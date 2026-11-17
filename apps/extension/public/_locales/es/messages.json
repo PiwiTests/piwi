@@ -225,9 +225,6 @@
   "badge_recording": {
     "message": "REC"
   },
-  "badge_bug": {
-    "message": "BUG"
-  },
   "badge_replay": {
     "message": "REPR"
   },
@@ -371,23 +368,11 @@
       }
     }
   },
-  "popup_reportBug": {
-    "message": "Notificar un bug"
-  },
-  "popup_reportBugHint": {
-    "message": "Pasos y lo que falla → una prueba que falla"
-  },
-  "popup_replayBug": {
-    "message": "Reproducir un informe de bug"
-  },
-  "popup_replayBugHint": {
-    "message": "Reproduce sus pasos aquí, con un cursor"
-  },
   "popup_record": {
-    "message": "Grabar acciones"
+    "message": "Grabar"
   },
   "popup_recordHint": {
-    "message": "Tus pasos → una prueba"
+    "message": "Un escenario o un bug"
   },
   "popup_pick": {
     "message": "Elegir un elemento"
@@ -428,17 +413,8 @@
   "popup_sectionPick": {
     "message": "Elegir"
   },
-  "popup_sectionRecord": {
-    "message": "Grabar"
-  },
-  "popup_sectionRunControl": {
-    "message": "Control de ejecución"
-  },
-  "popup_sectionDashboard": {
-    "message": "Panel de control"
-  },
-  "popup_sectionAgents": {
-    "message": "Agentes"
+  "popup_sectionTests": {
+    "message": "Pruebas"
   },
   "popup_devtoolsNote": {
     "message": "La consola de locators, la sesión, los mocks de red, los viewports, la vista Playwright y Guardar la sesión están en DevTools, en el panel Piwi."
@@ -491,17 +467,8 @@
       }
     }
   },
-  "popup_stopRecording": {
-    "message": "Detener la grabación ($count$)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "popup_finishBugReport": {
-    "message": "Terminar el informe ($count$)",
+  "popup_finishRecording": {
+    "message": "Terminar ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -513,7 +480,7 @@
     "message": "Pasos grabados hasta ahora"
   },
   "popup_reviewRecording": {
-    "message": "Revisar la grabación ($count$)",
+    "message": "Revisar ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -521,44 +488,26 @@
       }
     }
   },
-  "popup_reviewBugReport": {
-    "message": "Revisar el informe de bug"
+  "popup_replay": {
+    "message": "Reproducir"
+  },
+  "popup_replayHint": {
+    "message": "Una grabación, aquí"
   },
   "popup_notExported": {
     "message": "Aún sin exportar"
   },
   "popup_takeScreenshot": {
-    "message": "Hacer una captura de pantalla"
+    "message": "Capturar pantalla"
   },
-  "popup_screenshotHint_one": {
-    "message": "Añade esta pestaña, tal como está, al informe ($count$ evento hasta ahora)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "12"
-      }
-    }
-  },
-  "popup_screenshotHint_other": {
-    "message": "Añade esta pestaña, tal como está, al informe ($count$ eventos hasta ahora)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "12"
-      }
-    }
-  },
-  "popup_reviewBugReportHint": {
-    "message": "Copia la prueba que falla o el informe, o descárgalo"
-  },
-  "popup_finishFirst": {
-    "message": "Primero termina o descarta la grabación en curso"
-  },
-  "popup_finishBeforeBug": {
-    "message": "Termina o descarta la grabación en curso antes de notificar un bug."
+  "popup_screenshotHint": {
+    "message": "Esta pestaña, tal cual"
   },
   "popup_permissionNeeded": {
     "message": "Piwi Picker necesita acceso a este sitio para grabar de una página a otra."
+  },
+  "popup_recordNotAllowed": {
+    "message": "La grabación no empezó: no se permitió Piwi Picker en este sitio."
   },
   "popup_cannotRecord": {
     "message": "Piwi Picker no puede grabar en esta página."
@@ -2302,8 +2251,14 @@
   "record_checkElement": {
     "message": "Comprobar un elemento"
   },
+  "record_checkElementHint": {
+    "message": "Elige un elemento de la página: comprueba lo que muestra, o di lo que debería mostrar"
+  },
   "record_checkAddress": {
     "message": "Comprobar la dirección"
+  },
+  "record_checkAddressHint": {
+    "message": "Comprueba la dirección de la página, o di en qué página deberías estar"
   },
   "record_checkOn": {
     "message": "Elemento: $locator$",
@@ -2350,11 +2305,14 @@
   "record_checkAdd": {
     "message": "Añadir la comprobación"
   },
+  "record_checkPasses": {
+    "message": "Una comprobación: la prueba pasa mientras la página muestre esto."
+  },
+  "record_checkWrong": {
+    "message": "Marcado como incorrecto: la grabación pasa a ser un informe de bug, y su prueba falla hasta que la página muestre lo que esperas."
+  },
   "record_checkNoLocator": {
     "message": "Ningún locator encuentra este elemento solo: elige otro."
-  },
-  "record_lastLocator": {
-    "message": "Último locator"
   },
   "record_matchingFunctions": {
     "message": "Funciones de prueba que coinciden"
@@ -2373,15 +2331,6 @@
   },
   "record_reviewLabel": {
     "message": "Tu grabación"
-  },
-  "record_testTitle": {
-    "message": "Título de la prueba"
-  },
-  "record_testTitlePlaceholder": {
-    "message": "Nombre de la prueba"
-  },
-  "record_nothingRecorded": {
-    "message": "No se grabó nada"
   },
   "record_stepsRecorded_one": {
     "message": "$count$ paso grabado",
@@ -2422,26 +2371,20 @@
   "record_noFunctionMatches": {
     "message": "Ninguna de tus funciones de prueba coincide: el código solo usa locators."
   },
+  "record_copyTest": {
+    "message": "Copiar la prueba"
+  },
+  "record_copyTestHint": {
+    "message": "Una prueba de Playwright de estos pasos, en TypeScript"
+  },
+  "record_copyWithoutFunctions": {
+    "message": "Sin tus funciones"
+  },
+  "record_copyWithoutFunctionsHint": {
+    "message": "Copiar la prueba solo con locators, sin tus funciones de prueba"
+  },
   "record_notConnected": {
     "message": "Sin conexión con Piwi: el código solo usa locators."
-  },
-  "record_noSteps": {
-    "message": "No se grabó ningún paso."
-  },
-  "record_copyCode": {
-    "message": "Copiar como TypeScript"
-  },
-  "record_copyCodeWithFunctions": {
-    "message": "Copiar como TypeScript (con tus funciones)"
-  },
-  "record_copyCodeWithoutFunctions": {
-    "message": "Copiar como TypeScript sin tus funciones"
-  },
-  "record_downloadSteps": {
-    "message": "Descargar los pasos"
-  },
-  "record_downloadStepsTitle": {
-    "message": "Guarda la grabación como archivo de pasos, para compartirla o convertirla en una prueba con piwi codegen"
   },
   "record_sendToEditor": {
     "message": "Enviar al editor"
@@ -2452,44 +2395,11 @@
   "record_replayHint": {
     "message": "Vuelve a ejecutar los pasos en este sitio, con un cursor, y mira si cada paso aún encuentra su elemento"
   },
-  "bug_reportLabel": {
-    "message": "Informe de bug de Piwi Picker"
-  },
-  "bug_hudTitle_one": {
-    "message": "Notificando un bug · $count$ paso",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "4"
-      }
-    }
-  },
-  "bug_hudTitle_other": {
-    "message": "Notificando un bug · $count$ pasos",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "4"
-      }
-    }
-  },
-  "bug_mark": {
-    "message": "Marcar lo que falla"
-  },
-  "bug_markHint": {
-    "message": "Elige un elemento de la página y di lo que debería mostrar"
-  },
   "bug_missing": {
     "message": "Falta algo"
   },
   "bug_missingHint": {
     "message": "Nombra un elemento que debería estar en esta página y no está"
-  },
-  "bug_wrongPage": {
-    "message": "Página equivocada"
-  },
-  "bug_wrongPageHint": {
-    "message": "Di a qué página deberías haber llegado"
   },
   "bug_screenshot": {
     "message": "Captura"
@@ -2498,10 +2408,10 @@
     "message": "Añadir una captura de la página tal como está ahora"
   },
   "bug_debuggingOn": {
-    "message": "Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es este informe leyendo la consola, las solicitudes fallidas y las capturas. Nada sale de su equipo, y la barra desaparece al terminar."
+    "message": "Chrome muestra una barra que dice que Piwi Picker empezó a depurar este navegador: es esta grabación leyendo la consola, las solicitudes fallidas y las capturas. Nada sale de tu equipo, y la barra desaparece al terminar."
   },
   "bug_debuggingCanceled": {
-    "message": "Se canceló la barra de depuración: el informe lee la consola y las solicitudes desde la página a partir de ahora, y una captura requiere «$action$» en Piwi Picker.",
+    "message": "Se canceló la barra de depuración: la grabación lee la consola y las solicitudes desde la página a partir de ahora, y una captura requiere «$action$» en Piwi Picker.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2510,7 +2420,7 @@
     }
   },
   "bug_debuggingRefused": {
-    "message": "Chrome rechazó la sesión de depuración (otro depurador en esta pestaña, o una directiva): el informe lee la consola y las solicitudes desde la página, y una captura requiere «$action$» en Piwi Picker.",
+    "message": "Chrome rechazó la sesión de depuración (otro depurador en esta pestaña, o una directiva): la grabación lee la consola y las solicitudes desde la página, y una captura requiere «$action$» en Piwi Picker.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2584,27 +2494,6 @@
   "bug_addToReport": {
     "message": "Añadir al informe"
   },
-  "bug_onElement": {
-    "message": "Elemento: $locator$",
-    "placeholders": {
-      "locator": {
-        "content": "$1",
-        "example": "getByTestId('cart-total')"
-      }
-    }
-  },
-  "bug_whatsWrong": {
-    "message": "Lo que falla"
-  },
-  "bug_itsValue": {
-    "message": "Su valor"
-  },
-  "bug_itsText": {
-    "message": "Su texto"
-  },
-  "bug_itsName": {
-    "message": "Su nombre, tal como lo anuncian los lectores de pantalla"
-  },
   "bug_shouldBeVisible": {
     "message": "Debería estar visible"
   },
@@ -2620,17 +2509,11 @@
   "bug_pageShows": {
     "message": "La página muestra"
   },
-  "bug_shouldShow": {
-    "message": "Lo que debería mostrar"
-  },
   "bug_note": {
     "message": "Nota"
   },
   "bug_notePlaceholder": {
     "message": "Lo que pasó, con tus palabras (opcional)"
-  },
-  "bug_sameAsPage": {
-    "message": "Eso es lo que la página ya muestra. Escribe lo que debería mostrar en su lugar."
   },
   "bug_whatShouldBeThere": {
     "message": "Lo que debería estar"
@@ -2645,7 +2528,7 @@
     "message": "Escribe su nombre, tal como se leería en la página."
   },
   "bug_alreadyThere_one": {
-    "message": "Ya hay $count$ elemento así en la página: usa «$mark$» para decir lo que falla.",
+    "message": "Ya hay $count$ elemento así en la página: usa «$mark$» para comprobarlo, o para decir lo que falla.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2658,7 +2541,7 @@
     }
   },
   "bug_alreadyThere_other": {
-    "message": "Ya hay $count$ elementos así en la página: usa «$mark$» para decir lo que falla.",
+    "message": "Ya hay $count$ elementos así en la página: usa «$mark$» para comprobarlos, o para decir lo que falla.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2678,12 +2561,6 @@
         "example": "/cart"
       }
     }
-  },
-  "bug_pageShouldBe": {
-    "message": "La página en la que deberías estar"
-  },
-  "bug_samePage": {
-    "message": "Esa es la dirección de esta página. Escribe aquella a la que deberías haber llegado."
   },
   "bug_kindButton": {
     "message": "Botón"
@@ -2784,15 +2661,6 @@
   "bug_stepShotsHint": {
     "message": "La página al empezar cada paso, para quien reproduce un paso a mano. Muestran toda la página: déjalas fuera si muestra lo que no debe compartirse."
   },
-  "bug_nothingMarked": {
-    "message": "No hay nada marcado como incorrecto, así que la prueba pasaría. Vuelve a grabar y usa «$mark$».",
-    "placeholders": {
-      "mark": {
-        "content": "$1",
-        "example": "Mark what’s wrong"
-      }
-    }
-  },
   "bug_stepWarning": {
     "message": "Paso $step$: $message$",
     "placeholders": {
@@ -2835,9 +2703,6 @@
   },
   "bug_downloadReportHint": {
     "message": "steps.json, la prueba, el informe en Markdown, evidence.json y las capturas de pantalla, en un archivo zip"
-  },
-  "bug_replay": {
-    "message": "Reproducir"
   },
   "bug_replayHint": {
     "message": "Vuelve a ejecutar los pasos en este sitio, con un cursor, y mira si el bug aparece"
@@ -3708,7 +3573,7 @@
     "message": "Usar el informe de bug grabado en este navegador"
   },
   "replay_useRecordedActions": {
-    "message": "Usar las acciones grabadas en este navegador"
+    "message": "Usar la grabación hecha en este navegador"
   },
   "replay_chooseFile": {
     "message": "O elige el .piwibug del informe, o su steps.json, guardado por Piwi Picker:"
@@ -5592,32 +5457,6 @@
       }
     }
   },
-  "devtools_bugRecordingOn_one": {
-    "message": "Informe de bug en $site$: $count$ paso",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      },
-      "site": {
-        "content": "$2",
-        "example": "https://shop.example"
-      }
-    }
-  },
-  "devtools_bugRecordingOn_other": {
-    "message": "Informe de bug en $site$: $count$ pasos",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      },
-      "site": {
-        "content": "$2",
-        "example": "https://shop.example"
-      }
-    }
-  },
   "devtools_recordingStopped_one": {
     "message": "Grabación detenida: $count$ paso, aún sin exportar",
     "placeholders": {
@@ -5636,11 +5475,8 @@
       }
     }
   },
-  "devtools_stopRecording": {
-    "message": "Detener la grabación"
-  },
-  "devtools_finishBugOnPage": {
-    "message": "Termina el informe de bug desde su panel en la página, que reúne las evidencias."
+  "devtools_finishOnPage": {
+    "message": "Termina la grabación desde su barra en la página, o desde el menú de Piwi Picker: reúnen las últimas evidencias."
   },
   "devtools_noReplay": {
     "message": "Aún no hay ninguna reproducción. Inicia una con Reproducir un informe de bug en el menú de la extensión: sus pasos y resultados aparecen aquí."

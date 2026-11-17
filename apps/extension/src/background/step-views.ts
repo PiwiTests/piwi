@@ -1,6 +1,6 @@
 import { BUG_EVIDENCE_LIMITS } from '@piwitests/core/bug-report';
 import type { ViewportBox } from '@piwitests/core/recording';
-import { getRecordingState, recordingMode, RECORDING_KEY, type RecordingState } from '../shared/recording-storage.js';
+import { getRecordingState, RECORDING_KEY, type RecordingState } from '../shared/recording-storage.js';
 import {
   clearRecordingViews,
   countRecordingViews,
@@ -80,7 +80,7 @@ export async function handleStepView(
   const id = message.id;
   if (typeof id !== 'string' || !VIEW_ID.test(id) || tab?.id == null) return captured(false);
   const state = await getRecordingState();
-  if (!state.active || recordingMode(state) !== 'bug') return captured(false);
+  if (!state.active || !state.bugToken) return captured(false);
   await deleteRecordingView(id).catch(() => undefined);
   if ((await countRecordingViews().catch(() => Infinity)) >= BUG_EVIDENCE_LIMITS.stepShots) return captured(false);
   const takenAt = Date.now();

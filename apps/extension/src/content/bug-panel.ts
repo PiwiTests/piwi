@@ -1,62 +1,34 @@
-import { installPickerOverlay, removePickerOverlay, highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
+import { installPickerOverlay, removePickerOverlay, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import {
-  normalizeSteps,
-  sessionFromEvents,
-  stepViews,
-  VALUE_MATCHERS,
   type AssertionMatcher,
   type RawCaptureEvent,
   type RecordedStep,
   type RecordedTarget,
   type StepAssertion,
 } from '@piwitests/core/recording';
-import {
-  BUG_REPORT_EXTENSION,
-  BUG_REPORT_MEDIA_TYPE,
-  bugContextFrom,
-  emptyBugEvidence,
-  expectedSteps,
-  renderBugSpec,
-  summarizeEvidence,
-  type BugContext,
-} from '@piwitests/core/bug-report';
+import { bugContextFrom, emptyBugEvidence, summarizeEvidence, type BugContext } from '@piwitests/core/bug-report';
 import { parseLocatorChain, renderLocatorChain } from '@piwitests/core/locator-chain';
-import { suggestAssertions } from './assertion-suggest.js';
-import { isSensitiveField } from './sensitive-fields.js';
+
 import { pickerOverlayStrings } from './picker-strings.js';
 import { DomModel } from './engine-aria.js';
 import { createLocatorEngine } from './locator-engine.js';
 import { buildOutline, outlineRoot } from './bug-outline.js';
-import {
-  assembleBugReport,
-  bugReportArchive,
-  bugReportMarkdown,
-  NO_SCREENSHOT_TAKEN,
-  stepShotsOf,
-  stepViewIds,
-  withoutStepShots,
-  type ReportLanguage,
-} from './bug-report-files.js';
-import { codegenWarningText, interfacePhrases } from '../shared/core-words.js';
+import { NO_SCREENSHOT_TAKEN, stepViewIds, type ReportLanguage } from './bug-report-files.js';
+import { interfacePhrases } from '../shared/core-words.js';
 import {
   BUG_DIALOG_HOST_ID,
   FRAME_HOST_ID,
   HUD_HOST_ID,
-  PANEL_HOST_ID,
   SHARED_STYLE,
-  copyToClipboard,
-  fileStamp,
   hideSurfaces,
   isOwnHost,
   mountSurface,
-  startReplayHere,
 } from './record-ui.js';
 import { cornerInset, hudCorner, moveHudButton } from './hud-corner.js';
-import { downloadBlob } from '../shared/download.js';
+
 import {
   addBugScreenshot,
   getBugEvidence,
-  getBugScreenshots,
   setBugEvidenceFields,
   type ScreenshotFailure,
   type StoredBugEvidence,
@@ -69,16 +41,17 @@ import {
   toolIsCurrent,
   waitForGlobal,
 } from '../shared/tool-session.js';
-import { formatNumber, t, tn, tNodes, uiLanguage, type MessageKey } from '../shared/i18n.js';
-import type { RecordingState } from '../shared/recording-storage.js';
+import { formatNumber, t, tn, uiLanguage, type MessageKey } from '../shared/i18n.js';
+
 import type { StoredStepView } from '../shared/step-views.js';
 import { attachPanelShadow } from './panel-root.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { activePathPrefixes } from '../shared/active-project.js';
-import { openSendPreview, SEND_DIALOG_HOST_ID, sendTarget } from './bug-send-panel.js';
+
 import { BUTTON_CSS, makeButton, styleButton, type ButtonOptions } from '../shared/buttons.js';
 import type { IconName } from '../shared/icons.js';
-import { richText, STEP_CSS, stepView, urlView } from '../shared/step-view.js';
+import { richText, STEP_CSS, stepView } from '../shared/step-view.js';
+import { IDE_BUILD } from '../shared/ide-build.js';
 
 /**
  * The bug recording's page UI: its HUD, the three ways to say what is wrong
@@ -120,7 +93,7 @@ const SCREENSHOT_FAILED_NOTE = 'The browser could not take the screenshot.';
 const SCREENSHOT_NOT_KEPT_NOTE = 'The screenshot was too large to keep in this browser’s storage.';
 
 /** A stored screenshot note in the interface language; a note this module does not know stays as it is. */
-function screenshotNoteText(note: string): string {
+export function screenshotNoteText(note: string): string {
   if (note === NO_SCREENSHOT_NOTE) return t('bug_screenshotBlocked', { action: t('popup_takeScreenshot') });
   if (note === NO_SCREENSHOT_NOTE_FIREFOX) {
     return t('bug_screenshotBlockedFirefox', { action: t('popup_takeScreenshot') });
@@ -142,12 +115,13 @@ function screenshotFailureNote(reason: ScreenshotFailure | undefined): string {
 }
 
 /** The report's Markdown in the interface language. */
-function reportLanguage(): ReportLanguage {
+export function reportLanguage(): ReportLanguage {
   return { phrases: interfacePhrases(), screenshotNote: screenshotNoteText };
 }
 
-const PANEL_CSS = `
+export const PANEL_CSS = `
   ${SHARED_STYLE}
+  [hidden] { display: none !important; }
   ${LOCATOR_SYNTAX_CSS}
   ${BUTTON_CSS}
   ${STEP_CSS}
@@ -166,10 +140,12 @@ const PANEL_CSS = `
   input, select { width: 100%; font: inherit; font-size: 12.5px; padding: 6px 8px; border-radius: 6px;
     border: 1px solid rgba(128,128,128,.4); background: rgba(128,128,128,.1); color: inherit; }
   .actual { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; padding: 6px 8px; border-radius: 6px;
-    background: rgba(239,68,68,.12); word-break: break-word; }
+    background: rgba(148,163,184,.12); word-break: break-word; }
   .message { color: #fca5a5; font-size: 12px; margin-top: 8px; min-height: 1em; }
   .message:empty { display: none; }
   .actions { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 12px; }
+  .actions + .actions { margin-top: 6px; }
+  .actions .piwi-btn { white-space: nowrap; }
   .actions .discard { margin-inline-start: auto; }
   .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 260px; overflow: auto; margin: 10px 0; }
   .step { padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: flex-start; }
@@ -178,6 +154,10 @@ const PANEL_CSS = `
   .step .piwi-step { flex: 1; }
   .step.marked { background: rgba(239,68,68,.1); box-shadow: inset 3px 0 0 #ef4444; }
   .step-actual { color: #fca5a5; }
+  .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa;
+    flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  .verdict { font-size: 12px; margin-top: 10px; padding: 6px 8px; border-radius: 6px; background: rgba(16,185,129,.12); color: #6ee7b7; }
+  .verdict.wrong { background: rgba(239,68,68,.12); color: #fca5a5; }
   .evidence { font-size: 12px; color: #9ca3af; }
   .warn { color: #fca5a5; font-size: 12px; margin-top: 6px; overflow-wrap: anywhere; }
   .local { color: #9ca3af; font-size: 11px; margin-top: 10px; }
@@ -186,7 +166,9 @@ const PANEL_CSS = `
   @media (prefers-color-scheme: light) {
     .sub, label, .step-idx, .evidence, .local { color: #6b7280; }
     label.keep { color: inherit; }
-    .message, .warn, .step-actual { color: #b91c1c; }
+    .message, .warn, .step-actual, .verdict.wrong { color: #b91c1c; }
+    .verdict { color: #047857; }
+    .step-fn { color: #6d28d9; }
   }
 `;
 
@@ -334,7 +316,7 @@ export async function captureStepView(
 }
 
 /** The screenshots of the page as each step began that the worker kept for this recording. */
-async function keptStepViews(events: RawCaptureEvent[]): Promise<StoredStepView[]> {
+export async function keptStepViews(events: RawCaptureEvent[]): Promise<StoredStepView[]> {
   const ids = stepViewIds(events);
   if (ids.length === 0) return [];
   try {
@@ -499,20 +481,6 @@ export function input(value = '', placeholder = ''): HTMLInputElement {
   return el;
 }
 
-interface ExpectedChoice {
-  matcher: AssertionMatcher;
-  label: string;
-  /** What the page shows now. */
-  actual: string;
-}
-
-const STATE_LABELS: Partial<Record<AssertionMatcher, MessageKey>> = {
-  toBeVisible: 'bug_shouldBeVisible',
-  toBeHidden: 'bug_shouldBeHidden',
-  toBeEnabled: 'bug_shouldBeEnabled',
-  toBeDisabled: 'bug_shouldBeDisabled',
-};
-
 /** The state words a recorded assertion keeps in `actual`, which the report stores in English. */
 const STATE_WORDS: Record<string, MessageKey> = {
   visible: 'bug_stateVisible',
@@ -525,97 +493,6 @@ const STATE_MATCHERS = new Set<AssertionMatcher>(['toBeVisible', 'toBeHidden', '
 
 /** What `actual` holds for an element named in Something is missing. */
 const MISSING_ACTUAL = 'not on the page';
-
-/**
- * What can be said to be wrong about an element: its value, text or name, or
- * the opposite of each state it is in. A field that holds a secret
- * (`isSensitiveField`) offers its states only, so what it holds is never shown
- * or kept.
- */
-function expectedChoices(element: Element): { locator: string | null; choices: ExpectedChoice[] } {
-  const suggestion = suggestAssertions(element);
-  const choices: ExpectedChoice[] = [];
-  const secret = isSensitiveField(element);
-  for (const c of suggestion.candidates) {
-    if (c.detail == null || secret) continue;
-    if (c.method === 'toHaveValue') choices.push({ matcher: c.method, label: t('bug_itsValue'), actual: c.detail });
-    if (c.method === 'toHaveText') choices.push({ matcher: c.method, label: t('bug_itsText'), actual: c.detail });
-    if (c.method === 'toHaveAccessibleName')
-      choices.push({ matcher: c.method, label: t('bug_itsName'), actual: c.detail });
-  }
-  const model = new DomModel();
-  const visible = model.isVisible(element);
-  const disabled = model.disabled(element);
-  const states: Array<[AssertionMatcher, string]> = [
-    [visible ? 'toBeHidden' : 'toBeVisible', visible ? 'visible' : 'hidden'],
-    [disabled ? 'toBeEnabled' : 'toBeDisabled', disabled ? 'disabled' : 'enabled'],
-  ];
-  for (const [matcher, actual] of states) choices.push({ matcher, label: t(STATE_LABELS[matcher]!), actual });
-  return { locator: suggestion.locator, choices };
-}
-
-/** The expected-value dialog for a picked element. */
-function expectedDialog(element: Element): Promise<StepAssertion | null> {
-  const { locator, choices } = expectedChoices(element);
-  return openRecordDialog<StepAssertion>(t('bug_mark'), ({ form, field, say }) => {
-    if (locator) {
-      const sub = document.createElement('div');
-      sub.className = 'sub';
-      const code = document.createElement('span');
-      code.className = 'piwi-loc';
-      code.innerHTML = highlightLocator(locator);
-      sub.append(...tNodes('bug_onElement', { locator: code }));
-      form.appendChild(sub);
-    }
-    const select = document.createElement('select');
-    choices.forEach((c, i) => {
-      const option = document.createElement('option');
-      option.value = String(i);
-      option.textContent = c.label;
-      select.appendChild(option);
-    });
-    field(t('bug_whatsWrong'), select);
-    const actual = document.createElement('div');
-    actual.className = 'actual';
-    field(t('bug_pageShows'), actual);
-    const expected = input();
-    field(t('bug_shouldShow'), expected);
-    const note = input('', t('bug_notePlaceholder'));
-    field(t('bug_note'), note);
-
-    const expectedLabel = expected.previousElementSibling as HTMLElement;
-    const show = () => {
-      const choice = choices[Number(select.value)]!;
-      const takesValue = VALUE_MATCHERS.has(choice.matcher);
-      expected.hidden = !takesValue;
-      expectedLabel.hidden = !takesValue;
-      actual.textContent = takesValue ? choice.actual : stateWord(choice.actual);
-      if (takesValue) expected.value = choice.actual;
-      say('');
-    };
-    select.addEventListener('change', show);
-    show();
-
-    return {
-      focus: VALUE_MATCHERS.has(choices[0]!.matcher) ? expected : select,
-      submit: () => {
-        const choice = choices[Number(select.value)]!;
-        const takesValue = VALUE_MATCHERS.has(choice.matcher);
-        if (takesValue && expected.value === choice.actual) {
-          say(t('bug_sameAsPage'));
-          return null;
-        }
-        return {
-          matcher: choice.matcher,
-          expected: takesValue ? expected.value : null,
-          actual: choice.actual,
-          negated: false,
-          note: note.value.trim() || null,
-        };
-      },
-    };
-  });
-}
 
 /** The kinds of element a person can say are missing, in their words, most common first. */
 const MISSING_KINDS: ReadonlyArray<{ role: string; label: MessageKey }> = [
@@ -685,7 +562,7 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
           found = 0;
         }
         if (found > 0) {
-          say(tn('bug_alreadyThere', found, { mark: t('bug_mark') }));
+          say(tn('bug_alreadyThere', found, { mark: t('record_checkElement') }));
           return null;
         }
         return {
@@ -704,31 +581,6 @@ function missingDialog(): Promise<{ target: RecordedTarget; note: string | null 
   });
 }
 
-function wrongPageDialog(): Promise<StepAssertion | null> {
-  const here = `${location.pathname}${location.search}`;
-  return openRecordDialog<StepAssertion>(t('bug_wrongPage'), ({ form, field, say }) => {
-    const sub = document.createElement('div');
-    sub.className = 'sub';
-    sub.append(...tNodes('bug_youAreOn', { path: urlView(here) }));
-    form.appendChild(sub);
-    const expected = input(location.pathname, '/checkout/thanks');
-    field(t('bug_pageShouldBe'), expected);
-    const note = input('', t('bug_notePlaceholder'));
-    field(t('bug_note'), note);
-    return {
-      focus: expected,
-      submit: () => {
-        const value = expected.value.trim();
-        if (!value || value === here || value === location.pathname || value === location.href) {
-          say(t('bug_samePage'));
-          return null;
-        }
-        return { matcher: 'toHaveURL', expected: value, actual: here, negated: false, note: note.value.trim() || null };
-      },
-    };
-  });
-}
-
 // ---------------------------------------------------------------------------
 // Flows started from the HUD
 
@@ -742,29 +594,6 @@ export async function exclusive(run: () => Promise<void>): Promise<void> {
   } finally {
     g.__piwiBugFlow = false;
   }
-}
-
-/** Pick an element, say what it should show, and record that as an expected assertion. */
-export function runMarkFlow(hooks: BugRecorderHooks): Promise<void> {
-  return exclusive(async () => {
-    hooks.setPaused(true);
-    // Out of the way while picking, so the HUD itself cannot be picked.
-    let showHud = hideSurfaces([HUD_HOST_ID]);
-    try {
-      const element = await pickElement();
-      showHud();
-      showHud = () => undefined;
-      if (!element) return;
-      const assertion = await expectedDialog(element);
-      if (!assertion) return;
-      const step = await hooks.addAssert(hooks.targetFor(element), assertion);
-      await setBugEvidenceFields({ outline: outlineAround(element) });
-      await takeBugScreenshot('marked', step);
-    } finally {
-      showHud();
-      hooks.setPaused(false);
-    }
-  });
 }
 
 /** Name an element that should be on the page and is not. */
@@ -789,32 +618,32 @@ export function runMissingFlow(hooks: BugRecorderHooks): Promise<void> {
   });
 }
 
-/** Say which page the flow should have reached. */
-export function runWrongPageFlow(hooks: BugRecorderHooks): Promise<void> {
-  return exclusive(async () => {
-    hooks.setPaused(true);
-    try {
-      const assertion = await wrongPageDialog();
-      if (!assertion) return;
-      const step = await hooks.addAssert(null, assertion);
-      await setBugEvidenceFields({ outline: outlineAround(null) });
-      await takeBugScreenshot('marked', step);
-    } finally {
-      hooks.setPaused(false);
-    }
-  });
-}
-
 // ---------------------------------------------------------------------------
 // HUD
 
-export interface BugHudHandlers {
-  mark(): void;
+/** What the recording bar's buttons do: `record-panel.ts` runs each. */
+export interface RecordingBarHandlers {
+  checkElement(): void;
+  checkAddress(): void;
+  /** Something is missing: not in the IDE bundle. */
   missing(): void;
-  wrongPage(): void;
-  finish(): void;
   /** A screenshot now: offered while the debugging protocol takes them. */
   screenshot(): void;
+  pause(): void;
+  /** Finish in the extension, Stop in the IDE bundle. */
+  finish(): void;
+}
+
+/** What the recording bar shows, read by `record-panel.ts` as it draws it. */
+export interface RecordingBarView {
+  title: string;
+  steps: RecordedStep[];
+  paused: boolean;
+  /** The evidence collected so far; null in the IDE bundle, which collects none. */
+  evidence: StoredBugEvidence | null;
+  captureError: string | null;
+  /** The matching test functions, drawn under the buttons when the project has a catalog. */
+  functions: HTMLElement | null;
 }
 
 /** What the HUD says about the debugging session: expected while it runs, and why it stopped when it did. */
@@ -847,9 +676,9 @@ function evidenceSummary(evidence: StoredBugEvidence): string {
   );
 }
 
-function stepRow(step: RecordedStep, index: number): HTMLElement {
+export function stepRow(step: RecordedStep, index: number): HTMLElement {
   const row = document.createElement('div');
-  row.className = step.action === 'assert' ? 'step marked' : 'step';
+  row.className = step.action === 'assert' && step.assertion?.actual != null ? 'step marked' : 'step';
   const idx = document.createElement('span');
   idx.className = 'step-idx';
   idx.textContent = formatNumber(index + 1);
@@ -866,7 +695,7 @@ function stepRow(step: RecordedStep, index: number): HTMLElement {
 }
 
 /** A recorded state word (`hidden`) in the interface language. */
-function stateWord(actual: string): string {
+export function stateWord(actual: string): string {
   const key = STATE_WORDS[actual];
   return key ? t(key) : actual;
 }
@@ -919,17 +748,14 @@ function focusedHudAction(): string | null {
 }
 
 /**
- * The HUD of a bug recording: the last steps, the three ways to mark what is
- * wrong, Finish, and what evidence has been collected. Its shadow root
+ * The recording bar: the last steps, the checks, Something is missing, a
+ * screenshot while the debugging protocol takes them, Pause and Finish, the
+ * matching test functions, and what evidence has been collected. Every label
+ * stays on one line: a row of buttons wraps between buttons. Its shadow root
  * delegates focus, so focusing the host reaches its first button. A redraw
- * keeps the focus in the HUD, on the button that had it when it is still there.
+ * keeps the focus in the bar, on the button that had it when it is still there.
  */
-export function renderBugHud(
-  state: RecordingState,
-  evidence: StoredBugEvidence,
-  captureError: string | null,
-  handlers: BugHudHandlers,
-): void {
+export function renderRecordingBar(view: RecordingBarView, handlers: RecordingBarHandlers): void {
   const focusedAction = focusedHudAction();
   document.getElementById(HUD_HOST_ID)?.remove();
   const host = document.createElement('div');
@@ -943,18 +769,19 @@ export function renderBugHud(
     ${LOCATOR_SYNTAX_CSS}
     ${BUTTON_CSS}
     ${STEP_CSS}
+    [hidden] { display: none !important; }
     .bar { display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb; border-radius: 12px;
       padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4); font-size: 12.5px; width: 360px; max-width: calc(100vw - 32px);
       position: relative; }
     .bar > .move { position: absolute; top: 6px; right: 8px; }
-    .bar > .row:first-child { padding-right: 28px; }
     @media (prefers-color-scheme: light) {
       .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); border: 1px solid #e5e7eb; }
     }
-    .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+    .top { display: flex; align-items: center; gap: 6px; padding-right: 28px; min-height: 24px; }
     .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
     @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
     @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
+    .dot.paused { background: #9ca3af; animation: none; }
     .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; }
     .steps { display: flex; flex-direction: column; gap: 4px; font-size: 11.5px; max-height: 170px; overflow: auto; }
     .step { display: flex; gap: 6px; overflow-wrap: anywhere; align-items: flex-start; }
@@ -964,30 +791,49 @@ export function renderBugHud(
     .step .piwi-step-badge .piwi-icon { width: 12px; height: 12px; }
     .step.marked .piwi-step-words { color: #fca5a5; }
     .step-actual { opacity: .85; }
-    .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
-    .buttons .piwi-btn { justify-content: flex-start; }
-    .buttons .finish { grid-column: 1 / -1; justify-content: center; }
-    .evidence { color: #9ca3af; font-size: 11px; overflow-wrap: anywhere; }
+    .buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+    .buttons .piwi-btn { flex: 1 1 auto; white-space: nowrap; }
+    .buttons .finish { flex-grow: 3; }
+    .evidence, .empty { color: #9ca3af; font-size: 11px; overflow-wrap: anywhere; }
     .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-    @media (prefers-color-scheme: light) { .warn, .step.marked .piwi-step-words { color: #b91c1c; } .evidence, .step-idx { color: #6b7280; } }
+    .section-title { color: #9ca3af; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; }
+    .match { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
+    .match-name { font-family: ui-monospace, monospace; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .match-bar { width: 34px; height: 4px; border-radius: 2px; background: rgba(128,128,128,.25); overflow: hidden; flex-shrink: 0; }
+    .match-bar-fill { height: 100%; background: #7c3aed; }
+    .match-badge { font-size: 9.5px; padding: 1px 4px; border-radius: 4px; flex-shrink: 0; }
+    .match-badge.complete { background: rgba(34,197,94,.2); color: #22c55e; }
+    .match-badge.partial { color: #9ca3af; }
+    @media (prefers-color-scheme: light) {
+      .warn, .step.marked .piwi-step-words { color: #b91c1c; }
+      .evidence, .empty, .step-idx, .section-title, .match-badge.partial { color: #6b7280; }
+      .match-badge.complete { color: #15803d; }
+    }
   `;
   const bar = document.createElement('div');
   bar.className = 'bar';
   bar.setAttribute('role', 'region');
-  bar.setAttribute('aria-label', t('bug_reportLabel'));
+  bar.setAttribute('aria-label', t('record_hudLabel'));
   bar.lang = uiLanguage();
 
-  const steps = normalizeSteps(state.events);
   const top = document.createElement('div');
-  top.className = 'row';
+  top.className = 'top';
   const dot = document.createElement('div');
-  dot.className = 'dot';
+  dot.className = view.paused ? 'dot paused' : 'dot';
   const title = document.createElement('div');
   title.className = 'title';
-  title.textContent = tn('bug_hudTitle', steps.length);
+  title.textContent = view.title;
   top.append(dot, title);
   bar.appendChild(top);
 
+  if (view.paused) {
+    const note = document.createElement('div');
+    note.className = 'empty';
+    note.textContent = t('record_pausedNote');
+    bar.appendChild(note);
+  }
+
+  const { steps } = view;
   if (steps.length > 0) {
     const list = document.createElement('div');
     list.className = 'steps';
@@ -1000,22 +846,58 @@ export function renderBugHud(
     });
   }
 
-  const buttons = document.createElement('div');
-  buttons.className = 'buttons';
-  const button = (action: keyof BugHudHandlers, label: string, options: ButtonOptions) => {
+  const tools = document.createElement('div');
+  tools.className = 'buttons';
+  const ends = document.createElement('div');
+  ends.className = 'buttons';
+  const button = (
+    into: HTMLElement,
+    action: keyof RecordingBarHandlers,
+    label: string,
+    options: ButtonOptions,
+  ): HTMLButtonElement => {
     const b = makeButton(label, () => handlers[action](), { small: true, ...options });
     b.dataset.action = action;
-    buttons.appendChild(b);
+    into.appendChild(b);
     return b;
   };
-  button('mark', t('bug_mark'), { icon: 'flag', title: t('bug_markHint') });
-  button('missing', t('bug_missing'), { icon: 'missing', title: t('bug_missingHint') });
-  button('wrongPage', t('bug_wrongPage'), { icon: 'globe', title: t('bug_wrongPageHint') });
-  if (evidence.debugging?.state === 'on') {
-    button('screenshot', t('bug_screenshot'), { icon: 'camera', title: t('bug_screenshotHint') });
+  // Nothing is recorded while paused, so no check either.
+  button(tools, 'checkElement', t('record_checkElement'), {
+    icon: 'check-circle',
+    title: t('record_checkElementHint'),
+  }).disabled = view.paused;
+  button(tools, 'checkAddress', t('record_checkAddress'), {
+    icon: 'globe',
+    title: t('record_checkAddressHint'),
+  }).disabled = view.paused;
+  if (!IDE_BUILD) {
+    button(tools, 'missing', t('bug_missing'), { icon: 'missing', title: t('bug_missingHint') }).disabled = view.paused;
   }
-  button('finish', t('bug_finish'), { icon: 'check', tone: 'success', className: 'finish' });
-  bar.appendChild(buttons);
+  if (view.evidence?.debugging?.state === 'on') {
+    button(tools, 'screenshot', t('bug_screenshot'), { icon: 'camera', title: t('bug_screenshotHint') });
+  }
+  bar.appendChild(tools);
+
+  const pause = button(ends, 'pause', view.paused ? t('record_resume') : t('record_pause'), {
+    icon: view.paused ? 'play' : 'pause',
+    className: 'pause',
+  });
+  pause.setAttribute('aria-pressed', String(view.paused));
+  if (IDE_BUILD) {
+    button(ends, 'finish', t('common_stop'), { icon: 'stop-circle', tone: 'danger', className: 'stop finish' });
+  } else {
+    button(ends, 'finish', t('bug_finish'), { icon: 'check', tone: 'success', className: 'finish' });
+  }
+  bar.appendChild(ends);
+
+  if (view.captureError) {
+    const warn = document.createElement('div');
+    warn.className = 'warn';
+    warn.setAttribute('role', 'alert');
+    warn.textContent = view.captureError;
+    bar.appendChild(warn);
+  }
+  if (view.functions) bar.appendChild(view.functions);
 
   const lines: BugHudEvidence = {
     summary: document.createElement('div'),
@@ -1025,15 +907,10 @@ export function renderBugHud(
   lines.summary.className = 'evidence';
   lines.debugging.className = 'evidence';
   lines.screenshotNote.className = 'warn';
-  bar.append(lines.summary, lines.debugging);
-  if (captureError) {
-    const warn = document.createElement('div');
-    warn.className = 'warn';
-    warn.textContent = captureError;
-    bar.appendChild(warn);
+  if (view.evidence) {
+    bar.append(lines.summary, lines.debugging, lines.screenshotNote);
+    writeHudEvidence(lines, view.evidence);
   }
-  bar.appendChild(lines.screenshotNote);
-  writeHudEvidence(lines, evidence);
   panelGlobals().__piwiBugHud = { host, root, ...lines };
 
   // Last in the bar, so its actions come first from the keyboard; drawn in its top right corner.
@@ -1044,227 +921,4 @@ export function renderBugHud(
   bar.appendChild(move);
   root.append(style, bar);
   if (focusedAction) (root.querySelector<HTMLElement>(`[data-action="${focusedAction}"]`) ?? host).focus();
-}
-
-// ---------------------------------------------------------------------------
-// Finish panel
-
-/**
- * The finished report: a title, the steps with what was marked, the evidence,
- * the exports, and, when an instance is connected, Send to Piwi…, which shows
- * exactly what would be sent before anything is.
- */
-export async function renderBugFinishPanel(state: RecordingState, onDiscard: () => Promise<void>): Promise<void> {
-  document.getElementById(HUD_HOST_ID)?.remove();
-  document.getElementById(PANEL_HOST_ID)?.remove();
-  document.getElementById(FRAME_HOST_ID)?.remove();
-
-  const [evidence, screenshots, views] = await Promise.all([
-    getBugEvidence(),
-    getBugScreenshots(),
-    keptStepViews(state.events),
-  ]);
-  const context = evidence.context ?? (await currentBugContext());
-  const startedAt = state.startedAt ?? state.events[0]?.timestamp ?? Date.now();
-  let title = evidence.title ?? '';
-  /** The reporter keeps the step screenshots unless they leave them out. */
-  let keepStepShots = true;
-  const report = () => {
-    const assembled = assembleBugReport({
-      events: state.events,
-      startedAt,
-      evidence: { ...evidence, title },
-      screenshots,
-      context,
-      views,
-    });
-    return keepStepShots ? assembled : withoutStepShots(assembled);
-  };
-  const initial = report();
-  const stepImages = new Map(
-    stepShotsOf(sessionFromEvents(state.events, startedAt).steps, views).map(({ shot, dataUrl }) => [
-      shot.file,
-      dataUrl,
-    ]),
-  );
-
-  const host = document.createElement('div');
-  host.id = PANEL_HOST_ID;
-  host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
-  document.documentElement.appendChild(host);
-  const root = attachPanelShadow(host, { mode: 'closed' });
-  const style = document.createElement('style');
-  style.textContent = PANEL_CSS;
-  const backdrop = document.createElement('div');
-  backdrop.className = 'backdrop';
-  const panel = document.createElement('div');
-  panel.className = 'panel';
-  panel.setAttribute('role', 'dialog');
-  panel.setAttribute('aria-label', t('bug_reportLabel'));
-  panel.lang = uiLanguage();
-  panel.tabIndex = -1;
-
-  const header = document.createElement('div');
-  header.className = 'header';
-  const heading = document.createElement('div');
-  heading.className = 'title';
-  heading.textContent = tn('bug_finishTitle', initial.steps.steps.length);
-  const closeBtn = makeButton(t('common_close'), () => closePanel(), {
-    icon: 'close',
-    iconOnly: true,
-    tone: 'ghost',
-    className: 'close',
-  });
-  header.append(heading, closeBtn);
-  panel.appendChild(header);
-
-  const titleLabel = document.createElement('label');
-  titleLabel.textContent = t('bug_title');
-  titleLabel.htmlFor = 'bug-title';
-  const titleInput = input(title, t('bug_titlePlaceholder'));
-  titleInput.id = 'bug-title';
-  titleInput.addEventListener('input', () => {
-    title = titleInput.value;
-    void setBugEvidenceFields({ title }).catch(() => undefined);
-  });
-  panel.append(titleLabel, titleInput);
-
-  const stepsWrap = document.createElement('div');
-  stepsWrap.className = 'steps';
-  initial.steps.steps.forEach((step, i) => stepsWrap.appendChild(stepRow(step, i)));
-  panel.appendChild(stepsWrap);
-
-  const summary = document.createElement('div');
-  summary.className = 'evidence';
-  const summarize = () => t('bug_attached', { summary: summarizeEvidence(report().evidence, interfacePhrases()) });
-  summary.textContent = summarize();
-  panel.appendChild(summary);
-
-  if (stepImages.size > 0) {
-    const keep = document.createElement('label');
-    keep.className = 'keep';
-    const box = document.createElement('input');
-    box.type = 'checkbox';
-    box.checked = true;
-    box.addEventListener('change', () => {
-      keepStepShots = box.checked;
-      summary.textContent = summarize();
-    });
-    keep.append(box, t('bug_stepShots', { count: formatNumber(stepImages.size) }));
-    const hint = document.createElement('div');
-    hint.className = 'evidence';
-    hint.textContent = t('bug_stepShotsHint');
-    panel.append(keep, hint);
-  }
-
-  const notes: string[] = [];
-  if (expectedSteps(initial).length === 0) {
-    notes.push(t('bug_nothingMarked', { mark: t('bug_mark') }));
-  }
-  for (const w of renderBugSpec(initial).warnings)
-    notes.push(t('bug_stepWarning', { step: w.step + 1, message: codegenWarningText(w) }));
-  if (initial.evidence.screenshots.length === 0) {
-    notes.push(
-      evidence.screenshotNote
-        ? t('bug_noScreenshot', { reason: screenshotNoteText(evidence.screenshotNote) })
-        : t('bug_noScreenshotTaken'),
-    );
-  }
-  for (const text of notes) {
-    const warn = document.createElement('div');
-    warn.className = 'warn';
-    warn.textContent = text;
-    panel.appendChild(warn);
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'actions';
-  const action = (label: string, options: ButtonOptions, onClick: (btn: HTMLButtonElement) => void) => {
-    const b: HTMLButtonElement = makeButton(label, () => onClick(b), options);
-    actions.appendChild(b);
-    return b;
-  };
-  action(t('bug_copyTest'), { icon: 'code', tone: 'primary', title: t('bug_copyTestHint') }, (b) => {
-    void copyToClipboard(renderBugSpec(report()).code, b);
-  });
-  action(t('bug_copyReport'), { icon: 'copy', title: t('bug_copyReportHint') }, (b) => {
-    void copyToClipboard(bugReportMarkdown(report(), reportLanguage()), b);
-  });
-  action(t('bug_downloadReport'), { icon: 'download', title: t('bug_downloadReportHint') }, () => {
-    const current = report();
-    downloadBlob(
-      new Blob([bugReportArchive(current, screenshots, reportLanguage(), stepImages) as BlobPart], {
-        type: BUG_REPORT_MEDIA_TYPE,
-      }),
-      `piwi-bug-${fileStamp(current.context.time)}.${BUG_REPORT_EXTENSION}`,
-    );
-  });
-
-  const controller = new AbortController();
-  const closePanel = () => {
-    controller.abort();
-    host.remove();
-  };
-  const replayMessage = document.createElement('div');
-  replayMessage.className = 'warn';
-  action(t('bug_replay'), { icon: 'play', title: t('bug_replayHint') }, (b) => {
-    b.disabled = true;
-    void (async () => {
-      // The replay shows a step it hands to the person as the recording saw it.
-      const response = await startReplayHere(
-        report().steps,
-        stepViews(sessionFromEvents(state.events, startedAt).steps),
-      );
-      if (response.ok) closePanel();
-      else {
-        b.disabled = false;
-        replayMessage.textContent = response.error ?? t('common_replayStartFailed');
-      }
-    })();
-  });
-  const sendBtn = action(t('bug_sendToPiwi'), { icon: 'send', title: t('bug_sendToPiwiHint') }, () => {
-    void sendTarget().then((target) => {
-      if (!target.project) {
-        replayMessage.textContent = t('bug_sendNoProject');
-        return;
-      }
-      openSendPreview({
-        report: report(),
-        screenshots,
-        stepImages,
-        target: { ...target, project: target.project },
-        css: PANEL_CSS,
-      });
-    });
-  });
-  sendBtn.hidden = true;
-  action(t('common_discard'), { icon: 'trash', tone: 'remove', className: 'discard' }, () => {
-    void onDiscard().then(closePanel, closePanel);
-  });
-  panel.append(actions, replayMessage);
-
-  const local = document.createElement('div');
-  local.className = 'local';
-  local.textContent = t('bug_staysLocal');
-  panel.appendChild(local);
-  void sendTarget().then((target) => {
-    if (!target.connected) return;
-    sendBtn.hidden = false;
-    local.textContent = t('bug_staysLocalUntilSent');
-  });
-
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) closePanel();
-  });
-  document.addEventListener(
-    'keydown',
-    (e) => {
-      if (e.key === 'Escape' && !document.getElementById(SEND_DIALOG_HOST_ID)) closePanel();
-    },
-    { capture: true, signal: controller.signal },
-  );
-
-  backdrop.appendChild(panel);
-  root.append(style, backdrop);
-  panel.focus();
 }

@@ -11,6 +11,7 @@ import {
   emptyBugEvidence,
   expectedSteps,
   isBugReportArchive,
+  isWrongStep,
   parseBugReport,
   renderBugMarkdown,
   renderBugSpec,
@@ -144,6 +145,13 @@ describe('bug report', () => {
     expect(parsed.steps.steps.map((s) => s.action)).toEqual(['goto', 'fill', 'click', 'assert', 'assert']);
     expect(parsed.steps.steps[3]!.assertion).toMatchObject({ expected: 'Total: 42', actual: 'Total: 40' });
     expect(expectedSteps(report).map((e) => e.index)).toEqual([3, 4]);
+  });
+
+  test('a check that keeps what the page showed says the page was wrong; a check without it passes', () => {
+    const [, , click, wrong] = couponReport().steps.steps;
+    expect(isWrongStep(wrong!)).toBe(true);
+    expect(isWrongStep(click!)).toBe(false);
+    expect(isWrongStep({ ...wrong!, assertion: { ...wrong!.assertion!, actual: null } })).toBe(false);
   });
 
   test('the failing test is marked to fail, tagged, relative, and uses the stable locator', () => {

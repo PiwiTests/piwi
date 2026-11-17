@@ -7,7 +7,6 @@ import {
   decideRecordIntent,
   serveAppendRecordingEvent,
   serveUpdateRecording,
-  type RecordingMode,
 } from '../shared/recording-storage.js';
 import {
   getReplayState,
@@ -144,7 +143,7 @@ async function showStateBadge(): Promise<void> {
   if (signShowing) return;
   const runs = runsBadge();
   if (recording.active) {
-    await chrome.action.setBadgeText({ text: t(recording.mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeText({ text: t('badge_recording') });
     await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
   } else if (replay && (replay.status === 'running' || replay.status === 'paused')) {
     await chrome.action.setBadgeText({ text: t('badge_replay') });
@@ -283,36 +282,26 @@ async function unregisterScripts(ids: string[]): Promise<void> {
  * (it needs to happen inside its own click handler to count as a user
  * gesture) and only sends the already-granted origin pattern here.
  */
-async function handleStartRecording(
-  originPattern: string,
-  tabId: number,
-  mode: RecordingMode,
-): Promise<{ ok: boolean; error?: string }> {
+async function handleStartRecording(originPattern: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
   try {
-    await startRecording(originPattern, mode);
+    await startRecording(originPattern);
     // Best-effort: a previous recording that ended without a clean `stop`
     // (crashed tab, browser killed mid-session) can leave a stale
     // registration behind — `persistAcrossSessions: false` means it never
     // survives a full browser restart, only the current one.
     await unregisterScripts(RECORDING_SCRIPT_IDS);
-    // A bug recording also runs a script in the page's main world, the only
-    // place that sees the page's console and its fetch/XHR calls, under the
-    // same origin grant and only for as long as the recording.
-    const bugScripts: chrome.scripting.RegisteredContentScript[] =
-      mode === 'bug'
-        ? [
-            {
-              id: BUG_EVIDENCE_SCRIPT_ID,
-              js: ['bug-evidence-main.js'],
-              matches: [originPattern],
-              runAt: 'document_start',
-              world: 'MAIN',
-              persistAcrossSessions: false,
-            },
-          ]
-        : [];
+    // A recording also runs a script in the page's main world, the only place
+    // that sees the page's console and its fetch/XHR calls, under the same
+    // origin grant and only for as long as the recording.
     await chrome.scripting.registerContentScripts([
-      ...bugScripts,
+      {
+        id: BUG_EVIDENCE_SCRIPT_ID,
+        js: ['bug-evidence-main.js'],
+        matches: [originPattern],
+        runAt: 'document_start',
+        world: 'MAIN',
+        persistAcrossSessions: false,
+      },
       {
         id: RECORD_SCRIPT_ID,
         js: ['record-panel.js'],
@@ -323,15 +312,13 @@ async function handleStartRecording(
     ]);
     // The registration above only applies to *future* navigations — the
     // already-loaded current page needs its own one-off injection.
-    if (mode === 'bug') {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
-    }
-    // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the report
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
+    // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the recording
     // starts in. The page's script above stays registered for the other tabs, and takes over if this fails.
-    if (mode === 'bug') await startBugDebugger(tabId, originPattern);
+    await startBugDebugger(tabId, originPattern);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['record-panel.js'] });
     await i18nReady;
-    await chrome.action.setBadgeText({ text: t(mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeText({ text: t('badge_recording') });
     await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
     return { ok: true };
   } catch (err) {
@@ -360,16 +347,12 @@ async function handleStartRecording(
  */
 let startInFlight = false;
 
-async function startRecordingOnce(
-  originPattern: string,
-  tabId: number,
-  mode: RecordingMode,
-): Promise<{ ok: boolean; error?: string }> {
+async function startRecordingOnce(originPattern: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
   if (startInFlight) return { ok: true };
   startInFlight = true;
   try {
     if ((await getRecordingState()).active) return { ok: true };
-    return await handleStartRecording(originPattern, tabId, mode);
+    return await handleStartRecording(originPattern, tabId);
   } finally {
     startInFlight = false;
     // The intent has done its job (or failed to) — never leave it to revive a
@@ -397,7 +380,7 @@ async function handlePermissionAdded(addedOrigins: string[]): Promise<void> {
     await clearRecordIntent().catch(() => undefined);
     return;
   }
-  await startRecordingOnce(decision.originPattern, decision.tabId, decision.mode);
+  await startRecordingOnce(decision.originPattern, decision.tabId);
 }
 
 // The person cancelled the debugging bar during a bug recording: the recorder's page relay takes over.
@@ -1085,9 +1068,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Through the dedupe guard, not `handleStartRecording` directly: on a
     // first-time grant `chrome.permissions.onAdded` may already be starting the
     // same recording (see `startRecordingOnce`).
-    void startRecordingOnce(message.originPattern, message.tabId, message.mode === 'bug' ? 'bug' : 'actions').then(
-      sendResponse,
-    );
+    void startRecordingOnce(message.originPattern, message.tabId).then(sendResponse);
     return true; // keep the message channel open for the async response
   }
   if (message?.type === 'piwi-start-replay') {

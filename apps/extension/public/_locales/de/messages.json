@@ -225,9 +225,6 @@
   "badge_recording": {
     "message": "REC"
   },
-  "badge_bug": {
-    "message": "BUG"
-  },
   "badge_replay": {
     "message": "PLAY"
   },
@@ -371,23 +368,11 @@
       }
     }
   },
-  "popup_reportBug": {
-    "message": "Bug melden"
-  },
-  "popup_reportBugHint": {
-    "message": "Schritte und was falsch ist → ein roter Test"
-  },
-  "popup_replayBug": {
-    "message": "Bug-Report abspielen"
-  },
-  "popup_replayBugHint": {
-    "message": "Hier abspielen, mit Cursor"
-  },
   "popup_record": {
     "message": "Aufzeichnen"
   },
   "popup_recordHint": {
-    "message": "Aktionen → ein Test"
+    "message": "Ein Szenario oder ein Bug"
   },
   "popup_pick": {
     "message": "Element wählen"
@@ -428,17 +413,8 @@
   "popup_sectionPick": {
     "message": "Wählen"
   },
-  "popup_sectionRecord": {
-    "message": "Aufzeichnen"
-  },
-  "popup_sectionRunControl": {
-    "message": "Laufsteuerung"
-  },
-  "popup_sectionDashboard": {
-    "message": "Dashboard"
-  },
-  "popup_sectionAgents": {
-    "message": "Agenten"
+  "popup_sectionTests": {
+    "message": "Tests"
   },
   "popup_devtoolsNote": {
     "message": "Locator-Konsole, Session, Netzwerk-Mocks, Viewports, Playwright-Ansicht und Anmeldung speichern: in DevTools, im Piwi-Panel."
@@ -491,17 +467,8 @@
       }
     }
   },
-  "popup_stopRecording": {
-    "message": "Aufzeichnung beenden ($count$)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      }
-    }
-  },
-  "popup_finishBugReport": {
-    "message": "Bug-Report abschließen ($count$)",
+  "popup_finishRecording": {
+    "message": "Abschließen ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -510,10 +477,10 @@
     }
   },
   "popup_stepsSoFar": {
-    "message": "Bisher aufgezeichnete Schritte"
+    "message": "Bisher aufgezeichnet"
   },
   "popup_reviewRecording": {
-    "message": "Aufzeichnung ansehen ($count$)",
+    "message": "Ansehen ($count$)",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -521,44 +488,26 @@
       }
     }
   },
-  "popup_reviewBugReport": {
-    "message": "Bug-Report ansehen"
+  "popup_replay": {
+    "message": "Abspielen"
+  },
+  "popup_replayHint": {
+    "message": "Eine Aufzeichnung, hier"
   },
   "popup_notExported": {
     "message": "Noch nicht exportiert"
   },
   "popup_takeScreenshot": {
-    "message": "Screenshot aufnehmen"
+    "message": "Screenshot"
   },
-  "popup_screenshotHint_one": {
-    "message": "Fügt diesen Tab, wie er jetzt ist, dem Bug-Report hinzu (bisher $count$ Ereignis)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "12"
-      }
-    }
-  },
-  "popup_screenshotHint_other": {
-    "message": "Fügt diesen Tab, wie er jetzt ist, dem Bug-Report hinzu (bisher $count$ Ereignisse)",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "12"
-      }
-    }
-  },
-  "popup_reviewBugReportHint": {
-    "message": "Den fehlschlagenden Test oder den Bericht kopieren oder herunterladen"
-  },
-  "popup_finishFirst": {
-    "message": "Beenden oder verwerfen Sie zuerst die laufende Aufzeichnung"
-  },
-  "popup_finishBeforeBug": {
-    "message": "Beenden oder verwerfen Sie die laufende Aufzeichnung, bevor Sie einen Bug melden."
+  "popup_screenshotHint": {
+    "message": "Dieser Tab, wie er ist"
   },
   "popup_permissionNeeded": {
     "message": "Piwi Picker braucht Zugriff auf diese Website, um von Seite zu Seite aufzuzeichnen."
+  },
+  "popup_recordNotAllowed": {
+    "message": "Die Aufzeichnung hat nicht begonnen: Piwi Picker wurde auf dieser Website nicht erlaubt."
   },
   "popup_cannotRecord": {
     "message": "Piwi Picker kann auf dieser Seite nicht aufzeichnen."
@@ -2302,8 +2251,14 @@
   "record_checkElement": {
     "message": "Element prüfen"
   },
+  "record_checkElementHint": {
+    "message": "Wählen Sie ein Element der Seite: Prüfen Sie, was es zeigt, oder sagen Sie, was es zeigen sollte"
+  },
   "record_checkAddress": {
     "message": "Adresse prüfen"
+  },
+  "record_checkAddressHint": {
+    "message": "Prüfen Sie die Adresse der Seite, oder sagen Sie, auf welcher Seite Sie sein sollten"
   },
   "record_checkOn": {
     "message": "Element: $locator$",
@@ -2350,11 +2305,14 @@
   "record_checkAdd": {
     "message": "Prüfung hinzufügen"
   },
+  "record_checkPasses": {
+    "message": "Eine Prüfung: Der Test besteht, solange die Seite dies zeigt."
+  },
+  "record_checkWrong": {
+    "message": "Als falsch markiert: Die Aufzeichnung wird zum Bug-Report, und ihr Test schlägt fehl, bis die Seite zeigt, was Sie erwarten."
+  },
   "record_checkNoLocator": {
     "message": "Kein Locator findet dieses Element allein: Wählen Sie ein anderes."
-  },
-  "record_lastLocator": {
-    "message": "Letzter Locator"
   },
   "record_matchingFunctions": {
     "message": "Passende Testfunktionen"
@@ -2373,15 +2331,6 @@
   },
   "record_reviewLabel": {
     "message": "Ihre Aufzeichnung"
-  },
-  "record_testTitle": {
-    "message": "Titel des Tests"
-  },
-  "record_testTitlePlaceholder": {
-    "message": "Name des Tests"
-  },
-  "record_nothingRecorded": {
-    "message": "Nichts aufgezeichnet"
   },
   "record_stepsRecorded_one": {
     "message": "$count$ Schritt aufgezeichnet",
@@ -2422,26 +2371,20 @@
   "record_noFunctionMatches": {
     "message": "Keine Ihrer Testfunktionen passt: Der Code verwendet nur Locators."
   },
+  "record_copyTest": {
+    "message": "Test kopieren"
+  },
+  "record_copyTestHint": {
+    "message": "Ein Playwright-Test dieser Schritte, in TypeScript"
+  },
+  "record_copyWithoutFunctions": {
+    "message": "Ohne Ihre Funktionen"
+  },
+  "record_copyWithoutFunctionsHint": {
+    "message": "Den Test nur mit Locators kopieren, ohne Ihre Testfunktionen"
+  },
   "record_notConnected": {
     "message": "Nicht mit Piwi verbunden: Der Code verwendet nur Locators."
-  },
-  "record_noSteps": {
-    "message": "Es wurden keine Schritte aufgezeichnet."
-  },
-  "record_copyCode": {
-    "message": "Als TypeScript kopieren"
-  },
-  "record_copyCodeWithFunctions": {
-    "message": "Als TypeScript kopieren (mit Ihren Funktionen)"
-  },
-  "record_copyCodeWithoutFunctions": {
-    "message": "Als TypeScript ohne Ihre Funktionen kopieren"
-  },
-  "record_downloadSteps": {
-    "message": "Schritte herunterladen"
-  },
-  "record_downloadStepsTitle": {
-    "message": "Speichert die Aufzeichnung als Schrittdatei, um sie zu teilen oder mit piwi codegen in einen Test umzuwandeln"
   },
   "record_sendToEditor": {
     "message": "An den Editor senden"
@@ -2452,44 +2395,11 @@
   "record_replayHint": {
     "message": "Die Schritte auf dieser Website mit einem Cursor erneut abspielen und sehen, ob jeder Schritt sein Element noch findet"
   },
-  "bug_reportLabel": {
-    "message": "Bug-Report von Piwi Picker"
-  },
-  "bug_hudTitle_one": {
-    "message": "Bug melden · $count$ Schritt",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "4"
-      }
-    }
-  },
-  "bug_hudTitle_other": {
-    "message": "Bug melden · $count$ Schritte",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "4"
-      }
-    }
-  },
-  "bug_mark": {
-    "message": "Fehler markieren"
-  },
-  "bug_markHint": {
-    "message": "Wählen Sie ein Element der Seite und sagen Sie, was es zeigen sollte"
-  },
   "bug_missing": {
     "message": "Etwas fehlt"
   },
   "bug_missingHint": {
     "message": "Nennen Sie ein Element, das auf dieser Seite sein sollte und fehlt"
-  },
-  "bug_wrongPage": {
-    "message": "Falsche Seite"
-  },
-  "bug_wrongPageHint": {
-    "message": "Sagen Sie, auf welcher Seite Sie hätten landen sollen"
   },
   "bug_screenshot": {
     "message": "Screenshot"
@@ -2498,10 +2408,10 @@
     "message": "Einen Screenshot der Seite in ihrem jetzigen Zustand hinzufügen"
   },
   "bug_debuggingOn": {
-    "message": "Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist dieser Bericht, der die Konsole, fehlgeschlagene Anfragen und Screenshots liest. Nichts verlässt Ihren Computer, und die Leiste verschwindet, wenn Sie fertig sind."
+    "message": "Chrome zeigt eine Leiste, dass Piwi Picker diesen Browser debuggt: Das ist diese Aufzeichnung, die die Konsole, fehlgeschlagene Anfragen und Screenshots liest. Nichts verlässt Ihren Computer, und die Leiste verschwindet, wenn Sie fertig sind."
   },
   "bug_debuggingCanceled": {
-    "message": "Die Debugging-Leiste wurde abgebrochen: Der Bericht liest Konsole und Anfragen ab jetzt aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "message": "Die Debugging-Leiste wurde abgebrochen: Die Aufzeichnung liest Konsole und Anfragen ab jetzt aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2510,7 +2420,7 @@
     }
   },
   "bug_debuggingRefused": {
-    "message": "Chrome hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab oder eine Richtlinie): Der Bericht liest Konsole und Anfragen aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
+    "message": "Chrome hat die Debugging-Sitzung abgelehnt (ein anderer Debugger auf diesem Tab oder eine Richtlinie): Die Aufzeichnung liest Konsole und Anfragen aus der Seite, und für einen Screenshot wählen Sie „$action$“ in Piwi Picker.",
     "placeholders": {
       "action": {
         "content": "$1",
@@ -2584,27 +2494,6 @@
   "bug_addToReport": {
     "message": "Zum Bericht hinzufügen"
   },
-  "bug_onElement": {
-    "message": "Element: $locator$",
-    "placeholders": {
-      "locator": {
-        "content": "$1",
-        "example": "getByTestId('cart-total')"
-      }
-    }
-  },
-  "bug_whatsWrong": {
-    "message": "Was falsch ist"
-  },
-  "bug_itsValue": {
-    "message": "Sein Wert"
-  },
-  "bug_itsText": {
-    "message": "Sein Text"
-  },
-  "bug_itsName": {
-    "message": "Sein Name, wie Screenreader ihn ansagen"
-  },
   "bug_shouldBeVisible": {
     "message": "Es sollte sichtbar sein"
   },
@@ -2620,17 +2509,11 @@
   "bug_pageShows": {
     "message": "Die Seite zeigt"
   },
-  "bug_shouldShow": {
-    "message": "Was es zeigen sollte"
-  },
   "bug_note": {
     "message": "Notiz"
   },
   "bug_notePlaceholder": {
     "message": "Was passiert ist, in Ihren Worten (optional)"
-  },
-  "bug_sameAsPage": {
-    "message": "Das zeigt die Seite bereits. Geben Sie ein, was sie stattdessen zeigen sollte."
   },
   "bug_whatShouldBeThere": {
     "message": "Was da sein sollte"
@@ -2645,7 +2528,7 @@
     "message": "Geben Sie seinen Namen ein, wie er auf der Seite stehen würde."
   },
   "bug_alreadyThere_one": {
-    "message": "$count$ solches Element ist schon auf der Seite: Sagen Sie mit „$mark$“, was daran falsch ist.",
+    "message": "$count$ solches Element ist schon auf der Seite: Prüfen Sie es mit „$mark$“, oder sagen Sie damit, was daran falsch ist.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2658,7 +2541,7 @@
     }
   },
   "bug_alreadyThere_other": {
-    "message": "$count$ solche Elemente sind schon auf der Seite: Sagen Sie mit „$mark$“, was daran falsch ist.",
+    "message": "$count$ solche Elemente sind schon auf der Seite: Prüfen Sie sie mit „$mark$“, oder sagen Sie damit, was daran falsch ist.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -2678,12 +2561,6 @@
         "example": "/cart"
       }
     }
-  },
-  "bug_pageShouldBe": {
-    "message": "Die Seite, auf der Sie sein sollten"
-  },
-  "bug_samePage": {
-    "message": "Das ist die Adresse dieser Seite. Geben Sie die ein, auf der Sie hätten landen sollen."
   },
   "bug_kindButton": {
     "message": "Button"
@@ -2784,15 +2661,6 @@
   "bug_stepShotsHint": {
     "message": "Die Seite zu Beginn jedes Schritts, für alle, die einen Schritt von Hand ausführen. Sie zeigen die ganze Seite: Lassen Sie sie weg, wenn diese zeigt, was nicht geteilt werden soll."
   },
-  "bug_nothingMarked": {
-    "message": "Nichts ist als Fehler markiert, also würde der Test bestehen. Zeichnen Sie erneut auf und verwenden Sie „$mark$“.",
-    "placeholders": {
-      "mark": {
-        "content": "$1",
-        "example": "Mark what’s wrong"
-      }
-    }
-  },
   "bug_stepWarning": {
     "message": "Schritt $step$: $message$",
     "placeholders": {
@@ -2835,9 +2703,6 @@
   },
   "bug_downloadReportHint": {
     "message": "steps.json, der Test, der Bericht als Markdown, evidence.json und die Screenshots, in einem ZIP-Archiv"
-  },
-  "bug_replay": {
-    "message": "Abspielen"
   },
   "bug_replayHint": {
     "message": "Die Schritte auf dieser Website mit einem Cursor erneut abspielen und sehen, ob der Bug auftritt"
@@ -3708,7 +3573,7 @@
     "message": "Den in diesem Browser aufgezeichneten Bug-Report verwenden"
   },
   "replay_useRecordedActions": {
-    "message": "Die in diesem Browser aufgezeichneten Aktionen verwenden"
+    "message": "Die in diesem Browser gemachte Aufzeichnung verwenden"
   },
   "replay_chooseFile": {
     "message": "Oder wählen Sie die .piwibug-Datei des Berichts oder seine steps.json, von Piwi Picker gespeichert:"
@@ -5592,32 +5457,6 @@
       }
     }
   },
-  "devtools_bugRecordingOn_one": {
-    "message": "Bug-Report auf $site$: $count$ Schritt",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      },
-      "site": {
-        "content": "$2",
-        "example": "https://shop.example"
-      }
-    }
-  },
-  "devtools_bugRecordingOn_other": {
-    "message": "Bug-Report auf $site$: $count$ Schritte",
-    "placeholders": {
-      "count": {
-        "content": "$1",
-        "example": "3"
-      },
-      "site": {
-        "content": "$2",
-        "example": "https://shop.example"
-      }
-    }
-  },
   "devtools_recordingStopped_one": {
     "message": "Aufzeichnung beendet: $count$ Schritt, noch nicht exportiert",
     "placeholders": {
@@ -5636,11 +5475,8 @@
       }
     }
   },
-  "devtools_stopRecording": {
-    "message": "Aufzeichnung beenden"
-  },
-  "devtools_finishBugOnPage": {
-    "message": "Schließen Sie den Bug-Report über sein Panel auf der Seite ab, das die Belege sammelt."
+  "devtools_finishOnPage": {
+    "message": "Schließen Sie die Aufzeichnung über ihre Leiste auf der Seite oder über das Menü von Piwi Picker ab: Sie sammeln die letzten Belege."
   },
   "devtools_noReplay": {
     "message": "Noch keine Wiedergabe. Starten Sie eine mit Bug-Report abspielen im Menü der Erweiterung: Ihre Schritte und Ergebnisse erscheinen hier."

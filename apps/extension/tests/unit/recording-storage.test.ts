@@ -103,14 +103,12 @@ describe('recording state', () => {
     expect(state.active).toBe(true);
     expect(state.grantedOriginPattern).toBe('https://x.test/*');
     expect(state.startedAt).not.toBeNull();
-    expect(state.mode).toBe('actions');
-    expect(state.bugToken).toBeNull();
+    expect(state.bugToken).toMatch(/^[0-9a-f]{32}$/);
   });
 
-  it('a bug recording gets a fresh token each time', async () => {
-    const first = await startRecording('https://x.test/*', 'bug');
-    const second = await startRecording('https://x.test/*', 'bug');
-    expect(first.mode).toBe('bug');
+  it('a recording gets a fresh evidence token each time', async () => {
+    const first = await startRecording('https://x.test/*');
+    const second = await startRecording('https://x.test/*');
     expect(first.bugToken).toMatch(/^[0-9a-f]{32}$/);
     expect(second.bugToken).not.toBe(first.bugToken);
   });
@@ -300,12 +298,11 @@ describe('recording state', () => {
 describe('record intent', () => {
   it('round-trips the origin pattern and tab, stamping a creation time', async () => {
     const before = Date.now();
-    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7, mode: 'bug' });
+    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7 });
     const intent = await getRecordIntent();
     expect(intent).not.toBeNull();
     expect(intent!.originPattern).toBe('https://x.test/*');
     expect(intent!.tabId).toBe(7);
-    expect(intent!.mode).toBe('bug');
     expect(intent!.createdAt).toBeGreaterThanOrEqual(before);
   });
 
@@ -319,14 +316,14 @@ describe('record intent', () => {
   });
 
   it('clearRecordIntent removes it', async () => {
-    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7, mode: 'bug' });
+    await setRecordIntent({ originPattern: 'https://x.test/*', tabId: 7 });
     await clearRecordIntent();
     expect(await getRecordIntent()).toBeNull();
   });
 });
 
 describe('decideRecordIntent', () => {
-  const intent: RecordIntent = { originPattern: 'https://x.test/*', tabId: 7, mode: 'actions', createdAt: 1_000 };
+  const intent: RecordIntent = { originPattern: 'https://x.test/*', tabId: 7, createdAt: 1_000 };
 
   it('ignores a grant when nothing is parked', () => {
     expect(decideRecordIntent(null, ['https://x.test/*'], 1_000)).toEqual({ action: 'ignore' });
@@ -341,7 +338,6 @@ describe('decideRecordIntent', () => {
       action: 'start',
       originPattern: 'https://x.test/*',
       tabId: 7,
-      mode: 'actions',
     });
   });
 

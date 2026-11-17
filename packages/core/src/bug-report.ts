@@ -215,6 +215,14 @@ export function bugTitle(report: BugReport, phrases: BugPhrases = ENGLISH): stri
   return report.context.pageKey ? phrases.report.titleOnPage(report.context.pageKey) : phrases.report.untitled;
 }
 
+/**
+ * Whether a step says the page was wrong: a check that keeps what the page
+ * showed (`actual`) beside what was expected. A check without it passes.
+ */
+export function isWrongStep(step: RecordedStep): boolean {
+  return step.action === 'assert' && step.assertion?.actual != null;
+}
+
 /** The steps that state what should happen instead. */
 export function expectedSteps(report: BugReport): Array<{ index: number; step: RecordedStep }> {
   return report.steps.steps.flatMap((step, index) =>

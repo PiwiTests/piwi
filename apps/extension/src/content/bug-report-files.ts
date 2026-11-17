@@ -8,7 +8,6 @@ import {
   BUG_REPORT_VERSION,
   bugTitle,
   renderBugMarkdown,
-  renderBugSpec,
   stepShotFile,
   type BugContext,
   type BugReport,
@@ -18,6 +17,7 @@ import {
 import type { StoredBugEvidence, StoredBugScreenshot } from '../shared/bug-storage.js';
 import type { StoredStepView } from '../shared/step-views.js';
 import { createZip, dataUrlBytes, type ZipEntry } from '../shared/zip.js';
+import { recordingSpec } from '../shared/recording-spec.js';
 
 /** The note a report carries when no screenshot was taken and nothing said why. */
 export const NO_SCREENSHOT_TAKEN = 'none was taken';
@@ -54,7 +54,7 @@ export function stepViewIds(events: RawCaptureEvent[]): string[] {
 }
 
 /**
- * The report a bug recording makes: its steps as a steps document, its
+ * The report a recording makes: its steps as a steps document, its
  * evidence and its context, with the screenshot of each step among `views`.
  */
 export function assembleBugReport(input: {
@@ -129,7 +129,7 @@ export function withoutStepShots(report: BugReport): BugReport {
 
 /**
  * Every file of the report's archive: its media type first, then the steps
- * document, the failing test, the Markdown in `language`, the evidence with
+ * document, the test (`recordingSpec`), the Markdown in `language`, the evidence with
  * the context, the screenshots, and the screenshot of each step its evidence
  * names, from `stepImages` (data URLs by file name).
  */
@@ -142,7 +142,7 @@ export function bugReportEntries(
   return [
     { name: BUG_REPORT_FILES.mediaType, data: BUG_REPORT_MEDIA_TYPE },
     { name: BUG_REPORT_FILES.steps, data: `${JSON.stringify(report.steps, null, 2)}\n` },
-    { name: specFileName(report), data: renderBugSpec(report).code },
+    { name: specFileName(report), data: recordingSpec(report).code },
     { name: BUG_REPORT_FILES.markdown, data: bugReportMarkdown(report, language) },
     {
       name: BUG_REPORT_FILES.evidence,

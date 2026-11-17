@@ -1,23 +1,20 @@
 import {
   normalizeSteps,
-  buildSession,
   RECORDED_KEYS,
   type RawCaptureEvent,
   type RecordedTarget,
   type StepAssertion,
   type StepView,
 } from '@piwitests/core/recording';
-import { rankFunctionMatches, type TestFunctionEntry, type RankedFunctionMatch } from '@piwitests/core/function-match';
-import { renderSpec } from '@piwitests/core/codegen';
-import { toStepsDocument, type PiwiSteps } from '@piwitests/core/steps';
+import { rankFunctionMatches, type RankedFunctionMatch } from '@piwitests/core/function-match';
+
 import { IDE_PAUSED_MESSAGE, type IdeRecorderSettings } from '@piwitests/core/ide-recorder';
-import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
-import { formatNumber, initI18n, t, tn, uiLanguage } from '../shared/i18n.js';
-import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
-import { STEP_CSS, stepView } from '../shared/step-view.js';
+
+import { formatNumber, initI18n, t, tn } from '../shared/i18n.js';
+
 import { relayEvidence } from '../shared/bug-relay.js';
 import { classifyInputKind, isActionKind, lastActionOf, ownNavigation } from './record-capture.js';
-import { cornerInset, hudCorner, loadHudCorner, moveHudButton } from './hud-corner.js';
+import { loadHudCorner } from './hud-corner.js';
 import { isSensitiveField, rememberChangedFields } from './sensitive-fields.js';
 import { rankElement, verifiedLocators } from './verified-locators.js';
 import { parentElementOrShadowHost } from './engine-aria.js';
@@ -28,7 +25,6 @@ import {
   appendRecordingEvent,
   stopRecording,
   discardRecording,
-  recordingMode,
   updateRecording,
   type RecordingState,
 } from '../shared/recording-storage.js';
@@ -38,40 +34,26 @@ import {
   captureStepView,
   currentBugContext,
   outlineAround,
-  renderBugFinishPanel,
-  renderBugHud,
-  runMarkFlow,
+  renderRecordingBar,
   runMissingFlow,
-  runWrongPageFlow,
   takeBugScreenshot,
   updateBugHudEvidence,
   type BugRecorderHooks,
 } from './bug-panel.js';
-import {
-  HUD_HOST_ID,
-  PANEL_HOST_ID,
-  FRAME_HOST_ID,
-  BUG_DIALOG_HOST_ID,
-  OWN_HOST_IDS,
-  SHARED_STYLE,
-  copyToClipboard,
-  fileStamp,
-  mountSurface,
-  startReplayHere,
-} from './record-ui.js';
-import { downloadBlob } from '../shared/download.js';
+import { HUD_HOST_ID, FRAME_HOST_ID, BUG_DIALOG_HOST_ID, OWN_HOST_IDS, mountSurface } from './record-ui.js';
+
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { ensureSessionAccess } from '../shared/session-access.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { attachPanelShadow } from './panel-root.js';
-import { getEditorPairing } from '../shared/editor-pairing.js';
-import { sendToEditor, showSendResult } from '../shared/editor-send.js';
+
 import { IDE_BUILD, getIdeSettings, ideHostInstalled } from '../shared/ide-build.js';
 import { runCheckAddressFlow, runCheckElementFlow } from './check-panel.js';
+import { renderFinishPanel } from './finish-panel.js';
 import { webOrigin } from '../shared/web-origin.js';
-import { cleanTitle, RECORDING_TITLE_MAX, titleFromSteps } from '../shared/recording-title.js';
+import { cleanTitle } from '../shared/recording-title.js';
 
 /**
  * The DOM shapes a click/action can reasonably land on — a click deeper inside one of these snaps up to it, same intent
@@ -561,7 +543,7 @@ async function setRecordingPaused(paused: boolean): Promise<void> {
  * is easy to overlook, and easy to mistake for a leftover from a previous
  * session.
  *
- * Its own host rather than part of the HUD: `renderHud` tears its host down
+ * Its own host rather than part of the HUD: `renderRecordingBar` tears its host down
  * and rebuilds it on *every* captured step, which would make a border flicker
  * constantly. `pointer-events: none` throughout so it never intercepts a
  * click the recorder is supposed to be capturing.
@@ -599,150 +581,22 @@ function hudTitle(steps: number): string {
   return file ? tn('record_hudTitleInto', steps, { file }) : tn('record_hudTitle', steps);
 }
 
-function renderHud(state: RecordingState, catalog: TestFunctionEntry[]): void {
-  document.getElementById(HUD_HOST_ID)?.remove();
-  document.getElementById(PANEL_HOST_ID)?.remove();
-  ensureRecordingFrame();
-
-  const host = document.createElement('div');
-  host.id = HUD_HOST_ID;
-  host.style.cssText = `all:initial;position:fixed;inset:${cornerInset(hudCorner())};z-index:2147483647;`;
-  mountSurface(host);
-  const root = attachPanelShadow(host, { mode: 'closed' });
-
-  const style = document.createElement('style');
-  style.textContent = `
-    ${SHARED_STYLE}
-    ${LOCATOR_SYNTAX_CSS}
-    ${BUTTON_CSS}
-    .bar {
-      display: flex; flex-direction: column; gap: 8px; background: #111827; color: #f9fafb;
-      border-radius: 12px; padding: 10px 12px; box-shadow: 0 8px 30px rgba(0,0,0,.4);
-      font-size: 12.5px; min-width: 260px; max-width: 340px;
-    }
-    @media (prefers-color-scheme: light) {
-      .bar { background: #ffffff; color: #111827; box-shadow: 0 8px 30px rgba(0,0,0,.2); border: 1px solid #e5e7eb; }
-    }
-    .row { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
-    .dot { width: 8px; height: 8px; border-radius: 50%; background: #ef4444; flex-shrink: 0; animation: pulse 1.4s ease-in-out infinite; }
-    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .35; } }
-    @media (prefers-reduced-motion: reduce) { .dot { animation: none; } }
-    .dot.paused { background: #9ca3af; animation: none; }
-    .title { font-weight: 600; flex: 1; min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
-    .checks { display: flex; gap: 6px; flex-wrap: wrap; }
-    .section-title { color: #9ca3af; font-size: 10.5px; text-transform: uppercase; letter-spacing: .03em; margin-top: 2px; }
-    code.last { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; word-break: break-all; display: block;
-      padding: 5px 7px; border-radius: 6px; background: rgba(148,163,184,.12); border: 1px solid rgba(148,163,184,.22); }
-    .match { display: flex; align-items: center; gap: 6px; padding: 3px 0; }
-    .match-name { font-family: ui-monospace, monospace; font-size: 11px; flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-    .match-bar { width: 34px; height: 4px; border-radius: 2px; background: rgba(128,128,128,.25); overflow: hidden; flex-shrink: 0; }
-    .match-bar-fill { height: 100%; background: #7c3aed; }
-    .match-badge { font-size: 9.5px; padding: 1px 4px; border-radius: 4px; flex-shrink: 0; }
-    .match-badge.complete { background: rgba(34,197,94,.2); color: #22c55e; }
-    .match-badge.partial { color: #9ca3af; }
-    .empty { color: #9ca3af; font-size: 11px; }
-    .empty, .warn { overflow-wrap: anywhere; hyphens: auto; }
-    .warn { color: #fca5a5; font-size: 11px; line-height: 1.35; }
-    @media (prefers-color-scheme: light) {
-      .warn { color: #b91c1c; }
-      .match-badge.complete { color: #15803d; }
-      .match-badge.partial, .empty, .section-title { color: #6b7280; }
-    }
-  `;
-  root.appendChild(style);
-
-  const steps = normalizeSteps(state.events);
-  const matches = catalog.length > 0 ? rankFunctionMatches(steps, catalog).slice(0, 3) : [];
-  const lastTarget = [...state.events].reverse().find((e) => e.target)?.target ?? null;
-
-  // A landmark, not a dialog: the page stays usable around it.
-  const bar = document.createElement('div');
-  bar.className = 'bar';
-  bar.setAttribute('role', 'region');
-  bar.setAttribute('aria-label', t('record_hudLabel'));
-  bar.lang = uiLanguage();
-
-  const topRow = document.createElement('div');
-  topRow.className = 'row';
-  const dot = document.createElement('div');
-  dot.className = 'dot';
+/** The matching test functions under the bar's buttons, best first; null when the project has no catalog. */
+function functionsSection(matches: RankedFunctionMatch[] | null): HTMLElement | null {
+  if (!matches) return null;
+  const section = document.createElement('div');
   const title = document.createElement('div');
-  title.className = 'title';
-  title.textContent = hudTitle(steps.length);
-  const stopBtn = makeButton(t('common_stop'), () => void handleStop(), {
-    icon: 'stop-circle',
-    tone: 'danger',
-    small: true,
-    className: 'stop',
-  });
-  dot.classList.toggle('paused', recordingPaused);
-  const pauseBtn = makeButton(
-    recordingPaused ? t('record_resume') : t('record_pause'),
-    () => void setRecordingPaused(!recordingPaused),
-    {
-      icon: recordingPaused ? 'play' : 'pause',
-      small: true,
-      className: 'pause',
-    },
-  );
-  pauseBtn.setAttribute('aria-pressed', String(recordingPaused));
-  topRow.append(dot, title, pauseBtn, stopBtn, moveHudButton(host));
-  bar.appendChild(topRow);
-
-  if (recordingPaused) {
-    const note = document.createElement('div');
-    note.className = 'empty';
-    note.textContent = t('record_pausedNote');
-    bar.appendChild(note);
+  title.className = 'section-title';
+  title.textContent = t('record_matchingFunctions');
+  section.appendChild(title);
+  if (matches.length === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'empty';
+    empty.textContent = t('record_noMatch');
+    section.appendChild(empty);
   }
-
-  // Checks of what the page shows now; none while paused, when nothing is recorded.
-  const checks = document.createElement('div');
-  checks.className = 'checks';
-  for (const [label, glyph, run] of [
-    ['record_checkElement', 'check-circle', runCheckElementFlow],
-    ['record_checkAddress', 'globe', runCheckAddressFlow],
-  ] as const) {
-    const button = makeButton(t(label), () => void run(bugHooks), { icon: glyph, small: true });
-    button.disabled = recordingPaused;
-    checks.appendChild(button);
-  }
-  bar.appendChild(checks);
-
-  if (captureError) {
-    const warn = document.createElement('div');
-    warn.className = 'warn';
-    warn.setAttribute('role', 'alert');
-    warn.textContent = captureError;
-    bar.appendChild(warn);
-  }
-
-  if (lastTarget?.alternatives[0]) {
-    const locTitle = document.createElement('div');
-    locTitle.className = 'section-title';
-    locTitle.textContent = t('record_lastLocator');
-    const code = document.createElement('code');
-    code.className = 'piwi-loc last';
-    code.innerHTML = highlightLocator(lastTarget.alternatives[0].locator);
-    bar.append(locTitle, code);
-  }
-
-  if (catalog.length > 0) {
-    const matchTitle = document.createElement('div');
-    matchTitle.className = 'section-title';
-    matchTitle.textContent = t('record_matchingFunctions');
-    bar.appendChild(matchTitle);
-    if (matches.length === 0) {
-      const empty = document.createElement('div');
-      empty.className = 'empty';
-      empty.textContent = t('record_noMatch');
-      bar.appendChild(empty);
-    } else {
-      for (const m of matches) bar.appendChild(renderMatchRow(m));
-    }
-  }
-
-  root.appendChild(bar);
+  for (const m of matches) section.appendChild(renderMatchRow(m));
+  return section;
 }
 
 function renderMatchRow(m: RankedFunctionMatch): HTMLElement {
@@ -764,325 +618,6 @@ function renderMatchRow(m: RankedFunctionMatch): HTMLElement {
     : `${formatNumber(m.matchedIndices.length)}/${formatNumber(m.entry.steps.length)}`;
   row.append(name, barWrap, badge);
   return row;
-}
-
-/** Save a steps document as `piwi-steps-<date>-<time>.json`, through the page's own download handling. */
-function downloadSteps(doc: PiwiSteps): void {
-  downloadBlob(
-    new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
-    `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
-  );
-}
-
-/** How long after the last keystroke the review panel stores its title. */
-const TITLE_WRITE_MS = 300;
-
-interface TitleWriter {
-  /** Stores `title` once {@link TITLE_WRITE_MS} pass without another. */
-  schedule(title: string): void;
-  /** Stores the pending title now; resolves once no write is in flight. */
-  flush(): Promise<void>;
-  /** Forgets the pending title; resolves once no write is in flight. */
-  drop(): Promise<void>;
-}
-
-/** The review panel's title, stored on the recording the panel reviews and on no other (see `updateRecording`). */
-function titleWriter(startedAt: number | null): TitleWriter {
-  let pending: { title: string } | null = null;
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  let writing: Promise<unknown> = Promise.resolve();
-  const cancel = (): void => {
-    clearTimeout(timer);
-    timer = undefined;
-  };
-  const idle = (): Promise<void> => writing.then(() => undefined);
-  const flush = (): Promise<void> => {
-    cancel();
-    if (pending) {
-      const { title } = pending;
-      pending = null;
-      writing = writing.then(() => updateRecording(startedAt, { title })).catch(() => undefined);
-    }
-    return idle();
-  };
-  return {
-    schedule(title) {
-      pending = { title };
-      cancel();
-      timer = setTimeout(() => void flush(), TITLE_WRITE_MS);
-    },
-    flush,
-    drop() {
-      cancel();
-      pending = null;
-      return idle();
-    },
-  };
-}
-
-async function renderReviewPanel(state: RecordingState): Promise<void> {
-  if (recordingMode(state) === 'bug') {
-    await renderBugFinishPanel(state, discardRecording);
-    return;
-  }
-  const { events } = state;
-  document.getElementById(HUD_HOST_ID)?.remove();
-  document.getElementById(PANEL_HOST_ID)?.remove();
-  // Recording is over by the time the review panel opens — drop the border
-  // before anything else, so it never outlives the capture it signals.
-  removeRecordingFrame();
-
-  const steps = normalizeSteps(events);
-  const session = buildSession(steps, events[0]?.timestamp ?? Date.now());
-  const fallbackTitle = titleFromSteps(steps);
-  const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride()]);
-  const activeProject = resolveActiveProject(connection, override, location.href);
-  // Worth waiting for here, unlike in the live HUD: this is the one-shot that
-  // feeds "Copy as TypeScript", and generating a spec against a catalog that
-  // predates a function added mid-session would silently emit raw locators
-  // where a call belonged.
-  await requestCatalogRefresh(activeProject?.projectId ?? null);
-  const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
-  // URL checks: after a step that leads to another page, the spec waits for
-  // it, and for the next element as the only match, before acting.
-  const withCatalog = renderSpec(session, { catalog, urlChecks: true });
-
-  const host = document.createElement('div');
-  host.id = PANEL_HOST_ID;
-  host.style.cssText = 'all:initial;position:fixed;inset:0;z-index:2147483647;';
-  document.documentElement.appendChild(host);
-  const root = attachPanelShadow(host, { mode: 'closed' });
-
-  const style = document.createElement('style');
-  style.textContent = `
-    ${SHARED_STYLE}
-    ${LOCATOR_SYNTAX_CSS}
-    ${BUTTON_CSS}
-    ${STEP_CSS}
-    .backdrop { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: flex; align-items: flex-start; justify-content: center; padding-top: 6vh; }
-    .panel { background: #111827; color: #f9fafb; border-radius: 12px; padding: 16px; width: min(680px, 92vw); max-height: 84vh;
-      overflow: auto; box-shadow: 0 8px 40px rgba(0,0,0,.5); font-size: 13px; line-height: 1.5; }
-    @media (prefers-color-scheme: light) { .panel { background: #ffffff; color: #111827; box-shadow: 0 8px 40px rgba(0,0,0,.2); } }
-    .header { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; margin-bottom: 10px; }
-    .header > div { min-width: 0; overflow-wrap: anywhere; hyphens: auto; }
-    .panel:focus { outline: none; }
-    .title { font-weight: 600; font-size: 14px; }
-    .sub { color: #9ca3af; font-size: 12px; }
-    .steps { border: 1px solid rgba(128,128,128,.3); border-radius: 8px; max-height: 280px; overflow: auto; margin-bottom: 12px; }
-    .step { padding: 6px 10px; font-size: 12.5px; border-bottom: 1px solid rgba(128,128,128,.15); display: flex; gap: 8px; align-items: flex-start; }
-    .step-desc { min-width: 0; flex: 1; }
-    .step:last-child { border-bottom: none; }
-    .step-idx { color: #9ca3af; flex-shrink: 0; min-width: 18px; text-align: end; font-variant-numeric: tabular-nums; font-size: 11px; padding-top: 3px; }
-    .step-fn { margin-left: auto; font-size: 10px; padding: 1px 5px; border-radius: 4px; background: rgba(124,58,237,.2); color: #a78bfa; flex-shrink: 0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
-    .field { display: flex; flex-direction: column; gap: 4px; margin-bottom: 12px; font-size: 12px; color: #9ca3af; }
-    .field input { font: inherit; font-size: 13px; color: inherit; background: rgba(148,163,184,.12);
-      border: 1px solid rgba(148,163,184,.35); border-radius: 6px; padding: 6px 8px; width: 100%; }
-    .field input:focus { outline: 2px solid #7c3aed; outline-offset: 0; }
-    .panel .field input { color: #f9fafb; }
-    .actions { display: flex; gap: 6px; flex-wrap: wrap; }
-    .actions .discard { margin-inline-start: auto; }
-    .empty { color: #9ca3af; font-size: 12.5px; padding: 16px; text-align: center; }
-    .message { color: #fca5a5; font-size: 12px; margin-top: 8px; overflow-wrap: anywhere; }
-    .message:empty { display: none; }
-    @media (prefers-color-scheme: light) {
-      .sub, .step-idx, .empty, .field { color: #6b7280; }
-      .panel .field input { color: #111827; }
-      .step-fn { color: #6d28d9; }
-      .message { color: #b91c1c; }
-    }
-  `;
-  root.appendChild(style);
-
-  const backdrop = document.createElement('div');
-  backdrop.className = 'backdrop';
-  const panel = document.createElement('div');
-  panel.className = 'panel';
-  panel.setAttribute('role', 'dialog');
-  panel.lang = uiLanguage();
-  panel.setAttribute('aria-label', t('record_reviewLabel'));
-  panel.tabIndex = -1;
-
-  const header = document.createElement('div');
-  header.className = 'header';
-  const titleWrap = document.createElement('div');
-  const title = document.createElement('div');
-  title.className = 'title';
-  title.textContent = steps.length === 0 ? t('record_nothingRecorded') : tn('record_stepsRecorded', steps.length);
-  const sub = document.createElement('div');
-  sub.className = 'sub';
-  sub.textContent =
-    withCatalog.matchedSpans.length > 0
-      ? tn('record_stepsMatched', withCatalog.matchedSpans.length)
-      : catalog.length > 0
-        ? t('record_noFunctionMatches')
-        : t('record_notConnected');
-  titleWrap.append(title, sub);
-  // Every close path (the ×, the backdrop, Discard, Escape) goes through one
-  // function, which stores the title still pending and detaches the
-  // document-level listeners below with the panel.
-  const titles = titleWriter(state.startedAt);
-  const closeController = new AbortController();
-  const closePanel = (): void => {
-    void titles.flush();
-    closeController.abort();
-    host.remove();
-  };
-  const closeBtn = makeButton(t('common_close'), closePanel, {
-    icon: 'close',
-    iconOnly: true,
-    tone: 'ghost',
-    className: 'close',
-  });
-  header.append(titleWrap, closeBtn);
-  panel.appendChild(header);
-
-  // The test's title, which the spec and the steps file take: the first page's own title unless changed, and the
-  // first action's words when the field is left empty.
-  const titleField = document.createElement('label');
-  titleField.className = 'field';
-  const titleLabel = document.createElement('span');
-  titleLabel.textContent = t('record_testTitle');
-  const titleInput = document.createElement('input');
-  titleInput.type = 'text';
-  titleInput.maxLength = RECORDING_TITLE_MAX;
-  titleInput.value = state.title ?? '';
-  titleInput.placeholder = fallbackTitle ?? t('record_testTitlePlaceholder');
-  titleInput.addEventListener('input', () => titles.schedule(titleInput.value));
-  titleField.append(titleLabel, titleInput);
-  const specTitle = (): string | undefined => cleanTitle(titleInput.value) ?? fallbackTitle ?? undefined;
-  const stepsDocument = (): PiwiSteps => toStepsDocument(session, { title: specTitle() ?? null });
-  if (steps.length > 0) panel.appendChild(titleField);
-
-  if (steps.length === 0) {
-    const empty = document.createElement('div');
-    empty.className = 'empty';
-    empty.textContent = t('record_noSteps');
-    panel.appendChild(empty);
-  } else {
-    const stepsWrap = document.createElement('div');
-    stepsWrap.className = 'steps';
-    steps.forEach((step, i) => {
-      const row = document.createElement('div');
-      row.className = 'step';
-      const idx = document.createElement('span');
-      idx.className = 'step-idx';
-      idx.textContent = formatNumber(i + 1);
-      const desc = stepView(step);
-      desc.classList.add('step-desc');
-      row.append(idx, desc);
-      const span = withCatalog.matchedSpans.find((s) => i >= s.startStep && i <= s.endStep);
-      if (span) {
-        const fnBadge = document.createElement('span');
-        fnBadge.className = 'step-fn';
-        fnBadge.textContent = span.functionName;
-        row.appendChild(fnBadge);
-      }
-      stepsWrap.appendChild(row);
-    });
-    panel.appendChild(stepsWrap);
-  }
-
-  const actions = document.createElement('div');
-  actions.className = 'actions';
-  const message = document.createElement('div');
-  message.className = 'message';
-  message.setAttribute('role', 'alert');
-
-  if (steps.length > 0) {
-    const copyPrimary = makeButton(
-      catalog.length > 0 ? t('record_copyCodeWithFunctions') : t('record_copyCode'),
-      () => {
-        void titles.flush();
-        void copyToClipboard(renderSpec(session, { catalog, urlChecks: true, title: specTitle() }).code, copyPrimary);
-      },
-      { icon: 'copy', tone: 'primary' },
-    );
-    actions.appendChild(copyPrimary);
-
-    if (catalog.length > 0 && withCatalog.matchedSpans.length > 0) {
-      const copyRaw = makeButton(
-        t('record_copyCodeWithoutFunctions'),
-        () => {
-          void titles.flush();
-          void copyToClipboard(renderSpec(session, { urlChecks: true, title: specTitle() }).code, copyRaw);
-        },
-        { icon: 'code' },
-      );
-      actions.appendChild(copyRaw);
-    }
-
-    actions.appendChild(
-      makeButton(
-        t('record_downloadSteps'),
-        () => {
-          void titles.flush();
-          downloadSteps(stepsDocument());
-        },
-        {
-          icon: 'download',
-          title: t('record_downloadStepsTitle'),
-        },
-      ),
-    );
-
-    if (await getEditorPairing().catch(() => null)) {
-      const sendBtn = makeButton(
-        t('record_sendToEditor'),
-        () => {
-          void titles.flush();
-          void sendToEditor({ kind: 'steps', steps: stepsDocument() }).then((result) =>
-            showSendResult(sendBtn, result),
-          );
-        },
-        { icon: 'send' },
-      );
-      actions.appendChild(sendBtn);
-    }
-
-    // Played again before export: the one check that every recorded locator still finds its element.
-    const replayBtn = makeButton(
-      t('record_replay'),
-      () => {
-        replayBtn.disabled = true;
-        void titles
-          .flush()
-          .then(() => startReplayHere(stepsDocument()))
-          .then((response) => {
-            if (response.ok) return closePanel();
-            replayBtn.disabled = false;
-            message.textContent = response.error ?? t('common_replayStartFailed');
-          });
-      },
-      { icon: 'play', title: t('record_replayHint') },
-    );
-    actions.appendChild(replayBtn);
-  }
-
-  actions.appendChild(
-    makeButton(t('common_discard'), () => void titles.drop().then(discardRecording).then(closePanel, closePanel), {
-      icon: 'trash',
-      tone: 'remove',
-      className: 'discard',
-    }),
-  );
-  panel.appendChild(actions);
-  panel.appendChild(message);
-
-  backdrop.addEventListener('click', (e) => {
-    if (e.target === backdrop) closePanel();
-  });
-  document.addEventListener(
-    'keydown',
-    (e) => {
-      if (e.key === 'Escape') closePanel();
-    },
-    { capture: true, signal: closeController.signal },
-  );
-  window.addEventListener('pagehide', () => void titles.flush(), { signal: closeController.signal });
-
-  backdrop.appendChild(panel);
-  root.appendChild(backdrop);
-  panel.focus();
 }
 
 /** The longest Stop waits for the worker's answer before it opens the review. */
@@ -1108,16 +643,17 @@ async function handleStop(): Promise<void> {
   const state = await stopRecording();
   stopCapture();
   await tellWorkerStopped();
-  // The IDE bundle opens no review: the steps are in the editor.
-  if (!IDE_BUILD) await renderReviewPanel(state);
+  // The IDE bundle opens no finish panel: the steps are in the editor.
+  if (!IDE_BUILD) await renderFinishPanel(state, discardRecording);
 }
 
 /**
- * Finishes a bug recording: the last evidence entries, a screenshot of the
- * page as it is, an outline when nothing was marked, and the page's context,
- * then the same stop as any recording.
+ * Finishes a recording of the extension: the last evidence entries, a
+ * screenshot of the page as it is, an outline when nothing was marked, and the
+ * page's context, then the stop. The IDE bundle stops at once.
  */
-async function handleBugFinish(): Promise<void> {
+async function handleFinish(): Promise<void> {
+  if (IDE_BUILD) return handleStop();
   const g = recorderGlobals();
   if (g.__piwiBugFinishing) return;
   g.__piwiBugFinishing = true;
@@ -1162,7 +698,7 @@ function buildEvent(
   };
 }
 
-/** What the bug panel and a test recording's checks need from the recorder to add an assertion to the recording. */
+/** What the checks and Something is missing need from the recorder to add an assertion to the recording. */
 const bugHooks: BugRecorderHooks = {
   targetFor: deriveRecordedTarget,
   async addAssert(target: RecordedTarget | null, assertion: StepAssertion): Promise<number | null> {
@@ -1189,25 +725,34 @@ async function refreshHud(): Promise<void> {
     getActiveProjectOverride(),
   ]);
   if (!state.active) return;
-  if (recordingMode(state) === 'bug') {
-    const evidence = await getBugEvidence();
-    ensureRecordingFrame();
-    renderBugHud(state, evidence, captureError, {
-      mark: () => void runMarkFlow(bugHooks),
+  ensureRecordingFrame();
+  const steps = normalizeSteps(state.events);
+  // The IDE bundle has no catalog and collects no evidence.
+  const activeProject = IDE_BUILD ? null : resolveActiveProject(connection, override, location.href);
+  const catalog = IDE_BUILD ? [] : await getCachedCatalog(activeProject?.projectId ?? null);
+  const evidence = IDE_BUILD ? null : await getBugEvidence().catch(() => null);
+  renderRecordingBar(
+    {
+      title: hudTitle(steps.length),
+      steps,
+      paused: recordingPaused,
+      evidence,
+      captureError,
+      functions: catalog.length > 0 ? functionsSection(rankFunctionMatches(steps, catalog).slice(0, 3)) : null,
+    },
+    {
+      checkElement: () => void runCheckElementFlow(bugHooks),
+      checkAddress: () => void runCheckAddressFlow(bugHooks),
       missing: () => void runMissingFlow(bugHooks),
-      wrongPage: () => void runWrongPageFlow(bugHooks),
-      finish: () => void handleBugFinish(),
       screenshot: () =>
         void getRecordingState().then(async (latest) => {
           await takeBugScreenshot('manual', normalizeSteps(latest.events).length - 1);
           scheduleHudRefresh();
         }),
-    });
-    return;
-  }
-  const activeProject = resolveActiveProject(connection, override, location.href);
-  const catalog = await getCachedCatalog(activeProject?.projectId ?? null);
-  renderHud(state, catalog);
+      pause: () => void setRecordingPaused(!recordingPaused),
+      finish: () => void handleFinish(),
+    },
+  );
 }
 
 /**
@@ -1702,12 +1247,11 @@ function installStopListener(): void {
       });
     }
     if (message?.type === 'piwi-bug-finish' && recorderGlobals().__piwiRecordCapture) {
-      // The popup's Finish: answered once the page knows it records a bug, then finished as the HUD's Finish is.
+      // The popup's Finish: answered once the page knows it records, then finished as the bar's Finish is.
       void getRecordingState().then(
         (state) => {
-          const bug = state.active && recordingMode(state) === 'bug';
-          sendResponse({ ok: bug });
-          if (bug) void handleBugFinish();
+          sendResponse({ ok: state.active });
+          if (state.active) void handleFinish();
         },
         () => sendResponse({ ok: false }),
       );
@@ -1717,7 +1261,7 @@ function installStopListener(): void {
       // Answered at once: the popup that asked closes as soon as it hears back.
       sendResponse({ ok: true });
       void getRecordingState().then(async (state) => {
-        if (!state.active || recordingMode(state) !== 'bug') return;
+        if (!state.active) return;
         await takeBugScreenshot('manual', normalizeSteps(state.events).length - 1);
         scheduleHudRefresh();
       });
@@ -1920,7 +1464,7 @@ async function initRecordPanel(restoredAt: number | null): Promise<void> {
     // only came back from the cache: the review is the stopping tab's. The
     // IDE bundle has no review: the steps are in the editor.
     stopCapture();
-    if (state.events.length > 0 && !restored && !IDE_BUILD) await renderReviewPanel(state);
+    if (state.events.length > 0 && !restored && !IDE_BUILD) await renderFinishPanel(state, discardRecording);
     return;
   }
 
@@ -1930,12 +1474,12 @@ async function initRecordPanel(restoredAt: number | null): Promise<void> {
     return;
   }
 
-  // A recording of actions takes its first page's own title, which the review panel offers as the test's.
-  if (!IDE_BUILD && recordingMode(state) === 'actions' && state.title === undefined) {
+  // A recording takes its first page's own title, which the finish panel offers as its title.
+  if (!IDE_BUILD && state.title === undefined) {
     await updateRecording(state.startedAt, { title: cleanTitle(document.title) });
   }
   // The size comes before the page, so the first one is the size of the first step.
-  const viewport = recordingMode(state) === 'bug' ? await recordPageViewport(state) : null;
+  const viewport = IDE_BUILD ? null : await recordPageViewport(state);
   // Seed this page's own URL so a mid-recording navigation's `RecordedStep`s
   // carry the right `pageUrl`; only the very first one across the whole
   // recording survives into a `page.goto()`, and a page the person reached
@@ -1957,7 +1501,7 @@ async function initRecordPanel(restoredAt: number | null): Promise<void> {
     watchViewport(viewport, capture.signal);
     startViews(capture.signal);
   }
-  if (recordingMode(state) === 'bug' && state.bugToken && capture && !(await evidenceThroughDebugger())) {
+  if (!IDE_BUILD && state.bugToken && capture && !(await evidenceThroughDebugger())) {
     startPageRelay(state.bugToken);
   }
   // Once per page, not per step — `refreshHud` runs on every captured

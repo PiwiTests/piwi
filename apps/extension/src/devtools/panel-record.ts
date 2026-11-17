@@ -1,23 +1,17 @@
-import { renderSpec } from '@piwitests/core/codegen';
-import { buildSession, normalizeSteps, type RecordedStep } from '@piwitests/core/recording';
+import { normalizeSteps, sessionFromEvents, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
+import { BUG_REPORT_VERSION, bugContextFrom, emptyBugEvidence, type BugReport } from '@piwitests/core/bug-report';
 import { highlightLocator } from '@piwitests/picker-dom';
 import { getActiveProjectOverride, resolveActiveProject } from '../shared/active-project.js';
 import { getCachedCatalog } from '../shared/catalog-cache.js';
 import { requestCatalogRefresh } from '../shared/catalog-refresh.js';
 import { getConnectionSettings } from '../shared/connection-settings.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
-import { downloadBlob } from '../shared/download.js';
 import { icon, type IconName } from '../shared/icons.js';
 import { stepView } from '../shared/step-view.js';
 import { t, tn } from '../shared/i18n.js';
-import {
-  discardRecording,
-  getRecordingState,
-  recordingMode,
-  stopRecording,
-  type RecordingState,
-} from '../shared/recording-storage.js';
+import { discardRecording, getRecordingState, type RecordingState } from '../shared/recording-storage.js';
+import { recordingSpec } from '../shared/recording-spec.js';
 import { patternOrigin } from '../shared/web-origin.js';
 import { recordingTitle } from '../shared/recording-title.js';
 import { evalInPage } from './inspected.js';
@@ -61,81 +55,66 @@ export function viewHead(dot: string, text: string | Array<Node | string>, ...ac
   return head;
 }
 
-/** The spec the review panel copies, with the active project's functions when the extension is connected. */
+/**
+ * The test the finish panel copies, with the active project's functions when
+ * the extension is connected: the failing test when a step says the page was
+ * wrong (`recordingSpec`).
+ */
 async function specFor(state: RecordingState): Promise<string> {
   const steps = normalizeSteps(state.events);
-  const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
+  const session = sessionFromEvents(state.events, state.startedAt ?? steps[0]?.timestamp ?? Date.now());
   const href = await evalInPage<string>('location.href');
   const pageUrl = href.ok && typeof href.value === 'string' ? href.value : (session.startUrl ?? '');
   const [connection, override] = await Promise.all([getConnectionSettings(), getActiveProjectOverride(pageUrl)]);
   const project = resolveActiveProject(connection, override, pageUrl);
   await requestCatalogRefresh(project?.projectId ?? null);
   const catalog = await getCachedCatalog(project?.projectId ?? null);
-  return renderSpec(session, { catalog, urlChecks: true, title: recordingTitle(state, steps) ?? undefined }).code;
-}
-
-function fileStamp(time: number): string {
-  return new Date(time || Date.now()).toISOString().slice(0, 16).replace(/[:T]/g, '-');
+  const report: BugReport = {
+    v: BUG_REPORT_VERSION,
+    steps: toStepsDocument(session, { title: recordingTitle(state, steps) }),
+    evidence: emptyBugEvidence(),
+    context: bugContextFrom({
+      url: pageUrl,
+      userAgent: null,
+      viewport: null,
+      time: Date.now(),
+      extensionVersion: null,
+    }),
+  };
+  return recordingSpec(report, catalog).code;
 }
 
 /**
- * The Record tab: the recording's steps as they are captured, with the review
- * panel's actions once it stops. It stops a recording the way the popup does;
- * a bug report is finished from its panel on the page, which collects the
- * evidence.
+ * The Record tab: the recording's steps as they are captured, then Copy test
+ * and Discard once it stops. A recording is finished from its bar on the page
+ * or from the popup, which collect the last evidence.
  */
 export async function renderRecordTab(container: HTMLElement): Promise<void> {
   const state = await getRecordingState();
   const steps = normalizeSteps(state.events);
-  const bug = recordingMode(state) === 'bug';
   if (!state.active && state.events.length === 0) {
     container.replaceChildren(emptyState('record', t('devtools_noRecording')));
     return;
   }
 
   const count = steps.length;
-  const paused = state.active && !bug && state.paused === true;
+  const paused = state.active && state.paused === true;
   const text = state.active
-    ? tn(bug ? 'devtools_bugRecordingOn' : paused ? 'devtools_recordingPaused' : 'devtools_recordingOn', count, {
+    ? tn(paused ? 'devtools_recordingPaused' : 'devtools_recordingOn', count, {
         site: state.grantedOriginPattern ? patternOrigin(state.grantedOriginPattern) : '',
       })
     : tn('devtools_recordingStopped', count);
 
   const actions: HTMLElement[] = [];
-  if (state.active && bug) {
-    actions.push(iconLine('info', 'muted', t('devtools_finishBugOnPage')));
-  } else if (state.active) {
-    actions.push(
-      button(
-        t('devtools_stopRecording'),
-        () => {
-          void stopRecording().then(() =>
-            chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }).catch(() => undefined),
-          );
-        },
-        { icon: 'stop-circle', tone: 'danger' },
-      ),
-    );
-  } else if (!bug) {
-    const copy = button(t('record_copyCode'), () => void specFor(state).then((spec) => copyWithFeedback(spec, copy)), {
+  if (state.active) {
+    actions.push(iconLine('info', 'muted', t('devtools_finishOnPage')));
+  } else {
+    const copy = button(t('record_copyTest'), () => void specFor(state).then((spec) => copyWithFeedback(spec, copy)), {
       icon: 'copy',
       tone: 'primary',
     });
-    const save = button(
-      t('record_downloadSteps'),
-      () => {
-        const session = buildSession(steps, state.events[0]?.timestamp ?? Date.now());
-        const doc = toStepsDocument(session, { title: recordingTitle(state, steps) });
-        downloadBlob(
-          new Blob([JSON.stringify(doc, null, 2)], { type: 'application/json' }),
-          `piwi-steps-${fileStamp(doc.recordedAt)}.json`,
-        );
-      },
-      { icon: 'download', title: t('record_downloadStepsTitle') },
-    );
     actions.push(
       copy,
-      save,
       button(t('common_discard'), () => void discardRecording(), { icon: 'trash', tone: 'remove' }),
     );
   }
