@@ -1322,7 +1322,8 @@ const REPRO_SCENE_STEPS = (() => {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  *   folderSuggestions — desktop mode: the folders `desktop_suggest_project_folders` finds for a project (default [])
  *   folderCheck — desktop mode: what `desktop_check_project_folder` answers (default: the folder picked fits)
- *   requestFindings — desktop mode: the folders `desktop_find_request_folders` finds for a request (default [])
+ *   requestFindings, requestRepository — desktop mode: the folders `desktop_find_request_folders` finds for a request
+ *                 and the repository it names (default none)
  *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts, or a list of the
  *                 ids of the runs it starts in turn (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
@@ -10425,18 +10426,19 @@ const SCENES = [
     mode: 'desktop',
     route: '/',
     viewport: { width: 1280, height: 1000 },
+    requestRepository: 'github.com/acme/checkout',
     requestFindings: [
       {
         path: '/home/dev/code/acme-checkout',
         playwrightConfig: 'playwright.config.ts',
         specsFound: 1,
-        source: 'search',
+        source: 'run',
       },
       {
         path: '/home/dev/Documents/GitHub/acme-checkout',
         playwrightConfig: 'playwright.config.ts',
         specsFound: 1,
-        source: 'search',
+        source: 'clone',
       },
     ],
     async run({ page, shoot, settle }) {

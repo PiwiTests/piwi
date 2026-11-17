@@ -203,6 +203,19 @@ fn shown(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// Whether `path` is absolute on a disk of this machine: never a network path
+/// (`\\server\share`, `//server/share`) nor one under an automounter's
+/// network folder (`/net`, `/Network`), which a check would make the machine
+/// connect to.
+pub(crate) fn is_local_absolute(path: &str) -> bool {
+    let network = path.starts_with("\\\\")
+        || path.starts_with("//")
+        || ["/net", "/Network"]
+            .iter()
+            .any(|root| path == *root || path.starts_with(&format!("{root}/")));
+    !network && Path::new(path).is_absolute()
+}
+
 /// A regular file's first `MAX_GIT_FILE_BYTES` as text; `None` for anything else (a pipe, a device).
 fn read_small(path: &Path) -> Option<String> {
     let file = std::fs::File::open(path).ok()?;
@@ -567,9 +580,9 @@ pub(crate) fn suggest_folders(
     let specs = checkable_specs(specs);
     let offered = |path: &Path| !excluded.iter().any(|root| path.starts_with(root)) && fits(path, &specs);
     let mut from_runs = Vec::new();
-    for dir in working_dirs {
+    for dir in working_dirs.iter().filter(|dir| is_local_absolute(dir)) {
         let path = PathBuf::from(dir);
-        if path.is_absolute() && path.is_dir() && offered(&path) {
+        if path.is_dir() && offered(&path) {
             from_runs.extend(candidate(&path, &specs, "run"));
         }
     }
@@ -624,6 +637,15 @@ pub(crate) fn search_places(linked: &[PathBuf], home: Option<&Path>) -> Vec<Path
     places
 }
 
+/// Whether `folder` is a clone of another repository than the one `key` names:
+/// false when either is unknown.
+fn of_another_repository(folder: &Path, key: Option<&str>) -> bool {
+    key.is_some_and(|key| {
+        let repositories = folder_repositories(folder);
+        !repositories.is_empty() && !repositories.iter().any(|repository| repository == key)
+    })
+}
+
 /// The folders below `places` that fit a request's `specs`: a folder at most
 /// `MAX_DEPTH_BELOW` levels below a place that holds a config and some of the
 /// specs, the most specs first, examining at most `MAX_FOLDERS_PER_PLACE`
@@ -660,6 +682,42 @@ pub(crate) fn find_folders(
         left -= share - budget;
     }
     (ranked(found, true), whole)
+}
+
+/// How many folders a request's search offers at most.
+const MAX_REQUEST_FOLDERS: usize = 6;
+
+/// The folders on this machine that fit a request's `specs`, best first: the
+/// `run_folders` the person's own runs of the project came from, the clones of
+/// its `repository` next to the `linked` folders, then what a search of the
+/// usual places finds (`find_folders`), a clone of another repository last (a
+/// remote spelled another way, a fork without its upstream). Once each by its
+/// real path; none of `skipped` or under `excluded`. The flag says whether every
+/// place was searched whole.
+pub(crate) fn find_request_folders(
+    run_folders: &[String],
+    linked: &[PathBuf],
+    specs: &[String],
+    repository: Option<&str>,
+    excluded: &[PathBuf],
+    skipped: &[PathBuf],
+    home: Option<&Path>,
+) -> (Vec<FolderCandidate>, bool) {
+    let key = repository.and_then(repository_key);
+    let mut folders: Vec<FolderCandidate> = suggest_folders(run_folders, linked, specs, repository, excluded)
+        .into_iter()
+        .filter(|folder| !skipped.contains(&PathBuf::from(&folder.path)))
+        .collect();
+    let places = search_places(linked, home);
+    let (mut searched, complete) = find_folders(&places, specs, excluded, skipped);
+    searched.sort_by_key(|folder| of_another_repository(Path::new(&folder.path), key.as_deref()));
+    folders.extend(searched);
+    let mut seen = HashSet::new();
+    folders.retain(|folder| {
+        seen.insert(std::fs::canonicalize(&folder.path).unwrap_or_else(|_| PathBuf::from(&folder.path)))
+    });
+    folders.truncate(MAX_REQUEST_FOLDERS);
+    (folders, complete)
 }
 
 #[cfg(test)]
@@ -1071,7 +1129,57 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!((found[0].path.clone(), found[0].source), (shown(&root.at("code/shop/e2e")), "search"));
         assert!(find_folders(&[root.at("code")], &[], &[], &[]).0.is_empty());
-        assert!(find_folders(&[root.at("code")], &specs(&["tests/cart.spec.ts"]), &[], &[root.at("code/shop/e2e")]).0.is_empty());
+        let linked = [root.at("code/shop/e2e")];
+        assert!(find_folders(&[root.at("code")], &specs(&["tests/cart.spec.ts"]), &[], &linked).0.is_empty());
+    }
+
+    #[test]
+    fn a_request_offers_the_folders_its_runs_came_from_then_clones_then_the_search() {
+        let root = Folder::new("request");
+        // The folder the person's runs came from, a clone next to a linked folder, and one only the search finds.
+        root.write("code/shop/e2e/playwright.config.ts", "");
+        root.write("code/shop/e2e/tests/cart.spec.ts", "");
+        root.clone_of("code/shop", "https://github.com/acme/shop");
+        root.clone_of("code/shop-review", "git@github.com:acme/shop.git");
+        root.write("code/shop-review/e2e/playwright.config.ts", "");
+        root.write("code/shop-review/e2e/tests/cart.spec.ts", "");
+        root.clone_of("code/blog", "https://github.com/acme/blog");
+        root.write("home/projects/shop-copy/playwright.config.ts", "");
+        root.write("home/projects/shop-copy/tests/cart.spec.ts", "");
+        // A clone of another repository holding the same test path comes last.
+        root.clone_of("home/projects/fork", "https://github.com/someone/else");
+        root.write("home/projects/fork/playwright.config.ts", "");
+        root.write("home/projects/fork/tests/cart.spec.ts", "");
+
+        let (found, whole) = find_request_folders(
+            &[shown(&root.at("code/shop/e2e"))],
+            &[root.at("code/blog")],
+            &specs(&["tests/cart.spec.ts"]),
+            Some("https://github.com/acme/shop"),
+            &[],
+            &[],
+            Some(&root.at("home")),
+        );
+
+        assert!(whole);
+        assert_eq!(
+            found.iter().map(|f| (f.path.clone(), f.source)).collect::<Vec<_>>(),
+            vec![
+                (shown(&root.at("code/shop/e2e")), "run"),
+                (shown(&root.at("code/shop-review/e2e")), "clone"),
+                (shown(&root.at("home/projects/shop-copy")), "search"),
+                (shown(&root.at("home/projects/fork")), "search"),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_network_path_is_never_checked() {
+        for path in ["\\\\server\\share\\shop", "//server/share/shop", "/net/server/shop", "/Network/Servers/x", "relative/e2e"] {
+            assert!(!is_local_absolute(path), "{path}");
+        }
+        assert!(is_local_absolute("/home/robin/shop"));
+        assert!(is_local_absolute("/network-drive-is-a-name/shop"));
     }
 
     #[test]
@@ -1079,7 +1187,8 @@ mod tests {
         let root = Folder::new("config-spec");
         root.write("code/any/playwright.config.ts", "");
 
-        let (found, _) = find_folders(&[root.at("code")], &specs(&["playwright.config.ts", "e2e/playwright.config.js"]), &[], &[]);
+        let configs = specs(&["playwright.config.ts", "e2e/playwright.config.js"]);
+        let (found, _) = find_folders(&[root.at("code")], &configs, &[], &[]);
 
         assert!(found.is_empty());
     }

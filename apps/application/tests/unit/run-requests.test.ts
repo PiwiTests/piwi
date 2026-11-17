@@ -31,6 +31,7 @@ const {
   effectiveState,
   endStaleRequests,
   findOwnRequest,
+  folderHintsForTarget,
   moveRequestState,
   pruneRunRequests,
   requestsForTarget,
@@ -330,6 +331,48 @@ describe('the life of a request', () => {
     expect(await claimRequest(second, id)).toMatchObject({ ok: false, statusCode: 409 });
     expect(await claimRequest(first, id)).toMatchObject({ ok: false, statusCode: 409 });
     expect((await stored(id)).targetId).toBe(first.target.id);
+  });
+
+  test('folder hints answer the app that claimed the request, from its owner’s own runs of the project', async () => {
+    const c = await caller();
+    const other = await caller();
+    const id = await request();
+    await db
+      .update(schema.projects)
+      .set({ repositoryUrl: 'https://github.com/acme/shop' })
+      .where(eq(schema.projects.id, allowed));
+    const at = (minutes: number) => new Date(Date.now() - 60 * 60_000 + minutes * 60_000);
+    const run = (minutes: number, values: Partial<typeof schema.testRuns.$inferInsert>, workingDir: string) => ({
+      projectId: allowed,
+      status: 'passed',
+      startTime: at(minutes),
+      metadata: { workingDir },
+      ...values,
+    });
+    await db.insert(schema.testRuns).values([
+      run(1, { reporterId: userId, origin: 'local' }, '/home/robin/old'),
+      run(3, { requesterId: userId, origin: 'request' }, '/home/robin/shop/e2e'),
+      run(2, { reporterId: userId, origin: 'editor' }, 'relative/e2e'),
+      run(4, { reporterId: otherUserId, origin: 'local' }, '/home/sam/shop'),
+      run(5, { reporterId: userId, origin: 'ci' }, '/home/runner/work/shop'),
+      run(6, { reporterId: userId, origin: 'flake-lab' }, '/home/robin/.piwi/worktrees/7'),
+      run(7, { projectId: viewOnly, reporterId: userId, origin: 'local' }, '/home/robin/docs'),
+      {
+        ...run(8, { reporterId: userId, origin: 'local' }, '/home/robin/long-ago'),
+        startTime: new Date('2020-01-01'),
+      },
+    ]);
+
+    expect(await folderHintsForTarget(c, id)).toMatchObject({ ok: false, statusCode: 404 });
+    expect(await claimRequest(c, id)).toMatchObject({ ok: true });
+    expect(await folderHintsForTarget(other, id)).toMatchObject({ ok: false, statusCode: 404 });
+    expect(await folderHintsForTarget(c, id)).toEqual({
+      ok: true,
+      hints: { repositoryUrl: 'https://github.com/acme/shop', folders: ['/home/robin/shop/e2e', '/home/robin/old'] },
+    });
+
+    state.machineRuns.delete(allowed);
+    expect(await folderHintsForTarget(c, id)).toMatchObject({ ok: false, statusCode: 403 });
   });
 
   test('another person’s request, or an unknown one, is missing', async () => {

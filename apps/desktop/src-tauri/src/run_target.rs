@@ -681,23 +681,82 @@ pub struct RequestFolderSearch {
     folders: Vec<crate::folder_search::FolderCandidate>,
     /// Every place was searched whole: an empty list then means nothing is there.
     complete: bool,
+    /// The project's repository as the instance names it, without its scheme (`github.com/acme/shop`).
+    repository: Option<String>,
+}
+
+/// What the shell looks for a request's folder with, read from its own server
+/// by the request's id (`POST /api/desktop/run-target/requests/:id/folder-search`),
+/// never from the window.
+struct FolderSearchInput {
+    project_id: String,
+    specs: Vec<String>,
+    repository_url: Option<String>,
+    run_folders: Vec<String>,
+}
+
+/// Read what to look for a request's folder with, and with `hints` what the
+/// instance says helps find it, from the bundled server.
+fn folder_search_of(server: &ServerInfo, request_id: &str, hints: bool) -> Result<FolderSearchInput, String> {
+    let answer = local_call(
+        server,
+        "POST",
+        &format!("/api/desktop/run-target/requests/{request_id}/folder-search"),
+        Some(&json!({ "hints": hints })),
+    )?;
+    let project_id = answer
+        .get("projectId")
+        .and_then(|v| v.as_u64())
+        .map(|id| id.to_string())
+        .filter(|id| crate::runner::valid_project_id(id))
+        .ok_or("no project")?;
+    let texts = |name: &str, max: usize| -> Vec<String> {
+        answer
+            .get(name)
+            .and_then(|v| v.as_array())
+            .map(|list| list.iter().filter_map(|v| v.as_str()).take(max).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    let repository_url = answer
+        .get("repositoryUrl")
+        .and_then(|v| v.as_str())
+        .filter(|url| url.len() <= 500 && (url.starts_with("https://") || url.starts_with("http://")))
+        .map(str::to_string);
+    let run_folders = texts("runFolders", 5)
+        .into_iter()
+        .filter(|folder| folder.len() <= 500 && crate::folder_search::is_local_absolute(folder))
+        .collect();
+    Ok(FolderSearchInput { project_id, specs: texts("specs", 200), repository_url, run_folders })
+}
+
+/// `folder_search_of` on a blocking thread, for a request id the window names.
+async fn request_folder_search(app: &AppHandle, request_id: &str, hints: bool) -> Result<FolderSearchInput, String> {
+    if !valid_request_id(request_id) {
+        return Err("invalid request id".into());
+    }
+    let server = server_info(app).ok_or("the local server is not running")?;
+    let asked = request_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || folder_search_of(&server, &asked, hints))
+        .await
+        .map_err(|e| e.to_string())?
 }
 
 /// Look for the folders on this machine that hold the Playwright config and
-/// some of `specs` (a request's spec paths) for a project of the connected
-/// instance, other than the one linked to it: next to the folders linked to
-/// any project, and in the usual code folders of the home folder, never under
-/// the app's data folder or the temp folder. The shell keeps what it found for
+/// some of the spec paths of a request the window asks about, for its
+/// project, other than the folder linked to it: the folders the person's own
+/// runs of it came from and the clones of its repository, as the instance
+/// tells them, then next to the folders linked to any project and in the usual
+/// code folders of the home folder; never a folder under the app's data folder
+/// or the temp folder. The window names the request alone: the shell reads
+/// the rest from its own server, and keeps what it found for
 /// `desktop_link_request_folder`.
 #[tauri::command]
 pub async fn desktop_find_request_folders(
     app: AppHandle,
-    project_id: String,
-    specs: Vec<String>,
+    request_id: String,
 ) -> Result<RequestFolderSearch, String> {
-    if !crate::runner::valid_project_id(&project_id) {
-        return Err("invalid project id".into());
-    }
+    let FolderSearchInput { project_id, specs, repository_url, run_folders } =
+        request_folder_search(&app, &request_id, true).await?;
     let instance = connected_instance(&app).ok_or("no team instance is connected")?;
     let links = links_of(&app, &instance);
     let skipped: Vec<PathBuf> = links.get(&project_id).map(PathBuf::from).into_iter().collect();
@@ -709,10 +768,20 @@ pub async fn desktop_find_request_folders(
         .into_iter()
         .chain(std::iter::once(std::env::temp_dir()))
         .collect();
+    let repository = repository_url
+        .as_deref()
+        .map(|url| url.trim_start_matches("https://").trim_start_matches("http://").to_string());
     let (folders, complete) = tauri::async_runtime::spawn_blocking(move || {
         let home = crate::folder_search::home_folder();
-        let places = crate::folder_search::search_places(&linked, home.as_deref());
-        crate::folder_search::find_folders(&places, &specs, &excluded, &skipped)
+        crate::folder_search::find_request_folders(
+            &run_folders,
+            &linked,
+            &specs,
+            repository_url.as_deref(),
+            &excluded,
+            &skipped,
+            home.as_deref(),
+        )
     })
     .await
     .map_err(|e| e.to_string())?;
@@ -720,7 +789,7 @@ pub async fn desktop_find_request_folders(
     let search = state.searches.fetch_add(1, Ordering::SeqCst) + 1;
     let paths = folders.iter().map(|folder| PathBuf::from(&folder.path)).collect();
     state.found.lock().unwrap().insert((instance, project_id), (search, paths));
-    Ok(RequestFolderSearch { search, folders, complete })
+    Ok(RequestFolderSearch { search, folders, complete, repository })
 }
 
 /// Whether the person, in a native dialog the window cannot answer, says to
@@ -773,24 +842,21 @@ async fn confirmed_request_folder(app: &AppHandle, picked: String, specs: Vec<St
     .unwrap_or(kept)
 }
 
-/// Link the folder of one of the connected instance's projects: with `found`,
-/// the folder at that place of what search number `search` of
+/// Link the folder of the project of a request the window asks about: with
+/// `found`, the folder at that place of what search number `search` of
 /// `desktop_find_request_folders` found for it, once the person says so in a
-/// native dialog; else the one the person picks in the shell's own picker.
-/// `specs` are the request's spec paths, relative to the Playwright config's
-/// folder: when the picked folder holds none of them and a folder above or
-/// below it does, the shell offers that one. `None` when the person cancels.
+/// native dialog; else the one the person picks in the shell's own picker,
+/// where a folder above or below the one picked is offered when only it holds
+/// the request's tests. The window names the request alone: the shell reads its
+/// project and spec paths from its own server. `None` when the person cancels.
 #[tauri::command]
 pub async fn desktop_link_request_folder(
     app: AppHandle,
-    project_id: String,
-    specs: Option<Vec<String>>,
+    request_id: String,
     found: Option<usize>,
     search: Option<u64>,
 ) -> Result<Option<String>, String> {
-    if !crate::runner::valid_project_id(&project_id) {
-        return Err("invalid project id".into());
-    }
+    let FolderSearchInput { project_id, specs, .. } = request_folder_search(&app, &request_id, false).await?;
     let instance = connected_instance(&app).ok_or("no team instance is connected")?;
     let key = (instance.clone(), project_id.clone());
     let folder = match found {
@@ -824,7 +890,7 @@ pub async fn desktop_link_request_folder(
             else {
                 return Ok(None);
             };
-            confirmed_request_folder(&app, picked, specs.unwrap_or_default()).await
+            confirmed_request_folder(&app, picked, specs).await
         }
     };
     let mut links = links_of(&app, &instance);
