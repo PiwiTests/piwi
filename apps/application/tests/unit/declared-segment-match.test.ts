@@ -116,14 +116,14 @@ describe('a segment mixing literals and parameters', () => {
 
 describe('optional parameters', () => {
   test('a pattern of many optional parameters matches in steps that grow with its length', () => {
-    const optional = Array.from({ length: 200 }, (_, i) => `{p${i}?}`).join('/');
+    const optional = Array.from({ length: 400 }, () => '{p?}').join('/');
     const match = createDeclaredMatcher([
       { kind: 'page', key: '/x/declared', attrs: { declared: true, patterns: [`/x/${optional}/end`] } },
     ]);
     const values = (n: number) => Array.from({ length: n }, () => 'v').join('/');
     const started = performance.now();
-    expect(match('page', `/x/${values(100)}/nope`)).toEqual([]);
-    expect(match('page', `/x/${values(100)}/end`)).toEqual(['/x/declared']);
+    expect(match('page', `/x/${values(200)}/nope`)).toEqual([]);
+    expect(match('page', `/x/${values(200)}/end`)).toEqual(['/x/declared']);
     expect(match('page', '/x/end')).toEqual(['/x/declared']);
     expect(performance.now() - started).toBeLessThan(500);
   });
