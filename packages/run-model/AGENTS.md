@@ -22,6 +22,9 @@ status: its tests ended at a stop), `presence` (who has a run open, watches or d
 - **`RUN_WORDS_EN` is the extension's English catalog:** `apps/extension/tests/unit/run-words.test.ts` fails on a
   message or a placeholder that differs, or a key a catalog lacks. That test is what keeps the English words a surface
   without the catalogs says (`englishRunSpeaker`) the window's.
+- **`src/words/<code>.json` are written by `npm run run-model:words` from Piwi Picker's catalogs**, for a surface
+  without them (`speakers.ts`, Piwi Runner's window): regenerate them after a run word or its translation changes,
+  never edit or merge them by hand. `apps/extension/tests/unit/run-words.test.ts` fails while one differs.
 - **Icons are names by meaning (`WorkerIcon`, `ControlIcon`),** the Runs window's own `IconName`s; another surface
   maps each to its set. A new one needs its entry in the extension's `ICONS`.
 - **FSL-1.1-MIT, and never moved into `@piwitests/core`,** which is MIT: code moves from the MIT parts into this

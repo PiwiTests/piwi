@@ -1,0 +1,896 @@
+{
+  "runui_connectionIntro": {
+    "message": "Receba pedidos de execução da sua instância da equipe: um teste que você abre lá é executado aqui, em um navegador na sua tela."
+  },
+  "runui_connectionHowItWorks": {
+    "message": "Cada pedido aparece primeiro nesta janela, com os testes, as verificações da sua pasta e o comando: nada é executado até você clicar em $run$. A execução reporta à instância, e só você a vê lá.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runui_connectionStatus": {
+    "message": "Status"
+  },
+  "runui_connectionStateNone": {
+    "message": "Não conectado"
+  },
+  "runui_connectionStateSigningIn": {
+    "message": "Aguardando você autorizar este aplicativo na instância"
+  },
+  "runui_connectionStateConnecting": {
+    "message": "Conectando"
+  },
+  "runui_connectionStateOnline": {
+    "message": "Conectado: os pedidos das suas páginas chegam aqui"
+  },
+  "runui_connectionStateOffline": {
+    "message": "Conectado, mas a instância não responde: tentando de novo"
+  },
+  "runui_connectionStateRevoked": {
+    "message": "Desconectado pela instância"
+  },
+  "runui_connectionAllowWithCode": {
+    "message": "A página da instância pede que você autorize o $app$ com este código: $code$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "code": {
+        "content": "$2",
+        "example": "WXYZ-1234"
+      }
+    }
+  },
+  "runui_connectionOpenPageAgain": {
+    "message": "Abrir a página de novo"
+  },
+  "runui_connectionAddressLabel": {
+    "message": "Endereço da instância da equipe"
+  },
+  "runui_connectionConnect": {
+    "message": "Conectar"
+  },
+  "runui_connectionLinkedFolders": {
+    "message": "Pastas vinculadas"
+  },
+  "runui_connectionNoLinkedFolder": {
+    "message": "Nenhuma ainda: o pedido de um projeto pede a pasta dele."
+  },
+  "runui_connectionProject": {
+    "message": "Projeto $id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_connectionUnlink": {
+    "message": "Desvincular"
+  },
+  "runui_connectionDisconnect": {
+    "message": "Desconectar"
+  },
+  "runui_connectionConnectFailed": {
+    "message": "Não foi possível conectar"
+  },
+  "runui_connectionDisconnectFailed": {
+    "message": "Não foi possível desconectar"
+  },
+  "runui_connectionUnlinkFailed": {
+    "message": "Não foi possível desvincular"
+  },
+  "runui_connectionErrorDisconnected": {
+    "message": "A instância desconectou este aplicativo."
+  },
+  "runui_connectionErrorNoAnswer": {
+    "message": "A instância não respondeu."
+  },
+  "runui_connectionErrorStatus": {
+    "message": "A instância respondeu $status$ ao pedido de conexão.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "runui_connectionErrorSignInTimedOut": {
+    "message": "O login na instância expirou: conecte-se de novo."
+  },
+  "runui_connectionErrorSignInExpired": {
+    "message": "O login expirou."
+  },
+  "runui_connectionErrorDenied": {
+    "message": "A conexão foi recusada na instância."
+  },
+  "runui_yourTeamInstance": {
+    "message": "sua instância da equipe"
+  },
+  "runui_aTest": {
+    "message": "um teste"
+  },
+  "runui_tests_one": {
+    "message": "$count$ teste",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_tests_other": {
+    "message": "$count$ testes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_optionHeaded": {
+    "message": "com janela"
+  },
+  "runui_optionHeadless": {
+    "message": "sem janela"
+  },
+  "runui_optionTrace": {
+    "message": "trace $mode$",
+    "placeholders": {
+      "mode": {
+        "content": "$1",
+        "example": "on"
+      }
+    }
+  },
+  "runui_optionRepeat": {
+    "message": "repetir $times$×",
+    "placeholders": {
+      "times": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_optionWorkers_one": {
+    "message": "$count$ worker",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_optionWorkers_other": {
+    "message": "$count$ workers",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runui_optionProject": {
+    "message": "projeto $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "chromium"
+      }
+    }
+  },
+  "runui_requestTitle": {
+    "message": "Executar nesta máquina?"
+  },
+  "runui_requestIntro": {
+    "message": "Você pediu em $host$ para executar aqui $tests$ de $project$, na pasta vinculada a esse projeto. Isso executa o código dessa pasta nesta máquina; nada é executado até você clicar em $run$. O pedido termina sem resposta às $time$.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Checkout"
+      },
+      "run": {
+        "content": "$3",
+        "example": "Run"
+      },
+      "tests": {
+        "content": "$4",
+        "example": "3 testes"
+      },
+      "time": {
+        "content": "$5",
+        "example": "15:45"
+      }
+    }
+  },
+  "runui_requestProject": {
+    "message": "projeto $id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_requestRunTitle": {
+    "message": "$tests$ para $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "3 testes"
+      }
+    }
+  },
+  "runui_requestFolderOlderCopy": {
+    "message": "Faltam alguns destes testes na pasta vinculada: ela pode ser uma cópia antiga do $code$. Obtenha a versão mais recente (ou peça isso a quem configurou estes testes) ou use outra cópia que tenha todos eles.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "código de Acme Checkout"
+      }
+    }
+  },
+  "runui_requestFolderNotRight": {
+    "message": "A pasta vinculada não é a certa."
+  },
+  "runui_requestFolderNeeded": {
+    "message": "O Piwi precisa da sua cópia do $code$ neste computador: a pasta que contém a configuração do Playwright ($config$) e estes testes, como $spec$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "código de Acme Checkout"
+      },
+      "config": {
+        "content": "$2",
+        "example": "playwright.config.ts"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "tests/cart.spec.ts"
+      }
+    }
+  },
+  "runui_requestProjectCode": {
+    "message": "código de $project$",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Checkout"
+      }
+    }
+  },
+  "runui_requestProjectCodeAt": {
+    "message": "código de $project$ ($repository$)",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Checkout"
+      },
+      "repository": {
+        "content": "$2",
+        "example": "github.com/acme/shop"
+      }
+    }
+  },
+  "runui_requestFoundHeading": {
+    "message": "Encontradas neste computador"
+  },
+  "runui_requestFoundFromRun": {
+    "message": "Uma execução sua veio desta pasta."
+  },
+  "runui_requestFoundClone": {
+    "message": "Uma cópia de $repository$.",
+    "placeholders": {
+      "repository": {
+        "content": "$1",
+        "example": "github.com/acme/shop"
+      }
+    }
+  },
+  "runui_requestFoundHolds": {
+    "message": "Contém $config$ e $tests$.",
+    "placeholders": {
+      "config": {
+        "content": "$1",
+        "example": "playwright.config.ts"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "os arquivos de teste"
+      }
+    }
+  },
+  "runui_requestTestFile": {
+    "message": "o arquivo de teste"
+  },
+  "runui_requestTestFiles": {
+    "message": "os arquivos de teste"
+  },
+  "runui_requestSomeTestFiles": {
+    "message": "$found$ dos $total$ arquivos de teste: pode ser uma cópia antiga",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "2"
+      },
+      "total": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runui_requestUseFolderLabel": {
+    "message": "Usar $path$",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/home/dana/shop"
+      }
+    }
+  },
+  "runui_requestUseFolder": {
+    "message": "Usar esta pasta"
+  },
+  "runui_requestNoneFound": {
+    "message": "Nenhuma cópia do $code$ foi encontrada nos lugares habituais deste computador.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "código de Acme Checkout"
+      }
+    }
+  },
+  "runui_requestNoOtherFound": {
+    "message": "Nenhuma outra cópia do $code$ foi encontrada nos lugares habituais deste computador.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "código de Acme Checkout"
+      }
+    }
+  },
+  "runui_requestNoneFoundPartly": {
+    "message": "Nenhuma cópia do $code$ foi encontrada nos lugares que o Piwi conseguiu examinar.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "código de Acme Checkout"
+      }
+    }
+  },
+  "runui_requestNoOtherFoundPartly": {
+    "message": "Nenhuma outra cópia do $code$ foi encontrada nos lugares que o Piwi conseguiu examinar.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "código de Acme Checkout"
+      }
+    }
+  },
+  "runui_requestSetUpFirst": {
+    "message": "Se você tiver uma em outro lugar, escolha a pasta dela. Se não, o código precisa primeiro ser configurado neste computador: peça ajuda a quem configurou estes testes."
+  },
+  "runui_requestSetUpFirstFrom": {
+    "message": "Se você tiver uma em outro lugar, escolha a pasta dela. Se não, o código precisa primeiro ser configurado neste computador: peça ajuda a quem configurou estes testes (ele vem de $repository$).",
+    "placeholders": {
+      "repository": {
+        "content": "$1",
+        "example": "github.com/acme/shop"
+      }
+    }
+  },
+  "runui_requestFindFolder": {
+    "message": "Encontrar para mim"
+  },
+  "runui_requestLookAgain": {
+    "message": "Procurar de novo"
+  },
+  "runui_requestChooseFolder": {
+    "message": "Escolher a pasta…"
+  },
+  "runui_requestChooseOtherFolder": {
+    "message": "Escolher outra pasta…"
+  },
+  "runui_requestRunsIn": {
+    "message": "Executa na pasta vinculada e reporta a $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_requestNotNow": {
+    "message": "Agora não"
+  },
+  "runui_requestRun": {
+    "message": "Executar"
+  },
+  "runui_requestFindFailed": {
+    "message": "Não foi possível procurar a pasta"
+  },
+  "runui_requestLinkFailed": {
+    "message": "Não foi possível vincular a pasta"
+  },
+  "runui_requestStartFailed": {
+    "message": "Não foi possível iniciar a execução"
+  },
+  "runui_checkFolderNone": {
+    "message": "Nenhuma pasta desta máquina está vinculada a este projeto."
+  },
+  "runui_checkFolderGone": {
+    "message": "A pasta vinculada não existe mais: escolha-a de novo."
+  },
+  "runui_checkFolderLinked": {
+    "message": "Pasta vinculada: $folder$",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/shop"
+      }
+    }
+  },
+  "runui_checkFolderBusy": {
+    "message": "Outra execução está em andamento nesta pasta: esta poderá ser executada quando ela terminar."
+  },
+  "runui_checkConfigMissing": {
+    "message": "A pasta não contém nenhuma configuração do Playwright."
+  },
+  "runui_checkSpecsMissing": {
+    "message": "Não estão na pasta: $files$.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts, tests/login.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsMissingMore": {
+    "message": "Não estão na pasta: $files$ e mais $more$.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
+      },
+      "more": {
+        "content": "$2",
+        "example": "2"
+      }
+    }
+  },
+  "runui_checkSpecsFound": {
+    "message": "Os arquivos de teste estão na pasta."
+  },
+  "runui_checkPlaywrightMissing": {
+    "message": "O Playwright não está instalado na pasta: execute `npm install` nela."
+  },
+  "runui_checkPlaywrightInstalled": {
+    "message": "O Playwright está instalado."
+  },
+  "runui_checkCommitDiffers": {
+    "message": "Sua pasta está $here$; a execução de onde você veio estava $there$. Os testes são selecionados pelo título.",
+    "placeholders": {
+      "here": {
+        "content": "$1",
+        "example": "na branch main, no commit 1a2b3c4"
+      },
+      "there": {
+        "content": "$2",
+        "example": "na branch main, no commit 5d6e7f8"
+      }
+    }
+  },
+  "runui_checkOnBranchAt": {
+    "message": "na branch $branch$, no commit $commit$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "main"
+      },
+      "commit": {
+        "content": "$2",
+        "example": "1a2b3c4"
+      }
+    }
+  },
+  "runui_checkOnBranch": {
+    "message": "na branch $branch$",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "main"
+      }
+    }
+  },
+  "runui_checkAtCommit": {
+    "message": "no commit $commit$",
+    "placeholders": {
+      "commit": {
+        "content": "$1",
+        "example": "1a2b3c4"
+      }
+    }
+  },
+  "runui_checkOutsideGit": {
+    "message": "fora de um repositório git"
+  },
+  "runui_checkCommitSame": {
+    "message": "Sua pasta está no commit de onde veio a execução."
+  },
+  "runui_checkChangesUncommitted": {
+    "message": "Sua pasta tem alterações sem commit."
+  },
+  "runui_checkCommandTooLong": {
+    "message": "O comando para estes testes passa de $max$ caracteres: peça menos testes.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "24.000"
+      }
+    }
+  },
+  "runui_durationSeconds": {
+    "message": "$seconds$ s",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_durationMinutes": {
+    "message": "$minutes$ min $seconds$ s",
+    "placeholders": {
+      "minutes": {
+        "content": "$1",
+        "example": "2"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "5"
+      }
+    }
+  },
+  "runui_shareInstanceUnknown": {
+    "message": "a instância do Piwi para a qual ela reporta"
+  },
+  "runui_shareWarning": {
+    "message": "Enquanto esta execução está compartilhada com $instance$, quem estiver com a página dela aberta lá vê cada parada dos seus testes: a chamada, o arquivo e a linha, e o título do teste, mesmo quando ninguém assiste. Enquanto alguém assiste um worker, imagens da página do teste dele também vão para lá, cada uma com a sua chamada e o título do teste. Quem pode abrir a execução lá pode assistir e, numa instância com a autenticação desligada, qualquer um que a alcance. Nada é guardado, e Parar de compartilhar encerra tudo em segundos.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_liveSharedOn": {
+    "message": "Compartilhada ao vivo em $instance$",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_liveShared": {
+    "message": "Compartilhada ao vivo"
+  },
+  "runui_liveNobodyWatches": {
+    "message": "ninguém assiste ainda"
+  },
+  "runui_liveViews_one": {
+    "message": "$count$ visualização aberta",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_liveViews_other": {
+    "message": "$count$ visualizações abertas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_stopSharingRunTitle": {
+    "message": "Parar de compartilhar ao vivo a execução #$id$?",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "412"
+      }
+    }
+  },
+  "runui_stopSharingTitle": {
+    "message": "Parar de compartilhar a execução ao vivo?"
+  },
+  "runui_theTeamInstance": {
+    "message": "a instância da equipe"
+  },
+  "runui_stopSharingNobody": {
+    "message": "Nada mais dela vai para $instance$.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_stopSharingOneView": {
+    "message": "A visualização aberta se fecha, e nada mais da execução vai para $instance$.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_stopSharingViews_one": {
+    "message": "$count$ visualização aberta se fecha, e nada mais da execução vai para $instance$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "instance": {
+        "content": "$2",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_stopSharingViews_other": {
+    "message": "As $count$ visualizações abertas se fecham, e nada mais da execução vai para $instance$.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "instance": {
+        "content": "$2",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_codeAssert": {
+    "message": "Asserção feita pelo agente"
+  },
+  "runui_codeSteps": {
+    "message": "Passos gravados pelo agente"
+  },
+  "runui_codeLocator": {
+    "message": "Locator escolhido pelo agente"
+  },
+  "runui_codeLocatorPicked": {
+    "message": "Locator escolhido"
+  },
+  "runui_imagePickTitle": {
+    "message": "Clique na imagem para nomear o elemento sob o ponteiro (ou use Shift+clique); Esc cancela"
+  },
+  "runui_laneNextTest": {
+    "message": "A página aparece quando o próximo teste começa."
+  },
+  "runui_laneInspect": {
+    "message": "Inspecionar"
+  },
+  "runui_workerWindowFailed": {
+    "message": "Não foi possível abrir a janela"
+  },
+  "runui_workerOpenWindowTitle": {
+    "message": "Abrir em uma janela, mantida acima das outras"
+  },
+  "runui_workerOpenWindowLabel": {
+    "message": "Abrir este worker em uma janela, mantida acima das outras"
+  },
+  "runui_workerCannotPause": {
+    "message": "Este teste nunca para: $reason$",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Playwright's Inspector runs the test (PWDEBUG), run without --debug"
+      }
+    }
+  },
+  "runui_workerAssertRegionTitle": {
+    "message": "Escolher uma região da página: o snapshot ARIA dela vira uma verificação $method$ para copiar",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "toMatchAriaSnapshot"
+      }
+    }
+  },
+  "runui_workerMockTitle": {
+    "message": "Escolher uma resposta que a página recebeu: ela vira uma simulação com $method$ para copiar",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "page.route"
+      }
+    }
+  },
+  "runui_workerResponsesListed_one": {
+    "message": "$count$ resposta listada.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_workerResponsesListed_other": {
+    "message": "$count$ respostas listadas.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_driverAgentMayAct": {
+    "message": "Um agente pode agir nesta parada"
+  },
+  "runui_sessionStartingWorker": {
+    "message": "Iniciando um worker…"
+  },
+  "runui_sessionWorkersLabel": {
+    "message": "Os workers de $run$",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Acme Checkout"
+      }
+    }
+  },
+  "runui_commonCopy": {
+    "message": "Copiar"
+  },
+  "runui_commonCopied": {
+    "message": "Copiado"
+  },
+  "runui_commonCancel": {
+    "message": "Cancelar"
+  },
+  "runui_commonUnknownError": {
+    "message": "Erro desconhecido"
+  },
+  "runui_hubAskToWatchRun": {
+    "message": "$who$ pede para assistir à execução #$id$ ao vivo",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "412"
+      },
+      "who": {
+        "content": "$2",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "runui_hubAskToWatch": {
+    "message": "$who$ pede para assistir a esta execução ao vivo",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "runui_hubNotNow": {
+    "message": "Agora não"
+  },
+  "runui_hubNotice": {
+    "message": "Execuções"
+  },
+  "runui_hubNotConnected": {
+    "message": "A janela não está conectada às execuções: ela se conecta de novo em instantes."
+  },
+  "runui_hubNoAnswer": {
+    "message": "O aplicativo não respondeu."
+  },
+  "runui_copyCopiedToClipboard": {
+    "message": "Copiado para a área de transferência"
+  },
+  "runui_copyCopiedTitle": {
+    "message": "Copiado!"
+  },
+  "runui_copyHeading": {
+    "message": "Código das execuções"
+  },
+  "runui_copyLocatorCopied": {
+    "message": "Locator copiado"
+  },
+  "runui_copyCodeCopied": {
+    "message": "Código copiado"
+  },
+  "runui_copyImportsCopied": {
+    "message": "Imports copiados"
+  },
+  "runui_copyImports": {
+    "message": "Copiar os imports"
+  },
+  "runui_copyAbove": {
+    "message": "Acima de $place$",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/checkout.spec.ts:42"
+      }
+    }
+  },
+  "runui_copyImportsPlace": {
+    "message": "Imports, no topo do arquivo"
+  },
+  "runui_copyWarnings": {
+    "message": "O que conferir no código"
+  },
+  "runui_copyShowFewer": {
+    "message": "Mostrar menos"
+  },
+  "runui_copyShowAll": {
+    "message": "Mostrar todos os $total$",
+    "placeholders": {
+      "total": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_shareCopyPageLink": {
+    "message": "Copiar o link da página da execução"
+  },
+  "runui_shareStopSharing": {
+    "message": "Parar de compartilhar…"
+  },
+  "runui_shareLiveTooltip": {
+    "message": "Deixar um colega assistir a esta execução pela página dela na sua instância do Piwi"
+  },
+  "runui_shareAskTitle": {
+    "message": "Compartilhar esta execução ao vivo?"
+  },
+  "runui_pageOpenRun": {
+    "message": "Abrir a execução #$id$",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "412"
+      }
+    }
+  },
+  "runui_requestsBytes": {
+    "message": "$size$ B",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "512"
+      }
+    }
+  },
+  "runui_requestsKilobytes": {
+    "message": "$size$ kB",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "1,5"
+      }
+    }
+  },
+  "runui_connectionKeepKeyFailed": {
+    "message": "Não foi possível guardar a chave: desconectado"
+  }
+}

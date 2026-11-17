@@ -113,6 +113,23 @@ export function runUiTranslator<C extends object>(
   };
 }
 
+/** The languages of the layer's catalogs, by their codes: Piwi Picker's. */
+export const RUN_UI_LANGUAGES = ['en', 'de', 'es', 'fr', 'pt_BR'] as const;
+
+export type RunUiLanguage = (typeof RUN_UI_LANGUAGES)[number];
+
+const RUN_UI_CATALOG_LOADERS: Record<Exclude<RunUiLanguage, 'en'>, () => Promise<{ default: RunUiRawCatalog }>> = {
+  de: () => import('../../locales/de.json'),
+  es: () => import('../../locales/es.json'),
+  fr: () => import('../../locales/fr.json'),
+  pt_BR: () => import('../../locales/pt_BR.json'),
+};
+
+/** The layer's catalog in `language`, loaded the first time a host asks for it. */
+export async function loadRunUiCatalog(language: RunUiLanguage): Promise<RunUiRawCatalog> {
+  return language === 'en' ? englishCatalog : (await RUN_UI_CATALOG_LOADERS[language]()).default;
+}
+
 /** The layer's English catalog, the source of its keys and the fallback of every other language. */
 export const RUN_UI_ENGLISH_CATALOG = englishCatalog;
 

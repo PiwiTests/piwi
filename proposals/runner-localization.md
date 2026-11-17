@@ -5,7 +5,14 @@ same five languages as Piwi Picker ([`extension-localization.md`](../adr/extensi
 a tester installs to run, on their own machine, the tests a team instance asks for. It is often the first Piwi tool
 they meet, through a page of the instance, and the people Picker was translated for are the same people.
 
-**Status.** Proposed 2026-11-17. Nothing is built. Its open questions were settled the same day (D9 to D11).
+**Status.** Proposed 2026-11-17, its open questions settled the same day (D9 to D11), and built the same day on one
+branch: the machinery and the layer's catalog (PR 1), the codes from the host (PR 2), the language from the shell with
+the Language setting and the window in French (PR 3), the shell's texts (PR 4), and German, Spanish and Brazilian
+Portuguese as drafts with the docs section (PR 5). Two things remain. The macOS app menu's standard items and the
+folder picker are still to be checked in French on a Mac (D9). Runner's own hub sentences (`RUNNER_RUNS_WORDS`: where
+a locator picked on the image and a code made at a stop wait to be copied) stay in English: they wrap the editor's
+English words for the code (`what`), so wording them needs the editor's stop actions to say their parts by code
+first. Decisions made while building are listed at the end.
 
 **Summary.** Runner's window holds few texts of its own: most of what it shows comes from the Nuxt layer it shares
 with the dashboard (`packages/run-ui`), from the sentences its Node host writes (`@piwitests/editor`), and from the
@@ -212,35 +219,37 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
 
 **PR 1: the layer's machinery, in English.** No visible change. About 4 days.
 
-- [ ] `RUN_UI_WORDS`, `t()`, `tn()` and the English default in `packages/run-ui`; `desktopSay` and the
+- [x] `RUN_UI_WORDS`, `t()`, `tn()` and the English default in `packages/run-ui`; `desktopSay` and the
       `englishRunSpeaker` imports through it.
-- [ ] The layer's texts and Runner's window texts in their English catalogs; texts Picker already shows become run
+- [x] The layer's texts and Runner's window texts in their English catalogs; texts Picker already shows become run
       words.
-- [ ] The catalog check's rules moved into `shared/`, the text scan with its not-yet-migrated list ending empty.
+- [x] The catalog check's rules moved into `shared/`, the text scan with its not-yet-migrated list ending empty.
 
 **PR 2: codes from the host.** No visible change. About 1.5 days.
 
-- [ ] `code` and `args` on the request's checks, `errorCode` on the connection, codes on Runner's hub sentences.
-- [ ] `ANSWER_KEYS` moved into run-model; the layer words the hub's answers by code.
+- [x] `code` and `args` on the request's checks, `errorCode` on the connection.
+- [ ] Codes on Runner's hub sentences (see the Status paragraph).
+- [x] `ANSWER_KEYS` moved into run-model; the layer words the hub's answers by code.
 
 **PR 3: French in the window.** About 1.5 days.
 
-- [ ] The language from the shell (`sys-locale`, the command), the Language setting.
-- [ ] `RUN_WORDS` by language, its script and test; the French catalogs; Nuxt UI's locale; `<html lang>`.
-- [ ] The window spec in French; the glossary terms Runner adds.
+- [x] The language from the shell (`sys-locale`, the command), the Language setting.
+- [x] `RUN_WORDS` by language, its script and test; the French catalogs; Nuxt UI's locale; `<html lang>`.
+- [x] The window spec in French; the glossary terms Runner adds.
 
 **PR 4: the shell's texts.** About 1 day.
 
-- [ ] The tray, its tooltip, the startup screen, the quit question with its plural forms, the update dialogs, from the
+- [x] The tray, its tooltip, the startup screen, the quit question with its plural forms, the update dialogs, from the
       embedded catalog; the shared functions take their words as arguments.
-- [ ] The tray rebuilt on a change of language.
-- [ ] `CFBundleLocalizations` in Runner's `Info.plist`; the app menu and the folder picker checked in French on a Mac,
-      and a standard item that stays English given its text from the catalog.
+- [x] The tray rebuilt on a change of language.
+- [x] `CFBundleLocalizations` in Runner's `Info.plist` (`macos/runner-info.plist`).
+- [ ] The app menu and the folder picker checked in French on a Mac, and a standard item that stays English given its
+      text from the catalog.
 
 **PR 5: German, Spanish, Brazilian Portuguese.** About 1 day.
 
-- [ ] Their catalogs, as drafts; the window spec in German.
-- [ ] A **Languages** section in `apps/docs/features/piwi-runner.md`; Runner's review table in
+- [x] Their catalogs, as drafts; the window spec in German.
+- [x] A **Languages** section in `apps/docs/features/piwi-runner.md`; Runner's review table in
       `apps/runner/locales/README.md`, covering the layer's catalogs and Runner's.
 
 ## Not in this plan
@@ -251,3 +260,21 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
   Tauri's NSIS bundler can show several languages; that is a later change to `runner.conf.json`.
 - **The documentation site** stays in English, as for Picker.
 - **Other languages.** Adding one afterwards is its catalogs, its run words and its glossary.
+
+## Decisions made while building
+
+- **The desktop app's shell reads Runner's English catalog.** The functions both apps share (the tray's background
+  rows, the question before quitting, updating or restarting, the update dialogs) read `shell_words(app)`; the desktop
+  app keeps no language, so they stay English there, and the question lost its "run(s)" in both apps.
+- **An English window shows the hub's own sentences.** The layer words a coded answer (`RUN_ANSWER_KEYS`) only in
+  another language, so the dashboard's English stays the hub's, character for character.
+- **The catalogs load on demand.** The layer's (`loadRunUiCatalog`), Runner's and the run words'
+  (`@piwitests/run-model/speakers`) load when a language is first shown, so the dashboard ships none but English.
+  Runner's window waits for the shell's answer before it shows, so it never shows English first.
+- **The Language setting is a card of its own**, under In the background, and lists each language by its own name.
+- **The start screen keeps the language Runner started in**, until it starts again: the shell makes its three lines
+  once per launch.
+- **The window's spec runs in CI's Piwi Runner job** (`npm run runner:e2e`, after the window's build), in French and in
+  German, at the window's smallest size (640 × 480).
+- **The words chosen for the terms Runner adds** are in each glossary's new rows (*team instance*, *run
+  request*, *linked folder*, *tray*, *local host*); a reviewer should check those first.

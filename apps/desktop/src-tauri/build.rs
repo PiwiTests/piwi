@@ -15,6 +15,8 @@ fn main() {
     tauri_build::try_build(
         Attributes::new().app_manifest(AppManifest::new().commands(&[
             "desktop_get_service_settings",
+            "desktop_get_language",
+            "desktop_set_language",
             "desktop_set_run_in_background",
             "desktop_set_start_on_login",
             "desktop_set_server_port",

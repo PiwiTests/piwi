@@ -135,6 +135,7 @@ jobs:
               - 'packages/core/**'
               - 'packages/picker-dom/**'
               - 'packages/run-model/**'
+              - 'shared/i18n-catalogs.ts'
             # Both editor clients ship the recorder's IDE bundle, which the editor service builds from the extension.
             vscode:
               - 'apps/vscode/**'
@@ -154,17 +155,22 @@ jobs:
               - 'apps/extension/public/_locales/**'
               - 'apps/extension/scripts/build.mjs'
               - 'apps/docs/public/screenshots/jetbrains-*.png'
-            # The desktop app bundles the Node version of the Dockerfile's base image.
+            # The desktop app bundles the Node version of the Dockerfile's base image, and Piwi Runner's catalogs, whose
+            # shell messages it says.
             desktop:
               - 'apps/desktop/**'
+              - 'apps/runner/locales/**'
               - 'Dockerfile'
-            # Piwi Runner's host and window, the layer the window shares with the dashboard, and the editor service's
-            # run target the host serves.
+            # Piwi Runner's host and window, the layer the window shares with the dashboard, the run model's words it
+            # says, the editor service's run target the host serves, and the checks of its catalogs and templates.
             runner:
               - 'apps/runner/**'
               - 'packages/run-ui/**'
+              - 'packages/run-model/**'
               - 'packages/editor/**'
               - 'packages/core/**'
+              - 'shared/i18n-catalogs.ts'
+              - 'shared/ui-text-scan.ts'
               - 'package.json'
               - 'package-lock.json'
             # The site, and what apps/docs/scripts generate pages from.
@@ -587,7 +593,8 @@ jobs:
         run: npm run showcase:test
 
   # Piwi Runner: the shared layer's tests (it loads under the dashboard's server rendering and the window's single-page
-  # build), the host's and the window's tests, and both builds. The shell's Rust tests run in the desktop job.
+  # build), the host's and the window's tests, both builds, and the built window in French and German. The shell's
+  # Rust tests run in the desktop job.
   runner:
     name: Piwi Runner
     needs: changes
@@ -604,6 +611,8 @@ jobs:
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
 
       - name: Test the shared layer
         working-directory: packages/run-ui
@@ -620,6 +629,10 @@ jobs:
       - name: Build the window
         working-directory: apps/runner
         run: npm run runner:window
+
+      - name: Test the window in other languages
+        working-directory: apps/runner
+        run: npm run runner:e2e
 
   e2e:
     name: E2E (storage=${{ matrix.storage }}, db=${{ matrix.database }}, shard ${{ matrix.shard }})

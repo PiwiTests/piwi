@@ -41,6 +41,9 @@
       "icons-runner/icon.icns",
       "icons-runner/icon.ico"
     ],
+    "macOS": {
+      "infoPlist": "macos/runner-info.plist"
+    },
     "externalBin": ["binaries/piwi-runner-node"],
     "resources": ["resources/runner-host"],
     "shortDescription": "Run the tests a Piwi team instance asks for on this machine.",

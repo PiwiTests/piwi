@@ -163,6 +163,11 @@ shell and are feature-equivalent.
   `menu-icons/`), and its Run in background and Start on login (`background_menu_items`, `hide_to_tray`),
   with Run in background on until the person turns it off, and its window holds the same two toggles: a desktop with
   no tray host must still be able to turn it off and quit.
+- **The shell's words are Piwi Runner's catalogs' `shell_` messages** (`shell_words.rs`, which embeds
+  `apps/runner/locales/<code>.json`): a text a shared function shows (the tray's rows, a question before quitting or
+  updating, the update dialogs) is read through `shell_words(app)`. Runner keeps the language (`ShellLanguage`,
+  `desktop_get_language`, `desktop_set_language`), the desktop app keeps none, so it speaks English; the module's
+  tests fail on a catalog that lacks a `shell_` message.
 - **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config:
   `piwi-desktop-node`, `piwi-runner-node`): the `.deb` and the `.rpm` install the sidecar in `/usr/bin`, so a plain
   `node` would clash with the other app's package and the distribution's `nodejs`.

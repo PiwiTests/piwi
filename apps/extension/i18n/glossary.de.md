@@ -48,6 +48,18 @@ above all on popup tiles, buttons and badges.
 | badge | Badge | |
 | evidence (bug report) | Belege | |
 | page outline | Seitenstruktur | |
+| team instance | Team-Instanz (feminin) | `Ihre Team-Instanz`, the Piwi instance a team shares |
+| run request | Laufanfrage | a team instance asking to run tests on this machine; *die Anfrage* once the sentence says which one |
+| to run (tests) | ausführen | the Run button is *Ausführen*; the run itself is *Lauf* |
+| linked folder | verknüpfter Ordner | `der verknüpfte Ordner`; to link is *verknüpfen*, to unlink *Verknüpfung lösen* |
+| this machine | dieser Rechner | `auf diesem Rechner`; *Computer* where the English says computer |
+| tray (system tray) | Infobereich | `im Infobereich`, for the macOS menu bar too |
+| local host (Runner's server) | lokaler Server | `der lokale Server`; never *Host* |
+| stop (a test at a breakpoint) | Halt (maskulin) | `an diesem Halt`; a stopped test is *angehalten*; *stoppen* only ends a whole run |
+| breakpoint | Haltepunkt | |
+| worker (Playwright) | Worker (maskulin) | `der Worker`, `die Worker` |
+| live view / to share live | Live-Ansicht / live teilen | the button that ends it is *Teilen beenden* |
+| update (of an app) | Update / aktualisieren | `Nach Updates suchen…`, `Aktualisieren Sie sie` |
 
 ## Tool names
 

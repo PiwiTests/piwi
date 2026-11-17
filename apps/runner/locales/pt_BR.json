@@ -1,0 +1,334 @@
+{
+  "runner_tagline": {
+    "message": "Executa nesta máquina os testes que uma instância da equipe pede."
+  },
+  "runner_connectionHeading": {
+    "message": "Executar na minha máquina"
+  },
+  "runner_runsHeading": {
+    "message": "Execuções"
+  },
+  "runner_noRuns": {
+    "message": "Nenhuma execução ainda. Quando uma instância da equipe pedir testes, você os confirma aqui primeiro."
+  },
+  "runner_statusRunning": {
+    "message": "Em execução"
+  },
+  "runner_statusPassed": {
+    "message": "Aprovada"
+  },
+  "runner_statusFailed": {
+    "message": "Com falha"
+  },
+  "runner_statusStopped": {
+    "message": "Interrompida"
+  },
+  "runner_statusError": {
+    "message": "Não foi possível executar"
+  },
+  "runner_stopping": {
+    "message": "Parando…"
+  },
+  "runner_stop": {
+    "message": "Parar"
+  },
+  "runner_stopNow": {
+    "message": "Parar agora"
+  },
+  "runner_holdFailures": {
+    "message": "Reter falhas"
+  },
+  "runner_holdFailuresHint": {
+    "message": "Um teste com falha espera aqui até você olhar, antes que a execução siga."
+  },
+  "runner_output": {
+    "message": "Saída"
+  },
+  "runner_stillRunning": {
+    "message": "Ainda em execução desde antes de a janela recarregar"
+  },
+  "runner_backgroundHeading": {
+    "message": "Em segundo plano"
+  },
+  "runner_runInBackground": {
+    "message": "Executar em segundo plano"
+  },
+  "runner_runInBackgroundHint": {
+    "message": "Fechar a janela mantém o Piwi Runner na área de notificação: a instância só alcança esta máquina enquanto ele está em execução. Com esta opção desativada, fechar a janela encerra o Piwi Runner."
+  },
+  "runner_startOnLogin": {
+    "message": "Iniciar ao fazer login"
+  },
+  "runner_startOnLoginHint": {
+    "message": "Inicia o Piwi Runner na área de notificação quando você faz login no computador."
+  },
+  "runner_saveFailed": {
+    "message": "Não foi possível salvar a configuração"
+  },
+  "runner_languageHeading": {
+    "message": "Idioma"
+  },
+  "runner_languageSystem": {
+    "message": "O mesmo do sistema ($language$)",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "Français"
+      }
+    }
+  },
+  "runner_languageHint": {
+    "message": "O idioma dos textos do próprio Piwi Runner. Os títulos dos testes, os arquivos, os comandos e a saída dos testes ficam como estão."
+  },
+  "runner_languageDraft": {
+    "message": "Esta tradução é um rascunho: nenhum falante nativo a revisou ainda."
+  },
+  "runner_languageDraftLink": {
+    "message": "Sugerir uma correção"
+  },
+  "runner_languageFailed": {
+    "message": "Não foi possível mudar o idioma"
+  },
+  "shell_trayTooltip": {
+    "message": "$app$ (clique para abrir)",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_open": {
+    "message": "Abrir o $app$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_showLogs": {
+    "message": "Mostrar os logs"
+  },
+  "shell_checkUpdates": {
+    "message": "Procurar atualizações…"
+  },
+  "shell_quit": {
+    "message": "Sair do $app$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitQuestion": {
+    "message": "Sair do $app$?",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitButton": {
+    "message": "Sair"
+  },
+  "shell_cancel": {
+    "message": "Cancelar"
+  },
+  "shell_runsGoingQuit_one": {
+    "message": "$count$ execução local de testes ainda está em andamento: sair a interrompe.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingQuit_other": {
+    "message": "$count$ execuções locais de testes ainda estão em andamento: sair as interrompe.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_one": {
+    "message": "$count$ execução local de testes ainda está em andamento: atualizar a interrompe.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_other": {
+    "message": "$count$ execuções locais de testes ainda estão em andamento: atualizar as interrompe.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingRestart_one": {
+    "message": "$count$ execução local de testes ainda está em andamento: reiniciar a interrompe.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingRestart_other": {
+    "message": "$count$ execuções locais de testes ainda estão em andamento: reiniciar as interrompe.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_restartQuestion": {
+    "message": "Reiniciar o Piwi?"
+  },
+  "shell_restartButton": {
+    "message": "Reiniciar"
+  },
+  "shell_splashSlow": {
+    "message": "O servidor local está demorando mais que o normal para iniciar. Ainda aguardando: a janela se abre assim que ele estiver no ar."
+  },
+  "shell_splashRestarting": {
+    "message": "O servidor local parou. Reiniciando: a janela se abre de novo assim que ele estiver no ar."
+  },
+  "shell_splashStopped": {
+    "message": "O servidor local parou e não pôde ser reiniciado. Saia do $app$ e abra-o de novo.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateCheckFailed": {
+    "message": "Não foi possível procurar atualizações: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnsupported": {
+    "message": "Esta cópia do $app$ não pode se atualizar sozinha. Baixe as novas versões em $page$.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "page": {
+        "content": "$2",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateLatest": {
+    "message": "O $app$ $version$ é a versão mais recente.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateTitle": {
+    "message": "Atualizar o $app$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateAvailable": {
+    "message": "O $app$ $offered$ está disponível (você tem a $installed$). Ela é instalada agora e depois o $app$ reinicia.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "installed": {
+        "content": "$2",
+        "example": "0.70.0"
+      },
+      "offered": {
+        "content": "$3",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateWhatsNew": {
+    "message": "Novidades: $page$",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateInstall": {
+    "message": "Instalar e reiniciar"
+  },
+  "shell_updateNotNow": {
+    "message": "Agora não"
+  },
+  "shell_updateQuestion": {
+    "message": "Atualizar o $app$?",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateButton": {
+    "message": "Atualizar"
+  },
+  "shell_updateDownloading": {
+    "message": "$app$: baixando a atualização",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateDownloadingPercent": {
+    "message": "$app$: baixando a atualização, $percent$%",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "42"
+      }
+    }
+  },
+  "shell_updateFailed": {
+    "message": "A atualização falhou: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "signature mismatch"
+      }
+    }
+  }
+}

@@ -23,12 +23,14 @@ mod repro;
 mod run_target;
 mod runner;
 mod session;
+mod shell_words;
 mod spec_filter;
 #[cfg(windows)]
 mod taskbar_win;
 mod updates;
 mod worktree;
 
+use shell_words::{desktop_get_language, desktop_set_language};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -248,10 +250,11 @@ pub(crate) fn background_menu_items(
     app: &tauri::App,
 ) -> tauri::Result<(tauri::menu::CheckMenuItem<tauri::Wry>, tauri::menu::CheckMenuItem<tauri::Wry>)> {
     let run_bg = app.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
-    let run_bg_item = CheckMenuItemBuilder::with_id(TRAY_RUN_BG_ID, "Run in background")
+    let words = shell_words::shell_words(app.handle());
+    let run_bg_item = CheckMenuItemBuilder::with_id(TRAY_RUN_BG_ID, words.say("runner_runInBackground", &[]))
         .checked(run_bg)
         .build(app)?;
-    let login_item = CheckMenuItemBuilder::with_id(TRAY_START_ON_LOGIN_ID, "Start on login")
+    let login_item = CheckMenuItemBuilder::with_id(TRAY_START_ON_LOGIN_ID, words.say("runner_startOnLogin", &[]))
         .checked(app.autolaunch().is_enabled().unwrap_or(false))
         .build(app)?;
     app.manage(BackgroundMenu {
@@ -259,6 +262,15 @@ pub(crate) fn background_menu_items(
         login: login_item.clone(),
     });
     Ok((run_bg_item, login_item))
+}
+
+/// Says the tray's Run in background and Start on login again, in the shell's language now.
+pub(crate) fn relabel_background_menu(app: &AppHandle) {
+    if let Some(menu) = app.try_state::<BackgroundMenu>() {
+        let words = shell_words::shell_words(app);
+        let _ = menu.run_bg.set_text(words.say("runner_runInBackground", &[]));
+        let _ = menu.login.set_text(words.say("runner_startOnLogin", &[]));
+    }
 }
 
 /// The glyph of a row of the tray's menu, the same in Piwi Desktop and Piwi Runner: the Piwi mark for the app, else
@@ -3066,22 +3078,41 @@ fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str)
 
 // ── Leaving the app while local test runs are in flight ───────────────────────
 
-/// Every way out of the app kills the local test runs (see
+/// What stopping the local runs is for, which the question about them says: quitting, updating or restarting.
+#[derive(Clone, Copy)]
+pub(crate) enum StopRunsFor {
+    Quit,
+    Update,
+    Restart,
+}
+
+impl StopRunsFor {
+    /// The counted message of the question's body.
+    fn message(self) -> &'static str {
+        match self {
+            StopRunsFor::Quit => "shell_runsGoingQuit",
+            StopRunsFor::Update => "shell_runsGoingUpdate",
+            StopRunsFor::Restart => "shell_runsGoingRestart",
+        }
+    }
+}
+
+/// Every way out of the app stops the local runs going (their processes die with it,
 /// `LocalRuns::kill_all`), so each exit path asks first while any is going:
 /// `proceed` runs at once when nothing is active, and only on confirmation
-/// otherwise. `verb` fills the question ("quitting" / "restarting"), and
-/// `confirm_label` names its confirm button.
+/// otherwise. `title` and `confirm_label` name the question and its confirm button,
+/// and `what` says what stops the runs, in the shell's language.
 ///
 /// The callback form keeps the event loop free — a blocking dialog here would
 /// freeze the very window the question is about.
 pub(crate) fn confirm_stopping_local_runs(
     app: &AppHandle,
     title: &str,
-    verb: &str,
+    what: StopRunsFor,
     confirm_label: &str,
     proceed: impl FnOnce() + Send + 'static,
 ) {
-    ask_stopping_local_runs(app, title, verb, confirm_label, move |go| {
+    ask_stopping_local_runs(app, title, what, confirm_label, move |go| {
         if go {
             proceed();
         }
@@ -3093,7 +3124,7 @@ pub(crate) fn confirm_stopping_local_runs(
 pub(crate) fn ask_stopping_local_runs(
     app: &AppHandle,
     title: &str,
-    verb: &str,
+    what: StopRunsFor,
     confirm_label: &str,
     answer: impl FnOnce(bool) + Send + 'static,
 ) {
@@ -3105,33 +3136,33 @@ pub(crate) fn ask_stopping_local_runs(
         answer(true);
         return;
     }
+    let words = shell_words::shell_words(app);
     app.dialog()
-        .message(format!(
-            "{active} local test run(s) are still running — {verb} stops them."
-        ))
+        .message(words.count(what.message(), active, &[]))
         .title(title)
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
             confirm_label.into(),
-            "Cancel".into(),
+            words.say("shell_cancel", &[]),
         ))
         .show(answer);
 }
 
 /// The question asked before quitting stops local runs, titled with the app's name.
-fn quit_question(app_name: &str) -> String {
-    format!("Quit {app_name}?")
+fn quit_question(words: &shell_words::ShellWords, app_name: &str) -> String {
+    words.say("shell_quitQuestion", &[("app", app_name)])
 }
 
 /// Quit the app called `app_name`, asking first while local test runs are going:
 /// the tray's Quit and, on macOS, the app menu's.
 pub(crate) fn quit_after_confirming(app: &AppHandle, app_name: &str) {
     let handle = app.clone();
+    let words = shell_words::shell_words(app);
     confirm_stopping_local_runs(
         app,
-        &quit_question(app_name),
-        "quitting",
-        "Quit",
+        &quit_question(&words, app_name),
+        StopRunsFor::Quit,
+        &words.say("shell_quitButton", &[]),
         move || {
             handle.exit(0);
         },
@@ -3271,7 +3302,7 @@ fn quit_menu_item<R: tauri::Runtime>(
     app: &AppHandle<R>,
     app_name: &str,
 ) -> tauri::Result<tauri::menu::MenuItem<R>> {
-    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {app_name}"))
+    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, shell_words::shell_words(app).say("shell_quit", &[("app", app_name)]))
         .accelerator("CmdOrCtrl+Q")
         .build(app)
 }
@@ -3365,11 +3396,12 @@ fn hold_close_for_local_runs(window: &tauri::Window, app_name: &str) -> bool {
     }
 
     let target = window.clone();
+    let words = shell_words::shell_words(window.app_handle());
     confirm_stopping_local_runs(
         window.app_handle(),
-        &quit_question(app_name),
-        "quitting",
-        "Quit",
+        &quit_question(&words, app_name),
+        StopRunsFor::Quit,
+        &words.say("shell_quitButton", &[]),
         move || {
             if let Some(state) = target.try_state::<QuitConfirmed>() {
                 state.0.store(true, Ordering::SeqCst);
@@ -3522,6 +3554,8 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             desktop_get_service_settings,
+            desktop_get_language,
+            desktop_set_language,
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_set_server_port,

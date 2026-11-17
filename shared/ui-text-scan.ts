@@ -1,6 +1,5 @@
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import path from 'node:path';
-import { parse as parseTemplate, type TemplateChildNode, type ElementNode } from '@vue/compiler-dom';
 import { parse as parseSfc } from '@vue/compiler-sfc';
 import ts from 'typescript';
 
@@ -17,6 +16,23 @@ import ts from 'typescript';
  * a call. A static attribute whose value is an address (`https://…`) is an example, and a literal shaped as a catalog's
  * key (`runui_requestRun`) names a message, and a product's name is never translated: none of them is text.
  */
+
+/** The parts of a template's AST the scan reads (`@vue/compiler-core`'s node types). */
+interface TemplateNode {
+  type: number;
+  loc: { start: { line: number } };
+  content?: string | { type: number; content: string };
+  tag?: string;
+  props?: Array<{
+    type: number;
+    name: string;
+    loc: { start: { line: number } };
+    value?: { content: string };
+    arg?: { type: number; content: string };
+    exp?: { type: number; content: string };
+  }>;
+  children?: TemplateNode[];
+}
 
 export interface UiTextFinding {
   line: number;
@@ -105,20 +121,20 @@ function scriptFindings(code: string, lineOffset: number): UiTextFinding[] {
 }
 
 /** What a template writes as text. */
-function templateFindings(children: TemplateChildNode[]): UiTextFinding[] {
+function templateFindings(children: TemplateNode[]): UiTextFinding[] {
   const found: UiTextFinding[] = [];
   const report = (line: number, texts: string[]) => {
     for (const text of texts) if (isText(text)) found.push({ line, text: text.trim() });
   };
-  const visit = (nodes: TemplateChildNode[]) => {
+  const visit = (nodes: TemplateNode[]) => {
     for (const node of nodes) {
-      // 1: element, 2: text, 5: interpolation, 9 to 11: v-if branches and v-for.
-      if (node.type === 2) report(node.loc.start.line, [node.content]);
-      else if (node.type === 5 && node.content.type === 4) {
+      // 1: element, 2: text, 5: interpolation of an expression (4).
+      if (node.type === 2 && typeof node.content === 'string') report(node.loc.start.line, [node.content]);
+      else if (node.type === 5 && typeof node.content === 'object' && node.content.type === 4) {
         report(node.loc.start.line, expressionParts(node.content.content));
       } else if (node.type === 1) {
-        const element = node as ElementNode;
-        for (const prop of element.props) {
+        for (const prop of node.props ?? []) {
+          // 6: a static attribute, 7: a directive, `:title` among them.
           if (prop.type === 6 && TEXT_ATTRIBUTES.has(prop.name) && prop.value && !ADDRESS.test(prop.value.content)) {
             report(prop.loc.start.line, [prop.value.content]);
           }
@@ -132,11 +148,7 @@ function templateFindings(children: TemplateChildNode[]): UiTextFinding[] {
             report(prop.loc.start.line, expressionParts(prop.exp.content));
           }
         }
-        if (!CODE_ELEMENTS.has(element.tag)) visit(element.children);
-      } else if ('children' in node && Array.isArray(node.children)) {
-        visit(node.children as TemplateChildNode[]);
-      } else if ('branches' in node) {
-        for (const branch of node.branches) visit(branch.children);
+        if (!CODE_ELEMENTS.has(node.tag ?? '')) visit(node.children ?? []);
       }
     }
   };
@@ -153,10 +165,7 @@ export function uiTextFindings(file: string): UiTextFinding[] {
   for (const block of [descriptor.script, descriptor.scriptSetup]) {
     if (block) found.push(...scriptFindings(block.content, block.loc.start.line - 1));
   }
-  if (descriptor.template) {
-    const ast = parseTemplate(descriptor.template.content);
-    const offset = descriptor.template.loc.start.line - 1;
-    found.push(...templateFindings(ast.children).map((f) => ({ ...f, line: f.line + offset })));
-  }
+  const ast = descriptor.template?.ast as { children?: TemplateNode[] } | undefined;
+  found.push(...templateFindings(ast?.children ?? []));
   return found.sort((a, b) => a.line - b.line);
 }

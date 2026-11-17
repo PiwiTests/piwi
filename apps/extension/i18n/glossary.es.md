@@ -46,6 +46,16 @@ Spanish word is as clear. This catalog is a draft until a native reader reviews 
 | enabled / disabled | habilitado / deshabilitado | in the report's own words, `disponible` / `atenuado` |
 | brittle | frágil | a brittle locator `puede fallar` |
 | watch (a locator's stability level) | a vigilar | the level between stable and brittle, *Watch* in the dashboard |
+| team instance | instancia del equipo | `la instancia de tu equipo` for *your team instance* |
+| run request | solicitud de ejecución | a request a person makes; `petición` stays for an HTTP request (`Simular una petición`) |
+| linked folder / to link, unlink | carpeta vinculada / vincular, desvincular | |
+| tray (system tray) | bandeja del sistema | `el menú de la bandeja`; Windows calls it *área de notificación*, macOS *barra de menús* |
+| local host (Runner's server) | servidor local | |
+| this machine, this computer | esta máquina | not *este equipo*, which reads as the team beside *instancia del equipo* |
+| worker (Playwright) | worker (masculino) | `el worker`, `los workers` |
+| stop (a stopped test) | parada | `esta parada`; the test is `detenida` |
+| breakpoint | punto de interrupción | |
+| live view / Share live | vista en directo / Compartir en directo | *Stop sharing* is `Dejar de compartir` |
 
 ## The tools' names
 

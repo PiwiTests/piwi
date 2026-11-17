@@ -12,6 +12,7 @@
     "./layers": "./src/layers.ts",
     "./outcome": "./src/outcome.ts",
     "./presence": "./src/presence.ts",
+    "./speakers": "./src/speakers.ts",
     "./status": "./src/status.ts",
     "./stop": "./src/stop.ts",
     "./tabs": "./src/tabs.ts",
@@ -26,6 +27,7 @@
     "run-model:lint:fix": "oxlint --config oxlint.config.mts . --fix",
     "run-model:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\"",
     "run-model:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\"",
+    "run-model:words": "node scripts/words.mjs",
     "test": "npm run run-model:test"
   },
   "dependencies": {
