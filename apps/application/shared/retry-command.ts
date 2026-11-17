@@ -114,17 +114,51 @@ function atFolderStart(spec: string): string {
   return spec.startsWith('/') || /^[A-Za-z]:\//.test(spec) ? spec : `/${spec}`;
 }
 
-/** A spec's path as a copied command names it (see {@link atFolderStart}). */
-export function commandSpec(filePath: string): string {
-  return atFolderStart(specPattern(filePath));
+/** The ASCII characters Node's `pathToFileURL` may percent-encode in a Windows path. */
+const URL_ENCODED = new Set(' "#%<>?[]^`{|}~');
+
+/**
+ * `ch` as a regular expression of its percent-encoding in a `file:` URL (`.C3.A9` for `é`), or null for a character
+ * the URL keeps as it is. Each `%` stands as `.`, which every shell leaves as it is.
+ */
+function urlEncodedPattern(ch: string): string | null {
+  if (ch.charCodeAt(0) < 0x80 && !URL_ENCODED.has(ch)) return null;
+  return [...new TextEncoder().encode(ch)]
+    .map((byte) => `.${byte.toString(16).toUpperCase().padStart(2, '0')}`)
+    .join('');
 }
 
 /**
- * The quoted spec filters of `values` that Playwright takes as test filters (see {@link isSpecFilter}), each after a
- * `/` (see {@link atFolderStart}).
+ * A spec's path as a copied command names it: {@link specPattern}'s pattern after a `/` (see {@link atFolderStart}),
+ * in which a character the spec's `file:` URL may percent-encode (a space, `#`, `%`, `[`, `~`, a non-ASCII character)
+ * also matches its encoding: `my(?: |.20)tests/a.spec.ts`. On Windows, Playwright up to 1.62 tests a filter against
+ * the native path, whose separator is `\`, and against the `file:` URL, never against the `/`-separated path.
  */
-function quoteSpecs(values: string[]): string[] {
-  return quoteAll(values.filter(isSpecFilter).map(atFolderStart));
+export function commandSpec(filePath: string): string {
+  let pattern = '';
+  for (const ch of toPosixPath(filePath)) {
+    const encoded = urlEncodedPattern(ch);
+    pattern += encoded ? `(?:${specPattern(ch)}|${encoded})` : specPattern(ch);
+  }
+  return atFolderStart(pattern);
+}
+
+/** A spec and the line a filter names in it, if any. */
+interface SpecLine {
+  filePath: string;
+  line?: number | null;
+}
+
+/**
+ * The quoted filters of `specs` that Playwright takes as test filters (see {@link isSpecFilter}), each written by
+ * {@link commandSpec} then its `:line`, and each that every shell leaves as it is, once each (`tests\a.spec.ts` and
+ * `tests/a.spec.ts` are one filter).
+ */
+function quoteSpecs(specs: SpecLine[]): string[] {
+  const filters = specs
+    .filter((s) => isSpecFilter(specPattern(s.filePath)))
+    .map((s) => (s.line ? `${commandSpec(s.filePath)}:${s.line}` : commandSpec(s.filePath)));
+  return quoteAll([...new Set(filters)]);
 }
 
 /**
@@ -132,7 +166,7 @@ function quoteSpecs(values: string[]): string[] {
  * ({@link isTitleFilter}); by file, when its spec path is a filter Playwright takes and every shell leaves as it is.
  */
 export function retryCommandNames(c: RetryCase, mode: RetryMode = 'file-line'): boolean {
-  return mode === 'grep' ? isTitleFilter(c.title) : quoteSpecs([specPattern(c.filePath)]).length > 0;
+  return mode === 'grep' ? isTitleFilter(c.title) : quoteSpecs([{ filePath: c.filePath }]).length > 0;
 }
 
 /** What a copy of a retry command says when no case has a file path or title a command can name. */
@@ -259,20 +293,18 @@ export function buildRetryCommand(
     let cmd: string;
 
     if (mode === 'file') {
-      const args = quoteSpecs(dedupeFiles(projectCases).map(specPattern));
+      const args = quoteSpecs(dedupeFiles(projectCases).map((filePath) => ({ filePath })));
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
     } else if (mode === 'file-line') {
       const seen = new Set<string>();
       const args = quoteSpecs(
-        projectCases
-          .filter((c) => {
-            const key = c.filePath + ':' + c.line;
-            if (c.line && seen.has(key)) return false;
-            if (c.line) seen.add(key);
-            return true;
-          })
-          .map((c) => (c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath))),
+        projectCases.filter((c) => {
+          const key = c.filePath + ':' + c.line;
+          if (c.line && seen.has(key)) return false;
+          if (c.line) seen.add(key);
+          return true;
+        }),
       );
       if (args.length === 0) continue;
       cmd = `${baseCmd} ${args.join(' ')}`;
@@ -299,7 +331,7 @@ export function buildRetryCommand(
     if (mode === 'file-line') {
       return buildRetryCommand(cases, { ...opts, mode: 'file' });
     }
-    const args = quoteSpecs(dedupeFilePaths(cases).map(specPattern));
+    const args = quoteSpecs(dedupeFilePaths(cases).map((filePath) => ({ filePath })));
     if (args.length === 0) return '';
     const project = opts?.options?.project;
     const tail = (project && quoteShellArg(project) ? projectFlag(project) : '') + flags;
@@ -329,10 +361,7 @@ export function buildRetryCommand(
 export function buildRetryArgs(allCases: RetryCase[]): string {
   const cases = allCases.filter((c) => isSpecFilter(specPattern(c.filePath)));
   if (cases.length === 0) return '';
-  const specs = [
-    ...new Set(cases.map((c) => (c.line ? `${specPattern(c.filePath)}:${c.line}` : specPattern(c.filePath)))),
-  ];
-  const quoted = quoteSpecs(specs);
+  const quoted = quoteSpecs(cases);
   if (quoted.length === 0) return '';
   return quoted.join(' ') + projectFlags(caseProjects(cases));
 }
@@ -361,12 +390,15 @@ export function buildRerunCommand(cases: RetryCase[]): string {
 export function buildRerunPlan(cases: RetryCase[]): { command: string; leftOut: RetryCase[] } {
   const base = 'npx playwright test';
   if (cases.length === 0) return { command: base, leftOut: [] };
-  const byFile = cases.filter((c) => quoteSpecs([specPattern(c.filePath)]).length > 0);
+  const byFile = cases.filter((c) => retryCommandNames(c));
   const allByFile = byFile.length === cases.length;
   const allByTitle = cases.every((c) => isTitleFilter(c.title));
   const named = allByFile || allByTitle ? cases : byFile;
   const leftOut = cases.filter((c) => !named.includes(c));
-  const files = allByFile || !allByTitle ? quoteSpecs([...new Set(byFile.map((c) => specPattern(c.filePath)))]) : [];
+  const files =
+    allByFile || !allByTitle
+      ? quoteSpecs([...new Set(byFile.map((c) => c.filePath))].map((filePath) => ({ filePath })))
+      : [];
   const grep = allByTitle ? buildTitleGrepFlag([...new Set(cases.map((c) => c.title))]) : '';
   if (files.length === 0 && !grep) return { command: '', leftOut: cases };
   const projects = projectFlags(caseProjects(named));

@@ -98,8 +98,8 @@ export class LocalStorageAdapter implements StorageAdapter {
     }
   }
 
-  getFullPath(path: string): string {
-    return this.resolvePath(path);
+  localRoot(): string {
+    return resolve(this.basePath);
   }
 
   async deleteFile(path: string): Promise<void> {

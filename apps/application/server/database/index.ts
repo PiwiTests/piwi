@@ -10,6 +10,7 @@ import {
 } from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
+import { postgresPoolMax } from './postgres-pool';
 import { configureSqliteConnections, sqliteClientConfig } from './sqlite-connections';
 import { isOtelTracingEnabled, traceSqlStatements } from '../utils/otel';
 import { existsSync, mkdirSync } from 'fs';
@@ -296,7 +297,7 @@ async function openDatabase(): Promise<DB> {
       const { migrate } = await import('drizzle-orm/postgres-js/migrator');
       const { default: postgres } = await import('postgres');
 
-      const client = postgres(databaseUrl);
+      const client = postgres(databaseUrl, { max: postgresPoolMax(databaseUrl) });
       const pgDb = drizzle(client);
       if (isOtelTracingEnabled()) await traceSqlStatements('postgres', pgDb, client);
       // Cast to the canonical SQLite DB type so callers retain typed query results

@@ -169,6 +169,9 @@ export function flakeCommand(testCaseId: number, kind: 'reproduce' | 'verify'): 
     : `npx @piwitests/reporter flake ${testCaseId}`;
 }
 
+/** A character of a dashboard's copied spec filter written with its `file:` URL encoding (`(?:é|.C3.A9)`). */
+const URL_ENCODED_ALTERNATIVE = /\(\?:(\[.\]|[^|])\|(?:\.[0-9A-F]{2})+\)/gu;
+
 /** A grep that a person would not read as a title: a regular expression's syntax beyond `.`. */
 const GREP_PATTERN = /[|()^$\\[\]*+?{}]/;
 
@@ -176,7 +179,8 @@ const GREP_PATTERN = /[|()^$\\[\]*+?{}]/;
  * What a run is called wherever a person sees or picks it, from its arguments after `playwright test`: its first
  * filter, a test file with the line it names (`checkout.spec.ts:12`), and how many more, else the title it greps, else
  * every test; then how many times each test repeats (`checkout.spec.ts:12 ×3`). A file reads as its spec's own name,
- * without the classes `specPattern` writes (`[[]id].spec.ts` is `[id].spec.ts`).
+ * without the classes `specPattern` writes (`[[]id].spec.ts` is `[id].spec.ts`) nor the percent-encoded alternatives
+ * of a dashboard's copied command (`caf(?:é|.C3.A9).spec.ts` is `café.spec.ts`).
  */
 export function runName(args: readonly string[]): string {
   const files: string[] = [];
@@ -191,7 +195,7 @@ export function runName(args: readonly string[]): string {
         .split(/[\\/]/)
         .filter((part) => part && part !== '.')
         .pop();
-      if (file) files.push(file.replace(/\[(.)\]/g, '$1'));
+      if (file) files.push(file.replace(URL_ENCODED_ALTERNATIVE, '$1').replace(/\[(.)\]/g, '$1'));
       continue;
     }
     const eq = arg.indexOf('=');

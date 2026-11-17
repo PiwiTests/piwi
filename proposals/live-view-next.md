@@ -18,9 +18,10 @@ document, with the snapshot picker and its search by text (Part 4,
 [`features/live-inspect`](../apps/docs/features/live-inspect.md)); **Watch all** and **Follow what needs attention** on
 one watch of the run (Part 5, as live-runs P10 revised it, [`features/watch-all`](../apps/docs/features/watch-all.md)),
 and a filmstrip of the test's calls in place of the last 30 seconds (live-runs P11); a CI run of the branch in the
-editors and in Piwi Picker's Runs window, read-only (Part 6, through live-runs P10); and images as binary bodies at the
-size the viewers show them (Part 7, without video). Left: the parts below, and two pieces of Part 9 for what is
-built: the live view setting's text, which names only the images, and the demo's call log and Inspect. The plan as
+editors and in Piwi Picker's Runs window, read-only (Part 6, through live-runs P10); images as binary bodies at the
+size the viewers show them (Part 7, without video); and the live view setting's text, which names everything a watched
+worker sends and what the instance keeps (Part 9). Left: the parts below, and one piece of Part 9 for what is built:
+the demo's call log and Inspect. The plan as
 proposed, with every part, the decisions D1 to D12, spikes A to H and the defect it found (fixed before its first PR),
 is at commit `46c65e9fd`; the live-runs ADR cites its parts, PRs and open questions by those numbers. Parts and decisions keep their numbers here;
 the delivery steps and the open questions are numbered anew. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. Its
@@ -29,8 +30,7 @@ held failure and its setting, `get_live_test` and the share link to a running ru
 
 **Summary.** What remains, in the order it should be built:
 
-- **The live view setting says what goes out**: the call log, the page's events and text, and Inspect's DOM, which it
-  does not name yet. The demo plays the call log and an Inspect snapshot.
+- **The demo plays the call log and an Inspect snapshot.**
 - **Where a stuck test waits.** A **Stuck?** row, which names the step the test is in, also says how long that step
   usually takes.
 - **The test's other pages**, each a tab of the lane view, not only the `page` fixture's.
@@ -185,10 +185,10 @@ frame shows within two seconds, as WebKit on Linux did ([spike G](#g-the-live-we
   the ARIA tree on the Inspect page.
 - `get_live_test` on the generated MCP tools page; the watch link on the
   [share links](../apps/docs/features/share-links.md) page; the hold's setting in `shared/help-content.ts`.
-- The live view setting's text (`ProjectLiveViewSettings.vue`, and `project.live-view` in `shared/help-content.ts`),
-  which says what goes out, to whom and what is kept, names only the images. It says it again for what is built (the
-  call log, the page's events and its text, Inspect's DOM and resources, kept in the instance's memory for the run),
-  then for the hold and the watch link.
+- The live view setting's text (`ProjectLiveViewSettings.vue`, and `project.live-view` in `shared/help-content.ts`)
+  says what goes out, to whom and what is kept for what is built: the images, the call log, the page's events and its
+  text, the filmstrip, and Inspect's DOM and resources, kept in the instance's memory while their test runs. It says it
+  again for the hold and the watch link.
 - The demo plays a stuck test, but no call log nor Inspect snapshot, which its run simulator can play without a
   browser. It mirrors each part below where it can.
 
@@ -208,7 +208,7 @@ Each PR is usable on its own; sizes are relative (S, M).
 
 | PR | Content | Size |
 | --- | --- | --- |
-| 1 | The live view setting's text for what is built, and the demo's call log and Inspect snapshot (Part 9). | S |
+| 1 | The live view setting's text for what is built (built), and the demo's call log and Inspect snapshot (Part 9). | S |
 | 2 | How long the step a stuck test is in usually takes (Part 1). | S |
 | 3 | The test's other pages as tabs (Part 3). | M |
 | 4 | The ARIA tree in Inspect (Part 4). | S |

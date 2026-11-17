@@ -10,7 +10,7 @@ lang: en-US
 
 In a project that turns the live view on, a running test of a CI run, or of a run a developer
 [shares from their machine](./share-live), gets **Watch** on its run page on the team instance: the page that worker
-is on, a few images a second, each with the call it was taken at, for a CI run that seems stuck or a teammate's
+is on, a few images a second, each with the call it was taken at, for a CI run that seems [stuck](./stuck-tests) or a teammate's
 paused test. Nothing you do in the view reaches the test.
 
 ## Where to watch a run
@@ -110,7 +110,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 - **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
-- **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
+- **The test's `page`.** The view shows the page of Playwright's `page` fixture, not a popup or a second page.
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
   that person's oldest. Its workers send 4 MB of images a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
@@ -121,6 +121,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 - [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
+- [Stuck tests](./stuck-tests): a test past its usual time
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a local run live](./share-live): let a teammate watch a run on your machine
 - [Runs window](./runs-window): the live view of a test your editor runs, with its controls

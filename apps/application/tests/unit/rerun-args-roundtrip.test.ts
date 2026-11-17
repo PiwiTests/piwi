@@ -32,7 +32,7 @@ describe('splitRerunArgs undoes quoteShellArg', () => {
     ]);
     expect(splitRerunArgs(args)).toEqual([
       '/tests/login.spec.ts:10',
-      '/tests/cart page.spec.ts:4',
+      '/tests/cart(?: |.20)page.spec.ts:4',
       '/tests/posts..postId.spec.ts',
       '--project=chromium',
       '--project=mobile safari',

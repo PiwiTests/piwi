@@ -360,6 +360,18 @@ export const PIWI_ENV_VARS = {
     example: 'postgres://piwi:piwi@db:5432/piwi',
     docs: 'operate/database#postgresql',
   },
+  PIWI_DATABASE_POOL_MAX: {
+    description:
+      'Most connections the server opens to PostgreSQL at once. A `max` in `PIWI_DATABASE_URL`, then postgres.js’s `PGMAX`, set it too; this variable wins over both.',
+    category: 'database',
+    type: 'number',
+    default: '10',
+    min: 1,
+    max: 1000,
+    relevantWhen: { PIWI_DATABASE_URL: '*' },
+    docs: 'operate/database#connections',
+    since: '0.72.0',
+  },
   PIWI_RETENTION_DAYS: {
     description:
       'Days of test-run history the nightly retention sweep keeps. Unset or 0 disables automatic run pruning (the default — pruning is opt-in). Kept runs are never pruned.',

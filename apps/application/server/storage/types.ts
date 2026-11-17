@@ -71,11 +71,10 @@ export interface StorageAdapter {
   deleteDirectory(path: string): Promise<void>;
 
   /**
-   * Get the full path for a relative path (for local storage only, returns relative path for S3)
-   * @param path - Relative path
-   * @returns Full path for local storage or relative path for S3
+   * The folder on this server's disk that holds the stored files
+   * @returns Its absolute path, or null for a remote store (S3) that keeps nothing on this server's disk
    */
-  getFullPath(path: string): string;
+  localRoot(): string | null;
 }
 
 interface S3BaseConfig {

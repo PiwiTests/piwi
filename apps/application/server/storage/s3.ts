@@ -139,9 +139,8 @@ export class S3StorageAdapter implements StorageAdapter {
     return Promise.resolve();
   }
 
-  getFullPath(path: string): string {
-    // For S3, return the key as-is (relative path)
-    return path;
+  localRoot(): null {
+    return null;
   }
 
   async deleteFile(path: string): Promise<void> {
