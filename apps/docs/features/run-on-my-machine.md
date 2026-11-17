@@ -43,9 +43,9 @@ Windows, the Secret Service on Linux), never in a file, and holds its connection
 An app connects to one instance at a time. **Disconnect** removes the key from the keychain; the app stays listed in
 the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
-The folder of each project is linked on this machine, per instance: the first request for a project asks for it, and
-**Settings → Desktop app** lists the linked folders by project name, with **Unlink**. If the folder you pick lacks the
-request's tests, the app offers the one above or below holding them.
+Each project's folder is linked on this machine, per instance: its first request asks for it, and
+**Settings → Desktop app** lists them by project name, with **Unlink**. **Find it for me** looks in your code folders
+and beside linked ones; a picked folder without the tests gets the one above or below offered.
 
 ## Ask for a run
 

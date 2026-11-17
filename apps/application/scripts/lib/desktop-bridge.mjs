@@ -24,7 +24,8 @@ export const READY_INSPECTION = {
  * answers: `link` (`desktop_get_project_link`, else no linked folder),
  * `inspection` (`desktop_inspect_folder`, else `READY_INSPECTION`),
  * `requestFolders` (`desktop_request_folders`, the folders linked to a team
- * instance's projects by project id, else none),
+ * instance's projects by project id, else none), `requestFindings` (the folders
+ * `desktop_find_request_folders` finds for a request's project, else none),
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
  * native import picker returns, else none), `folderSuggestions` (the folders
  * `desktop_suggest_project_folders` finds for a project, else none),
@@ -52,6 +53,7 @@ export function bridgeScript(shape = {}) {
   const folderCheck = shape.folderCheck ?? null;
   const localRunIds = [shape.localRunId ?? null].flat();
   const requestFolders = shape.requestFolders ?? {};
+  const requestFindings = shape.requestFindings ?? [];
   const serverPort = shape.serverPort ?? 3000;
   const activePort = shape.activePort ?? serverPort;
   const update = shape.update ?? null;
@@ -120,6 +122,8 @@ export function bridgeScript(shape = {}) {
               return ${update ? `Promise.resolve(${JSON.stringify(update.releaseNotes)})` : `Promise.reject('no update found, run a check first')`};
             case 'desktop_request_folders':
               return Promise.resolve(${JSON.stringify(requestFolders)});
+            case 'desktop_find_request_folders':
+              return Promise.resolve(${JSON.stringify(requestFindings)});
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
             case 'desktop_run_local_tests':

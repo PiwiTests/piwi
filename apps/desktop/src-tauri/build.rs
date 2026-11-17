@@ -46,6 +46,7 @@ fn main() {
             "desktop_keep_run_target_key",
             "desktop_forget_run_target",
             "desktop_request_folders",
+            "desktop_find_request_folders",
             "desktop_link_request_folder",
             "desktop_unlink_request_folder",
             "desktop_run_requested_tests",

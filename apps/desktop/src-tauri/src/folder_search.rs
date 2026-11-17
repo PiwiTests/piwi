@@ -47,6 +47,26 @@ const MAX_FOLDERS_BELOW: usize = 2_000;
 const MAX_FOLDERS_BELOW_CLONE: usize = 300;
 /// How many clones of the repository the suggestions search at most.
 const MAX_CLONES: usize = 5;
+/// How many folders a search for a request's folder examines at most, across all its places.
+const MAX_FOLDERS_FOUND: usize = 20_000;
+/// Where people keep their code, in the home folder: the usual names, GitHub Desktop's and Visual Studio's defaults.
+const USUAL_CODE_FOLDERS: [&str; 15] = [
+    "code",
+    "Code",
+    "src",
+    "dev",
+    "Dev",
+    "projects",
+    "Projects",
+    "repos",
+    "git",
+    "workspace",
+    "Developer",
+    "IdeaProjects",
+    "WebstormProjects",
+    "Documents/GitHub",
+    "source/repos",
+];
 /// How many levels above a folder a search looks, up to the root of its git repository.
 const MAX_LEVELS_ABOVE: usize = 8;
 /// How many levels above a folder a search looks when it is in no git repository.
@@ -104,7 +124,8 @@ pub struct FolderCandidate {
     /// How many of the spec paths given it holds.
     pub specs_found: usize,
     /// Why it is offered: `above` or `below` the folder checked, a folder a
-    /// `run` of the project was reported from, or a `clone` of its repository.
+    /// `run` of the project was reported from, a `clone` of its repository, or
+    /// a folder a `search` of the usual places found.
     pub source: &'static str,
 }
 
@@ -325,15 +346,14 @@ fn folder_repositories(folder: &Path) -> Vec<String> {
 
 /// Folders below `folder` (not itself) holding a Playwright config, nearest
 /// first: at most `MAX_DEPTH_BELOW` levels down, through no link, hidden
-/// folder or `SKIPPED_FOLDERS`, examining at most `max_folders` folders. None
-/// below a `guarded` folder.
-fn config_folders_below(folder: &Path, max_folders: usize) -> Vec<PathBuf> {
+/// folder or `SKIPPED_FOLDERS`, examining at most `budget` folders, which it
+/// lowers by those it examined. None below a `guarded` folder.
+fn config_folders_below(folder: &Path, budget: &mut usize) -> Vec<PathBuf> {
     let mut found = Vec::new();
     if guarded(folder) {
         return found;
     }
     let mut level = vec![folder.to_path_buf()];
-    let mut examined = 0;
     for _ in 0..MAX_DEPTH_BELOW {
         let mut next = Vec::new();
         for dir in &level {
@@ -353,10 +373,10 @@ fn config_folders_below(folder: &Path, max_folders: usize) -> Vec<PathBuf> {
                 .collect();
             children.sort();
             for child in children {
-                if examined >= max_folders {
+                if *budget == 0 {
                     return found;
                 }
-                examined += 1;
+                *budget -= 1;
                 if find_config(&child).is_some() {
                     found.push(child.clone());
                 }
@@ -447,7 +467,8 @@ pub(crate) fn check_folder(folder: &Path, specs: &[String], expected_repository:
         Vec::new()
     } else {
         let above = config_folders_above(folder);
-        let below = config_folders_below(folder, MAX_FOLDERS_BELOW);
+        let mut budget = MAX_FOLDERS_BELOW;
+        let below = config_folders_below(folder, &mut budget);
         let candidates = above
             .iter()
             .filter_map(|dir| candidate(dir, &specs, "above"))
@@ -550,7 +571,8 @@ pub(crate) fn suggest_folders(
             .take(MAX_CLONES)
             .collect();
         for clone in clones {
-            let below = config_folders_below(&clone, MAX_FOLDERS_BELOW_CLONE);
+            let mut budget = MAX_FOLDERS_BELOW_CLONE;
+            let below = config_folders_below(&clone, &mut budget);
             for path in std::iter::once(clone).chain(below) {
                 if offered(&path) {
                     from_clones.extend(candidate(&path, &specs, "clone"));
@@ -567,6 +589,43 @@ pub(crate) fn suggest_folders(
     }
     suggestions.truncate(MAX_RESULTS);
     suggestions
+}
+
+/// The places a search for a project's folder looks in: the folders holding
+/// the `linked` folders' repositories, then the usual code folders of the home
+/// folder that exist, each once by its real path.
+pub(crate) fn search_places(linked: &[PathBuf]) -> Vec<PathBuf> {
+    let mut places = clone_parents(linked);
+    if let Some(home) = home_folder() {
+        places.extend(USUAL_CODE_FOLDERS.iter().map(|name| home.join(name)).filter(|place| place.is_dir()));
+    }
+    let mut seen = HashSet::new();
+    places.retain(|place| seen.insert(std::fs::canonicalize(place).unwrap_or_else(|_| place.clone())));
+    places
+}
+
+/// The folders below `places` that fit a request's `specs`: a folder at most
+/// `MAX_DEPTH_BELOW` levels below a place that holds a config and some of the
+/// specs, the most specs first, examining at most `MAX_FOLDERS_FOUND` folders
+/// in all. None without a spec, and none under one of `excluded`.
+pub(crate) fn find_folders(places: &[PathBuf], specs: &[String], excluded: &[PathBuf]) -> Vec<FolderCandidate> {
+    let specs = checkable_specs(specs);
+    if specs.is_empty() {
+        return Vec::new();
+    }
+    let mut budget = MAX_FOLDERS_FOUND;
+    let mut found = Vec::new();
+    for place in places {
+        for folder in config_folders_below(place, &mut budget) {
+            if !excluded.iter().any(|root| folder.starts_with(root)) && specs_found(&folder, &specs) > 0 {
+                found.extend(candidate(&folder, &specs, "search"));
+            }
+        }
+        if budget == 0 {
+            break;
+        }
+    }
+    ranked(found, true)
 }
 
 #[cfg(test)]
@@ -724,7 +783,7 @@ mod tests {
         root.write("repo/node_modules/pkg/playwright.config.ts", "");
         root.write("repo/.cache/playwright.config.ts", "");
 
-        assert!(config_folders_below(&root.at("repo"), MAX_FOLDERS_BELOW).is_empty());
+        assert!(config_folders_below(&root.at("repo"), &mut 10).is_empty());
     }
 
     #[test]
@@ -734,7 +793,9 @@ mod tests {
             root.write(&format!("repo/{name}/playwright.config.ts"), "");
         }
 
-        assert_eq!(config_folders_below(&root.at("repo"), 2), vec![root.at("repo/a"), root.at("repo/b")]);
+        let mut budget = 2;
+        assert_eq!(config_folders_below(&root.at("repo"), &mut budget), vec![root.at("repo/a"), root.at("repo/b")]);
+        assert_eq!(budget, 0);
     }
 
     #[test]
@@ -953,6 +1014,34 @@ mod tests {
         assert_eq!(better_folder(&root.at("shop"), &cart), Some(root.at("shop/e2e")));
         assert_eq!(better_folder(&root.at("shop/e2e"), &cart), None);
         assert_eq!(better_folder(&root.at("shop"), &specs(&["tests/other.spec.ts"])), None);
+    }
+
+    #[test]
+    fn a_search_finds_the_folders_that_hold_the_config_and_the_tests() {
+        let root = Folder::new("find");
+        root.clone_of("code/shop", "git@github.com:Acme/Shop.git");
+        root.write("code/shop/e2e/playwright.config.ts", "");
+        root.write("code/shop/e2e/tests/cart.spec.ts", "");
+        root.write("code/blog/playwright.config.ts", "");
+        root.write("other/shop/e2e/playwright.config.ts", "");
+        root.write("other/shop/e2e/tests/cart.spec.ts", "");
+
+        let found = find_folders(&[root.at("code"), root.at("other")], &specs(&["tests/cart.spec.ts"]), &[root.at("other")]);
+
+        assert_eq!(found.len(), 1);
+        assert_eq!((found[0].path.clone(), found[0].source), (shown(&root.at("code/shop/e2e")), "search"));
+        assert!(find_folders(&[root.at("code")], &[], &[]).is_empty());
+    }
+
+    #[test]
+    fn the_search_places_start_with_the_folder_holding_the_linked_repositories() {
+        let root = Folder::new("places");
+        root.clone_of("code/shop", "https://github.com/acme/shop");
+
+        let places = search_places(&[root.at("code/shop")]);
+
+        assert_eq!(places.first(), Some(&root.at("code")));
+        assert_eq!(places.iter().filter(|place| **place == root.at("code")).count(), 1);
     }
 
     #[test]

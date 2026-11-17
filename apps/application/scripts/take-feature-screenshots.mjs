@@ -1322,6 +1322,7 @@ const REPRO_SCENE_STEPS = (() => {
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
  *   folderSuggestions — desktop mode: the folders `desktop_suggest_project_folders` finds for a project (default [])
  *   folderCheck — desktop mode: what `desktop_check_project_folder` answers (default: the folder picked fits)
+ *   requestFindings — desktop mode: the folders `desktop_find_request_folders` finds for a request (default [])
  *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts, or a list of the
  *                 ids of the runs it starts in turn (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
@@ -10412,6 +10413,60 @@ const SCENES = [
       await page.locator('[data-shot="desktop-team-run-request"]').waitFor({ timeout: 60_000 });
       // **Run** is armed once the request has been shown, unchanged, for a second.
       await page.locator('[role="dialog"] button:not([disabled])', { hasText: /^Run$/ }).waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'desktop-team-run-request-find',
+    description:
+      'A run request for a project with no folder on this machine: which folder it needs, and what Find it for me found (desktop shell, and Piwi Runner)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    requestFindings: [
+      {
+        path: '/home/dev/code/acme-checkout',
+        playwrightConfig: 'playwright.config.ts',
+        specsFound: 1,
+        source: 'search',
+      },
+      {
+        path: '/home/dev/Documents/GitHub/acme-checkout',
+        playwrightConfig: 'playwright.config.ts',
+        specsFound: 1,
+        source: 'search',
+      },
+    ],
+    async run({ page, shoot, settle }) {
+      const request = {
+        id: '1f1e2d3c4b5a69788796a5b4c3d2e1f0',
+        instance: 'https://piwi.example.com',
+        projectId: 1,
+        projectName: 'Acme Checkout',
+        tests: [
+          { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
+        ],
+        options: { headed: true },
+        source: { runId: 2, branch: 'main', commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e' },
+        checks: [{ id: 'folder', level: 'fail', message: 'No folder is linked to this project on this machine.' }],
+        runnable: false,
+        command: '',
+        hasFolder: false,
+        answerBy: new Date(Date.now() + 600_000).toISOString(),
+      };
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-request', request })}\n\n`,
+        }),
+      );
+      await page.reload();
+      const folder = page.getByTestId('team-run-request-folder');
+      await folder.waitFor({ timeout: 60_000 });
+      await folder.getByRole('button', { name: 'Find it for me' }).click();
+      await folder.getByText('Found on this computer').waitFor();
       await settle();
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
