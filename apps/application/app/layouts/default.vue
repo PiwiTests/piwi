@@ -626,6 +626,9 @@ onMounted(async () => {
     <!-- Desktop shell: import dialog for archives dropped on the window or opened with the app -->
     <DesktopImportModal />
 
+    <!-- Desktop shell: link a project to its folder, from every "Choose folder…" of the app -->
+    <DesktopLinkFolderModal />
+
     <!-- Desktop shell: after linking a folder, offer to import the runs already in it -->
     <DesktopImportPreviousRunsModal />
 

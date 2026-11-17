@@ -12,7 +12,7 @@
 // database — a folder path is a fact about this machine, not about the project.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
@@ -458,13 +458,55 @@ pub struct ProjectLink {
     exists: bool,
 }
 
-/// Native folder picker. Returns `None` when the user cancels.
+/// Upper bound on a folder picker's title, in characters.
+const MAX_PICKER_TITLE_CHARS: usize = 200;
+
+/// The folder holding the most of `linked` folders' repositories, where the
+/// clones are kept: where a folder picker opens when nothing else names one.
+/// `None` when nothing is linked, which leaves it to the system.
+pub(crate) fn pick_start_near(linked: impl IntoIterator<Item = PathBuf>) -> Option<PathBuf> {
+    let mut counts: Vec<(PathBuf, usize)> = Vec::new();
+    for folder in linked {
+        let root = crate::folder_search::git_root(&folder).unwrap_or(folder);
+        let Some(parent) = root.parent().filter(|p| p.is_dir()) else {
+            continue;
+        };
+        match counts.iter_mut().find(|(known, _)| known == parent) {
+            Some((_, count)) => *count += 1,
+            None => counts.push((parent.to_path_buf(), 1)),
+        }
+    }
+    counts.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
+    counts.into_iter().next().map(|(parent, _)| parent)
+}
+
+/// Native folder picker, titled `title` and opened at `start` when it is a
+/// folder, else next to the folders linked to the projects
+/// (`pick_start_near`). Returns `None` when the user cancels.
 #[tauri::command]
-pub async fn desktop_pick_folder(app: AppHandle) -> Option<String> {
-    let dialog = app.dialog().file();
+pub async fn desktop_pick_folder(
+    app: AppHandle,
+    title: Option<String>,
+    start: Option<String>,
+) -> Option<String> {
+    let mut dialog = app.dialog().file();
+    if let Some(title) = title.map(|t| t.trim().chars().take(MAX_PICKER_TITLE_CHARS).collect::<String>()) {
+        if !title.is_empty() {
+            dialog = dialog.set_title(title);
+        }
+    }
+    let linked: Vec<PathBuf> = read_links(&app).into_values().map(|r| PathBuf::from(r.path)).collect();
     // The blocking picker must not run on the IPC/async worker it was called
-    // from — park it on a blocking thread and await the result.
+    // from — park it on a blocking thread and await the result. Where it opens
+    // is read there too: it looks at the disk.
     tauri::async_runtime::spawn_blocking(move || {
+        let start = start
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute() && p.is_dir())
+            .or_else(|| pick_start_near(linked));
+        if let Some(start) = start {
+            dialog = dialog.set_directory(start);
+        }
         dialog
             .blocking_pick_folder()
             .and_then(|f| f.into_path().ok())
@@ -569,24 +611,12 @@ pub struct SpecCheck {
 /// linked, and the answer here only ever drives a warning.
 fn missing_specs(folder: &Path, files: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
-    let mut missing = Vec::new();
-    for file in files {
-        let relative = Path::new(file);
-        if relative.is_absolute()
-            || relative
-                .components()
-                .any(|part| matches!(part, Component::ParentDir))
-        {
-            continue;
-        }
-        if !seen.insert(file.as_str()) {
-            continue;
-        }
-        if !folder.join(relative).is_file() {
-            missing.push(file.clone());
-        }
-    }
-    missing
+    files
+        .iter()
+        .filter(|file| crate::folder_search::spec_in(folder, file) == Some(false))
+        .filter(|file| seen.insert(file.as_str()))
+        .cloned()
+        .collect()
 }
 
 /// Which of a run's spec files the linked folder does not contain — the cheap
@@ -609,6 +639,47 @@ pub fn desktop_check_local_specs(
         missing: missing_specs(&folder, &files),
         folder: folder.to_string_lossy().to_string(),
     })
+}
+
+/// How a folder fits a project before it is linked: whether it holds the
+/// Playwright config and some of `specs` (the spec paths of the project's
+/// runs, relative to the config's folder), whether it is a clone of
+/// `repository_url`, and the folders above or below it that fit better.
+#[tauri::command]
+pub async fn desktop_check_project_folder(
+    path: String,
+    specs: Vec<String>,
+    repository_url: Option<String>,
+) -> Result<crate::folder_search::FolderCheck, String> {
+    let folder = PathBuf::from(&path);
+    if !folder.is_absolute() {
+        return Err("the folder path must be absolute".into());
+    }
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::folder_search::check_folder(&folder, &specs, repository_url.as_deref())
+    })
+    .await
+    .map_err(|e| e.to_string())
+}
+
+/// The folders on this machine that fit a project, best first: those its runs
+/// were reported from (`working_dirs`), then the clones of `repository_url`
+/// next to the folders linked to any project. Never one under the app's data
+/// folder, where the throwaway checkouts of reproductions and bisects live.
+#[tauri::command]
+pub async fn desktop_suggest_project_folders(
+    app: AppHandle,
+    working_dirs: Vec<String>,
+    specs: Vec<String>,
+    repository_url: Option<String>,
+) -> Result<Vec<crate::folder_search::FolderCandidate>, String> {
+    let linked: Vec<PathBuf> = read_links(&app).into_values().map(|r| PathBuf::from(r.path)).collect();
+    let excluded: Vec<PathBuf> = app.path().app_data_dir().into_iter().collect();
+    tauri::async_runtime::spawn_blocking(move || {
+        crate::folder_search::suggest_folders(&working_dirs, &linked, &specs, repository_url.as_deref(), &excluded)
+    })
+    .await
+    .map_err(|e| e.to_string())
 }
 
 /// Resolve a file inside a `node_modules` reachable from `start`, walking up so

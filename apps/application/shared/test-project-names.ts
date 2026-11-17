@@ -58,6 +58,7 @@ export const PROJECT = {
   DELETE_SHARED_BLOB: 'delete-shared-blob-project',
   DELETE_TEST: 'delete-test-project',
   DESKTOP_IMPORT_PREV: 'desktop-import-prev-test',
+  DESKTOP_LINK_FOLDER: 'desktop-link-folder-test',
   DESKTOP_LOCAL_IMPORT: 'desktop-local-import-test',
   DESKTOP_LOCAL_RUN: 'desktop-local-run-test',
   DESKTOP_LOCAL_RUN_UNNAMED: 'desktop-local-run-unnamed-test',

@@ -10,17 +10,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::folder_search::find_config;
 use crate::runner::{resolve_node_module, resolve_playwright_cli};
-
-/// Playwright's own config lookup order.
-const CONFIG_NAMES: [&str; 6] = [
-    "playwright.config.ts",
-    "playwright.config.mts",
-    "playwright.config.cts",
-    "playwright.config.js",
-    "playwright.config.mjs",
-    "playwright.config.cjs",
-];
 
 const REPORTER_PACKAGE: &str = "@piwitests/reporter";
 
@@ -88,12 +79,6 @@ struct PackageJson {
 fn read_package_json(folder: &Path) -> Option<PackageJson> {
     let raw = std::fs::read_to_string(folder.join("package.json")).ok()?;
     serde_json::from_str(&raw).ok()
-}
-
-fn find_config(folder: &Path) -> Option<&'static str> {
-    CONFIG_NAMES
-        .into_iter()
-        .find(|name| folder.join(name).is_file())
 }
 
 /// The config's contents, or `None` when there is no config or it is

@@ -52,6 +52,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'PATCH /api/desktop/repro-requests/:id', // desktop build only; the window records what it did with a request
   'GET /api/desktop/repro-requests/:id/spec', // desktop build only; the shell reads the spec it writes and runs
   'POST /api/desktop/picker-pairings', // desktop build only; Piwi Picker asks to pair with the app, 404 everywhere else
+  'GET /api/projects/:id/folder-hints', // read only by the desktop app's folder dialog; the demo has no folder to link
   'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
   'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
   'GET /api/desktop/run-channel', // desktop build only; the shell reads the run channel it names in each run it starts

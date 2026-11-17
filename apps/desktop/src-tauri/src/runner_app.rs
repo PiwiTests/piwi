@@ -337,6 +337,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             run_target::desktop_keep_run_target_key,
             run_target::desktop_forget_run_target,
             run_target::desktop_request_folders,
+            run_target::desktop_find_request_folders,
             run_target::desktop_link_request_folder,
             run_target::desktop_unlink_request_folder,
             run_target::desktop_run_requested_tests
@@ -346,6 +347,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
         .manage(runner::LocalRuns::default())
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
+        .manage(run_target::FoundFolders::default())
         .manage(QuitConfirmed::default())
         .manage(updates::UpdaterSupport(can_update))
         .manage(updates::PendingUpdate::default())

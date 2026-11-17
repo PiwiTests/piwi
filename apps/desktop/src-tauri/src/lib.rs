@@ -10,6 +10,7 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod folder_search;
 mod hub_env;
 mod ide_launcher;
 mod inspect;
@@ -64,14 +65,14 @@ use updates::{
     desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
-    desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link, desktop_local_runs,
-    desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
-    desktop_set_project_link, desktop_stop_local_tests,
+    desktop_check_local_env, desktop_check_local_specs, desktop_check_project_folder, desktop_get_project_link,
+    desktop_local_runs, desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_set_project_link, desktop_stop_local_tests, desktop_suggest_project_folders,
 };
 use repro::desktop_run_repro;
 use run_target::{
-    desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder, desktop_request_folders,
-    desktop_run_requested_tests, desktop_unlink_request_folder,
+    desktop_find_request_folders, desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder,
+    desktop_request_folders, desktop_run_requested_tests, desktop_unlink_request_folder,
 };
 use worktree::{
     desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
@@ -3542,6 +3543,8 @@ pub fn run() {
             desktop_pick_files_to_open,
             desktop_inspect_folder,
             desktop_find_importable_runs,
+            desktop_check_project_folder,
+            desktop_suggest_project_folders,
             desktop_get_project_link,
             desktop_set_project_link,
             desktop_run_local_tests,
@@ -3550,6 +3553,7 @@ pub fn run() {
             desktop_keep_run_target_key,
             desktop_forget_run_target,
             desktop_request_folders,
+            desktop_find_request_folders,
             desktop_link_request_folder,
             desktop_unlink_request_folder,
             desktop_run_requested_tests,
@@ -3582,6 +3586,7 @@ pub fn run() {
         .manage(runner::LocalRuns::default())
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
+        .manage(run_target::FoundFolders::default())
         .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())

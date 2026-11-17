@@ -15,7 +15,7 @@ bundles the Docker image's server in a native window and adds what only a local 
 ## What it does
 
 - **Receives your local runs** with no URL or token in your Playwright config.
-- **Links a project to its checkout**, so a run page can re-run the failed tests here.
+- **Links a project to its folder**, so a run page can re-run the failed tests here.
 - **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, also for your editor.
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config.
@@ -81,12 +81,13 @@ page there, starting the app if needed (macOS: from Applications; Linux: after o
 
 ## Projects from local folders
 
-**Projects → New project → Choose folder…** creates a project from a checkout on this machine, named as it would
-report, and checks the setup (a Playwright config, Playwright, the reporter): `npx @piwitests/reporter init` there
-fixes what is missing. The link stays on this machine, under **Project → Settings → Local folder**, with
-the same checks and **Change** and **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/`;
-[Open in editor](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
-serves its git history without an [SCM credential](/guide/source-control#on-the-desktop-app).
+A project's folder holds its Playwright config (a monorepo's subfolder, not its root).
+**Projects → New project → Choose folder…** creates a project from one, named as it would report, and checks its
+setup: `npx @piwitests/reporter init` there fixes what is missing. The link stays local, under
+**Project → Settings → Local folder**, with its checks, **Unlink** and **Change**, which suggests folders and checks
+your pick. Linking it offers to import its earlier runs; [Open in editor](/features/ide-integration) resolves source
+links against it when no workspace root is set; and a clone serves its git history without an
+[SCM credential](/guide/source-control#on-the-desktop-app).
 
 ## Running tests from the app
 

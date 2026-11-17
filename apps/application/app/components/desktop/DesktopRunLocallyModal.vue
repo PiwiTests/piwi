@@ -32,13 +32,18 @@ const open = defineModel<boolean>('open', { default: false });
 
 const store = useDesktopLocalRuns();
 const { link, busy, pickAndLink } = useDesktopProjectLink(() => props.projectId);
-const { missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
+const { specFiles, missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
   () => props.projectId,
   () => props.cases,
 );
 const { playwrightMissing, checkEnv } = useDesktopEnvCheck(() => props.projectId);
 
 const linked = computed(() => !!link.value?.exists);
+
+/** Link the project's folder, checked against the tests this dialog runs. */
+function chooseFolder() {
+  void pickAndLink({ projectLabel: props.projectLabel, specs: specFiles.value });
+}
 
 /** This run's options: the button's, each time the dialog opens, then whatever the form changes. */
 const options = ref<SavedLocalRunOptions>({ ...DEFAULT_LOCAL_RUN_OPTIONS });
@@ -88,8 +93,9 @@ function run() {
       <div class="space-y-4">
         <div v-if="!linked" class="space-y-3">
           <p class="text-sm text-muted">
-            Link {{ projectLabel || 'this project' }} to its local checkout — the folder that contains these tests. Piwi
-            runs that folder's own Playwright with the app's bundled Node, so nothing else needs to be installed.
+            Link {{ projectLabel || 'this project' }} to its folder on this machine: the one that holds its Playwright
+            config and these tests. Piwi runs that folder's own Playwright with the app's bundled Node, so nothing else
+            needs to be installed.
           </p>
           <UAlert
             v-if="link && !link.exists"
@@ -99,7 +105,7 @@ function run() {
             title="The linked folder no longer exists"
             :description="link.path"
           />
-          <UButton icon="i-lucide-folder-plus" :loading="busy" @click="pickAndLink">Choose folder…</UButton>
+          <UButton icon="i-lucide-folder-plus" :loading="busy" @click="chooseFolder">Choose folder…</UButton>
         </div>
 
         <template v-else>
@@ -114,7 +120,7 @@ function run() {
               variant="ghost"
               icon="i-lucide-folder-search"
               :loading="busy"
-              @click="pickAndLink"
+              @click="chooseFolder"
             >
               Change
             </UButton>
@@ -162,7 +168,8 @@ function run() {
               </p>
               <p class="mt-1">
                 <template v-if="wrongFolder">
-                  This project is probably linked to a different checkout than the one these tests come from.
+                  This project is probably linked to another folder than the one these tests come from: the folder to
+                  link holds the Playwright config.
                 </template>
                 <template v-else> Running anyway is fine when your Playwright config puts them elsewhere. </template>
               </p>
@@ -174,7 +181,7 @@ function run() {
                 icon="i-lucide-folder-search"
                 class="mt-2"
                 :loading="busy"
-                @click="pickAndLink"
+                @click="chooseFolder"
               >
                 Choose the right folder…
               </UButton>

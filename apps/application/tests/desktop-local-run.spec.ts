@@ -76,6 +76,21 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
                 return null;
               case 'desktop_check_local_specs':
                 return { folder: '/home/dev/acme', missing: opts.missingSpecs ?? [] };
+              case 'desktop_suggest_project_folders':
+                return [];
+              case 'desktop_check_project_folder':
+                return {
+                  path: args?.path,
+                  exists: true,
+                  playwrightConfig: 'playwright.config.ts',
+                  specsChecked: 1,
+                  specsFound: 1,
+                  missingSpecs: [],
+                  repository: null,
+                  sameRepository: null,
+                  fits: true,
+                  alternatives: [],
+                };
               case 'desktop_check_local_env': {
                 if (!state.link) throw new Error('no folder is linked to this project');
                 return {
@@ -586,7 +601,7 @@ test.describe('Desktop local run', () => {
 
     await expect(dialog.getByText('None of these tests are in the linked folder')).toBeVisible();
     await expect(dialog.getByText('tests/checkout.spec.ts', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('linked to a different checkout')).toBeVisible();
+    await expect(dialog.getByText('linked to another folder than the one these tests come from')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Choose the right folder…' })).toBeVisible();
 
     // A warning, never a block: the config may put specs elsewhere.
@@ -827,14 +842,19 @@ test.describe('Desktop local run', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('button', { name: 'Choose folder…' })).toBeVisible();
 
+    // The link dialog opens on top, and checks the folder picked against the tests this run would run.
     await dialog.getByRole('button', { name: 'Choose folder…' }).click();
+    const linkDialog = page.getByRole('dialog', { name: /to its folder$/ });
+    await linkDialog.getByRole('button', { name: 'Choose folder…' }).click();
+    await expect(linkDialog).toBeHidden();
 
     await expect(dialog.getByText('/home/dev/acme')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
 
-    const setInvocation = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.find((i) => i.cmd === 'desktop_set_project_link'),
-    );
+    const invocations = await page.evaluate(() => window.__piwiFakeTauri.invocations);
+    const checked = invocations.find((i) => i.cmd === 'desktop_check_project_folder');
+    expect(checked!.args!.specs).toEqual(['tests/checkout.spec.ts']);
+    const setInvocation = invocations.find((i) => i.cmd === 'desktop_set_project_link');
     expect(setInvocation!.args!.path).toBe('/home/dev/acme');
   });
 });

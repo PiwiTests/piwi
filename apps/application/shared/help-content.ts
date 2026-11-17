@@ -591,8 +591,8 @@ export const HELP_TOPICS = {
   },
   'project.local-folder': {
     title: 'Linked local folder',
-    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. Its default run options are what each Re-run button of the project starts from. Both stay on this machine, never on the server.',
-    doc: 'features/desktop#running-tests-from-the-app',
+    text: 'The folder on this machine that holds this project’s Playwright config, where Playwright runs and the test paths of its runs start: in a monorepo, the config’s subfolder, not the repository root.\n\n- **Choose folder…** — offers the folders found on this machine and checks the one you pick against the project’s tests\n- **Once linked** — the app runs its tests and opens its files in your IDE; each Re-run button of the project starts from its default run options\n\nThe link and the options stay on this machine, never on the server.',
+    doc: 'features/desktop#projects-from-local-folders',
   },
 
   // ── Test run detail ───────────────────────────────────────────────────

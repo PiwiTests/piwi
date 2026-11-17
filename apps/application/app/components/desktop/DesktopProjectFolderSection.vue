@@ -62,7 +62,7 @@ watch(
 
 /** Link (or re-link) the folder, then offer to import the runs already in it. */
 async function chooseAndPropose() {
-  const linked = await pickAndLink();
+  const linked = await pickAndLink({ projectLabel: props.projectName });
   if (linked) void proposePrevRuns(props.projectName, link.value?.path);
 }
 </script>
@@ -77,7 +77,8 @@ async function chooseAndPropose() {
     help="project.local-folder"
   >
     <template #subtitle>
-      The checkout of this project on this machine — used to run tests locally and open files in your IDE.
+      The folder on this machine that holds this project's Playwright config, where its tests run locally and its files
+      open in your IDE.
     </template>
     <template #actions>
       <UBadge v-if="link && !link.exists" color="warning" variant="subtle" size="sm">missing</UBadge>
@@ -114,9 +115,7 @@ async function chooseAndPropose() {
         </div>
       </div>
 
-      <p v-if="!link.exists" class="text-sm text-warning">
-        The folder is gone from this machine — pick the checkout again.
-      </p>
+      <p v-if="!link.exists" class="text-sm text-warning">The folder is gone from this machine: choose it again.</p>
 
       <DesktopFolderChecklist v-if="inspection" :inspection="inspection" />
 

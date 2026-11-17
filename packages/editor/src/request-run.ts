@@ -179,7 +179,7 @@ export async function planRequestedRun(
     checks.push({ id: 'folder', level: 'fail', message: 'The linked folder no longer exists: choose it again.' });
     return done();
   }
-  checks.push({ id: 'folder', level: 'ok', message: 'The folder is linked.' });
+  checks.push({ id: 'folder', level: 'ok', message: `Linked folder: ${folder}` });
   if (runningIn.some((other) => realFolder(other) === real)) {
     checks.push({
       id: 'busy',

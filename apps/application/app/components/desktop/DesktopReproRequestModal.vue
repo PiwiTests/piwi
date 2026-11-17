@@ -208,7 +208,7 @@ async function run() {
           variant="soft"
           icon="i-lucide-folder-x"
           title="No project is linked to a folder"
-          description="Link a project to its checkout in its Settings, Local folder, then send the request again."
+          description="Link a project to its folder, the one that holds its Playwright config, in its Settings, Local folder, then send the request again."
         />
 
         <template v-else>
