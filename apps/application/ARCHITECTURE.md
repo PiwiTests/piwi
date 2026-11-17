@@ -867,6 +867,13 @@ repository from the drawing and the brand colors in that file: navy ink, violet 
   streams under its own instance id and, from its first simulation, holds a Web Lock while open
   (`app/demo/simulator-instance.ts`); the clean-up on mount (`POST /api/demo/cancel-stale-runs`) reads the held locks
   in the service worker and cancels only the runs of a page that is gone.
+- The demo runs no browser, so the run page's live view is played by the simulator's workers: each publishes the call
+  its test is in and the pages Inspect shows (`app/demo/live-calls.ts`) on the same BroadcastChannel (`live`), and the
+  run page's watch is `DemoLiveWatch` (`app/demo/live-watch.ts`, in `useLiveWatch`), which keeps what each worker said
+  for a lane panel opened later and sends no image. Inspect's pages are moments of the committed checkout trace, which
+  the service worker renders with the server's renderer and serves as the server does (`app/demo/api/live-view.ts`,
+  `server/utils/snapshot-frame-html.ts`); the frames take them inline (`srcdoc`), since a service worker does not serve
+  a sandboxed frame's address.
 - The tour's prompt is a toast (`DemoTourPrompt`, hosted by `DemoTour`) asking a first-time visitor what they do: a
   role starts its tour, **Later** asks again a day later (`TOUR_SNOOZE_MS`), **×** never again, and the banner's
   **Guided tour** button (`DemoTourButton`) reopens it. The decision is stored under `localStorage['piwi-demo-tour']`

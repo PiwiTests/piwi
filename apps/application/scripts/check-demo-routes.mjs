@@ -102,14 +102,14 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
   // The run page's live view: a live run's test workers hold its streams and post its frames, and a page watches
-  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch, and Watch all
-  // shows each running lane's step in place of its image.
+  // them. The demo runs no test worker and no browser: its simulator plays the workers' call logs to the page over the
+  // demo's event channel, which the page's own watch reads (`app/demo/live-watch.ts`), so only the page Inspect shows
+  // at a call has a demo route.
   'GET /api/test-runs/:id/live-view',
   'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
   'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
-  'GET /api/test-runs/:id/live-view/watch/:watch/snapshot',
   // Ask to watch: an ask reaches a run's reporter in the answers of its stream, and the demo signs nobody in and runs
   // no reporter, so its simulated runs are never a run nobody shares.
   'POST /api/test-runs/:id/live-view/ask',

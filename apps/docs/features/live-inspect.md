@@ -108,7 +108,8 @@ Inspect says why:
 
 ## In the demo
 
-The live demo runs no browser, and Inspect needs a running test: [Watch all](./watch-all#in-the-demo).
+The live demo runs no browser: its Inspect shows a recorded trace's checkout page
+([Stuck tests](./stuck-tests#try-it-in-the-demo)).
 
 ## Related
 

@@ -5,7 +5,10 @@
  * Playwright run (setup → begin → events → finish) against the in-browser
  * demo API, so visitors can watch a run arrive in real time: initialization
  * status, live test results across parallel workers, failure clustering,
- * flaky retries, performance data, and the final summary.
+ * flaky retries, performance data, and the final summary. Each worker also
+ * tells a view of it the call its test is in and the pages Inspect shows, as a
+ * live run's worker does, with no image: the demo runs no browser
+ * (`live-calls.ts`, published over `run-events.ts`).
  *
  * Scenarios target the seeded `e2e-checkout` project so history-based
  * features (test case history, timing vs average, regression context,
@@ -35,9 +38,19 @@ import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-re
 import { demoHtmlReport } from '#shared/demo/demo-run-projects.mjs';
 import { isFlakyResult } from '#shared/status-classify';
 import { parseLocation } from '#shared/parse-location';
+import type { LiveCallLog, LiveTestOutcome, LiveViewerMessage, LiveWorkerId } from '@piwitests/core/live-view';
 import type { TestRunDetails } from '~~/types/api';
 import { simulatorInstanceId } from './simulator-instance';
 import { demoBrowser, demoCiRunner } from '#shared/demo/demo-environments.mjs';
+import { publishDemoLiveMessage } from './run-events';
+import {
+  DEMO_NO_PAGES,
+  demoCallId,
+  demoCallLog,
+  demoSnapshotNotice,
+  demoTestHasPages,
+  type DemoTracePhase,
+} from './live-calls';
 
 /** Project from the demo seed (scripts/generate-demo-seed.mjs) */
 const DEMO_PROJECT_NAME = 'e2e-checkout';
@@ -601,11 +614,6 @@ interface BaseTestOptions {
   slowNetwork?: boolean;
   slowSteps?: boolean;
   waitHeavy?: boolean;
-  /**
-   * The PayPal checkout test waits `STUCK_HANG_MS` on a payment that does not answer, then fails with its seeded
-   * story's error: a failure, so it never becomes one of the passes a later stuck check reads.
-   */
-  stuck?: boolean;
   /** The PayPal checkout test stands stopped at a breakpoint `BREAKPOINT_STOP_MS`, then goes on and passes. */
   breakpoint?: boolean;
 }
@@ -617,8 +625,13 @@ const BREAKPOINT_STOP_MS = 5 * 60_000;
 const STUCK_HANG_MS = 6 * 60_000;
 /** The title of the test the stuck scenario holds. */
 const STUCK_TEST_TITLE = 'should complete checkout with PayPal';
-/** How often, in virtual time, a hanging attempt posts its heartbeat. */
+/** How often, in virtual time, a hanging attempt posts its heartbeat, and its worker its call log. */
 const HANG_TICK_MS = 10_000;
+
+/** The Playwright category a live step carries, as the reporter streams it: `expect` for an assertion, else `pw:api`. */
+function liveCategory(step: SimStep): string {
+  return step.category === 'assertion' ? 'expect' : 'pw:api';
+}
 
 /** The `Before Hooks` section: the context and page fixtures, then a `beforeEach` hook. */
 function beforeHooksEvent(
@@ -845,18 +858,6 @@ function baseTests(opts: BaseTestOptions = {}): SimTest[] {
       slowestStep: slowest.title,
       slowestStepDuration: slowest.duration,
       wastedTimeMs: wastedTimeMs > 0 ? wastedTimeMs : null,
-      ...(opts.stuck && t.title === STUCK_TEST_TITLE
-        ? {
-            attempts: [
-              {
-                status: 'failed' as const,
-                duration: duration + STUCK_HANG_MS,
-                hangMs: STUCK_HANG_MS,
-                error: CLUSTER1_STORY.failingCases[1]!.error,
-              },
-            ],
-          }
-        : {}),
       ...(opts.breakpoint && t.title === STUCK_TEST_TITLE
         ? {
             attempts: [
@@ -917,64 +918,71 @@ function buildMetadata(opts: {
  * evidence, so they join that cluster rather than splitting into a lookalike.
  */
 function withPayTimeouts(tests: SimTest[]): SimTest[] {
-  for (const i of [0, 1]) {
-    const failingCase = CLUSTER1_STORY.failingCases[i]!;
-    // The story's own steps once the fixtures are set up: the beforeEach
-    // navigation, the checkout fields, then the Pay click the test timeout
-    // stops, with the story's evidence placed around it. Every time is in
-    // ms from the attempt's start, which workerLoop stamps on.
-    const scale = vary(1000, 0.1) / 1000;
-    const context = vary(75, 0.2);
-    const page = vary(55, 0.2);
-    const placed = authoredFailureSteps(failingCase, { scale, startMs: context + page })!;
-    const payClick = placed.at(-1)!;
-    const failedDuration = payClick.at + payClick.duration + FAILURE_TEARDOWN_MS;
-    const times = storyEvidenceTimes(CLUSTER1_STORY, payClick);
-    const slowest = placed.reduce((a, b) => (a.duration > b.duration ? a : b));
-    tests[i]!.relativeTimes = true;
-    tests[i]!.steps = placed;
-    tests[i]!.slowestStep = slowest.title;
-    tests[i]!.slowestStepDuration = slowest.duration;
-    tests[i]!.stepEvents = buildStoryStepEvents(failedDuration, {
-      context,
-      page,
-      beforeEach: authoredBeforeEachMs(failingCase, { scale }),
-    });
-    tests[i]!.wastedTimeMs = null;
-    tests[i]!.pageState = { ...tests[i]!.pageState, ...CLUSTER1_STORY.evidence.pageInteraction };
-    tests[i]!.attempts = [
-      {
-        status: 'failed',
-        duration: failedDuration,
-        error: failingCase.error,
-        consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, 0, times.console),
-        // The first holder also leaves a confirm dialog open at the failure
-        // moment — it blocks the page until dismissed, so the Pay action
-        // never resolves. Feeds the dialogs lane and the dialog clue.
-        dialogs:
-          i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
-            ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: times.dialogClosedAt }]
-            : undefined,
-        testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
-        testSourceFrames: buildSourceFrames(failingCase),
-        stdout: CLUSTER1_STORY.evidence.outputOnFail?.stdout ?? null,
-        stderr: CLUSTER1_STORY.evidence.outputOnFail?.stderr ?? null,
-      },
-    ];
-    // Merge in the story's own themed evidence (a slow quote request, not
-    // a payment failure — the Pay button times out because the quote
-    // never resolves in time, not because payment itself errors). The
-    // quote starts where the story puts it, and the payment authorization
-    // the Pay click would send never goes out.
-    const own = CLUSTER1_STORY.evidence.failingNetwork ?? [];
-    const skipped = [...own, ...(CLUSTER1_STORY.evidence.unreachedNetwork ?? [])];
-    const base = buildNetworkRequests().filter((r) => !skipped.some((o) => o.method === r.method && o.url === r.url));
-    tests[i]!.networkRequests = [
-      ...withStartTimes(base, 0),
-      ...own.map((o, k) => ({ ...o, startTime: times.requests[k]! })),
-    ];
-  }
+  for (const i of [0, 1]) asPayTimeout(tests, i);
   return tests;
+}
+
+/**
+ * The checkout suite's `i`th test (0 or 1) times out on the Pay button, as `withPayTimeouts` has it, after waiting
+ * `hangMs` more on that click: a test that hangs there, which the stuck scenario's PayPal test does.
+ */
+function asPayTimeout(tests: SimTest[], i: number, hangMs = 0): void {
+  const failingCase = CLUSTER1_STORY.failingCases[i]!;
+  // The story's own steps once the fixtures are set up: the beforeEach
+  // navigation, the checkout fields, then the Pay click the test timeout
+  // stops, with the story's evidence placed around it. Every time is in
+  // ms from the attempt's start, which workerLoop stamps on.
+  const scale = vary(1000, 0.1) / 1000;
+  const context = vary(75, 0.2);
+  const page = vary(55, 0.2);
+  const placed = authoredFailureSteps(failingCase, { scale, startMs: context + page })!;
+  const payClick = placed.at(-1)!;
+  const failedDuration = payClick.at + payClick.duration + FAILURE_TEARDOWN_MS;
+  const times = storyEvidenceTimes(CLUSTER1_STORY, payClick);
+  const slowest = placed.reduce((a, b) => (a.duration > b.duration ? a : b));
+  tests[i]!.relativeTimes = true;
+  tests[i]!.steps = placed;
+  tests[i]!.slowestStep = slowest.title;
+  tests[i]!.slowestStepDuration = slowest.duration;
+  tests[i]!.stepEvents = buildStoryStepEvents(failedDuration + hangMs, {
+    context,
+    page,
+    beforeEach: authoredBeforeEachMs(failingCase, { scale }),
+  });
+  tests[i]!.wastedTimeMs = null;
+  tests[i]!.pageState = { ...tests[i]!.pageState, ...CLUSTER1_STORY.evidence.pageInteraction };
+  tests[i]!.attempts = [
+    {
+      status: 'failed',
+      duration: failedDuration + hangMs,
+      ...(hangMs ? { hangMs } : {}),
+      error: failingCase.error,
+      consoleLogs: themedConsoleLogs(CLUSTER1_STORY.evidence.consoleOnFail, 0, times.console),
+      // The first holder also leaves a confirm dialog open at the failure
+      // moment — it blocks the page until dismissed, so the Pay action
+      // never resolves. Feeds the dialogs lane and the dialog clue.
+      dialogs:
+        i === 0 && CLUSTER1_STORY.evidence.dialogOnFail
+          ? [{ ...CLUSTER1_STORY.evidence.dialogOnFail, closedAt: times.dialogClosedAt }]
+          : undefined,
+      testSource: buildTestSource(CLUSTER1_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
+      testSourceFrames: buildSourceFrames(failingCase),
+      stdout: CLUSTER1_STORY.evidence.outputOnFail?.stdout ?? null,
+      stderr: CLUSTER1_STORY.evidence.outputOnFail?.stderr ?? null,
+    },
+  ];
+  // Merge in the story's own themed evidence (a slow quote request, not
+  // a payment failure — the Pay button times out because the quote
+  // never resolves in time, not because payment itself errors). The
+  // quote starts where the story puts it, and the payment authorization
+  // the Pay click would send never goes out.
+  const own = CLUSTER1_STORY.evidence.failingNetwork ?? [];
+  const skipped = [...own, ...(CLUSTER1_STORY.evidence.unreachedNetwork ?? [])];
+  const base = buildNetworkRequests().filter((r) => !skipped.some((o) => o.method === r.method && o.url === r.url));
+  tests[i]!.networkRequests = [
+    ...withStartTimes(base, 0),
+    ...own.map((o, k) => ({ ...o, startTime: times.requests[k]! })),
+  ];
 }
 
 /**
@@ -1296,7 +1304,17 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         author: 'Priya Natarajan',
         commitMessage: 'feat(checkout): call the PayPal sandbox through the new payment gateway',
       }),
-    tests: () => baseTests({ stuck: true }),
+    // The PayPal checkout test waits `STUCK_HANG_MS` on its Pay click, whose payment does not answer, then fails with
+    // its seeded story's error: a failure, so it never becomes one of the passes a later stuck check reads.
+    tests: () => {
+      const tests = baseTests();
+      asPayTimeout(
+        tests,
+        CHECKOUT_TESTS.findIndex((t) => t.title === STUCK_TEST_TITLE),
+        STUCK_HANG_MS,
+      );
+      return tests;
+    },
   },
   {
     id: 'breakpoint',
@@ -1701,6 +1719,11 @@ async function runSingleSimulation(
     });
   }
 
+  /** What a worker of the run says to the views of it (`app/demo/live-calls.ts`). */
+  function say(message: LiveViewerMessage): void {
+    publishDemoLiveMessage(runId, message);
+  }
+
   /** The run's heartbeat, with the virtual time a hanging attempt reached (`SimAttempt.hangMs`). */
   async function postHeartbeat(at: number): Promise<void> {
     await $fetch(`/api/test-runs/${runId}/heartbeat`, { method: 'POST', body: { streamToken, at } }).catch(() => {});
@@ -1720,6 +1743,12 @@ async function runSingleSimulation(
     let virtualNow = virtualStart + INIT_DELAY_MS;
     // The executions this worker ran so far: in a leaky run each left its page open.
     let ranInWorker = 0;
+    /** This worker as a view of the run names it: its shard, its index and its lane. */
+    const liveWorker: LiveWorkerId = {
+      shard: shardOverride?.shardIndex ?? null,
+      worker: workerIndex,
+      slot: parallelIndex,
+    };
 
     while (!cutShort()) {
       const test = tests[queueIndex++];
@@ -1758,14 +1787,20 @@ async function runSingleSimulation(
         ]);
 
         // Stream a few of the test's steps live (transient SSE events, like the
-        // real reporter) so the demo run page shows the in-row live step readout.
-        // Wait steps are the least interesting to watch; the persisted stepEvents
-        // still carry them for the timeline. Each live step carries the Playwright
-        // category the reporter streams: `expect` for an assertion, `pw:api` otherwise.
+        // real reporter) so the demo run page shows the in-row live step readout:
+        // a story's test streams each of its authored steps, the call it fails on
+        // last, any other test its first three. Wait steps are the least interesting
+        // to watch; the persisted stepEvents still carry them for the timeline.
         const liveSteps = (test.steps ?? [])
           .filter((s) => s.category !== 'wait')
-          .slice(0, 3)
-          .map((s) => ({ ...s, category: s.category === 'assertion' ? 'expect' : 'pw:api' }));
+          .slice(0, test.relativeTimes ? undefined : 3);
+
+        // The worker says the call its test is in to the views of it, and the page at each call Inspect has from the
+        // demo's recorded trace; a test the trace holds no page of says so as it begins.
+        if (!demoTestHasPages(liveSteps)) {
+          say({ type: 'snapshot', ...liveWorker, refused: DEMO_NO_PAGES, test: test.title });
+        }
+        let pages = 0;
 
         let attemptRemaining = attemptDuration;
         let stepCursor = virtualNow;
@@ -1773,21 +1808,38 @@ async function runSingleSimulation(
           await sleep(attemptDuration / scenario.speed);
           virtualNow += attemptDuration;
         } else {
-          for (const s of liveSteps) {
+          for (const [n, s] of liveSteps.entries()) {
             const seg = Math.min(Math.max(s.duration, 1), attemptRemaining);
+            const callId = demoCallId(s, n);
+            const logCall = (status: LiveCallLog['status'], ms: number, error: string | null = null) =>
+              say({
+                type: 'call-log',
+                ...liveWorker,
+                log: demoCallLog(s, { id: callId, testLocation: test.location, status, ms, error }),
+                test: test.title,
+              });
+            const sendPage = (phase: DemoTracePhase) => {
+              const at = { testLocation: test.location, phase, index: pages, at: virtualNow };
+              const notice = demoSnapshotNotice(liveWorker, test.title, s, at);
+              if (!notice) return;
+              pages++;
+              say(notice);
+            };
             await postEvents([
               {
                 type: 'step-begin',
                 title: s.title,
                 subtitle: s.subtitle ?? null,
                 location: test.location,
-                stepCategory: s.category,
+                stepCategory: liveCategory(s),
                 parentTitle: test.title,
                 workerIndex,
                 shardIndex: shardOverride?.shardIndex ?? null,
                 startedAt: stepCursor,
               },
             ]);
+            sendPage('before');
+            logCall('running', 0);
             await sleep(seg / scenario.speed);
             virtualNow += seg;
             attemptRemaining -= seg;
@@ -1823,6 +1875,7 @@ async function runSingleSimulation(
                 virtualNow += tick;
                 hung += tick;
                 await postHeartbeat(virtualNow);
+                logCall('running', seg + hung);
               }
               if (a.stopMs) await postEvents([{ type: 'test-resumed', ...of, pausedMs: hung }]);
               attemptRemaining -= hung;
@@ -1840,13 +1893,17 @@ async function runSingleSimulation(
                 location: test.location,
                 status: 'passed',
                 duration: seg + hung,
-                stepCategory: s.category,
+                stepCategory: liveCategory(s),
                 parentTitle: test.title,
                 workerIndex,
                 shardIndex: shardOverride?.shardIndex ?? null,
                 startedAt: stepCursor,
               },
             ]);
+            // The call the attempt fails on ends with its error, any other passes.
+            const failed = !!s.failed && a.status === 'failed' && !cutShort();
+            logCall(failed ? 'failed' : 'passed', seg + hung, failed ? (a.error ?? null) : null);
+            sendPage('after');
             stepCursor += seg;
             if (attemptRemaining <= 0) break;
           }
@@ -1926,6 +1983,11 @@ async function runSingleSimulation(
             resources: executionResources(ranMs, ranInWorker),
           },
         ]);
+        say({
+          type: 'test-ended',
+          ...liveWorker,
+          outcome: { test: test.title, status: status as LiveTestOutcome['status'], ms: ranMs },
+        });
 
         ranInWorker++;
         const spans = testsByWorker.get(workerIndex) ?? [];

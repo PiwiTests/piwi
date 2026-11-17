@@ -9,7 +9,13 @@
  *
  * Event payload shapes are identical to the server SSE messages so the
  * subscribing components can share their handling code between modes.
+ *
+ * The simulated workers' live messages go over the same channel (`live`),
+ * published by the page that runs the simulator: the call each test is in and
+ * the pages Inspect shows, which the demo's watch of a run reads
+ * (`app/demo/live-watch.ts`).
  */
+import type { LiveViewerMessage } from '@piwitests/core/live-view';
 import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
 import type { RunProgressBroadcast } from '~~/server/utils/run-events';
 import { runProgressThrottle } from '~~/server/utils/run-progress-throttle';
@@ -55,7 +61,9 @@ export type DemoEventMessage =
   | { scope: 'global'; event: DemoGlobalEvent }
   /** A running run's tally, as the server's `/api/stream` sends its `run-progress`. */
   | { scope: 'progress'; event: RunProgressBroadcast }
-  | { scope: 'notification'; event: Record<string, unknown> };
+  | { scope: 'notification'; event: Record<string, unknown> }
+  /** What a simulated worker of a run says to the views of it, as a watch's message carries it, with no data. */
+  | { scope: 'live'; runId: number; message: LiveViewerMessage };
 
 // ── Publishing (service worker side) ───────────────────────────────────────
 
@@ -109,6 +117,11 @@ export function publishDemoRunProgress(progress: RunProgressBroadcast): void {
 
 export function publishDemoNotificationEvent(event: Record<string, unknown>): void {
   getPublishChannel().postMessage({ scope: 'notification', event } satisfies DemoEventMessage);
+}
+
+/** Publish what a simulated worker of run `runId` says to the views of it, from the page that runs the simulator. */
+export function publishDemoLiveMessage(runId: number, message: LiveViewerMessage): void {
+  getPublishChannel().postMessage({ scope: 'live', runId, message } satisfies DemoEventMessage);
 }
 
 // ── Subscribing (window side) ──────────────────────────────────────────────

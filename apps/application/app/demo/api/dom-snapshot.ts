@@ -50,6 +50,15 @@ function getTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<DomSnap
 }
 
 /**
+ * The page a committed trace holds at a call's moment (`at`), rendered as the server renders a stored trace's; null
+ * when the trace holds no page of that moment, rather than the failure-time page it would render in its place.
+ */
+export async function getDemoTraceMoment(path: string, at: SnapshotMoment): Promise<DomSnapshotResult | null> {
+  const result = await getTraceDomSnapshot(path, at);
+  return result?.snapshotName === `${at.phase}@${at.callId}` ? result : null;
+}
+
+/**
  * Fetch a committed trace ZIP from the demo's static assets and extract the
  * failure-time DOM snapshot, mirroring the server's `getTraceDomSnapshot`
  * (`parseZip` → `parseTraceTexts` → `extractDomSnapshot`). Returns null when

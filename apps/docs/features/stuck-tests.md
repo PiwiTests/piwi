@@ -89,7 +89,9 @@ runs as `local`: set `PIWI_ORIGIN=ci` on it ([run origin](/reference/test-metada
 
 In the [live demo](https://piwitests.dev/demo/), pick **Stuck test** in **Simulate a test run**: the PayPal checkout
 waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time; on
-the **Timeline** tab its bar turns amber past the pale bar of that time.
+the **Timeline** tab its bar turns amber past the pale bar of that time. Its row's **Watch** shows the click it waits
+on, its call log retrying a disabled **Pay** button, and [Inspect](./live-inspect) the checkout page at that click, as
+a recorded trace holds it, with the locator picker.
 **Stopped at a breakpoint** plays a run from VS Code whose PayPal test stands at a breakpoint for five minutes: its row
 says where, and never reads **Stuck?**.
 

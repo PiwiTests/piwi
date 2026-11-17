@@ -621,7 +621,7 @@ export const HELP_TOPICS = {
   },
   'run.live-view-demo': {
     title: 'Simulated run results',
-    text: 'This run simulates test results. Watching a browser needs a real run connected to your Piwi instance.',
+    text: 'This run simulates test results, and the call each worker’s test is in: **Watch** shows its call log, and **Inspect** the checkout page from a recorded trace, at the disabled Pay button in the **Stuck test** scenario. The image of the page, its events and its text need a real run connected to your Piwi instance.',
     doc: 'features/live-view#turn-it-on',
   },
   'run.live-no-workers': {

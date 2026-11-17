@@ -71,8 +71,16 @@ const snapshotError = ref<string | null>(null);
 // view toggle so the ARIA tree can be viewed even when a trace exists.
 const viewSource = ref<SnapshotSource | undefined>(undefined);
 
+const config = useRuntimeConfig();
+const isDemo = !!config.public.demoMode;
+const apiBase = (config.app.baseURL || '/').replace(/\/$/, '');
+
+/** The picker's document of a live page in the demo, read from its address: the demo's frames are inline. */
+const livePickerDoc = ref<string | null>(null);
+
 async function fetchSnapshot() {
-  // A live page is served whole by the live view, which said its viewport: nothing to ask first.
+  // A live page is served whole by the live view, which said its viewport: nothing to ask first, but in the demo its
+  // picker's document, which the frame takes inline.
   if (props.livePage) {
     snapshot.value = {
       status: 'ok',
@@ -82,6 +90,16 @@ async function fetchSnapshot() {
       availableSources: ['dom'],
     };
     snapshotError.value = null;
+    livePickerDoc.value = null;
+    if (!isDemo) return;
+    snapshotPending.value = true;
+    try {
+      livePickerDoc.value = await $fetch<string>(`${props.livePage.src}&mode=pick`, { responseType: 'text' });
+    } catch (err: unknown) {
+      snapshotError.value = err instanceof Error ? err.message : 'Unknown error';
+    } finally {
+      snapshotPending.value = false;
+    }
     return;
   }
   snapshotPending.value = true;
@@ -153,16 +171,15 @@ const alternatives = ref<RankedLocator[]>([]);
 // policy then blocks the picker's inline script — the picker never starts. The
 // demo is a static SPA with no server and no such CSP, so it keeps building the
 // document inline as a `srcdoc` (its snapshots come from the in-browser router,
-// not an API route an iframe `src` could reach).
-const config = useRuntimeConfig();
-const isDemo = !!config.public.demoMode;
-const apiBase = (config.app.baseURL || '/').replace(/\/$/, '');
-
-const srcDoc = computed(() =>
-  isDemo && import.meta.client && snapshot.value?.html
+// not an API route an iframe `src` could reach), and a live page's picker
+// document is read from its address first.
+const srcDoc = computed(() => {
+  if (!isDemo || !import.meta.client) return undefined;
+  if (props.livePage) return livePickerDoc.value ?? undefined;
+  return snapshot.value?.html
     ? buildPickerDocument(snapshot.value.html, { probedAttrs: CAPTURED_ATTRIBUTES })
-    : undefined,
-);
+    : undefined;
+});
 
 // Bumped to force the iframe to reload — restarting the picker script — when
 // re-picking or switching source (remounts via `:key`, and busts `frameSrc`).
@@ -175,8 +192,9 @@ function reloadFrame() {
 // re-pick / reload re-runs the picker script (the endpoint is `no-store`, so
 // this only forces a fresh navigation rather than defeating a cache).
 const frameSrc = computed(() => {
+  if (isDemo) return undefined;
   if (props.livePage) return `${props.livePage.src}&mode=pick&r=${renderKey.value}`;
-  if (isDemo || snapshot.value?.status !== 'ok' || !snapshot.value.html) return undefined;
+  if (snapshot.value?.status !== 'ok' || !snapshot.value.html) return undefined;
   const params = new URLSearchParams({ mode: 'pick', ...momentParams() });
   if (viewSource.value) params.set('source', viewSource.value);
   params.set('r', String(renderKey.value));
