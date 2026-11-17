@@ -183,6 +183,7 @@ import {
 } from './dashboards';
 import { createDemoChannel, deleteDemoChannel, demoReportChannels, listDemoChannels } from './channels';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
+import { apiDemoChangelog } from './changelog';
 import {
   apiGetDemoTraceStacks,
   apiGetDemoTraceNetwork,
@@ -4359,6 +4360,12 @@ const routes: RouteEntry[] = [
         arch: null,
         dbBackend: 'sql.js (in-browser)',
       }),
+  },
+
+  {
+    method: 'GET',
+    pattern: /^\/api\/changelog$/,
+    handler: (_, _body, query) => apiDemoChangelog(query),
   },
 
   // Health — demo runs entirely client-side, so "the database" is always the

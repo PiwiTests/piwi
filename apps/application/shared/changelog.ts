@@ -2,9 +2,10 @@
  * The project changelog (`CHANGELOG.md` at the repository root), parsed into
  * releases. It feeds the MCP `get_release_notes` tool, which ships the file
  * inside the server build so it answers for the running version, and the docs'
- * generated What's new page (`apps/docs/scripts/generate-whats-new.mjs`). The
- * desktop app's update card reads a GitHub release body the same way, through
- * `parseReleaseNotes`.
+ * generated What's new page (`apps/docs/scripts/generate-whats-new.mjs`) and the
+ * dashboard's Changelog window (`GET /api/changelog`, read by `changelogPage`).
+ * The desktop app's update card reads a GitHub release body the same way,
+ * through `parseReleaseNotes`.
  *
  * The file mixes two shapes: release-please's raw sections (`### Features`,
  * `### Bug Fixes`, one `* **scope:** subject ([hash](url))` line per commit, so a
@@ -13,6 +14,7 @@
  * intro, `### ✨ Highlights`, `####` groups, `-` bullets). Both parse to the same
  * shape: commit, pull-request and `closes` links dropped, repeats collapsed.
  */
+import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 import { compareVersions } from '#shared/piwi-env-vars';
 
 /** The kinds of entry a release lists, in the order a reader wants them. */
@@ -213,4 +215,56 @@ const ENTRY_SCOPE = /^\*\*([a-z-]+):\*\*\s+/;
 export function splitEntryScope(entry: string): { scope: string | null; text: string } {
   const match = entry.match(ENTRY_SCOPE);
   return match ? { scope: match[1]!, text: entry.slice(match[0].length) } : { scope: null, text: entry };
+}
+
+/** The GitHub release page of a single release, or the header's link for a grouped entry. */
+export function changelogReleaseUrl(release: ChangelogRelease): string | null {
+  return release.from === release.to ? `${PROJECT_LINKS.releases}/tag/v${release.to}` : release.url;
+}
+
+/** True when `version` falls in the versions the release covers. */
+export function changelogReleaseCovers(release: ChangelogRelease, version: string): boolean {
+  return compareVersions(release.from, version) <= 0 && compareVersions(version, release.to) <= 0;
+}
+
+/** Releases one page of `GET /api/changelog` holds by default, and at most. */
+export const CHANGELOG_PAGE_SIZE = 10;
+export const CHANGELOG_MAX_PAGE_SIZE = 50;
+
+/** What `GET /api/changelog` answers: one page of the changelog shipped with the build. */
+export interface ChangelogPage {
+  /** The version of the build that answers. */
+  runningVersion: string;
+  /** Releases the shipped changelog lists in all; 0 when the build has none. */
+  total: number;
+  /** Newest first, each `url` its release page. */
+  releases: ChangelogRelease[];
+  /** The `cursor` that reads the next, older page; null on the last one. */
+  nextCursor: string | null;
+}
+
+/**
+ * One page of the releases (newest first), starting after the release whose
+ * highest version is `cursor`, which no other release shares (the unit tests
+ * hold `CHANGELOG.md` to it). An unknown cursor reads an empty page. A `limit`
+ * above `CHANGELOG_MAX_PAGE_SIZE` reads that many releases, and one that is
+ * not a whole number of at least 1 reads `CHANGELOG_PAGE_SIZE`.
+ */
+export function changelogPage(
+  releases: ChangelogRelease[] | null,
+  options: { runningVersion: string; cursor?: unknown; limit?: unknown },
+): ChangelogPage {
+  const all = releases ?? [];
+  const limit = Number(options.limit);
+  const size = Number.isInteger(limit) && limit >= 1 ? Math.min(limit, CHANGELOG_MAX_PAGE_SIZE) : CHANGELOG_PAGE_SIZE;
+  const cursor = typeof options.cursor === 'string' && options.cursor ? options.cursor : null;
+  const start = cursor === null ? 0 : all.findIndex((release) => release.to === cursor) + 1;
+  const page = start > 0 || cursor === null ? all.slice(start, start + size) : [];
+  const last = page[page.length - 1];
+  return {
+    runningVersion: options.runningVersion,
+    total: all.length,
+    releases: page.map((release) => ({ ...release, url: changelogReleaseUrl(release) })),
+    nextCursor: last && start + size < all.length ? last.to : null,
+  };
 }

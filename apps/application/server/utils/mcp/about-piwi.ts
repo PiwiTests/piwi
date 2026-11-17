@@ -49,31 +49,28 @@ import {
   suggestDocsPages,
   type DocsCorpus,
 } from '#shared/docs-corpus';
-import { CHANGELOG_ENTRY_KINDS, parseChangelog, type ChangelogRelease } from '#shared/changelog';
+import {
+  CHANGELOG_ENTRY_KINDS,
+  changelogReleaseCovers,
+  changelogReleaseUrl,
+  type ChangelogRelease,
+} from '#shared/changelog';
 import { resolveInstanceStates } from '#shared/handlers/setup-status';
 import { DOCS_BASE_URL } from '#shared/docs';
 import { isAdministrator } from '#shared/permissions';
 import { getDialect, type DbClient } from '../../database';
 import { isAuthEnabled } from '../auth';
+import { assetText, bundledChangelog } from '../bundled-assets';
 import { dropNulls } from './json';
 import { serveableTools } from './served';
 import type { McpContext } from './tools';
 
 // ── Bundled material ──────────────────────────────────────────────────────────
 
-/** Server-asset mounts declared in nuxt.config.ts. */
+/** The docs' server-asset mount, declared in nuxt.config.ts. */
 const DOCS_STORAGE = 'assets:piwi-docs';
-const CHANGELOG_STORAGE = 'assets:piwi-changelog';
-
-/** A bundled asset as text: production builds hand non-text types back as bytes. */
-function assetText(value: unknown): string | null {
-  if (typeof value === 'string') return value;
-  if (value instanceof Uint8Array) return new TextDecoder().decode(value);
-  return null;
-}
 
 let docsCache: Promise<DocsCorpus | null> | null = null;
-let changelogCache: Promise<ChangelogRelease[] | null> | null = null;
 
 /** The bundled docs, parsed once per process — re-read on every call in dev, so edits show up. */
 function bundledDocs(): Promise<DocsCorpus | null> {
@@ -92,17 +89,6 @@ function bundledDocs(): Promise<DocsCorpus | null> {
     return corpus.pages.length ? corpus : null;
   })().catch(() => null);
   return docsCache;
-}
-
-/** The bundled changelog, parsed once per process. */
-function bundledChangelog(): Promise<ChangelogRelease[] | null> {
-  if (changelogCache && !import.meta.dev) return changelogCache;
-  changelogCache = (async () => {
-    const text = assetText(await useStorage(CHANGELOG_STORAGE).getItemRaw('CHANGELOG.md'));
-    const releases = text ? parseChangelog(text) : [];
-    return releases.length ? releases : null;
-  })().catch(() => null);
-  return changelogCache;
 }
 
 const DOCS_NOT_BUNDLED = `This server was built without its documentation; read it at ${DOCS_BASE_URL}.`;
@@ -568,15 +554,10 @@ export async function describePiwi(db: DbClient, params: Record<string, unknown>
 
 // ── get_release_notes ─────────────────────────────────────────────────────────
 
-/** The GitHub release page of a single release, or the header's link for a grouped entry. */
-function releaseUrl(release: ChangelogRelease): string | null {
-  return release.from === release.to ? `${PROJECT_LINKS.releases}/tag/v${release.to}` : release.url;
-}
-
 /** True when `version` (`0.36.0`, or `0.36` for a minor) names this release. */
 function releaseMatches(release: ChangelogRelease, version: string): boolean {
   if (/^\d+\.\d+$/.test(version)) return release.to.startsWith(`${version}.`) || release.from.startsWith(`${version}.`);
-  return compareVersions(release.from, version) <= 0 && compareVersions(version, release.to) <= 0;
+  return changelogReleaseCovers(release, version);
 }
 
 function plainEntries(entries: string[]): string[] | null {
@@ -587,7 +568,7 @@ function fullRelease(release: ChangelogRelease) {
   return dropNulls({
     version: release.version,
     date: release.date,
-    url: releaseUrl(release),
+    url: changelogReleaseUrl(release),
     intro: release.intro ? plainText(release.intro) : null,
     highlights: plainEntries(release.entries.highlights),
     breaking: plainEntries(release.entries.breaking),
@@ -614,7 +595,7 @@ function releaseSummary(release: ChangelogRelease) {
   return dropNulls({
     version: release.version,
     date: release.date,
-    url: releaseUrl(release),
+    url: changelogReleaseUrl(release),
     intro: release.intro ? plainText(release.intro) : null,
     [highlights.length ? 'highlights' : 'features']: plainEntries(listed),
     moreFeatures: !highlights.length && features.length > SUMMARY_FEATURES ? features.length - SUMMARY_FEATURES : null,

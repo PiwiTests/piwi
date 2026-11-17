@@ -623,6 +623,9 @@ onMounted(async () => {
     <!-- Global "Open in editor" settings modal, toggled from file-path choosers and the user menu -->
     <OpenInIdeSettingsModal />
 
+    <!-- The changelog shipped with this build, opened from the user menu, Settings → About and the Updates card -->
+    <ChangelogModal />
+
     <!-- Desktop shell: import dialog for archives dropped on the window or opened with the app -->
     <DesktopImportModal />
 

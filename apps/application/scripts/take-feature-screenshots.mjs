@@ -9181,6 +9181,44 @@ const SCENES = [
     },
   },
   {
+    name: 'changelog',
+    description:
+      "Settings → About, then the Changelog window: the changelog shipped with this build, the running version's release marked and open, at 1280 and 390 px",
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['changelog.png', 'changelog-narrow.png'],
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('about-changelog').click();
+      await page.locator('[data-shot="changelog"] [data-release]').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('narrow');
+    },
+  },
+  {
+    name: 'desktop-update-changelog',
+    description:
+      'Settings → About in the desktop app: the Updates card with its Changelog button, then the Changelog window it opens',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['desktop-update-changelog.png', 'desktop-update-changelog-modal.png'],
+    async run({ page, shoot, settle }) {
+      const card = page.locator('[data-shot="desktop-updates"]');
+      await card.getByTestId('update-card-changelog').waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="desktop-updates"]', pad: 24 });
+      await card.getByTestId('update-card-changelog').click();
+      await page.locator('[data-shot="changelog"] [data-release]').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('modal');
+    },
+  },
+  {
     name: 'settings-desktop',
     description:
       'Settings → Desktop app (desktop app), the first page of Settings there: the address and token, Piwi Picker pairing, the data location and the background service',
