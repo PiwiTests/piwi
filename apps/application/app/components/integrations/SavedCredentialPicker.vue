@@ -7,8 +7,7 @@
  * besides the one it names already. Once one is picked, it says whose token is
  * sent, and the form hides its token fields.
  */
-import { isUnderBaseUrl } from '#shared/ci-server';
-import type { CredentialService, CredentialSummary } from '#shared/credentials';
+import { credentialsServingEveryProject, type CredentialService, type CredentialSummary } from '#shared/credentials';
 import type { ApiResponse } from '~~/types/api';
 
 const props = defineProps<{
@@ -26,15 +25,11 @@ const { data } = useFetch<CredentialsAnswer>('/api/credentials', {
   server: false,
 });
 const saved = computed(() =>
-  ((data.value?.credentials ?? []) as CredentialSummary[]).filter(
-    (c) =>
-      c.service === props.service &&
-      c.managedBy === 'db' &&
-      c.scope.allProjects &&
-      c.id !== props.current &&
-      props.endpoint !== null &&
-      isUnderBaseUrl(c.destination, props.endpoint),
-  ),
+  credentialsServingEveryProject(
+    (data.value?.credentials ?? []) as CredentialSummary[],
+    props.service,
+    props.endpoint,
+  ).filter((c) => c.id !== props.current),
 );
 const items = computed(() =>
   saved.value.map((c) => ({

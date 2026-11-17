@@ -603,7 +603,8 @@ export const PIWI_ENV_VARS = {
     enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
   },
   PIWI_AI_API_KEY: {
-    description: 'API key for the diagnosis provider. Takes precedence over the DB-stored key.',
+    description:
+      'API key for the diagnosis provider, used while PIWI_AI_PROVIDER is set. It shows as a read-only credential (Settings → Credentials) that reads it from here at each use.',
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
@@ -687,7 +688,8 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
   PIWI_AI_RESEARCH_API_KEY: {
-    description: 'API key for the research-stage provider. Falls back to PIWI_AI_API_KEY.',
+    description:
+      'API key for the research-stage provider. Falls back to PIWI_AI_API_KEY. It shows as a read-only credential that reads it from here.',
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
@@ -730,7 +732,8 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
   },
   PIWI_AI_EMBEDDING_API_KEY: {
-    description: 'API key for the embedding provider. Falls back to PIWI_AI_API_KEY.',
+    description:
+      'API key for the embedding provider. Falls back to PIWI_AI_API_KEY. It shows as a read-only credential that reads it from here.',
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
@@ -762,7 +765,8 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
   },
   PIWI_AI_ASSISTANT_API_KEY: {
-    description: 'API key for the assistant provider. Falls back to PIWI_AI_API_KEY.',
+    description:
+      'API key for the assistant provider. Falls back to PIWI_AI_API_KEY. It shows as a read-only credential that reads it from here.',
     category: 'ai',
     secret: true,
     since: '0.59.0',

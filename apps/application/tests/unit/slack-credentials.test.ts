@@ -2,7 +2,7 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi 
 import { asc, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
-import { ADMIN_ACCESS } from '#shared/permissions';
+import { ADMIN_ACCESS, InstanceRole, type AccessSummary } from '#shared/permissions';
 import { credentialReferences, namedForEveryProject } from '#shared/handlers/credentials';
 import { openTempDb, type TempDb } from './temp-db';
 
@@ -19,11 +19,11 @@ import { openTempDb, type TempDb } from './temp-db';
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = '0123456789abcdef'.repeat(4);
 
-const state = vi.hoisted(() => ({ db: null as unknown, authEnabled: true }));
+const state = vi.hoisted(() => ({ db: null as unknown, authEnabled: true, access: null as unknown }));
 vi.mock('../../server/database', () => ({ getDatabase: async () => state.db }));
 vi.mock('../../server/utils/auth', () => ({
   requireAuth: async () => ({ id: 1 }),
-  getRequestAccess: async () => ADMIN_ACCESS,
+  getRequestAccess: async () => state.access ?? ADMIN_ACCESS,
   isAuthEnabled: () => state.authEnabled,
 }));
 type RouteEvent = { body?: unknown; params?: Record<string, string>; query?: Record<string, string> };
@@ -50,6 +50,12 @@ const deleteConnection = (await import('../../server/api/integrations/connection
   event: RouteEvent & { context: Record<string, unknown> },
 ) => Promise<{ credentialDeleted: boolean }>;
 const { createConnection } = await import('../../server/utils/integrations/connections');
+const testUnsavedChannel = (await import('../../server/api/channels/test.post')).default as unknown as (
+  event: RouteEvent & { context: Record<string, unknown> },
+) => Promise<{ success: boolean; error?: string }>;
+const { slackChannelCredentialProblem } = await import('../../server/utils/notifications/slack-credentials');
+const { insertCredential } = await import('#shared/handlers/credentials');
+const { sealCredentialSecret } = await import('../../server/utils/credentials');
 const { CredentialRefusedError } = await import('../../server/utils/credentials');
 const { encryptSecret, getEncryptionKey } = await import('../../server/utils/crypto');
 
@@ -70,6 +76,7 @@ afterAll(async () => {
 beforeEach(async () => {
   posted.length = 0;
   state.authEnabled = true;
+  state.access = null;
   await db.delete(schema.notificationChannels);
   await db.delete(schema.credentialUses);
   await db.delete(schema.credentials);
@@ -177,7 +184,9 @@ describe('a Slack channel of the instance', () => {
       .select({ config: schema.notificationChannels.config, userId: schema.notificationChannels.userId })
       .from(schema.notificationChannels);
     expect(row?.userId).toBe(1);
-    expect(typeof (row!.config as Record<string, unknown>).token).toBe('string');
+    const sealed = (row!.config as Record<string, unknown>).token as string;
+    expect(sealed.startsWith('v1:')).toBe(true);
+    expect(sealed).not.toContain(TOKEN);
     expect(await credentialRows()).toEqual([]);
   });
 });
@@ -196,6 +205,28 @@ describe('importSlackChannelTokens', () => {
       .returning();
     return row!;
   };
+
+  test('leaves a token it cannot open where it is', async () => {
+    const [row] = await db
+      .insert(schema.notificationChannels)
+      .values({
+        name: 'Broken',
+        type: 'slack',
+        config: { token: 'v1:not-a-sealed-value', channelId: 'C0123456789' },
+        userId: null,
+        verified: true,
+      })
+      .returning();
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    expect(await importSlackChannelTokens(db as never)).toBe(0);
+    const [after] = await db
+      .select({ config: schema.notificationChannels.config })
+      .from(schema.notificationChannels)
+      .where(eq(schema.notificationChannels.id, row!.id));
+    expect(after?.config).toEqual({ token: 'v1:not-a-sealed-value', channelId: 'C0123456789' });
+    expect(warn).toHaveBeenCalled();
+    warn.mockRestore();
+  });
 
   test('moves the global channels’ tokens to credentials, equal tokens sharing one, once', async () => {
     const a = await channelWithToken('Releases', TOKEN);
@@ -271,5 +302,62 @@ describe('deleting what names a credential', () => {
     expect(await remove(kept.id, false)).toMatchObject({ credentialDeleted: false });
     expect(await remove(asked.id, true)).toMatchObject({ credentialDeleted: true });
     expect((await credentialRows()).map((credential) => credential.name)).toEqual(['Kept']);
+  });
+});
+
+describe('who may send with a saved Slack credential', () => {
+  const MEMBER: AccessSummary = { instanceRole: InstanceRole.MEMBER, allProjects: [], projects: {} };
+  const slackCredential = (name: string, fields: { destination?: string; allProjects?: boolean } = {}) =>
+    insertCredential(
+      db as never,
+      {
+        name,
+        description: null,
+        service: 'slack',
+        user: null,
+        destination: fields.destination ?? 'https://slack.com/api/',
+        scope: fields.allProjects === false ? { allProjects: false, projectIds: [] } : { allProjects: true },
+        allowedInputs: null,
+        customRequests: false,
+        disabled: false,
+      },
+      sealCredentialSecret(fields.destination ?? 'https://slack.com/api/', TOKEN),
+      null,
+    );
+
+  test('a test before saving sends with one for an administrator, and refuses anyone else', async () => {
+    const credentialId = await slackCredential('Slack · bot');
+    const event = { body: { type: 'slack', config: { credentialId, channelId: 'C0123456789' } }, context: {} };
+    expect(await testUnsavedChannel(event)).toEqual({ success: true });
+    expect(posted).toHaveLength(1);
+    state.access = MEMBER;
+    await expect(testUnsavedChannel(event)).rejects.toMatchObject({ statusCode: 403 });
+    expect(posted).toHaveLength(1);
+  });
+
+  test('a channel names only one shared with all projects and sent to the Web API', async () => {
+    expect(
+      await slackChannelCredentialProblem(db as never, await slackCredential('Narrow', { allProjects: false })),
+    ).toContain('is not shared with all projects');
+    expect(
+      await slackChannelCredentialProblem(
+        db as never,
+        await slackCredential('Elsewhere', { destination: 'https://hooks.slack.com/' }),
+      ),
+    ).toContain('not to Slack’s Web API');
+  });
+
+  test('only an administrator deletes a channel’s credential with it', async () => {
+    const { channel } = await create({ token: TOKEN, channelId: 'C0123456789' }, false, 'Mine');
+    const credentialId = await slackCredential('Slack · shared');
+    await db
+      .update(schema.notificationChannels)
+      .set({ config: { credentialId, channelId: 'C0123456789' } })
+      .where(eq(schema.notificationChannels.id, channel.id));
+    state.access = MEMBER;
+    expect(
+      await deleteChannel({ params: { id: String(channel.id) }, query: { deleteCredential: 'true' }, context: {} }),
+    ).toMatchObject({ credentialDeleted: false });
+    expect((await credentialRows()).map((credential) => credential.id)).toEqual([credentialId]);
   });
 });

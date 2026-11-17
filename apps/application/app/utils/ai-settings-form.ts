@@ -44,7 +44,17 @@ export interface RoleDraft extends RoleForm {
 export type RoleDrafts = Record<AiModelRole, RoleDraft>;
 
 export function blankRoleDraft(): RoleDraft {
-  return { enabled: false, reuse: null, provider: '', model: '', baseUrl: '', apiKey: '', temperature: '', tile: null };
+  return {
+    enabled: false,
+    reuse: null,
+    provider: '',
+    model: '',
+    baseUrl: '',
+    apiKey: '',
+    credentialId: undefined,
+    temperature: '',
+    tile: null,
+  };
 }
 
 /** The form of a stored role; the key is never returned, so it starts empty. */
@@ -56,6 +66,7 @@ export function roleDraftFromSettings(stored: AiRoleSettings | null | undefined)
     model: stored?.model ?? '',
     baseUrl: stored?.baseUrl ?? '',
     apiKey: '',
+    credentialId: undefined,
     temperature: stored?.temperature != null ? String(stored.temperature) : '',
     tile: stored?.reuse ? null : tileFor(stored?.provider, stored?.baseUrl),
   };

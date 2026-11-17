@@ -5,17 +5,17 @@ rules a reasonable change would otherwise break. Read [`../../AGENTS.md`](../../
 guide of their own: [`mcp/AGENTS.md`](mcp/AGENTS.md) (MCP tools) and [`assistant/AGENTS.md`](assistant/AGENTS.md) (the
 in-app assistant).
 
-| Touching                                                                         | Section                                             |
-| -------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `server/utils/scm/`, `shared/scm-urls.ts`, any link to a commit or a repository  | [SCM providers](#scm-providers)                     |
-| `shared/error-fingerprint.ts`, failure clusters                                  | [Failure fingerprints](#failure-fingerprints)       |
-| locator snapshots, `locator-healing.ts`, `LocatorHealingPanel.vue`               | [Locator healing](#locator-healing)                 |
-| trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`          | [Trace storage](#trace-storage)                     |
-| `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                     | [DOM snapshot live state](#dom-snapshot-live-state) |
-| `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
-| `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
-| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes      | [Desktop runs](#desktop-runs)                       |
-| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token | [Credentials](#credentials)                         |
+| Touching                                                                                                                                                                              | Section                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `server/utils/scm/`, `shared/scm-urls.ts`, any link to a commit or a repository                                                                                                       | [SCM providers](#scm-providers)                     |
+| `shared/error-fingerprint.ts`, failure clusters                                                                                                                                       | [Failure fingerprints](#failure-fingerprints)       |
+| locator snapshots, `locator-healing.ts`, `LocatorHealingPanel.vue`                                                                                                                    | [Locator healing](#locator-healing)                 |
+| trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`                                                                                                               | [Trace storage](#trace-storage)                     |
+| `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                                                                                                                          | [DOM snapshot live state](#dom-snapshot-live-state) |
+| `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts`                                                                                                      | [AI CLI providers](#ai-cli-providers)               |
+| `ai-context*.ts`, `integrations/automation.ts`                                                                                                                                        | [Wiring rules](#wiring-rules)                       |
+| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes                                                                                                           | [Desktop runs](#desktop-runs)                       |
+| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token, `ai-credentials.ts`, `integrations/connection-credentials.ts`, `notifications/slack-credentials.ts` | [Credentials](#credentials)                         |
 
 ## SCM providers
 
@@ -300,6 +300,9 @@ runs (`@piwitests/editor/run-host`), plus these:
   public wrapper of the base class that runs a `do…` hook through `write`, so it is logged and checked again: a new
   write is a hook behind such a wrapper. Only `LocalGitProvider` overrides a wrapper, to call the hosted provider's
   (`tests/unit/scm-credentials.test.ts`).
+- **A caller that calls an AI model resolves its configuration with `resolveAiConfig(db, { open: true, actor })`**,
+  which opens each role's key through `openAiKeys` as one counted read; without `open`, a role holds no key and the
+  call goes out with none (`tests/unit/ai-credentials.test.ts`).
 - **A Jira or Zephyr Scale client gets its token only from `openTracker` or `openTestManagement`**
   (`integrations/connections.ts`), which open the connection's credential as one counted read; each of the clients'
   writes goes through the credential's `writeGate`, and a POST that only reads is listed in the Jira client's

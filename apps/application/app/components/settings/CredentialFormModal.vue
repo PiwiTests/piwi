@@ -261,7 +261,7 @@ async function submit() {
           v-if="asksService"
           label="Service"
           name="credentialService"
-          description="What it is sent to: a CI server, or a repository host's API."
+          description="What it is sent to: a CI server, a repository host's API, an AI provider, Jira, Zephyr Scale or Slack."
         >
           <USelect
             v-model="form.service"

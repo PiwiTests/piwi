@@ -4,13 +4,14 @@
  * `PIWI_AI_ASSISTANT_*` variables, it is its own. The limits are parsed and
  * clamped like the AI-step limits, and their registry entries match the code.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { migrateToLatest } from './temp-db';
+import { stubAiKeyEnv } from './ai-key-env';
 
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY ||= 'assistant-role-test-secret-key-0123456789';
@@ -22,17 +23,7 @@ const { assistantRole, resolveAiConfig } = await import('../../server/utils/ai-p
 
 /** The configuration a call to the model reads: the environment's keys set as the server reads them, then opened. */
 async function resolveForCall() {
-  const vars = [
-    ['apiKey', 'PIWI_AI_API_KEY'],
-    ['researchApiKey', 'PIWI_AI_RESEARCH_API_KEY'],
-    ['embeddingApiKey', 'PIWI_AI_EMBEDDING_API_KEY'],
-    ['assistantApiKey', 'PIWI_AI_ASSISTANT_API_KEY'],
-  ] as const;
-  for (const [field, name] of vars) {
-    const value = (envAi as Record<string, string | undefined> | undefined)?.[field];
-    if (value) process.env[name] = value;
-    else delete process.env[name];
-  }
+  stubAiKeyEnv(envAi);
   return resolveAiConfig(db, { open: true });
 }
 const { readAiSettings } = await import('../../server/utils/ai-settings');
@@ -49,6 +40,9 @@ beforeAll(async () => {
   db = sqlite as unknown as DbClient;
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 beforeEach(async () => {
   envAi = {};
   await deleteAppSetting(db, 'ai');
@@ -107,8 +101,9 @@ describe('the assistant role from the environment', () => {
 
   test('a model alone reuses the main provider, key and base URL', async () => {
     envAi = { ...env, assistantModel: 'env-chat', assistantTemperature: '0.2' };
-    expect(assistantRole((await resolveForCall())!)).toMatchObject({
+    expect(assistantRole((await resolveForCall())!)).toEqual({
       provider: 'openai',
+      credentialId: expect.any(Number),
       apiKey: 'env-key',
       model: 'env-chat',
       baseUrl: 'https://llm.internal/v1',
@@ -213,7 +208,7 @@ describe('the DeepSeek CLI provider roles', () => {
 
 describe('resolveAssistantLimits', () => {
   test('defaults with nothing set', () => {
-    expect(limits.resolveAssistantLimits({})).toMatchObject({
+    expect(limits.resolveAssistantLimits({})).toEqual({
       maxToolCalls: limits.DEFAULT_ASSISTANT_MAX_TOOL_CALLS,
       maxOutputTokens: limits.DEFAULT_ASSISTANT_MAX_OUTPUT_TOKENS,
       turnTimeoutMs: limits.DEFAULT_ASSISTANT_TURN_TIMEOUT_SECONDS * 1000,
@@ -231,7 +226,7 @@ describe('resolveAssistantLimits', () => {
         PIWI_AI_ASSISTANT_DAILY_TOKENS_PER_USER: 'lots',
         PIWI_AI_ASSISTANT_DAILY_TOKENS: '-5',
       }),
-    ).toMatchObject({
+    ).toEqual({
       maxToolCalls: 30,
       maxOutputTokens: 256,
       turnTimeoutMs: 60_000,

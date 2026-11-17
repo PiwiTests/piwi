@@ -92,7 +92,10 @@ export interface JiraClientConfig {
   cloudId?: string | null;
   /** Request timeout in ms; unfurl passes a shorter budget than the default. */
   timeoutMs?: number;
-  /** Runs each write (any method but GET) inside the check and log row of the credential its token comes from. */
+  /**
+   * Runs each write (any method but GET, except the POSTs of `READ_POSTS`) inside the check and log row of the
+   * credential its token comes from.
+   */
   writeGate?: CredentialWriteGate;
 }
 

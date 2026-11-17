@@ -431,7 +431,7 @@ test.describe.serial('Integrations — the fields Jira requires', () => {
 
   test.afterAll(async ({ request }) => {
     if (projectId) await request.put(`/api/projects/${projectId}/integrations`, { data: { connectionId: null } });
-    if (connectionId) await request.delete(`/api/integrations/connections/${connectionId}`);
+    if (connectionId) await request.delete(`/api/integrations/connections/${connectionId}?deleteCredential=true`);
     await new Promise<void>((resolve) => mock.server.close(() => resolve()));
   });
 

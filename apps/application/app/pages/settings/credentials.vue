@@ -125,7 +125,7 @@ async function remove() {
       <EmptyState
         v-if="credentials.length === 0"
         icon="i-lucide-key-round"
-        text="No credential yet. Save one here, then name it in a project’s CI actions or Source control settings."
+        text="No credential yet. Save one here, or type a key or token in the form that needs it: a CI action, source control, an AI role, a Jira or Zephyr Scale connection, a Slack channel."
       />
       <ul v-else class="divide-y divide-default" data-testid="credential-list">
         <li v-for="credential in credentials" :key="credential.id">
@@ -186,8 +186,8 @@ async function remove() {
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt class="text-muted">Service</dt>
             <dd class="text-highlighted">{{ CREDENTIAL_SERVICE_LABELS[selected.service] }}</dd>
-            <template v-if="selected.service === 'ci-server'">
-              <dt class="text-muted">User</dt>
+            <template v-if="selected.service === 'ci-server' || selected.service === 'jira'">
+              <dt class="text-muted">{{ selected.service === 'jira' ? 'Account e-mail' : 'User' }}</dt>
               <dd class="text-highlighted font-mono">{{ selected.user ?? '—' }}</dd>
             </template>
             <dt class="text-muted">Destination</dt>
@@ -225,10 +225,18 @@ async function remove() {
           <div class="space-y-1">
             <p class="text-sm font-semibold text-highlighted">Used by</p>
             <p v-if="selected.usedBy.length === 0" class="text-sm text-muted">
-              Nothing names it{{ selected.managedBy === 'env' ? ': the CI actions that name none send it' : '' }}.
+              Nothing names it{{
+                selected.managedBy === 'env' && selected.service === 'ci-server'
+                  ? ': the CI actions that name none send it'
+                  : ''
+              }}.
             </p>
             <ul v-else class="space-y-0.5">
-              <li v-for="use in selected.usedBy" :key="`${use.kind}-${use.projectId}-${use.actionId}`" class="text-sm">
+              <li
+                v-for="use in selected.usedBy"
+                :key="`${use.kind}-${use.projectId}-${use.actionId}-${use.name}`"
+                class="text-sm"
+              >
                 <NuxtLink :to="referenceLink(use)" class="text-primary hover:underline">{{ use.name }}</NuxtLink>
                 <span class="text-muted"> · {{ use.projectName ?? 'the instance' }}</span>
               </li>

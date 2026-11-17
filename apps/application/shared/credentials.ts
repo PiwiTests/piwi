@@ -113,6 +113,21 @@ export interface CredentialReference {
   name: string;
 }
 
+/**
+ * The saved credentials a form serving every project may name (an AI role, a
+ * connection, a Slack channel of the instance): of the service, saved in the
+ * database, shared with all projects and sent under the form's endpoint.
+ */
+export function credentialsServingEveryProject<
+  T extends { service: CredentialService; managedBy: string; scope: CredentialScope; destination: string },
+>(credentials: readonly T[], service: CredentialService, endpoint: string | null): T[] {
+  if (endpoint === null) return [];
+  return credentials.filter(
+    (c) =>
+      c.service === service && c.managedBy === 'db' && c.scope.allProjects && isUnderBaseUrl(c.destination, endpoint),
+  );
+}
+
 /** A reference as a sentence names it: the CI action or `Source control`, then its project or the instance. */
 export function credentialReferenceText(reference: CredentialReference): string {
   return `"${reference.name}" (${reference.projectName ?? 'the instance'})`;

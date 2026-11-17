@@ -133,15 +133,28 @@ const credentialResult = computed(() =>
 );
 const cloudId = computed(() => siteResult.value?.cloudId ?? (storedConfig.cloudId as string | undefined) ?? null);
 
+/** A stored token is kept only while the site it was saved for is the one in the form. */
+const keepsStoredToken = computed(
+  () =>
+    !!props.connection?.hasCredentials &&
+    !!siteAddress.value &&
+    siteAddress.value.url === normalizeJiraSiteUrl(props.connection.baseUrl)?.url,
+);
+/** Editing a connection with a token, moved to another site: the token is asked again. */
+const siteMoved = computed(() => editing.value && !!props.connection?.hasCredentials && !keepsStoredToken.value);
+
 const canCheckCredentials = computed(
   () =>
     !!siteAddress.value &&
-    (pickedCredential.value !== null || (!!form.email.trim() && (!!form.apiToken || editing.value))),
+    (pickedCredential.value !== null || (!!form.email.trim() && (!!form.apiToken || keepsStoredToken.value))),
 );
 
 /** What a blank token keeps, or where a typed one is saved. */
 const tokenDescription = computed(() => {
-  if (!editing.value) return 'Saved as a credential (Settings → Credentials), never shown again.';
+  if (siteMoved.value) return 'Enter the token again: a token is sent only to the site it was saved for.';
+  if (!editing.value || !keepsStoredToken.value) {
+    return 'Saved as a credential (Settings → Credentials), never shown again.';
+  }
   const name = props.connection?.credentialName;
   return name ? `Leave blank to keep the token of “${name}”.` : 'Leave blank to keep the stored token.';
 });
@@ -165,9 +178,9 @@ const saving = ref(false);
 const canSave = computed(
   () =>
     !!siteAddress.value &&
-    (editing.value ||
-      pickedCredential.value !== null ||
-      (!!form.email.trim() && !!form.apiToken && props.canStoreSecrets)),
+    (pickedCredential.value !== null ||
+      (!!form.email.trim() && !!form.apiToken && props.canStoreSecrets) ||
+      (editing.value && !siteMoved.value)),
 );
 
 async function submit() {
@@ -370,7 +383,7 @@ const envSnippet = computed(() =>
             v-model="form.apiToken"
             type="password"
             autocomplete="new-password"
-            :placeholder="editing ? 'Unchanged' : 'Paste the token'"
+            :placeholder="keepsStoredToken ? 'Unchanged' : 'Paste the token'"
             class="w-full"
           />
         </UFormField>

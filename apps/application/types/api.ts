@@ -1907,7 +1907,10 @@ export type AiModelRole = 'diagnosis' | 'research' | 'embedding' | 'assistant';
 /** A fully-resolved provider config for a single role (server-side; holds the raw key). */
 export interface ResolvedAiRole {
   provider: AiProvider;
-  /** The key, once `openAiKeys` opened the role's credential for a call; empty until then. */
+  /**
+   * The key: once `openAiKeys` opened the role's credential for a call, or a key the setting still holds because it
+   * could not be moved to a credential; empty otherwise.
+   */
   apiKey: string;
   /** The `ai` credential the role's key is in; absent or null for a local CLI or a key not moved to the store. */
   credentialId?: number | null;

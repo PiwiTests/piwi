@@ -1,16 +1,14 @@
 ---
 title: Credentials
-description: "Save a secret Piwi sends to a CI server or a Git host once, bind it to the address it may reach, share it with projects, and read the log of every use."
+description: "Save a secret Piwi sends to a CI server, a Git host, an AI provider, Jira, Zephyr Scale or Slack once, bind it to the address it may reach, and read the log of every use."
 lang: en-US
 ---
 
 # Credentials
 
 A credential is a secret Piwi sends to another service, saved once under **Settings → Credentials** and named wherever
-it is needed: by a CI server action of [Re-run in CI](/features/ci-rerun), instead of a user, a token and a base URL in
-every action, by a project's [source control](/guide/source-control), an AI role, a Jira or Zephyr Scale connection or a Slack
-channel.
-A rotation is one change, and every use is logged.
+it is needed: a CI server action, [source control](/guide/source-control), an AI role, a Jira or Zephyr Scale
+connection or a Slack channel. A rotation is one change, and every use is logged.
 
 <figure>
   <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins and two GitHub credentials, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
@@ -63,8 +61,8 @@ reading its secret. See
 [Access, roles and groups](./project-access).
 
 **Disable** refuses every use of a credential at once, for an incident, without touching the actions that name it.
-**Delete** is refused while something names the credential (a CI action, a project's or the instance's source
-control): the answer lists them.
+**Delete** is refused while something names the credential (a CI action, source control, an AI role, a connection, a
+Slack channel): the answer lists them.
 
 ## Using one in a CI action
 
@@ -107,7 +105,8 @@ changed `PIWI_SECRET_KEY`) stays where it is, with a warning in the log at each 
 The token typed for a Jira or Zephyr Scale connection (**Settings → Integrations**) or a global Slack channel's bot
 (**Settings → Notifications**) becomes its credential, named after it, shared with all projects
 and sent only under the Jira site (a scoped token's Atlassian gateway counts as the site), the Zephyr Scale region's
-API or Slack's Web API. **Saved credential** picks another; a token typed later rotates a connection's. Opening a
+API or Slack's Web API. **Saved credential** picks another. A token typed later rotates the connection's credential, or saves a new one while
+something else names it. Opening a
 connection is a counted read; each write (an issue, a comment, a transition, an attachment, a results upload, a link)
 and each Slack message is a row. A personal channel keeps its own token. Deleting one asks whether to delete its
 credential too.

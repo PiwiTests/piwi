@@ -7,8 +7,7 @@
  * picked instead. A command-line tool shows its status and sign-in instead of
  * a key. Env-managed, the key and address are the server's.
  */
-import { isUnderBaseUrl } from '#shared/ci-server';
-import { aiEndpoint, type CredentialSummary } from '#shared/credentials';
+import { aiEndpoint, credentialsServingEveryProject, type CredentialSummary } from '#shared/credentials';
 import type { AiModelRole, ApiResponse } from '~~/types/api';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import {
@@ -97,15 +96,15 @@ const { data: listed } = useFetch<CredentialsAnswer>('/api/credentials', { key: 
 const endpoint = computed(() => aiEndpoint(r.value.provider, r.value.baseUrl));
 /** The saved AI keys the role may name: shared with all projects, sent under its endpoint. */
 const savedKeys = computed(() =>
-  ((listed.value?.credentials ?? []) as CredentialSummary[]).filter(
-    (c) =>
-      c.service === 'ai' &&
-      c.managedBy === 'db' &&
-      c.scope.allProjects &&
-      endpoint.value !== null &&
-      isUnderBaseUrl(c.destination, endpoint.value),
-  ),
+  credentialsServingEveryProject((listed.value?.credentials ?? []) as CredentialSummary[], 'ai', endpoint.value),
 );
+// A move to another endpoint drops a pick that is not sent there.
+watch([endpoint, listed], () => {
+  const picked = r.value.credentialId;
+  if (typeof picked === 'number' && listed.value && !savedKeys.value.some((c) => c.id === picked)) {
+    r.value.credentialId = undefined;
+  }
+});
 const savedKeyItems = computed(() =>
   savedKeys.value.map((c) => ({ label: c.disabled ? `${c.name} (disabled)` : c.name, value: c.id })),
 );

@@ -73,7 +73,7 @@ test.describe.serial('Integrations — connection, test and link unfurl', () => 
   });
 
   test.afterAll(async ({ request }) => {
-    if (connectionId) await request.delete(`/api/integrations/connections/${connectionId}`);
+    if (connectionId) await request.delete(`/api/integrations/connections/${connectionId}?deleteCredential=true`);
     await new Promise<void>((resolve) => mockServer.close(() => resolve()));
   });
 

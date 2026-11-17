@@ -1338,13 +1338,14 @@ export const HELP_TOPICS = {
   'settings.credentials': {
     title: 'Credentials',
     text: [
-      'A credential is a secret Piwi sends to another service, saved once and named wherever it is needed: a CI server action picks one instead of repeating a user and a token, a project’s source control picks the token it reads and writes its repository with, and an AI role the key it calls its provider with.',
+      'A credential is a secret Piwi sends to another service, saved once and named wherever it is needed: a CI server action picks one instead of repeating a user and a token, a project’s source control picks the token it reads and writes its repository with, an AI role the key it calls its provider with, a Jira or Zephyr Scale connection its API token, and a Slack channel of the instance its bot token.',
       '',
       '- **Destination**: the base URL the secret may be sent under. A request elsewhere is refused, and changing the destination asks for the secret again.',
       '- **Projects**: the projects that may use it. A Project admin shares one with the projects they manage; sharing with all projects takes an administrator.',
       '- **Inputs and Custom requests**: for a CI server, the action inputs a request carrying it may send, and whether a Custom request may carry it (it reaches any path under the destination).',
       '- **Source control**: a token sent to the API of GitHub, GitLab or Bitbucket, the whole API or a path under its repositories.',
       '- **AI provider**: the key of a role of **Settings → AI**, sent to its provider; a key typed there is saved as one.',
+      '- **Jira Cloud, Zephyr Scale, Slack**: the token of a connection of **Settings → Integrations** (Jira’s user is the account’s e-mail) or of a Slack channel of the instance, saved as one when typed in its form.',
       '- **Secret source**: saved here, encrypted, or, for an administrator, read at each use from a server variable named `PIWI_CREDENTIAL_…`.',
       '',
       'The secret is encrypted with `PIWI_SECRET_KEY` and never shown again. **Disable** refuses every use at once. Every use is logged: who started it, for which project, where it went and how it ended.',
@@ -1354,7 +1355,7 @@ export const HELP_TOPICS = {
   },
   'settings.credentials.log': {
     title: 'Credential log',
-    text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch, a comment, a commit status or a pull request is one row, settled once the service answers (`ok` or `failed`), and a read (a Check, a repository read, a call to an AI model) is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
+    text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch, a comment, a commit status, a pull request, a write to Jira or Zephyr Scale or a Slack message is one row, settled once the service answers (`ok` or `failed`), and a read (a Check, a repository read, a call to an AI model, a connection opened) is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
     doc: 'operate/credentials#the-log',
     envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS'],
   },

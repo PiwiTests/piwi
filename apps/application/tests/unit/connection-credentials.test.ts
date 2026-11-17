@@ -17,8 +17,15 @@ import { openTempDb, type TempDb } from './temp-db';
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY = '0123456789abcdef'.repeat(4);
 
-const { createConnection, createTracker, getConnectionRow, listConnections, testConnection, updateConnection } =
-  await import('../../server/utils/integrations/connections');
+const {
+  createConnection,
+  createTracker,
+  getConnectionRow,
+  listConnections,
+  openTestManagement,
+  testConnection,
+  updateConnection,
+} = await import('../../server/utils/integrations/connections');
 const { connectionCredentialProblem, importConnectionCredentials } =
   await import('../../server/utils/integrations/connection-credentials');
 const { encryptSecret, getEncryptionKey } = await import('../../server/utils/crypto');
@@ -28,7 +35,9 @@ const SITE = 'https://team.atlassian.net';
 
 let db: TempDb;
 let close: () => Promise<void>;
-const sent: Array<{ method: string; path: string }> = [];
+const sent: Array<{ method: string; path: string; authorization: string | null }> = [];
+/** The Authorization header a Jira request carries for an account and its token. */
+const basic = (email: string, token: string) => `Basic ${Buffer.from(`${email}:${token}`).toString('base64')}`;
 
 beforeAll(async () => {
   ({ db, close } = await openTempDb());
@@ -46,7 +55,8 @@ beforeEach(async () => {
     'fetch',
     vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = new URL(String(input));
-      sent.push({ method: init?.method ?? 'GET', path: url.pathname });
+      const authorization = new Headers(init?.headers).get('authorization');
+      sent.push({ method: init?.method ?? 'GET', path: url.pathname, authorization });
       if (url.pathname.endsWith('/transitions')) return new Response(null, { status: 204 });
       if (url.pathname.endsWith('/search/jql')) return Response.json({ issues: [] });
       return Response.json({ accountId: 'a1', displayName: 'Ada' });
@@ -143,6 +153,23 @@ describe('a connection’s token', () => {
     ]);
   });
 
+  test('logs each write of a Zephyr Scale client as a row of its own', async () => {
+    const created = await createConnection(db as never, {
+      provider: 'zephyr-scale',
+      name: 'Zephyr',
+      baseUrl: 'https://api.zephyrscale.smartbear.com/v2',
+      config: { region: 'us' },
+      credentials: { apiToken: 'zephyr-token' },
+    });
+    const client = (await openTestManagement(db as never, (await getConnectionRow(db as never, created.id))!))!;
+    await client.linkRun!({ key: 'SHOP-R1' }, { url: 'https://piwi.example.com/runs/1', title: 'Piwi run' });
+    expect((await uses()).map((use) => [use.feature, use.result, use.count])).toEqual([
+      ['integration-read', 'ok', 1],
+      ['integration-write', 'ok', 1],
+    ]);
+    expect(sent.at(-1)).toMatchObject({ method: 'POST', authorization: 'Bearer zephyr-token' });
+  });
+
   test('gives no client once its credential is disabled, and the test of the connection says why', async () => {
     const created = await jira();
     await db.update(schema.credentials).set({ disabled: true }).where(eq(schema.credentials.id, created.credentialId!));
@@ -161,6 +188,8 @@ describe('a connection’s token', () => {
     const row = (await getConnectionRow(db as never, created.id))!;
     expect(row.credentialId).toBe(created.credentialId);
     expect(await db.select({ id: schema.credentials.id }).from(schema.credentials)).toHaveLength(1);
+    await (await createTracker(db as never, created.id))!.whoAmI();
+    expect(sent.at(-1)?.authorization).toBe(basic('me@team.io', 'rotated'));
   });
 });
 
@@ -174,6 +203,7 @@ describe('a saved credential picked for a connection', () => {
       credentialValues: { email: 'bot@team.io' },
     });
     expect(await (await createTracker(db as never, created.id))!.whoAmI()).toEqual({ id: 'a1', displayName: 'Ada' });
+    expect(sent.at(-1)?.authorization).toBe(basic('bot@team.io', 'bot-token'));
   });
 
   test('must be sent to the connection’s site, shared with all projects, and saved in the database', async () => {
@@ -187,6 +217,13 @@ describe('a saved credential picked for a connection', () => {
     );
     expect(await connectionCredentialProblem(db as never, 'zephyr-scale', narrow, `${SITE}/`)).toContain(
       'No zephyr-scale credential',
+    );
+    process.env.PIWI_JIRA_BASE_URL = SITE;
+    process.env.PIWI_JIRA_EMAIL = 'env@team.io';
+    process.env.PIWI_JIRA_API_TOKEN = 'env-token';
+    const [environment] = await listConnections(db as never);
+    expect(await connectionCredentialProblem(db as never, 'jira', environment!.credentialId!, `${SITE}/`)).toContain(
+      'is set by the environment',
     );
   });
 
@@ -221,7 +258,7 @@ describe('the environment’s connection', () => {
       user: 'env@team.io',
     });
     await (await createTracker(db as never, connection!.id))!.whoAmI();
-    expect(sent).toHaveLength(1);
+    expect(sent).toEqual([expect.objectContaining({ authorization: basic('env@team.io', 'env-token') })]);
 
     delete process.env.PIWI_JIRA_BASE_URL;
     expect(await listConnections(db as never)).toEqual([]);
@@ -275,6 +312,7 @@ describe('importConnectionCredentials', () => {
       },
     ]);
     expect(await (await createTracker(db as never, jiraRow.id))!.whoAmI()).toEqual({ id: 'a1', displayName: 'Ada' });
+    expect(sent.at(-1)?.authorization).toBe(basic('me@team.io', 'old-token'));
   });
 
   test('leaves a token it cannot open where it is', async () => {

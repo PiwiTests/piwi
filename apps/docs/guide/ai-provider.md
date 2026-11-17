@@ -53,8 +53,9 @@ Use [Codex CLI](/guide/codex-cli) with a ChatGPT login, or [official DeepSeek Ha
 ## API keys
 
 A key typed in a role's form is saved as an **AI provider** [credential](/operate/credentials), shared with all
-projects and sent only to the role's endpoint: Anthropic's API, or its OpenAI-compatible base URL. A new key rotates
-it, and the form's **Saved key** picks one saved under **Settings → Credentials** instead. The key is opened only by a
+projects and sent only to the role's endpoint: its base URL, else Anthropic's API for an Anthropic role. A new key
+rotates it, or saves a new one while another role names it, and the form's **Saved key** picks one saved under
+**Settings → Credentials** instead. The key is opened only by a
 call to the model, counted in the credential's log; a disabled or refused credential fails the call with its reason.
 Each `PIWI_AI_*_API_KEY` set is a read-only credential of the environment. The keys saved before credentials existed
 are moved at startup, one credential per key and endpoint.

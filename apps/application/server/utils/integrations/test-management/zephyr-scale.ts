@@ -39,7 +39,7 @@ export interface ZephyrClientOptions {
    * with. Left out, requests go at once (the pre-save check has no connection to limit).
    */
   beforeRequest?: () => Promise<void>;
-  /** Runs each write (a POST) inside the check and log row of the credential its token comes from. */
+  /** Runs each write (any method but GET) inside the check and log row of the credential its token comes from. */
   writeGate?: CredentialWriteGate;
 }
 

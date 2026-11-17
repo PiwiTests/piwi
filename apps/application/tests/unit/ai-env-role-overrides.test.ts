@@ -1,9 +1,10 @@
-import { describe, test, expect, beforeAll, beforeEach, afterAll, vi } from 'vitest';
+import { describe, test, expect, beforeAll, beforeEach, afterAll, vi, afterEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { migrateToLatest } from './temp-db';
+import { stubAiKeyEnv } from './ai-key-env';
 
 /**
  * With AI configured through env vars, the per-role settings saved in
@@ -22,17 +23,7 @@ const { resolveAiConfig } = await import('../../server/utils/ai-provider');
 
 /** The configuration a call to the model reads: the environment's keys set as the server reads them, then opened. */
 async function resolveForCall() {
-  const vars = [
-    ['apiKey', 'PIWI_AI_API_KEY'],
-    ['researchApiKey', 'PIWI_AI_RESEARCH_API_KEY'],
-    ['embeddingApiKey', 'PIWI_AI_EMBEDDING_API_KEY'],
-    ['assistantApiKey', 'PIWI_AI_ASSISTANT_API_KEY'],
-  ] as const;
-  for (const [field, name] of vars) {
-    const value = (envAi as Record<string, string | undefined> | undefined)?.[field];
-    if (value) process.env[name] = value;
-    else delete process.env[name];
-  }
+  stubAiKeyEnv(envAi);
   return resolveAiConfig(db, { open: true });
 }
 const { readAiSettings } = await import('../../server/utils/ai-settings');
@@ -47,6 +38,9 @@ beforeAll(async () => {
   db = sqlite as unknown as DbClient;
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 beforeEach(async () => {
   envAi = {
     provider: 'openai',
@@ -75,7 +69,8 @@ describe('resolveAiConfig under env-managed AI', () => {
     });
 
     const config = await resolveForCall();
-    expect(config?.roles.diagnosis).toMatchObject({
+    expect(config?.roles.diagnosis).toEqual({
+      credentialId: expect.any(Number),
       provider: 'openai',
       apiKey: 'env-key',
       model: 'picked-model',
@@ -90,7 +85,8 @@ describe('resolveAiConfig under env-managed AI', () => {
     await setAppSetting(db, 'ai', { roles: { embedding: { reuse: 'diagnosis', model: 'embed-model' } } });
 
     const config = await resolveForCall();
-    expect(config?.roles.embedding).toMatchObject({
+    expect(config?.roles.embedding).toEqual({
+      credentialId: expect.any(Number),
       provider: 'openai',
       apiKey: 'env-key',
       model: 'embed-model',
@@ -136,7 +132,8 @@ describe('the research and embedding roles of the environment', () => {
     envAi = { ...envAi, researchApiKey: 'research-key', embeddingModel: 'embed-model' };
 
     const [config, settings] = await Promise.all([resolveForCall(), readAiSettings(db)]);
-    expect(config?.roles.research).toMatchObject({
+    expect(config?.roles.research).toEqual({
+      credentialId: expect.any(Number),
       provider: 'openai',
       apiKey: 'research-key',
       model: 'env-research-model',
@@ -179,7 +176,7 @@ describe('resolveAiConfig from settings saved in the flat shape of earlier versi
 
     const [config, settings] = await Promise.all([resolveForCall(), readAiSettings(db)]);
     expect(config).toMatchObject({ source: 'settings', model: 'stored-model', apiKey: 'stored-key' });
-    expect(config?.roles.research).toMatchObject({
+    expect(config?.roles.research).toEqual({
       provider: 'openai',
       apiKey: 'stored-key',
       model: 'stored-research-model',
