@@ -17,6 +17,7 @@ import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { getReproducingArm } from './flake-lab';
+import { readProjectRunVariables } from './run-variables';
 import {
   buildBisectScript,
   buildReproRecipe,
@@ -114,6 +115,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
   }
 
   const projectName = input.cases.find((c) => c.projectName)?.projectName ?? null;
+  const runVariables = run ? await readProjectRunVariables(db, run.projectId) : [];
 
   const reproduce = buildReproRecipe({
     commit,
@@ -123,9 +125,15 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
     environment: run?.environment ?? null,
     baseUrl: input.baseUrl ?? null,
     cases: input.cases,
+    runVariables,
   });
 
-  const bisect = buildBisectScript({ good: lastGreenCommit, bad: commit, verifyCommand: input.verifyCommand });
+  const bisect = buildBisectScript({
+    good: lastGreenCommit,
+    bad: commit,
+    verifyCommand: input.verifyCommand,
+    runVariables,
+  });
 
   const bisectedCommit = await readBisectedCommit(db, input.clusterId, repositoryUrl);
   const testCaseIds = [...new Set(input.testCaseIds ?? [])];

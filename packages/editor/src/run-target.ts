@@ -11,7 +11,8 @@
  */
 import * as os from 'node:os';
 import type { RunRequest, RunRequestOffer, RunRequestOutcome } from '@piwitests/core/run-request';
-import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
+import { RUN_REQUEST_ID, RUN_TARGET_FEATURES } from '@piwitests/core/run-request';
+import type { RunVariable, RunVariablesParse } from '@piwitests/core/run-variables';
 import {
   postDeviceFlow,
   REQUEST_TOKEN_LIFETIME_MS,
@@ -35,8 +36,13 @@ interface HeldRequest {
   answerBy: number;
   /** After **Run**: the request token, until the shell takes it, and whether the run started. */
   token: string | null;
-  /** What **Run** approved: the arguments the window showed and the folder they were checked in. */
-  approved: { args: string[]; folder: string } | null;
+  /** The project's run variables as the instance gave them, read at the claim and again at **Run**. */
+  variables: RunVariablesParse;
+  /**
+   * What **Run** approved: the arguments the window showed, the folder they were checked in, and the run variables
+   * its command started with.
+   */
+  approved: { args: string[]; folder: string; variables: RunVariable[] } | null;
   launched: boolean;
   /** Whether the requester asked to stop it. */
   stopRequested: boolean;
@@ -262,7 +268,12 @@ function startHost(instance: string, key: string): void {
   const host = new RequestHost({
     instance,
     key,
-    describe: () => ({ platform: platformName(), version: appVersion, projectIds: [...state.links.keys()] }),
+    describe: () => ({
+      platform: platformName(),
+      version: appVersion,
+      projectIds: [...state.links.keys()],
+      features: RUN_TARGET_FEATURES,
+    }),
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
@@ -301,9 +312,11 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
       return;
     }
     if (state.host !== host) return;
+    const variables = await host.runVariables(request.id);
+    if (state.host !== host) return;
     let plan: RequestPlan;
     try {
-      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null, foldersRunning());
+      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null, foldersRunning(), variables);
     } catch (error) {
       await host
         .answer(request.id, {
@@ -318,6 +331,7 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
     const held: HeldRequest = {
       request,
       plan,
+      variables,
       answerBy: Date.now() + ANSWER_WITHIN_MS,
       token: null,
       approved: null,
@@ -546,6 +560,7 @@ export async function planAgain(id: string): Promise<RunRequestPromptView | null
     held.request,
     state.links.get(held.request.projectId) ?? null,
     foldersRunning(held),
+    held.variables,
   );
   // Answered or gone while it was planned: the window shows it no more.
   if (!unanswered(id, held)) return null;
@@ -565,9 +580,12 @@ async function planWaiting(): Promise<void> {
   const waiting = [...state.held].filter(([id, held]) => unanswered(id, held));
   const plans = await Promise.all(
     waiting.map(([, held]) =>
-      planRequestedRun(held.request, state.links.get(held.request.projectId) ?? null, foldersRunning(held)).catch(
-        () => null,
-      ),
+      planRequestedRun(
+        held.request,
+        state.links.get(held.request.projectId) ?? null,
+        foldersRunning(held),
+        held.variables,
+      ).catch(() => null),
     ),
   );
   if (turn !== planning) return;
@@ -606,19 +624,22 @@ export async function answerRunRequest(
   try {
     if (decision === 'run') {
       const folder = state.links.get(held.request.projectId) ?? null;
-      held.plan = await planRequestedRun(held.request, folder, foldersRunning(held));
-      // The folder changed since the window showed it: it shows the checks and the command again.
+      // Read again: a variable changed since the window showed the command changes the command.
+      held.variables = await host.runVariables(id);
+      held.plan = await planRequestedRun(held.request, folder, foldersRunning(held), held.variables);
+      // The folder or the run variables changed since the window showed them: it shows the checks and the command
+      // again.
       if (!folder || !held.plan.runnable || held.plan.args.length === 0 || held.plan.display !== shownCommand) {
         tellWindow({ type: 'run-request', request: promptOf(held) });
         return {
           ok: false,
           statusCode: 409,
           message: held.plan.runnable
-            ? 'The folder changed since: check the command again'
+            ? 'The folder or the run variables changed since: check the command again'
             : 'A check failed: the run cannot start',
         };
       }
-      const approved = { args: [...held.plan.args], folder };
+      const approved = { args: [...held.plan.args], folder, variables: [...held.plan.variables] };
       const { requestToken } = await host.answer(id, { decision: 'run' });
       if (!requestToken) throw new RequestHostError(502, 'The instance gave no request token');
       if (state.held.get(id) !== held || held.stopRequested) {
@@ -652,12 +673,18 @@ export async function answerRunRequest(
 
 /**
  * What the shell starts for a request after **Run**: the instance and the request token, once, the project, the
- * folder **Run** approved, and the arguments after `playwright test` it approved. Null for any other request, and for
- * one approved with no arguments, which would run every test.
+ * folder **Run** approved, the arguments after `playwright test` it approved, and the run variables its command
+ * started with, which the shell checks again and sets on the process. Null for any other request, and for one
+ * approved with no arguments, which would run every test.
  */
-export function launchOf(
-  id: string,
-): { instance: string; token: string; projectId: number; folder: string; args: string[] } | null {
+export function launchOf(id: string): {
+  instance: string;
+  token: string;
+  projectId: number;
+  folder: string;
+  args: string[];
+  runVariables: RunVariable[];
+} | null {
   const held = state.held.get(id);
   const approved = held?.approved;
   if (!held?.token || held.launched || !state.instance || !approved || approved.args.length === 0) return null;
@@ -666,7 +693,14 @@ export function launchOf(
   held.launched = true;
   if (held.expiry) clearTimeout(held.expiry);
   held.expiry = null;
-  return { instance: state.instance, token, projectId: held.request.projectId, ...approved };
+  return {
+    instance: state.instance,
+    token,
+    projectId: held.request.projectId,
+    folder: approved.folder,
+    args: approved.args,
+    runVariables: approved.variables,
+  };
 }
 
 /** The shell started the run of a request. */

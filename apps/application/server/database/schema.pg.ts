@@ -79,6 +79,7 @@ export const projects = pgTable(
     askToWatch: boolean('ask_to_watch').notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: jsonb('status_filter'), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: jsonb('tag_keys'), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
+    runVariables: jsonb('run_variables'), // RunVariable[] (@piwitests/core/run-variables) — the environment variables every run Piwi starts for the project gets, and every command it gives to copy starts with; null = none
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -3092,6 +3093,7 @@ export const runTargets = pgTable(
     platform: text('platform'),
     version: text('version'),
     projectIds: jsonb('project_ids'), // number[]: the projects it has a folder for
+    features: jsonb('features'), // string[]: what the app does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
     lastSeenAt: timestamp('last_seen_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()

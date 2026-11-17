@@ -16,6 +16,7 @@ import {
   type RunRequestOffer,
   type RunRequestOutcome,
 } from '@piwitests/core/run-request';
+import { parseRunVariables, type RunVariablesParse } from '@piwitests/core/run-variables';
 import { instanceFetch } from './http';
 
 /** What the target's stream and its list say, in the instance's words. */
@@ -56,8 +57,8 @@ export interface RequestHostOptions {
   instance: string;
   /** The target's key. */
   key: string;
-  /** How this app names itself to the instance, and the projects it has a folder for. */
-  describe: () => { platform: string; version: string; projectIds: number[] };
+  /** How this app names itself to the instance, the projects it has a folder for, and what it does beyond a request. */
+  describe: () => { platform: string; version: string; projectIds: number[]; features: readonly string[] };
   /** A request offered for the first time, still waiting for a claim. */
   onOffer: (offer: RunRequestOffer) => void;
   /** A request offered earlier that no longer waits: stopped, claimed by another app, or past its time. */
@@ -296,15 +297,43 @@ export class RequestHost {
     await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
   }
 
-  /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */
+  /**
+   * Tell the instance this app's platform, version, the projects it has a folder for and its features; it names the
+   * projects back. An instance that predates `features` refuses the field (400): it is told the rest again without it,
+   * and offers nothing that needs one.
+   */
   async describe(): Promise<void> {
-    const { platform, version, projectIds } = this.options.describe();
-    const described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', {
-      platform,
-      version,
-      projectIds: projectIds.slice(0, 200),
-    });
+    const { platform, version, projectIds, features } = this.options.describe();
+    const body = { platform, version, projectIds: projectIds.slice(0, 200) };
+    let described: { projects?: unknown };
+    try {
+      described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', { ...body, features });
+    } catch (error) {
+      if (!(error instanceof RequestHostError) || error.status !== 400) throw error;
+      described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', body);
+    }
     if (!this.stopped) this.takeNames(described?.projects);
+  }
+
+  /**
+   * The run variables of the project of a request this app claimed, as `parseRunVariables` reads them: a list it
+   * refuses, or one it cannot read, is a problem the plan fails with. An instance that predates them answers 404:
+   * its projects set none.
+   */
+  async runVariables(id: string): Promise<RunVariablesParse> {
+    if (!isRequestId(id)) return { ok: false, problems: ['No run request has this id.'] };
+    try {
+      const answer = await this.call<{ runVariables?: unknown }>(
+        'GET',
+        `/api/run-targets/requests/${id}/run-variables`,
+        undefined,
+        { onlyRequest: true },
+      );
+      return parseRunVariables(answer?.runVariables);
+    } catch (error) {
+      if (error instanceof RequestHostError && error.status === 404) return { ok: true, value: [] };
+      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`] };
+    }
   }
 
   /** Where the connection stands now. */

@@ -21,6 +21,7 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
       command: 'npx playwright test tests/checkout.spec.ts',
       cases: [{ filePath: 'tests/checkout.spec.ts', title: 'checkout completes' }],
       leftOut: [],
+      runVariables: [],
       expectation: 'When these pass, Piwi records the fix.',
       commitTrailer: 'Piwi-Cluster: 7',
     },
@@ -107,6 +108,12 @@ describe('fixPlanToMarkdown', () => {
     expect(md).not.toContain('## Diagnosis');
     expect(md).not.toContain('## Suggested locator edits');
     expect(md).not.toContain('## Owner');
+  });
+
+  it('starts the verify command with the project’s run variables, in bash', () => {
+    const plan = makePlan();
+    plan.verify.runVariables = [{ name: 'TENANT', value: 'acme' }];
+    expect(fixPlanToMarkdown(plan)).toContain('TENANT=acme npx playwright test tests/checkout.spec.ts');
   });
 
   it('renders the suspect lines first among the evidence when the tests recorded coverage', () => {

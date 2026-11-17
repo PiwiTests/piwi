@@ -206,7 +206,9 @@ import {
   INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
+  InvalidRunVariablesError,
   InvalidTagKeysError,
+  getProjectRunVariables,
   updateProject,
   createProject,
   getProjectMenu,
@@ -1093,7 +1095,8 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
-        if (e instanceof InvalidTagKeysError) throw demoHttpError(400, e.message);
+        if (e instanceof InvalidTagKeysError || e instanceof InvalidRunVariablesError)
+          throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -4171,6 +4174,19 @@ const routes: RouteEntry[] = [
     handler: async (m, _, __, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/run-variables$/,
+    handler: async (m, _, __, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      try {
+        return { runVariables: await getProjectRunVariables(await getDemoDb(), +m[1]!) };
+      } catch (e) {
+        if (e instanceof Error && e.message === 'Project not found') throw demoHttpError(404, e.message);
+        throw e;
+      }
     },
   },
   {

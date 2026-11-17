@@ -568,6 +568,29 @@ pub fn desktop_get_project_link(app: AppHandle, project_id: String) -> Option<Pr
     })
 }
 
+/// The other projects linked to `project_id`'s folder, by id, lowest first: one app's folder that several projects
+/// run from, each with its own run variables (a tenant per project). Empty when the project has no link.
+#[tauri::command]
+pub fn desktop_folder_projects(app: AppHandle, project_id: String) -> Vec<String> {
+    if !valid_project_id(&project_id) {
+        return Vec::new();
+    }
+    others_linked_to_folder(&read_links(&app), &project_id)
+}
+
+fn others_linked_to_folder(links: &HashMap<String, LinkRecord>, project_id: &str) -> Vec<String> {
+    let Some(own) = links.get(project_id) else {
+        return Vec::new();
+    };
+    let mut others: Vec<String> = links
+        .iter()
+        .filter(|(id, link)| id.as_str() != project_id && Path::new(&link.path) == Path::new(&own.path))
+        .map(|(id, _)| id.clone())
+        .collect();
+    others.sort_by_key(|id| (id.len(), id.clone()));
+    others
+}
+
 /// Set (`path: Some`) or clear (`path: None`) the folder linked to a project.
 #[tauri::command]
 pub fn desktop_set_project_link(
@@ -1008,6 +1031,9 @@ pub async fn desktop_run_local_tests(
     origin_ref: Option<String>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
+    if !valid_project_id(&project_id) {
+        return Err("not a project id".into());
+    }
     let origin_ref = crate::worktree::origin_reference(None, origin_ref)?;
     let origin = crate::worktree::origin_env("desktop", origin_ref.as_deref());
 
@@ -1022,8 +1048,9 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
+    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
     let args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
-    let id = spawn_tests(&app, &folder, &cli, args, origin, |_, _| {}).await?;
+    let id = spawn_tests(&app, &folder, &cli, args, variables, origin, |_, _| {}).await?;
     if let Some(origin_ref) = origin_ref {
         app.state::<LocalRuns>().note_origin(id, origin_ref);
     }
@@ -1040,15 +1067,18 @@ pub(crate) fn emit_verdict(app: &AppHandle, payload: RunEventPayload) {
 }
 
 /// Spawn `playwright test <args>` with `cli`, the folder's Playwright, in
-/// `folder` with the bundled Node sidecar, `envs` beside the run's own (the
-/// hub's, the colors, the folder's `PATH`), and stream its output as
-/// `piwi:local-run` events. `on_exit` hears its exit code once it ends, before
-/// the window does, and whether a stop was asked for it. Returns the run id.
+/// `folder` with the bundled Node sidecar, the project's checked run variables
+/// (`variables`, [`crate::run_variables`]) first, then `envs` beside the run's
+/// own (the hub's, the colors, the folder's `PATH`), which a run variable never
+/// names, and stream its output as `piwi:local-run` events. `on_exit` hears its
+/// exit code once it ends, before the window does, and whether a stop was asked
+/// for it. Returns the run id.
 pub(crate) async fn spawn_tests(
     app: &AppHandle,
     folder: &Path,
     cli: &Path,
     args: Vec<String>,
+    variables: Vec<(String, String)>,
     envs: Vec<(&'static str, String)>,
     on_exit: impl FnOnce(Option<i32>, bool) + Send + 'static,
 ) -> Result<u32, String> {
@@ -1065,6 +1095,7 @@ pub(crate) async fn spawn_tests(
         .map_err(|e| e.to_string())?
         .args(cmd_args)
         .current_dir(folder)
+        .envs(variables)
         .envs(crate::worktree::run_path_env(app, folder))
         .envs(COLOR_ENV)
         .envs(envs)
@@ -1262,6 +1293,22 @@ mod tests {
             runs.note_exit(id, Some(0));
         }
         assert!(runs.state().origins.is_empty());
+    }
+
+    #[test]
+    fn the_other_projects_of_a_folder_are_named_lowest_id_first() {
+        let link = |path: &str| LinkRecord { path: path.to_string() };
+        let links: HashMap<String, LinkRecord> = [
+            ("12".to_string(), link("/code/shop")),
+            ("3".to_string(), link("/code/shop/")),
+            ("7".to_string(), link("/code/shop")),
+            ("9".to_string(), link("/code/admin")),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(others_linked_to_folder(&links, "7"), vec!["3".to_string(), "12".to_string()]);
+        assert!(others_linked_to_folder(&links, "9").is_empty());
+        assert!(others_linked_to_folder(&links, "4").is_empty());
     }
 
     #[test]

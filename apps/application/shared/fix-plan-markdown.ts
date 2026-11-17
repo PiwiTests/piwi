@@ -9,6 +9,7 @@
  */
 import type { FixPlan } from '#shared/fix-plan.types';
 import { reproScript } from '#shared/reproduce';
+import { commandWithRunVariables } from '#shared/run-variables';
 import { suspectLineMarkdown, suspectLinesLead } from '#shared/suspect-lines';
 import { markdownCode } from '#shared/utils/markdown-code';
 
@@ -160,7 +161,14 @@ export function fixPlanToMarkdown(plan: FixPlan, opts: { url?: string } = {}): s
 
   // Verify
   if (verify.command) {
-    lines.push('## Verify', '', fence(verify.command), '', verify.expectation, '');
+    lines.push(
+      '## Verify',
+      '',
+      fence(commandWithRunVariables(verify.command, verify.runVariables ?? [], 'bash')),
+      '',
+      verify.expectation,
+      '',
+    );
     if (verify.leftOut.length) {
       lines.push('The command leaves out these tests: run them yourself.', '');
       for (const c of verify.leftOut)

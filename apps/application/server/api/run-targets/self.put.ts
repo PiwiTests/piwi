@@ -2,14 +2,15 @@ import { eq } from 'drizzle-orm';
 import { z } from 'zod';
 import { runTargets } from '../../database/schema';
 import { can } from '#shared/permissions';
-import { requireRunTarget, storedProjectIds, targetProjectNames } from '../../utils/run-requests';
+import { RUN_TARGET_FEATURES, type RunTargetFeature } from '@piwitests/core/run-request';
+import { requireRunTarget, storedProjectIds, targetFeatures, targetProjectNames } from '../../utils/run-requests';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Run requests'],
     summary: 'Describe this connected app to the instance',
     description:
-      'A run target tells the instance its platform, its version and the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run; a project where its owner lacks `run:receive` is left out. Each field is optional; a field left out keeps its value. Authenticated with the target’s key alone. Answers the target as stored, with `projects`, the `id` and `name` (its label, else its name) of each of its `projectIds` where its owner holds `run:receive`.',
+      'A run target tells the instance its platform, its version, the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run (a project where its owner lacks `run:receive` is left out), and what it does beyond a run request (`features`, at most 20: `run-variables`, it applies the project’s run variables, without which a request of a project that sets some is refused at its claim; a feature this instance does not know is left out). Each field is optional; a field left out keeps its value, but `features`: a description without it, from an app that predates it, stores none. Authenticated with the target’s key alone. Answers the target as stored, with `projects`, the `id` and `name` (its label, else its name) of each of its `projectIds` where its owner holds `run:receive`.',
     'x-required-permission': 'run:receive',
     security: [{ bearerAuth: [] }],
     responses: {
@@ -24,6 +25,7 @@ const bodySchema = z
     platform: z.string().trim().min(1).max(50).optional(),
     version: z.string().trim().min(1).max(50).optional(),
     projectIds: z.array(z.number().int().positive().max(2_147_483_647)).max(200).optional(),
+    features: z.array(z.string().max(50)).max(20).optional(),
   })
   .strict();
 
@@ -33,12 +35,16 @@ export default eventHandler(async (event) => {
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   }
-  const { platform, version, projectIds } = parsed.data;
+  const { platform, version, projectIds, features } = parsed.data;
   const values = {
     ...(platform !== undefined ? { platform } : {}),
     ...(version !== undefined ? { version } : {}),
     ...(projectIds !== undefined
       ? { projectIds: [...new Set(projectIds)].filter((id) => can(access, 'run:receive', id)).sort((a, b) => a - b) }
+      : {}),
+    // An app that predates `features` describes itself without them: it applies none.
+    ...(platform !== undefined || version !== undefined || projectIds !== undefined || features !== undefined
+      ? { features: RUN_TARGET_FEATURES.filter((known: RunTargetFeature) => (features ?? []).includes(known)) }
       : {}),
   };
   const [row] = Object.keys(values).length
@@ -51,6 +57,7 @@ export default eventHandler(async (event) => {
     platform: row!.platform,
     version: row!.version,
     projectIds: row!.projectIds ?? [],
+    features: targetFeatures(row!),
     projects: await targetProjectNames(
       db,
       storedProjectIds(row!).filter((id) => can(access, 'run:receive', id)),

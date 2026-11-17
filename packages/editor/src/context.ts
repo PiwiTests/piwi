@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import type { RunVariablesParse } from '@piwitests/core/run-variables';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types';
 import {
@@ -409,6 +410,12 @@ export class PiwiContext {
   /** The instance the environment, the `.env` or the editor's settings name, in use or not. */
   instance: { serverUrl: string; source: ConnectionSource } | null = null;
   project: { id: number; name: string } | null = null;
+  /**
+   * The project's run variables as `parseRunVariables` read them from the instance, for the commands the service
+   * builds: null until a refresh read them, none without a project.
+   */
+  runVariables: RunVariablesParse | null = null;
+  private runVariablesRead: Promise<RunVariablesParse> | null = null;
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
   index: LocatorIndex | null = null;
@@ -563,6 +570,9 @@ export class PiwiContext {
           return;
         }
       }
+      // Read again on each refresh: a run started meanwhile waits for this read (`readRunVariables`).
+      this.runVariablesRead = null;
+      void this.readRunVariables();
       const index = await this.client.locatorIndex(this.project.id, null);
       this.branches = [
         ...new Set([index.defaultBranch, ...index.branches.map((b) => b.name)].filter((b): b is string => !!b)),
@@ -643,6 +653,24 @@ export class PiwiContext {
     }
   }
 
+  /**
+   * The project's run variables, read from the instance once per refresh, for a run about to start. None without a
+   * client or a project: the run reports nowhere this service knows.
+   */
+  readRunVariables(): Promise<RunVariablesParse> {
+    const client = this.client;
+    const project = this.project;
+    if (!client || !project) return Promise.resolve({ ok: true, value: [] });
+    if (!this.runVariablesRead) {
+      const read = client.runVariables(project.id).then((parsed) => {
+        if (this.runVariablesRead === read) this.runVariables = parsed;
+        return parsed;
+      });
+      this.runVariablesRead = read;
+    }
+    return this.runVariablesRead;
+  }
+
   private fail(kind: ProblemKind, problem: string): void {
     this.problemKind = kind;
     this.problem = problem;
@@ -654,6 +682,8 @@ export class PiwiContext {
    */
   private forget(): void {
     this.project = null;
+    this.runVariables = null;
+    this.runVariablesRead = null;
     this.branch = null;
     this.index = null;
     this.codeIndex = null;

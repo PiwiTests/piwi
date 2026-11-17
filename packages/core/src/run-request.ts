@@ -14,6 +14,15 @@
 export const RUN_REQUEST_KINDS = ['run'] as const;
 export type RunRequestKind = (typeof RUN_REQUEST_KINDS)[number];
 
+/**
+ * What a target does beyond running a request, as it says when it describes itself (`PUT /api/run-targets/self`):
+ * `run-variables`, it applies the project's run variables (`@piwitests/core/run-variables`), checked again, to the
+ * run and shows them in its confirmation. An instance ends a request of a project with run variables that a target
+ * without it claims, with words that say to update the app.
+ */
+export const RUN_TARGET_FEATURES = ['run-variables'] as const;
+export type RunTargetFeature = (typeof RUN_TARGET_FEATURES)[number];
+
 /** The bounds of a request, fixed here rather than in a setting. */
 export const RUN_REQUEST_LIMITS = {
   tests: { min: 1, max: 200 },
@@ -149,7 +158,7 @@ const PLAYWRIGHT_PROJECT = /^[\p{L}\p{N}_.:@/+][\p{L}\p{N}\p{M}_ .:@/+()-]{0,99}
  * and isolates, zero-width characters), U+2028 and U+2029, and every default-ignorable code point (variation
  * selectors, the Hangul fillers, the combining grapheme joiner).
  */
-const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+export const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 /** What a shell or a glob expands, and `:`, which Playwright reads as the start of a line number. */
 const SPEC_PATH_SPECIAL = /[*?|&%^"<>$`:!]/;
 /** What git refuses in a ref name, besides control characters: `..`, `~ ^ : ? * [ \`, a space and `@{`. */

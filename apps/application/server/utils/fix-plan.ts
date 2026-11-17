@@ -25,6 +25,7 @@ import { storedPatchValidation, validatePatch } from '#shared/patch';
 import { parseCallsiteLocation } from '#shared/callsite-location';
 import { buildRerunPlan } from '#shared/retry-command';
 import { computeReproduceContext } from '#shared/handlers/reproduce';
+import { readProjectRunVariables } from '#shared/handlers/run-variables';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
 import type { FixPlan, FixPlanEdit } from '#shared/fix-plan.types';
 import { clusterTrailerLine } from '#shared/commit-trailers';
@@ -177,6 +178,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     verify: {
       command: verifyCommand,
       cases: rerunCases,
+      runVariables: await readProjectRunVariables(db, cluster.projectId),
       // One entry per test: a test that failed in several projects is several cases.
       leftOut: [...new Map(verifyLeftOut.map((c) => [`${c.filePath}\0${c.title}`, c])).values()],
       expectation:

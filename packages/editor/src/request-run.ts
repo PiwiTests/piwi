@@ -7,11 +7,17 @@ import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
+import {
+  runVariableAssignments,
+  withRunVariables,
+  type RunVariable,
+  type RunVariablesParse,
+} from '@piwitests/core/run-variables';
 import { currentBranch, hasUncommittedChanges, headCommit, playwrightConfigFile, repositoryRoot } from './workspace';
 
 /** One row of the confirmation: a check that failed stops **Run**, a warning does not. */
 export interface RequestCheck {
-  id: 'folder' | 'busy' | 'config' | 'specs' | 'playwright' | 'command' | 'commit' | 'changes';
+  id: 'folder' | 'variables' | 'busy' | 'config' | 'specs' | 'playwright' | 'command' | 'commit' | 'changes';
   level: 'ok' | 'warn' | 'fail';
   message: string;
 }
@@ -23,8 +29,10 @@ export interface RequestPlan {
   runnable: boolean;
   /** The arguments after `playwright test`, each one argv element; empty while a check fails. */
   args: string[];
-  /** The command as the confirmation shows it. */
+  /** The command as the confirmation shows it, starting with the run variables. */
   display: string;
+  /** The project's run variables the run gets, checked; empty while a check fails. */
+  variables: RunVariable[];
   /** Whether the tests are selected by title, because the folder is not on the request's commit or has changes. */
   byTitle: boolean;
   branch: string | null;
@@ -140,27 +148,35 @@ function displayArg(arg: string): string {
   return /[\s"']/.test(arg) ? `"${arg.replaceAll('"', '\\"')}"` : arg;
 }
 
+/** The shell the confirmation writes the run variables for: this machine's. */
+const DISPLAY_SHELL = process.platform === 'win32' ? 'powershell' : 'bash';
+
 /**
  * Check `folder`, the folder linked to the request's project on this machine (null when none is), against
  * `request`, and build the command. A failed check names its fix and leaves the command empty; a branch or a commit
  * other than the request's, or uncommitted changes, warns and selects the tests by title, since a line may have moved.
  * `runningIn` names the folders a run of this app is going in, requested or the person's own: one of them fails the
- * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`.
+ * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`. `variables` are the project's run variables as
+ * `parseRunVariables` read them from the instance: a problem fails the check, and the command starts with them.
  */
 export async function planRequestedRun(
   request: RunRequest,
   folder: string | null,
   runningIn: string[] = [],
+  variables: RunVariablesParse = { ok: true, value: [] },
 ): Promise<RequestPlan> {
   const checks: RequestCheck[] = [];
   const done = (extra: Partial<RequestPlan> = {}): RequestPlan => {
     const runnable = !checks.some((c) => c.level === 'fail');
     const args = runnable ? (extra.args ?? []) : [];
+    const applied = runnable && variables.ok ? variables.value : [];
+    const command = ['npx', 'playwright', 'test', ...args.map(displayArg)].join(' ');
     return {
       checks,
       runnable,
       args,
-      display: runnable ? ['npx', 'playwright', 'test', ...args.map(displayArg)].join(' ') : '',
+      display: runnable ? withRunVariables(command, applied, DISPLAY_SHELL) : '',
+      variables: applied,
       byTitle: extra.byTitle ?? false,
       branch: extra.branch ?? null,
       commit: extra.commit ?? null,
@@ -180,6 +196,19 @@ export async function planRequestedRun(
     return done();
   }
   checks.push({ id: 'folder', level: 'ok', message: `Linked folder: ${folder}` });
+  if (!variables.ok) {
+    checks.push({
+      id: 'variables',
+      level: 'fail',
+      message: `The project's run variables cannot be set: ${variables.problems.join(' ')}`,
+    });
+  } else if (variables.value.length > 0) {
+    checks.push({
+      id: 'variables',
+      level: 'ok',
+      message: `Runs with the project's run variables: ${runVariableAssignments(variables.value, 'bash')}.`,
+    });
+  }
   if (runningIn.some((other) => realFolder(other) === real)) {
     checks.push({
       id: 'busy',

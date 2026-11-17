@@ -38,6 +38,7 @@ export const projects = sqliteTable(
     askToWatch: integer('ask_to_watch', { mode: 'boolean' }).notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: text('tag_keys', { mode: 'json' }), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
+    runVariables: text('run_variables', { mode: 'json' }), // RunVariable[] (@piwitests/core/run-variables) — the environment variables every run Piwi starts for the project gets, and every command it gives to copy starts with; null = none
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -3129,6 +3130,7 @@ export const runTargets = sqliteTable(
     platform: text('platform'),
     version: text('version'),
     projectIds: text('project_ids', { mode: 'json' }), // number[]: the projects it has a folder for
+    features: text('features', { mode: 'json' }), // string[]: what the app does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()

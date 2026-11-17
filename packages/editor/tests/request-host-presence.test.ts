@@ -72,7 +72,7 @@ function requestHost(instance: ReturnType<typeof fakeInstance>) {
   const host = new RequestHost({
     instance: 'http://instance.test',
     key: KEY,
-    describe: () => ({ platform: 'macOS', version: '0.67.0', projectIds: [1] }),
+    describe: () => ({ platform: 'macOS', version: '0.67.0', projectIds: [1], features: [] }),
     onOffer: (o) => heard.push(`offer ${o.id}`),
     onWithdrawn: (i) => heard.push(`withdrawn ${i}`),
     onStop: (i) => heard.push(`stop ${i}`),

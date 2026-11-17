@@ -37,6 +37,8 @@ async function fakeInstance(handlers: {
   };
   /** What the instance answers the describe call with. */
   self?: () => unknown;
+  /** What the instance answers a request's run variables with. */
+  runVariables?: () => unknown;
   status?: (path: string) => number | null;
   /** What a refusal carries instead of the instance's JSON message, as a proxy in front would send it. */
   refusalBody?: string;
@@ -68,6 +70,7 @@ async function fakeInstance(handlers: {
       if (path === '/api/run-targets/requests')
         res.end(JSON.stringify(handlers.list?.() ?? { requests: [], stops: [] }));
       else if (path === '/api/run-targets/self') res.end(JSON.stringify(handlers.self?.() ?? {}));
+      else if (path.endsWith('/run-variables')) res.end(JSON.stringify(handlers.runVariables?.() ?? {}));
       else if (path.endsWith('/claim'))
         res.end(JSON.stringify({ ...offer(path.split('/')[4]!), expiresAt: undefined }));
       else if (path.endsWith('/answer'))
@@ -111,7 +114,7 @@ function host(instance: string, overrides: Partial<ConstructorParameters<typeof 
   const made = new RequestHost({
     instance,
     key: KEY,
-    describe: () => ({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2] }),
+    describe: () => ({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2], features: ['run-variables'] }),
     onOffer: (o) => heard.push(`offer ${o.id}`),
     onWithdrawn: (i) => heard.push(`withdrawn ${i}`),
     onStop: (i) => heard.push(`stop ${i}`),
@@ -197,7 +200,12 @@ describe('the request host', () => {
     expect(heard).toHaveLength(4);
     const describeCall = instance.calls.find((c) => c.path === '/api/run-targets/self')!;
     expect(describeCall.method).toBe('PUT');
-    expect(JSON.parse(describeCall.body)).toEqual({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2] });
+    expect(JSON.parse(describeCall.body)).toEqual({
+      platform: 'macOS',
+      version: '0.68.0',
+      projectIds: [1, 2],
+      features: ['run-variables'],
+    });
     expect(instance.calls.every((c) => c.authorization === `Bearer ${KEY}`)).toBe(true);
   });
 
@@ -385,6 +393,47 @@ describe('the request host', () => {
     const refused = await made.claim(id(3)).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(RequestHostError);
     expect(refused).toMatchObject({ status: 409, message: 'answered 409' });
+    expect(made.state).not.toBe('revoked');
+  });
+
+  test('describes itself again without its features to an instance that refuses the field', async () => {
+    let described = 0;
+    const instance = await fakeInstance({
+      status: (path) => (path === '/api/run-targets/self' && described++ === 0 ? 400 : null),
+      self: () => ({ projects: [{ id: 1, name: 'Checkout' }] }),
+    });
+    cleanups.push(instance.close);
+    const names: string[] = [];
+    const { made } = host(instance.url, { onProjectNames: (projects) => names.push(...projects.map((p) => p.name)) });
+    await made.describe();
+    const bodies = instance.calls.filter((c) => c.path === '/api/run-targets/self').map((c) => JSON.parse(c.body));
+    expect(bodies).toEqual([
+      { platform: 'macOS', version: '0.68.0', projectIds: [1, 2], features: ['run-variables'] },
+      { platform: 'macOS', version: '0.68.0', projectIds: [1, 2] },
+    ]);
+    expect(names).toEqual(['Checkout']);
+    expect(made.state).not.toBe('revoked');
+  });
+
+  test('reads a claimed request’s run variables as core reads them, none from an instance that predates them', async () => {
+    let answer: unknown = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    const instance = await fakeInstance({
+      runVariables: () => answer,
+      status: (path) =>
+        path.endsWith(`${id(4)}/run-variables`) ? 404 : path.endsWith(`${id(5)}/run-variables`) ? 500 : null,
+    });
+    cleanups.push(instance.close);
+    const { made } = host(instance.url);
+    expect(await made.runVariables(id(1))).toEqual({ ok: true, value: [{ name: 'TENANT', value: 'acme' }] });
+    answer = { runVariables: [{ name: 'NODE_OPTIONS', value: '--require ./x.js' }] };
+    const refused = await made.runVariables(id(1));
+    expect(refused.ok).toBe(false);
+    expect(await made.runVariables(id(4))).toEqual({ ok: true, value: [] });
+    expect(await made.runVariables(id(5))).toEqual({
+      ok: false,
+      problems: ['They could not be read: answered 500'],
+    });
+    expect(await made.runVariables('not-an-id')).toMatchObject({ ok: false });
     expect(made.state).not.toBe('revoked');
   });
 

@@ -837,7 +837,7 @@ async fn ensure_browser(
     }
     emit_line(app, id, "stdout", format!("Installing {browser}…"));
     let args = vec![node_path(cli), "install".into(), browser.to_string()];
-    run_sidecar_streaming(app, id, None, worktree, args, &[])
+    run_sidecar_streaming(app, id, None, worktree, args, &[], &[])
         .await
         .map(|code| code == 0)
         .unwrap_or(false)
@@ -936,9 +936,10 @@ async fn run_sidecar_streaming(
     worktree: &Path,
     node_args: Vec<String>,
     env: &[(&'static str, String)],
+    variables: &[(String, String)],
 ) -> Option<i32> {
     let _ = cli; // node_args already carry the resolved CLI path
-    run_sidecar(app, id, worktree, node_args, env, false)
+    run_sidecar(app, id, worktree, node_args, env, variables, false)
         .await
         .0
 }
@@ -951,6 +952,7 @@ async fn run_sidecar(
     worktree: &Path,
     node_args: Vec<String>,
     env: &[(&'static str, String)],
+    variables: &[(String, String)],
     keep_stdout: bool,
 ) -> (Option<i32>, String) {
     let mut stdout = String::new();
@@ -958,6 +960,7 @@ async fn run_sidecar(
         Ok(c) => c
             .args(node_args)
             .current_dir(worktree)
+            .envs(variables.iter().cloned())
             .envs(run_path_env(app, worktree))
             .envs(COLOR_ENV)
             .envs(env.iter().map(|(k, v)| (k.to_string(), v.clone()))),
@@ -1140,6 +1143,7 @@ pub async fn desktop_reproduce_here(
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
 
     let state = app.state::<LocalRuns>();
     let id = state.allocate_id();
@@ -1173,6 +1177,7 @@ pub async fn desktop_reproduce_here(
             &args,
             browser.as_deref(),
             origin_ref.as_deref(),
+            &variables,
             &stop,
         )
         .await;
@@ -1192,6 +1197,7 @@ async fn reproduce_driver(
     args: &[String],
     browser: Option<&str>,
     origin_ref: Option<&str>,
+    variables: &[(String, String)],
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "checkout"));
@@ -1215,7 +1221,7 @@ async fn reproduce_driver(
     let env = origin_env("reproduce", origin_ref);
     let attended = crate::hub_env::attended_args(args);
     let job = (folder, commit);
-    run_test_phase(app, id, worktree, job, args, browser, &env, stop, attended).await
+    run_test_phase(app, id, worktree, job, args, browser, &env, variables, stop, attended).await
 }
 
 /// The browser + test phases shared by reproduce and each bisect step; the test
@@ -1231,6 +1237,7 @@ async fn run_test_phase(
     args: &[String],
     browser: Option<&str>,
     env: &[(&'static str, String)],
+    variables: &[(String, String)],
     stop: &AtomicBool,
     attended: bool,
 ) -> Option<i32> {
@@ -1250,7 +1257,7 @@ async fn run_test_phase(
     node_args.extend(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows)));
     let mut env_with_app = lab_env_with_hub(app, id, attended, job.0, job.1).await;
     env_with_app.extend_from_slice(env);
-    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app).await
+    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app, variables).await
 }
 
 /// Drive a git bisect over the window `good..bad` in a throwaway worktree, step by
@@ -1274,6 +1281,7 @@ pub async fn desktop_bisect_here(
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
     if !commit_exists(&git, &folder, &good) || !commit_exists(&git, &folder, &bad) {
         return Err(format!(
             "one of the commits is unknown to the linked repository — run `git fetch {}` in it first.",
@@ -1326,6 +1334,7 @@ pub async fn desktop_bisect_here(
             browser.as_deref(),
             flake_test_case_id,
             origin_ref.as_deref(),
+            &variables,
             &stop,
         )
         .await;
@@ -1348,6 +1357,7 @@ async fn bisect_driver(
     // A flake-aware bisect asks `piwi flake verify --bisect` for this test at each step.
     flake: Option<u64>,
     origin_ref: Option<&str>,
+    variables: &[(String, String)],
     stop: &AtomicBool,
 ) -> Option<i32> {
     emit(app, RunEventPayload::phase(id, "bisect"));
@@ -1424,7 +1434,7 @@ async fn bisect_driver(
             "skip"
         } else if let Some(test_case_id) = flake {
             let at = candidate.as_deref().unwrap_or_default();
-            let code = run_flake_step(app, id, folder, worktree, at, test_case_id, stop).await;
+            let code = run_flake_step(app, id, folder, worktree, at, test_case_id, variables, stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1439,7 +1449,7 @@ async fn bisect_driver(
             let env = origin_env("bisect", origin_ref);
             let job = (folder, candidate.as_deref().unwrap_or_default());
             let code =
-                run_test_phase(app, id, worktree, job, args, browser, &env, stop, false).await;
+                run_test_phase(app, id, worktree, job, args, browser, &env, variables, stop, false).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1505,6 +1515,7 @@ async fn run_flake_step(
     worktree: &Path,
     commit: &str,
     test_case_id: u64,
+    variables: &[(String, String)],
     stop: &AtomicBool,
 ) -> Option<i32> {
     if stop.load(Ordering::SeqCst) {
@@ -1516,7 +1527,7 @@ async fn run_flake_step(
     };
     let args = flake_bisect_args(&cli, test_case_id);
     let env = lab_env_with_hub(app, id, false, folder, commit).await;
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env, variables).await
 }
 
 /// Run a Flake Lab session on one test at the commit of its latest failure, in
@@ -1562,6 +1573,7 @@ pub async fn desktop_flake_lab_here(
         return Err("the latest failure's commit is not a commit id".into());
     }
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
     let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
         .map(|out| is_dirty(&out))
         .unwrap_or(false);
@@ -1605,6 +1617,7 @@ pub async fn desktop_flake_lab_here(
             dirty,
             test_case_id,
             &options,
+            &variables,
             &stop,
         )
         .await;
@@ -1633,12 +1646,13 @@ async fn flake_lab_driver(
     dirty: bool,
     test_case_id: u64,
     options: &FlakeLabOptions,
+    variables: &[(String, String)],
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = flake_lab_args(&cli, test_case_id, options);
     let env = lab_env_with_hub(app, id, false, folder, commit).await;
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env).await
+    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env, variables).await
 }
 
 /// The phases before a lab runs in its worktree: checkout, install, and the
@@ -1712,6 +1726,7 @@ pub async fn desktop_flake_lab_job(
         .map_err(|e| e.to_string())??;
     let (commit, plan) = parse_lab_job(&request)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
     let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
         .map(|out| is_dirty(&out))
         .unwrap_or(false);
@@ -1750,7 +1765,7 @@ pub async fn desktop_flake_lab_job(
 
     tauri::async_runtime::spawn(async move {
         let code = lab_job_driver(
-            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &stop,
+            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &variables, &stop,
         )
         .await;
         let _ = std::fs::remove_file(&plan_file);
@@ -1778,12 +1793,13 @@ async fn lab_job_driver(
     commit: &str,
     dirty: bool,
     plan_file: &Path,
+    variables: &[(String, String)],
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
     let args = lab_job_args(&cli, plan_file);
     let env = lab_env_with_hub(app, id, false, folder, commit).await;
-    let (code, stdout) = run_sidecar(app, id, worktree, args, &env, true).await;
+    let (code, stdout) = run_sidecar(app, id, worktree, args, &env, variables, true).await;
     crate::runner::emit_verdict(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
 }

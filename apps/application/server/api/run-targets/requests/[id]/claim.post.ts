@@ -6,14 +6,14 @@ defineRouteMeta({
     tags: ['Run requests'],
     summary: 'Claim a run request for this connected app',
     description:
-      'Claims a waiting request of the target’s owner, once: a second claim, from another target or a reconnect, answers 409, as does an expired request. The owner’s other connected apps hear it `withdrawn` on their streams. Answers the request, which the target shows and runs only after the person clicks **Run**. Refused (403) on a project where **Run on my machine** is off or the owner lacks `run:receive`. Authenticated with the target’s key alone.',
+      'Claims a waiting request of the target’s owner, once: a second claim, from another target or a reconnect, answers 409, as does an expired request. The owner’s other connected apps hear it `withdrawn` on their streams. Answers the request, which the target shows and runs only after the person clicks **Run**. Refused (403) on a project where **Run on my machine** is off or the owner lacks `run:receive`. A target that did not say it applies run variables (`features` of `PUT /api/run-targets/self`) claiming a request of a project that sets some ends it as refused, with words that say to update the app, and answers 409. Authenticated with the target’s key alone.',
     'x-required-permission': 'run:receive',
     security: [{ bearerAuth: [] }],
     responses: {
       200: { description: 'The claimed request' },
       403: { description: 'Not a run target’s key, or the project does not allow it' },
       404: { description: 'No request of the owner has this id' },
-      409: { description: 'Already claimed, or expired' },
+      409: { description: 'Already claimed, or expired, or the app does not apply the project’s run variables' },
     },
   },
 });
@@ -22,7 +22,10 @@ export default eventHandler(async (event) => {
   const caller = await requireRunTarget(event);
   const id = requireRunRequestId(event);
   const claimed = await claimRequest(caller, id);
-  if (!claimed.ok) throw apiError({ statusCode: claimed.statusCode, message: claimed.message });
+  if (!claimed.ok) {
+    if (claimed.ended) await publishWithdrawn(caller.db, caller.target.userId, id, caller.target.id).catch(() => {});
+    throw apiError({ statusCode: claimed.statusCode, message: claimed.message });
+  }
   // The owner's other apps stop offering it.
   await publishWithdrawn(caller.db, caller.target.userId, id, caller.target.id).catch(() => {});
   const request = runRequestOf(claimed.row);

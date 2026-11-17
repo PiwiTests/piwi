@@ -42,6 +42,9 @@ pub struct FolderInspection {
     reporter_configured: bool,
     /// `projectName` value parsed out of the Playwright config, when set.
     configured_project_name: Option<String>,
+    /// The config sets `projectName` with an expression (`` `shop-${tenant}` ``), whose value only a run knows: it
+    /// may read the project's run variables.
+    project_name_computed: bool,
     /// The Playwright config declares a `webServer` — Playwright starts the app
     /// under test itself, so a reproduction/bisect exercises the real app.
     web_server: bool,
@@ -127,6 +130,31 @@ fn parse_config_project_name(source: &str) -> Option<String> {
     None
 }
 
+/// Whether the config source sets `projectName` at all: a `projectName` key followed by `:`, or written alone
+/// (`{ projectName }`).
+fn sets_project_name(source: &str) -> bool {
+    let bytes = source.as_bytes();
+    let mut from = 0;
+    while let Some(found) = source[from..].find("projectName") {
+        let start = from + found;
+        let mut i = start + "projectName".len();
+        from = i;
+        let word_before =
+            start > 0 && (bytes[start - 1].is_ascii_alphanumeric() || matches!(bytes[start - 1], b'_' | b'$' | b'.'));
+        let word_after = i < bytes.len() && (bytes[i].is_ascii_alphanumeric() || matches!(bytes[i], b'_' | b'$'));
+        if word_before || word_after {
+            continue;
+        }
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        if i < bytes.len() && matches!(bytes[i], b':' | b',' | b'}') {
+            return true;
+        }
+    }
+    false
+}
+
 /// Unscoped, filesystem-safe name: `@acme/checkout` → `checkout`.
 fn unscoped(name: &str) -> &str {
     match name.strip_prefix('@') {
@@ -148,6 +176,7 @@ fn inspect(folder: &Path) -> FolderInspection {
             reporter_installed: false,
             reporter_configured: false,
             configured_project_name: None,
+            project_name_computed: false,
             web_server: false,
         };
     }
@@ -156,6 +185,8 @@ fn inspect(folder: &Path) -> FolderInspection {
     let config = find_config(folder);
     let config_source = read_config(folder, config);
     let configured_project_name = config_source.as_deref().and_then(parse_config_project_name);
+    let project_name_computed =
+        configured_project_name.is_none() && config_source.as_deref().is_some_and(sets_project_name);
 
     let package_name = package.as_ref().and_then(|p| p.name.clone());
     let dependency_declared = package.as_ref().is_some_and(|p| {
@@ -193,6 +224,7 @@ fn inspect(folder: &Path) -> FolderInspection {
             .as_deref()
             .is_some_and(|s| s.contains(REPORTER_PACKAGE)),
         configured_project_name,
+        project_name_computed,
         web_server: config_source.as_deref().is_some_and(has_web_server),
     }
 }
@@ -491,6 +523,16 @@ mod tests {
         let result = inspect(&folder.0);
 
         assert!(result.playwright_installed);
+    }
+
+    #[test]
+    fn a_project_name_the_config_computes_is_told_apart_from_none() {
+        assert!(sets_project_name("wrapConfig(defineConfig({}), { projectName: `shop-${process.env.TENANT}` })"));
+        assert!(sets_project_name("const projectName = name(); wrapConfig(config, { projectName })"));
+        assert!(sets_project_name("reporter: [['@piwitests/reporter', { projectName: process.env.PROJECT }]]"));
+        assert!(!sets_project_name("export default defineConfig({ use: { baseURL } })"));
+        assert!(!sets_project_name("const piwiProjectName = 'x'; options.projectNameFallback;"));
+        assert!(parse_config_project_name("{ projectName: `shop-${tenant}` }").is_none());
     }
 
     #[test]

@@ -36,7 +36,9 @@ const {
   requestsForTarget,
   requireRunTarget,
   resolveRequestTests,
+  runVariablesForTarget,
   stopOwnRequest,
+  targetFeatures,
 } = await import('../../server/utils/run-requests');
 const { listOwnRequests } = await import('#shared/handlers/run-requests');
 const { RUN_REQUEST_LIMITS } = await import('@piwitests/core/run-request');
@@ -579,6 +581,68 @@ describe('the life of a request', () => {
     state.machineRuns.delete(allowed);
     expect(await answerRequest(c, id, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 403 });
     expect(await answerRequest(c, id, { decision: 'not-now' })).toMatchObject({ ok: true, row: { state: 'declined' } });
+  });
+
+  test('a target that does not apply run variables ends a request of a project that sets some, with words to update', async () => {
+    await db
+      .update(schema.projects)
+      .set({ runVariables: [{ name: 'TENANT', value: 'acme' }] })
+      .where(eq(schema.projects.id, allowed));
+    const older = await caller();
+    const id = await request();
+    const refused = await claimRequest(older, id);
+    expect(refused).toMatchObject({
+      ok: false,
+      statusCode: 409,
+      ended: true,
+      message: expect.stringMatching(/update/),
+    });
+    expect(await stored(id)).toMatchObject({
+      state: 'refused',
+      targetId: older.target.id,
+      detail: refused.ok ? null : refused.message,
+    });
+
+    // A target that says it applies them claims the next one, and reads them.
+    const newer = await caller();
+    await db
+      .update(schema.runTargets)
+      .set({ features: ['run-variables'] })
+      .where(eq(schema.runTargets.id, newer.target.id));
+    const [row] = await db.select().from(schema.runTargets).where(eq(schema.runTargets.id, newer.target.id));
+    newer.target = row!;
+    expect(targetFeatures(newer.target)).toEqual(['run-variables']);
+    const next = await request();
+    expect(await claimRequest(newer, next)).toMatchObject({ ok: true });
+    expect(await runVariablesForTarget(newer, next)).toEqual({
+      ok: true,
+      runVariables: [{ name: 'TENANT', value: 'acme' }],
+    });
+    // Another target, or a request it did not claim, reads none of them.
+    expect(await runVariablesForTarget(older, next)).toMatchObject({ ok: false, statusCode: 404 });
+    expect(await runVariablesForTarget(newer, await request())).toMatchObject({ ok: false, statusCode: 404 });
+  });
+
+  test('Run refuses a target that does not apply run variables once the project sets some', async () => {
+    const c = await caller();
+    const id = await request();
+    expect(await claimRequest(c, id)).toMatchObject({ ok: true });
+    await db
+      .update(schema.projects)
+      .set({ runVariables: [{ name: 'TENANT', value: 'acme' }] })
+      .where(eq(schema.projects.id, allowed));
+    expect(await answerRequest(c, id, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 409 });
+    expect(await stored(id)).toMatchObject({ state: 'refused', requestTokenDigest: null });
+  });
+
+  test('a project with no run variables runs on any target, and reads none', async () => {
+    const c = await caller();
+    const id = await request();
+    expect(targetFeatures(c.target)).toEqual([]);
+    expect(await claimRequest(c, id)).toMatchObject({ ok: true });
+    expect(await runVariablesForTarget(c, id)).toEqual({ ok: true, runVariables: [] });
+    state.machineRuns.delete(allowed);
+    expect(await runVariablesForTarget(c, id)).toMatchObject({ ok: false, statusCode: 403 });
   });
 
   test('two tests of one title in two describe blocks stay two', async () => {

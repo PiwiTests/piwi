@@ -48,6 +48,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
+import type { RunVariablesParse } from '@piwitests/core/run-variables';
 import {
   RUN_CHANNEL_ENV,
   RUN_REF_ENV,
@@ -929,6 +930,17 @@ export function editorRunEnv(ref?: string): Record<string, string> {
 }
 
 /**
+ * A context's run variables as the environment of a command the service builds, before the service's own variables
+ * (which a run variable never names), or the words why nothing runs: not read yet, refused by `parseRunVariables`,
+ * or not readable.
+ */
+export function runVariablesEnv(read: RunVariablesParse | null): Record<string, string> | string {
+  if (!read) return 'The project’s run variables are not read yet, so Piwi runs nothing: try again in a moment.';
+  if (!read.ok) return `The project’s run variables cannot be set, so Piwi runs nothing: ${read.problems.join(' ')}`;
+  return Object.fromEntries(read.value.map((variable) => [variable.name, variable.value]));
+}
+
+/**
  * The folder a command of a context runs in: the config's folder as the file system spells it (`canonicalPath`), so
  * the project's Playwright and the config it loads resolve `@playwright/test` to one path whatever the case the
  * editor gave the folder in (`c:\…` for `C:\…` on Windows).
@@ -955,6 +967,8 @@ export function flakeLabLines(
   const lens = entry && context.client ? flakeLabLens(testCaseId, entry) : null;
   if (!lens || !context.client) return [];
   const serverUrl = context.client.connection.serverUrl;
+  // A command runs only with the project's run variables: without them, the lines offer none.
+  const variables = runVariablesEnv(context.runVariables);
   return [
     {
       line,
@@ -966,22 +980,26 @@ export function flakeLabLines(
       },
     },
     ...lens.actions.flatMap((a): SummaryLine[] => [
-      {
-        line,
-        title: a.title,
-        command: {
-          title: a.title,
-          command: 'piwi.runCommand',
-          arguments: [
+      ...(typeof variables === 'string'
+        ? []
+        : [
             {
-              cwd: commandFolder(context),
-              command: withServerUrl(a.command, serverUrl, context.root, env),
-              env: editorRunEnv(),
-              follow: true,
-            } satisfies RunCommandArgs,
-          ],
-        },
-      },
+              line,
+              title: a.title,
+              command: {
+                title: a.title,
+                command: 'piwi.runCommand',
+                arguments: [
+                  {
+                    cwd: commandFolder(context),
+                    command: withServerUrl(a.command, serverUrl, context.root, env),
+                    env: { ...variables, ...editorRunEnv() },
+                    follow: true,
+                  } satisfies RunCommandArgs,
+                ],
+              },
+            } satisfies SummaryLine,
+          ]),
       ...(desktop && a.kind === 'reproduce' ? [flakeLabJobLine(context, testCaseId, line)] : []),
     ]),
   ];
@@ -3201,7 +3219,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
         const verification = fixPlan ? verificationCommand(fixPlan.verify.command) : null;
-        if (planEdit && verification) {
+        const verifyVariables = verification ? runVariablesEnv(await owner.readRunVariables()) : null;
+        if (planEdit && verification && verifyVariables && typeof verifyVariables !== 'string') {
           actions.push({
             title: `Apply the fix plan (${plural(planEdit.files, 'file')}), then run its verification`,
             kind: CodeActionKind.QuickFix,
@@ -3214,7 +3233,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
                 {
                   cwd: commandFolder(owner),
                   command: verification,
-                  env: editorRunEnv(),
+                  env: { ...verifyVariables, ...editorRunEnv() },
                   follow: true,
                 } satisfies RunCommandArgs,
               ],
@@ -4500,7 +4519,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * saved, headed with one worker, stopping once at the failing line, with the editor's breakpoints too; the failure's
    * suggested locator asked of the instance at once, for the stop. Null, with a notice saying why, when it cannot run.
    */
-  const debugRunArgs = (context: PiwiContext | null, params: RunTestsArgs): RunCommand | null => {
+  const debugRunArgs = (
+    context: PiwiContext | null,
+    params: RunTestsArgs,
+    variables: Record<string, string>,
+  ): RunCommand | null => {
     const refuse = (message: string) => {
       void connection.sendNotification(NOTICE_NOTIFICATION, {
         root: context?.root ?? '',
@@ -4544,7 +4567,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const run: RunCommand = {
       cwd: commandFolder(context),
       ...headedCommand(command, args),
-      env: editorRunEnv(ref),
+      env: { ...variables, ...editorRunEnv(ref) },
       ref,
     };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
@@ -4559,11 +4582,28 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(RUN_ARGS_REQUEST, (params: RunTestsArgs) => runCommandFor(params));
 
+  /**
+   * The run variables of a context's project, as the environment of a run about to start, or null with a notice when
+   * they cannot be set: the run does not start without them.
+   */
+  const runVariablesFor = async (context: PiwiContext): Promise<Record<string, string> | null> => {
+    const variables = runVariablesEnv(await context.readRunVariables());
+    if (typeof variables !== 'string') return variables;
+    void connection.sendNotification(NOTICE_NOTIFICATION, {
+      root: context.root,
+      severity: 'warning',
+      message: variables,
+    } satisfies Notice);
+    return null;
+  };
+
   /** The command that runs the tests `params` names, as `piwi/runArgs` answers it: null when none can run. */
   const runCommandFor = async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
-    if (params.debug) return debugRunArgs(context, params);
+    const variables = context ? await runVariablesFor(context) : {};
+    if (variables === null) return null;
+    if (params.debug) return debugRunArgs(context, params, variables);
     if (!context) return null;
     const repeat = params.repeat ?? null;
     const named = await testArgs(context, params);
@@ -4584,7 +4624,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       cwd: commandFolder(context),
       args,
       command,
-      env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
+      env: { ...variables, ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
     if (repeat === null) {
@@ -4757,13 +4797,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const args = own ?? (selection ? playwrightArgsOf(selection.command) : null);
     const command = args?.length ? playwrightTestCommand(args) : null;
     if (!context || !args || !command) return null;
+    const variables = await runVariablesFor(context);
+    if (variables === null) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
     const run: RunCommand = {
       cwd: commandFolder(context),
       command,
       args,
-      env: editorRunEnv(ref),
+      env: { ...variables, ...editorRunEnv(ref) },
       ref,
     };
     return withStartOptions(withRecording(context, withBreakpoints(context, run, params.breakpoints)), params);

@@ -550,6 +550,18 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/live-view',
   },
+  'project.run-variables': {
+    title: 'Run variables',
+    text: [
+      'Environment variables, `NAME=value`, that every run Piwi starts for this project gets, for an app that picks a tenant, a region or a brand with one (`TENANT=acme`).',
+      '',
+      "- **Applied to** — the desktop app’s runs (Re-run, Run with options, Reproduce, Bisect, Flake Lab, a bug report’s reproduction), **Run on my machine** and the editors’ runs. Every command Piwi gives to copy starts with them: `TENANT=acme npx playwright test` in bash, `$env:TENANT='acme'; npx playwright test` in PowerShell.",
+      '- **Not secret** — commands and confirmations show them. A secret stays in each machine’s `.env`.',
+      '- **Refused names** — those that change which code runs, which browser starts or where results go: `PATH`, `HOME`, `NODE_OPTIONS`, and names starting with `PIWI_`, `PLAYWRIGHT_`, `NODE_`, `NPM_` or `GIT_`, among others. Each app that runs the tests checks them again, and runs nothing when one fails.',
+      '- **Building and starting the app** stay in the Playwright config: read the variable there (`webServer.env`, `projectName`), so CI and a terminal run the same steps.',
+    ].join('\n'),
+    doc: 'features/run-variables',
+  },
   'project.ci-rerun': {
     title: 'CI actions',
     text: [

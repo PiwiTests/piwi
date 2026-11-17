@@ -54,6 +54,7 @@ const sectionVisible = computed<Record<SectionId, boolean>>(() => ({
   'source-control': true,
   ai: true,
   'live-view': canManage.value && !isDesktop,
+  'run-variables': canManage.value,
   capabilities: canDecide.value,
   coverage: canManage.value && (!isHidden('coverage') || showOpenApi.value || showServerProbes.value),
   targets: canManage.value,
@@ -189,6 +190,13 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         v-else-if="active === 'live-view'"
         :project="project"
         data-tour="project-settings-live-view"
+        @saved="emit('saved')"
+      />
+
+      <ProjectRunVariablesSettings
+        v-else-if="active === 'run-variables'"
+        :project="project"
+        data-tour="project-settings-run-variables"
         @saved="emit('saved')"
       />
 

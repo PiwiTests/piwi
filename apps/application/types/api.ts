@@ -474,6 +474,8 @@ export interface ProjectWithTestRuns {
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
   /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
   tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
+  /** The run variables: the environment variables every run Piwi starts for the project gets. */
+  runVariables?: import('@piwitests/core/run-variables').RunVariable[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -517,6 +519,8 @@ export interface ProjectDetails {
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
   /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
   tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
+  /** The run variables: the environment variables every run Piwi starts for the project gets. */
+  runVariables?: import('@piwitests/core/run-variables').RunVariable[];
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */

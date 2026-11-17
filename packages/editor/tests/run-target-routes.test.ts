@@ -87,6 +87,9 @@ function offer(id = REQUEST_ID): RunRequestOffer {
 }
 
 /** A team instance that offers one request, gives its key and its request token. */
+/** What the fake instance answers a request's run variables with. */
+let runVariables: unknown = { runVariables: [] };
+
 async function fakeInstance() {
   const streams: http.ServerResponse[] = [];
   const server = http.createServer((req, res) => {
@@ -107,6 +110,7 @@ async function fakeInstance() {
         const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
+      else if (url.endsWith('/run-variables')) res.end(JSON.stringify(runVariables));
       else res.end('{}');
     });
   });
@@ -422,6 +426,47 @@ describe('every host of the run-target routes', () => {
       body: { instance: instance.url, token: REQUEST_TOKEN, projectId: 3, folder },
     });
     expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(404);
+  });
+
+  test('runs with the project’s run variables the confirmation showed, and asks again when they change', async () => {
+    runVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        command: string;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.command).toMatch(
+        process.platform === 'win32'
+          ? /^\$env:TENANT='acme'; npx playwright test /
+          : /^TENANT=acme npx playwright test /,
+      );
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'variables', level: 'ok' }));
+
+      // A variable changed since the window showed the command: Run shows it again rather than run another.
+      runVariables = { runVariables: [{ name: 'TENANT', value: 'globex' }] };
+      const changed = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+      });
+      expect(changed.status).toBe(409);
+      const [again] = (await host.call('GET', '', SHELL)).body!.requests as { command: string }[];
+      expect(again!.command).toContain('globex');
+
+      const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: again!.command,
+      });
+      expect(answered).toMatchObject({ status: 200, body: { launch: true } });
+      const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
+      expect(launch.body).toMatchObject({ runVariables: [{ name: 'TENANT', value: 'globex' }] });
+    } finally {
+      runVariables = { runVariables: [] };
+    }
   });
 });
 

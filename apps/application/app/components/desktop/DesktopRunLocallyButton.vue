@@ -15,6 +15,7 @@
  * unconditionally next to the copyable retry command.
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
+import { withRunVariables } from '@piwitests/core/run-variables';
 import type { RetryCase } from '~/utils/retry-command';
 import {
   buildLocalRunPlan,
@@ -218,8 +219,11 @@ function setOption(patch: LocalRunOptions) {
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
 /** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
+const runVariables = useProjectRunVariables(() => props.projectId);
 const copyCommand = computed(() =>
-  buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
+  runVariables.command(
+    buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
+  ),
 );
 /** The tests the run names that the copied command leaves out: a shell would misread their title or path. */
 const copyLeavesOut = computed(() => namedCases.value.filter((c) => !retryCommandNames(c, options.value.mode)).length);
@@ -227,7 +231,9 @@ const copyLeavesOut = computed(() => namedCases.value.filter((c) => !retryComman
 /** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
-  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map((step) => step.summary ?? step.display);
+  const shown = plan.value
+    .slice(0, MAX_PREVIEW_STEPS)
+    .map((step) => withRunVariables(step.summary ?? step.display, runVariables.variables.value, 'bash'));
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
 });
