@@ -829,25 +829,38 @@ function segmentRank(declared: DeclaredSegment, observed: string): number {
 }
 
 /**
- * The rank of each declared segment against the observed segments from `j` on,
- * or null when the pattern does not match them. An optional parameter is tried
- * both holding a segment and left out, and the closer match is kept.
+ * The rank of each declared segment against the observed segments, or null when
+ * the pattern does not match them. An optional parameter is tried both holding a
+ * segment and left out, and the closer match is kept. Each (declared, observed)
+ * position is matched once, so the work grows with the product of the two
+ * lengths, whatever number of optional parameters the pattern holds.
  */
-function matchSegments(segments: DeclaredSegment[], i: number, observed: string[], j: number): number[] | null {
-  if (i === segments.length) return j === observed.length ? [] : null;
-  const segment = segments[i]!;
-  if (segment.kind === 'catch-all') return observed.length - j >= segment.min ? [0] : null;
-  let best: number[] | null = null;
-  if (j < observed.length) {
-    const rank = segmentRank(segment, observed[j]!);
-    const rest = rank < 0 ? null : matchSegments(segments, i + 1, observed, j + 1);
-    if (rest) best = [rank, ...rest];
-  }
-  if (segment.kind === 'param' && segment.optional) {
-    const rest = matchSegments(segments, i + 1, observed, j);
-    if (rest && (!best || compareRanks([0, ...rest], best) > 0)) best = [0, ...rest];
-  }
-  return best;
+function matchSegments(segments: DeclaredSegment[], observed: string[]): number[] | null {
+  const width = observed.length + 1;
+  const known = new Map<number, number[] | null>();
+  const from = (i: number, j: number): number[] | null => {
+    const key = i * width + j;
+    const seen = known.get(key);
+    if (seen !== undefined) return seen;
+    let best: number[] | null = null;
+    const segment = segments[i];
+    if (!segment) best = j === observed.length ? [] : null;
+    else if (segment.kind === 'catch-all') best = observed.length - j >= segment.min ? [0] : null;
+    else {
+      if (j < observed.length) {
+        const rank = segmentRank(segment, observed[j]!);
+        const rest = rank < 0 ? null : from(i + 1, j + 1);
+        if (rest) best = [rank, ...rest];
+      }
+      if (segment.kind === 'param' && segment.optional) {
+        const rest = from(i + 1, j);
+        if (rest && (!best || compareRanks([0, ...rest], best) > 0)) best = [0, ...rest];
+      }
+    }
+    known.set(key, best);
+    return best;
+  };
+  return from(0, 0);
 }
 
 /**
@@ -940,7 +953,7 @@ export function createDeclaredMatcher(nodes: DeclaredSurfaceNode[]): (kind: stri
       for (const candidate of candidates) {
         const { pattern } = candidate;
         if (observed.length < pattern.min || observed.length > pattern.max) continue;
-        const ranks = matchSegments(pattern.segments, 0, observed, 0);
+        const ranks = matchSegments(pattern.segments, observed);
         if (!ranks) continue;
         const order = best ? compareRanks(ranks, best) : 1;
         if (order > 0) {
