@@ -39,6 +39,7 @@ import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
+import { withRunVariables, type RunVariable } from '@piwitests/core/run-variables';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import {
   desktopFailedExecution,
@@ -258,6 +259,8 @@ export interface LocalRun {
    * the cluster or bug report it was launched for, else one made for it alone.
    */
   originRef: string | null;
+  /** The project's run variables, which the shell sets on each Playwright process it starts for the run. */
+  runVariables?: RunVariable[];
   /** Shell id of the step currently spawned, for stopping it. */
   shellId: number | null;
   /** A step is being started: the shell has not answered with its id yet. */
@@ -346,10 +349,12 @@ export function localRunTitle(
 }
 
 /** A run's second line: its project, then the command its current step runs, when it has one. */
-export function localRunDetail(run: Pick<LocalRun, 'projectLabel' | 'projectId' | 'steps' | 'stepIndex'>): string {
+export function localRunDetail(
+  run: Pick<LocalRun, 'projectLabel' | 'projectId' | 'steps' | 'stepIndex' | 'runVariables'>,
+): string {
   const project = run.projectLabel || `Project ${run.projectId}`;
   const command = run.steps[run.stepIndex]?.display;
-  return command ? `${project} · ${command}` : project;
+  return command ? `${project} · ${withRunVariables(command, run.runVariables ?? [], 'bash')}` : project;
 }
 
 /**
@@ -1170,6 +1175,8 @@ export function useDesktopLocalRuns() {
     runs.value = [run, ...runs.value];
     const tracked = runs.value[0]!;
     trayOpen.value = true;
+    // A run a team instance asked for names its variables in the command its confirmation showed.
+    if (tracked.kind !== 'request') void readRunVariables(tracked);
     if (localRunOriginKind(tracked.kind)) void captureBaseline(tracked).then(() => drive(tracked));
     else {
       // A Flake Lab session, which no Piwi run is linked to, starts at once: its lab runs begin once its worktree is
@@ -1179,6 +1186,18 @@ export function useDesktopLocalRuns() {
       void drive(tracked);
     }
     return tracked;
+  }
+
+  /** Reads the run variables of the run's project, which the shell reads too when it starts each step. */
+  async function readRunVariables(run: LocalRun) {
+    try {
+      const answer = await $fetch<{ runVariables: RunVariable[] }>(
+        `/api/projects/${encodeURIComponent(run.projectId)}/run-variables`,
+      );
+      if (answer.runVariables.length > 0) run.runVariables = answer.runVariables;
+    } catch {
+      // The tray shows the command without them; the shell reads them itself.
+    }
   }
 
   /**

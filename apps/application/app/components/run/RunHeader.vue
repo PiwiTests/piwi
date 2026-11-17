@@ -188,8 +188,9 @@ const {
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
-} = useRunRetryCommand(() =>
-  runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases),
+} = useRunRetryCommand(
+  () => (runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases)),
+  () => props.testRun?.projectId,
 );
 
 /**

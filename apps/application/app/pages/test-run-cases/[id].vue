@@ -467,8 +467,9 @@ const retryCases = computed(() => [
 ]);
 // This one test by its file and line, with the run options the browser remembers from the run page.
 const { optionsFor: retryOptionsFor } = useRetryOptions();
+const retryRunVariables = useProjectRunVariables(() => testCase.value?.testRun?.project?.id);
 const retryCommand = computed(() =>
-  buildRetryCommand(retryCases.value, { mode: 'file-line', options: retryOptionsFor() }),
+  retryRunVariables.command(buildRetryCommand(retryCases.value, { mode: 'file-line', options: retryOptionsFor() })),
 );
 const { copy: copyRetry } = useCopy();
 
@@ -650,7 +651,10 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       label: 'Copy retry command',
       icon: 'i-lucide-clipboard',
       'data-tour': 'copy-retry-command',
-      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
+      onSelect: async () => {
+        await retryRunVariables.ready();
+        copyRetry(retryCommand.value, { toast: 'Retry command copied' });
+      },
     });
   }
 

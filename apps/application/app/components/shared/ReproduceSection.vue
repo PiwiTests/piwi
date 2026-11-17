@@ -27,6 +27,7 @@ const props = defineProps<{
   projectLabel?: string | null;
 }>();
 
+const shellKey = COMMAND_SHELL_KEY;
 const recipeBash = computed(() => reproScript(props.reproduce, 'bash'));
 const recipePowershell = computed(() => reproScript(props.reproduce, 'powershell'));
 
@@ -145,12 +146,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
   <div class="space-y-3" data-shot="fix-reproduce-body" data-copies="copy-recipe">
     <div class="space-y-1.5">
       <!-- The run line first — the exact test invocation. -->
-      <PlatformCodeBlock
-        v-if="runStep"
-        :bash="runStep.bash"
-        :powershell="runStep.powershell"
-        storage-key="piwi-repro-shell"
-      />
+      <PlatformCodeBlock v-if="runStep" :bash="runStep.bash" :powershell="runStep.powershell" :storage-key="shellKey" />
       <template v-else>
         <p v-for="note in reproduce.notes" :key="note" class="text-xs text-muted">{{ note }}</p>
       </template>
@@ -171,7 +167,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
           Reproduce the failure on your machine — check out the failing commit, install the run's Playwright version and
           browser, then run exactly the failing test.
         </p>
-        <PlatformCodeBlock :bash="recipeBash" :powershell="recipePowershell" storage-key="piwi-repro-shell" />
+        <PlatformCodeBlock :bash="recipeBash" :powershell="recipePowershell" :storage-key="shellKey" />
         <div v-if="reproduce.env.length" class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
           <span v-for="e in reproduce.env" :key="e.label">
             <span class="font-medium">{{ e.label }}:</span> <span class="font-mono">{{ e.value }}</span>
@@ -218,7 +214,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         <h4 class="text-xs font-medium uppercase tracking-wide text-muted">Find the breaking commit</h4>
       </div>
       <template v-if="bisect.available">
-        <PlatformCodeBlock :bash="bisect.bash" :powershell="bisect.powershell" storage-key="piwi-repro-shell" />
+        <PlatformCodeBlock :bash="bisect.bash" :powershell="bisect.powershell" :storage-key="shellKey" />
         <p class="text-xs text-muted">{{ bisect.explanation }}</p>
         <ClientOnly>
           <div v-if="desktop && canBisectHere" class="pt-0.5 space-y-1">

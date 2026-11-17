@@ -206,6 +206,7 @@ import {
   INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
+  InvalidRunVariablesError,
   InvalidTagKeysError,
   updateProject,
   createProject,
@@ -215,6 +216,7 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { readProjectRunVariables } from '#shared/handlers/run-variables';
 import { SOLE_USER } from '#shared/own-runs';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
@@ -1093,7 +1095,8 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
-        if (e instanceof InvalidTagKeysError) throw demoHttpError(400, e.message);
+        if (e instanceof InvalidTagKeysError || e instanceof InvalidRunVariablesError)
+          throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -4171,6 +4174,16 @@ const routes: RouteEntry[] = [
     handler: async (m, _, __, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
       return getProjectCapabilities(await getDemoDb(), +m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/run-variables$/,
+    handler: async (m, _, __, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const runVariables = await readProjectRunVariables(await getDemoDb(), +m[1]!);
+      if (!runVariables) throw demoHttpError(404, 'Project not found');
+      return { runVariables };
     },
   },
   {

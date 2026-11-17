@@ -1,5 +1,7 @@
 import { INVALID_EXTERNAL_ID_URL, normalizeExternalIdUrl } from '#shared/external-id-link';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
+import { parseRunVariables } from '@piwitests/core/run-variables';
+import { storedRunVariables, type RunVariable } from '#shared/run-variables';
 import {
   projects,
   testRuns,
@@ -529,6 +531,7 @@ export async function getProject(
     hasScmToken: project.scmCredentialId != null,
     ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
     tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
+    runVariables: storedRunVariables(project.runVariables),
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
@@ -639,6 +642,14 @@ export class InvalidTagKeysError extends Error {
   }
 }
 
+/** The error `updateProject` throws for run variables `parseRunVariables` refuses; the message names each problem. */
+export class InvalidRunVariablesError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidRunVariablesError';
+  }
+}
+
 /**
  * The status filter `updateProject` stores: null for none, and for a filter
  * every non-lab run passes (every branch, every environment, partial runs too).
@@ -691,6 +702,8 @@ export async function updateProject(
     statusFilter?: unknown;
     /** The patterns that read the issue key and the test case key out of a test's tags (`TagKeyPatterns`); null turns both off. */
     tagKeys?: unknown;
+    /** The run variables (`RunVariable[]`), checked by `parseRunVariables`; null or [] removes them. */
+    runVariables?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -720,6 +733,7 @@ export async function updateProject(
     coverageAreas,
     statusFilter,
     tagKeys,
+    runVariables,
     tagIds: dataTagIds,
   } = data;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
@@ -748,6 +762,12 @@ export async function updateProject(
     if (!parsed.ok) throw new InvalidTagKeysError(parsed.message);
     storedTagKeys = parsed.tagKeys;
   }
+  let storedVariables: RunVariable[] | null | undefined;
+  if (runVariables !== undefined) {
+    const parsed = parseRunVariables(runVariables);
+    if (!parsed.ok) throw new InvalidRunVariablesError(parsed.problems.join(' '));
+    storedVariables = parsed.value.length > 0 ? parsed.value : null;
+  }
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
@@ -775,6 +795,7 @@ export async function updateProject(
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),
         tagKeys: storedTagKeys,
+        runVariables: storedVariables,
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),
@@ -823,6 +844,7 @@ export async function updateProject(
       ...updatedProjectPublic,
       hasScmToken: updatedProjectPublic.scmCredentialId != null,
       ciRerun: updatedProjectPublic.ciRerun == null ? null : resolveCiActionsSettings(updatedProjectPublic.ciRerun),
+      runVariables: storedRunVariables(updatedProjectPublic.runVariables),
       tags: projectTagRows.map((r: any) => r.tag),
     },
   };

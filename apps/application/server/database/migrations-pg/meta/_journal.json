@@ -1275,6 +1275,13 @@
       "when": 1794867796320,
       "tag": "0181_connection_credential",
       "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1794932062175,
+      "tag": "0182_curved_edwin_jarvis",
+      "breakpoints": true
     }
   ]
 }

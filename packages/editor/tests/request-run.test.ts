@@ -132,6 +132,45 @@ describe('planRequestedRun', () => {
     expect(plan).toMatchObject({ branch: 'main', commit });
   });
 
+  test('starts the command with the project’s run variables, and names them among the checks', async () => {
+    const commit = git('rev-parse', 'HEAD');
+    const variables = [
+      { name: 'TENANT', value: 'acme' },
+      { name: 'REGION', value: 'eu west' },
+    ];
+    const plan = await planRequestedRun(request({ source: { commit } }), folder, [], { ok: true, value: variables });
+    expect(plan.runnable).toBe(true);
+    expect(plan.variables).toEqual(variables);
+    expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
+      id: 'variables',
+      level: 'ok',
+      message: "Runs with the project's run variables: TENANT=acme REGION='eu west'.",
+    });
+    expect(plan.display).toMatch(
+      process.platform === 'win32'
+        ? /^\$env:TENANT='acme'; \$env:REGION='eu west'; npx playwright test /
+        : /^TENANT=acme REGION='eu west' npx playwright test /,
+    );
+    // The arguments stay the command's alone: the variables go to the process's environment.
+    expect(plan.args.some((arg) => arg.includes('TENANT'))).toBe(false);
+  });
+
+  test('a list of run variables a target refuses fails the check and leaves no command', async () => {
+    const plan = await planRequestedRun(request(), folder, [], {
+      ok: false,
+      problems: ['NODE_OPTIONS is not a variable a project can set.'],
+    });
+    expect(plan.runnable).toBe(false);
+    expect(plan.args).toEqual([]);
+    expect(plan.display).toBe('');
+    expect(plan.variables).toEqual([]);
+    expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
+      id: 'variables',
+      level: 'fail',
+      message: "The project's run variables cannot be set: NODE_OPTIONS is not a variable a project can set.",
+    });
+  });
+
   test('off the request’s commit, or with changes, warns and selects by title', async () => {
     const plan = await planRequestedRun(
       request({ source: { branch: 'main', commit: '9f8e7d6'.padEnd(40, '0') } }),

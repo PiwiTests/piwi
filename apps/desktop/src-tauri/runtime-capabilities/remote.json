@@ -34,6 +34,7 @@
     "allow-desktop-check-project-folder",
     "allow-desktop-suggest-project-folders",
     "allow-desktop-get-project-link",
+    "allow-desktop-folder-projects",
     "allow-desktop-set-project-link",
     "allow-desktop-run-local-tests",
     "allow-desktop-stop-local-tests",

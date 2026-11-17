@@ -213,6 +213,9 @@ const PROJECTS = [
     description: 'Integration tests for REST API endpoints',
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
+    // The API serves several tenants from one build: every run Piwi starts, and every command it gives to copy, picks
+    // this one.
+    run_variables: [{ name: 'TENANT', value: 'acme' }],
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
     // the CI settings list its CI actions, each naming the Jenkins credential.
     ci_rerun: {

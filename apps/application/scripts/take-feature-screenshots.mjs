@@ -3877,6 +3877,17 @@ const SCENES = [
     of: '[data-shot="project-live-view-settings"]',
   })),
   ...[
+    { name: 'project-run-variables-settings', width: 1280, height: 900, docs: true },
+    { name: 'project-run-variables-settings-mobile', width: 375, height: 1300, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    description: `Project → Settings → Run variables: the project's name and value rows, and the command they start in each shell, at ${width} px`,
+    route: '/projects/2?tab=settings&section=run-variables',
+    viewport: { width, height },
+    of: '[data-shot="project-run-variables-settings"]',
+  })),
+  ...[
     { name: 'project-url-patterns-empty', width: 1280 },
     { name: 'project-url-patterns-empty-mobile', width: 375 },
   ].map(({ name, width }) => ({

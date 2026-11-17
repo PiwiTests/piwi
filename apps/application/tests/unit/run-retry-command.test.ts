@@ -3,9 +3,10 @@ import { computed, ref, toValue } from 'vue';
 import type { TestCaseResult } from '../../types/api';
 import { isFailedStatus } from '#shared/utils/test-counts';
 import { statusPaletteKey } from '@piwitests/run-ui/status-palette';
+import { commandWithRunVariables, type RunVariable } from '#shared/run-variables';
 
 /** The composable with its Nuxt auto-imports in place; a fresh import per case. */
-async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown) {
+async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown, variables: RunVariable[] = []) {
   vi.stubGlobal('computed', computed);
   vi.stubGlobal('toValue', toValue);
   vi.stubGlobal('useState', (_key: string, init: () => unknown) => ref(init()));
@@ -16,6 +17,9 @@ async function retryCommandOf(rows: Partial<TestCaseResult>[], cookie?: unknown)
   vi.stubGlobal('statusPaletteKey', statusPaletteKey);
   vi.stubGlobal('useCookie', () => ref(cookie));
   vi.stubGlobal('useRoute', () => ({ path: '/test-runs/1' }));
+  vi.stubGlobal('useProjectRunVariables', () => ({
+    command: (text: string) => commandWithRunVariables(text, variables, 'bash'),
+  }));
   const { useRetryOptions } = await import('../../app/composables/useRetryOptions');
   vi.stubGlobal('useRetryOptions', useRetryOptions);
   const { useRunRetryCommand } = await import('../../app/composables/useRunRetryCommand');
@@ -49,6 +53,11 @@ describe('the run page retry command under --repeat-each', () => {
 
     expect(failedCases.value).toHaveLength(1);
     expect(command.value).toBe('npx playwright test "/checkout.spec.ts:12" --project="chromium"');
+  });
+
+  test('starts the command with the project’s run variables', async () => {
+    const { command } = await retryCommandOf([pays(0, 0, 'failed')], undefined, [{ name: 'TENANT', value: 'acme' }]);
+    expect(command.value).toBe('TENANT=acme npx playwright test "/checkout.spec.ts:12" --project="chromium"');
   });
 
   test('names a test once however many of its repetitions failed', async () => {

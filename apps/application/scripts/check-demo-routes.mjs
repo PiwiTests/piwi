@@ -135,6 +135,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/run-targets/requests/:id/claim',
   'POST /api/run-targets/requests/:id/answer',
   'POST /api/run-targets/requests/:id/state',
+  'GET /api/run-targets/requests/:id/run-variables',
   'GET /api/run-targets/requests/:id/folder-hints',
   'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the

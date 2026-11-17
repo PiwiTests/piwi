@@ -37,6 +37,8 @@ async function fakeInstance(handlers: {
   };
   /** What the instance answers the describe call with. */
   self?: () => unknown;
+  /** What the instance answers a request's run variables with. */
+  runVariables?: () => unknown;
   status?: (path: string) => number | null;
   /** What a refusal carries instead of the instance's JSON message, as a proxy in front would send it. */
   refusalBody?: string;
@@ -68,6 +70,7 @@ async function fakeInstance(handlers: {
       if (path === '/api/run-targets/requests')
         res.end(JSON.stringify(handlers.list?.() ?? { requests: [], stops: [] }));
       else if (path === '/api/run-targets/self') res.end(JSON.stringify(handlers.self?.() ?? {}));
+      else if (path.endsWith('/run-variables')) res.end(JSON.stringify(handlers.runVariables?.() ?? {}));
       else if (path.endsWith('/claim'))
         res.end(JSON.stringify({ ...offer(path.split('/')[4]!), expiresAt: undefined }));
       else if (path.endsWith('/folder-hints'))
@@ -385,6 +388,10 @@ describe('the request host', () => {
     cleanups.push(instance.close);
     const { made } = host(instance.url);
     expect((await made.claim(id(1))).id).toBe(id(1));
+    // The claim says the app applies a project's run variables.
+    expect(JSON.parse(instance.calls.find((c) => c.path.endsWith('/claim'))!.body)).toEqual({
+      features: ['run-variables'],
+    });
     expect(await made.answer(id(1), { decision: 'run' })).toEqual({ requestToken: `pdq_${'b'.repeat(64)}` });
     await made.report(id(1), { state: 'ended', outcome: 'passed' });
     const state = instance.calls.find((c) => c.path.endsWith('/state'))!;
@@ -392,6 +399,29 @@ describe('the request host', () => {
     const refused = await made.claim(id(3)).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(RequestHostError);
     expect(refused).toMatchObject({ status: 409, message: 'answered 409' });
+    expect(made.state).not.toBe('revoked');
+  });
+
+  test('reads a claimed request’s run variables as core reads them, none from an instance that predates them', async () => {
+    let answer: unknown = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    const instance = await fakeInstance({
+      runVariables: () => answer,
+      status: (path) =>
+        path.endsWith(`${id(4)}/run-variables`) ? 404 : path.endsWith(`${id(5)}/run-variables`) ? 500 : null,
+    });
+    cleanups.push(instance.close);
+    const { made } = host(instance.url);
+    expect(await made.runVariables(id(1))).toEqual({ ok: true, value: [{ name: 'TENANT', value: 'acme' }] });
+    answer = { runVariables: [{ name: 'NODE_OPTIONS', value: '--require ./x.js' }] };
+    const refused = await made.runVariables(id(1));
+    expect(refused.ok).toBe(false);
+    expect(await made.runVariables(id(4))).toEqual({ ok: true, value: [] });
+    expect(await made.runVariables(id(5))).toEqual({
+      ok: false,
+      problems: ['They could not be read: answered 500'],
+      unreadable: true,
+    });
+    expect(await made.runVariables('not-an-id')).toMatchObject({ ok: false });
     expect(made.state).not.toBe('revoked');
   });
 

@@ -211,6 +211,8 @@ const runStreamOpens = new Map<number, number>();
 const runDetails = new Map<number, Record<string, unknown>>();
 /** How long `GET /api/test-runs/:id` takes to answer a run as it stood when asked. */
 let detailsDelayMs = 0;
+/** What the instance answers project 7's run variables with; null answers 404, as an instance that predates them. */
+let projectRunVariables: unknown = null;
 /** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
 const goneRunStreams = new Map<number, number>();
 /** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
@@ -361,6 +363,10 @@ beforeAll(async () => {
       return res.end(JSON.stringify(found ?? null));
     }
     if (u === '/api/projects/menu') return res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
+    if (u === '/api/projects/7/run-variables') {
+      if (projectRunVariables === null) res.statusCode = 404;
+      return res.end(JSON.stringify(projectRunVariables ?? { message: 'Not found' }));
+    }
     const baselineKey = req.headers['x-api-key'] === BASELINE_KEY;
     if (u.startsWith('/api/projects/7/locator-index')) {
       const branches = [{ name: 'feature/x', lastSeenAt: '2026-09-27T00:00:00Z', tests: 3 }];
@@ -1744,6 +1750,50 @@ describe('the Piwi language server', () => {
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
       name: 'checkout.spec.ts:3',
     });
+  });
+
+  test('asks before a run gets the project’s run variables, and runs nothing when they cannot be set', async () => {
+    const runArgs = () =>
+      client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/checkout.spec.ts'),
+        testIds: [1],
+      }) as Promise<RunCommand | null>;
+    const asked: string[] = [];
+    let answer: { title: string } | null = { title: 'Not now' };
+    const prompt = client.onRequest('window/showMessageRequest', (params: { message: string }) => {
+      asked.push(params.message);
+      return answer;
+    });
+    projectRunVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await client.sendRequest('piwi/refresh');
+      // Not now: nothing runs, and the next run asks again.
+      expect(await runArgs()).toBeNull();
+      expect(asked).toEqual([
+        'Acme Mugs sets run variables that every run Piwi starts for its tests gets: TENANT=acme. Run its tests with them?',
+      ]);
+      answer = { title: 'Allow' };
+      const command = await runArgs();
+      expect(asked).toHaveLength(2);
+      // The command stays the same: the variables go to the run's environment, before the service's own.
+      expect(command).toMatchObject({
+        command: 'npx playwright test tests/checkout.spec.ts:3',
+        env: { TENANT: 'acme', PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command!.ref },
+      });
+      expect(Object.keys(command!.env!)[0]).toBe('TENANT');
+      // Allowed once, the same values run without asking again.
+      expect(await runArgs()).not.toBeNull();
+      expect(asked).toHaveLength(2);
+
+      projectRunVariables = { runVariables: [{ name: 'NODE_OPTIONS', value: '--require ./x.js' }] };
+      await client.sendRequest('piwi/refresh');
+      expect(await runArgs()).toBeNull();
+      expect(asked).toHaveLength(2);
+    } finally {
+      prompt.dispose();
+      projectRunVariables = null;
+      await client.sendRequest('piwi/refresh');
+    }
   });
 
   test('finds the test at the cursor, and the tests of its spec', async () => {

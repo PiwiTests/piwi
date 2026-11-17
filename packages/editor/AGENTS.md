@@ -38,13 +38,14 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   filter, or an option of `PLAYWRIGHT_OPTIONS`, none of which loads or writes a file) and quotes it (`shellWord`); any
   other argument refuses the whole command, and the clients run only what the service built. Checked by
   `tests/commands.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#how-a-command-is-built))
-- **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`). Every `cwd`
-  handed to a client uses it, never the folder as the editor spelled it (on Windows, possibly with a lower-case drive
-  letter). Checked by `tests/lsp.test.ts` ("the folder a command runs in").
+- **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`), in every
+  `cwd` handed to a client. Checked by `tests/lsp.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#the-folder-a-command-runs-in))
+- **A project's run variables reach a run only once `parseRunVariables` passed them and, in an editor, the person
+  allowed them** (`runVariablesFor`, `src/run-target.ts`); else it runs nothing.
+  ([ARCHITECTURE.md](ARCHITECTURE.md#run-variables))
 - **A commit, a branch or a blob id reaches git only when it matches its pattern, never as an option** (`COMMIT`,
-  `BRANCH`, `BLOB` in `src/workspace.ts`). The commit and branch checks are tested by `tests/lsp.test.ts` ("a file is
-  read at a commit by its object name only") and `tests/workspace.test.ts` ("where a branch left the default branch");
-  the blob check has no test yet.
+  `BRANCH`, `BLOB` in `src/workspace.ts`). Checked by `tests/lsp.test.ts` and `tests/workspace.test.ts`, the blob check
+  aside.
 
 ### Reads and caching
 

@@ -39,6 +39,7 @@ fn main() {
             "desktop_check_project_folder",
             "desktop_suggest_project_folders",
             "desktop_get_project_link",
+            "desktop_folder_projects",
             "desktop_set_project_link",
             "desktop_run_local_tests",
             "desktop_stop_local_tests",

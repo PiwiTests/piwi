@@ -675,14 +675,18 @@ const selectedTestsLabel = computed(
 const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 /** The Playwright projects the selected tests ran in, the ones the command can name. */
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
+const selectionRunVariables = useProjectRunVariables(() => props.projectKey);
 const selectionCommand = computed(() =>
-  buildRetryCommand(selectedRetryCases.value, {
-    mode: retryMode.value,
-    options: retryOptionsFor(selectedProjects.value),
-  }),
+  selectionRunVariables.command(
+    buildRetryCommand(selectedRetryCases.value, {
+      mode: retryMode.value,
+      options: retryOptionsFor(selectedProjects.value),
+    }),
+  ),
 );
 const { copy: copySelection } = useCopy();
-function copySelectionCommand() {
+async function copySelectionCommand() {
+  await selectionRunVariables.ready();
   if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
   else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
 }

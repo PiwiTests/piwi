@@ -566,6 +566,18 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=live-view', expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-run-variables',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'run-variables' } }],
+    describes:
+      'The Run variables section: the environment variables (a tenant, a region) every run Piwi starts for the project gets, and its copied commands start with.',
+    requires: { permission: 'project:manage' },
+    help: 'project.run-variables',
+    doc: 'features/run-variables',
+    sample: { route: '/projects/1?tab=settings&section=run-variables', expect: PROJECT_1 },
+  },
+  {
     id: 'project-settings-capabilities',
     kind: 'tab',
     pages: ['/projects/[id]'],

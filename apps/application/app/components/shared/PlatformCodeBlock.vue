@@ -12,21 +12,29 @@ const props = defineProps<{
 }>();
 
 type Shell = 'bash' | 'powershell';
-const shell = ref<Shell>('bash');
+// The command shell's key shares one value with every copy button of the page (`useCommandShell`).
+const shared = props.storageKey === COMMAND_SHELL_KEY ? useCommandShell() : null;
+const own = ref<Shell>('bash');
+const shell = computed<Shell>(() => shared?.shell.value ?? own.value);
 
 // A per-viewer convenience only; never fails the render when storage is blocked.
 onMounted(() => {
-  if (!props.storageKey) return;
+  if (shared) return;
+  let saved: string | null = null;
   try {
-    const saved = localStorage.getItem(props.storageKey);
-    if (saved === 'bash' || saved === 'powershell') shell.value = saved;
+    saved = props.storageKey ? localStorage.getItem(props.storageKey) : null;
   } catch {
-    // Ignore — private windows and blocked storage both leave the default.
+    // Ignore — private windows and blocked storage both leave the computer's shell.
   }
+  own.value = saved === 'bash' || saved === 'powershell' ? saved : viewerShell();
 });
 
 function pick(next: Shell) {
-  shell.value = next;
+  if (shared) {
+    shared.pick(next);
+    return;
+  }
+  own.value = next;
   if (!props.storageKey) return;
   try {
     localStorage.setItem(props.storageKey, next);

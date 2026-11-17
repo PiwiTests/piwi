@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { withRunVariables } from '@piwitests/core/run-variables';
 /**
  * Desktop shell only: the "run with options" dialog — first-time folder setup,
  * the full options form, the spec check and the exact command preview. The
@@ -62,7 +63,10 @@ watch([open, () => link.value?.path, linked], () => {
 });
 
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
-const preview = computed(() => plan.value.map((s) => s.display).join('\n'));
+const runVariables = useProjectRunVariables(() => props.projectId);
+const preview = computed(() =>
+  plan.value.map((s) => withRunVariables(s.display, runVariables.variables.value, 'bash')).join('\n'),
+);
 
 function run() {
   store.startRun({

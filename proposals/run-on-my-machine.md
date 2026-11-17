@@ -250,7 +250,9 @@ five-second "Starting in 5 s · Cancel" notice in the target, and turned off fro
   `--timeout` are not offered.
 - **What the request came from**: the run, the execution, the branch and the commit, for the confirmation's branch check
   and for the issue (D17).
-- **Never** an absolute path, a command line, an environment variable, a URL or code. The target checks that each
+- **Never** an absolute path, a command line, an environment variable, a URL or code (amended by
+  [run-variables.md](../adr/run-variables.md) D6: the project's run variables reach the target apart from the request,
+  checked again there and shown before **Run**). The target checks that each
   test's spec is an existing regular file of its own folder, and builds the command itself: each test is one
   `specFileArgument` of core (the resolved path escaped and anchored as `/^…$/`, then `:line`, since Playwright reads a
   file argument as a regular expression), passed as argv without a shell.

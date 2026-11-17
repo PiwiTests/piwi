@@ -87,6 +87,10 @@ function offer(id = REQUEST_ID): RunRequestOffer {
 }
 
 /** A team instance that offers one request, gives its key and its request token. */
+/** What the fake instance answers a request's run variables with, and with which status. */
+let runVariables: unknown = { runVariables: [] };
+let runVariablesStatus = 200;
+
 async function fakeInstance() {
   const streams: http.ServerResponse[] = [];
   const paths: string[] = [];
@@ -101,6 +105,11 @@ async function fakeInstance() {
           `data: ${JSON.stringify({ type: 'snapshot', requests: offered.map((id) => offer(id)), stops: [] })}\n\n`,
         );
         streams.push(res);
+        return;
+      }
+      if (url.endsWith('/run-variables')) {
+        res.writeHead(runVariablesStatus, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(runVariablesStatus === 200 ? runVariables : { message: 'Bad gateway' }));
         return;
       }
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -428,6 +437,72 @@ describe('every host of the run-target routes', () => {
       body: { instance: instance.url, token: REQUEST_TOKEN, projectId: 3, folder },
     });
     expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(404);
+  });
+
+  test('runs with the project’s run variables the confirmation showed, and asks again when they change', async () => {
+    runVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        command: string;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.command).toMatch(
+        process.platform === 'win32'
+          ? /^\$env:TENANT='acme'; npx playwright test /
+          : /^TENANT=acme npx playwright test /,
+      );
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'variables', level: 'ok' }));
+
+      // A variable changed since the window showed the command: Run shows it again rather than run another.
+      runVariables = { runVariables: [{ name: 'TENANT', value: 'globex' }] };
+      const changed = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+      });
+      expect(changed.status).toBe(409);
+      const [again] = (await host.call('GET', '', SHELL)).body!.requests as { command: string }[];
+      expect(again!.command).toContain('globex');
+
+      const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: again!.command,
+      });
+      expect(answered).toMatchObject({ status: 200, body: { launch: true } });
+      const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
+      expect(launch.body).toMatchObject({ runVariables: [{ name: 'TENANT', value: 'globex' }] });
+    } finally {
+      runVariables = { runVariables: [] };
+    }
+  });
+
+  test('a read of the run variables the instance did not answer fails the check, and the next check reads again', async () => {
+    runVariablesStatus = 502;
+    runVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        runnable: boolean;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.runnable).toBe(false);
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'variables', level: 'fail' }));
+
+      runVariablesStatus = 200;
+      const again = await host.call('POST', `/requests/${REQUEST_ID}/plan`, SHELL);
+      expect(again.body).toMatchObject({ runnable: true, command: expect.stringContaining('acme') });
+    } finally {
+      runVariablesStatus = 200;
+      runVariables = { runVariables: [] };
+    }
   });
 });
 

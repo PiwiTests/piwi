@@ -14,7 +14,9 @@
  * unknown Playwright version drops the pin, and a missing bisect window returns
  * a plain reason instead of a script.
  */
+import { runVariableAssignments, withRunVariables } from '@piwitests/core/run-variables';
 import { buildRetryArgs, type RetryCase } from '#shared/retry-command';
+import { commandWithRunVariables, type RunVariable } from '#shared/run-variables';
 import { isPlainRevision } from '#shared/scm-urls';
 
 // The recipe's values come from the reporter and are pasted into a shell, so each must look like what it names.
@@ -69,6 +71,8 @@ export interface ReproInput {
   baseUrl: string | null;
   /** The failing tests, for the exact `playwright test` invocation. */
   cases: RetryCase[];
+  /** The project's run variables, which the test step starts with. */
+  runVariables?: readonly RunVariable[];
 }
 
 export type BisectResult =
@@ -96,6 +100,8 @@ export interface BisectInput {
   bad: string | null;
   /** The command that proves a commit good (exit 0) or bad (non-zero). */
   verifyCommand: string;
+  /** The project's run variables, which each step's run gets. */
+  runVariables?: readonly RunVariable[];
 }
 
 /**
@@ -191,7 +197,12 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
   const testArgs = buildRetryArgs(input.cases);
   if (testArgs || input.cases.length === 0) {
     const testCmd = testArgs ? `npx playwright test ${testArgs}` : 'npx playwright test';
-    steps.push({ step: 'Run the failing test', bash: testCmd, powershell: testCmd });
+    const variables = input.runVariables ?? [];
+    steps.push({
+      step: 'Run the failing test',
+      bash: commandWithRunVariables(testCmd, variables, 'bash'),
+      powershell: commandWithRunVariables(testCmd, variables, 'powershell'),
+    });
   } else {
     notes.push('No failing test has a file path a command can name, so the step that runs it is left out.');
   }
@@ -234,6 +245,7 @@ export function reproScript(recipe: ReproRecipe, shell: 'bash' | 'powershell'): 
  */
 export function buildBisectScript(input: BisectInput): BisectResult {
   const { good, bad, verifyCommand } = input;
+  const variables = input.runVariables ?? [];
 
   if (!bad) {
     return {
@@ -272,10 +284,19 @@ export function buildBisectScript(input: BisectInput): BisectResult {
   const goodShort = good.slice(0, 7);
   const badShort = bad.slice(0, 7);
 
-  // git and npx are portable, so the two forms are the same commands. `git
-  // bisect run` re-runs the command at each step: exit 0 marks the commit good,
-  // any non-zero marks it bad — exactly what a failing `playwright test` does.
-  const script = [`git bisect start ${bad} ${good}`, `git bisect run ${command}`, 'git bisect reset'].join('\n');
+  // git and npx are portable, so the two forms are the same commands but for the run variables: bash passes them with
+  // `env` before the command, PowerShell sets them for the session first. `git bisect run` re-runs the command at each
+  // step: exit 0 marks the commit good, any non-zero marks it bad — exactly what a failing `playwright test` does.
+  const steps = [`git bisect start ${bad} ${good}`, 'git bisect reset'];
+  const scriptFor = (shell: 'bash' | 'powershell') => {
+    if (shell === 'powershell') {
+      // The session's variables reach git and the `sh` it runs the command in: no argument carries them.
+      const set = withRunVariables('', variables, 'powershell').trim();
+      return [...(set ? [set] : []), steps[0], `git bisect run ${command}`, steps[1]].join('\n');
+    }
+    const run = variables.length > 0 ? `env ${runVariableAssignments(variables, 'bash')} ${command}` : command;
+    return [steps[0], `git bisect run ${run}`, steps[1]].join('\n');
+  };
 
   return {
     available: true,
@@ -283,8 +304,8 @@ export function buildBisectScript(input: BisectInput): BisectResult {
     bad,
     goodShort,
     badShort,
-    bash: script,
-    powershell: script,
+    bash: scriptFor('bash'),
+    powershell: scriptFor('powershell'),
     explanation: `Walks the commits between the last green (${goodShort}) and the failing commit (${badShort}), re-running the test at each step until it names the first commit that broke it — a non-zero exit marks a commit bad. \`git bisect reset\` returns you to where you started.`,
   };
 }
