@@ -10,6 +10,7 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod folder_search;
 mod hub_env;
 mod ide_launcher;
 mod inspect;
@@ -64,9 +65,9 @@ use updates::{
     desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
-    desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link, desktop_local_runs,
-    desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
-    desktop_set_project_link, desktop_stop_local_tests,
+    desktop_check_local_env, desktop_check_local_specs, desktop_check_project_folder, desktop_get_project_link,
+    desktop_local_runs, desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_set_project_link, desktop_stop_local_tests, desktop_suggest_project_folders,
 };
 use repro::desktop_run_repro;
 use run_target::{
@@ -3542,6 +3543,8 @@ pub fn run() {
             desktop_pick_files_to_open,
             desktop_inspect_folder,
             desktop_find_importable_runs,
+            desktop_check_project_folder,
+            desktop_suggest_project_folders,
             desktop_get_project_link,
             desktop_set_project_link,
             desktop_run_local_tests,

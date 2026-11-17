@@ -44,7 +44,6 @@ const projectId = computed(() => props.context?.projectId ?? null);
 const desktop = ref(false);
 const link = ref<DesktopProjectLink | null>(null);
 const inspection = ref<DesktopFolderInspection | null>(null);
-const linking = ref(false);
 
 async function refreshLink() {
   const id = projectId.value;
@@ -77,21 +76,14 @@ const canBisectHere = computed(
     canBisect(props.context.cases, props.context.flakeArm?.testCaseId),
 );
 
+const { chooseProjectFolder } = useDesktopLinkFolder();
+
+/** Link the project's folder, checked against the failing tests. */
 async function linkFolder() {
   const id = projectId.value;
-  const core = tauriCore();
-  if (!core || id == null) return;
-  linking.value = true;
-  try {
-    const path = await pickDesktopFolder();
-    if (!path) return;
-    await core.invoke('desktop_set_project_link', { projectId: String(id), path });
-    await refreshLink();
-  } catch (error) {
-    toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
-  } finally {
-    linking.value = false;
-  }
+  if (!tauriCore() || id == null) return;
+  const specs = [...new Set((props.context?.cases ?? []).map((c) => c.filePath).filter(Boolean))];
+  if (await chooseProjectFolder({ projectId: id, projectLabel: props.projectLabel, specs })) await refreshLink();
 }
 
 function reproduceHere() {
@@ -209,7 +201,6 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             color="neutral"
             variant="soft"
             icon="i-lucide-folder-plus"
-            :loading="linking"
             @click="linkFolder"
           >
             Link a folder to reproduce here

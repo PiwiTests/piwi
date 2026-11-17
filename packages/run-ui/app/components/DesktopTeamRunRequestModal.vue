@@ -2,7 +2,8 @@
 /**
  * Desktop shell only: a run request from the team instance this app is connected to, which the app claimed. It shows
  * the instance that asked, the project (by the name the instance gives it, else its id), the tests, the checks of the
- * folder linked to the request's project on this machine (with **Choose the folder** when none is), and the exact
+ * folder linked to the request's project on this machine (with **Choose the folder** when none is: the shell's picker,
+ * which offers the folder above or below the one picked that holds the tests), and the exact
  * command. Nothing runs before **Run**; **Not now** declines it, or refuses it with the checks that failed. The shell
  * takes the command and the request token from this app's server, never from this window. **Run**, **Not now** and
  * closing the dialog answer the request shown, and only once it has been shown, unchanged, in the visible and focused
@@ -84,8 +85,10 @@ async function chooseFolder() {
   if (!request || !core || linking.value) return;
   linking.value = true;
   try {
+    // The shell opens its own picker, and offers a folder above or below the one picked when that one holds the tests.
     const folder = await core.invoke<string | null>('desktop_link_request_folder', {
       projectId: String(request.projectId),
+      specs: [...new Set(request.tests.map((test) => test.filePath))],
     });
     if (!folder) return;
     add(

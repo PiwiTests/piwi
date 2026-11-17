@@ -187,6 +187,9 @@ test.describe('Desktop import of previous runs', () => {
     await waitForHydration(page);
 
     await page.getByRole('button', { name: 'Choose folder…' }).click();
+    const linkDialog = page.getByRole('dialog', { name: `Link ${PROJECT.DESKTOP_IMPORT_PREV} to its folder` });
+    await linkDialog.getByRole('button', { name: 'Choose folder…' }).click();
+    await expect(linkDialog).toBeHidden();
 
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('heading', { name: 'Import previous runs' })).toBeVisible();

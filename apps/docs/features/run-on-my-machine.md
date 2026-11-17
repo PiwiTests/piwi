@@ -44,7 +44,8 @@ An app connects to one instance at a time. **Disconnect** removes the key from t
 the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
 The folder of each project is linked on this machine, per instance: the first request for a project asks for it, and
-**Settings → Desktop app** lists the linked folders by project name, with **Unlink**.
+**Settings → Desktop app** lists the linked folders by project name, with **Unlink**. If the folder you pick lacks the
+request's tests, the app offers the one above or below holding them.
 
 ## Ask for a run
 

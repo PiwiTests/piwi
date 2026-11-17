@@ -22,12 +22,10 @@ const props = defineProps<{
 const emit = defineEmits<{ finished: [] }>();
 
 const config = useRuntimeConfig();
-const toast = useToast();
 const store = useDesktopLocalRuns();
 
 const desktop = ref(false);
 const linked = ref(false);
-const linking = ref(false);
 const open = ref(false);
 
 async function refreshLink() {
@@ -46,20 +44,11 @@ watch(
   },
 );
 
+const { chooseProjectFolder } = useDesktopLinkFolder();
+
 async function linkFolder() {
-  const core = tauriCore();
-  if (!core || props.projectId == null) return;
-  linking.value = true;
-  try {
-    const path = await pickDesktopFolder();
-    if (!path) return;
-    await core.invoke('desktop_set_project_link', { projectId: String(props.projectId), path });
-    await refreshLink();
-  } catch (error) {
-    toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
-  } finally {
-    linking.value = false;
-  }
+  if (!tauriCore() || props.projectId == null) return;
+  if (await chooseProjectFolder({ projectId: props.projectId, projectLabel: props.projectLabel })) await refreshLink();
 }
 
 /** `each` runs every arm in turn, `all` adds every condition at once, a number one suspect. */
@@ -119,7 +108,6 @@ watch(
       color="neutral"
       variant="outline"
       icon="i-lucide-folder-plus"
-      :loading="linking"
       data-testid="flake-lab-link-folder"
       title="Link the project's folder on this machine to run the lab in the desktop app"
       @click="linkFolder"

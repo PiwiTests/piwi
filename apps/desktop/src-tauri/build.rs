@@ -36,6 +36,8 @@ fn main() {
             "desktop_pick_files_to_open",
             "desktop_inspect_folder",
             "desktop_find_importable_runs",
+            "desktop_check_project_folder",
+            "desktop_suggest_project_folders",
             "desktop_get_project_link",
             "desktop_set_project_link",
             "desktop_run_local_tests",

@@ -51,7 +51,7 @@ onMounted(() => {
 
 const store = useDesktopLocalRuns();
 const { link, loaded: linkLoaded, busy, pickAndLink, refresh } = useDesktopProjectLink(() => props.projectId);
-const { missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
+const { specFiles, missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
   () => props.projectId,
   () => props.cases,
 );
@@ -64,6 +64,11 @@ const modalOpen = ref(false);
 watch(modalOpen, (isOpen) => {
   if (!isOpen) void refresh();
 });
+
+/** Link the project's folder, checked against the tests this button runs. */
+function chooseFolder() {
+  void pickAndLink({ projectLabel: props.projectLabel, specs: specFiles.value });
+}
 
 const canRun = computed(() => available.value && props.projectId != null && props.cases.length > 0);
 const linked = computed(() => !!link.value?.exists);
@@ -162,7 +167,7 @@ const face = computed(() => {
   };
   if (!linkLoaded.value) return { ...idle, tooltip: 'Reading the linked folder…' };
   if (!linked.value) {
-    return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
+    return { ...idle, tooltip: 'Link the folder that holds this project’s Playwright config to run tests here' };
   }
   if (noPlan.value) return { ...idle, tooltip: noPlanHint.value };
   const command =
@@ -233,12 +238,12 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
   if (!linked.value) {
     groups.push([
       { type: 'label', label: link.value ? 'The linked folder is missing' : 'No folder linked yet' },
-      { label: 'Choose folder…', icon: 'i-lucide-folder-plus', onSelect: () => void pickAndLink() },
+      { label: 'Choose folder…', icon: 'i-lucide-folder-plus', onSelect: chooseFolder },
     ]);
   } else if (wrongFolder.value) {
     groups.push([
       { type: 'label', label: 'Tests not found in the linked folder' },
-      { label: 'Choose the right folder…', icon: 'i-lucide-folder-search', onSelect: () => void pickAndLink() },
+      { label: 'Choose the right folder…', icon: 'i-lucide-folder-search', onSelect: chooseFolder },
       { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   } else if (playwrightMissing.value) {
@@ -413,7 +418,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
   if (linked.value) {
     groups.push([
       { type: 'label', label: link.value!.path, class: 'font-mono text-[11px] break-all font-normal' },
-      { label: 'Change linked folder…', icon: 'i-lucide-folder-search', onSelect: () => void pickAndLink() },
+      { label: 'Change linked folder…', icon: 'i-lucide-folder-search', onSelect: chooseFolder },
     ]);
   }
 

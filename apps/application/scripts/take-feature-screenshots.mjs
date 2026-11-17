@@ -86,6 +86,33 @@ const OUT_TARGETS = {
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 860 };
 
+/** The folders the link dialog finds for a project in the desktop scenes: one a run came from, one clone. */
+const LINK_FOLDER_SUGGESTIONS = [
+  { path: '/home/dev/code/acme-shop/e2e', playwrightConfig: 'playwright.config.ts', specsFound: 12, source: 'run' },
+  {
+    path: '/home/dev/code/acme-shop-review/e2e',
+    playwrightConfig: 'playwright.config.ts',
+    specsFound: 12,
+    source: 'clone',
+  },
+];
+
+/** A monorepo's root picked by hand: no config at its root, none of the tests, the config folder below it. */
+const MONOREPO_ROOT_CHECK = {
+  path: '/home/dev/code/acme-shop',
+  exists: true,
+  playwrightConfig: null,
+  specsChecked: 12,
+  specsFound: 0,
+  missingSpecs: ['tests/checkout.spec.ts'],
+  repository: null,
+  sameRepository: null,
+  fits: false,
+  alternatives: [
+    { path: '/home/dev/code/acme-shop/e2e', playwrightConfig: 'playwright.config.ts', specsFound: 12, source: 'below' },
+  ],
+};
+
 /**
  * A real Playwright 1.63 trace recorded with `snapshots: { dom, aria, screen }`,
  * ingested by the failing-step-evidence scene so the timeline can show the page
@@ -1293,6 +1320,8 @@ const REPRO_SCENE_STEPS = (() => {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
+ *   folderSuggestions — desktop mode: the folders `desktop_suggest_project_folders` finds for a project (default [])
+ *   folderCheck — desktop mode: what `desktop_check_project_folder` answers (default: the folder picked fits)
  *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts, or a list of the
  *                 ids of the runs it starts in turn (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
@@ -10641,6 +10670,77 @@ const SCENES = [
       await page.getByRole('heading', { name: 'Create new project' }).waitFor();
       await page.getByRole('button', { name: 'Choose folder…' }).click();
       await page.getByText(READY_INSPECTION.path).first().waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'project-from-folder-monorepo',
+    description: 'New-project modal: a monorepo root offers the folder that holds the Playwright config',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    inspection: { ...READY_INSPECTION, playwrightConfig: null, playwrightInstalled: false, reporterInstalled: false },
+    folderCheck: MONOREPO_ROOT_CHECK,
+    route: '/projects',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'New project' }).click();
+      await page.getByRole('heading', { name: 'Create new project' }).waitFor();
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-new-project-alternatives').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'link-folder-dialog',
+    description: 'Link a project to its folder: the folders found on this machine (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    folderSuggestions: LINK_FOLDER_SUGGESTIONS,
+    route: '/projects/2?tab=settings&section=local-folder',
+    of: '[role="dialog"]',
+    pad: 8,
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-link-folder-offers').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'link-folder-dialog-mismatch',
+    description: 'The same dialog once a folder picked by hand does not match the project',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    folderCheck: MONOREPO_ROOT_CHECK,
+    route: '/projects/2?tab=settings&section=local-folder',
+    of: '[role="dialog"]',
+    pad: 8,
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByText('No folder of this project found on this machine').waitFor();
+      await dialog.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-link-folder-check').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'link-folder-dialog-mobile',
+    description: 'The dialog with the folders found, at phone width',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    folderSuggestions: LINK_FOLDER_SUGGESTIONS,
+    viewport: { width: 375, height: 812 },
+    route: '/projects/2?tab=settings&section=local-folder',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-link-folder-offers').waitFor();
       await settle();
       await shoot();
     },

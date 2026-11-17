@@ -42,7 +42,8 @@ const ready = computed(() => isFolderPiwiReady(inspection.value));
           <UBadge v-else-if="inspection" color="warning" variant="subtle" size="sm">needs setup</UBadge>
         </template>
         <span v-else class="text-muted">
-          No local folder linked — link this project’s checkout to run tests from here and open files in your IDE.
+          No local folder linked: link the folder that holds this project’s Playwright config to run its tests here and
+          open its files in your IDE.
         </span>
       </div>
       <UButton
