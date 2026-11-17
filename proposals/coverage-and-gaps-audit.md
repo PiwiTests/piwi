@@ -785,12 +785,11 @@ Severity: **H** high, **M** medium, **L** low. *run*, *read* and *seen* as defin
 
 ### Found on the way, outside the scope
 
-- **Matrix jobs may cancel each other** (suspicion, read). A run that is not sharded takes its instance id from the
-  CI run and job (`packages/reporter/src/internal/support/ci.ts:57-61`). On GitHub, the legs of a matrix share
-  `GITHUB_JOB`, so two legs would share an instance id, and a new run cancels the running ones of its instance
-  (`shared/handlers/failure-cluster-ops.ts:891-918`).
 - **A dialog left open at the test's end** kept the capture fixture's teardown from ending within 15 seconds, in the
   reviewer's harness, with coverage off and on. Not checked in a real Playwright run.
+- **The legs of a GitHub Actions matrix share one run label** unless each sets its own, and then cancel each other's
+  live runs. This is documented ([`ci.md`](../apps/docs/guide/ci.md#parallel-jobs-in-one-pipeline)), not a defect; it
+  is noted here because CT-19 has the same cause, one identity for several jobs of a commit.
 
 ## Appendix B. The earlier audit's ids, on v0.72.0
 
