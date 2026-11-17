@@ -3,6 +3,7 @@ import { describe, test, expect } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
   buildRetryCommand,
   buildRetryArgs,
@@ -95,8 +96,8 @@ test('normalizes Windows backslash paths to forward slashes', () => {
 
 test('quotes paths containing spaces', () => {
   const spaced = [{ filePath: 'tests/my dir/foo.spec.ts', title: 'spaced', line: 12, projectName: 'chromium' }];
-  expect(buildRetryCommand(spaced)).toContain('"/tests/my dir/foo.spec.ts:12"');
-  expect(buildRetryCommand(spaced, { mode: 'file' })).toContain('"/tests/my dir/foo.spec.ts"');
+  expect(buildRetryCommand(spaced)).toContain('"/tests/my(?: |.20)dir/foo.spec.ts:12"');
+  expect(buildRetryCommand(spaced, { mode: 'file' })).toContain('"/tests/my(?: |.20)dir/foo.spec.ts"');
 });
 
 test('no project name', () => {
@@ -198,7 +199,7 @@ describe('buildTitleGrepFlag', () => {
 describe('unsafe file paths and project names are left out', () => {
   test('a path holding characters a shell expands names its file with `.` in their place, and such a project is dropped', () => {
     expect(buildRetryCommand([{ filePath: 'tests/`id`.spec.ts', title: 't', line: 1, projectName: 'chromium' }])).toBe(
-      'npx playwright test "/tests/.id..spec.ts:1" --project="chromium"',
+      'npx playwright test "/tests/(?:.|.60)id(?:.|.60).spec.ts:1" --project="chromium"',
     );
     expect(buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: 'x$(id)' }])).toBe(
       'npx playwright test "/tests/a.spec.ts:1"',
@@ -416,6 +417,29 @@ describe('a spec named from a folder’s start', () => {
     expect(takes(spec!, '/repo/my tests/a.spec.ts')).toBe(false);
     // A folder whose path ends as its own still matches: the dashboard does not know the checkout's folder.
     expect(takes(spec!, '/repo/e2e/tests/a.spec.ts')).toBe(true);
+  });
+
+  test('takes a spec whose path its file: URL encodes, as Windows Playwright up to 1.62 tests it', () => {
+    for (const filePath of [
+      'my tests/a.spec.ts',
+      'tests/café.spec.ts',
+      'tests/#1 [x] {y} ~^%`.spec.ts',
+      '測試/a.spec.ts',
+    ]) {
+      const [spec] = splitRerunArgs(buildRetryArgs([{ filePath, title: 't', line: 3 }]));
+      expect(spec, filePath).toMatch(/:3$/);
+      const posix = `C:/repo/${filePath}`;
+      expect(takes(spec!, posix), posix).toBe(true);
+      expect(takes(spec!, `/repo/${filePath}`), filePath).toBe(true);
+      const url = pathToFileURL(`C:\\repo\\${filePath.replace(/\//g, '\\')}`, { windows: true }).href;
+      expect(url).toContain('%');
+      expect(takes(spec!, url), url).toBe(true);
+      expect(takes(spec!, url.replace('/repo/', '/repo/x')), url).toBe(false);
+    }
+    expect(commandSpec('my tests/a.spec.ts')).toBe('/my(?: |.20)tests/a.spec.ts');
+    expect(commandSpec('tests/é.spec.ts')).toBe('/tests/(?:é|.C3.A9).spec.ts');
+    expect(commandSpec('tests/[id].spec.ts')).toBe('/tests/(?:[[]|.5B)id(?:]|.5D).spec.ts');
+    expect(commandSpec('tests/a%b.spec.ts')).toBe('/tests/a(?:.|.25)b.spec.ts');
   });
 
   test('is written once, and never before a path that starts at a root', () => {

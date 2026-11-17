@@ -115,10 +115,10 @@ describe('shell safety', () => {
 
   test('a file holding characters a shell expands is named with `.` in their place, in args and command', () => {
     const result = materializeSelection([hostile, tests[0]!], 'args');
-    expect(result.args).toEqual(['/tests/.[(]touch pwned[)].spec.ts:5', '/tests/login.spec.ts:10']);
+    expect(result.args).toEqual(['/tests/.[(]touch(?: |.20)pwned[)].spec.ts:5', '/tests/login.spec.ts:10']);
     expect(result.command).not.toContain('$(');
     const files = materializeSelection([hostile], 'files');
     expect(files.format).toBe('files');
-    expect(files.command).toBe('npx playwright test "/tests/.[(]touch pwned[)].spec.ts"');
+    expect(files.command).toBe('npx playwright test "/tests/.[(]touch(?: |.20)pwned[)].spec.ts"');
   });
 });
