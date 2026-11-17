@@ -5,8 +5,9 @@ import type { RunRequestPromptView, RunTargetConnectionView } from '@piwitests/e
  * gave goes to the shell, which keeps it in the OS keychain (the window never reads it); a key the instance revoked
  * leaves the keychain. A request the window has not seen yet brings it to the front, where the person runs or
  * declines it; the same request sent again (a reconnect, a new plan) does not. Activates only in the `main` window.
+ * What it says is in the host's words (`useRunUiWords`), read as it speaks.
  */
-export default defineNuxtPlugin(() => {
+export default defineNuxtPlugin((nuxtApp) => {
   const core = tauriCore();
   if (!core || tauriWindowLabel() !== 'main') return;
 
@@ -24,9 +25,10 @@ export default defineNuxtPlugin(() => {
           .invoke('desktop_keep_run_target_key')
           .catch((error: unknown) => {
             // A key the keychain cannot keep would be lost at the next start: disconnect rather than take requests.
+            const { t } = nuxtApp.vueApp.runWithContext(useRunUiWords);
             useToast().add({
-              title: 'Could not keep the key: disconnected',
-              description: errorMessage(error),
+              title: t('runui_connectionKeepKeyFailed'),
+              description: errorMessage(error, t('runui_commonUnknownError')),
               color: 'error',
             });
             return core.invoke('desktop_forget_run_target').catch(() => {});

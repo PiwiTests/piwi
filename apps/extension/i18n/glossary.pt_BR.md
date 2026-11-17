@@ -29,6 +29,16 @@ This is a draft: no native reader has reviewed it yet.
 | watch (a locator's stability level) | a observar | the level between stable and brittle, *Watch* in the dashboard |
 | branch | branch (feminino) | `a branch`, `todas as branches` |
 | instance (Piwi) | instância | `sua instância do Piwi` |
+| team instance | instância da equipe | `sua instância da equipe`; Piwi Runner's word for the instance that sends it run requests |
+| run request | pedido de execução | `o pedido`; *requisição* stays for an HTTP request |
+| linked folder / to link, to unlink | pasta vinculada / vincular, desvincular | `a pasta vinculada a esse projeto` |
+| tray (system tray) | área de notificação | `na área de notificação`; the tray menu is its menu |
+| local host (Piwi Runner's) | servidor local | the Node process that serves Runner's window; not the code word `localhost` |
+| worker (Playwright) | worker (masculino) | `o worker`, `os workers`, as the Runs window says it |
+| stop (a test stopped at a line) | parada | `esta parada`; the state is `Parado em um ponto de interrupção` |
+| breakpoint | ponto de interrupção | |
+| live view / share live | visualização ao vivo / compartilhar ao vivo | `Parar de compartilhar` |
+| sign-in (on the instance) / to allow (an app) | login / autorizar | `O login na instância expirou`, `autorize o Piwi Runner` |
 | API key | chave de API | |
 | settings | configurações | the gear button and the settings page |
 | dashboard | painel | `o painel do Piwi` |

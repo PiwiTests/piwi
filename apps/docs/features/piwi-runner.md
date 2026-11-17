@@ -82,6 +82,16 @@ extension): turn **Run in background** off there, and closing the window quits.
 Its icon is the Piwi mark on a teal tile with a play sign, so it reads apart from the desktop app's in the tray and the
 taskbar.
 
+## Languages
+
+Piwi Runner speaks English, French, German, Spanish and Brazilian Portuguese, in its window, its tray menu and its
+questions: your system's language, or the one you choose under **Language** in its window. German, Spanish and
+Portuguese are drafts no native reader has reviewed yet: while one is on screen, a line says so and links to a form for
+a correction. Test titles, files, commands and a run's output stay as they are, the reason a run could not start
+included, and so do two answers of the runs' hub, where a locator picked on the image and a code made at a stop wait
+to be copied. The start screen keeps the
+language Runner started in until it starts again. The [desktop app](./desktop) stays in English.
+
 ## Related
 
 - [Run on my machine](./run-on-my-machine): who may ask, how an administrator turns it on, and what a request holds

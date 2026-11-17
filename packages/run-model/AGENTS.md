@@ -6,7 +6,8 @@ share about a run they follow. Its modules: `attention` (what the runs ask of th
 its place, its error), `status` (a worker's status and tab), `controls`, `outcome` (how a run came out beyond its
 status: its tests ended at a stop), `presence` (who has a run open, watches or drives), `tabs` (the worker shown),
 `layers` (a watched lane's layers under its page: why it waits, its events, its text, its filmstrip), `view-input`
-(the live view's input, also the VS Code paused page's) and `words`. Read
+(the live view's input, also the VS Code paused page's), `ci` (the CI runs in progress), `words`, and `speakers` (the
+words in each of Piwi Picker's languages, for a surface without its catalogs). Read
 [`../../AGENTS.md`](../../AGENTS.md) first.
 
 ## Rules
@@ -22,6 +23,9 @@ status: its tests ended at a stop), `presence` (who has a run open, watches or d
 - **`RUN_WORDS_EN` is the extension's English catalog:** `apps/extension/tests/unit/run-words.test.ts` fails on a
   message or a placeholder that differs, or a key a catalog lacks. That test is what keeps the English words a surface
   without the catalogs says (`englishRunSpeaker`) the window's.
+- **`src/words/<code>.json` are written by `npm run run-model:words` from Piwi Picker's catalogs**, for a surface
+  without them (`speakers.ts`, Piwi Runner's window): regenerate them after a run word or its translation changes,
+  never edit or merge them by hand. `apps/extension/tests/unit/run-words.test.ts` fails while one differs.
 - **Icons are names by meaning (`WorkerIcon`, `ControlIcon`),** the Runs window's own `IconName`s; another surface
   maps each to its set. A new one needs its entry in the extension's `ICONS`.
 - **FSL-1.1-MIT, and never moved into `@piwitests/core`,** which is MIT: code moves from the MIT parts into this

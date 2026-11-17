@@ -16,7 +16,10 @@ This file is reference material: open it when you need to understand the code.
 | `app/utils/runner-runs.ts`, `app/composables/useRunnerRuns.ts` | The runs list: start, output, stop, Hold failures, the shell's `piwi:local-run` events, and the hub's name of each run                                                                               |
 | `app/components/RunnerRunList.vue`                             | One card per run: its status, Stop, its workers live from the hub (`DesktopRunSession`, the layer's), its output                                                                                     |
 | `app/plugins/runner-run-hub.client.ts`                         | The window on the hub's stream: held from its start until the hub listed its runs, then while a run runs or the hub has one; present while visible, `show` for Hold failures, to the front at a stop |
-| `tests/`                                                       | The host on a real socket                                                                                                                                                                            |
+| `locales/<code>.json`, `app/composables/useRunnerWords.ts`     | Runner's own words, in Piwi Picker's shape: the window's (`runner_`) and the shell's (`shell_`)                                                                                                      |
+| `app/composables/useRunnerLanguage.ts`, `app/plugins/runner-words.client.ts` | The language the shell answers, its catalogs loaded before the window shows, and the layer's words in it (`RUN_UI_WORDS`)                                                              |
+| `app/utils/runner-language.ts`, `app/components/RunnerLanguageSetting.vue` | The languages Runner ships, with their draft status, and the Language card                                                                                                               |
+| `tests/`                                                       | The host on a real socket, the catalogs and the text scan; `tests/e2e/` the built window in French and German                                                                                       |
 
 ## The shell build
 

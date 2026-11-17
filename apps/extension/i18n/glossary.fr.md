@@ -35,6 +35,16 @@ one of `store/amo-description.fr.md`: plain sentences, `vous`, no anglicism wher
 | to pick (an element) | choisir | |
 | to hover | survoler | |
 | badge | badge | |
+| team instance | instance d’équipe | the instance whose pages send Piwi Runner its run requests |
+| run request | demande d’exécution | |
+| linked folder | dossier lié | to link, to unlink: *lier*, *dissocier* |
+| worker (Playwright) | worker (masculin) | `un worker`, `des workers` |
+| stop, breakpoint | arrêt, point d’arrêt | a test stopped at a line: *cet arrêt* |
+| Hold failures | Retenir les échecs | the switch, in Piwi Picker and Piwi Runner |
+| live (Share live, live view) | en direct | *Partager en direct*, *vue en direct*, *Arrêter le partage* |
+| tray (system) | zone de notification | the icon and its menu; the menu bar on macOS |
+| local host | serveur local | Piwi Runner's own Node server, on the start screen |
+| uncommitted changes | modifications non commitées | `commit` stays, as developers say it |
 
 ## Typography
 

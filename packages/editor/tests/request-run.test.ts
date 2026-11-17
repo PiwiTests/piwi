@@ -144,6 +144,8 @@ describe('planRequestedRun', () => {
     expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
       id: 'variables',
       level: 'ok',
+      code: 'variables-set',
+      args: { variables: "TENANT=acme REGION='eu west'" },
       message: "Runs with the project's run variables: TENANT=acme REGION='eu west'.",
     });
     expect(plan.display).toMatch(
@@ -167,6 +169,8 @@ describe('planRequestedRun', () => {
     expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
       id: 'variables',
       level: 'fail',
+      code: 'variables-invalid',
+      args: { problems: 'NODE_OPTIONS is not a variable a project can set.' },
       message: "The project's run variables cannot be set: NODE_OPTIONS is not a variable a project can set.",
     });
   });

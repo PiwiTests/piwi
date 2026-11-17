@@ -10,15 +10,7 @@
  * JPEG whose base64 `takeLaneLayer` checked again, its URL made once for each image.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
-import {
-  callWait,
-  englishSeconds,
-  laneEventSaid,
-  laneTextSource,
-  type LaneFilmEntry,
-} from '@piwitests/run-model/layers';
-import { englishRunSpeaker } from '@piwitests/run-model/words';
-import { desktopSay } from '../utils/run-view';
+import { callWait, laneEventSaid, laneTextSource, secondsIn, type LaneFilmEntry } from '@piwitests/run-model/layers';
 import { statusPalette } from '../utils/status-palette';
 
 const props = defineProps<{
@@ -29,16 +21,20 @@ const props = defineProps<{
 }>();
 
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
 const runRef = computed(() => props.session.ref);
 const lane = computed(() => props.worker.parallelIndex);
 const layers = computed(() => hub.laneLayers(runRef.value, lane.value));
 const text = computed(() => hub.laneText(runRef.value, lane.value));
 
-const wait = computed(() => (layers.value?.log ? callWait(layers.value.log, englishRunSpeaker, englishSeconds) : null));
+/** A number of seconds in the language on screen: `12s`, `0.4s` in English. */
+const saySeconds = computed(() => secondsIn(runUiLocale(words.language)));
+
+const wait = computed(() => (layers.value?.log ? callWait(layers.value.log, words.run, saySeconds.value) : null));
 const events = computed(() =>
   (layers.value?.events ?? []).map((entry) => ({
     key: entry.key,
-    ...laneEventSaid(entry.event, englishRunSpeaker, englishSeconds),
+    ...laneEventSaid(entry.event, words.run, saySeconds.value),
   })),
 );
 
@@ -74,8 +70,8 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
 <template>
   <div v-if="layers" class="grid gap-2.5" data-testid="desktop-lane-layers">
     <section class="grid gap-1 min-w-0" :aria-labelledby="ids.calls">
-      <h4 :id="ids.calls" class="text-xs font-semibold text-muted">{{ desktopSay('runs_layerCalls') }}</h4>
-      <p v-if="!wait" class="text-xs text-muted">{{ desktopSay('runs_callNone') }}</p>
+      <h4 :id="ids.calls" class="text-xs font-semibold text-muted">{{ words.say('runs_layerCalls') }}</h4>
+      <p v-if="!wait" class="text-xs text-muted">{{ words.say('runs_callNone') }}</p>
       <template v-else>
         <p class="text-xs break-words">
           <code class="font-mono text-highlighted">{{ wait.title }}</code>
@@ -95,8 +91,8 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
     </section>
 
     <section class="grid gap-1 min-w-0" :aria-labelledby="ids.events">
-      <h4 :id="ids.events" class="text-xs font-semibold text-muted">{{ desktopSay('runs_layerEvents') }}</h4>
-      <p v-if="!events.length" class="text-xs text-muted">{{ desktopSay('runs_eventsNone') }}</p>
+      <h4 :id="ids.events" class="text-xs font-semibold text-muted">{{ words.say('runs_layerEvents') }}</h4>
+      <p v-if="!events.length" class="text-xs text-muted">{{ words.say('runs_eventsNone') }}</p>
       <ul
         v-else
         class="m-0 grid max-h-44 gap-0.5 overflow-auto p-0 text-xs list-none"
@@ -112,7 +108,7 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
     </section>
 
     <section class="grid gap-1 min-w-0" :aria-labelledby="ids.text">
-      <h4 :id="ids.text" class="text-xs font-semibold text-muted">{{ desktopSay('runs_layerText') }}</h4>
+      <h4 :id="ids.text" class="text-xs font-semibold text-muted">{{ words.say('runs_layerText') }}</h4>
       <div class="flex flex-wrap gap-1.5">
         <UButton
           v-if="!text.asked"
@@ -120,11 +116,11 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
           color="neutral"
           variant="outline"
           icon="i-lucide-list-tree"
-          :title="desktopSay('runs_textShowTitle')"
+          :title="words.say('runs_textShowTitle')"
           :aria-disabled="busy || undefined"
           @click="askText(true)"
         >
-          {{ desktopSay('runs_textShow') }}
+          {{ words.say('runs_textShow') }}
         </UButton>
         <template v-else>
           <UButton
@@ -135,7 +131,7 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
             :aria-disabled="busy || undefined"
             @click="askText(true)"
           >
-            {{ desktopSay('runs_textAgain') }}
+            {{ words.say('runs_textAgain') }}
           </UButton>
           <UButton
             size="xs"
@@ -145,22 +141,22 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
             :aria-disabled="busy || undefined"
             @click="askText(false)"
           >
-            {{ desktopSay('runs_textHide') }}
+            {{ words.say('runs_textHide') }}
           </UButton>
         </template>
       </div>
       <template v-if="text.asked">
-        <p v-if="text.asking" class="text-xs text-muted">{{ desktopSay('runs_textWaiting') }}</p>
+        <p v-if="text.asking" class="text-xs text-muted">{{ words.say('runs_textWaiting') }}</p>
         <p v-if="textNote || layers.textRefused" class="flex items-start gap-1.5 text-xs text-warning">
           <UIcon name="i-lucide-triangle-alert" class="mt-0.5 size-3.5 shrink-0" aria-hidden="true" />
           {{ textNote || layers.textRefused }}
         </p>
         <template v-if="layers.text">
-          <p class="text-xs text-muted">{{ laneTextSource(layers.text, englishRunSpeaker) }}</p>
+          <p class="text-xs text-muted">{{ laneTextSource(layers.text, words.run) }}</p>
           <pre
             class="m-0 max-h-60 overflow-auto rounded-md border border-default bg-muted px-2 py-1.5 font-mono text-[11px] leading-4 whitespace-pre-wrap break-words focus-visible:outline-2 focus-visible:outline-primary"
             tabindex="0"
-            :aria-label="desktopSay('runs_textLabel')"
+            :aria-label="words.say('runs_textLabel')"
             data-testid="desktop-lane-text"
             >{{ layers.text.text }}</pre>
         </template>
@@ -168,21 +164,21 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
     </section>
 
     <section class="grid gap-1 min-w-0" :aria-labelledby="ids.film">
-      <h4 :id="ids.film" class="text-xs font-semibold text-muted">{{ desktopSay('runs_layerFilmstrip') }}</h4>
-      <p v-if="!film.length" class="text-xs text-muted">{{ desktopSay('runs_filmstripNone') }}</p>
+      <h4 :id="ids.film" class="text-xs font-semibold text-muted">{{ words.say('runs_layerFilmstrip') }}</h4>
+      <p v-if="!film.length" class="text-xs text-muted">{{ words.say('runs_filmstripNone') }}</p>
       <template v-else>
         <template v-if="shown">
           <figure class="m-0 overflow-hidden rounded-md border border-default bg-muted">
             <img
               class="block w-full h-auto"
               :src="filmUrl(shown)"
-              :alt="desktopSay('runs_filmstripAlt', { call: shown.thumb.title })"
+              :alt="words.say('runs_filmstripAlt', { call: shown.thumb.title })"
             />
             <figcaption class="px-2 py-1 font-mono text-xs break-words">{{ shown.thumb.title }}</figcaption>
           </figure>
           <div>
             <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-x" @click="chosen = null">
-              {{ desktopSay('runs_filmstripClose') }}
+              {{ words.say('runs_filmstripClose') }}
             </UButton>
           </div>
         </template>
@@ -199,7 +195,7 @@ const ids = { calls: useId(), events: useId(), text: useId(), film: useId() };
               <img
                 class="block w-20 h-auto"
                 :src="filmUrl(entry)"
-                :alt="desktopSay('runs_filmstripAlt', { call: entry.thumb.title })"
+                :alt="words.say('runs_filmstripAlt', { call: entry.thumb.title })"
               />
             </button>
           </li>

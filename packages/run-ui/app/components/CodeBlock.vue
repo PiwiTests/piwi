@@ -10,6 +10,7 @@ const props = defineProps<{
 }>();
 
 const { copy, copied } = useCopy();
+const { t } = useRunUiWords();
 
 const detectedLang = ref('');
 
@@ -49,7 +50,7 @@ const highlighted = computed(() => {
       color="neutral"
       variant="ghost"
       :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-      :title="copied ? 'Copied!' : copyPreview(code)"
+      :title="copied ? t('runui_copyCopiedTitle') : copyPreview(code)"
       class="absolute top-1.5 right-1.5 opacity-40 hover:opacity-100 transition-opacity"
       @click="copy(code, { toast: true })"
     />

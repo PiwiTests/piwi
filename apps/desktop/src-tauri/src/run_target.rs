@@ -658,9 +658,6 @@ pub fn desktop_request_folders(app: AppHandle) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-/// The title of the picker that links the folder of a requested run's project.
-/// The shell's own words: nothing the window or the instance says reaches it.
-const REQUEST_PICKER_TITLE: &str = "Choose your copy of the project's code: the folder with playwright.config.ts";
 
 /// The folders `desktop_find_request_folders` found, by instance and project
 /// id, with the number of the search that found them: `desktop_link_request_folder`
@@ -797,15 +794,17 @@ pub async fn desktop_find_request_folders(
 async fn confirmed_found_folder(app: &AppHandle, folder: &Path) -> bool {
     let asking = app.clone();
     let shown = folder.to_string_lossy().into_owned();
+    let words = crate::shell_words::shell_words(app);
     tauri::async_runtime::spawn_blocking(move || {
         asking
             .dialog()
-            .message(format!(
-                "{shown}\n\nPiwi runs the tests this project's requests ask for in this folder, once you click Run."
-            ))
-            .title("Use this folder?")
+            .message(format!("{shown}\n\n{}", words.say("shell_useFolderBody", &[])))
+            .title(words.say("shell_useFolderTitle", &[]))
             .kind(MessageDialogKind::Info)
-            .buttons(MessageDialogButtons::OkCancelCustom("Use this folder".into(), "Cancel".into()))
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                words.say("shell_useFolderButton", &[]),
+                words.say("shell_cancel", &[]),
+            ))
             .blocking_show()
     })
     .await
@@ -819,6 +818,7 @@ async fn confirmed_found_folder(app: &AppHandle, folder: &Path) -> bool {
 async fn confirmed_request_folder(app: &AppHandle, picked: String, specs: Vec<String>) -> String {
     let asking = app.clone();
     let kept = picked.clone();
+    let words = crate::shell_words::shell_words(app);
     tauri::async_runtime::spawn_blocking(move || {
         let Some(better) = crate::folder_search::better_folder(Path::new(&picked), &specs) else {
             return picked;
@@ -827,13 +827,15 @@ async fn confirmed_request_folder(app: &AppHandle, picked: String, specs: Vec<St
         let use_better = asking
             .dialog()
             .message(format!(
-                "The tests of this request are not in {picked}.\n\nThey are in {better}, which holds the Playwright config: Playwright runs there."
+                "{}\n\n{}",
+                words.say("shell_betterFolderNotIn", &[("folder", &picked)]),
+                words.say("shell_betterFolderIn", &[("folder", &better)])
             ))
-            .title("Link the folder that holds the tests?")
+            .title(words.say("shell_betterFolderTitle", &[]))
             .kind(MessageDialogKind::Info)
             .buttons(MessageDialogButtons::OkCancelCustom(
-                "Link that folder".into(),
-                "Keep my choice".into(),
+                words.say("shell_betterFolderLink", &[]),
+                words.say("shell_betterFolderKeep", &[]),
             ))
             .blocking_show();
         if use_better { better } else { picked }
@@ -885,8 +887,9 @@ pub async fn desktop_link_request_folder(
                 .ok()
                 .flatten()
                 .map(|p| p.to_string_lossy().into_owned());
-            let Some(picked) =
-                crate::runner::desktop_pick_folder(app.clone(), Some(REQUEST_PICKER_TITLE.into()), start).await
+            // The shell's own words: nothing the window or the instance says reaches the picker's title.
+            let title = crate::shell_words::shell_words(&app).say("shell_pickFolderTitle", &[]);
+            let Some(picked) = crate::runner::desktop_pick_folder(app.clone(), Some(title), start).await
             else {
                 return Ok(None);
             };

@@ -1,0 +1,398 @@
+{
+  "runner_tagline": {
+    "message": "Führt die Tests, die eine Team-Instanz anfordert, auf diesem Rechner aus."
+  },
+  "runner_connectionHeading": {
+    "message": "Auf meinem Rechner ausführen"
+  },
+  "runner_runsHeading": {
+    "message": "Läufe"
+  },
+  "runner_noRuns": {
+    "message": "Noch keine Läufe. Wenn eine Team-Instanz Tests anfordert, bestätigen Sie sie zuerst hier."
+  },
+  "runner_statusRunning": {
+    "message": "Läuft"
+  },
+  "runner_statusPassed": {
+    "message": "Bestanden"
+  },
+  "runner_statusFailed": {
+    "message": "Fehlgeschlagen"
+  },
+  "runner_statusStopped": {
+    "message": "Gestoppt"
+  },
+  "runner_statusError": {
+    "message": "Fehler"
+  },
+  "runner_stopping": {
+    "message": "Wird gestoppt…"
+  },
+  "runner_stop": {
+    "message": "Stoppen"
+  },
+  "runner_stopNow": {
+    "message": "Sofort stoppen"
+  },
+  "runner_holdFailures": {
+    "message": "Fehlschläge anhalten"
+  },
+  "runner_holdFailuresHint": {
+    "message": "Ein fehlgeschlagener Test wartet hier, damit Sie ihn ansehen können, bevor der Lauf weitergeht."
+  },
+  "runner_output": {
+    "message": "Ausgabe"
+  },
+  "runner_stillRunning": {
+    "message": "Läuft noch, gestartet vor dem Neuladen des Fensters"
+  },
+  "runner_backgroundHeading": {
+    "message": "Im Hintergrund"
+  },
+  "runner_runInBackground": {
+    "message": "Im Hintergrund laufen"
+  },
+  "runner_runInBackgroundHint": {
+    "message": "Wenn Sie das Fenster schließen, bleibt Piwi Runner im Infobereich: Die Instanz erreicht diesen Rechner nur, solange er läuft. Ist dies aus, beendet das Schließen des Fensters Piwi Runner."
+  },
+  "runner_startOnLogin": {
+    "message": "Bei Anmeldung starten"
+  },
+  "runner_startOnLoginHint": {
+    "message": "Startet Piwi Runner im Infobereich, wenn Sie sich anmelden."
+  },
+  "runner_saveFailed": {
+    "message": "Einstellung konnte nicht gespeichert werden"
+  },
+  "runner_languageHeading": {
+    "message": "Sprache"
+  },
+  "runner_languageSystem": {
+    "message": "Wie das System ($language$)",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "Français"
+      }
+    }
+  },
+  "runner_languageHint": {
+    "message": "Die Sprache der Texte von Piwi Runner. Testtitel, Dateien, Befehle und die Ausgabe der Tests bleiben, wie sie sind."
+  },
+  "runner_languageDraft": {
+    "message": "Diese Übersetzung ist ein Entwurf: Muttersprachler haben sie noch nicht geprüft."
+  },
+  "runner_languageDraftLink": {
+    "message": "Korrektur vorschlagen"
+  },
+  "runner_languageFailed": {
+    "message": "Sprache konnte nicht geändert werden"
+  },
+  "shell_trayTooltip": {
+    "message": "$app$ (zum Öffnen klicken)",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_open": {
+    "message": "$app$ öffnen",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_showLogs": {
+    "message": "Protokolle anzeigen"
+  },
+  "shell_checkUpdates": {
+    "message": "Nach Updates suchen…"
+  },
+  "shell_quit": {
+    "message": "$app$ beenden",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitQuestion": {
+    "message": "$app$ beenden?",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitButton": {
+    "message": "Beenden"
+  },
+  "shell_cancel": {
+    "message": "Abbrechen"
+  },
+  "shell_runsGoingQuit_one": {
+    "message": "$count$ lokaler Testlauf läuft noch: Das Beenden stoppt ihn.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingQuit_other": {
+    "message": "$count$ lokale Testläufe laufen noch: Das Beenden stoppt sie.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_one": {
+    "message": "$count$ lokaler Testlauf läuft noch: Das Update stoppt ihn.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_other": {
+    "message": "$count$ lokale Testläufe laufen noch: Das Update stoppt sie.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingRestart_one": {
+    "message": "$count$ lokaler Testlauf läuft noch: Der Neustart stoppt ihn.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingRestart_other": {
+    "message": "$count$ lokale Testläufe laufen noch: Der Neustart stoppt sie.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_restartQuestion": {
+    "message": "Piwi neu starten?"
+  },
+  "shell_restartButton": {
+    "message": "Neu starten"
+  },
+  "shell_splashSlow": {
+    "message": "Der lokale Server braucht länger als üblich zum Starten. Bitte warten Sie noch: Das Fenster öffnet sich, sobald er bereit ist."
+  },
+  "shell_splashRestarting": {
+    "message": "Der lokale Server wurde beendet. Er wird neu gestartet: Das Fenster öffnet sich wieder, sobald er bereit ist."
+  },
+  "shell_splashStopped": {
+    "message": "Der lokale Server wurde beendet und konnte nicht neu gestartet werden. Beenden Sie $app$ und starten Sie die App neu.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateCheckFailed": {
+    "message": "Suche nach Updates fehlgeschlagen: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnsupported": {
+    "message": "Dieser Build von $app$ kann sich nicht selbst aktualisieren. Neue Versionen gibt es unter $page$.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "page": {
+        "content": "$2",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateLatest": {
+    "message": "$app$ $version$ ist die neueste Version.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateTitle": {
+    "message": "$app$ aktualisieren",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateAvailable": {
+    "message": "$app$ $offered$ ist verfügbar (Sie haben $installed$). Das Update wird jetzt installiert, dann startet $app$ neu.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "installed": {
+        "content": "$2",
+        "example": "0.70.0"
+      },
+      "offered": {
+        "content": "$3",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateWhatsNew": {
+    "message": "Neuigkeiten: $page$",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateInstall": {
+    "message": "Installieren und neu starten"
+  },
+  "shell_updateNotNow": {
+    "message": "Nicht jetzt"
+  },
+  "shell_updateQuestion": {
+    "message": "$app$ aktualisieren?",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateButton": {
+    "message": "Aktualisieren"
+  },
+  "shell_updateDownloading": {
+    "message": "$app$: Update wird heruntergeladen",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateDownloadingPercent": {
+    "message": "$app$: Update wird heruntergeladen, $percent$ %",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "42"
+      }
+    }
+  },
+  "shell_updateFailed": {
+    "message": "Das Update ist fehlgeschlagen: $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "signature mismatch"
+      }
+    }
+  },
+  "shell_splashStarting": {
+    "message": "Der lokale Server startet…"
+  },
+  "shell_pickFolderTitle": {
+    "message": "Wählen Sie Ihre Kopie des Projektcodes: den Ordner mit playwright.config.ts"
+  },
+  "shell_useFolderTitle": {
+    "message": "Diesen Ordner verwenden?"
+  },
+  "shell_useFolderBody": {
+    "message": "Piwi führt die Tests der Laufanfragen dieses Projekts in diesem Ordner aus, sobald Sie auf Ausführen klicken."
+  },
+  "shell_useFolderButton": {
+    "message": "Diesen Ordner verwenden"
+  },
+  "shell_betterFolderTitle": {
+    "message": "Den Ordner mit den Tests verknüpfen?"
+  },
+  "shell_betterFolderNotIn": {
+    "message": "Die Tests dieser Anfrage liegen nicht in $folder$.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code"
+      }
+    }
+  },
+  "shell_betterFolderIn": {
+    "message": "Sie liegen in $folder$, der die Playwright-Konfiguration enthält: Dort läuft Playwright.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code/shop"
+      }
+    }
+  },
+  "shell_betterFolderLink": {
+    "message": "Diesen Ordner verknüpfen"
+  },
+  "shell_betterFolderKeep": {
+    "message": "Meine Wahl behalten"
+  },
+  "shell_updateNotification": {
+    "message": "$app$ $version$ ist verfügbar",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.72.0"
+      }
+    }
+  },
+  "shell_updateInstallFrom": {
+    "message": "Installieren Sie sie über $menu$ im Menü des Symbols im Infobereich oder laden Sie sie aus der neuesten Version herunter.",
+    "placeholders": {
+      "menu": {
+        "content": "$1",
+        "example": "Check for updates…"
+      }
+    }
+  }
+}

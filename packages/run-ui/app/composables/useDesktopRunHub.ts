@@ -65,14 +65,18 @@ import {
 } from '@piwitests/editor/shell-run-events';
 import { errorMessage } from '@piwitests/run-ui/text';
 import { tabsAdvanced, tabsAfter, tabsChosen, type WorkerTabs } from '@piwitests/run-model/tabs';
+import { RUN_ANSWER_KEYS } from '@piwitests/run-model/words';
+import { hasInjectionContext, inject } from 'vue';
 import {
   desktopLaneKey,
   desktopLaneRun,
+  desktopLiveInstance,
   desktopShareWarning,
   desktopViewKey,
   desktopWorkerKey,
 } from '../utils/run-view';
 import type { RunViewInspect } from '../utils/run-view-host';
+import { ENGLISH_RUN_UI_WORDS, RUN_UI_WORDS, type RunUiWords } from '../utils/run-ui-words';
 
 /** A code made at a stop, or a locator picked, in the order they came, each with the number it came as. */
 export type DesktopKept =
@@ -80,7 +84,7 @@ export type DesktopKept =
   | { serial: number; type: 'pick'; pick: DesktopRunPick };
 
 /** What the hub answered a command, as the window reads it: the hub's answer, or why it never reached the hub. */
-export type DesktopRunAnswer = Pick<HubAnswer, 'ok' | 'message' | 'image' | 'requests' | 'locator'>;
+export type DesktopRunAnswer = Pick<HubAnswer, 'ok' | 'message' | 'code' | 'image' | 'requests' | 'locator'>;
 
 /** What a code made at a stop came to, for the worker that stands at that stop. */
 export type DesktopCodeOutcome = Omit<HubCodeMessage, 'type'>;
@@ -227,6 +231,11 @@ const stopListeners = new Set<(session: HubSession, worker: HubWorker) => void>(
  */
 const heardAt = new Map<string, Map<number, string>>();
 let toastApi: ReturnType<typeof useToast> | null = null;
+/**
+ * The words the stream's toasts and the commands' answers are said in: the host's, as `useRunUiWords` reads them, taken
+ * by each setup that uses the hub; English until one does.
+ */
+let words: RunUiWords = ENGLISH_RUN_UI_WORDS;
 /** The window said what Share live sends since the app started: it asks no more. */
 let shareWarned = false;
 /** Who hears that another tool asked to stop a run (`stop-run`): the window's hub plugin. */
@@ -302,21 +311,26 @@ function heard(text: string): void {
         // The first share of the app's session says what it sends, as the run's Share live does.
         const warns = !shareWarned;
         toastApi?.add({
-          title: `${value.by} asks to watch ${typeof value.run === 'number' ? `run #${value.run}` : 'this run'} live`,
-          description: warns ? desktopShareWarning({ page: state.sessions[ref]?.live?.page ?? null }) : undefined,
+          title:
+            typeof value.run === 'number'
+              ? words.t('runui_hubAskToWatchRun', { id: value.run, who: value.by })
+              : words.t('runui_hubAskToWatch', { who: value.by }),
+          description: warns
+            ? desktopShareWarning({ page: state.sessions[ref]?.live?.page ?? null }, words)
+            : undefined,
           icon: 'i-lucide-radio',
           color: 'neutral',
           duration: 0,
           actions: [
             {
-              label: 'Share live',
+              label: words.say('runs_shareLive'),
               color: 'primary' as const,
               onClick: () => {
                 shareWarned = true;
                 void command({ type: 'share', ref, on: true }).then((answer) => {
                   if (answer.ok) return;
                   toastApi?.add({
-                    title: 'Share live',
+                    title: words.say('runs_shareLive'),
                     description: answer.message,
                     color: 'warning',
                     icon: 'i-lucide-info',
@@ -325,14 +339,14 @@ function heard(text: string): void {
               },
             },
             {
-              label: 'Not now',
+              label: words.t('runui_hubNotNow'),
               color: 'neutral' as const,
               variant: 'outline' as const,
               onClick: () =>
                 void command({ type: 'answer-ask', ref, ask }).then((answer) => {
                   if (answer.ok) return;
                   toastApi?.add({
-                    title: 'Not now',
+                    title: words.t('runui_hubNotNow'),
                     description: answer.message,
                     color: 'warning',
                     icon: 'i-lucide-info',
@@ -350,7 +364,7 @@ function heard(text: string): void {
       // A sentence about a run (a stop that went on, a code not made): the tray shows it as a toast.
       if (typeof value.message === 'string') {
         toastApi?.add({
-          title: 'Runs',
+          title: words.t('runui_hubNotice'),
           description: value.message,
           color: value.severity === 'warning' ? 'warning' : 'neutral',
           icon: 'i-lucide-info',
@@ -747,20 +761,35 @@ async function tellLanes(): Promise<Map<string, DesktopRunAnswer>> {
   return answers;
 }
 
+/**
+ * The hub's answer in the window's words, when it carries a code the run model words (`RUN_ANSWER_KEYS`) and the
+ * window is not in English, whose sentence the hub wrote already; Share live's name the instance of the run's page.
+ */
+function answerInWords(answer: HubAnswer, body: Record<string, unknown>): HubAnswer {
+  const code = answer.code;
+  if (!code || !(code in RUN_ANSWER_KEYS) || words.language === 'en') return answer;
+  if (code === 'share-on' || code === 'share-off') {
+    const ref = typeof body.ref === 'string' ? body.ref : null;
+    const page = ref ? (state.sessions[ref]?.live?.page ?? null) : null;
+    const instance = desktopLiveInstance({ page }) ?? words.t('runui_theTeamInstance');
+    return { ...answer, message: words.say(RUN_ANSWER_KEYS[code], { instance }) };
+  }
+  return { ...answer, message: words.say(RUN_ANSWER_KEYS[code]) };
+}
+
 /** A command of the window's, as the hub answered it (`reached`), or why it never reached the hub. */
 async function send(body: Record<string, unknown>): Promise<{ answer: DesktopRunAnswer; reached: boolean }> {
   if (!viewer) {
-    const message = 'The window is not connected to the runs: it connects again in a moment.';
-    return { answer: { ok: false, message }, reached: false };
+    return { answer: { ok: false, message: words.t('runui_hubNotConnected') }, reached: false };
   }
   try {
     const answer = await $fetch<HubAnswer>('/api/desktop/runs/commands', {
       method: 'POST',
       body: { ...body, id: nextId++, viewer },
     });
-    return { answer, reached: true };
+    return { answer: answerInWords(answer, body), reached: true };
   } catch (error) {
-    return { answer: { ok: false, message: errorMessage(error, 'The app did not answer.') }, reached: false };
+    return { answer: { ok: false, message: errorMessage(error, words.t('runui_hubNoAnswer')) }, reached: false };
   }
 }
 
@@ -771,6 +800,7 @@ async function command(body: Record<string, unknown>): Promise<DesktopRunAnswer>
 
 export function useDesktopRunHub() {
   toastApi ??= useToast();
+  if (hasInjectionContext()) words = inject(RUN_UI_WORDS, ENGLISH_RUN_UI_WORDS);
   return {
     /** What the window heard: read it, never write it. */
     state: state as Readonly<HubState>,

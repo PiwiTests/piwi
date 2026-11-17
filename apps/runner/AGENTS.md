@@ -13,6 +13,14 @@ built with the `runner` feature.
   view of a run (`useDesktopRunHub`, `DesktopRunSession`) come from `packages/run-ui` by auto-import, and a change both
   windows need goes there. The window has no router, no store beyond the run list and no network call but the
   layer's.
+- **Every text Runner shows comes from a catalog.** The window's own and the shell's are in `locales/<code>.json`
+  (`runner_` through `useRunnerWords()`, `shell_` read by the shell, which also reads `runner_runInBackground` and
+  `runner_startOnLogin` for its tray), the layer's in its own (`useRunUiWords()`).
+  `tests/catalogs.test.ts` holds them to Piwi Picker's rules and fails on text written in a template. How to add a
+  message or a language, and who reviewed each: [`locales/README.md`](locales/README.md).
+- **The language comes from the shell.** `useRunnerLanguage` asks `desktop_get_language` before the window shows and
+  follows `piwi:language`; inside the shell the window never reads the browser's language. `tests/e2e/window.spec.ts`
+  shows the built window in French and German at its smallest size and fails on a text cut.
 - **The shell runs the tests, the window shows them.** A confirmed request calls `desktop_run_requested_tests` with the
   request id alone, and the shell reads the command and the request token from the host. Output arrives as
   `piwi:local-run` events, and Stop calls `desktop_stop_local_tests`.
@@ -46,6 +54,7 @@ npm run runner:lint
 npm run runner:format:check
 npm run runner:build         # dist/server.cjs (the host)
 npm run runner:window        # .output/public (the window, `nuxt generate`)
+npm run runner:e2e           # the window in French and German (Playwright), after runner:window
 npm run runner:stage         # copies dist/server.cjs and .output/public into the shell's resources/runner-host
 ```
 

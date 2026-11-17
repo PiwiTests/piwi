@@ -14,6 +14,8 @@ defineProps<{ appName: string }>();
 
 const { connection } = useDesktopTeamRequests();
 const toast = useToast();
+const words = useRunUiWords();
+const { t } = words;
 const instanceUrl = ref('');
 const busy = ref(false);
 const folders = ref<Record<string, string>>({});
@@ -52,7 +54,11 @@ async function connect() {
     });
     if (connection.value.verificationUrl) openPage(connection.value.verificationUrl);
   } catch (error) {
-    toast.add({ title: 'Could not connect', description: errorMessage(error), color: 'error' });
+    toast.add({
+      title: t('runui_connectionConnectFailed'),
+      description: errorMessage(error, t('runui_commonUnknownError')),
+      color: 'error',
+    });
   } finally {
     busy.value = false;
   }
@@ -71,7 +77,11 @@ async function disconnect() {
   try {
     await core.invoke('desktop_forget_run_target');
   } catch (error) {
-    toast.add({ title: 'Could not disconnect', description: errorMessage(error), color: 'error' });
+    toast.add({
+      title: t('runui_connectionDisconnectFailed'),
+      description: errorMessage(error, t('runui_commonUnknownError')),
+      color: 'error',
+    });
   } finally {
     busy.value = false;
   }
@@ -81,7 +91,11 @@ async function unlink(projectId: string) {
   await tauriCore()
     ?.invoke('desktop_unlink_request_folder', { projectId })
     .catch((error: unknown) =>
-      toast.add({ title: 'Could not unlink', description: errorMessage(error), color: 'error' }),
+      toast.add({
+        title: t('runui_connectionUnlinkFailed'),
+        description: errorMessage(error, t('runui_commonUnknownError')),
+        color: 'error',
+      }),
     );
   await loadFolders();
 }
@@ -90,23 +104,32 @@ async function unlink(projectId: string) {
 <template>
   <div class="space-y-4 text-sm">
     <p class="text-muted">
-      Each request shows in this window first, with its tests, the checks of your folder and the command: nothing runs
-      until you click <strong>Run</strong>. The run reports to the instance, and only you see it there.
+      <RunUiText name="runui_connectionHowItWorks">
+        <template #run>
+          <strong>{{ t('runui_requestRun') }}</strong>
+        </template>
+      </RunUiText>
     </p>
 
     <div class="space-y-1">
-      <div class="text-muted">Status</div>
-      <div class="text-highlighted">{{ CONNECTION_WORDS[connection.state] }}</div>
+      <div class="text-muted">{{ t('runui_connectionStatus') }}</div>
+      <div class="text-highlighted">{{ connectionStateWords(connection.state, words) }}</div>
       <code v-if="connection.instance && connection.state !== 'none'" class="text-xs break-all">{{
         connection.instance
       }}</code>
-      <p v-if="connection.error" class="text-xs text-error">{{ connection.error }}</p>
+      <p v-if="connection.error" class="text-xs text-error">{{ connectionErrorWords(connection, words) }}</p>
     </div>
 
     <div v-if="connection.state === 'signing-in'" class="space-y-2">
       <p class="text-muted">
-        The instance's page asks you to allow <strong>{{ appName }}</strong> with this code:
-        <code class="text-highlighted">{{ connection.userCode }}</code>
+        <RunUiText name="runui_connectionAllowWithCode">
+          <template #app>
+            <strong>{{ appName }}</strong>
+          </template>
+          <template #code>
+            <code class="text-highlighted">{{ connection.userCode }}</code>
+          </template>
+        </RunUiText>
       </p>
       <div class="flex flex-wrap gap-2">
         <UButton
@@ -114,9 +137,11 @@ async function unlink(projectId: string) {
           color="neutral"
           variant="outline"
           @click="openPage(connection.verificationUrl)"
-          >Open the page again</UButton
+          >{{ t('runui_connectionOpenPageAgain') }}</UButton
         >
-        <UButton color="neutral" variant="ghost" :loading="busy" @click="disconnect">Cancel</UButton>
+        <UButton color="neutral" variant="ghost" :loading="busy" @click="disconnect">{{
+          t('runui_commonCancel')
+        }}</UButton>
       </div>
     </div>
 
@@ -126,28 +151,34 @@ async function unlink(projectId: string) {
         type="url"
         placeholder="https://piwi.example.com"
         class="flex-1"
-        aria-label="Team instance address"
+        :aria-label="t('runui_connectionAddressLabel')"
       />
-      <UButton type="submit" :loading="busy" :disabled="!instanceUrl.trim()">Connect</UButton>
+      <UButton type="submit" :loading="busy" :disabled="!instanceUrl.trim()">{{
+        t('runui_connectionConnect')
+      }}</UButton>
     </form>
 
     <template v-else>
       <div class="space-y-1">
-        <div class="text-muted">Linked folders</div>
+        <div class="text-muted">{{ t('runui_connectionLinkedFolders') }}</div>
         <p v-if="Object.keys(folders).length === 0" class="text-xs text-muted">
-          None yet: a request for a project asks for its folder.
+          {{ t('runui_connectionNoLinkedFolder') }}
         </p>
         <ul v-else class="space-y-1">
           <li v-for="(folder, projectId) in folders" :key="projectId" class="flex items-start gap-2 min-w-0">
             <span class="text-xs text-muted shrink-0">{{
-              connection.projectNames[Number(projectId)] || `Project ${projectId}`
+              connection.projectNames[Number(projectId)] || t('runui_connectionProject', { id: projectId })
             }}</span>
             <code class="text-xs break-all flex-1">{{ folder }}</code>
-            <UButton color="neutral" variant="ghost" size="xs" @click="unlink(String(projectId))">Unlink</UButton>
+            <UButton color="neutral" variant="ghost" size="xs" @click="unlink(String(projectId))">{{
+              t('runui_connectionUnlink')
+            }}</UButton>
           </li>
         </ul>
       </div>
-      <UButton color="neutral" variant="outline" :loading="busy" @click="disconnect">Disconnect</UButton>
+      <UButton color="neutral" variant="outline" :loading="busy" @click="disconnect">{{
+        t('runui_connectionDisconnect')
+      }}</UButton>
     </template>
   </div>
 </template>

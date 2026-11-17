@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import type { HubPresence } from '@piwitests/core/run-hub';
 import { presenceLine } from '@piwitests/run-model/presence';
+import { loadRunSpeaker } from '@piwitests/run-model/speakers';
 import { RUN_WORDS_EN, englishRunSpeaker, type RunWordKey } from '@piwitests/run-model/words';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
 import { LANGUAGES } from '../../src/shared/i18n.js';
 import { runsSpeaker } from '../../src/shared/run-words.js';
 import { readCatalog, setBrowserLanguage } from './setup-i18n.js';
@@ -59,5 +62,37 @@ describe('the run model’s words', () => {
     const code: HubPresence = { kind: 'editor', name: 'Visual Studio Code' };
     setBrowserLanguage('de');
     expect(presenceLine([desktop, code], runsSpeaker)).toBe('Auch geöffnet in der Desktop-App und Visual Studio Code');
+  });
+
+  it.each(LANGUAGES.filter((code) => code !== 'en'))(
+    'are the %s catalog’s in the run model’s copy for surfaces without the catalogs (`npm run run-model:words`)',
+    (code) => {
+      const file = path.resolve(import.meta.dirname, '../../../../packages/run-model/src/words', `${code}.json`);
+      const copy = JSON.parse(readFileSync(file, 'utf8')) as Record<string, string>;
+      const catalog = readCatalog(code);
+      const plural = /_(zero|one|two|few|many|other)$/;
+      const expected = Object.fromEntries(
+        Object.entries(catalog)
+          .filter(
+            ([key]) =>
+              keys.includes(key as RunWordKey) || keys.includes(`${key.replace(plural, '')}_other` as RunWordKey),
+          )
+          .map(([key, entry]) => [key, entry.message]),
+      );
+      expect(copy).toEqual(expected);
+    },
+  );
+
+  it('are said in a surface’s own language by the run model’s copy, as the Runs window says them', async () => {
+    setBrowserLanguage('fr');
+    const french = await loadRunSpeaker('fr');
+    for (const count of [1, 2, 1200]) {
+      expect(french.count('runs_progressEndedAtStop', count)).toBe(
+        runsSpeaker.count('runs_progressEndedAtStop', count),
+      );
+    }
+    expect(french.say('runs_failedAt', { place: 'cart.spec.ts:12' })).toBe(
+      runsSpeaker.say('runs_failedAt', { place: 'cart.spec.ts:12' }),
+    );
   });
 });

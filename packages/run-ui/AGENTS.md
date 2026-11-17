@@ -24,6 +24,12 @@ extends it with its server render, and Piwi Runner's window (`apps/runner`) exte
   heard, `apps/application/app/plugins/run-view-host.ts`), and Piwi Runner provides nothing, so its window offers none.
   `useDesktopRunHub` carries only Inspect's open lanes, the `inspect` command and its refusals; what is heard is the
   host's.
+- **Every text the layer shows comes from its catalog (`locales/<code>.json`) or the run model's words**, through
+  `useRunUiWords()` (`t`, `tn`, `say`, and `RunUiText` for a message holding markup); a pure helper takes the words as
+  its last argument, English by default. A host provides its words once under `RUN_UI_WORDS`, and the dashboard
+  provides none, so it stays English: a new message's English is the text it replaces. `tests/catalogs.test.ts` holds
+  the catalogs to Piwi Picker's rules (`apps/extension/i18n/README.md`) and fails on text written in a template, a
+  toast or an answer; `tests/words.test.ts` holds the words of the host's coded sentences to the editor's English.
 - **Auto-imports are the layer's interface.** A name is unique across the layer, every host and the repository's other
   exports, since a file in `app/components/`, `app/composables/` or `app/utils/` is imported by name. `npm run knip`
   reads each host's `.nuxt/imports.d.ts` and counts an export of the same name elsewhere as unused.

@@ -14,7 +14,7 @@
 import type { ViewButton, ViewInput } from '@piwitests/core/run-view';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
 import type { DesktopRunAnswer } from '../composables/useDesktopRunHub';
-import { desktopImagePoint, desktopSay, type DesktopRunInputTarget } from '../utils/run-view';
+import { desktopImagePoint, type DesktopRunInputTarget } from '../utils/run-view';
 
 const props = defineProps<{
   alt: string;
@@ -41,6 +41,7 @@ const emit = defineEmits<{
 const picking = defineModel<boolean>('picking', { default: false });
 
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
 
 /** The buttons that go to the page: the middle one stays the window's, as it opens what it clicks in a new tab. */
 const BUTTONS: Record<number, ViewButton> = { 0: 'left', 2: 'right' };
@@ -303,11 +304,11 @@ onBeforeUnmount(() => {
         class="pointer-events-none absolute top-2 left-2 inline-flex items-center gap-1 rounded bg-default/90 px-1.5 py-0.5 text-xs text-highlighted"
       >
         <span v-if="mark === 'live'" class="size-1.5 rounded-full bg-error" />
-        {{ desktopSay(mark === 'live' ? 'runs_liveBadge' : 'runs_laneRunning') }}
+        {{ words.say(mark === 'live' ? 'runs_liveBadge' : 'runs_laneRunning') }}
       </span>
     </div>
     <p v-if="inputOn" class="px-2.5 py-1.5 border-t border-default text-xs text-muted">
-      {{ desktopSay('runs_liveHint') }}
+      {{ words.say('runs_liveHint') }}
     </p>
   </div>
 </template>

@@ -56,7 +56,7 @@ packages/run-model/   @piwitests/run-model: the run model Piwi Picker's Runs win
 packages/server/      @piwitests/server: the published npm run option (`npx @piwitests/server`)
 integrations/         Instrumentation adapters: nitro/ (npm), aspnetcore/ and serilog/ (NuGet, .NET tests, .slnx)
 examples/sample-app/  One web app and its Playwright suite, served by each supported backend
-shared/               Base oxlint/oxfmt configs extended by every workspace
+shared/               Base lint/format configs and the catalog checks
 plans/                The maintainer's local planning folder: gitignored, absent in a fresh clone
 ```
 

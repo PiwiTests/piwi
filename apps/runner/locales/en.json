@@ -1,0 +1,470 @@
+{
+  "runner_tagline": {
+    "message": "Runs the tests a team instance asks for, on this machine.",
+    "description": "Under the app's name, at the top of the window: what Piwi Runner does."
+  },
+  "runner_connectionHeading": {
+    "message": "Run on my machine",
+    "description": "Heading of the card that connects Piwi Runner to a team instance. The feature's name on the instance's pages."
+  },
+  "runner_runsHeading": {
+    "message": "Runs",
+    "description": "Heading of the list of the runs this window started."
+  },
+  "runner_noRuns": {
+    "message": "No runs yet. When a team instance asks for tests, you confirm them here first.",
+    "description": "In place of the list of runs, while there is none."
+  },
+  "runner_statusRunning": {
+    "message": "Running",
+    "description": "Badge of a run: its tests are running."
+  },
+  "runner_statusPassed": {
+    "message": "Passed",
+    "description": "Badge of a run: every test passed."
+  },
+  "runner_statusFailed": {
+    "message": "Failed",
+    "description": "Badge of a run: a test failed."
+  },
+  "runner_statusStopped": {
+    "message": "Stopped",
+    "description": "Badge of a run: the person stopped it before it ended."
+  },
+  "runner_statusError": {
+    "message": "Could not run",
+    "description": "Badge of a run: it could not start, or Playwright ended with an error."
+  },
+  "runner_stopping": {
+    "message": "Stopping…",
+    "description": "Badge of a run, and label of its Stop button, once Stop was clicked and the run has not ended yet."
+  },
+  "runner_stop": {
+    "message": "Stop",
+    "description": "Button: stops a run."
+  },
+  "runner_stopNow": {
+    "message": "Stop now",
+    "description": "Button, once Stop was clicked and the run has not ended yet: ends it at once."
+  },
+  "runner_holdFailures": {
+    "message": "Hold failures",
+    "description": "Switch of a running run: a failed test waits at its failure for the person to look before the run goes on."
+  },
+  "runner_holdFailuresHint": {
+    "message": "A failed test waits here for you to look before the run goes on.",
+    "description": "Under the Hold failures switch: what it does."
+  },
+  "runner_output": {
+    "message": "Output",
+    "description": "Summary of the collapsed block that shows a run's terminal output."
+  },
+  "runner_stillRunning": {
+    "message": "Still running from before the window reloaded",
+    "description": "On a run the window has no entry for: it was started before the window reloaded and still runs."
+  },
+  "runner_backgroundHeading": {
+    "message": "In the background",
+    "description": "Heading of the card of the settings that keep Piwi Runner running when its window is closed."
+  },
+  "runner_runInBackground": {
+    "message": "Run in background",
+    "description": "Checkbox of the window, and the same item in the tray menu: closing the window keeps Piwi Runner in the tray."
+  },
+  "runner_runInBackgroundHint": {
+    "message": "Closing the window keeps Piwi Runner in the tray: the instance reaches this machine only while it runs. Turned off, closing the window quits it.",
+    "description": "Under the Run in background checkbox: what it does."
+  },
+  "runner_startOnLogin": {
+    "message": "Start on login",
+    "description": "Checkbox, and the same item in the tray menu: Piwi Runner starts when the person signs in to their computer."
+  },
+  "runner_startOnLoginHint": {
+    "message": "Starts Piwi Runner in the tray when you sign in.",
+    "description": "Under the Start on login checkbox: what it does."
+  },
+  "runner_saveFailed": {
+    "message": "Could not save the setting",
+    "description": "Title of an error notification: a setting could not be saved. The reason follows below it."
+  },
+  "runner_languageHeading": {
+    "message": "Language",
+    "description": "Heading of the card that chooses the language of Piwi Runner's own texts."
+  },
+  "runner_languageSystem": {
+    "message": "Same as the system ($language$)",
+    "description": "First choice of the Language setting: follow the computer's language. $language$ is that language's name in itself, such as Français.",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "Français"
+      }
+    }
+  },
+  "runner_languageHint": {
+    "message": "The language of Piwi Runner's own texts. Test titles, files, commands and the tests' output stay as they are.",
+    "description": "Under the Language setting: what it changes, and what it never translates."
+  },
+  "runner_languageDraft": {
+    "message": "This translation is a draft: no native reader has reviewed it yet.",
+    "description": "Under the Language setting, while the language on screen is a draft translation. Followed by runner_languageDraftLink."
+  },
+  "runner_languageDraftLink": {
+    "message": "Suggest a correction",
+    "description": "Link after runner_languageDraft: opens the form to suggest a correction to a translation."
+  },
+  "runner_languageFailed": {
+    "message": "Could not change the language",
+    "description": "Title of an error notification: the language could not be saved. The reason follows below it."
+  },
+  "shell_trayTooltip": {
+    "message": "$app$ (click to open)",
+    "description": "Tooltip of the app's icon in the system tray (the menu bar on macOS). $app$ is the app's name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_open": {
+    "message": "Open $app$",
+    "description": "Item of the tray menu: brings the app's window to the front. $app$ is the app's name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_showLogs": {
+    "message": "Show logs",
+    "description": "Item of the tray menu: shows the app's log file in the file manager."
+  },
+  "shell_checkUpdates": {
+    "message": "Check for updates…",
+    "description": "Item of the tray menu: looks for a newer version of the app. The ellipsis says it asks a question before it acts."
+  },
+  "shell_quit": {
+    "message": "Quit $app$",
+    "description": "Item of the tray menu and of the macOS app menu: quits the app. $app$ is the app's name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitQuestion": {
+    "message": "Quit $app$?",
+    "description": "Title of the question asked before quitting stops the test runs going. $app$ is the app's name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitButton": {
+    "message": "Quit",
+    "description": "Button of the question asked before quitting: quits, and stops the runs going."
+  },
+  "shell_cancel": {
+    "message": "Cancel",
+    "description": "Button of a question of the app: does nothing and closes it."
+  },
+  "shell_runsGoingQuit_one": {
+    "message": "$count$ local test run is still running: quitting stops it.",
+    "description": "Body of the question asked before quitting, while runs are going, singular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingQuit_other": {
+    "message": "$count$ local test runs are still running: quitting stops them.",
+    "description": "Body of the question asked before quitting, while runs are going, plural.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_one": {
+    "message": "$count$ local test run is still running: updating stops it.",
+    "description": "Body of the question asked before an update installs, while runs are going, singular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_other": {
+    "message": "$count$ local test runs are still running: updating stops them.",
+    "description": "Body of the question asked before an update installs, while runs are going, plural.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingRestart_one": {
+    "message": "$count$ local test run is still running: restarting stops it.",
+    "description": "Body of the question asked before the app restarts, while runs are going, singular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingRestart_other": {
+    "message": "$count$ local test runs are still running: restarting stops them.",
+    "description": "Body of the question asked before the app restarts, while runs are going, plural.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_restartQuestion": {
+    "message": "Restart Piwi?",
+    "description": "Title of the question asked before the app restarts to finish an update, while runs are going."
+  },
+  "shell_restartButton": {
+    "message": "Restart",
+    "description": "Button of the question asked before the app restarts: restarts it, and stops the runs going."
+  },
+  "shell_splashSlow": {
+    "message": "The local host is taking longer than usual to start. Still waiting: the window opens once it is up.",
+    "description": "On the start screen, when the app's local server is slow to start."
+  },
+  "shell_splashRestarting": {
+    "message": "The local host stopped. Restarting it: the window opens again once it is up.",
+    "description": "On the start screen, while the app's local server restarts."
+  },
+  "shell_splashStopped": {
+    "message": "The local host stopped and could not be restarted. Quit and relaunch $app$.",
+    "description": "On the start screen, once the app's local server could not be restarted. $app$ is the app's name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateCheckFailed": {
+    "message": "Could not check for updates: $error$",
+    "description": "A dialog: looking for a newer version failed. $error$ is the reason, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnsupported": {
+    "message": "This build of $app$ cannot update itself. Get new versions from $page$.",
+    "description": "A dialog: this copy of the app has no updater. $page$ is the address of the releases page.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "page": {
+        "content": "$2",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateLatest": {
+    "message": "$app$ $version$ is the latest version.",
+    "description": "A dialog: no newer version exists. $version$ is a version number.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateTitle": {
+    "message": "Update $app$",
+    "description": "Title of the dialog that offers a newer version.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateAvailable": {
+    "message": "$app$ $offered$ is available (you have $installed$). It installs now, then $app$ restarts.",
+    "description": "Body of the dialog that offers a newer version. $offered$ and $installed$ are version numbers. Followed by shell_updateWhatsNew on its own paragraph.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "installed": {
+        "content": "$2",
+        "example": "0.70.0"
+      },
+      "offered": {
+        "content": "$3",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateWhatsNew": {
+    "message": "What's new: $page$",
+    "description": "Last paragraph of the dialog that offers a newer version. $page$ is the address of the releases page.",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateInstall": {
+    "message": "Install and restart",
+    "description": "Button of the dialog that offers a newer version: installs it, then restarts the app."
+  },
+  "shell_updateNotNow": {
+    "message": "Not now",
+    "description": "Button of the dialog that offers a newer version: closes it."
+  },
+  "shell_updateQuestion": {
+    "message": "Update $app$?",
+    "description": "Title of the question asked before an update installs, while runs are going.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateButton": {
+    "message": "Update",
+    "description": "Button of the question asked before an update installs: installs it, and stops the runs going."
+  },
+  "shell_updateDownloading": {
+    "message": "$app$: downloading the update",
+    "description": "Tooltip of the tray icon while an update downloads.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateDownloadingPercent": {
+    "message": "$app$: downloading the update, $percent$%",
+    "description": "Tooltip of the tray icon while an update downloads. $percent$ is a number from 0 to 100.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "42"
+      }
+    }
+  },
+  "shell_updateFailed": {
+    "message": "The update failed: $error$",
+    "description": "A dialog: the update could not be installed. $error$ is the reason, in English.",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "signature mismatch"
+      }
+    }
+  },
+  "shell_splashStarting": {
+    "message": "Starting the local host…",
+    "description": "First line of the start screen, while the app's local server starts."
+  },
+  "shell_pickFolderTitle": {
+    "message": "Choose your copy of the project's code: the folder with playwright.config.ts",
+    "description": "Title of the system's folder picker that links a requested run's project to a folder. Keep the file name as it is."
+  },
+  "shell_useFolderTitle": {
+    "message": "Use this folder?",
+    "description": "Title of the question asked before a found folder is linked to a project. Its path comes first in the body."
+  },
+  "shell_useFolderBody": {
+    "message": "Piwi runs the tests this project's requests ask for in this folder, once you click Run.",
+    "description": "Body of the question asked before a found folder is linked, under the folder's path. Run is the window's Run button (runui_requestRun in the layer's catalog), as that catalog says it."
+  },
+  "shell_useFolderButton": {
+    "message": "Use this folder",
+    "description": "Button of the question asked before a found folder is linked: links it."
+  },
+  "shell_betterFolderTitle": {
+    "message": "Link the folder that holds the tests?",
+    "description": "Title of the question asked when the picked folder does not hold the request's tests but a folder above or below it does."
+  },
+  "shell_betterFolderNotIn": {
+    "message": "The tests of this request are not in $folder$.",
+    "description": "First paragraph of the question shell_betterFolderTitle. $folder$ is the path of the folder picked.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code"
+      }
+    }
+  },
+  "shell_betterFolderIn": {
+    "message": "They are in $folder$, which holds the Playwright config: Playwright runs there.",
+    "description": "Second paragraph of the question shell_betterFolderTitle. $folder$ is the path of the folder that holds the tests.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code/shop"
+      }
+    }
+  },
+  "shell_betterFolderLink": {
+    "message": "Link that folder",
+    "description": "Button of the question shell_betterFolderTitle: links the folder that holds the tests."
+  },
+  "shell_betterFolderKeep": {
+    "message": "Keep my choice",
+    "description": "Button of the question shell_betterFolderTitle: links the folder picked."
+  },
+  "shell_updateNotification": {
+    "message": "$app$ $version$ is available",
+    "description": "Title of the system notification that a newer version is out. $version$ is a version number.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.72.0"
+      }
+    }
+  },
+  "shell_updateInstallFrom": {
+    "message": "Install it from $menu$ in the tray icon's menu, or download it from the latest release.",
+    "description": "Body of the system notification that a newer version is out. $menu$ is the tray item shell_checkUpdates.",
+    "placeholders": {
+      "menu": {
+        "content": "$1",
+        "example": "Check for updates…"
+      }
+    }
+  }
+}

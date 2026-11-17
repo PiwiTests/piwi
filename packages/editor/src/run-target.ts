@@ -26,7 +26,13 @@ import {
   type RequestHostStatus,
 } from './request-host';
 import { planRequestedRun, type RequestPlan } from './request-run';
-import type { RunRequestPromptView, RunTargetConnectionView, RunTargetMessage } from './run-target-view';
+import {
+  runTargetErrorSentence,
+  type RunRequestPromptView,
+  type RunTargetConnectionView,
+  type RunTargetErrorCode,
+  type RunTargetMessage,
+} from './run-target-view';
 
 /** How long `useKeptKey` waits for the ends the shell hands it to be reported. */
 const ENDED_REPORT_WITHIN_MS = 10_000;
@@ -85,7 +91,7 @@ const state: {
   key: string | null;
   keyToKeep: boolean;
   status: RequestHostStatus | 'none' | 'signing-in';
-  error: string | null;
+  error: ConnectionError | null;
   flow: DeviceFlow | null;
   flowTimer: ReturnType<typeof setTimeout> | null;
   host: RequestHost | null;
@@ -118,6 +124,17 @@ const state: {
   projectNames: new Map(),
 };
 
+/** Why the last connect failed: its English sentence, and its code when the app worded it. */
+interface ConnectionError {
+  text: string;
+  code: RunTargetErrorCode | null;
+  args: Readonly<Record<string, string | number>>;
+}
+
+function errorOf(code: RunTargetErrorCode, args: Readonly<Record<string, string | number>> = {}): ConnectionError {
+  return { text: runTargetErrorSentence(code, args), code, args };
+}
+
 const windowListeners = new Set<(message: RunTargetMessage) => void>();
 const shellListeners = new Set<(command: ShellRunTargetCommand) => void>();
 
@@ -148,7 +165,9 @@ export function runTargetConnection(): RunTargetConnectionView {
     instance: state.instance,
     userCode: state.status === 'signing-in' ? (state.flow?.userCode ?? null) : null,
     verificationUrl: state.status === 'signing-in' ? (state.flow?.verificationUrl ?? null) : null,
-    error: state.error,
+    error: state.error?.text ?? null,
+    errorCode: state.error?.code ?? null,
+    errorArgs: state.error?.args ?? {},
     keyToKeep: state.keyToKeep,
     linkedProjectIds: [...state.links.keys()].sort((a, b) => a - b),
     projectNames: Object.fromEntries(state.projectNames),
@@ -335,7 +354,7 @@ function startHost(instance: string, key: string): void {
     onStatus: (status, detail) => {
       state.status = status;
       if (status === 'revoked') {
-        state.error = detail || 'The instance disconnected this app.';
+        state.error = detail ? { text: detail, code: null, args: {} } : errorOf('disconnected');
         state.key = null;
         stopHost();
       }
@@ -519,14 +538,16 @@ export async function connectRunTarget(instance: string): Promise<RunTargetConne
       os: platformName(),
     });
   } catch {
-    state.error = 'The instance did not answer.';
+    state.error = errorOf('no-answer');
     tellConnection();
     return runTargetConnection();
   }
   const { answer } = started;
   if (started.status !== 200 || typeof answer.deviceCode !== 'string' || typeof answer.userCode !== 'string') {
     state.error =
-      typeof answer.message === 'string' ? answer.message : `The instance answered ${started.status} to connect.`;
+      typeof answer.message === 'string'
+        ? { text: answer.message, code: null, args: {} }
+        : errorOf('answered-status', { status: started.status });
     tellConnection();
     return runTargetConnection();
   }
@@ -552,7 +573,7 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
     if (Date.now() > flow.expiresAt) {
       state.flow = null;
       state.status = 'none';
-      state.error = 'The sign-in on the instance expired: connect again.';
+      state.error = errorOf('sign-in-timed-out');
       tellConnection();
       return;
     }
@@ -573,7 +594,7 @@ function pollFlow(instance: string, flow: DeviceFlow): void {
     if (status === 'denied' || status === 'expired') {
       state.flow = null;
       state.status = 'none';
-      state.error = status === 'denied' ? 'The connection was denied on the instance.' : 'The sign-in expired.';
+      state.error = errorOf(status === 'denied' ? 'denied' : 'sign-in-expired');
       tellConnection();
       return;
     }

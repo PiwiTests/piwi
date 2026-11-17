@@ -7,6 +7,7 @@
 import type { RunPage } from '@piwitests/core/run-channel';
 
 const props = defineProps<{ page: RunPage }>();
+const words = useRunUiWords();
 
 /** The page as a path of this window when it is this app's own, else its whole address. */
 const target = computed(() => {
@@ -22,14 +23,14 @@ const target = computed(() => {
 
 <template>
   <p class="flex items-center gap-1.5 text-xs text-muted" data-testid="desktop-run-page">
-    <span class="font-semibold text-highlighted">Run #{{ page.id }}</span>
+    <span class="font-semibold text-highlighted">{{ words.say('runs_runNumber', { id: String(page.id) }) }}</span>
     <span aria-hidden="true">·</span>
     <ULink
       v-bind="target"
       :target="'href' in target ? '_blank' : undefined"
       class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
-      :aria-label="`Open run #${page.id}`"
-      >Open</ULink
+      :aria-label="words.t('runui_pageOpenRun', { id: page.id })"
+      >{{ words.say('runs_openRunPage') }}</ULink
     >
   </p>
 </template>

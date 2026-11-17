@@ -1,0 +1,49 @@
+name: Translation fix (Piwi Runner)
+description: A word or a sentence of Piwi Runner that reads wrong in your language
+title: "i18n(runner): "
+labels: ["i18n"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reading Piwi Runner in your language. German, Spanish and Brazilian Portuguese are drafts that no native reader has reviewed yet, so every correction helps. Write in English or in the language itself.
+  - type: dropdown
+    id: language
+    attributes:
+      label: Language
+      options:
+        - Deutsch (de)
+        - Español (es)
+        - Português (Brasil) (pt_BR)
+        - Français (fr)
+        - Another language
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where it appears
+      description: The part of the app, such as the connection card, a run request's confirmation, a stopped run, the tray menu or a question it asks.
+      placeholder: The confirmation of a run request, its checks
+    validations:
+      required: true
+  - type: textarea
+    id: now
+    attributes:
+      label: What it says now
+      description: Copy the text as it reads, or attach a screenshot.
+    validations:
+      required: true
+  - type: textarea
+    id: better
+    attributes:
+      label: What it should say
+      description: Your wording, and why if it helps (a wrong word, a term your team uses, grammar, tone).
+    validations:
+      required: true
+  - type: checkboxes
+    id: review
+    attributes:
+      label: Reviewing the whole language
+      options:
+        - label: I read this language natively and could review the whole translation.

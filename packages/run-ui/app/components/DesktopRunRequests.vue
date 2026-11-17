@@ -3,15 +3,15 @@
  * Desktop shell only: the responses a stopped test of a desktop run kept, to choose the one **Mock a request** writes
  * a `page.route` for: a button each (the method and address, the status, type, size and time), the arrow keys, Home
  * and End moving between them (one tab stop), Escape closing the list, a filter from six, in the words of Piwi Picker's
- * Runs window (`desktopSay`). Every field is the page's text, shown as text; the address is cut to the row and whole in
+ * Runs window (`words.say`). Every field is the page's text, shown as text; the address is cut to the row and whole in
  * its title.
  */
 import type { HubKeptRequest } from '@piwitests/core/run-hub';
 import { foldText } from '@piwitests/run-ui/fold-text';
-import { desktopSay } from '../utils/run-view';
 
 const props = defineProps<{ requests: readonly HubKeptRequest[]; busy: boolean }>();
 const emit = defineEmits<{ mock: [id: number]; close: [] }>();
+const words = useRunUiWords();
 
 /** From how many requests a filter box narrows the list. */
 const FILTER_FROM = 6;
@@ -27,14 +27,23 @@ const shown = computed(() => {
 const current = ref<number | null>(null);
 const rows = ref<HTMLButtonElement[]>([]);
 
+/** `value` with one decimal, as `toFixed(1)` rounds it, written with the language's decimal mark. */
+function oneDecimal(value: number): string {
+  const parts = new Intl.NumberFormat(runUiLocale(words.language)).formatToParts(0.5);
+  return value.toFixed(1).replace('.', parts.find((part) => part.type === 'decimal')?.value ?? '.');
+}
+
 function sizeText(size: number | null): string {
-  if (size === null) return desktopSay('runs_requestNoSize');
-  return size < 1000 ? `${size} B` : `${(size / 1000).toFixed(1)} kB`;
+  if (size === null) return words.say('runs_requestNoSize');
+  return size < 1000
+    ? words.t('runui_requestsBytes', { size })
+    : words.t('runui_requestsKilobytes', { size: oneDecimal(size / 1000) });
 }
 
 /** What follows a response's status: its type, its size and when it finished. */
 function factsOf(request: HubKeptRequest): string {
-  const at = desktopSay('runs_requestAt', { time: `${(request.time / 1000).toFixed(1)} s` });
+  const time = words.t('runui_durationSeconds', { seconds: oneDecimal(request.time / 1000) });
+  const at = words.say('runs_requestAt', { time });
   return [request.type, sizeText(request.size), at].filter(Boolean).join(' · ');
 }
 
@@ -59,25 +68,25 @@ function tabIndexOf(request: HubKeptRequest, index: number): number {
 <template>
   <div role="group" :aria-labelledby="titleId" class="space-y-2" @keydown.esc.prevent="emit('close')">
     <div class="flex items-center justify-between gap-2">
-      <p :id="titleId" class="text-sm font-semibold text-highlighted">{{ desktopSay('runs_requestsTitle') }}</p>
+      <p :id="titleId" class="text-sm font-semibold text-highlighted">{{ words.say('runs_requestsTitle') }}</p>
       <UButton
         size="xs"
         color="neutral"
         variant="ghost"
         icon="i-lucide-x"
-        :aria-label="desktopSay('runs_requestsClose')"
+        :aria-label="words.say('runs_requestsClose')"
         @click="emit('close')"
       />
     </div>
-    <p v-if="requests.length === 0" class="text-xs text-muted">{{ desktopSay('runs_requestsNone') }}</p>
+    <p v-if="requests.length === 0" class="text-xs text-muted">{{ words.say('runs_requestsNone') }}</p>
     <template v-else>
       <UInput
         v-if="requests.length >= FILTER_FROM"
         v-model="query"
         size="xs"
         type="search"
-        :placeholder="desktopSay('runs_requestsFilter')"
-        :aria-label="desktopSay('runs_requestsFilter')"
+        :placeholder="words.say('runs_requestsFilter')"
+        :aria-label="words.say('runs_requestsFilter')"
         @keydown.down.prevent="rows[0]?.focus()"
       />
       <ul class="space-y-1 max-h-56 overflow-y-auto">
@@ -104,7 +113,7 @@ function tabIndexOf(request: HubKeptRequest, index: number): number {
           </button>
         </li>
       </ul>
-      <p v-if="shown.length === 0" class="text-xs text-muted">{{ desktopSay('runs_requestsNoMatch') }}</p>
+      <p v-if="shown.length === 0" class="text-xs text-muted">{{ words.say('runs_requestsNoMatch') }}</p>
     </template>
   </div>
 </template>
