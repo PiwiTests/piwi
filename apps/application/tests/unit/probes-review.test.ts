@@ -254,6 +254,73 @@ describe('recordProbeResults — project scope + fault allow-list (F3, F5)', () 
     expect(await db.select().from(schema.scenarioGaps)).toEqual([]);
   });
 
+  test('a server result names a dependency only for a dependency fault on one its route calls', async () => {
+    await db
+      .update(schema.projects)
+      .set({
+        serverProbes: { enabled: true, faults: ['throw', 'dependency'], routes: [], dependencyOnStateChanging: false },
+      })
+      .where(eq(schema.projects.id, 1));
+    await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
+    await seedRouteNode();
+    await db.insert(schema.graphEdges).values([
+      {
+        projectId: 1,
+        fromKind: 'route',
+        fromKey: 'GET /api/a',
+        toKind: 'handler',
+        toKey: 'api/a.get.ts',
+        kind: 'handled-by',
+        confidence: 1,
+        lastSeenAt: new Date(),
+      },
+      {
+        projectId: 1,
+        fromKind: 'handler',
+        fromKey: 'api/a.get.ts',
+        toKind: 'dependency',
+        toKey: 'postgres',
+        kind: 'calls',
+        confidence: 1,
+        lastSeenAt: new Date(),
+      },
+    ]);
+    const dependencyEdges = async () =>
+      (await db.select().from(schema.graphEdges))
+        .filter((e) => e.kind === 'checks' && e.toKind === 'dependency')
+        .map((e) => e.toKey);
+    await recordProbeResults(db, 1, null, [
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'throw',
+        outcome: 'noticed',
+        level: 'server',
+        dependency: 'postgres',
+      },
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'dependency',
+        outcome: 'noticed',
+        level: 'server',
+        dependency: 'stripe',
+      },
+    ]);
+    expect(await dependencyEdges()).toEqual([]);
+    await recordProbeResults(db, 1, null, [
+      {
+        testCaseId: 1,
+        routeKey: 'GET /api/a',
+        fault: 'dependency',
+        outcome: 'noticed',
+        level: 'server',
+        dependency: 'postgres',
+      },
+    ]);
+    expect(await dependencyEdges()).toEqual(['postgres']);
+  });
+
   test('drops a fault outside its level’s vocabulary', async () => {
     await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'a.spec.ts', title: 'mine' });
     await seedRouteNode();

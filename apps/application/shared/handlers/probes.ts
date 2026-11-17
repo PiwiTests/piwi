@@ -660,9 +660,12 @@ export async function recordProbeResults(
     .from(projects)
     .where(eq(projects.id, projectId));
   const settings = resolveServerProbeSettings(project?.serverProbes);
+  const routeDependencies = results.some((r) => r.level === 'server' && r.dependency)
+    ? await loadRouteDependencies(db, projectId)
+    : new Map<string, string[]>();
   results = results
     .filter((r) => ownTestIds.has(r.testCaseId))
-    .map((r) => probeResultAtItsLevel(r, settings))
+    .map((r) => probeResultAtItsLevel(r, settings, routeDependencies))
     .filter((r): r is ProbeResultInput => r !== null);
   if (results.length === 0) return { recorded: 0 };
   runId = await runIdOfProject(db, projectId, runId);
@@ -862,10 +865,15 @@ const MAX_PROBE_EVIDENCE_CHARS = 4096;
  * A result as its level permits it, or null when its fault is not one of that
  * level's: no level reads as client; a client result keeps no handling and no
  * dependency; a server result needs a fault the project's settings allow on its
- * route. Its route loses its query, as the route node's key does, and evidence
- * past `MAX_PROBE_EVIDENCE_CHARS` is dropped.
+ * route, and keeps a dependency only for a `dependency` fault on one its route's
+ * handler calls (`routeDependencies`). Its route loses its query, as the route
+ * node's key does, and evidence past `MAX_PROBE_EVIDENCE_CHARS` is dropped.
  */
-function probeResultAtItsLevel(r: ProbeResultInput, settings: ServerProbeSettings): ProbeResultInput | null {
+function probeResultAtItsLevel(
+  r: ProbeResultInput,
+  settings: ServerProbeSettings,
+  routeDependencies: Map<string, string[]>,
+): ProbeResultInput | null {
   const routeKey = routeKeyWithoutQuery(r.routeKey);
   const evidenceJson = r.evidence === undefined ? undefined : JSON.stringify(r.evidence);
   const evidence =
@@ -873,7 +881,11 @@ function probeResultAtItsLevel(r: ProbeResultInput, settings: ServerProbeSetting
   if (r.level === 'server') {
     if (!isServerProbeFault(r.fault) || !serverProbeAllowed(settings, routeKey, r.fault)) return null;
     const handled = r.handled && PROBE_HANDLING.has(r.handled) ? r.handled : 'n/a';
-    return { ...r, routeKey, level: 'server', handled, evidence };
+    const dependency =
+      r.fault === 'dependency' && r.dependency && routeDependencies.get(routeKey)?.includes(r.dependency)
+        ? r.dependency
+        : null;
+    return { ...r, routeKey, level: 'server', handled, dependency, evidence };
   }
   if (!(PROBE_FAULTS as readonly string[]).includes(r.fault)) return null;
   return { ...r, routeKey, level: 'client', handled: 'n/a', dependency: null, evidence };
