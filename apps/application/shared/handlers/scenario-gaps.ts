@@ -62,7 +62,13 @@ import {
   pageKeyMatchesTarget,
 } from '../graph';
 import { pathSegments } from '@piwitests/core/file-routes';
-import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
+import {
+  LOCATING_METHODS,
+  isInteractionAction,
+  quoteJsString,
+  tryParseLocatorChain,
+  type LocatorArg,
+} from '../locator-chain';
 import {
   scoreTargetMatch,
   urlMatches,
@@ -4355,28 +4361,13 @@ const PAGE_KEY_PLACEHOLDER = /\/:(id|uuid|ulid|jwt|token)(?=\/|$)/g;
 export function gotoStep(key: string): string {
   const placeholders = [...new Set([...key.matchAll(PAGE_KEY_PLACEHOLDER)].map((m) => `:${m[1]}`))];
   return placeholders.length
-    ? `// TODO: a real ${placeholders.join(' and ')} in place of the key's: await page.goto(${q(key)});`
-    : `await page.goto(${q(key)});`;
+    ? `// TODO: a real ${placeholders.join(' and ')} in place of the key's: await page.goto(${quoteJsString(key)});`
+    : `await page.goto(${quoteJsString(key)});`;
 }
 
-/** How `q` writes each character that would end a single-quoted string or its line. */
-const QUOTED_CHARS: Record<string, string> = {
-  '\\': '\\\\',
-  "'": "\\'",
-  '\n': '\\n',
-  '\r': '\\r',
-  '\u2028': '\\u2028',
-  '\u2029': '\\u2029',
-};
-
-/** A single-quoted string for the generated source: no quote, backslash or line break of `s` leaves it. */
-function q(s: string): string {
-  return `'${s.replace(/[\\'\n\r\u2028\u2029]/g, (c) => QUOTED_CHARS[c]!)}'`;
-}
-
-/** A `//` comment line of the generated source holding `text`, which no line break of it can leave. */
+/** A `//` comment line of the generated source holding `text`, its line breaks and control characters as spaces. */
 function commentLine(text: string, indent = ''): string {
-  return `${indent}// ${text.replace(/[\n\r\u2028\u2029]+/g, ' ')}`;
+  return `${indent}// ${text.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ')}`;
 }
 
 /** The TODO assertion a gap's class suggests. */
@@ -4413,9 +4404,9 @@ export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
 
   const annotationArg =
     annotations.length > 0
-      ? `, {\n  annotation: [${annotations.map((a) => `{ type: ${q(a.type)}, description: ${q(a.description ?? '')} }`).join(', ')}],\n}`
+      ? `, {\n  annotation: [${annotations.map((a) => `{ type: ${quoteJsString(a.type)}, description: ${quoteJsString(a.description ?? '')} }`).join(', ')}],\n}`
       : '';
-  lines.push(`test(${q(input.gapTitle)}${annotationArg}, async ({ page }) => {`);
+  lines.push(`test(${quoteJsString(input.gapTitle)}${annotationArg}, async ({ page }) => {`);
 
   if (input.path.length > 0) {
     lines.push('  // Path to the gap:');
@@ -4675,7 +4666,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
     if (anchor.kind === 'control') {
       const [role, ...nameParts] = anchor.key.split(':');
       const name = nameParts.join(':');
-      path.push(`await page.getByRole(${q(role ?? 'button')}, { name: ${q(name)} }).click();`);
+      path.push(`await page.getByRole(${quoteJsString(role ?? 'button')}, { name: ${quoteJsString(name)} }).click();`);
     }
   }
 

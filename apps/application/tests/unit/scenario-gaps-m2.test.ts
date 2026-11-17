@@ -316,7 +316,7 @@ describe('renderScenarioDraft', () => {
   });
 
   test('keeps every text it quotes inside its comment or string, whatever line breaks it holds', () => {
-    const payload = 'x\nrequire("child_process").execSync("id");\r\u2028// y';
+    const payload = 'x\nrequire("child_process").execSync("id");\r\u2028// y\u0000';
     const draft = renderScenarioDraft({
       gapTitle: `Cart total ${payload}`,
       gapClass: 'false-comfort',
@@ -340,6 +340,7 @@ describe('renderScenarioDraft', () => {
     ];
     const lines = draft.text.split(/\r\n|\r|\n|\u2028|\u2029/);
     expect(lines.filter((line) => !skeleton.some((shape) => shape.test(line)))).toEqual([]);
+    expect(draft.text.includes('\u0000')).toBe(false);
     expect(
       lines
         .filter((line) => line.includes('child_process'))
