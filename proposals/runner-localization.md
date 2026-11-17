@@ -5,7 +5,7 @@ same five languages as Piwi Picker ([`extension-localization.md`](../adr/extensi
 a tester installs to run, on their own machine, the tests a team instance asks for. It is often the first Piwi tool
 they meet, through a page of the instance, and the people Picker was translated for are the same people.
 
-**Status.** Proposed 2026-11-17. Nothing is built.
+**Status.** Proposed 2026-11-17. Nothing is built. Its open questions were settled the same day (D9 to D11).
 
 **Summary.** Runner's window holds few texts of its own: most of what it shows comes from the Nuxt layer it shares
 with the dashboard (`packages/run-ui`), from the sentences its Node host writes (`@piwitests/editor`), and from the
@@ -161,6 +161,11 @@ take their words as arguments, and the desktop app keeps passing its English one
 tray menu, as the shell already does when the runs change. The quit question gets plural forms in the process: it
 reads "1 local test run(s) are still running" today.
 
+On macOS, Runner builds its app menu with `Menu::default`, whose standard items (Edit, Copy, Paste) carry English
+labels, and the folder picker is a native panel. Runner's bundle declares its five languages (`CFBundleLocalizations`
+in its `Info.plist`), so macOS can show its own panels in the system's language. PR 4 checks the menu and the picker
+in French on a Mac; a standard item that stays English then gets its text from the catalog.
+
 ### Formatting
 
 Numbers, counts and times follow the language through `Intl` (`RunSpeaker.number`, `toLocaleTimeString(language)` for
@@ -179,12 +184,16 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
 | D6 | The shell decides the language: the Language setting, else the system's, matched to a shipped catalog, else English. |
 | D7 | A Language setting in the window's settings card, stored by the shell, with Picker's draft note. |
 | D8 | The shell's texts are embedded in the binary from Runner's catalog; the shared Rust functions take their words as arguments. |
+| D9 | Runner's macOS bundle declares its five languages (`CFBundleLocalizations`); a standard menu item that still shows English gets its text from the catalog. |
+| D10 | The catalog check's rules live in one module in the root `shared/` folder, which Picker's test and Runner's import by relative path. |
+| D11 | Runner has its own review table, beside its catalogs: its French is reviewed on its own schedule, independently of Picker's. |
 
 ## Checks and tests
 
 - **The catalog check.** The rules of `apps/extension/tests/unit/locales.test.ts` (same keys as English, same
   placeholders, the plural forms each language needs, no `<`, a `description` on every English entry, the French
-  no-break spaces) move into one module that Picker's test and Runner's both import, rather than a second copy.
+  no-break spaces) move into one module in the root `shared/` folder, beside the base lint and format configs, which
+  Picker's test and Runner's both import by relative path, rather than a second copy.
 - **No text in code.** A scan of `packages/run-ui/app` and `apps/runner/app`, as Picker's
   `no-hardcoded-text.test.ts` does, reading the templates of `.vue` files with Vue's compiler. A list of files not
   yet migrated keeps it green while PR 1 moves the texts, and the list only shrinks.
@@ -207,7 +216,7 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
       `englishRunSpeaker` imports through it.
 - [ ] The layer's texts and Runner's window texts in their English catalogs; texts Picker already shows become run
       words.
-- [ ] The shared catalog check, the text scan with its not-yet-migrated list ending empty.
+- [ ] The catalog check's rules moved into `shared/`, the text scan with its not-yet-migrated list ending empty.
 
 **PR 2: codes from the host.** No visible change. About 1.5 days.
 
@@ -225,12 +234,14 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
 - [ ] The tray, its tooltip, the startup screen, the quit question with its plural forms, the update dialogs, from the
       embedded catalog; the shared functions take their words as arguments.
 - [ ] The tray rebuilt on a change of language.
+- [ ] `CFBundleLocalizations` in Runner's `Info.plist`; the app menu and the folder picker checked in French on a Mac,
+      and a standard item that stays English given its text from the catalog.
 
 **PR 5: German, Spanish, Brazilian Portuguese.** About 1 day.
 
 - [ ] Their catalogs, as drafts; the window spec in German.
-- [ ] A **Languages** section in `apps/docs/features/piwi-runner.md`; Runner's row in the review table of
-      `apps/extension/i18n/README.md`, or a table of its own beside the catalogs.
+- [ ] A **Languages** section in `apps/docs/features/piwi-runner.md`; Runner's review table in
+      `apps/runner/locales/README.md`, covering the layer's catalogs and Runner's.
 
 ## Not in this plan
 
@@ -240,14 +251,3 @@ the time a request ends unanswered). Nuxt UI's own texts follow through `<UApp :
   Tauri's NSIS bundler can show several languages; that is a later change to `runner.conf.json`.
 - **The documentation site** stays in English, as for Picker.
 - **Other languages.** Adding one afterwards is its catalogs, its run words and its glossary.
-
-## Open questions
-
-1. **The macOS app menu and native panels.** Runner builds its menu with `Menu::default`, whose standard items (Edit,
-   Copy, Paste) carry English labels, and the folder picker is a native panel. Check whether they follow the system's
-   language once the bundle declares its localizations (`CFBundleLocalizations` in `Info.plist`), or whether each
-   standard item needs its text passed in.
-2. **Where the shared catalog check lives.** Picker's test and Runner's both import it: the root `shared/` folder holds
-   only lint and format configs today, and no package fits. Settled in PR 1.
-3. **One review table or two.** Runner's French is reviewed with Picker's or on its own schedule: one table in
-   `apps/extension/i18n/README.md` covering both tools, or one per tool.
