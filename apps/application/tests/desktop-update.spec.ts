@@ -8,8 +8,9 @@ import { waitForHydration } from './utils';
  * this covers the dashboard side: the three check outcomes render, install
  * streams progress, the restart is only ever user-initiated, an update the
  * startup check found shows without a click, the startup notification
- * checkbox round-trips to the shell, and an available update lists the
- * release notes of the versions in between.
+ * checkbox round-trips to the shell, an available update lists the release
+ * notes of the versions in between, and Changelog opens the changelog the
+ * installed version ships with.
  */
 
 declare global {
@@ -177,6 +178,16 @@ test.describe('Desktop update card', () => {
 
     await page.getByRole('button', { name: 'Check for updates' }).click();
     await expect(page.getByText("You're on the latest version.")).toBeVisible();
+  });
+
+  test('opens the changelog shipped with the installed version', async ({ page }) => {
+    await installFakeBridge(page, 'uptodate');
+    await page.goto('/settings/about');
+    await waitForHydration(page);
+
+    await page.getByTestId('update-card-changelog').click();
+    const dialog = page.getByRole('dialog', { name: 'Changelog' });
+    await expect(dialog.getByTestId('release-notes-current')).toBeVisible();
   });
 
   test('installs an available update and restarts on demand', async ({ page }) => {

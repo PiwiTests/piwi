@@ -1,10 +1,13 @@
 import { describe, test, expect } from 'vitest';
-import { parseReleaseNotes } from '#shared/changelog';
+import { changelogPage, parseChangelog, parseReleaseNotes } from '#shared/changelog';
+import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 import {
+  changelogReleaseItem,
   compareUrl,
   releaseNoteHtml,
   releasePageUrl,
   summarizeReleaseNotes,
+  updateReleaseItem,
 } from '../../app/utils/update-release-notes';
 
 const release = (version: string, body: string) =>
@@ -89,4 +92,39 @@ test('releasePageUrl keeps an http(s) release page, else points at the releases 
     'https://github.com/PiwiTests/piwi/releases/tag/v1.0.0',
   );
   expect(releasePageUrl({ ...note, url: 'javascript:alert(1)' })).toBe('https://github.com/piwitests/piwi/releases');
+});
+
+describe('release items', () => {
+  test('an update release keeps its version as key, and the releases page for a URL that is not http(s)', () => {
+    const item = updateReleaseItem({
+      version: '0.67.0',
+      date: '2026-11-05T10:00:00Z',
+      url: 'javascript:alert(1)',
+      body: '',
+    });
+    expect(item).toMatchObject({ key: '0.67.0', label: 'v0.67.0', date: '2026-11-05T10:00:00Z' });
+    expect(item.pageUrl).toBe(PROJECT_LINKS.releases);
+  });
+
+  test("a changelog release marks the running version's release, a grouped one keeps its span as label", () => {
+    const { releases } = changelogPage(
+      parseChangelog(
+        [
+          '## [0.36.0](https://x/compare) (2026-09-22)\n\n* **app:** add a\n',
+          '## [0.4.0 – 0.4.4](https://github.com/PiwiTests/platform/compare/v0.3.0...v0.4.4) (2026-06-23 – 2026-06-28)\n\n* add b\n',
+        ].join('\n'),
+      ),
+      { runningVersion: '0.4.2' },
+    );
+    const [newest, grouped] = releases.map((release) => changelogReleaseItem(release, '0.4.2'));
+    expect(newest).toMatchObject({ key: '0.36.0', label: 'v0.36.0', date: '2026-09-22', current: false });
+    expect(newest!.pageUrl).toBe(`${PROJECT_LINKS.releases}/tag/v0.36.0`);
+    expect(grouped).toMatchObject({
+      key: '0.4.4',
+      label: '0.4.0 – 0.4.4',
+      date: '2026-06-23 – 2026-06-28',
+      current: true,
+    });
+    expect(changelogReleaseItem(releases[0]!, '').current).toBe(false);
+  });
 });

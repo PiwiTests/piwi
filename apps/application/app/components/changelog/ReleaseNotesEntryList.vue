@@ -3,8 +3,9 @@
  * One section of release notes: an optional label and its entries. A raw
  * entry's `**scope:**` prefix shows as a meta label before its sentence, and an
  * entry carrying a version (a breaking change gathered from several releases)
- * names it after the sentence. Entries come from GitHub, so they render only
- * through `releaseNoteHtml`, which escapes first.
+ * names it after the sentence. Entries come from GitHub or from the changelog
+ * shipped with the build, so they render only through `releaseNoteHtml`, which
+ * escapes first.
  */
 import { splitEntryScope } from '#shared/changelog';
 

@@ -3,12 +3,18 @@ import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
+  CHANGELOG_MAX_PAGE_SIZE,
+  CHANGELOG_PAGE_SIZE,
+  changelogPage,
+  changelogReleaseCovers,
+  changelogReleaseUrl,
   changelogSectionKind,
   cleanChangelogEntry,
   parseChangelog,
   parseReleaseNotes,
   splitEntryScope,
 } from '#shared/changelog';
+import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', '..');
 
@@ -209,5 +215,66 @@ describe('splitEntryScope', () => {
       scope: null,
       text: '**🎯 Test selections** — Save a set',
     });
+  });
+});
+
+describe('changelogPage', () => {
+  /** Releases 0.30.0 down to 0.1.0, then a grouped entry, as the changelog lists them. */
+  const releases = parseChangelog(
+    [
+      ...Array.from(
+        { length: 30 },
+        (_, i) => `## [0.${30 - i}.0](https://x/compare) (2026-07-01)\n\n* **app:** add ${30 - i}\n`,
+      ),
+      '## [0.0.1 – 0.0.8](https://github.com/PiwiTests/platform/releases) (2025-12 – 2026-04)\n\n* first steps\n',
+    ].join('\n'),
+  );
+
+  test('reads the newest releases first, each with its release page, and a cursor to the older ones', () => {
+    const page = changelogPage(releases, { runningVersion: '0.30.0' });
+    expect(page.runningVersion).toBe('0.30.0');
+    expect(page.total).toBe(31);
+    expect(page.releases.map((r) => r.version)).toEqual(
+      Array.from({ length: CHANGELOG_PAGE_SIZE }, (_, i) => `0.${30 - i}.0`),
+    );
+    expect(page.releases[0]!.url).toBe(`${PROJECT_LINKS.releases}/tag/v0.30.0`);
+    expect(page.nextCursor).toBe('0.21.0');
+  });
+
+  test('reads on from the cursor until the last release, a grouped entry keeping its own link', () => {
+    const second = changelogPage(releases, { runningVersion: '0.30.0', cursor: '0.21.0', limit: '20' });
+    expect(second.releases.map((r) => r.version)[0]).toBe('0.20.0');
+    expect(second.releases).toHaveLength(20);
+    expect(second.nextCursor).toBe('0.1.0');
+    const last = changelogPage(releases, { runningVersion: '0.30.0', cursor: second.nextCursor });
+    expect(last.releases.map((r) => r.version)).toEqual(['0.0.1 – 0.0.8']);
+    expect(last.releases[0]!.url).toBe('https://github.com/PiwiTests/platform/releases');
+    expect(last.nextCursor).toBeNull();
+  });
+
+  test('reads an empty page for an unknown cursor, and the default size for a limit out of range', () => {
+    expect(changelogPage(releases, { runningVersion: '', cursor: '9.9.9' }).releases).toEqual([]);
+    expect(changelogPage(releases, { runningVersion: '', limit: '0' }).releases).toHaveLength(CHANGELOG_PAGE_SIZE);
+    expect(changelogPage(releases, { runningVersion: '', limit: 'abc' }).releases).toHaveLength(CHANGELOG_PAGE_SIZE);
+    expect(changelogPage(releases, { runningVersion: '', limit: 500 }).releases).toHaveLength(
+      Math.min(CHANGELOG_MAX_PAGE_SIZE, releases.length),
+    );
+  });
+
+  test('answers an empty changelog for a build without one', () => {
+    expect(changelogPage(null, { runningVersion: '0.30.0' })).toEqual({
+      runningVersion: '0.30.0',
+      total: 0,
+      releases: [],
+      nextCursor: null,
+    });
+  });
+
+  test('a release covers the versions of its span, and links its page', () => {
+    const grouped = releases[releases.length - 1]!;
+    expect(changelogReleaseCovers(grouped, '0.0.4')).toBe(true);
+    expect(changelogReleaseCovers(grouped, '0.1.0')).toBe(false);
+    expect(changelogReleaseCovers(releases[0]!, '0.30.0')).toBe(true);
+    expect(changelogReleaseUrl(releases[0]!)).toBe(`${PROJECT_LINKS.releases}/tag/v0.30.0`);
   });
 });

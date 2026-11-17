@@ -3,6 +3,7 @@ import type { ApiResponse } from '~~/types/api';
 import { compareVersions } from '#shared/piwi-env-vars';
 const config = useRuntimeConfig();
 const isDesktop = useIsDesktop();
+const { openChangelog } = useChangelog();
 
 const { data: versionInfo } =
   await useFetch<ApiResponse<typeof import('~~/server/api/version.get').default>>('/api/version');
@@ -101,6 +102,18 @@ const dbBackendLabel = computed(() => {
             <span :title="prettyDateFormat(buildTime)">Built {{ formatRelativeTime(buildTime) }}</span>
           </ClientOnly>
         </p>
+        <!-- The desktop app opens the changelog from its Updates card. -->
+        <UButton
+          v-if="!isDesktop"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          class="mt-2"
+          data-testid="about-changelog"
+          @click="openChangelog"
+        >
+          Changelog
+        </UButton>
       </div>
     </div>
 

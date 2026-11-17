@@ -13,6 +13,8 @@
  * version): the card sums them up (how many releases, how many breaking
  * changes, the newest highlights) and What's new opens them in full. Without
  * them the card links to the releases page, and installing works the same.
+ * Changelog, in every state, opens the changelog shipped with the installed
+ * version (`ChangelogModal`).
  */
 import { parseReleaseNotes } from '#shared/changelog';
 
@@ -31,6 +33,7 @@ interface UpdateSettings {
 }
 
 const toast = useToast();
+const { openChangelog } = useChangelog();
 
 const available = ref(false);
 const checking = ref(false);
@@ -187,11 +190,16 @@ const progressPercent = computed(() => {
 </script>
 
 <template>
-  <SectionCard v-if="available" icon="i-lucide-arrow-up-circle" title="Updates">
+  <SectionCard v-if="available" icon="i-lucide-arrow-up-circle" title="Updates" data-shot="desktop-updates">
     <template #subtitle>
       Updates install from GitHub releases and apply on restart{{
         currentVersion ? ` — you are on v${currentVersion}` : ''
       }}.
+    </template>
+    <template #actions>
+      <UButton size="xs" color="neutral" variant="outline" data-testid="update-card-changelog" @click="openChangelog">
+        Changelog
+      </UButton>
     </template>
 
     <div class="space-y-3">

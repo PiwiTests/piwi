@@ -148,7 +148,7 @@ command palette or `g` then `s`: your **Account** and connected accounts ([OAuth
 ([SCM credentials](/guide/source-control#set-the-credential)), **Integrations** ([Jira Cloud](/operate/integrations), [Zephyr Scale Cloud](/operate/zephyr-scale)),
 **Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
-([Localization](/operate/localization)) and **About**, and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
+([Localization](/operate/localization)) and **About** (version and **Changelog**), and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
 an environment variable is shown read-only with the variable's name ([Configuration reference](/reference/configuration)).
 
 ## Setup

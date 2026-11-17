@@ -580,6 +580,13 @@ export default defineNuxtConfig({
             cpSync(wasmSrc, wasmDst);
           }
         }
+        // The demo's `/api/changelog` reads the changelog from beside the seed: its service worker has no server assets.
+        const changelogSrc = resolve(changelogDir, 'CHANGELOG.md');
+        if (existsSync(changelogSrc)) {
+          const changelogDst = resolve(nitro.options.output.publicDir, 'demo/changelog.md');
+          mkdirSync(dirname(changelogDst), { recursive: true });
+          cpSync(changelogSrc, changelogDst);
+        }
         const seedSrc = resolve(__dirname, 'public/demo/seed.sql');
         if (!existsSync(seedSrc)) {
           console.warn('[Build] WARNING: public/demo/seed.sql not found. Run `npm run app:seed:demo` before building.');

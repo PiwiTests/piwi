@@ -1,8 +1,10 @@
 /**
  * The release notes the desktop shell reads for an available update
- * (`desktop_get_release_notes`), and the summary the update card shows of them.
+ * (`desktop_get_release_notes`), the summary the update card shows of them, and
+ * the shape `ReleaseNotesAccordion` shows a release in, for them and for the
+ * changelog shipped with the build.
  */
-import { splitEntryScope, type ChangelogRelease } from '#shared/changelog';
+import { changelogReleaseCovers, parseReleaseNotes, splitEntryScope, type ChangelogRelease } from '#shared/changelog';
 import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { inlineMarkdownHtml } from './markdown-inline';
@@ -47,6 +49,42 @@ const NO_ENTITIES = { known: new Set<string>(), baseURL: '/' };
  */
 export function releaseNoteHtml(markdown: string): string {
   return inlineMarkdownHtml(markdown, NO_ENTITIES);
+}
+
+/** A release as `ReleaseNotesAccordion` shows it. */
+export interface ReleaseNotesItem {
+  /** The fold's value, unique in the list. */
+  key: string;
+  label: string;
+  /** An ISO 8601 timestamp, a `YYYY-MM-DD` day, or the text of a span of days. */
+  date: string | null;
+  pageUrl: string;
+  parsed: ChangelogRelease;
+  /** Marks the release of the version this dashboard runs. */
+  current?: boolean;
+}
+
+/** A release of the update on offer, as `ReleaseNotesAccordion` shows it. */
+export function updateReleaseItem(note: DesktopReleaseNote): ReleaseNotesItem {
+  return {
+    key: note.version,
+    label: `v${note.version}`,
+    date: note.date,
+    pageUrl: releasePageUrl(note),
+    parsed: parseReleaseNotes(note),
+  };
+}
+
+/** A release of the changelog shipped with the build, as `ReleaseNotesAccordion` shows it. */
+export function changelogReleaseItem(release: ChangelogRelease, runningVersion: string): ReleaseNotesItem {
+  return {
+    key: release.to,
+    label: release.from === release.to ? `v${release.version}` : release.version,
+    date: release.date,
+    pageUrl: safeHttpUrl(release.url) ?? RELEASES_PAGE_URL,
+    parsed: release,
+    current: !!runningVersion && changelogReleaseCovers(release, runningVersion),
+  };
 }
 
 /** A breaking change, with the version that made it. */

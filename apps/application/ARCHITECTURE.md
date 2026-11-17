@@ -343,7 +343,9 @@ Each entry names folders under `server/api/`.
   its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
   `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
   server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
-  `shared/piwi-ecosystem.ts`.
+  `shared/piwi-ecosystem.ts`. `server/utils/bundled-assets.ts` reads the bundled CHANGELOG for that tool and for
+  `GET /api/changelog`, which pages it (`changelogPage`) for the Changelog window (`ChangelogModal`); the demo build
+  copies the file beside its seed and pages it the same way.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
   through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
   redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
