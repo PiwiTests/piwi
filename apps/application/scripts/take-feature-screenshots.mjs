@@ -3836,8 +3836,8 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'project-live-view-settings', width: 1280, height: 800 },
-    { name: 'project-live-view-settings-mobile', width: 375, height: 1100 },
+    { name: 'project-live-view-settings', width: 1280, height: 1000 },
+    { name: 'project-live-view-settings-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
     description: `Project → Settings → Live view: the switch, the masked elements, and what goes out, to whom and what is kept, at ${width} px`,
