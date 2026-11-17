@@ -70,13 +70,13 @@ One per language, `glossary.<code>.md`: the words a translation of that language
 
 ## Review status
 
-| Language | Catalog | Reviewed by | At version |
-| --- | --- | --- | --- |
-| English (`en`) | the source | — | — |
-| French (`fr`) | all surfaces: the popup, the settings, the in-page tools, badges and messages from the background | to be reviewed by the team before the release that ships it | — |
-| German (`de`) | all surfaces | nobody yet: ships as a draft | — |
-| Spanish (`es`) | all surfaces | nobody yet: ships as a draft | — |
-| Brazilian Portuguese (`pt_BR`) | all surfaces | nobody yet: ships as a draft | — |
+| Language                       | Catalog                                                                                           | Reviewed by                                                 | At version |
+| ------------------------------ | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------------- | ---------- |
+| English (`en`)                 | the source                                                                                        | —                                                           | —          |
+| French (`fr`)                  | all surfaces: the popup, the settings, the in-page tools, badges and messages from the background | to be reviewed by the team before the release that ships it | —          |
+| German (`de`)                  | all surfaces                                                                                      | nobody yet: ships as a draft                                | —          |
+| Spanish (`es`)                 | all surfaces                                                                                      | nobody yet: ships as a draft                                | —          |
+| Brazilian Portuguese (`pt_BR`) | all surfaces                                                                                      | nobody yet: ships as a draft                                | —          |
 
 A draft is marked in three places, all driven by `draft: true` in `src/shared/languages.ts`: a note under Language in
 the settings while the interface is in that language, with a link to the form for translation fixes

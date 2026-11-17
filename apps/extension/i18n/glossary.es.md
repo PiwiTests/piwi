@@ -1,81 +1,81 @@
 # Spanish glossary
 
 The words the Spanish catalog uses for the terms that come back everywhere. One Spanish serves Spain and Latin America
-(the `es` catalog also answers browsers set to `es_419`), so it avoids words that belong to one region: *hacer clic*,
-*archivo*, *pantalla*, *pestaña*, and no *ordenador* or *computadora*. The reader is addressed with `tú`, as Google's and
+(the `es` catalog also answers browsers set to `es_419`), so it avoids words that belong to one region: _hacer clic_,
+_archivo_, _pantalla_, _pestaña_, and no _ordenador_ or _computadora_. The reader is addressed with `tú`, as Google's and
 Mozilla's Spanish do; the tone is the one of `store/amo-description.es.md`: plain sentences, no anglicism where a
 Spanish word is as clear. This catalog is a draft until a native reader reviews it.
 
-| English | Spanish | Notes |
-| --- | --- | --- |
-| locator | locator (masculino) | `el locator`, `los locators`; never *selector*, which is a CSS selector |
-| locator index | índice de locators | |
-| selector (CSS) | selector | only for CSS or XPath selectors |
-| test id | test id | code, kept as it is |
-| test | prueba | `una prueba de Playwright`, `la prueba que falla` |
-| run | ejecución | |
-| flaky | inestable | |
-| passed / failed | superada / fallida | about a test (`prueba`, feminine); `una prueba que falla` for a failing test |
-| step | paso | |
-| assertion | aserción | |
-| page object | page object | as Spanish-speaking developers say it |
-| helper function | función auxiliar | |
-| test function | función de prueba | feminine: `lista para usar`, `encontrada en parte` |
-| recording / to record | grabación / grabar | |
-| bug | bug (masculino) | `el bug`, `los bugs`; not *error*, which the report uses for console errors |
-| bug report | informe de bug | |
-| to report (a bug) | notificar | |
-| to replay | reproducir | `Reproducido` / `No reproducido` for the verdict |
-| screenshot | captura de pantalla | `hacer una captura de pantalla` |
-| tested elements | elementos probados | the tool's name, capitalized as a title: *Elementos probados* |
-| URL pattern | patrón de dirección | the settings section's name, in the plural: *Patrones de dirección* |
-| branch | rama | `rama predeterminada` |
-| instance (Piwi) | instancia | `tu instancia de Piwi` |
-| API key | clave de API | |
-| settings | configuración | the gear button and the settings page, as Chrome's Spanish says |
-| dashboard | panel de control | |
-| panel (of a tool) | panel | |
-| popup | este menú | when a text must name it; mostly avoided |
-| background worker | proceso en segundo plano | |
-| to pick (an element) | elegir | |
-| to hover | pasar el puntero | |
-| to click | hacer clic (en) | |
-| to type, to fill | escribir | |
-| badge (on a box) | insignia | the toolbar badge's texts are `REC`, `REPR` |
-| hidden / visible | oculto / visible | states agree with the noun: `oculto`, `oculta` |
-| enabled / disabled | habilitado / deshabilitado | in the report's own words, `disponible` / `atenuado` |
-| brittle | frágil | a brittle locator `puede fallar` |
-| watch (a locator's stability level) | a vigilar | the level between stable and brittle, *Watch* in the dashboard |
-| team instance | instancia del equipo | `la instancia de tu equipo` for *your team instance* |
-| run request | solicitud de ejecución | a request a person makes; `petición` stays for an HTTP request (`Simular una petición`) |
-| linked folder / to link, unlink | carpeta vinculada / vincular, desvincular | |
-| tray (system tray) | bandeja del sistema | `el menú de la bandeja`; Windows calls it *área de notificación*, macOS *barra de menús* |
-| local host (Runner's server) | servidor local | |
-| this machine, this computer | esta máquina | not *este equipo*, which reads as the team beside *instancia del equipo* |
-| worker (Playwright) | worker (masculino) | `el worker`, `los workers` |
-| stop (a stopped test) | parada | `esta parada`; the test is `detenida` |
-| breakpoint | punto de interrupción | |
-| live view / Share live | vista en directo / Compartir en directo | *Stop sharing* is `Dejar de compartir` |
+| English                             | Spanish                                   | Notes                                                                                    |
+| ----------------------------------- | ----------------------------------------- | ---------------------------------------------------------------------------------------- |
+| locator                             | locator (masculino)                       | `el locator`, `los locators`; never _selector_, which is a CSS selector                  |
+| locator index                       | índice de locators                        |                                                                                          |
+| selector (CSS)                      | selector                                  | only for CSS or XPath selectors                                                          |
+| test id                             | test id                                   | code, kept as it is                                                                      |
+| test                                | prueba                                    | `una prueba de Playwright`, `la prueba que falla`                                        |
+| run                                 | ejecución                                 |                                                                                          |
+| flaky                               | inestable                                 |                                                                                          |
+| passed / failed                     | superada / fallida                        | about a test (`prueba`, feminine); `una prueba que falla` for a failing test             |
+| step                                | paso                                      |                                                                                          |
+| assertion                           | aserción                                  |                                                                                          |
+| page object                         | page object                               | as Spanish-speaking developers say it                                                    |
+| helper function                     | función auxiliar                          |                                                                                          |
+| test function                       | función de prueba                         | feminine: `lista para usar`, `encontrada en parte`                                       |
+| recording / to record               | grabación / grabar                        |                                                                                          |
+| bug                                 | bug (masculino)                           | `el bug`, `los bugs`; not _error_, which the report uses for console errors              |
+| bug report                          | informe de bug                            |                                                                                          |
+| to report (a bug)                   | notificar                                 |                                                                                          |
+| to replay                           | reproducir                                | `Reproducido` / `No reproducido` for the verdict                                         |
+| screenshot                          | captura de pantalla                       | `hacer una captura de pantalla`                                                          |
+| tested elements                     | elementos probados                        | the tool's name, capitalized as a title: _Elementos probados_                            |
+| URL pattern                         | patrón de dirección                       | the settings section's name, in the plural: _Patrones de dirección_                      |
+| branch                              | rama                                      | `rama predeterminada`                                                                    |
+| instance (Piwi)                     | instancia                                 | `tu instancia de Piwi`                                                                   |
+| API key                             | clave de API                              |                                                                                          |
+| settings                            | configuración                             | the gear button and the settings page, as Chrome's Spanish says                          |
+| dashboard                           | panel de control                          |                                                                                          |
+| panel (of a tool)                   | panel                                     |                                                                                          |
+| popup                               | este menú                                 | when a text must name it; mostly avoided                                                 |
+| background worker                   | proceso en segundo plano                  |                                                                                          |
+| to pick (an element)                | elegir                                    |                                                                                          |
+| to hover                            | pasar el puntero                          |                                                                                          |
+| to click                            | hacer clic (en)                           |                                                                                          |
+| to type, to fill                    | escribir                                  |                                                                                          |
+| badge (on a box)                    | insignia                                  | the toolbar badge's texts are `REC`, `REPR`                                              |
+| hidden / visible                    | oculto / visible                          | states agree with the noun: `oculto`, `oculta`                                           |
+| enabled / disabled                  | habilitado / deshabilitado                | in the report's own words, `disponible` / `atenuado`                                     |
+| brittle                             | frágil                                    | a brittle locator `puede fallar`                                                         |
+| watch (a locator's stability level) | a vigilar                                 | the level between stable and brittle, _Watch_ in the dashboard                           |
+| team instance                       | instancia del equipo                      | `la instancia de tu equipo` for _your team instance_                                     |
+| run request                         | solicitud de ejecución                    | a request a person makes; `petición` stays for an HTTP request (`Simular una petición`)  |
+| linked folder / to link, unlink     | carpeta vinculada / vincular, desvincular |                                                                                          |
+| tray (system tray)                  | bandeja del sistema                       | `el menú de la bandeja`; Windows calls it _área de notificación_, macOS _barra de menús_ |
+| local host (Runner's server)        | servidor local                            |                                                                                          |
+| this machine, this computer         | esta máquina                              | not _este equipo_, which reads as the team beside _instancia del equipo_                 |
+| worker (Playwright)                 | worker (masculino)                        | `el worker`, `los workers`                                                               |
+| stop (a stopped test)               | parada                                    | `esta parada`; the test is `detenida`                                                    |
+| breakpoint                          | punto de interrupción                     |                                                                                          |
+| live view / Share live              | vista en directo / Compartir en directo   | _Stop sharing_ is `Dejar de compartir`                                                   |
 
 ## The tools' names
 
 The popup, the panels, the store description and the phrasebook use these names.
 
-| Key | English | Spanish |
-| --- | --- | --- |
-| `popup_pick` | Pick an element | Elegir un elemento |
-| `popup_hoverInspect` | Hover-inspect | Inspeccionar |
-| `popup_locatorConsole` | Locator console | Consola |
-| `popup_multiPick` | Multi-pick | Multiselección |
-| `popup_lint` | Lint overlay | Revisión |
-| `popup_assertions` | Assertions | Aserciones |
-| `popup_session` | Session | Sesión |
-| `popup_agentContext` | Agent context | Contexto para IA |
-| `popup_testFunctions` | Test functions | Funciones de prueba |
-| `popup_record` | Record | Grabar |
-| `popup_replay` | Replay | Reproducir |
-| `record_checkElement` | Check an element | Comprobar un elemento |
-| `popup_testedElements` | Tested elements | Elementos probados |
+| Key                    | English          | Spanish               |
+| ---------------------- | ---------------- | --------------------- |
+| `popup_pick`           | Pick an element  | Elegir un elemento    |
+| `popup_hoverInspect`   | Hover-inspect    | Inspeccionar          |
+| `popup_locatorConsole` | Locator console  | Consola               |
+| `popup_multiPick`      | Multi-pick       | Multiselección        |
+| `popup_lint`           | Lint overlay     | Revisión              |
+| `popup_assertions`     | Assertions       | Aserciones            |
+| `popup_session`        | Session          | Sesión                |
+| `popup_agentContext`   | Agent context    | Contexto para IA      |
+| `popup_testFunctions`  | Test functions   | Funciones de prueba   |
+| `popup_record`         | Record           | Grabar                |
+| `popup_replay`         | Replay           | Reproducir            |
+| `record_checkElement`  | Check an element | Comprobar un elemento |
+| `popup_testedElements` | Tested elements  | Elementos probados    |
 
 ## Typography
 
@@ -83,6 +83,6 @@ The popup, the panels, the store description and the phrasebook use these names.
 - No space before `:`, `;`, `!` or `?`; a question or an exclamation also opens with `¿` or `¡`.
 - A no-break space (U+00A0) between a number and its unit or `%`: `hace 3 min`, `40 %`, as the RAE writes them.
 - `…` rather than three dots.
-- Buttons and titles take a capital only on their first word: *Copiar el informe*, *Paso siguiente*.
-- Steps of a bug report start with an infinitive, the article agreeing with the noun: *Hacer clic en el botón
-  «Apply coupon»*, *Escribir «SPRING10» en el campo de texto «Coupon»*, *Marcar la casilla «I agree»*.
+- Buttons and titles take a capital only on their first word: _Copiar el informe_, _Paso siguiente_.
+- Steps of a bug report start with an infinitive, the article agreeing with the noun: _Hacer clic en el botón
+  «Apply coupon»_, _Escribir «SPRING10» en el campo de texto «Coupon»_, _Marcar la casilla «I agree»_.
