@@ -495,16 +495,18 @@ pub async fn desktop_pick_folder(
             dialog = dialog.set_title(title);
         }
     }
-    let start = start
-        .map(PathBuf::from)
-        .filter(|p| p.is_absolute() && p.is_dir())
-        .or_else(|| pick_start_near(read_links(&app).into_values().map(|r| PathBuf::from(r.path))));
-    if let Some(start) = start {
-        dialog = dialog.set_directory(start);
-    }
+    let linked: Vec<PathBuf> = read_links(&app).into_values().map(|r| PathBuf::from(r.path)).collect();
     // The blocking picker must not run on the IPC/async worker it was called
-    // from — park it on a blocking thread and await the result.
+    // from — park it on a blocking thread and await the result. Where it opens
+    // is read there too: it looks at the disk.
     tauri::async_runtime::spawn_blocking(move || {
+        let start = start
+            .map(PathBuf::from)
+            .filter(|p| p.is_absolute() && p.is_dir())
+            .or_else(|| pick_start_near(linked));
+        if let Some(start) = start {
+            dialog = dialog.set_directory(start);
+        }
         dialog
             .blocking_pick_folder()
             .and_then(|f| f.into_path().ok())

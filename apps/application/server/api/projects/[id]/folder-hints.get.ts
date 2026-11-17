@@ -3,7 +3,7 @@ import { getDatabase } from '../../../database';
 import { testCases, testRuns, testRunsCases } from '../../../database/schema';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { readProjectRepositoryUrl } from '../../../utils/scm/project-repository';
-import { notPrivateRun } from '#shared/run-eligibility';
+import { notLabRun } from '#shared/run-eligibility';
 
 /** How many of the latest runs the folders are read from. */
 const RECENT_RUNS = 20;
@@ -17,7 +17,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Get what identifies the folder of a project',
     description:
-      'What the desktop app checks a folder against before linking it to the project. `specFiles`: the spec paths of the latest run (up to 50), relative to the folder of the Playwright config, which is the folder to link. `workingDirs`: the folders the latest runs were reported from (their `metadata.workingDir`, newest first, up to 5), absolute paths on the machines that ran them. `repositoryUrl`: the project’s repository. Empty lists and null for a project with no run.',
+      'What the desktop app checks a folder against before linking it to the project. `specFiles`: the spec paths of the latest run (up to 50), relative to the folder of the Playwright config, which is the folder to link. `workingDirs`: the folders the latest runs were reported from (their `metadata.workingDir`, newest first, up to 5), absolute paths on the machines that ran them. `repositoryUrl`: the project’s repository. Lab and private runs are left aside. Empty lists and null for a project with no run.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },
@@ -31,7 +31,7 @@ export default eventHandler(async (event) => {
   const runs = await db
     .select({ id: testRuns.id, metadata: testRuns.metadata })
     .from(testRuns)
-    .where(and(eq(testRuns.projectId, id), notPrivateRun(testRuns.origin)))
+    .where(and(eq(testRuns.projectId, id), notLabRun(testRuns.origin)))
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(RECENT_RUNS);
 

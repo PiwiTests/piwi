@@ -4,11 +4,14 @@
 // link. In a monorepo it is the subfolder with the config, not the repository
 // root.
 //
-// Read-only and bounded: a search reads a fixed number of folders, follows no
-// link and skips dependency and output folders. Depends on `std` and `serde`
-// alone.
+// Read-only and bounded: a search below a folder examines a fixed number of
+// folders, enters no link and skips dependency and output folders; a git file
+// is read only when it is a regular file, and only its first bytes. On macOS no
+// search reads the folders directly in the home folder (Desktop, Documents…),
+// which would ask the person for access. Depends on `std` and `serde` alone.
 
 use std::collections::HashSet;
+use std::io::Read as _;
 use std::path::{Component, Path, PathBuf};
 
 /// Playwright's own config lookup order.
@@ -33,10 +36,17 @@ const SKIPPED_FOLDERS: [&str; 8] = [
     "blob-report",
 ];
 
+/// The extensions of a Playwright test file: a spec path without one is never checked.
+const SPEC_EXTENSIONS: [&str; 8] = [".ts", ".js", ".mjs", ".cjs", ".mts", ".cts", ".tsx", ".jsx"];
+
 /// How many levels below a folder a search looks for a config.
 const MAX_DEPTH_BELOW: usize = 4;
-/// How many folders one search below reads at most.
-const MAX_FOLDERS_READ: usize = 2_000;
+/// How many folders a search below a folder the person picked examines at most.
+const MAX_FOLDERS_BELOW: usize = 2_000;
+/// How many folders a search below one clone examines at most.
+const MAX_FOLDERS_BELOW_CLONE: usize = 300;
+/// How many clones of the repository the suggestions search at most.
+const MAX_CLONES: usize = 5;
 /// How many levels above a folder a search looks, up to the root of its git repository.
 const MAX_LEVELS_ABOVE: usize = 8;
 /// How many levels above a folder a search looks when it is in no git repository.
@@ -133,11 +143,12 @@ pub(crate) fn spec_in(folder: &Path, file: &str) -> Option<bool> {
     relative_spec(file).map(|relative| folder.join(relative).is_file())
 }
 
-/// The spec paths a check reads: the ones that can be checked, once each, at most `MAX_SPECS`.
+/// The spec paths a check reads: the relative paths of test files (`SPEC_EXTENSIONS`), once each, at most `MAX_SPECS`.
 fn checkable_specs(specs: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     specs
         .iter()
+        .filter(|file| SPEC_EXTENSIONS.iter().any(|ext| file.ends_with(ext)))
         .filter(|file| relative_spec(file).is_some())
         .filter(|file| seen.insert(file.as_str()))
         .take(MAX_SPECS)
@@ -161,18 +172,40 @@ fn shown(path: &Path) -> String {
     path.to_string_lossy().into_owned()
 }
 
+/// A regular file's first `MAX_GIT_FILE_BYTES` as text; `None` for anything else (a pipe, a device).
 fn read_small(path: &Path) -> Option<String> {
-    if std::fs::metadata(path).ok()?.len() > MAX_GIT_FILE_BYTES {
+    let file = std::fs::File::open(path).ok()?;
+    if !file.metadata().ok()?.is_file() {
         return None;
     }
-    std::fs::read_to_string(path).ok()
+    let mut text = String::new();
+    file.take(MAX_GIT_FILE_BYTES).read_to_string(&mut text).ok()?;
+    Some(text)
 }
 
-/// The root of the git working tree `folder` is in: the nearest folder holding `.git`.
+/// The person's home folder.
+fn home_folder() -> Option<PathBuf> {
+    std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
+        .map(PathBuf::from)
+        .filter(|path| path.is_absolute())
+}
+
+/// Whether reading the folders directly in `folder` would ask the person for
+/// access: the home folder on macOS, whose Desktop, Documents and Downloads
+/// are protected.
+fn guarded(folder: &Path) -> bool {
+    cfg!(target_os = "macos") && home_folder().is_some_and(|home| home == folder)
+}
+
+/// The root of the git working tree `folder` is in: the nearest folder holding
+/// `.git`, below the home folder (a home tracked for its dotfiles is no
+/// project's repository).
 pub(crate) fn git_root(folder: &Path) -> Option<PathBuf> {
+    let home = home_folder();
     folder
         .ancestors()
         .take(MAX_GIT_ROOT_WALK)
+        .take_while(|dir| home.as_deref() != Some(*dir))
         .find(|dir| dir.join(".git").exists())
         .map(Path::to_path_buf)
 }
@@ -221,20 +254,22 @@ fn remote_urls(config: &str) -> Vec<String> {
 }
 
 /// A Git host's SSH alias replaced by the host it stands for, as the server's
-/// `canonicalScmHostname` does.
+/// `canonicalScmHostname` does, with Azure DevOps' SSH host.
 fn canonical_host(host: &str) -> &str {
     match host {
         "ssh.github.com" => "github.com",
         "ssh.bitbucket.org" | "altssh.bitbucket.org" => "bitbucket.org",
+        "ssh.dev.azure.com" => "dev.azure.com",
         other => other,
     }
 }
 
 /// A remote URL as `host/owner/repo` in lower case, whatever its form (https,
 /// `ssh://`, `git@host:owner/repo`, with credentials, a port or a `.git`
-/// suffix): two remotes of one repository give the same key, and no
-/// credential is kept. `None` for a local path or a URL with no owner and
-/// repository.
+/// suffix, Azure DevOps' `v3/` and `_git/` parts): two remotes of one
+/// repository give the same key, and no credential is kept. `None` for a local
+/// path, a host with no dot (an `insteadOf` shorthand such as `gh:`) or a URL
+/// with no owner and repository.
 pub(crate) fn repository_key(url: &str) -> Option<String> {
     let url = url.trim();
     let (host, path) = if let Some((scheme, rest)) = url.split_once("://") {
@@ -257,12 +292,18 @@ pub(crate) fn repository_key(url: &str) -> Option<String> {
     };
     let host = host.to_ascii_lowercase();
     let host = canonical_host(&host);
-    let path = path.split(['?', '#']).next().unwrap_or("").trim_matches('/');
+    let path = path.split(['?', '#']).next().unwrap_or("").to_ascii_lowercase();
+    let path = path.trim_matches('/');
     let path = path.strip_suffix(".git").unwrap_or(path).trim_end_matches('/');
-    if host.is_empty() || !path.contains('/') {
+    let path = if host == "dev.azure.com" {
+        path.strip_prefix("v3/").unwrap_or(path).replacen("/_git/", "/", 1)
+    } else {
+        path.to_string()
+    };
+    if !host.contains('.') || !path.contains('/') {
         return None;
     }
-    Some(format!("{host}/{}", path.to_ascii_lowercase()))
+    Some(format!("{host}/{path}"))
 }
 
 /// The repositories the remotes of the repository holding `folder` name, as `repository_key`s.
@@ -284,18 +325,18 @@ fn folder_repositories(folder: &Path) -> Vec<String> {
 
 /// Folders below `folder` (not itself) holding a Playwright config, nearest
 /// first: at most `MAX_DEPTH_BELOW` levels down, through no link, hidden
-/// folder or `SKIPPED_FOLDERS`, reading at most `MAX_FOLDERS_READ` folders.
-fn config_folders_below(folder: &Path) -> Vec<PathBuf> {
+/// folder or `SKIPPED_FOLDERS`, examining at most `max_folders` folders. None
+/// below a `guarded` folder.
+fn config_folders_below(folder: &Path, max_folders: usize) -> Vec<PathBuf> {
     let mut found = Vec::new();
+    if guarded(folder) {
+        return found;
+    }
     let mut level = vec![folder.to_path_buf()];
-    let mut read = 0;
+    let mut examined = 0;
     for _ in 0..MAX_DEPTH_BELOW {
         let mut next = Vec::new();
         for dir in &level {
-            if read >= MAX_FOLDERS_READ {
-                return found;
-            }
-            read += 1;
             let Ok(entries) = std::fs::read_dir(dir) else {
                 continue;
             };
@@ -312,6 +353,10 @@ fn config_folders_below(folder: &Path) -> Vec<PathBuf> {
                 .collect();
             children.sort();
             for child in children {
+                if examined >= max_folders {
+                    return found;
+                }
+                examined += 1;
                 if find_config(&child).is_some() {
                     found.push(child.clone());
                 }
@@ -402,7 +447,7 @@ pub(crate) fn check_folder(folder: &Path, specs: &[String], expected_repository:
         Vec::new()
     } else {
         let above = config_folders_above(folder);
-        let below = config_folders_below(folder);
+        let below = config_folders_below(folder, MAX_FOLDERS_BELOW);
         let candidates = above
             .iter()
             .filter_map(|dir| candidate(dir, &specs, "above"))
@@ -424,11 +469,12 @@ pub(crate) fn check_folder(folder: &Path, specs: &[String], expected_repository:
     }
 }
 
-/// The folder to link in place of `picked` when it does not fit and a folder
-/// above or below it holds some of `specs`: the one holding the most.
+/// The folder to link in place of `picked` when `picked` holds neither a
+/// config nor any of `specs` (a repository's root, a folder of tests) and a
+/// folder above or below it holds some of them: the one holding the most.
 pub(crate) fn better_folder(picked: &Path, specs: &[String]) -> Option<PathBuf> {
     let check = check_folder(picked, specs, None);
-    if check.fits {
+    if !check.exists || check.playwright_config.is_some() || check.specs_found > 0 {
         return None;
     }
     check
@@ -439,22 +485,24 @@ pub(crate) fn better_folder(picked: &Path, specs: &[String]) -> Option<PathBuf> 
 }
 
 /// The folders holding the clones next to `linked`: the parent of each linked
-/// folder's repository root, once each.
+/// folder's repository root, once each, in path order, never a `guarded` one.
 fn clone_parents(linked: &[PathBuf]) -> Vec<PathBuf> {
     let mut parents: Vec<PathBuf> = Vec::new();
     for folder in linked {
         let root = git_root(folder).unwrap_or_else(|| folder.clone());
-        if let Some(parent) = root.parent() {
+        if let Some(parent) = root.parent().filter(|parent| !guarded(parent)) {
             if !parents.iter().any(|known| known == parent) {
                 parents.push(parent.to_path_buf());
             }
         }
     }
+    parents.sort();
     parents.truncate(MAX_CLONE_PARENTS);
     parents
 }
 
-/// The folders directly in `parent` that are clones of the repository `key` names.
+/// The folders directly in `parent` that are clones of the repository `key`
+/// names, among the first `MAX_SIBLINGS` by name.
 fn clones_in(parent: &Path, key: &str) -> Vec<PathBuf> {
     let Ok(entries) = std::fs::read_dir(parent) else {
         return Vec::new();
@@ -463,12 +511,12 @@ fn clones_in(parent: &Path, key: &str) -> Vec<PathBuf> {
         .flatten()
         .filter(|entry| !entry.file_name().to_string_lossy().starts_with('.'))
         .map(|entry| entry.path())
-        .filter(|path| path.is_dir())
-        .take(MAX_SIBLINGS)
         .collect();
     folders.sort();
     folders
         .into_iter()
+        .filter(|path| path.is_dir())
+        .take(MAX_SIBLINGS)
         .filter(|folder| folder.join(".git").exists())
         .filter(|folder| folder_repositories(folder).iter().any(|repository| repository == key))
         .collect()
@@ -496,12 +544,16 @@ pub(crate) fn suggest_folders(
     }
     let mut from_clones = Vec::new();
     if let Some(key) = expected_repository.and_then(repository_key) {
-        for parent in clone_parents(linked) {
-            for clone in clones_in(&parent, &key) {
-                for path in std::iter::once(clone.clone()).chain(config_folders_below(&clone)) {
-                    if offered(&path) {
-                        from_clones.extend(candidate(&path, &specs, "clone"));
-                    }
+        let clones: Vec<PathBuf> = clone_parents(linked)
+            .iter()
+            .flat_map(|parent| clones_in(parent, &key))
+            .take(MAX_CLONES)
+            .collect();
+        for clone in clones {
+            let below = config_folders_below(&clone, MAX_FOLDERS_BELOW_CLONE);
+            for path in std::iter::once(clone).chain(below) {
+                if offered(&path) {
+                    from_clones.extend(candidate(&path, &specs, "clone"));
                 }
             }
         }
@@ -672,7 +724,38 @@ mod tests {
         root.write("repo/node_modules/pkg/playwright.config.ts", "");
         root.write("repo/.cache/playwright.config.ts", "");
 
-        assert!(config_folders_below(&root.at("repo")).is_empty());
+        assert!(config_folders_below(&root.at("repo"), MAX_FOLDERS_BELOW).is_empty());
+    }
+
+    #[test]
+    fn the_search_below_examines_at_most_its_budget_of_folders() {
+        let root = Folder::new("budget");
+        for name in ["a", "b", "c"] {
+            root.write(&format!("repo/{name}/playwright.config.ts"), "");
+        }
+
+        assert_eq!(config_folders_below(&root.at("repo"), 2), vec![root.at("repo/a"), root.at("repo/b")]);
+    }
+
+    #[test]
+    fn only_test_files_are_checked_as_specs() {
+        let root = Folder::new("ext");
+        root.write("app/playwright.config.ts", "");
+        root.write("app/notes.txt", "");
+
+        let check = check_folder(&root.at("app"), &specs(&["notes.txt", "tests/a.spec.mts"]), None);
+
+        assert_eq!((check.specs_checked, check.specs_found), (1, 0));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_git_config_that_is_not_a_regular_file_is_not_read() {
+        let root = Folder::new("device");
+        std::fs::create_dir_all(root.at("repo/.git")).expect("create .git");
+        std::os::unix::fs::symlink("/dev/zero", root.at("repo/.git/config")).expect("link the config");
+
+        assert!(folder_repositories(&root.at("repo")).is_empty());
     }
 
     #[test]
@@ -728,11 +811,28 @@ mod tests {
             repository_key("git@gitlab.example.com:group/sub/app.git").as_deref(),
             Some("gitlab.example.com/group/sub/app")
         );
+        assert_eq!(repository_key("https://github.com/Acme/Shop.GIT").as_deref(), Some("github.com/acme/shop"));
+    }
+
+    #[test]
+    fn azure_devops_remotes_match_over_ssh_and_https() {
+        let expected = Some("dev.azure.com/acme/web/shop".to_string());
+        assert_eq!(repository_key("git@ssh.dev.azure.com:v3/acme/web/shop"), expected);
+        assert_eq!(repository_key("https://acme@dev.azure.com/acme/web/_git/shop"), expected);
+        assert_eq!(repository_key("https://ssh.dev.azure.com/v3/acme/web/shop"), expected);
     }
 
     #[test]
     fn local_paths_and_bare_hosts_have_no_repository_key() {
-        for remote in ["/srv/git/shop.git", "../shop", "C:\\repos\\shop", "file:///srv/shop", "https://github.com", "git@host:shop"] {
+        for remote in [
+            "/srv/git/shop.git",
+            "../shop",
+            "C:\\repos\\shop",
+            "file:///srv/shop",
+            "https://github.com",
+            "git@host.example:shop",
+            "gh:acme/shop",
+        ] {
             assert_eq!(repository_key(remote), None, "{remote}");
         }
     }
@@ -853,5 +953,15 @@ mod tests {
         assert_eq!(better_folder(&root.at("shop"), &cart), Some(root.at("shop/e2e")));
         assert_eq!(better_folder(&root.at("shop/e2e"), &cart), None);
         assert_eq!(better_folder(&root.at("shop"), &specs(&["tests/other.spec.ts"])), None);
+    }
+
+    #[test]
+    fn a_folder_with_its_own_config_is_never_swapped_for_another() {
+        let root = Folder::new("own-config");
+        root.write("shop/playwright.config.ts", "");
+        root.write("shop/examples/demo/playwright.config.ts", "");
+        root.write("shop/examples/demo/tests/example.spec.ts", "");
+
+        assert_eq!(better_folder(&root.at("shop"), &specs(&["tests/example.spec.ts"])), None);
     }
 }

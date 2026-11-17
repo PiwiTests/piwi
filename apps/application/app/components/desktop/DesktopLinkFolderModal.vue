@@ -12,6 +12,7 @@
 import type { ApiResponse } from '~~/types/api';
 import type { DesktopFolderCandidate, DesktopFolderCheck } from '~/composables/useDesktopFolderInspect';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
+import type { DesktopLinkFolderRequest } from '~/composables/useDesktopLinkFolder';
 
 type FolderHints = ApiResponse<typeof import('~~/server/api/projects/[id]/folder-hints.get').default>;
 
@@ -20,8 +21,9 @@ const toast = useToast();
 
 const modalOpen = computed({
   get: () => open.value,
+  // A folder being linked keeps the dialog open until the shell answers.
   set: (value) => {
-    if (!value) finish(null);
+    if (!value && !linking.value) finish(null);
   },
 });
 
@@ -47,10 +49,14 @@ const offered = computed(() => (check.value ? check.value.alternatives : suggest
 /** Counts the loads, so an answer for a request the dialog no longer shows is dropped. */
 let loads = 0;
 
+/** Whether the dialog still shows `req`: an answer that arrives once it closed or moved on is dropped. */
+function stillShowing(req: DesktopLinkFolderRequest): boolean {
+  return open.value && request.value === req;
+}
+
 watch(
-  open,
-  async (isOpen) => {
-    const req = request.value;
+  [open, request],
+  async ([isOpen, req]) => {
     if (!isOpen || !req) return;
     const load = ++loads;
     hints.value = null;
@@ -83,11 +89,11 @@ watch(
 
 async function link(path: string) {
   const req = request.value;
-  if (!req || linking.value) return;
+  if (!req || !stillShowing(req) || linking.value) return;
   linking.value = path;
   try {
     await setDesktopProjectLink(req.projectId, path);
-    finish(path);
+    if (request.value === req) finish(path);
   } catch (error) {
     toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
   } finally {
@@ -97,15 +103,17 @@ async function link(path: string) {
 
 /** Pick a folder in the native picker, then link it when it fits, or show what does not match. */
 async function browse() {
-  if (!request.value || picking.value) return;
+  const req = request.value;
+  if (!req || loading.value || picking.value) return;
   picking.value = true;
   try {
     const path = await pickDesktopFolder({
       title: `Choose the folder of ${label.value} that holds playwright.config.ts`,
       start: current.value?.exists ? current.value.path : null,
     });
-    if (!path) return;
+    if (!path || !stillShowing(req)) return;
     const result = await checkDesktopProjectFolder(path, specs.value, repositoryUrl.value);
+    if (!stillShowing(req)) return;
     // A shell that cannot check links what was picked.
     if (!result || (result.fits && result.sameRepository !== false)) {
       await link(path);
@@ -131,7 +139,12 @@ const browsePrimary = computed(() => offered.value.length === 0);
 </script>
 
 <template>
-  <UModal v-model:open="modalOpen" :title="`Link ${label} to its folder`" :ui="{ content: 'max-w-2xl' }">
+  <!-- Mounted in the layout, its layer precedes a dialog it opens from (the run dialog): it stacks above it. -->
+  <UModal
+    v-model:open="modalOpen"
+    :title="`Link ${label} to its folder`"
+    :ui="{ overlay: 'z-[60]', content: 'z-[60] max-w-2xl' }"
+  >
     <template #body>
       <div class="space-y-4" data-shot="desktop-link-folder">
         <div class="space-y-1.5">
@@ -234,12 +247,13 @@ const browsePrimary = computed(() => offered.value.length === 0);
 
     <template #footer>
       <div class="flex justify-end gap-2 w-full">
-        <UButton color="neutral" variant="ghost" @click="finish(null)">Cancel</UButton>
+        <UButton color="neutral" variant="ghost" :disabled="!!linking" @click="finish(null)">Cancel</UButton>
         <UButton
           icon="i-lucide-folder-open"
           :color="browsePrimary ? 'primary' : 'neutral'"
           :variant="browsePrimary ? 'solid' : 'outline'"
           :loading="picking"
+          :disabled="loading"
           @click="browse"
         >
           {{ check ? 'Choose another folder…' : 'Choose folder…' }}

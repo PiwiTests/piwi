@@ -1035,7 +1035,11 @@ fn resolve_repo(
     }
     let git = resolve_tool(app, "git").ok_or("git was not found — install it and try again")?;
     if !folder.join(".git").exists() {
-        return Err("the linked folder is not a git repository".into());
+        return Err(
+            "the linked folder is not the root of a git repository: a reproduction, a bisect and the lab check out the \
+             repository and run Playwright at its root, so they need a repository whose Playwright config is at its root"
+                .into(),
+        );
     }
     Ok((record, folder, git))
 }

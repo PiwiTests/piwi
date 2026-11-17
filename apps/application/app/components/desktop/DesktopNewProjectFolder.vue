@@ -49,12 +49,15 @@ function clear() {
 watch(
   folder,
   async (path) => {
-    inspection.value = path ? await inspectDesktopFolder(path) : null;
-    alternatives.value =
-      path && inspection.value?.exists && !inspection.value.playwrightConfig
-        ? ((await checkDesktopProjectFolder(path, [], null))?.alternatives ?? [])
-        : [];
-    if (inspection.value) emit('detected', inspection.value);
+    alternatives.value = [];
+    const inspected = path ? await inspectDesktopFolder(path) : null;
+    if (folder.value !== path) return;
+    inspection.value = inspected;
+    if (!inspected) return;
+    emit('detected', inspected);
+    if (!path || !inspected.exists || inspected.playwrightConfig) return;
+    const found = (await checkDesktopProjectFolder(path, [], null))?.alternatives ?? [];
+    if (folder.value === path) alternatives.value = found;
   },
   { immediate: true },
 );

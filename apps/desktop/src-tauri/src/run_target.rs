@@ -707,7 +707,11 @@ pub async fn desktop_link_request_folder(
         return Err("invalid project id".into());
     }
     let instance = connected_instance(&app).ok_or("no team instance is connected")?;
-    let start = crate::runner::pick_start_near(links_of(&app, &instance).into_values().map(PathBuf::from))
+    let linked: Vec<PathBuf> = links_of(&app, &instance).into_values().map(PathBuf::from).collect();
+    let start = tauri::async_runtime::spawn_blocking(move || crate::runner::pick_start_near(linked))
+        .await
+        .ok()
+        .flatten()
         .map(|p| p.to_string_lossy().into_owned());
     let Some(picked) =
         crate::runner::desktop_pick_folder(app.clone(), Some(REQUEST_PICKER_TITLE.into()), start).await

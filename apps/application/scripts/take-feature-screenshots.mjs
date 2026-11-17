@@ -10680,8 +10680,19 @@ const SCENES = [
     tags: ['desktop'],
     mode: 'desktop',
     link: null,
-    inspection: { ...READY_INSPECTION, playwrightConfig: null, playwrightInstalled: false, reporterInstalled: false },
-    folderCheck: MONOREPO_ROOT_CHECK,
+    inspection: {
+      ...READY_INSPECTION,
+      playwrightConfig: null,
+      playwrightInstalled: false,
+      reporterInstalled: false,
+      reporterConfigured: false,
+      configuredProjectName: null,
+    },
+    folderCheck: {
+      ...MONOREPO_ROOT_CHECK,
+      path: READY_INSPECTION.path,
+      alternatives: [{ ...MONOREPO_ROOT_CHECK.alternatives[0], path: `${READY_INSPECTION.path}/e2e` }],
+    },
     route: '/projects',
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'New project' }).click();
@@ -10700,8 +10711,7 @@ const SCENES = [
     link: null,
     folderSuggestions: LINK_FOLDER_SUGGESTIONS,
     route: '/projects/2?tab=settings&section=local-folder',
-    of: '[role="dialog"]',
-    pad: 8,
+    of: '[role="dialog"]:has([data-shot="desktop-link-folder"])',
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Choose folder…' }).click();
       await page.getByTestId('desktop-link-folder-offers').waitFor();
@@ -10717,8 +10727,7 @@ const SCENES = [
     link: null,
     folderCheck: MONOREPO_ROOT_CHECK,
     route: '/projects/2?tab=settings&section=local-folder',
-    of: '[role="dialog"]',
-    pad: 8,
+    of: '[role="dialog"]:has([data-shot="desktop-link-folder"])',
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Choose folder…' }).click();
       const dialog = page.getByRole('dialog');
@@ -10822,6 +10831,7 @@ const SCENES = [
     route: '/projects/2?tab=settings&section=local-folder',
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Choose folder…' }).click();
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('heading', { name: 'Import previous runs' }).waitFor();
       await settle();
