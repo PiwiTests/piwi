@@ -601,7 +601,7 @@ test.describe('Desktop local run', () => {
 
     await expect(dialog.getByText('None of these tests are in the linked folder')).toBeVisible();
     await expect(dialog.getByText('tests/checkout.spec.ts', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('linked to a different checkout')).toBeVisible();
+    await expect(dialog.getByText('linked to another folder than the one these tests come from')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Choose the right folder…' })).toBeVisible();
 
     // A warning, never a block: the config may put specs elsewhere.
