@@ -162,9 +162,14 @@ export async function installRouteRules(page: Page, rules: RouteRule[]): Promise
  * Install the fault interception for one plan item on a page. Requests before the
  * first navigation (seeding) are never touched; the fault is applied to the Nth
  * matching request exactly once, by fetching the real response and fulfilling
- * with the mutation.
+ * with the mutation. `baseURL` is the test's `baseURL` option, whose origin is
+ * the application's.
  */
-export async function installProbeInterception(page: Page, item: ProbePlanItem): Promise<ProbeInterception> {
+export async function installProbeInterception(
+  page: Page,
+  item: ProbePlanItem,
+  baseURL: string | null = null,
+): Promise<ProbeInterception> {
   // Refuse a plan item whose fault is not one this reporter knows how to apply
   // at its level, independently of the server-side planner's allow-list.
   if (!isFaultAllowed(item.level ?? 'client', item.fault)) {
@@ -174,18 +179,15 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
   let applied = false;
   let appliedFault: string | null = null;
   let serverError = false;
-  // The application's own origin, learned on the first main-frame navigation. A
-  // signed probe header is attached only to a request on this origin, so a
-  // request to a third-party host that happens to share the route path never
-  // receives the reporter's HMAC-signed header.
-  let appOrigin: string | null = null;
+  // The application's own origin: the `baseURL`'s, else the first main-frame
+  // navigation's, kept for the whole test. A signed probe header goes only to a
+  // request on this origin, never while it is unknown, so a page that navigates
+  // to another site never hands that site the reporter's signed header.
+  let appOrigin: string | null = baseURL ? originOf(baseURL) : null;
   const probeSecret = process.env[PIWI_PROBE_ENV.secret];
 
   page.on('framenavigated', (frame) => {
-    if (frame === page.mainFrame()) {
-      const origin = originOf(page.url());
-      if (origin) appOrigin = origin;
-    }
+    if (appOrigin === null && frame === page.mainFrame()) appOrigin = originOf(page.url());
   });
 
   const handle = async (route: Route, startedAt: number): Promise<void> => {
@@ -198,7 +200,7 @@ export async function installProbeInterception(page: Page, item: ProbePlanItem):
     // asked for — a request the server ignored or applied differently records
     // inconclusive, never a false gap.
     if (item.level === 'server') {
-      if (!probeSecret || (appOrigin !== null && originOf(request.url()) !== appOrigin)) {
+      if (!probeSecret || appOrigin === null || originOf(request.url()) !== appOrigin) {
         await route.fallback();
         return;
       }

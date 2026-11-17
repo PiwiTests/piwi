@@ -3017,7 +3017,7 @@ function instrumentPage(page: Page): void {
   // registration resolves before the first request in practice.
   const probeSink = currentSink;
   if (probeSink?.probeItem && !probeSink.probeInterception) {
-    void installProbeInterception(page, probeSink.probeItem)
+    void installProbeInterception(page, probeSink.probeItem, probeSink.baseURL)
       .then((interception) => {
         probeSink.probeInterception = interception;
       })
