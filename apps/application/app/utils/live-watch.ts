@@ -66,6 +66,22 @@ export interface LiveWatchEvents {
   focusRefused(focus: LiveWorkerId, status: number | null): void;
 }
 
+/**
+ * A page's watch of a live run, as `useLiveWatch` drives it: `LiveWatch` on an instance, the demo's watch of its
+ * simulated workers in the demo (`app/demo/live-watch.ts`).
+ */
+export interface LiveWatchConnection {
+  /** Show `ask` from now on; nothing wanted closes the watch. */
+  want(ask: LiveWatchAsk): void;
+  /** Ask the worker shown in full for its page's text now. */
+  askText(): void;
+  /** The id the open watch is named by, which the address of a page Inspect shows carries; null while none is open. */
+  readonly id: string | null;
+  /** Open a watch that closed saying why again. */
+  resume(): void;
+  close(): void;
+}
+
 /** How long the watch waits before it opens again after a drop, each try in a row; then it gives up. */
 const RETRY_MS = [1000, 2000, 4000, 8000, 16000];
 /** How long the watch waits before it asks again for a change that failed, each try in a row; then it opens again. */
@@ -144,7 +160,7 @@ export function liveWatchQuery(ask: LiveWatchAsk): URLSearchParams {
   return query;
 }
 
-export class LiveWatch {
+export class LiveWatch implements LiveWatchConnection {
   private ask: LiveWatchAsk = { focus: null, tiles: false, size: null, layers: [], inspect: false };
   /** What the instance shows now, as the watch's stream opened or the last change said. */
   private shown: LiveWatchAsk | null = null;

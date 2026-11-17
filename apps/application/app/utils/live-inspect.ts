@@ -268,6 +268,20 @@ export function teamInspectSource(base: string, runId: number, watchId: string |
   };
 }
 
+/** What the demo's Inspect says: its workers run no browser, and their pages are a recorded trace's. */
+export const DEMO_INSPECT_WORDS: InspectWords = {
+  ...TEAM_INSPECT_WORDS,
+  waiting: 'Waiting for the page at the test’s next call, which the demo plays from a trace of its checkout page.',
+  note: 'The demo runs no browser: these pages are the checkout page as a recorded trace holds it at each call, rendered without its scripts and with the values of its secret fields removed, as the instance renders the pages a worker sends.',
+  calls: 'The calls whose page the demo’s trace holds, the latest last',
+  from: 'the demo’s trace holds',
+};
+
+/** The demo's Inspect of run `runId`, through its watch `watchId` (null while it is not open): pages its service worker serves. */
+export function demoInspectSource(base: string, runId: number, watchId: string | null): InspectSource {
+  return { ...teamInspectSource(base, runId, watchId), words: DEMO_INSPECT_WORDS };
+}
+
 /** What the tray's Inspect says: the desktop app reads the pages from the test's own trace, on this machine. */
 export const DESKTOP_INSPECT_VIEW_WORDS: InspectWords = {
   connecting: 'Waiting for the window’s connection to the runs…',

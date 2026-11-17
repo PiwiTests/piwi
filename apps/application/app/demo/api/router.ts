@@ -148,6 +148,7 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
+import { apiGetDemoLiveSnapshot } from './live-view';
 import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
@@ -1471,6 +1472,16 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
     handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
+  },
+  // The page of a simulated worker at a call, for Inspect: a moment of the committed checkout trace, as the server
+  // serves a live page. The rest of the live view runs in the page (`app/demo/live-watch.ts`).
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/watch\/([^/]+)\/snapshot$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiGetDemoLiveSnapshot(+m[1]!, query ?? new URLSearchParams());
+    },
   },
 
   // Test runs

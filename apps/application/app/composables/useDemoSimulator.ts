@@ -7,6 +7,7 @@ import {
   type SimulationController,
 } from '~/demo/simulator';
 import { holdSimulatorPage } from '~/demo/simulator-instance';
+import { listenToDemoWorkers } from '~/demo/live-watch';
 
 /**
  * Shared state for the demo run simulator (see app/demo/simulator.ts).
@@ -95,6 +96,8 @@ export function useDemoSimulator() {
     try {
       // Other tabs see this page's runs as live only while it holds its lock.
       await holdSimulatorPage();
+      // This page keeps what its simulated workers say from the run's start, for a view of one opened later.
+      listenToDemoWorkers();
       const { runId, status } = await runSimulation(
         scenario,
         {

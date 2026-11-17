@@ -60,8 +60,9 @@ second, whatever the view asks; the dashboard passes one a second of them to a t
 ## In the demo
 
 The live demo runs no browser: **Watch all** on a simulated run shows each running worker's step where its image
-would be, and its stops and **Stuck?** marks. A tile opens no full view there, so no page events, text, filmstrip or
-Inspect.
+would be, and its stops and **Stuck?** marks. A click on a tile opens its worker's panel with no image: the call its
+test is in, with its log, and [Inspect](./live-inspect#in-the-demo) on the checkout page from a recorded trace. Its
+page events, text and filmstrip stay empty.
 
 ## Related
 

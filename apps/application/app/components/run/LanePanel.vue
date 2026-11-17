@@ -29,6 +29,8 @@
  * (saying the run's verdict, `verdict`), the project turns its live view off, as it closes, and after
  * `HIDDEN_CLOSE_MS` in a hidden tab; one the instance refuses says why, and offers to try again. Nothing is kept: the
  * latest image and call log, and the layers of the test shown, are in this page's memory alone, until the view closes.
+ * In the demo, which runs no browser, the watch is the demo's (`app/demo/live-watch.ts`): the simulated workers' call
+ * logs, Inspect's pages from a recorded trace, and in place of the image why none comes.
  */
 import {
   LIVE_VIEW_END_TEXT,
@@ -65,6 +67,7 @@ import {
 } from '~/utils/live-layers';
 import {
   NO_INSPECT_HEARD,
+  demoInspectSource,
   hearInspect,
   inspectEnd,
   nextInspectTest,
@@ -168,9 +171,11 @@ const inspectHeard = shallowRef<InspectHeard>(NO_INSPECT_HEARD);
 const inspectTurn = ref(0);
 /** The test Inspect shows ended, the view waiting for the lane's next: the instance lets its pages go. */
 const inspectTestEnded = ref(false);
-/** Where Inspect reads each page: the instance, through the watch, while it is open. */
-const inspectBase = (useRuntimeConfig().app.baseURL || '/').replace(/\/$/, '');
-const inspectSource = computed(() => teamInspectSource(inspectBase, props.runId, props.live.watchId.value));
+/** Where Inspect reads each page: the instance, through the watch, while it is open; in the demo, its trace's pages. */
+const runtimeConfig = useRuntimeConfig();
+const inspectBase = (runtimeConfig.app.baseURL || '/').replace(/\/$/, '');
+const inspectSourceOf = runtimeConfig.public.demoMode ? demoInspectSource : teamInspectSource;
+const inspectSource = computed(() => inspectSourceOf(inspectBase, props.runId, props.live.watchId.value));
 
 /**
  * Let go of the layers of the test the view showed: the next one's come afresh, but for what Inspect heard of the
@@ -185,6 +190,17 @@ function forgetLayers(next = false): void {
   for (const shot of strip.value) URL.revokeObjectURL(shot.url);
   strip.value = [];
   enlarged.value = null;
+}
+
+/** The lane's next attempt of the test shown began, once the test ended: the view starts it afresh. */
+function nextAttempt(): void {
+  outcome.value = null;
+  testDone = false;
+  log.value = null;
+  lastTarget.value = null;
+  if (zoom.value?.kind === 'element') zoom.value = null;
+  forgetLayers(true);
+  askText();
 }
 
 /** Ask the worker for its page's text now, while the text shows and the view is open. */
@@ -308,15 +324,7 @@ function onMessage(message: LiveViewerMessage): void {
       return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
     }
     // A frame after the test ended is of the lane's next test, of the same title: a retry starts afresh.
-    if (testDone && follows.value) {
-      outcome.value = null;
-      testDone = false;
-      log.value = null;
-      lastTarget.value = null;
-      if (zoom.value?.kind === 'element') zoom.value = null;
-      forgetLayers(true);
-      askText();
-    }
+    if (testDone && follows.value) nextAttempt();
     showImage(message.image);
     call.value = message.call;
     frameAt.value = message.at ?? 0;
@@ -326,6 +334,9 @@ function onMessage(message: LiveViewerMessage): void {
     if (message.test !== null && message.test !== watchedTest.value && !nextTest(message.test)) {
       return end(LIVE_VIEW_END_TEXT['test-ended'], 'test-ended');
     }
+    // A call other than the last one, logged after the test ended, is of the lane's next test of the same title, as
+    // a frame is: a retry with no image starts afresh too.
+    if (testDone && follows.value && message.log.id !== log.value?.id) nextAttempt();
     const before = log.value;
     log.value = message.log;
     logAt.value = Date.now();

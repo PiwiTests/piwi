@@ -1,6 +1,14 @@
 import { liveWorkerKey, type LiveCall, type LiveViewerMessage, type LiveWorkerId } from '@piwitests/core/live-view';
 import type { LaneLayer } from '@piwitests/core/live-layers';
-import { LiveWatch, heldLayers, sameWorker, type LiveWatchState } from '~/utils/live-watch';
+import {
+  LiveWatch,
+  heldLayers,
+  sameWorker,
+  type LiveWatchConnection,
+  type LiveWatchEvents,
+  type LiveWatchState,
+} from '~/utils/live-watch';
+import { DemoLiveWatch, listenToDemoWorkers } from '~/demo/live-watch';
 
 /** A worker's latest image on the run page, as its tile shows it, or why none shows. */
 export interface LiveTile {
@@ -36,10 +44,12 @@ export type LiveFocusEvent =
  * connection.
  * The tiles keep each worker's latest image alone, with when it came, in this page's memory, while Watch all is on,
  * until the worker leaves (`keep`), Watch all goes off, or the watch closes or goes idle. In a tab hidden for
- * `LIVE_HIDDEN_CLOSE_MS`, the tiles are no longer asked for; they are asked again as the tab shows.
+ * `LIVE_HIDDEN_CLOSE_MS`, the tiles are no longer asked for; they are asked again as the tab shows. In the demo, the
+ * watch is the demo's (`DemoLiveWatch`): its simulated workers' call logs and Inspect's pages, with no image.
  */
 export function useLiveWatch(runId: () => number) {
-  const baseURL = useRuntimeConfig().app.baseURL;
+  const config = useRuntimeConfig();
+  const baseURL = config.app.baseURL;
   const tiles = ref(false);
   const focus = shallowRef<LiveWorkerId | null>(null);
   const size = shallowRef<{ width: number; height: number } | null>(null);
@@ -97,39 +107,44 @@ export function useLiveWatch(runId: () => number) {
     images.value = { ...images.value, [key]: tile };
   }
 
-  const live = import.meta.client
-    ? new LiveWatch(`${baseURL.replace(/\/$/, '')}/api/test-runs/${runId()}/live-view/watch`, {
-        message(message) {
-          // A tile is kept while Watch all is on alone: a full view's frames are its worker's tile then too.
-          if ((message.type === 'frame' || message.type === 'refused') && tilesAsked()) keepTile(message);
-          const worker: LiveWorkerId | undefined =
-            message.type === 'hello' || message.worker === undefined
-              ? undefined
-              : {
-                  shard: message.shard ?? null,
-                  worker: message.worker,
-                  ...(message.slot === undefined ? {} : { slot: message.slot }),
-                };
-          if (message.type !== 'hello' && forFocus(worker)) listener!.hear({ kind: 'message', message });
-          // Its full view ended, or the whole watch: the full view shows no more, and tiles show again as asked.
-          if (message.type === 'end' && (worker === undefined || (focus.value && sameWorker(focus.value, worker)))) {
-            focus.value = null;
-          }
-        },
-        state(next) {
-          state.value = next;
-          watchId.value = next.kind === 'open' ? (live?.id ?? null) : null;
-          // Nothing is watched any more: no image of it stays.
-          if (next.kind === 'idle' || next.kind === 'closed') keep([]);
-          listener?.hear({ kind: 'state', state: next });
-        },
-        focusRefused(refused, status) {
-          if (!focus.value || !sameWorker(focus.value, refused)) return;
-          focus.value = null;
-          listener?.hear({ kind: 'refused', status });
-        },
-      })
-    : null;
+  const events: LiveWatchEvents = {
+    message(message) {
+      // A tile is kept while Watch all is on alone: a full view's frames are its worker's tile then too.
+      if ((message.type === 'frame' || message.type === 'refused') && tilesAsked()) keepTile(message);
+      const worker: LiveWorkerId | undefined =
+        message.type === 'hello' || message.worker === undefined
+          ? undefined
+          : {
+              shard: message.shard ?? null,
+              worker: message.worker,
+              ...(message.slot === undefined ? {} : { slot: message.slot }),
+            };
+      if (message.type !== 'hello' && forFocus(worker)) listener!.hear({ kind: 'message', message });
+      // Its full view ended, or the whole watch: the full view shows no more, and tiles show again as asked.
+      if (message.type === 'end' && (worker === undefined || (focus.value && sameWorker(focus.value, worker)))) {
+        focus.value = null;
+      }
+    },
+    state(next) {
+      state.value = next;
+      watchId.value = next.kind === 'open' ? (live?.id ?? null) : null;
+      // Nothing is watched any more: no image of it stays.
+      if (next.kind === 'idle' || next.kind === 'closed') keep([]);
+      listener?.hear({ kind: 'state', state: next });
+    },
+    focusRefused(refused, status) {
+      if (!focus.value || !sameWorker(focus.value, refused)) return;
+      focus.value = null;
+      listener?.hear({ kind: 'refused', status });
+    },
+  };
+  let live: LiveWatchConnection | null = null;
+  if (import.meta.client && config.public.demoMode) {
+    listenToDemoWorkers();
+    live = new DemoLiveWatch(runId(), events);
+  } else if (import.meta.client) {
+    live = new LiveWatch(`${baseURL.replace(/\/$/, '')}/api/test-runs/${runId()}/live-view/watch`, events);
+  }
 
   const asked = () => ({
     focus: focus.value,
