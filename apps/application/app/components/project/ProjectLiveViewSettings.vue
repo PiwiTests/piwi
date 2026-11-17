@@ -109,17 +109,18 @@ async function submit() {
           <dd class="text-highlighted leading-relaxed">
             Small images of the test's page, a few a second, each with the call it was taken at, and the call's log.
             While the panel shows them: the page's events (console and uncaught errors, failed, pending and API
-            requests, the errors the backend logged), its text as roles and names, and a filmstrip of its calls. With
-            Inspect open: the page at each call as a document, with its stylesheets, fonts and images. Only from a CI
-            run or a run its developer shares, and only while someone watches that worker: a run nobody watches sends
-            none of it.
+            requests, the errors and warnings the backend logged), its text as roles and names, and a filmstrip of its
+            calls. With Inspect open: the page at each call as a document, with its stylesheets, fonts and images. Only
+            from a CI run or a run its developer shares, and only while someone watches that worker: a run nobody
+            watches sends none of it.
           </dd>
           <dt class="font-semibold text-highlighted">Who sees it</dt>
           <dd class="text-highlighted leading-relaxed">
             The people who may open the run. It shows what the page shows, as its screenshots and traces do. The worker
-            paints the secret fields and the masked elements over in the images, hides the values of secret fields in
-            the text and in Inspect's pages, and hides credentials in addresses and the call's log. A secret written in
-            the page's own text still shows in the images. A project with masked elements gets no Inspect page.
+            paints the secret fields and the masked elements over in the images, removes the secret fields' values from
+            the text and Inspect's pages and the masked elements from the text, and hides credentials in addresses and
+            in the call's log, typed text too. A secret the page writes as its own text is not masked. A project with
+            masked elements gets no Inspect page.
           </dd>
           <dt class="font-semibold text-highlighted">What is kept</dt>
           <dd class="text-highlighted leading-relaxed">
