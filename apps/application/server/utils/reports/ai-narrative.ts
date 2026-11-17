@@ -17,7 +17,7 @@ import type { ReportBundle } from '#shared/reports/types';
 
 export async function generateReportNarrative(db: DbClient, bundle: ReportBundle): Promise<GeneratedNarrative | null> {
   try {
-    const config = await resolveAiConfig(db);
+    const config = await resolveAiConfig(db, { open: true, roles: ['diagnosis'] });
     const role = config ? resolveAiRole(config, 'diagnosis') : null;
     if (!role) return null;
     const { system, user } = narrativePrompt(bundle);

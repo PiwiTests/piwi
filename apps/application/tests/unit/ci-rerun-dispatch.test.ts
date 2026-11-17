@@ -13,16 +13,21 @@ delete process.env.PIWI_DATABASE_URL;
 
 const dispatched: Array<{ args: string; request: Record<string, unknown>; settings: unknown }> = [];
 let answer: Record<string, unknown> = {};
+/** The options each repository provider was opened with. */
+const opened: Array<Record<string, unknown> | undefined> = [];
 vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: (url: string | null) => (url?.includes('gitlab') ? 'gitlab' : url ? 'github' : null),
-  resolveScmToken: async () => 'token',
-  createScmProvider: async () => ({
-    provider: 'gitlab',
-    dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {
-      dispatched.push({ args, request, settings });
-      return { url: 'https://ci.example/runs', ref: request.ref ?? 'main', ...answer };
-    },
-  }),
+  hasScmCredential: async () => true,
+  createScmProvider: async (_url: string, _db: unknown, _projectId: number, options?: Record<string, unknown>) => {
+    opened.push(options);
+    return {
+      provider: 'gitlab',
+      dispatchRerun: async (settings: unknown, args: string, request: Record<string, unknown>) => {
+        dispatched.push({ args, request, settings });
+        return { url: 'https://ci.example/runs', ref: request.ref ?? 'main', ...answer };
+      },
+    };
+  },
 }));
 
 const {
@@ -37,6 +42,8 @@ const {
 const { matchRerunDispatch, resolveCiRerunSettings, RERUN_CLOCK_SLACK_MS, RERUN_MATCH_WINDOW_MS } =
   await import('#shared/ci-rerun');
 const { ciActionsFromLegacy, pickCiAction } = await import('#shared/ci-actions');
+const { insertCredential, updateCredential } = await import('#shared/handlers/credentials');
+const { sealCredentialSecret } = await import('../../server/utils/credentials');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -47,6 +54,11 @@ const GITLAB = 'https://gitlab.com/acme/shop.git';
 async function seed(remoteUrl: string) {
   db = drizzle(createClient({ url: ':memory:' }), { schema });
   await migrateToLatest(db);
+  // The people the dispatches name, whom the credential log refers to.
+  await db.insert(schema.users).values([
+    { id: 1, username: 'ada', password: '', role: 'member' },
+    { id: 7, username: 'ada7', password: '', role: 'member' },
+  ]);
   await db.insert(schema.projects).values({
     id: 1,
     name: 'shop',
@@ -131,6 +143,34 @@ describe('a CI re-run dispatch', () => {
       files: ['tests/checkout.spec.ts'],
       byName: 'Ada',
     });
+    // The dispatch cannot do without its credential: a refusal stops it, and its log names the action and the user.
+    expect(opened.at(-1)).toMatchObject({ strict: true, credentialId: null, actor: { userId: 7 } });
+    expect(dispatched[0]!.request.actionId).toBeTruthy();
+  });
+
+  test('carries the SCM credential the action names', async () => {
+    await seed(GITHUB);
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'gh',
+              name: 'Dispatch',
+              target: { type: 'github', workflow: 'e2e.yml', ref: 'main', argsInput: 'args', credentialId: 5 },
+              inputs: [],
+              accepts: ['tests'],
+            },
+          ],
+          defaults: { rerun: 'gh' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    expect(opened.at(-1)).toMatchObject({ strict: true, credentialId: 5 });
+    expect(dispatched.at(-1)!.request.actionId).toBe('gh');
   });
 
   test('is unavailable before the click when no affected test has a file path it can name', async () => {
@@ -403,6 +443,7 @@ describe('a CI server dispatch', () => {
   let server: Server;
   let base: string;
   let status = 201;
+  let failure = 'No such job';
   const received: Array<{ method: string; url: string; authorization?: string; body: string }> = [];
 
   beforeAll(async () => {
@@ -412,7 +453,7 @@ describe('a CI server dispatch', () => {
       req.on('end', () => {
         received.push({ method: req.method ?? '', url: req.url ?? '', authorization: req.headers.authorization, body });
         res.writeHead(status, { Location: `${base}queue/item/5/`, 'Content-Type': 'application/json' });
-        res.end(status === 201 ? '' : '{"message":"No such job"}');
+        res.end(status === 201 ? '' : JSON.stringify({ message: failure }));
       });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -424,6 +465,7 @@ describe('a CI server dispatch', () => {
   beforeEach(() => {
     received.length = 0;
     status = 201;
+    failure = 'No such job';
     process.env.PIWI_CI_SERVER_URL = base;
     process.env.PIWI_CI_SERVER_USER = 'piwi-bot';
     process.env.PIWI_CI_SERVER_TOKEN = 'instance-secret';
@@ -434,6 +476,34 @@ describe('a CI server dispatch', () => {
     delete process.env.PIWI_CI_SERVER_USER;
     delete process.env.PIWI_CI_SERVER_TOKEN;
   });
+
+  const uses = () => db.select().from(schema.credentialUses);
+
+  /** A credential shared with the project, its secret sealed for its destination. */
+  async function teamCredential(over: { destination?: string; allowedInputs?: string[] | null } = {}) {
+    const destination = over.destination ?? base;
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    try {
+      return await insertCredential(
+        db as never,
+        {
+          name: 'Team Jenkins',
+          description: null,
+          service: 'ci-server',
+          user: 'team-bot',
+          destination,
+          scope: { allProjects: false, projectIds: [1] },
+          allowedInputs: over.allowedInputs ?? null,
+          customRequests: false,
+          disabled: false,
+        },
+        sealCredentialSecret(destination, 'team-secret'),
+        null,
+      );
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+  }
 
   async function useCiServer(ciServer: Record<string, unknown> | null, enabled = true) {
     await db
@@ -515,21 +585,33 @@ describe('a CI server dispatch', () => {
       tests: 2,
       byName: 'Ada',
     });
+    expect(await uses()).toEqual([
+      expect.objectContaining({
+        credentialName: 'CI server (environment)',
+        feature: 'ci-dispatch',
+        projectId: 1,
+        userId: 7,
+        subjectType: 'ci-action',
+        subjectId: 'rerun-ci-server',
+        destination: `${base}job/polaris/job/e2e/buildWithParameters`,
+        result: 'ok',
+        count: 1,
+      }),
+    ]);
   });
 
   /** An action with a fixed and a choice input on a Jenkins job, the default for re-runs. */
-  async function useStagingAction(extra: Record<string, unknown> = {}) {
+  async function useStagingAction(target: Record<string, unknown> = {}) {
     await db
       .update(schema.projects)
       .set({
-        ...extra,
         ciRerun: {
           enabled: true,
           actions: [
             {
               id: 'staging',
               name: 'Staging',
-              target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' } },
+              target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' }, ...target },
               inputs: [
                 { name: 'TARGET_ENV', kind: 'fixed', value: 'staging' },
                 { name: 'SUITE', kind: 'choice', options: ['smoke', 'full'], default: 'full' },
@@ -571,20 +653,91 @@ describe('a CI server dispatch', () => {
     expect(form.get('PIWI_RERUN_ARGS')).not.toContain('staging');
   });
 
-  test('sends every input on the project’s own token', async () => {
+  test('sends every input on the credential the action names, when it allows them all, and records the use', async () => {
     await seed(GITHUB);
-    process.env.PIWI_SECRET_KEY = 'a-test-key-for-the-ci-server-token';
+    const id = await teamCredential();
+    await useStagingAction({ credentialId: id });
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
     try {
-      const { sealCiServerToken } = await import('../../server/utils/ci-server-dispatch');
-      await useStagingAction({ ciServerToken: sealCiServerToken(base, 'project-secret') });
+      expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({ available: true, hasToken: true });
       expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
     } finally {
       delete process.env.PIWI_SECRET_KEY;
     }
-    expect(received[0]!.authorization).toBe(`Basic ${Buffer.from(':project-secret').toString('base64')}`);
+    expect(received[0]!.authorization).toBe(`Basic ${Buffer.from('team-bot:team-secret').toString('base64')}`);
     const form = new URLSearchParams(received[0]!.body);
     expect(form.get('TARGET_ENV')).toBe('staging');
     expect(form.get('SUITE')).toBe('full');
+    expect(await uses()).toEqual([
+      expect.objectContaining({ credentialId: id, credentialName: 'Team Jenkins', subjectId: 'staging', result: 'ok' }),
+    ]);
+    const [credential] = await db
+      .select({ lastUsedAt: schema.credentials.lastUsedAt })
+      .from(schema.credentials)
+      .where(eq(schema.credentials.id, id));
+    expect(credential!.lastUsedAt).not.toBeNull();
+  });
+
+  test('sends only the inputs the credential the action names lists', async () => {
+    await seed(GITHUB);
+    const id = await teamCredential({ allowedInputs: ['SUITE'] });
+    await useStagingAction({ credentialId: id });
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    try {
+      expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+    const form = new URLSearchParams(received[0]!.body);
+    expect(form.has('TARGET_ENV')).toBe(false);
+    expect(form.get('SUITE')).toBe('full');
+  });
+
+  test('refuses a credential outside its destination: unavailable before the click, and a dispatch sends nothing and records the refusal', async () => {
+    await seed(GITHUB);
+    const id = await teamCredential({ destination: 'https://ci.other.example/' });
+    await useStagingAction({ credentialId: id, baseUrl: base });
+    const availability = await ciRerunAvailability(db as never, 1, 1);
+    expect(availability).toMatchObject({ available: false, hasToken: false });
+    expect(availability.reason).toContain('is sent only under https://ci.other.example/');
+    const cluster = { id: 1, projectId: 1, lastSeenRunId: 1 };
+    await expect(dispatchClusterRerun(db as never, cluster, { id: 7, name: 'Ada' })).rejects.toThrow(
+      'is sent only under https://ci.other.example/',
+    );
+    expect(received).toHaveLength(0);
+    expect(await uses()).toEqual([
+      expect.objectContaining({
+        credentialId: id,
+        userId: 7,
+        result: 'refused',
+        reason: expect.stringContaining('is sent only under'),
+      }),
+    ]);
+  });
+
+  test('refuses a disabled credential, and one no longer shared with the project', async () => {
+    await seed(GITHUB);
+    const id = await teamCredential();
+    await useStagingAction({ credentialId: id });
+    await updateCredential(db as never, id, { disabled: true });
+    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe('The credential "Team Jenkins" is disabled.');
+    await updateCredential(db as never, id, { disabled: false, scope: { allProjects: false, projectIds: [] } });
+    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe(
+      'The credential "Team Jenkins" is not shared with this project.',
+    );
+
+    // A re-run asked for anyway, as a route or the MCP tool asks for it, is refused by the credential and logged.
+    const outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada', apiKeyId: null });
+    expect(outcome).toEqual({
+      ok: false,
+      error: 'unavailable',
+      message: 'The credential "Team Jenkins" is not shared with this project.',
+    });
+    expect(received).toHaveLength(0);
+    const rows = await db.select().from(schema.credentialUses);
+    expect(rows).toEqual([
+      expect.objectContaining({ credentialId: id, feature: 'ci-dispatch', result: 'refused', projectId: 1, userId: 7 }),
+    ]);
   });
 
   test('picks the action of the run’s environment', async () => {
@@ -652,6 +805,26 @@ describe('a CI server dispatch', () => {
     delete process.env.PIWI_CI_SERVER_HOSTS;
   });
 
+  test('fails without the secret when the server’s message repeats it', async () => {
+    await seed(GITHUB);
+    const id = await teamCredential();
+    await useStagingAction({ credentialId: id });
+    status = 401;
+    failure = `Bad credentials team-bot:team-secret (${Buffer.from('team-bot:team-secret').toString('base64')})`;
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    let outcome: Awaited<ReturnType<typeof rerunClusterInCi>>;
+    try {
+      outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' });
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+    expect(outcome).toMatchObject({ ok: false, error: 'dispatch-failed' });
+    const message = outcome.ok ? '' : outcome.message;
+    expect(message).toContain('The CI server answered 401');
+    expect(message).not.toContain('team-secret');
+    expect(message).not.toContain(Buffer.from('team-bot:team-secret').toString('base64'));
+  });
+
   test("fails with the server's status and message", async () => {
     await seed(GITHUB);
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
@@ -661,6 +834,9 @@ describe('a CI server dispatch', () => {
       error: 'dispatch-failed',
       message: 'The CI server answered 404: No such job',
     });
+    expect(await uses()).toEqual([
+      expect.objectContaining({ userId: null, result: 'failed', reason: 'The CI server answered 404' }),
+    ]);
   });
 
   test('re-runs one execution, and the run it starts is matched and linked to its build', async () => {
@@ -727,7 +903,8 @@ describe('an action input a repository host reserves', () => {
   test('is refused by the dispatch itself, which sends nothing, whoever calls it', async () => {
     await seed(GITLAB);
     await use([{ name: 'bitbucket_branch', kind: 'fixed', value: 'x' }], 'gitlab');
-    await expect(dispatchClusterRerun(db as never, { id: 1, projectId: 1, lastSeenRunId: 1 })).rejects.toThrow(
+    const cluster = { id: 1, projectId: 1, lastSeenRunId: 1 };
+    await expect(dispatchClusterRerun(db as never, cluster, { id: null, name: null })).rejects.toThrow(
       /bitbucket_branch/,
     );
     expect(dispatched).toHaveLength(0);

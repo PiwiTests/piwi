@@ -2685,7 +2685,11 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       if (existing?.status === 'completed') return dropNulls({ clusterId: id, ...diagnosisToMcp(existing) });
     }
 
-    const config = await resolveAiConfig(db);
+    const config = await resolveAiConfig(db, {
+      open: true,
+      projectId: cluster.projectId,
+      actor: { userId: ctx.user?.id || null, apiKeyId: ctx.apiKeyId ?? null },
+    });
     if (!config) throw new Error(AI_NOT_CONFIGURED);
     const baseCommit = typeof params.baseCommit === 'string' ? params.baseCommit : undefined;
     const diag = await runClusterDiagnosis(db, cluster, config, { baseCommit });
@@ -2698,6 +2702,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const execution = await checkEntityScope(db, ctx, id, loadExecutionForDiagnosis, 'ai:run');
     if (execution === 'not-found') return null;
     const outcome = await diagnoseExecution(db, execution, {
+      actor: { userId: ctx.user?.id || null, apiKeyId: ctx.apiKeyId ?? null },
       force: params.force === true || params.force === 'true',
       additionalContext:
         typeof params.additionalContext === 'string' && params.additionalContext.trim()
@@ -2955,7 +2960,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const outcome = await rerunClusterInCi(
       db,
       id,
-      { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null },
+      { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null, apiKeyId: ctx.apiKeyId ?? null },
       { actionId: action || undefined },
     );
     if (!outcome.ok) {

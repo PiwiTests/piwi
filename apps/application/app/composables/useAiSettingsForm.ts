@@ -64,7 +64,14 @@ function connectionPart(r: RoleDraft) {
   const temperature = String(r.temperature ?? '').trim();
   return r.reuse
     ? { reuse: r.reuse, model: r.model, temperature }
-    : { provider: r.provider, model: r.model, baseUrl: r.baseUrl, apiKey: r.apiKey, temperature };
+    : {
+        provider: r.provider,
+        model: r.model,
+        baseUrl: r.baseUrl,
+        apiKey: r.apiKey,
+        credentialId: r.credentialId,
+        temperature,
+      };
 }
 
 /**
@@ -143,7 +150,15 @@ export function createAiSettingsForm(
   function connectionKey(role: AiModelRole): string {
     const r = roles[role];
     const src = roles[sourceRole(role)];
-    return [r.reuse, r.model, String(r.temperature ?? ''), src.provider, src.baseUrl, src.apiKey].join('\u0000');
+    return [
+      r.reuse,
+      r.model,
+      String(r.temperature ?? ''),
+      src.provider,
+      src.baseUrl,
+      src.apiKey,
+      String(src.credentialId ?? ''),
+    ].join('\u0000');
   }
 
   /** Env-managed, a feature the environment sets has its own provider and cannot be turned off here. */
@@ -312,7 +327,13 @@ export function createAiSettingsForm(
       const res = await $fetch<{ models: ModelInfo[] }>('/api/settings/ai/models', {
         method: 'POST',
         // role lets the server fall back to the stored key when the form key is blank
-        body: { role, provider: src.provider, baseUrl: src.baseUrl || undefined, apiKey: src.apiKey || undefined },
+        body: {
+          role,
+          provider: src.provider,
+          baseUrl: src.baseUrl || undefined,
+          apiKey: src.apiKey || undefined,
+          credentialId: src.apiKey ? undefined : (src.credentialId ?? undefined),
+        },
       });
       // A list for a connection changed since the request belongs to no one.
       if (connectionKey(role) === key) models[role] = res.models;
@@ -335,6 +356,7 @@ export function createAiSettingsForm(
           role,
           provider: src.provider || undefined,
           apiKey: src.apiKey || undefined,
+          credentialId: src.apiKey ? undefined : (src.credentialId ?? undefined),
           model: r.model || (r.reuse ? src.model : '') || undefined,
           baseUrl: src.baseUrl || undefined,
           // Temperature is per-role (not inherited through reuse), so read it off `r`.
@@ -440,6 +462,8 @@ export function createAiSettingsForm(
       // The connections just saved are the ones tested: their results stay once the typed keys are cleared.
       const tested = { ...tests };
       await refresh();
+      // A typed key just became a credential the other roles may pick.
+      await refreshNuxtData('ai-credentials');
       load();
       await nextTick();
       Object.assign(tests, tested);

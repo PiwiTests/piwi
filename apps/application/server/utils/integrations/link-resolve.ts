@@ -1,7 +1,7 @@
 import { detectProvider, extractKey, type LinkProvider } from '#shared/link-detect';
 import type { IntegrationProviderName } from '#shared/integrations/registry';
 import type { DbClient } from '../../database';
-import { ensureEnvManagedConnections, getConnectionRow, trackerForRow } from './connections';
+import { ensureEnvManagedConnections, getConnectionRow, parseConnectionIssueUrl } from './connections';
 
 /** How a URL resolved: its provider, the connection that recognized it, its key. */
 export interface ResolvedLink {
@@ -27,7 +27,7 @@ export async function detectProviderWithConnection(
   if (projectConnectionId != null) {
     await ensureEnvManagedConnections(db);
     const row = await getConnectionRow(db, projectConnectionId);
-    const match = row ? trackerForRow(row)?.parseIssueUrl(url) : null;
+    const match = row ? parseConnectionIssueUrl(row, url) : null;
     if (row && match) {
       return {
         provider: row.provider as IntegrationProviderName as LinkProvider,

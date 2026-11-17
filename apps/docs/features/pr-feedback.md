@@ -87,7 +87,7 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 
 - **`PIWI_SITE_URL`** set on the dashboard. Every link in the comment is built from it; without it nothing is posted,
   because a comment full of unreachable links is worse than no comment.
-- **An SCM token with write access** to the repository, set instance-wide or per project: `repo` on GitHub, `api` on
+- **An SCM credential with write access** to the repository, set instance-wide or per project: `repo` on GitHub, `api` on
   GitLab, `repository` and `pullrequest` on Bitbucket. [Source control](/guide/source-control) explains where to set
   it and what else uses it.
 - **Branch and commit metadata on the run**, which the reporter [detects automatically](/guide/ci#what-gets-detected).
@@ -107,7 +107,7 @@ Turn it on in **Settings → Pull requests** (off by default). It needs:
 
 - [CI & sharding](/guide/ci): run the reporter in CI
 - [CI merge gate](./merge-gate): fail a CI job on the run's analysis
-- [Source control](/guide/source-control): the SCM token and its scopes
+- [Source control](/guide/source-control): the SCM credential and its scopes
 - [Auto-heal PRs](./auto-heal): the pull request Piwi opens itself
 - [Failure clusters](./failure-clusters): the clusters the comment reports
 - [Re-run in CI](./ci-rerun): re-run a cluster's tests from the dashboard

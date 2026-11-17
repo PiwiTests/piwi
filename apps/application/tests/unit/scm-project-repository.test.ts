@@ -19,7 +19,7 @@ const { BitbucketProvider } = await import('../../server/utils/scm/BitbucketProv
 const { INVALID_REPOSITORY_URL, updateProject } = await import('../../shared/handlers/projects');
 const { PROBE_RUN_METADATA_KEY } = await import('../../shared/run-eligibility');
 const { createUnfurlProvider } = await import('../../server/utils/unfurl');
-const { encryptSecret, getEncryptionKey } = await import('../../server/utils/crypto');
+const { sealCredentialSecret } = await import('../../server/utils/credentials');
 const { detectProvider, extractKey } = await import('../../shared/link-detect');
 
 const migrationsFolder = fileURLToPath(new URL('../../server/database/migrations', import.meta.url));
@@ -123,7 +123,7 @@ describe('the pinned repository', () => {
     );
   });
 
-  test('a link reads a repository with the instance token only when a readable project pins it', async () => {
+  test('a link reads a repository with the instance credential only when a readable project pins it', async () => {
     expect(await isRepositoryPinnedInScope(db as never, 'all', 'https://github.com/acme/shop')).toBe(true);
     expect(await isRepositoryPinnedInScope(db as never, new Set([1]), 'git@github.com:acme/shop.git')).toBe(true);
     expect(await isRepositoryPinnedInScope(db as never, new Set([2]), 'https://github.com/acme/shop')).toBe(false);
@@ -131,14 +131,23 @@ describe('the pinned repository', () => {
     expect(await isRepositoryPinnedInScope(db as never, 'all', 'https://github.com/acme/payments-private')).toBe(false);
   });
 
-  test('a link is unfurled with the instance token only for a repository a readable project pins', async () => {
+  test('a link is unfurled with the instance credential only for a repository a readable project pins', async () => {
     vi.stubEnv('PIWI_SECRET_KEY', 'project-repository-test-secret-0123456789');
     const fetchMock = vi.fn(async () => new Response(JSON.stringify({ title: 'PR', state: 'open' })));
     vi.stubGlobal('fetch', fetchMock);
     try {
-      await db
-        .insert(schema.appSettings)
-        .values({ key: 'scm_token', value: { value: encryptSecret('ghp_instance', getEncryptionKey()) } });
+      const destination = 'https://api.github.com/';
+      const [credential] = await db
+        .insert(schema.credentials)
+        .values({
+          name: 'GitHub',
+          service: 'scm',
+          destination,
+          secret: sealCredentialSecret(destination, 'ghp_instance'),
+          allProjects: true,
+        })
+        .returning({ id: schema.credentials.id });
+      await db.insert(schema.appSettings).values({ key: 'scm_credentials', value: { ids: [credential!.id] } });
       const authorization = async (url: string, readable: 'all' | Set<number>) => {
         fetchMock.mockClear();
         const provider = await createUnfurlProvider(url, db as never, readable);

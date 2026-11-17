@@ -46,6 +46,7 @@ export function useSettingsEnvState() {
     'source-control': false,
     'auto-heal': false,
     integrations: false,
+    credentials: false,
     ai: false,
     desktop: false,
     connect: false,

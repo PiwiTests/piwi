@@ -10,13 +10,29 @@ import * as schema from '../../server/database/schema.sqlite';
 import { GitHubProvider } from '../../server/utils/scm/GitHubProvider';
 import { LocalGitProvider, localGitProvider, remoteKey } from '../../server/utils/scm/local-git';
 import { desktopLinkedFolder } from '../../server/utils/desktop-links';
-import { encryptSecret, getEncryptionKey } from '../../server/utils/crypto';
 import { migrateToLatest } from './temp-db';
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set,
 // so clear it before the SCM index (which imports the barrel) loads.
 delete process.env.PIWI_DATABASE_URL;
 const { createScmProvider } = await import('../../server/utils/scm');
+const { sealCredentialSecret } = await import('../../server/utils/credentials');
+
+/** Name an SCM credential, shared with all projects and sent to `destination`, as the project's. */
+async function nameScmCredential(db: ReturnType<typeof drizzle<typeof schema>>, destination: string) {
+  vi.stubEnv('PIWI_SECRET_KEY', 'local-git-test-secret-key-0123456789abcdef');
+  const [row] = await db
+    .insert(schema.credentials)
+    .values({
+      name: `GitHub ${Math.random()}`,
+      service: 'scm',
+      destination,
+      secret: sealCredentialSecret(destination, 'ghp_test'),
+      allProjects: true,
+    })
+    .returning({ id: schema.credentials.id });
+  await db.update(schema.projects).set({ scmCredentialId: row!.id }).where(eq(schema.projects.id, PROJECT_ID));
+}
 const { getSourceAtBlob, clearSourceAtBlobCache } = await import('../../server/utils/source-at-blob');
 
 const REPO_URL = 'https://github.com/acme/shop';
@@ -364,12 +380,8 @@ describe('createScmProvider on the desktop app', () => {
     expect(await createScmProvider(REPO_URL, db, PROJECT_ID)).toBeInstanceOf(LocalGitProvider);
   });
 
-  test('keeps the host when a token is set', async () => {
-    vi.stubEnv('PIWI_SECRET_KEY', 'local-git-test-secret-key-0123456789abcdef');
-    await db
-      .update(schema.projects)
-      .set({ scmToken: encryptSecret('ghp_test', getEncryptionKey()) })
-      .where(eq(schema.projects.id, PROJECT_ID));
+  test('keeps the host when a credential is set', async () => {
+    await nameScmCredential(db, 'https://api.github.com/');
     expect(await createScmProvider(REPO_URL, db, PROJECT_ID)).toBeInstanceOf(GitHubProvider);
   });
 
@@ -406,13 +418,9 @@ describe('createScmProvider on the desktop app', () => {
       });
     });
 
-    test('reads the linked clone, with or without a token', async () => {
+    test('reads the linked clone, with or without a credential', async () => {
       expect(await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID)).toBeInstanceOf(LocalGitProvider);
-      vi.stubEnv('PIWI_SECRET_KEY', 'local-git-test-secret-key-0123456789abcdef');
-      await db
-        .update(schema.projects)
-        .set({ scmToken: encryptSecret('token', getEncryptionKey()) })
-        .where(eq(schema.projects.id, PROJECT_ID));
+      await nameScmCredential(db, 'https://api.github.com/');
       const withToken = await createScmProvider(INTERNAL_REMOTE, db, PROJECT_ID);
       expect(withToken).toBeInstanceOf(LocalGitProvider);
       // What the clone lacks is asked of no host: the token goes nowhere.

@@ -76,8 +76,8 @@ the channel, then copy the URL from **Incoming Webhooks**. A Slack-compatible se
 **Bot token.** Piwi posts with the Web API's
 [`chat.postMessage`](https://docs.slack.dev/reference/methods/chat.postMessage). The same link asks for `chat:write`
 and `chat:write.public` instead: install the app, copy the **Bot User OAuth Token** (`xoxb-…`) and the channel's
-**Channel ID**, and invite the app to a private channel first. The token is encrypted at rest and never returned, so it
-needs `PIWI_SECRET_KEY`. A refusal names Slack's error code (`not_in_channel`, `invalid_auth`) with what to do.
+**Channel ID**, and invite the app to a private channel first. The token is encrypted (`PIWI_SECRET_KEY`) and never
+returned; a global channel's is a [credential](/operate/credentials#connections-and-slack-channels). A refusal names Slack's error code (`not_in_channel`, `invalid_auth`) with what to do.
 
 Through either, a delivery Slack rate-limits retries after its `Retry-After`, up to an hour.
 
@@ -103,7 +103,7 @@ The body, its fields and how to verify the signature are in
 
 ### Reaching the person who fixed it
 
-`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider, which for a private repository needs an [SCM token](/guide/source-control) (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly, when the commit's email belongs to a registered Piwi user who can open the project:
+`cluster.fixed` and `cluster.regressed` resolve the fixing commit's author through the SCM provider, which for a private repository needs an [SCM credential](/guide/source-control) (for a regression, the author of the fix that did not hold). On top of the normal subscription routing, the event is then delivered to that person directly, when the commit's email belongs to a registered Piwi user who can open the project:
 
 - **Email**, through the same outbox, when SMTP is configured. The mail goes to that user's account email, never to the raw commit address, so a fix by an outside contributor never becomes a mail to a stranger.
 - **A browser notification** for that user, delivered even when they have no matching subscription.

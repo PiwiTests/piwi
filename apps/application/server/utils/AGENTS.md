@@ -5,16 +5,17 @@ rules a reasonable change would otherwise break. Read [`../../AGENTS.md`](../../
 guide of their own: [`mcp/AGENTS.md`](mcp/AGENTS.md) (MCP tools) and [`assistant/AGENTS.md`](assistant/AGENTS.md) (the
 in-app assistant).
 
-| Touching                                                                         | Section                                             |
-| -------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `server/utils/scm/`, `shared/scm-urls.ts`, any link to a commit or a repository  | [SCM providers](#scm-providers)                     |
-| `shared/error-fingerprint.ts`, failure clusters                                  | [Failure fingerprints](#failure-fingerprints)       |
-| locator snapshots, `locator-healing.ts`, `LocatorHealingPanel.vue`               | [Locator healing](#locator-healing)                 |
-| trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`          | [Trace storage](#trace-storage)                     |
-| `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                     | [DOM snapshot live state](#dom-snapshot-live-state) |
-| `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
-| `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
-| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes      | [Desktop runs](#desktop-runs)                       |
+| Touching                                                                                                                                                                              | Section                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `server/utils/scm/`, `shared/scm-urls.ts`, any link to a commit or a repository                                                                                                       | [SCM providers](#scm-providers)                     |
+| `shared/error-fingerprint.ts`, failure clusters                                                                                                                                       | [Failure fingerprints](#failure-fingerprints)       |
+| locator snapshots, `locator-healing.ts`, `LocatorHealingPanel.vue`                                                                                                                    | [Locator healing](#locator-healing)                 |
+| trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`                                                                                                               | [Trace storage](#trace-storage)                     |
+| `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                                                                                                                          | [DOM snapshot live state](#dom-snapshot-live-state) |
+| `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts`                                                                                                      | [AI CLI providers](#ai-cli-providers)               |
+| `ai-context*.ts`, `integrations/automation.ts`                                                                                                                                        | [Wiring rules](#wiring-rules)                       |
+| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes                                                                                                           | [Desktop runs](#desktop-runs)                       |
+| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token, `ai-credentials.ts`, `integrations/connection-credentials.ts`, `notifications/slack-credentials.ts` | [Credentials](#credentials)                         |
 
 ## SCM providers
 
@@ -286,3 +287,28 @@ runs (`@piwitests/editor/run-host`), plus these:
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
   copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).
+
+## Credentials
+
+- **A credential's secret is opened only by `withCredential`** (`credentials.ts`), which checks the credential's rules
+  (`credentialRefusal`), logs the use and masks the secret in what it keeps: never read `credentials.secret` or select a
+  whole credential row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
+  without the secret and builds it again inside `withCredential`'s `send`, as `ci-server-dispatch.ts` does.
+- **An SCM provider gets a token only from `openScmProvider`** (`scm/index.ts`), which picks the credential
+  (`scmCredentialFor`) and opens it through `withCredential` as one counted read. Every write of `ScmProvider` is a
+  public wrapper of the base class that runs a `do…` hook through `write`, so it is logged and checked again: a new
+  write is a hook behind such a wrapper. Only `LocalGitProvider` overrides a wrapper, to call the hosted provider's
+  (`tests/unit/scm-credentials.test.ts`).
+- **A caller that calls an AI model resolves its configuration with `resolveAiConfig(db, { open: true, actor })`**,
+  which opens each role's key through `openAiKeys` as one counted read; without `open`, a role holds no key and the
+  call goes out with none (`tests/unit/ai-credentials.test.ts`).
+- **A Jira or Zephyr Scale client gets its token only from `openTracker` or `openTestManagement`**
+  (`integrations/connections.ts`), which open the connection's credential as one counted read; each of the clients'
+  writes goes through the credential's `writeGate`, and a POST that only reads is listed in the Jira client's
+  `READ_POSTS` (`tests/unit/connection-credentials.test.ts`).
+- **A Slack channel of the instance sends only with the credential its config names** (`config.credentialId`,
+  `postSlackWithCredential` in `notifications/slack-credentials.ts`), one log row per message; a personal channel keeps
+  its own token, since its owner holds no right on the instance's credentials (`tests/unit/slack-credentials.test.ts`).
+- **A Project admin changes only a credential they created** (`canManageCredential`): an administrator's credential
+  shared with their project is picked, never loosened, since allowing a Custom request would reach a CI server's script
+  console with it.

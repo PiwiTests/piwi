@@ -3,6 +3,7 @@ import { requireProjectAccess, requireRouteId } from '../../../../utils/project-
 import { getDatabase } from '../../../../database';
 import { resolveAiConfig } from '../../../../utils/ai-provider';
 import { extractTestFunctionFromCode } from '../../../../utils/ai-function-extract';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -21,7 +22,7 @@ const extractSchema = z.object({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'project ID');
-  await requireProjectAccess(event, id);
+  const user = await requireProjectAccess(event, id);
 
   const body = await readBody(event);
   const validation = extractSchema.safeParse(body);
@@ -30,7 +31,12 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const config = await resolveAiConfig(db);
+  const config = await resolveAiConfig(db, {
+    open: true,
+    roles: ['research', 'diagnosis'],
+    projectId: id,
+    actor: requestCredentialActor(event, user),
+  });
   const role = config?.roles.research ?? config?.roles.diagnosis;
   if (!role) {
     throw apiError({

@@ -3,7 +3,7 @@ import type { DbClient } from '../../database';
 import type { ProjectScope } from '../project-access';
 import type { UnfurlResult } from '../unfurl/UnfurlProvider';
 import { unfurlUrl } from '../unfurl';
-import { createTracker } from './connections';
+import { createTracker, nullWhenRefused } from './connections';
 import type { TrackerStatusCategory } from './types';
 
 /**
@@ -24,7 +24,7 @@ const EMPTY: LinkUnfurlResult = { title: null, statusText: null, statusColor: nu
  * (`projectConnectionId`) and no other. A link on that connection reads its
  * record through the connection's tracker; any other link keeps the generic
  * unfurl path (rich SCM/OpenGraph), which reads a Jira URL only through that
- * same connection, and uses the instance SCM token only for a repository pinned
+ * same connection, and uses the instance SCM credential only for a repository pinned
  * by a project in `readable`, the projects the caller can read.
  */
 export async function unfurlLink(
@@ -34,7 +34,7 @@ export async function unfurlLink(
   projectConnectionId: number | null,
 ): Promise<LinkUnfurlResult> {
   if (link.connectionId != null && link.connectionId === projectConnectionId) {
-    const tracker = await createTracker(db, link.connectionId);
+    const tracker = await nullWhenRefused(createTracker(db, link.connectionId));
     if (!tracker) return EMPTY;
     const idOrKey = link.externalId ?? link.key;
     if (!idOrKey) return EMPTY;

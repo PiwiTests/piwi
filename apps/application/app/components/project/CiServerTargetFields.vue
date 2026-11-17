@@ -1,62 +1,130 @@
 <script setup lang="ts">
 /**
  * The CI server target of a CI action: the preset (Jenkins, or a Custom
- * request), the base URL and credential, the preset's fields, and the request a
- * dispatch would send. The project's CI server token is not set here: it is one
- * field in the CI section, bound to one base URL, and this form only says
- * whether it applies to the request.
+ * request), the credential its requests carry and the base URL, the preset's
+ * fields, and the request a dispatch would send. The credential is picked from
+ * the ones shared with the project (Settings → Credentials), or created here
+ * for it; with none, the instance's is sent under its URL.
  */
 import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
-import {
-  ciServerRequestPreview,
-  ciServerTokenState,
-  customizeCiServerForm,
-  type CiServerFormState,
-} from '~/utils/ci-server-form';
+import type { CredentialOption, CredentialSummary } from '#shared/credentials';
+import type { ApiResponse } from '~~/types/api';
+import { ciServerRequestPreview, customizeCiServerForm, type CiServerFormState } from '~/utils/ci-server-form';
 
 const props = defineProps<{
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
-  hasToken: boolean;
-  /** The base URL the stored token is bound to. */
-  tokenUrl: string | null;
+  /** The project the action belongs to, whose credentials the picker lists. */
+  projectId: number;
   /** The action's inputs as name and value pairs, shown in the request preview. */
   inputs?: [string, string][];
 }>();
 const state = defineModel<CiServerFormState>({ required: true });
+/** Why a save of the project would refuse this target's credential, or null: the editor refuses it first. */
+const problem = defineModel<string | null>('problem', { default: null });
+
+type CredentialsAnswer = ApiResponse<typeof import('~~/server/api/credentials/index.get').default>;
+const {
+  data: listed,
+  refresh,
+  status,
+} = useFetch<CredentialsAnswer>('/api/credentials', {
+  key: `ci-credentials-${props.projectId}`,
+  query: { projectId: props.projectId, service: 'ci-server' },
+  server: false,
+});
+const credentials = computed(() => (listed.value?.credentials ?? []) as CredentialOption[]);
+const chosen = computed(() => credentials.value.find((c) => c.id === state.value.credentialId) ?? null);
+/** Whether the list has answered: until then a named credential is not known to be missing. */
+const listedOk = computed(() => status.value === 'success');
+const canEncrypt = computed(() => listed.value?.canEncrypt ?? true);
+
+/** No credential picked: the instance's, when it sets one. */
+const NONE = -1;
+const credentialItems = computed(() => [
+  { label: props.instanceUrl ? 'The instance credential' : 'No credential', value: NONE },
+  ...credentials.value.map((c) => ({
+    label: c.disabled ? `${c.name} (disabled)` : c.name,
+    value: c.id,
+    description: c.user ? `${c.user} · ${c.destination}` : c.destination,
+  })),
+]);
+const credentialValue = computed({
+  get: () => state.value.credentialId ?? NONE,
+  set: (value: number) => {
+    state.value.credentialId = value === NONE ? null : value;
+  },
+});
 
 const previewOpts = computed(() => ({
   instanceUrl: props.instanceUrl,
-  tokenUrl: props.hasToken ? props.tokenUrl : null,
+  credential: chosen.value,
   inputs: props.inputs,
 }));
 const preview = computed(() => ciServerRequestPreview(state.value, 'rerun', previewOpts.value));
+/** The preview waits for the list when the action names a credential, whose destination may be its base URL. */
+const previewReady = computed(() => listedOk.value || state.value.credentialId === null);
 
-/** The stored token is judged on the re-run request's URL, as the server judges it; else on the base URL. */
-const effectiveBaseUrl = computed(() => normalizeCiServerBaseUrl(state.value.baseUrl) ?? props.instanceUrl);
-const tokenState = computed(() =>
-  props.hasToken ? ciServerTokenState(preview.value.url ?? effectiveBaseUrl.value, props.tokenUrl) : 'none',
-);
-const tokenDescription = computed(() => {
+/** The base URL a request uses when the field is empty: the credential's destination, else the instance's. */
+const fallbackUrl = computed(() => chosen.value?.destination ?? props.instanceUrl);
+
+const credentialDescription = computed(() => {
+  if (state.value.credentialId && !listedOk.value) {
+    return status.value === 'error'
+      ? 'The credentials shared with this project could not be read.'
+      : 'Reading the credentials shared with this project…';
+  }
   const request = preview.value;
   if (request.carriesAuth === false) return 'This request carries no credential: its auth is none.';
-  if (tokenState.value === 'bound') {
-    return `The project’s CI server token (${props.tokenUrl}) is sent with this request. Set it in the CI section.`;
+  const credential = chosen.value;
+  if (state.value.credentialId && !credential) {
+    return 'The credential this action names is not shared with this project any more: pick another one.';
   }
-  if (tokenState.value === 'elsewhere') {
-    return `The project’s CI server token is bound to ${props.tokenUrl}, so a request outside it goes without it. Set it again in the CI section.`;
+  if (credential) {
+    if (credential.disabled) return `“${credential.name}” is disabled: a dispatch is refused until it is enabled.`;
+    if (credential.secretEnvSet === false) {
+      return `“${credential.name}” reads its secret from ${credential.secretEnv}, which is not set on the server: a dispatch is refused.`;
+    }
+    if (request.url && !isUnderBaseUrl(credential.destination, request.url)) {
+      return `“${credential.name}” is sent only under ${credential.destination}, and this request goes elsewhere: a dispatch is refused.`;
+    }
+    if (state.value.preset === 'custom' && !credential.customRequests) {
+      return `“${credential.name}” does not go with a Custom request: a dispatch is refused.`;
+    }
+    return `“${credential.name}” is sent with this request, and each use is logged.`;
   }
-  if (state.value.preset === 'custom') {
-    return 'A Custom request carries the project’s CI server token, set in the CI section, and never the instance token.';
-  }
-  if (!props.instanceUrl) {
-    return 'The instance has no CI server, so no token is sent unless the CI section holds one for this base URL.';
-  }
+  if (state.value.preset === 'custom') return 'A Custom request carries only a credential it names.';
+  if (!props.instanceUrl) return 'The instance has no CI server credential, so this request carries none.';
   if (request.url && !isUnderBaseUrl(props.instanceUrl, request.url)) {
-    return `This request is not under the instance CI server URL (${props.instanceUrl}), so no token is sent unless the CI section holds one for it.`;
+    return `This request is not under the instance CI server URL (${props.instanceUrl}), so it carries no credential.`;
   }
-  return 'The instance token is sent, only under the instance CI server URL. The CI section can hold a project token instead.';
+  return 'The instance credential is sent, only under the instance CI server URL.';
 });
+
+const creating = ref(false);
+watch(
+  [chosen, listedOk, () => state.value.preset, () => state.value.baseUrl, () => state.value.credentialId],
+  () => {
+    const credential = chosen.value;
+    const baseUrl = normalizeCiServerBaseUrl(state.value.baseUrl);
+    if (!state.value.credentialId || !listedOk.value) problem.value = null;
+    else if (!credential) problem.value = 'Pick a credential shared with this project.';
+    else if (baseUrl && !isUnderBaseUrl(credential.destination, baseUrl)) {
+      problem.value = `The base URL is not under ${credential.destination}, where “${credential.name}” is sent: clear it, or pick another credential.`;
+    } else if (state.value.preset === 'custom' && !credential.customRequests) {
+      problem.value = `“${credential.name}” does not go with a Custom request: pick another credential.`;
+    } else problem.value = null;
+  },
+  { immediate: true },
+);
+
+async function created(credential: CredentialSummary) {
+  await refresh();
+  // A credential no longer shared with this project, once its scope was edited in the form, is not picked.
+  if (!credential.scope.allProjects && !credential.scope.projectIds.includes(props.projectId)) return;
+  state.value.credentialId = credential.id;
+  if (normalizeCiServerBaseUrl(state.value.baseUrl) === credential.destination) state.value.baseUrl = '';
+}
 
 function customize() {
   state.value = customizeCiServerForm(state.value);
@@ -65,30 +133,47 @@ function customize() {
 
 <template>
   <div class="space-y-3" data-testid="ci-server-target" data-shot="ci-server-target">
-    <div class="grid gap-2 sm:grid-cols-2">
-      <UFormField label="Base URL" name="ciServerBaseUrl" class="sm:col-span-2">
-        <UInput
-          v-model="state.baseUrl"
-          :placeholder="instanceUrl ?? 'https://jenkins.example.com/'"
-          aria-label="CI server base URL"
-          class="w-full font-mono"
+    <FormFieldGroup label="Credential" help="settings.credentials" data-testid="ci-server-credential">
+      <div class="flex flex-col gap-2 sm:flex-row sm:items-center">
+        <USelect
+          v-model="credentialValue"
+          :items="credentialItems"
+          aria-label="CI server credential"
+          class="w-full sm:max-w-sm"
         />
-        <p v-if="!state.baseUrl.trim()" class="mt-1 text-xs text-muted">
-          {{ instanceUrl ? 'Uses the instance’s CI server.' : 'The instance sets no CI server: enter its URL.' }}
-        </p>
-      </UFormField>
-    </div>
+        <UButton
+          color="neutral"
+          variant="outline"
+          size="sm"
+          icon="i-lucide-key-round"
+          :disabled="!canEncrypt"
+          :title="canEncrypt ? undefined : 'Set PIWI_SECRET_KEY on the server to save a credential'"
+          data-testid="ci-server-credential-new"
+          @click="creating = true"
+        >
+          New credential
+        </UButton>
+      </div>
+      <p class="mt-1 text-xs text-muted" data-testid="ci-server-credential-description">{{ credentialDescription }}</p>
+    </FormFieldGroup>
 
-    <UFormField label="User" name="ciServerUser" class="sm:max-w-sm">
+    <UFormField label="Base URL" name="ciServerBaseUrl">
       <UInput
-        v-model="state.user"
-        placeholder="the user the token belongs to"
-        autocomplete="off"
-        aria-label="CI server user"
+        v-model="state.baseUrl"
+        :placeholder="fallbackUrl ?? 'https://jenkins.example.com/'"
+        aria-label="CI server base URL"
         class="w-full font-mono"
       />
+      <p v-if="!state.baseUrl.trim()" class="mt-1 text-xs text-muted">
+        {{
+          chosen
+            ? 'Uses the credential’s destination.'
+            : instanceUrl
+              ? 'Uses the instance’s CI server.'
+              : 'Enter its URL, or pick a credential.'
+        }}
+      </p>
     </UFormField>
-    <p class="text-xs text-muted">{{ tokenDescription }}</p>
 
     <template v-if="state.preset === 'jenkins'">
       <div class="space-y-2">
@@ -154,8 +239,19 @@ function customize() {
 
     <div class="space-y-1">
       <p class="text-xs text-muted">The request this action sends, with sample values</p>
-      <CodeBlock v-if="preview.text" :code="preview.text" lang="text" />
-      <p v-else class="text-xs text-error">{{ preview.error }}</p>
+      <template v-if="previewReady">
+        <CodeBlock v-if="preview.text" :code="preview.text" lang="text" />
+        <p v-else class="text-xs text-error">{{ preview.error }}</p>
+      </template>
+      <p v-else class="text-xs text-muted">Reading the credential…</p>
     </div>
+
+    <CredentialFormModal
+      v-model:open="creating"
+      :credential="null"
+      service="ci-server"
+      :project-id="projectId"
+      @saved="created"
+    />
   </div>
 </template>

@@ -1269,7 +1269,7 @@ test.describe.serial('Reporter with authentication enabled', () => {
       expect((await triage.json()).message).toBe('Insufficient permissions');
     } finally {
       await loginAs(request, 'admin', 'adminpassword123');
-      await request.delete(`${AUTH_SERVER_URL}/api/integrations/connections/${connectionId}`);
+      await request.delete(`${AUTH_SERVER_URL}/api/integrations/connections/${connectionId}?deleteCredential=true`);
     }
   });
 

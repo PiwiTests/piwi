@@ -17,7 +17,7 @@ import { migrateToLatest } from './temp-db';
 
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: async () => null,
-  resolveScmToken: async () => null,
+  hasScmCredential: async () => false,
   scmProviderForUrl: () => null,
 }));
 // The flaky analysis behind the quarantine candidates, when a test sets it.

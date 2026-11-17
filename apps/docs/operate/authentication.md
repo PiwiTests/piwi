@@ -27,7 +27,7 @@ A Member's rights inside a project come from the **project roles** granted to th
    ```bash
    PIWI_AUTH_ENABLED=true
    PIWI_AUTH_SECRET=your-auth-secret-here  # signs session cookies
-   PIWI_SECRET_KEY=your-secret-key-here    # encrypts stored credentials (AI keys, SCM tokens)
+   PIWI_SECRET_KEY=your-secret-key-here    # encrypts stored secrets (AI keys, credentials)
    ```
 
    Generate a strong random value for each secret (run it twice):

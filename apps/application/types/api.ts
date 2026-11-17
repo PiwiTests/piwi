@@ -436,12 +436,11 @@ export interface ProjectWithTestRuns {
   ownRuns?: TestRunSummary[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
+  /** Whether the project names an SCM credential of its own (`scmCredentialId`). */
   hasScmToken?: boolean;
-  /** Whether a CI server token is stored for the project. */
-  hasCiServerToken?: boolean;
-  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
-  ciServerTokenUrl?: string | null;
-  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  /** The SCM credential the project's repository calls carry; null for the instance's. */
+  scmCredentialId?: number | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
@@ -490,12 +489,11 @@ export interface ProjectDetails {
   label?: string | null;
   description?: string | null;
   diagnosisInstructions?: string | null;
+  /** Whether the project names an SCM credential of its own (`scmCredentialId`). */
   hasScmToken: boolean;
-  /** Whether a CI server token is stored for the project. */
-  hasCiServerToken?: boolean;
-  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
-  ciServerTokenUrl?: string | null;
-  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  /** The SCM credential the project's repository calls carry; null for the instance's. */
+  scmCredentialId?: number | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
   /** The project's CI actions (secrets excluded). */
@@ -1909,7 +1907,15 @@ export type AiModelRole = 'diagnosis' | 'research' | 'embedding' | 'assistant';
 /** A fully-resolved provider config for a single role (server-side; holds the raw key). */
 export interface ResolvedAiRole {
   provider: AiProvider;
+  /**
+   * The key: once `openAiKeys` opened the role's credential for a call, or a key the setting still holds because it
+   * could not be moved to a credential; empty otherwise.
+   */
   apiKey: string;
+  /** The `ai` credential the role's key is in; absent or null for a local CLI or a key not moved to the store. */
+  credentialId?: number | null;
+  /** Why the credential refused to open, which a call with the role throws. */
+  refusal?: string;
   model: string;
   baseUrl: string | null;
   /** OpenAI-compat only: sampling temperature. Omitted from the request when null (provider default applies) — reasoning models (o1/o3/GPT-5-class) reject any explicit value. */
@@ -1927,6 +1933,9 @@ export interface ResolvedAiRole {
 export interface AiConfig {
   provider: AiProvider;
   apiKey: string;
+  /** The diagnosis role's credential, and why it refused to open (see `ResolvedAiRole`). */
+  credentialId?: number | null;
+  refusal?: string;
   model: string;
   baseUrl: string | null;
   temperature: number | null;
@@ -1962,6 +1971,8 @@ export interface AiRoleSettings {
   baseUrl: string | null;
   reuse: AiModelRole | null;
   hasApiKey: boolean;
+  /** The `ai` credential the role's key is in (Settings → Credentials); absent or null when none. */
+  credentialId?: number | null;
   /** OpenAI-compat only: sampling temperature override, or null for the provider default. */
   temperature: number | null;
 }
@@ -1978,14 +1989,17 @@ export interface AiSettings {
     assistant: AiRoleSettings | null;
   };
   autoDiagnose: boolean;
+  /** Whether the instance has an SCM credential: `scmCredentialIds` is not empty. */
   hasScmToken: boolean;
+  /** The instance's SCM credentials, which a project's repository calls carry when the project names none. */
+  scmCredentialIds: number[];
   envManaged: boolean;
   customInstructions: string | null;
   /** The AI response language ("French", "Japanese", …); null keeps English prose. */
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
-  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key cannot be saved. */
   canStoreSecrets: boolean;
   /** True when this server may run the local Claude Code CLI: the desktop app, or `PIWI_CLAUDE_CLI_PATH` set. */
   claudeCliAvailable: boolean;
@@ -2006,7 +2020,10 @@ export interface AiRoleConfigInput {
   provider?: string | null;
   model?: string | null;
   baseUrl?: string | null;
+  /** A key typed for the role: it creates the role's credential, or rotates the one it names; null or '' removes the role's. */
   apiKey?: string | null;
+  /** An `ai` credential to name instead (Settings → Credentials); null removes the role's. */
+  credentialId?: number | null;
   reuse?: AiModelRole | null;
   /** OpenAI-compat only: sampling temperature override, or null/omitted for the provider default. */
   temperature?: number | null;
@@ -2019,7 +2036,8 @@ export interface SaveAiSettingsBody {
   roles?: Partial<Record<AiModelRole, AiRoleConfigInput | null>> | null;
   autoDiagnose?: boolean;
   customInstructions?: string | null;
-  scmToken?: string | null;
+  /** The instance's SCM credentials (`credentials.id`, source control, shared with all projects); empty clears them. */
+  scmCredentialIds?: number[] | null;
   /** The instance-wide AI response language; ignored when env-managed. */
   language?: string | null;
 }

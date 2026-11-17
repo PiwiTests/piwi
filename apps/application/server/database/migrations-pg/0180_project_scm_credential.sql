@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "scm_credential_id" integer;

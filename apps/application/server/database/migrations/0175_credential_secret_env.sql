@@ -1,0 +1,1 @@
+ALTER TABLE `credentials` ADD `secret_env` text;

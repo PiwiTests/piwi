@@ -28,6 +28,7 @@ import type {
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef } from './refs';
 import type { CiActionTarget } from '#shared/ci-actions';
+import { scmRepositoryApiUrl } from '#shared/scm-urls';
 
 /** Turn a non-2xx GitLab response into an Error carrying the API's own message. */
 async function gitlabError(res: Response, action: string): Promise<Error> {
@@ -104,6 +105,11 @@ export class GitLabProvider extends ScmProvider {
     token: string | null,
   ) {
     super(token);
+  }
+
+  /** The repository's API URL, which the credential's destination must hold. */
+  get apiUrl(): string {
+    return scmRepositoryApiUrl(this.webUrl)!;
   }
 
   async listBranches(limit = 100): Promise<string[]> {
@@ -482,7 +488,7 @@ export class GitLabProvider extends ScmProvider {
     return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
   }
 
-  override async postPullRequestComment(
+  protected override async doPostPullRequestComment(
     prNumber: number,
     marker: string,
     body: string,
@@ -519,7 +525,7 @@ export class GitLabProvider extends ScmProvider {
     }
   }
 
-  override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
+  protected override async doPostCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
     if (!this.token || !isValidGitRef(sha)) return false;
     try {
       // GitLab has no `error` state; it splits GitHub's `failure` into
@@ -558,7 +564,7 @@ export class GitLabProvider extends ScmProvider {
     return data.commit?.id ?? null;
   }
 
-  override async createBranch(name: string, fromSha: string): Promise<void> {
+  protected override async doCreateBranch(name: string, fromSha: string): Promise<void> {
     const url = new URL(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/repository/branches`);
     url.searchParams.set('branch', name);
     url.searchParams.set('ref', fromSha);
@@ -570,7 +576,7 @@ export class GitLabProvider extends ScmProvider {
     if (!res.ok) throw await gitlabError(res, 'create branch');
   }
 
-  override async commitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
+  protected override async doCommitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
     const res = await fetch(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/repository/commits`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
@@ -587,7 +593,7 @@ export class GitLabProvider extends ScmProvider {
     return id;
   }
 
-  override async createPullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
+  protected override async doCreatePullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
     // GitLab marks a draft MR by a `Draft:` title prefix.
     const title = input.draft ? `Draft: ${input.title}` : input.title;
     const res = await fetch(`https://${this.hostname}/api/v4/projects/${this.projectPath()}/merge_requests`, {
@@ -612,7 +618,7 @@ export class GitLabProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(
+  protected override async doDispatchRerun(
     target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},

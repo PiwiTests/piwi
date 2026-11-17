@@ -407,6 +407,40 @@ export const SETTINGS_ANCHORS = [
     sample: { route: '/settings/tags' },
   },
 
+  // Credentials
+  {
+    id: 'credentials-page',
+    kind: 'page',
+    pages: ['/settings/credentials'],
+    describes:
+      'Settings → Credentials: the secrets Piwi sends to other services, each saved once and named by the CI actions that use it.',
+    requires: { permission: 'credentials:manage' },
+    doc: 'operate/credentials',
+    sample: { route: '/settings/credentials' },
+  },
+  {
+    id: 'credentials-list',
+    kind: 'field',
+    pages: ['/settings/credentials'],
+    describes:
+      'The credentials: each one’s user, destination, projects and the actions that name it; a row opens its details and log.',
+    requires: { permission: 'credentials:manage' },
+    help: 'settings.credentials',
+    doc: 'operate/credentials',
+    sample: { route: '/settings/credentials' },
+  },
+  {
+    id: 'credentials-log',
+    kind: 'field',
+    pages: ['/settings/credentials'],
+    describes:
+      'The log of every credential, deleted ones included: each use, who started it, for which project and action, and how it ended.',
+    requires: { permission: 'credentials:manage' },
+    help: 'settings.credentials.log',
+    doc: 'operate/credentials#the-log',
+    sample: { route: '/settings/credentials' },
+  },
+
   // Integrations
   {
     id: 'integrations-page',
@@ -602,9 +636,9 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/source-control'],
     describes:
-      'Settings → Source control: the instance-wide SCM token the features that read or write a repository use for a project without its own.',
+      'Settings → Source control: the instance’s SCM credentials, which the features that read or write a repository use for a project without its own.',
     requires: { permission: 'settings:manage' },
-    doc: 'guide/source-control#set-the-token',
+    doc: 'guide/source-control#set-the-credential',
     sample: { route: '/settings/source-control' },
   },
   {
@@ -612,10 +646,10 @@ export const SETTINGS_ANCHORS = [
     kind: 'field',
     pages: ['/settings/source-control'],
     describes:
-      'The SCM token: the GitHub, GitLab or Bitbucket token a project without its own reads its repository with and posts pull-request feedback with.',
+      'The SCM credentials: the GitHub, GitLab or Bitbucket credentials a project without its own reads its repository with and posts pull-request feedback with.',
     requires: { permission: 'settings:manage' },
     help: 'project.scm-token',
-    doc: 'guide/source-control#set-the-token',
+    doc: 'guide/source-control#set-the-credential',
     sample: { route: '/settings/source-control' },
   },
 

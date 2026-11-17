@@ -26,7 +26,8 @@ import { computeRegressionContext } from './regression-context';
 import { clusterSuspectLinesForChanges } from './suspect-lines';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
-import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
+import { readProjectRepositoryUrl } from './scm/project-repository';
 import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
@@ -2491,7 +2492,9 @@ async function scmInvestigationSections(
     scmCov.compareUrl = usable && repositoryUrl ? compareUrl(repositoryUrl, fromSha, toSha) : null;
     scmCov.gitCommand = usable ? `git log --oneline ${fromSha}..${toSha}` : null;
   };
-  scmCov.hasToken = (await resolveScmToken(db, cluster.projectId).catch(() => null)) != null;
+  scmCov.hasToken = await readProjectRepositoryUrl(db, cluster.projectId)
+    .then((repository) => hasScmCredential(db, cluster.projectId, repository))
+    .catch(() => false);
 
   /**
    * Fetch the changes of `fromSha..toSha` and add them: the changed lines the
@@ -3114,7 +3117,7 @@ export async function buildDiagnosisContext(
     const scmError = coverage.scm?.error;
     absentReasons.scmInvestigation = scmError
       ? `SCM diff fetch failed: ${scmError}`
-      : 'no SCM diff available — check repository URL in project settings or configure a SCM token';
+      : 'no SCM diff available — check repository URL in project settings or pick an SCM credential';
   }
   // The capture fixtures were active for this execution when any fixture-produced
   // field is present that was not itself recovered from the trace. The humans'

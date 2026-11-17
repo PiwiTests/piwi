@@ -1,0 +1,1 @@
+ALTER TABLE `integration_connections` ADD `credential_id` integer;

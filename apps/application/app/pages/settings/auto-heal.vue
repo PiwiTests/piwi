@@ -152,7 +152,7 @@ const resetToDefaults = () => persist({ settings: null }, 'Reset to defaults');
         <template #footer>
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs text-muted">
-              Needs an SCM token with write access. Prefer a per-project token to the one in
+              Needs an SCM credential with write access. Prefer a per-project credential to the ones in
               <NuxtLink to="/settings/source-control" :class="SENTENCE_LINK_CLASS">Source control</NuxtLink>, which
               grants write everywhere it reaches.
             </p>

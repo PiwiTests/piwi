@@ -119,6 +119,8 @@ let close: () => Promise<void>;
 beforeAll(async () => {
   ({ db, close } = await openTempDb());
   state.db = db;
+  // The administrator the routes act as owns the credentials a typed token makes.
+  await db.insert(schema.users).values({ id: 1, username: 'admin', password: '', role: InstanceRole.ADMINISTRATOR });
   await db.insert(schema.projects).values({ id: 10, name: 'web' });
 });
 afterAll(async () => {
@@ -152,7 +154,9 @@ describe('creating a Zephyr connection', () => {
     expect(JSON.stringify(connection)).not.toContain(TOKEN);
     expect(JSON.stringify(await list(event()))).not.toContain(TOKEN);
     const [row] = await db.select().from(schema.integrationConnections);
-    expect(row!.credentials).not.toContain(TOKEN);
+    // The token is kept in the connection's credential, never in its row.
+    expect(row!.credentials).toBeNull();
+    expect(row!.credentialId).toEqual(expect.any(Number));
   });
 
   test('ignores a typed baseUrl', async () => {

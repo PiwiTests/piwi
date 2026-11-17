@@ -526,8 +526,7 @@ export async function getProject(
   return {
     ...project,
     effectiveDefaultBranch,
-    hasScmToken: !!project.scmToken,
-    hasCiServerToken: !!project.ciServerToken,
+    hasScmToken: project.scmCredentialId != null,
     ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
     tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
     // Validated per-project capability decisions, so the edit form preselects a
@@ -660,9 +659,8 @@ export async function updateProject(
     description?: string | null;
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
-    scmToken?: string | null;
-    /** The CI server token, already sealed with its base URL; null removes it. */
-    ciServerToken?: string | null;
+    /** The SCM credential the project's repository calls carry (checked by the caller); null for the instance's. */
+    scmCredentialId?: number | null;
     /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
     repositoryUrl?: string | null;
     defaultBranch?: string | null;
@@ -704,8 +702,7 @@ export async function updateProject(
     description,
     diagnosisInstructions,
     aiLanguage,
-    scmToken,
-    ciServerToken,
+    scmCredentialId,
     repositoryUrl,
     defaultBranch,
     openApiUrl,
@@ -762,8 +759,7 @@ export async function updateProject(
         description,
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
-        scmToken: scmToken !== undefined ? scmToken : undefined,
-        ciServerToken,
+        scmCredentialId,
         repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
@@ -825,6 +821,7 @@ export async function updateProject(
     success: true,
     project: {
       ...updatedProjectPublic,
+      hasScmToken: updatedProjectPublic.scmCredentialId != null,
       ciRerun: updatedProjectPublic.ciRerun == null ? null : resolveCiActionsSettings(updatedProjectPublic.ciRerun),
       tags: projectTagRows.map((r: any) => r.tag),
     },

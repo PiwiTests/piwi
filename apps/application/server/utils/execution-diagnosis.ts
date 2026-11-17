@@ -12,6 +12,7 @@ import { hasFailureToDiagnose } from '#shared/ai-diagnosis';
 import { resolveAiConfig, type AiAttachedImage } from './ai-provider';
 import { runExecutionDiagnosis, isDiagnosisRunningForExecution, isDiagnosisStale } from './ai-diagnosis';
 import type { DbClient } from '../database';
+import type { CredentialActor } from './credentials';
 
 /** An execution as its diagnosis reads it: its project, its cluster and whether it failed. */
 export interface ExecutionForDiagnosis {
@@ -29,6 +30,8 @@ export interface ExecutionDiagnosisOptions {
   images?: AiAttachedImage[];
   baseCommit?: string;
   selectedCommitShas?: string[];
+  /** Who asked, for the log of the AI key's use; the instance itself when absent. */
+  actor?: CredentialActor;
 }
 
 export type ExecutionDiagnosisOutcome =
@@ -82,7 +85,7 @@ export async function diagnoseExecution(
     if (existing?.status === 'completed') return { ok: true, diagnosis: existing };
   }
 
-  const config = await resolveAiConfig(db);
+  const config = await resolveAiConfig(db, { open: true, actor: opts.actor, projectId: execution.projectId });
   if (!config) return { ok: false, error: 'not-configured' };
 
   let cluster: FailureCluster | null = null;

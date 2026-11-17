@@ -54,7 +54,7 @@ with the branch it merges into, so every push reports the whole pull request: th
 open on its branch, so a push-triggered workflow reads its pull request too. Any other run is compared with the
 commit of the last passing run. A public repository is read without a token, so
 its uncovered changes and their gaps appear in Piwi, though nothing is posted; a private one needs a
-[token](/guide/source-control#set-the-token). With no diff, nothing appears.
+[SCM credential](/guide/source-control#set-the-credential). With no diff, nothing appears.
 
 ## On the pull request
 

@@ -1,23 +1,42 @@
-import { describe, expect, test } from 'vitest';
-import { prepareCiServerRequest } from '../../server/utils/ci-server-dispatch';
+import { afterEach, describe, expect, test } from 'vitest';
+import { credentialRefusal } from '#shared/credentials';
+import {
+  ciServerBaseUrl,
+  prepareCiServerRequest,
+  type CiServerCredential,
+  type OutgoingCiRequest,
+} from '../../server/utils/ci-server-dispatch';
 import {
   ciServerFormState,
   ciServerPreviewCredential,
   ciServerRequestPreview,
   ciServerTargetFromForm,
-  ciServerTokenState,
   customizeCiServerForm,
+  type CiServerFormCredential,
   type CiServerFormState,
+  type CiServerPreviewCredential,
 } from '~/utils/ci-server-form';
 
 const BASE = 'https://jenkins.example.com/';
+
+/** A credential an action names, as the form lists it. */
+const TEAM: CiServerFormCredential = {
+  id: 4,
+  name: 'Team Jenkins',
+  destination: BASE,
+  customRequests: false,
+  disabled: false,
+};
+
+afterEach(() => {
+  delete process.env.PIWI_CI_SERVER_URL;
+});
 
 function jenkinsForm(overrides: Partial<CiServerFormState> = {}): CiServerFormState {
   const state = ciServerFormState(null);
   return {
     ...state,
     baseUrl: BASE,
-    user: 'piwi-bot',
     rerun: { ...state.rerun, job: 'polaris/e2e', ref: 'main' },
     ...overrides,
   };
@@ -28,7 +47,7 @@ describe('ciServerFormState', () => {
     expect(ciServerFormState(null)).toEqual({
       preset: 'jenkins',
       baseUrl: '',
-      user: '',
+      credentialId: null,
       rerun: { job: '', ref: '', argsParameter: '', dispatchParameter: '' },
       flakeLab: { job: '', ref: '', argsParameter: '', dispatchParameter: '' },
       customRef: '',
@@ -38,12 +57,15 @@ describe('ciServerFormState', () => {
 
   test('a saved Jenkins target opens with its fields', () => {
     const saved = ciServerTargetFromForm(
-      jenkinsForm({ flakeLab: { job: 'polaris/flake-lab', ref: '', argsParameter: '', dispatchParameter: '' } }),
+      jenkinsForm({
+        credentialId: 4,
+        flakeLab: { job: 'polaris/flake-lab', ref: '', argsParameter: '', dispatchParameter: '' },
+      }),
     );
     if (!saved.target) throw new Error(saved.error);
     const state = ciServerFormState(saved.target);
     expect(state.baseUrl).toBe(BASE);
-    expect(state.user).toBe('piwi-bot');
+    expect(state.credentialId).toBe(4);
     expect(state.rerun).toMatchObject({ job: 'polaris/e2e', ref: 'main' });
     expect(state.flakeLab.job).toBe('polaris/flake-lab');
   });
@@ -52,9 +74,14 @@ describe('ciServerFormState', () => {
 describe('ciServerTargetFromForm', () => {
   test('a Jenkins form saves the fields that are filled in', () => {
     const { target } = ciServerTargetFromForm(jenkinsForm());
-    expect(target).toMatchObject({ preset: 'jenkins', baseUrl: BASE, user: 'piwi-bot' });
+    expect(target).toMatchObject({ preset: 'jenkins', baseUrl: BASE });
     expect(target?.rerun).toMatchObject({ job: 'polaris/e2e', ref: 'main' });
+    expect(target?.credentialId).toBeUndefined();
     expect(target?.flakeLab).toBeUndefined();
+  });
+
+  test('saves the credential the action names', () => {
+    expect(ciServerTargetFromForm(jenkinsForm({ credentialId: 4 })).target?.credentialId).toBe(4);
   });
 
   test('an empty base URL saves none, so the instance URL applies', () => {
@@ -94,12 +121,15 @@ describe('ciServerTargetFromForm', () => {
 });
 
 describe('ciServerTargetFromForm with the instance URL', () => {
-  test('a form without a base URL needs the instance to set one', () => {
+  test('a form without a base URL needs a credential or the instance to set one', () => {
     const state = jenkinsForm({ baseUrl: '' });
     expect(ciServerTargetFromForm(state, { instanceUrl: null }).error).toBe(
-      'Set a base URL: the instance has no CI server.',
+      'Set a base URL or pick a credential: the instance has no CI server.',
     );
     expect(ciServerTargetFromForm(state, { instanceUrl: BASE }).target).not.toBeNull();
+    expect(ciServerTargetFromForm({ ...state, credentialId: 4 }, { instanceUrl: null }).target).toMatchObject({
+      credentialId: 4,
+    });
   });
 
   test('a Custom credential header the server cannot set is refused', () => {
@@ -139,11 +169,12 @@ describe('ciServerRequestPreview', () => {
     const preview = ciServerRequestPreview(
       jenkinsForm({ rerun: { job: 'polaris/e2e/{branch}', ref: '', argsParameter: '', dispatchParameter: '' } }),
       'rerun',
-      { instanceUrl: null, branch: 'feature/x', typedToken: true },
+      { instanceUrl: null, branch: 'feature/x', credential: TEAM },
     );
     const lines = preview.text?.split('\n') ?? [];
     expect(lines[0]).toBe('POST https://jenkins.example.com/job/polaris/job/e2e/job/feature%252Fx/buildWithParameters');
-    expect(lines).toContain('Authorization: ••••••••');
+    expect(lines).toContain('Authorization: •••••••• (Team Jenkins)');
+    expect(preview.credential).toBe('credential');
     expect(lines).toContain('Content-Type: application/x-www-form-urlencoded');
     expect(lines.at(-1)).toContain('PIWI_RERUN_ARGS=');
     expect(lines.at(-1)).toContain('PIWI_ORIGIN_REF=0f3a9c2e7b5d4e1a');
@@ -167,6 +198,16 @@ describe('ciServerRequestPreview', () => {
     expect(ciServerRequestPreview(jenkinsForm({ baseUrl: '' }), 'rerun', { instanceUrl: null }).error).toMatch(
       /base URL/,
     );
+  });
+
+  test('uses the destination of the credential the action names when the form names no base URL', () => {
+    const credential = { ...TEAM, destination: 'https://ci.team.example/' };
+    const preview = ciServerRequestPreview(jenkinsForm({ baseUrl: '', credentialId: 4 }), 'rerun', {
+      instanceUrl: 'https://ci.internal.example/',
+      credential,
+    });
+    expect(preview.text?.split('\n')[0]).toBe('POST https://ci.team.example/job/polaris/job/e2e/buildWithParameters');
+    expect(preview.credential).toBe('credential');
   });
 
   test('a Flake Lab preview passes the flake command', () => {
@@ -200,135 +241,189 @@ describe('the preview headers', () => {
     json.rerun.headers = [['content-type', 'application/x-www-form-urlencoded; charset=utf-8']];
     const lines = ciServerRequestPreview({ ...custom, customJson: JSON.stringify(json) }, 'rerun', {
       instanceUrl: null,
-      typedToken: true,
+      credential: { ...TEAM, customRequests: true },
     }).text?.split('\n');
     expect(lines?.slice(1, 4)).toEqual([
       'Accept: application/json',
       'content-type: application/x-www-form-urlencoded; charset=utf-8',
-      'Authorization: ••••••••',
+      'Authorization: •••••••• (Team Jenkins)',
     ]);
   });
 
-  test('carry no credential when none applies, and say when the instance token would', () => {
+  test('carry no credential when none applies, and say when the instance credential would', () => {
     const none = ciServerRequestPreview(jenkinsForm(), 'rerun', { instanceUrl: null }).text ?? '';
     expect(none).not.toContain('Authorization');
     const state = jenkinsForm({ baseUrl: '' });
     const instance = ciServerRequestPreview(state, 'rerun', { instanceUrl: BASE }).text ?? '';
-    expect(instance).toContain('Authorization: •••••••• (the instance token, when it sets one)');
+    expect(instance).toContain('Authorization: •••••••• (the instance credential)');
+  });
+
+  test('carry no credential its rules refuse, and say so', () => {
+    const preview = ciServerRequestPreview(jenkinsForm({ baseUrl: 'https://other.example.com/' }), 'rerun', {
+      instanceUrl: null,
+      credential: TEAM,
+    });
+    expect(preview.credential).toBe('refused');
+    expect(preview.text).not.toContain('Authorization');
   });
 });
 
 describe('ciServerPreviewCredential', () => {
   const URL = `${BASE}job/polaris/job/e2e/buildWithParameters`;
-  const opts = { instanceUrl: null, typedToken: false, tokenUrl: null };
 
-  test('a typed token, or one stored for a URL the request lies under, is the project credential', () => {
-    expect(ciServerPreviewCredential('jenkins', URL, BASE, { ...opts, typedToken: true })).toBe('project');
-    expect(ciServerPreviewCredential('jenkins', URL, BASE, { ...opts, tokenUrl: BASE })).toBe('project');
+  test('is the credential the action names for a request under its destination', () => {
+    expect(ciServerPreviewCredential('jenkins', URL, { instanceUrl: BASE, credential: TEAM })).toBe('credential');
+    const folder = { ...TEAM, destination: `${BASE}job/polaris/` };
+    expect(ciServerPreviewCredential('jenkins', URL, { instanceUrl: null, credential: folder })).toBe('credential');
   });
 
-  test('a preset under the instance URL falls back on the instance token, a Custom request never does', () => {
-    expect(ciServerPreviewCredential('jenkins', URL, BASE, { ...opts, instanceUrl: BASE })).toBe('instance');
-    expect(ciServerPreviewCredential('custom', URL, BASE, { ...opts, instanceUrl: BASE })).toBe('none');
-  });
-
-  test('a token stored for another URL is not sent', () => {
-    expect(ciServerPreviewCredential('jenkins', URL, BASE, { ...opts, tokenUrl: 'https://other.example.com/' })).toBe(
-      'none',
+  test('is refused outside its destination, when it is disabled, and for a Custom request it does not allow', () => {
+    const opts = { instanceUrl: BASE };
+    const elsewhere = { ...TEAM, destination: 'https://other.example.com/' };
+    expect(ciServerPreviewCredential('jenkins', URL, { ...opts, credential: elsewhere })).toBe('refused');
+    const sibling = { ...TEAM, destination: `${BASE}job/polaris-other/` };
+    expect(ciServerPreviewCredential('jenkins', URL, { ...opts, credential: sibling })).toBe('refused');
+    expect(ciServerPreviewCredential('jenkins', URL, { ...opts, credential: { ...TEAM, disabled: true } })).toBe(
+      'refused',
     );
+    expect(ciServerPreviewCredential('custom', URL, { ...opts, credential: TEAM })).toBe('refused');
+    expect(ciServerPreviewCredential('custom', URL, { ...opts, credential: { ...TEAM, customRequests: true } })).toBe(
+      'credential',
+    );
+  });
+
+  test('a preset under the instance URL falls back on the instance credential, a Custom request never does', () => {
+    expect(ciServerPreviewCredential('jenkins', URL, { instanceUrl: BASE })).toBe('instance');
+    expect(ciServerPreviewCredential('custom', URL, { instanceUrl: BASE })).toBe('none');
+  });
+
+  test('is none without a credential, or under another instance URL', () => {
+    expect(ciServerPreviewCredential('jenkins', URL, { instanceUrl: null })).toBe('none');
+    expect(ciServerPreviewCredential('jenkins', URL, { instanceUrl: 'https://other.example.com/' })).toBe('none');
+    expect(ciServerPreviewCredential('jenkins', URL, { instanceUrl: `${BASE}job/qa/`, credential: null })).toBe('none');
   });
 });
 
 describe('the preview and the server send the same credential', () => {
-  const credentials = {
-    instance: { url: `${BASE}job/qa/`, user: 'piwi-bot', token: 'instance-secret' },
-  };
+  /**
+   * What the server sends with a request: none, the instance credential, or
+   * the action's, which `withCredential` refuses as its rules say.
+   */
+  function serverSends(
+    request: OutgoingCiRequest,
+    credential: CiServerFormCredential | null,
+  ): CiServerPreviewCredential {
+    if (!request.credential) return 'none';
+    if (request.credential.source === 'instance') return 'instance';
+    const rules = { ...credential!, allProjects: true, projectIds: [] };
+    return credentialRefusal(rules, { projectId: 1, url: request.url, custom: request.custom })
+      ? 'refused'
+      : 'credential';
+  }
 
   function both(
     state: CiServerFormState,
-    opts: { instanceUrl: string | null; tokenUrl: string | null; typedToken?: boolean },
+    opts: { instanceUrl: string | null; credential?: CiServerFormCredential },
     kind: 'rerun' | 'flakeLab' = 'rerun',
   ) {
-    const preview = ciServerRequestPreview(state, kind, { ...opts, branch: 'main' });
-    const target = ciServerTargetFromForm(state, { instanceUrl: opts.instanceUrl }).target;
+    const credential = opts.credential ?? null;
+    const form = { ...state, credentialId: credential?.id ?? null };
+    const preview = ciServerRequestPreview(form, kind, { ...opts, branch: 'main' });
+    const target = ciServerTargetFromForm(form, { instanceUrl: credential?.destination ?? opts.instanceUrl }).target;
     if (!target || !preview.url) throw new Error('the form did not resolve');
-    const baseUrl = target.baseUrl ?? opts.instanceUrl!;
-    // A typed token is saved with the base URL in effect, as the project update seals it.
-    const tokenUrl = opts.typedToken ? baseUrl : opts.tokenUrl;
-    const server = prepareCiServerRequest({
+    if (opts.instanceUrl) process.env.PIWI_CI_SERVER_URL = opts.instanceUrl;
+    else delete process.env.PIWI_CI_SERVER_URL;
+    // The credential `ciServerCredential` reads: the action's when it names one, else the instance's.
+    const carried: CiServerCredential | null = credential
+      ? {
+          id: credential.id,
+          name: credential.name,
+          url: credential.destination,
+          user: null,
+          allowedInputs: null,
+          source: 'action',
+        }
+      : opts.instanceUrl
+        ? {
+            id: 99,
+            name: 'CI server (environment)',
+            url: opts.instanceUrl,
+            user: 'piwi-bot',
+            allowedInputs: [],
+            source: 'instance',
+          }
+        : null;
+    const baseUrl = ciServerBaseUrl(target, carried);
+    if (!baseUrl) throw new Error('no base URL');
+    const request = prepareCiServerRequest({
       target,
       kind,
       baseUrl,
       values: { args: kind === 'flakeLab' ? 'flake 12' : 'a', dispatchId: 'd', ref: 'main', commit: '' },
-      projectToken: tokenUrl ? { url: tokenUrl, token: 'project-secret' } : null,
-      instanceCredential: opts.instanceUrl ? { ...credentials.instance, url: opts.instanceUrl } : null,
+      credential: carried,
     });
-    return { preview: preview.credential, server: server.credential ?? 'none' };
+    expect(request.url).toBe(preview.url);
+    return { preview: preview.credential, server: serverSends(request, credential) };
   }
 
-  test('with a typed token, which replaces the stored one', () => {
-    expect(
-      both(jenkinsForm(), { instanceUrl: null, tokenUrl: 'https://other.example.com/', typedToken: true }),
-    ).toEqual({
-      preview: 'project',
-      server: 'project',
+  test('with the credential the action names, under its destination', () => {
+    expect(both(jenkinsForm(), { instanceUrl: null, credential: TEAM })).toEqual({
+      preview: 'credential',
+      server: 'credential',
+    });
+    expect(both(jenkinsForm({ baseUrl: '' }), { instanceUrl: null, credential: TEAM })).toEqual({
+      preview: 'credential',
+      server: 'credential',
     });
   });
 
-  test('with a Custom request whose auth is none, or a header', () => {
+  test('with the credential the action names, after the base URL moved off its destination', () => {
+    const moved = jenkinsForm({ baseUrl: 'https://ci.moved.example/' });
+    expect(both(moved, { instanceUrl: BASE, credential: TEAM })).toEqual({ preview: 'refused', server: 'refused' });
+  });
+
+  test('with a disabled credential', () => {
+    expect(both(jenkinsForm(), { instanceUrl: null, credential: { ...TEAM, disabled: true } })).toEqual({
+      preview: 'refused',
+      server: 'refused',
+    });
+  });
+
+  test('with a Custom request whose auth is none, or a header, and a credential that allows one or not', () => {
     const custom = customizeCiServerForm(jenkinsForm());
     const json = JSON.parse(custom.customJson);
     const none = { ...custom, customJson: JSON.stringify({ ...json, auth: 'none' }) };
-    expect(both(none, { instanceUrl: BASE, tokenUrl: BASE })).toEqual({ preview: 'none', server: 'none' });
-    expect(ciServerRequestPreview(none, 'rerun', { instanceUrl: BASE, tokenUrl: BASE }).carriesAuth).toBe(false);
+    expect(both(none, { instanceUrl: BASE, credential: TEAM })).toEqual({ preview: 'none', server: 'none' });
+    expect(ciServerRequestPreview(none, 'rerun', { instanceUrl: BASE, credential: TEAM }).carriesAuth).toBe(false);
     const header = { ...custom, customJson: JSON.stringify({ ...json, auth: { header: 'X-Token' } }) };
-    expect(both(header, { instanceUrl: BASE, tokenUrl: BASE })).toEqual({ preview: 'project', server: 'project' });
-    expect(both(header, { instanceUrl: BASE, tokenUrl: null })).toEqual({ preview: 'none', server: 'none' });
+    expect(both(header, { instanceUrl: BASE, credential: { ...TEAM, customRequests: true } })).toEqual({
+      preview: 'credential',
+      server: 'credential',
+    });
+    expect(both(header, { instanceUrl: BASE, credential: TEAM })).toEqual({ preview: 'refused', server: 'refused' });
+    expect(both(header, { instanceUrl: BASE })).toEqual({ preview: 'none', server: 'none' });
   });
 
-  test('for a Flake Lab job outside the folder a token is bound to', () => {
+  test('for a Flake Lab job outside the folder a credential is bound to', () => {
     const state = jenkinsForm({
       rerun: { job: 'qa/e2e', ref: 'main', argsParameter: '', dispatchParameter: '' },
       flakeLab: { job: 'lab/flake', ref: '', argsParameter: '', dispatchParameter: '' },
     });
-    const opts = { instanceUrl: null, tokenUrl: `${BASE}job/qa/` };
-    expect(both(state, opts)).toEqual({ preview: 'project', server: 'project' });
-    expect(both(state, opts, 'flakeLab')).toEqual({ preview: 'none', server: 'none' });
+    const opts = { instanceUrl: null, credential: { ...TEAM, destination: `${BASE}job/qa/` } };
+    expect(both(state, opts)).toEqual({ preview: 'credential', server: 'credential' });
+    expect(both(state, opts, 'flakeLab')).toEqual({ preview: 'refused', server: 'refused' });
   });
 
-  test('with an instance token bound to a folder, for a job inside it under a root base URL', () => {
+  test('with an instance credential bound to a folder, for a job inside it under a root base URL', () => {
     const state = jenkinsForm({ rerun: { job: 'qa/e2e', ref: 'main', argsParameter: '', dispatchParameter: '' } });
-    const sent = both(state, { instanceUrl: `${BASE}job/qa/`, tokenUrl: null });
-    expect(sent).toEqual({ preview: 'instance', server: 'instance' });
-    const outside = both(jenkinsForm(), { instanceUrl: `${BASE}job/qa/`, tokenUrl: null });
-    expect(outside).toEqual({ preview: 'none', server: 'none' });
+    expect(both(state, { instanceUrl: `${BASE}job/qa/` })).toEqual({ preview: 'instance', server: 'instance' });
+    expect(both(jenkinsForm(), { instanceUrl: `${BASE}job/qa/` })).toEqual({ preview: 'none', server: 'none' });
   });
 
-  test('with a project token bound to a folder, after the base URL moved to the root', () => {
-    const state = jenkinsForm({ rerun: { job: 'qa/e2e', ref: 'main', argsParameter: '', dispatchParameter: '' } });
-    expect(both(state, { instanceUrl: null, tokenUrl: `${BASE}job/qa/` })).toEqual({
-      preview: 'project',
-      server: 'project',
+  test('with no base URL in the form, under the instance URL', () => {
+    expect(both(jenkinsForm({ baseUrl: '' }), { instanceUrl: BASE })).toEqual({
+      preview: 'instance',
+      server: 'instance',
     });
-    expect(both(jenkinsForm(), { instanceUrl: null, tokenUrl: `${BASE}job/qa/` })).toEqual({
-      preview: 'none',
-      server: 'none',
-    });
-  });
-});
-
-describe('ciServerTokenState', () => {
-  test('none without a stored token', () => {
-    expect(ciServerTokenState(BASE, null)).toBe('none');
-  });
-
-  test('bound when the request URL lies under the URL the token was saved with', () => {
-    expect(ciServerTokenState(BASE, BASE)).toBe('bound');
-    expect(ciServerTokenState('https://jenkins.example.com/job/qa/', BASE)).toBe('bound');
-  });
-
-  test('elsewhere when the request URL is off it', () => {
-    expect(ciServerTokenState('https://other.example.com/', BASE)).toBe('elsewhere');
-    expect(ciServerTokenState(null, BASE)).toBe('elsewhere');
   });
 });

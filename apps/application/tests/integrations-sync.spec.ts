@@ -258,7 +258,7 @@ test.describe.serial('Integrations — keep the ticket honest', () => {
   });
 
   test.afterAll(async ({ request }) => {
-    if (connectionId) await request.delete(`/api/integrations/connections/${connectionId}`);
+    if (connectionId) await request.delete(`/api/integrations/connections/${connectionId}?deleteCredential=true`);
     await new Promise<void>((resolve) => mock.server.close(() => resolve()));
   });
 

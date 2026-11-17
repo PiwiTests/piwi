@@ -21,7 +21,6 @@ import {
   ciServerTargetProblem,
   DEFAULT_ARGS_PARAMETER,
   DEFAULT_DISPATCH_PARAMETER,
-  normalizeCiServerBaseUrl,
   resolveCiServerTarget,
   type CiRequestTemplate,
   type CiServerAuth,
@@ -66,13 +65,19 @@ export type CiActionTarget =
       argsInput: string;
       /** The input that receives the dispatch id, sent only when set. */
       dispatchIdInput?: string;
+      /** The SCM credential its dispatch and Check carry (`credentials.id`); absent, the project's. */
+      credentialId?: number;
     }
-  | { type: 'gitlab'; ref: string; argsVariable: string }
-  | { type: 'bitbucket'; pipeline: string; argsVariable: string }
+  | { type: 'gitlab'; ref: string; argsVariable: string; credentialId?: number }
+  | { type: 'bitbucket'; pipeline: string; argsVariable: string; credentialId?: number }
   | {
       type: 'ci-server';
       preset: CiServerPreset;
+      /** Absent, the credential's destination, else the instance's `PIWI_CI_SERVER_URL`. */
       baseUrl?: string;
+      /** The credential its requests carry (`credentials.id`); absent, the instance's, under its URL. */
+      credentialId?: number;
+      /** The user name a project's CI server token pairs with; the startup import moves it to the credential. */
       user?: string;
       /** The preset's fields (Jenkins: `job`, `argsParameter`, `dispatchParameter`, `ref`); Custom keeps only `ref`. */
       fields: Record<string, string>;
@@ -115,6 +120,7 @@ export function ciServerTargetOf(target: Extract<CiActionTarget, { type: 'ci-ser
   return {
     preset: target.preset,
     ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
+    ...(target.credentialId ? { credentialId: target.credentialId } : {}),
     ...(target.user ? { user: target.user } : {}),
     rerun: target.fields,
     ...(target.custom ? { custom: { auth: target.custom.auth, rerun: target.custom.request } } : {}),
@@ -145,10 +151,16 @@ function rawCiServerTarget(target: Record<string, unknown>): Record<string, unkn
   return {
     preset: target.preset,
     baseUrl: target.baseUrl,
+    credentialId: target.credentialId,
     user: target.user,
     rerun: target.fields,
     ...(custom ? { custom: { auth: custom.auth, rerun: custom.request } } : {}),
   };
+}
+
+/** A posted credential id: a positive integer, else absent. */
+function credentialIdOf(raw: unknown): { credentialId?: number } {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? { credentialId: raw } : {};
 }
 
 /** A target from an untrusted payload, or null when it cannot dispatch. */
@@ -160,17 +172,26 @@ function resolveTarget(input: unknown): CiActionTarget | null {
     const argsInput = str(input.argsInput);
     const dispatchIdInput = str(input.dispatchIdInput);
     if (!workflow || !ref || !argsInput) return null;
-    return { type: 'github', workflow, ref, argsInput, ...(dispatchIdInput ? { dispatchIdInput } : {}) };
+    return {
+      type: 'github',
+      workflow,
+      ref,
+      argsInput,
+      ...(dispatchIdInput ? { dispatchIdInput } : {}),
+      ...credentialIdOf(input.credentialId),
+    };
   }
   if (input.type === 'gitlab') {
     const ref = str(input.ref);
     const argsVariable = str(input.argsVariable);
-    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable } : null;
+    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable, ...credentialIdOf(input.credentialId) } : null;
   }
   if (input.type === 'bitbucket') {
     const pipeline = str(input.pipeline);
     const argsVariable = str(input.argsVariable);
-    return pipeline && argsVariable ? { type: 'bitbucket', pipeline, argsVariable } : null;
+    return pipeline && argsVariable
+      ? { type: 'bitbucket', pipeline, argsVariable, ...credentialIdOf(input.credentialId) }
+      : null;
   }
   if (input.type === 'ci-server') {
     const resolved = resolveCiServerTarget(rawCiServerTarget(input));
@@ -179,6 +200,7 @@ function resolveTarget(input: unknown): CiActionTarget | null {
       type: 'ci-server',
       preset: resolved.preset,
       ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+      ...(resolved.credentialId ? { credentialId: resolved.credentialId } : {}),
       ...(resolved.user ? { user: resolved.user } : {}),
       fields: resolved.rerun,
       ...(resolved.custom ? { custom: { auth: resolved.custom.auth, request: resolved.custom.rerun } } : {}),
@@ -618,30 +640,4 @@ export interface CiActionCheckResult {
 /** The input and argument names a dispatch of this action sends, which the target must declare. */
 export function ciActionSentNames(action: CiAction): string[] {
   return [...builtInInputNames(action.target), ...action.inputs.map((i) => i.name)];
-}
-
-/**
- * The one CI server base URL the project's token may be bound to: the URL
- * every CI server action sends under (its own, else the instance's). The token
- * is one value for the project, so it cannot be saved while the actions use
- * more than one URL. With no CI server action it is the instance's URL.
- */
-export function ciServerTokenBinding(
-  settings: CiActionsSettings,
-  instanceUrl: string | null,
-): { url: string; error: null } | { url: null; error: string } {
-  const urls = new Set<string>();
-  for (const action of settings.actions) {
-    if (action.target.type !== 'ci-server') continue;
-    const url = normalizeCiServerBaseUrl(action.target.baseUrl) ?? instanceUrl;
-    if (url) urls.add(url);
-  }
-  if (urls.size > 1) {
-    return {
-      url: null,
-      error: `The CI server actions send to ${urls.size} different base URLs (${[...urls].join(', ')}), and the token is bound to one: give them the same base URL, or save the token while one is in use.`,
-    };
-  }
-  const url = [...urls][0] ?? instanceUrl;
-  return url ? { url, error: null } : { url: null, error: 'Set the CI server base URL before saving its token' };
 }

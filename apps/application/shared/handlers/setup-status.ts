@@ -48,6 +48,7 @@ import { PR_FEEDBACK_KEY } from '#shared/pr-feedback';
 import { AUTO_HEAL_KEY } from '#shared/auto-heal';
 import { compareVersions } from '#shared/piwi-env-vars';
 import { providersOfKind } from '#shared/integrations/registry';
+import { readInstanceScmCredentialIds } from './credentials';
 import {
   CAPABILITIES,
   CAPABILITY_BY_ID,
@@ -213,7 +214,7 @@ const evidenceFoundAt = new WeakMap<object, Map<number | 'instance', Map<SetupCa
 /**
  * Evidence per detection id. With no `projectId` the probes are instance-wide;
  * with one, the project-level detections (fixtures, backend logs, locator
- * healing, green samples, quarantine, markers, the SCM token, and the reporter
+ * healing, green samples, quarantine, markers, the SCM credential, and the reporter
  * and clustering rows) are scoped through the project's runs and cases. The
  * instance-shaped detections (AI, notifications, tags, quality reports) stay instance-wide
  * because they carry no project dimension.
@@ -372,16 +373,17 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
           .where(inArray(integrationConnections.provider, providersOfKind('tracker')))
           .limit(1),
       ),
-    scm: () =>
+    scm: async () =>
+      (await readInstanceScmCredentialIds(db)).length > 0 ||
       exists(
         db,
         scoped
           ? db
               .select({ id: projects.id })
               .from(projects)
-              .where(and(eq(projects.id, pid), isNotNull(projects.scmToken)))
+              .where(and(eq(projects.id, pid), isNotNull(projects.scmCredentialId)))
               .limit(1)
-          : db.select({ id: projects.id }).from(projects).where(isNotNull(projects.scmToken)).limit(1),
+          : db.select({ id: projects.id }).from(projects).where(isNotNull(projects.scmCredentialId)).limit(1),
       ),
     tags: () => exists(db, db.select({ id: tags.id }).from(tags).limit(1)),
     markers: () =>

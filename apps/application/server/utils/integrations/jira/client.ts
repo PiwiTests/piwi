@@ -25,8 +25,12 @@ import { isJiraIconPath, jiraAvatar, jiraIconPath, MAX_ICON_BYTES } from './icon
 import { isTransientImageStatus } from '../../public-image';
 import { IntegrationHttpError, parseRetryAfter } from '../http-error';
 import { createHash } from 'node:crypto';
+import type { CredentialWriteGate } from '../../credentials';
 
 const JIRA_TIMEOUT_MS = 10_000;
+
+/** The requests Jira takes as a POST that only read: they count as reads of the credential, not writes. */
+const READ_POSTS = new Set(['/rest/api/3/issue/bulkfetch', '/rest/api/3/search/jql']);
 
 /** A title as Jira takes a summary: one line, at most {@link TICKET_TITLE_MAX_LENGTH} characters. */
 export function jiraSummary(title: string): string {
@@ -88,6 +92,11 @@ export interface JiraClientConfig {
   cloudId?: string | null;
   /** Request timeout in ms; unfurl passes a shorter budget than the default. */
   timeoutMs?: number;
+  /**
+   * Runs each write (any method but GET, except the POSTs of `READ_POSTS`) inside the check and log row of the
+   * credential its token comes from.
+   */
+  writeGate?: CredentialWriteGate;
 }
 
 interface JiraStatus {
@@ -204,12 +213,18 @@ export class JiraClient implements IssueTracker {
     this.cloudId = config.cloudId ?? scopedCloudIds.get(this.credentialKey()) ?? null;
   }
 
-  static fromCredentials(baseUrl: string, credentials: TrackerCredentials, cloudId?: string | null): JiraClient {
+  static fromCredentials(
+    baseUrl: string,
+    credentials: TrackerCredentials,
+    cloudId?: string | null,
+    writeGate?: CredentialWriteGate,
+  ): JiraClient {
     return new JiraClient({
       baseUrl,
       email: credentials.email,
       apiToken: credentials.apiToken,
       cloudId: cloudId ?? null,
+      writeGate,
     });
   }
 
@@ -235,6 +250,18 @@ export class JiraClient implements IssueTracker {
    * site's cloud id and retry there once; a classic token never takes this path.
    */
   private async apiFetch(path: string, build: () => RequestInit): Promise<Response> {
+    const method = (build().method ?? 'GET').toUpperCase();
+    if (method !== 'GET' && !READ_POSTS.has(path) && this.config.writeGate) {
+      return this.config.writeGate(
+        () => this.sendApi(path, build),
+        (response) => (response.ok ? null : `Jira answered ${response.status}`),
+      );
+    }
+    return this.sendApi(path, build);
+  }
+
+  /** {@link apiFetch} without the gate. */
+  private async sendApi(path: string, build: () => RequestInit): Promise<Response> {
     let response = await fetch(`${this.apiBase()}${path}`, build());
     if (response.status === 401 && !this.cloudId) {
       const key = this.credentialKey();
@@ -587,25 +614,30 @@ export class JiraClient implements IssueTracker {
   }
 
   parseIssueUrl(url: string): { key: string } | null {
-    let parsed: URL;
-    let base: URL;
-    try {
-      parsed = new URL(url);
-      base = new URL(this.baseUrl);
-    } catch {
-      return null;
-    }
-    if (parsed.host !== base.host) return null;
-    // <baseUrl>/browse/KEY-123
-    const browse = /\/browse\/([A-Z][A-Z0-9_]+-\d+)(?:$|[?#/])/i.exec(parsed.pathname);
-    if (browse?.[1]) return { key: browse[1].toUpperCase() };
-    // <baseUrl>/jira/software/c/projects/KEY/…?selectedIssue=KEY-123
-    const selected = parsed.searchParams.get('selectedIssue');
-    if (selected && /^[A-Z][A-Z0-9_]+-\d+$/i.test(selected)) return { key: selected.toUpperCase() };
-    const projectIssue = /\/jira\/software\/c\/projects\/[^/]+\/issues\/([A-Z][A-Z0-9_]+-\d+)/i.exec(parsed.pathname);
-    if (projectIssue?.[1]) return { key: projectIssue[1].toUpperCase() };
+    return parseJiraIssueUrl(this.baseUrl, url);
+  }
+}
+
+/** The issue key a URL on the Jira site at `baseUrl` names, or null for any other URL. */
+export function parseJiraIssueUrl(baseUrl: string, url: string): { key: string } | null {
+  let parsed: URL;
+  let base: URL;
+  try {
+    parsed = new URL(url);
+    base = new URL(baseUrl);
+  } catch {
     return null;
   }
+  if (parsed.host !== base.host) return null;
+  // <baseUrl>/browse/KEY-123
+  const browse = /\/browse\/([A-Z][A-Z0-9_]+-\d+)(?:$|[?#/])/i.exec(parsed.pathname);
+  if (browse?.[1]) return { key: browse[1].toUpperCase() };
+  // <baseUrl>/jira/software/c/projects/KEY/…?selectedIssue=KEY-123
+  const selected = parsed.searchParams.get('selectedIssue');
+  if (selected && /^[A-Z][A-Z0-9_]+-\d+$/i.test(selected)) return { key: selected.toUpperCase() };
+  const projectIssue = /\/jira\/software\/c\/projects\/[^/]+\/issues\/([A-Z][A-Z0-9_]+-\d+)/i.exec(parsed.pathname);
+  if (projectIssue?.[1]) return { key: projectIssue[1].toUpperCase() };
+  return null;
 }
 
 /** Translate a neutral search into JQL: label AND text clauses, ordered by update. */

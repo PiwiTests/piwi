@@ -4,7 +4,6 @@ import {
   ciActionSentNames,
   ciActionsFromLegacy,
   ciActionsProblem,
-  ciServerTokenBinding,
   pickCiAction,
   reservedInputName,
   resolveCiActionsSettings,
@@ -13,19 +12,31 @@ import {
 } from '#shared/ci-actions';
 import { resolveCiRerunSettings } from '#shared/ci-rerun';
 
-const fileAt = vi.hoisted(() => ({ result: null as null | { content: string } | Error, asked: [] as string[][] }));
+const fileAt = vi.hoisted(() => ({
+  result: null as null | { content: string } | Error,
+  asked: [] as string[][],
+  options: [] as Array<Record<string, unknown> | undefined>,
+}));
 vi.mock('../../server/utils/scm/project-repository', () => ({
   readProjectRepositoryUrl: async () => 'https://github.com/acme/shop.git',
 }));
 vi.mock('../../server/utils/scm', () => ({
-  createScmProvider: async () => ({
-    provider: 'github',
-    fetchFileAtRef: async (path: string, ref: string) => {
-      fileAt.asked.push([path, ref]);
-      if (fileAt.result instanceof Error) throw fileAt.result;
-      return fileAt.result;
-    },
-  }),
+  createScmProvider: async (_url: string, _db: unknown, _projectId: number, options?: Record<string, unknown>) => {
+    fileAt.options.push(options);
+    // A credential the action names that its rules refuse: the provider is never built.
+    if (options?.credentialId === 99) {
+      const { CredentialRefusedError } = await import('../../server/utils/credentials');
+      throw new CredentialRefusedError('The credential "Dispatch only" is disabled.');
+    }
+    return {
+      provider: 'github',
+      fetchFileAtRef: async (path: string, ref: string) => {
+        fileAt.asked.push([path, ref]);
+        if (fileAt.result instanceof Error) throw fileAt.result;
+        return fileAt.result;
+      },
+    };
+  },
 }));
 
 const { checkCiAction, workflowDispatchInputs } = await import('../../server/utils/ci-actions');
@@ -376,59 +387,6 @@ describe('reservedInputName', () => {
   });
 });
 
-describe('ciServerTokenBinding', () => {
-  const server = (name: string, baseUrl?: string): CiAction =>
-    jenkins({
-      id: name,
-      name,
-      target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' }, ...(baseUrl ? { baseUrl } : {}) },
-    });
-
-  test('answers an error when two actions use different base URLs', () => {
-    const binding = ciServerTokenBinding(
-      settings([server('A', 'https://a.example.com'), server('B', 'https://b.example.com')]),
-      null,
-    );
-    expect(binding.url).toBeNull();
-    expect(binding.error).toContain('2 different base URLs');
-  });
-
-  test('binds to the one URL every action shares, however it is written', () => {
-    expect(
-      ciServerTokenBinding(
-        settings([server('A', 'https://a.example.com'), server('B', 'https://a.example.com/')]),
-        null,
-      ),
-    ).toEqual({ url: 'https://a.example.com/', error: null });
-  });
-
-  test('counts the instance URL as its own value beside an action URL', () => {
-    const binding = ciServerTokenBinding(
-      settings([server('A', 'https://a.example.com'), server('B')]),
-      'https://instance.example.com',
-    );
-    expect(binding.url).toBeNull();
-    expect(binding.error).toContain('2 different base URLs');
-  });
-
-  test('binds to the instance URL when no action has its own, and asks for a URL when there is none', () => {
-    expect(ciServerTokenBinding(settings([server('A')]), 'https://instance.example.com')).toEqual({
-      url: 'https://instance.example.com',
-      error: null,
-    });
-    expect(ciServerTokenBinding(settings([server('A')]), null).error).toContain('base URL');
-  });
-
-  test('ignores actions that are not CI server actions', () => {
-    expect(
-      ciServerTokenBinding(settings([github(), server('A', 'https://a.example.com')]), 'https://instance.example.com'),
-    ).toEqual({
-      url: 'https://a.example.com/',
-      error: null,
-    });
-  });
-});
-
 describe('pickCiAction', () => {
   const staging = github({ id: 'staging', name: 'Staging', environment: 'staging' });
   const prod = github({ id: 'prod', name: 'Prod', environment: 'production' });
@@ -564,6 +522,7 @@ describe('workflowDispatchInputs', () => {
 
 describe('Check on a GitHub action', () => {
   const db = {} as never;
+  const use = { actor: { userId: null, apiKeyId: null } };
   const WORKFLOW = 'on:\n  workflow_dispatch:\n    inputs:\n      args: {}\n      TARGET_ENV: {}\n';
   beforeEach(() => {
     fileAt.asked.length = 0;
@@ -572,7 +531,7 @@ describe('Check on a GitHub action', () => {
 
   test('passes when the workflow declares every name a dispatch sends, read at the action’s ref', async () => {
     const action = github({ inputs: [{ name: 'TARGET_ENV', kind: 'fixed', value: 'staging' }] });
-    expect(await checkCiAction(db, 1, action)).toMatchObject({ ok: true, missing: [] });
+    expect(await checkCiAction(db, 1, action, use)).toMatchObject({ ok: true, missing: [] });
     expect(fileAt.asked).toEqual([['.github/workflows/e2e.yml', 'main']]);
   });
 
@@ -583,7 +542,7 @@ describe('Check on a GitHub action', () => {
         { name: 'SUITE', kind: 'fixed', value: 'smoke' },
       ],
     });
-    const result = await checkCiAction(db, 1, action);
+    const result = await checkCiAction(db, 1, action, use);
     expect(result.ok).toBe(false);
     expect(result.missing).toEqual(['SUITE']);
     expect(result.message).toContain('does not declare SUITE');
@@ -591,26 +550,40 @@ describe('Check on a GitHub action', () => {
 
   test('fails a workflow with no workflow_dispatch trigger', async () => {
     fileAt.result = { content: 'on: push\n' };
-    expect(await checkCiAction(db, 1, github())).toMatchObject({ ok: false, missing: [] });
+    expect(await checkCiAction(db, 1, github(), use)).toMatchObject({ ok: false, missing: [] });
   });
 
   test('cannot say when the file is unreadable, missing, invalid or named by its id', async () => {
     fileAt.result = new Error('rate limited');
-    expect((await checkCiAction(db, 1, github())).message).toContain('rate limited');
+    expect((await checkCiAction(db, 1, github(), use)).message).toContain('rate limited');
     fileAt.result = null;
-    expect(await checkCiAction(db, 1, github())).toMatchObject({ ok: null });
+    expect(await checkCiAction(db, 1, github(), use)).toMatchObject({ ok: null });
     fileAt.result = { content: 'on: [unclosed' };
-    expect((await checkCiAction(db, 1, github())).message).toContain('not valid YAML');
+    expect((await checkCiAction(db, 1, github(), use)).message).toContain('not valid YAML');
     const byId = github({ target: { type: 'github', workflow: '1234', ref: 'main', argsInput: 'args' } });
-    expect((await checkCiAction(db, 1, byId)).message).toContain('numeric id');
+    expect((await checkCiAction(db, 1, byId, use)).message).toContain('numeric id');
+  });
+
+  test('reads with the credential the action names, and a refusal is its answer', async () => {
+    const named = (credentialId: number) =>
+      github({ target: { type: 'github', workflow: 'e2e.yml', ref: 'main', argsInput: 'args', credentialId } });
+    expect(await checkCiAction(db, 1, named(5), use)).toMatchObject({ ok: true });
+    expect(fileAt.options.at(-1)).toMatchObject({ credentialId: 5, strict: true });
+    expect(await checkCiAction(db, 1, named(99), use)).toMatchObject({
+      ok: null,
+      message: 'The credential "Dispatch only" is disabled.',
+    });
+    // An action that names none reads with the project's, and goes on without it when it is refused.
+    await checkCiAction(db, 1, github(), use);
+    expect(fileAt.options.at(-1)).toMatchObject({ credentialId: null, strict: false });
   });
 
   test('says what cannot be checked on GitLab and Bitbucket', async () => {
-    expect((await checkCiAction(db, 1, gitlab())).message).toContain("GitLab pipelines can't be checked");
+    expect((await checkCiAction(db, 1, gitlab(), use)).message).toContain("GitLab pipelines can't be checked");
     const bitbucket: CiAction = {
       ...gitlab(),
       target: { type: 'bitbucket', pipeline: 'rerun', argsVariable: 'PIWI_RERUN_ARGS' },
     };
-    expect(await checkCiAction(db, 1, bitbucket)).toMatchObject({ ok: null, missing: [] });
+    expect(await checkCiAction(db, 1, bitbucket, use)).toMatchObject({ ok: null, missing: [] });
   });
 });

@@ -64,8 +64,9 @@ test('a Slack channel saved with a bot token shows its channel ID and never retu
     items: Array<{ id: number; name: string; config: Record<string, unknown> }>;
   };
   const channel = items.find((c) => c.name === 'Slack bot channel-form');
-  expect(channel?.config).toEqual({ channelId: 'C0E2E000001' });
-  await request.delete(`/api/channels/${channel!.id}`);
+  // A channel of the instance keeps its token as a credential, named after it.
+  expect(channel?.config).toEqual({ channelId: 'C0E2E000001', credentialId: expect.any(Number) });
+  await request.delete(`/api/channels/${channel!.id}?deleteCredential=true`);
 });
 
 test('creating a Slack channel with a bot token returns it masked', async ({ request }) => {
@@ -76,8 +77,8 @@ test('creating a Slack channel with a bot token returns it masked', async ({ req
   expect(res.ok()).toBe(true);
   expect(await res.text()).not.toContain(token);
   const { channel } = (await res.json()) as { channel: { id: number; config: Record<string, unknown> } };
-  expect(channel.config).toEqual({ channelId: 'C0E2E000002' });
-  await request.delete(`/api/channels/${channel.id}`);
+  expect(channel.config).toEqual({ channelId: 'C0E2E000002', credentialId: expect.any(Number) });
+  await request.delete(`/api/channels/${channel.id}?deleteCredential=true`);
 
   const refused = await request.post('/api/channels', {
     data: { name: 'Slack bot no ID', type: 'slack', config: { token, channelId: 'general' } },

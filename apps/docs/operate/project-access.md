@@ -53,8 +53,9 @@ each endpoint's requirement (`x-required-permission`), so a script author can te
 | Delete runs, release kept runs | `run:delete` | | | | ✓ | |
 
 Only an Administrator holds the **instance permissions**: `users:manage`, `groups:manage`, `settings:manage`,
-`connections:manage`, `storage:manage`, `tags:manage`, `project:create` and `project:delete`. An endpoint any
-signed-in user may call (their profile, API keys, dashboards, channels, subscriptions) declares `signed-in`.
+`connections:manage`, `credentials:manage`, `storage:manage`, `tags:manage`, `project:create` and
+`project:delete`. An endpoint any signed-in user may call (their profile, API keys, dashboards, channels,
+subscriptions) declares `signed-in`.
 
 ## All projects or one project
 

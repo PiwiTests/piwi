@@ -1,9 +1,10 @@
 import { getDatabase } from '../../../database';
 import { requireAuth } from '../../../utils/auth';
-import { resolveAiConfig, storedKeyFor } from '../../../utils/ai-provider';
+import { formAiKey } from '../../../utils/ai-provider';
 import { CLAUDE_CLI_MODELS } from '../../../utils/claude-cli-models';
 import { AI_ROLES } from '../../../utils/ai-settings';
 import type { AiModelRole, ModelInfo } from '~~/types/api';
+import { requestCredentialActor } from '../../../utils/credentials';
 
 /** Convert per-token pricing string to per-million-tokens, keeping larger values as-is. */
 function normalizePricing(v: string | undefined): string | undefined {
@@ -38,18 +39,19 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'List available models from an AI provider',
     description:
-      "Calls the provider's models endpoint to return available models with metadata. Accepts provider, baseUrl, apiKey, and role in the request body; when apiKey is omitted, the saved key for that role (then the diagnosis role) is used, only if provider and baseUrl match the ones it was saved for. Requires `settings:manage` (administrators only).",
+      "Calls the provider's models endpoint to return available models with metadata. Accepts provider, baseUrl, apiKey, credentialId and role in the request body; when apiKey is omitted, the saved AI credential `credentialId` names (checked for the endpoint of the role), else the saved key for that role (then the diagnosis role) is used, only if provider and baseUrl match the ones it was saved for. Requires `settings:manage` (administrators only).",
     'x-required-permission': 'settings:manage',
   },
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
 
   const body = await readBody<{
     provider?: string;
     baseUrl?: string;
     apiKey?: string;
+    credentialId?: number;
     role?: string;
   }>(event).catch(() => null);
 
@@ -69,13 +71,16 @@ export default eventHandler(async (event) => {
   // config must fall back to the stored (decrypted) or env-managed key, but only
   // for the provider and base URL that key was saved for.
   let apiKey = body?.apiKey;
-  if (!apiKey) {
+  if (!apiKey && provider) {
     const role: AiModelRole = AI_ROLES.includes(body?.role as AiModelRole) ? (body!.role as AiModelRole) : 'diagnosis';
-    const resolved = await resolveAiConfig(await getDatabase());
-    apiKey =
-      storedKeyFor(resolved?.roles[role], provider, baseUrl) ||
-      storedKeyFor(resolved?.roles.diagnosis, provider, baseUrl) ||
-      undefined;
+    const { key } = await formAiKey(await getDatabase(), {
+      role,
+      provider,
+      baseUrl,
+      credentialId: body?.credentialId,
+      actor: requestCredentialActor(event, user),
+    });
+    apiKey = key || undefined;
   }
 
   if (provider === 'openai') {

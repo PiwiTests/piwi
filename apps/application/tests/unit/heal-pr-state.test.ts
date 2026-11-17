@@ -20,12 +20,11 @@ const scm = vi.hoisted(() => ({
 
 vi.mock('../../server/utils/scm', () => ({
   createScmProvider: vi.fn(),
-  resolveScmToken: vi.fn(async (_db: unknown, projectId: number) =>
-    projectId in scm.tokens ? scm.tokens[projectId] : 'token',
-  ),
-  scmProviderForUrl: vi.fn((repositoryUrl: string) => {
+  openScmProvider: vi.fn(async (_db: unknown, projectId: number, repositoryUrl: string) => {
     if (repositoryUrl.includes('unsupported')) return null;
+    const token = projectId in scm.tokens ? scm.tokens[projectId] : 'token';
     return {
+      hasToken: token !== null,
       async fetchPullRequest(number: number) {
         scm.lookups.push(number);
         const state = scm.prStates[number] ?? 'open';
@@ -228,7 +227,7 @@ describe('refreshOpenHealActions', () => {
     expect(error).toHaveBeenCalledTimes(1);
   });
 
-  test('skips a project with no SCM token and still refreshes the others', async () => {
+  test('skips a project with no SCM credential and still refreshes the others', async () => {
     scm.tokens[1] = null;
     const untokened = await seedAction({ projectId: 1 });
     const tokened = await seedAction({ projectId: 2 });

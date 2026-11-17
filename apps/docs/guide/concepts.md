@@ -397,6 +397,13 @@ With [authentication](/operate/authentication) on, every account holds an **inst
 on all of them. A **group** is a named set of users that receives project roles the way a user does. See
 [Access, roles and groups](/operate/project-access).
 
+### Credential
+
+**A secret Piwi sends to another service, saved once and named by id wherever it is needed**: a user, the secret, the
+destination (the base URL it may be sent under) and the projects that may use it. A CI server action, source control,
+an AI role, a Jira or Zephyr Scale connection and a Slack channel of the instance name one; every use is checked against
+it and logged. See [Credentials](/operate/credentials).
+
 ## Words kept to one meaning
 
 Some words name two things across the docs, the dashboard and the tools. Each keeps the meaning in the middle column

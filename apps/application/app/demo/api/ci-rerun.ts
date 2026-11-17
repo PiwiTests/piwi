@@ -12,7 +12,6 @@ import {
   ciActionInputValues,
   ciActionsProblem,
   ciServerTargetOf,
-  ciServerTokenBinding,
   pickCiAction,
   resolveCiActionsSettings,
   type CiAction,
@@ -26,8 +25,6 @@ import {
   ciServerRequestTemplate,
   DEFAULT_ARGS_PARAMETER,
   DEFAULT_DISPATCH_PARAMETER,
-  isUnderBaseUrl,
-  normalizeCiServerBaseUrl,
   readCiServerAnswer,
   renderCiRequest,
   type CiServerTarget,
@@ -42,6 +39,8 @@ import {
   recordClusterDispatch,
   rerunFiles,
 } from '#shared/handlers/ci-rerun-target';
+import { ciActionsCredentialProblem, loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
+import { credentialRefusal } from '#shared/credentials';
 import type { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
 
@@ -61,14 +60,21 @@ interface DemoRerunAvailability {
 }
 
 async function projectCiActions(db: DemoDB, projectId: number) {
-  const [row] = await db
-    .select({ ciRerun: projects.ciRerun, ciServerToken: projects.ciServerToken })
-    .from(projects)
-    .where(eq(projects.id, projectId));
-  return {
-    settings: resolveCiActionsSettings(row?.ciRerun ?? null),
-    tokenUrl: demoCiServerTokenUrl(row?.ciServerToken),
-  };
+  const [row] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
+  return { settings: resolveCiActionsSettings(row?.ciRerun ?? null) };
+}
+
+/**
+ * The credential a target names and the base URL it dispatches under (its
+ * own, else the credential's destination), as the server reads them; the demo
+ * has no instance CI server.
+ */
+async function targetCredential(
+  db: DemoDB,
+  target: CiServerTarget,
+): Promise<{ credential: CredentialRecord | null; baseUrl: string | null }> {
+  const credential = target.credentialId ? await loadCredentialRecord(db as never, target.credentialId) : null;
+  return { credential, baseUrl: target.baseUrl ?? credential?.destination ?? null };
 }
 
 /** The action a re-run uses: the demo reaches only CI servers, so a repository host's action is not served. */
@@ -88,17 +94,18 @@ async function runEnvironment(db: DemoDB, runId: number): Promise<string | null>
  */
 function prepare(
   target: CiServerTarget,
+  baseUrl: string | null,
   values: CiTemplateValues,
   inputs: [string, string][],
 ): { link: string; url: string; sendsCredential: boolean } | { error: string } {
   const spec = target ? ciServerRequestTemplate(target, 'rerun') : null;
-  if (!spec || !target.baseUrl) return { error: NO_TARGET };
-  if (!target.baseUrl.startsWith('https:')) {
+  if (!spec || !baseUrl) return { error: NO_TARGET };
+  if (!baseUrl.startsWith('https:')) {
     return { error: CI_SERVER_HTTPS_PROBLEM };
   }
   try {
-    const { url } = renderCiRequest(target.baseUrl, spec.template, values, inputs);
-    const { link } = readCiServerAnswer(target.baseUrl, spec.template, values, { header: () => null, json: null });
+    const { url } = renderCiRequest(baseUrl, spec.template, values, inputs);
+    const { link } = readCiServerAnswer(baseUrl, spec.template, values, { header: () => null, json: null });
     return { link, url, sendsCredential: spec.auth !== 'none' };
   } catch (e) {
     return { error: e instanceof Error ? e.message : 'The CI server request cannot be built.' };
@@ -111,7 +118,7 @@ async function availability(
   runId: number,
   actionId?: string | null,
 ): Promise<DemoRerunAvailability> {
-  const { settings, tokenUrl } = await projectCiActions(db, projectId);
+  const { settings } = await projectCiActions(db, projectId);
   const pick = pickRerunAction(settings, await runEnvironment(db, runId), actionId);
   const action = pick.action;
   const ref = action ? { id: action.id, name: action.name } : null;
@@ -132,15 +139,21 @@ async function availability(
     };
   }
   const target = ciServerTargetOf(action.target);
+  const { credential, baseUrl } = await targetCredential(db, target);
   const prepared = prepare(
     target,
+    baseUrl,
     await ciServerValues(db, runId, target, 'args', 'dispatch'),
     Object.entries(ciActionInputValues(action)),
   );
-  // As the server: a request whose auth is `none` carries no credential, token or not.
-  const hasToken =
-    'url' in prepared && prepared.sendsCredential && !!tokenUrl && isUnderBaseUrl(tokenUrl, prepared.url);
-  const reason = 'error' in prepared ? prepared.error : null;
+  // As the server: a request whose auth is `none` carries no credential, and one its credential refuses is unavailable.
+  let reason = 'error' in prepared ? prepared.error : null;
+  if (!reason && target.credentialId && 'url' in prepared && prepared.sendsCredential) {
+    reason = credential
+      ? credentialRefusal(credential, { projectId, url: prepared.url, custom: target.preset === 'custom' })
+      : 'The credential this CI action names does not exist: pick another one.';
+  }
+  const hasToken = !reason && !!credential && 'url' in prepared && prepared.sendsCredential;
   return { available: !reason, reason, provider: 'ci-server', enabled: true, hasToken, action: ref };
 }
 
@@ -204,7 +217,8 @@ async function dispatch(
   if (!args) throw demoHttpError(400, NO_RETRY_ARGS);
   const id = randomId();
   const values = await ciServerValues(db, input.runId, target, args, id);
-  const prepared = prepare(target, values, Object.entries(ciActionInputValues(action)));
+  const { baseUrl } = await targetCredential(db, target);
+  const prepared = prepare(target, baseUrl, values, Object.entries(ciActionInputValues(action)));
   if ('error' in prepared) throw demoHttpError(400, prepared.error);
   const record: ClusterRerunDispatch = {
     id,
@@ -277,6 +291,18 @@ export async function demoCiActionCheck(
     const problem = ciActionsProblem({ actions: [body.action] });
     if (problem) throw demoHttpError(400, problem);
     action = resolveCiActionsSettings({ enabled: true, actions: [body.action], defaults: {} }).actions[0];
+    const credentialProblem = action
+      ? await ciActionsCredentialProblem(
+          db as never,
+          projectId,
+          { actions: [action] },
+          [],
+          new Set(),
+          (await db.select({ url: projects.repositoryUrl }).from(projects).where(eq(projects.id, projectId)))[0]?.url ??
+            null,
+        )
+      : null;
+    if (credentialProblem) throw demoHttpError(400, credentialProblem);
   } else {
     const { settings } = await projectCiActions(db, projectId);
     action = settings.actions.find((a) => a.id === actionId);
@@ -286,48 +312,30 @@ export async function demoCiActionCheck(
   if (target.type !== 'ci-server') return { ok: null, missing: [], message: CANNOT_CHECK[target.type] };
   if (target.preset === 'custom') return { ok: null, missing: [], message: CANNOT_CHECK.custom };
   const server = ciServerTargetOf(target);
-  if (!server.baseUrl) return { ok: false, missing: [], message: NO_TARGET };
-  if (!server.baseUrl.startsWith('https:')) return { ok: false, missing: [], message: CI_SERVER_HTTPS_PROBLEM };
-  const [plan] = ciServerCheckPlans(
-    server,
-    server.baseUrl,
-    action.inputs.map((i) => i.name),
-  );
+  const { credential, baseUrl } = await targetCredential(db, server);
+  if (!baseUrl) return { ok: false, missing: [], message: NO_TARGET };
+  if (!baseUrl.startsWith('https:')) return { ok: false, missing: [], message: CI_SERVER_HTTPS_PROBLEM };
+  const inputNames = action.inputs.map((i) => i.name);
+  const [plan] = ciServerCheckPlans(server, baseUrl, inputNames);
   if (!plan) return { ok: null, missing: [], message: 'Nothing was checked.' };
   if ('error' in plan) return { ok: false, missing: [], message: plan.error };
-  const finding = ciServerCheckFinding(plan, DEMO_JOB_JSON);
-  return { ok: finding.ok, missing: finding.missing, message: finding.message };
-}
-
-/**
- * What the demo stores for a CI server token a save sends: never the token,
- * only the base URL a server would bind it to (the one every CI server action
- * sends under, in the request else the stored settings; the demo has no
- * instance CI server). `undefined` keeps the stored value, `null` removes it.
- * Throws the server's 400 answers when no base URL is set or the actions use
- * more than one.
- */
-export async function demoCiServerTokenMarker(
-  db: DemoDB,
-  projectId: number,
-  body: { ciServerToken?: unknown; ciRerun?: unknown } | null,
-): Promise<string | null | undefined> {
-  const token = body?.ciServerToken;
-  if (token === undefined) return undefined;
-  if (typeof token !== 'string' || !token.trim()) return null;
-  const [row] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
-  const settings = resolveCiActionsSettings(body?.ciRerun === undefined ? row?.ciRerun : body.ciRerun);
-  const binding = ciServerTokenBinding(settings, null);
-  if (binding.error) throw demoHttpError(400, binding.error);
-  return JSON.stringify({ url: binding.url });
-}
-
-/** The base URL a demo project's stored CI server token is bound to, as `ciServerTokenUrl` answers. */
-export function demoCiServerTokenUrl(stored: string | null | undefined): string | null {
-  if (!stored) return null;
-  try {
-    return normalizeCiServerBaseUrl((JSON.parse(stored) as { url?: unknown }).url);
-  } catch {
-    return null;
+  // As the server: the credential's rules refuse the read, and it sends only the inputs it allows.
+  if (server.credentialId) {
+    const refusal = credential
+      ? credentialRefusal(credential, { projectId, url: plan.url, custom: false })
+      : 'The credential this CI action names does not exist: pick another one.';
+    if (refusal) return { ok: false, missing: [], message: refusal };
   }
+  const allowed = credential?.allowedInputs ?? null;
+  const notSent = allowed ? inputNames.filter((name) => !allowed.includes(name)) : [];
+  const finding = ciServerCheckFinding(
+    notSent.length > 0 ? { ...plan, required: plan.required.filter((name) => !notSent.includes(name)) } : plan,
+    DEMO_JOB_JSON,
+  );
+  if (notSent.length === 0) return { ok: finding.ok, missing: finding.missing, message: finding.message };
+  return {
+    ok: false,
+    missing: finding.missing,
+    message: `${finding.message} Not sent: ${notSent.join(', ')}, because the credential "${credential!.name}" does not allow these inputs.`,
+  };
 }

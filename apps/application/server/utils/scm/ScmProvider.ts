@@ -6,6 +6,7 @@ import {
 } from '@piwitests/core/codeowners';
 import { fnv1a32 } from '@piwitests/core/hash';
 import type { CiActionTarget } from '#shared/ci-actions';
+import type { ScmWriteFeature } from '#shared/credentials';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
 
 /** What a CI re-run dispatch carries besides the Playwright arguments. */
@@ -16,6 +17,8 @@ export interface RerunDispatchRequest {
   dispatchId?: string;
   /** An action's inputs, sent beside the arguments; never part of them. */
   inputs?: Record<string, string>;
+  /** The CI action dispatched, which the credential's log names. */
+  actionId?: string;
 }
 
 /** What a provider answers to a CI re-run dispatch. */
@@ -186,6 +189,23 @@ export interface CreatePullRequestInput {
   draft: boolean;
 }
 
+/** One write to the host, as the credential's log records it: its feature and what it was about. */
+export interface ScmWrite {
+  feature: ScmWriteFeature;
+  subject: { type: 'pull-request' | 'commit' | 'branch' | 'ci-action'; id: string } | undefined;
+}
+
+/**
+ * Runs one write of a provider that carries a credential, with the
+ * credential's check and log row around it (`openScmProvider`). `failure`
+ * reads a failure from what the write returned.
+ */
+export type ScmWriteGate = <T>(
+  write: ScmWrite,
+  run: () => Promise<T>,
+  failure: (value: T) => string | null,
+) => Promise<T>;
+
 export abstract class ScmProvider {
   /** The Git host, or null for a repository on a host Piwi has no client for (a local clone's only). */
   abstract readonly provider: ScmProviderName | null;
@@ -199,9 +219,27 @@ export abstract class ScmProvider {
    */
   protected readonly keyPrefix: string;
 
+  private writeGate: ScmWriteGate | null = null;
+
   constructor(token: string | null) {
     this.token = token;
     this.keyPrefix = token ? fnv1a32(token) : 'anon';
+  }
+
+  /** Whether the provider carries a token: a private repository reads, and writes are possible. */
+  get hasToken(): boolean {
+    return this.token !== null;
+  }
+
+  /** Route every write of this provider through `gate`: the check and log row of the credential its token comes from. */
+  gateWrites(gate: ScmWriteGate): this {
+    this.writeGate = gate;
+    return this;
+  }
+
+  /** Run one write, through the credential's gate when the provider has one. */
+  protected write<T>(write: ScmWrite, run: () => Promise<T>, failure: (value: T) => string | null): Promise<T> {
+    return this.writeGate ? this.writeGate(write, run, failure) : run();
   }
 
   protected makeHeaders(): Record<string, string> {
@@ -314,15 +352,45 @@ export abstract class ScmProvider {
 
   /**
    * {@link upsertPullRequestComment} that also returns the host's id of the
-   * comment, for the run's PR feedback record. Null when nothing was posted;
-   * `id` is null when the host did not say.
+   * comment, for the run's PR feedback record. Null when nothing was posted
+   * (the credential refused it included); `id` is null when the host did not say.
    */
   async postPullRequestComment(prNumber: number, marker: string, body: string): Promise<ScmPostedComment | null> {
+    try {
+      return await this.write(
+        { feature: 'scm-comment', subject: { type: 'pull-request', id: String(prNumber) } },
+        () => this.doPostPullRequestComment(prNumber, marker, body),
+        (posted) => (posted ? null : 'The host did not accept the comment.'),
+      );
+    } catch {
+      return null;
+    }
+  }
+
+  /** The host's side of {@link postPullRequestComment}. */
+  protected async doPostPullRequestComment(
+    prNumber: number,
+    marker: string,
+    body: string,
+  ): Promise<ScmPostedComment | null> {
     return (await this.upsertPullRequestComment(prNumber, marker, body)) ? { id: null } : null;
   }
 
-  /** Attach a status to a commit. Returns true when it was accepted. */
-  async postCommitStatus(_sha: string, _status: ScmCommitStatus): Promise<boolean> {
+  /** Attach a status to a commit. Returns true when it was accepted, false otherwise (the credential refused it included). */
+  async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
+    try {
+      return await this.write(
+        { feature: 'scm-status', subject: { type: 'commit', id: sha } },
+        () => this.doPostCommitStatus(sha, status),
+        (ok) => (ok ? null : 'The host did not accept the status.'),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /** The host's side of {@link postCommitStatus}. */
+  protected async doPostCommitStatus(_sha: string, _status: ScmCommitStatus): Promise<boolean> {
     return false;
   }
 
@@ -352,17 +420,44 @@ export abstract class ScmProvider {
   }
 
   /** Create a branch at `fromSha`. Throws on failure. */
-  async createBranch(_name: string, _fromSha: string): Promise<void> {
+  async createBranch(name: string, fromSha: string): Promise<void> {
+    return this.write(
+      { feature: 'scm-pull-request', subject: { type: 'branch', id: name } },
+      () => this.doCreateBranch(name, fromSha),
+      () => null,
+    );
+  }
+
+  /** The host's side of {@link createBranch}. */
+  protected async doCreateBranch(_name: string, _fromSha: string): Promise<void> {
     throw new Error(`${this.provider ?? "This repository's host"} does not support creating branches`);
   }
 
   /** Commit `files` onto `branch` as one commit; returns the new commit SHA. Throws on failure. */
-  async commitFiles(_branch: string, _message: string, _files: ScmFileEdit[]): Promise<string> {
+  async commitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
+    return this.write(
+      { feature: 'scm-pull-request', subject: { type: 'branch', id: branch } },
+      () => this.doCommitFiles(branch, message, files),
+      () => null,
+    );
+  }
+
+  /** The host's side of {@link commitFiles}. */
+  protected async doCommitFiles(_branch: string, _message: string, _files: ScmFileEdit[]): Promise<string> {
     throw new Error(`${this.provider ?? "This repository's host"} does not support committing files`);
   }
 
   /** Open a pull/merge request; returns its number + URL. Throws on failure. */
-  async createPullRequest(_input: CreatePullRequestInput): Promise<ScmPullRequest> {
+  async createPullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
+    return this.write(
+      { feature: 'scm-pull-request', subject: { type: 'branch', id: input.head } },
+      () => this.doCreatePullRequest(input),
+      () => null,
+    );
+  }
+
+  /** The host's side of {@link createPullRequest}. */
+  protected async doCreatePullRequest(_input: CreatePullRequestInput): Promise<ScmPullRequest> {
     throw new Error(`${this.provider ?? "This repository's host"} does not support opening pull requests`);
   }
 
@@ -377,13 +472,29 @@ export abstract class ScmProvider {
    * provider's `target`, on `request.ref` when given (else the target's own
    * ref), with the action's `request.inputs`. Returns the runs/pipeline URL to watch and the
    * provider's id for the pipeline it created, when it answers with one.
-   * Throws when the provider is unsupported, has no configured target, or the
-   * dispatch request fails.
+   * Throws when the provider is unsupported, has no configured target, the
+   * credential refuses it, or the dispatch request fails.
    */
   async dispatchRerun(
+    target: CiActionTarget,
+    playwrightArgs: string,
+    request: RerunDispatchRequest = {},
+  ): Promise<RerunDispatchResult> {
+    return this.write(
+      {
+        feature: 'ci-dispatch',
+        subject: request.actionId ? { type: 'ci-action', id: request.actionId } : undefined,
+      },
+      () => this.doDispatchRerun(target, playwrightArgs, request),
+      () => null,
+    );
+  }
+
+  /** The host's side of {@link dispatchRerun}. */
+  protected async doDispatchRerun(
     _target: CiActionTarget,
     _playwrightArgs: string,
-    _request: RerunDispatchRequest = {},
+    _request: RerunDispatchRequest,
   ): Promise<RerunDispatchResult> {
     throw new Error(`${this.provider ?? "This repository's host"} does not support CI re-run`);
   }

@@ -226,6 +226,59 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
 }
 
 /**
+ * Move the project CI server tokens (`projects.ci_server_token`), the AI keys,
+ * the Jira and Zephyr Scale tokens (`integration_connections.credentials`),
+ * the bot tokens of the instance's Slack channels and the SCM tokens
+ * (`projects.scm_token`, the `scm_token` app setting) into credentials
+ * (`importProjectCiServerTokens`, `importAiKeys`, `importConnectionCredentials`,
+ * `importSlackChannelTokens`, `importScmTokens`). Startup waits for it, so
+ * no dispatch or repository call runs while it still waits for its credential.
+ * A token that cannot be opened, or waits for a repository, is left for later,
+ * and a failure is logged.
+ */
+async function importProjectCiServerTokens(target: DB): Promise<void> {
+  try {
+    const { importProjectCiServerTokens: importTokens } = await import('../utils/credentials');
+    const moved = await importTokens(target as any);
+    if (moved) console.log(`[Database] CI server tokens of ${moved} project(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the CI server tokens to credentials failed:', err);
+  }
+  try {
+    const { importAiKeys, removeUnmanagedEnvAiCredentials } = await import('../utils/ai-credentials');
+    const moved = await importAiKeys(target as any);
+    if (moved) console.log(`[Database] ${moved} AI key(s) moved to credentials`);
+    await removeUnmanagedEnvAiCredentials(
+      target as any,
+      process.env.PIWI_AI_PROVIDER?.trim() || process.env.NUXT_AI_PROVIDER?.trim(),
+    );
+  } catch (err) {
+    console.error('[Database] Moving the AI keys to credentials failed:', err);
+  }
+  try {
+    const { importConnectionCredentials } = await import('../utils/integrations/connection-credentials');
+    const moved = await importConnectionCredentials(target as any);
+    if (moved) console.log(`[Database] ${moved} Jira or Zephyr Scale token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the Jira and Zephyr Scale tokens to credentials failed:', err);
+  }
+  try {
+    const { importSlackChannelTokens } = await import('../utils/notifications/slack-credentials');
+    const moved = await importSlackChannelTokens(target as any);
+    if (moved) console.log(`[Database] ${moved} Slack channel token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the Slack channel tokens to credentials failed:', err);
+  }
+  try {
+    const { importScmTokens } = await import('../utils/credentials');
+    const moved = await importScmTokens(target as any);
+    if (moved) console.log(`[Database] ${moved} SCM token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the SCM tokens to credentials failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -260,6 +313,7 @@ async function openDatabase(): Promise<DB> {
           await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
+          await importProjectCiServerTokens(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
@@ -317,6 +371,7 @@ async function openDatabase(): Promise<DB> {
           await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
+          await importProjectCiServerTokens(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();

@@ -246,6 +246,7 @@ export const selfHostingSidebar: SidebarGroup[] = [
       { text: 'Authentication', link: '/operate/authentication' },
       { text: 'Access, roles and groups', link: '/operate/project-access' },
       { text: 'API keys', link: '/operate/api-keys' },
+      { text: 'Credentials', link: '/operate/credentials' },
       { text: 'Localization', link: '/operate/localization' },
       { text: 'Choose what you use', link: '/operate/capabilities' },
     ],

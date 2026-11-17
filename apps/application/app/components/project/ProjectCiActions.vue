@@ -23,11 +23,10 @@ import {
 
 const props = defineProps<{
   projectId: number;
+  /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
+  repositoryUrl?: string | null;
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
-  /** Whether the project holds a CI server token, and the base URL it is bound to. */
-  hasToken: boolean;
-  tokenUrl: string | null;
 }>();
 const settings = defineModel<CiActionsSettings>({ required: true });
 
@@ -269,8 +268,8 @@ const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-mut
       :default-for="editingDefaults"
       :other-names="otherNames"
       :instance-url="instanceUrl"
-      :has-token="hasToken"
-      :token-url="tokenUrl"
+      :project-id="projectId"
+      :repository-url="repositoryUrl ?? null"
       @save="saveAction"
     />
   </div>

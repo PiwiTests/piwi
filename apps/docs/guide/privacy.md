@@ -105,8 +105,8 @@ Never captured, so it cannot leak:
 ## Secrets at rest
 
 Credentials you store in the dashboard are encrypted with AES-256-GCM using `PIWI_SECRET_KEY`:
-AI provider keys, SCM tokens (the instance's and each project's), webhook signing secrets, Slack bot
-tokens, the Jira and Zephyr Scale connections' credentials, CI server tokens, and a scheduled
+AI provider keys, credentials (CI server and SCM tokens), webhook signing secrets, Slack bot
+tokens, the Jira and Zephyr Scale connections' credentials, and a scheduled
 report's share-link token on its way to delivery. **Set it in production.** Unset, or set to the
 published development default, the dashboard refuses to save a credential and names the variable.
 Generate a key with:

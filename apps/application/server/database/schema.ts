@@ -102,6 +102,9 @@ export const {
   projectStars,
   runTargets,
   runRequests,
+  credentials,
+  credentialProjects,
+  credentialUses,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -201,4 +204,6 @@ export type {
   ReportSnapshot,
   RunTarget,
   RunRequestRow,
+  CredentialRow,
+  CredentialUseRow,
 } from './schema.sqlite';

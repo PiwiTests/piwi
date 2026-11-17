@@ -31,7 +31,7 @@ const scm = vi.hoisted(() => ({
 }));
 vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: () => 'github',
-  resolveScmToken: async () => null,
+  hasScmCredential: async () => false,
   createScmProvider: async () => ({
     fetchChanges: async (from: string, to: string) => {
       scm.fetched.push([from, to]);

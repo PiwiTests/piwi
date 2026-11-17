@@ -21,7 +21,7 @@ const scm = vi.hoisted(() => ({
 }));
 
 vi.mock('../../server/utils/scm', () => ({
-  resolveScmToken: async () => 'token',
+  hasScmCredential: async () => true,
   scmProviderForUrl: () => null,
   createScmProvider: async (url: string) =>
     url.includes('unsupported')

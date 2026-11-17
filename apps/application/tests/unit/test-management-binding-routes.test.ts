@@ -137,6 +137,8 @@ let jiraId: number;
 beforeAll(async () => {
   ({ db, close } = await openTempDb());
   state.db = db;
+  // The administrator the routes act as owns the credentials a typed token makes.
+  await db.insert(schema.users).values({ id: 1, username: 'admin', password: '', role: InstanceRole.ADMINISTRATOR });
   await db.insert(schema.projects).values({ id: 10, name: 'web' });
   state.caller = admin;
   zephyrId = (

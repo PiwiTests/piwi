@@ -3641,30 +3641,196 @@ const SCENES = [
     { name: 'project-ci-settings-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions, the one CI server token and its Save, at ${width} px`,
+    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions and its Save, at ${width} px`,
     mode: 'demo',
     route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
     async run({ page, shoot, settle }) {
       await page.getByTestId('ci-actions-list').waitFor({ timeout: 90000 });
-      await page.getByTestId('ci-server-token').waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
   })),
   ...[
-    { name: 'project-ci-token', width: 1280, height: 700 },
-    { name: 'project-ci-token-mobile', width: 375, height: 900 },
+    { name: 'project-ci-credential', width: 1280, height: 1100 },
+    { name: 'project-ci-credential-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → CI: the one CI server token field, stating the base URL it is bound to, at ${width} px`,
-    mode: 'demo',
+    description: `Project → Settings → CI: a Jenkins action's editor, its credential picked from the ones shared with the project and the request preview naming it, at ${width} px`,
     route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
+    of: '[data-shot="ci-server-target"]',
     async run({ page, shoot, settle }) {
-      const field = page.locator('[data-shot="ci-server-token"]');
-      await field.waitFor({ timeout: 90000 });
-      await field.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+      const row = page.getByTestId('ci-action-row').filter({ hasText: 'Re-run failed tests' });
+      await row.getByTestId('ci-action-edit').click({ timeout: 90000 });
+      await page
+        .getByTestId('ci-server-credential-description')
+        .filter({ hasText: 'is sent' })
+        .waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-scm-credential', width: 1280, height: 900 },
+    { name: 'project-scm-credential-mobile', width: 375, height: 1300 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Source control: the SCM credential the project's repository calls carry, picked from the ones shared with it, at ${width} px`,
+    route: '/projects/1?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="project-scm-credential"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .getByTestId('scm-credential-description')
+        .filter({ hasText: 'is sent to' })
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-ci-scm-credential', width: 1280, height: 1100 },
+    { name: 'project-ci-scm-credential-mobile', width: 375, height: 1700 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → CI: a new GitHub action's Credential, the project's by default or one shared with the project for its dispatch, at ${width} px`,
+    route: '/projects/1?tab=settings&section=ci',
+    viewport: { width, height },
+    of: '[data-shot="ci-action-scm-credential"]',
+    async run({ page, shoot, settle }) {
+      // Project 1 has no CI action yet: turn them on (nothing is saved) to add one.
+      await page.getByTestId('ci-actions-enabled').click({ timeout: 90000 });
+      await page.getByTestId('ci-action-add').click();
+      await page.locator('[data-shot="ci-action-scm-credential"]').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-source-control', width: 1280, height: 800 },
+    { name: 'settings-source-control-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Source control: the instance's SCM credentials, for every project that names none, at ${width} px`,
+    route: '/settings/source-control',
+    viewport: { width, height },
+    of: '[data-shot="source-control-token"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .getByRole('button', { name: 'Instance repository credentials' })
+        .filter({ hasText: 'GitHub · example' })
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-scm-credential-form', width: 1280, height: 1000 },
+    { name: 'settings-scm-credential-form-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a new Source control credential, its destination one click per host, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-new').click({ timeout: 90000 });
+      await page.getByTestId('credential-service').click();
+      await page.getByRole('option', { name: 'Source control' }).click();
+      await page.getByTestId('credential-form').getByRole('button', { name: 'GitHub', exact: true }).click();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-scm-credential-panel', width: 1280, height: 1000 },
+    { name: 'settings-scm-credential-panel-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: an SCM credential's panel, the project that names it and its log of repository reads, a commit status and a pull-request comment, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-4').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-credentials', width: 1280, height: 800 },
+    { name: 'settings-credentials-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: each credential's user, destination, projects, the actions that name it and its last use, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    of: '[data-shot="credentials-list"]',
+  })),
+  {
+    name: 'credentials-settings',
+    description:
+      'Settings → Credentials at 1280 px: the list, and a credential’s panel with its user, destination, projects, the CI actions that name it and its log',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/credentials',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-1').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
+  ...[
+    { name: 'settings-credentials-log', width: 1280, height: 900 },
+    { name: 'settings-credentials-log-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: the log of every credential, deleted ones included, each row naming its credential and CI action, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    of: '[data-shot="credentials-log"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="credentials-log"]')
+        .getByTestId('credential-use')
+        .first()
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-credential-variable', width: 1280, height: 1000 },
+    { name: 'settings-credential-variable-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a credential whose secret is read from a PIWI_CREDENTIAL_* variable of the server, its panel saying the variable is not set, then its edit form, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-2').click({ timeout: 90000 });
+      await page.getByTestId('credential-panel').getByText('not set on the server').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('panel');
+      await page.getByRole('button', { name: 'Edit or rotate' }).click();
+      await page.getByTestId('credential-secret-env').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('form');
+    },
+  })),
+  ...[
+    { name: 'settings-credential-panel', width: 1280, height: 1000 },
+    { name: 'settings-credential-panel-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a credential's panel, with what names it, Disable and Delete, and its log, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-1').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
@@ -4564,6 +4730,8 @@ const SCENES = [
                 lastError: null,
                 managedBy: 'db',
                 hasCredentials: true,
+                credentialId: null,
+                credentialName: null,
                 credentialValues: {},
                 hasWebhookToken: false,
                 createdAt: null,

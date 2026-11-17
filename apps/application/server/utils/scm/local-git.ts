@@ -545,7 +545,7 @@ export class LocalGitProvider extends ScmProvider {
     const where = `the folder linked to this project (${this.root})`;
     if (!branch) return `No commits found in ${where}.`;
     return this.provider
-      ? `Branch '${branch}' is not in ${where}. Fetch it there, or set an SCM token in Settings → Source control to read it from the host.`
+      ? `Branch '${branch}' is not in ${where}. Fetch it there, or pick an SCM credential in Settings → Source control to read it from the host.`
       : `Branch '${branch}' is not in ${where}. Fetch it there; Piwi reads no host for this repository (a self-hosted GitLab goes in PIWI_SCM_GITLAB_HOSTS).`;
   }
 

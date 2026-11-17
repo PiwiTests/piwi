@@ -13,7 +13,8 @@
 import { randomBytes } from 'node:crypto';
 import { and, desc, eq, isNotNull } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../database/schema';
-import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
+import { readProjectRepositoryUrl } from './scm/project-repository';
 import { normalizeGitUrl } from './scm/git-url';
 import { buildRetryArgs, NO_RETRY_ARGS, toPosixPath, withRetryCases, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
@@ -49,11 +50,14 @@ import { safeHttpUrl } from '#shared/utils/safe-url';
 import {
   ciServerBaseUrl,
   ciServerBaseUrlProblem,
+  ciServerCredential,
   dispatchToCiServer,
-  instanceCiServer,
   prepareCiServerRequest,
-  projectCiServerToken,
+  type CiServerCredential,
 } from './ci-server-dispatch';
+import { loadCredentialRecord } from '#shared/handlers/credentials';
+import { credentialRefusal } from '#shared/credentials';
+import { CredentialRefusedError, credentialEnvRefusal } from './credentials';
 import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
 import { resolveRunBranch } from './run-branch';
 import type { RunMetadata } from './run-json-types';
@@ -92,20 +96,27 @@ const actionRef = (action: CiAction | null) => (action ? { id: action.id, name: 
 /**
  * Whether a CI server action can be dispatched for a run, and whether it would
  * carry a credential: a request its target builds, a base URL that is https
- * (or http on a listed place), and a request its values fill, built as the
- * dispatch builds it. DNS is checked at dispatch.
+ * (or http on a listed place), a request its values fill, built as the
+ * dispatch builds it, and a credential that allows it. DNS is checked at
+ * dispatch.
  */
 async function ciServerReadiness(
   db: DbClient,
   projectId: number,
   action: CiAction & { target: { type: 'ci-server' } },
   runId: number | null,
-): Promise<{ reason: string | null; hasToken: boolean }> {
+): Promise<{ reason: string | null; hasToken: boolean; credentialRefused?: boolean }> {
   const target = ciServerTargetOf(action.target);
   if (!ciServerRequestTemplate(target, 'rerun')) {
     return { reason: 'No CI server is configured for this project.', hasToken: false };
   }
-  const baseUrl = ciServerBaseUrl(target);
+  let credential: CiServerCredential | null;
+  try {
+    credential = await ciServerCredential(db, target);
+  } catch (e) {
+    return { reason: e instanceof Error ? e.message : 'The credential cannot be read.', hasToken: false };
+  }
+  const baseUrl = ciServerBaseUrl(target, credential);
   const problem = ciServerBaseUrlProblem(baseUrl);
   if (problem || !baseUrl) return { reason: problem, hasToken: false };
   try {
@@ -115,9 +126,17 @@ async function ciServerReadiness(
       baseUrl,
       values: await ciServerValues(db, runId, target, 'args', 'dispatch'),
       inputs: ciActionInputValues(action),
-      projectToken: await projectCiServerToken(db, projectId),
-      instanceCredential: instanceCiServer().credential,
+      credential,
     });
+    if (request.credential?.source === 'action') {
+      const record = await loadCredentialRecord(db, request.credential.id);
+      const refusal = record
+        ? (credentialRefusal(record, { projectId, url: request.url, custom: request.custom }) ??
+          credentialEnvRefusal(record))
+        : 'The credential this CI action names does not exist: pick another one.';
+      // A dispatch still goes to `withCredential`, which refuses it again and logs the refusal.
+      if (refusal) return { reason: refusal, hasToken: false, credentialRefused: Boolean(record) };
+    }
     return { reason: null, hasToken: request.credential !== null };
   } catch (e) {
     return { reason: e instanceof Error ? e.message : 'The CI server request cannot be built.', hasToken: false };
@@ -132,6 +151,8 @@ interface DispatchReadiness {
   enabled: boolean;
   hasToken: boolean;
   action: CiAction | null;
+  /** Unavailable only because the action's credential refuses the request, which a dispatch then logs. */
+  credentialRefused?: boolean;
 }
 
 /**
@@ -153,7 +174,13 @@ async function dispatchReadiness(
   const pick = pickCiAction(settings, kind, { provider: detected, environment, actionId });
   const action = pick.action;
   const provider = action ? action.target.type : detected;
-  const hasScmToken = Boolean(await resolveScmToken(db, projectId));
+  const scmCredentialId = action && action.target.type !== 'ci-server' ? (action.target.credentialId ?? null) : null;
+  const hasScmToken = await hasScmCredential(
+    db,
+    projectId,
+    await readProjectRepositoryUrl(db, projectId),
+    scmCredentialId,
+  );
   if (!settings.enabled) {
     return {
       available: false,
@@ -187,13 +214,14 @@ async function dispatchReadiness(
       enabled: true,
       hasToken: ready.hasToken,
       action,
+      ...(ready.credentialRefused ? { credentialRefused: true } : {}),
     };
   }
   if (!hasScmToken) {
     const reason =
       kind === 'flakeLab'
-        ? 'No SCM token is configured to dispatch the experiment.'
-        : 'No SCM token is configured to dispatch the re-run.';
+        ? 'No SCM credential is set to dispatch the experiment: pick one in the project’s Source control settings.'
+        : 'No SCM credential is set to dispatch the re-run: pick one in the project’s Source control settings.';
     return { available: false, reason, provider, enabled: true, hasToken: false, action };
   }
   return { available: true, reason: null, provider, enabled: true, hasToken: true, action };
@@ -214,6 +242,21 @@ export async function ciRerunAvailability(
   actionId?: string | null,
   cases?: () => Promise<RetryCase[]>,
 ): Promise<CiRerunAvailability> {
+  return (await rerunReadiness(db, projectId, lastSeenRunId, actionId, cases)).availability;
+}
+
+/**
+ * `ciRerunAvailability`, and whether a re-run is unavailable only because the
+ * action's credential refuses it: a dispatch then goes on to `withCredential`,
+ * which logs the refusal before it answers.
+ */
+async function rerunReadiness(
+  db: DbClient,
+  projectId: number,
+  lastSeenRunId: number,
+  actionId?: string | null,
+  cases?: () => Promise<RetryCase[]>,
+): Promise<{ availability: CiRerunAvailability; credentialRefused: boolean }> {
   const ready = await dispatchReadiness(db, projectId, lastSeenRunId, 'tests', actionId);
   const availability: CiRerunAvailability = {
     available: ready.available,
@@ -223,7 +266,10 @@ export async function ciRerunAvailability(
     hasToken: ready.hasToken,
     action: actionRef(ready.action),
   };
-  return cases && availability.available ? withRetryCases(availability, await cases()) : availability;
+  return {
+    availability: cases && availability.available ? withRetryCases(availability, await cases()) : availability,
+    credentialRefused: ready.credentialRefused === true,
+  };
 }
 
 /** The branch a re-run runs on: the branch of the run it re-runs, when that run has one. */
@@ -250,6 +296,7 @@ async function dispatchWithAction(
     id: string;
     /** The spec files and the number of tests the arguments name, recorded for matching the run it starts. */
     cases?: RetryCase[];
+    actor: CiRerunActor;
   },
 ): Promise<DispatchedRerun> {
   const { action, args, id } = input;
@@ -263,7 +310,11 @@ async function dispatchWithAction(
   if (target.type === 'ci-server') {
     const server = ciServerTargetOf(target);
     const values = await ciServerValues(db, input.runId, server, args, id);
-    const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs);
+    const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs, {
+      // The virtual administrator of an instance without sign-in is id 0, no user row.
+      actor: { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null },
+      actionId: action.id,
+    });
     return {
       id,
       actionId: action.id,
@@ -281,11 +332,16 @@ async function dispatchWithAction(
   if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
     throw new Error('No supported repository to dispatch to');
   }
-  const scm = await createScmProvider(repositoryUrl, db, input.projectId);
+  const scm = await createScmProvider(repositoryUrl, db, input.projectId, {
+    // The virtual administrator of an instance without sign-in is id 0, no user row.
+    actor: { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null },
+    credentialId: target.credentialId ?? null,
+    strict: true,
+  });
   if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
 
   const ref = input.runId ? await rerunRef(db, input.runId) : null;
-  const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs });
+  const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs, actionId: action.id });
   return {
     id,
     actionId: action.id,
@@ -325,6 +381,7 @@ async function actionFor(
 export async function dispatchClusterRerun(
   db: DbClient,
   cluster: { id: number; projectId: number; lastSeenRunId: number },
+  actor: CiRerunActor,
   actionId?: string | null,
 ): Promise<DispatchedRerun> {
   return dispatchRerunOf(db, {
@@ -332,6 +389,7 @@ export async function dispatchClusterRerun(
     runId: cluster.lastSeenRunId,
     cases: await clusterRerunCases(db, cluster.id),
     actionId,
+    actor,
   });
 }
 
@@ -345,7 +403,7 @@ class NoRetryArgsError extends Error {
 /** Dispatch a CI re-run of these cases, through the action the project's settings pick for the run. */
 async function dispatchRerunOf(
   db: DbClient,
-  input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null },
+  input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null; actor: CiRerunActor },
 ): Promise<DispatchedRerun> {
   const action = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
   const args = buildRetryArgs(input.cases);
@@ -358,13 +416,15 @@ async function dispatchRerunOf(
     args,
     id: randomBytes(8).toString('hex'),
     cases: input.cases,
+    actor: input.actor,
   });
 }
 
-/** Who asked for a re-run, as the dispatch record names them. */
+/** Who asked for a re-run, as the dispatch record names them, and the API key it came through, for the credential log. */
 export interface CiRerunActor {
   id: number | null;
   name: string | null;
+  apiKeyId?: number | null;
 }
 
 export type ClusterRerunOutcome =
@@ -392,10 +452,14 @@ export async function rerunClusterInCi(
     .where(eq(failureClusters.id, clusterId));
   if (!cluster) return { ok: false, error: 'not-found', message: 'Failure cluster not found' };
 
-  const availability = await ciRerunAvailability(db, cluster.projectId, cluster.lastSeenRunId, options.actionId, () =>
-    clusterRerunCases(db, cluster.id),
+  const { availability, credentialRefused } = await rerunReadiness(
+    db,
+    cluster.projectId,
+    cluster.lastSeenRunId,
+    options.actionId,
+    () => clusterRerunCases(db, cluster.id),
   );
-  if (!availability.available) {
+  if (!availability.available && !credentialRefused) {
     return {
       ok: false,
       error: 'unavailable',
@@ -405,11 +469,11 @@ export async function rerunClusterInCi(
 
   let dispatched: DispatchedRerun;
   try {
-    dispatched = await dispatchClusterRerun(db, cluster, options.actionId);
+    dispatched = await dispatchClusterRerun(db, cluster, actor, options.actionId);
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof NoRetryArgsError ? 'unavailable' : 'dispatch-failed',
+      error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
       message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
     };
   }
@@ -448,10 +512,14 @@ export async function rerunExecutionInCi(
   const target = await executionRerunTarget(db, executionId);
   if (!target) return { ok: false, error: 'not-found', message: 'Test run case not found' };
 
-  const availability = await ciRerunAvailability(db, target.projectId, target.runId, null, async () => [
-    target.rerunCase,
-  ]);
-  if (!availability.available) {
+  const { availability, credentialRefused } = await rerunReadiness(
+    db,
+    target.projectId,
+    target.runId,
+    null,
+    async () => [target.rerunCase],
+  );
+  if (!availability.available && !credentialRefused) {
     return {
       ok: false,
       error: 'unavailable',
@@ -465,11 +533,12 @@ export async function rerunExecutionInCi(
       projectId: target.projectId,
       runId: target.runId,
       cases: [target.rerunCase],
+      actor,
     });
   } catch (e) {
     return {
       ok: false,
-      error: e instanceof NoRetryArgsError ? 'unavailable' : 'dispatch-failed',
+      error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
       message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
     };
   }
@@ -601,9 +670,9 @@ export async function runFlakeLabInCi(
 ): Promise<FlakeLabCiOutcome> {
   const [tc] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, testCaseId));
   if (!tc) return { ok: false, error: 'not-found', message: 'Test case not found' };
-  const availability = await flakeLabCiAvailability(db, tc.projectId, testCaseId);
-  if (!availability.available) {
-    return { ok: false, error: 'unavailable', message: availability.reason ?? 'Flake Lab in CI is not available' };
+  const ready = await dispatchReadiness(db, tc.projectId, await latestTestRunId(db, testCaseId), 'flakeLab');
+  if (!ready.available && !ready.credentialRefused) {
+    return { ok: false, error: 'unavailable', message: ready.reason ?? 'Flake Lab in CI is not available' };
   }
   try {
     const runId = await latestTestRunId(db, testCaseId);
@@ -614,9 +683,14 @@ export async function runFlakeLabInCi(
       action,
       args: flakeLabCiArgs(testCaseId, kind),
       id: randomBytes(8).toString('hex'),
+      actor,
     });
     return { ok: true, dispatch: { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id } };
   } catch (e) {
-    return { ok: false, error: 'dispatch-failed', message: e instanceof Error ? e.message : 'Dispatch failed' };
+    return {
+      ok: false,
+      error: e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
+      message: e instanceof Error ? e.message : 'Dispatch failed',
+    };
   }
 }

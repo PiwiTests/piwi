@@ -9,13 +9,14 @@ import {
 } from '#shared/integrations/registry';
 import type { ConnectionCheckResult } from '#shared/integrations/types';
 import { CONNECTION_CHECKS, ConnectionCheckRefusal } from '../../../utils/integrations/connection-check';
+import { requestCredentialActor } from '../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Integrations'],
     summary: 'Check a connection before saving it',
     description:
-      "Runs the provider's own check, with each step carrying a plain-language `hint` when it fails. Nothing is stored. When `connectionId` names the connection being edited and a credential field is blank, the stored value is used, but only while the site stays the same. For Zephyr Scale: signs in on the chosen region's host, never a typed one, and counts the projects the token sees. For Jira: reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees.",
+      "Runs the provider's own check, with each step carrying a plain-language `hint` when it fails. Nothing is stored. `credentialId` signs in with a saved Jira or Zephyr Scale credential the connection could name (shared with all projects, sent under the site or the region's API) in place of the typed fields. When `connectionId` names the connection being edited and a credential field is blank, the value its credential holds is used (a counted read of the credential), but only while the site stays the same. For Zephyr Scale: signs in on the chosen region's host, never a typed one, and counts the projects the token sees. For Jira: reads the typed address down to the Jira site URL, checks it is a Jira Cloud site through its public `serverInfo` (and resolves its cloud id), then — when credentials are supplied — signs in, reports whether the token is classic or scoped, and counts the projects the account sees.",
     'x-required-permission': 'connections:manage',
   },
 });
@@ -25,11 +26,12 @@ const schema = z.object({
   baseUrl: z.string().min(1).max(2000).optional(),
   region: z.string().max(50).optional(),
   credentials: z.record(z.string(), z.string()).nullable().optional(),
+  credentialId: z.number().int().positive().nullable().optional(),
   connectionId: z.number().int().positive().nullable().optional(),
 });
 
 export default eventHandler(async (event): Promise<ConnectionCheckResult> => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const parsed = schema.safeParse(await readBody(event));
   if (!parsed.success) {
     throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
@@ -43,7 +45,10 @@ export default eventHandler(async (event): Promise<ConnectionCheckResult> => {
     input.baseUrl = endpoint.baseUrl;
   }
   try {
-    return await CONNECTION_CHECKS[provider as IntegrationProviderName](await getDatabase(), input);
+    return await CONNECTION_CHECKS[provider as IntegrationProviderName](await getDatabase(), {
+      ...input,
+      actor: requestCredentialActor(event, user),
+    });
   } catch (err) {
     if (err instanceof ConnectionCheckRefusal) throw apiError({ statusCode: 400, message: err.message });
     throw err;

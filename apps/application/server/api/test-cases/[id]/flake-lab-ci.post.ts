@@ -6,7 +6,7 @@ defineRouteMeta({
     tags: ['Test Cases'],
     summary: 'Run a test’s Flake Lab experiment in CI',
     description:
-      "Dispatches the project's default CI action for Flake Lab with the `piwi flake` arguments for this test: `flake <id>` to reproduce it, `flake verify <id>` to verify its fix. It runs on the branch of the test's newest run, with the project's SCM token or its CI server credential, through the same dispatch as a cluster's CI re-run, and the experiment `piwi flake` records is saved on the test as usual. Returns the dispatch and the provider's runs URL.",
+      "Dispatches the project's default CI action for Flake Lab with the `piwi flake` arguments for this test: `flake <id>` to reproduce it, `flake verify <id>` to verify its fix. It runs on the branch of the test's newest run, with the SCM credential of the action or the project, or its CI server credential, through the same dispatch as a cluster's CI re-run, and the experiment `piwi flake` records is saved on the test as usual. Returns the dispatch and the provider's runs URL.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     requestBody: {
       required: false,
@@ -36,6 +36,7 @@ export default eventHandler(async (event) => {
   const outcome = await runFlakeLabInCi(db, testCaseId, kind, {
     id: user.id,
     name: user.name || user.username || null,
+    apiKeyId: (event.context.apiKeyId as number | undefined) ?? null,
   });
   if (!outcome.ok) throw apiError({ statusCode: STATUS_BY_ERROR[outcome.error], message: outcome.message });
   return { ok: true, dispatch: outcome.dispatch };

@@ -21,7 +21,7 @@ Integrations, beside **Issue tracker**): a list of named [CI actions](#ci-action
 what it sends.
 
 Its buttons show to people with [`run:control`](/operate/project-access#what-each-role-can-do) once an action serves the
-run (through the repository, with an SCM token) and a test has a path Playwright takes.
+run (through the repository, with an SCM credential) and a test has a path Playwright takes.
 
 *Copy retry command* is the local counterpart: it copies an `npx playwright test` command to run the same tests on your
 machine. On a run's page, its menu adds run options the browser remembers (headed, trace, repeat each up to 10 without
@@ -86,7 +86,8 @@ Choose the provider of the action:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch uses the project's [SCM token](/guide/source-control) with the scope above.
+The dispatch, and a GitHub action's **Check**, carry the action's **Credential**, else the repository's
+[SCM credential](/guide/source-control#set-the-credential), with the scope above.
 
 On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the
 quoted arguments without a shell:
@@ -125,7 +126,7 @@ A CI server action is a **preset**, which builds the request from a few fields, 
 
 **Jenkins** takes the job as Jenkins shows its path (`polaris/e2e`; `polaris/e2e/{branch}` for a multibranch pipeline)
 and posts to its `buildWithParameters` with `PIWI_RERUN_ARGS` (the arguments) and `PIWI_ORIGIN_REF` (the dispatch id),
-names you can change, plus the action's inputs. The credential is a user and their API token, sent as Basic
+names you can change, plus the action's inputs. The credential is a Jenkins user and their API token, sent as Basic
 authentication. The link goes to the job's page. The job declares both parameters and runs `rerun`:
 
 ```groovy
@@ -200,13 +201,12 @@ refused. In a JSON body it fills a whole string value.
 
 ### The credential and the hosts
 
-The **CI server token** is one write-only field of the **CI** section: leave it empty to keep it. It is stored with the
-one base URL the CI server actions send under (an action's own, else `PIWI_CI_SERVER_URL`), which the field states, and
-sent only under it. Saving it while the actions use more than one base URL is refused. A project without a token uses
-the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`), only with a preset's request under that URL, and then
-sends only the inputs the operator lists in `PIWI_CI_SERVER_ALLOWED_INPUTS` (comma-separated, empty by default);
-**Check** names the ones left out. A base URL or request path is refused when a segment would climb once a server decodes
-it (`..%2F`, `..;`).
+A CI server action names a [credential](/operate/credentials): a user, a secret and the base URL it may be sent
+under, saved once, shared with projects, and logged on each use. Its base URL can stay empty to use the credential's. A
+request carrying it sends only the inputs it allows; **Check** names the ones left out. With no credential, a preset's
+request under `PIWI_CI_SERVER_URL` carries the instance's (`PIWI_CI_SERVER_USER`, `PIWI_CI_SERVER_TOKEN`) and sends
+only the inputs `PIWI_CI_SERVER_ALLOWED_INPUTS` lists. A base URL or request path is refused when a segment would climb
+once a server decodes it (`..%2F`, `..;`).
 
 A request never follows a redirect, and a link from the answer is kept only as an `http(s)` URL or a path from the
 base URL's root. A CI server is reached over `https`; over `http` or on a private address it is reached only when
@@ -257,7 +257,7 @@ files.
 ## Related
 
 - [Pull-request feedback](./pr-feedback): the result posted on the pull request
-- [Source control](/guide/source-control): the SCM token and its scopes
+- [Source control](/guide/source-control): the SCM credential and its scopes
 - [Failure clusters](./failure-clusters): the clusters a re-run acts on
 - [Flake Lab](./flake-lab): the experiment a Flake Lab action runs in CI
 - [CLI](/reference/cli#rerun): the `rerun` command a pipeline runs

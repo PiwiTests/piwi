@@ -294,7 +294,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_SECRET_KEY: {
     description:
-      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, SCM tokens, webhook and integration secrets). Required before the dashboard can save any of them.',
+      'Master key for AES-256-GCM encryption of secrets stored in the database (AI API keys, credentials, webhook and integration secrets). Required before the dashboard can save any of them.',
     category: 'general',
     secret: true,
     example: 'a 64-char random hex string',
@@ -405,6 +405,16 @@ export const PIWI_ENV_VARS = {
     min: 0,
     since: '0.59.0',
     docs: 'features/assistant#privacy',
+  },
+  PIWI_RETENTION_CREDENTIAL_LOG_DAYS: {
+    description:
+      'Days the log of every credential use (Settings → Credentials) is kept before the nightly sweep deletes it (default 365; 0 keeps it forever).',
+    category: 'database',
+    type: 'number',
+    default: '365',
+    min: 0,
+    since: '0.72.0',
+    docs: 'operate/credentials#the-log',
   },
   PIWI_RETENTION_DIAGNOSIS_VERSIONS: {
     description:
@@ -593,7 +603,8 @@ export const PIWI_ENV_VARS = {
     enum: ['anthropic', 'openai', 'claude-cli', 'codex-cli', 'deepseek-cli'],
   },
   PIWI_AI_API_KEY: {
-    description: 'API key for the diagnosis provider. Takes precedence over the DB-stored key.',
+    description:
+      'API key for the diagnosis provider, used while PIWI_AI_PROVIDER is set. It shows as a read-only credential (Settings → Credentials) that reads it from here at each use.',
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_PROVIDER: '*' },
@@ -677,7 +688,8 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
   },
   PIWI_AI_RESEARCH_API_KEY: {
-    description: 'API key for the research-stage provider. Falls back to PIWI_AI_API_KEY.',
+    description:
+      'API key for the research-stage provider. Falls back to PIWI_AI_API_KEY. It shows as a read-only credential that reads it from here.',
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_RESEARCH_MODEL: '*' },
@@ -720,7 +732,8 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
   },
   PIWI_AI_EMBEDDING_API_KEY: {
-    description: 'API key for the embedding provider. Falls back to PIWI_AI_API_KEY.',
+    description:
+      'API key for the embedding provider. Falls back to PIWI_AI_API_KEY. It shows as a read-only credential that reads it from here.',
     category: 'ai',
     secret: true,
     relevantWhen: { PIWI_AI_EMBEDDING_MODEL: '*' },
@@ -752,7 +765,8 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_AI_ASSISTANT_MODEL: '*' },
   },
   PIWI_AI_ASSISTANT_API_KEY: {
-    description: 'API key for the assistant provider. Falls back to PIWI_AI_API_KEY.',
+    description:
+      'API key for the assistant provider. Falls back to PIWI_AI_API_KEY. It shows as a read-only credential that reads it from here.',
     category: 'ai',
     secret: true,
     since: '0.59.0',
@@ -1340,7 +1354,7 @@ export const PIWI_ENV_VARS = {
   // ── Integrations ─────────────────────────────────────────────────────────
   PIWI_SCM_GITLAB_HOSTS: {
     description:
-      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may call with the SCM token. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
+      'Self-hosted GitLab host names (comma-separated, e.g. gitlab.example.com) Piwi may send an SCM credential to. The GitLab cloud needs no entry; a self-hosted GitLab not listed here is not read.',
     category: 'integrations',
     destination: 'Your git host',
     type: 'list',
@@ -1368,7 +1382,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CI_SERVER_TOKEN: {
     description:
-      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
+      "API token of the instance's CI server, sent only to URLs under PIWI_CI_SERVER_URL, by a CI server action that names no credential. It is listed in Settings → Credentials as a read-only credential, and its uses are logged there. Give it to a CI user allowed to build only the jobs Piwi should start. Never returned by the API.",
     category: 'integrations',
     secret: true,
     since: '0.67.0',
@@ -1386,7 +1400,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_CI_SERVER_ALLOWED_INPUTS: {
     description:
-      "Input names (comma-separated, e.g. TARGET_ENV,SUITE) a CI action may send to a request that carries the instance CI server token. A request under PIWI_CI_SERVER_URL with that token sends the Playwright arguments and the dispatch id and no other input, so a project admin cannot set other parameters on jobs the token can build; names listed here are sent. A project's own token is not limited. Names are case-sensitive; empty by default.",
+      'Input names (comma-separated, e.g. TARGET_ENV,SUITE) a CI action may send to a request that carries the instance CI server token. A request under PIWI_CI_SERVER_URL with that token sends the Playwright arguments and the dispatch id and no other input, so a project admin cannot set other parameters on jobs the token can build; names listed here are sent. A credential saved in Settings → Credentials has its own list. Names are case-sensitive; empty by default.',
     category: 'integrations',
     type: 'list',
     example: 'TARGET_ENV,SUITE',
@@ -1412,7 +1426,8 @@ export const PIWI_ENV_VARS = {
     requiredWhen: { PIWI_JIRA_BASE_URL: '*' },
   },
   PIWI_JIRA_API_TOKEN: {
-    description: 'Jira Cloud API token (from id.atlassian.com). Never returned by the API.',
+    description:
+      'Jira Cloud API token (from id.atlassian.com). With the other PIWI_JIRA_* variables it creates a read-only Jira connection, whose read-only credential (Settings → Credentials) reads the token from here. Never returned by the API.',
     category: 'integrations',
     secret: true,
     since: '0.29.0',
@@ -1421,7 +1436,7 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_ZEPHYR_API_TOKEN: {
     description:
-      'Zephyr Scale Cloud API access token (Jira: profile picture → Zephyr API keys). Setting it creates a read-only, environment-managed Zephyr Scale connection. Never returned by the API.',
+      'Zephyr Scale Cloud API access token (Jira: profile picture → Zephyr API keys). Setting it creates a read-only, environment-managed Zephyr Scale connection, whose read-only credential (Settings → Credentials) reads the token from here. Never returned by the API.',
     category: 'integrations',
     secret: true,
     since: '0.68.0',

@@ -508,13 +508,21 @@ import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiActions,
   demoCiActionCheck,
-  demoCiServerTokenMarker,
-  demoCiServerTokenUrl,
   demoClusterRerunInfo,
   demoExecutionRerunInfo,
   demoRerunCluster,
   demoRerunExecution,
 } from './ci-rerun';
+import {
+  demoAllCredentialUses,
+  demoCreateCredential,
+  demoCredentialUses,
+  demoDeleteCredential,
+  demoGetCredential,
+  demoListCredentials,
+  demoUpdateCredential,
+} from './credentials';
+import { ciActionsCredentialProblem, projectScmCredentialProblem } from '#shared/handlers/credentials';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
@@ -722,6 +730,11 @@ function demoRequester(ctx: DemoCtx | undefined): number {
 
 function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
   return ctx?.access ?? ADMIN_ACCESS;
+}
+
+/** The acting user as the credential handlers read them: their access and id. */
+function demoViewer(ctx: DemoCtx | undefined) {
+  return { access: demoAccess(ctx), userId: ctx?.actingUserId ?? null };
 }
 
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
@@ -1004,11 +1017,10 @@ const routes: RouteEntry[] = [
       if (!project) return project;
       const {
         scmToken: _scm,
-        ciServerToken,
+        ciServerToken: _ciServerToken,
         ...rest
       } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
-      const ciServerTokenUrl = demoCan(ctx, 'project:manage', +m[1]!) ? demoCiServerTokenUrl(ciServerToken) : null;
-      return { ...rest, ciServerTokenUrl, ciServerInstanceUrl: null };
+      return { ...rest, ciServerInstanceUrl: null };
     },
   },
   {
@@ -1017,18 +1029,56 @@ const routes: RouteEntry[] = [
     permission: 'project:manage',
     handler: async (m, body, _, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      // A browser demo has no server secret to encrypt with (the server uses
-      // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
-      // and every GET strips it. A CI server token is never stored: only the
-      // base URL it would be bound to.
       try {
         const db = await getDemoDb();
-        const update = body as Parameters<typeof updateProject>[2];
+        const update = body as Parameters<typeof updateProject>[2] & { ciServerToken?: unknown; scmToken?: unknown };
+        if (update?.ciServerToken !== undefined) {
+          throw demoHttpError(
+            400,
+            'ciServerToken is replaced by credentials: create one with POST /api/credentials and name its id in the CI server action’s credentialId.',
+          );
+        }
+        if (update?.scmToken !== undefined) {
+          throw demoHttpError(
+            400,
+            'scmToken is replaced by credentials: create one with POST /api/credentials (service scm) and name its id in scmCredentialId.',
+          );
+        }
+        const [stored] = await db
+          .select({
+            ciRerun: projects.ciRerun,
+            scmCredentialId: projects.scmCredentialId,
+            repositoryUrl: projects.repositoryUrl,
+          })
+          .from(projects)
+          .where(eq(projects.id, +m[1]!));
+        const repository =
+          update?.repositoryUrl === undefined ? (stored?.repositoryUrl ?? null) : update.repositoryUrl?.trim() || null;
+        // As the server: a credential named before, with the repository unchanged, is not checked again.
+        const repositoryChanged = update?.repositoryUrl !== undefined && repository !== (stored?.repositoryUrl ?? null);
+        if (
+          typeof update?.scmCredentialId === 'number' &&
+          (update.scmCredentialId !== stored?.scmCredentialId || repositoryChanged)
+        ) {
+          const problem = await projectScmCredentialProblem(db as never, +m[1]!, update.scmCredentialId, repository);
+          if (problem) throw demoHttpError(400, problem);
+        }
         assertDemoCiActions(update);
-        const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
         // As the server: store the normalized actions (a value with no `actions` list converts to actions).
         const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
-        const project = await updateProject(db, +m[1]!, { ...update, ciRerun, ciServerToken });
+        if (ciRerun) {
+          const storedActions = stored?.ciRerun ? resolveCiActionsSettings(stored.ciRerun).actions : [];
+          const credentialProblem = await ciActionsCredentialProblem(
+            db as never,
+            +m[1]!,
+            ciRerun,
+            storedActions,
+            new Set(),
+            repository,
+          );
+          if (credentialProblem) throw demoHttpError(400, credentialProblem);
+        }
+        const project = await updateProject(db, +m[1]!, { ...update, ciRerun });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -3805,6 +3855,55 @@ const routes: RouteEntry[] = [
     },
   },
 
+  // Credentials — the server's shared handlers; the demo stores no secret
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (_m, _b, q, ctx) =>
+      demoListCredentials(await getDemoDb(), demoViewer(ctx), Object.fromEntries(q ?? []), (projectId) =>
+        assertDemoScope(ctx ? { ...ctx, permission: ['project:manage'] } : ctx, projectId),
+      ),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/credentials$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (_m, body, _q, ctx) =>
+      demoCreateCredential(await getDemoDb(), demoViewer(ctx), body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/uses$/,
+    permission: 'credentials:manage',
+    handler: async (_m, _b, q) => demoAllCredentialUses(await getDemoDb(), Object.fromEntries(q ?? [])),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, _q, ctx) => demoGetCredential(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, body, _q, ctx) => demoUpdateCredential(await getDemoDb(), demoViewer(ctx), +m[1]!, body),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, _q, ctx) => demoDeleteCredential(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)\/uses$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, q, ctx) =>
+      demoCredentialUses(await getDemoDb(), demoViewer(ctx), +m[1]!, Object.fromEntries(q ?? [])),
+  },
+
   // Integrations — one canned connection per provider, answered from constants
   {
     method: 'GET',
@@ -3838,7 +3937,7 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/integrations\/connections\/(\d+)$/,
     permission: 'connections:manage',
-    handler: async () => ({ success: true }),
+    handler: async () => ({ success: true, credentialDeleted: false }),
   },
   {
     method: 'POST',
@@ -4489,9 +4588,9 @@ routes.push(
   {
     method: 'DELETE',
     pattern: /^\/api\/channels\/(\d+)$/,
-    handler: async (m) => {
+    handler: async (m, _body, query) => {
       const id = parseInt(m[1]!);
-      const result = await deleteDemoChannel(await getDemoDb(), id);
+      const result = await deleteDemoChannel(await getDemoDb(), id, query?.get('deleteCredential') === 'true');
       // Like the server, a channel's subscriptions go with it.
       for (let i = _demoSubs.length - 1; i >= 0; i--) if (_demoSubs[i]!.channelId === id) _demoSubs.splice(i, 1);
       return result;

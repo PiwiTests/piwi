@@ -13,8 +13,8 @@ issues from a failure is [Issue tracking (Jira)](/features/issue-tracking). Zeph
 [its own page](./zephyr-scale).
 
 A connection is instance infrastructure: one row per external system, managed by an administrator, shared
-by every project. Nothing is sent to Jira until a connection exists, and credentials are encrypted at rest
-with `PIWI_SECRET_KEY`.
+by every project. Nothing is sent to Jira until a connection exists, and its token is a
+[credential](./credentials#connections-and-slack-channels).
 
 <figure>
   <img src="/screenshots/integrations-settings.png" alt="Settings → Integrations: a Jira card with a connected system, its verified status, and a test-connection button">
@@ -92,13 +92,12 @@ assignable-user picker), on top of the account permissions above.
 
 A connection can live in either place:
 
-- **Dashboard-managed**: added on the Integrations page. Editable there; the credential is encrypted in
-  the database and never returned by any endpoint. Saving with the token field left blank keeps the stored
-  token.
+- **Dashboard-managed**: added on the Integrations page and editable there. The token typed is saved as the
+  connection's credential, or **Saved credential** picks one; a blank token field keeps it.
 - **Environment-managed**: created from the environment at startup when `PIWI_JIRA_BASE_URL`,
   `PIWI_JIRA_EMAIL` and `PIWI_JIRA_API_TOKEN` are all set. It shows a lock badge and is read-only in the
-  dashboard: change it by editing the environment and restarting. The token stays in the environment and
-  never enters the database. Without `PIWI_SECRET_KEY` the connect form cannot store a token, so it says so and
+  dashboard: change it by editing the environment and restarting. Its read-only credential reads the token
+  from the environment, never the database. Without `PIWI_SECRET_KEY` the connect form cannot store a token, so it says so and
   shows these variables filled in from what you typed.
 
 See the [configuration reference](/reference/configuration#integrations) for the variables.

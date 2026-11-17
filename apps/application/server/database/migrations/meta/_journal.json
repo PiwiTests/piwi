@@ -1219,6 +1219,48 @@
       "when": 1794837289208,
       "tag": "0173_spotty_shatterstar",
       "breakpoints": true
+    },
+    {
+      "idx": 174,
+      "version": "6",
+      "when": 1794850691821,
+      "tag": "0174_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "6",
+      "when": 1794853777091,
+      "tag": "0175_credential_secret_env",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "6",
+      "when": 1794856656436,
+      "tag": "0176_credential_name_lower",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "6",
+      "when": 1794858811087,
+      "tag": "0177_credential_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "6",
+      "when": 1794860255808,
+      "tag": "0178_project_scm_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "6",
+      "when": 1794867794242,
+      "tag": "0179_connection_credential",
+      "breakpoints": true
     }
   ]
 }

@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { apiError } from '../../server/utils/api-error';
@@ -6,8 +6,8 @@ import { openTempDb, type TempDb } from './temp-db';
 
 /**
  * Saving CI actions through the server's project route and through the demo router: both answer HTTP 400 for a
- * payload that breaks a limit or would seal the one CI server token to more than one base URL, and both leave the
- * stored settings as they were.
+ * payload that breaks a limit, for a CI server action whose credential the project may not use there, and for the
+ * project CI server token credentials replace, and both leave the stored settings as they were.
  */
 
 delete process.env.PIWI_DATABASE_URL;
@@ -37,19 +37,26 @@ vi.stubGlobal('apiError', apiError);
 type Handler = (event: FakeEvent) => Promise<{ project: Record<string, unknown> }>;
 const patchProject = (await import('../../server/api/projects/[id].patch')).default as unknown as Handler;
 const { handleDemoRequest } = await import('~~/app/demo/api/router');
-const { openCiServerToken } = await import('../../server/utils/ci-server-dispatch');
+const { insertCredential } = await import('../../shared/handlers/credentials');
 const { listProjects } = await import('../../shared/handlers/projects');
 
 const A = 'https://a.example.com/';
 const B = 'https://b.example.com/';
 
-const server = (id: string, baseUrl?: string) => ({
+const server = (id: string, target: Record<string, unknown> = {}) => ({
   id,
   name: id,
-  target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' }, ...(baseUrl ? { baseUrl } : {}) },
+  target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'e2e' }, ...target },
   inputs: [],
   accepts: ['tests'],
 });
+const custom = (id: string, target: Record<string, unknown> = {}) =>
+  server(id, {
+    preset: 'custom',
+    fields: {},
+    custom: { auth: 'bearer', request: { method: 'POST', path: 'build' } },
+    ...target,
+  });
 const github = (over: Record<string, unknown> = {}) => ({
   id: 'smoke',
   name: 'Smoke',
@@ -64,23 +71,55 @@ let db: TempDb;
 let close: () => Promise<void>;
 
 beforeAll(async () => {
-  process.env.PIWI_SECRET_KEY = 'a-test-key-for-the-ci-server-token';
   ({ db, close } = await openTempDb());
   state.db = db;
 });
 
 afterAll(async () => {
-  delete process.env.PIWI_SECRET_KEY;
   await close();
 });
 
-beforeEach(async () => {
-  await db.delete(schema.projects);
-  await db.insert(schema.projects).values({ id: 1, name: 'shop' });
-});
+/** The credentials the actions name: shared with the project, with another one, and the one the environment sets. */
+const ids = { shared: 0, sharedCustom: 0, elsewhere: 0, env: 0 };
 
-afterEach(() => {
-  delete process.env.PIWI_CI_SERVER_URL;
+beforeEach(async () => {
+  await db.delete(schema.credentials);
+  await db.delete(schema.projects);
+  await db.insert(schema.projects).values([
+    { id: 1, name: 'shop' },
+    { id: 2, name: 'other' },
+  ]);
+  const credential = (name: string, projectIds: number[], customRequests = false) =>
+    insertCredential(
+      db as never,
+      {
+        name,
+        description: null,
+        service: 'ci-server',
+        user: 'piwi-bot',
+        destination: A,
+        scope: { allProjects: false, projectIds },
+        allowedInputs: null,
+        customRequests,
+        disabled: false,
+      },
+      null,
+      null,
+    );
+  ids.shared = await credential('Shared', [1]);
+  ids.sharedCustom = await credential('Shared custom', [1], true);
+  ids.elsewhere = await credential('Elsewhere', [2]);
+  const [env] = await db
+    .insert(schema.credentials)
+    .values({
+      name: 'CI server (environment)',
+      service: 'ci-server',
+      destination: A,
+      allProjects: true,
+      managedBy: 'env',
+    })
+    .returning({ id: schema.credentials.id });
+  ids.env = env!.id;
 });
 
 const serverPatch = (body: unknown) => patchProject({ params: { id: '1' }, body });
@@ -96,9 +135,7 @@ const stored = async () => {
   return row!;
 };
 
-describe.each(routes)('PATCH of CI actions through %s', (name, patch) => {
-  const isServer = name === 'the server route';
-
+describe.each(routes)('PATCH of CI actions through %s', (_name, patch) => {
   test('answers 400 for a fixed value, an option or an action name over its limit, and stores nothing', async () => {
     const long = 'x'.repeat(501);
     const input = (extra: Record<string, unknown>) => ({ name: 'A', ...extra });
@@ -133,44 +170,59 @@ describe.each(routes)('PATCH of CI actions through %s', (name, patch) => {
     await expect(patch({ ciRerun: settings([onGitlab('MY_CI_NAME')]) })).resolves.toBeDefined();
   });
 
-  test('answers 400 for a token when two actions send to different base URLs', async () => {
-    await expect(
-      patch({ ciRerun: settings([server('a', A), server('b', B)]), ciServerToken: 'secret' }),
-    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('different base URLs') });
-    expect((await stored()).ciServerToken).toBeNull();
-    // The same actions save without a token.
-    await expect(patch({ ciRerun: settings([server('a', A), server('b', B)]) })).resolves.toBeDefined();
-  });
-
-  test('seals the token to the one URL the actions share', async () => {
-    await patch({ ciRerun: settings([server('a', A), server('b', A)]), ciServerToken: ' secret ' });
-    const row = await stored();
-    expect(row.ciServerToken).not.toBeNull();
-    if (isServer) expect(openCiServerToken(row.ciServerToken)).toEqual({ url: A, token: 'secret' });
-    else expect(row.ciServerToken).toContain(A);
-  });
-
-  test('keeps the stored actions when only the token is sent, and 400s when they now use two URLs', async () => {
-    await patch({ ciRerun: settings([server('a', A), server('b', B)]) });
-    await expect(patch({ ciServerToken: 'secret' })).rejects.toMatchObject({ statusCode: 400 });
-  });
-});
-
-describe('PATCH of a token through the server route when the instance has a CI server', () => {
-  test('answers 400 when an action with no URL of its own and one with its own would both send', async () => {
-    process.env.PIWI_CI_SERVER_URL = 'https://instance.example.com/';
-    await expect(
-      serverPatch({ ciRerun: settings([server('a'), server('b', A)]), ciServerToken: 'secret' }),
-    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining('different base URLs') });
-  });
-
-  test('seals to the instance URL when no action has its own', async () => {
-    process.env.PIWI_CI_SERVER_URL = 'https://instance.example.com/';
-    await serverPatch({ ciRerun: settings([server('a')]), ciServerToken: 'secret' });
-    expect(openCiServerToken((await stored()).ciServerToken)).toEqual({
-      url: 'https://instance.example.com/',
-      token: 'secret',
+  test('answers 400 for a CI server token, which credentials replace, and stores nothing', async () => {
+    await expect(patch({ ciServerToken: 'secret' })).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('credentialId'),
     });
+    await expect(
+      patch({ ciRerun: settings([server('a', { credentialId: ids.shared })]), ciServerToken: null }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+    const row = await stored();
+    expect(row.ciRerun).toBeNull();
+    expect(row.ciServerToken).toBeNull();
+  });
+
+  test('answers 400 for a credential that does not exist, is shared with another project or is set by the environment', async () => {
+    for (const credentialId of [9999, ids.elsewhere, ids.env]) {
+      await expect(patch({ ciRerun: settings([server('a', { credentialId })]) })).rejects.toMatchObject({
+        statusCode: 400,
+        message: `"a": no CI server credential ${credentialId} is shared with this project.`,
+      });
+    }
+    expect((await stored()).ciRerun).toBeNull();
+  });
+
+  test('answers 400 for a base URL outside the credential’s destination, and a Custom request it does not allow', async () => {
+    await expect(
+      patch({ ciRerun: settings([server('a', { credentialId: ids.shared, baseUrl: B })]) }),
+    ).rejects.toMatchObject({ statusCode: 400, message: expect.stringContaining(`is not under ${A}`) });
+    await expect(patch({ ciRerun: settings([custom('c', { credentialId: ids.shared })]) })).rejects.toMatchObject({
+      statusCode: 400,
+      message: expect.stringContaining('does not go with a Custom request'),
+    });
+    await expect(
+      patch({ ciRerun: settings([custom('c', { credentialId: ids.sharedCustom })]) }),
+    ).resolves.toBeDefined();
+  });
+
+  test('saves an action that names a credential shared with the project, under its destination', async () => {
+    await patch({
+      ciRerun: settings([
+        server('a', { credentialId: ids.shared }),
+        server('b', { credentialId: ids.shared, baseUrl: `${A}job/qa/` }),
+      ]),
+    });
+    const actions = (await stored()).ciRerun as { actions: Array<{ target: Record<string, unknown> }> };
+    expect(actions.actions.map((a) => a.target)).toEqual([
+      expect.objectContaining({ credentialId: ids.shared }),
+      expect.objectContaining({ credentialId: ids.shared, baseUrl: `${A}job/qa/` }),
+    ]);
+    expect(actions.actions[0]!.target).not.toHaveProperty('baseUrl');
+  });
+
+  test('keeps an action without a credential, which the instance’s serves', async () => {
+    await expect(patch({ ciRerun: settings([server('a'), server('b', { baseUrl: B })]) })).resolves.toBeDefined();
   });
 });
 
@@ -187,7 +239,9 @@ describe('listProjects', () => {
         } as never,
       })
       .where(eq(schema.projects.id, 1));
-    const [project] = (await listProjects(db as never)) as unknown as Array<{ ciRerun: Record<string, unknown> }>;
+    const project = (
+      (await listProjects(db as never)) as unknown as Array<{ id: number; ciRerun: Record<string, unknown> }>
+    ).find((p) => p.id === 1);
     const ciRerun = project!.ciRerun as { enabled: boolean; actions: Array<{ id: string }>; defaults: unknown };
     expect(ciRerun.enabled).toBe(true);
     expect(ciRerun.actions.map((a) => a.id).sort()).toEqual(['rerun-ci-server', 'rerun-github']);
@@ -195,7 +249,9 @@ describe('listProjects', () => {
   });
 
   test('returns null for a project with no CI settings', async () => {
-    const [project] = (await listProjects(db as never)) as unknown as Array<{ ciRerun: unknown }>;
+    const project = ((await listProjects(db as never)) as unknown as Array<{ id: number; ciRerun: unknown }>).find(
+      (p) => p.id === 1,
+    );
     expect(project!.ciRerun).toBeNull();
   });
 });

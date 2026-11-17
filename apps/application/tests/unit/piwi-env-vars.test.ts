@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { CREDENTIAL_SECRET_ENV_PREFIX } from '#shared/credentials';
 import {
   PIWI_ENV_VARS,
   PIWI_ENV_CATEGORIES,
@@ -171,6 +172,14 @@ function referencedEnvVars(): Set<string> {
 }
 
 describe('PIWI_ENV_VARS registry', () => {
+  test('no variable is named under the prefix a credential reads its secret from', () => {
+    const named = Object.keys(PIWI_ENV_VARS).filter((name) => name.startsWith(CREDENTIAL_SECRET_ENV_PREFIX));
+    expect(
+      named,
+      `a credential can send a ${CREDENTIAL_SECRET_ENV_PREFIX}* variable anywhere: name it otherwise`,
+    ).toEqual([]);
+  });
+
   test('every entry has a non-empty description and valid category', () => {
     for (const [name, meta] of allEntries) {
       expect(meta.description.length, `${name} description`).toBeGreaterThan(0);

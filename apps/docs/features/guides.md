@@ -43,7 +43,7 @@ popover, and pointing at a line enlarges its number on the page.
 |---|---|---|
 | **Report a first run** | Install the reporter, send a run, and find it in its project | Administrators |
 | **Configure AI** | Choose where the AI runs and what it does | Administrators |
-| **Add the SCM token** | Let Piwi read the commits behind a failure | Project admins |
+| **Add the SCM credential** | Let Piwi read the commits behind a failure | Project admins |
 | **Set up CI and sharding** | Report from CI, merge shards into one run, re-run from a cluster | Administrators |
 | **Turn on pull-request feedback** | Post each run's result on its pull request | Administrators |
 | **Connect Jira** | File issues from failures and keep them in sync | Administrators |
@@ -79,7 +79,7 @@ Three pages suggest a guide, or a question for the [assistant](./assistant), whe
 | Page | When | Offers |
 |---|---|---|
 | Settings → Capabilities | A capability is neither in use nor declined | **Ask**: which of them your runs would use, and what each one needs |
-| A failure cluster | Its diagnosis read no commits, and no SCM token is set for the project or the instance | **Show me**: Add the SCM token |
+| A failure cluster | Its diagnosis read no commits, and no SCM credential is set for the project or the instance | **Show me**: Add the SCM credential |
 | An execution | It timed out, or its leading clue comes from the network, the server logs or the console, and the project has not decided on the capture fixtures | **Show me**: Add the capture fixtures |
 
 A fixed rule over what the page already shows decides; no AI model is called. A page shows one suggestion at most,

@@ -155,7 +155,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     id: 'pr-feedback',
     title: 'Pull requests',
     summary: 'When a run finishes on a branch with an open pull request, the result posted back to it.',
-    how: 'Configure it in Settings — needs an SCM token with write access.',
+    how: 'Configure it in Settings — needs an SCM credential with write access.',
     icon: 'i-lucide-git-pull-request',
     doc: 'features/pr-feedback',
     to: '/settings/pr-feedback',
@@ -187,7 +187,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Source control',
     summary:
       'The commits behind a failure, CODEOWNERS-derived ownership, and pull-request feedback on the branch that broke.',
-    how: 'Add an SCM token in Settings → Source control, or on the project in its Source control settings.',
+    how: 'Pick an SCM credential in Settings → Source control, or on the project in its Source control settings.',
     icon: 'i-lucide-git-branch',
     doc: 'guide/source-control',
     to: '/settings/source-control',
