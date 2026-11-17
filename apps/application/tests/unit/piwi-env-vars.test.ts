@@ -15,6 +15,7 @@ import {
 import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context-limits';
 import { DEFAULT_INGEST_LIMITS, INGEST_LIMIT_FIELDS } from '#shared/ingest-limits';
 import { DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
+import { DEFAULT_DATABASE_POOL_MAX, MAX_DATABASE_POOL_MAX } from '../../server/database/postgres-pool';
 import {
   DEFAULT_MAX_SUBMIT_BYTES,
   DEFAULT_MAX_UPLOAD_BYTES,
@@ -293,6 +294,14 @@ describe('PIWI_ENV_VARS registry', () => {
     expect(meta.min).toBe(MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
     expect(meta.max).toBe(MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
     expect(meta.since).toBe('0.68.0');
+  });
+
+  test('registry default and bounds for the PostgreSQL pool size match the code', () => {
+    const meta = PIWI_ENV_VARS.PIWI_DATABASE_POOL_MAX;
+    expect(meta.type).toBe('number');
+    expect(meta.default).toBe(String(DEFAULT_DATABASE_POOL_MAX));
+    expect(meta.min).toBe(1);
+    expect(meta.max).toBe(MAX_DATABASE_POOL_MAX);
   });
 
   test('relevantWhen/requiredWhen only reference registered vars, never themselves', () => {

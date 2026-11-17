@@ -58,6 +58,20 @@ To try it locally against a throwaway server:
 docker run -d -p 5432:5432 -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=piwi_dashboard postgres:17-alpine
 ```
 
+### Connections
+
+An instance opens **at most 10 connections** to PostgreSQL, and only as its queries need them. Set
+`PIWI_DATABASE_POOL_MAX` to change that number, for instance below 10 on a server whose role is limited to fewer
+connections:
+
+```bash
+PIWI_DATABASE_POOL_MAX=4
+```
+
+A `max` in the connection string (`?max=4`), then postgres.js's own `PGMAX`, set it too; `PIWI_DATABASE_POOL_MAX` wins
+over both. A value that is not a whole number of at least 1 is left out, and one above 1,000 is lowered to 1,000, each
+with a warning in the server's log.
+
 ## Switching backends
 
 There is **no migration path between SQLite and PostgreSQL** — pointing an instance at a new backend
