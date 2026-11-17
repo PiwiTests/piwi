@@ -26,6 +26,8 @@ export const CREDENTIAL_SERVICE_LABELS: Record<CredentialService, string> = {
 
 /** The destination of a Slack credential: the Web API a channel's bot token is sent to. */
 export const SLACK_API_ENDPOINT = 'https://slack.com/api/';
+/** The method a Slack channel posts with, which a Slack credential's destination must hold. */
+export const SLACK_POST_MESSAGE_URL = `${SLACK_API_ENDPOINT}chat.postMessage`;
 
 /** The feature a use comes from. */
 export const CREDENTIAL_FEATURES = [

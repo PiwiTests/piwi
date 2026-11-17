@@ -5,7 +5,7 @@
  */
 import type { DbClient } from '../../database';
 import type { TrackerField } from '#shared/integrations/fields';
-import { createTracker } from './connections';
+import { createTracker, nullWhenRefused } from './connections';
 import { createFieldsCache } from './picker-cache';
 
 /**
@@ -21,7 +21,7 @@ export async function getCreateFields(
   const cacheKey = createFieldsKey(connectionId, projectKey, issueType);
   const cached = createFieldsCache.get(cacheKey);
   if (cached) return cached;
-  const tracker = await createTracker(db, connectionId);
+  const tracker = await nullWhenRefused(createTracker(db, connectionId));
   if (!tracker?.listCreateFields) return null;
   const fields = await tracker.listCreateFields(projectKey, issueType);
   createFieldsCache.set(cacheKey, fields);

@@ -32,8 +32,9 @@ vi.stubGlobal('eventHandler', (handler: unknown) => handler);
 vi.stubGlobal('readBody', async (event: { body?: unknown }) => event.body);
 vi.stubGlobal('apiError', apiError);
 
-const { importAiKeys, saveAiRoleKey } = await import('../../server/utils/ai-credentials');
-const { callAiProvider, resolveAiConfig } = await import('../../server/utils/ai-provider');
+const { importAiKeys, removeUnmanagedEnvAiCredentials, saveAiRoleKey } =
+  await import('../../server/utils/ai-credentials');
+const { callAiProvider, formAiKey, resolveAiConfig } = await import('../../server/utils/ai-provider');
 const { readAiSettings } = await import('../../server/utils/ai-settings');
 const { getAppSetting, setAppSetting } = await import('../../server/utils/app-settings');
 const { encryptSecret } = await import('../../server/utils/crypto');
@@ -188,6 +189,54 @@ describe('Settings → AI', () => {
     expect(config.roles.diagnosis.apiKey).toBe('sk-second');
   });
 
+  test('a key typed for a role whose credential another role names saves one of its own', async () => {
+    await saveAiSettings({
+      body: {
+        roles: {
+          diagnosis: { provider: 'openai', baseUrl: 'https://llm.example.com/v1', model: 'm', apiKey: 'sk-shared' },
+        },
+      },
+    });
+    const [shared] = await credentialRows();
+    await saveAiSettings({
+      body: {
+        roles: {
+          diagnosis: { provider: 'openai', baseUrl: 'https://llm.example.com/v1', model: 'm' },
+          research: { provider: 'openai', baseUrl: 'https://llm.example.com/v1', model: 'r', credentialId: shared!.id },
+        },
+      },
+    });
+    await saveAiSettings({
+      body: {
+        roles: {
+          diagnosis: { provider: 'openai', baseUrl: 'https://llm.example.com/v1', model: 'm' },
+          research: { provider: 'openai', baseUrl: 'https://llm.example.com/v1', model: 'r', apiKey: 'sk-own' },
+        },
+      },
+    });
+    const config = (await resolveAiConfig(db as never, { open: true }))!;
+    expect(config.roles.diagnosis).toMatchObject({ credentialId: shared!.id, apiKey: 'sk-shared' });
+    expect(config.roles.research?.apiKey).toBe('sk-own');
+    expect(config.roles.research?.credentialId).not.toBe(shared!.id);
+  });
+
+  test('a form request uses the credential picked, and says why one is refused', async () => {
+    await saveAiSettings({ body: role({ apiKey: 'sk-first' }) });
+    const [made] = await credentialRows();
+    const actor = { userId: 1, apiKeyId: null };
+    const input = { role: 'diagnosis' as const, provider: 'openai', baseUrl: 'https://llm.example.com/v1', actor };
+    expect(await formAiKey(db as never, { ...input, credentialId: made!.id })).toEqual({ key: 'sk-first' });
+    expect(await formAiKey(db as never, input)).toEqual({ key: 'sk-first' });
+    await db.update(schema.credentials).set({ disabled: true }).where(eq(schema.credentials.id, made!.id));
+    expect(await formAiKey(db as never, input)).toEqual({
+      key: '',
+      refusal: expect.stringContaining('is disabled'),
+    });
+    expect(
+      await formAiKey(db as never, { ...input, baseUrl: 'https://other.example.com/v1', credentialId: made!.id }),
+    ).toEqual({ key: '', refusal: expect.stringContaining('is sent only under') });
+  });
+
   test('another endpoint needs the key again, or a credential sent there', async () => {
     await saveAiSettings({ body: role({ apiKey: 'sk-first' }) });
     await expect(saveAiSettings({ body: role({ baseUrl: 'https://other.example.com/v1' }) })).rejects.toMatchObject({
@@ -252,6 +301,26 @@ describe('the environment’s AI keys', () => {
     expect(unset.roles.diagnosis).toMatchObject({ apiKey: '' });
     expect(unset.roles.diagnosis.credentialId).toBeUndefined();
     expect(await credentialRows()).toEqual([]);
+  });
+
+  test('are removed at startup once the environment no longer manages AI', async () => {
+    envAi = { provider: 'openai', apiKey: 'env-key', model: 'm', baseUrl: 'https://llm.example.com/v1' };
+    process.env.PIWI_AI_API_KEY = 'env-key';
+    await resolveAiConfig(db as never, { open: true });
+    expect(await removeUnmanagedEnvAiCredentials(db as never, 'openai')).toBe(0);
+    expect(await credentialRows()).toHaveLength(1);
+    expect(await removeUnmanagedEnvAiCredentials(db as never, undefined)).toBe(1);
+    expect(await credentialRows()).toEqual([]);
+  });
+
+  test('read a key set as its NUXT_AI_ override', async () => {
+    envAi = { provider: 'openai', apiKey: 'env-key', model: 'm', baseUrl: 'https://llm.example.com/v1' };
+    process.env.NUXT_AI_API_KEY = 'nuxt-key';
+    try {
+      expect((await resolveAiConfig(db as never, { open: true }))!.roles.diagnosis.apiKey).toBe('nuxt-key');
+    } finally {
+      delete process.env.NUXT_AI_API_KEY;
+    }
   });
 });
 

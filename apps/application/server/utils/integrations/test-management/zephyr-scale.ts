@@ -261,7 +261,8 @@ export class ZephyrScaleClient implements TestManagementProvider {
 
   /**
    * One request, after the limiter's wait: the response when it is a success, else the error it maps to. `timeoutMs`
-   * is the budget of the request and of reading its body. A write goes through the credential's gate.
+   * is the budget of the request and of reading its body. A write goes through the credential's gate once its turn
+   * comes, so the log row it writes covers the request alone.
    */
   private async request(
     method: 'GET' | 'POST',
@@ -269,27 +270,28 @@ export class ZephyrScaleClient implements TestManagementProvider {
     params: Record<string, string | number>,
     init: { body?: BodyInit; contentType?: string; timeoutMs?: number } = {},
   ): Promise<Response> {
-    if (method !== 'GET' && this.writeGate) {
-      return this.writeGate(
-        () => this.send(method, path, params, init),
-        () => null,
-      );
-    }
-    return this.send(method, path, params, init);
-  }
-
-  /** {@link request} without the gate. */
-  private async send(
-    method: 'GET' | 'POST',
-    path: string,
-    params: Record<string, string | number>,
-    init: { body?: BodyInit; contentType?: string; timeoutMs?: number },
-  ): Promise<Response> {
-    const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
     const timeoutMs = init.timeoutMs ?? this.timeoutMs;
     await this.beforeRequest?.();
     // A wait that used up the budget leaves nothing to send a request with.
     if (this.signal?.aborted) throw this.timedOut(timeoutMs);
+    if (method !== 'GET' && this.writeGate) {
+      return this.writeGate(
+        () => this.send(method, path, params, init, timeoutMs),
+        () => null,
+      );
+    }
+    return this.send(method, path, params, init, timeoutMs);
+  }
+
+  /** {@link request} once its turn came, without the gate. */
+  private async send(
+    method: 'GET' | 'POST',
+    path: string,
+    params: Record<string, string | number>,
+    init: { body?: BodyInit; contentType?: string },
+    timeoutMs: number,
+  ): Promise<Response> {
+    const query = new URLSearchParams(Object.entries(params).map(([key, value]) => [key, String(value)]));
     const headers: Record<string, string> = { Authorization: `Bearer ${this.apiToken}`, Accept: 'application/json' };
     if (init.contentType) headers['Content-Type'] = init.contentType;
     let response: Response;

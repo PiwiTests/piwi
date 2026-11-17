@@ -231,7 +231,9 @@ function removeConnection(conn: ConnectionSummary) {
 async function deleteConnection(conn: ConnectionSummary, deleteCredential: boolean) {
   deleting.value = conn.id;
   try {
-    const answer = await $fetch<{ credentialDeleted?: boolean }>(`/api/integrations/connections/${conn.id}`, {
+    const answer = await $fetch<
+      ApiResponse<typeof import('~~/server/api/integrations/connections/[id].delete').default>
+    >(`/api/integrations/connections/${conn.id}`, {
       method: 'DELETE',
       query: deleteCredential ? { deleteCredential: 'true' } : undefined,
     });

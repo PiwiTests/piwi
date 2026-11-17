@@ -5,10 +5,10 @@
  * error message.
  */
 import { slackDelivery } from '#shared/notifications/channel-setup';
+import { SLACK_POST_MESSAGE_URL } from '#shared/credentials';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { safeFetch } from '../safe-fetch';
 
-export const SLACK_POST_MESSAGE_URL = 'https://slack.com/api/chat.postMessage';
 const SLACK_API_TIMEOUT_MS = 10_000;
 /** The wait assumed when Slack answers 429 without a usable `Retry-After`. */
 const DEFAULT_RETRY_AFTER_SECONDS = 60;

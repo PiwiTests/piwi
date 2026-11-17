@@ -48,6 +48,7 @@ import { JiraError } from './jira/client';
 import { IntegrationHttpError } from './http-error';
 import { mergeEntityLinkMetadata, writeCreatedIssueLink } from './entity-links';
 import { applySyncResults, SyncUploadError } from './test-management/sync';
+import { CredentialRefusedError } from '../credentials';
 import { RequestLimiterBusyError } from './test-management/limiter';
 import { readTestManagementBinding } from './test-management/binding';
 import {
@@ -362,9 +363,9 @@ export class RequiredFieldsError extends Error {
   }
 }
 
-/** Whether an attempt's error is a refusal that retrying cannot change. */
+/** Whether an attempt's error is a refusal that retrying cannot change: the tool's, or the credential's rules'. */
 export function isFinalRefusal(err: unknown): boolean {
-  if (err instanceof RequiredFieldsError) return true;
+  if (err instanceof RequiredFieldsError || err instanceof CredentialRefusedError) return true;
   return err instanceof IntegrationHttpError && FINAL_REFUSAL_STATUSES.has(err.status);
 }
 
@@ -489,10 +490,12 @@ const UNSENT_ERROR_CODES = new Set([
 
 /**
  * Whether a create's error says the issue was not created: the tracker answered with a refusal, a rate limit or a
- * 503, or the request never left (a refused connection, an unknown host, a certificate refused). A timeout, a
+ * 503, or the request never left (the credential's rules refused it, a refused connection, an unknown host, a
+ * certificate refused). A timeout, a
  * connection lost after sending or another 5xx may come after the tracker created it.
  */
 function trackerDeclined(err: unknown): boolean {
+  if (err instanceof CredentialRefusedError) return true;
   const status = (err as { status?: unknown } | null)?.status;
   if (typeof status === 'number') return status < 500 || status === 503;
   for (let cause: unknown = err, depth = 0; cause && depth < 4; depth++) {
@@ -809,11 +812,13 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
   const pausedUntil = connectionPausedUntil(action.connectionId, now);
   if (pausedUntil) return waitForPause(db, action, pausedUntil);
 
+  // The credential's uses are logged under the person who asked for the action and its project.
+  const actor = { userId: action.requestedBy ?? null, apiKeyId: null };
   switch (kind) {
     case 'tracker': {
-      const tracker = await createTracker(db, action.connectionId);
-      if (!tracker) return skip(NO_CREDENTIALS);
       try {
+        const tracker = await createTracker(db, action.connectionId, actor, action.projectId);
+        if (!tracker) return skip(NO_CREDENTIALS);
         return await applyTrackerAction(db, tracker, action, attempts, now);
       } catch (err) {
         return failAttempt(db, action, attempts, now, err);
@@ -830,9 +835,11 @@ export async function runAction(db: DbClient, action: IntegrationAction): Promis
         return { status: 'done', result };
       }
       const row = await getConnectionRow(db, action.connectionId);
-      const tm = row ? await openTestManagement(db, row, { maxWaitMs: SYNC_LIMITER_WAIT_MS }) : null;
-      if (!tm) return skip(NO_CREDENTIALS);
       try {
+        const tm = row
+          ? await openTestManagement(db, row, { maxWaitMs: SYNC_LIMITER_WAIT_MS }, actor, action.projectId)
+          : null;
+        if (!tm) return skip(NO_CREDENTIALS);
         return { status: 'done', result: await applySyncResults(db, tm, action, attempts) };
       } catch (err) {
         return failSyncAttempt(db, action, attempts, now, err);
@@ -936,8 +943,13 @@ async function failAttempt(
   const next = final
     ? { status: 'failed' as const, scheduledFor: action.scheduledFor }
     : nextAttempt(attempts, now, action.scheduledFor, retryAfterMs(err));
-  // A last attempt that may have created the issue says so, rather than its error.
-  const unknown = next.status === 'failed' && action.kind === 'create-issue' && (await holdsMarker(db, action.id));
+  // A last attempt that may have created the issue says so, rather than its error. A credential's refusal sent nothing.
+  const refusedCredential = err instanceof CredentialRefusedError;
+  const unknown =
+    !refusedCredential &&
+    next.status === 'failed' &&
+    action.kind === 'create-issue' &&
+    (await holdsMarker(db, action.id));
   if (unknown) message = outcomeUnknownMessage((action.payload as CreateIssueActionPayload).title);
   await db
     .update(integrationActions)
@@ -947,7 +959,7 @@ async function failAttempt(
       error: message,
       scheduledFor: next.scheduledFor,
       finishedAt: next.status === 'failed' ? now : null,
-      ...(unknown ? { result: null } : {}),
+      ...(unknown || (refusedCredential && action.kind === 'create-issue') ? { result: null } : {}),
     })
     .where(eq(integrationActions.id, action.id));
   if (err instanceof IntegrationHttpError && err.status === 429) {
@@ -983,6 +995,7 @@ async function failSyncAttempt(
   const status = cause instanceof IntegrationHttpError ? cause.status : null;
   const rateLimited = status === 429;
   const refused = status === 401 || isFinalRefusal(cause) || cause instanceof RangeError;
+  // A credential's refusal (`isFinalRefusal`) sent nothing, so the upload's marker is cleared below.
   const unknown = upload && !rateLimited && !refused;
   const final = refused || unknown;
   const next = final

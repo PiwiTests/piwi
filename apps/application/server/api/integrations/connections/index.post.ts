@@ -12,6 +12,7 @@ import {
   connectionCredentialProblem,
   connectionEndpoint,
   hasTypedToken,
+  refuseSharedChange,
 } from '../../../utils/integrations/connection-credentials';
 
 defineRouteMeta({
@@ -59,14 +60,16 @@ export default eventHandler(async (event) => {
     );
     if (problem) throw apiError({ statusCode: 400, message: problem });
   }
-  const connection = await createConnection(db, {
-    provider,
-    name: parsed.data.name,
-    baseUrl: endpoint.baseUrl,
-    config,
-    credentials: parsed.data.credentials ?? null,
-    credentialId: parsed.data.credentialId ?? null,
-    createdBy: user.id || null,
-  });
+  const connection = await refuseSharedChange(() =>
+    createConnection(db, {
+      provider,
+      name: parsed.data.name,
+      baseUrl: endpoint.baseUrl,
+      config,
+      credentials: parsed.data.credentials ?? null,
+      credentialId: parsed.data.credentialId ?? null,
+      createdBy: user.id || null,
+    }),
+  );
   return { connection };
 });

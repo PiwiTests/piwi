@@ -11,7 +11,7 @@ import {
   deleteCredentialIfUnused,
   freeCredentialName,
   insertCredential,
-  loadCredentialRecord,
+  slackChannelCredentialProblem,
 } from '#shared/handlers/credentials';
 import { SLACK_API_ENDPOINT } from '#shared/credentials';
 import { loadReportChannels, type ReportChannel } from '#shared/handlers/reports';
@@ -78,9 +78,8 @@ export async function createDemoChannel(
     const picked = (config as Record<string, unknown>).credentialId;
     let credentialId: number;
     if (typeof picked === 'number') {
-      const record = await loadCredentialRecord(db, picked);
-      if (record?.service !== 'slack' || !record.allProjects)
-        throw demoHttpError(400, `No Slack credential ${picked} exists.`);
+      const refused = await slackChannelCredentialProblem(db, picked);
+      if (refused) throw demoHttpError(400, refused);
       credentialId = picked;
     } else {
       credentialId = await insertCredential(
@@ -100,7 +99,7 @@ export async function createDemoChannel(
         null,
       );
     }
-    stored = { credentialId, channelId: stored.channelId };
+    stored = { credentialId, channelId: String(stored.channelId ?? '').trim() };
   }
 
   // Ids follow the account email's, which lives outside the table.

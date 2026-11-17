@@ -85,7 +85,7 @@ export async function diagnoseExecution(
     if (existing?.status === 'completed') return { ok: true, diagnosis: existing };
   }
 
-  const config = await resolveAiConfig(db, { open: true, actor: opts.actor });
+  const config = await resolveAiConfig(db, { open: true, actor: opts.actor, projectId: execution.projectId });
   if (!config) return { ok: false, error: 'not-configured' };
 
   let cluster: FailureCluster | null = null;

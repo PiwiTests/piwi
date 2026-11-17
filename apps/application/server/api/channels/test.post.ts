@@ -10,11 +10,8 @@ import {
 import { channelConfigProblem, channelDeliveryHint } from '#shared/notifications/channel-setup';
 import { getDatabase } from '../../database';
 import { requestCredentialActor } from '../../utils/credentials';
-import {
-  channelCredentialId,
-  postSlackWithCredential,
-  slackChannelCredentialProblem,
-} from '../../utils/notifications/slack-credentials';
+import { channelCredentialId, postSlackWithCredential } from '../../utils/notifications/slack-credentials';
+import { slackChannelCredentialProblem } from '#shared/handlers/credentials';
 import { isAdministrator } from '#shared/permissions';
 
 defineRouteMeta({

@@ -20,7 +20,7 @@ import {
   type ChannelType,
   type SlackDelivery,
 } from '#shared/notifications/channel-setup';
-import { SLACK_API_ENDPOINT } from '#shared/credentials';
+import { SLACK_POST_MESSAGE_URL } from '#shared/credentials';
 
 const props = defineProps<{
   authEnabled: boolean;
@@ -70,8 +70,6 @@ const slackAppUrl = computed(() => slackCreateAppUrl(undefined, form.slackDelive
 const slackApi = computed(() => form.type === 'slack' && form.slackDelivery === 'api');
 /** A channel of the instance: global, or any channel without authentication. */
 const instanceChannel = computed(() => !props.authEnabled || form.global);
-/** The address a Slack bot token is sent to, which a saved credential's destination must hold. */
-const SLACK_POST_MESSAGE_ENDPOINT = `${SLACK_API_ENDPOINT}chat.postMessage`;
 /** A saved Slack credential picked for a channel of the instance in place of a typed token, or null. */
 const pickedCredential = ref<number | null>(null);
 watch(instanceChannel, (instance) => {
@@ -259,7 +257,7 @@ async function requestPermission() {
           v-if="instanceChannel"
           v-model="pickedCredential"
           service="slack"
-          :endpoint="SLACK_POST_MESSAGE_ENDPOINT"
+          :endpoint="SLACK_POST_MESSAGE_URL"
         />
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <UFormField

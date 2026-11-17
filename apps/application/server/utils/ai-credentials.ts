@@ -9,13 +9,14 @@
  * the configuration for a status or a form never opens one.
  */
 import { and, eq, inArray } from 'drizzle-orm';
-import { credentials } from '../database/schema';
+import { appSettings, credentials } from '../database/schema';
 import type { DbClient } from '../database';
 import { getAppSetting, setAppSetting } from './app-settings';
 import { decryptSecret, getEncryptionKey } from './crypto';
 import {
   AI_KEY_ENV_VARS,
   CredentialRefusedError,
+  readAiKeyEnv,
   freeName,
   sealCredentialSecret,
   withCredential,
@@ -29,7 +30,12 @@ import {
   type RawStoredAi,
   type RawStoredRole,
 } from './ai-settings';
-import { insertCredential, loadCredentialRecord, updateCredential } from '#shared/handlers/credentials';
+import {
+  credentialReferences,
+  insertCredential,
+  loadCredentialRecord,
+  updateCredential,
+} from '#shared/handlers/credentials';
 import { isUnderBaseUrl } from '#shared/ci-server';
 import { aiEndpoint } from '#shared/credentials';
 
@@ -49,20 +55,27 @@ export function aiRoleName(role: AiModelRole): string {
 }
 
 /**
- * Save a key typed for a role: it rotates the credential the role names, bound
- * again to the role's endpoint, or creates one shared with all projects,
- * named after the role. Returns the credential's id.
+ * Save a key typed for a role: it rotates the credential the role names while
+ * that is the role's own (an `ai` key saved in the database, sent under the
+ * role's endpoint, named by nothing else), and otherwise creates one shared
+ * with all projects, named after the role. Returns the credential's id.
  */
 export async function saveAiRoleKey(
   db: DbClient,
   input: { role: AiModelRole; endpoint: string; key: string; credentialId: number | null; createdBy: number | null },
 ): Promise<number> {
-  const sealed = sealCredentialSecret(input.endpoint, input.key);
   const named = input.credentialId ? await loadCredentialRecord(db, input.credentialId) : null;
-  if (named && named.service === 'ai' && named.managedBy === 'db') {
-    await updateCredential(db, named.id, { destination: input.endpoint }, sealed);
+  if (
+    named &&
+    named.service === 'ai' &&
+    named.managedBy === 'db' &&
+    isUnderBaseUrl(named.destination, input.endpoint) &&
+    !(await namedByOthers(db, named.id, input.role))
+  ) {
+    await updateCredential(db, named.id, {}, sealCredentialSecret(named.destination, input.key), input.createdBy);
     return named.id;
   }
+  const sealed = sealCredentialSecret(input.endpoint, input.key);
   const host = new URL(input.endpoint).host;
   return insertCredential(
     db,
@@ -82,10 +95,17 @@ export async function saveAiRoleKey(
   );
 }
 
+/** Whether something besides the role names the credential: another role, a connection, a channel. */
+async function namedByOthers(db: DbClient, credentialId: number, role: AiModelRole): Promise<boolean> {
+  const references = (await credentialReferences(db as never)).get(credentialId) ?? [];
+  return references.some((reference) => !(reference.kind === 'ai-role' && reference.name === aiRoleName(role)));
+}
+
 /**
  * Why a role cannot name this credential, or null: it must exist, hold a key
- * for an AI provider, be shared with all projects (the roles serve every
- * project), and be sent under the role's endpoint.
+ * for an AI provider saved in the database (the environment's are its own
+ * roles'), be shared with all projects (the roles serve every project), and
+ * be sent under the role's endpoint.
  */
 export async function aiRoleCredentialProblem(
   db: DbClient,
@@ -95,6 +115,7 @@ export async function aiRoleCredentialProblem(
 ): Promise<string | null> {
   const record = await loadCredentialRecord(db, credentialId);
   if (!record || record.service !== 'ai') return `Role "${role}": no AI credential ${credentialId} exists.`;
+  if (record.managedBy !== 'db') return `Role "${role}": the credential "${record.name}" is set by the environment.`;
   if (!record.allProjects) return `Role "${role}": the credential "${record.name}" is not shared with all projects.`;
   if (!isUnderBaseUrl(record.destination, endpoint)) {
     return `Role "${role}": the credential "${record.name}" is sent only under ${record.destination}, not to ${endpoint}.`;
@@ -110,7 +131,7 @@ function envKeyVariable(role: AiModelRole): (typeof AI_KEY_ENV_VARS)[number] {
     embedding: 'PIWI_AI_EMBEDDING_API_KEY',
     assistant: 'PIWI_AI_ASSISTANT_API_KEY',
   } as const;
-  return process.env[own[role]]?.trim() ? own[role] : 'PIWI_AI_API_KEY';
+  return readAiKeyEnv(own[role]) ? own[role] : 'PIWI_AI_API_KEY';
 }
 
 /** The variable and endpoint of each role whose key the environment sets, following `reuse` links. */
@@ -128,7 +149,7 @@ export function envAiKeySources(
     }
     const endpoint = aiEndpoint(cfg.provider, cfg.baseUrl);
     const variable = envKeyVariable(role);
-    if (endpoint && process.env[variable]?.trim()) sources.set(role, { variable, endpoint });
+    if (endpoint && readAiKeyEnv(variable)) sources.set(role, { variable, endpoint });
   }
   return sources;
 }
@@ -185,6 +206,20 @@ export async function ensureEnvAiCredentials(
   return ids;
 }
 
+/**
+ * Remove the AI credentials of the environment once it no longer manages AI
+ * (`PIWI_AI_PROVIDER` unset), at startup: the variables cannot change while
+ * the server runs, and nothing else deletes a credential the environment set.
+ */
+export async function removeUnmanagedEnvAiCredentials(db: DbClient, envProvider: string | undefined): Promise<number> {
+  if (envProvider) return 0;
+  const removed = await db
+    .delete(credentials)
+    .where(and(eq(credentials.service, 'ai'), eq(credentials.managedBy, 'env')))
+    .returning({ id: credentials.id });
+  return removed.length;
+}
+
 /** The credential each role's key comes from while the environment manages AI. */
 export async function envAiCredentialIds(
   db: DbClient,
@@ -200,17 +235,30 @@ export async function envAiCredentialIds(
   return byRole;
 }
 
+/** Which keys a caller opens: the roles it calls (all of them by default), and the project the calls serve. */
+export interface AiKeyScope {
+  roles?: readonly AiModelRole[];
+  projectId?: number | null;
+}
+
 /**
  * A configuration with the keys of its roles opened, for a call to the model:
  * each credential once, through `withCredential`, as one counted read
- * (`ai-call`). A role whose credential is refused keeps no key and carries the
- * refusal, which a call with it throws; the configuration is still returned,
- * so a role the call does not use cannot stop it.
+ * (`ai-call`) logged under the project the calls serve, and only for the roles
+ * the caller calls. A role whose credential is refused keeps no key and
+ * carries the refusal, which a call with it throws; the configuration is still
+ * returned, so a role the call does not use cannot stop it.
  */
-export async function openAiKeys(db: DbClient, config: AiConfig, actor: CredentialActor): Promise<AiConfig> {
+export async function openAiKeys(
+  db: DbClient,
+  config: AiConfig,
+  actor: CredentialActor,
+  scope: AiKeyScope = {},
+): Promise<AiConfig> {
   const opened = new Map<string, { key: string } | { refusal: string }>();
-  const open = async (role: ResolvedAiRole | null): Promise<ResolvedAiRole | null> => {
-    if (!role || role.credentialId == null) return role;
+  const wanted = (name: AiModelRole) => !scope.roles || scope.roles.includes(name);
+  const open = async (role: ResolvedAiRole | null, name: AiModelRole): Promise<ResolvedAiRole | null> => {
+    if (!role || role.credentialId == null || !wanted(name)) return role;
     const endpoint = aiEndpoint(role.provider, role.baseUrl);
     if (!endpoint) return role;
     const cacheKey = `${role.credentialId} ${endpoint}`;
@@ -219,7 +267,14 @@ export async function openAiKeys(db: DbClient, config: AiConfig, actor: Credenti
       try {
         const key = await withCredential(
           db,
-          { credentialId: role.credentialId, feature: 'ai-call', projectId: null, url: endpoint, custom: false, actor },
+          {
+            credentialId: role.credentialId,
+            feature: 'ai-call',
+            projectId: scope.projectId ?? null,
+            url: endpoint,
+            custom: false,
+            actor,
+          },
           async (credential) => credential.secret,
         );
         result = { key };
@@ -232,10 +287,10 @@ export async function openAiKeys(db: DbClient, config: AiConfig, actor: Credenti
     return 'key' in result ? { ...role, apiKey: result.key } : { ...role, apiKey: '', refusal: result.refusal };
   };
   const roles = {
-    diagnosis: (await open(config.roles.diagnosis))!,
-    research: await open(config.roles.research),
-    embedding: await open(config.roles.embedding),
-    assistant: await open(config.roles.assistant),
+    diagnosis: (await open(config.roles.diagnosis, 'diagnosis'))!,
+    research: await open(config.roles.research, 'research'),
+    embedding: await open(config.roles.embedding, 'embedding'),
+    assistant: await open(config.roles.assistant, 'assistant'),
   };
   return { ...config, apiKey: roles.diagnosis.apiKey, refusal: roles.diagnosis.refusal, roles };
 }
@@ -251,48 +306,61 @@ export function assertAiKey(role: ResolvedAiRole): void {
  * each key to one bound to its role's endpoint, shared with all projects and
  * named by the role; equal keys for the same endpoint share one. The setting
  * is written back in the roles shape, each role naming its credential and
- * holding no key. A key that cannot be opened, or a configuration
- * `PIWI_SECRET_KEY` cannot seal, is left as it is and logged. Returns how many
- * keys were moved.
+ * holding no key, in the transaction that made the credentials, so a failure
+ * leaves none behind and a second server starting at once moves nothing. A key
+ * that cannot be opened, or a configuration `PIWI_SECRET_KEY` cannot seal, is
+ * left as it is and logged. Returns how many keys were moved.
  */
 export async function importAiKeys(db: DbClient): Promise<number> {
   const stored = await getAppSetting<RawStoredAi>(db, 'ai');
   const roles = storedRoles(stored);
   if (!AI_ROLES.some((role) => roles[role]?.apiKey && roles[role]?.credentialId == null)) return 0;
-  const next: Partial<Record<AiModelRole, RawStoredRole>> = { ...roles };
-  const made = new Map<string, number>();
-  let moved = 0;
   try {
-    for (const role of AI_ROLES) {
-      const cfg = roles[role];
-      if (!cfg?.apiKey || cfg.credentialId != null) continue;
-      const endpoint = aiEndpoint(cfg.provider, cfg.baseUrl);
-      let key: string;
-      try {
-        key = decryptSecret(cfg.apiKey, getEncryptionKey()).trim();
-      } catch {
-        console.warn(`[credentials] The AI key of the ${role} role cannot be opened; it is left as it is`);
-        continue;
+    return await db.transaction(async (tx) => {
+      // The setting's row is written first, so a second server waits here and then finds the keys moved.
+      await tx.update(appSettings).set({ updatedAt: new Date() }).where(eq(appSettings.key, 'ai'));
+      const current = await getAppSetting<RawStoredAi>(tx as never, 'ai');
+      if (JSON.stringify(current) !== JSON.stringify(stored)) return 0;
+      const next: Partial<Record<AiModelRole, RawStoredRole>> = { ...roles };
+      const made = new Map<string, number>();
+      let moved = 0;
+      for (const role of AI_ROLES) {
+        const cfg = roles[role];
+        if (!cfg?.apiKey || cfg.credentialId != null) continue;
+        const endpoint = aiEndpoint(cfg.provider, cfg.baseUrl);
+        let key: string;
+        try {
+          key = decryptSecret(cfg.apiKey, getEncryptionKey()).trim();
+        } catch {
+          console.warn(`[credentials] The AI key of the ${role} role cannot be opened; it is left as it is`);
+          continue;
+        }
+        if (!endpoint || !key) continue;
+        const dedupe = JSON.stringify([endpoint, key]);
+        let id = made.get(dedupe);
+        if (id === undefined) {
+          id = await saveAiRoleKey(tx as unknown as DbClient, {
+            role,
+            endpoint,
+            key,
+            credentialId: null,
+            createdBy: null,
+          });
+          made.set(dedupe, id);
+        }
+        const { apiKey: _key, ...rest } = cfg;
+        next[role] = { ...rest, credentialId: id };
+        moved++;
       }
-      if (!endpoint || !key) continue;
-      const dedupe = JSON.stringify([endpoint, key]);
-      let id = made.get(dedupe);
-      if (id === undefined) {
-        id = await saveAiRoleKey(db, { role, endpoint, key, credentialId: null, createdBy: null });
-        made.set(dedupe, id);
+      if (moved > 0) {
+        await setAppSetting(tx as never, 'ai', { autoDiagnose: stored?.autoDiagnose ?? false, roles: next });
       }
-      const { apiKey: _key, ...rest } = cfg;
-      next[role] = { ...rest, credentialId: id };
-      moved++;
-    }
+      return moved;
+    });
   } catch (err) {
     console.warn('[credentials] The AI keys could not be moved; they are left as they are', err);
     return 0;
   }
-  if (moved > 0) {
-    await setAppSetting(db, 'ai', { autoDiagnose: stored?.autoDiagnose ?? false, roles: next });
-  }
-  return moved;
 }
 
 /** The roles the environment sets, with the stored settings laid over them, as `resolveAiConfig` reads them. */

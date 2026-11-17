@@ -10,6 +10,7 @@ import { and, eq, isNotNull } from 'drizzle-orm';
 import { credentials, integrationConnections, type IntegrationConnection } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { decryptSecret, getEncryptionKey } from '../crypto';
+import { apiError } from '../api-error';
 import {
   CredentialRefusedError,
   freeName,
@@ -18,7 +19,12 @@ import {
   type CredentialActor,
   type CredentialWriteGate,
 } from '../credentials';
-import { insertCredential, loadCredentialRecord, updateCredential } from '#shared/handlers/credentials';
+import {
+  credentialReferences,
+  insertCredential,
+  loadCredentialRecord,
+  updateCredential,
+} from '#shared/handlers/credentials';
 import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import { connectionBaseUrl } from '#shared/integrations/registry';
 import { normalizeJiraSiteUrl } from '#shared/integrations/jira-setup';
@@ -74,11 +80,12 @@ export async function openConnectionCredentials(
   db: DbClient,
   row: IntegrationConnection,
   actor: CredentialActor = INSTANCE,
+  projectId: number | null = null,
 ): Promise<OpenedConnection | { refusal: string } | null> {
   if (row.credentialId == null) return null;
   const endpoint = connectionEndpoint(row.provider, row.baseUrl, row.config as Record<string, unknown> | null);
   if (!endpoint) return null;
-  const use = { credentialId: row.credentialId, projectId: null, url: endpoint, custom: false, actor };
+  const use = { credentialId: row.credentialId, projectId, url: endpoint, custom: false, actor };
   try {
     const opened = await withCredential(db, { ...use, feature: 'integration-read' }, async (credential) => credential);
     return {
@@ -121,8 +128,9 @@ export async function connectionCredentialProblem(
 
 /**
  * The fields of a saved credential a connection form picked, opened for its
- * pre-save check as one counted read; null when the connection could not name
- * it (see {@link connectionCredentialProblem}) or its rules refuse it.
+ * pre-save check as one counted read. Throws a {@link CredentialRefusedError}
+ * with the reason when the connection could not name it (see
+ * {@link connectionCredentialProblem}) or its rules refuse it.
  */
 export async function openCredentialForCheck(
   db: DbClient,
@@ -130,28 +138,50 @@ export async function openCredentialForCheck(
   credentialId: number,
   endpoint: string | null,
   actor: CredentialActor = INSTANCE,
-): Promise<Record<string, string> | null> {
-  if (!endpoint || (await connectionCredentialProblem(db, provider, credentialId, endpoint))) return null;
+): Promise<Record<string, string>> {
+  const problem = await connectionCredentialProblem(db, provider, credentialId, endpoint);
+  if (problem) throw new CredentialRefusedError(problem);
+  const opened = await withCredential(
+    db,
+    { credentialId, feature: 'integration-read', projectId: null, url: endpoint!, custom: false, actor },
+    async (credential) => credential,
+  );
+  return valuesOf(provider, opened);
+}
+
+/** A change typed for a connection that would reach the others naming its credential: answered with a 400. */
+export class SharedCredentialError extends Error {}
+
+/** Run a connection's save, answering a {@link SharedCredentialError} as a 400 with its reason. */
+export async function refuseSharedChange<T>(save: () => Promise<T>): Promise<T> {
   try {
-    const opened = await withCredential(
-      db,
-      { credentialId, feature: 'integration-read', projectId: null, url: endpoint, custom: false, actor },
-      async (credential) => credential,
-    );
-    return valuesOf(provider, opened);
+    return await save();
   } catch (e) {
-    if (e instanceof CredentialRefusedError) return null;
+    if (e instanceof SharedCredentialError) throw apiError({ statusCode: 400, message: e.message });
     throw e;
   }
 }
 
+/** Whether something besides the connection `selfId` names the credential: another connection, a role, a channel. */
+async function namedElsewhere(db: DbClient, credentialId: number, selfId: number | null): Promise<boolean> {
+  const references = (await credentialReferences(db as never)).get(credentialId) ?? [];
+  if (references.some((reference) => reference.kind !== 'connection')) return true;
+  const connections = await db
+    .select({ id: integrationConnections.id })
+    .from(integrationConnections)
+    .where(eq(integrationConnections.credentialId, credentialId));
+  return connections.some((connection) => connection.id !== selfId);
+}
+
 /**
- * Save the secret fields typed in a connection form: a token rotates the
- * credential the connection names while its destination holds the
- * connection's endpoint, or makes one shared with all projects, named after
- * the connection; an e-mail alone changes the user of the credential named.
- * Returns the credential the connection names next (null when nothing usable
- * was typed and it names none that fits), and whether its token or user changed.
+ * Save the secret fields typed in a connection form. A token rotates the
+ * credential the connection names while it is the connection's own (saved in
+ * the database, sent under the connection's endpoint, named by nothing else),
+ * and otherwise makes a new one shared with all projects, named after the
+ * connection; an e-mail alone changes the user of the connection's own
+ * credential, and is refused for one something else names. Returns the
+ * credential the connection names next (null when nothing usable was typed
+ * and it names none that fits), and whether its token or user changed.
  */
 export async function saveConnectionCredential(
   db: DbClient,
@@ -161,38 +191,46 @@ export async function saveConnectionCredential(
     endpoint: string;
     typed: Record<string, string>;
     credentialId: number | null;
+    /** The connection being saved, which the credential may name; null for a new one. */
+    selfId: number | null;
     createdBy: number | null;
   },
 ): Promise<{ id: number | null; changed: boolean }> {
   const named = input.credentialId ? await loadCredentialRecord(db, input.credentialId) : null;
   const fits = named && named.service === input.provider && isUnderBaseUrl(named.destination, input.endpoint);
-  const ours = fits && named.managedBy === 'db' ? named : null;
+  const ours = fits && named.managedBy === 'db' && !(await namedElsewhere(db, named.id, input.selfId)) ? named : null;
   const { user, secret } = credentialFields(input.provider, input.typed);
   if (!secret) {
-    const newUser = !!ours && !!user && user !== ours.user;
-    if (newUser) await updateCredential(db, ours!.id, { user });
-    return { id: fits ? named.id : null, changed: newUser };
+    const newUser = !!fits && !!user && user !== named!.user;
+    if (newUser && !ours) {
+      throw new SharedCredentialError(
+        `The credential "${named!.name}" is named elsewhere too: type the token as well, to save one of this connection's own.`,
+      );
+    }
+    if (newUser) await updateCredential(db, ours!.id, { user }, undefined, input.createdBy);
+    return { id: fits ? named!.id : null, changed: newUser };
   }
-  const sealed = sealCredentialSecret(input.endpoint, secret);
   if (ours) {
-    await updateCredential(db, ours.id, { destination: input.endpoint, ...(user ? { user } : {}) }, sealed);
+    const sealed = sealCredentialSecret(ours.destination, secret);
+    await updateCredential(db, ours.id, user ? { user } : {}, sealed, input.createdBy);
     return { id: ours.id, changed: true };
   }
-  if (input.provider === 'jira' && !user) return { id: null, changed: false };
+  const account = user ?? (fits ? named!.user : null);
+  if (input.provider === 'jira' && !account) return { id: null, changed: false };
   const id = await insertCredential(
     db,
     {
       name: await freeName(db, input.name),
       description: null,
       service: input.provider,
-      user,
+      user: account,
       destination: input.endpoint,
       scope: { allProjects: true },
       allowedInputs: null,
       customRequests: false,
       disabled: false,
     },
-    sealed,
+    sealCredentialSecret(input.endpoint, secret),
     input.createdBy,
   );
   return { id, changed: true };
@@ -225,23 +263,33 @@ export async function ensureEnvConnectionCredential(
     }
     return existing.id;
   }
-  const [row] = await db
-    .insert(credentials)
-    .values({
-      name: await freeName(db, env.name),
-      service: provider,
-      userName: env.user,
-      destination: env.endpoint,
-      secret: null,
-      secretEnv: ENV_TOKEN_VARIABLES[provider],
-      allProjects: true,
-      allowedInputs: null,
-      customRequests: false,
-      disabled: false,
-      managedBy: 'env',
-    })
-    .returning({ id: credentials.id });
-  return row!.id;
+  try {
+    const [row] = await db
+      .insert(credentials)
+      .values({
+        name: await freeName(db, env.name),
+        service: provider,
+        userName: env.user,
+        destination: env.endpoint,
+        secret: null,
+        secretEnv: ENV_TOKEN_VARIABLES[provider],
+        allProjects: true,
+        allowedInputs: null,
+        customRequests: false,
+        disabled: false,
+        managedBy: 'env',
+      })
+      .returning({ id: credentials.id });
+    return row!.id;
+  } catch (err) {
+    // Two requests reconciling at once: the other one's row stands.
+    const [other] = await db
+      .select({ id: credentials.id })
+      .from(credentials)
+      .where(and(eq(credentials.service, provider), eq(credentials.managedBy, 'env')));
+    if (other) return other.id;
+    throw err;
+  }
 }
 
 /** Remove the read-only credential of a connection the environment no longer sets. */
@@ -298,6 +346,7 @@ export async function importConnectionCredentials(db: DbClient): Promise<number>
           endpoint,
           typed: values,
           credentialId: null,
+          selfId: row.id,
           createdBy: null,
         });
         await tx.update(integrationConnections).set({ credentialId: id }).where(eq(integrationConnections.id, row.id));

@@ -245,9 +245,13 @@ async function importProjectCiServerTokens(target: DB): Promise<void> {
     console.error('[Database] Moving the CI server tokens to credentials failed:', err);
   }
   try {
-    const { importAiKeys } = await import('../utils/ai-credentials');
+    const { importAiKeys, removeUnmanagedEnvAiCredentials } = await import('../utils/ai-credentials');
     const moved = await importAiKeys(target as any);
     if (moved) console.log(`[Database] ${moved} AI key(s) moved to credentials`);
+    await removeUnmanagedEnvAiCredentials(
+      target as any,
+      process.env.PIWI_AI_PROVIDER?.trim() || process.env.NUXT_AI_PROVIDER?.trim(),
+    );
   } catch (err) {
     console.error('[Database] Moving the AI keys to credentials failed:', err);
   }

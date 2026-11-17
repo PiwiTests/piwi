@@ -3,7 +3,7 @@ import type { DbClient } from '../../database';
 import type { ProjectScope } from '../project-access';
 import type { UnfurlResult } from '../unfurl/UnfurlProvider';
 import { unfurlUrl } from '../unfurl';
-import { createTracker } from './connections';
+import { createTracker, nullWhenRefused } from './connections';
 import type { TrackerStatusCategory } from './types';
 
 /**
@@ -34,7 +34,7 @@ export async function unfurlLink(
   projectConnectionId: number | null,
 ): Promise<LinkUnfurlResult> {
   if (link.connectionId != null && link.connectionId === projectConnectionId) {
-    const tracker = await createTracker(db, link.connectionId);
+    const tracker = await nullWhenRefused(createTracker(db, link.connectionId));
     if (!tracker) return EMPTY;
     const idOrKey = link.externalId ?? link.key;
     if (!idOrKey) return EMPTY;

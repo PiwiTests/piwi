@@ -69,7 +69,11 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const config = await resolveAiConfig(db, { open: true, actor: requestCredentialActor(event, user) });
+  const config = await resolveAiConfig(db, {
+    open: true,
+    roles: ['research', 'diagnosis'],
+    actor: requestCredentialActor(event, user),
+  });
   // Planning/grounding reuses the research role (cheaper tier) with a diagnosis
   // fallback — the same ladder the test-function extractor uses.
   const role = config?.roles.research ?? config?.roles.diagnosis;

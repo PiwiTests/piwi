@@ -19,6 +19,7 @@ import {
 } from '../connections';
 import { readCatalogInfo } from './catalog';
 import type { PageCursor, TestManagementProvider, TmCase, TmPage } from './types';
+import { CredentialRefusedError } from '../../credentials';
 
 /** A catalog older than this is read again by the hourly task. */
 export const CATALOG_MAX_AGE_MS = 24 * 60 * 60 * 1000;
@@ -194,7 +195,13 @@ async function readAndStore(
   if (paused) {
     return { ok: false, status: 429, error: `Paused until ${paused.toISOString()}: rate limited`, pausedUntil: paused };
   }
-  const client = await openTestManagement(db, row);
+  let client: TestManagementProvider | null;
+  try {
+    client = await openTestManagement(db, row);
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) return { ok: false, status: 409, error: e.message, pausedUntil: null };
+    throw e;
+  }
   if (!client) return { ok: false, status: 502, error: 'This connection has no usable credentials', pausedUntil: null };
 
   const fetchedAt = now();

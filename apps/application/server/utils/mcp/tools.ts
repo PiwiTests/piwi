@@ -2687,6 +2687,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
 
     const config = await resolveAiConfig(db, {
       open: true,
+      projectId: cluster.projectId,
       actor: { userId: ctx.user?.id || null, apiKeyId: ctx.apiKeyId ?? null },
     });
     if (!config) throw new Error(AI_NOT_CONFIGURED);

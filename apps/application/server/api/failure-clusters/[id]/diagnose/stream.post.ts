@@ -12,6 +12,7 @@ import { requestCredentialActor } from '../../../../utils/credentials';
 import type { AiAttachedImage } from '../../../../utils/ai-provider';
 import { streamClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../../utils/ai-diagnosis';
 import { diagnosisFrame } from '../../../../utils/diagnosis-stream-frames';
+import { openAiKeys } from '../../../../utils/ai-credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -54,8 +55,8 @@ export default eventHandler(async (event) => {
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
   if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
-  const config = await resolveAiConfig(db, { open: true, actor: requestCredentialActor(event, user) });
-  if (!config)
+  const resolved = await resolveAiConfig(db);
+  if (!resolved)
     throw apiError({ statusCode: 503, errorCode: 'AI_NOT_CONFIGURED', message: 'AI diagnosis is not configured' });
 
   const isExecutionScope = body?.scope === 'execution' && Boolean(body?.executionId);
@@ -111,6 +112,9 @@ export default eventHandler(async (event) => {
       }
     }
   }
+
+  // The keys are opened once the diagnosis is sure to call the model.
+  const config = await openAiKeys(db, resolved, requestCredentialActor(event, user), { projectId });
 
   // SSE headers
   setResponseHeaders(event, {

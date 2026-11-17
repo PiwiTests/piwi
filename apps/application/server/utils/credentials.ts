@@ -65,6 +65,14 @@ function readSecretEnv(name: string): string | null {
 }
 
 /**
+ * An AI key variable's value: `PIWI_AI_…`, else the `NUXT_AI_…` override the
+ * runtime configuration also reads, or null when neither is set.
+ */
+export function readAiKeyEnv(name: string): string | null {
+  return readSecretEnv(name) ?? readSecretEnv(name.replace(/^PIWI_/, 'NUXT_'));
+}
+
+/**
  * The secret of a stored credential, or why it cannot be had: the seal opens
  * for its destination and its variable, and the variable it names is set.
  */
@@ -124,7 +132,7 @@ function envSecret(service: CredentialService, variable: string | null): string 
   if (service === 'jira') return readSecretEnv('PIWI_JIRA_API_TOKEN');
   if (service === 'zephyr-scale') return readSecretEnv('PIWI_ZEPHYR_API_TOKEN');
   if (service === 'ai') {
-    return variable && (AI_KEY_ENV_VARS as readonly string[]).includes(variable) ? readSecretEnv(variable) : null;
+    return variable && (AI_KEY_ENV_VARS as readonly string[]).includes(variable) ? readAiKeyEnv(variable) : null;
   }
   return envCredential(service)?.secret ?? null;
 }

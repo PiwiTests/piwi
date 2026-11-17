@@ -142,7 +142,7 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (patch.scope && !patch.scope.allProjects && (await namedForEveryProject(db as never, id))) {
     throw demoHttpError(
       409,
-      'The instance’s source control or an AI role names this credential, and they serve every project: name another one there first.',
+      'Something that serves every project names this credential (the instance’s source control, an AI role, a connection or a Slack channel of the instance): name another one there first.',
     );
   }
   if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {

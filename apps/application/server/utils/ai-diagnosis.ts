@@ -781,7 +781,7 @@ export async function autoDiagnoseRun(db: DbClient, projectId: number, runId: nu
   // The keys are opened only when this run calls a model: embeddings, or diagnoses.
   const config =
     resolved && (resolved.roles.embedding || resolved.autoDiagnose)
-      ? await openAiKeys(db, resolved, { userId: null, apiKeyId: null })
+      ? await openAiKeys(db, resolved, { userId: null, apiKeyId: null }, { projectId })
       : resolved;
 
   // Always-on (when an embedding role is configured): collapse semantic

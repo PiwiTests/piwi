@@ -12,11 +12,8 @@ import {
 } from '#shared/notifications/channel-setup';
 import { isAdministrator } from '#shared/permissions';
 import { z } from 'zod';
-import {
-  channelCredentialId,
-  saveSlackChannelCredential,
-  slackChannelCredentialProblem,
-} from '../../utils/notifications/slack-credentials';
+import { channelCredentialId, saveSlackChannelCredential } from '../../utils/notifications/slack-credentials';
+import { slackChannelCredentialProblem } from '#shared/handlers/credentials';
 
 defineRouteMeta({
   openAPI: {

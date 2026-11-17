@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ApiResponse } from '~~/types/api';
 import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { slackDelivery } from '#shared/notifications/channel-setup';
@@ -119,10 +120,10 @@ function deleteChannel(channel: Channel) {
 async function removeChannel(id: number, deleteCredential: boolean) {
   deletingChannelBusy.value = true;
   try {
-    const answer = await $fetch<{ credentialDeleted?: boolean }>(`/api/channels/${id}`, {
-      method: 'DELETE',
-      query: deleteCredential ? { deleteCredential: 'true' } : undefined,
-    });
+    const answer = await $fetch<ApiResponse<typeof import('~~/server/api/channels/[id].delete').default>>(
+      `/api/channels/${id}`,
+      { method: 'DELETE', query: deleteCredential ? { deleteCredential: 'true' } : undefined },
+    );
     deletingChannel.value = null;
     await refreshChannels();
     toast.add({

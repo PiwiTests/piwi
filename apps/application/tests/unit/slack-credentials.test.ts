@@ -53,7 +53,7 @@ const { createConnection } = await import('../../server/utils/integrations/conne
 const testUnsavedChannel = (await import('../../server/api/channels/test.post')).default as unknown as (
   event: RouteEvent & { context: Record<string, unknown> },
 ) => Promise<{ success: boolean; error?: string }>;
-const { slackChannelCredentialProblem } = await import('../../server/utils/notifications/slack-credentials');
+const { slackChannelCredentialProblem } = await import('#shared/handlers/credentials');
 const { insertCredential } = await import('#shared/handlers/credentials');
 const { sealCredentialSecret } = await import('../../server/utils/credentials');
 const { CredentialRefusedError } = await import('../../server/utils/credentials');

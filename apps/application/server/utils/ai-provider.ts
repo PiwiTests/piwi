@@ -5,8 +5,16 @@ import { callCodexCli, streamCodexCli } from './ai-codex-cli';
 import { callDeepseekCli, streamDeepseekCli } from './ai-deepseek-cli';
 import { decryptSecret, getEncryptionKey } from './crypto';
 import { rolesFromLegacy, storedRoles, type RawStoredAi, type RawStoredRole } from './ai-settings';
-import { assertAiKey, envAiCredentialIds, envRoles, openAiKeys } from './ai-credentials';
-import type { CredentialActor } from './credentials';
+import {
+  aiEndpoint,
+  aiRoleCredentialProblem,
+  assertAiKey,
+  envAiCredentialIds,
+  envRoles,
+  openAiKeys,
+  type AiKeyScope,
+} from './ai-credentials';
+import { CredentialRefusedError, withCredential, type CredentialActor } from './credentials';
 import type { AiProvider, AiConfig, AiModelRole, ResolvedAiRole } from '~~/types/api';
 import type { DbClient } from '../database';
 
@@ -131,11 +139,12 @@ function assembleConfig(
  *
  * Each role names the credential its key is in, and holds no key: `open` opens
  * them for a call to the model (`openAiKeys`, one counted use per credential,
- * on behalf of `actor`), and only a caller that calls a model passes it.
+ * on behalf of `actor`, for the `roles` the caller calls and the `projectId`
+ * the calls serve), and only a caller that calls a model passes it.
  */
 export async function resolveAiConfig(
   db: DbClient,
-  options: { open?: boolean; actor?: CredentialActor } = {},
+  options: { open?: boolean; actor?: CredentialActor } & AiKeyScope = {},
 ): Promise<AiConfig | null> {
   const envAi = useRuntimeConfig().ai as
     | (Parameters<typeof rolesFromLegacy>[0] & { autoDiagnose?: boolean | string })
@@ -157,7 +166,7 @@ export async function resolveAiConfig(
       : null;
   }
   if (!config || !options.open) return config;
-  return openAiKeys(db, config, options.actor ?? { userId: null, apiKeyId: null });
+  return openAiKeys(db, config, options.actor ?? { userId: null, apiKeyId: null }, options);
 }
 
 const endpointOf = (baseUrl: string | null | undefined) => (baseUrl ?? '').trim().replace(/\/+$/, '').toLowerCase();
@@ -174,6 +183,57 @@ export function storedKeyFor(
 ): string {
   if (!stored?.apiKey || !provider || stored.provider !== provider) return '';
   return endpointOf(stored.baseUrl) === endpointOf(baseUrl) ? stored.apiKey : '';
+}
+
+/**
+ * The key a request of the Settings → AI form (Test, the model list) sends for a role: the one typed; else the saved
+ * credential the form picked, checked for the role's endpoint and opened as one counted read; else the stored key of
+ * the role, then of the diagnosis role, each only for the provider and base URL it was saved for. `refusal` is why a
+ * credential that applies was refused.
+ */
+export async function formAiKey(
+  db: DbClient,
+  input: {
+    role: AiModelRole;
+    provider: string;
+    baseUrl: string | null | undefined;
+    apiKey?: string;
+    credentialId?: number;
+    actor: CredentialActor;
+  },
+): Promise<{ key: string; refusal?: string }> {
+  if (input.apiKey) return { key: input.apiKey };
+  if (typeof input.credentialId === 'number') {
+    const endpoint = aiEndpoint(input.provider, input.baseUrl);
+    if (!endpoint) return { key: '', refusal: 'This provider takes no key.' };
+    const problem = await aiRoleCredentialProblem(db, input.role, input.credentialId, endpoint);
+    if (problem) return { key: '', refusal: problem };
+    try {
+      const key = await withCredential(
+        db,
+        {
+          credentialId: input.credentialId,
+          feature: 'ai-call',
+          projectId: null,
+          url: endpoint,
+          custom: false,
+          actor: input.actor,
+        },
+        async (credential) => credential.secret,
+      );
+      return { key };
+    } catch (e) {
+      if (e instanceof CredentialRefusedError) return { key: '', refusal: e.message };
+      throw e;
+    }
+  }
+  const resolved = await resolveAiConfig(db, { open: true, roles: [input.role, 'diagnosis'], actor: input.actor });
+  for (const role of [resolved?.roles[input.role], resolved?.roles.diagnosis]) {
+    if (!role || role.provider !== input.provider || endpointOf(role.baseUrl) !== endpointOf(input.baseUrl)) continue;
+    if (role.refusal) return { key: '', refusal: role.refusal };
+    if (role.apiKey) return { key: role.apiKey };
+  }
+  return { key: '' };
 }
 
 /** Resolved config for a given role, or null when that role is unconfigured. */

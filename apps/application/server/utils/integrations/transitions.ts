@@ -9,7 +9,7 @@
  */
 import type { DbClient } from '../../database';
 import type { TrackerTransitionOption, TransitionSample } from '#shared/integrations/transitions';
-import { createTracker } from './connections';
+import { createTracker, nullWhenRefused } from './connections';
 import { transitionsCache } from './picker-cache';
 import type { TrackerTransition } from './types';
 
@@ -60,7 +60,7 @@ export async function getTransitionSample(
   const cached = transitionsCache.get(cacheKey);
   if (cached) return cached;
 
-  const tracker = await createTracker(db, connectionId);
+  const tracker = await nullWhenRefused(createTracker(db, connectionId));
   if (!tracker) return null;
 
   for (const jql of sampleIssueQueries(projectKey, from, issueType)) {

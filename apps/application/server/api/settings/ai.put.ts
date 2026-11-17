@@ -22,7 +22,7 @@ defineRouteMeta({
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and the SCM credentials of the instance (`scmCredentialIds`: credentials of the source control service shared with all projects; an empty list clears them). Each role has its own provider/model/baseUrl and key, or `reuse` to inherit another role. A typed `apiKey` is saved as a credential of the `ai` service bound to the endpoint of the role (it rotates the credential the role names, else makes one shared with all projects), so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset; `credentialId` names a saved credential instead, which must be shared with all projects and sent under the endpoint of the role; `null` for either removes the key of the role. A role that keeps its credential while its provider or base URL moves outside the destination of the credential answers 400. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and the SCM credentials of the instance (`scmCredentialIds`: credentials of the source control service shared with all projects; an empty list clears them). Each role has its own provider/model/baseUrl and key, or `reuse` to inherit another role. A typed `apiKey` is saved as a credential of the `ai` service bound to the endpoint of the role (it rotates the credential the role names while nothing else names it, else makes one shared with all projects), so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset; `credentialId` names a saved credential instead, which must be shared with all projects and sent under the endpoint of the role; `null` for either removes the key of the role. A role that keeps its credential while its provider or base URL moves outside the destination of the credential answers 400. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
     'x-required-permission': 'settings:manage',
   },
 });
@@ -195,7 +195,11 @@ export default eventHandler(async (event) => {
       if (endpoint) {
         const typed = typeof cfg.apiKey === 'string' ? cfg.apiKey.trim() : '';
         if (typed) {
-          // Saved below, once the whole body passed its checks: it rotates the credential named, else makes one.
+          if (typeof cfg.credentialId === 'number') {
+            const problem = await aiRoleCredentialProblem(db, role, cfg.credentialId, endpoint);
+            if (problem) throw apiError({ statusCode: 400, message: problem });
+          }
+          // Saved below, once the whole body passed its checks: it rotates the role's own credential, else makes one.
           typedKeys.push({
             role,
             endpoint,

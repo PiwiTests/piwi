@@ -82,7 +82,7 @@ export async function assistantAvailability(
     role: null,
   });
   if (await isAssistantDeclined(db)) return unavailable('declined');
-  const config = await resolveAiConfig(db, { open: actor !== undefined, actor });
+  const config = await resolveAiConfig(db, { open: actor !== undefined, roles: ['assistant', 'diagnosis'], actor });
   if (!config) return unavailable('not-configured');
   const role = assistantRole(config);
   return {

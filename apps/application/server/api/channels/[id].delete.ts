@@ -12,7 +12,7 @@ defineRouteMeta({
     tags: ['Notifications'],
     summary: 'Delete a notification channel',
     description:
-      'Deletes a channel and all associated subscriptions and deliveries. With `deleteCredential=true`, an administrator deleting a global Slack channel also deletes the credential it sent with, unless something else names it (`credentialDeleted` says which).',
+      'Deletes a channel and all associated subscriptions and deliveries. With `deleteCredential=true`, an administrator deleting a global Slack channel also deletes the credential it sent with, unless something else names it (`credentialDeleted` says whether it was).',
     'x-required-permission': 'signed-in',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },

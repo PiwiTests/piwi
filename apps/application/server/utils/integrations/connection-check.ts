@@ -9,7 +9,7 @@ import type { DbClient } from '../../database';
 import { credentialsForCheck, regionCredentialsForCheck } from './connections';
 import { checkJiraCredentials, probeJiraSite } from './jira/check';
 import { checkZephyrCredentials } from './test-management/zephyr-check';
-import type { CredentialActor } from '../credentials';
+import { CredentialRefusedError, type CredentialActor } from '../credentials';
 
 /**
  * What the connect form sends to check: the address or region typed, the credentials, the connection being edited,
@@ -40,13 +40,19 @@ async function checkJiraConnection(db: DbClient, input: ConnectionCheckInput): P
   // An unreachable address answers nothing more with credentials; skip the second wait.
   if (!result.site.reachable) return result;
 
-  const credentials = await credentialsForCheck(db, {
-    siteUrl: site.url,
-    credentials: input.credentials,
-    credentialId: input.credentialId,
-    connectionId: input.connectionId,
-    actor: input.actor,
-  });
+  let credentials: Awaited<ReturnType<typeof credentialsForCheck>>;
+  try {
+    credentials = await credentialsForCheck(db, {
+      siteUrl: site.url,
+      credentials: input.credentials,
+      credentialId: input.credentialId,
+      connectionId: input.connectionId,
+      actor: input.actor,
+    });
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) return { ...result, auth: { ok: false, error: e.message } };
+    throw e;
+  }
   if (!credentials) return result;
   return { ...result, ...(await checkJiraCredentials(site.url, credentials)) };
 }
@@ -58,14 +64,21 @@ async function checkJiraConnection(db: DbClient, input: ConnectionCheckInput): P
 async function checkZephyrConnection(db: DbClient, input: ConnectionCheckInput): Promise<ConnectionCheckResult> {
   const endpoint = connectionBaseUrl('zephyr-scale', { region: input.region });
   if ('error' in endpoint) throw new ConnectionCheckRefusal(endpoint.error);
-  const credentials = await regionCredentialsForCheck(db, {
-    provider: 'zephyr-scale',
-    region: endpoint.region!,
-    credentials: input.credentials,
-    credentialId: input.credentialId,
-    connectionId: input.connectionId,
-    actor: input.actor,
-  });
+  let credentials: Awaited<ReturnType<typeof regionCredentialsForCheck>>;
+  try {
+    credentials = await regionCredentialsForCheck(db, {
+      provider: 'zephyr-scale',
+      region: endpoint.region!,
+      credentials: input.credentials,
+      credentialId: input.credentialId,
+      connectionId: input.connectionId,
+      actor: input.actor,
+    });
+  } catch (e) {
+    if (!(e instanceof CredentialRefusedError)) throw e;
+    const { site } = await checkZephyrCredentials(endpoint.region!, null);
+    return { baseUrl: endpoint.baseUrl, site, auth: { ok: false, error: e.message } };
+  }
   return { baseUrl: endpoint.baseUrl, ...(await checkZephyrCredentials(endpoint.region!, credentials)) };
 }
 

@@ -11,10 +11,9 @@ import { notificationChannels } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { decryptSecret, getEncryptionKey } from '../crypto';
 import { freeName, sealCredentialSecret, withCredential, type CredentialActor } from '../credentials';
-import { insertCredential, loadCredentialRecord } from '#shared/handlers/credentials';
-import { isUnderBaseUrl } from '#shared/ci-server';
-import { SLACK_API_ENDPOINT } from '#shared/credentials';
-import { postSlackApiMessage, SLACK_POST_MESSAGE_URL } from './slack-api';
+import { insertCredential } from '#shared/handlers/credentials';
+import { SLACK_API_ENDPOINT, SLACK_POST_MESSAGE_URL } from '#shared/credentials';
+import { postSlackApiMessage } from './slack-api';
 
 const INSTANCE: CredentialActor = { userId: null, apiKeyId: null };
 
@@ -45,23 +44,6 @@ export async function saveSlackChannelCredential(
     sealCredentialSecret(SLACK_API_ENDPOINT, input.token),
     input.createdBy,
   );
-}
-
-/**
- * Why a channel of the instance cannot name this credential, or null: it must
- * hold a Slack token saved in the database, be shared with all projects (a
- * channel of the instance serves every project) and be sent to the Web API.
- */
-export async function slackChannelCredentialProblem(db: DbClient, credentialId: number): Promise<string | null> {
-  const record = await loadCredentialRecord(db, credentialId);
-  if (!record || record.service !== 'slack' || record.managedBy !== 'db') {
-    return `No Slack credential ${credentialId} exists.`;
-  }
-  if (!record.allProjects) return `The credential "${record.name}" is not shared with all projects.`;
-  if (!isUnderBaseUrl(record.destination, SLACK_POST_MESSAGE_URL)) {
-    return `The credential "${record.name}" is sent only under ${record.destination}, not to Slack’s Web API.`;
-  }
-  return null;
 }
 
 /**

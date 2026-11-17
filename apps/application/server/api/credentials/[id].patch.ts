@@ -73,7 +73,7 @@ export default eventHandler(async (event) => {
     throw apiError({
       statusCode: 409,
       message:
-        'The instance’s source control or an AI role names this credential, and they serve every project: name another one there first.',
+        'Something that serves every project names this credential (the instance’s source control, an AI role, a connection or a Slack channel of the instance): name another one there first.',
     });
   }
   if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {

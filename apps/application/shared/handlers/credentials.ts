@@ -25,6 +25,7 @@ import {
   CREDENTIAL_FEATURES,
   CREDENTIAL_USE_RESULTS,
   MAX_CREDENTIAL_NAME_LENGTH,
+  SLACK_POST_MESSAGE_URL,
   type CredentialFeature,
   type CredentialInput,
   type CredentialOption,
@@ -236,7 +237,8 @@ async function aiRoleCredentialIds(db: DrizzleDB): Promise<Array<[string, number
 
 /**
  * What names each credential, by credential id: CI actions, projects' source
- * control, the instance's source control, the AI roles.
+ * control, the instance's source control, the AI roles, the Jira and Zephyr
+ * Scale connections, the Slack channels of the instance.
  */
 export async function credentialReferences(db: DrizzleDB): Promise<Map<number, CredentialReference[]>> {
   const [rows, instanceIds, aiRoles, connections, channels] = await Promise.all([
@@ -484,6 +486,23 @@ export async function updateCredential(
 /** Delete a credential; its log rows stay, under the name they recorded. */
 export async function deleteCredential(db: DrizzleDB, id: number): Promise<void> {
   await db.delete(credentials).where(eq(credentials.id, id));
+}
+
+/**
+ * Why a Slack channel of the instance cannot name this credential, or null: it
+ * must hold a Slack token saved in the database, be shared with all projects
+ * (a channel of the instance serves every project) and be sent to the Web API.
+ */
+export async function slackChannelCredentialProblem(db: DrizzleDB, credentialId: number): Promise<string | null> {
+  const record = await loadCredentialRecord(db, credentialId);
+  if (!record || record.service !== 'slack' || record.managedBy !== 'db') {
+    return `No Slack credential ${credentialId} exists.`;
+  }
+  if (!record.allProjects) return `The credential "${record.name}" is not shared with all projects.`;
+  if (!isUnderBaseUrl(record.destination, SLACK_POST_MESSAGE_URL)) {
+    return `The credential "${record.name}" is sent only under ${record.destination}, not to Slack’s Web API.`;
+  }
+  return null;
 }
 
 /**

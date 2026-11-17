@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Integrations'],
     summary: 'Delete an integration connection',
     description:
-      'Deletes a connection. Linked records keep their URL and have their connection cleared. Environment-managed connections are read-only. With `deleteCredential=true`, the credential the connection named is deleted too, unless something else names it or the environment sets it (`credentialDeleted` says which).',
+      'Deletes a connection. Linked records keep their URL and have their connection cleared. Environment-managed connections are read-only. With `deleteCredential=true`, the credential the connection named is deleted too, unless something else names it or the environment sets it (`credentialDeleted` says whether it was).',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'deleteCredential', in: 'query', required: false, schema: { type: 'boolean' } },

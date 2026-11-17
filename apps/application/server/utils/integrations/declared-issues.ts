@@ -16,7 +16,7 @@ import { resolveTagSource } from '#shared/integrations/binding';
 import { linkNamedIssues, type DeclaredLinksResult } from '#shared/handlers/declared-issues';
 import { TtlCache } from '../ttl-cache';
 import { readProjectIntegration } from './binding';
-import { createTracker } from './connections';
+import { createTracker, nullWhenRefused } from './connections';
 import { loadTrackerRun, runDrivesWrites } from './tracker-run';
 
 export {
@@ -60,7 +60,7 @@ export async function linkDeclaredIssues(
   const projectKey = binding.projectKey;
   if (!projectKey) return { ...result, skipped: 'no-project-key' };
   if (!runDrivesWrites(run, binding.policies.scope)) return { ...result, skipped: 'out-of-scope' };
-  const tracker = await createTracker(db, binding.connectionId);
+  const tracker = await nullWhenRefused(createTracker(db, binding.connectionId, undefined, run.projectId));
   if (!tracker || tracker.provider !== 'jira' || !tracker.getIssues) return { ...result, skipped: 'no-lookup' };
 
   const [project] = await db.select({ tagKeys: projects.tagKeys }).from(projects).where(eq(projects.id, run.projectId));

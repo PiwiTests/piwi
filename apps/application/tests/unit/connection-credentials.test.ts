@@ -22,6 +22,7 @@ const {
   createTracker,
   getConnectionRow,
   listConnections,
+  nullWhenRefused,
   openTestManagement,
   testConnection,
   updateConnection,
@@ -170,16 +171,38 @@ describe('a connection’s token', () => {
     expect(sent.at(-1)).toMatchObject({ method: 'POST', authorization: 'Bearer zephyr-token' });
   });
 
-  test('gives no client once its credential is disabled, and the test of the connection says why', async () => {
+  test('gives no client once its credential is disabled, saying why, and the test of the connection says it too', async () => {
     const created = await jira();
     await db.update(schema.credentials).set({ disabled: true }).where(eq(schema.credentials.id, created.credentialId!));
-    expect(await createTracker(db as never, created.id)).toBeNull();
+    await expect(createTracker(db as never, created.id)).rejects.toThrow('The credential "Team Jira" is disabled.');
+    expect(await nullWhenRefused(createTracker(db as never, created.id))).toBeNull();
     expect(await testConnection(db as never, created.id)).toEqual({
       ok: false,
       error: 'The credential "Team Jira" is disabled.',
     });
     expect(sent).toEqual([]);
-    expect((await uses()).map((u) => u.result)).toEqual(['refused']);
+    expect((await uses()).map((u) => [u.result, u.count])).toEqual([['refused', 3]]);
+  });
+
+  test('saves a new credential for a token typed while another connection names the one it names', async () => {
+    const shared = await savedJiraCredential();
+    const first = await jira({ name: 'First', credentials: null, credentialId: shared });
+    const second = await jira({ name: 'Second', credentials: null, credentialId: shared });
+    await updateConnection(db as never, second.id, { credentials: { apiToken: 'own-token' } });
+    const after = (await getConnectionRow(db as never, second.id))!;
+    expect(after.credentialId).not.toBe(shared);
+    expect((await getConnectionRow(db as never, first.id))!.credentialId).toBe(shared);
+    await (await createTracker(db as never, first.id))!.whoAmI();
+    expect(sent.at(-1)?.authorization).toBe(basic('bot@team.io', 'bot-token'));
+    await (await createTracker(db as never, second.id))!.whoAmI();
+    expect(sent.at(-1)?.authorization).toBe(basic('bot@team.io', 'own-token'));
+    await expect(
+      updateConnection(db as never, first.id, { credentials: { email: 'other@team.io' } }),
+    ).resolves.toBeTruthy();
+    await jira({ name: 'Third', credentials: null, credentialId: shared });
+    await expect(updateConnection(db as never, first.id, { credentials: { email: 'else@team.io' } })).rejects.toThrow(
+      'is named elsewhere too',
+    );
   });
 
   test('rotates the credential the connection names when a new one is typed', async () => {

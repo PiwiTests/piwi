@@ -8,6 +8,7 @@ import {
   connectionCredentialProblem,
   connectionEndpoint,
   hasTypedToken,
+  refuseSharedChange,
 } from '../../../utils/integrations/connection-credentials';
 
 defineRouteMeta({
@@ -81,6 +82,6 @@ export default eventHandler(async (event) => {
     if (problem) throw apiError({ statusCode: 400, message: problem });
   }
 
-  const connection = await updateConnection(db, id, { ...input, createdBy: user.id || null });
+  const connection = await refuseSharedChange(() => updateConnection(db, id, { ...input, createdBy: user.id || null }));
   return { connection };
 });

@@ -26,7 +26,9 @@ import {
 import type { DbClient } from '../../database';
 import { randomBytes } from 'node:crypto';
 import { hashToken } from '../token-hash';
-import type { CredentialActor } from '../credentials';
+import { CredentialRefusedError, type CredentialActor } from '../credentials';
+import { apiError } from '../api-error';
+import { CONNECTION_NOT_FOUND } from '#shared/integrations/connection-access';
 import { JiraClient, parseJiraIssueUrl } from './jira/client';
 import { jiraCheckFailure } from './jira/check';
 import { jiraFailureHint, normalizeJiraSiteUrl, type JiraTokenKind } from '#shared/integrations/jira-setup';
@@ -302,6 +304,7 @@ async function savedCredentialId(
     endpoint: string | null;
     typed: Record<string, string>;
     credentialId: number | null;
+    selfId: number | null;
     createdBy: number | null;
   },
 ): Promise<{ id: number | null; changed: boolean }> {
@@ -329,6 +332,7 @@ export async function createConnection(
     endpoint: connectionEndpoint(input.provider, input.baseUrl, config),
     typed: nonEmptyValues(input.credentials),
     credentialId: input.credentialId ?? null,
+    selfId: null,
     createdBy: input.createdBy ?? null,
   });
   const [row] = await db
@@ -379,6 +383,7 @@ export async function updateConnection(
     ),
     typed,
     credentialId: input.credentialId !== undefined ? input.credentialId : row.credentialId,
+    selfId: row.id,
     createdBy: input.createdBy ?? null,
   });
   if (saved.id !== row.credentialId || saved.changed) {
@@ -409,10 +414,31 @@ export async function createTracker(
   db: DbClient,
   connectionId: number,
   actor?: CredentialActor,
+  projectId: number | null = null,
 ): Promise<IssueTracker | null> {
   const row = await getConnectionRow(db, connectionId);
   if (!row) return null;
-  return openTracker(db, row, actor);
+  return openTracker(db, row, actor, projectId);
+}
+
+/**
+ * A route's tracker client for a connection: the 404 of a connection missing or without credentials, and the
+ * refusal of its credential as a 409 with the credential's reason.
+ */
+export async function requireTracker(
+  db: DbClient,
+  connectionId: number,
+  actor: CredentialActor,
+): Promise<IssueTracker> {
+  let tracker: IssueTracker | null;
+  try {
+    tracker = await createTracker(db, connectionId, actor);
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) throw apiError({ statusCode: 409, message: e.message });
+    throw e;
+  }
+  if (!tracker) throw apiError({ statusCode: 404, message: CONNECTION_NOT_FOUND });
+  return tracker;
 }
 
 /** The scoped-token cloud id stored on the connection, or null. */
@@ -423,7 +449,8 @@ function cloudIdFromConfig(row: IntegrationConnection): string | null {
 }
 
 /** A Jira client from a connection's opened credential, its writes through the credential's gate. */
-function jiraClientFor(row: IntegrationConnection, opened: OpenedConnection): IssueTracker | null {
+function jiraClientFor(row: IntegrationConnection, opened: OpenedConnection | null): IssueTracker | null {
+  if (!opened) return null;
   const { email, apiToken } = opened.values;
   if (!email || !apiToken) return null;
   return JiraClient.fromCredentials(row.baseUrl, { email, apiToken }, cloudIdFromConfig(row), opened.writeGate);
@@ -431,17 +458,37 @@ function jiraClientFor(row: IntegrationConnection, opened: OpenedConnection): Is
 
 /**
  * Build a tracker client from an already-loaded connection row, opening its
- * credential as one counted read; null when it names none or the credential
- * is refused.
+ * credential as one counted read, logged under `projectId` when the client
+ * serves one; null when it names none. A credential its rules refuse throws
+ * a {@link CredentialRefusedError} with the reason.
  */
 export async function openTracker(
   db: DbClient,
   row: IntegrationConnection,
   actor?: CredentialActor,
+  projectId: number | null = null,
 ): Promise<IssueTracker | null> {
   if (row.provider !== 'jira') return null;
-  const opened = await openConnectionCredentials(db, row, actor);
-  return opened && 'values' in opened ? jiraClientFor(row, opened) : null;
+  return jiraClientFor(row, openedOrThrow(await openConnectionCredentials(db, row, actor, projectId)));
+}
+
+/**
+ * A client, or null when its connection's credential is refused (the refusal is in the credential's log), for a
+ * caller that does without a client rather than show the reason.
+ */
+export async function nullWhenRefused<T>(client: Promise<T | null>): Promise<T | null> {
+  try {
+    return await client;
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) return null;
+    throw e;
+  }
+}
+
+/** The credential opened, null for none, or the refusal thrown. */
+function openedOrThrow(opened: OpenedConnection | { refusal: string } | null): OpenedConnection | null {
+  if (opened && 'refusal' in opened) throw new CredentialRefusedError(opened.refusal);
+  return opened;
 }
 
 /** The issue key a URL on a tracker connection's site names, or null; reads no credential. */
@@ -499,18 +546,20 @@ export function testManagementClientFor(
 }
 
 /**
- * Build a test management client from an already-loaded connection row, opening its credential as one counted read;
- * null when it is not one, names none, or the credential is refused.
+ * Build a test management client from an already-loaded connection row, opening its credential as one counted read,
+ * logged under `projectId` when the client serves one; null when it is not one or names none. A credential its rules
+ * refuse throws a {@link CredentialRefusedError} with the reason.
  */
 export async function openTestManagement(
   db: DbClient,
   row: IntegrationConnection,
   options: TestManagementClientOptions = {},
   actor?: CredentialActor,
+  projectId: number | null = null,
 ): Promise<TestManagementProvider | null> {
   if (!isProviderOfKind(row.provider, 'test-management')) return null;
-  const opened = await openConnectionCredentials(db, row, actor);
-  return opened && 'values' in opened ? testManagementClientFor(row, opened, options) : null;
+  const opened = openedOrThrow(await openConnectionCredentials(db, row, actor, projectId));
+  return opened ? testManagementClientFor(row, opened, options) : null;
 }
 
 /** Every tracker connection with usable credentials — what drives the UI entry points. */
@@ -766,8 +815,8 @@ async function storedCredentialsForCheck(
 
 /**
  * The credentials a pre-save check signs in with: those of the saved credential
- * the form picked, else the submitted fields, each blank one taken from the
- * connection being edited. The stored ones are used only while the site stays
+ * the form picked (its refusal thrown), else the submitted fields, each blank
+ * one taken from the connection being edited. The stored ones are used only while the site stays
  * the same, so a stored token never goes to another host.
  */
 export async function credentialsForCheck(

@@ -31,7 +31,12 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const config = await resolveAiConfig(db, { open: true, actor: requestCredentialActor(event, user) });
+  const config = await resolveAiConfig(db, {
+    open: true,
+    roles: ['research', 'diagnosis'],
+    projectId: id,
+    actor: requestCredentialActor(event, user),
+  });
   const role = config?.roles.research ?? config?.roles.diagnosis;
   if (!role) {
     throw apiError({

@@ -18,7 +18,7 @@ import {
 import { RequestLimiterBusyError } from './limiter';
 import type { TestManagementProvider } from './types';
 import type { IntegrationConnection } from '../../../database/schema';
-import type { CredentialActor } from '../../credentials';
+import { CredentialRefusedError, type CredentialActor } from '../../credentials';
 
 /** Answer 429 with a `Retry-After` of `waitMs`, in whole seconds. */
 export function refuseRateLimited(event: H3Event, waitMs: number, message: string): never {
@@ -46,7 +46,13 @@ export async function requireTestManagementClient(
   const paused = connectionPausedUntil(connectionId, now);
   if (paused)
     refuseRateLimited(event, paused.getTime() - now.getTime(), `Paused until ${paused.toISOString()}: rate limited`);
-  const client = await openTestManagement(db, row, options, actor);
+  let client: TestManagementProvider | null;
+  try {
+    client = await openTestManagement(db, row, options, actor);
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) throw apiError({ statusCode: 409, message: e.message });
+    throw e;
+  }
   if (!client) throw apiError({ statusCode: 400, message: 'This connection has no usable credentials' });
   return { row, client };
 }
