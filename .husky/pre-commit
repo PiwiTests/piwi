@@ -55,7 +55,7 @@ format_staged packages/picker-dom oxfmt.config.mts packages/picker-dom/src/ pack
 format_staged packages/editor oxfmt.config.mts packages/editor/src/ packages/editor/tests/
 format_staged packages/run-ui oxfmt.config.mts packages/run-ui/src/ packages/run-ui/app/ packages/run-ui/tests/ packages/run-ui/nuxt.config.ts
 format_staged packages/run-model oxfmt.config.mts packages/run-model/src/ packages/run-model/tests/
-format_staged apps/extension oxfmt.config.mts apps/extension/src/ apps/extension/tests/ apps/extension/scripts/
+format_staged apps/extension oxfmt.config.mts apps/extension/src/ apps/extension/tests/ apps/extension/scripts/ apps/extension/i18n/
 format_staged apps/vscode oxfmt.config.mts apps/vscode/src/ apps/vscode/tests/ apps/vscode/build.mjs
 format_staged apps/showcase oxfmt.config.mts apps/showcase/
 
