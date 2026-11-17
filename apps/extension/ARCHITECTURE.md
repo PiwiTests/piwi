@@ -68,12 +68,13 @@ Terms used in this file:
   risk list.
 - [Naming and ranking an element](#naming-and-ranking-an-element): accessible names, ranking, checking and narrowing
   candidates, multi-pick, lint, verdict words, the hover cost, and where a new naming case is tested.
-- [Checks in a test recording](#checks-in-a-test-recording): Check an element and Check the address, Pause, Replay
-  from the review panel, and the recording's title.
-- [Report a bug](#report-a-bug): bug recordings, the `.piwibug` archive, step screenshots, steps handed to the person,
-  evidence through the debugging protocol, and screenshots without it.
+- [The recording bar and its checks](#the-recording-bar-and-its-checks): one bar for every recording, Check an
+  element and Check the address (a check or the page marked wrong), Pause, the finish panel, and the recording's title.
+- [Evidence and bug reports](#evidence-and-bug-reports): the evidence every recording collects, when a recording is a
+  bug report, the `.piwibug` archive, step screenshots, steps handed to the person, evidence through the debugging
+  protocol, and screenshots without it.
   - [The main-world evidence script](#the-main-world-evidence-script): what `bug-evidence-main.ts` may and may not do,
-    in a bug recording and in a replay.
+    in a recording and in a replay.
 - [Files, double clicks and drags](#files-double-clicks-and-drags): how the recorder records them.
 - [The recording bar's corner](#the-recording-bars-corner): the Move button and the stored corner.
 - [What a click lands on, and pages reached without one](#what-a-click-lands-on-and-pages-reached-without-one): the
@@ -113,7 +114,7 @@ Terms used in this file:
   (`build-manifests.test.ts`).
 - **`optional_host_permissions`** (`http://*/*`, `https://*/*`) is declared but **grants nothing by default**. The popup
   requests a single origin (`https://<the-recorded-site>/*`, built by `hostPattern`) with `chrome.permissions.request`,
-  inside the click on **Record actions**, **Report a bug** or **Replay a bug report**. The settings page and the
+  inside the click on **Record** or **Replay**. The settings page and the
   DevTools pages request the origins they need the same way, inside a click (see "Connected mode" and "DevTools").
 - **`optional_permissions`** holds `cookies` alone, granted nothing at install. Only Save login for tests asks for it
   (below).
@@ -200,7 +201,7 @@ replay's panel only when the start message asks, `inject`).
 | Script                       | World    | Registered while                                         | Id                     |
 | ---------------------------- | -------- | -------------------------------------------------------- | ---------------------- |
 | `record-panel.js`            | isolated | a recording runs                                         | `piwi-record-panel`    |
-| `bug-evidence-main.js`       | main     | a bug recording runs                                     | `piwi-bug-evidence`    |
+| `bug-evidence-main.js`       | main     | a recording runs                                         | `piwi-bug-evidence`    |
 | `replay-panel.js`            | isolated | a replay runs                                            | `piwi-replay-panel`    |
 | `bug-evidence-main.js`       | main     | a replay runs                                            | `piwi-replay-evidence` |
 | `request-conditions.js`      | isolated | request conditions are on                                | `piwi-conditions`      |
@@ -216,23 +217,29 @@ recorder attaches there on `pageshow` (`persisted`), or lets go of the page when
 `src/popup/` holds the toolbar popup: plain TypeScript and DOM, no UI framework. Keep it that way unless the popup's
 own complexity genuinely outgrows it.
 
-- It holds the tools that act on the page, for testers and developers alike, in the sections of Piwi's menu as the
-  editors order them: **Record actions** and **Pick an element** first, then Piwi Picker's own tools under **Pick**
-  (Multi-pick, Assertions, Lint overlay, Test functions), **Report a bug** and **Replay a bug report** under
-  **Record**, and side by side **Runs** under **Run control**, **Tested elements** under **Dashboard** and **Agent
-  context** under **Agents**; the gear is Connection. The digits follow the tiles' order.
-- Every tile shows its one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks the compact
-  tiles).
+- It holds the tools that act on the page, for testers and developers alike: **Record** and **Pick an element**
+  first, then two sections. **Pick** holds Piwi Picker's pick tools (Multi-pick, Assertions, Lint overlay, Test
+  functions, Agent context), with the digits 3 to 7 in their order. **Tests** holds what plays and follows tests,
+  each with a letter: **Replay** (`R`), **Runs** (`U`) and **Tested elements** (`T`). No section holds a single tile;
+  the gear is Connection.
+- While a recording runs, the Record tile reads **Finish (n)** and **Take a screenshot** (`S`) takes Replay's place:
+  a replay sends trusted input, which the recording would capture. Once stopped, the tile reads **Review (n)**.
+- Every tile shows its one-line hint under its label, never only as a tooltip (`popup.spec.ts` checks every tile
+  shown).
 - The developer tools that have a home in DevTools are there, not here (see "DevTools"). Pick, Lint and Tested elements
   are also in the Piwi panel's toolbar. The popup ends with a line saying so.
-- **Runs** and its section's name show only while a hub of the paired editor answers (see "The Runs window"); the
-  Run control cell takes no column otherwise.
+- **Runs** shows only while the paired editor or desktop app is known (see "The Runs window").
+- **Record closes the popup once the site's permission prompt shows** when the site is not granted yet, so the popup
+  never covers the prompt: the worker starts the recording when the grant lands (see "Rules, with their reasons"). The
+  popup waits `PROMPT_SHOWN_MS` first, since Chrome drops a prompt whose popup closed before it showed. A refusal
+  reaches no code, so the next popup on that tab says the recording did not start (`popup_recordNotAllowed`).
 - A gear button opens the settings (`chrome.runtime.openOptionsPage()`).
 - Once connected, an **Active project** select shows which mapped project applies to the current tab's site, and
   overrides it. The connection's line sits under it (`#connection-health`, see "Connection health").
 - **It must fit Chrome's 600-pixel popup height** in every shipped language; German is the longest. `popup.spec.ts`
-  measures the connected popup in English, German, French, Spanish and Brazilian Portuguese. A new tile goes under More
-  tools or into DevTools rather than below the fold.
+  measures the connected popup in English, German, French, Spanish and Brazilian Portuguese, recording and not, and
+  fails on a tile whose label or hint is cut or takes two lines. A new tile goes in its section or into DevTools rather
+  than below the fold.
 
 ### The settings page
 
@@ -288,7 +295,7 @@ More behavior of the tool session:
 - The pick-driven tools tear down with `teardownToolSurfaces`. The picking overlay and the anchors step go, listeners
   included; `__piwiPickState` / `__piwiAnchorState` are answered for a flow that waits on them; no other surface on the
   page is touched.
-- The bug recorder's **Mark what's wrong** claims the page as `pick` for its pick alone, so a Pick started meanwhile
+- The recording bar's **Check an element** claims the page as `pick` for its pick alone, so a Pick started meanwhile
   leaves it be.
 - The Pick results' **Pick another** picks again inside the same tool session (`runPick` runs `pickOne` again on the
   `pick-another` outcome), so it neither starts a tool nor ends one.
@@ -341,7 +348,7 @@ The purposes (`DebugPurpose`):
 | Purpose      | Feature                                                       | Holds the tab                                          |
 | ------------ | ------------------------------------------------------------- | ------------------------------------------------------ |
 | `replay`     | a replay's trusted input (`cdp-replay.ts`)                    | from the replay's first page until it lets go (below)  |
-| `bug`        | a bug recording's evidence (`cdp-evidence.ts`)                | the report's first tab, until it stops or is discarded |
+| `bug`        | a recording's evidence (`cdp-evidence.ts`)                    | the recording's first tab, until it stops or is discarded |
 | `conditions` | the DevTools panel's request conditions (`cdp-conditions.ts`) | while any condition or throttling is on                |
 | `viewport`   | a viewport set from the DevTools panel (`cdp-conditions.ts`)  | until **Back to the window's size**, or the tab closes |
 
@@ -508,7 +515,7 @@ projects; they come from the instance and from this browser. For the recorder, c
 - The matcher never invents a function: it only scores and selects among what the catalog already has.
 
 Connected mode also adds Tested elements (see "Tested elements") and bug reports sent to the instance and replayed from
-it (see "Report a bug").
+it (see "Evidence and bug reports").
 
 ### Connect
 
@@ -585,7 +592,7 @@ The **active project** of a page is the project that applies there. Only `resolv
 
 Matching uses the URL, through `urlMatches` / `globToRegExp` in `packages/core/src/function-match.ts`: the same glob
 matcher a catalog entry's own `urlPattern` gate uses. Every consumer that needs the project for a page (the record
-panel's HUD and review panel, `test-function-panel.ts`, the popup's select) calls this one function rather than
+panel's bar and finish panel, `test-function-panel.ts`, the popup's select) calls this one function rather than
 re-deriving it.
 
 **Disconnect**, and connecting to another instance, drop every site's override and every project's branch choice
@@ -1436,16 +1443,31 @@ in the same order, or both refuse the expression.
 - A case is never skipped. Each group must also find something for more than a third of its expressions, which shows
   that its fixture loaded.
 
-## Checks in a test recording
+## The recording bar and its checks
 
-A test recording's bar (`renderHud`, in Piwi Picker and in the IDE bundle) has **Check an element** and **Check the
-address** (`check-panel.ts`).
+Every recording has one bar (`renderRecordingBar`, `bug-panel.ts`), in Piwi Picker and in the IDE bundle: the last six
+steps, **Check an element**, **Check the address**, **Something is missing** (not in the IDE bundle), **Screenshot**
+(while the debugging protocol takes them), **Pause** and **Finish** (**Stop** in the IDE bundle), the matching test
+functions when the project has a catalog, and the evidence lines (not in the IDE bundle).
 
-- They reuse the bug report's pick and dialog (`pickElement`, `openRecordDialog` in `bug-panel.ts`), and pause capture
-  the same way.
-- They record an `assert` event of what the page shows now, with `actual` null: the spec writes it as `await expect(…)`.
-- The dialog names the element by the recorded target's first locator, so the project's test id attribute applies.
-- Both buttons are disabled while the recording is paused.
+- **No label wraps inside a button**: a row of buttons wraps between buttons (`white-space: nowrap`), and the replay
+  bar keeps its buttons on one line too. `wrappedButtonsInShadows` (`tests/e2e/shadow.ts`, which reads every text node
+  of a button, its label being in a span beside the icon) checks it in `record.spec.ts` and `bug-report.spec.ts` in
+  French and German. The title has its row to itself, so a count stays with its noun; no spec measures it.
+- A new recording's bar takes down a finish panel still open on the page, and the panel's Discard discards its own
+  recording alone (`discardRecordingStartedAt`), never one started since.
+- **The viewport is recorded while paused too**: the next step plays at the size the window has then.
+- The checks (`check-panel.ts`) pick with `pickElement` and open `openRecordDialog` (`bug-panel.ts`), and pause capture
+  while they are on screen (`__piwiRecordPaused`, a global because every re-injection of `record-panel.js` is its own
+  module instance).
+- **A check starts from what the page shows.** Keeping it records an `assert` event with `actual` null, a check that
+  passes. Changing the expected value, choosing a state the element is not in (**It should be hidden**…), or typing
+  another address records `actual`, what the page showed: the page is marked wrong (`isWrongStep`, core), the outline
+  and a screenshot are kept, and the dialog says which of the two Add records before it is pressed, with a Note field
+  for the second. The IDE bundle records checks only: `actual` stays null there.
+- The dialog names the element by the recorded target's first locator, so the project's test id attribute applies. A
+  field that holds a secret offers its states only.
+- The check buttons and Something is missing are disabled while the recording is paused.
 
 **Pause** in the bar (both builds) stops capture without ending the recording, until **Resume**. One guard,
 `capturePaused()`, sits at every capture listener.
@@ -1457,46 +1479,55 @@ address** (`check-panel.ts`).
 - In the IDE bundle the launcher keeps it and tells the editor.
 - The DevTools Record tab says the recording is paused.
 
-**Replay from the review panel.** The review panel after Stop has **Replay**, as the bug report's finish panel has. Both
-start the replay in the tab through `startReplayHere` (`record-ui.ts`, `piwi-start-replay`). The replay dialog offers
-the last recording not discarded, of either mode (`lastRecordedReport`), each under its own label.
+**The finish panel** (`renderFinishPanel`, `finish-panel.ts`) opens after Finish, or as the recorder attaches to a
+recording that stopped and was not discarded. Its first action follows the recording (`recordingSpec`,
+`src/shared/recording-spec.ts`): **Copy test**, a test that passes, or **Copy failing test** once a step says the page
+was wrong (`renderBugSpec`). Both put in the project's test functions, and **Without your functions** copies the
+locators alone. Then Send to editor (when paired), Replay, Copy report, Download the `.piwibug` and, once a step says the
+page was wrong, Send to Piwi… (when connected): the instance keeps what it is sent as a bug report. Replay starts in the tab through `startReplayHere` (`record-ui.ts`, `piwi-start-replay`), and the replay
+dialog offers the last recording not discarded (`lastRecordedReport`), as a bug report or a recording.
 
 **The recording's title** (`RecordingState.title`) is the first page's `document.title` as the recorder first attaches,
-then the review panel's **Test title** field.
+then the finish panel's **Title** field. It is the test's title and the report's.
 
-- The panel stores the field a moment after the last keystroke, and at once on Copy, Download steps, Send to editor,
-  Replay, close and `pagehide` (`titleWriter`). Discard drops the pending write and waits for the one in flight before
-  it removes the recording.
+- The panel stores the field a moment after the last keystroke, and at once on Copy, Download, Send to editor, Replay,
+  close and `pagehide` (`titleWriter`). Discard drops the pending write and waits for the one in flight before it
+  removes the recording.
 - A field write names its recording: `updateRecording` takes the recording's `startedAt` and writes nothing when the
   stored recording is gone or a newer one (`isRecordingStartedAt`). So a late keystroke never brings a discarded
   recording back, nor renames the one another tab records. Pause names the recording its page started with the same
   way.
-- Every export goes through `recordingTitle` (`src/shared/recording-title.ts`), which falls back to the first action in
-  words (`titleFromSteps`). So no spec says `recorded flow` when the steps name it better. The title reaches
-  `renderSpec({ title })` for Copy as TypeScript (the review panel and the DevTools Record tab), and `steps.title` for
-  Download steps, Send to editor, Replay and the replay dialog.
-- A bug report keeps its own title in its evidence.
+- Every export goes through `recordingTitle` (`src/shared/recording-title.ts`), the finish panel's with the field's
+  text, which falls back to the first action in words (`titleFromSteps`). So no spec says `recorded flow` when the
+  steps name it better.
 
-## Report a bug
+## Evidence and bug reports
 
-A **bug recording** is a recording with `mode: 'bug'` (`recording-storage.ts`): the same capture, navigation and
-one-origin rule as a test recording, a different HUD (`bug-panel.ts`), and `assert` events that `normalizeSteps`
-keeps in place.
+Every recording of the extension collects evidence (the IDE bundle's does not), and a recording is a **bug report**
+once a step says the page was wrong (`isWrongStep`): its test is the failing one, its finish panel says "Bug report"
+and offers Send to Piwi…, Replay's chooser names it so, and Replay's verdict says reproduced or not (`replayVerdict`,
+`verdictText`): a step marked wrong that does not hold is the bug showing, and a check that held when recorded failing
+means the page differs. Without one, the test passes and Replay says whether every check holds. The `assert` events
+stay in place through `normalizeSteps`.
 
-- **Mark what's wrong** pauses capture (`__piwiRecordPaused`, a global because every re-injection of
-  `record-panel.js` is its own module instance), runs the pick overlay, and opens the expected-value dialog built from
-  `suggestAssertions`.
+A report's expectations (`expectedSteps`, core) are all its checks, since a report made from a test run can expect an
+element it never found, with no `actual`; the dashboard's one-line claim of a report takes the first step marked wrong
+among them.
+
 - **Something is missing** checks its `getByRole` with the in-page engine, and refuses an element that is there.
 - Evidence lives under its own session storage keys (`bug-storage.ts`), not in `RecordingState`, which is rewritten on
   every keystroke.
 - The report and its files are assembled by `bug-report-files.ts` (pure) and `@piwitests/core/bug-report`
   (`renderBugMarkdown`, `renderBugSpec`).
-- **The `.piwibug` archive** is written by `shared/zip.ts`, stored without compression, and downloaded as `.piwibug`.
-  Its first entry is `mimetype`, holding `BUG_REPORT_MEDIA_TYPE`, which `isBugReportArchive` (core) reads to tell it
-  from any other zip. Readers go by content, never by name: Replay and the desktop app take the same file named `.zip`.
-- A bug recording also records `viewport` events (`record-panel.ts`): the page's size when the recording reaches it,
+- **The `.piwibug` archive** is the one download of a recording: `steps.json`, the test (`recordingSpec`), the Markdown,
+  the evidence and the screenshots. It is written by `shared/zip.ts`, stored without compression, and downloaded as
+  `piwi-bug-….piwibug`, or `piwi-recording-….piwibug` when nothing is marked wrong. Its first entry is `mimetype`,
+  holding `BUG_REPORT_MEDIA_TYPE`, which `isBugReportArchive` (core) reads to tell it from any other zip. Readers go by
+  content, never by name: Replay and the desktop app take the same file named `.zip`.
+- A recording also records `viewport` events (`record-panel.ts`): the page's size when the recording reaches it,
   before its `navigate`, and the size a resize settles at. `normalizeSteps` skips them, and `sessionFromEvents` turns
-  them into the steps document's `viewports`, by the first step recorded at or after each.
+  them into the steps document's `viewports`, by the first step recorded at or after each; the test sets them with
+  `setViewportSize`.
 - The bar's evidence lines (the summary, the debugging session's note, why there is no screenshot) are written in place
   by `updateBugHudEvidence` whenever the evidence changes: an entry the page relays, or a screenshot stored or refused
   (`takeBugScreenshot` ends with `refreshBugHudEvidence`). That is needed because the bar a mark redraws counts the
@@ -1567,7 +1598,7 @@ screenshot only when that step is handed over (`fetchBugReportStepShot`).
 
 ### Evidence through the debugging protocol (Chrome and Edge)
 
-A bug recording holds a debugging session on the tab it starts in (`startBugDebugger`,
+A recording holds a debugging session on the tab it starts in (`startBugDebugger`,
 `src/background/cdp-evidence.ts`):
 
 - `Runtime` and `Log` give the console and uncaught errors, from the page's first script;
@@ -1599,10 +1630,10 @@ requests of its documents, their URLs written against it. A sign-in on another s
 against the real extension.
 
 - The popup click that starts a report grants `activeTab` until the tab navigates.
-- After that, the report records why there is no screenshot. During a bug recording, the popup's tile asks the page for
+- After that, the report records why there is no screenshot. During a recording, the popup's Take a screenshot tile asks the page for
   one (`piwi-bug-take-screenshot`), since opening the popup is the grant.
 - Never answer this with `<all_urls>`.
-- The popup's **Finish bug report** asks the page too (`piwi-bug-finish`), which finishes as the HUD's Finish does (the
+- The popup's **Finish** asks the page too (`piwi-bug-finish`), which finishes as the bar's Finish does (the
   relay's last entries, a screenshot, the outline). It stops the recording itself only when no recorder of the tab
   answers.
 - The note a report keeps follows the worker's reason (`ScreenshotFailure`): no grant, in the words of Chrome or
@@ -1613,13 +1644,13 @@ against the real extension.
 ### The main-world evidence script
 
 `bug-evidence-main.ts` wraps `console.error` / `console.warn`, `fetch` and `XMLHttpRequest`, and listens to `error`
-and `unhandledrejection`. It is the evidence in Firefox, in a bug recording's other tabs, once a debugging session is
+and `unhandledrejection`. It is the evidence in Firefox, in a recording's other tabs, once a debugging session is
 lost, and in every replay. It is the only code here, with the request-conditions wrapper, that runs in the page's own
 JavaScript world. So:
 
 - **It is registered only while its feature runs, for that feature's granted origin**, at `document_start`, with
   `persistAcrossSessions: false`, and injected into the tab's page already open (`src/background/index.ts`):
-  - for a bug recording, as `BUG_EVIDENCE_SCRIPT_ID`, unregistered with the recorder;
+  - for a recording, as `BUG_EVIDENCE_SCRIPT_ID`, unregistered with the recorder;
   - for every replay, as `REPLAY_EVIDENCE_SCRIPT_ID`, beside `replay-panel.js`, unregistered when the replay finishes.
 
   It needs no permission beyond `scripting` and that grant.
@@ -1634,14 +1665,14 @@ JavaScript world. So:
   messages.
   - The recorder and the replay listen through `relayEvidence`, which stores in batches.
   - As the page is left, what is pending goes to the worker in one message (`piwi-relay-left`), since a read and a write
-    of session storage started then never finish. The worker keeps it for the bug recording or the replay whose token
+    of session storage started then never finish. The worker keeps it for the recording or the replay whose token
     it carries.
   - The token (per recording, or the replay's `evidenceToken`) keeps out entries from another recording or replay, not
     a page that means harm. `readRelayedEntry` rebuilds every entry field by field and truncates it, and storage caps
     each kind at 100 (`BUG_EVIDENCE_LIMITS`). Treat everything it relays as page-controlled text.
 
 **In a replay**, the panel keeps the entries apart from the replay state (`piwiReplayEvidence`) and lists them under
-the verdict. Its relay sends `ReplayState.startedAt` as `since`. In the tab a bug recording's debugging session
+the verdict. Its relay sends `ReplayState.startedAt` as `since`. In the tab a recording's debugging session
 collected from, the page's script still holds the recording's entries, which its quiet relay never took; a replay
 started on that page would otherwise count them as its own.
 
@@ -1657,14 +1688,14 @@ started on that page would otherwise count them as its own.
 
 ## The recording bar's corner
 
-Both bars (a test recording's, `renderHud` in `record-panel.ts`, and a bug report's, `renderBugHud`) sit in a corner of
-the viewport, over the page, bottom right by default. A checkout bar or a form's last button can be under them.
+The recording bar (`renderRecordingBar`, `bug-panel.ts`, in Piwi Picker and in the IDE bundle) sits in a corner of the
+viewport, over the page, bottom right by default. A checkout bar or a form's last button can be under it.
 
-- Their **Move** button (`moveHudButton`, `hud-corner.ts`; `data-piwi-control="hud-move"`) moves the bar to the next
+- Its **Move** button (`moveHudButton`, `hud-corner.ts`; `data-piwi-control="hud-move"`) moves the bar to the next
   corner.
 - The corner is kept in `chrome.storage.local` (`piwiHudCorner`) for every page and later recording, and read as the
   recorder attaches (`loadHudCorner`).
-- The bug bar has the button last in its DOM, drawn in its top right corner, so its actions come first from the
+- The bar has the button last in its DOM, drawn in its top right corner, so its actions come first from the
   keyboard (`bug-report.spec.ts` reaches them by Tab).
 
 ## What a click lands on, and pages reached without one
@@ -1756,10 +1787,11 @@ the editor's `dist/`. Neither file is part of `dist/` or `dist-firefox/`.
   The page's own `chrome` is never touched. Without the binding the host installs nothing, and the recorder never
   starts. A `chrome` call the recorder starts making needs its answer in the host and in the launcher.
 - **What differs is behind `IDE_BUILD`** (`src/shared/ide-build.ts`, the build constant `__PIWI_IDE__`). It is false in
-  every bundle of the extension, where those branches fold away, and it is read in `record-panel.ts` alone:
+  every bundle of the extension, where those branches fold away, and it is read in `record-panel.ts` and the modules it
+  draws its bar and checks with (`bug-panel.ts`, `check-panel.ts`):
   - the IDE bundle records the top-level document of an http or https page and nothing else (the launcher's script also
     runs in frames and in a new tab's `about:blank`);
-  - Stop opens no review: capture stops, the HUD and the border go, and `piwi-recording-stopped` still goes out;
+  - Stop opens no finish panel: capture stops, the bar and the border go, and `piwi-recording-stopped` still goes out;
   - the HUD names the file from `piwiIdeSettings` (`record_hudTitleInto`);
   - its **Pause** goes to the launcher, which keeps the recording's `paused` for every page and tells the editor
     (`piwi-recording-paused`); the editor's Pause reaches the page through `__piwiIdeDispatch`;
@@ -1842,8 +1874,9 @@ The Piwi panel (`src/devtools/panel.ts`, `panel-record.ts`, `panel-replay.ts`) m
 session storage (`RECORDING_KEY`, `REPLAY_KEY`) and redraws on `chrome.storage.onChanged`, so it needs no channel of its
 own. Its buttons do what the in-page panels do:
 
-- Stop is the popup's stop (`stopRecording` and `piwi-recording-stopped`).
-- Pause, Continue and Stop write the replay state, then send `piwi-replay-wake` to the replayed site's tabs.
+- The Record tab finishes no recording: the bar on the page and the popup do, since they collect the last evidence.
+  Once it stops, the tab copies the same test as the finish panel (`recordingSpec`) and discards the recording.
+- The replay's Pause, Continue and Stop write the replay state, then send `piwi-replay-wake` to the replayed site's tabs.
   `replay-panel.ts` answers by redrawing its panel, and:
   - with `wake: true` (Next step, Stop), by releasing its wait or keeping the wake for the next one;
   - with `wake: 'waiting'` (Pause, Continue, as the in-page panel's own do), by releasing only a wait in progress.
@@ -2079,17 +2112,19 @@ found by its icon and its color before its words are read, and a step reads at a
   never pre-granted, never `<all_urls>`.**
   - `chrome.permissions.request` only counts as satisfying a user gesture when called synchronously inside one. So it
     can't move into `background/index.ts` (see `startRecordingFlow` and `requestRecording` in `src/popup/main.ts`).
-  - But on a first-time grant, the prompt that request shows _takes focus and closes the popup_. That kills the code
-    that would have messaged the worker to start, which is why a first recording used to need a second click.
-  - So the popup parks a `RecordIntent` (origin and tab, in session storage) inside that same click. The worker's
-    `chrome.permissions.onAdded` picks it back up when the grant lands, and starts the recording itself.
-  - Both starts (the popup's own message when it _does_ survive, and the `onAdded` fallback) go through
-    `startRecordingOnce`, which dedupes.
+  - On a first-time grant the prompt that request shows can _take focus and close the popup_, and when it does not, the
+    popup covers it. So when the site is not granted yet (`siteGranted`, read as the popup opens), the popup parks a
+    `RecordIntent` (origin and tab, in session storage) inside that same click and closes itself once the prompt shows
+    (`PROMPT_SHOWN_MS`: Chrome drops a prompt whose popup closed before it showed). The worker's
+    `chrome.permissions.onAdded` picks the intent back up when the grant lands, and starts the recording itself.
+  - On a site already granted no prompt shows: the popup sends `piwi-start-recording` and closes. Both starts go
+    through `startRecordingOnce`, which dedupes.
   - `decideRecordIntent` (pure, unit-tested in `recording-storage.test.ts`) keeps the fallback from firing on an
     unrelated grant (the settings page granting the instance origin fires the same event) or on a stale intent.
-  - A Deny reaches no code. So the intent is cleared when the popup opens again, by each origin request of the settings
-    page (`requestOrigins`), and by each DevTools request for a site (`requestSiteAccess`, right after the request
-    call): the next grant of that origin is not the recording's. `record-intent.spec.ts` grants the site from
+  - A Deny reaches no code. So the intent is cleared when the popup opens again, which then says the recording did not
+    start when the site is still not granted, by each origin request of the settings page (`requestOrigins`), and by
+    each DevTools request for a site (`requestSiteAccess`, right after the request call): the next grant of that origin
+    is not the recording's. `record-intent.spec.ts` grants the site from
     `chrome://extensions`, which fires the real `onAdded`.
   - A recording covers the one origin granted at start. Navigating to a different origin mid-recording is a known,
     documented limit (see "Limits" in `apps/docs/features/extension.md`), not a silent gap. A future phase could detect

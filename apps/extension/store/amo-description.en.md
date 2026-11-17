@@ -1,10 +1,10 @@
-Piwi Picker gives you the Playwright locator to use for any element of the page you are on. Every candidate is scored for stability, then run against the live page, so the one at the top finds exactly one element. Click through a flow and it writes the test; reproduce a bug and it writes the failing test and the report.
+Piwi Picker gives you the Playwright locator to use for any element of the page you are on. Every candidate is scored for stability, then run against the live page, so the one at the top finds exactly one element. Click through a flow and it writes the test; reproduce a bug, say what the page should show, and it writes the failing test and the report.
 
 **From the toolbar popup, on any page**
 
 - **Pick an element**: the ranked locators of one element, re-checked against the page, copied as a locator, an action line or an assertion. When several elements share a name, scope the locator to a stable parent.
-- **Record actions**: clicks, fills and choices across a site's pages, turned into a runnable TypeScript spec. Passwords are never captured.
-- **Report a bug**: record the steps, mark what is wrong on the page, and get a failing test, a Markdown report and a .piwibug file with the console errors and the failed requests. **Replay a bug report** plays its steps again in a tab.
+- **Record**: clicks, fills and choices across a site's pages, with checks of what the page shows, turned into a runnable TypeScript test. Passwords are never captured. Change what a check expects and the recording becomes a bug report: a failing test, a Markdown report and a .piwibug file with the console errors, the failed requests and screenshots.
+- **Replay**: a recording or a bug report played again in a tab, with a cursor on each step.
 - **Lint overlay**: the elements no stable locator finds alone, each with a suggested data-testid.
 - **Multi-pick**, **Assertions** and **Agent context**: the pattern shared by a list's rows, expect(...) lines for an element, and one block about an element for a coding agent.
 

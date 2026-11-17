@@ -70,4 +70,4 @@ out, and the recording says so when it starts.
 
 - [Record tests from the editor](./editor-recording): start a recording, and what happens while it runs.
 - [Test functions](./test-functions): the page objects and helpers a recording calls.
-- [Piwi Picker](./extension): records in your everyday browser, for a bug report or a steps file.
+- [Piwi Picker](./extension): records in your everyday browser, for a test or a bug report with its evidence.

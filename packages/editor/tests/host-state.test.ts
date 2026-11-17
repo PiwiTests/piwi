@@ -50,7 +50,6 @@ describe('RecorderHost', () => {
         events: [],
         startedAt: 1_000,
         grantedOriginPattern: null,
-        mode: 'actions',
         paused: false,
       },
     });

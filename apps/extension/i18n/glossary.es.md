@@ -41,7 +41,7 @@ Spanish word is as clear. This catalog is a draft until a native reader reviews 
 | to hover | pasar el puntero | |
 | to click | hacer clic (en) | |
 | to type, to fill | escribir | |
-| badge (on a box) | insignia | the toolbar badge's texts are `REC`, `BUG`, `REPR` |
+| badge (on a box) | insignia | the toolbar badge's texts are `REC`, `REPR` |
 | hidden / visible | oculto / visible | states agree with the noun: `oculto`, `oculta` |
 | enabled / disabled | habilitado / deshabilitado | in the report's own words, `disponible` / `atenuado` |
 | brittle | frágil | a brittle locator `puede fallar` |
@@ -72,9 +72,9 @@ The popup, the panels, the store description and the phrasebook use these names.
 | `popup_session` | Session | Sesión |
 | `popup_agentContext` | Agent context | Contexto para IA |
 | `popup_testFunctions` | Test functions | Funciones de prueba |
-| `popup_record` | Record actions | Grabar acciones |
-| `popup_reportBug` | Report a bug | Notificar un bug |
-| `popup_replayBug` | Replay a bug report | Reproducir un informe de bug |
+| `popup_record` | Record | Grabar |
+| `popup_replay` | Replay | Reproducir |
+| `record_checkElement` | Check an element | Comprobar un elemento |
 | `popup_testedElements` | Tested elements | Elementos probados |
 
 ## Typography

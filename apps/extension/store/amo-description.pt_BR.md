@@ -1,12 +1,12 @@
 *Esta tradução é um rascunho: nenhum falante nativo a revisou ainda. Encontrou um erro? [Sugira uma correção](https://github.com/PiwiTests/piwi/issues/new?template=translation.yml).*
 
-O Piwi Picker dá a você o locator do Playwright a usar para qualquer elemento da página em que você está. Cada candidato é pontuado pela estabilidade e depois executado na página como ela está, para que o primeiro encontre exatamente um elemento. Percorra um fluxo clicando e a extensão escreve o teste; reproduza um bug e ela escreve o teste que falha e o relatório.
+O Piwi Picker dá a você o locator do Playwright a usar para qualquer elemento da página em que você está. Cada candidato é pontuado pela estabilidade e depois executado na página como ela está, para que o primeiro encontre exatamente um elemento. Percorra um fluxo clicando e a extensão escreve o teste; reproduza um bug, diga o que a página deveria mostrar e ela escreve o teste que falha e o relatório.
 
 **Pelo botão da barra de ferramentas, em qualquer página**
 
 - **Escolher elemento**: os locators classificados de um elemento, conferidos de novo na página, para copiar sozinhos, como linha de ação ou como asserção. Quando vários elementos têm o mesmo nome, limite o locator a um elemento pai estável.
-- **Gravar**: cliques, digitação e escolhas nas páginas de um site, transformados em um teste TypeScript pronto para rodar. As senhas nunca são gravadas.
-- **Relatar um bug**: grave os passos, marque o que está errado na página e receba um teste que falha, um relatório em Markdown e um arquivo .piwibug com os erros do console e as requisições que falharam. **Reproduzir um relatório de bug** executa os passos dele de novo em uma aba.
+- **Gravar**: cliques, digitação e escolhas nas páginas de um site, com verificações do que a página mostra, transformados em um teste TypeScript pronto para rodar. As senhas nunca são gravadas. Mude o que uma verificação espera e a gravação vira um relatório de bug: um teste que falha, um relatório em Markdown e um arquivo .piwibug com os erros do console, as requisições que falharam e capturas de tela.
+- **Reproduzir**: uma gravação ou um relatório de bug executado de novo em uma aba, com um cursor em cada passo.
 - **Verificação**: os elementos que nenhum locator estável encontra sozinho, cada um com um data-testid sugerido.
 - **Multisseleção**, **Asserções** e **Contexto de IA**: o padrão comum às linhas de uma lista, linhas expect(...) para um elemento e um bloco sobre um elemento para um agente de código.
 

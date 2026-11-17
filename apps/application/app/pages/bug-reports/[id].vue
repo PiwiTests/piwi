@@ -6,7 +6,7 @@
  */
 import type { BugReportDetail } from '#shared/handlers/bug-reports';
 import type { DetailTabItem } from '~/components/shared/DetailPageLayout.vue';
-import { describeStepInParts, expectedSteps } from '@piwitests/core/bug-report';
+import { describeStepInParts, expectedSteps, isWrongStep } from '@piwitests/core/bug-report';
 import { BUG_REPORT_STATUS, reproductionPlace, verdictLabel } from '~/utils/bug-reports';
 
 const route = useRoute();
@@ -39,11 +39,12 @@ const EDGE: Record<BugReportDetail['status'], string> = {
 
 const statusInfo = computed(() => (report.value ? BUG_REPORT_STATUS[report.value.status] : null));
 
-/** The first expectation, the report's claim in one line. */
+/** The report's claim in one line: the first step that says the page was wrong, else the first expectation. */
 const claim = computed(() => {
   const r = report.value;
   if (!r) return null;
-  const [first] = expectedSteps({ v: 1, steps: r.steps, evidence: r.evidence, context: r.context });
+  const expected = expectedSteps({ v: 1, steps: r.steps, evidence: r.evidence, context: r.context });
+  const first = expected.find((e) => isWrongStep(e.step)) ?? expected[0];
   if (!first) return null;
   return { parts: describeStepInParts(first.step), actual: first.step.assertion?.actual ?? null, step: first.index };
 });

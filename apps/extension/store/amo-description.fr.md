@@ -1,10 +1,10 @@
-Piwi Picker vous donne le locator Playwright à utiliser pour n’importe quel élément de la page que vous consultez. Chaque candidat est noté selon sa stabilité, puis exécuté sur la page telle qu’elle est, pour que celui en tête trouve exactement un élément. Parcourez un scénario en cliquant, l’extension écrit le test ; reproduisez un bug, elle écrit le test en échec et le rapport.
+Piwi Picker vous donne le locator Playwright à utiliser pour n’importe quel élément de la page que vous consultez. Chaque candidat est noté selon sa stabilité, puis exécuté sur la page telle qu’elle est, pour que celui en tête trouve exactement un élément. Parcourez un scénario en cliquant, l’extension écrit le test ; reproduisez un bug, dites ce que la page devrait afficher, elle écrit le test en échec et le rapport.
 
 **Depuis le bouton de la barre d’outils, sur n’importe quelle page**
 
 - **Choisir un élément** : les locators classés d’un élément, revérifiés sur la page, à copier seuls, en ligne d’action ou en assertion. Quand plusieurs éléments portent le même nom, limitez le locator à un parent stable.
-- **Enregistrer** : clics, saisies et choix sur les pages d’un site, transformés en test TypeScript prêt à lancer. Les mots de passe ne sont jamais enregistrés.
-- **Signaler un bug** : enregistrez les étapes, marquez ce qui ne va pas sur la page, et obtenez un test en échec, un rapport Markdown et un fichier .piwibug avec les erreurs de console et les requêtes en échec. **Rejouer un rapport de bug** repasse ses étapes dans un onglet.
+- **Enregistrer** : clics, saisies et choix sur les pages d’un site, avec des vérifications de ce que la page affiche, transformés en test TypeScript prêt à lancer. Les mots de passe ne sont jamais enregistrés. Changez ce qu’une vérification attend et l’enregistrement devient un rapport de bug : un test en échec, un rapport Markdown et un fichier .piwibug avec les erreurs de console, les requêtes en échec et des captures d’écran.
+- **Rejouer** : un enregistrement ou un rapport de bug repassé dans un onglet, un curseur sur chaque étape.
 - **Contrôle** : les éléments qu’aucun locator stable ne trouve seul, chacun avec un data-testid suggéré.
 - **Multi-sélection**, **Assertions** et **Contexte IA** : le motif commun aux lignes d’une liste, des lignes expect(...) pour un élément, et un bloc décrivant un élément pour un agent de code.
 

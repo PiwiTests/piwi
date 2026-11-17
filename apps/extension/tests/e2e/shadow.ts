@@ -40,3 +40,31 @@ export function clippedInShadows(page: Page): Promise<string[]> {
     return found;
   });
 }
+
+/**
+ * The buttons inside the page's open shadow roots whose label takes more than
+ * one line: a row of buttons wraps between buttons, never inside one.
+ */
+export function wrappedButtonsInShadows(page: Page): Promise<string[]> {
+  return page.evaluate(() => {
+    const found: string[] = [];
+    const walk = (root: Document | ShadowRoot) => {
+      for (const el of root.querySelectorAll<HTMLElement>('*')) {
+        if (el.shadowRoot) walk(el.shadowRoot);
+        if (!el.classList.contains('piwi-btn') || el.getClientRects().length === 0) continue;
+        // The label sits in a span beside the icon: every text node inside the button counts.
+        const lines = new Set<number>();
+        const texts = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);
+        for (let node = texts.nextNode(); node; node = texts.nextNode()) {
+          if (!node.textContent!.trim()) continue;
+          const range = document.createRange();
+          range.selectNodeContents(node);
+          for (const rect of range.getClientRects()) if (rect.width > 0) lines.add(Math.round(rect.top));
+        }
+        if (lines.size > 1) found.push((el.textContent ?? '').trim());
+      }
+    };
+    walk(document);
+    return found;
+  });
+}

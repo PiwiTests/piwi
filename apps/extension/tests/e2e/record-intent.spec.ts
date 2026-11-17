@@ -5,7 +5,7 @@ import { extensionWorker, launchWithEditedManifest } from './fixtures.js';
 import { fireDevtoolsEvent, openDevtoolsPage, openNetworkTab, selectElement } from './devtools-stub.js';
 
 /**
- * The intent "Record actions" parks while the browser asks for the site
+ * The intent a Record click parks while the browser asks for the site
  * (`RecordIntent`), against the real worker. A spec cannot click the browser's
  * prompt, so the site is granted from `chrome://extensions`, as its Site access
  * setting grants it: the manifest asks for the local sites, withheld until
@@ -79,12 +79,12 @@ const test = base.extend<Fixtures>({
   },
 });
 
-/** What the popup's Record actions click parks before its prompt shows. */
+/** What the popup's Record click parks before its prompt shows. */
 async function parkIntent(worker: Worker, originPattern: string, tabId: number): Promise<void> {
   await worker.evaluate(
     ([pattern, id]) =>
       chrome.storage.session.set({
-        piwiRecordIntent: { originPattern: pattern, tabId: id, mode: 'actions', createdAt: Date.now() },
+        piwiRecordIntent: { originPattern: pattern, tabId: id, createdAt: Date.now() },
       }),
     [originPattern, tabId] as const,
   );
@@ -117,7 +117,7 @@ async function settle(page: Page): Promise<void> {
   await page.waitForTimeout(1_000);
 }
 
-test.describe('a parked Record actions intent', () => {
+test.describe('a parked Record intent', () => {
   test('is picked up by the grant that answers its prompt, and the recording starts', async ({
     worker,
     extensionId,
@@ -143,7 +143,7 @@ test.describe('a parked Record actions intent', () => {
     const popup = await context.newPage();
     await popup.goto(`chrome-extension://${extensionId}/popup.html`);
     await expect.poll(() => parkedIntent(worker)).toBeNull();
-    // The popup's Replay a bug report asks for the same site.
+    // The popup's Replay asks for the same site.
     await grantSite(extensions, worker, extensionId, `${site}/*`);
     await settle(popup);
     expect(await recording(worker)).toBe(false);

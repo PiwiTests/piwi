@@ -9,7 +9,7 @@ import {
   driverText,
   replayVerdict,
   stepStatus,
-  VERDICT_ICONS,
+  verdictIcon,
   verdictText,
   type ReplayVerdict,
 } from '../content/replay-core.js';
@@ -117,7 +117,7 @@ export async function renderReplayTab(container: HTMLElement): Promise<void> {
     const detailEl = el('div');
     detailEl.append(...richText(detail));
     words.append(el('strong', '', title), detailEl);
-    box.append(icon(VERDICT_ICONS[verdict.kind]), words);
+    box.append(icon(verdictIcon(verdict, steps)), words);
     parts.push(box);
   }
 

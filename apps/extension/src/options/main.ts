@@ -243,7 +243,7 @@ function requestInstanceHostPermission(instanceUrl: string): Promise<boolean> {
 
 /**
  * `chrome.permissions.request` for `origins`, called at once. Its grant is not
- * a recording's: a "Record actions" intent still parked is cleared with the
+ * a recording's: a Record intent still parked is cleared with the
  * request, or the grant would start that recording.
  */
 function requestOrigins(origins: string[]): Promise<boolean> {

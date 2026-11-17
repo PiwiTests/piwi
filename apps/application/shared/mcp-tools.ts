@@ -2144,7 +2144,7 @@ export const MCP_TOOL_DEFS = [
       'Returns `{ code, warnings }`, with the spec’s `path` for a bug report. Pass one of:',
       [
         '`bugReportId`: the report’s spec, with the project’s generated-spec settings, function catalog and suite locators; `mode` `commit` (the default) adds `test.fail()`, `@bug` and `piwi:bug`, to commit now, and `run` leaves `test.fail()` out, to reproduce',
-        '`steps`: a steps document, as Piwi Picker’s **Download steps** writes it, with converter `options`',
+        '`steps`: a steps document, such as the `steps.json` of a Piwi Picker `.piwibug`, with converter `options`',
       ],
     ),
     inputSchema: {

@@ -4,7 +4,7 @@ import { clickInShadow, debuggerAttached, expect, tabIdOf, test } from './truste
 import { readStoredZip } from '../zip-reader.js';
 
 /**
- * Report a bug in Chrome, where the evidence comes through the debugging
+ * A recording in Chrome, where the evidence comes through the debugging
  * protocol: the console from the page's first script, requests for any kind of
  * resource, and screenshots on any page of the recording, without the popup's
  * `activeTab` grant. Cancelling the debugging bar hands the evidence back to
@@ -51,8 +51,7 @@ test('collects the console, failed requests and screenshots through the debuggin
   await page.goto(`${site}/first`);
   const tabId = await tabIdOf(worker, `${site}/first`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -124,8 +123,7 @@ test('in another tab of the recording, the page’s script relays, and an entry 
   await page.goto(`${site}/first`);
   const tabId = await tabIdOf(worker, `${site}/first`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -162,8 +160,7 @@ test('Finish waits for the worker: an error logged as it finishes is in the repo
   await page.goto(`${site}/first`);
   const tabId = await tabIdOf(worker, `${site}/first`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -215,8 +212,7 @@ test('keeps the recorded origin only: nothing of another site the tab goes throu
   await page.goto(`${site}/first`);
   const tabId = await tabIdOf(worker, `${site}/first`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -253,7 +249,7 @@ test('keeps the recorded origin only: nothing of another site the tab goes throu
   await control.evaluate(() => chrome.runtime.sendMessage({ type: 'piwi-recording-stopped' }));
 });
 
-test('the popup’s Finish bug report finishes as the page’s Finish does, with its screenshot and outline', async ({
+test('the popup’s Finish finishes as the page’s Finish does, with its screenshot and outline', async ({
   context,
   control,
   site,
@@ -263,8 +259,7 @@ test('the popup’s Finish bug report finishes as the page’s Finish does, with
   await page.goto(`${site}/first`);
   const tabId = await tabIdOf(worker, `${site}/first`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -279,7 +274,7 @@ test('the popup’s Finish bug report finishes as the page’s Finish does, with
     { id: tabId, url: `${site}/first`, active: true },
   );
   await popup.goto(`chrome-extension://${new URL(worker.url()).host}/popup.html`);
-  await expect(popup.locator('#record-label')).toContainText('Finish bug report');
+  await expect(popup.locator('#record-label')).toHaveText(/^Finish \(\d+\)$/);
   await popup.locator('#record').click();
 
   await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
@@ -310,8 +305,7 @@ test('keeps a screenshot of the page as each step began, with its element, in th
   await page.goto(`${site}/first`);
   const tabId = await tabIdOf(worker, `${site}/first`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -400,8 +394,7 @@ test('keeps the zoom of the tab with the viewport size, which already holds it',
   await worker.evaluate(async (id) => chrome.tabs.setZoom(id, 1.25), tabId);
   await expect.poll(() => page.evaluate(() => devicePixelRatio)).toBe(1.25);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -430,8 +423,7 @@ test('takes the view again when the page scrolls, so each box sits on its elemen
   await page.goto(`${site}/long`);
   const tabId = await tabIdOf(worker, `${site}/long`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });

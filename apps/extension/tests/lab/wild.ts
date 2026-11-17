@@ -3,8 +3,8 @@ import { pressPanelControl } from './panel.js';
 import { pause, retype, type, type Scenario } from './scenarios.js';
 
 /**
- * The lab's scenarios on public sites, recorded as **Report a bug** records
- * them: pages the extension was not built against, each picked for something a
+ * The lab's scenarios on public sites, recorded as **Record** records them,
+ * a person looking at the first page a while first: pages the extension was not built against, each picked for something a
  * locator or a replay has to cope with (a button whose id or text changes on
  * every load, identical buttons, a hover menu, a React field, a delayed
  * element, a new tab). Run with `LAB_SET=wild`.
@@ -27,14 +27,14 @@ async function addTodos(page: Page, ...todos: string[]): Promise<void> {
   }
 }
 
-const bug = { mode: 'bug', settleMs: 2000 } as const;
+const lookFirst = { settleMs: 2000 } as const;
 
 export const WILD_SCENARIOS: Scenario[] = [
   // TodoMVC: every row's checkbox is named "Toggle Todo", its delete button shows on hover only.
   {
     name: 'wild-todomvc-complete-filter',
     start: TODO,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await addTodos(page, 'buy milk', 'walk the dog', 'file taxes');
       await page.getByRole('listitem').filter({ hasText: 'walk the dog' }).getByRole('checkbox').click();
@@ -52,7 +52,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-todomvc-edit-delete',
     start: TODO,
-    ...bug,
+    ...lookFirst,
     hovers: 1,
     run: async (page) => {
       await addTodos(page, 'buy milk', 'walk the dog');
@@ -72,7 +72,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-todomvc-toggle-all',
     start: TODO,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await addTodos(page, 'one', 'two');
       await page.getByText('Mark all as complete').click();
@@ -86,7 +86,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-add-remove',
     start: `${INTERNET}/add_remove_elements/`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       for (let i = 0; i < 3; i++) {
         await page.getByRole('button', { name: 'Add Element' }).click();
@@ -101,7 +101,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-checkboxes',
     start: `${INTERNET}/checkboxes`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('checkbox').first().click();
       await pause(page);
@@ -112,7 +112,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-dropdown',
     start: `${INTERNET}/dropdown`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // A closed native select changes with the arrow keys, as a person's keyboard changes it.
       await page.getByRole('combobox').focus();
@@ -125,7 +125,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-dynamic-controls',
     start: `${INTERNET}/dynamic_controls`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('button', { name: 'Remove' }).click();
       await page.getByText("It's gone!").waitFor();
@@ -144,7 +144,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-hovers',
     start: `${INTERNET}/hovers`,
-    ...bug,
+    ...lookFirst,
     hovers: 1,
     run: async (page) => {
       const figure = page.locator('.figure').nth(1);
@@ -158,7 +158,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-tables',
     start: `${INTERNET}/tables`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.locator('#table1').getByText('Last Name').click();
       await pause(page);
@@ -176,7 +176,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-challenging-dom',
     start: `${INTERNET}/challenging_dom`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // The three buttons get a new id and a new text on every load; the table's links share their names.
       await page.getByRole('row').filter({ hasText: 'Iuvaret3' }).getByRole('link', { name: 'edit' }).click();
@@ -192,7 +192,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-dynamic-loading',
     start: `${INTERNET}/dynamic_loading/2`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // "Hello World!" is added to the page about five seconds after Start.
       await page.getByRole('button', { name: 'Start' }).click();
@@ -205,7 +205,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-login',
     start: `${INTERNET}/login`,
-    ...bug,
+    ...lookFirst,
     secrets: ['SuperSecretPassword!'],
     run: async (page) => {
       await page.getByRole('textbox', { name: 'Username' }).click();
@@ -223,7 +223,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-key-presses',
     start: `${INTERNET}/key_presses`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('textbox').click();
       await page.keyboard.press('Tab');
@@ -236,7 +236,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-drag-drop',
     start: `${INTERNET}/drag_and_drop`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.locator('#column-a').dragTo(page.locator('#column-b'));
       await pause(page);
@@ -245,7 +245,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-jquery-menu',
     start: `${INTERNET}/jqueryui/menu`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // A jQuery UI menu opens its submenus on mouseenter.
       await page.getByRole('menuitem', { name: 'Enabled' }).hover();
@@ -258,7 +258,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-new-window',
     start: `${INTERNET}/windows`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       const opened = page.context().waitForEvent('page');
       await page.getByRole('link', { name: 'Click Here' }).click();
@@ -270,7 +270,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-internet-history',
     start: `${INTERNET}/status_codes`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('link', { name: '404' }).click();
       await page.waitForURL(/\/404$/);
@@ -287,7 +287,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-dynamic-id',
     start: `${UITAP}/dynamicid`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('button', { name: 'Button with Dynamic ID' }).click();
       await pause(page);
@@ -296,7 +296,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-class-attr',
     start: `${UITAP}/classattr`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // Three buttons named "Button", in an order and with class lists that change on every load.
       page.once('dialog', (dialog) => void dialog.accept());
@@ -307,7 +307,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-hidden-layers',
     start: `${UITAP}/hiddenlayers`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // The green button, once clicked, is covered by the blue one.
       await page.locator('#greenButton').click();
@@ -319,7 +319,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-load-delay',
     start: `${UITAP}/`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('link', { name: 'Load Delay' }).click();
       await page.getByRole('button', { name: 'Button Appearing After Delay' }).waitFor({ timeout: 30_000 });
@@ -331,7 +331,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-ajax',
     start: `${UITAP}/ajax`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // The label the server sends comes about fifteen seconds after the click.
       await page.getByRole('button', { name: 'Button Triggering AJAX Request' }).click();
@@ -344,7 +344,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-click',
     start: `${UITAP}/click`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // The button ignores a click a script sends: only a real mouse makes it turn green.
       await page.getByRole('button', { name: 'Button That Ignores DOM Click Event' }).click();
@@ -356,7 +356,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-text-input',
     start: `${UITAP}/textinput`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // The button takes the typed name once clicked.
       await page.getByRole('textbox', { name: 'Set New Button Name' }).click();
@@ -370,7 +370,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-scrollbars',
     start: `${UITAP}/scrollbars`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('button', { name: 'Hiding Button' }).click();
       await pause(page);
@@ -379,7 +379,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-sample-app',
     start: `${UITAP}/sampleapp`,
-    ...bug,
+    ...lookFirst,
     secrets: ['pwd'],
     run: async (page) => {
       await page.getByRole('textbox', { name: 'User Name' }).click();
@@ -396,7 +396,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-mouseover',
     start: `${UITAP}/mouseover`,
-    ...bug,
+    ...lookFirst,
     hovers: 0,
     run: async (page) => {
       // The link is replaced by another as the pointer enters it.
@@ -411,7 +411,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-nbsp',
     start: `${UITAP}/nbsp`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('button', { name: 'My Button' }).click();
       await pause(page);
@@ -420,7 +420,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-overlapped',
     start: `${UITAP}/overlapped`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       // The Name field is half covered until its container is scrolled.
       await page.getByPlaceholder('Id').click();
@@ -436,7 +436,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-shadow-dom',
     start: `${UITAP}/shadowdom`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.locator('#buttonGenerate').click();
       await pause(page);
@@ -447,7 +447,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-animation',
     start: `${UITAP}/animation`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('button', { name: 'Start Animation' }).click();
       await page.getByText('Animation done').waitFor({ timeout: 15_000 });
@@ -459,7 +459,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-uitap-disabled-input',
     start: `${UITAP}/disabledinput`,
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('button', { name: 'Enable Edit Field with 5 seconds delay' }).click();
       await page.locator('#inputField:enabled').waitFor({ timeout: 15_000 });
@@ -474,7 +474,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-saucedemo-checkout',
     start: 'https://www.saucedemo.com/',
-    ...bug,
+    ...lookFirst,
     secrets: ['secret_sauce'],
     run: async (page) => {
       await page.getByPlaceholder('Username').click();
@@ -509,7 +509,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-saucedemo-sort',
     start: 'https://www.saucedemo.com/',
-    ...bug,
+    ...lookFirst,
     secrets: ['secret_sauce'],
     run: async (page) => {
       await page.getByPlaceholder('Username').click();
@@ -532,7 +532,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-demoqa-text-box',
     start: 'https://demoqa.com/text-box',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       await page.getByPlaceholder('Full Name').click();
@@ -548,7 +548,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-demoqa-buttons',
     start: 'https://demoqa.com/buttons',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       // "Click Me" is a substring of the two other buttons' names.
@@ -561,7 +561,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-demoqa-radio',
     start: 'https://demoqa.com/radio-button',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       // The radio inputs are hidden behind their labels.
@@ -574,7 +574,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-demoqa-checkbox-tree',
     start: 'https://demoqa.com/checkbox',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       // An rc-tree: the switcher that opens a node is an empty span, the checkboxes are spans with a role.
@@ -587,7 +587,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-demoqa-react-select',
     start: 'https://demoqa.com/select-menu',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       await page.locator('#withOptGroup').click();
@@ -603,7 +603,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-demoqa-web-tables',
     start: 'https://demoqa.com/webtables',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       await page.getByPlaceholder('Type to search').click();
@@ -619,7 +619,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-wikipedia-search',
     start: 'https://en.wikipedia.org/wiki/Main_Page',
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('searchbox', { name: 'Search Wikipedia' }).click();
       await type(page, 'Playwright software');
@@ -632,7 +632,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-wikipedia-article',
     start: 'https://en.wikipedia.org/wiki/Playwright_(software)',
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('link', { name: 'Talk', exact: true }).click();
       await page.waitForURL(/Talk:/);
@@ -648,7 +648,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-hackernews-browse',
     start: 'https://news.ycombinator.com/',
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('link', { name: 'new', exact: true }).click();
       await page.waitForURL(/newest/);
@@ -662,7 +662,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-books-catalog',
     start: 'https://books.toscrape.com/',
-    ...bug,
+    ...lookFirst,
     run: async (page) => {
       await page.getByRole('link', { name: 'Travel', exact: true }).click();
       await pause(page);
@@ -678,7 +678,7 @@ export const WILD_SCENARIOS: Scenario[] = [
   {
     name: 'wild-conduit-feed',
     start: 'https://conduit.bondaracademy.com/',
-    ...bug,
+    ...lookFirst,
     settleMs: 4000,
     run: async (page) => {
       await page.locator('.sidebar .tag-list a, .sidebar .tag-list .tag-pill').first().click();

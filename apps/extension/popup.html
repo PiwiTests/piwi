@@ -13,7 +13,7 @@
         --border: #e5e7eb;
         --accent: #7c3aed;
         --accent-fg: #6d28d9;
-        --bug: #dc2626;
+        --danger: #dc2626;
         --ok: #059669;
         --wait: #7c3aed;
       }
@@ -25,7 +25,7 @@
           --muted: #9ca3af;
           --border: #374151;
           --accent-fg: #c4b5fd;
-          --bug: #f87171;
+          --danger: #f87171;
           --ok: #34d399;
           --wait: #a78bfa;
         }
@@ -228,18 +228,6 @@
         border-color: var(--accent);
         color: #fff;
       }
-      /* Report a bug: a flow of its own, for testers as much as developers. */
-      .tile.bug {
-        border-color: rgb(220 38 38 / 0.55);
-        background: linear-gradient(120deg, rgb(220 38 38 / 0.1), rgb(245 158 11 / 0.08));
-      }
-      .tile.bug svg {
-        color: var(--bug);
-      }
-      .tile.bug:hover,
-      .tile.bug:focus-visible {
-        border-color: var(--bug);
-      }
       /* The editor's runs: shown while the paired editor shares them. */
       .tile.runs {
         border-color: rgb(3 105 161 / 0.5);
@@ -259,7 +247,6 @@
       }
       /* Tested elements needs a Piwi instance: set apart from the standalone tools. */
       .tile.feature {
-        margin-bottom: 6px;
         border-color: rgb(124 58 237 / 0.55);
         background: linear-gradient(120deg, rgb(124 58 237 / 0.1), rgb(16 185 129 / 0.1));
       }
@@ -275,15 +262,7 @@
         white-space: nowrap;
         text-overflow: ellipsis;
       }
-      /* Record and Report a bug while a recording runs: red to stop it, green to finish a bug report, the accent to
-         review what was recorded. */
-      .tile[data-state='stop'] {
-        border-color: color-mix(in srgb, var(--bug) 60%, transparent);
-        background: color-mix(in srgb, var(--bug) 7%, var(--surface));
-      }
-      .tile[data-state='stop'] svg {
-        color: var(--bug);
-      }
+      /* Record while a recording runs: green to finish it, the accent to review what was recorded. */
       .tile[data-state='finish'] {
         border-color: color-mix(in srgb, var(--ok) 60%, transparent);
         background: color-mix(in srgb, var(--ok) 8%, var(--surface));
@@ -294,7 +273,7 @@
       .tile[data-state='review'] svg {
         color: var(--accent-fg);
       }
-      /* Report a bug while another recording runs: it waits for that one to end. */
+      /* A tile whose tool cannot answer now: Runs while no hub of the paired editor answers. */
       .tile[data-state='waiting'] {
         border-color: var(--border);
         background: var(--surface);
@@ -315,11 +294,7 @@
       }
       .tile[data-state='failed'] svg,
       .tile[data-state='failed'] .hint {
-        color: var(--bug);
-      }
-      .tile[data-state='stop']:hover,
-      .tile[data-state='stop']:focus-visible {
-        border-color: var(--bug);
+        color: var(--danger);
       }
       .tile[data-state='finish']:hover,
       .tile[data-state='finish']:focus-visible {
@@ -339,6 +314,10 @@
       }
       .tile.primary.running .label::after {
         color: #fff;
+      }
+      /* A compact tile says so by its accent border alone: a word after its label would take a second line. */
+      .tile.compact.running .label::after {
+        content: none;
       }
       .tile .text {
         flex: 1;
@@ -393,67 +372,6 @@
       .tile.primary .key {
         border-color: #ffffff55;
         color: #ffffffcc;
-      }
-      /* Run control, Dashboard and Agents side by side, each tile under its section's name, sharing the row; a section
-         whose tile is hidden (Runs, while nothing is paired) takes no column. */
-      .grid.sections {
-        grid-template-columns: none;
-        grid-auto-flow: column;
-        grid-auto-columns: minmax(0, 1fr);
-      }
-      .grid.sections .cell {
-        display: flex;
-        flex-direction: column;
-        min-width: 0;
-      }
-      .grid.sections .cell:has(> .tile[hidden]) {
-        display: none;
-      }
-      .grid.sections .section-label {
-        margin-top: 4px;
-        overflow: hidden;
-        white-space: nowrap;
-        text-overflow: ellipsis;
-      }
-      /* A tile a third of the popup wide: its icon and label first, its hint (two lines at most) and key under them,
-         each as wide as the tile. */
-      .grid.sections .tile {
-        flex: 1;
-        display: grid;
-        grid-template-columns: auto minmax(0, 1fr) auto;
-        align-items: center;
-        column-gap: 6px;
-        margin-bottom: 0;
-        padding-inline: 8px;
-      }
-      .grid.sections .tile .text {
-        display: contents;
-      }
-      .grid.sections .tile svg {
-        grid-area: 1 / 1;
-      }
-      .grid.sections .tile .label {
-        grid-area: 1 / 2 / 2 / 4;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        overflow: hidden;
-      }
-      /* The running tool's tile says so by its accent border alone here: a word after its label would add a line. */
-      .grid.sections .tile.running .label::after {
-        content: none;
-      }
-      .grid.sections .tile .hint {
-        grid-area: 2 / 1 / 3 / 3;
-        display: -webkit-box;
-        -webkit-box-orient: vertical;
-        -webkit-line-clamp: 2;
-        line-clamp: 2;
-        white-space: normal;
-      }
-      .grid.sections .tile .key {
-        grid-area: 2 / 3;
       }
       .section-label {
         margin: 10px 0 5px;
@@ -603,8 +521,8 @@
             <circle cx="12" cy="12" r="8" />
           </svg>
           <span class="text">
-            <span class="label" id="record-label" data-i18n="popup_record">Record actions</span>
-            <span class="hint" id="record-hint" data-i18n="popup_recordHint">Across pages → a test</span>
+            <span class="label" id="record-label" data-i18n="popup_record">Record</span>
+            <span class="hint" id="record-hint" data-i18n="popup_recordHint">A scenario or a bug</span>
           </span>
           <kbd class="key" aria-hidden="true">1</kbd>
         </button>
@@ -621,8 +539,8 @@
         </button>
       </div>
 
-      <!-- The tools in the sections of Piwi's menu, in its order: Piwi Picker's own tools (Pick), Record, then Run
-           control, Dashboard and Agents side by side, each under its section's name; Connection is the gear. -->
+      <!-- The tools after Record and Pick an element: Piwi Picker's pick tools, then what plays and follows tests. The
+           digits follow the tiles' order; Connection is the gear. -->
       <div class="section-label" id="pick-section-label" data-i18n="popup_sectionPick">Pick</div>
       <div class="grid actions" role="group" aria-labelledby="pick-section-label">
         <button id="multi-pick" class="tile compact" type="button" aria-keyshortcuts="3">
@@ -670,88 +588,74 @@
           </span>
           <kbd class="key" aria-hidden="true">6</kbd>
         </button>
-      </div>
-
-      <div class="section-label" id="record-section-label" data-i18n="popup_sectionRecord">Record</div>
-      <div class="grid" role="group" aria-labelledby="record-section-label">
-        <button id="report-bug" class="tile bug" type="button" aria-keyshortcuts="B">
+        <button id="agent-context-panel" class="tile compact" type="button" aria-keyshortcuts="7">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-            <rect x="7.5" y="7" width="9" height="12.5" rx="4.5" />
-            <path
-              d="M9.5 7.5a2.5 2.5 0 015 0M12 11v8.5M7.5 12H4M20 12h-3.5M7.8 16.5l-3 2M16.2 16.5l3 2M7.8 9l-2.5-2M16.2 9l2.5-2"
-            />
+            <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" />
+            <path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z" />
           </svg>
           <span class="text">
-            <span class="label" id="report-bug-label" data-i18n="popup_reportBug">Report a bug</span>
-            <span class="hint" id="report-bug-hint" data-i18n="popup_reportBugHint"
-              >Steps and what's wrong → a failing test</span
-            >
+            <span class="label" data-i18n="popup_agentContext">Agent context</span>
+            <span class="hint" data-i18n="popup_agentContextHint">Summary for an AI</span>
           </span>
-          <kbd class="key" aria-hidden="true">B</kbd>
+          <kbd class="key" aria-hidden="true">7</kbd>
         </button>
-        <button id="replay-bug" class="tile" type="button" aria-keyshortcuts="R">
+      </div>
+
+      <div class="section-label" id="tests-section-label" data-i18n="popup_sectionTests">Tests</div>
+      <div class="grid" role="group" aria-labelledby="tests-section-label">
+        <button id="replay" class="tile compact" type="button" aria-keyshortcuts="R">
           <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
             <path d="M8 5.5v13l10-6.5z" />
             <path d="M4 4v16" />
           </svg>
           <span class="text">
-            <span class="label" data-i18n="popup_replayBug">Replay a bug report</span>
-            <span class="hint" data-i18n="popup_replayBugHint">Play its steps here, with a cursor</span>
+            <span class="label" data-i18n="popup_replay">Replay</span>
+            <span class="hint" data-i18n="popup_replayHint">A recording, here</span>
           </span>
           <kbd class="key" aria-hidden="true">R</kbd>
         </button>
-      </div>
-
-      <div class="grid sections">
-        <div class="cell" role="group" aria-labelledby="run-control-section-label">
-          <div class="section-label" id="run-control-section-label" data-i18n="popup_sectionRunControl">
-            Run control
-          </div>
-          <!-- The editor's runs, in a window of their own: shown while an editor or the desktop app is paired, muted while
+        <!-- Takes Replay's place while a recording runs: opening this popup is what lets the browser take a screenshot of
+             the tab. -->
+        <button id="screenshot" class="tile compact" type="button" aria-keyshortcuts="S" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path
+              d="M4 8.75A1.5 1.5 0 0 1 5.5 7.25h2.3l1.7-2.5h5L16.2 7.25h2.3A1.5 1.5 0 0 1 20 8.75v9a1.5 1.5 0 0 1-1.5 1.5h-13A1.5 1.5 0 0 1 4 17.75z"
+            />
+            <circle cx="12" cy="12.75" r="3.3" />
+          </svg>
+          <span class="text">
+            <span class="label" data-i18n="popup_takeScreenshot">Take a screenshot</span>
+            <span class="hint" data-i18n="popup_screenshotHint">This tab, as it is now</span>
+          </span>
+          <kbd class="key" aria-hidden="true">S</kbd>
+        </button>
+        <!-- The editor's runs, in a window of their own: shown while an editor or the desktop app is paired, muted while
              none of its hubs answers. -->
-          <button id="runs" class="tile compact runs" type="button" aria-keyshortcuts="U" hidden>
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M8.5 5.5v13M15.5 5.5v13" />
-            </svg>
-            <span class="text">
-              <span class="label" data-i18n="popup_runs">Runs</span>
-              <span class="hint" id="runs-hint" data-i18n="popup_runsHintNone">Pause, step, resume</span>
-            </span>
-            <kbd class="key" aria-hidden="true">U</kbd>
-          </button>
-        </div>
-        <div class="cell" role="group" aria-labelledby="dashboard-section-label">
-          <div class="section-label" id="dashboard-section-label" data-i18n="popup_sectionDashboard">Dashboard</div>
-          <button id="coverage-overlay" class="tile compact feature" type="button" aria-keyshortcuts="T">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <rect x="3" y="3" width="8" height="8" rx="1.5" />
-              <path d="M5.3 7.2l1.5 1.5 2.7-3" />
-              <rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="2.2 2" />
-              <path d="M15 3h6v6M9 21H3v-6" />
-            </svg>
-            <span class="text">
-              <span class="label" data-i18n="popup_testedElements">Tested elements</span>
-              <span class="hint" id="coverage-hint" data-i18n="popup_testedElementsShort"
-                >What your tests reach here</span
-              >
-            </span>
-            <kbd class="key" aria-hidden="true">T</kbd>
-          </button>
-        </div>
-        <div class="cell actions" role="group" aria-labelledby="agents-section-label">
-          <div class="section-label" id="agents-section-label" data-i18n="popup_sectionAgents">Agents</div>
-          <button id="agent-context-panel" class="tile compact" type="button" aria-keyshortcuts="7">
-            <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
-              <path d="M11 3l1.9 5.1L18 10l-5.1 1.9L11 17l-1.9-5.1L4 10l5.1-1.9z" />
-              <path d="M18 15l.8 2.2L21 18l-2.2.8L18 21l-.8-2.2L15 18l2.2-.8z" />
-            </svg>
-            <span class="text">
-              <span class="label" data-i18n="popup_agentContext">Agent context</span>
-              <span class="hint" data-i18n="popup_agentContextHint">Summary for an AI</span>
-            </span>
-            <kbd class="key" aria-hidden="true">7</kbd>
-          </button>
-        </div>
+        <button id="runs" class="tile compact runs" type="button" aria-keyshortcuts="U" hidden>
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <path d="M8.5 5.5v13M15.5 5.5v13" />
+          </svg>
+          <span class="text">
+            <span class="label" data-i18n="popup_runs">Runs</span>
+            <span class="hint" id="runs-hint" data-i18n="popup_runsHintNone">Pause, step, resume</span>
+          </span>
+          <kbd class="key" aria-hidden="true">U</kbd>
+        </button>
+        <button id="coverage-overlay" class="tile compact feature" type="button" aria-keyshortcuts="T">
+          <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false">
+            <rect x="3" y="3" width="8" height="8" rx="1.5" />
+            <path d="M5.3 7.2l1.5 1.5 2.7-3" />
+            <rect x="13" y="13" width="8" height="8" rx="1.5" stroke-dasharray="2.2 2" />
+            <path d="M15 3h6v6M9 21H3v-6" />
+          </svg>
+          <span class="text">
+            <span class="label" data-i18n="popup_testedElements">Tested elements</span>
+            <span class="hint" id="coverage-hint" data-i18n="popup_testedElementsShort"
+              >What your tests reach here</span
+            >
+          </span>
+          <kbd class="key" aria-hidden="true">T</kbd>
+        </button>
       </div>
 
       <p class="devtools-note">

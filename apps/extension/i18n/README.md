@@ -15,7 +15,7 @@ Playwright) and the popup's single-key shortcuts.
 2. Add the same key, at the same place, to every other catalog. Draft the translation yourself if you have to: a check
    fails on a missing key, so no language quietly falls back to English. Say in the pull request which drafts need a
    reader.
-3. Use it: `t('popup_pick')`, `t('popup_stopRecording', { count })`, `tn('options_saved', n)`. In `popup.html` and
+3. Use it: `t('popup_pick')`, `t('popup_finishRecording', { count })`, `tn('options_saved', n)`. In `popup.html` and
    `options.html`, keep the English in the markup and name the key: `data-i18n="popup_pick"` for the text, and
    `data-i18n-title`, `data-i18n-placeholder` or `data-i18n-aria-label` for those attributes. A `<kbd>` or `<code>`
    inside the text fills a placeholder: `<kbd data-i18n-slot="first">1</kbd>` for `$first$`.

@@ -5,9 +5,9 @@ import {
   getRecordIntent,
   clearRecordIntent,
   decideRecordIntent,
+  setRecordStartError,
   serveAppendRecordingEvent,
   serveUpdateRecording,
-  type RecordingMode,
 } from '../shared/recording-storage.js';
 import {
   getReplayState,
@@ -144,7 +144,7 @@ async function showStateBadge(): Promise<void> {
   if (signShowing) return;
   const runs = runsBadge();
   if (recording.active) {
-    await chrome.action.setBadgeText({ text: t(recording.mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeText({ text: t('badge_recording') });
     await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
   } else if (replay && (replay.status === 'running' || replay.status === 'paused')) {
     await chrome.action.setBadgeText({ text: t('badge_replay') });
@@ -256,14 +256,14 @@ const sessionAccessReady = Promise.resolve()
   .catch(() => undefined);
 
 const RECORD_SCRIPT_ID = 'piwi-record-panel';
-/** The bug recording's main-world script: console errors and failed requests, registered only while one runs. */
+/** The recording's main-world script: console errors and failed requests, registered only while one runs. */
 const BUG_EVIDENCE_SCRIPT_ID = 'piwi-bug-evidence';
 const RECORDING_SCRIPT_IDS = [RECORD_SCRIPT_ID, BUG_EVIDENCE_SCRIPT_ID];
 
 /**
  * Unregisters whichever of `ids` are registered. Chrome refuses the whole call
- * when one of the ids is not registered, as the bug recording's script is not
- * during an actions recording.
+ * when one of the ids is not registered, as after a recording that could not
+ * register them.
  */
 async function unregisterScripts(ids: string[]): Promise<void> {
   try {
@@ -283,36 +283,26 @@ async function unregisterScripts(ids: string[]): Promise<void> {
  * (it needs to happen inside its own click handler to count as a user
  * gesture) and only sends the already-granted origin pattern here.
  */
-async function handleStartRecording(
-  originPattern: string,
-  tabId: number,
-  mode: RecordingMode,
-): Promise<{ ok: boolean; error?: string }> {
+async function handleStartRecording(originPattern: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
   try {
-    await startRecording(originPattern, mode);
+    await startRecording(originPattern);
     // Best-effort: a previous recording that ended without a clean `stop`
     // (crashed tab, browser killed mid-session) can leave a stale
     // registration behind — `persistAcrossSessions: false` means it never
     // survives a full browser restart, only the current one.
     await unregisterScripts(RECORDING_SCRIPT_IDS);
-    // A bug recording also runs a script in the page's main world, the only
-    // place that sees the page's console and its fetch/XHR calls, under the
-    // same origin grant and only for as long as the recording.
-    const bugScripts: chrome.scripting.RegisteredContentScript[] =
-      mode === 'bug'
-        ? [
-            {
-              id: BUG_EVIDENCE_SCRIPT_ID,
-              js: ['bug-evidence-main.js'],
-              matches: [originPattern],
-              runAt: 'document_start',
-              world: 'MAIN',
-              persistAcrossSessions: false,
-            },
-          ]
-        : [];
+    // A recording also runs a script in the page's main world, the only place
+    // that sees the page's console and its fetch/XHR calls, under the same
+    // origin grant and only for as long as the recording.
     await chrome.scripting.registerContentScripts([
-      ...bugScripts,
+      {
+        id: BUG_EVIDENCE_SCRIPT_ID,
+        js: ['bug-evidence-main.js'],
+        matches: [originPattern],
+        runAt: 'document_start',
+        world: 'MAIN',
+        persistAcrossSessions: false,
+      },
       {
         id: RECORD_SCRIPT_ID,
         js: ['record-panel.js'],
@@ -323,15 +313,13 @@ async function handleStartRecording(
     ]);
     // The registration above only applies to *future* navigations — the
     // already-loaded current page needs its own one-off injection.
-    if (mode === 'bug') {
-      await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
-    }
-    // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the report
+    await chrome.scripting.executeScript({ target: { tabId }, files: ['bug-evidence-main.js'], world: 'MAIN' });
+    // Chrome: the console, the requests and screenshots through the debugging protocol, in the tab the recording
     // starts in. The page's script above stays registered for the other tabs, and takes over if this fails.
-    if (mode === 'bug') await startBugDebugger(tabId, originPattern);
+    await startBugDebugger(tabId, originPattern);
     await chrome.scripting.executeScript({ target: { tabId }, files: ['record-panel.js'] });
     await i18nReady;
-    await chrome.action.setBadgeText({ text: t(mode === 'bug' ? 'badge_bug' : 'badge_recording') });
+    await chrome.action.setBadgeText({ text: t('badge_recording') });
     await chrome.action.setBadgeBackgroundColor({ color: RECORDING_BADGE_COLOR });
     return { ok: true };
   } catch (err) {
@@ -350,7 +338,7 @@ async function handleStartRecording(
 /**
  * Guards against starting the same recording twice.
  *
- * A first "Record actions" click resolves its grant down two paths that both
+ * A first Record click resolves its grant down two paths that both
  * land here: the popup's own `piwi-start-recording` message (when the popup
  * survives the permission prompt) and `chrome.permissions.onAdded` (when the
  * prompt closed it). `startInFlight` is set synchronously before the first
@@ -360,16 +348,12 @@ async function handleStartRecording(
  */
 let startInFlight = false;
 
-async function startRecordingOnce(
-  originPattern: string,
-  tabId: number,
-  mode: RecordingMode,
-): Promise<{ ok: boolean; error?: string }> {
+async function startRecordingOnce(originPattern: string, tabId: number): Promise<{ ok: boolean; error?: string }> {
   if (startInFlight) return { ok: true };
   startInFlight = true;
   try {
     if ((await getRecordingState()).active) return { ok: true };
-    return await handleStartRecording(originPattern, tabId, mode);
+    return await handleStartRecording(originPattern, tabId);
   } finally {
     startInFlight = false;
     // The intent has done its job (or failed to) — never leave it to revive a
@@ -397,16 +381,20 @@ async function handlePermissionAdded(addedOrigins: string[]): Promise<void> {
     await clearRecordIntent().catch(() => undefined);
     return;
   }
-  await startRecordingOnce(decision.originPattern, decision.tabId, decision.mode);
+  const started = await startRecordingOnce(decision.originPattern, decision.tabId);
+  // No popup is open to say why: the next one on that tab does.
+  if (!started.ok) {
+    await setRecordStartError(decision.tabId, started.error ?? t('common_recordingStartFailed')).catch(() => undefined);
+  }
 }
 
-// The person cancelled the debugging bar during a bug recording: the recorder's page relay takes over.
+// The person cancelled the debugging bar during a recording: the recorder's page relay takes over.
 onBugDebuggerLost(async () => {
   const { grantedOriginPattern, active } = await getRecordingState();
   if (active) await notifyRecorderTabs(grantedOriginPattern, undefined, { type: 'piwi-bug-debugger-lost' });
 });
 
-// A bug recording's step screenshots go with it.
+// A recording's step screenshots go with it.
 clearViewsWithRecording();
 
 chrome.permissions.onAdded.addListener((permissions) => {
@@ -458,14 +446,14 @@ async function handleRecordingStopped(senderTabId?: number): Promise<void> {
 }
 
 /**
- * A screenshot of the tab a bug recording runs in, for its report.
+ * A screenshot of the tab a recording runs in, for its report.
  *
  * In Chrome, through the recording's debugging session (`Page.captureScreenshot`):
  * at any moment and on any page of the recording. Without it (Firefox, a
  * session refused or cancelled), `captureVisibleTab`, which needs `<all_urls>`
  * or the `activeTab` grant: the recorder's per-origin host permission is not
- * enough. `activeTab` is granted by opening the popup on the tab (as the Report
- * a bug click does) or by the keyboard shortcut, and lasts until the tab
+ * enough. `activeTab` is granted by opening the popup on the tab (as the Record
+ * click does) or by the keyboard shortcut, and lasts until the tab
  * navigates; outside it Chrome refuses, and the report says there is no
  * screenshot rather than asking for a wider permission.
  */
@@ -791,7 +779,7 @@ let replayStartQueue: Promise<unknown> = Promise.resolve();
  * again here, the state goes to session storage, and the replay script is
  * registered for the origin so every page the replay reaches continues it.
  * It needs the origin's host permission, which Replay in the popup requests
- * and a bug recording on the same site already holds. A content script starts
+ * and a recording on the same site already holds. A content script starts
  * a replay only on its own tab's origin; an extension page names any.
  */
 function handleStartReplay(
@@ -1085,9 +1073,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     // Through the dedupe guard, not `handleStartRecording` directly: on a
     // first-time grant `chrome.permissions.onAdded` may already be starting the
     // same recording (see `startRecordingOnce`).
-    void startRecordingOnce(message.originPattern, message.tabId, message.mode === 'bug' ? 'bug' : 'actions').then(
-      sendResponse,
-    );
+    void startRecordingOnce(message.originPattern, message.tabId).then(sendResponse);
     return true; // keep the message channel open for the async response
   }
   if (message?.type === 'piwi-start-replay') {
@@ -1107,7 +1093,7 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message?.type === 'piwi-tab-zoom') {
-    // The zoom of the sender's tab, which a bug recording keeps with each viewport size.
+    // The zoom of the sender's tab, which a recording keeps with each viewport size.
     const tabId = sender.tab?.id;
     void (tabId != null ? tabZoom(tabId) : Promise.resolve(1)).then((zoom) => sendResponse({ zoom }));
     return true;

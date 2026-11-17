@@ -814,7 +814,8 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     features: [
       {
         title: 'Browser extension',
-        summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
+        summary:
+          'Record tests and bug reports, build and lint locators, and copy context for an agent, straight from the page.',
         needs: ['extension'],
         where: 'Browser extension',
         doc: 'features/extension',
@@ -847,11 +848,11 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'On the page',
       },
       {
-        title: 'Record actions',
+        title: 'Record a test',
         summary:
-          'Clicks and fills across a site recorded into a runnable Playwright spec, paused, titled and replayed before you export it.',
+          'Clicks and fills across a site recorded into a runnable Playwright test, with checks of what the page shows and its evidence, paused, titled and replayed before you copy it.',
         needs: ['extension'],
-        where: 'Browser extension → Record actions',
+        where: 'Browser extension → Record',
         doc: 'features/record-actions',
         part: 'On the page',
       },
@@ -868,7 +869,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',
         needs: ['extension'],
-        where: 'Browser extension → Tested elements',
+        where: 'Browser extension → Tests → Tested elements',
         doc: 'features/tested-elements',
         part: 'On the page',
       },
@@ -891,20 +892,20 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'DevTools',
       },
       {
-        title: 'Report a bug',
+        title: 'Record a bug report',
         summary:
-          'Record the steps to a bug, mark what the page should show, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
+          'Record the steps to a bug, mark what the page should show instead of what it shows, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
         needs: ['extension'],
-        where: 'Browser extension → Report a bug',
+        where: 'Browser extension → Record → Check an element',
         doc: 'features/report-a-bug',
         part: 'Bugs',
       },
       {
-        title: 'Replay a bug report',
+        title: 'Replay a recording',
         summary:
-          'Play a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
+          'Play a recording or a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
         needs: ['extension'],
-        where: 'Browser extension → Replay a bug report',
+        where: 'Browser extension → Tests → Replay',
         doc: 'features/replay-a-bug-report',
         part: 'Bugs',
       },
@@ -922,7 +923,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
         needs: ['fixtures', 'extension'],
-        where: 'Browser extension → Run control → Runs',
+        where: 'Browser extension → Tests → Runs',
         doc: 'features/runs-window',
       },
     ],

@@ -787,7 +787,6 @@ test.describe('the sites Piwi Picker may run on', () => {
           events: [],
           startedAt: 1,
           grantedOriginPattern: 'https://rec.example/*',
-          mode: 'actions',
         },
       });
     }, instance);

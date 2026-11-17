@@ -33,9 +33,10 @@ each rule below ends with the section to read there.
 - "The editor's runs": before changing the Runs window, the run shortcut, the run hubs or the editor's proof
   (`editor-proof.ts`).
 - "Tested elements", "Naming and ranking an element": before changing the engine, naming or narrowing.
-- "Checks in a test recording", "Files, double clicks and drags", "The recording bar's corner", "What a click lands
+- "The recording bar and its checks", "Files, double clicks and drags", "The recording bar's corner", "What a click lands
   on, and pages reached without one", "Hovers a click depends on": before changing what the recorder captures.
-- "Report a bug", "The main-world evidence script": before changing the bug recorder or its evidence.
+- "Evidence and bug reports", "The main-world evidence script": before changing the evidence, the finish panel or what
+  makes a recording a bug report.
 - "The IDE bundle": before changing `record-panel.ts` or its imports (the editor service ships them too).
 - "Playwright view", "DevTools", "Content-script structure", "Buttons, icons and readable steps": before changing them.
 - "Rules, with their reasons": to learn why a rule exists. "Loading it locally": before changing `scripts/dev.mjs`.
@@ -49,10 +50,10 @@ each rule below ends with the section to read there.
   reviewed decision. (see "The manifest and its permissions")
 - **Request a host permission for one origin, inside the user's click, before any `await`.** Firefox shows no prompt
   after an `await`, and a service worker can never ask. (see "Host permissions for the instance")
-- **The recorder's grant comes from the popup's Record actions or Report a bug click, per origin and per recording,
-  never pre-granted.** It cannot move to the worker (`requestRecording`, `startRecordingFlow` in `src/popup/main.ts`);
-  `decideRecordIntent` handles a prompt that closed the popup (`record-intent.spec.ts`). (see "Rules, with their
-  reasons")
+- **The recorder's grant comes from the popup's Record click, per origin and per recording, never pre-granted.** It
+  cannot move to the worker (`requestRecording` in `src/popup/main.ts`); on a site not granted yet the popup closes
+  once the prompt shows, and `decideRecordIntent` starts the recording when the grant lands (`record-intent.spec.ts`).
+  (see "Rules, with their reasons")
 - **An extension page that requests a site's `hostPattern` clears the parked recording intent with it**
   (`requestOrigins` in the settings, `requestSiteAccess` in DevTools), or that grant can start the parked recording
   (`record-intent.spec.ts`). (see "Rules, with their reasons")
@@ -203,7 +204,7 @@ each rule below ends with the section to read there.
 - **A page writes the replay's state only through `updateReplayState(change, replayId)`; only the worker writes its
   tab** (`piwiReplayTab`). (see "A replay belongs to one tab")
 - **Bug evidence has its own keys (`bug-storage.ts`), never `RecordingState`; only the worker writes
-  `CDP_EVIDENCE_KEY`.** (see "Report a bug")
+  `CDP_EVIDENCE_KEY`.** (see "Evidence and bug reports")
 
 ### The debugging protocol (Chrome and Edge)
 
@@ -222,7 +223,7 @@ each rule below ends with the section to read there.
 ### Main-world scripts
 
 - **Register a main-world script only while its feature runs, for its granted origin:** `bug-evidence-main.js` for a
-  bug recording or a replay, `request-conditions-main.js` for request conditions `via: 'page'`. (see "The main-world
+  recording or a replay, `request-conditions-main.js` for request conditions `via: 'page'`. (see "The main-world
   evidence script" and "Slow down or fail a request")
 - **A main-world script imports nothing that touches `chrome.*`, and only wraps and listens:** each wrapper calls the
   original with the same arguments and returns its result. (see "The main-world evidence script")
@@ -232,18 +233,22 @@ each rule below ends with the section to read there.
 ### Recording and replay
 
 - **A recording keeps a file's name, never its content** (`record.spec.ts`). (see "Files, double clicks and drags")
-- **Every capture listener checks `capturePaused()`; every exported title goes through `recordingTitle`.** (see
-  "Checks in a test recording")
+- **Every capture listener checks `capturePaused()` (the viewport watch aside); every exported title goes through
+  `recordingTitle`.** (see "The recording bar and its checks")
 - **A step is never lost to its locators:** unchecked candidates are kept, and an element with a role and no name
   gets its bare role. (see "Naming and ranking an element")
 - **A replay hands a step it cannot play to the person;** it never types a redacted value or sends input twice. (see
   "How a replay finds a step's element", "Trusted input in a replay")
-- **Read a `.piwibug` by its content (`isBugReportArchive`), never by its name.** (see "Report a bug")
+- **Read a `.piwibug` by its content (`isBugReportArchive`), never by its name.** (see "Evidence and bug reports")
+- **A recording is a bug report only through a step that says the page was wrong** (`isWrongStep`,
+  `@piwitests/core/bug-report`): the tests (`recordingSpec`), Send to Piwi… and Replay's verdict follow it. (see
+  "Evidence and bug reports")
 - **Send `stepShot` parts only to an instance whose intake declares `stepShots`.** (see "A screenshot of each step")
 - **Never answer a refused `captureVisibleTab` with `<all_urls>`;** a missing screenshot never blocks Finish. (see
   "Screenshots without the protocol need `activeTab`")
-- **The IDE bundle never touches the page's `chrome`; what differs stays behind `IDE_BUILD` in `record-panel.ts`.** A
-  new `chrome` call needs its answer in `src/ide/host.ts` and the launcher. (see "The IDE bundle")
+- **The IDE bundle never touches the page's `chrome`; what differs stays behind `IDE_BUILD`** in `record-panel.ts`,
+  `bug-panel.ts` and `check-panel.ts`. A new `chrome` call needs its answer in `src/ide/host.ts` and the launcher. (see
+  "The IDE bundle")
 
 ### Locators and the in-page engine
 
@@ -270,9 +275,12 @@ each rule below ends with the section to read there.
 ### Interface
 
 - **The popup and the settings page stay plain TypeScript and DOM, no UI framework.** (see "The popup")
-- **The popup must fit Chrome's 600-pixel popup height in every language** (`popup.spec.ts`): its tiles stand in the
-  sections of Piwi's menu (Pick, Record, Run control, Dashboard, Agents), a new tile in its section or in DevTools,
-  with its hint under its label, never only a tooltip. (see "The popup")
+- **The popup must fit Chrome's 600-pixel popup height in every language, and no tile's label or hint is cut or takes
+  two lines** (`popup.spec.ts`, recording and not): its tools stand in two sections, Pick and Tests, never a section
+  of one tile; a new tile goes in its section or in DevTools, with its hint under its label, never only a tooltip.
+  (see "The popup")
+- **No button label wraps in a bar on the page:** a row of buttons wraps between buttons, never inside one
+  (`wrappedButtonsInShadows` in `record.spec.ts` and `bug-report.spec.ts`). (see "The recording bar and its checks")
 - **A panel with a backdrop is modal through `holdFocus`; one that leaves the page usable is `role="region"`, never a
   dialog.** A bar on the page stops animating under `prefers-reduced-motion: reduce`. (see "Content-script
   structure")

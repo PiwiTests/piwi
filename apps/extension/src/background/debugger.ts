@@ -2,7 +2,7 @@ import { fallbackReasonOf, type FallbackReason } from '../shared/cdp-input.js';
 
 /**
  * The extension's debugging sessions, one per tab at most, shared by the
- * features that need one: a replay's trusted input, a bug recording's
+ * features that need one: a replay's trusted input, a recording's
  * evidence, the request conditions and the viewport set from DevTools. Chrome
  * shows its "started debugging this browser" bar while a session is attached,
  * so a feature holds the session only while it runs, and the session is

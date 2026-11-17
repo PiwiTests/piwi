@@ -1,14 +1,16 @@
 ---
 title: Bug report file format
-description: "The .piwibug file Piwi Picker saves for a bug report: a zip archive with the steps, the failing test, the Markdown report, the evidence and the screenshots, and how a reader tells it from any other zip."
+description: "The .piwibug file Piwi Picker saves for a recording or a bug report: a zip archive with the steps, the test, the Markdown report, the evidence and the screenshots, and how a reader tells it from any other zip."
 lang: en-US
 ---
 
 # Bug report file format
 
-[Report a bug](/features/report-a-bug) saves a report as one `.piwibug` file with **Download .piwibug**, and a failed
-execution's [Export](/features/offline-export#replay-the-failure-in-a-browser) writes one from the test run. Piwi
-Picker's [Replay](/features/replay-a-bug-report) plays it, and the [desktop app](/features/desktop#importing-local-files)
+A [recording](/features/record-actions) of Piwi Picker, a [bug report](/features/report-a-bug) or not, is saved as one
+`.piwibug` file with **Download .piwibug**, named after the time it was finished: `piwi-bug-2026-11-17-15-25.piwibug`
+once a step is marked wrong, `piwi-recording-…` otherwise. A failed execution's
+[Export](/features/offline-export#replay-the-failure-in-a-browser) writes one from the test run. Piwi Picker's
+[Replay](/features/replay-a-bug-report) plays it, and the [desktop app](/features/desktop#importing-local-files)
 imports it into a project as a [bug report](/features/bug-reports).
 
 ## The archive
@@ -19,7 +21,7 @@ A `.piwibug` file is a zip archive, its entries stored without compression:
 |---|---|
 | `mimetype` | `application/vnd.piwi.bug-report+zip`, always the first entry |
 | `steps.json` | The steps, as a [steps file](/reference/steps-format), with the viewport sizes they were recorded at |
-| `<title>.spec.ts` | The failing test, named after the report's title, such as `coupon-not-applied.spec.ts` |
+| `<title>.spec.ts` | The test, named after the title, such as `coupon-not-applied.spec.ts`: the failing test once a step is marked wrong, else a test that passes |
 | `bug-report.md` | The report as Markdown, in the language Piwi Picker shows |
 | `evidence.json` | The evidence and the context; see below |
 | `screenshots/<n>-<moment>.png` | Up to three screenshots: `marked` (a step marked as wrong), `finish` (a report made from a test run holds its failure screenshot as `screenshots/1-finish.png`) or `manual` |
@@ -103,6 +105,7 @@ as a [steps file](/reference/steps-format#checks) is, and a file whose steps fai
 
 ## Related
 
-- [Report a bug](/features/report-a-bug): recording a report and what it collects
+- [Record a bug report](/features/report-a-bug): recording a report and what it collects
+- [Record a test](/features/record-actions): the recording, and the finish panel that saves the file
 - [Steps file format](/reference/steps-format): the format of `steps.json`
 - [Bug reports on your instance](/features/bug-reports): what the instance does with a report

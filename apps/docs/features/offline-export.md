@@ -48,6 +48,11 @@ screenshot. The line under it counts the steps, those done by hand and the calls
 button's tooltip names those calls. **Steps (steps.json)**, under **Copy to clipboard**, copies the steps alone, to
 paste into Replay.
 
+<figure>
+  <img src="/screenshots/execution-replay-export.png" alt="A failed execution's Export menu: downloads as HTML, ZIP, PDF, Markdown or JSON, the bug report to replay in a browser with its 6 steps, a Perfetto trace, and the report or the steps to copy">
+  <figcaption>The Export menu of a failed execution: its steps as a bug report to replay.</figcaption>
+</figure>
+
 ## What an export leaves out, and why it tells you
 
 Exports are bounded so one download cannot exhaust the server:

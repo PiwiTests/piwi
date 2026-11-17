@@ -18,33 +18,24 @@ import { t } from './i18n.js';
  */
 export const RECORDING_KEY = 'piwiRecording';
 
-/** `actions` records a flow; `bug` records a bug report, with its HUD and the page's console and failed requests. */
-export type RecordingMode = 'actions' | 'bug';
-
 export interface RecordingState {
   active: boolean;
   events: RawCaptureEvent[];
   startedAt: number | null;
   /** The origin pattern granted for this recording (e.g. `https://app.example.com/*`) — background re-registers the content script for it on every new tab/navigation. */
   grantedOriginPattern: string | null;
-  /** Absent on a recording stored before bug reports existed, which reads as `actions`. */
-  mode?: RecordingMode;
-  /** A bug recording's token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. */
+  /** The recording's evidence token: the main-world evidence script's messages carry it, and the recorder ignores any that do not. Absent in the IDE bundle, which collects no evidence. */
   bugToken?: string | null;
   /** Paused from the recording bar, or from the editor that started the recording: nothing done in the browser is captured until it resumes. */
   paused?: boolean;
   /**
-   * A recording of actions' title, for its spec and its steps file: the first page's own title as the recording
-   * reaches it, then what the review panel's field holds. Null when the page had none; absent until the first page.
+   * The recording's title, for its test and its report: the first page's own title as the recording reaches it, then
+   * what the finish panel's field holds. Null when the page had none; absent until the first page.
    */
   title?: string | null;
 }
 
 const EMPTY: RecordingState = { active: false, events: [], startedAt: null, grantedOriginPattern: null };
-
-export function recordingMode(state: Pick<RecordingState, 'mode'>): RecordingMode {
-  return state.mode === 'bug' ? 'bug' : 'actions';
-}
 
 function newBugToken(): string {
   const bytes = new Uint8Array(16);
@@ -62,18 +53,14 @@ async function setRecordingState(state: RecordingState): Promise<void> {
   await sessionArea().set({ [RECORDING_KEY]: state });
 }
 
-export async function startRecording(
-  grantedOriginPattern: string,
-  mode: RecordingMode = 'actions',
-): Promise<RecordingState> {
+export async function startRecording(grantedOriginPattern: string): Promise<RecordingState> {
   await clearBugEvidence();
   const state: RecordingState = {
     active: true,
     events: [],
     startedAt: Date.now(),
     grantedOriginPattern,
-    mode,
-    bugToken: mode === 'bug' ? newBugToken() : null,
+    bugToken: newBugToken(),
   };
   await setRecordingState(state);
   return state;
@@ -92,7 +79,17 @@ export async function discardRecording(): Promise<void> {
 }
 
 /**
- * A "Record actions" click that still needs its host permission, parked in
+ * Discards the recording that started at `startedAt`, and nothing when the one
+ * stored now is another: a panel left open on a page discards its own
+ * recording, never one started since.
+ */
+export async function discardRecordingStartedAt(startedAt: number | null): Promise<void> {
+  const stored = (await sessionArea().get(RECORDING_KEY))[RECORDING_KEY];
+  if (isRecordingStartedAt(stored, startedAt)) await discardRecording();
+}
+
+/**
+ * A Record click that still needs its host permission, parked in
  * `chrome.storage.session` so the *background* can finish starting the
  * recording after the popup is gone.
  *
@@ -111,8 +108,6 @@ const RECORD_INTENT_KEY = 'piwiRecordIntent';
 export interface RecordIntent {
   /** The origin pattern the popup requested (e.g. `https://app.example.com/*`). */
   originPattern: string;
-  /** Which recording the click asked for. */
-  mode: RecordingMode;
   /** The tab the click applied to — the already-loaded page that needs the one-off inject. */
   tabId: number;
   /** When the popup requested the grant; a stale intent is ignored rather than reviving a recording on some later, unrelated grant. */
@@ -139,7 +134,6 @@ export async function getRecordIntent(): Promise<RecordIntent | null> {
   if (typeof intent.originPattern !== 'string' || typeof intent.tabId !== 'number') return null;
   return {
     originPattern: intent.originPattern,
-    mode: intent.mode === 'bug' ? 'bug' : 'actions',
     tabId: intent.tabId,
     createdAt: intent.createdAt ?? 0,
   };
@@ -149,8 +143,29 @@ export async function clearRecordIntent(): Promise<void> {
   await sessionArea().remove(RECORD_INTENT_KEY);
 }
 
+/**
+ * Why the recording a grant should have started did not start, for the tab it
+ * was asked on: the worker keeps it, since no popup is open by then, and the
+ * next popup on that tab says it once (`takeRecordStartError`).
+ */
+const RECORD_START_ERROR_KEY = 'piwiRecordStartError';
+
+export async function setRecordStartError(tabId: number, error: string): Promise<void> {
+  await sessionArea().set({ [RECORD_START_ERROR_KEY]: { tabId, error } });
+}
+
+/** The start error kept for `tabId`, removed as it is read; null when there is none for that tab. */
+export async function takeRecordStartError(tabId: number): Promise<string | null> {
+  const stored = (await sessionArea().get(RECORD_START_ERROR_KEY))[RECORD_START_ERROR_KEY] as
+    | { tabId?: unknown; error?: unknown }
+    | undefined;
+  if (!stored || stored.tabId !== tabId || typeof stored.error !== 'string') return null;
+  await sessionArea().remove(RECORD_START_ERROR_KEY);
+  return stored.error;
+}
+
 export type RecordIntentDecision =
-  | { action: 'start'; originPattern: string; tabId: number; mode: RecordingMode }
+  | { action: 'start'; originPattern: string; tabId: number }
   | { action: 'clear' }
   | { action: 'ignore' };
 
@@ -174,7 +189,7 @@ export function decideRecordIntent(
   if (!intent) return { action: 'ignore' };
   if (!addedOrigins.includes(intent.originPattern)) return { action: 'ignore' };
   if (now - intent.createdAt > RECORD_INTENT_TTL_MS) return { action: 'clear' };
-  return { action: 'start', originPattern: intent.originPattern, tabId: intent.tabId, mode: intent.mode ?? 'actions' };
+  return { action: 'start', originPattern: intent.originPattern, tabId: intent.tabId };
 }
 
 /**

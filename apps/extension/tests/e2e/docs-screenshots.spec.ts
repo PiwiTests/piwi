@@ -790,10 +790,10 @@ test('picker-record-loop', async () => {
   await apply.click();
   await page.waitForTimeout(1200);
 
-  // Stopping opens the review: the steps, ready to export as a test.
-  const stop = page.locator('#piwi-record-hud-host').getByRole('button', { name: 'Stop' });
-  await glide(page, stop, 500);
-  await stop.click();
+  // Finish opens the finish panel: the steps, ready to copy as a test.
+  const finish = page.locator('#piwi-record-hud-host').getByRole('button', { name: 'Finish' });
+  await glide(page, finish, 500);
+  await finish.click();
   await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
   await page.waitForTimeout(3500);
   await writeLoop(loop, from, 'picker-record-loop');
@@ -809,7 +809,6 @@ test('picker-report-loop', async () => {
           events: [],
           startedAt: Date.now(),
           grantedOriginPattern: `${BUG_SHOP_ORIGIN}/*`,
-          mode: 'bug',
           bugToken: 'a'.repeat(32),
         },
       },
@@ -841,10 +840,10 @@ test('picker-report-loop', async () => {
   await apply.click();
   await page.waitForTimeout(1000);
 
-  // Mark what's wrong: pick the total, say what it should read.
-  const hud = page.locator('#piwi-record-hud-host').getByRole('button');
-  await glide(page, hud.nth(0), 500);
-  await hud.nth(0).click();
+  // Check an element: pick the total, say what it should read instead, which marks the page wrong.
+  const check = page.locator('#piwi-record-hud-host').getByRole('button', { name: 'Check an element' });
+  await glide(page, check, 500);
+  await check.click();
   await expect(page.getByText('click any element to generate locators')).toBeVisible();
   const total = page.getByTestId('cart-total');
   await glide(page, total, 700);
@@ -860,8 +859,9 @@ test('picker-report-loop', async () => {
   await page.waitForTimeout(1000);
 
   // Finish: the report, with the steps, the evidence and a failing test to copy.
-  await glide(page, hud.nth(3), 500);
-  await hud.nth(3).click();
+  const finish = page.locator('#piwi-record-hud-host').getByRole('button', { name: 'Finish' });
+  await glide(page, finish, 500);
+  await finish.click();
   await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(true);
   await page.waitForTimeout(4000);
   await writeLoop(loop, from, 'picker-report-loop');
