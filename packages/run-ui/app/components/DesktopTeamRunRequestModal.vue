@@ -40,6 +40,8 @@ interface FoundFolder {
   path: string;
   playwrightConfig: string;
   specsFound: number;
+  /** A folder the person's own `run` came from, a `clone` of the project's repository, or one a `search` found. */
+  source: string;
 }
 /** What `desktop_find_request_folders` answers: its search's number, which the link takes back. */
 interface FolderSearch {
@@ -120,6 +122,11 @@ const folderIssue = computed<'none' | 'config' | 'tests' | null>(() => {
   if (failed('config')) return 'config';
   return failed('specs') ? 'tests' : null;
 });
+/** The project's repository as the instance names it, without its scheme: `github.com/acme/shop`. */
+const repository = computed(() => current.value?.repositoryUrl?.replace(/^https?:\/\//, '') ?? null);
+/** The project's code, in words: `Acme Checkout's code (github.com/acme/shop)`. */
+const projectCode = computed(() => `${project.value}'s code${repository.value ? ` (${repository.value})` : ''}`);
+
 /** What **Find it for me** found for the request shown. */
 const foundHere = computed(() => (found.value && found.value.requestId === current.value?.id ? found.value : null));
 
@@ -137,9 +144,12 @@ async function findFolder() {
   if (!request || !core || findingFor.value) return;
   findingFor.value = request.id;
   try {
+    // The instance's hints only steer the search: the shell checks each folder, and asks before linking one.
     const answer = await core.invoke<FolderSearch>('desktop_find_request_folders', {
       projectId: String(request.projectId),
       specs: specFiles.value,
+      repositoryUrl: request.repositoryUrl ?? null,
+      runFolders: request.runFolders ?? [],
     });
     found.value = { requestId: request.id, ...answer };
   } catch (error) {
@@ -256,7 +266,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
           </p>
           <p v-else class="text-sm text-highlighted leading-relaxed">
             <template v-if="folderIssue === 'config'">The linked folder is not the right one. </template>Piwi needs your
-            copy of {{ project }}'s code on this computer: the folder that holds its Playwright config (<code
+            copy of {{ projectCode }} on this computer: the folder that holds its Playwright config (<code
               class="font-mono"
               >playwright.config.ts</code
             >) and these tests, such as <code class="font-mono">{{ specFiles[0] }}</code
@@ -274,6 +284,10 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
                 <div class="min-w-0 flex-1">
                   <code class="block text-xs font-mono text-highlighted break-all">{{ folder.path }}</code>
                   <p class="text-xs text-muted">
+                    <template v-if="folder.source === 'run'">A run of yours came from this folder. </template>
+                    <template v-else-if="folder.source === 'clone' && repository"
+                      >A copy of {{ repository }}.
+                    </template>
                     Holds <code class="font-mono">{{ folder.playwrightConfig }}</code> and {{ testsHeld(folder) }}.
                   </p>
                 </div>
@@ -296,8 +310,9 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
                 ? `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the usual places on this computer.`
                 : `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the places Piwi could look through.`
             }}
-            If you have one elsewhere, choose its folder. If not, the code has to be downloaded first: ask whoever set
-            up these tests to help you.
+            If you have one elsewhere, choose its folder. If not, the code has to be downloaded first{{
+              repository ? ` from ${repository}` : ''
+            }}: ask whoever set up these tests to help you.
           </p>
 
           <div class="flex flex-wrap gap-2">

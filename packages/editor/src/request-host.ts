@@ -11,10 +11,12 @@
  */
 import {
   parseRunRequest,
+  readRunRequestFolderHints,
   RUN_REQUEST_ID,
   type RunRequest,
   type RunRequestOffer,
   type RunRequestOutcome,
+  type RunRequestFolderHints,
 } from '@piwitests/core/run-request';
 import { instanceFetch } from './http';
 
@@ -294,6 +296,21 @@ export class RequestHost {
   ): Promise<void> {
     if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
     await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
+  }
+
+  /**
+   * What helps this app find the folder of a request it claimed on this machine: the project's repository and the
+   * folders the person's own runs of it came from. No hint from an instance that answers none (an older one) or fails.
+   */
+  async folderHints(id: string): Promise<RunRequestFolderHints> {
+    const none: RunRequestFolderHints = { repositoryUrl: null, folders: [] };
+    if (!isRequestId(id)) return none;
+    try {
+      const route = `/api/run-targets/requests/${id}/folder-hints`;
+      return readRunRequestFolderHints(await this.call('GET', route, undefined, { onlyRequest: true }));
+    } catch {
+      return none;
+    }
   }
 
   /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */

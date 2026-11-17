@@ -10,7 +10,12 @@
  * in memory while they are asked about or run. The window never reads the key nor a request token.
  */
 import * as os from 'node:os';
-import type { RunRequest, RunRequestOffer, RunRequestOutcome } from '@piwitests/core/run-request';
+import type {
+  RunRequest,
+  RunRequestFolderHints,
+  RunRequestOffer,
+  RunRequestOutcome,
+} from '@piwitests/core/run-request';
 import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
 import {
   postDeviceFlow,
@@ -32,6 +37,8 @@ const ANSWER_WITHIN_MS = 10 * 60 * 1000;
 interface HeldRequest {
   request: RunRequest;
   plan: RequestPlan;
+  /** What helps find its folder on this machine, asked for when it has none it can run in. */
+  hints: RunRequestFolderHints;
   answerBy: number;
   /** After **Run**: the request token, until the shell takes it, and whether the run started. */
   token: string | null;
@@ -164,8 +171,32 @@ function promptOf(held: HeldRequest): RunRequestPromptView {
     runnable: plan.runnable,
     command: plan.display,
     hasFolder: state.links.has(request.projectId),
+    repositoryUrl: held.hints.repositoryUrl,
+    runFolders: held.hints.folders,
     answerBy: new Date(held.answerBy).toISOString(),
   };
+}
+
+/** How long the folder hints may hold back a request's confirmation. */
+const HINTS_WAIT_MS = 3000;
+const NO_HINTS: RunRequestFolderHints = { repositoryUrl: null, folders: [] };
+
+/**
+ * The folder hints of a request whose plan has no folder it can run in (none linked, or one without the config or the
+ * tests), asked for at most `HINTS_WAIT_MS`; none for a request that has one.
+ */
+async function hintsFor(host: RequestHost, request: RunRequest, plan: RequestPlan): Promise<RunRequestFolderHints> {
+  const folderFails = plan.checks.some((c) => ['folder', 'config', 'specs'].includes(c.id) && c.level === 'fail');
+  if (!folderFails) return NO_HINTS;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<RunRequestFolderHints>((resolve) => {
+    timer = setTimeout(() => resolve(NO_HINTS), HINTS_WAIT_MS);
+  });
+  try {
+    return await Promise.race([host.folderHints(request.id), late]);
+  } finally {
+    clearTimeout(timer);
+  }
 }
 
 /** An instance URL the app may connect to: http(s), with no credentials, query or fragment, without a trailing `/`. */
@@ -313,11 +344,13 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
         .catch(() => {});
       return;
     }
+    const hints = await hintsFor(host, request, plan);
     // Stopped from the dashboard while it was claimed and checked: the instance ended it already.
     if (state.host !== host || state.stoppedWhileClaiming.has(request.id)) return;
     const held: HeldRequest = {
       request,
       plan,
+      hints,
       answerBy: Date.now() + ANSWER_WITHIN_MS,
       token: null,
       approved: null,

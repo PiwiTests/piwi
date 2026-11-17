@@ -70,6 +70,13 @@ async function fakeInstance(handlers: {
       else if (path === '/api/run-targets/self') res.end(JSON.stringify(handlers.self?.() ?? {}));
       else if (path.endsWith('/claim'))
         res.end(JSON.stringify({ ...offer(path.split('/')[4]!), expiresAt: undefined }));
+      else if (path.endsWith('/folder-hints'))
+        res.end(
+          JSON.stringify({
+            repositoryUrl: 'https://github.com/acme/shop',
+            folders: ['/home/robin/shop/e2e', 'relative/e2e'],
+          }),
+        );
       else if (path.endsWith('/answer'))
         res.end(JSON.stringify({ state: 'starting', requestToken: `pdq_${'b'.repeat(64)}` }));
       else res.end('{}');
@@ -385,6 +392,23 @@ describe('the request host', () => {
     const refused = await made.claim(id(3)).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(RequestHostError);
     expect(refused).toMatchObject({ status: 409, message: 'answered 409' });
+    expect(made.state).not.toBe('revoked');
+  });
+
+  test('reads a request’s folder hints, and none from an instance that answers none', async () => {
+    const instance = await fakeInstance({ status: (path) => (path.includes(id(2)) ? 404 : null) });
+    cleanups.push(instance.close);
+    const { made } = host(instance.url);
+    expect(await made.folderHints(id(1))).toEqual({
+      repositoryUrl: 'https://github.com/acme/shop',
+      folders: ['/home/robin/shop/e2e'],
+    });
+    expect(instance.calls[instance.calls.length - 1]).toMatchObject({
+      method: 'GET',
+      path: `/api/run-targets/requests/${id(1)}/folder-hints`,
+    });
+    expect(await made.folderHints(id(2))).toEqual({ repositoryUrl: null, folders: [] });
+    expect(await made.folderHints('../x')).toEqual({ repositoryUrl: null, folders: [] });
     expect(made.state).not.toBe('revoked');
   });
 

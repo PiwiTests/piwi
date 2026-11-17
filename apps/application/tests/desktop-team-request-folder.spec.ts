@@ -55,6 +55,8 @@ function request(state: FolderState) {
     runnable: linked,
     command: linked ? `npx playwright test ${SPEC}:42` : '',
     hasFolder: state !== 'none',
+    repositoryUrl: 'https://github.com/acme/checkout',
+    runFolders: [FOUND],
     answerBy: new Date(Date.now() + 600_000).toISOString(),
   };
 }
@@ -105,15 +107,24 @@ async function invocationOf(page: Page, cmd: string): Promise<Invocation | undef
 test.describe('Desktop team request folder', () => {
   test('finds the folder on this machine and links it by its search and place', async ({ page }) => {
     const { dialog, folder } = await openRequest(page, [
-      { path: FOUND, playwrightConfig: 'playwright.config.ts', specsFound: 1, source: 'search' },
+      { path: FOUND, playwrightConfig: 'playwright.config.ts', specsFound: 1, source: 'run' },
     ]);
-    await expect(folder.getByText("Piwi needs your copy of Acme Checkout's code on this computer")).toBeVisible();
+    await expect(
+      folder.getByText("Piwi needs your copy of Acme Checkout's code (github.com/acme/checkout) on this computer"),
+    ).toBeVisible();
 
     await folder.getByRole('button', { name: 'Find it for me' }).click();
 
     await expect(folder.getByText('Found on this computer')).toBeVisible();
+    await expect(folder.getByText('A run of yours came from this folder.')).toBeVisible();
     await expect(folder.getByText('and the test file.')).toBeVisible();
-    expect((await invocationOf(page, 'desktop_find_request_folders'))!.args).toEqual({ projectId: '7', specs: [SPEC] });
+    // What the instance said helps find the folder steers the shell's search.
+    expect((await invocationOf(page, 'desktop_find_request_folders'))!.args).toEqual({
+      projectId: '7',
+      specs: [SPEC],
+      repositoryUrl: 'https://github.com/acme/checkout',
+      runFolders: [FOUND],
+    });
 
     await folder.getByRole('button', { name: `Use ${FOUND}` }).click();
 
@@ -135,6 +146,7 @@ test.describe('Desktop team request folder', () => {
     await expect(
       folder.getByText("No copy of Acme Checkout's code was found in the usual places on this computer."),
     ).toBeVisible();
+    await expect(folder.getByText('downloaded first from github.com/acme/checkout')).toBeVisible();
     await expect(folder.getByRole('button', { name: 'Look again' })).toBeVisible();
     await expect(folder.getByRole('button', { name: 'Choose the folder…' })).toBeEnabled();
   });

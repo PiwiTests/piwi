@@ -89,10 +89,12 @@ function offer(id = REQUEST_ID): RunRequestOffer {
 /** A team instance that offers one request, gives its key and its request token. */
 async function fakeInstance() {
   const streams: http.ServerResponse[] = [];
+  const paths: string[] = [];
   const server = http.createServer((req, res) => {
     req.resume();
     req.on('end', () => {
       const url = req.url ?? '';
+      paths.push(url);
       if (url === '/api/run-targets/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         res.write(
@@ -107,12 +109,16 @@ async function fakeInstance() {
         const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
+      else if (url.endsWith('/folder-hints'))
+        res.end(JSON.stringify({ repositoryUrl: 'https://github.com/acme/shop', folders: ['/home/robin/shop/e2e'] }));
       else res.end('{}');
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    /** The paths the app called, in order. */
+    paths,
     /** The instance asks the app to stop the requests `stops`. */
     stop: (...stops: string[]) => {
       for (const res of streams) res.write(`data: ${JSON.stringify({ type: 'snapshot', requests: [], stops })}\n\n`);
@@ -457,6 +463,28 @@ describe('the end of a requested run', () => {
       const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
       expect(used.status, JSON.stringify(ended).slice(0, 80)).toBe(400);
     }
+  });
+});
+
+describe('a request with no folder it can run in', () => {
+  type Asked = { hasFolder: boolean; repositoryUrl: string | null; runFolders: string[] };
+  const asked = async () => ((await host.call('GET', '', SHELL)).body?.requests ?? []) as Asked[];
+
+  test('carries what the instance says helps find its folder', async () => {
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {} });
+    await until(async () => (await asked()).length === 1);
+    expect((await asked())[0]).toMatchObject({
+      hasFolder: false,
+      repositoryUrl: 'https://github.com/acme/shop',
+      runFolders: ['/home/robin/shop/e2e'],
+    });
+  });
+
+  test('a request that can run in its linked folder asks for no hint', async () => {
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+    await until(async () => (await asked()).length === 1);
+    expect((await asked())[0]).toMatchObject({ hasFolder: true, repositoryUrl: null, runFolders: [] });
+    expect(instance.paths.some((p) => p.endsWith('/folder-hints'))).toBe(false);
   });
 });
 

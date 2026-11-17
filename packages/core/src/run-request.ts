@@ -407,3 +407,41 @@ export function parseRunRequest(value: unknown): RunRequestParse<RunRequest> {
     },
   };
 }
+
+/**
+ * What a target is told to find a request's folder with on its machine (`GET /api/run-targets/requests/:id/folder-hints`):
+ * the project's repository, and the folders the requester's own runs of the project were reported from, newest first.
+ * Never part of a request, so an app that does not ask for them reads every request as before.
+ */
+export interface RunRequestFolderHints {
+  /** The project's repository, `https://host/owner/repo`; null when the instance knows none. */
+  repositoryUrl: string | null;
+  /** Absolute paths on the machines that ran them. */
+  folders: string[];
+}
+
+/** How many folders the hints name at most. */
+export const MAX_RUN_REQUEST_HINT_FOLDERS = 5;
+
+/** An absolute path: `/` on macOS and Linux, a drive letter or `\\server` on Windows. */
+const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|\\\\[^\\])/;
+/** An http(s) URL with a host and a path, and no space. */
+const REPOSITORY_URL = /^https?:\/\/[^\s/]+\/\S+$/;
+
+/**
+ * Folder hints read from untrusted input. What does not pass is left out, never refused: a URL that is not http(s), a
+ * path that is not absolute, a hidden character, a value over 500 characters; folders once each, at most
+ * `MAX_RUN_REQUEST_HINT_FOLDERS`.
+ */
+export function readRunRequestFolderHints(value: unknown): RunRequestFolderHints {
+  const record = isRecord(value) ? value : {};
+  const readable = (text: unknown): text is string =>
+    typeof text === 'string' && text.length > 0 && text.length <= MAX_PATH_CHARS && !HIDDEN_CHARACTER.test(text);
+  const url = record.repositoryUrl;
+  const folders: string[] = [];
+  for (const folder of Array.isArray(record.folders) ? record.folders : []) {
+    if (folders.length === MAX_RUN_REQUEST_HINT_FOLDERS) break;
+    if (readable(folder) && ABSOLUTE_PATH.test(folder) && !folders.includes(folder)) folders.push(folder);
+  }
+  return { repositoryUrl: readable(url) && REPOSITORY_URL.test(url) ? url : null, folders };
+}

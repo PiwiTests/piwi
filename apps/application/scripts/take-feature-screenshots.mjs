@@ -10430,13 +10430,13 @@ const SCENES = [
         path: '/home/dev/code/acme-checkout',
         playwrightConfig: 'playwright.config.ts',
         specsFound: 1,
-        source: 'search',
+        source: 'run',
       },
       {
         path: '/home/dev/Documents/GitHub/acme-checkout',
         playwrightConfig: 'playwright.config.ts',
         specsFound: 1,
-        source: 'search',
+        source: 'clone',
       },
     ],
     async run({ page, shoot, settle }) {
@@ -10454,6 +10454,8 @@ const SCENES = [
         runnable: false,
         command: '',
         hasFolder: false,
+        repositoryUrl: 'https://github.com/acme/checkout',
+        runFolders: ['/home/dev/code/acme-checkout'],
         answerBy: new Date(Date.now() + 600_000).toISOString(),
       };
       await page.route('**/api/desktop/events', (route) =>

@@ -685,15 +685,19 @@ pub struct RequestFolderSearch {
 
 /// Look for the folders on this machine that hold the Playwright config and
 /// some of `specs` (a request's spec paths) for a project of the connected
-/// instance, other than the one linked to it: next to the folders linked to
-/// any project, and in the usual code folders of the home folder, never under
-/// the app's data folder or the temp folder. The shell keeps what it found for
-/// `desktop_link_request_folder`.
+/// instance, other than the one linked to it: the `run_folders` the person's
+/// own runs of it came from and the clones of its `repository_url`, as the
+/// instance tells them, then next to the folders linked to any project and in
+/// the usual code folders of the home folder; never a clone of another
+/// repository, nor a folder under the app's data folder or the temp folder.
+/// The shell keeps what it found for `desktop_link_request_folder`.
 #[tauri::command]
 pub async fn desktop_find_request_folders(
     app: AppHandle,
     project_id: String,
     specs: Vec<String>,
+    repository_url: Option<String>,
+    run_folders: Option<Vec<String>>,
 ) -> Result<RequestFolderSearch, String> {
     if !crate::runner::valid_project_id(&project_id) {
         return Err("invalid project id".into());
@@ -709,10 +713,18 @@ pub async fn desktop_find_request_folders(
         .into_iter()
         .chain(std::iter::once(std::env::temp_dir()))
         .collect();
+    let run_folders = run_folders.unwrap_or_default();
     let (folders, complete) = tauri::async_runtime::spawn_blocking(move || {
         let home = crate::folder_search::home_folder();
-        let places = crate::folder_search::search_places(&linked, home.as_deref());
-        crate::folder_search::find_folders(&places, &specs, &excluded, &skipped)
+        crate::folder_search::find_request_folders(
+            &run_folders,
+            &linked,
+            &specs,
+            repository_url.as_deref(),
+            &excluded,
+            &skipped,
+            home.as_deref(),
+        )
     })
     .await
     .map_err(|e| e.to_string())?;

@@ -8,6 +8,7 @@ import {
   parseRunRequest,
   parseRunRequestOptions,
   parseRunRequestTest,
+  readRunRequestFolderHints,
   specFileArgument,
   specFilePattern,
 } from '../src/run-request';
@@ -352,5 +353,38 @@ describe('specFileArgument', () => {
   test('refuses a line that is not a line number', () => {
     expect(() => specFileArgument('/home/me/a.spec.ts', 0)).toThrow(RangeError);
     expect(() => specFileArgument('/home/me/a.spec.ts', 1.5)).toThrow(RangeError);
+  });
+});
+
+describe('readRunRequestFolderHints', () => {
+  test('keeps an http(s) repository and absolute folders, once each, at most five', () => {
+    const folders = [
+      '/home/robin/code/shop/e2e',
+      'C:\\Users\\robin\\shop',
+      '\\\\server\\share\\shop',
+      '/a',
+      '/b',
+      '/c',
+    ];
+    expect(
+      readRunRequestFolderHints({
+        repositoryUrl: 'https://github.com/acme/shop',
+        folders: [...folders, '/home/robin/code/shop/e2e'],
+      }),
+    ).toEqual({ repositoryUrl: 'https://github.com/acme/shop', folders: folders.slice(0, 5) });
+  });
+
+  test('leaves out what does not pass, and reads anything else as no hint', () => {
+    expect(
+      readRunRequestFolderHints({
+        repositoryUrl: 'file:///srv/shop',
+        folders: ['relative/e2e', '', 42, '/ok', `/${'x'.repeat(600)}`, '/bidi\u202e'],
+      }),
+    ).toEqual({ repositoryUrl: null, folders: ['/ok'] });
+    expect(readRunRequestFolderHints('nothing')).toEqual({ repositoryUrl: null, folders: [] });
+    expect(readRunRequestFolderHints({ repositoryUrl: 'https://host with space/x' })).toEqual({
+      repositoryUrl: null,
+      folders: [],
+    });
   });
 });
