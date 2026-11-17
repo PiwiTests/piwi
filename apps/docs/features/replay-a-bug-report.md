@@ -1,32 +1,31 @@
 ---
-title: Replay a bug report
-description: "Play a bug report's steps again in a tab with Piwi Picker, with a cursor and a caption per step, and see whether the bug shows on your own dev server, or run them with Playwright in the desktop app."
+title: Replay a recording
+description: "Play a recording or a bug report's steps again in a tab with Piwi Picker, with a cursor and a caption per step, and see whether the bug shows on your own dev server, or run them with Playwright in the desktop app."
 lang: en-US
 ---
 
-# Replay a bug report
+# Replay a recording
 
 <Needs extension />
 
-**Replay** plays a [bug report](./report-a-bug)'s steps again in a tab, with a cursor that moves to each element and a
-caption saying what it does, then says whether the bug shows there. It suits the developer who receives the report:
-open the app on your own dev server, and the steps run there, with your session and your browser's developer tools at
-hand, or [with Playwright](#running-it-with-playwright) in the desktop app. Recording a report:
-[Report a bug](./report-a-bug); what an instance keeps: [Bug reports on your instance](./bug-reports).
+**Replay** plays a [recording](./record-actions)'s steps again in a tab, with a cursor that moves to each element and a
+caption saying what it does, then says whether each still finds its element and, for a [bug report](./report-a-bug),
+whether the bug shows there. It suits the developer who receives a report: open the app on your own dev server, and
+the steps run there, with your session and your browser's developer tools at hand, or
+[with Playwright](#running-it-with-playwright) in the desktop app. What an instance keeps:
+[Bug reports on your instance](./bug-reports).
 
 <figure>
   <video src="/videos/picker-replay-loop.mp4" autoplay loop muted playsinline controls aria-label="Replaying a bug report on a cart page: the cursor fills the coupon, clicks Apply and checks the total, and the verdict says the bug shows here, the total reading 50 instead of 45"></video>
   <figcaption>The report's four steps played again, then the verdict: reproduced.</figcaption>
 </figure>
 
-## Choosing a report
+## Choosing a recording
 
-- From the finished report, **Replay** plays it at once on the same site. The review of a
-  [recording of actions](./record-actions) has the same **Replay**, to check its steps before you export them.
-- From the popup, **Replay a bug report** (`R`) asks for the site's access if needed, then for the report: the
-  [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`) or its `steps.json`, the text of a
-  `steps.json` pasted in, the report or the recording of actions just made in this browser (**Use the actions recorded
-  in this browser**), or, connected, one of the project's reports on Piwi.
+- From a recording's [finish panel](./record-actions#the-finish-panel), **Replay** plays it at once on the same site.
+- From the popup, **Replay** (`R`) asks for the site's access if needed, then for what to play: the recording just made
+  in this browser, a bug report or not, a [`.piwibug` file](/reference/bug-report-file) (or the same file named `.zip`)
+  or its `steps.json`, the text of a `steps.json` pasted in, or, connected, one of the project's reports on Piwi.
 - From a failed execution on the dashboard, **Export → Bug report (.piwibug)** makes a report from the test run
   ([below](#a-report-made-from-a-test-run)), and **Steps (steps.json)** copies its steps to paste.
 
@@ -35,20 +34,21 @@ a link that opens an order beside the list, takes the replay to that tab, as the
 
 ## The answer
 
-Each element is looked for with every locator it was recorded with, the one the failing test uses first. When that
+Each element is looked for with every locator it was recorded with, the one the test uses first. When that
 one finds nothing for two seconds, finds several elements, or finds one the other locators disagree on, the element
 most of them agree on is used, and the step says which locator found it: a label that changed or an id made up on each load does not stop
 the replay. The element is then waited for as Playwright waits: visible, enabled and still, for as long as Playwright
 waits or, when you waited longer for it while recording (a reply that takes the server fifteen seconds), that long and
-a few seconds more, up to a minute. The replay ends with one of four answers:
+a few seconds more, up to a minute. The replay ends with one of five answers:
 
-- **Reproduced**: an expected result does not hold, such as a total that still reads "Total: 40.00", and the panel says
-  whether that is the value reported.
+- **Reproduced**: an expected result, or a recording's check, does not hold, such as a total that still reads
+  "Total: 40.00", and the panel says whether that is the value reported.
 - **Not reproduced**: every expected result holds here.
 - **Could not reach the bug** (the dashboard's *diverged*): a step could not be played (it found no element, several, or a disabled one, or the
   flow ended on another page) and you stopped there. The data, the login or a flag differ here.
 - **Failed at step 4, as in the test run**: in a report made from a test run, the step that could not be played is
   the one the test failed at.
+- **Replayed every step**: the steps hold no check.
 
 Under the answer, the panel lists the failed requests and console errors the page showed during the replay, such as
 "POST /api/cart/coupon answered 500": from the moment the replay started, never those of the recording, even when you
@@ -126,13 +126,14 @@ result does not hold, **not reproduced** when the test passes, or **diverged** a
 
 ## Limits
 
-- It plays one site, in the top-level document only, as the report was recorded. A step that opens another site, or
+- It plays one site, in the top-level document only, as the recording was made. A step that opens another site, or
   an address that is not a web page, is handed to you.
 - **Share result…** and **Run with Playwright…** are the only parts that send anything, each after showing what it
   sends.
 
 ## Related
 
-- [Report a bug](./report-a-bug): recording the report Replay plays
+- [Record a test](./record-actions): the recording Replay plays
+- [Record a bug report](./report-a-bug): marking what the page gets wrong
 - [Bug reports on your instance](./bug-reports): the reports kept
 - [Bug report file format](/reference/bug-report-file): what a `.piwibug` holds

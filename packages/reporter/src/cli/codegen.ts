@@ -1,8 +1,8 @@
 /**
  * `piwi codegen` — turn a steps file into a Playwright spec.
  *
- * A steps file is the portable form of a recording (Piwi Picker's Download
- * steps). This renders it with the shared converter in
+ * A steps file is the portable form of a recording (the `steps.json` of a
+ * `.piwibug` Piwi Picker saves, or the dashboard's Steps export). This renders it with the shared converter in
  * `@piwitests/core`, with the defaults a test project wants: paths so the
  * config's `baseURL` applies, stable locators, and a URL check after each
  * navigation. Given a project, it also uses the project's function catalog and

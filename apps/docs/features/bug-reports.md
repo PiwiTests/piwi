@@ -8,13 +8,13 @@ lang: en-US
 
 <Needs extension />
 
-A tester who [reports a bug](./report-a-bug) in Piwi Picker can send it to your Piwi instance. Piwi keeps it with its
-steps and the evidence the tester chose to send; writes it as a failing Playwright test for
-your project; and follows that test's runs: from the test being committed, to the bug looking fixed, to the report
-closing when the fix holds. This page covers what needs an instance: sending a report, the failing test (the one
+A tester who [records a bug report](./report-a-bug) in Piwi Picker can send it to your Piwi instance. Piwi keeps it
+with its steps and the evidence the tester chose to send; writes it as a failing Playwright test for your project; and
+follows that test's runs: from the test being committed, to the bug looking fixed, to the report closing when the fix
+holds. This page covers what needs an instance: sending a report, the failing test (the one
 Piwi Picker copies too), and following it to the fix. Recording a report is on
-[Report a bug](./report-a-bug), and playing one again, in the browser or with Playwright, on
-[Replay a bug report](./replay-a-bug-report).
+[Record a bug report](./report-a-bug), and playing one again, in the browser or with Playwright, on
+[Replay a recording](./replay-a-bug-report).
 
 ## Sending a report
 
@@ -73,9 +73,9 @@ assertion, as a comment. Marked `test.fail()`, it passes while the bug exists an
 fixed, Playwright reports the expected failure as a failure: remove `test.fail()` and the test guards the fix.
 
 The **Spec** tab adds what Piwi knows about your project: calls to your [test functions](./test-functions) where the
-steps match one, and for each element the locator your tests already use when it is not [brittle](/reference/locator-stability), which is why its
-`getByLabel('Coupon')` below reads `getByRole('textbox', { name: 'Coupon' })` in the copy Piwi Picker makes alone. Two
-versions:
+steps match one, as Piwi Picker's copy has them once connected, and for each element the locator your tests already use
+when it is not [brittle](/reference/locator-stability), which is why its `getByLabel('Coupon')` below reads
+`getByRole('textbox', { name: 'Coupon' })` in the copy Piwi Picker makes. Two versions:
 
 - **To commit**: marked `test.fail()`, with a `piwi:bug` annotation naming the report.
 - **To run**: the same test without `test.fail()` or the annotation, which fails on the expected result while the bug
@@ -150,9 +150,9 @@ the exact verdict and a trace: see [Running it with Playwright](./replay-a-bug-r
 
 ## Replaying a report from Piwi
 
-A developer with the extension connected finds the project's open reports in **Replay a bug report**, beside the file
-chooser: the report's steps play in their own tab, on their own dev server, and a step handed over shows its
-screenshot. See [Replay a bug report](./replay-a-bug-report).
+A developer with the extension connected finds the project's open reports in Piwi Picker's **Replay**, beside the
+file chooser: the report's steps play in their own tab, on their own dev server, and a step handed over shows its
+screenshot. See [Replay a recording](./replay-a-bug-report).
 
 ## For agents
 
@@ -162,6 +162,6 @@ and the reproductions), `render_steps`, which writes a report's failing test, or
 
 ## Related
 
-- [Report a bug](./report-a-bug): recording a report in Piwi Picker
+- [Record a bug report](./report-a-bug): recording a report in Piwi Picker
 - [Steps files](/reference/steps-format): the format of the steps
 - [Test metadata](/reference/test-metadata#ownership-metadata-piwi-annotations): the `piwi:bug` annotation

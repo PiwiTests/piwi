@@ -17,7 +17,7 @@ same stops: [Pause and step from the editor](./editor-run-control).
 
 With Piwi Picker [paired with VS Code or a JetBrains IDE](./editor-pairing), or with the
 [desktop app](./extension-connection#pair-with-the-desktop-app), the popup shows a **Runs** tile under
-**Run control**, muted with **Not connected** while none of them answers. It opens the Runs window where you left it last. While a test waits at a stop for you (a breakpoint, a **Pause**, a failure held
+**Tests**, muted with **Not connected** while none of them answers. It opens the Runs window where you left it last. While a test waits at a stop for you (a breakpoint, a **Pause**, a failure held
 at its line, not a stop an agent drives), the tile says how many in the pause bar's violet, as do the toolbar's badge
 and the Runs window's title (`1 waiting · Runs · Piwi Picker`); while none waits, how many failed, in red, a run that failed while
 the Runs window was not in front counted until you bring it there. For each run

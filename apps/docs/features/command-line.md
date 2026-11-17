@@ -46,7 +46,7 @@ API key, is on the [Piwi CLI reference](/reference/cli).
 
 ## Writing and fixing a test
 
-- **[`codegen`](/reference/cli#codegen)** turns a Piwi Picker recording into a spec ([Record actions](./record-actions)).
+- **[`codegen`](/reference/cli#codegen)** turns a Piwi Picker recording into a spec ([Record a test](./record-actions)).
 - **[`bug`](/reference/cli#bug)** writes a [bug report](./bug-reports)'s failing test into the project and runs it.
 - **[`preflight`](/reference/cli#preflight)** lists the test locators your change breaks, and fixes them
   ([Locator preflight](./preflight)).

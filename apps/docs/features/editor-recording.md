@@ -98,7 +98,7 @@ page object or helper has none of its own, and offers none.
 A locator picked with the [Piwi Picker](./extension) browser extension in your everyday browser, or a flow it
 recorded, lands at the editor's cursor too, once Piwi Picker is [paired with the editor](./editor-pairing). A picked
 locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
-[Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
+[Locators console](./devtools#the-piwi-panel) in DevTools and a recording's finish panel then show **Send to editor**. A
 locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
 [`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one. With no editor open, a JetBrains IDE
 puts it in a new scratch file. A locator picked at a stop of a run Piwi starts reaches the editor the same way.
@@ -119,5 +119,5 @@ puts it in a new scratch file. A locator picked at a stop of a run Piwi starts r
 
 - [Recorded code](./recorded-code): what a recording writes, and the options that shape it.
 - [Editor extensions](./editors): everything else the editor shows from your suite.
-- [Piwi Picker](./extension): records in your everyday browser, for a bug report or a steps file.
+- [Piwi Picker](./extension): records in your everyday browser, for a test or a bug report with its evidence.
 - [Test functions](./test-functions): the page objects and helpers a recording calls.

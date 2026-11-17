@@ -1,13 +1,14 @@
 ---
 title: Steps file format
-description: "The steps file: a recording as data, which Piwi Picker saves and piwi codegen turns into a Playwright spec. Every field, the limits and how a file is checked."
+description: "The steps file: a recording as data, which Piwi Picker keeps in its .piwibug files and piwi codegen turns into a Playwright spec. Every field, the limits and how a file is checked."
 lang: en-US
 ---
 
 # Steps file format
 
-A **steps file** is a recording as data rather than code. [Piwi Picker](/features/record-actions) saves one
-with **Download steps**, and [`piwi codegen`](/reference/cli#codegen) turns one into a Playwright spec. Because it
+A **steps file** is a recording as data rather than code. A [Piwi Picker recording](/features/record-actions) keeps
+one as the `steps.json` of the [`.piwibug`](/reference/bug-report-file) it saves and sends one to a paired editor, and
+[`piwi codegen`](/reference/cli#codegen) turns one into a Playwright spec. Because it
 holds steps and not code, the same file can be rendered for different projects (their `test` import, their
 `baseURL`) and read again by newer tools.
 
@@ -139,7 +140,7 @@ The kinds are `goBack`, `goForward`, `reload`, `gotoUnknown`, `setContent`, `key
 
 ## Viewports
 
-A [bug report](/features/report-a-bug) keeps the size of the page's viewport, in CSS pixels: the size the recording
+A [recording](/features/record-actions) keeps the size of the page's viewport, in CSS pixels: the size the recording
 started at, then each size the window settled at after a resize. Each entry names the step it applies from:
 
 ```json
@@ -186,7 +187,7 @@ file as it did.
 
 ## Related
 
-- [Record actions](/features/record-actions): the recorder that writes these files
-- [Report a bug](/features/report-a-bug): a report's steps, in the same format
-- [Replay a bug report](/features/replay-a-bug-report): how the steps play back
+- [Record a test](/features/record-actions): the recorder that writes these files
+- [Record a bug report](/features/report-a-bug): a report's steps, in the same format
+- [Replay a recording](/features/replay-a-bug-report): how the steps play back
 - [Piwi CLI](/reference/cli#codegen): `piwi codegen`, from steps to a spec

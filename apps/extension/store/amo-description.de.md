@@ -1,12 +1,12 @@
 Diese deutsche Übersetzung ist ein Entwurf: Muttersprachler haben sie noch nicht geprüft. Wenn Ihnen ein Fehler oder eine holprige Formulierung auffällt, [schlagen Sie eine Korrektur vor](https://github.com/PiwiTests/piwi/issues/new?template=translation.yml).
 
-Piwi Picker gibt Ihnen den Playwright-Locator für jedes Element der Seite, die Sie gerade ansehen. Jeder Kandidat wird nach seiner Stabilität bewertet und dann auf der Seite, wie sie gerade ist, ausgeführt, sodass der oberste genau ein Element findet. Klicken Sie einen Ablauf durch, und die Erweiterung schreibt den Test; reproduzieren Sie einen Bug, und sie schreibt den fehlschlagenden Test und den Bericht.
+Piwi Picker gibt Ihnen den Playwright-Locator für jedes Element der Seite, die Sie gerade ansehen. Jeder Kandidat wird nach seiner Stabilität bewertet und dann auf der Seite, wie sie gerade ist, ausgeführt, sodass der oberste genau ein Element findet. Klicken Sie einen Ablauf durch, und die Erweiterung schreibt den Test; reproduzieren Sie einen Bug, sagen Sie, was die Seite zeigen sollte, und sie schreibt den fehlschlagenden Test und den Bericht.
 
 **Aus dem Popup in der Symbolleiste, auf jeder Seite**
 
 - **Element wählen**: die sortierten Locators eines Elements, erneut auf der Seite geprüft, kopiert als Locator, als Aktionszeile oder als Assertion. Teilen sich mehrere Elemente einen Namen, grenzen Sie den Locator auf ein stabiles Elternelement ein.
-- **Aufzeichnen**: Klicks, Eingaben und Auswahlen auf den Seiten einer Website, umgewandelt in einen lauffähigen TypeScript-Test. Passwörter werden nie aufgezeichnet.
-- **Bug melden**: Schritte aufzeichnen, markieren, was auf der Seite falsch ist, und einen fehlschlagenden Test, einen Markdown-Bericht und eine .piwibug-Datei mit den Konsolenfehlern und den fehlgeschlagenen Anfragen erhalten. **Bug-Report abspielen** spielt dessen Schritte in einem Tab erneut ab.
+- **Aufzeichnen**: Klicks, Eingaben und Auswahlen auf den Seiten einer Website, mit Prüfungen dessen, was die Seite zeigt, umgewandelt in einen lauffähigen TypeScript-Test. Passwörter werden nie aufgezeichnet. Ändern Sie, was eine Prüfung erwartet, und die Aufzeichnung wird zum Bug-Report: ein fehlschlagender Test, ein Markdown-Bericht und eine .piwibug-Datei mit den Konsolenfehlern, den fehlgeschlagenen Anfragen und einem Screenshot jedes Schritts.
+- **Abspielen**: eine Aufzeichnung oder ein Bug-Report, in einem Tab erneut abgespielt, mit einem Cursor auf jedem Schritt.
 - **Prüfung**: die Elemente, die kein stabiler Locator allein findet, jeweils mit einer vorgeschlagenen data-testid.
 - **Mehrfachauswahl**, **Assertions** und **KI-Kontext**: das gemeinsame Muster der Zeilen einer Liste, expect(...)-Zeilen für ein Element und ein Textblock über ein Element für einen KI-Coding-Agenten.
 

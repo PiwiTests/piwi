@@ -360,7 +360,7 @@ const PROJECT_URL_PATTERNS = [
   updated_at: URL_PATTERN_TIME,
 }));
 
-// ── Bug reports (sent from Piwi Picker's Report a bug) ─────────────────────
+// ── Bug reports (sent from a Piwi Picker recording) ────────────────────────
 // One open report on the checkout project, with the steps a tester recorded on
 // staging, the value the page showed, and the evidence they chose to send.
 const BUG_REPORT_TIME = Math.floor(new Date('2025-04-24T15:20:00Z').getTime() / 1000);

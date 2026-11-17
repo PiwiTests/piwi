@@ -23,8 +23,8 @@ body:
     id: where
     attributes:
       label: Where it appears
-      description: The tool or page, such as the popup, the settings, Report a bug, or the store listing.
-      placeholder: Report a bug, the dialog that asks what is wrong
+      description: The tool or page, such as the popup, the settings, the recording bar, or the store listing.
+      placeholder: Check an element, the dialog that asks what the page should show
     validations:
       required: true
   - type: textarea

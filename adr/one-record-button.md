@@ -1,7 +1,13 @@
 # One Record button for scenarios and bug reports
 
-**Status.** Proposed 2026-11-17 and being built on the branch that adds it. Every step of the delivery plan below is
-planned for that branch.
+- Status: accepted
+- Date: 2026-11-17
+
+**Status.** Shipped 2026-11-17, every step of the delivery plan below in one branch. Two changes came on the way: the
+popup's tools stand in two sections, Pick and Tests, since the merge left four sections of one tile each; and Replay's
+verdict for a recording that marks nothing wrong says whether every check holds rather than whether a bug reproduced.
+The DevTools Record tab finishes no recording: the bar on the page and the popup do, since they collect the last
+evidence.
 
 **Summary.** Piwi Picker's popup had two tiles that start the same recorder: **Record actions** and **Report a bug**.
 They differ only by the tools of their bar and by what their last panel exports, and each lacks what the other has.
@@ -36,7 +42,7 @@ What each mode offered before this change:
 
 ## Decisions
 
-1. **One tile, Record**, with the line "A scenario, or a bug with its evidence". The red tile and the `BUG` badge go.
+1. **One tile, Record**, with the line "A scenario or a bug". The red tile and the `BUG` badge go.
    Replay a bug report becomes **Replay a recording**, which it already was.
 2. **Every recording of the extension collects evidence**, as a bug recording did: the debugging protocol in Chrome and
    Edge from the start (its banner is expected, and the bar says why), the main-world evidence script elsewhere and
