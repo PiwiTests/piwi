@@ -87,8 +87,9 @@ function offer(id = REQUEST_ID): RunRequestOffer {
 }
 
 /** A team instance that offers one request, gives its key and its request token. */
-/** What the fake instance answers a request's run variables with. */
+/** What the fake instance answers a request's run variables with, and with which status. */
 let runVariables: unknown = { runVariables: [] };
+let runVariablesStatus = 200;
 
 async function fakeInstance() {
   const streams: http.ServerResponse[] = [];
@@ -104,13 +105,17 @@ async function fakeInstance() {
         streams.push(res);
         return;
       }
+      if (url.endsWith('/run-variables')) {
+        res.writeHead(runVariablesStatus, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(runVariablesStatus === 200 ? runVariables : { message: 'Bad gateway' }));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (url === '/api/run-targets/requests') res.end(JSON.stringify({ requests: [], stops: [] }));
       else if (url.endsWith('/claim')) {
         const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
-      else if (url.endsWith('/run-variables')) res.end(JSON.stringify(runVariables));
       else res.end('{}');
     });
   });
@@ -465,6 +470,31 @@ describe('every host of the run-target routes', () => {
       const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
       expect(launch.body).toMatchObject({ runVariables: [{ name: 'TENANT', value: 'globex' }] });
     } finally {
+      runVariables = { runVariables: [] };
+    }
+  });
+
+  test('a read of the run variables the instance did not answer fails the check, and the next check reads again', async () => {
+    runVariablesStatus = 502;
+    runVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        runnable: boolean;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.runnable).toBe(false);
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'variables', level: 'fail' }));
+
+      runVariablesStatus = 200;
+      const again = await host.call('POST', `/requests/${REQUEST_ID}/plan`, SHELL);
+      expect(again.body).toMatchObject({ runnable: true, command: expect.stringContaining('acme') });
+    } finally {
+      runVariablesStatus = 200;
       runVariables = { runVariables: [] };
     }
   });

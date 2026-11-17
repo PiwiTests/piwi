@@ -65,7 +65,8 @@ export function useRunRetryCommand(
 
   const { copy, copied } = useCopy();
   const toast = useToast();
-  function copyCommand() {
+  async function copyCommand() {
+    await runVariables.ready();
     if (command.value) copy(command.value, { toast: 'Retry command copied' });
     else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
   }

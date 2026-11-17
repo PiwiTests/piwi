@@ -128,7 +128,8 @@ async function submit() {
             Add a variable
           </UButton>
           <span class="text-xs text-muted">
-            {{ RUN_VARIABLE_LIMITS.count }} at most. Names are capital letters, digits and <code>_</code>.
+            {{ RUN_VARIABLE_LIMITS.count }} at most. Names are capital letters, digits and <code>_</code>; values are
+            letters, digits, spaces and <code>_ - . , : / @ + =</code>.
           </span>
         </div>
 

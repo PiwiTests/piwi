@@ -48,7 +48,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
-import type { RunVariablesParse } from '@piwitests/core/run-variables';
+import { runVariableAssignments, type RunVariable, type RunVariablesParse } from '@piwitests/core/run-variables';
 import {
   RUN_CHANNEL_ENV,
   RUN_REF_ENV,
@@ -967,8 +967,13 @@ export function flakeLabLines(
   const lens = entry && context.client ? flakeLabLens(testCaseId, entry) : null;
   if (!lens || !context.client) return [];
   const serverUrl = context.client.connection.serverUrl;
-  // A command runs only with the project's run variables: without them, the lines offer none.
-  const variables = runVariablesEnv(context.runVariables);
+  // A command runs only with the project's run variables, once the person allowed them: until then, the lines offer
+  // none.
+  const read = context.runVariables;
+  const variables =
+    read?.ok && !context.runVariablesAllowed(read.value)
+      ? 'The project’s run variables are not allowed yet.'
+      : runVariablesEnv(read);
   return [
     {
       line,
@@ -3219,7 +3224,19 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
         const verification = fixPlan ? verificationCommand(fixPlan.verify.command) : null;
-        const verifyVariables = verification ? runVariablesEnv(await owner.readRunVariables()) : null;
+        // The quick fix waits for the run variables as long as for its other lookups, and offers no run without them.
+        const verifyRead = verification
+          ? await within(
+              owner.readRunVariables().catch(() => null),
+              null,
+            )
+          : null;
+        const verifyVariables =
+          verifyRead &&
+          verifyRead.unknown === undefined &&
+          (!verifyRead.ok || owner.runVariablesAllowed(verifyRead.value))
+            ? runVariablesEnv(verifyRead)
+            : null;
         if (planEdit && verification && verifyVariables && typeof verifyVariables !== 'string') {
           actions.push({
             title: `Apply the fix plan (${plural(planEdit.files, 'file')}), then run its verification`,
@@ -4582,19 +4599,71 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(RUN_ARGS_REQUEST, (params: RunTestsArgs) => runCommandFor(params));
 
+  /** The questions about a project's run variables being asked now, so the runs started meanwhile share one. */
+  const askingRunVariables = new Map<string, Promise<boolean>>();
+  /** The contexts told their project's run variables could not be read, until a read succeeds. */
+  const toldUnknownVariables = new Set<string>();
+
+  /**
+   * Whether the person allows runs of the context's project to get `variables`: asked once per set while the service
+   * runs (`window/showMessageRequest`, **Allow** or **Not now**), as the editor shows it.
+   */
+  const allowRunVariables = async (context: PiwiContext, variables: RunVariable[]): Promise<boolean> => {
+    if (context.runVariablesAllowed(variables)) return true;
+    const key = JSON.stringify([context.root, variables]);
+    let asking = askingRunVariables.get(key);
+    if (!asking) {
+      const project = context.project?.name ?? 'This project';
+      asking = Promise.resolve(
+        connection.window.showWarningMessage(
+          `${project} sets run variables that every run Piwi starts for its tests gets: ${runVariableAssignments(variables, 'bash')}. Run its tests with them?`,
+          { title: 'Allow' },
+          { title: 'Not now' },
+        ),
+      )
+        .then((choice) => choice?.title === 'Allow')
+        .catch(() => false)
+        .finally(() => askingRunVariables.delete(key));
+      askingRunVariables.set(key, asking);
+    }
+    const allowed = await asking;
+    if (allowed) context.allowRunVariables(variables);
+    return allowed;
+  };
+
   /**
    * The run variables of a context's project, as the environment of a run about to start, or null with a notice when
-   * they cannot be set: the run does not start without them.
+   * they cannot be set or the person did not allow them: the run does not start without them. With no project known
+   * to read them for, the run starts with none, and the person hears it once.
    */
   const runVariablesFor = async (context: PiwiContext): Promise<Record<string, string> | null> => {
-    const variables = runVariablesEnv(await context.readRunVariables());
-    if (typeof variables !== 'string') return variables;
-    void connection.sendNotification(NOTICE_NOTIFICATION, {
-      root: context.root,
-      severity: 'warning',
-      message: variables,
-    } satisfies Notice);
-    return null;
+    const notice = (message: string) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: context.root,
+        severity: 'warning',
+        message,
+      } satisfies Notice);
+    const read = await context.readRunVariables();
+    if (read.unknown !== undefined) {
+      if (!toldUnknownVariables.has(context.root)) {
+        toldUnknownVariables.add(context.root);
+        notice(`This run gets none of the project’s run variables: Piwi could not read them (${read.unknown}).`);
+      }
+      return {};
+    }
+    toldUnknownVariables.delete(context.root);
+    const variables = runVariablesEnv(read);
+    if (typeof variables === 'string') {
+      notice(variables);
+      return null;
+    }
+    if (read.ok && !(await allowRunVariables(context, read.value))) {
+      notice(
+        'Piwi runs nothing without the project’s run variables you did not allow: start the run again to be asked.',
+      );
+      return null;
+    }
+    return variables;
   };
 
   /** The command that runs the tests `params` names, as `piwi/runArgs` answers it: null when none can run. */

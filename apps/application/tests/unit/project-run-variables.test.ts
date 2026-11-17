@@ -7,8 +7,7 @@ import { commandWithRunVariables } from '../../shared/run-variables';
 import { buildBisectScript, buildReproRecipe } from '../../shared/reproduce';
 
 delete process.env.PIWI_DATABASE_URL;
-const { getProject, getProjectRunVariables, updateProject, InvalidRunVariablesError } =
-  await import('../../shared/handlers/projects');
+const { getProject, updateProject, InvalidRunVariablesError } = await import('../../shared/handlers/projects');
 const { readProjectRunVariables } = await import('../../shared/handlers/run-variables');
 
 const TENANT = { name: 'TENANT', value: 'acme' };
@@ -24,14 +23,14 @@ describe('a project stores its run variables', () => {
 
   test('a new project has none', async () => {
     expect((await getProject(db as never, 1))?.runVariables).toEqual([]);
-    expect(await getProjectRunVariables(db as never, 1)).toEqual([]);
+    expect(await readProjectRunVariables(db as never, 1)).toEqual([]);
   });
 
   test('they read back as saved, in their order', async () => {
-    const saved = await updateProject(db as never, 1, { runVariables: [TENANT, { name: 'REGION', value: '' }] });
-    expect(saved.project.runVariables).toEqual([TENANT, { name: 'REGION', value: '' }]);
-    expect((await getProject(db as never, 1))?.runVariables).toEqual([TENANT, { name: 'REGION', value: '' }]);
-    expect(await readProjectRunVariables(db as never, 1)).toEqual([TENANT, { name: 'REGION', value: '' }]);
+    const saved = await updateProject(db as never, 1, { runVariables: [TENANT, { name: 'REGION', value: 'eu' }] });
+    expect(saved.project.runVariables).toEqual([TENANT, { name: 'REGION', value: 'eu' }]);
+    expect((await getProject(db as never, 1))?.runVariables).toEqual([TENANT, { name: 'REGION', value: 'eu' }]);
+    expect(await readProjectRunVariables(db as never, 1)).toEqual([TENANT, { name: 'REGION', value: 'eu' }]);
   });
 
   test('a refused list is refused whole, naming each problem, and the stored ones stay', async () => {
@@ -47,22 +46,21 @@ describe('a project stores its run variables', () => {
     ).rejects.toThrow(/PIWI_PROJECT_NAME is not a variable a project can set/);
     await expect(updateProject(db as never, 1, { runVariables: [TENANT, TENANT] })).rejects.toThrow(/set twice/);
     await expect(updateProject(db as never, 1, { runVariables: 'TENANT=acme' })).rejects.toThrow(/must be a list/);
-    expect(await getProjectRunVariables(db as never, 1)).toEqual([TENANT, { name: 'REGION', value: '' }]);
+    expect(await readProjectRunVariables(db as never, 1)).toEqual([TENANT, { name: 'REGION', value: 'eu' }]);
   });
 
   test('leaving them out changes nothing, and null or [] removes them', async () => {
     await updateProject(db as never, 1, { label: 'Shop (acme)' });
-    expect(await getProjectRunVariables(db as never, 1)).toHaveLength(2);
+    expect(await readProjectRunVariables(db as never, 1)).toHaveLength(2);
     await updateProject(db as never, 1, { runVariables: [] });
-    expect(await getProjectRunVariables(db as never, 1)).toEqual([]);
+    expect(await readProjectRunVariables(db as never, 1)).toEqual([]);
     await updateProject(db as never, 1, { runVariables: [TENANT] });
     await updateProject(db as never, 1, { runVariables: null });
-    expect(await getProjectRunVariables(db as never, 1)).toEqual([]);
+    expect(await readProjectRunVariables(db as never, 1)).toEqual([]);
   });
 
-  test('a missing project reads as none, or as not found', async () => {
-    expect(await readProjectRunVariables(db as never, 99)).toEqual([]);
-    await expect(getProjectRunVariables(db as never, 99)).rejects.toThrow('Project not found');
+  test('a missing project reads as not found', async () => {
+    expect(await readProjectRunVariables(db as never, 99)).toBeNull();
   });
 });
 
@@ -109,21 +107,21 @@ describe('the reproduce recipe and the bisect with run variables', () => {
     expect(run.powershell).toMatch(/^\$env:TENANT='acme corp'; npx playwright test /);
   });
 
-  test('each bisect step runs with them through env, quoted for each shell', () => {
+  test('each bisect step runs with them, in each shell', () => {
     const bisect = buildBisectScript({
       good: 'a'.repeat(40),
       bad: 'b'.repeat(40),
       verifyCommand: 'npx playwright test tests/checkout.spec.ts:12',
-      runVariables: [{ name: 'TENANT', value: "o'hara" }],
+      runVariables: [{ name: 'TENANT', value: 'acme corp' }],
     });
     expect(bisect.available).toBe(true);
     if (!bisect.available) return;
     expect(bisect.bash).toContain(
-      `git bisect run env TENANT='o'\\''hara' npx playwright test tests/checkout.spec.ts:12`,
+      `git bisect run env TENANT='acme corp' npx playwright test tests/checkout.spec.ts:12`,
     );
-    expect(bisect.powershell).toContain(
-      `git bisect run env TENANT='o''hara' npx playwright test tests/checkout.spec.ts:12`,
-    );
+    // PowerShell sets them for the session first: git, and the sh it runs the command in, get them.
+    expect(bisect.powershell.split('\n')[0]).toBe(`$env:TENANT='acme corp';`);
+    expect(bisect.powershell).toContain('git bisect run npx playwright test tests/checkout.spec.ts:12');
   });
 
   test('without variables, the recipe and the bisect stay as they were', () => {

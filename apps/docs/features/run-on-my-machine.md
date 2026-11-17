@@ -66,8 +66,7 @@ the linked folder, and the exact command. Nothing runs until you click **Run**:
   tests are picked by their titles (`--grep`) rather than by their lines, which may have moved.
 - **One run per folder**: while another run goes on in the folder, the request waits, and is checked again once it
   ends. A command takes at most 24,000 characters.
-- **The project's [run variables](./run-variables)**: listed among the checks, and the command starts with them. An app
-  too old to apply them refuses the request, saying to update it.
+- **The project's [run variables](./run-variables)**: listed among the checks, and the command starts with them.
 
 **Not now** declines it, or refuses it with the checks that failed, and the page says which. A request nobody answers
 in the app within 10 minutes ends.
@@ -133,4 +132,3 @@ does, so you can show a teammate what happened on your machine. It appears in th
 - [Desktop app](./desktop): the app that takes requests, and its Settings page
 - [Desktop app runs](./desktop-runs): the runs the desktop app starts and how you follow them
 - [Share links](./share-links): showing one execution to someone without an account
-- [Run variables](./run-variables): the environment variables a requested run gets

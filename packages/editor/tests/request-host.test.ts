@@ -114,7 +114,7 @@ function host(instance: string, overrides: Partial<ConstructorParameters<typeof 
   const made = new RequestHost({
     instance,
     key: KEY,
-    describe: () => ({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2], features: ['run-variables'] }),
+    describe: () => ({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2] }),
     onOffer: (o) => heard.push(`offer ${o.id}`),
     onWithdrawn: (i) => heard.push(`withdrawn ${i}`),
     onStop: (i) => heard.push(`stop ${i}`),
@@ -200,12 +200,7 @@ describe('the request host', () => {
     expect(heard).toHaveLength(4);
     const describeCall = instance.calls.find((c) => c.path === '/api/run-targets/self')!;
     expect(describeCall.method).toBe('PUT');
-    expect(JSON.parse(describeCall.body)).toEqual({
-      platform: 'macOS',
-      version: '0.68.0',
-      projectIds: [1, 2],
-      features: ['run-variables'],
-    });
+    expect(JSON.parse(describeCall.body)).toEqual({ platform: 'macOS', version: '0.68.0', projectIds: [1, 2] });
     expect(instance.calls.every((c) => c.authorization === `Bearer ${KEY}`)).toBe(true);
   });
 
@@ -386,6 +381,10 @@ describe('the request host', () => {
     cleanups.push(instance.close);
     const { made } = host(instance.url);
     expect((await made.claim(id(1))).id).toBe(id(1));
+    // The claim says the app applies a project's run variables.
+    expect(JSON.parse(instance.calls.find((c) => c.path.endsWith('/claim'))!.body)).toEqual({
+      features: ['run-variables'],
+    });
     expect(await made.answer(id(1), { decision: 'run' })).toEqual({ requestToken: `pdq_${'b'.repeat(64)}` });
     await made.report(id(1), { state: 'ended', outcome: 'passed' });
     const state = instance.calls.find((c) => c.path.endsWith('/state'))!;
@@ -393,25 +392,6 @@ describe('the request host', () => {
     const refused = await made.claim(id(3)).catch((error: unknown) => error);
     expect(refused).toBeInstanceOf(RequestHostError);
     expect(refused).toMatchObject({ status: 409, message: 'answered 409' });
-    expect(made.state).not.toBe('revoked');
-  });
-
-  test('describes itself again without its features to an instance that refuses the field', async () => {
-    let described = 0;
-    const instance = await fakeInstance({
-      status: (path) => (path === '/api/run-targets/self' && described++ === 0 ? 400 : null),
-      self: () => ({ projects: [{ id: 1, name: 'Checkout' }] }),
-    });
-    cleanups.push(instance.close);
-    const names: string[] = [];
-    const { made } = host(instance.url, { onProjectNames: (projects) => names.push(...projects.map((p) => p.name)) });
-    await made.describe();
-    const bodies = instance.calls.filter((c) => c.path === '/api/run-targets/self').map((c) => JSON.parse(c.body));
-    expect(bodies).toEqual([
-      { platform: 'macOS', version: '0.68.0', projectIds: [1, 2], features: ['run-variables'] },
-      { platform: 'macOS', version: '0.68.0', projectIds: [1, 2] },
-    ]);
-    expect(names).toEqual(['Checkout']);
     expect(made.state).not.toBe('revoked');
   });
 
@@ -432,6 +412,7 @@ describe('the request host', () => {
     expect(await made.runVariables(id(5))).toEqual({
       ok: false,
       problems: ['They could not be read: answered 500'],
+      unreadable: true,
     });
     expect(await made.runVariables('not-an-id')).toMatchObject({ ok: false });
     expect(made.state).not.toBe('revoked');

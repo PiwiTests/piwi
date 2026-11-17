@@ -396,7 +396,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
             ? `Names ${copyLeavesOut.value} test${copyLeavesOut.value === 1 ? '' : 's'} fewer than the run: a shell would misread ${copyLeavesOut.value === 1 ? 'its title or path' : 'their titles or paths'}`
             : undefined,
         disabled: !copyCommand.value,
-        onSelect: () => void copy(copyCommand.value, { toast: 'Command copied' }),
+        onSelect: () => void runVariables.ready().then(() => copy(copyCommand.value, { toast: 'Command copied' })),
       },
       {
         label: 'Project defaults…',

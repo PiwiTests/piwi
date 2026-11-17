@@ -651,7 +651,10 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       label: 'Copy retry command',
       icon: 'i-lucide-clipboard',
       'data-tour': 'copy-retry-command',
-      onSelect: () => copyRetry(retryCommand.value, { toast: 'Retry command copied' }),
+      onSelect: async () => {
+        await retryRunVariables.ready();
+        copyRetry(retryCommand.value, { toast: 'Retry command copied' });
+      },
     });
   }
 

@@ -206,7 +206,7 @@ export async function planRequestedRun(
     checks.push({
       id: 'variables',
       level: 'ok',
-      message: `Runs with the project's run variables: ${runVariableAssignments(variables.value, 'bash')}.`,
+      message: `Runs with the project's run variables: ${runVariableAssignments(variables.value, DISPLAY_SHELL)}.`,
     });
   }
   if (runningIn.some((other) => realFolder(other) === real)) {

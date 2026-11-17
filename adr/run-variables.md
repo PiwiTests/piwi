@@ -11,9 +11,10 @@ run started from Piwi tested the default tenant and reported to the wrong projec
 
 **Status.** Proposed and built 2026-11-17, the four steps of the delivery in one pull request: the setting and the
 copied commands (D2, D3, D4), the desktop app's runs and the folder's other projects (D5, D9), Run on my machine (D6)
-and the editors (D7). What the build changed from the proposal is written into each decision: a light route of its own
-for the variables (`GET /api/projects/:id/run-variables`), a longer list of refused names (D3), the shell a copy button
-copies for (D4), and a target that predates the feature refused at its claim or its **Run** (D6). Left open, as
+and the editors (D7). What the build and its review changed from the proposal is written into each decision: a light route
+of its own for the variables (`GET /api/projects/:id/run-variables`), values limited to plain text (D2), a longer list
+of refused names (D3), the shell a copy button copies for (D4), the feature a target declares with each claim (D6), and
+the person's **Allow** before an editor applies them (D7). Left open, as
 written under Open questions: values per deployment environment, the project an editor follows for a folder linked to
 several (the lowest id), and the desktop app's own projects taking a team project's variables.
 
@@ -82,8 +83,12 @@ per environment instead of per project. The maintainer chose to keep the project
 
 - **A name**: capital letters, digits and `_`, starting with a letter or `_`, 64 characters at most
   (`^[A-Z_][A-Z0-9_]{0,63}$`).
-- **A value**: 500 characters at most, with no line break, no NUL and none of the hidden characters a request refuses
-  (`HIDDEN_CHARACTER` of `@piwitests/core/run-request`). An empty value is allowed: it sets the variable to `''`.
+- **A value**: 1 to 500 letters, combining marks and digits of any script, spaces and `_ - . , : / @ + =`
+  (`PLAIN_VALUE`), with no space at either end, none of the hidden characters a request refuses (`HIDDEN_CHARACTER` of
+  `@piwitests/core/run-request`), and not starting with `//`. It holds a tenant, a region, a brand or an address. No
+  `$` (an editor's task expands `${env:…}` and `${command:…}` in its environment), no `\` (a Windows or UNC path that
+  points a loader at another machine's file), no quote, backtick or shell operator. The proposal allowed any text and
+  an empty value; the review found what each opens, and Windows PowerShell removes a variable it sets to `''`.
 - **At most 10 per project**, names once each.
 - **Never a secret.** The value is stored as it is, shown in copied commands, in the desktop app and in a target's
   confirmation. The setting says so, and a secret stays in each machine's own `.env`.
@@ -108,15 +113,29 @@ are trusted, or where results and requests go. Refused, whatever the case, since
   as bash starts), and the programs a tool opens (`EDITOR`, `VISUAL`, `PAGER`, `LESSOPEN`, `LESSCLOSE`, `BROWSER`);
 - Piwi's, Playwright's and git's own: `PIWI_`, `PLAYWRIGHT_`, `PW_`, `PWDEBUG`, and `GIT_` (`GIT_CONFIG_COUNT` sets any
   git setting, `core.fsmonitor` among them, for the git the reporter runs), and `SSH_` (`SSH_ASKPASS`);
-- trust and the network: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, names starting with `SSL_`;
+- trust and the network: `HTTP_PROXY`, `HTTPS_PROXY`, `ALL_PROXY`, `NO_PROXY`, `AUTO_PROXY`, `SOCKS_SERVER`,
+  `SSLKEYLOGFILE`, how a host name resolves (`HOSTALIASES`, `LOCALDOMAIN`, `RES_OPTIONS`), names starting with `SSL_`
+  or `OPENSSL_`;
+- the libraries a browser or a build loads (`GTK_`, `VK_`, `LIBGL_`, `MESA_`, `QT_`, `GIO_`, `GST_`, `DBUS_`, `__`,
+  `ESBUILD_`, `NAPI_RS_`, `COMPLUS_`, `GCONV_PATH`, `RUSTC_WRAPPER`, `MAVEN_OPTS`, `GRADLE_OPTS`, `JAVA_OPTS`), npm's
+  prefix (`PREFIX`, `DESTDIR`, which point npm at another `npmrc`), Playwright's own (`PWTEST_`, `DEBUG_FILE`, which
+  truncates a file), and the folders Windows installs programs in (`PROGRAMFILES` and its kin);
+- what a shell runs or keeps to itself: `STTY` (zsh runs it), `PS0` to `PS4`, `UID`, `EUID`, `GID`, `EGID`, `PPID`,
+  `USERNAME`, `_`, PowerShell's module path and execution policy, and the colors Piwi sets (`NO_COLOR`,
+  `FORCE_COLOR`);
+- the CI a run reports it ran in, which the reporter reads: `CI`, `TF_BUILD`, `JENKINS_URL`, `BUILD_NUMBER` and their
+  kin, and names starting with `GITHUB_`, `GITLAB_`, `CI_`, `BITBUCKET_`, `BUILDKITE_`, `CIRCLE_`, `TRAVIS`,
+  `APPVEYOR_`, `TEAMCITY_`, `DRONE_`, `SEMAPHORE_`, `CODEBUILD_`, `RUNNER_`;
 - the folders and the display programs read: `HOME`, `HOMEDRIVE`, `HOMEPATH`, `USERPROFILE`, `APPDATA`,
   `LOCALAPPDATA`, `PROGRAMDATA`, `SYSTEMROOT`, `WINDIR`, `TMP`, `TEMP`, `TMPDIR`, names starting with `XDG_`,
   `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`.
 
-The proposal named a shorter list; the build added each variable a common runtime, shell or tool reads to load code,
-run a command or send a request elsewhere. The list is a deny list, so it cannot be complete: what keeps it safe is
-that only a project's managers set the variables, that the confirmation and every command show them, and that the
-names a tenant needs (`TENANT`, `REGION`, `BRAND`) are none of these. A name it refuses is refused when the setting is
+The proposal named a shorter list; the build and its review added each variable a common runtime, shell or tool reads
+to load code, run a command, write a file or send a request elsewhere. `ENV` stays allowed (`ENV=staging`): a
+non-interactive shell does not read it, and no value can hold the `$(…)` an interactive one would run. The list is a
+deny list, so it cannot be complete: what keeps the feature safe is that only a project's managers set the variables,
+that values are plain text (D2), and that the person sees every variable before it applies: in the command they
+copy, in the confirmation of **Run on my machine**, and in the question an editor asks (D7). A name it refuses is refused when the setting is
 saved, and again by every target before it runs anything (D5, D6, D7).
 
 ### D4. Copied commands
@@ -130,11 +149,12 @@ Every command the dashboard shows for the project's tests starts with its run va
 - PowerShell: `$env:TENANT='acme'; npx playwright test …`, which sets the variable for the rest of the session, each
   value single-quoted with `'` and the curly single quotes PowerShell reads as `'` doubled (`powerShellQuote`).
 
-The retry commands of a run, a test and a selection, **Copy as command** in the desktop app, the fix plan's verification
-and a saved selection's command are copied by a button with no shell of its own: it copies the form of the shell the
-viewer last picked in a command block (`useCommandShell`, kept in the browser), else the one of their computer. The
-reproduce recipe's test step carries both forms, and each step of its bisect runs `env NAME=value …`, quoted for each
-shell, since `git bisect run` hands its command to `sh`. The fix plan's Markdown, an issue's body and an auto-heal pull
+The retry commands of a run, a test and a selection, **Copy as command** in the desktop app, the fix plan's verification,
+a saved selection's commands (`npx playwright test …` and `npx @piwitests/reporter run …`) and the Flake Lab commands
+are copied by a button with no shell of its own, which waits for the project's variables before it copies: it copies the form of the shell the
+viewer last picked in a command block (`useCommandShell`, kept in the browser), else the one of their computer. The reproduce recipe's test step carries both forms. Its bisect runs `env NAME=value …` in bash; in PowerShell it sets
+the variables for the session before `git bisect run`, since Windows PowerShell 5.1 passes a native command's
+arguments without escaping their quotes. The fix plan's Markdown, an issue's body and an auto-heal pull
 request's verify command are documents: they show the bash form. The fix plan names the variables beside its verify
 command (`verify.runVariables`) and the verify command itself stays bare, since the editor service reads it as Playwright
 arguments. CI re-runs stay as they are: the pipeline picks its tenant through the CI action's `inputs`.
@@ -163,14 +183,18 @@ parser refuses:
 
 - `GET /api/run-targets/requests/:id/run-variables` answers the target that claimed the request with the project's run
   variables;
-- a target that applies them says so when it describes itself (`PUT /api/run-targets/self`, `features:
-  ['run-variables']`). A description without `features`, from an app that predates them or one downgraded since,
-  stores none. A target without the feature that claims a request of a project with run variables, or answers **Run**
-  to one whose project set some since, ends it as `refused`, with words that say to update the app, rather than run the
-  default tenant. An instance that predates `features` refuses the field: the target describes itself again without
-  it, and reads no variables from it (404);
+- a target that applies them says so with each claim (`POST /api/run-targets/requests/:id/claim`, body
+  `{ features: ['run-variables'] }`), and the instance keeps it on the request (`claim_features`). A claim without the
+  feature of a request of a project with run variables answers 409 and leaves the request waiting for an app that
+  applies them, with words that say to update the app, which the requester reads if no app takes it; **Run** on a
+  request claimed without the feature, whose project set variables since, ends it as `refused` with the same words.
+  The proposal had the target declare the feature when it describes itself (`PUT /api/run-targets/self`); the review
+  found that a stored description outlives a downgrade, and that ending the request at an older app's claim could
+  take it from an updated app of the same person. An instance that predates the feature ignores the claim's body and
+  answers 404 for the variables: its projects set none;
 - the editor service's plan (`request-run.ts`) checks the list with `parseRunVariables` and fails its `variables` check
-  with the problems when it does not pass, or when it cannot be read;
+  with the problems when it does not pass, or when it cannot be read; the next check reads a list it could not read
+  again;
 - the confirmation lists them among its checks and shows them in the command, `TENANT=acme npx playwright test …`
   (PowerShell's form on Windows). **Run** reads them again: when they changed since the window showed the command, it
   shows the new command instead of running. The shell takes them with the command from its server at launch
@@ -185,9 +209,14 @@ to the person before anything runs.
 
 Once it knows the project, the editor service reads its run variables (`GET /api/projects/:id/run-variables`, a call
 it did not make before: it names projects from `/api/projects/menu`) once per refresh, and sets them on every command it
-builds for the project's tests: runs by location, by test, a selection, a debug run and the runs an agent starts. A
-run waits for the read; a list that does not pass `parseRunVariables`, or that cannot be read, runs nothing and says
-why (`piwi/notice`), and the Flake Lab commands and the fix plan's verification above a test are left out. VS Code
+builds for the project's tests: runs by location, by test, a selection, a debug run and the runs an agent starts. The first run of a set asks the person (`window/showMessageRequest`, which both clients' language-server
+support shows: **Allow** or **Not now**), once per set while the service runs, except on the desktop app's own server,
+whose projects are theirs; nothing runs with a set they did not allow. A run waits for the read, and for a project a
+refresh is resolving; with no project known (the instance unreachable), it starts with none and the person hears it
+once. A list that does not pass `parseRunVariables`, or that the instance did not answer, runs nothing and says why
+(`piwi/notice`); a read that failed is asked again by the next run. The Flake Lab commands and the fix plan's
+verification above a test are left out until the set is allowed. The proposal applied them silently; the review found
+that an editor's run, unlike a copied command or a requested run, showed them nowhere. VS Code
 passes them to the task's environment and JetBrains to `withEnvironment`, as they pass the service's own variables; the
 clients needed no change. An instance that predates them answers 404: its projects set none. A run started in a
 terminal is the person's: Piwi sets nothing there, and the listing of a config's tests for the test tree sets none.
@@ -247,20 +276,21 @@ Linking one folder to several projects stays allowed, and becomes the expected c
   `{ runVariables }` (`project:read`) to the shell, the editor service and the dashboard's copy buttons. The demo's
   handlers and seed mirror them.
 - `GET /api/run-targets/requests/:id/run-variables` (target key, `run:receive`, the request claimed by this target).
-- `PUT /api/run-targets/self` takes `features`.
+- `POST /api/run-targets/requests/:id/claim` takes `{ features }`, kept on the request.
 
 ## Security
 
 - **Who sets them**: a project's managers, on the team instance. What they set runs on teammates' machines through
-  **Run on my machine** and the editors, so the refused names of D3 keep it to plain values, and the confirmation and
-  the commands show every variable before it applies.
+  **Run on my machine** and the editors, so values are plain text (D2), the refused names of D3 keep out what a known
+  runtime or tool reads, and the person sees every variable before it applies: the command they copy, the
+  confirmation, the editor's question.
 - **Checked twice**: on save, and by every target before it runs (the editor service's plan and runs, the shell), so an
   instance that sends a refused name, or an older one that does not check, runs nothing with it.
 - **Never a secret**: values are shown and copied. The setting says so; a secret stays in the machine's `.env`.
 - **Nothing reaches a shell**: the desktop app and Piwi Runner pass the variables as the process's environment, before
   their own, never through a shell line; the copied commands quote each value.
-- **No older app runs without them**: a target that does not say it applies them never starts a request of a project
-  that sets some, and a description without the feature clears it.
+- **No older app runs without them**: a claim that does not say it applies them never takes a request of a project that
+  sets some, and **Run** checks the claim's word again.
 
 ## What changes in other records
 

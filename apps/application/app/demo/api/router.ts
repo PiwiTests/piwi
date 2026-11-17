@@ -208,7 +208,6 @@ import {
   INVALID_COVERAGE_SCOPE,
   InvalidRunVariablesError,
   InvalidTagKeysError,
-  getProjectRunVariables,
   updateProject,
   createProject,
   getProjectMenu,
@@ -217,6 +216,7 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { readProjectRunVariables } from '#shared/handlers/run-variables';
 import { SOLE_USER } from '#shared/own-runs';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
@@ -4181,12 +4181,9 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/run-variables$/,
     handler: async (m, _, __, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      try {
-        return { runVariables: await getProjectRunVariables(await getDemoDb(), +m[1]!) };
-      } catch (e) {
-        if (e instanceof Error && e.message === 'Project not found') throw demoHttpError(404, e.message);
-        throw e;
-      }
+      const runVariables = await readProjectRunVariables(await getDemoDb(), +m[1]!);
+      if (!runVariables) throw demoHttpError(404, 'Project not found');
+      return { runVariables };
     },
   },
   {

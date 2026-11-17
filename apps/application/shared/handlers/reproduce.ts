@@ -115,7 +115,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
   }
 
   const projectName = input.cases.find((c) => c.projectName)?.projectName ?? null;
-  const runVariables = run ? await readProjectRunVariables(db, run.projectId) : [];
+  const runVariables = run ? ((await readProjectRunVariables(db, run.projectId)) ?? []) : [];
 
   const reproduce = buildReproRecipe({
     commit,

@@ -12,6 +12,7 @@
 import {
   parseRunRequest,
   RUN_REQUEST_ID,
+  RUN_TARGET_FEATURES,
   type RunRequest,
   type RunRequestOffer,
   type RunRequestOutcome,
@@ -57,8 +58,8 @@ export interface RequestHostOptions {
   instance: string;
   /** The target's key. */
   key: string;
-  /** How this app names itself to the instance, the projects it has a folder for, and what it does beyond a request. */
-  describe: () => { platform: string; version: string; projectIds: number[]; features: readonly string[] };
+  /** How this app names itself to the instance, and the projects it has a folder for. */
+  describe: () => { platform: string; version: string; projectIds: number[] };
   /** A request offered for the first time, still waiting for a claim. */
   onOffer: (offer: RunRequestOffer) => void;
   /** A request offered earlier that no longer waits: stopped, claimed by another app, or past its time. */
@@ -106,6 +107,9 @@ const DEFAULT_TIMING = {
 };
 
 /** A refusal of a target route, with the instance's status. */
+/** How long reading a request's run variables may take before the plan fails, in milliseconds. */
+const RUN_VARIABLES_WAIT_MS = 15_000;
+
 export class RequestHostError extends Error {
   constructor(
     readonly status: number,
@@ -253,11 +257,20 @@ export class RequestHost {
     this.retry = this.poll = null;
   }
 
-  /** Claim a request offered here: the instance answers the request, or refuses it once another app claimed it. */
+  /**
+   * Claim a request offered here, saying what this app does beyond a request (`RUN_TARGET_FEATURES`): the instance
+   * answers the request, or refuses it once another app claimed it, or when its project sets run variables and the
+   * claim did not say it applies them.
+   */
   async claim(id: string): Promise<RunRequest> {
     if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
     const claimed = readRequest(
-      await this.call('POST', `/api/run-targets/requests/${id}/claim`, undefined, { onlyRequest: true }),
+      await this.call(
+        'POST',
+        `/api/run-targets/requests/${id}/claim`,
+        { features: [...RUN_TARGET_FEATURES] },
+        { onlyRequest: true },
+      ),
     );
     this.claimed.add(id);
     this.offered.delete(id);
@@ -297,21 +310,14 @@ export class RequestHost {
     await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
   }
 
-  /**
-   * Tell the instance this app's platform, version, the projects it has a folder for and its features; it names the
-   * projects back. An instance that predates `features` refuses the field (400): it is told the rest again without it,
-   * and offers nothing that needs one.
-   */
+  /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */
   async describe(): Promise<void> {
-    const { platform, version, projectIds, features } = this.options.describe();
-    const body = { platform, version, projectIds: projectIds.slice(0, 200) };
-    let described: { projects?: unknown };
-    try {
-      described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', { ...body, features });
-    } catch (error) {
-      if (!(error instanceof RequestHostError) || error.status !== 400) throw error;
-      described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', body);
-    }
+    const { platform, version, projectIds } = this.options.describe();
+    const described = await this.call<{ projects?: unknown }>('PUT', '/api/run-targets/self', {
+      platform,
+      version,
+      projectIds: projectIds.slice(0, 200),
+    });
     if (!this.stopped) this.takeNames(described?.projects);
   }
 
@@ -320,19 +326,19 @@ export class RequestHost {
    * refuses, or one it cannot read, is a problem the plan fails with. An instance that predates them answers 404:
    * its projects set none.
    */
-  async runVariables(id: string): Promise<RunVariablesParse> {
+  async runVariables(id: string): Promise<RunVariablesParse & { unreadable?: true }> {
     if (!isRequestId(id)) return { ok: false, problems: ['No run request has this id.'] };
     try {
       const answer = await this.call<{ runVariables?: unknown }>(
         'GET',
         `/api/run-targets/requests/${id}/run-variables`,
         undefined,
-        { onlyRequest: true },
+        { onlyRequest: true, timeoutMs: RUN_VARIABLES_WAIT_MS },
       );
       return parseRunVariables(answer?.runVariables);
     } catch (error) {
       if (error instanceof RequestHostError && error.status === 404) return { ok: true, value: [] };
-      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`] };
+      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };
     }
   }
 
@@ -349,9 +355,10 @@ export class RequestHost {
     method: string,
     route: string,
     body?: unknown,
-    { onlyRequest = false }: { onlyRequest?: boolean } = {},
+    { onlyRequest = false, timeoutMs }: { onlyRequest?: boolean; timeoutMs?: number } = {},
   ): Promise<T> {
     const response = await this.fetch(`${this.options.instance}${route}`, {
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       method,
       headers: {
         Authorization: `Bearer ${this.options.key}`,

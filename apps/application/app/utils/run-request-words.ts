@@ -21,13 +21,17 @@ function appName(request: Pick<RunRequestView, 'target'>): string {
 export function runRequestSentence(request: Pick<RunRequestView, 'state' | 'outcome' | 'detail' | 'target'>): string {
   switch (request.state) {
     case 'waiting':
-      return 'Waiting for one of your apps to pick it up';
+      return request.detail
+        ? `Waiting for one of your apps to pick it up. ${request.detail}`
+        : 'Waiting for one of your apps to pick it up';
     case 'claimed':
       return `${appName(request)} shows it: click Run there`;
     case 'declined':
       return 'You answered Not now in the app';
     case 'expired':
-      return 'None of your apps picked it up within 2 minutes: is the desktop app open and connected?';
+      return request.detail
+        ? `None of your apps picked it up within 2 minutes. ${request.detail}`
+        : 'None of your apps picked it up within 2 minutes: is the desktop app open and connected?';
     case 'refused':
       return request.detail ? `The app could not run it: ${request.detail}` : 'The app could not run it';
     case 'starting':

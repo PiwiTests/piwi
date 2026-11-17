@@ -18,75 +18,157 @@ const MAX_VALUE_UNITS: usize = 500;
 
 /// The names a run variable never sets: core's `REFUSED_RUN_VARIABLE_NAMES`.
 pub(crate) const REFUSED_NAMES: &[&str] = &[
-    "APPDATA",
+    "AGENT_JOBNAME",
     "ALL_PROXY",
+    "APPDATA",
+    "AUTO_PROXY",
     "BASHOPTS",
     "BROWSER",
+    "BUILD_BUILDID",
+    "BUILD_BUILDNUMBER",
+    "BUILD_ID",
+    "BUILD_NUMBER",
+    "BUILD_URL",
     "CDPATH",
+    "CHANGE_ID",
+    "CHANGE_TARGET",
+    "CI",
+    "CIRCLECI",
     "CLASSPATH",
+    "COMMONPROGRAMFILES",
+    "COMMONPROGRAMW6432",
     "COMSPEC",
+    "DEBUG_FILE",
+    "DESTDIR",
     "DISPLAY",
     "EDITOR",
-    "ENV",
+    "EGID",
+    "EUID",
+    "FORCE_COLOR",
+    "GCONV_PATH",
+    "GID",
+    "GLIBC_TUNABLES",
+    "GRADLE_OPTS",
     "HOME",
     "HOMEDRIVE",
     "HOMEPATH",
+    "HOSTALIASES",
     "HTTPS_PROXY",
     "HTTP_PROXY",
     "IFS",
+    "JAVA_OPTS",
     "JAVA_TOOL_OPTIONS",
     "JDK_JAVA_OPTIONS",
+    "JENKINS_URL",
+    "JOB_NAME",
     "LESSCLOSE",
     "LESSOPEN",
     "LOCALAPPDATA",
+    "LOCALDOMAIN",
+    "LOCPATH",
+    "MAVEN_OPTS",
+    "NLSPATH",
+    "NO_COLOR",
     "NO_PROXY",
     "PAGER",
     "PATH",
     "PATHEXT",
+    "PPID",
+    "PREFIX",
     "PROGRAMDATA",
+    "PROGRAMFILES",
+    "PROGRAMW6432",
     "PROMPT_COMMAND",
+    "PS0",
+    "PS1",
+    "PS2",
+    "PS3",
     "PS4",
+    "PSEXECUTIONPOLICYPREFERENCE",
+    "PSMODULEPATH",
     "PWDEBUG",
+    "RESOLV_HOST_CONF",
+    "RES_OPTIONS",
+    "RUSTC_WRAPPER",
     "SHELL",
     "SHELLOPTS",
+    "SOCKS_SERVER",
+    "SSLKEYLOGFILE",
+    "STTY",
     "SYSTEMROOT",
+    "SYSTEM_JOBID",
+    "SYSTEM_PULLREQUEST_PULLREQUESTNUMBER",
+    "SYSTEM_PULLREQUEST_TARGETBRANCH",
+    "SYSTEM_TEAMFOUNDATIONSERVERURI",
+    "SYSTEM_TEAMPROJECT",
     "TEMP",
+    "TF_BUILD",
     "TMP",
     "TMPDIR",
+    "UID",
+    "USERNAME",
     "USERPROFILE",
     "VISUAL",
     "WAYLAND_DISPLAY",
     "WINDIR",
     "XAUTHORITY",
     "ZDOTDIR",
+    "_",
     "_JAVA_OPTIONS",
 ];
 
 /// The prefixes of the names a run variable never sets: core's `REFUSED_RUN_VARIABLE_PREFIXES`.
 pub(crate) const REFUSED_PREFIXES: &[&str] = &[
+    "APPVEYOR_",
     "BASH_",
+    "BITBUCKET_",
+    "BUILDKITE_",
     "BUN_",
-    "COREPACK_",
+    "CIRCLE_",
+    "CI_",
+    "CODEBUILD_",
+    "COMPLUS_",
     "CORECLR_",
+    "COREPACK_",
     "COR_",
+    "DBUS_",
     "DOTNET_",
+    "DRONE_",
     "DYLD_",
     "ELECTRON_",
+    "ESBUILD_",
+    "GIO_",
+    "GITHUB_",
+    "GITLAB_",
     "GIT_",
+    "GST_",
+    "GTK_",
     "LD_",
+    "LIBGL_",
+    "MESA_",
+    "NAPI_RS_",
     "NODE_",
     "NPM_",
+    "OPENSSL_",
     "PERL",
     "PIWI_",
     "PLAYWRIGHT_",
     "PNPM_",
+    "PWTEST_",
     "PW_",
     "PYTHON",
+    "QT_",
     "RUBY",
+    "RUNNER_",
+    "SEMAPHORE_",
     "SSH_",
     "SSL_",
+    "TEAMCITY_",
+    "TRAVIS",
+    "VK_",
     "XDG_",
     "YARN_",
+    "__",
 ];
 
 /// Whether a name is one a run variable never sets, whatever its case: Windows reads names without it.
@@ -143,9 +225,17 @@ fn is_hidden(c: char) -> bool {
         )
 }
 
+/// A value made of letters and digits of any script, spaces and `_ - . , : / @ + =`, with no space at either end and
+/// not starting with `//`: core's `PLAIN_VALUE`, or narrower for a combining mark Rust does not count as alphabetic.
+fn is_plain_value(value: &str) -> bool {
+    value.chars().all(|c| c.is_alphanumeric() || " _.,:/@+=-".contains(c))
+        && value.trim() == value
+        && !value.starts_with("//")
+}
+
 /// The run variables of `value` (a list of `{ name, value }`, null for none) as `(name, value)` pairs, in order, or
 /// why they cannot be set: more than 10, a field other than the name and the value, a name set twice, a name core
-/// refuses, or a value longer than 500 characters or with a hidden character.
+/// refuses, or a value that is empty, longer than 500 characters or with a hidden character.
 pub(crate) fn checked_run_variables(value: &Value) -> Result<Vec<(String, String)>, String> {
     let items = match value {
         Value::Null => return Ok(Vec::new()),
@@ -177,9 +267,17 @@ pub(crate) fn checked_run_variables(value: &Value) -> Result<Vec<(String, String
         if is_refused_name(name) {
             return Err(format!("{name} is not a variable a project can set"));
         }
+        if text.is_empty() {
+            return Err(format!("the value of {name} is empty"));
+        }
         if text.encode_utf16().count() > MAX_VALUE_UNITS {
             return Err(format!(
                 "the value of {name} is longer than {MAX_VALUE_UNITS} characters"
+            ));
+        }
+        if !is_plain_value(text) {
+            return Err(format!(
+                "the value of {name} must be letters, digits, spaces and _ - . , : / @ + = only"
             ));
         }
         if text.chars().any(is_hidden) {
@@ -207,8 +305,10 @@ pub(crate) fn project_run_variables(
     let body =
         crate::repro::local_get_json(server, &format!("/api/projects/{project_id}/run-variables"))
             .map_err(|e| format!("the project's run variables could not be read: {e}"))?;
-    checked_run_variables(body.get("runVariables").unwrap_or(&Value::Null))
-        .map_err(|e| format!("the project's run variables were not set: {e}"))
+    let listed = body
+        .get("runVariables")
+        .ok_or("the project's run variables could not be read: the server did not name them")?;
+    checked_run_variables(listed).map_err(|e| format!("the project's run variables were not set: {e}"))
 }
 
 /// [`project_run_variables`] off the async runtime, with the app's server. Errors without a server.
@@ -243,12 +343,12 @@ mod tests {
     #[test]
     fn takes_a_list_of_names_and_values_in_order() {
         let list =
-            json!([{ "name": "TENANT", "value": "acme" }, { "name": "_REGION_2", "value": "" }]);
+            json!([{ "name": "TENANT", "value": "acme" }, { "name": "_REGION_2", "value": "eu" }]);
         assert_eq!(
             checked_run_variables(&list).unwrap(),
             vec![
                 ("TENANT".to_string(), "acme".to_string()),
-                ("_REGION_2".to_string(), String::new())
+                ("_REGION_2".to_string(), "eu".to_string())
             ]
         );
         assert!(checked_run_variables(&Value::Null).unwrap().is_empty());
@@ -270,6 +370,10 @@ mod tests {
             "HOME",
             "COMSPEC",
             "HTTPS_PROXY",
+            "STTY",
+            "OPENSSL_CONF",
+            "GITHUB_ACTIONS",
+            "_",
         ] {
             let list = json!([{ "name": name, "value": "x" }]);
             let refused = checked_run_variables(&list).unwrap_err();
@@ -303,6 +407,7 @@ mod tests {
         assert!(refused(
             json!([{ "name": "TENANT", "value": "a".repeat(501) }])
         ));
+        assert!(refused(json!([{ "name": "TENANT", "value": "" }])));
         for hidden in [
             "a\nb",
             "a\u{0}b",
@@ -319,7 +424,7 @@ mod tests {
             );
         }
         let eleven: Vec<Value> = (0..11)
-            .map(|i| json!({ "name": format!("V{i}"), "value": "" }))
+            .map(|i| json!({ "name": format!("V{i}"), "value": "x" }))
             .collect();
         assert!(refused(Value::Array(eleven.clone())));
         assert!(!refused(Value::Array(eleven[..10].to_vec())));
@@ -327,7 +432,23 @@ mod tests {
             json!([{ "name": "TENANT", "value": "a".repeat(500) }])
         ));
         assert!(!refused(
-            json!([{ "name": "TENANT", "value": "it's $HOME; `id` | & \"é\"" }])
+            json!([{ "name": "TENANT", "value": "https://acme.example.com:8443/app" }])
         ));
+        assert!(!refused(
+            json!([{ "name": "TENANT", "value": "Société Générale, eu-west 2 = a+b@c_d" }])
+        ));
+        for value in [
+            "$HOME",
+            "${env:GITHUB_TOKEN}",
+            "\\\\host\\share\\x.cnf",
+            "//host/share/x",
+            "it's",
+            "a\"b",
+            "a`id`",
+            "a;b",
+            " acme",
+        ] {
+            assert!(refused(json!([{ "name": "TENANT", "value": value }])), "{value:?}");
+        }
     }
 }

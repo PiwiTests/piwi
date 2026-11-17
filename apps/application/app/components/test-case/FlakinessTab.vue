@@ -71,9 +71,13 @@ const reproduced = computed(() => experiments.value.some((e) => e.kind === 'repr
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
-const reproduceCommand = computed(() => flakeCommand(props.testCaseId));
-const verifyCommand = computed(() => flakeCommand(props.testCaseId, 'verify'));
-async function copyCommand(command: string) {
+const flakeRunVariables = useProjectRunVariables(() => props.projectId);
+const reproduceCommand = computed(() => flakeRunVariables.command(flakeCommand(props.testCaseId)));
+const verifyCommand = computed(() => flakeRunVariables.command(flakeCommand(props.testCaseId, 'verify')));
+/** Copies `kind`'s command once the project's run variables are read, so it starts with them. */
+async function copyCommand(kind: 'reproduce' | 'verify') {
+  await flakeRunVariables.ready();
+  const command = kind === 'verify' ? verifyCommand.value : reproduceCommand.value;
   await copy(command, { toast: 'Command copied' });
   copiedCommand.value = command;
 }
@@ -265,7 +269,7 @@ function detailLine(s: FlakeSuspect): string | null {
             :icon="copied && copiedCommand === reproduceCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
             :title="reproduceCommand"
             data-testid="copy-flake-command"
-            @click="copyCommand(reproduceCommand)"
+            @click="copyCommand('reproduce')"
           >
             Copy command
           </UButton>
@@ -277,7 +281,7 @@ function detailLine(s: FlakeSuspect): string | null {
             :icon="copied && copiedCommand === verifyCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
             :title="verifyCommand"
             data-testid="copy-flake-verify-command"
-            @click="copyCommand(verifyCommand)"
+            @click="copyCommand('verify')"
           >
             Copy verify command
           </UButton>

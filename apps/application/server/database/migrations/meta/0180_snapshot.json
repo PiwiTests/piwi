@@ -1,7 +1,7 @@
 {
   "version": "6",
   "dialect": "sqlite",
-  "id": "d90127e4-51cb-4789-b06e-ef42b67e2773",
+  "id": "4216caf6-3552-402b-8e23-cc77886be7c4",
   "prevId": "727ae158-8de9-4923-a38b-36f85ba3c562",
   "tables": {
     "account_tokens": {
@@ -9638,6 +9638,13 @@
           "notNull": false,
           "autoincrement": false
         },
+        "claim_features": {
+          "name": "claim_features",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false,
+          "autoincrement": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -9871,13 +9878,6 @@
         },
         "project_ids": {
           "name": "project_ids",
-          "type": "text",
-          "primaryKey": false,
-          "notNull": false,
-          "autoincrement": false
-        },
-        "features": {
-          "name": "features",
           "type": "text",
           "primaryKey": false,
           "notNull": false,

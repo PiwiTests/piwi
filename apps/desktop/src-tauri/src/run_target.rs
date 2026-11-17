@@ -951,6 +951,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         Ok(launch) => launch,
         Err(e) => {
             forget(&app, &request_id);
+            tell_started(&server, &request_id, Some(&e));
             return Err(e);
         }
     };

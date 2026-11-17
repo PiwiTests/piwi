@@ -685,7 +685,8 @@ const selectionCommand = computed(() =>
   ),
 );
 const { copy: copySelection } = useCopy();
-function copySelectionCommand() {
+async function copySelectionCommand() {
+  await selectionRunVariables.ready();
   if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
   else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
 }

@@ -3130,7 +3130,6 @@ export const runTargets = sqliteTable(
     platform: text('platform'),
     version: text('version'),
     projectIds: text('project_ids', { mode: 'json' }), // number[]: the projects it has a folder for
-    features: text('features', { mode: 'json' }), // string[]: what the app does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
     lastSeenAt: integer('last_seen_at', { mode: 'timestamp_ms' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -3155,6 +3154,7 @@ export const runRequests = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
+    claimFeatures: text('claim_features', { mode: 'json' }), // string[]: what the target that claimed it said it does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
     kind: text('kind').notNull(), // RunRequestKind
     tests: text('tests', { mode: 'json' }).notNull(), // RunRequestTest[]
     options: text('options', { mode: 'json' }).notNull(), // RunRequestOptions

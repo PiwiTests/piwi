@@ -553,13 +553,6 @@ export async function getProject(
   };
 }
 
-/** A project's run variables (`[]` for none), or throws `Project not found`. */
-export async function getProjectRunVariables(db: DrizzleDB, id: number): Promise<RunVariable[]> {
-  const [row] = await db.select({ runVariables: projects.runVariables }).from(projects).where(eq(projects.id, id));
-  if (!row) throw new Error('Project not found');
-  return storedRunVariables(row.runVariables);
-}
-
 /** A scope's environments alone: what an own run must match to be listed despite the partial-run and branch filters. */
 function environmentsOnly(scope: ProjectRunScope): ProjectRunScope {
   return { environments: scope.environments, branches: [], allBranches: true, fullRunsOnly: false };

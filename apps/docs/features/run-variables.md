@@ -17,36 +17,39 @@ A project admin sets them in **Project → Settings → Run variables**: up to 1
 you type.
 
 - **A name** is capital letters, digits and `_`, not starting with a digit, 64 characters at most, each name once.
-- **A value** is at most 500 characters, with no line break or invisible character. An empty value sets the variable
-  to an empty string.
+- **A value** is 1 to 500 letters, digits, spaces and `_ - . , : / @ + =`: a tenant, a region, a brand or an address
+  (`https://acme.example.com:8443/app`). No `$`, backslash, quote or shell operator, no space at either end, and not
+  starting with `//`.
 - **Never a secret.** Every copied command and every confirmation shows the values. A secret stays in each machine's
   own `.env`.
 - **Refused names**: a run variable never sets a variable that changes which code runs, which browser starts, which
-  certificates are trusted or where results and requests go. `PATH`, `HOME`, `NODE_OPTIONS`, `BASH_ENV`,
-  `HTTPS_PROXY` and `COMSPEC` are refused, and so is every name starting with `PIWI_`, `PLAYWRIGHT_`, `NODE_`, `NPM_`,
-  `GIT_`, `LD_` or `DYLD_`, among others. Windows reads names whatever their case, so `Path` is `PATH`.
+  certificates are trusted, where results and requests go, or the CI a run reports. `PATH`, `HOME`, `PREFIX`,
+  `NODE_OPTIONS`, `BASH_ENV`, `HTTPS_PROXY`, `CI` and `COMSPEC` are refused, and so is every name starting with
+  `PIWI_`, `PLAYWRIGHT_`, `NODE_`, `NPM_`, `GIT_`, `GITHUB_`, `LD_` or `DYLD_`, among others. Windows reads names
+  whatever their case, so `Path` is `PATH`.
 
-The settings save refuses a list with one refused name whole, and each app that runs the tests checks the list again
-before it runs anything: a name refused there runs nothing, rather than run without it.
+The settings save refuses a list with one refused variable whole, and each app that runs the tests checks the list
+again before it runs anything: a variable refused there runs nothing, rather than run without it.
 
 ## Where they apply
 
 - **Copied commands**: the retry commands of a run, a test and a selection, **Copy as command** in the desktop app,
-  the verify command of a fix plan, a saved selection's command, and the test step of the reproduce recipe. In bash a
-  command starts with the variables (`TENANT=acme npx playwright test …`); in PowerShell it sets them for the rest of
-  the session first (`$env:TENANT='acme'; npx playwright test …`). A copy button copies the form of the shell you last
-  picked in a command block, else your computer's. The Markdown of a fix plan, an issue and an auto-heal pull request
-  show the bash form.
+  the verify command of a fix plan, a saved selection's commands, the Flake Lab commands, and the test step of the
+  reproduce recipe and its bisect. In bash a command starts with the variables (`TENANT=acme npx playwright test …`);
+  in PowerShell it sets them for the rest of the session first (`$env:TENANT='acme'; npx playwright test …`). A copy
+  button copies the form of the shell you last picked in a command block, else your computer's. The Markdown of a fix
+  plan, an issue and an auto-heal pull request show the bash form.
 - **The desktop app's runs**: Re-run, **Run with options…**, Reproduce, Bisect, Flake Lab and a bug report's
   reproduction. The app reads the variables of its own project when it starts each run, never from the page, and the
   run's line in **Local runs** shows them. The install step of a checkout gets none.
 - **[Run on my machine](./run-on-my-machine)**: the confirmation lists them among its checks and starts the command with
   them. **Run** reads them again: when one changed since the window showed the command, it shows the new command
-  instead of running. An app too old to apply them refuses the request with words that say to update it, rather than
-  run the default tenant.
+  instead of running. An app too old to apply them cannot take the request, which waits for one that can and says to
+  update the app.
 - **The editors' runs**: VS Code and JetBrains run a test, a file, a selection, a debug run and the runs an agent starts
-  with the variables of the project their folder follows. A run you start in a terminal is yours: Piwi sets nothing
-  there.
+  with the variables of the project their folder follows. The first run asks you, **Allow** or **Not now**, once per
+  set of values while the editor runs; until you allow them, Piwi runs nothing for the project. A run you start in a
+  terminal is yours: Piwi sets nothing there.
 
 A re-run in CI passes arguments only: a CI action picks its tenant with its fixed inputs, per
 [deployment environment](./ci-rerun).
@@ -86,8 +89,10 @@ An editor follows one project per folder: the one with the lowest id.
 ## Limits
 
 - One value per project: a project whose tenant also differs by deployment environment needs a project per pair.
+- The PowerShell form keeps the variables set in that window: a command copied later for another project, in the same
+  window, runs with them too. Copied commands are written for bash, zsh and PowerShell.
 - The commands the MCP tools return name no variable. The fix plan lists the project's run variables beside its verify
-  command.
+  command, and tells an agent to set them.
 - Listing the tests of a config for the editors' test tree sets no variable.
 
 ## Related

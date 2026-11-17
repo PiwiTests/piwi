@@ -2087,6 +2087,20 @@ test filter, or an option of `PLAYWRIGHT_OPTIONS`, none of which names a file Pl
 An argument that is anything else, or that a shell would expand, refuses the whole command, and the clients run only
 what the service built.
 
+### Run variables
+
+A project's run variables (`@piwitests/core/run-variables`, `adr/run-variables.md`) are environment variables, never
+words of a command. A context reads them once per refresh (`readRunVariables`, `GET /api/projects/:id/run-variables`;
+a 404 from an older instance reads as none) and every run the service builds gets them, before its own variables:
+runs by location or test, a selection, a debug run, an agent's `run_start`, the Flake Lab lines and the fix plan's
+verification. The first run of a set asks the person (`window/showMessageRequest`: **Allow** or **Not now**), once
+while the service runs, except on the desktop app's own server; until they allow it, nothing runs with it, and the
+Flake Lab lines and the verification offer no run. A list `parseRunVariables` refuses, or one the instance did not
+answer, runs nothing and says why (`piwi/notice`); a read that failed is asked again by the next run. With no project
+known (the instance unreachable), a run gets none and the person hears it once. A requested run reads them at its
+claim, again at **Run** (a change shows the new command) and again at the next check after a failed read; the claim
+says the app applies them (`features`), and the launch hands them to the shell, which checks them once more.
+
 ### The folder a command runs in
 
 A command runs in the config's folder as the file system spells it (`commandFolder`, `canonicalPath`). Every `cwd` the

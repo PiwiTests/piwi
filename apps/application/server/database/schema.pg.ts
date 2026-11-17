@@ -3093,7 +3093,6 @@ export const runTargets = pgTable(
     platform: text('platform'),
     version: text('version'),
     projectIds: jsonb('project_ids'), // number[]: the projects it has a folder for
-    features: jsonb('features'), // string[]: what the app does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
     lastSeenAt: timestamp('last_seen_at', { mode: 'date' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -3118,6 +3117,7 @@ export const runRequests = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
+    claimFeatures: jsonb('claim_features'), // string[]: what the target that claimed it said it does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
     kind: text('kind').notNull(), // RunRequestKind
     tests: jsonb('tests').notNull(), // RunRequestTest[]
     options: jsonb('options').notNull(), // RunRequestOptions

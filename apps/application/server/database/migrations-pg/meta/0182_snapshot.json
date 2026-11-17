@@ -1,5 +1,5 @@
 {
-  "id": "36bf461c-05d6-41d1-b733-8833e9b10a41",
+  "id": "cec7bd2d-8bc0-4c8f-a031-e6ca29faf065",
   "prevId": "1513bf44-a598-4147-8d72-f1e01868d0cd",
   "version": "7",
   "dialect": "postgresql",
@@ -11772,6 +11772,12 @@
           "primaryKey": false,
           "notNull": false
         },
+        "claim_features": {
+          "name": "claim_features",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false
+        },
         "kind": {
           "name": "kind",
           "type": "text",
@@ -12057,12 +12063,6 @@
         },
         "project_ids": {
           "name": "project_ids",
-          "type": "jsonb",
-          "primaryKey": false,
-          "notNull": false
-        },
-        "features": {
-          "name": "features",
           "type": "jsonb",
           "primaryKey": false,
           "notNull": false

@@ -14,7 +14,7 @@
  * unknown Playwright version drops the pin, and a missing bisect window returns
  * a plain reason instead of a script.
  */
-import { runVariableAssignments } from '@piwitests/core/run-variables';
+import { runVariableAssignments, withRunVariables } from '@piwitests/core/run-variables';
 import { buildRetryArgs, type RetryCase } from '#shared/retry-command';
 import { commandWithRunVariables, type RunVariable } from '#shared/run-variables';
 import { isPlainRevision } from '#shared/scm-urls';
@@ -284,13 +284,18 @@ export function buildBisectScript(input: BisectInput): BisectResult {
   const goodShort = good.slice(0, 7);
   const badShort = bad.slice(0, 7);
 
-  // git and npx are portable, so the two forms are the same commands but for the run variables' quotes. `git
-  // bisect run` re-runs the command at each step: exit 0 marks the commit good,
-  // any non-zero marks it bad — exactly what a failing `playwright test` does. It runs the command through `sh`,
-  // on Windows too, so `env` sets the run variables there.
+  // git and npx are portable, so the two forms are the same commands but for the run variables: bash passes them with
+  // `env` before the command, PowerShell sets them for the session first. `git bisect run` re-runs the command at each
+  // step: exit 0 marks the commit good, any non-zero marks it bad — exactly what a failing `playwright test` does.
+  const steps = [`git bisect start ${bad} ${good}`, 'git bisect reset'];
   const scriptFor = (shell: 'bash' | 'powershell') => {
-    const run = variables.length > 0 ? `env ${runVariableAssignments(variables, shell)} ${command}` : command;
-    return [`git bisect start ${bad} ${good}`, `git bisect run ${run}`, 'git bisect reset'].join('\n');
+    if (shell === 'powershell') {
+      // The session's variables reach git and the `sh` it runs the command in: no argument carries them.
+      const set = withRunVariables('', variables, 'powershell').trim();
+      return [...(set ? [set] : []), steps[0], `git bisect run ${command}`, steps[1]].join('\n');
+    }
+    const run = variables.length > 0 ? `env ${runVariableAssignments(variables, 'bash')} ${command}` : command;
+    return [steps[0], `git bisect run ${run}`, steps[1]].join('\n');
   };
 
   return {

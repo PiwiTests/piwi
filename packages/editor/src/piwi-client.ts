@@ -17,6 +17,12 @@ import type { BisectResultBody } from '@piwitests/core/bisect';
 import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
 import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
 import { parseRunVariables, type RunVariablesParse } from '@piwitests/core/run-variables';
+
+/**
+ * A project's run variables as a client read them: `parseRunVariables`' answer, `unreadable` when the instance did not
+ * answer them (a later run asks again), `unknown` (the words why) when no project is known to read them for.
+ */
+export type RunVariablesRead = RunVariablesParse & { unreadable?: true; unknown?: string };
 import type { TimeoutAdvice } from './analysis.js';
 import { instanceFetch } from './http.js';
 
@@ -558,13 +564,13 @@ export class PiwiClient {
    * A project's run variables, as `parseRunVariables` reads them: a list it refuses, or one that cannot be read, is a
    * problem every run refuses. An instance that predates them answers 404: its projects set none.
    */
-  async runVariables(projectId: number): Promise<RunVariablesParse> {
+  async runVariables(projectId: number): Promise<RunVariablesRead> {
     try {
       const body = await this.get<{ runVariables?: unknown }>(`/api/projects/${projectId}/run-variables`, true);
       return parseRunVariables(body?.runVariables);
     } catch (error) {
       if (error instanceof PiwiHttpError && error.status === 404) return { ok: true, value: [] };
-      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`] };
+      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };
     }
   }
 

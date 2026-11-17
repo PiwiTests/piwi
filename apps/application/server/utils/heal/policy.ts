@@ -312,7 +312,7 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
     commitMessage: settings.commitMessage,
     title: settings.commitMessage,
     draft: settings.draft,
-    ...buildVerify(edits, rows, await readProjectRunVariables(db as never, run.projectId)),
+    ...buildVerify(edits, rows, (await readProjectRunVariables(db as never, run.projectId)) ?? []),
     edits,
   };
 

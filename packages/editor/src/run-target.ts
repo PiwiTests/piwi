@@ -11,7 +11,7 @@
  */
 import * as os from 'node:os';
 import type { RunRequest, RunRequestOffer, RunRequestOutcome } from '@piwitests/core/run-request';
-import { RUN_REQUEST_ID, RUN_TARGET_FEATURES } from '@piwitests/core/run-request';
+import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
 import type { RunVariable, RunVariablesParse } from '@piwitests/core/run-variables';
 import {
   postDeviceFlow,
@@ -36,8 +36,11 @@ interface HeldRequest {
   answerBy: number;
   /** After **Run**: the request token, until the shell takes it, and whether the run started. */
   token: string | null;
-  /** The project's run variables as the instance gave them, read at the claim and again at **Run**. */
-  variables: RunVariablesParse;
+  /**
+   * The project's run variables as the instance gave them, read at the claim and again at **Run**, and by the next
+   * check after a read the instance did not answer (`unreadable`).
+   */
+  variables: RunVariablesParse & { unreadable?: true };
   /**
    * What **Run** approved: the arguments the window showed, the folder they were checked in, and the run variables
    * its command started with.
@@ -268,12 +271,7 @@ function startHost(instance: string, key: string): void {
   const host = new RequestHost({
     instance,
     key,
-    describe: () => ({
-      platform: platformName(),
-      version: appVersion,
-      projectIds: [...state.links.keys()],
-      features: RUN_TARGET_FEATURES,
-    }),
+    describe: () => ({ platform: platformName(), version: appVersion, projectIds: [...state.links.keys()] }),
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
@@ -556,6 +554,8 @@ function unanswered(id: string, held: HeldRequest | undefined): held is HeldRequ
 export async function planAgain(id: string): Promise<RunRequestPromptView | null> {
   const held = state.held.get(id);
   if (!unanswered(id, held)) return null;
+  await readVariablesAgain(held);
+  if (!unanswered(id, held)) return null;
   const plan = await planRequestedRun(
     held.request,
     state.links.get(held.request.projectId) ?? null,
@@ -568,6 +568,12 @@ export async function planAgain(id: string): Promise<RunRequestPromptView | null
   return promptOf(held);
 }
 
+/** Reads a held request's run variables again when the last read was not answered. */
+async function readVariablesAgain(held: HeldRequest): Promise<void> {
+  if (!held.variables.unreadable || !state.host) return;
+  held.variables = await state.host.runVariables(held.request.id);
+}
+
 /** Which call of `planWaiting` is the latest: an earlier one that ends after it changes nothing. */
 let planning = 0;
 
@@ -578,6 +584,9 @@ let planning = 0;
 async function planWaiting(): Promise<void> {
   const turn = ++planning;
   const waiting = [...state.held].filter(([id, held]) => unanswered(id, held));
+  await Promise.all(waiting.map(([, held]) => readVariablesAgain(held)));
+  // The variables each plan is made with: a plan whose request read them again meanwhile (at **Run**) is dropped.
+  const planned = waiting.map(([, held]) => held.variables);
   const plans = await Promise.all(
     waiting.map(([, held]) =>
       planRequestedRun(
@@ -591,7 +600,7 @@ async function planWaiting(): Promise<void> {
   if (turn !== planning) return;
   waiting.forEach(([id, held], i) => {
     const plan = plans[i];
-    if (!plan || !unanswered(id, held) || samePlan(held.plan, plan)) return;
+    if (!plan || !unanswered(id, held) || held.variables !== planned[i] || samePlan(held.plan, plan)) return;
     held.plan = plan;
     tellWindow({ type: 'run-request', request: promptOf(held) });
   });
@@ -626,6 +635,11 @@ export async function answerRunRequest(
       const folder = state.links.get(held.request.projectId) ?? null;
       // Read again: a variable changed since the window showed the command changes the command.
       held.variables = await host.runVariables(id);
+      // Stopped, dropped or disconnected while they were read: the window no longer shows it.
+      if (state.held.get(id) !== held || held.stopRequested || state.host !== host) {
+        if (state.held.get(id) === held && held.stopRequested) drop(id, 'stopped');
+        return { ok: false, statusCode: 409, message: 'This request was stopped' };
+      }
       held.plan = await planRequestedRun(held.request, folder, foldersRunning(held), held.variables);
       // The folder or the run variables changed since the window showed them: it shows the checks and the command
       // again.

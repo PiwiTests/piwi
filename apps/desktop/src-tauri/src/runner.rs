@@ -582,9 +582,11 @@ fn others_linked_to_folder(links: &HashMap<String, LinkRecord>, project_id: &str
     let Some(own) = links.get(project_id) else {
         return Vec::new();
     };
+    // As the runs compare folders: by real path, so a link through a symlink or another letter case is the same one.
+    let own_folder = real_path(Path::new(&own.path));
     let mut others: Vec<String> = links
         .iter()
-        .filter(|(id, link)| id.as_str() != project_id && Path::new(&link.path) == Path::new(&own.path))
+        .filter(|(id, link)| id.as_str() != project_id && real_path(Path::new(&link.path)) == own_folder)
         .map(|(id, _)| id.clone())
         .collect();
     others.sort_by_key(|id| (id.len(), id.clone()));

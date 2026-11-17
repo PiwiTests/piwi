@@ -178,7 +178,7 @@ export async function buildFixPlan(db: DrizzleDB, clusterId: number): Promise<Fi
     verify: {
       command: verifyCommand,
       cases: rerunCases,
-      runVariables: await readProjectRunVariables(db, cluster.projectId),
+      runVariables: (await readProjectRunVariables(db, cluster.projectId)) ?? [],
       // One entry per test: a test that failed in several projects is several cases.
       leftOut: [...new Map(verifyLeftOut.map((c) => [`${c.filePath}\0${c.title}`, c])).values()],
       expectation:

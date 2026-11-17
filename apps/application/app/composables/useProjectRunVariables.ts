@@ -3,6 +3,9 @@ import { commandWithRunVariables, type RunVariable } from '#shared/run-variables
 /** How long a project's run variables are read again rather than taken from the page's store, in milliseconds. */
 const FRESH_MS = 60_000;
 
+/** The reads on their way, by project id: the components of one page that ask for one project share a read. */
+const reading = new Map<number, Promise<void>>();
+
 interface Stored {
   variables: RunVariable[];
   readAt: number;
@@ -25,15 +28,27 @@ export function useProjectRunVariables(projectId: MaybeRefOrGetter<number | stri
 
   const variables = computed<RunVariable[]>(() => (id.value == null ? [] : (store.value[id.value]?.variables ?? [])));
 
-  async function read(id: number) {
+  function read(id: number): Promise<void> {
     const stored = store.value[id];
-    if (stored && Date.now() - stored.readAt < FRESH_MS) return;
-    try {
-      const answer = await $fetch<{ runVariables: RunVariable[] }>(`/api/projects/${id}/run-variables`);
-      store.value = { ...store.value, [id]: { variables: answer.runVariables, readAt: Date.now() } };
-    } catch {
-      // A project the viewer cannot read, or a failed read: its commands stay as they are.
+    if (stored && Date.now() - stored.readAt < FRESH_MS) return Promise.resolve();
+    let asked = reading.get(id);
+    if (!asked) {
+      asked = $fetch<{ runVariables: RunVariable[] }>(`/api/projects/${id}/run-variables`)
+        .then((answer) => {
+          store.value = { ...store.value, [id]: { variables: answer.runVariables, readAt: Date.now() } };
+        })
+        .catch(() => {
+          // A project the viewer cannot read, or a failed read: its commands stay as they are.
+        })
+        .finally(() => reading.delete(id));
+      reading.set(id, asked);
     }
+    return asked;
+  }
+
+  /** Resolves once the project's run variables are read, so a copy made at once starts with them. */
+  function ready(): Promise<void> {
+    return id.value == null ? Promise.resolve() : read(id.value);
   }
 
   onMounted(() => {
@@ -58,5 +73,5 @@ export function useProjectRunVariables(projectId: MaybeRefOrGetter<number | stri
     if (id.value != null) store.value = { ...store.value, [id.value]: { variables: saved, readAt: Date.now() } };
   }
 
-  return { variables, shell, command, remember };
+  return { variables, shell, command, remember, ready };
 }
