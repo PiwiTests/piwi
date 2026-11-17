@@ -272,7 +272,7 @@ export function teamInspectSource(base: string, runId: number, watchId: string |
 export const DEMO_INSPECT_WORDS: InspectWords = {
   ...TEAM_INSPECT_WORDS,
   waiting: 'Waiting for the page at the test’s next call, which the demo plays from a trace of its checkout page.',
-  note: 'The demo runs no browser: these pages are the checkout page as a recorded trace holds it at each call, rendered without its scripts, as the instance renders the pages a worker sends.',
+  note: 'The demo runs no browser: these pages are the checkout page as a recorded trace holds it at each call, rendered without its scripts and with the values of its secret fields removed, as the instance renders the pages a worker sends.',
   calls: 'The calls whose page the demo’s trace holds, the latest last',
   from: 'the demo’s trace holds',
 };

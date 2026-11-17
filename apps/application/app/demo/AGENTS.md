@@ -55,7 +55,6 @@ runs `npm run app:seed:demo`:
   (`app/demo/live-calls.ts`), read by the page's `DemoLiveWatch` as a watch reads its stream. Inspect's pages are
   moments of the committed checkout trace named by `DEMO_TRACE_CALLS`: re-recording that trace updates its call ids,
   which `tests/unit/demo-live-calls.test.ts` checks against the ZIP.
-
 - **Demo AI diagnosis is data-grounded, never canned prose**: rebuilt from the seeded database and each cluster's real
   stats, its suggested patches checked with `validatePatch`.
 - **Demo-only AI and SCM code stays out of `shared/handlers/`**, so the canned SCM never enters the server bundle. The

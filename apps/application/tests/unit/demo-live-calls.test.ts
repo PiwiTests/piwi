@@ -4,6 +4,7 @@ import { describe, expect, test } from 'vitest';
 import { readLiveViewerMessage, type LiveViewerMessage } from '@piwitests/core/live-view';
 import { SIMULATOR_CALL_LOGS, storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import { readZipEntries } from '../../app/demo/trace-zip.client';
+import { withLiveSecretsHidden } from '../../app/demo/api/dom-snapshot';
 import { parseTraceTexts, traceFileRank } from '../../server/utils/trace-events';
 import { DOM_SNAPSHOT_CAP_CHARS, extractDomSnapshot } from '../../server/utils/dom-snapshot-render';
 import {
@@ -142,5 +143,21 @@ describe('the pages Inspect shows of a demo step', () => {
     const atPay = extractDomSnapshot(data, DOM_SNAPSHOT_CAP_CHARS, {}, { callId: 'call@12', phase: 'before' });
     expect(atPay.html).toMatch(/<button class="primary" id="pay" disabled=""/);
     expect(atPay.viewport).toEqual({ width: 640, height: 480 });
+
+    // As a live worker sends it, the page holds no secret field's value: the card's number and code are removed.
+    expect(atPay.html).toContain('<input id="card" value="4242 4242 4242 4242">');
+    expect(atPay.html).toContain('<input id="cvv" value="123">');
+    const live = withLiveSecretsHidden(data);
+    for (const { call, phases } of Object.values(DEMO_TRACE_CALLS)) {
+      for (const phase of phases) {
+        const page = extractDomSnapshot(live, DOM_SNAPSHOT_CAP_CHARS, {}, { callId: call, phase });
+        expect(page.snapshotName, `${phase}@${call}`).toBe(`${phase}@${call}`);
+        expect(page.html, `${phase}@${call}`).not.toContain('4242');
+      }
+    }
+    const livePay = extractDomSnapshot(live, DOM_SNAPSHOT_CAP_CHARS, {}, { callId: 'call@12', phase: 'before' });
+    expect(livePay.html).toContain('<input id="email" type="email" value="buyer@example.com">');
+    expect(livePay.html).toContain('<input id="card">');
+    expect(livePay.html).toContain('<input id="cvv">');
   });
 });

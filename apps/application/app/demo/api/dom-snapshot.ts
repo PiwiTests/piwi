@@ -13,7 +13,13 @@ import { and, eq } from 'drizzle-orm';
 import { files, testCases, testRunsCases } from '~~/server/database/schema.sqlite';
 import { storyForCase } from '#shared/demo/failure-stories.mjs';
 import { renderAriaSnapshotHtml } from '~~/server/utils/dom-snapshot-aria';
-import { parseTraceTexts, traceFileRank } from '~~/server/utils/trace-events';
+import {
+  parseTraceTexts,
+  traceFileRank,
+  type ParsedTraceData,
+  type TraceFrameSnapshot,
+} from '~~/server/utils/trace-events';
+import { hideFrameSnapshotSecrets } from '@piwitests/core/live-inspect';
 import {
   DOM_SNAPSHOT_CAP_CHARS,
   extractDomSnapshot,
@@ -26,6 +32,20 @@ import {
 import { readZipEntries } from '../trace-zip.client';
 import { getDemoDb, getDemoDbBaseUrl } from '../db.client';
 
+/**
+ * A trace's pages as a live worker sends them for Inspect: each frame snapshot with its secret fields' values removed
+ * (`hideFrameSnapshotSecrets`, as `server/utils/live-inspect.ts` reads a worker's), one it cannot read whole left out.
+ */
+export function withLiveSecretsHidden(data: ParsedTraceData): ParsedTraceData {
+  return {
+    ...data,
+    frameSnapshots: data.frameSnapshots.flatMap((snapshot) => {
+      const shown = hideFrameSnapshotSecrets(snapshot as unknown as Record<string, unknown>, { secrets: [] });
+      return shown ? [shown as unknown as TraceFrameSnapshot] : [];
+    }),
+  };
+}
+
 /** Only committed demo assets may be fetched (mirrors files.ts). */
 const ALLOWED_TRACE_PREFIX = 'demo/traces/';
 
@@ -35,11 +55,11 @@ const ALLOWED_TRACE_PREFIX = 'demo/traces/';
 // recover on the next request.
 const traceSnapshotCache = new Map<string, Promise<DomSnapshotResult | null>>();
 
-function getTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<DomSnapshotResult | null> {
-  const key = at ? `${path}#${at.phase}@${at.callId}` : path;
+function getTraceDomSnapshot(path: string, at?: SnapshotMoment, live = false): Promise<DomSnapshotResult | null> {
+  const key = `${at ? `${path}#${at.phase}@${at.callId}` : path}${live ? '#live' : ''}`;
   const cached = traceSnapshotCache.get(key);
   if (cached) return cached;
-  const promise = loadTraceDomSnapshot(path, at)
+  const promise = loadTraceDomSnapshot(path, at, live)
     .catch(() => null)
     .then((result) => {
       if (!result) traceSnapshotCache.delete(key);
@@ -50,11 +70,13 @@ function getTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<DomSnap
 }
 
 /**
- * The page a committed trace holds at a call's moment (`at`), rendered as the server renders a stored trace's; null
- * when the trace holds no page of that moment, rather than the failure-time page it would render in its place.
+ * The page a committed trace holds at a call's moment (`at`), as the server renders a live worker's page for Inspect:
+ * its secret fields' values removed (`hideFrameSnapshotSecrets`, as `server/utils/live-inspect.ts` reads a worker's
+ * snapshot), then rendered as a stored trace's. Null when the trace holds no page of that moment, rather than the
+ * failure-time page it would render in its place.
  */
 export async function getDemoTraceMoment(path: string, at: SnapshotMoment): Promise<DomSnapshotResult | null> {
-  const result = await getTraceDomSnapshot(path, at);
+  const result = await getTraceDomSnapshot(path, at, true);
   return result?.snapshotName === `${at.phase}@${at.callId}` ? result : null;
 }
 
@@ -64,7 +86,11 @@ export async function getDemoTraceMoment(path: string, at: SnapshotMoment): Prom
  * (`parseZip` → `parseTraceTexts` → `extractDomSnapshot`). Returns null when
  * the trace is missing, unparsable, or holds no renderable snapshot.
  */
-async function loadTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<DomSnapshotResult | null> {
+async function loadTraceDomSnapshot(
+  path: string,
+  at?: SnapshotMoment,
+  live = false,
+): Promise<DomSnapshotResult | null> {
   if (!path.startsWith(ALLOWED_TRACE_PREFIX)) return null;
 
   const base = getDemoDbBaseUrl().replace(/\/$/, '');
@@ -78,7 +104,8 @@ async function loadTraceDomSnapshot(path: string, at?: SnapshotMoment): Promise<
   if (traceEntries.length === 0) return null;
 
   const decoder = new TextDecoder();
-  const data = parseTraceTexts(traceEntries.map((entry) => decoder.decode(entry.data)));
+  const parsed = parseTraceTexts(traceEntries.map((entry) => decoder.decode(entry.data)));
+  const data = live ? withLiveSecretsHidden(parsed) : parsed;
   const result = extractDomSnapshot(data, DOM_SNAPSHOT_CAP_CHARS, {}, at);
   return result.status === 'ok' && result.html ? result : null;
 }
