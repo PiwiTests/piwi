@@ -8,8 +8,12 @@ asked how best to find a missing test. This one asks three other questions: is w
 is it **useful** enough to act on, and is it **easy to use**. It lists the defects found, with the file and the input
 behind each, says what to change and in what order, and proposes new features that the stored data already allows.
 
-**Status.** Proposed 2026-11-17, against `main` at v0.72.0 (`5efbb7c`). Nothing in it is built. Its delivery is
-planned in six pull requests (§13), and each updates this paragraph.
+**Status.** Proposed 2026-11-17, against `main` at v0.72.0 (`5efbb7c`). Its delivery is planned in six pull
+requests (§13), and each updates this paragraph.
+
+- **Built: PR 0.** Five of the six findings reported apart are fixed. The sixth, read again, describes behavior the
+  docs already state, and stays as it is.
+- **Left:** PR 1 to PR 5.
 
 **Summary.** The area holds a lot: the reference lists 24 detectors, coverage is recorded per test in the browser and
 on two backends and combined with unit suites per commit, and the dashboard, the pull request, two editors, the
