@@ -5,10 +5,25 @@ import { chromium, type Browser, type Page } from '@playwright/test';
 import { installProbeInterception } from '../src/internal/probe/interception.js';
 import type { ProbePlanItem } from '../src/internal/probe/plan.js';
 
-/** A local server that answers every path and keeps the headers of each request to `/api/`. */
-async function startServer(): Promise<{ server: Server; origin: string; apiHeaders: IncomingHttpHeaders[] }> {
+/**
+ * A local server that answers every path and keeps the headers of each request to `/api/`. `/login` redirects to
+ * `redirectTo` when one is set, and so does `/api/orders/9`.
+ */
+async function startServer(): Promise<{
+  server: Server;
+  origin: string;
+  apiHeaders: IncomingHttpHeaders[];
+  redirectTo: { url: string | null };
+}> {
   const apiHeaders: IncomingHttpHeaders[] = [];
+  const redirectTo: { url: string | null } = { url: null };
   const server = createServer((req, res) => {
+    if (redirectTo.url && (req.url === '/login' || req.url === '/api/orders/9')) {
+      if (req.url.startsWith('/api/')) apiHeaders.push(req.headers);
+      res.writeHead(302, { location: `${redirectTo.url}${req.url}`, 'access-control-allow-origin': '*' });
+      res.end();
+      return;
+    }
     if (req.url?.startsWith('/api/')) {
       apiHeaders.push(req.headers);
       res.writeHead(200, { 'content-type': 'application/json', 'access-control-allow-origin': '*' });
@@ -19,7 +34,7 @@ async function startServer(): Promise<{ server: Server; origin: string; apiHeade
     res.end('<!doctype html><title>page</title>');
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-  return { server, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, apiHeaders };
+  return { server, origin: `http://127.0.0.1:${(server.address() as AddressInfo).port}`, apiHeaders, redirectTo };
 }
 
 const ITEM: ProbePlanItem = {
@@ -58,6 +73,8 @@ describe('installProbeInterception: the origin a signed server fault goes to', (
   beforeEach(async () => {
     app.apiHeaders.length = 0;
     other.apiHeaders.length = 0;
+    app.redirectTo.url = null;
+    other.redirectTo.url = null;
     page = await browser.newPage();
   });
 
@@ -65,7 +82,7 @@ describe('installProbeInterception: the origin a signed server fault goes to', (
     await page.close();
   });
 
-  const fetchOrder = (p: Page) => p.evaluate(() => fetch('/api/orders/7').then((r) => r.status));
+  const fetchOrder = (p: Page, id = 7) => p.evaluate((n) => fetch(`/api/orders/${n}`).then((r) => r.status), id);
 
   it('signs a request of the application’s origin', async () => {
     await installProbeInterception(page, ITEM, `${app.origin}/`);
@@ -83,8 +100,29 @@ describe('installProbeInterception: the origin a signed server fault goes to', (
     expect(other.apiHeaders[0]!['x-piwi-probe']).toBeUndefined();
   });
 
-  it('takes the base URL’s origin over a first navigation elsewhere', async () => {
+  it('keeps the origin the test opened when it was redirected to another site first', async () => {
+    app.redirectTo.url = other.origin;
+    await installProbeInterception(page, ITEM);
+    await page.goto(`${app.origin}/login`);
+    expect(page.url()).toBe(`${other.origin}/login`);
+    await page.goto(`${app.origin}/`);
+    await fetchOrder(page);
+    expect(app.apiHeaders.map((h) => typeof h['x-piwi-probe'])).toEqual(['string']);
+  });
+
+  it('never lets the signed header follow a redirect to another site', async () => {
+    app.redirectTo.url = other.origin;
+    await installProbeInterception(page, { ...ITEM, nth: 1 }, `${app.origin}/`);
+    await page.goto(`${app.origin}/`);
+    expect(await fetchOrder(page, 9)).toBe(200);
+    expect(typeof app.apiHeaders[0]?.['x-piwi-probe']).toBe('string');
+    expect(other.apiHeaders).toHaveLength(1);
+    expect(other.apiHeaders[0]!['x-piwi-probe']).toBeUndefined();
+  });
+
+  it('signs neither a later site nor its requests when the test has a base URL', async () => {
     await installProbeInterception(page, ITEM, `${app.origin}/`);
+    await page.goto(`${app.origin}/`);
     await page.goto(`${other.origin}/`);
     await fetchOrder(page);
     expect(other.apiHeaders).toHaveLength(1);

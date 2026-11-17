@@ -8,7 +8,7 @@
  */
 
 import { gunzipSync } from 'node:zlib';
-import type { Page, Route } from '@playwright/test';
+import type { Page, Request, Route } from '@playwright/test';
 import { PIWI_PROBE_ENV } from '../config/env.js';
 import { computeFault, faultRouteAction, isFaultAllowed, type ProbeFault, type RouteAction } from './faults.js';
 import {
@@ -85,6 +85,15 @@ export function fulfillHeaders(
 }
 
 /** The origin of a URL, or null when it cannot be parsed or is opaque (`about:blank`). */
+/** Whether a request belongs to the page's main frame; a service worker's has no frame. */
+function isMainFrameRequest(page: Page, request: Request): boolean {
+  try {
+    return request.frame() === page.mainFrame();
+  } catch {
+    return false;
+  }
+}
+
 function originOf(url: string): string | null {
   try {
     const origin = new URL(url).origin;
@@ -179,15 +188,24 @@ export async function installProbeInterception(
   let applied = false;
   let appliedFault: string | null = null;
   let serverError = false;
-  // The application's own origin: the `baseURL`'s, else the first main-frame
-  // navigation's, kept for the whole test. A signed probe header goes only to a
-  // request on this origin, never while it is unknown, so a page that navigates
-  // to another site never hands that site the reporter's signed header.
-  let appOrigin: string | null = baseURL ? originOf(baseURL) : null;
+  // The application's own origins, for the whole test: the `baseURL`'s, and the
+  // one the test first asked the page to open (its first main-frame navigation
+  // request, before any redirect). A signed probe header goes only to a request
+  // on one of them, never to a page the test was redirected or navigated to
+  // since, nor through a redirect.
+  const appOrigins = new Set<string>();
+  const baseOrigin = baseURL ? originOf(baseURL) : null;
+  if (baseOrigin) appOrigins.add(baseOrigin);
+  let firstOpened = false;
   const probeSecret = process.env[PIWI_PROBE_ENV.secret];
 
-  page.on('framenavigated', (frame) => {
-    if (appOrigin === null && frame === page.mainFrame()) appOrigin = originOf(page.url());
+  page.on('request', (request) => {
+    if (firstOpened || !request.isNavigationRequest() || request.redirectedFrom()) return;
+    if (!isMainFrameRequest(page, request)) return;
+    const origin = originOf(request.url());
+    if (!origin) return;
+    firstOpened = true;
+    appOrigins.add(origin);
   });
 
   const handle = async (route: Route, startedAt: number): Promise<void> => {
@@ -200,7 +218,8 @@ export async function installProbeInterception(
     // asked for — a request the server ignored or applied differently records
     // inconclusive, never a false gap.
     if (item.level === 'server') {
-      if (!probeSecret || appOrigin === null || originOf(request.url()) !== appOrigin) {
+      const origin = originOf(request.url());
+      if (!probeSecret || origin === null || !appOrigins.has(origin)) {
         await route.fallback();
         return;
       }
@@ -209,6 +228,7 @@ export async function installProbeInterception(
       try {
         const response = await route.fetch({
           headers: { ...request.headers(), 'x-piwi-probe': buildProbeHeader(probeSecret, spec) },
+          maxRedirects: 0,
         });
         const trace = parseProbeTrace(response.headers()['x-piwi-trace']);
         appliedFault = trace.appliedFault;
