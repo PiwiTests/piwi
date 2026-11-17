@@ -2,7 +2,8 @@ import { readLiveWorkerId, liveWorkerKey } from '@piwitests/core/live-view';
 import { isLayerCallId } from '@piwitests/core/live-layers';
 import type { SnapshotPhase } from '@piwitests/core/live-inspect';
 import { isAuthEnabled } from '../../../../../../utils/auth';
-import { snapshotFrameDocument, snapshotFrameMode } from '../../../../../../utils/dom-snapshot-frame';
+import { snapshotFrameDocument } from '../../../../../../utils/dom-snapshot-frame';
+import { snapshotFrameMode } from '../../../../../../utils/snapshot-frame-html';
 import { liveViewRelay } from '../../../../../../utils/live-view';
 import {
   requireResolvedProjectAccess,

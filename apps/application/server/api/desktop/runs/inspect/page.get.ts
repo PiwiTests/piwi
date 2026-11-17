@@ -6,7 +6,8 @@ import { requireAuth } from '../../../../utils/auth';
 import { apiError } from '../../../../utils/api-error';
 import { readDesktopInspectLane, readDesktopInspectMoment } from '../../../../utils/desktop-inspect';
 import { desktopRuns } from '../../../../utils/desktop-runs';
-import { snapshotFrameDocument, snapshotFrameMode } from '../../../../utils/dom-snapshot-frame';
+import { snapshotFrameDocument } from '../../../../utils/dom-snapshot-frame';
+import { snapshotFrameMode } from '../../../../utils/snapshot-frame-html';
 
 defineRouteMeta({
   openAPI: {
