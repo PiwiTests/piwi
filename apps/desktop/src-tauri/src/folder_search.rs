@@ -7,8 +7,9 @@
 // Read-only and bounded: a search below a folder examines a fixed number of
 // folders, enters no link and skips dependency and output folders; a git file
 // is read only when it is a regular file, and only its first bytes. On macOS no
-// search reads the folders directly in the home folder (Desktop, Documents…),
-// which would ask the person for access. Depends on `std` and `serde` alone.
+// search lists the home folder itself, whose Desktop, Documents and Downloads
+// would each ask the person for access; looking in `Documents/GitHub`, GitHub
+// Desktop's folder, asks for Documents once. Depends on `std` and `serde` alone.
 
 use std::collections::HashSet;
 use std::io::Read as _;
@@ -49,6 +50,8 @@ const MAX_FOLDERS_BELOW_CLONE: usize = 300;
 const MAX_CLONES: usize = 5;
 /// How many folders a search for a request's folder examines at most, across all its places.
 const MAX_FOLDERS_FOUND: usize = 20_000;
+/// How many folders that search examines at most in one place, so a large one leaves the others their turn.
+const MAX_FOLDERS_PER_PLACE: usize = 5_000;
 /// Where people keep their code, in the home folder: the usual names, GitHub Desktop's and Visual Studio's defaults.
 const USUAL_CODE_FOLDERS: [&str; 15] = [
     "code",
@@ -164,13 +167,20 @@ pub(crate) fn spec_in(folder: &Path, file: &str) -> Option<bool> {
     relative_spec(file).map(|relative| folder.join(relative).is_file())
 }
 
-/// The spec paths a check reads: the relative paths of test files (`SPEC_EXTENSIONS`), once each, at most `MAX_SPECS`.
+/// The spec paths a check reads: the relative paths of test files (`SPEC_EXTENSIONS`, never a Playwright config),
+/// once each, at most `MAX_SPECS`.
 fn checkable_specs(specs: &[String]) -> Vec<String> {
     let mut seen = HashSet::new();
     specs
         .iter()
         .filter(|file| SPEC_EXTENSIONS.iter().any(|ext| file.ends_with(ext)))
-        .filter(|file| relative_spec(file).is_some())
+        .filter(|file| {
+            relative_spec(file).is_some_and(|path| {
+                !path
+                    .file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("playwright.config."))
+            })
+        })
         .filter(|file| seen.insert(file.as_str()))
         .take(MAX_SPECS)
         .cloned()
@@ -205,7 +215,7 @@ fn read_small(path: &Path) -> Option<String> {
 }
 
 /// The person's home folder.
-fn home_folder() -> Option<PathBuf> {
+pub(crate) fn home_folder() -> Option<PathBuf> {
     std::env::var_os(if cfg!(windows) { "USERPROFILE" } else { "HOME" })
         .map(PathBuf::from)
         .filter(|path| path.is_absolute())
@@ -592,12 +602,22 @@ pub(crate) fn suggest_folders(
 }
 
 /// The places a search for a project's folder looks in: the folders holding
-/// the `linked` folders' repositories, then the usual code folders of the home
-/// folder that exist, each once by its real path.
-pub(crate) fn search_places(linked: &[PathBuf]) -> Vec<PathBuf> {
-    let mut places = clone_parents(linked);
-    if let Some(home) = home_folder() {
-        places.extend(USUAL_CODE_FOLDERS.iter().map(|name| home.join(name)).filter(|place| place.is_dir()));
+/// the `linked` folders' repositories, then the usual code folders of `home`
+/// that exist, each once by its real path. Never `home` itself, a root of the
+/// file system or the temp folder, whose trees hold far more than code.
+pub(crate) fn search_places(linked: &[PathBuf], home: Option<&Path>) -> Vec<PathBuf> {
+    let temp = std::env::temp_dir();
+    let mut places: Vec<PathBuf> = clone_parents(linked)
+        .into_iter()
+        .filter(|place| Some(place.as_path()) != home && place.parent().is_some() && *place != temp)
+        .collect();
+    if let Some(home) = home {
+        places.extend(
+            USUAL_CODE_FOLDERS
+                .iter()
+                .map(|name| name.split('/').fold(home.to_path_buf(), |path, part| path.join(part)))
+                .filter(|place| place.is_dir()),
+        );
     }
     let mut seen = HashSet::new();
     places.retain(|place| seen.insert(std::fs::canonicalize(place).unwrap_or_else(|_| place.clone())));
@@ -606,26 +626,40 @@ pub(crate) fn search_places(linked: &[PathBuf]) -> Vec<PathBuf> {
 
 /// The folders below `places` that fit a request's `specs`: a folder at most
 /// `MAX_DEPTH_BELOW` levels below a place that holds a config and some of the
-/// specs, the most specs first, examining at most `MAX_FOLDERS_FOUND` folders
-/// in all. None without a spec, and none under one of `excluded`.
-pub(crate) fn find_folders(places: &[PathBuf], specs: &[String], excluded: &[PathBuf]) -> Vec<FolderCandidate> {
+/// specs, the most specs first, examining at most `MAX_FOLDERS_PER_PLACE`
+/// folders in a place and `MAX_FOLDERS_FOUND` in all. Never one of `skipped`
+/// or a folder under one of `excluded`. The flag says whether every place was
+/// searched whole; nothing is searched without a spec.
+pub(crate) fn find_folders(
+    places: &[PathBuf],
+    specs: &[String],
+    excluded: &[PathBuf],
+    skipped: &[PathBuf],
+) -> (Vec<FolderCandidate>, bool) {
     let specs = checkable_specs(specs);
     if specs.is_empty() {
-        return Vec::new();
+        return (Vec::new(), true);
     }
-    let mut budget = MAX_FOLDERS_FOUND;
+    let mut left = MAX_FOLDERS_FOUND;
+    let mut whole = true;
     let mut found = Vec::new();
     for place in places {
+        if left == 0 {
+            whole = false;
+            break;
+        }
+        let share = MAX_FOLDERS_PER_PLACE.min(left);
+        let mut budget = share;
         for folder in config_folders_below(place, &mut budget) {
-            if !excluded.iter().any(|root| folder.starts_with(root)) && specs_found(&folder, &specs) > 0 {
+            let offered = !skipped.contains(&folder) && !excluded.iter().any(|root| folder.starts_with(root));
+            if offered && specs_found(&folder, &specs) > 0 {
                 found.extend(candidate(&folder, &specs, "search"));
             }
         }
-        if budget == 0 {
-            break;
-        }
+        whole &= budget > 0;
+        left -= share - budget;
     }
-    ranked(found, true)
+    (ranked(found, true), whole)
 }
 
 #[cfg(test)]
@@ -1026,11 +1060,28 @@ mod tests {
         root.write("other/shop/e2e/playwright.config.ts", "");
         root.write("other/shop/e2e/tests/cart.spec.ts", "");
 
-        let found = find_folders(&[root.at("code"), root.at("other")], &specs(&["tests/cart.spec.ts"]), &[root.at("other")]);
+        let (found, whole) = find_folders(
+            &[root.at("code"), root.at("other")],
+            &specs(&["tests/cart.spec.ts"]),
+            &[root.at("other")],
+            &[],
+        );
 
+        assert!(whole);
         assert_eq!(found.len(), 1);
         assert_eq!((found[0].path.clone(), found[0].source), (shown(&root.at("code/shop/e2e")), "search"));
-        assert!(find_folders(&[root.at("code")], &[], &[]).is_empty());
+        assert!(find_folders(&[root.at("code")], &[], &[], &[]).0.is_empty());
+        assert!(find_folders(&[root.at("code")], &specs(&["tests/cart.spec.ts"]), &[], &[root.at("code/shop/e2e")]).0.is_empty());
+    }
+
+    #[test]
+    fn a_config_file_never_counts_as_a_test() {
+        let root = Folder::new("config-spec");
+        root.write("code/any/playwright.config.ts", "");
+
+        let (found, _) = find_folders(&[root.at("code")], &specs(&["playwright.config.ts", "e2e/playwright.config.js"]), &[], &[]);
+
+        assert!(found.is_empty());
     }
 
     #[test]
@@ -1038,10 +1089,16 @@ mod tests {
         let root = Folder::new("places");
         root.clone_of("code/shop", "https://github.com/acme/shop");
 
-        let places = search_places(&[root.at("code/shop")]);
+        root.write("home/code/readme.md", "");
+        root.write("home/Documents/GitHub/readme.md", "");
+        root.clone_of("home/shop", "https://github.com/acme/shop");
 
-        assert_eq!(places.first(), Some(&root.at("code")));
-        assert_eq!(places.iter().filter(|place| **place == root.at("code")).count(), 1);
+        let places = search_places(&[root.at("code/shop"), root.at("home/shop")], Some(&root.at("home")));
+
+        assert_eq!(
+            places,
+            vec![root.at("code"), root.at("home/code"), root.at("home").join("Documents").join("GitHub")]
+        );
     }
 
     #[test]

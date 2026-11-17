@@ -123,7 +123,7 @@ export function bridgeScript(shape = {}) {
             case 'desktop_request_folders':
               return Promise.resolve(${JSON.stringify(requestFolders)});
             case 'desktop_find_request_folders':
-              return Promise.resolve(${JSON.stringify(requestFindings)});
+              return Promise.resolve({ search: 1, folders: ${JSON.stringify(requestFindings)}, complete: true });
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
             case 'desktop_run_local_tests':

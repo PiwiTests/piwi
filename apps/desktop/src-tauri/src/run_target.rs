@@ -15,7 +15,7 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
@@ -663,27 +663,45 @@ pub fn desktop_request_folders(app: AppHandle) -> HashMap<String, String> {
 const REQUEST_PICKER_TITLE: &str = "Choose your copy of the project's code: the folder with playwright.config.ts";
 
 /// The folders `desktop_find_request_folders` found, by instance and project
-/// id, which `desktop_link_request_folder` links by their place in the list:
-/// the window names a place, never a path.
+/// id, with the number of the search that found them: `desktop_link_request_folder`
+/// links one by that number and its place in the list, so the window names a
+/// place, never a path, and a list a later search replaced links nothing.
 #[derive(Default)]
-pub struct FoundFolders(Mutex<HashMap<(String, String), Vec<PathBuf>>>);
+pub struct FoundFolders {
+    searches: AtomicU64,
+    found: Mutex<HashMap<(String, String), (u64, Vec<PathBuf>)>>,
+}
+
+/// What `desktop_find_request_folders` answers.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestFolderSearch {
+    /// The search's number, which `desktop_link_request_folder` takes back.
+    search: u64,
+    folders: Vec<crate::folder_search::FolderCandidate>,
+    /// Every place was searched whole: an empty list then means nothing is there.
+    complete: bool,
+}
 
 /// Look for the folders on this machine that hold the Playwright config and
 /// some of `specs` (a request's spec paths) for a project of the connected
-/// instance: next to the folders linked to any project, and in the usual code
-/// folders of the home folder, never under the app's data folder or the temp
-/// folder. The shell keeps what it found for `desktop_link_request_folder`.
+/// instance, other than the one linked to it: next to the folders linked to
+/// any project, and in the usual code folders of the home folder, never under
+/// the app's data folder or the temp folder. The shell keeps what it found for
+/// `desktop_link_request_folder`.
 #[tauri::command]
 pub async fn desktop_find_request_folders(
     app: AppHandle,
     project_id: String,
     specs: Vec<String>,
-) -> Result<Vec<crate::folder_search::FolderCandidate>, String> {
+) -> Result<RequestFolderSearch, String> {
     if !crate::runner::valid_project_id(&project_id) {
         return Err("invalid project id".into());
     }
     let instance = connected_instance(&app).ok_or("no team instance is connected")?;
-    let mut linked: Vec<PathBuf> = links_of(&app, &instance).into_values().map(PathBuf::from).collect();
+    let links = links_of(&app, &instance);
+    let skipped: Vec<PathBuf> = links.get(&project_id).map(PathBuf::from).into_iter().collect();
+    let mut linked: Vec<PathBuf> = links.into_values().map(PathBuf::from).collect();
     linked.extend(crate::runner::read_links(&app).into_values().map(|r| PathBuf::from(r.path)));
     let excluded: Vec<PathBuf> = app
         .path()
@@ -691,15 +709,38 @@ pub async fn desktop_find_request_folders(
         .into_iter()
         .chain(std::iter::once(std::env::temp_dir()))
         .collect();
-    let found = tauri::async_runtime::spawn_blocking(move || {
-        let places = crate::folder_search::search_places(&linked);
-        crate::folder_search::find_folders(&places, &specs, &excluded)
+    let (folders, complete) = tauri::async_runtime::spawn_blocking(move || {
+        let home = crate::folder_search::home_folder();
+        let places = crate::folder_search::search_places(&linked, home.as_deref());
+        crate::folder_search::find_folders(&places, &specs, &excluded, &skipped)
     })
     .await
     .map_err(|e| e.to_string())?;
-    let paths = found.iter().map(|folder| PathBuf::from(&folder.path)).collect();
-    app.state::<FoundFolders>().0.lock().unwrap().insert((instance, project_id), paths);
-    Ok(found)
+    let state = app.state::<FoundFolders>();
+    let search = state.searches.fetch_add(1, Ordering::SeqCst) + 1;
+    let paths = folders.iter().map(|folder| PathBuf::from(&folder.path)).collect();
+    state.found.lock().unwrap().insert((instance, project_id), (search, paths));
+    Ok(RequestFolderSearch { search, folders, complete })
+}
+
+/// Whether the person, in a native dialog the window cannot answer, says to
+/// use `folder` for the project a request named.
+async fn confirmed_found_folder(app: &AppHandle, folder: &Path) -> bool {
+    let asking = app.clone();
+    let shown = folder.to_string_lossy().into_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        asking
+            .dialog()
+            .message(format!(
+                "{shown}\n\nPiwi runs the tests this project's requests ask for in this folder, once you click Run."
+            ))
+            .title("Use this folder?")
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom("Use this folder".into(), "Cancel".into()))
+            .blocking_show()
+    })
+    .await
+    .unwrap_or(false)
 }
 
 /// The folder to link once the person picked `picked` for a request whose
@@ -733,34 +774,41 @@ async fn confirmed_request_folder(app: &AppHandle, picked: String, specs: Vec<St
 }
 
 /// Link the folder of one of the connected instance's projects: with `found`,
-/// the folder at that place of what `desktop_find_request_folders` found for
-/// it; else the one the person picks in the shell's own picker. `specs` are the
-/// request's spec paths, relative to the Playwright config's folder: when the
-/// picked folder holds none of them and a folder above or below it does, the
-/// shell offers that one. `None` when the person cancels.
+/// the folder at that place of what search number `search` of
+/// `desktop_find_request_folders` found for it, once the person says so in a
+/// native dialog; else the one the person picks in the shell's own picker.
+/// `specs` are the request's spec paths, relative to the Playwright config's
+/// folder: when the picked folder holds none of them and a folder above or
+/// below it does, the shell offers that one. `None` when the person cancels.
 #[tauri::command]
 pub async fn desktop_link_request_folder(
     app: AppHandle,
     project_id: String,
     specs: Option<Vec<String>>,
     found: Option<usize>,
+    search: Option<u64>,
 ) -> Result<Option<String>, String> {
     if !crate::runner::valid_project_id(&project_id) {
         return Err("invalid project id".into());
     }
     let instance = connected_instance(&app).ok_or("no team instance is connected")?;
+    let key = (instance.clone(), project_id.clone());
     let folder = match found {
         Some(place) => {
             let path = app
                 .state::<FoundFolders>()
-                .0
+                .found
                 .lock()
                 .unwrap()
-                .get(&(instance.clone(), project_id.clone()))
-                .and_then(|paths| paths.get(place).cloned())
+                .get(&key)
+                .filter(|(number, _)| Some(*number) == search)
+                .and_then(|(_, paths)| paths.get(place).cloned())
                 .ok_or("that folder is no longer offered: look for it again")?;
-            if !path.is_dir() {
-                return Err("that folder is no longer on this machine: look for it again".into());
+            if !path.is_dir() || crate::folder_search::find_config(&path).is_none() {
+                return Err("that folder no longer holds the Playwright config: look for it again".into());
+            }
+            if !confirmed_found_folder(&app, &path).await {
+                return Ok(None);
             }
             path.to_string_lossy().into_owned()
         }
@@ -782,6 +830,7 @@ pub async fn desktop_link_request_folder(
     let mut links = links_of(&app, &instance);
     links.insert(project_id, folder.clone());
     write_links(&app, &instance, links)?;
+    app.state::<FoundFolders>().found.lock().unwrap().remove(&key);
     let handed = app.clone();
     tauri::async_runtime::spawn_blocking(move || hand_links(&handed, &instance))
         .await

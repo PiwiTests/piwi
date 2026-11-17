@@ -10,10 +10,11 @@
  * the place of the one shown, answers nothing. Once the shell is told to run a request, the modal emits `start`: the
  * host decides what shows the run.
  *
- * While the request has no folder it can run in (none linked, or one without the Playwright config or the tests), the
- * dialog says in plain words which folder that is, and offers **Find it for me**, which asks the shell to look for it
- * on this machine and lists what it found, and **Choose the folder…**, the shell's own picker. A found folder is
- * linked by its place in the shell's list: the window never names a path.
+ * While the request has no folder it can run in (none linked, one that is not the project's, or an older copy without
+ * all the tests), the dialog says in plain words which folder that is, and offers **Find it for me**, which asks the
+ * shell to look for it on this machine and lists what it found, and **Choose the folder…**, the shell's own picker. A
+ * found folder is named by its search and its place in the shell's list, never by its path, and the shell asks the
+ * person in a native dialog before linking it.
  */
 import type { RunRequestPromptView } from '@piwitests/editor/run-target-view';
 
@@ -33,7 +34,6 @@ const emit = defineEmits<{
 const { current, add, remove } = useDesktopTeamRequests();
 const toast = useToast();
 const starting = ref(false);
-const linking = ref(false);
 
 /** A folder the shell found for the request's project (`desktop_find_request_folders`). */
 interface FoundFolder {
@@ -41,9 +41,18 @@ interface FoundFolder {
   playwrightConfig: string;
   specsFound: number;
 }
-const finding = ref(false);
+/** What `desktop_find_request_folders` answers: its search's number, which the link takes back. */
+interface FolderSearch {
+  search: number;
+  folders: FoundFolder[];
+  /** Every place was searched whole. */
+  complete: boolean;
+}
+/** The request whose folder the shell is looking for, and the one whose folder it is linking. */
+const findingFor = ref<string | null>(null);
+const linkingFor = ref<string | null>(null);
 /** What **Find it for me** found, for the request it looked for; null before it looked. */
-const found = ref<{ requestId: string; folders: FoundFolder[] } | null>(null);
+const found = ref<({ requestId: string } & FolderSearch) | null>(null);
 /** The place of the found folder being linked. */
 const linkingFound = ref<number | null>(null);
 
@@ -95,46 +104,48 @@ const testCount = computed(() => current.value?.tests.length ?? 0);
 const answerBy = computed(() => (current.value ? new Date(current.value.answerBy) : null));
 const options = computed(() => optionWords(current.value?.options));
 
+const finding = computed(() => !!current.value && findingFor.value === current.value.id);
+const linking = computed(() => !!current.value && linkingFor.value === current.value.id);
+
 /** The request's spec files, once each. */
 const specFiles = computed(() => [...new Set(current.value?.tests.map((test) => test.filePath) ?? [])]);
-/** The request has no folder it can run in: none is linked, or the linked one lacks the config or the tests. */
-const needsFolder = computed(
-  () =>
-    !!current.value &&
-    (!current.value.hasFolder ||
-      current.value.checks.some((c) => ['folder', 'config', 'specs'].includes(c.id) && c.level === 'fail')),
-);
+const failed = (id: string) => !!current.value?.checks.some((c) => c.id === id && c.level === 'fail');
+/**
+ * Why the request has no folder it can run in: none is linked (`none`), the linked one is not the project's
+ * (`config`), or it lacks some of the tests (`tests`), which an older copy of the code does; null when it has one.
+ */
+const folderIssue = computed<'none' | 'config' | 'tests' | null>(() => {
+  if (!current.value) return null;
+  if (!current.value.hasFolder || failed('folder')) return 'none';
+  if (failed('config')) return 'config';
+  return failed('specs') ? 'tests' : null;
+});
 /** What **Find it for me** found for the request shown. */
-const foundHere = computed(() =>
-  found.value && found.value.requestId === current.value?.id ? found.value.folders : null,
-);
+const foundHere = computed(() => (found.value && found.value.requestId === current.value?.id ? found.value : null));
 
 /** Which of the request's spec files a found folder holds, in words. */
 function testsHeld(folder: FoundFolder): string {
   const total = specFiles.value.length;
-  return folder.specsFound >= total
-    ? total === 1
-      ? 'the test file'
-      : 'the test files'
-    : `${folder.specsFound} of the ${total} test files`;
+  if (folder.specsFound < total) return `${folder.specsFound} of the ${total} test files: it may be an older copy`;
+  return total === 1 ? 'the test file' : 'the test files';
 }
 
 /** Ask the shell to look for the request's folder on this machine. */
 async function findFolder() {
   const request = current.value;
   const core = tauriCore();
-  if (!request || !core || finding.value) return;
-  finding.value = true;
+  if (!request || !core || findingFor.value) return;
+  findingFor.value = request.id;
   try {
-    const folders = await core.invoke<FoundFolder[] | null>('desktop_find_request_folders', {
+    const answer = await core.invoke<FolderSearch>('desktop_find_request_folders', {
       projectId: String(request.projectId),
       specs: specFiles.value,
     });
-    found.value = { requestId: request.id, folders: folders ?? [] };
+    found.value = { requestId: request.id, ...answer };
   } catch (error) {
     toast.add({ title: 'Could not look for the folder', description: errorMessage(error), color: 'error' });
   } finally {
-    finding.value = false;
+    findingFor.value = null;
   }
 }
 
@@ -145,14 +156,16 @@ async function findFolder() {
 async function chooseFolder(place: number | null = null) {
   const request = current.value;
   const core = tauriCore();
-  if (!request || !core || linking.value) return;
-  linking.value = true;
+  if (!request || !core || linkingFor.value) return;
+  linkingFor.value = request.id;
   linkingFound.value = place;
   try {
+    // A found folder is named by its search and its place: the shell asks the person before linking it.
     const folder = await core.invoke<string | null>('desktop_link_request_folder', {
       projectId: String(request.projectId),
       specs: specFiles.value,
       found: place,
+      search: place === null ? null : (foundHere.value?.search ?? null),
     });
     if (!folder) return;
     found.value = null;
@@ -167,7 +180,7 @@ async function chooseFolder(place: number | null = null) {
     if ((error as { statusCode?: number } | null)?.statusCode === 404) return;
     toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
   } finally {
-    linking.value = false;
+    linkingFor.value = null;
     linkingFound.value = null;
   }
 }
@@ -233,22 +246,28 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
         </ul>
 
         <div
-          v-if="needsFolder"
+          v-if="folderIssue"
           class="space-y-3 rounded-md border border-default p-3"
           data-testid="team-run-request-folder"
         >
-          <p class="text-sm text-highlighted leading-relaxed">
-            Piwi needs your copy of {{ project }}'s code on this computer: the folder that holds its Playwright config
-            (<code class="font-mono">playwright.config.ts</code>) and these tests, such as
-            <code class="font-mono">{{ specFiles[0] }}</code
+          <p v-if="folderIssue === 'tests'" class="text-sm text-highlighted leading-relaxed">
+            The linked folder lacks some of these tests: it may be an older copy of {{ project }}'s code. Get its latest
+            version (or ask whoever set up these tests to), or use another copy that holds them all.
+          </p>
+          <p v-else class="text-sm text-highlighted leading-relaxed">
+            <template v-if="folderIssue === 'config'">The linked folder is not the right one. </template>Piwi needs your
+            copy of {{ project }}'s code on this computer: the folder that holds its Playwright config (<code
+              class="font-mono"
+              >playwright.config.ts</code
+            >) and these tests, such as <code class="font-mono">{{ specFiles[0] }}</code
             >.
           </p>
 
-          <div v-if="foundHere?.length" class="space-y-1.5">
+          <div v-if="foundHere?.folders.length" class="space-y-1.5">
             <p class="text-sm font-semibold text-highlighted">Found on this computer</p>
             <ul class="divide-y divide-default rounded-md border border-default">
               <li
-                v-for="(folder, place) in foundHere"
+                v-for="(folder, place) in foundHere.folders"
                 :key="folder.path"
                 class="flex flex-wrap items-center justify-between gap-x-3 gap-y-2 p-2.5"
               >
@@ -262,7 +281,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
                   size="sm"
                   color="neutral"
                   variant="outline"
-                  :loading="linkingFound === place"
+                  :loading="linking && linkingFound === place"
                   :disabled="linking"
                   :aria-label="`Use ${folder.path}`"
                   @click="chooseFolder(place)"
@@ -272,29 +291,33 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
             </ul>
           </div>
           <p v-else-if="foundHere" class="text-sm text-highlighted leading-relaxed">
-            No copy of {{ project }}'s code was found on this computer. If you have one elsewhere, choose its folder. If
-            not, the code has to be downloaded first: ask whoever set up these tests to help you.
+            {{
+              foundHere.complete
+                ? `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the usual places on this computer.`
+                : `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the places Piwi could look through.`
+            }}
+            If you have one elsewhere, choose its folder. If not, the code has to be downloaded first: ask whoever set
+            up these tests to help you.
           </p>
 
           <div class="flex flex-wrap gap-2">
             <UButton
-              v-if="!foundHere"
               icon="i-lucide-search"
               color="neutral"
               variant="outline"
               :loading="finding"
               :disabled="linking"
               @click="findFolder"
-              >Find it for me</UButton
+              >{{ foundHere ? 'Look again' : 'Find it for me' }}</UButton
             >
             <UButton
               icon="i-lucide-folder-open"
               color="neutral"
-              :variant="foundHere ? 'outline' : 'ghost'"
+              variant="ghost"
               :loading="linking && linkingFound === null"
-              :disabled="finding || linking"
+              :disabled="linking"
               @click="chooseFolder()"
-              >{{ foundHere?.length ? 'Choose another folder…' : 'Choose the folder…' }}</UButton
+              >{{ foundHere?.folders.length ? 'Choose another folder…' : 'Choose the folder…' }}</UButton
             >
           </div>
         </div>
