@@ -505,6 +505,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/change-impact',
       },
       {
+        title: 'Run variables',
+        summary:
+          'Environment variables a project sets on every run Piwi starts for it and at the start of every command it gives to copy: the tenant one app serves several projects from.',
+        needs: [],
+        where: 'Project → Settings → Run variables',
+        doc: 'features/run-variables',
+      },
+      {
         title: 'Reuse forecast',
         summary:
           'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',

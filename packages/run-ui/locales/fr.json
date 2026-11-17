@@ -442,6 +442,24 @@
       }
     }
   },
+  "runui_checkVariablesInvalid": {
+    "message": "Les variables d’exécution du projet ne peuvent pas être définies : $problems$",
+    "placeholders": {
+      "problems": {
+        "content": "$1",
+        "example": "PATH is a name the shell keeps."
+      }
+    }
+  },
+  "runui_checkVariablesSet": {
+    "message": "S’exécute avec les variables d’exécution du projet : $variables$.",
+    "placeholders": {
+      "variables": {
+        "content": "$1",
+        "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
   "runui_checkFolderBusy": {
     "message": "Une autre exécution est en cours dans ce dossier : celle-ci pourra démarrer une fois l’autre terminée."
   },

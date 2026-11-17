@@ -517,6 +517,26 @@
       }
     }
   },
+  "runui_checkVariablesInvalid": {
+    "message": "The project's run variables cannot be set: $problems$",
+    "description": "A failed check of a run request: the project's run variables, set on the instance, cannot be given to the run. $problems$ is the instance's explanation, in English.",
+    "placeholders": {
+      "problems": {
+        "content": "$1",
+        "example": "PATH is a name the shell keeps."
+      }
+    }
+  },
+  "runui_checkVariablesSet": {
+    "message": "Runs with the project's run variables: $variables$.",
+    "description": "A passed check of a run request: the run gets the project's run variables. $variables$ is how the shell sets them, as code.",
+    "placeholders": {
+      "variables": {
+        "content": "$1",
+        "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
   "runui_checkFolderBusy": {
     "message": "Another run is going in this folder: this one can run once it ends.",
     "description": "A failed check of a run request: another run uses the same folder."

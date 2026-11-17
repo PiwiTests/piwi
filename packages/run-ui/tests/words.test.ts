@@ -62,6 +62,8 @@ describe('the host’s sentences, by their code', () => {
       ['folder-none', {}],
       ['folder-gone', {}],
       ['folder-linked', { folder: '/home/dana/shop' }],
+      ['variables-invalid', { problems: 'PATH is a name the shell keeps.' }],
+      ['variables-set', { variables: 'BASE_URL=https://staging.example.com' }],
       ['folder-busy', {}],
       ['config-missing', {}],
       ['specs-missing', { files: 'a.spec.ts, b.spec.ts', more: 0 }],

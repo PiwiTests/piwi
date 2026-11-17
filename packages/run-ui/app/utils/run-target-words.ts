@@ -93,6 +93,10 @@ export function requestCheckWords(
       return words.t('runui_checkFolderGone');
     case 'folder-linked':
       return words.t('runui_checkFolderLinked', { folder: value('folder') });
+    case 'variables-invalid':
+      return words.t('runui_checkVariablesInvalid', { problems: value('problems') });
+    case 'variables-set':
+      return words.t('runui_checkVariablesSet', { variables: value('variables') });
     case 'folder-busy':
       return words.t('runui_checkFolderBusy');
     case 'config-missing':

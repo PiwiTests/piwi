@@ -26,6 +26,7 @@ interface Resolution {
 const route = useRoute();
 const projectId = route.params.id as string;
 const toast = useToast();
+const { command: withVariables, shell: commandShell } = useProjectRunVariables(projectId);
 
 const { data: project, error: projectError } = await useFetch<ProjectDetails>(`/api/projects/${projectId}`);
 if (projectError.value) showPageLoadError(projectError.value, 'project');
@@ -613,7 +614,11 @@ function saveSmoke(testCaseIds: number[]) {
                 icon="i-lucide-triangle-alert"
                 :ui="{ title: 'text-xs' }"
               />
-              <CodeBlock v-if="preview.materialization.command" :code="preview.materialization.command" lang="bash" />
+              <CodeBlock
+                v-if="preview.materialization.command"
+                :code="withVariables(preview.materialization.command)"
+                :lang="commandShell"
+              />
             </template>
             <p v-else-if="!parsed.error" class="text-xs text-gray-500">
               Edit the definition to preview what it resolves to.
@@ -659,11 +664,11 @@ function saveSmoke(testCaseIds: number[]) {
           />
           <div>
             <p class="text-xs text-gray-500 mb-1">Run it with the reporter CLI</p>
-            <CodeBlock :code="runCommand(resolvedKey)" lang="bash" />
+            <CodeBlock :code="withVariables(runCommand(resolvedKey))" :lang="commandShell" />
           </div>
           <div v-if="resolved.materialization.command">
             <p class="text-xs text-gray-500 mb-1">Or drive Playwright directly</p>
-            <CodeBlock :code="resolved.materialization.command" lang="bash" />
+            <CodeBlock :code="withVariables(resolved.materialization.command)" :lang="commandShell" />
           </div>
           <EmptyState
             v-if="resolved.estimate.count === 0"

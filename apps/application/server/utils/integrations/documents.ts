@@ -44,6 +44,7 @@ import {
 } from '#shared/integrations/run-issue';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 import type { DrizzleDB } from '#shared/handlers/db';
+import { commandWithRunVariables } from '#shared/run-variables';
 
 function scmCommit(metadata: unknown): string | null {
   const scm = (metadata as { scm?: { commit?: string | null } } | null)?.scm;
@@ -192,7 +193,9 @@ async function gatherClusterFacts(
     failingLocator: cluster.selector ?? null,
     patch,
     locatorEdits,
-    verifyCommand: plan?.verify.command ?? null,
+    verifyCommand: plan?.verify.command
+      ? commandWithRunVariables(plan.verify.command, plan.verify.runVariables ?? [], 'bash')
+      : (plan?.verify.command ?? null),
     verifyLeftOut: plan?.verify.leftOut.map((c) => c.title || c.filePath),
     reproduceScript,
     relatedIssues,

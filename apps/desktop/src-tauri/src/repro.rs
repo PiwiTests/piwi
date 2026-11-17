@@ -272,6 +272,8 @@ pub async fn desktop_run_repro(
     let cli = resolve_playwright_cli(&folder).ok_or(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
+    // The config may read them (its project name, its server's tenant), so the listing gets them too.
+    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
 
     let listed = app
         .shell()
@@ -284,6 +286,7 @@ pub async fn desktop_run_repro(
             "--reporter=json".into(),
         ])
         .current_dir(&folder)
+        .envs(variables.clone())
         .env("NO_COLOR", "1")
         .output()
         .await
@@ -335,6 +338,7 @@ pub async fn desktop_run_repro(
     let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)
+        .envs(variables)
         .envs(crate::worktree::run_path_env(&app, &folder))
         .envs(crate::runner::COLOR_ENV)
         .env(

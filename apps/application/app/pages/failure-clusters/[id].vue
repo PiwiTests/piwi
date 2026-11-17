@@ -15,6 +15,7 @@ import type { LocatorHealingResult } from '#shared/locator-healing.types';
 import { hasHealingAlternatives } from '#shared/locator-healing';
 import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
+import { commandWithRunVariables } from '#shared/run-variables';
 import type { FixSectionKey } from '~/utils/fix-sections';
 import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi, stripAnsi } from '@piwitests/run-ui/ansi';
@@ -310,7 +311,21 @@ const affectedRetryCases = computed(() => fixPlan.value?.verify?.cases ?? []);
 const affectedTestsLabel = computed(
   () => `${affectedRetryCases.value.length} affected test${affectedRetryCases.value.length === 1 ? '' : 's'}`,
 );
-const retryCommand = computed(() => fixPlan.value?.verify?.command ?? '');
+const { shell: commandShell } = useCommandShell();
+const verifyVariables = computed(() => fixPlan.value?.verify?.runVariables ?? []);
+const retryCommand = computed(() =>
+  commandWithRunVariables(fixPlan.value?.verify?.command ?? '', verifyVariables.value, commandShell.value),
+);
+/** The verify command in each shell, when the project's run variables make the two differ. */
+const verifyForms = computed(() => {
+  const command = fixPlan.value?.verify?.command;
+  if (!command || verifyVariables.value.length === 0) return null;
+  return {
+    bash: commandWithRunVariables(command, verifyVariables.value, 'bash'),
+    powershell: commandWithRunVariables(command, verifyVariables.value, 'powershell'),
+  };
+});
+const shellKey = COMMAND_SHELL_KEY;
 const { copy: copyRetry } = useCopy();
 
 const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
@@ -952,7 +967,13 @@ const breadcrumbItems = computed(() => [
           <!-- Verify — the command and how to re-run it -->
           <template v-if="fixPlan" #verify>
             <div class="space-y-1.5">
-              <CodeBlock :code="fixPlan.verify.command" lang="bash" />
+              <PlatformCodeBlock
+                v-if="verifyForms"
+                :bash="verifyForms.bash"
+                :powershell="verifyForms.powershell"
+                :storage-key="shellKey"
+              />
+              <CodeBlock v-else :code="fixPlan.verify.command" lang="bash" />
               <p v-if="fixPlan.verify.leftOut?.length" class="text-xs text-muted">
                 The command leaves out
                 {{ fixPlan.verify.leftOut.length === 1 ? 'one test' : `${fixPlan.verify.leftOut.length} tests` }} its

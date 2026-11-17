@@ -20,6 +20,8 @@ export interface DesktopFolderInspection {
   reporterConfigured: boolean;
   /** `projectName` parsed out of the Playwright config, when set as a literal. */
   configuredProjectName: string | null;
+  /** The config sets `projectName` with an expression, whose value only a run knows (it may read run variables). */
+  projectNameComputed: boolean;
   /** The Playwright config declares a `webServer` — Playwright starts the app itself. */
   webServer: boolean;
 }

@@ -21,6 +21,7 @@ mod mcp_stdio;
 mod private_fs;
 mod repro;
 mod run_target;
+mod run_variables;
 mod runner;
 mod session;
 mod shell_words;
@@ -67,8 +68,8 @@ use updates::{
     desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
-    desktop_check_local_env, desktop_check_local_specs, desktop_check_project_folder, desktop_get_project_link,
-    desktop_local_runs, desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_check_local_env, desktop_check_local_specs, desktop_check_project_folder, desktop_folder_projects,
+    desktop_get_project_link, desktop_local_runs, desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
     desktop_set_project_link, desktop_stop_local_tests, desktop_suggest_project_folders,
 };
 use repro::desktop_run_repro;
@@ -3580,6 +3581,7 @@ pub fn run() {
             desktop_check_project_folder,
             desktop_suggest_project_folders,
             desktop_get_project_link,
+            desktop_folder_projects,
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,

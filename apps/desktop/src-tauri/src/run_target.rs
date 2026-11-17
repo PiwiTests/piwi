@@ -931,6 +931,8 @@ struct Launch {
     /// The folder **Run** approved, which the run's folder must still be.
     folder: String,
     args: Vec<String>,
+    /// The project's run variables the confirmation showed, checked again here, or why they cannot be set.
+    variables: Result<Vec<(String, String)>, String>,
 }
 
 fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
@@ -962,12 +964,15 @@ fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
                 .collect::<Vec<_>>()
         })
         .ok_or("no command")?;
+    let variables = crate::run_variables::checked_run_variables(answer.get("runVariables").unwrap_or(&Value::Null))
+        .map_err(|e| format!("the project's run variables were not set: {e}"));
     Ok(Launch {
         instance,
         token,
         project_id,
         folder,
         args,
+        variables,
     })
 }
 
@@ -1015,10 +1020,19 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         Ok(launch) => launch,
         Err(e) => {
             forget(&app, &request_id);
+            tell_started(&server, &request_id, Some(&e));
             return Err(e);
         }
     };
 
+    let variables = match launch.variables.clone() {
+        Ok(variables) => variables,
+        Err(e) => {
+            forget(&app, &request_id);
+            tell_started(&server, &request_id, Some(&e));
+            return Err(e);
+        }
+    };
     let prepared = prepare(&app, &launch);
     let (folder, cli, dir, token_file) = match prepared {
         Ok(prepared) => prepared,
@@ -1065,7 +1079,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_dir = dir.clone();
     // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and
     // only the quit sends an end once it began.
-    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code, stopped| {
+    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, variables, envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
         let Some(runs) = ended_app.try_state::<RequestedRuns>() else {
             return;
@@ -1590,6 +1604,7 @@ mod tests {
             project_id: "3".into(),
             folder: folder.to_string_lossy().to_string(),
             args: args.iter().map(|a| a.to_string()).collect(),
+            variables: Ok(Vec::new()),
         }
     }
 

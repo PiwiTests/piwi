@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import type { RunVariable } from '@piwitests/core/run-variables';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types';
 import {
@@ -31,6 +32,7 @@ import {
 import type { TimeoutAdvice } from './analysis.js';
 import { shellWord } from './commands.js';
 import { DesktopNotProvenError, holdDesktopToken } from './http.js';
+import type { RunVariablesRead } from './piwi-client.js';
 import type {
   BaselineChoice,
   ConnectionSource,
@@ -409,6 +411,16 @@ export class PiwiContext {
   /** The instance the environment, the `.env` or the editor's settings name, in use or not. */
   instance: { serverUrl: string; source: ConnectionSource } | null = null;
   project: { id: number; name: string } | null = null;
+  /**
+   * The project's run variables as `parseRunVariables` read them from the instance, for the commands the service
+   * builds: null until a refresh read them, none without a project.
+   */
+  runVariables: RunVariablesRead | null = null;
+  private runVariablesRead: Promise<RunVariablesRead> | null = null;
+  /** The project's name being resolved by a refresh now: a run waits for it before it reads the run variables. */
+  private resolving: Promise<unknown> | null = null;
+  /** The sets of run variables the person allowed for this context's project, while the service runs. */
+  private allowedRunVariables = new Set<string>();
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
   index: LocatorIndex | null = null;
@@ -557,12 +569,25 @@ export class PiwiContext {
         return;
       }
       if (!this.project || this.project.name !== connection.project) {
-        this.project = await this.client.resolveProject(connection.project);
+        // Another project's run variables, and the person's answer about them, are not this one's.
+        this.runVariables = null;
+        this.runVariablesRead = null;
+        this.allowedRunVariables.clear();
+        const resolving = this.client.resolveProject(connection.project);
+        this.resolving = resolving;
+        try {
+          this.project = await resolving;
+        } finally {
+          this.resolving = null;
+        }
         if (!this.project) {
           this.fail('no-project', `No project named "${connection.project}" on ${connection.serverUrl}.`);
           return;
         }
       }
+      // Read again on each refresh: a run started meanwhile waits for this read (`readRunVariables`).
+      this.runVariablesRead = null;
+      void this.readRunVariables();
       const index = await this.client.locatorIndex(this.project.id, null);
       this.branches = [
         ...new Set([index.defaultBranch, ...index.branches.map((b) => b.name)].filter((b): b is string => !!b)),
@@ -643,6 +668,44 @@ export class PiwiContext {
     }
   }
 
+  /**
+   * The project's run variables, read from the instance once per refresh, for a run about to start. None without a
+   * client: the run reports nowhere this service knows. A run waits for a project a refresh is resolving; with none
+   * known, the read says why (`unknown`). A read the instance did not answer is not kept: the next run asks again.
+   */
+  async readRunVariables(): Promise<RunVariablesRead> {
+    if (this.client && !this.project && this.resolving) await this.resolving.catch(() => {});
+    const client = this.client;
+    const project = this.project;
+    if (!client) return { ok: true, value: [] };
+    if (!project) return { ok: true, value: [], unknown: this.problem ?? 'its project is not known yet' };
+    if (!this.runVariablesRead) {
+      const read: Promise<RunVariablesRead> = client.runVariables(project.id).then((parsed) => {
+        if (this.runVariablesRead !== read) return parsed;
+        this.runVariables = parsed;
+        if (parsed.unreadable) this.runVariablesRead = null;
+        return parsed;
+      });
+      this.runVariablesRead = read;
+    }
+    return this.runVariablesRead;
+  }
+
+  /**
+   * Whether the person allowed `variables` for this context's project while the service runs: always for none, and
+   * for the desktop app's own server, whose projects are theirs.
+   */
+  runVariablesAllowed(variables: readonly RunVariable[]): boolean {
+    return (
+      variables.length === 0 || this.source === 'desktop' || this.allowedRunVariables.has(JSON.stringify(variables))
+    );
+  }
+
+  /** Keeps the person's answer that runs of this context's project may get `variables`. */
+  allowRunVariables(variables: readonly RunVariable[]): void {
+    this.allowedRunVariables.add(JSON.stringify(variables));
+  }
+
   private fail(kind: ProblemKind, problem: string): void {
     this.problemKind = kind;
     this.problem = problem;
@@ -654,6 +717,9 @@ export class PiwiContext {
    */
   private forget(): void {
     this.project = null;
+    this.runVariables = null;
+    this.runVariablesRead = null;
+    this.allowedRunVariables.clear();
     this.branch = null;
     this.index = null;
     this.codeIndex = null;

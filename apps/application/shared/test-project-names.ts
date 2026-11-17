@@ -193,6 +193,7 @@ export const PROJECT = {
   RUN_TAB_INDICATOR: 'run-tab-indicator-test',
   RUN_TIMELINE_HOOKS: 'run-timeline-hooks-test',
   RUN_TIMELINE_RESOURCES: 'run-timeline-resources-test',
+  RUN_VARIABLES: 'run-variables-test',
   RUNS_LIST: 'runs-list-test',
   SCENARIO_GAPS: 'scenario-gaps-e2e-test',
   SCENARIO_GAPS_DECLINE: 'scenario-gaps-decline-test',

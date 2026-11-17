@@ -135,6 +135,7 @@ const testIds = computed(() => {
 // ── Run these tests ─────────────────────────────────────────────────────
 const command = ref<string | null>(null);
 const commandPending = ref(false);
+const { command: withVariables, shell: commandShell } = useProjectRunVariables(() => props.projectId);
 const toast = useToast();
 
 async function buildCommand() {
@@ -254,7 +255,7 @@ async function buildCommand() {
             </UButton>
             <template v-else>
               <p class="text-xs font-medium text-muted">Run them</p>
-              <CodeBlock :code="command" lang="bash" />
+              <CodeBlock :code="withVariables(command)" :lang="commandShell" />
             </template>
           </div>
         </template>

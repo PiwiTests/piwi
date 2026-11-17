@@ -48,6 +48,7 @@ import { TextDocument } from 'vscode-languageserver-textdocument';
 import { renderSpec } from '@piwitests/core/codegen';
 import { codegenConfigOf } from '@piwitests/core/piwi-config';
 import { RECORD_CHANNEL_ENV } from '@piwitests/core/ide-recorder';
+import { runVariableAssignments, type RunVariable, type RunVariablesParse } from '@piwitests/core/run-variables';
 import {
   RUN_CHANNEL_ENV,
   RUN_REF_ENV,
@@ -929,6 +930,17 @@ export function editorRunEnv(ref?: string): Record<string, string> {
 }
 
 /**
+ * A context's run variables as the environment of a command the service builds, before the service's own variables
+ * (which a run variable never names), or the words why nothing runs: not read yet, refused by `parseRunVariables`,
+ * or not readable.
+ */
+export function runVariablesEnv(read: RunVariablesParse | null): Record<string, string> | string {
+  if (!read) return 'The project’s run variables are not read yet, so Piwi runs nothing: try again in a moment.';
+  if (!read.ok) return `The project’s run variables cannot be set, so Piwi runs nothing: ${read.problems.join(' ')}`;
+  return Object.fromEntries(read.value.map((variable) => [variable.name, variable.value]));
+}
+
+/**
  * The folder a command of a context runs in: the config's folder as the file system spells it (`canonicalPath`), so
  * the project's Playwright and the config it loads resolve `@playwright/test` to one path whatever the case the
  * editor gave the folder in (`c:\…` for `C:\…` on Windows).
@@ -955,6 +967,13 @@ export function flakeLabLines(
   const lens = entry && context.client ? flakeLabLens(testCaseId, entry) : null;
   if (!lens || !context.client) return [];
   const serverUrl = context.client.connection.serverUrl;
+  // A command runs only with the project's run variables, once the person allowed them: until then, the lines offer
+  // none.
+  const read = context.runVariables;
+  const variables =
+    read?.ok && !context.runVariablesAllowed(read.value)
+      ? 'The project’s run variables are not allowed yet.'
+      : runVariablesEnv(read);
   return [
     {
       line,
@@ -966,22 +985,26 @@ export function flakeLabLines(
       },
     },
     ...lens.actions.flatMap((a): SummaryLine[] => [
-      {
-        line,
-        title: a.title,
-        command: {
-          title: a.title,
-          command: 'piwi.runCommand',
-          arguments: [
+      ...(typeof variables === 'string'
+        ? []
+        : [
             {
-              cwd: commandFolder(context),
-              command: withServerUrl(a.command, serverUrl, context.root, env),
-              env: editorRunEnv(),
-              follow: true,
-            } satisfies RunCommandArgs,
-          ],
-        },
-      },
+              line,
+              title: a.title,
+              command: {
+                title: a.title,
+                command: 'piwi.runCommand',
+                arguments: [
+                  {
+                    cwd: commandFolder(context),
+                    command: withServerUrl(a.command, serverUrl, context.root, env),
+                    env: { ...variables, ...editorRunEnv() },
+                    follow: true,
+                  } satisfies RunCommandArgs,
+                ],
+              },
+            } satisfies SummaryLine,
+          ]),
       ...(desktop && a.kind === 'reproduce' ? [flakeLabJobLine(context, testCaseId, line)] : []),
     ]),
   ];
@@ -3201,7 +3224,20 @@ export function startServer(connection: Connection, options: ServerOptions = {})
         const fixPlan = await fixPlanAsked;
         const planEdit = fixPlan ? fixPlanEdit(owner, fixPlan) : null;
         const verification = fixPlan ? verificationCommand(fixPlan.verify.command) : null;
-        if (planEdit && verification) {
+        // The quick fix waits for the run variables as long as for its other lookups, and offers no run without them.
+        const verifyRead = verification
+          ? await within(
+              owner.readRunVariables().catch(() => null),
+              null,
+            )
+          : null;
+        const verifyVariables =
+          verifyRead &&
+          verifyRead.unknown === undefined &&
+          (!verifyRead.ok || owner.runVariablesAllowed(verifyRead.value))
+            ? runVariablesEnv(verifyRead)
+            : null;
+        if (planEdit && verification && verifyVariables && typeof verifyVariables !== 'string') {
           actions.push({
             title: `Apply the fix plan (${plural(planEdit.files, 'file')}), then run its verification`,
             kind: CodeActionKind.QuickFix,
@@ -3214,7 +3250,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
                 {
                   cwd: commandFolder(owner),
                   command: verification,
-                  env: editorRunEnv(),
+                  env: { ...verifyVariables, ...editorRunEnv() },
                   follow: true,
                 } satisfies RunCommandArgs,
               ],
@@ -4500,7 +4536,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
    * saved, headed with one worker, stopping once at the failing line, with the editor's breakpoints too; the failure's
    * suggested locator asked of the instance at once, for the stop. Null, with a notice saying why, when it cannot run.
    */
-  const debugRunArgs = (context: PiwiContext | null, params: RunTestsArgs): RunCommand | null => {
+  const debugRunArgs = (
+    context: PiwiContext | null,
+    params: RunTestsArgs,
+    variables: Record<string, string>,
+  ): RunCommand | null => {
     const refuse = (message: string) => {
       void connection.sendNotification(NOTICE_NOTIFICATION, {
         root: context?.root ?? '',
@@ -4544,7 +4584,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const run: RunCommand = {
       cwd: commandFolder(context),
       ...headedCommand(command, args),
-      env: editorRunEnv(ref),
+      env: { ...variables, ...editorRunEnv(ref) },
       ref,
     };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
@@ -4559,11 +4599,80 @@ export function startServer(connection: Connection, options: ServerOptions = {})
 
   connection.onRequest(RUN_ARGS_REQUEST, (params: RunTestsArgs) => runCommandFor(params));
 
+  /** The questions about a project's run variables being asked now, so the runs started meanwhile share one. */
+  const askingRunVariables = new Map<string, Promise<boolean>>();
+  /** The contexts told their project's run variables could not be read, until a read succeeds. */
+  const toldUnknownVariables = new Set<string>();
+
+  /**
+   * Whether the person allows runs of the context's project to get `variables`: asked once per set while the service
+   * runs (`window/showMessageRequest`, **Allow** or **Not now**), as the editor shows it.
+   */
+  const allowRunVariables = async (context: PiwiContext, variables: RunVariable[]): Promise<boolean> => {
+    if (context.runVariablesAllowed(variables)) return true;
+    const key = JSON.stringify([context.root, variables]);
+    let asking = askingRunVariables.get(key);
+    if (!asking) {
+      const project = context.project?.name ?? 'This project';
+      asking = Promise.resolve(
+        connection.window.showWarningMessage(
+          `${project} sets run variables that every run Piwi starts for its tests gets: ${runVariableAssignments(variables, 'bash')}. Run its tests with them?`,
+          { title: 'Allow' },
+          { title: 'Not now' },
+        ),
+      )
+        .then((choice) => choice?.title === 'Allow')
+        .catch(() => false)
+        .finally(() => askingRunVariables.delete(key));
+      askingRunVariables.set(key, asking);
+    }
+    const allowed = await asking;
+    if (allowed) context.allowRunVariables(variables);
+    return allowed;
+  };
+
+  /**
+   * The run variables of a context's project, as the environment of a run about to start, or null with a notice when
+   * they cannot be set or the person did not allow them: the run does not start without them. With no project known
+   * to read them for, the run starts with none, and the person hears it once.
+   */
+  const runVariablesFor = async (context: PiwiContext): Promise<Record<string, string> | null> => {
+    const notice = (message: string) =>
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: context.root,
+        severity: 'warning',
+        message,
+      } satisfies Notice);
+    const read = await context.readRunVariables();
+    if (read.unknown !== undefined) {
+      if (!toldUnknownVariables.has(context.root)) {
+        toldUnknownVariables.add(context.root);
+        notice(`This run gets none of the project’s run variables: Piwi could not read them (${read.unknown}).`);
+      }
+      return {};
+    }
+    toldUnknownVariables.delete(context.root);
+    const variables = runVariablesEnv(read);
+    if (typeof variables === 'string') {
+      notice(variables);
+      return null;
+    }
+    if (read.ok && !(await allowRunVariables(context, read.value))) {
+      notice(
+        'Piwi runs nothing without the project’s run variables you did not allow: start the run again to be asked.',
+      );
+      return null;
+    }
+    return variables;
+  };
+
   /** The command that runs the tests `params` names, as `piwi/runArgs` answers it: null when none can run. */
   const runCommandFor = async (params: RunTestsArgs): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
     const context = contexts.find((c) => c.root === params.root) ?? (file ? contextFor(file) : null);
-    if (params.debug) return debugRunArgs(context, params);
+    const variables = context ? await runVariablesFor(context) : {};
+    if (variables === null) return null;
+    if (params.debug) return debugRunArgs(context, params, variables);
     if (!context) return null;
     const repeat = params.repeat ?? null;
     const named = await testArgs(context, params);
@@ -4584,7 +4693,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       cwd: commandFolder(context),
       args,
       command,
-      env: { ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
+      env: { ...variables, ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
     };
     if (repeat === null) {
@@ -4757,13 +4866,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const args = own ?? (selection ? playwrightArgsOf(selection.command) : null);
     const command = args?.length ? playwrightTestCommand(args) : null;
     if (!context || !args || !command) return null;
+    const variables = await runVariablesFor(context);
+    if (variables === null) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
     const run: RunCommand = {
       cwd: commandFolder(context),
       command,
       args,
-      env: editorRunEnv(ref),
+      env: { ...variables, ...editorRunEnv(ref) },
       ref,
     };
     return withStartOptions(withRecording(context, withBreakpoints(context, run, params.breakpoints)), params);

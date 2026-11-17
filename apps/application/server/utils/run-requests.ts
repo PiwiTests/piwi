@@ -24,6 +24,9 @@ import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can, type AccessSummary } from '#shared/permissions';
 import { LOCAL_RUN_ORIGINS, PRIVATE_RUN_ORIGINS, runOriginIn } from '#shared/run-eligibility';
 import { ACTIVE_STATES, projectNamesOf, RUN_STATES } from '#shared/handlers/run-requests';
+import { readProjectRunVariables } from '#shared/handlers/run-variables';
+import type { RunVariable } from '#shared/run-variables';
+import { RUN_TARGET_FEATURES, type RunTargetFeature } from '@piwitests/core/run-request';
 
 export {
   countWaitingRequests,
@@ -236,6 +239,28 @@ export async function pruneRunRequests(db: DbClient, olderThanDays: number, now 
 
 const NOT_ALLOWED = 'Run on my machine is off for this project, or you cannot run its tests';
 
+/**
+ * The words a waiting request keeps when an app that does not apply run variables was asked to run one of a project
+ * that sets some: the request goes on waiting for an app that does, and says why when none takes it.
+ */
+const NO_RUN_VARIABLES =
+  'An app that cannot apply this project’s run variables was asked to run it: update Piwi Desktop or Piwi Runner.';
+
+/** The features a target declared with its claim (`claimRequest`), those this instance knows. */
+export function claimedFeatures(declared: unknown): RunTargetFeature[] {
+  const listed = Array.isArray(declared) ? (declared as unknown[]) : [];
+  return RUN_TARGET_FEATURES.filter((feature) => listed.includes(feature));
+}
+
+/**
+ * Whether an app that declared `features` cannot take a request of a project: it does not apply run variables and the
+ * project sets some, so its run would miss them (the tenant it tests, the project it reports to).
+ */
+async function lacksRunVariables(db: DbClient, features: readonly string[], projectId: number): Promise<boolean> {
+  if (features.includes('run-variables')) return false;
+  return ((await readProjectRunVariables(db as never, projectId)) ?? []).length > 0;
+}
+
 /** Whether a target may take a request of a project: its owner holds `run:receive` there and the capability is on. */
 export async function mayReceiveOn(db: DbClient, access: AccessSummary, projectId: number): Promise<boolean> {
   return can(access, 'run:receive', projectId) && (await isOptInCapabilityOn(db, projectId, 'machine-runs'));
@@ -346,24 +371,37 @@ async function moveOrExplain(
 
 /**
  * Claim a waiting request for this target, in one conditional update: a second claim, from a reconnect or a second
- * process, finds it claimed and answers 409. An expired request cannot be claimed.
+ * process, finds it claimed and answers 409. An expired request cannot be claimed. `features` are what the target
+ * declares with this claim (`RUN_TARGET_FEATURES`), kept on the request: a target that does not apply run variables
+ * cannot claim one of a project that sets some, which goes on waiting for an app that does and keeps the words why.
  */
 export async function claimRequest(
   { db, target, access }: RunTargetCaller,
   id: string,
+  features: readonly string[] = [],
   now = new Date(),
 ): Promise<TargetMoveResult> {
   const [row] = await db
-    .select({ projectId: runRequests.projectId })
+    .select({ projectId: runRequests.projectId, state: runRequests.state, expiresAt: runRequests.expiresAt })
     .from(runRequests)
     .where(and(eq(runRequests.id, id), eq(runRequests.requesterId, target.userId)));
   if (!row) return { ok: false, statusCode: 404, message: 'No run request has this id' };
   if (!(await mayReceiveOn(db, access, row.projectId))) {
     return { ok: false, statusCode: 403, message: NOT_ALLOWED };
   }
+  const declared = claimedFeatures(features);
+  // A request already taken or past its time answers the claim's own 409, below.
+  const claimable = row.state === 'waiting' && !!row.expiresAt && row.expiresAt > now;
+  if (claimable && (await lacksRunVariables(db, declared, row.projectId))) {
+    await db
+      .update(runRequests)
+      .set({ detail: NO_RUN_VARIABLES, updatedAt: now })
+      .where(and(eq(runRequests.id, id), eq(runRequests.state, 'waiting'), gt(runRequests.expiresAt, now)));
+    return { ok: false, statusCode: 409, message: NO_RUN_VARIABLES };
+  }
   const moved = await db
     .update(runRequests)
-    .set({ state: 'claimed', targetId: target.id, claimedAt: now, updatedAt: now })
+    .set({ state: 'claimed', targetId: target.id, claimFeatures: declared, claimedAt: now, updatedAt: now })
     .where(
       and(
         eq(runRequests.id, id),
@@ -375,6 +413,25 @@ export async function claimRequest(
     )
     .returning();
   return moveOrExplain(db, target, id, moved, 'This request was already claimed, or has expired');
+}
+
+/**
+ * The run variables of a request's project, for the target that claimed it, as it plans and launches the run: 404 when
+ * the request is not this target's, 403 when the project no longer lets its owner receive it.
+ */
+export async function runVariablesForTarget(
+  { db, target, access }: RunTargetCaller,
+  id: string,
+): Promise<{ ok: true; runVariables: RunVariable[] } | { ok: false; statusCode: 403 | 404; message: string }> {
+  const [row] = await db
+    .select({ projectId: runRequests.projectId })
+    .from(runRequests)
+    .where(
+      and(eq(runRequests.id, id), eq(runRequests.requesterId, target.userId), eq(runRequests.targetId, target.id)),
+    );
+  if (!row) return { ok: false, statusCode: 404, message: 'No run request this app claimed has this id' };
+  if (!(await mayReceiveOn(db, access, row.projectId))) return { ok: false, statusCode: 403, message: NOT_ALLOWED };
+  return { ok: true, runVariables: (await readProjectRunVariables(db as never, row.projectId)) ?? [] };
 }
 
 /** How many of the requester's latest runs of a project the folder hints read, and over how long. */
@@ -438,11 +495,18 @@ export async function answerRequest(
 ): Promise<TargetMoveResult> {
   if (answer.decision === 'run') {
     const [row] = await db
-      .select({ projectId: runRequests.projectId })
+      .select({ projectId: runRequests.projectId, claimFeatures: runRequests.claimFeatures })
       .from(runRequests)
       .where(and(eq(runRequests.id, id), eq(runRequests.targetId, target.id)));
     if (row && !(await mayReceiveOn(db, access, row.projectId))) {
       return { ok: false, statusCode: 403, message: NOT_ALLOWED };
+    }
+    if (row && (await lacksRunVariables(db, claimedFeatures(row.claimFeatures), row.projectId))) {
+      await db
+        .update(runRequests)
+        .set({ state: 'refused', detail: NO_RUN_VARIABLES, answeredAt: now, updatedAt: now })
+        .where(and(eq(runRequests.id, id), eq(runRequests.targetId, target.id), eq(runRequests.state, 'claimed')));
+      return { ok: false, statusCode: 409, message: NO_RUN_VARIABLES };
     }
   }
   const base = [eq(runRequests.id, id), eq(runRequests.targetId, target.id), eq(runRequests.state, 'claimed')];

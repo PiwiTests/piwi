@@ -34,8 +34,11 @@ const loading = computed(() => status.value === 'idle' || status.value === 'pend
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
+const flakeRunVariables = useProjectRunVariables(() => props.projectId);
+/** Copies a test's next command once the project's run variables are read, so it starts with them. */
 async function copyCommand(command: string) {
-  await copy(command, { toast: 'Command copied' });
+  await flakeRunVariables.ready();
+  await copy(flakeRunVariables.command(command), { toast: 'Command copied' });
   copiedCommand.value = command;
 }
 
@@ -113,7 +116,7 @@ function stateLine(t: FlakeLabTest): string {
             >
               {{ flakeLabNextStep(t.state) === 'verify' ? 'Copy verify command' : 'Copy command' }}
             </UButton>
-            <code class="text-xs text-muted font-mono break-all">{{ t.nextCommand }}</code>
+            <code class="text-xs text-muted font-mono break-all">{{ flakeRunVariables.command(t.nextCommand) }}</code>
           </div>
         </li>
       </ol>

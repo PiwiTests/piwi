@@ -66,6 +66,7 @@ the linked folder, and the exact command. Nothing runs until you click **Run**:
   tests are picked by their titles (`--grep`) rather than by their lines, which may have moved.
 - **One run per folder**: while another run goes on in the folder, the request waits, and is checked again once it
   ends. A command takes at most 24,000 characters.
+- **The project's [run variables](./run-variables)**: listed among the checks, and the command starts with them.
 
 **Not now** declines it, or refuses it with the checks that failed, and the page says which. A request nobody answers
 in the app within 10 minutes ends.
@@ -125,11 +126,6 @@ Someone who holds `run:delete` on the project can delete it through the API with
 
 A [share link](./share-links) you make for one of its executions opens for whoever has the link, as any share link
 does, so you can show a teammate what happened on your machine. It appears in the project's list of share links.
-
-## One instance, one replica
-
-Whether an app is online is held in the server's memory, as live run updates are. The instance runs as one replica, as
-the [deployment page](/operate/deployment) requires.
 
 ## Related
 

@@ -32,6 +32,32 @@ watch(
   { immediate: true },
 );
 
+/**
+ * The other projects linked to the same folder, by name: one app that several projects run from (a project per
+ * tenant), each with its own run variables.
+ */
+const otherProjects = ref<string[]>([]);
+watch(
+  () => link.value?.path,
+  async (path) => {
+    otherProjects.value = [];
+    const core = tauriCore();
+    if (!path || !core) return;
+    try {
+      const ids = await core.invoke<string[]>('desktop_folder_projects', { projectId: String(props.projectId) });
+      if (ids.length === 0) return;
+      const menu = await $fetch<{ items: Array<{ id: number; name: string; label: string | null }> }>(
+        '/api/projects/menu',
+      );
+      const names = new Map(menu.items.map((project) => [String(project.id), project.label || project.name]));
+      otherProjects.value = ids.map((id) => names.get(id) ?? `Project ${id}`);
+    } catch {
+      // Nothing to name.
+    }
+  },
+  { immediate: true },
+);
+
 const route = useRoute();
 const card = ref<ComponentPublicInstance | null>(null);
 
@@ -116,6 +142,15 @@ async function chooseAndPropose() {
       </div>
 
       <p v-if="!link.exists" class="text-sm text-warning">The folder is gone from this machine: choose it again.</p>
+
+      <p
+        v-if="otherProjects.length"
+        class="text-sm text-highlighted leading-relaxed"
+        data-testid="folder-other-projects"
+      >
+        Also linked to this folder: {{ otherProjects.join(', ') }}. Each project's runs get its own run variables (in
+        its Settings), so one app's folder can run the tests of each tenant it serves.
+      </p>
 
       <DesktopFolderChecklist v-if="inspection" :inspection="inspection" />
 

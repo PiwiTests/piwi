@@ -13,11 +13,13 @@ import {
   parseRunRequest,
   readRunRequestFolderHints,
   RUN_REQUEST_ID,
+  RUN_TARGET_FEATURES,
   type RunRequest,
   type RunRequestOffer,
   type RunRequestOutcome,
   type RunRequestFolderHints,
 } from '@piwitests/core/run-request';
+import { parseRunVariables, type RunVariablesParse } from '@piwitests/core/run-variables';
 import { instanceFetch } from './http';
 
 /** What the target's stream and its list say, in the instance's words. */
@@ -107,6 +109,9 @@ const DEFAULT_TIMING = {
 };
 
 /** A refusal of a target route, with the instance's status. */
+/** How long reading a request's run variables may take before the plan fails, in milliseconds. */
+const RUN_VARIABLES_WAIT_MS = 15_000;
+
 export class RequestHostError extends Error {
   constructor(
     readonly status: number,
@@ -254,11 +259,20 @@ export class RequestHost {
     this.retry = this.poll = null;
   }
 
-  /** Claim a request offered here: the instance answers the request, or refuses it once another app claimed it. */
+  /**
+   * Claim a request offered here, saying what this app does beyond a request (`RUN_TARGET_FEATURES`): the instance
+   * answers the request, or refuses it once another app claimed it, or when its project sets run variables and the
+   * claim did not say it applies them.
+   */
   async claim(id: string): Promise<RunRequest> {
     if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
     const claimed = readRequest(
-      await this.call('POST', `/api/run-targets/requests/${id}/claim`, undefined, { onlyRequest: true }),
+      await this.call(
+        'POST',
+        `/api/run-targets/requests/${id}/claim`,
+        { features: [...RUN_TARGET_FEATURES] },
+        { onlyRequest: true },
+      ),
     );
     this.claimed.add(id);
     this.offered.delete(id);
@@ -324,6 +338,27 @@ export class RequestHost {
     if (!this.stopped) this.takeNames(described?.projects);
   }
 
+  /**
+   * The run variables of the project of a request this app claimed, as `parseRunVariables` reads them: a list it
+   * refuses, or one it cannot read, is a problem the plan fails with. An instance that predates them answers 404:
+   * its projects set none.
+   */
+  async runVariables(id: string): Promise<RunVariablesParse & { unreadable?: true }> {
+    if (!isRequestId(id)) return { ok: false, problems: ['No run request has this id.'] };
+    try {
+      const answer = await this.call<{ runVariables?: unknown }>(
+        'GET',
+        `/api/run-targets/requests/${id}/run-variables`,
+        undefined,
+        { onlyRequest: true, timeoutMs: RUN_VARIABLES_WAIT_MS },
+      );
+      return parseRunVariables(answer?.runVariables);
+    } catch (error) {
+      if (error instanceof RequestHostError && error.status === 404) return { ok: true, value: [] };
+      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };
+    }
+  }
+
   /** Where the connection stands now. */
   get state(): RequestHostStatus {
     return this.status;
@@ -337,9 +372,10 @@ export class RequestHost {
     method: string,
     route: string,
     body?: unknown,
-    { onlyRequest = false }: { onlyRequest?: boolean } = {},
+    { onlyRequest = false, timeoutMs }: { onlyRequest?: boolean; timeoutMs?: number } = {},
   ): Promise<T> {
     const response = await this.fetch(`${this.options.instance}${route}`, {
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       method,
       headers: {
         Authorization: `Bearer ${this.options.key}`,

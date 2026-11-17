@@ -84,6 +84,13 @@ A free-text label on a run (`production`, `staging`, a preview URL, whatever you
 analytics and timeline markers can be narrowed to one environment, so a staging suite's noise doesn't blend into
 production's numbers.
 
+### Run variable
+
+One `NAME=value` environment variable of a **project**, such as the tenant one app serves it as (`TENANT=acme`),
+that every run Piwi starts for the project gets and every command it gives to copy starts with. Not to be confused
+with a run's **environment** label. The names it may set and where it applies:
+[Run variables](/features/run-variables).
+
 ### Environment incident
 
 A **test run** whose failures come from the environment under test being down or broken (staging refusing

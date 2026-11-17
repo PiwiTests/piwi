@@ -661,7 +661,7 @@ export const MCP_TOOL_DEFS = [
         'an estimate from the test’s median duration',
         '`plan`: the full plan, which `piwi flake --plan <file>` also runs without the dashboard',
       ],
-      'After a fix, run the verify command: exit code 0 means the fix held under the condition that reproduced the failure.',
+      'After a fix, run the verify command, with `verify.runVariables` (the project’s run variables) set as environment variables when it lists any: exit code 0 means the fix held under the condition that reproduced the failure.',
     ),
     inputSchema: {
       type: 'object',

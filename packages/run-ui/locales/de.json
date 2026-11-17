@@ -442,6 +442,24 @@
       }
     }
   },
+  "runui_checkVariablesInvalid": {
+    "message": "Die Laufvariablen des Projekts lassen sich nicht setzen: $problems$",
+    "placeholders": {
+      "problems": {
+        "content": "$1",
+        "example": "PATH is a name the shell keeps."
+      }
+    }
+  },
+  "runui_checkVariablesSet": {
+    "message": "Läuft mit den Laufvariablen des Projekts: $variables$.",
+    "placeholders": {
+      "variables": {
+        "content": "$1",
+        "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
   "runui_checkFolderBusy": {
     "message": "In diesem Ordner läuft gerade ein anderer Lauf: Dieser kann starten, sobald der andere endet."
   },

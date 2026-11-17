@@ -34,7 +34,11 @@ const checks = computed<Check[]>(() => {
       ? {
           ok: true,
           label: 'Config sends results to Piwi',
-          detail: i.configuredProjectName ? `projectName: ${i.configuredProjectName}` : undefined,
+          detail: i.configuredProjectName
+            ? `projectName: ${i.configuredProjectName}`
+            : i.projectNameComputed
+              ? 'projectName: computed by the config, with the run variables of the project it runs for'
+              : undefined,
         }
       : { ok: false, label: 'Config does not use the Piwi reporter' },
   ];

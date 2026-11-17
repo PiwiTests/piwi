@@ -442,6 +442,24 @@
       }
     }
   },
+  "runui_checkVariablesInvalid": {
+    "message": "As variáveis de execução do projeto não podem ser definidas: $problems$",
+    "placeholders": {
+      "problems": {
+        "content": "$1",
+        "example": "PATH is a name the shell keeps."
+      }
+    }
+  },
+  "runui_checkVariablesSet": {
+    "message": "Executa com as variáveis de execução do projeto: $variables$.",
+    "placeholders": {
+      "variables": {
+        "content": "$1",
+        "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
   "runui_checkFolderBusy": {
     "message": "Outra execução está em andamento nesta pasta: esta poderá ser executada quando ela terminar."
   },
