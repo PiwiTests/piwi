@@ -10,7 +10,12 @@
  * in memory while they are asked about or run. The window never reads the key nor a request token.
  */
 import * as os from 'node:os';
-import type { RunRequest, RunRequestOffer, RunRequestOutcome } from '@piwitests/core/run-request';
+import type {
+  RunRequest,
+  RunRequestFolderHints,
+  RunRequestOffer,
+  RunRequestOutcome,
+} from '@piwitests/core/run-request';
 import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
 import type { RunVariable, RunVariablesParse } from '@piwitests/core/run-variables';
 import {
@@ -174,6 +179,50 @@ function promptOf(held: HeldRequest): RunRequestPromptView {
     command: plan.display,
     hasFolder: state.links.has(request.projectId),
     answerBy: new Date(held.answerBy).toISOString(),
+  };
+}
+
+/** How long the shell waits for the instance's folder hints. */
+const HINTS_WAIT_MS = 3000;
+const NO_HINTS: RunRequestFolderHints = { repositoryUrl: null, folders: [] };
+
+/** What the shell looks for a request's folder with (`folderSearchOf`). */
+export interface RequestFolderSearch {
+  projectId: number;
+  /** The request's spec paths, once each. */
+  specs: string[];
+  /** The instance's hints (`RunRequestFolderHints`), when asked for. */
+  repositoryUrl: string | null;
+  runFolders: string[];
+}
+
+/**
+ * What the shell looks for the folder of a request the window still asks about with: its project and its spec paths,
+ * and with `hints`, what the instance says helps find it, asked for at most `HINTS_WAIT_MS`. Null for a request the
+ * window no longer asks about. The shell reads it from this server by the request's id, never from the window.
+ */
+export async function folderSearchOf(id: string, hints: boolean): Promise<RequestFolderSearch | null> {
+  const held = state.held.get(id);
+  const host = state.host;
+  if (!unanswered(id, held) || !host) return null;
+  const { request } = held;
+  let found = NO_HINTS;
+  if (hints) {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const late = new Promise<RunRequestFolderHints>((resolve) => {
+      timer = setTimeout(() => resolve(NO_HINTS), HINTS_WAIT_MS);
+    });
+    try {
+      found = await Promise.race([host.folderHints(id), late]);
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+  return {
+    projectId: request.projectId,
+    specs: [...new Set(request.tests.map((test) => test.filePath))],
+    repositoryUrl: found.repositoryUrl,
+    runFolders: found.folders,
   };
 }
 

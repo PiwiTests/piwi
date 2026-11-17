@@ -42,6 +42,8 @@ const NO_PROJECT_IN_REQUEST: Record<string, string> = {
     'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
   'server/api/run-targets/requests/[id]/claim.post.ts':
     'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
+  'server/api/run-targets/requests/[id]/folder-hints.get.ts':
+    'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
   'server/api/run-targets/requests/[id]/run-variables.get.ts':
     'A run target’s route: `requireRunTarget` authenticates its key, and the run-requests helpers check `run:receive` on each request’s project.',
   'server/api/run-targets/requests/[id]/state.post.ts':

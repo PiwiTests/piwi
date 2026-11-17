@@ -1,24 +1,28 @@
 import { randomBytes } from 'node:crypto';
-import { and, eq, gt, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, isNull, lt, or } from 'drizzle-orm';
 import type { H3Event } from 'h3';
 import {
   FINAL_RUN_REQUEST_STATES,
   RUN_REQUEST_ID,
   RUN_REQUEST_LIMITS,
   parseRunRequest,
+  readRunRequestFolderHints,
   type RunRequest,
+  type RunRequestFolderHints,
   type RunRequestOffer,
   type RunRequestOutcome,
   type RunRequestState,
 } from '@piwitests/core/run-request';
-import { runRequests, runTargets, type RunRequestRow, type RunTarget, type User } from '../database/schema';
+import { runRequests, runTargets, testRuns, type RunRequestRow, type RunTarget, type User } from '../database/schema';
 import { getDatabase, type DbClient } from '../database';
 import { apiError } from './api-error';
 import { extractApiKey, getUserAccessCached, isAuthEnabled, resolveApiKey } from './auth';
 import { RUN_TARGET_KEY_PERMISSIONS } from './extension-connect';
+import { readProjectRepositoryUrl } from './scm/project-repository';
 import { newRequestToken, REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can, type AccessSummary } from '#shared/permissions';
+import { LOCAL_RUN_ORIGINS, PRIVATE_RUN_ORIGINS, runOriginIn } from '#shared/run-eligibility';
 import { ACTIVE_STATES, projectNamesOf, RUN_STATES } from '#shared/handlers/run-requests';
 import { readProjectRunVariables } from '#shared/handlers/run-variables';
 import type { RunVariable } from '#shared/run-variables';
@@ -428,6 +432,51 @@ export async function runVariablesForTarget(
   if (!row) return { ok: false, statusCode: 404, message: 'No run request this app claimed has this id' };
   if (!(await mayReceiveOn(db, access, row.projectId))) return { ok: false, statusCode: 403, message: NOT_ALLOWED };
   return { ok: true, runVariables: (await readProjectRunVariables(db as never, row.projectId)) ?? [] };
+}
+
+/** How many of the requester's latest runs of a project the folder hints read, and over how long. */
+const HINT_RUNS = 20;
+const HINT_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
+
+/**
+ * What a target is told to find the folder of a request it claimed with (`RunRequestFolderHints`): the project's
+ * repository, and the folders the requester's own runs of the project came from in the last 180 days, newest first:
+ * those they started on a machine of theirs (`LOCAL_RUN_ORIGINS`, reported with their credentials) and those they
+ * requested, never a CI or a lab run. Only the target that claimed the request is answered, while its owner may still
+ * run tests on the project.
+ */
+export async function folderHintsForTarget(
+  { db, target, access }: RunTargetCaller,
+  id: string,
+): Promise<{ ok: true; hints: RunRequestFolderHints } | { ok: false; statusCode: number; message: string }> {
+  const [row] = await db
+    .select({ projectId: runRequests.projectId })
+    .from(runRequests)
+    .where(
+      and(eq(runRequests.id, id), eq(runRequests.requesterId, target.userId), eq(runRequests.targetId, target.id)),
+    );
+  if (!row) return { ok: false, statusCode: 404, message: 'No run request of this app has this id' };
+  if (!(await mayReceiveOn(db, access, row.projectId))) {
+    return { ok: false, statusCode: 403, message: NOT_ALLOWED };
+  }
+  const runs = await db
+    .select({ metadata: testRuns.metadata })
+    .from(testRuns)
+    .where(
+      and(
+        eq(testRuns.projectId, row.projectId),
+        gt(testRuns.startTime, new Date(Date.now() - HINT_WINDOW_MS)),
+        or(
+          and(eq(testRuns.reporterId, target.userId), runOriginIn(testRuns.origin, LOCAL_RUN_ORIGINS)),
+          and(eq(testRuns.requesterId, target.userId), runOriginIn(testRuns.origin, PRIVATE_RUN_ORIGINS)),
+        ),
+      ),
+    )
+    .orderBy(desc(testRuns.startTime), desc(testRuns.id))
+    .limit(HINT_RUNS);
+  const folders = runs.map((run) => (run.metadata as { workingDir?: unknown } | null)?.workingDir);
+  const repositoryUrl = await readProjectRepositoryUrl(db, row.projectId);
+  return { ok: true, hints: readRunRequestFolderHints({ repositoryUrl, folders }) };
 }
 
 export type TargetAnswer = { decision: 'run' } | { decision: 'not-now' } | { decision: 'refused'; detail: string };
