@@ -16,6 +16,11 @@ one.
 A project admin sets them in **Project → Settings → Run variables**: up to 10 rows of a name and a value, checked as
 you type.
 
+<figure>
+  <img src="/screenshots/project-run-variables-settings.png" alt="Project Settings, Run variables: one row TENANT = acme, the Add a variable button, and the command it starts, TENANT=acme npx playwright test, under the Linux / macOS tab">
+  <figcaption>A project of a multi-tenant app, its tenant set once for every run Piwi starts.</figcaption>
+</figure>
+
 - **A name** is capital letters, digits and `_`, not starting with a digit, 64 characters at most, each name once.
 - **A value** is 1 to 500 letters, digits, spaces and `_ - . , : / @ + =`: a tenant, a region, a brand or an address
   (`https://acme.example.com:8443/app`). No `$`, backslash, quote or shell operator, no space at either end, and not
