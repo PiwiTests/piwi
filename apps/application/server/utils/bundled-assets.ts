@@ -19,7 +19,8 @@ let changelogCache: Promise<ChangelogRelease[] | null> | null = null;
 
 /**
  * The bundled changelog, parsed once per process (read again on every call in
- * dev, so edits show up); `null` when the build has none.
+ * dev, so edits show up); `null` when the build has none or it cannot be read,
+ * in which case the next call reads it again.
  */
 export function bundledChangelog(): Promise<ChangelogRelease[] | null> {
   if (changelogCache && !import.meta.dev) return changelogCache;
@@ -27,6 +28,11 @@ export function bundledChangelog(): Promise<ChangelogRelease[] | null> {
     const text = assetText(await useStorage(CHANGELOG_STORAGE).getItemRaw('CHANGELOG.md'));
     const releases = text ? parseChangelog(text) : [];
     return releases.length ? releases : null;
-  })().catch(() => null);
+  })()
+    .catch(() => null)
+    .then((releases) => {
+      if (!releases) changelogCache = null;
+      return releases;
+    });
   return changelogCache;
 }

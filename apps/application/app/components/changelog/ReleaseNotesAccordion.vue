@@ -3,9 +3,10 @@
  * One fold per release: its date, its release page, its intro, then its entries
  * by kind, bug fixes folded behind their count. With `breakingAbove`, the
  * caller lists every release's breaking changes above the folds and a release
- * leaves its own out; otherwise each release opens on its breaking changes.
- * Entries render only through `ReleaseNotesEntryList` and `releaseNoteHtml`,
- * which escape first.
+ * leaves its own out; otherwise a release lists them after its highlights. A
+ * GitHub timestamp is shown in the viewer's time zone, a changelog day as the
+ * calendar day it names (`formatReleaseDate`). Entries render only through
+ * `ReleaseNotesEntryList` and `releaseNoteHtml`, which escape first.
  */
 import { CHANGELOG_ENTRY_KINDS, type ChangelogEntryKind } from '#shared/changelog';
 
@@ -25,14 +26,7 @@ const KIND_LABELS: Record<ChangelogEntryKind, string> = {
   other: 'Other changes',
 };
 
-const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TIMESTAMP = /^\d{4}-\d{2}-\d{2}T/;
-
-/** What `ClientDate` formats: a day read at noon UTC, so no time zone moves it to another day. */
-function clientDate(date: string): string | null {
-  if (DAY.test(date)) return `${date}T12:00:00Z`;
-  return TIMESTAMP.test(date) ? date : null;
-}
 
 const items = computed(() =>
   props.releases.map((release) => {
@@ -49,8 +43,9 @@ const items = computed(() =>
       props.breakingAbove && release.parsed.entries.breaking.length
         ? 'Its breaking changes are listed above.'
         : 'No notes for this release.';
-    const date = release.date ? clientDate(release.date) : null;
-    return { label: release.label, value: release.key, release, sections, empty, emptyText, date };
+    const timestamp = release.date && TIMESTAMP.test(release.date) ? release.date : null;
+    const day = release.date && !timestamp ? release.date : null;
+    return { label: release.label, value: release.key, release, sections, empty, emptyText, timestamp, day };
   }),
 );
 
@@ -64,8 +59,10 @@ const PROSE_LINK = 'underline decoration-dotted underline-offset-2 hover:decorat
     <template #default="{ item }">
       <span class="flex flex-wrap items-baseline gap-x-2 min-w-0">
         <span class="text-sm font-semibold text-highlighted">{{ item.label }}</span>
-        <ClientDate v-if="item.date" :date="item.date" date-only class="text-xs text-muted" />
-        <span v-else-if="item.release.date" class="text-xs text-muted">{{ item.release.date }}</span>
+        <ClientDate v-if="item.timestamp" :date="item.timestamp" date-only class="text-xs text-muted" />
+        <ClientOnly v-else-if="item.day">
+          <span class="text-xs text-muted">{{ formatReleaseDate(item.day, activeLocalePrefs().locale) }}</span>
+        </ClientOnly>
         <span v-if="item.release.current" class="text-xs text-muted" data-testid="release-notes-current">
           · this version
         </span>

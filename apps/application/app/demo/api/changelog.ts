@@ -12,7 +12,7 @@ let releases: Promise<ChangelogRelease[] | null> | null = null;
 
 async function readDemoChangelog(): Promise<ChangelogRelease[] | null> {
   const base = getDemoDbBaseUrl().replace(/\/$/, '');
-  const response = await fetch(`${base}/demo/changelog.md`);
+  const response = await fetch(`${base}/demo/changelog.md`, { cache: 'no-cache' });
   if (!response.ok) return null;
   const parsed = parseChangelog(await response.text());
   return parsed.length ? parsed : null;

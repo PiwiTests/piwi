@@ -106,6 +106,9 @@ describe('parseChangelog', () => {
     const appVersion = JSON.parse(readFileSync(join(repoRoot, 'apps/application/package.json'), 'utf8')).version;
     expect(releases.length).toBeGreaterThan(10);
     expect(releases[0]!.to).toBe(appVersion);
+    // The Changelog window pages by a release's highest version, and keys its folds by it.
+    const repeated = releases.map((r) => r.to).filter((to, i, all) => all.indexOf(to) !== i);
+    expect(repeated, 'releases sharing a highest version').toEqual([]);
     for (const release of releases) {
       const entries = Object.values(release.entries).flat();
       expect(entries.length > 0 || release.intro !== null, release.version).toBe(true);
@@ -252,13 +255,23 @@ describe('changelogPage', () => {
     expect(last.nextCursor).toBeNull();
   });
 
-  test('reads an empty page for an unknown cursor, and the default size for a limit out of range', () => {
+  test('reads an empty page for an unknown cursor, and the default size for a limit that is not a whole number', () => {
     expect(changelogPage(releases, { runningVersion: '', cursor: '9.9.9' }).releases).toEqual([]);
-    expect(changelogPage(releases, { runningVersion: '', limit: '0' }).releases).toHaveLength(CHANGELOG_PAGE_SIZE);
-    expect(changelogPage(releases, { runningVersion: '', limit: 'abc' }).releases).toHaveLength(CHANGELOG_PAGE_SIZE);
-    expect(changelogPage(releases, { runningVersion: '', limit: 500 }).releases).toHaveLength(
-      Math.min(CHANGELOG_MAX_PAGE_SIZE, releases.length),
+    for (const limit of ['0', '-3', '2.5', 'abc', undefined]) {
+      expect(changelogPage(releases, { runningVersion: '', limit }).releases, String(limit)).toHaveLength(
+        CHANGELOG_PAGE_SIZE,
+      );
+    }
+  });
+
+  test('reads at most the largest page, whatever the limit asks', () => {
+    const many = parseChangelog(
+      Array.from({ length: 60 }, (_, i) => `## [1.${60 - i}.0](https://x/compare)\n\n* add ${i}\n`).join('\n'),
     );
+    expect(many.length).toBeGreaterThan(CHANGELOG_MAX_PAGE_SIZE);
+    const page = changelogPage(many, { runningVersion: '', limit: '500' });
+    expect(page.releases).toHaveLength(CHANGELOG_MAX_PAGE_SIZE);
+    expect(page.nextCursor).toBe(`1.${60 - CHANGELOG_MAX_PAGE_SIZE + 1}.0`);
   });
 
   test('answers an empty changelog for a build without one', () => {

@@ -55,22 +55,13 @@ function loadOlder() {
   if (cursor) void load(cursor);
 }
 
-const plural = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`;
-
-/** The running version and the number of releases, as the window's description names them. */
-const facts = computed(() =>
-  [appVersion ? `You are on v${appVersion}` : null, total.value ? plural(total.value, 'release', 'releases') : null]
-    .filter(Boolean)
-    .join(' · '),
-);
-
 const PROSE_LINK = 'underline decoration-dotted underline-offset-2 hover:decoration-solid';
 </script>
 
 <template>
   <UModal v-model:open="open" title="Changelog" :ui="{ content: 'sm:max-w-2xl' }">
     <template #description>
-      <template v-if="facts">{{ facts }} · </template>
+      <template v-if="appVersion">You are on v{{ appVersion }} · </template>
       <ULink :to="PROJECT_LINKS.changelog" target="_blank" rel="noopener noreferrer" :class="PROSE_LINK"
         >Changelog on GitHub</ULink
       >
@@ -104,7 +95,7 @@ const PROSE_LINK = 'underline decoration-dotted underline-offset-2 hover:decorat
             >
               Show older releases
             </UButton>
-            <p v-if="error" class="text-xs text-muted">Could not load them: {{ error }}</p>
+            <p v-if="error" role="alert" class="text-xs text-muted">Could not load them: {{ error }}</p>
           </div>
         </template>
       </div>

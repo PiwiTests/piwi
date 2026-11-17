@@ -17,15 +17,19 @@ test.describe('Changelog', () => {
     const dialog = page.getByRole('dialog', { name: 'Changelog' });
     await expect(dialog.getByText(`You are on v${appVersion}`)).toBeVisible();
 
-    const current = dialog.locator(`[data-release="${appVersion}"]`);
-    await expect(current).toBeVisible();
+    const version = appVersion.replace(/\./g, '\\.');
+    // The running version's fold is marked, alone, and open on its notes.
+    const currentFold = dialog.getByRole('button', { name: new RegExp(`^v${version}\\b`) });
+    await expect(currentFold.getByTestId('release-notes-current')).toBeVisible();
     await expect(dialog.getByTestId('release-notes-current')).toHaveCount(1);
+    const current = dialog.locator(`[data-release="${appVersion}"]`);
     await expect(current.getByRole('link', { name: 'Release page' })).toHaveAttribute(
       'href',
-      new RegExp(`/releases/tag/v${appVersion.replace(/\./g, '\\.')}$`),
+      new RegExp(`/releases/tag/v${version}$`),
     );
 
-    const folds = dialog.getByRole('button', { name: /^v\d+\.\d+\.\d+/ });
+    // One fold per release, a grouped release named by its span.
+    const folds = dialog.getByRole('button', { name: /^(v\d+\.\d+\.\d+|\d+\.\d+\.\d+ – \d+\.\d+\.\d+)/ });
     await expect(folds).toHaveCount(10);
     await dialog.getByTestId('changelog-older').click();
     await expect(folds).toHaveCount(20);

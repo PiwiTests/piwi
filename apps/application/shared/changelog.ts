@@ -245,9 +245,10 @@ export interface ChangelogPage {
 
 /**
  * One page of the releases (newest first), starting after the release whose
- * highest version is `cursor`. An unknown cursor reads an empty page, and a
- * `limit` that is not a whole number from 1 to `CHANGELOG_MAX_PAGE_SIZE`
- * reads `CHANGELOG_PAGE_SIZE` releases.
+ * highest version is `cursor`, which no other release shares (the unit tests
+ * hold `CHANGELOG.md` to it). An unknown cursor reads an empty page. A `limit`
+ * above `CHANGELOG_MAX_PAGE_SIZE` reads that many releases, and one that is
+ * not a whole number of at least 1 reads `CHANGELOG_PAGE_SIZE`.
  */
 export function changelogPage(
   releases: ChangelogRelease[] | null,

@@ -4,6 +4,7 @@ import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 import {
   changelogReleaseItem,
   compareUrl,
+  formatReleaseDate,
   releaseNoteHtml,
   releasePageUrl,
   summarizeReleaseNotes,
@@ -126,5 +127,24 @@ describe('release items', () => {
       current: true,
     });
     expect(changelogReleaseItem(releases[0]!, '').current).toBe(false);
+  });
+});
+
+describe('formatReleaseDate', () => {
+  test('reads a day as the calendar day it names, whatever the time zone', () => {
+    expect(formatReleaseDate('2026-11-15', 'en-US')).toBe('11/15/2026');
+    expect(formatReleaseDate('2026-11-15', 'fr-FR')).toBe('15/11/2026');
+    const zone = process.env.TZ;
+    for (const tz of ['Pacific/Kiritimati', 'Pacific/Auckland', 'Pacific/Pago_Pago']) {
+      process.env.TZ = tz;
+      expect(formatReleaseDate('2026-11-15', 'en-US'), tz).toBe('11/15/2026');
+    }
+    process.env.TZ = zone;
+  });
+
+  test('formats each end of a span, a month as a month, and leaves another shape as written', () => {
+    expect(formatReleaseDate('2026-06-23 – 2026-06-28', 'en-US')).toBe('6/23/2026 – 6/28/2026');
+    expect(formatReleaseDate('2025-12 – 2026-04', 'en-US')).toBe('12/2025 – 4/2026');
+    expect(formatReleaseDate('soon', 'en-US')).toBe('soon');
   });
 });

@@ -2,9 +2,10 @@
  * The release notes the desktop shell reads for an available update
  * (`desktop_get_release_notes`), the summary the update card shows of them, and
  * the shape `ReleaseNotesAccordion` shows a release in, for them and for the
- * changelog shipped with the build.
+ * changelog shipped with the build, with the changelog's dates.
  */
 import { changelogReleaseCovers, parseReleaseNotes, splitEntryScope, type ChangelogRelease } from '#shared/changelog';
+import { formatAbsolute, toIntlLocale, type LocalePref } from '#shared/i18n/locale-format';
 import { PROJECT_LINKS } from '#shared/piwi-ecosystem';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { inlineMarkdownHtml } from './markdown-inline';
@@ -49,6 +50,35 @@ const NO_ENTITIES = { known: new Set<string>(), baseURL: '/' };
  */
 export function releaseNoteHtml(markdown: string): string {
   return inlineMarkdownHtml(markdown, NO_ENTITIES);
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/;
+const MONTH = /^\d{4}-\d{2}$/;
+
+/**
+ * A changelog date (`2026-09-22`, or a span such as `2026-06-23 – 2026-06-28`
+ * or `2025-12 – 2026-04`) in the viewer's locale. A day or a month names a
+ * calendar date, not an instant, so it is formatted in UTC from its middle and
+ * reads the same in every time zone. A part of another shape stays as written.
+ */
+export function formatReleaseDate(date: string, locale: LocalePref): string {
+  return date
+    .split(' – ')
+    .map((raw) => {
+      const part = raw.trim();
+      if (DAY.test(part)) return formatAbsolute(`${part}T12:00:00Z`, { locale, timeZone: 'UTC', dateOnly: true });
+      if (!MONTH.test(part)) return part;
+      try {
+        return new Intl.DateTimeFormat(toIntlLocale(locale), {
+          year: 'numeric',
+          month: 'numeric',
+          timeZone: 'UTC',
+        }).format(new Date(`${part}-15T12:00:00Z`));
+      } catch {
+        return part;
+      }
+    })
+    .join(' – ');
 }
 
 /** A release as `ReleaseNotesAccordion` shows it. */
