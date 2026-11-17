@@ -506,6 +506,12 @@ const tests = {
     assert.ok(channel, 'the run names the run channel');
     const ref = 'ed-0000c0de';
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    // No editor open: the stop opens its file, whatever the tests before left open.
+    assert.deepEqual(
+      vscode.workspace.textDocuments.filter((d) => d.isDirty).map((d) => d.uri.toString()),
+      [],
+    );
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     // A worker of the run, as the capture fixtures play it on its run connection.
     const { socket, heard, send, heardOne } = runWorker(channel, ref);
     const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
@@ -533,11 +539,13 @@ const tests = {
         locator: "getByRole('button', { name: 'Pay now' })",
         bar: true,
       });
-      // The file opens at the paused line, marked, with what is about to run and the controls above it.
+      // The file opens at the paused line, marked, with what is about to run and the controls above it. The mark is
+      // drawn in each editor that shows the file as the stop is heard; the cursor moves once the stop's file opens.
       await waitFor(() => api.executionPoints(pageObject.toString()).includes(3), 'the execution point');
-      const editor = vscode.window.activeTextEditor;
-      assert.equal(editor?.document.uri.toString(), pageObject.toString());
-      assert.equal(editor.selection.active.line, 3);
+      await waitFor(() => {
+        const editor = vscode.window.activeTextEditor;
+        return editor?.document.uri.toString() === pageObject.toString() && editor.selection.active.line === 3;
+      }, 'the cursor at the paused line, in the active editor');
       const lenses = await waitFor(async () => {
         const titles = await pausedLenses(pageObject);
         return titles.length ? titles : null;
