@@ -3937,7 +3937,7 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/integrations\/connections\/(\d+)$/,
     permission: 'connections:manage',
-    handler: async () => ({ success: true }),
+    handler: async () => ({ success: true, credentialDeleted: false }),
   },
   {
     method: 'POST',
@@ -4588,9 +4588,9 @@ routes.push(
   {
     method: 'DELETE',
     pattern: /^\/api\/channels\/(\d+)$/,
-    handler: async (m) => {
+    handler: async (m, _body, query) => {
       const id = parseInt(m[1]!);
-      const result = await deleteDemoChannel(await getDemoDb(), id);
+      const result = await deleteDemoChannel(await getDemoDb(), id, query?.get('deleteCredential') === 'true');
       // Like the server, a channel's subscriptions go with it.
       for (let i = _demoSubs.length - 1; i >= 0; i--) if (_demoSubs[i]!.channelId === id) _demoSubs.splice(i, 1);
       return result;

@@ -104,15 +104,16 @@ changed `PIWI_SECRET_KEY`) stays where it is, with a warning in the log at each 
 
 ## Connections and Slack channels
 
-The token typed for a Jira or Zephyr Scale connection (**Settings → Integrations**) or a global Slack channel posting
-through the Web API (**Settings → Notifications**) becomes its credential, named after it, shared with all projects
+The token typed for a Jira or Zephyr Scale connection (**Settings → Integrations**) or a global Slack channel's bot
+(**Settings → Notifications**) becomes its credential, named after it, shared with all projects
 and sent only under the Jira site (a scoped token's Atlassian gateway counts as the site), the Zephyr Scale region's
 API or Slack's Web API. **Saved credential** picks another; a token typed later rotates a connection's. Opening a
-connection (a picker, a sync, a check) is a counted read; each write (an issue, a comment, a transition, an
-attachment, a results upload, a link) and each Slack message is a row. A personal channel keeps its own token.
+connection is a counted read; each write (an issue, a comment, a transition, an attachment, a results upload, a link)
+and each Slack message is a row. A personal channel keeps its own token. Deleting one asks whether to delete its
+credential too.
 
 `PIWI_JIRA_*` and `PIWI_ZEPHYR_*` make a read-only credential that reads the token from the variable. At startup, each
-connection's token moves to a credential of its own, and the global channels' to credentials, equal tokens sharing one.
+connection's token moves to a credential of its own, and equal tokens of global channels to one.
 
 ## The log
 

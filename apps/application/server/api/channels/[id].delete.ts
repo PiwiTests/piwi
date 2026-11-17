@@ -4,14 +4,20 @@ import { notificationChannels } from '../../database/schema';
 import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { isAdministrator } from '#shared/permissions';
 import { requireRouteId } from '../../utils/project-access';
+import { deleteCredentialIfUnused } from '#shared/handlers/credentials';
+import { channelCredentialId } from '../../utils/notifications/slack-credentials';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Notifications'],
     summary: 'Delete a notification channel',
-    description: 'Deletes a channel and all associated subscriptions and deliveries.',
+    description:
+      'Deletes a channel and all associated subscriptions and deliveries. With `deleteCredential=true`, an administrator deleting a global Slack channel also deletes the credential it sent with, unless something else names it (`credentialDeleted` says which).',
     'x-required-permission': 'signed-in',
-    parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
+    parameters: [
+      { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
+      { name: 'deleteCredential', in: 'query', required: false, schema: { type: 'boolean' } },
+    ],
   },
 });
 
@@ -42,5 +48,10 @@ export default eventHandler(async (event) => {
         ? eq(notificationChannels.id, id)
         : and(eq(notificationChannels.id, id), eq(notificationChannels.userId, user.id)),
     );
-  return { success: true };
+  const credentialId = channelCredentialId(channel.config as Record<string, unknown> | null);
+  const credentialDeleted =
+    isAdmin && credentialId != null && getQuery(event).deleteCredential === 'true'
+      ? await deleteCredentialIfUnused(db, credentialId)
+      : false;
+  return { success: true, credentialDeleted };
 });

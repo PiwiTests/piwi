@@ -7,7 +7,12 @@ import {
   slackDelivery,
   type ChannelType,
 } from '#shared/notifications/channel-setup';
-import { freeCredentialName, insertCredential, loadCredentialRecord } from '#shared/handlers/credentials';
+import {
+  deleteCredentialIfUnused,
+  freeCredentialName,
+  insertCredential,
+  loadCredentialRecord,
+} from '#shared/handlers/credentials';
 import { SLACK_API_ENDPOINT } from '#shared/credentials';
 import { loadReportChannels, type ReportChannel } from '#shared/handlers/reports';
 import type { DrizzleDB } from '#shared/handlers/db';
@@ -118,8 +123,15 @@ export async function createDemoChannel(
   return { success: true, channel: toDemoChannel(row!) };
 }
 
-/** Delete a channel added in the demo; the account email stays, as the server keeps a personal email channel. */
-export async function deleteDemoChannel(db: DrizzleDB, id: number): Promise<{ success: true }> {
+/**
+ * Delete a channel added in the demo, and the credential it sent with when asked and nothing else names it; the
+ * account email stays, as the server keeps a personal email channel.
+ */
+export async function deleteDemoChannel(
+  db: DrizzleDB,
+  id: number,
+  deleteCredential = false,
+): Promise<{ success: true; credentialDeleted: boolean }> {
   if (id === DEMO_CHANNEL.id) {
     throw demoHttpError(
       400,
@@ -129,9 +141,12 @@ export async function deleteDemoChannel(db: DrizzleDB, id: number): Promise<{ su
   const deleted = await db
     .delete(notificationChannels)
     .where(eq(notificationChannels.id, id))
-    .returning({ id: notificationChannels.id });
+    .returning({ id: notificationChannels.id, config: notificationChannels.config });
   if (!deleted.length) throw demoHttpError(404, 'Channel not found');
-  return { success: true };
+  const credentialId = (deleted[0]!.config as { credentialId?: unknown } | null)?.credentialId;
+  const credentialDeleted =
+    deleteCredential && typeof credentialId === 'number' ? await deleteCredentialIfUnused(db, credentialId) : false;
+  return { success: true, credentialDeleted };
 }
 
 /** Every channel a report schedule can name, as the server's `loadReportChannels` lists them. */

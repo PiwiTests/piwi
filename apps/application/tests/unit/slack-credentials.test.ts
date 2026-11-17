@@ -26,10 +26,16 @@ vi.mock('../../server/utils/auth', () => ({
   getRequestAccess: async () => ADMIN_ACCESS,
   isAuthEnabled: () => state.authEnabled,
 }));
-vi.stubGlobal('defineRouteMeta', () => {});
-vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-vi.stubGlobal('readBody', async (event: { body: unknown }) => event.body);
-vi.stubGlobal('apiError', apiError);
+type RouteEvent = { body?: unknown; params?: Record<string, string>; query?: Record<string, string> };
+function stubRouteGlobals() {
+  vi.stubGlobal('defineRouteMeta', () => {});
+  vi.stubGlobal('eventHandler', (handler: unknown) => handler);
+  vi.stubGlobal('readBody', async (event: RouteEvent) => event.body);
+  vi.stubGlobal('getQuery', (event: RouteEvent) => event.query ?? {});
+  vi.stubGlobal('getRouterParam', (event: RouteEvent, name: string) => event.params?.[name]);
+  vi.stubGlobal('apiError', apiError);
+}
+stubRouteGlobals();
 
 const createChannel = (await import('../../server/api/channels/index.post')).default as unknown as (event: {
   body: unknown;
@@ -37,6 +43,13 @@ const createChannel = (await import('../../server/api/channels/index.post')).def
 }) => Promise<{ channel: { id: number; config: Record<string, unknown> } }>;
 const { importSlackChannelTokens, postSlackWithCredential } =
   await import('../../server/utils/notifications/slack-credentials');
+const deleteChannel = (await import('../../server/api/channels/[id].delete')).default as unknown as (
+  event: RouteEvent & { context: Record<string, unknown> },
+) => Promise<{ credentialDeleted: boolean }>;
+const deleteConnection = (await import('../../server/api/integrations/connections/[id].delete')).default as unknown as (
+  event: RouteEvent & { context: Record<string, unknown> },
+) => Promise<{ credentialDeleted: boolean }>;
+const { createConnection } = await import('../../server/utils/integrations/connections');
 const { CredentialRefusedError } = await import('../../server/utils/credentials');
 const { encryptSecret, getEncryptionKey } = await import('../../server/utils/crypto');
 
@@ -71,10 +84,7 @@ beforeEach(async () => {
 });
 afterEach(() => {
   vi.unstubAllGlobals();
-  vi.stubGlobal('defineRouteMeta', () => {});
-  vi.stubGlobal('eventHandler', (handler: unknown) => handler);
-  vi.stubGlobal('readBody', async (event: { body: unknown }) => event.body);
-  vi.stubGlobal('apiError', apiError);
+  stubRouteGlobals();
 });
 
 const create = (config: Record<string, unknown>, global = true, name = 'Releases') =>
@@ -215,5 +225,51 @@ describe('importSlackChannelTokens', () => {
       message: { text: 'moved' },
     });
     expect(posted[0]?.authorization).toBe(`Bearer ${TOKEN}`);
+  });
+});
+
+describe('deleting what names a credential', () => {
+  const removeChannel = (id: number, deleteCredential: boolean) =>
+    deleteChannel({
+      params: { id: String(id) },
+      query: deleteCredential ? { deleteCredential: 'true' } : {},
+      context: {},
+    });
+
+  test('a channel deletes its credential when asked and nothing else names it', async () => {
+    const { channel } = await create({ token: TOKEN, channelId: 'C0123456789' });
+    expect(await removeChannel(channel.id, true)).toMatchObject({ credentialDeleted: true });
+    expect(await credentialRows()).toEqual([]);
+  });
+
+  test('a channel keeps its credential when not asked, or while another channel names it', async () => {
+    const first = await create({ token: TOKEN, channelId: 'C0123456789' });
+    const credentialId = first.channel.config.credentialId as number;
+    const second = await create({ credentialId, channelId: 'C0987654321' }, true, 'Nightly');
+    expect(await removeChannel(second.channel.id, true)).toMatchObject({ credentialDeleted: false });
+    expect(await removeChannel(first.channel.id, false)).toMatchObject({ credentialDeleted: false });
+    expect(await credentialRows()).toHaveLength(1);
+  });
+
+  test('a connection deletes its credential when asked, and keeps it otherwise', async () => {
+    await db.delete(schema.integrationConnections);
+    const jira = (name: string) =>
+      createConnection(db as never, {
+        provider: 'jira',
+        name,
+        baseUrl: 'https://team.atlassian.net',
+        credentials: { email: 'me@team.io', apiToken: 'jira-token' },
+      });
+    const kept = await jira('Kept');
+    const asked = await jira('Asked');
+    const remove = (id: number, deleteCredential: boolean) =>
+      deleteConnection({
+        params: { id: String(id) },
+        query: deleteCredential ? { deleteCredential: 'true' } : {},
+        context: {},
+      });
+    expect(await remove(kept.id, false)).toMatchObject({ credentialDeleted: false });
+    expect(await remove(asked.id, true)).toMatchObject({ credentialDeleted: true });
+    expect((await credentialRows()).map((credential) => credential.name)).toEqual(['Kept']);
   });
 });

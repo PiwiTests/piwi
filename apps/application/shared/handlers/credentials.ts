@@ -486,6 +486,19 @@ export async function deleteCredential(db: DrizzleDB, id: number): Promise<void>
   await db.delete(credentials).where(eq(credentials.id, id));
 }
 
+/**
+ * Delete the credential a deleted connection or channel named, when the
+ * person asked for it: only one saved in the database that nothing names any
+ * more. Returns whether it was deleted.
+ */
+export async function deleteCredentialIfUnused(db: DrizzleDB, id: number): Promise<boolean> {
+  const record = await loadCredentialRecord(db, id);
+  if (!record || record.managedBy !== 'db') return false;
+  if (((await credentialReferences(db)).get(id) ?? []).length > 0) return false;
+  await deleteCredential(db, id);
+  return true;
+}
+
 export const CREDENTIAL_USES_PAGE_SIZE = 50;
 
 /** The filters of a credential's log. */
