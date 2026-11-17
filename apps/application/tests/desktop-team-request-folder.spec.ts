@@ -28,6 +28,7 @@ declare global {
 }
 
 const FOUND = '/home/dev/code/acme-checkout/e2e';
+const REQUEST_ID = '0f1e2d3c4b5a69788796a5b4c3d2e1f0';
 const SPEC = 'tests/checkout.spec.ts';
 
 /** The checks of the request: no folder, a linked one, or an older copy that lacks the test. */
@@ -36,7 +37,7 @@ type FolderState = 'none' | 'linked' | 'older';
 function request(state: FolderState) {
   const linked = state === 'linked';
   return {
-    id: '0f1e2d3c4b5a69788796a5b4c3d2e1f0',
+    id: REQUEST_ID,
     instance: 'https://piwi.example.com',
     projectId: 7,
     projectName: 'Acme Checkout',
@@ -55,8 +56,6 @@ function request(state: FolderState) {
     runnable: linked,
     command: linked ? `npx playwright test ${SPEC}:42` : '',
     hasFolder: state !== 'none',
-    repositoryUrl: 'https://github.com/acme/checkout',
-    runFolders: [FOUND],
     answerBy: new Date(Date.now() + 600_000).toISOString(),
   };
 }
@@ -70,7 +69,9 @@ async function openRequest(page: Page, found: FoundFolder[], state: FolderState 
         core: {
           invoke: async (cmd: string, args?: Record<string, unknown>) => {
             invocations.push({ cmd, args });
-            if (cmd === 'desktop_find_request_folders') return { search: 3, folders, complete: true };
+            if (cmd === 'desktop_find_request_folders') {
+              return { search: 3, folders, complete: true, repository: 'github.com/acme/checkout' };
+            }
             if (cmd === 'desktop_link_request_folder') {
               const place = args?.found;
               return typeof place === 'number' && args?.search === 3 ? (folders[place]?.path ?? null) : null;
@@ -109,30 +110,25 @@ test.describe('Desktop team request folder', () => {
     const { dialog, folder } = await openRequest(page, [
       { path: FOUND, playwrightConfig: 'playwright.config.ts', specsFound: 1, source: 'run' },
     ]);
-    await expect(
-      folder.getByText("Piwi needs your copy of Acme Checkout's code (github.com/acme/checkout) on this computer"),
-    ).toBeVisible();
+    await expect(folder.getByText("Piwi needs your copy of Acme Checkout's code on this computer")).toBeVisible();
 
     await folder.getByRole('button', { name: 'Find it for me' }).click();
 
     await expect(folder.getByText('Found on this computer')).toBeVisible();
     await expect(folder.getByText('A run of yours came from this folder.')).toBeVisible();
     await expect(folder.getByText('and the test file.')).toBeVisible();
-    // What the instance said helps find the folder steers the shell's search.
-    expect((await invocationOf(page, 'desktop_find_request_folders'))!.args).toEqual({
-      projectId: '7',
-      specs: [SPEC],
-      repositoryUrl: 'https://github.com/acme/checkout',
-      runFolders: [FOUND],
-    });
+    await expect(
+      folder.getByText("Piwi needs your copy of Acme Checkout's code (github.com/acme/checkout) on this computer"),
+    ).toBeVisible();
+    // The window names the request alone: the shell reads its tests and the instance's hints itself.
+    expect((await invocationOf(page, 'desktop_find_request_folders'))!.args).toEqual({ requestId: REQUEST_ID });
 
     await folder.getByRole('button', { name: `Use ${FOUND}` }).click();
 
     await expect(dialog.getByText(`Linked folder: ${FOUND}`)).toBeVisible();
     await expect(folder).toBeHidden();
     expect((await invocationOf(page, 'desktop_link_request_folder'))!.args).toEqual({
-      projectId: '7',
-      specs: [SPEC],
+      requestId: REQUEST_ID,
       found: 0,
       search: 3,
     });
@@ -146,7 +142,7 @@ test.describe('Desktop team request folder', () => {
     await expect(
       folder.getByText("No copy of Acme Checkout's code was found in the usual places on this computer."),
     ).toBeVisible();
-    await expect(folder.getByText('downloaded first from github.com/acme/checkout')).toBeVisible();
+    await expect(folder.getByText('(it comes from github.com/acme/checkout)')).toBeVisible();
     await expect(folder.getByRole('button', { name: 'Look again' })).toBeVisible();
     await expect(folder.getByRole('button', { name: 'Choose the folder…' })).toBeEnabled();
   });

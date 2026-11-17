@@ -22,6 +22,7 @@ import { readProjectRepositoryUrl } from './scm/project-repository';
 import { newRequestToken, REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import { can, type AccessSummary } from '#shared/permissions';
+import { LOCAL_RUN_ORIGINS, PRIVATE_RUN_ORIGINS, runOriginIn } from '#shared/run-eligibility';
 import { ACTIVE_STATES, projectNamesOf, RUN_STATES } from '#shared/handlers/run-requests';
 
 export {
@@ -376,14 +377,16 @@ export async function claimRequest(
   return moveOrExplain(db, target, id, moved, 'This request was already claimed, or has expired');
 }
 
-/** How many of the requester's latest runs of a project the folder hints read. */
+/** How many of the requester's latest runs of a project the folder hints read, and over how long. */
 const HINT_RUNS = 20;
+const HINT_WINDOW_MS = 180 * 24 * 60 * 60 * 1000;
 
 /**
  * What a target is told to find the folder of a request it claimed with (`RunRequestFolderHints`): the project's
- * repository, and the folders the requester's own runs of the project were reported from, those reported with their
- * credentials and those they requested, newest first. Only the target that claimed the request is answered, while its
- * owner may still run tests on the project.
+ * repository, and the folders the requester's own runs of the project came from in the last 180 days, newest first:
+ * those they started on a machine of theirs (`LOCAL_RUN_ORIGINS`, reported with their credentials) and those they
+ * requested, never a CI or a lab run. Only the target that claimed the request is answered, while its owner may still
+ * run tests on the project.
  */
 export async function folderHintsForTarget(
   { db, target, access }: RunTargetCaller,
@@ -405,7 +408,11 @@ export async function folderHintsForTarget(
     .where(
       and(
         eq(testRuns.projectId, row.projectId),
-        or(eq(testRuns.reporterId, target.userId), eq(testRuns.requesterId, target.userId)),
+        gt(testRuns.startTime, new Date(Date.now() - HINT_WINDOW_MS)),
+        or(
+          and(eq(testRuns.reporterId, target.userId), runOriginIn(testRuns.origin, LOCAL_RUN_ORIGINS)),
+          and(eq(testRuns.requesterId, target.userId), runOriginIn(testRuns.origin, PRIVATE_RUN_ORIGINS)),
+        ),
       ),
     )
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))

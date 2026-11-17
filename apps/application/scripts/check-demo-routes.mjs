@@ -75,6 +75,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'PUT /api/desktop/run-target/local-runs', // desktop build only; the folders the shell's own local runs are going in
   'POST /api/desktop/run-target/requests/:id/answer', // desktop build only; the person's answer in the window
   'POST /api/desktop/run-target/requests/:id/plan', // desktop build only; the checks again once a folder is linked
+  'POST /api/desktop/run-target/requests/:id/folder-search', // desktop build only; the shell reads what to look for a folder with
   'POST /api/desktop/run-target/requests/:id/launch', // desktop build only; the shell takes the request token and command
   'POST /api/desktop/run-target/requests/:id/started', // desktop build only; the shell started the requested run
   'POST /api/desktop/run-target/requests/:id/ended', // desktop build only; the requested run's Playwright exited

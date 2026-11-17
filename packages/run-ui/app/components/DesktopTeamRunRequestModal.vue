@@ -49,6 +49,8 @@ interface FolderSearch {
   folders: FoundFolder[];
   /** Every place was searched whole. */
   complete: boolean;
+  /** The project's repository as the instance names it, without its scheme: `github.com/acme/shop`. */
+  repository: string | null;
 }
 /** The request whose folder the shell is looking for, and the one whose folder it is linking. */
 const findingFor = ref<string | null>(null);
@@ -122,13 +124,12 @@ const folderIssue = computed<'none' | 'config' | 'tests' | null>(() => {
   if (failed('config')) return 'config';
   return failed('specs') ? 'tests' : null;
 });
-/** The project's repository as the instance names it, without its scheme: `github.com/acme/shop`. */
-const repository = computed(() => current.value?.repositoryUrl?.replace(/^https?:\/\//, '') ?? null);
-/** The project's code, in words: `Acme Checkout's code (github.com/acme/shop)`. */
-const projectCode = computed(() => `${project.value}'s code${repository.value ? ` (${repository.value})` : ''}`);
-
 /** What **Find it for me** found for the request shown. */
 const foundHere = computed(() => (found.value && found.value.requestId === current.value?.id ? found.value : null));
+/** The project's repository, once a search named it. */
+const repository = computed(() => foundHere.value?.repository ?? null);
+/** The project's code, in words: `Acme Checkout's code (github.com/acme/shop)`. */
+const projectCode = computed(() => `${project.value}'s code${repository.value ? ` (${repository.value})` : ''}`);
 
 /** Which of the request's spec files a found folder holds, in words. */
 function testsHeld(folder: FoundFolder): string {
@@ -144,13 +145,8 @@ async function findFolder() {
   if (!request || !core || findingFor.value) return;
   findingFor.value = request.id;
   try {
-    // The instance's hints only steer the search: the shell checks each folder, and asks before linking one.
-    const answer = await core.invoke<FolderSearch>('desktop_find_request_folders', {
-      projectId: String(request.projectId),
-      specs: specFiles.value,
-      repositoryUrl: request.repositoryUrl ?? null,
-      runFolders: request.runFolders ?? [],
-    });
+    // The window names the request alone: the shell reads its tests and the instance's hints from this app's server.
+    const answer = await core.invoke<FolderSearch>('desktop_find_request_folders', { requestId: request.id });
     found.value = { requestId: request.id, ...answer };
   } catch (error) {
     toast.add({ title: 'Could not look for the folder', description: errorMessage(error), color: 'error' });
@@ -172,8 +168,7 @@ async function chooseFolder(place: number | null = null) {
   try {
     // A found folder is named by its search and its place: the shell asks the person before linking it.
     const folder = await core.invoke<string | null>('desktop_link_request_folder', {
-      projectId: String(request.projectId),
-      specs: specFiles.value,
+      requestId: request.id,
       found: place,
       search: place === null ? null : (foundHere.value?.search ?? null),
     });
@@ -310,9 +305,8 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
                 ? `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the usual places on this computer.`
                 : `No ${folderIssue === 'none' ? '' : 'other '}copy of ${project}'s code was found in the places Piwi could look through.`
             }}
-            If you have one elsewhere, choose its folder. If not, the code has to be downloaded first{{
-              repository ? ` from ${repository}` : ''
-            }}: ask whoever set up these tests to help you.
+            If you have one elsewhere, choose its folder. If not, the code has to be set up on this computer first: ask
+            whoever set up these tests to help you{{ repository ? ` (it comes from ${repository})` : '' }}.
           </p>
 
           <div class="flex flex-wrap gap-2">

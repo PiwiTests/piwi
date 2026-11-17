@@ -58,12 +58,6 @@ export interface RunRequestPromptView {
   command: string;
   /** Whether a folder is linked to its project on this machine. */
   hasFolder: boolean;
-  /**
-   * What helps find its folder while it has none it can run in, as the instance tells it: the project's repository
-   * (null when it names none) and the folders the person's own runs of the project came from.
-   */
-  repositoryUrl: string | null;
-  runFolders: string[];
   /** When the instance ends the request unanswered (ISO 8601). */
   answerBy: string;
 }

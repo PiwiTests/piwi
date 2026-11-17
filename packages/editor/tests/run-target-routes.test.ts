@@ -466,25 +466,38 @@ describe('the end of a requested run', () => {
   });
 });
 
-describe('a request with no folder it can run in', () => {
-  type Asked = { hasFolder: boolean; repositoryUrl: string | null; runFolders: string[] };
-  const asked = async () => ((await host.call('GET', '', SHELL)).body?.requests ?? []) as Asked[];
+describe('the search for a request’s folder', () => {
+  const asked = async () => ((await host.call('GET', '', SHELL)).body?.requests ?? []) as { id: string }[];
 
-  test('carries what the instance says helps find its folder', async () => {
+  test('gives the shell the request’s project and specs, and the instance’s hints when asked', async () => {
     await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {} });
     await until(async () => (await asked()).length === 1);
-    expect((await asked())[0]).toMatchObject({
-      hasFolder: false,
-      repositoryUrl: 'https://github.com/acme/shop',
-      runFolders: ['/home/robin/shop/e2e'],
+
+    const plain = await host.call('POST', `/requests/${REQUEST_ID}/folder-search`, SHELL, {});
+    expect(plain.body).toEqual({
+      projectId: 3,
+      specs: ['tests/checkout.spec.ts'],
+      repositoryUrl: null,
+      runFolders: [],
+    });
+    expect(instance.paths.some((p) => p.endsWith('/folder-hints'))).toBe(false);
+
+    const hinted = await host.call('POST', `/requests/${REQUEST_ID}/folder-search`, SHELL, { hints: true });
+    expect(hinted).toMatchObject({
+      status: 200,
+      noStore: true,
+      body: {
+        projectId: 3,
+        specs: ['tests/checkout.spec.ts'],
+        repositoryUrl: 'https://github.com/acme/shop',
+        runFolders: ['/home/robin/shop/e2e'],
+      },
     });
   });
 
-  test('a request that can run in its linked folder asks for no hint', async () => {
-    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
-    await until(async () => (await asked()).length === 1);
-    expect((await asked())[0]).toMatchObject({ hasFolder: true, repositoryUrl: null, runFolders: [] });
-    expect(instance.paths.some((p) => p.endsWith('/folder-hints'))).toBe(false);
+  test('answers 404 for a request the window no longer asks about', async () => {
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {} });
+    expect((await host.call('POST', `/requests/${'f'.repeat(32)}/folder-search`, SHELL, {})).status).toBe(404);
   });
 });
 

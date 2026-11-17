@@ -341,43 +341,25 @@ describe('the life of a request', () => {
       .update(schema.projects)
       .set({ repositoryUrl: 'https://github.com/acme/shop' })
       .where(eq(schema.projects.id, allowed));
-    const at = (minutes: number) => new Date(T0.getTime() + minutes * 60_000);
+    const at = (minutes: number) => new Date(Date.now() - 60 * 60_000 + minutes * 60_000);
+    const run = (minutes: number, values: Partial<typeof schema.testRuns.$inferInsert>, workingDir: string) => ({
+      projectId: allowed,
+      status: 'passed',
+      startTime: at(minutes),
+      metadata: { workingDir },
+      ...values,
+    });
     await db.insert(schema.testRuns).values([
+      run(1, { reporterId: userId, origin: 'local' }, '/home/robin/old'),
+      run(3, { requesterId: userId, origin: 'request' }, '/home/robin/shop/e2e'),
+      run(2, { reporterId: userId, origin: 'editor' }, 'relative/e2e'),
+      run(4, { reporterId: otherUserId, origin: 'local' }, '/home/sam/shop'),
+      run(5, { reporterId: userId, origin: 'ci' }, '/home/runner/work/shop'),
+      run(6, { reporterId: userId, origin: 'flake-lab' }, '/home/robin/.piwi/worktrees/7'),
+      run(7, { projectId: viewOnly, reporterId: userId, origin: 'local' }, '/home/robin/docs'),
       {
-        projectId: allowed,
-        status: 'passed',
-        startTime: at(1),
-        reporterId: userId,
-        metadata: { workingDir: '/home/robin/old' },
-      },
-      {
-        projectId: allowed,
-        status: 'passed',
-        startTime: at(3),
-        requesterId: userId,
-        origin: 'request',
-        metadata: { workingDir: '/home/robin/shop/e2e' },
-      },
-      {
-        projectId: allowed,
-        status: 'passed',
-        startTime: at(2),
-        reporterId: userId,
-        metadata: { workingDir: 'relative/e2e' },
-      },
-      {
-        projectId: allowed,
-        status: 'passed',
-        startTime: at(4),
-        reporterId: otherUserId,
-        metadata: { workingDir: '/home/sam/shop' },
-      },
-      {
-        projectId: viewOnly,
-        status: 'passed',
-        startTime: at(5),
-        reporterId: userId,
-        metadata: { workingDir: '/home/robin/docs' },
+        ...run(8, { reporterId: userId, origin: 'local' }, '/home/robin/long-ago'),
+        startTime: new Date('2020-01-01'),
       },
     ]);
 

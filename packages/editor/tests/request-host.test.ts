@@ -395,8 +395,10 @@ describe('the request host', () => {
     expect(made.state).not.toBe('revoked');
   });
 
-  test('reads a request’s folder hints, and none from an instance that answers none', async () => {
-    const instance = await fakeInstance({ status: (path) => (path.includes(id(2)) ? 404 : null) });
+  test('reads a request’s folder hints, and none from an instance that answers none or refuses them', async () => {
+    const instance = await fakeInstance({
+      status: (path) => (path.includes(id(2)) ? 404 : path.includes(id(3)) ? 403 : null),
+    });
     cleanups.push(instance.close);
     const { made } = host(instance.url);
     expect(await made.folderHints(id(1))).toEqual({
@@ -408,6 +410,7 @@ describe('the request host', () => {
       path: `/api/run-targets/requests/${id(1)}/folder-hints`,
     });
     expect(await made.folderHints(id(2))).toEqual({ repositoryUrl: null, folders: [] });
+    expect(await made.folderHints(id(3))).toEqual({ repositoryUrl: null, folders: [] });
     expect(await made.folderHints('../x')).toEqual({ repositoryUrl: null, folders: [] });
     expect(made.state).not.toBe('revoked');
   });

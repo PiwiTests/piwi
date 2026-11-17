@@ -15,6 +15,7 @@ import {
   isRequestId,
   keyToKeep,
   localRunsOf,
+  folderSearchOf,
   launchOf,
   linksOf,
   planAgain,
@@ -199,6 +200,19 @@ export const RUN_TARGET_ROUTES = {
       if (decision !== 'run' && decision !== 'not-now') return refused(400, 'The decision is run or not-now');
       const answered = await answerRunRequest(request.id!, decision, typeof command === 'string' ? command : null);
       return answered.ok ? ok({ launch: answered.launch }) : refused(answered.statusCode, answered.message);
+    },
+  },
+  /**
+   * What the shell looks for a request's folder with: its project and spec paths, and with `{ hints: true }` what the
+   * instance says helps find it. The shell asks by the request's id, so nothing the window says reaches the search.
+   */
+  folderSearch: {
+    method: 'POST',
+    path: '/requests/:id/folder-search',
+    shellOnly: true,
+    handle: async (request) => {
+      const found = await folderSearchOf(request.id!, bodyOf(request).hints === true);
+      return found ? ok(found) : refused(404, 'This request is no longer asked about');
     },
   },
   /** What the shell starts after **Run**, once. */

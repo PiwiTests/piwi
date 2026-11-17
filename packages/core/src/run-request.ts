@@ -423,15 +423,18 @@ export interface RunRequestFolderHints {
 /** How many folders the hints name at most. */
 export const MAX_RUN_REQUEST_HINT_FOLDERS = 5;
 
-/** An absolute path: `/` on macOS and Linux, a drive letter or `\\server` on Windows. */
-const ABSOLUTE_PATH = /^(?:\/|[A-Za-z]:[\\/]|\\\\[^\\])/;
+/**
+ * An absolute path on a disk of the machine: `/` on macOS and Linux, a drive letter on Windows. Never a network path
+ * (`\\server\share`, `//server/share`), which a check would make the machine connect to.
+ */
+const ABSOLUTE_PATH = /^(?:\/(?!\/)|[A-Za-z]:[\\/])/;
 /** An http(s) URL with a host and a path, and no space. */
 const REPOSITORY_URL = /^https?:\/\/[^\s/]+\/\S+$/;
 
 /**
  * Folder hints read from untrusted input. What does not pass is left out, never refused: a URL that is not http(s), a
- * path that is not absolute, a hidden character, a value over 500 characters; folders once each, at most
- * `MAX_RUN_REQUEST_HINT_FOLDERS`.
+ * path that is not absolute on a disk of the machine, a hidden character, a value over 500 characters; folders once
+ * each, at most `MAX_RUN_REQUEST_HINT_FOLDERS`.
  */
 export function readRunRequestFolderHints(value: unknown): RunRequestFolderHints {
   const record = isRecord(value) ? value : {};

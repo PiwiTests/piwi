@@ -358,14 +358,7 @@ describe('specFileArgument', () => {
 
 describe('readRunRequestFolderHints', () => {
   test('keeps an http(s) repository and absolute folders, once each, at most five', () => {
-    const folders = [
-      '/home/robin/code/shop/e2e',
-      'C:\\Users\\robin\\shop',
-      '\\\\server\\share\\shop',
-      '/a',
-      '/b',
-      '/c',
-    ];
+    const folders = ['/home/robin/code/shop/e2e', 'C:\\Users\\robin\\shop', 'D:/work/shop', '/a', '/b', '/c'];
     expect(
       readRunRequestFolderHints({
         repositoryUrl: 'https://github.com/acme/shop',
@@ -378,7 +371,16 @@ describe('readRunRequestFolderHints', () => {
     expect(
       readRunRequestFolderHints({
         repositoryUrl: 'file:///srv/shop',
-        folders: ['relative/e2e', '', 42, '/ok', `/${'x'.repeat(600)}`, '/bidi\u202e'],
+        folders: [
+          'relative/e2e',
+          '\\\\server\\share\\shop',
+          '//server/share',
+          '',
+          42,
+          '/ok',
+          `/${'x'.repeat(600)}`,
+          '/bidi\u202e',
+        ],
       }),
     ).toEqual({ repositoryUrl: null, folders: ['/ok'] });
     expect(readRunRequestFolderHints('nothing')).toEqual({ repositoryUrl: null, folders: [] });
