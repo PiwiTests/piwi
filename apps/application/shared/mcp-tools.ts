@@ -180,6 +180,21 @@ export const MCP_TOOL_DEFS = [
     },
   },
   {
+    name: 'list_environments',
+    module: 'core',
+    description: md(
+      'List a project’s environments, the deployments its tests run against, in their order.',
+      'A run’s `environment` label resolves to one of them by its `key` or one of its `aliases` (ignoring case; an alias with `*` matches a run of characters), and a label nothing takes creates a `discovered` one. Each item has `id`, `key`, `name`, `description`, `aliases`, `appFromCheckout` (whether the app under test is built from the run’s checkout, or deployed and independent of the run’s commit), `protected` with its `requiredTags`, and `archived`. Use it to name an environment before filtering runs by one, or to tell whether a failure ran against a deployed app.',
+    ),
+    inputSchema: {
+      type: 'object',
+      properties: {
+        projectId: { type: 'number', description: 'Project ID from list_projects' },
+      },
+      required: ['projectId'],
+    },
+  },
+  {
     name: 'list_runs',
     module: 'core',
     description: 'List a project’s test runs, newest first, optionally filtered by status or branch.',

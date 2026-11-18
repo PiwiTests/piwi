@@ -647,6 +647,7 @@ describe('the life of a request', () => {
     expect(await runVariablesForTarget(newer, id)).toEqual({
       ok: true,
       runVariables: [{ name: 'TENANT', value: 'acme' }],
+      environment: null,
     });
     // Another target, or a request it did not claim, reads none of them.
     expect(await runVariablesForTarget(older, id)).toMatchObject({ ok: false, statusCode: 404 });
@@ -685,11 +686,66 @@ describe('the life of a request', () => {
     expect(await answerRequest(c, next, { decision: 'run' })).toMatchObject({ ok: true, row: { state: 'starting' } });
   });
 
+  test('a request for an environment waits for an app that applies environments, which reads its variables', async () => {
+    await db
+      .update(schema.projects)
+      .set({
+        runVariables: [
+          { name: 'TENANT', value: 'acme' },
+          { name: 'TEST_ENV', value: 'local' },
+        ],
+      })
+      .where(eq(schema.projects.id, allowed));
+    const [staging] = await db
+      .insert(schema.environments)
+      .values({
+        projectId: allowed,
+        key: 'staging',
+        keyFold: 'staging',
+        name: 'Staging',
+        runVariables: [{ name: 'TEST_ENV', value: 'staging' }],
+        envFile: '.env.staging',
+      })
+      .returning();
+    const id = await request({ environmentId: staging!.id });
+
+    const older = await caller();
+    const refused = await claimRequest(older, id, ['run-variables']);
+    expect(refused).toMatchObject({ ok: false, statusCode: 409 });
+    expect(refused.ok ? '' : refused.message).toMatch(/cannot apply environments/);
+    expect((await stored(id)).state).toBe('waiting');
+
+    const newer = await caller();
+    expect(await claimRequest(newer, id, ['run-variables', 'environments'])).toMatchObject({ ok: true });
+    expect(await runVariablesForTarget(newer, id)).toEqual({
+      ok: true,
+      runVariables: [
+        { name: 'TENANT', value: 'acme' },
+        { name: 'TEST_ENV', value: 'staging' },
+      ],
+      environment: {
+        id: staging!.id,
+        key: 'staging',
+        name: 'Staging',
+        protected: false,
+        requiredTags: [],
+        envFile: '.env.staging',
+      },
+    });
+
+    // Once protected, only a manager of the project reads it: this owner contributes.
+    await db
+      .update(schema.environments)
+      .set({ protected: true, requiredTags: ['@smoke'] })
+      .where(eq(schema.environments.id, staging!.id));
+    expect(await runVariablesForTarget(newer, id)).toMatchObject({ ok: false, statusCode: 403 });
+  });
+
   test('a project with no run variables runs on any target, and reads none', async () => {
     const c = await caller();
     const id = await request();
     expect(await claimRequest(c, id)).toMatchObject({ ok: true });
-    expect(await runVariablesForTarget(c, id)).toEqual({ ok: true, runVariables: [] });
+    expect(await runVariablesForTarget(c, id)).toEqual({ ok: true, runVariables: [], environment: null });
     state.machineRuns.delete(allowed);
     expect(await runVariablesForTarget(c, id)).toMatchObject({ ok: false, statusCode: 403 });
   });

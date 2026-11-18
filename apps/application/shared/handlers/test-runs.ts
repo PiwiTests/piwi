@@ -41,6 +41,7 @@ import { isOptInCapabilityOn, isPassiveCapabilityDeclined } from './capabilities
 import { hasResourceReport } from './resource-reports';
 import { countRunVideos } from './run-videos';
 import { loadRunEnvironments } from './environment-snapshots';
+import { runEnvironmentFacts } from './environments';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
 import { workerKey } from '#shared/worker-lane';
@@ -391,6 +392,7 @@ export async function getTestRun(
     machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
     project: projectPublic,
     environments: await loadRunEnvironments(db, id),
+    ...(await runEnvironmentFacts(db, testRun)),
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
       id: r.id,

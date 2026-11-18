@@ -13,6 +13,7 @@ import {
   type RunRequestTest,
 } from '@piwitests/core/run-request';
 import {
+  environments,
   projects,
   runRequests,
   runTargets,
@@ -183,6 +184,8 @@ export interface RunRequestView {
   target: { id: number; kind: string; deviceName: string } | null;
   /** The run the request started, once its request token started one. */
   runId: number | null;
+  /** The environment of the project the run is for; null for none (the config decides). */
+  environmentId: number | null;
   expiresAt: string;
   createdAt: string;
   updatedAt: string;
@@ -234,6 +237,7 @@ function viewOf(
     stopRequested: row.stopRequestedAt != null,
     target: row.targetId == null ? null : (targets.get(row.targetId) ?? null),
     runId: row.runId ?? null,
+    environmentId: row.environmentId ?? null,
     expiresAt: row.expiresAt.toISOString(),
     createdAt: row.createdAt.toISOString(),
     updatedAt: row.updatedAt.toISOString(),
@@ -351,6 +355,7 @@ export const runRequestBodySchema = z.object({
   ]),
   options: z.unknown().optional(),
   targetId: id.optional(),
+  environmentId: id.nullish(),
 });
 
 export interface CreateRunRequestInput {
@@ -362,12 +367,16 @@ export interface CreateRunRequestInput {
   source: RunRequestSourceInput;
   options: RunRequestOptions;
   targetId: number | null;
+  /** The environment of the project the run is for; null or absent for none. */
+  environmentId?: number | null;
+  /** Whether the requester manages the project: a protected environment needs it. */
+  managesProject?: boolean;
   now?: Date;
 }
 
 export type CreateRunRequestResult =
   | { ok: true; row: RunRequestRow; skipped: number }
-  | { ok: false; statusCode: 404 | 422 | 429; message: string };
+  | { ok: false; statusCode: 403 | 404 | 422 | 429; message: string };
 
 /**
  * Store a request for the requester's own targets, its tests resolved from the stored executions. The cap of waiting
@@ -388,6 +397,27 @@ export async function createRunRequest(db: DrizzleDB, input: CreateRunRequestInp
       .from(runTargets)
       .where(and(eq(runTargets.id, input.targetId), eq(runTargets.userId, input.requesterId)));
     if (!target) return { ok: false, statusCode: 404, message: 'No connected app of yours has this id' };
+  }
+  const environmentId = input.environmentId ?? null;
+  if (environmentId !== null) {
+    const [environment] = await db
+      .select({ name: environments.name, protected: environments.protected })
+      .from(environments)
+      .where(
+        and(
+          eq(environments.id, environmentId),
+          eq(environments.projectId, input.projectId),
+          isNull(environments.archivedAt),
+        ),
+      );
+    if (!environment) return { ok: false, statusCode: 404, message: 'No environment of this project has this id' };
+    if (environment.protected && !input.managesProject) {
+      return {
+        ok: false,
+        statusCode: 403,
+        message: `${environment.name} is protected: only the project's managers start runs against it from Piwi`,
+      };
+    }
   }
   const request = parseRunRequest({
     id: input.id,
@@ -410,6 +440,7 @@ export async function createRunRequest(db: DrizzleDB, input: CreateRunRequestInp
       tests: request.value.tests,
       options: request.value.options,
       source: request.value.source,
+      environmentId,
       state: 'waiting',
       expiresAt: new Date(now.getTime() + RUN_REQUEST_LIMITS.lifetimeMs),
       createdAt: now,

@@ -108,6 +108,23 @@ function backfillAnalyticsRollups(): void {
 }
 
 /**
+ * Give the runs stored with a label and no environment theirs (`backfillRunEnvironments`), discovering an environment
+ * for each label nothing takes, without blocking startup. It reads only such runs, so an interrupted pass resumes at
+ * the next start, and costs one query once every run has its environment.
+ */
+function backfillRunEnvironmentIds(): void {
+  void (async () => {
+    try {
+      const { backfillRunEnvironments } = await import('#shared/handlers/environments');
+      const given = await backfillRunEnvironments(db as any);
+      if (given > 0) console.log(`[Database] Environment backfill gave ${given} run(s) their environment`);
+    } catch (err) {
+      console.error('[Database] Environment backfill failed:', err);
+    }
+  })();
+}
+
+/**
  * Give the retries stored without an attempt history one from their run's
  * stored attempts (`backfillAttemptHistoriesOnce`), once per instance, without
  * blocking startup; an interrupted backfill resumes at the next start.
@@ -319,6 +336,7 @@ async function openDatabase(): Promise<DB> {
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          backfillRunEnvironmentIds();
           hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
@@ -377,6 +395,7 @@ async function openDatabase(): Promise<DB> {
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          backfillRunEnvironmentIds();
           hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);

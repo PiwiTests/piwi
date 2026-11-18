@@ -222,7 +222,13 @@ export async function demoReadRunRequestBody(body: unknown, viewerId: number | n
   if (projectId === null) {
     throw demoHttpError(404, 'executionId' in source ? 'Execution not found' : 'Test run not found');
   }
-  return { source, options: options.value, targetId: parsed.data.targetId ?? null, projectId };
+  return {
+    source,
+    options: options.value,
+    targetId: parsed.data.targetId ?? null,
+    environmentId: parsed.data.environmentId ?? null,
+    projectId,
+  };
 }
 
 /** POST /api/run-requests, once the caller was checked on the project. */
@@ -234,7 +240,8 @@ export async function apiCreateRunRequest(
   if (!(await isOptInCapabilityOn(db, input.projectId, 'machine-runs'))) {
     throw demoHttpError(403, 'Run on my machine is off for this project');
   }
-  const created = await createRunRequest(db, { id: newDemoRequestId(), requesterId, ...input });
+  // The demo's visitor manages every project, as an administrator.
+  const created = await createRunRequest(db, { id: newDemoRequestId(), requesterId, ...input, managesProject: true });
   if (!created.ok) throw demoHttpError(created.statusCode, created.message);
   return { ...(await runRequestView(db, created.row)), skipped: created.skipped };
 }

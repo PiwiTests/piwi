@@ -51,6 +51,41 @@ export const projects = sqliteTable(
   }),
 );
 
+// A project's environments: the deployments of its application its tests run against (Local, Staging, Production).
+// A run reports a label; ingest resolves it to one of these by key or alias (`@piwitests/core/environments`), and an
+// unknown label creates a `discovered` one. A run Piwi starts for an environment gets its run variables.
+export const environments = sqliteTable(
+  'environments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(), // the label its runs report; `PIWI_ENVIRONMENT` of a run Piwi starts for it
+    keyFold: text('key_fold').notNull(), // the key in lower case: unique in the project
+    name: text('name').notNull(),
+    description: text('description'),
+    aliases: text('aliases', { mode: 'json' }), // string[]: other labels, or `*` patterns, that resolve to it; null = none
+    runVariables: text('run_variables', { mode: 'json' }), // RunVariable[]: set over the project's on the runs Piwi starts for it; null = none
+    appFromCheckout: integer('app_from_checkout', { mode: 'boolean' }).notNull().default(false), // true = the app under test is built from the run's checkout
+    protected: integer('protected', { mode: 'boolean' }).notNull().default(false), // true = confirmed, limited to its required tags, started by a project manager only, never by an agent
+    requiredTags: text('required_tags', { mode: 'json' }), // string[]: the tags a protected environment's runs are limited to
+    envFile: text('env_file'), // the file its config loads (`.env.staging`), never read by Piwi
+    position: integer('position').notNull().default(0), // the order pickers show
+    discovered: integer('discovered', { mode: 'boolean' }).notNull().default(false), // true = created by a run's label, until a manager saves it
+    archivedAt: integer('archived_at', { mode: 'timestamp' }), // set = out of the pickers; its runs keep it
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectKeyIdx: uniqueIndex('idx_environments_project_key').on(t.projectId, t.keyFold),
+  }),
+);
+
 // Test runs table
 export const testRuns = sqliteTable(
   'test_runs',
@@ -77,7 +112,8 @@ export const testRuns = sqliteTable(
     reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`; -1 when the run claimed a plan whose reuse could not be recorded
     filterDetails: text('filter_details', { mode: 'json' }), // JSON: { grep?, grepInvert? }
 
-    environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
+    environment: text('environment'), // The label the run reported (e.g. 'production', 'staging'), trimmed
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`); null for none
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
@@ -119,6 +155,11 @@ export const testRuns = sqliteTable(
     requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
     reporterIdx: index('idx_test_runs_reporter').on(table.reporterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
+    projectEnvironmentStartIdx: index('idx_test_runs_project_environment_start').on(
+      table.projectId,
+      table.environmentId,
+      table.startTime,
+    ),
   }),
 );
 
@@ -2660,6 +2701,8 @@ export type OAuthClient = typeof oauthClients.$inferSelect;
 export type OAuthGrant = typeof oauthGrants.$inferSelect;
 export type OAuthAuthorizationRequest = typeof oauthAuthorizationRequests.$inferSelect;
 export type ProjectUrlPattern = typeof projectUrlPatterns.$inferSelect;
+export type Environment = typeof environments.$inferSelect;
+export type NewEnvironment = typeof environments.$inferInsert;
 export type AccountToken = typeof accountTokens.$inferSelect;
 export type NewAccountToken = typeof accountTokens.$inferInsert;
 export type NotificationChannel = typeof notificationChannels.$inferSelect;
@@ -3155,6 +3198,7 @@ export const runRequests = sqliteTable(
       .references(() => users.id, { onDelete: 'cascade' }),
     targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
     claimFeatures: text('claim_features', { mode: 'json' }), // string[]: what the target that claimed it said it does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the run is for; null for none (the config decides)
     kind: text('kind').notNull(), // RunRequestKind
     tests: text('tests', { mode: 'json' }).notNull(), // RunRequestTest[]
     options: text('options', { mode: 'json' }).notNull(), // RunRequestOptions

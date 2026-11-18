@@ -32,6 +32,7 @@ import { joinSuitePath } from '../utils/suites';
 import { formatBytes } from '../utils/format-bytes';
 import type { ImportCheckResult, ImportRunResponse } from '../import.types';
 import { upsertDailyRollup } from './analytics/rollups';
+import { resolveRunEnvironment } from './environments';
 
 /** A file the host stored, as it should be recorded in `files`. */
 export interface StoredImportFile {
@@ -313,7 +314,7 @@ export async function importBlobReportRun(
       skippedTests: parsed.skippedTests,
       didNotRunTests: parsed.didNotRunTests,
       flakyTests: parsed.flakyTests,
-      environment: input.environment ?? null,
+      ...(await resolveRunEnvironment(db, projectId, input.environment)),
       branch: resolveRunBranch({ scm: parsed.scm }),
       label: input.label ?? null,
       playwrightVersion: parsed.playwrightVersion,
@@ -493,7 +494,7 @@ export async function importTraceRun(
             status: 'passed',
             startTime: new Date(parsed.startedAt),
             duration: 0,
-            environment: input.environment ?? null,
+            ...(await resolveRunEnvironment(db, projectId, input.environment)),
             label: input.label ?? null,
             playwrightVersion: parsed.playwrightVersion,
             importHash: runKey,

@@ -1268,6 +1268,13 @@
       "when": 1794932059932,
       "tag": "0180_mighty_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "6",
+      "when": 1795007575511,
+      "tag": "0181_safe_hex",
+      "breakpoints": true
     }
   ]
 }

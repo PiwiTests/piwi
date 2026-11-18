@@ -19,6 +19,7 @@ import { resolveIngestProject } from '../../utils/ingest-project';
 import { applyReporterKeep } from '#shared/handlers/run-keep';
 import { publicRunUrl } from '#shared/run-url';
 import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 
 defineRouteMeta({
   openAPI: {
@@ -139,7 +140,7 @@ export default eventHandler(async (event) => {
           failedTests: 0,
           skippedTests: 0,
           didNotRunTests: 0,
-          environment: body.environment || null,
+          ...(await resolveRunEnvironment(db as never, project.id, body.environment)),
           branch: resolveRunBranch(body.metadata),
           label: body.label || null,
           metadata,
@@ -205,7 +206,7 @@ export default eventHandler(async (event) => {
         failedTests: 0,
         skippedTests: 0,
         didNotRunTests: 0,
-        environment: body.environment || null,
+        ...(await resolveRunEnvironment(db as never, project.id, body.environment)),
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
         metadata,

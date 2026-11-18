@@ -20,8 +20,10 @@ export interface RunVariable {
 
 /** The bounds of a project's run variables. */
 export const RUN_VARIABLE_LIMITS = {
-  /** Run variables per project. */
+  /** Run variables per project, and per environment of a project. */
   count: 10,
+  /** Run variables a run gets: its project's and its environment's together. */
+  merged: 20,
   /** Characters of a name. */
   nameChars: 64,
   /** Characters of a value. */
@@ -246,15 +248,16 @@ export function runVariableValueProblem(name: string, value: string): string | n
 export type RunVariablesParse = { ok: true; value: RunVariable[] } | { ok: false; problems: string[] };
 
 /**
- * Reads a project's run variables: a list of `{ name, value }` objects with no other field, at most 10, each name once,
- * each name and value passing {@link runVariableNameProblem} and {@link runVariableValueProblem}. `undefined` and
- * `null` read as none. Any problem refuses the whole list: a target never runs with part of a project's variables.
+ * Reads a list of run variables: `{ name, value }` objects with no other field, at most `limit` (a project's or an
+ * environment's 10, or the 20 a run gets from both), each name once, each name and value passing
+ * {@link runVariableNameProblem} and {@link runVariableValueProblem}. `undefined` and `null` read as none. Any problem
+ * refuses the whole list: a target never runs with part of a project's variables.
  */
-export function parseRunVariables(value: unknown): RunVariablesParse {
+export function parseRunVariables(value: unknown, limit: number = RUN_VARIABLE_LIMITS.count): RunVariablesParse {
   if (value === undefined || value === null) return { ok: true, value: [] };
   if (!Array.isArray(value)) return { ok: false, problems: ['The run variables must be a list.'] };
-  if (value.length > RUN_VARIABLE_LIMITS.count) {
-    return { ok: false, problems: [`A project has at most ${RUN_VARIABLE_LIMITS.count} run variables.`] };
+  if (value.length > limit) {
+    return { ok: false, problems: [`A list of run variables holds at most ${limit} of them.`] };
   }
   const problems: string[] = [];
   const variables: RunVariable[] = [];
@@ -286,6 +289,21 @@ export function parseRunVariables(value: unknown): RunVariablesParse {
     variables.push({ name, value: text });
   }
   return problems.length > 0 ? { ok: false, problems } : { ok: true, value: variables };
+}
+
+/**
+ * The run variables a run gets for an environment: the project's, in their order, each name the environment also sets
+ * taking the environment's value, then the environment's other ones in their order. Neither list is checked here:
+ * {@link parseRunVariables} with {@link RUN_VARIABLE_LIMITS.merged} checks the result as one list.
+ */
+export function mergeRunVariables(project: readonly RunVariable[], environment: readonly RunVariable[]): RunVariable[] {
+  const own = new Map(environment.map((variable) => [variable.name, variable.value]));
+  const merged = project.map((variable) =>
+    own.has(variable.name) ? { name: variable.name, value: own.get(variable.name)! } : { ...variable },
+  );
+  const projectNames = new Set(project.map((variable) => variable.name));
+  for (const variable of environment) if (!projectNames.has(variable.name)) merged.push({ ...variable });
+  return merged;
 }
 
 /** The shells a copied command is written for. */

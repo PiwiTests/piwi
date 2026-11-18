@@ -15,12 +15,13 @@ export const RUN_REQUEST_KINDS = ['run'] as const;
 export type RunRequestKind = (typeof RUN_REQUEST_KINDS)[number];
 
 /**
- * What a target does beyond running a request, as it says when it describes itself (`PUT /api/run-targets/self`):
- * `run-variables`, it applies the project's run variables (`@piwitests/core/run-variables`), checked again, to the
- * run and shows them in its confirmation. An instance ends a request of a project with run variables that a target
- * without it claims, with words that say to update the app.
+ * What a target does beyond running a request, as it says with each claim: `run-variables`, it applies the project's
+ * run variables (`@piwitests/core/run-variables`), checked again, to the run and shows them in its confirmation;
+ * `environments`, it applies the environment a request names (`@piwitests/core/environments`): its run variables over
+ * the project's, `PIWI_ENVIRONMENT`, a protected environment's required tags and confirmation. A claim without the
+ * feature a request needs answers 409, and the request waits for an app that has it, with words that say to update.
  */
-export const RUN_TARGET_FEATURES = ['run-variables'] as const;
+export const RUN_TARGET_FEATURES = ['run-variables', 'environments'] as const;
 export type RunTargetFeature = (typeof RUN_TARGET_FEATURES)[number];
 
 /** The bounds of a request, fixed here rather than in a setting. */
