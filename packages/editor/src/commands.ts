@@ -51,7 +51,10 @@ const REQUIRED_TAGS_FILTER =
  * Whether `arg` is the filter that keeps a run to the tests carrying a protected environment's required tags, as
  * `requiredTagsGrepInvert` writes it from tags and a run's own pattern that a shell leaves as they are in double quotes.
  * Its own characters a shell could expand (`!`, `\s`, `$` before `)`) are left as they are in double quotes by bash
- * and zsh run with a command (no history expansion), PowerShell and cmd, so it is a shell word in double quotes too.
+ * and zsh run with a command (no history expansion) and by PowerShell, so it is a shell word in double quotes too.
+ * PowerShell hands it to a native command bare, having no whitespace, so a `.cmd` such as `npx.cmd` would let cmd
+ * read its `^` and `|`: on Windows such a run starts the project's Playwright CLI with `node`
+ * ({@link playwrightNodeCommand}).
  */
 export function isRequiredTagsFilter(arg: string): boolean {
   const match = REQUIRED_TAGS_FILTER.exec(arg);
@@ -149,6 +152,18 @@ export function playwrightTestCommand(args: unknown): string | null {
   if (!Array.isArray(args) || !validPlaywrightArgs(args)) return null;
   const words = args.map(shellWord);
   return words.every((w) => w !== null) ? ['npx playwright test', ...words].join(' ') : null;
+}
+
+/**
+ * `node <cli> test` with `args`: the project's Playwright CLI (`cli`, its path, written with `/`) started by Node with
+ * no `.cmd` between, so no cmd reads the arguments; null when `cli` is unknown, `args` are not
+ * {@link validPlaywrightArgs}, or one cannot be quoted.
+ */
+export function playwrightNodeCommand(cli: string | null, args: unknown): string | null {
+  if (!cli || !Array.isArray(args) || !validPlaywrightArgs(args)) return null;
+  const file = shellWord(cli.replaceAll('\\', '/'));
+  const words = args.map(shellWord);
+  return file && words.every((w) => w !== null) ? ['node', file, 'test', ...words].join(' ') : null;
 }
 
 /**

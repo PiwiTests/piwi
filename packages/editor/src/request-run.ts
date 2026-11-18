@@ -87,7 +87,7 @@ export function requestCheckSentence(code: RequestCheckCode, args: RequestCheckA
     case 'environment-set':
       return `Runs for ${value('environment')}: ${ENVIRONMENT_VARIABLE}=${value('key')}.`;
     case 'environment-protected':
-      return `Runs for ${value('environment')}, a protected environment: only the tests tagged ${value('tags')} run.`;
+      return `Runs for ${value('environment')}, a protected environment: only the tests tagged ${value('tags')} run, beside the setup and teardown projects they depend on, which Playwright runs whole.`;
     case 'folder-busy':
       return 'Another run is going in this folder: this one can run once it ends.';
     case 'config-missing':

@@ -783,13 +783,21 @@ reference.
 ### Choose environment
 
 The environment item (`piwi.environment`, beside the status item) shows the environment the runs of the active file's
-config are for, else of the first config whose project lists environments (`environmentItem` in `src/glue.ts`, from
-`StatusResult.contexts[].environment`), a lock and the warning background for a protected one; it hides while no
-project lists one. A click, or **Piwi: Choose environment…** (`piwi.chooseEnvironment`), offers that config's choices
-as `piwi/environments` answers them, **None** first. The choice is kept in workspace state (`piwi.environments`, by
-config folder, none as no entry: `withEnvironment`) and sent with `piwi/setEnvironment`; the credentials carry the
-whole map (`environments`). What a run for an environment gets, and the confirmation a protected one asks:
+config are for, or nothing when that config shows none; with the active file in no config, the first config's that
+shows one (`environmentItem` in `src/glue.ts`, from `StatusResult.contexts[].environment`), a lock and the warning
+background for a protected one. A click, or **Piwi: Choose environment…** (`piwi.chooseEnvironment`, in the palette
+while a context is connected or the item shows: `piwi.environmentShown`), offers that config's choices as
+`piwi/environments` answers them, **None** first, also for a config whose instance or project cannot be read now but
+that has an environment chosen. `piwi/setEnvironment` answers the choice the config holds (`KeptEnvironment`: the
+environment with its instance and project), which is kept in workspace state (`piwi.environments`, by config folder,
+none as no entry: `withEnvironment`); the credentials carry the whole map (`environments`). What a run for an
+environment gets, and the confirmation a protected one asks:
 [Environments](../../packages/editor/ARCHITECTURE.md#environments) in the editor service's reference.
+
+A run for a protected environment (`RunCommand.protected`) is confirmed for that run alone, and its task says so in its
+definition (`protected`). **Tasks: Rerun Last Task** cannot be kept from starting it again: the extension ends such a
+task as it starts (`tasks.onDidStartTask`) and says to start it from Piwi. That is a known limit: the task's shell has
+started by then, and Playwright may have begun before the task ends.
 
 ## Open in IDE
 

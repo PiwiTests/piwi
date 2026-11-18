@@ -342,7 +342,8 @@ data class RunCommandArgs(
  * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
  * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`). `label` says who
  * started it when a person did not (`Started by Claude Code`, an agent's `run_start`). `name` is what the run is called
- * (`checkout.spec.ts:12`), its Run tab's title and its name wherever it is picked.
+ * (`checkout.spec.ts:12`), its Run tab's title and its name wherever it is picked. `protected` says the run is for a
+ * protected environment, confirmed for this run alone: the plugin offers no Rerun of it and keeps no run configuration.
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -354,6 +355,7 @@ data class RunCommand(
     val pauses: Boolean? = null,
     val label: String? = null,
     val name: String? = null,
+    val protected: Boolean? = null,
 )
 
 /** `piwi/startRun`: run the command the service built for an agent's `run_start`, as a person's run starts. */
@@ -457,8 +459,19 @@ data class EnvironmentItem(
     val protected: Boolean = false,
 )
 
-/** `piwi/setEnvironment`: the environment chosen for the runs of the context at `root`, its id, or null for none. */
+/**
+ * An environment chosen for a context's runs: its `id` and `name`, and the instance (`serverUrl`) and the project whose
+ * environment it is; it applies to the context only while the context reads them.
+ */
+data class KeptEnvironment(val id: Int = 0, val name: String = "", val serverUrl: String = "", val projectId: Int = 0)
+
+/**
+ * `piwi/setEnvironment`: choose the environment of the runs of the context at `root`, its id, or null for none. The
+ * answer is the choice the context holds after it (`kept`, null for none), which the plugin keeps for the root.
+ */
 data class SetEnvironmentParams(val root: String, val environmentId: Int?)
+
+data class SetEnvironmentResult(val kept: KeptEnvironment? = null)
 
 /** `piwi/status`; `desktopUrl` is the desktop app running on this machine, null when it does not run. */
 data class StatusResult(val contexts: List<ContextStatus>? = null, val desktopUrl: String? = null)
@@ -1097,7 +1110,8 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
  * `piwi/setCredentials`: the instance saved in the IDE, and, with `desktop`, the desktop app first while it runs,
  * on the project `desktopProject` names, else the one linked there to the folder. `baselines` are the baselines chosen
  * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `environments` are the
- * environments chosen per context root, by id, kept on this machine; when sent, a context they leave out runs with none. `failureSeverity` is the
+ * environments chosen per context root, as `piwi/setEnvironment` answered them, kept on this machine; when sent, a
+ * context they leave out runs with none. `failureSeverity` is the
  * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
  * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
  * `mcpAuthorization` is how the agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key, or
@@ -1111,7 +1125,7 @@ data class EditorCredentials(
     val desktop: Boolean = false,
     val desktopProject: String? = null,
     val baselines: Map<String, BaselineChoice>? = null,
-    val environments: Map<String, Int>? = null,
+    val environments: Map<String, KeptEnvironment>? = null,
     val failureSeverity: String? = null,
     val mcpAuthorization: String? = null,
     val statusBarAlert: String? = null,
@@ -1910,8 +1924,8 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/environments")
     fun environments(params: EnvironmentsParams): CompletableFuture<EnvironmentsResult?>
 
-    @JsonNotification("piwi/setEnvironment")
-    fun setEnvironment(params: SetEnvironmentParams)
+    @JsonRequest("piwi/setEnvironment")
+    fun setEnvironment(params: SetEnvironmentParams): CompletableFuture<SetEnvironmentResult?>
 
     @JsonNotification("piwi/declineRecord")
     fun declineRecord(params: DeclineRecordParams)

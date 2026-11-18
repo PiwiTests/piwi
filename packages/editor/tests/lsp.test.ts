@@ -28,6 +28,7 @@ import type {
   AgentContextResult,
   ApplyPickResult,
   EnvironmentsResult,
+  SetEnvironmentResult,
   FailuresResult,
   FileSummary,
   McpServersResult,
@@ -220,6 +221,32 @@ let projectRunVariables: unknown = null;
 let projectEnvironments: unknown = null;
 /** What the instance answers project 7's run variables for an environment with, by its id; none answers 404. */
 const environmentRunVariables = new Map<number, unknown>();
+
+/** An environment as `GET /api/projects/:id/environments` lists it. */
+function environmentRecord(id: number, key: string, name: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    key,
+    name,
+    description: null as string | null,
+    aliases: [],
+    runVariables: [],
+    appFromCheckout: false,
+    protected: false,
+    requiredTags: [] as string[],
+    envFile: null,
+    position: id,
+    discovered: false,
+    archived: false,
+    ...extra,
+  };
+}
+
+/** An environment as the run variables route names it. */
+function environmentForRun(record: ReturnType<typeof environmentRecord>) {
+  const { id, key, name, protected: locked, requiredTags, envFile } = record;
+  return { id, key, name, protected: locked, requiredTags, envFile };
+}
 /** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
 const goneRunStreams = new Map<number, number>();
 /** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
@@ -1819,46 +1846,25 @@ describe('the Piwi language server', () => {
         testIds: [1],
         ...extra,
       }) as Promise<RunCommand | null>;
+    const choose = (environmentId: number | null) =>
+      client.sendRequest('piwi/setEnvironment', { root: dir, environmentId }) as Promise<SetEnvironmentResult | null>;
     const asked: string[] = [];
     let answer: (message: string) => { title: string } | null = () => ({ title: 'Allow' });
     const prompt = client.onRequest('window/showMessageRequest', (params: { message: string }) => {
       asked.push(params.message);
       return answer(params.message);
     });
-    const record = (id: number, key: string, name: string, extra: Record<string, unknown> = {}) => ({
-      id,
-      key,
-      name,
-      description: null,
-      aliases: [],
-      runVariables: [],
-      appFromCheckout: false,
-      protected: false,
-      requiredTags: [],
-      envFile: null,
-      position: id,
-      discovered: false,
-      archived: false,
-      ...extra,
-    });
-    const forRun = ({ id, key, name, protected: locked, requiredTags, envFile }: ReturnType<typeof record>) => ({
-      id,
-      key,
-      name,
-      protected: locked,
-      requiredTags,
-      envFile,
-    });
-    const staging = record(4, 'staging', 'Staging', { description: 'Reset every night.' });
-    const production = record(5, 'production', 'Production', { protected: true, requiredTags: ['@smoke'] });
+    const staging = environmentRecord(4, 'staging', 'Staging', { description: 'Reset every night.' });
+    const qa = environmentRecord(6, 'qa', 'QA');
+    const production = environmentRecord(5, 'production', 'Production', { protected: true, requiredTags: ['@smoke'] });
     projectEnvironments = {
-      environments: [staging, production, record(6, 'old', 'Old', { archived: true })],
+      environments: [staging, qa, production, environmentRecord(7, 'old', 'Old', { archived: true })],
     };
-    environmentRunVariables.set(4, {
-      runVariables: [{ name: 'TEST_ENV', value: 'staging' }],
-      environment: forRun(staging),
-    });
-    environmentRunVariables.set(5, { runVariables: [], environment: forRun(production) });
+    // The project sets TENANT; Staging and QA set nothing of their own.
+    const tenant = [{ name: 'TENANT', value: 'acme' }];
+    environmentRunVariables.set(4, { runVariables: tenant, environment: environmentForRun(staging) });
+    environmentRunVariables.set(6, { runVariables: tenant, environment: environmentForRun(qa) });
+    environmentRunVariables.set(5, { runVariables: [], environment: environmentForRun(production) });
     const status = async () => ((await client.sendRequest('piwi/status')) as StatusResult).contexts[0]!;
     try {
       await client.sendRequest('piwi/refresh');
@@ -1868,31 +1874,41 @@ describe('the Piwi language server', () => {
       expect(choices.items.map((item) => [item.id, item.label, item.description, item.picked])).toEqual([
         [null, 'None', 'the Playwright config decides', true],
         [4, 'Staging', 'staging', false],
+        [6, 'QA', 'qa', false],
         [5, 'Production', 'production', false],
       ]);
       expect(choices.items[1]!.detail).toBe('Reset every night.');
-      expect(choices.items[2]!.detail).toBe('Protected: each run is confirmed, and keeps to the tests tagged @smoke.');
+      expect(choices.items[3]!.detail).toBe(
+        'Protected: each run is confirmed, and only the tests tagged @smoke run, beside the setup and teardown projects they depend on, which Playwright runs whole.',
+      );
       expect((await status()).environment).toMatchObject({ id: null, text: 'No environment' });
       expect(await client.sendRequest('piwi/environments', { root: '/elsewhere' })).toBeNull();
 
-      await client.sendNotification('piwi/setEnvironment', { root: dir, environmentId: 4 });
-      await waitFor(async () => ((await status()).environment?.text === 'Staging' ? true : undefined));
+      // The choice names the instance and the project, which the client keeps; an id the project lists not is refused.
+      expect(await choose(4)).toEqual({ kept: { id: 4, name: 'Staging', serverUrl: url, projectId: 7 } });
+      expect(await choose(9)).toEqual({ kept: { id: 4, name: 'Staging', serverUrl: url, projectId: 7 } });
+      expect((await status()).environment?.text).toBe('Staging');
       const command = await runArgs();
       expect(asked).toEqual([
-        'Acme Mugs and its environment Staging set run variables that every run Piwi starts for its tests against Staging gets: TEST_ENV=staging. Run its tests with them?',
+        'Acme Mugs and its environment Staging set run variables that every run Piwi starts for its tests against Staging gets: TENANT=acme PIWI_ENVIRONMENT=staging. Run its tests with them?',
       ]);
       expect(command).toMatchObject({
         command: 'npx playwright test tests/checkout.spec.ts:3',
-        env: { TEST_ENV: 'staging', PIWI_ENVIRONMENT: 'staging', PIWI_ORIGIN: 'editor' },
+        env: { TENANT: 'acme', PIWI_ENVIRONMENT: 'staging', PIWI_ORIGIN: 'editor' },
       });
+      expect(command!.protected).toBeUndefined();
+      // The same variables for another environment are another set: asked again.
+      await choose(6);
+      expect(await runArgs()).toMatchObject({ env: { TENANT: 'acme', PIWI_ENVIRONMENT: 'qa' } });
+      expect(asked).toHaveLength(2);
 
       // A protected environment asks before every run, and keeps it to the required tags, the run's own filter kept.
-      await client.sendNotification('piwi/setEnvironment', { root: dir, environmentId: 5 });
-      await waitFor(async () => ((await status()).environment?.protected ? true : undefined));
+      await choose(5);
+      expect((await status()).environment?.protected).toBe(true);
       answer = () => ({ title: 'Not now' });
       expect(await runArgs()).toBeNull();
-      expect(asked[1]).toBe(
-        'Production is a protected environment of Acme Mugs: this run keeps to the tests tagged @smoke. Run them against Production?',
+      expect(asked[2]).toBe(
+        'Production is a protected environment of Acme Mugs: only the tests tagged @smoke run, beside the setup and teardown projects they depend on, which Playwright runs whole. Run against Production?',
       );
       answer = () => ({ title: 'Run against Production' });
       const kept = await runArgs({ grepInvert: 'slow' });
@@ -1901,18 +1917,25 @@ describe('the Piwi language server', () => {
         args: ['tests/checkout.spec.ts:3', '--grep-invert', filter],
         command: `npx playwright test tests/checkout.spec.ts:3 --grep-invert "${filter}"`,
         env: { PIWI_ENVIRONMENT: 'production' },
+        protected: true,
       });
       expect(await runArgs()).not.toBeNull();
-      expect(asked).toHaveLength(4);
+      expect(asked).toHaveLength(5);
 
-      // An environment the project no longer has runs nothing, and says so.
-      await client.sendNotification('piwi/setEnvironment', { root: dir, environmentId: 9 });
-      await waitFor(async () => ((await status()).environment?.id === 9 ? true : undefined));
+      // An environment the project no longer has runs nothing, and the item says so.
+      await choose(4);
+      projectEnvironments = { environments: [qa, production] };
+      environmentRunVariables.delete(4);
+      await client.sendRequest('piwi/refresh');
+      expect((await status()).environment).toMatchObject({ id: 4, text: 'Staging' });
+      expect((await status()).environment?.tooltip).toMatch(/^Staging is no longer one of Acme Mugs’s environments/);
       expect(await runArgs()).toBeNull();
-      expect(asked).toHaveLength(4);
+      expect(asked).toHaveLength(5);
+      // None stays offered, and is chosen.
+      expect(await choose(null)).toEqual({ kept: null });
     } finally {
       prompt.dispose();
-      await client.sendNotification('piwi/setEnvironment', { root: dir, environmentId: null });
+      await choose(null);
       projectEnvironments = null;
       environmentRunVariables.clear();
       await client.sendRequest('piwi/refresh');
@@ -4066,7 +4089,11 @@ describe('an agent’s run against a protected environment', () => {
       dir,
       false,
       { env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' } },
-      { agents: { enabled: true }, startsRuns: true, credentials: { environments: { [dir]: 5 } } },
+      {
+        agents: { enabled: true },
+        startsRuns: true,
+        credentials: { environments: { [dir]: { id: 5, name: 'Production', serverUrl: url, projectId: 7 } } },
+      },
     );
     const started: unknown[] = [];
     other.client.onRequest('piwi/startRun', (params: unknown) => {
@@ -4104,6 +4131,111 @@ describe('an agent’s run against a protected environment', () => {
     } finally {
       other.stop();
       environmentRunVariables.clear();
+    }
+  });
+});
+
+describe('a chosen environment', () => {
+  const kept = (id: number, name: string, serverUrl = url) => ({ id, name, serverUrl, projectId: 7 });
+
+  test('on Windows, starts a protected run with the project’s Playwright CLI and node, never through a .cmd', async () => {
+    const production = environmentRecord(5, 'production', 'Production', { protected: true, requiredTags: ['@smoke'] });
+    environmentRunVariables.set(5, { runVariables: [], environment: environmentForRun(production) });
+    const playwright = path.join(dir, 'node_modules', '@playwright', 'test');
+    fs.mkdirSync(playwright, { recursive: true });
+    fs.writeFileSync(path.join(playwright, 'package.json'), '{"name":"@playwright/test"}');
+    fs.writeFileSync(path.join(playwright, 'cli.js'), '');
+    const other = await runService(
+      dir,
+      false,
+      {
+        env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+        platform: 'win32',
+      },
+      { credentials: { environments: { [dir]: kept(5, 'Production') } } },
+    );
+    other.client.onRequest('window/showMessageRequest', () => ({ title: 'Run against Production' }));
+    try {
+      await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.connected ? true : undefined;
+      });
+      const command = (await other.client.sendRequest('piwi/runArgs', {
+        uri: pathToFileURL(path.join(dir, 'tests/checkout.spec.ts')).href,
+        testIds: [1],
+      })) as RunCommand;
+      const cli = fs.realpathSync.native(path.join(playwright, 'cli.js')).replaceAll('\\', '/');
+      expect(command.command).toBe(
+        `node "${cli}" test tests/checkout.spec.ts:3 --grep-invert "${requiredTagsGrepInvert(['@smoke'])}"`,
+      );
+      expect(command).toMatchObject({ protected: true, env: { PIWI_ENVIRONMENT: 'production' } });
+    } finally {
+      other.stop();
+      fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+      environmentRunVariables.clear();
+    }
+  });
+
+  test('of an instance that cannot be read runs nothing, says so, and can be set to None', async () => {
+    const other = await runService(
+      dir,
+      false,
+      {
+        env: {
+          PIWI_DASHBOARD_URL: 'http://127.0.0.1:9',
+          PIWI_PROJECT_NAME: 'Acme Mugs',
+          PIWI_DESKTOP_CONFIG: '/nonexistent',
+        },
+      },
+      { credentials: { environments: { [dir]: kept(4, 'Staging', 'http://127.0.0.1:9') } } },
+    );
+    try {
+      const environment = await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.problemKind === 'unreachable' ? status.contexts[0].environment : undefined;
+      });
+      expect(environment).toMatchObject({ id: 4, text: 'Staging' });
+      expect(environment!.tooltip).toMatch(/^Piwi cannot read the instance or the project \(Could not reach /);
+      const runArgs = () =>
+        other.client.sendRequest('piwi/runArgs', {
+          uri: pathToFileURL(path.join(dir, 'tests/checkout.spec.ts')).href,
+          testIds: [],
+          locations: ['tests/checkout.spec.ts:3'],
+        }) as Promise<RunCommand | null>;
+      expect(await runArgs()).toBeNull();
+      expect(other.notices[other.notices.length - 1]?.message).toMatch(
+        /^Piwi runs nothing for Staging while it cannot read the instance or the project \(.*\): Piwi: Choose environment… can choose None, to run without one\.$/,
+      );
+      // None is offered and taken, whatever the instance answers.
+      const choices = (await other.client.sendRequest('piwi/environments', { root: dir })) as EnvironmentsResult;
+      expect(choices.items.map((item) => item.label)).toEqual(['None']);
+      expect(await other.client.sendRequest('piwi/setEnvironment', { root: dir })).toEqual({ kept: null });
+      expect(await runArgs()).not.toBeNull();
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('of another instance does not apply to this one', async () => {
+    const other = await runService(
+      dir,
+      false,
+      { env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' } },
+      { credentials: { environments: { [dir]: kept(5, 'Production', 'http://127.0.0.1:9') } } },
+    );
+    try {
+      await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.connected ? true : undefined;
+      });
+      const command = (await other.client.sendRequest('piwi/runArgs', {
+        uri: pathToFileURL(path.join(dir, 'tests/checkout.spec.ts')).href,
+        testIds: [1],
+      })) as RunCommand;
+      expect(command.env?.PIWI_ENVIRONMENT).toBeUndefined();
+      expect(command.protected).toBeUndefined();
+    } finally {
+      other.stop();
     }
   });
 });

@@ -93,7 +93,7 @@ import {
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_BASELINE_NOTIFICATION,
-  SET_ENVIRONMENT_NOTIFICATION,
+  SET_ENVIRONMENT_REQUEST,
   ENVIRONMENTS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   SET_RUN_PAIRING_NOTIFICATION,
@@ -119,6 +119,8 @@ import {
   type RunningLinesChoice,
   type SetBaselineParams,
   type SetEnvironmentParams,
+  type SetEnvironmentResult,
+  type KeptEnvironment,
   type EnvironmentsParams,
   type EnvironmentsResult,
   type SetRunPairingParams,
@@ -400,7 +402,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
-    environments: context.workspaceState.get<Record<string, number | null>>(ENVIRONMENTS) ?? {},
+    environments: context.workspaceState.get<Record<string, KeptEnvironment>>(ENVIRONMENTS) ?? {},
     failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
     codeLens: settings.get<CodeLensChoice>('codeLens') ?? 'all',
     locatorWarnings: settings.get<boolean>('locatorWarnings') ?? true,
@@ -976,6 +978,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           : undefined;
     statusItem.show();
     const environment = serviceDown ? null : environmentItem(status, activeFile());
+    // The palette offers Choose environment… while the item shows, whatever the connection.
+    setContextKey('piwi.environmentShown', !!environment);
     if (environment) {
       environmentStatusItem.text = environment.text;
       environmentStatusItem.tooltip = environment.tooltip;
@@ -1077,7 +1081,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   ): Promise<boolean> => {
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(command.cwd));
     const task = new vscode.Task(
-      { type: RUN_TASK_TYPE, ref: command.ref },
+      { type: RUN_TASK_TYPE, ref: command.ref, ...(command.protected ? { protected: true } : {}) },
       folder ?? vscode.TaskScope.Workspace,
       // The run's name (`RunCommand.name`), as its other places say it; a command the service did not register, its line.
       command.label
@@ -1118,6 +1122,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return definition.type === RUN_TASK_TYPE && typeof definition.ref === 'string' ? definition.ref : null;
   };
   context.subscriptions.push(
+    // A run for a protected environment is confirmed for that run alone: Tasks: Rerun Last Task starting it again is
+    // ended as it starts, and the person starts it from Piwi, which asks again.
+    vscode.tasks.onDidStartTask((e) => {
+      const ref = taskRef(e.execution);
+      if (!ref || e.execution.task.definition.protected !== true || pendingStarts.has(ref)) return;
+      e.execution.terminate();
+      void vscode.window.showWarningMessage(
+        'Piwi: a run against a protected environment is confirmed each time. Start it again from Piwi to be asked.',
+      );
+    }),
     vscode.tasks.onDidStartTaskProcess((e) => {
       const ref = taskRef(e.execution);
       if (!ref || pendingStarts.delete(ref)) return;
@@ -1701,10 +1715,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (handed) handed = { ...handed, baselines };
       await lc.sendNotification(SET_BASELINE_NOTIFICATION, { root: target.root, choice } satisfies SetBaselineParams);
     }),
-    // From the environment item, its config; else the active file's, else the one picked among those with a project.
+    // From the environment item, its config; else the active file's, else the one picked among those with a project
+    // or an environment chosen, which can always be set to None, whatever the connection.
     vscode.commands.registerCommand('piwi.chooseEnvironment', async (root?: string) => {
-      if (!connectedOrSay()) return;
-      const contexts = (status?.contexts ?? []).filter((c) => c.projectId !== null);
+      const contexts = (status?.contexts ?? []).filter((c) => c.projectId !== null || c.environment?.id != null);
+      if (menuDown || !contexts.length) {
+        connectedOrSay();
+        return;
+      }
       const file = activeFile();
       const inFile = file
         ? contexts.filter((c) => isUnder(c.root, file)).sort((a, b) => b.root.length - a.root.length)
@@ -1737,14 +1755,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         { placeHolder: choices.title, matchOnDescription: true, matchOnDetail: true },
       );
       if (!picked) return;
-      const kept = context.workspaceState.get<Record<string, number | null>>(ENVIRONMENTS);
-      const environments = withEnvironment(kept, target.root, picked.id);
+      // The service answers the choice the config holds, with the instance and the project it belongs to.
+      const answer = await lc
+        .sendRequest<SetEnvironmentResult | null>(SET_ENVIRONMENT_REQUEST, {
+          root: target.root,
+          environmentId: picked.id,
+        } satisfies SetEnvironmentParams)
+        .catch(() => null);
+      if (!answer) return;
+      const kept = context.workspaceState.get<Record<string, KeptEnvironment>>(ENVIRONMENTS);
+      const environments = withEnvironment(kept, target.root, answer.kept);
       await context.workspaceState.update(ENVIRONMENTS, environments);
       if (handed) handed = { ...handed, environments };
-      await lc.sendNotification(SET_ENVIRONMENT_NOTIFICATION, {
-        root: target.root,
-        environmentId: picked.id,
-      } satisfies SetEnvironmentParams);
     }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.toggleCoverage', async () => {

@@ -428,7 +428,7 @@ class ChooseEnvironmentAction : AnAction(), DumbAware {
 
     override fun update(e: AnActionEvent) {
         val service = e.project?.service<PiwiProjectService>()
-        e.presentation.isEnabled = service?.status?.contexts.orEmpty().any { it.projectId != null }
+        e.presentation.isEnabled = Glue.environmentContexts(service?.status).isNotEmpty()
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -439,12 +439,12 @@ class ChooseEnvironmentAction : AnAction(), DumbAware {
 
     companion object {
         /**
-         * Offer the environments of the context at `root` (the first one with a project when no context is there), from
-         * the action or the environment widget, and keep the one chosen.
+         * Offer the environments of the context at `root` (the first one offered when no context offered is there), from
+         * the action or the environment widget, and keep the one chosen. **None** is offered whatever the connection.
          */
         fun choose(project: Project, root: String?) {
             val service = project.service<PiwiProjectService>()
-            val contexts = service.status?.contexts.orEmpty().filter { it.projectId != null }
+            val contexts = Glue.environmentContexts(service.status)
             val target = (contexts.firstOrNull { it.root == root } ?: contexts.firstOrNull())?.root ?: return
             ApplicationManager.getApplication().executeOnPooledThread {
                 val choices = service.server()?.environments(EnvironmentsParams(target))?.orNull()

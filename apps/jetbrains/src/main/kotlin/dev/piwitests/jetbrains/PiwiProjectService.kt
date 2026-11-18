@@ -86,7 +86,8 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); the baseline chosen with **Compare with…** for each Playwright
  * config folder (`Glue.encodeBaseline`; the ladder is no entry); the environment chosen with **Choose environment…** for
- * each Playwright config folder, by id (none is no entry); the runs' MCP server's port; and the options the
+ * each Playwright config folder, with its instance and project (`Glue.encodeEnvironment`; none is no entry); the runs'
+ * MCP server's port; and the options the
  * settings registry scopes to a project (`project`): the severity of a failure's diagnostic
  * (`Glue.FAILURE_SEVERITIES`) and whether the runs are served to agents.
  */
@@ -102,7 +103,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordPage: String = "",
         var failuresGrouping: String = "file",
         var baselines: MutableMap<String, String> = mutableMapOf(),
-        var environments: MutableMap<String, Int> = mutableMapOf(),
+        var environments: MutableMap<String, String> = mutableMapOf(),
         var failureSeverity: String = "error",
         var serveRunsToAgents: Boolean = true,
         var agentsPort: Int = 0,
@@ -649,7 +650,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktop = local.desktop,
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
-            environments = local.environments.filterValues { it > 0 }.toMap(),
+            environments = local.environments.mapNotNull { (root, text) -> Glue.decodeEnvironment(text)?.let { root to it } }.toMap(),
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
             codeLens = user.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES },
             locatorWarnings = user.locatorWarnings,
@@ -722,14 +723,15 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     /**
-     * Run the tests of the context at `root` for the environment `id`, or none (**Choose environment…**): kept in
-     * `PiwiLocalSettings` and sent to the service (`piwi/setEnvironment`), which says so in `piwi/statusChanged`. Sends
-     * over the network: never on the event thread.
+     * Run the tests of the context at `root` for the environment `id`, or none (**Choose environment…**): sent to the
+     * service (`piwi/setEnvironment`), which says so in `piwi/statusChanged` and answers the choice the context holds,
+     * kept in `PiwiLocalSettings` with its instance and project. Waits on the service: never on the event thread.
      */
     fun setEnvironment(root: String, id: Int?) {
+        val answer = server()?.setEnvironment(SetEnvironmentParams(root, id))?.orNull() ?: return
         val environments = local().environments
-        if (id == null) environments.remove(root) else environments[root] = id
-        server()?.setEnvironment(SetEnvironmentParams(root, id))
+        val kept = answer.kept?.let(Glue::encodeEnvironment)
+        if (kept == null) environments.remove(root) else environments[root] = kept
     }
 
     /** Whether the password safe holds a key for the instance. */

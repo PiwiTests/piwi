@@ -422,7 +422,7 @@
     }
   },
   "runui_requestProtectedNote": {
-    "message": "$environment$ é protegido: esta execução se limita aos testes marcados com $tags$ e só começa depois que você a confirmar.",
+    "message": "$environment$ é protegido: só os testes marcados com $tags$ são executados, além dos projetos de preparação e limpeza de que dependem, que o Playwright executa por inteiro. A execução só começa depois que você a confirmar.",
     "placeholders": {
       "environment": {
         "content": "$1",
@@ -505,7 +505,7 @@
     }
   },
   "runui_checkEnvironmentProtected": {
-    "message": "Executa para $environment$, um ambiente protegido: só os testes marcados com $tags$ são executados.",
+    "message": "Executa para $environment$, um ambiente protegido: só os testes marcados com $tags$ são executados, além dos projetos de preparação e limpeza de que dependem, que o Playwright executa por inteiro.",
     "placeholders": {
       "environment": {
         "content": "$1",

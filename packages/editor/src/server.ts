@@ -135,6 +135,7 @@ import {
   CI_ORIGINS,
   PiwiContext,
   desktopConfigPath,
+  keptEnvironmentOf,
   linkedDesktopProject,
   parseBaselineChoice,
   pruneEvidence,
@@ -179,6 +180,7 @@ import {
   commandName,
   verificationCommand,
   withRequiredTags,
+  playwrightNodeCommand,
 } from './commands.js';
 import { DesktopJobs } from './desktop-jobs.js';
 import { statusWords } from './status-words.js';
@@ -199,7 +201,7 @@ import { listWithReporter, readProjectOptions, type ProjectOptions } from './rec
 import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
 import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
 import { configTree, locationArg, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
-import { canonicalPath } from './recorder/playwright.js';
+import { canonicalPath, resolvePlaywrightCli } from './recorder/playwright.js';
 import {
   RecordingSessions,
   blockImports,
@@ -280,7 +282,7 @@ import {
   RUN_ARGS_REQUEST,
   FOLLOW_COMMAND_REQUEST,
   SET_BASELINE_NOTIFICATION,
-  SET_ENVIRONMENT_NOTIFICATION,
+  SET_ENVIRONMENT_REQUEST,
   ENVIRONMENTS_REQUEST,
   SET_RUN_PAIRING_NOTIFICATION,
   START_RUN_REQUEST,
@@ -410,6 +412,7 @@ import {
   type StatusBarAlert,
   type SetBaselineParams,
   type SetEnvironmentParams,
+  type SetEnvironmentResult,
   type EnvironmentsParams,
   type EnvironmentsResult,
   type StatusEnvironment,
@@ -546,6 +549,8 @@ export interface ServerOptions {
   traceViewer?: TraceViewerLauncher;
   /** Whether this machine shows the trace viewer's window; `hasDisplay` of `trace-viewer.ts` by default. */
   traceDisplay?: () => boolean;
+  /** The platform the runs the service builds start on; `process.platform` by default. */
+  platform?: NodeJS.Platform;
   /** Reads the resolved options of a config's projects; with the config's own Playwright by default. */
   readProjectOptions?: (configFile: string) => Promise<ProjectOptions>;
   /** Runs a config's Playwright in list mode for the test tree; with the config's own Playwright by default. */
@@ -959,13 +964,23 @@ export function ownCommandEnv(context: PiwiContext, read: RunVariablesRead | nul
   if (read?.ok && read.environment?.protected) {
     return `${read.environment.name} is protected: each run against it is confirmed, so only a run Piwi starts runs against it.`;
   }
-  if (read?.ok && !context.runVariablesAllowed(read.value)) return 'The project’s run variables are not allowed yet.';
+  if (read?.ok && !context.runVariablesAllowed(read.value, read.environment?.key ?? null)) {
+    return 'The project’s run variables are not allowed yet.';
+  }
   return runVariablesEnv(read);
 }
 
 /** An environment's id as a client names it: a positive whole number; null for anything else. */
 function environmentIdOf(value: unknown): number | null {
   return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null;
+}
+
+/**
+ * What a protected environment's run keeps to: the tests carrying one of its required tags, beside the setup and
+ * teardown projects they depend on, which Playwright runs whole (a CLI filter leaves out none of a dependency's tests).
+ */
+export function requiredTagsWords(tags: readonly string[]): string {
+  return `only the tests tagged ${tags.join(', ')} run, beside the setup and teardown projects they depend on, which Playwright runs whole`;
 }
 
 /**
@@ -1000,7 +1015,7 @@ export function environmentChoices(context: PiwiContext): EnvironmentsResult {
           [
             environment.description,
             environment.protected
-              ? `Protected: each run is confirmed, and keeps to the tests tagged ${environment.requiredTags.join(', ')}.`
+              ? `Protected: each run is confirmed, and ${requiredTagsWords(environment.requiredTags)}.`
               : null,
           ]
             .filter(Boolean)
@@ -1017,10 +1032,11 @@ export function environmentChoices(context: PiwiContext): EnvironmentsResult {
  * lists no environment and none is chosen.
  */
 export function statusEnvironment(context: PiwiContext): StatusEnvironment | null {
+  const id = context.environmentId;
   const chosen = context.chosenEnvironment();
   const project = context.project?.name ?? 'the project';
   const change = 'Piwi: Choose environment… changes it.';
-  if (context.environmentId === null) {
+  if (id === null) {
     if (!context.environments.length) return null;
     return {
       id: null,
@@ -1029,16 +1045,26 @@ export function statusEnvironment(context: PiwiContext): StatusEnvironment | nul
       protected: false,
     };
   }
+  const name = chosen?.name ?? context.environmentChoice?.name ?? `Environment #${id}`;
+  if (!context.client || !context.project || !context.environmentsRead || context.problem !== null) {
+    const why = context.problem ? ` (${context.problem})` : '';
+    return {
+      id,
+      text: name,
+      tooltip: `Piwi cannot read the instance or the project${why}, so it runs nothing for ${name}. Piwi: Choose environment… can choose None, to run without one.`,
+      protected: chosen?.protected ?? false,
+    };
+  }
   if (!chosen) {
     return {
-      id: context.environmentId,
-      text: `Environment #${context.environmentId}`,
-      tooltip: `The environment chosen is not one of ${project}’s: Piwi runs nothing for it. ${change}`,
+      id,
+      text: name,
+      tooltip: `${name} is no longer one of ${project}’s environments: Piwi runs nothing for it. ${change}`,
       protected: false,
     };
   }
   const limit = chosen.protected
-    ? ` It is protected: each run is confirmed, and keeps to the tests tagged ${chosen.requiredTags.join(', ')}.`
+    ? ` It is protected: each run is confirmed, and ${requiredTagsWords(chosen.requiredTags)}.`
     : '';
   return {
     id: chosen.id,
@@ -2872,7 +2898,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   const applyEnvironments = () => {
     const environments = credentials.environments;
     if (!environments || typeof environments !== 'object') return;
-    for (const c of contexts) c.chooseEnvironment(environmentIdOf(environments[c.root]));
+    for (const c of contexts) c.keepEnvironment(keptEnvironmentOf(environments[c.root]));
   };
 
   /** Tell the client the contexts' status when it changed. */
@@ -4679,14 +4705,16 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       debugArgs(locationArg(commandFolder(context), `${relative}:${test.line + 1}`), debug.project, test, debug.title),
       settings.environment,
     );
-    const command = args && playwrightTestCommand(args);
-    if (!args || !command) {
+    if (!args || !playwrightTestCommand(args)) {
       return refuse(
         args && playwrightTestCommand([args[0]!])
           ? `The Playwright project “${debug.project}” cannot be passed on a command line.`
           : `${relative} cannot be passed on a command line, so Piwi runs nothing.`,
       );
     }
+    // Said why by a notice when it cannot be written.
+    const command = runCommandLine(context, args, settings.environment);
+    if (!command) return null;
     // The dashboard follows the run by the name it gave it, unless a run of this window holds that name.
     const borrowed = !!debug.ref && !runCommands.has(debug.ref);
     const ref = borrowed ? debug.ref! : newRunRef();
@@ -4696,6 +4724,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       ...headedCommand(command, args),
       env: { ...settings.env, ...editorRunEnv(ref) },
       ref,
+      ...(settings.environment?.protected ? { protected: true } : {}),
     };
     const own = Array.isArray(params.breakpoints) ? params.breakpoints : [];
     const built = withRecording(context, withBreakpoints(context, run, [...own, debug.stop]), params);
@@ -4717,42 +4746,44 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /**
    * Whether the person allows runs of the context's project to get `variables`: asked once per set while the service
    * runs (`window/showMessageRequest`, **Allow** or **Not now**), as the editor shows it. The set is the project's
-   * variables and, for the environment chosen, the environment's over them.
+   * variables and, for the environment chosen, the environment's over them and its key (`PIWI_ENVIRONMENT`).
    */
   const allowRunVariables = async (
     context: PiwiContext,
     variables: RunVariable[],
     environment: EnvironmentForRun | null,
   ): Promise<boolean> => {
-    if (context.runVariablesAllowed(variables)) return true;
-    const key = JSON.stringify([context.root, variables]);
-    let asking = askingRunVariables.get(key);
+    const key = environment?.key ?? null;
+    if (context.runVariablesAllowed(variables, key)) return true;
+    const asked = JSON.stringify([context.root, key, variables]);
+    let asking = askingRunVariables.get(asked);
     if (!asking) {
       const project = context.project?.name ?? 'This project';
       const set = environment
         ? `${project} and its environment ${environment.name} set run variables that every run Piwi starts for its tests against ${environment.name} gets`
         : `${project} sets run variables that every run Piwi starts for its tests gets`;
+      const label = environment ? ` ${ENVIRONMENT_VARIABLE}=${environment.key}` : '';
       asking = Promise.resolve(
         connection.window.showWarningMessage(
-          `${set}: ${runVariableAssignments(variables, 'bash')}. Run its tests with them?`,
+          `${set}: ${runVariableAssignments(variables, 'bash')}${label}. Run its tests with them?`,
           { title: 'Allow' },
           { title: 'Not now' },
         ),
       )
         .then((choice) => choice?.title === 'Allow')
         .catch(() => false)
-        .finally(() => askingRunVariables.delete(key));
-      askingRunVariables.set(key, asking);
+        .finally(() => askingRunVariables.delete(asked));
+      askingRunVariables.set(asked, asking);
     }
     const allowed = await asking;
-    if (allowed) context.allowRunVariables(variables);
+    if (allowed) context.allowRunVariables(variables, key);
     return allowed;
   };
 
   /**
    * Whether the person confirms a run of the context's project against a protected environment: asked for every run
-   * (`window/showMessageRequest`), naming the environment, the required tags the run keeps to and the run variables
-   * it gets, which the answer allows for that run.
+   * (`window/showMessageRequest`), naming the environment, what the run keeps to (`requiredTagsWords`) and the run
+   * variables it gets, which the answer allows for that run.
    */
   const confirmProtected = async (
     context: PiwiContext,
@@ -4760,11 +4791,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     environment: EnvironmentForRun,
   ): Promise<boolean> => {
     const project = context.project?.name ?? 'this project';
-    const set = variables.length ? `, with ${runVariableAssignments(variables, 'bash')}` : '';
+    const set = variables.length ? ` It gets ${runVariableAssignments(variables, 'bash')}.` : '';
     const run = `Run against ${environment.name}`;
     const choice = await Promise.resolve(
       connection.window.showWarningMessage(
-        `${environment.name} is a protected environment of ${project}: this run keeps to the tests tagged ${environment.requiredTags.join(', ')}${set}. Run them against ${environment.name}?`,
+        `${environment.name} is a protected environment of ${project}: ${requiredTagsWords(environment.requiredTags)}.${set} Run against ${environment.name}?`,
         { title: run },
         { title: 'Not now' },
       ),
@@ -4792,9 +4823,10 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       } satisfies Notice);
     const read = await context.readRunVariables();
     if (read.ok && context.environmentId !== null && !read.environment) {
-      const why = read.unknown === undefined ? '' : ` (${read.unknown})`;
+      const name = context.environmentChoice?.name ?? 'the environment chosen';
+      const why = read.unknown ?? context.problem;
       notice(
-        `Piwi runs nothing for the environment chosen while it cannot read the project’s environments${why}: choose None to run without one.`,
+        `Piwi runs nothing for ${name} while it cannot read the instance or the project${why ? ` (${why})` : ''}: Piwi: Choose environment… can choose None, to run without one.`,
       );
       return null;
     }
@@ -4835,8 +4867,33 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   };
 
   /**
+   * The command line of a run's `args` in a context, for `environment`: `npx playwright test …`, but for a protected
+   * environment on Windows the project's own Playwright CLI started by `node` (`playwrightNodeCommand`), since
+   * PowerShell hands `npx.cmd` an argument without whitespace bare, and cmd would read the filter's `^` and `|`. Null,
+   * with a notice for that one, when it cannot be written.
+   */
+  const runCommandLine = (
+    context: PiwiContext,
+    args: string[],
+    environment: EnvironmentForRun | null,
+  ): string | null => {
+    if (!environment?.protected || (options.platform ?? process.platform) !== 'win32')
+      return playwrightTestCommand(args);
+    const command = playwrightNodeCommand(resolvePlaywrightCli(commandFolder(context)), args);
+    if (!command) {
+      void connection.sendNotification(NOTICE_NOTIFICATION, {
+        root: context.root,
+        severity: 'warning',
+        message: `Piwi runs nothing against ${environment.name} here: on Windows it starts the project’s own Playwright with node, and finds none in this folder. Run npm install, or run it from the desktop app.`,
+      } satisfies Notice);
+    }
+    return command;
+  };
+
+  /**
    * The command that runs the tests `params` names, as `piwi/runArgs` answers it: null when none can run. `by`: who
-   * asked for it, a person or an agent (`run_start`), which never runs against a protected environment.
+   * asked for it, a person or an agent (`run_start`), which never runs against a protected environment. A run for a
+   * protected environment says so (`RunCommand.protected`).
    */
   const runCommandFor = async (params: RunTestsArgs, by: 'person' | 'agent' = 'person'): Promise<RunCommand | null> => {
     const file = uriToPath(params.uri);
@@ -4858,7 +4915,8 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     ];
     const repeated = tests && repeat !== null ? repeatArgs(tests, repeat) : tests;
     const args = repeated && keptToEnvironment(repeated, settings.environment);
-    const command = args && (repeated!.length || params.all === true) ? playwrightTestCommand(args) : null;
+    const command =
+      args && (repeated!.length || params.all === true) ? runCommandLine(context, args, settings.environment) : null;
     if (!args || !command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref, repeat);
@@ -4868,6 +4926,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       command,
       env: { ...variables, ...editorRunEnv(ref), ...coverageRunEnv(params.coverage) },
       ref,
+      ...(settings.environment?.protected ? { protected: true } : {}),
     };
     if (repeat === null) {
       return withStartOptions(
@@ -5055,7 +5114,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const settings = await runSettingsFor(context);
     if (settings === null) return null;
     const args = keptToEnvironment(selected, settings.environment);
-    const command = args && playwrightTestCommand(args);
+    const command = args && runCommandLine(context, args, settings.environment);
     if (!args || !command) return null;
     const ref = newRunRef();
     runWatch.watch(context, ref);
@@ -5065,6 +5124,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       args,
       env: { ...settings.env, ...editorRunEnv(ref) },
       ref,
+      ...(settings.environment?.protected ? { protected: true } : {}),
     };
     return withStartOptions(withRecording(context, withBreakpoints(context, run, params.breakpoints)), params);
   });
@@ -5649,12 +5709,15 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     publishDiscovery();
   });
 
-  connection.onNotification(SET_ENVIRONMENT_NOTIFICATION, (params: SetEnvironmentParams) => {
+  connection.onRequest(SET_ENVIRONMENT_REQUEST, (params: SetEnvironmentParams): SetEnvironmentResult | null => {
     const context = typeof params?.root === 'string' ? contextOfRoot(params.root) : null;
+    if (!context) return null;
     // None as null, or left out by a client whose JSON drops nulls.
     const id = params?.environmentId ?? null;
-    if (!context || (id !== null && environmentIdOf(id) === null)) return;
-    if (context.chooseEnvironment(id)) statusChanged();
+    if (id === null || environmentIdOf(id) !== null) {
+      if (context.chooseEnvironment(id)) statusChanged();
+    }
+    return { kept: context.environmentChoice };
   });
 
   connection.onRequest(ENVIRONMENTS_REQUEST, (params: EnvironmentsParams): EnvironmentsResult | null => {

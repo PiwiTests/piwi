@@ -41,8 +41,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`), in every
   `cwd` handed to a client. Checked by `tests/lsp.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#the-folder-a-command-runs-in))
 - **Run variables and an environment reach a run only once core's parsers passed them and, in an editor, the person
-  allowed them; a protected environment's run is confirmed each time, kept to its required tags, never an agent's**
-  (`runSettingsFor`, `src/run-target.ts`, [ARCHITECTURE.md](ARCHITECTURE.md#environments)).
+  allowed them; a protected environment's run is confirmed each time, filtered by its required tags (its dependency
+  projects run whole), never an agent's** (`runSettingsFor`, `src/run-target.ts`,
+  [ARCHITECTURE.md](ARCHITECTURE.md#environments)).
 - **A commit, a branch or a blob id reaches git only when it matches its pattern, never as an option** (`COMMIT`,
   `BRANCH`, `BLOB` in `src/workspace.ts`). Checked by `tests/lsp.test.ts` and `tests/workspace.test.ts`, the blob check
   aside.

@@ -3,6 +3,7 @@ import { requiredTagsGrepInvert } from '@piwitests/core/environments';
 import {
   commandWords,
   isRequiredTagsFilter,
+  playwrightNodeCommand,
   flakeCommand,
   isTestLocation,
   locationSpec,
@@ -76,6 +77,27 @@ describe('a protected environment’s required tags', () => {
       expect(isRequiredTagsFilter(word), word).toBe(false);
       expect(shellWord(word), word).toBeNull();
     }
+  });
+});
+
+describe('playwrightNodeCommand', () => {
+  test('starts the project’s Playwright CLI with node, its path written with /', () => {
+    const filter = requiredTagsGrepInvert(['@smoke']);
+    expect(
+      playwrightNodeCommand('C:\\Users\\Dana Lee\\shop\\node_modules\\@playwright\\test\\cli.js', [
+        'tests/a.spec.ts:3',
+        '--grep-invert',
+        filter,
+      ]),
+    ).toBe(
+      `node "C:/Users/Dana Lee/shop/node_modules/@playwright/test/cli.js" test tests/a.spec.ts:3 --grep-invert "${filter}"`,
+    );
+  });
+
+  test('writes nothing without the CLI, or for arguments it would not run', () => {
+    expect(playwrightNodeCommand(null, ['tests/a.spec.ts'])).toBeNull();
+    expect(playwrightNodeCommand('/w/cli.js', ['--config', 'x.ts'])).toBeNull();
+    expect(playwrightNodeCommand('/w/$(id)/cli.js', ['tests/a.spec.ts'])).toBeNull();
   });
 });
 

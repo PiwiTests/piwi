@@ -2881,7 +2881,7 @@ describe('the environment item', () => {
   };
   const production = { id: 5, text: 'Production', tooltip: 'Protected.', protected: true };
 
-  test('shows the environment of the active file’s config, else of the first that lists environments', () => {
+  test('shows the environment of the active file’s config, or none, and else of the first that shows one', () => {
     const status = { contexts: [context('/w/a', null), context('/w/b', staging), context('/w/b/c', production)] };
     expect(environmentItem(status, '/w/b/c/tests/x.spec.ts')).toEqual({
       root: '/w/b/c',
@@ -2889,7 +2889,9 @@ describe('the environment item', () => {
       tooltip: 'Protected.',
       protected: true,
     });
-    expect(environmentItem(status, '/w/a/x.spec.ts')).toMatchObject({
+    // The active file's config shows none: no other config's environment stands in for it.
+    expect(environmentItem(status, '/w/a/x.spec.ts')).toBeNull();
+    expect(environmentItem(status, '/elsewhere/notes.md')).toMatchObject({
       root: '/w/b',
       text: '$(server-environment) Staging',
     });
@@ -2898,8 +2900,9 @@ describe('the environment item', () => {
   });
 
   test('keeps a choice per root, none as no entry', () => {
-    const kept = withEnvironment({ '/a': 4 }, '/b', 5);
-    expect(kept).toEqual({ '/a': 4, '/b': 5 });
-    expect(withEnvironment(kept, '/a', null)).toEqual({ '/b': 5 });
+    const qa = { id: 6, name: 'QA', serverUrl: 'https://piwi.example.com', projectId: 7 };
+    const kept = withEnvironment({ '/a': { ...qa, id: 4, name: 'Staging' } }, '/b', qa);
+    expect(kept).toEqual({ '/a': { ...qa, id: 4, name: 'Staging' }, '/b': qa });
+    expect(withEnvironment(kept, '/a', null)).toEqual({ '/b': qa });
   });
 });

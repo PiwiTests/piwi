@@ -37,6 +37,7 @@ import type {
   BaselineChoice,
   ConnectionSource,
   EditorCredentials,
+  KeptEnvironment,
   LiveRun,
   LiveTestStatus,
   ProblemKind,
@@ -403,6 +404,20 @@ export async function pruneEvidence(root = EVIDENCE_ROOT, now = Date.now()): Pro
   }
 }
 
+/**
+ * An environment choice a client kept (`EditorCredentials.environments`), checked field by field: a positive id and
+ * project id, a name of 1 to 80 characters and an instance's URL; null for anything else.
+ */
+export function keptEnvironmentOf(value: unknown): KeptEnvironment | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { id, name, serverUrl, projectId } = value as Record<string, unknown>;
+  const positive = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n > 0;
+  if (!positive(id) || !positive(projectId)) return null;
+  if (typeof name !== 'string' || !name.trim() || name.length > 80) return null;
+  if (typeof serverUrl !== 'string' || !/^https?:\/\//.test(serverUrl) || serverUrl.length > 500) return null;
+  return { id, name, serverUrl, projectId };
+}
+
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
@@ -426,12 +441,16 @@ export class PiwiContext {
    * before the first read, from an instance that lists none, and without a project.
    */
   environments: EnvironmentOption[] = [];
+  /** Whether `environments` were read for the project the context reads now. */
+  environmentsRead = false;
   /**
-   * The environment chosen for the runs of this context's tests (`piwi/setEnvironment`), kept while the service runs and
-   * by the client; null for none, where the Playwright config decides. Every run reads it again
-   * (`readRunVariables`), so one the project no longer has refuses the run.
+   * The environment chosen for the runs of this context's tests (`piwi/setEnvironment`), with the instance and the
+   * project it belongs to, kept while the service runs and by the client; null for none, where the Playwright config
+   * decides (`environmentId`).
    */
-  environmentId: number | null = null;
+  environmentChoice: KeptEnvironment | null = null;
+  /** The environment the run variables being read are for: a read for another one is not used. */
+  private runVariablesEnvironment: number | null = null;
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
   index: LocatorIndex | null = null;
@@ -585,6 +604,7 @@ export class PiwiContext {
         this.runVariablesRead = null;
         this.allowedRunVariables.clear();
         this.environments = [];
+        this.environmentsRead = false;
         const resolving = this.client.resolveProject(connection.project);
         this.resolving = resolving;
         try {
@@ -661,7 +681,10 @@ export class PiwiContext {
           .catch(() => {}),
         client
           .environments(projectId)
-          .then((environments) => (this.environments = environments))
+          .then((environments) => {
+            this.environments = environments;
+            this.environmentsRead = true;
+          })
           .catch(() => {}),
         // Completion reads these: fetched here, so no keystroke waits on them.
         this.functionCatalog(),
@@ -697,8 +720,14 @@ export class PiwiContext {
     const project = this.project;
     if (!client) return { ok: true, value: [] };
     if (!project) return { ok: true, value: [], unknown: this.problem ?? 'its project is not known yet' };
+    const environmentId = this.environmentId;
+    if (this.runVariablesRead && this.runVariablesEnvironment !== environmentId) {
+      this.runVariables = null;
+      this.runVariablesRead = null;
+    }
     if (!this.runVariablesRead) {
-      const read: Promise<RunVariablesRead> = client.runVariables(project.id, this.environmentId).then((parsed) => {
+      this.runVariablesEnvironment = environmentId;
+      const read: Promise<RunVariablesRead> = client.runVariables(project.id, environmentId).then((parsed) => {
         if (this.runVariablesRead !== read) return parsed;
         this.runVariables = parsed;
         if (!parsed.ok && parsed.unreadable) this.runVariablesRead = null;
@@ -710,29 +739,57 @@ export class PiwiContext {
   }
 
   /**
-   * Whether the person allowed `variables` for this context's project while the service runs: always for none, and
-   * for the desktop app's own server, whose projects are theirs.
+   * Whether the person allowed `variables` for this context's project, with the environment of key `environment`
+   * (`PIWI_ENVIRONMENT`), while the service runs: always for none, and for the desktop app's own server, whose
+   * projects are theirs.
    */
-  runVariablesAllowed(variables: readonly RunVariable[]): boolean {
+  runVariablesAllowed(variables: readonly RunVariable[], environment: string | null = null): boolean {
     return (
-      variables.length === 0 || this.source === 'desktop' || this.allowedRunVariables.has(JSON.stringify(variables))
+      variables.length === 0 ||
+      this.source === 'desktop' ||
+      this.allowedRunVariables.has(JSON.stringify([environment, variables]))
     );
   }
 
-  /** Keeps the person's answer that runs of this context's project may get `variables`. */
-  allowRunVariables(variables: readonly RunVariable[]): void {
-    this.allowedRunVariables.add(JSON.stringify(variables));
+  /** Keeps the person's answer that runs of this context's project may get `variables`, with that environment. */
+  allowRunVariables(variables: readonly RunVariable[], environment: string | null = null): void {
+    this.allowedRunVariables.add(JSON.stringify([environment, variables]));
   }
 
   /**
-   * Choose the environment of this context's runs: its id, or null for none. The run variables are read again for it,
-   * and a run started meanwhile waits for that read. Answers whether the choice changed.
+   * The id of the environment chosen for this context's runs: the choice's while the context reads its instance and
+   * its project, or one not known yet (no client, a project not resolved), where nothing runs until it is; null for
+   * none, and for a choice of another instance or project.
+   */
+  get environmentId(): number | null {
+    const choice = this.environmentChoice;
+    if (!choice) return null;
+    if (this.client && this.client.connection.serverUrl !== choice.serverUrl) return null;
+    if (this.project && this.project.id !== choice.projectId) return null;
+    return choice.id;
+  }
+
+  /**
+   * Choose the environment of this context's runs: one its project lists, by id, or none (null). An id the project
+   * does not list, or no project read, keeps the choice. A run started meanwhile waits for the run variables of the
+   * new choice. Answers whether the choice changed.
    */
   chooseEnvironment(environmentId: number | null): boolean {
-    if (this.environmentId === environmentId) return false;
-    this.environmentId = environmentId;
-    this.runVariables = null;
-    this.runVariablesRead = null;
+    if (environmentId === null) return this.keepEnvironment(null);
+    const listed = this.environments.find((environment) => environment.id === environmentId);
+    if (!listed || !this.client || !this.project || !this.environmentsRead) return false;
+    return this.keepEnvironment({
+      id: listed.id,
+      name: listed.name,
+      serverUrl: this.client.connection.serverUrl,
+      projectId: this.project.id,
+    });
+  }
+
+  /** Take `choice` as this context's environment, as the client kept it. Answers whether the choice changed. */
+  keepEnvironment(choice: KeptEnvironment | null): boolean {
+    if (JSON.stringify(choice) === JSON.stringify(this.environmentChoice)) return false;
+    this.environmentChoice = choice;
     if (this.client && this.project) void this.readRunVariables();
     return true;
   }
@@ -759,6 +816,7 @@ export class PiwiContext {
     this.runVariablesRead = null;
     this.allowedRunVariables.clear();
     this.environments = [];
+    this.environmentsRead = false;
     this.branch = null;
     this.index = null;
     this.codeIndex = null;

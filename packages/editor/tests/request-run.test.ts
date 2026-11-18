@@ -234,7 +234,8 @@ describe('planRequestedRun', () => {
       level: 'warn',
       code: 'environment-protected',
       args: { environment: 'Production', key: 'production', tags: '@smoke, @readonly' },
-      message: 'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run.',
+      message:
+        'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run, beside the setup and teardown projects they depend on, which Playwright runs whole.',
     });
     const filter = `--grep-invert=${requiredTagsGrepInvert(['@smoke', '@readonly'])}`;
     expect(plan.args[plan.args.length - 1]).toBe(filter);

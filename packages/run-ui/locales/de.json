@@ -422,7 +422,7 @@
     }
   },
   "runui_requestProtectedNote": {
-    "message": "$environment$ ist geschützt: Dieser Lauf bleibt bei den Tests mit dem Tag $tags$ und startet erst, wenn Sie ihn bestätigen.",
+    "message": "$environment$ ist geschützt: Nur die Tests mit dem Tag $tags$ laufen, dazu die Setup- und Teardown-Projekte, von denen sie abhängen und die Playwright vollständig ausführt. Der Lauf startet erst, wenn Sie ihn bestätigen.",
     "placeholders": {
       "environment": {
         "content": "$1",
@@ -505,7 +505,7 @@
     }
   },
   "runui_checkEnvironmentProtected": {
-    "message": "Läuft für $environment$, eine geschützte Umgebung: Nur die Tests mit dem Tag $tags$ laufen.",
+    "message": "Läuft für $environment$, eine geschützte Umgebung: Nur die Tests mit dem Tag $tags$ laufen, dazu die Setup- und Teardown-Projekte, von denen sie abhängen und die Playwright vollständig ausführt.",
     "placeholders": {
       "environment": {
         "content": "$1",

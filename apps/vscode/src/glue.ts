@@ -39,6 +39,7 @@ import type {
   RunStatusResult,
   RunTestsArgs,
   StatusResult,
+  KeptEnvironment,
   FileSummary,
   SummaryLine,
   TestAtResult,
@@ -918,8 +919,9 @@ export function withBaseline(
 
 /**
  * The environment item: the environment of the config whose folder holds the active file, the deepest when several
- * do, else of the first config whose project lists environments; null when none shows one
- * (`StatusResult.contexts[].environment`). Its text leads with the glyph of an environment, a lock for a protected one.
+ * do, or none when that config shows none; with the active file in no config, of the first config that shows one; null
+ * when none shows one (`StatusResult.contexts[].environment`). Its text leads with the glyph of an environment, a lock
+ * for a protected one.
  */
 export function environmentItem(
   status: StatusResult | null,
@@ -929,7 +931,7 @@ export function environmentItem(
   const holding = activeFile
     ? contexts.filter((c) => isUnder(c.root, activeFile)).sort((a, b) => b.root.length - a.root.length)[0]
     : undefined;
-  const shown = holding?.environment ? holding : contexts.find((c) => c.environment);
+  const shown = holding ?? contexts.find((c) => c.environment);
   const environment = shown?.environment;
   if (!shown || !environment) return null;
   return {
@@ -940,15 +942,15 @@ export function environmentItem(
   };
 }
 
-/** The environments kept for each config, by its root, with `root`'s set to `id`: none (null) is left out. */
+/** The environments kept for each config, by its root, with `root`'s set to `kept`: none (null) is left out. */
 export function withEnvironment(
-  kept: Record<string, number | null> | undefined,
+  kept: Record<string, KeptEnvironment> | undefined,
   root: string,
-  id: number | null,
-): Record<string, number | null> {
+  choice: KeptEnvironment | null,
+): Record<string, KeptEnvironment> {
   const next = { ...kept };
-  if (id === null) delete next[root];
-  else next[root] = id;
+  if (choice === null) delete next[root];
+  else next[root] = choice;
   return next;
 }
 

@@ -490,8 +490,8 @@
     }
   },
   "runui_requestProtectedNote": {
-    "message": "$environment$ is protected: this run keeps to the tests tagged $tags$, and starts only once you confirm it.",
-    "description": "Under the command of a request for a protected environment (production, as a rule). $environment$ is its name; $tags$ the tags its runs are limited to, joined by commas.",
+    "message": "$environment$ is protected: only the tests tagged $tags$ run, beside the setup and teardown projects they depend on, which Playwright runs whole. The run starts only once you confirm it.",
+    "description": "Under the command of a request for a protected environment (production, as a rule): what its run keeps to, and that it waits for the confirmation below. $environment$ is its name; $tags$ the tags its runs are limited to, joined by commas.",
     "placeholders": {
       "environment": {
         "content": "$1",
@@ -586,8 +586,8 @@
     }
   },
   "runui_checkEnvironmentProtected": {
-    "message": "Runs for $environment$, a protected environment: only the tests tagged $tags$ run.",
-    "description": "A warning of a run request: the run is for a protected environment, and only the tests carrying one of its required tags run. $environment$ is its name; $tags$ the tags, joined by commas.",
+    "message": "Runs for $environment$, a protected environment: only the tests tagged $tags$ run, beside the setup and teardown projects they depend on, which Playwright runs whole.",
+    "description": "A warning of a run request: the run is for a protected environment, and only the tests carrying one of its required tags run, beside the setup and teardown projects they depend on, which Playwright runs whole. $environment$ is its name; $tags$ the tags, joined by commas.",
     "placeholders": {
       "environment": {
         "content": "$1",

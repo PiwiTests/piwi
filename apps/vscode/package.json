@@ -843,7 +843,7 @@
         },
         {
           "command": "piwi.chooseEnvironment",
-          "when": "piwi.active"
+          "when": "piwi.active || piwi.environmentShown"
         },
         {
           "command": "piwi.copyMcpConfiguration",
@@ -2084,6 +2084,10 @@
           "ref": {
             "type": "string",
             "description": "The ref of the test run: the `PIWI_ORIGIN_REF` its command sets, by which Piwi follows the run."
+          },
+          "protected": {
+            "type": "boolean",
+            "description": "The run is for a protected environment, confirmed for this run alone: started again outside Piwi, it is ended."
           }
         }
       }

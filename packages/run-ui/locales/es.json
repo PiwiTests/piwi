@@ -422,7 +422,7 @@
     }
   },
   "runui_requestProtectedNote": {
-    "message": "$environment$ está protegido: esta ejecución se limita a las pruebas etiquetadas $tags$ y solo empieza cuando la confirmas.",
+    "message": "$environment$ está protegido: solo se ejecutan las pruebas etiquetadas $tags$, además de los proyectos de preparación y limpieza de los que dependen, que Playwright ejecuta completos. La ejecución solo empieza cuando la confirmas.",
     "placeholders": {
       "environment": {
         "content": "$1",
@@ -505,7 +505,7 @@
     }
   },
   "runui_checkEnvironmentProtected": {
-    "message": "Se ejecuta para $environment$, un entorno protegido: solo se ejecutan las pruebas etiquetadas $tags$.",
+    "message": "Se ejecuta para $environment$, un entorno protegido: solo se ejecutan las pruebas etiquetadas $tags$, además de los proyectos de preparación y limpieza de los que dependen, que Playwright ejecuta completos.",
     "placeholders": {
       "environment": {
         "content": "$1",

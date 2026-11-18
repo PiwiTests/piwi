@@ -58,7 +58,8 @@ function runRequest() {
         level: 'warn',
         code: 'environment-protected',
         args: { environment: ENVIRONMENT.name, key: ENVIRONMENT.key, tags: ENVIRONMENT.requiredTags.join(', ') },
-        message: 'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run.',
+        message:
+          'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run, beside the setup and teardown projects they depend on, which Playwright runs whole.',
       },
       { id: 'specs', level: 'ok', code: 'specs-found', args: {}, message: 'The specs are in the folder.' },
       { id: 'playwright', level: 'ok', code: 'playwright-installed', args: {}, message: 'Playwright is installed.' },
