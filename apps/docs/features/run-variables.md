@@ -63,8 +63,9 @@ A re-run in CI passes arguments only: a CI action picks its tenant with its fixe
 
 Each [environment](./environments) of the project (Local, Staging, Production) holds up to 10 run variables of its
 own, with the same rules. A run Piwi starts for one gets the project's, then the environment's, the environment's
-value winning for a name both set, at most 20 together, and `PIWI_ENVIRONMENT` set to its key. Every place above
-offers the environment to pick, and **None** applies the project's alone.
+value winning for a name both set, at most 20 together, and `PIWI_ENVIRONMENT` set to its key. The runs above and
+most copied commands offer the environment to pick ([where](./environments#choose-the-environment-of-a-run)); **None**,
+a fix plan's verify command and the reproduce recipe apply the project's alone.
 
 ## Building and starting the app
 

@@ -3,6 +3,7 @@ import {
   environmentDraft,
   environmentDraftBody,
   environmentDraftHasProblem,
+  environmentDraftProblemList,
   environmentDraftProblems,
   environmentMoves,
   type EnvironmentDraft,
@@ -105,6 +106,29 @@ describe('environmentDraftProblems', () => {
     expect(environmentDraftProblems(draft({ protected: false })).requiredTags).toBeUndefined();
   });
 
+  test('leaves the required tags of an environment that is not protected unchecked', () => {
+    const problems = environmentDraftProblems(draft({ protected: false, requiredTags: ['smoke'] }));
+    expect(problems.requiredTags).toBeUndefined();
+    expect(environmentDraftHasProblem(problems)).toBe(false);
+  });
+
+  test('lets an alias become the key, as the instance drops an alias equal to it', () => {
+    const problems = environmentDraftProblems(draft({ key: 'stg', aliases: ['stg', 'pr-*'] }));
+    expect(problems.list).toBeUndefined();
+    expect(environmentDraftHasProblem(problems)).toBe(false);
+    expect(environmentDraftBody(draft({ key: 'stg', aliases: ['STG', 'pr-*'] })).aliases).toEqual(['pr-*']);
+  });
+
+  test('lists every problem in the order of the form, for the line beside Save', () => {
+    const problems = environmentDraftProblems(draft({ key: '', name: '', envFile: 'x', protected: true }));
+    expect(environmentDraftProblemList(problems)).toEqual([
+      expect.stringMatching(/needs a key/),
+      expect.stringMatching(/needs a name/),
+      expect.stringMatching(/not an env file name/),
+      expect.stringMatching(/needs a required tag/),
+    ]);
+  });
+
   test('refuses a key or an alias another environment names, ignoring case', () => {
     const others = [environment(1, 'production', { aliases: ['prod'] })];
     expect(environmentDraftProblems(draft({ key: 'Production' }), others).list).toMatch(/names two environments/);
@@ -132,6 +156,7 @@ describe('environmentDraftBody', () => {
             { name: ' TEST_ENV ', value: 'staging' },
             { name: '', value: '' },
           ],
+          protected: true,
           requiredTags: ['@smoke', '@smoke'],
           envFile: ' ',
         }),
@@ -143,10 +168,14 @@ describe('environmentDraftBody', () => {
       aliases: ['stg'],
       runVariables: [{ name: 'TEST_ENV', value: 'staging' }],
       appFromCheckout: false,
-      protected: false,
+      protected: true,
       requiredTags: ['@smoke'],
       envFile: null,
     });
+  });
+
+  test('sends no required tags for an environment that is not protected', () => {
+    expect(environmentDraftBody(draft({ protected: false, requiredTags: ['@smoke'] })).requiredTags).toEqual([]);
   });
 });
 

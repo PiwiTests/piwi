@@ -76,3 +76,21 @@ export function environmentFilterLabel(value: string, environments: readonly Env
 export function commandEnvironmentDefault(shown: EnvironmentRecord | null | undefined): number | null {
   return shown && !shown.archived && !shown.protected ? shown.id : null;
 }
+
+/**
+ * The environment a page's commands are for: the pick (`undefined` when nothing was picked, `null` for **None**) while
+ * it is among `active`, the project's environments that are not archived, else the start
+ * (`commandEnvironmentDefault` of `shown`). With `protectedAllowed` false, a protected pick reads as none.
+ */
+export function commandEnvironmentOf(input: {
+  picked: number | null | undefined;
+  active: readonly EnvironmentRecord[];
+  shown: EnvironmentRecord | null | undefined;
+  protectedAllowed?: boolean;
+}): number | null {
+  if (input.picked === null) return null;
+  const environment =
+    input.picked === undefined ? null : input.active.find((candidate) => candidate.id === input.picked);
+  if (environment) return input.protectedAllowed === false && environment.protected ? null : environment.id;
+  return commandEnvironmentDefault(input.shown);
+}

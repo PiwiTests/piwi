@@ -15,6 +15,13 @@ const toast = useToast();
 const { can } = useAuth();
 const canManage = computed(() => can('project:manage', props.project.id));
 const { environments, loaded, refresh } = useProjectEnvironments(() => props.project.id);
+const { forget: forgetRunVariables } = useProjectRunVariables(() => props.project.id);
+
+/** After a change: the list read again, and the commands' run variables read again when next asked. */
+async function changed() {
+  forgetRunVariables();
+  await refresh();
+}
 
 const reading = ref(true);
 const failed = ref(false);
@@ -57,7 +64,7 @@ async function patch(environment: EnvironmentRecord, body: Record<string, unknow
     toast.add({ title: 'The environment could not be changed', description: errorMessage(e), color: 'error' });
   } finally {
     busy.value = null;
-    await refresh();
+    await changed();
   }
 }
 
@@ -97,7 +104,7 @@ function edit(environment: EnvironmentRecord) {
 
 async function onSaved(environment: EnvironmentRecord) {
   toast.add({ title: `${environment.name} saved`, color: 'success' });
-  await refresh();
+  await changed();
 }
 
 // ── Delete ────────────────────────────────────────────────────────────────
@@ -124,7 +131,7 @@ async function confirmDelete() {
     toast.add({ title: 'The environment could not be deleted', description: errorMessage(e), color: 'error' });
   } finally {
     removing.value = false;
-    await refresh();
+    await changed();
   }
 }
 
@@ -178,7 +185,7 @@ async function copy() {
     copyError.value = errorMessage(e, 'The environments could not be copied.');
   } finally {
     copying.value = false;
-    await refresh();
+    await changed();
   }
 }
 
@@ -240,7 +247,7 @@ export default wrapConfig(
     <div class="space-y-4">
       <p class="text-sm text-highlighted leading-relaxed">
         A run's label goes to the environment whose key or alias it matches; a label nothing matches adds a discovered
-        one. Where Piwi starts a run or gives a command to copy, you pick one: its run variables and
+        one. Where Piwi starts a run, and beside most commands it gives to copy, you pick one: its run variables and
         <code>PIWI_ENVIRONMENT</code> go with it.
       </p>
 

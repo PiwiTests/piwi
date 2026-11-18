@@ -77,7 +77,10 @@ const reproduced = computed(() => experiments.value.some((e) => e.kind === 'repr
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
-const { environmentId: flakeEnvironmentId } = useCommandEnvironment(() => props.projectId);
+// `piwi flake` takes no test filter, so it cannot keep to a protected environment's required tags.
+const { environmentId: flakeEnvironmentId } = useCommandEnvironment(() => props.projectId, null, {
+  protectedAllowed: false,
+});
 const flakeRunVariables = useProjectRunVariables(
   () => props.projectId,
   () => flakeEnvironmentId.value,
@@ -295,7 +298,12 @@ function detailLine(s: FlakeSuspect): string | null {
           >
             Copy verify command
           </UButton>
-          <CommandEnvironmentPicker v-model="flakeEnvironmentId" :project-id="projectId" class="w-48" />
+          <CommandEnvironmentPicker
+            v-model="flakeEnvironmentId"
+            :project-id="projectId"
+            protected-refused="protected, Flake Lab takes no tag filter"
+            class="w-48"
+          />
           <FlakeLabDesktopButton
             :test-case-id="testCaseId"
             :project-id="projectId ?? null"

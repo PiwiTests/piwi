@@ -95,15 +95,34 @@ export function useProjectRunVariables(
     return commandWithEnvironment(text, variables.value, environmentForRun.value, shell.value);
   }
 
-  /** Keeps the project's run variables as just saved, so the page's commands start with them at once. */
+  /** The store without the project's entries, its own and each environment's merged ones. */
+  function without(project: number): Record<string, Stored> {
+    const prefix = `${project}:`;
+    return Object.fromEntries(
+      Object.entries(store.value).filter(([at]) => at !== String(project) && !at.startsWith(prefix)),
+    );
+  }
+
+  /**
+   * Drops what the page keeps of the project's run variables, its own and each environment's merged ones, after a
+   * change to them or to an environment, so the next command reads them again.
+   */
+  function forget() {
+    if (id.value != null) store.value = without(id.value);
+  }
+
+  /**
+   * Keeps the project's run variables as just saved, so the page's commands start with them at once, and drops each
+   * environment's merged ones, read again when next asked.
+   */
   function remember(saved: RunVariable[]) {
     if (id.value != null) {
       store.value = {
-        ...store.value,
+        ...without(id.value),
         [storeKey(id.value, null)]: { variables: saved, environment: null, readAt: Date.now() },
       };
     }
   }
 
-  return { variables, environment: environmentForRun, shell, command, remember, ready };
+  return { variables, environment: environmentForRun, shell, command, remember, forget, ready };
 }

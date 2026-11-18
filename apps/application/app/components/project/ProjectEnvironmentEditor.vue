@@ -11,7 +11,7 @@ import type { EnvironmentRecord } from '#shared/environments';
 import {
   environmentDraft,
   environmentDraftBody,
-  environmentDraftHasProblem,
+  environmentDraftProblemList,
   environmentDraftProblems,
   type EnvironmentDraft,
   type EnvironmentDraftProblems,
@@ -62,9 +62,12 @@ function addRunVariable() {
   if (!fullRunVariables.value) draft.value.runVariables.push({ name: '', value: '' });
 }
 
+/** What keeps Save from saving, said beside the Save button once it was clicked, whichever field holds it. */
+const blocking = computed(() => (submitted.value ? environmentDraftProblemList(problems.value) : []));
+
 async function submit() {
   submitted.value = true;
-  if (environmentDraftHasProblem(problems.value) || saving.value) return;
+  if (blocking.value.length > 0 || saving.value) return;
   saving.value = true;
   error.value = null;
   try {
@@ -258,7 +261,7 @@ const PAIRED_FIELD_UI = { root: 'sm:row-span-2 sm:grid sm:grid-rows-subgrid' };
           <USwitch
             v-model="draft.protected"
             label="Protected"
-            description="Only the project's managers start runs against it from Piwi, after a confirmation, and only for the tests carrying a required tag."
+            description="Only the project's managers start runs against it from Piwi, after a confirmation, and only for the tests carrying a required tag, with the setup and teardown projects they depend on."
             data-testid="environment-protected"
           />
           <UFormField
@@ -267,7 +270,7 @@ const PAIRED_FIELD_UI = { root: 'sm:row-span-2 sm:grid sm:grid-rows-subgrid' };
             name="environmentRequiredTags"
             required
             :error="shown.requiredTags"
-            description="Its runs keep to the tests carrying one of them."
+            description="Its runs keep to the tests carrying one of them, and the setup and teardown projects those depend on, which Playwright runs whole."
           >
             <UInputTags
               v-model="draft.requiredTags"
@@ -285,15 +288,28 @@ const PAIRED_FIELD_UI = { root: 'sm:row-span-2 sm:grid sm:grid-rows-subgrid' };
       </form>
     </template>
     <template #footer>
-      <div class="flex w-full justify-end gap-2">
-        <UButton color="neutral" variant="outline" label="Cancel" @click="open = false" />
-        <UButton
-          color="primary"
-          :label="environment ? 'Save environment' : 'Add environment'"
-          :loading="saving"
-          data-testid="environment-save"
-          @click="submit"
-        />
+      <div class="w-full space-y-2">
+        <div
+          v-if="blocking.length"
+          class="max-h-24 overflow-y-auto text-xs text-error"
+          role="alert"
+          data-testid="environment-blocking"
+        >
+          <p>{{ blocking.length === 1 ? 'Fix this to save:' : 'Fix these to save:' }}</p>
+          <ul class="list-disc pl-4">
+            <li v-for="problem in blocking" :key="problem">{{ problem }}</li>
+          </ul>
+        </div>
+        <div class="flex justify-end gap-2">
+          <UButton color="neutral" variant="outline" label="Cancel" @click="open = false" />
+          <UButton
+            color="primary"
+            :label="environment ? 'Save environment' : 'Add environment'"
+            :loading="saving"
+            data-testid="environment-save"
+            @click="submit"
+          />
+        </div>
       </div>
     </template>
   </UModal>

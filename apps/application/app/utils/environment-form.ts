@@ -58,6 +58,24 @@ export function environmentDraft(record: EnvironmentRecord | null): EnvironmentD
   };
 }
 
+/**
+ * The aliases a draft saves: trimmed, each once, and none equal to the key ignoring case, which the instance drops too,
+ * so an alias promoted to the key leaves the list.
+ */
+function writtenAliases(draft: EnvironmentDraft): string[] {
+  const key = draft.key.trim().toLowerCase();
+  return [
+    ...new Set(
+      draft.aliases.map((alias) => alias.trim()).filter((alias) => alias !== '' && alias.toLowerCase() !== key),
+    ),
+  ];
+}
+
+/** The required tags a draft saves: trimmed and each once for a protected environment, none for another. */
+function writtenRequiredTags(draft: EnvironmentDraft): string[] {
+  return draft.protected ? [...new Set(draft.requiredTags.map((tag) => tag.trim()).filter((tag) => tag !== ''))] : [];
+}
+
 /** The run variable rows a draft saves: those with a name or a value, the name without spaces around it. */
 function writtenRunVariables(draft: EnvironmentDraft): RunVariable[] {
   return draft.runVariables
@@ -74,17 +92,18 @@ function firstProblem(values: readonly string[], problemOf: (value: string) => s
 }
 
 /**
- * Each field's problem in a draft. `others` are the project's other environments: a key or an exact alias one of them
- * names already is a problem, except a discovered environment the draft takes over (its key is the draft's key or
- * alias), which the instance merges into it on save.
+ * Each field's problem in a draft, read as the instance saves it: an alias equal to the key is left out, and the
+ * required tags count for a protected environment only. `others` are the project's other environments: a key or an
+ * exact alias one of them names already is a problem, except a discovered environment the draft takes over (its key
+ * is the draft's key or alias), which the instance merges into it on save.
  */
 export function environmentDraftProblems(
   draft: EnvironmentDraft,
   others: readonly EnvironmentRecord[] = [],
 ): EnvironmentDraftProblems {
   const key = draft.key.trim();
-  const aliases = draft.aliases.map((alias) => alias.trim()).filter((alias) => alias !== '');
-  const tags = draft.requiredTags.map((tag) => tag.trim()).filter((tag) => tag !== '');
+  const aliases = writtenAliases(draft);
+  const tags = writtenRequiredTags(draft);
   const envFile = draft.envFile.trim();
 
   const seen = new Set<string>();
@@ -134,12 +153,17 @@ export function environmentDraftProblems(
   return problems;
 }
 
+/** Every problem of a draft, in the order of the form's fields. */
+export function environmentDraftProblemList(problems: EnvironmentDraftProblems): string[] {
+  const fields = [problems.key, problems.name, problems.description, problems.aliases, problems.list];
+  return [...fields, ...problems.runVariables, problems.envFile, problems.requiredTags].filter(
+    (problem): problem is string => !!problem,
+  );
+}
+
 /** Whether any field of a draft has a problem. */
 export function environmentDraftHasProblem(problems: EnvironmentDraftProblems): boolean {
-  return (
-    Object.entries(problems).some(([field, value]) => field !== 'runVariables' && value !== undefined) ||
-    problems.runVariables.some(Boolean)
-  );
+  return environmentDraftProblemList(problems).length > 0;
 }
 
 /** What `POST /api/projects/:id/environments` takes for a draft, and `PATCH` for a change of one. */
@@ -148,11 +172,11 @@ export function environmentDraftBody(draft: EnvironmentDraft) {
     key: draft.key.trim(),
     name: draft.name.trim(),
     description: draft.description.trim() || null,
-    aliases: [...new Set(draft.aliases.map((alias) => alias.trim()).filter((alias) => alias !== ''))],
+    aliases: writtenAliases(draft),
     runVariables: writtenRunVariables(draft),
     appFromCheckout: draft.appFromCheckout,
     protected: draft.protected,
-    requiredTags: [...new Set(draft.requiredTags.map((tag) => tag.trim()).filter((tag) => tag !== ''))],
+    requiredTags: writtenRequiredTags(draft),
     envFile: draft.envFile.trim() || null,
   };
 }

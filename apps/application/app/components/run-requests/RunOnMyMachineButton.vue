@@ -226,7 +226,8 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
               <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 mt-px text-warning" aria-hidden="true" />
               <span
                 >{{ protectedPick.name }} is protected: the run keeps to the tests tagged
-                {{ protectedPick.requiredTags.join(', ') }}, and your app asks you to confirm it.</span
+                {{ protectedPick.requiredTags.join(', ') }} and the setup and teardown projects they depend on, and your
+                app asks you to confirm it.</span
               >
             </p>
           </div>

@@ -16,8 +16,8 @@ A project admin keeps the list in **Project → Settings → Environments**:
 
 - **Key**: the label its runs report (`staging`), unique in the project ignoring case: 1 to 80 letters, digits,
   spaces and `_ - . , : / @ + =`, since it reaches a run as a variable. A changed key stays as an alias.
-- **Name**, shown in every picker and filter (`Staging`), and a **description** for the team ("data reset every night
-  at 02:00").
+- **Name**, shown in the pickers and the project's filters (`Staging`), and a **description** for the team ("data
+  reset every night at 02:00").
 - **Aliases**: up to 20 other labels that name it (`stg`), or patterns where `*` matches any run of characters
   (`pr-*`).
 - **Run variables**: up to 10, set over the project's on the runs Piwi starts for it.
@@ -47,9 +47,9 @@ admin saves it.
 Saving an environment resolves the project's runs again. Adding `stg` as an alias of Staging moves the runs that
 reported `stg` to Staging, and removes the discovered `stg` that held them.
 
-The project page's **Filters** and Analytics list the project's environments, the labels no environment takes, and
-**No environment** for the runs that report none. Picking Staging keeps the runs whose label resolves to it, `stg`
-included.
+The project page's **Filters** and its status filter list the project's environments, the labels no environment
+takes, and **No environment** for the runs that report none. Picking Staging keeps the runs whose label resolves to
+it, `stg` included.
 
 ## Choose the environment of a run
 
@@ -58,17 +58,17 @@ Piwi applies the project's run variables only and sets no label: the config deci
 
 A run Piwi starts for an environment gets:
 
-- **the run variables**: the project's, then the environment's, the environment's value winning for a name both set.
-  At most 20 together, checked as one list by every app that runs the tests: one variable refused there refuses the
-  list, and nothing runs;
+- **the run variables**: the project's, then the environment's, which wins for a name both set; at most 20, checked as
+  one list by every app that runs the tests, which runs nothing when one is refused;
 - **`PIWI_ENVIRONMENT`** set to the environment's key, which the reporter sends as the run's label. A config that sets
   the reporter's `environment` option reports that one instead;
 - for a protected environment, the filter of its [required tags](#protected-environments).
 
 Where you pick it:
 
-- **Copied commands**: a picker beside the command block's shell picker. It starts on the environment of the run the
-  page shows, unless that one is protected or archived, else on **None**. The command shows what the run gets.
+- **Copied commands**: in **Copy retry command**'s options on a run, under **More** on an execution, and beside
+  selection, locator and Flake Lab commands, starting on the environment of the run the page shows, unless protected
+  or archived, else **None**.
 - **[Run on my machine](./run-on-my-machine)**: the request's window offers the same picker, and the app's
   confirmation names the environment and lists its variables.
 - **[The desktop app](./desktop)**: its runs offer the environments of the project the folder is linked to. A folder
@@ -143,10 +143,12 @@ after a dot (`.env.staging`), never a folder. Piwi never reads it and never send
 A protected environment, Production as a rule, holds at least one required tag (`@smoke`). Every run Piwi starts
 against it:
 
-- **runs only the tests carrying one of its required tags**: Piwi adds a `--grep-invert` that leaves out every test
-  without one, and keeps the run's own filter. The command shown carries it;
-- **is confirmed**, with the environment's name shown, in the desktop app, in the app that takes a Run on my machine
-  request and in the editors' question;
+- **runs only the tests carrying one of its required tags**, and the setup and teardown projects they depend on, which
+  Playwright runs whole: Piwi adds a `--grep-invert` that leaves out every other test, and keeps the run's own filter.
+  The command shown carries it. On Windows, PowerShell may break its quoting when `npx` resolves to `npx.cmd`: start
+  these runs from the desktop app or Run on my machine;
+- **is confirmed**, its name shown, in the desktop app, the app taking a Run on my machine request and the editors'
+  question;
 - **is started by a project admin only**: the instance gives a protected environment's run variables, and takes a
   request naming it, only to someone holding `project:manage`. For anyone else the pickers show it locked, and the
   list hides its variables;
@@ -159,8 +161,8 @@ These rules govern what Piwi starts. A command you type in a terminal stays your
 
 **Copy from another project**, in **Project → Settings → Environments**, copies the declared environments of a project
 you can read into one you manage: every field, at the end of its list. An environment whose key or one of its aliases
-the project already names is left as it is, and listed. The copies belong to the project from then on: nothing links
-them to their source, so a value that differs per project, such as a tenant's `BASE_URL`, is edited on each copy.
+the project already names is left as it is, and listed. Nothing links a copy to its source: a value that differs per
+project, such as a tenant's `BASE_URL`, is edited on each copy.
 
 ## The run page's warnings
 
@@ -175,8 +177,7 @@ The run page names the run's environment, and says when the run may not have tes
 
 ## Limits
 
-- Each project has its own environments: a Staging in two projects is two records, kept apart. Copy them to start a
-  project from another's.
+- Each project has its own environments: a Staging in two projects is two records, kept apart.
 - Notification filters, issue automation, CI actions and timeline markers match a run's label as text, not its
   environment: a notification filter on `staging` misses a run that reported `stg`.
 

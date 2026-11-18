@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import {
   NO_ENVIRONMENT_LABEL,
   commandEnvironmentDefault,
+  commandEnvironmentOf,
   environmentFilterItems,
   environmentFilterLabel,
 } from '../../app/utils/environment-filter';
@@ -110,5 +111,25 @@ describe('commandEnvironmentDefault', () => {
     expect(commandEnvironmentDefault(OLD)).toBeNull();
     expect(commandEnvironmentDefault(null)).toBeNull();
     expect(commandEnvironmentDefault(undefined)).toBeNull();
+  });
+});
+
+describe('commandEnvironmentOf', () => {
+  const active = [LOCAL, STAGING, PRODUCTION];
+
+  test('reads the pick while it is offered, None as none, and the start before any pick', () => {
+    expect(commandEnvironmentOf({ picked: STAGING.id, active, shown: LOCAL })).toBe(STAGING.id);
+    expect(commandEnvironmentOf({ picked: null, active, shown: LOCAL })).toBeNull();
+    expect(commandEnvironmentOf({ picked: undefined, active, shown: LOCAL })).toBe(LOCAL.id);
+  });
+
+  test('falls back to the start when the pick was archived or deleted', () => {
+    expect(commandEnvironmentOf({ picked: OLD.id, active, shown: LOCAL })).toBe(LOCAL.id);
+    expect(commandEnvironmentOf({ picked: 99, active, shown: null })).toBeNull();
+  });
+
+  test('reads a protected pick as none for a command that cannot keep to its tags', () => {
+    expect(commandEnvironmentOf({ picked: PRODUCTION.id, active, shown: null })).toBe(PRODUCTION.id);
+    expect(commandEnvironmentOf({ picked: PRODUCTION.id, active, shown: null, protectedAllowed: false })).toBeNull();
   });
 });

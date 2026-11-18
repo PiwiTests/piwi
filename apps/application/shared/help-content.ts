@@ -567,11 +567,11 @@ export const HELP_TOPICS = {
     text: [
       'An environment is a deployment of the application the tests run against (Local, Integration, Staging, Production). Each run reports a label, the reporter’s `environment` option or `PIWI_ENVIRONMENT`, and goes to the environment whose key or alias matches it, ignoring case; a label nothing matches adds a **discovered** one.',
       '',
-      '- **Picked** — where Piwi starts a run or gives a command to copy, and in every filter of the project, which also offers **No environment**.',
+      '- **Picked** — for Run on my machine, the desktop app’s runs and the editors’ runs, and for the retry, selection, locator and Flake Lab commands; and in the project page’s **Filters** and the **Status** filter, which also offer **No environment**.',
       '- **Run variables** — set over the project’s on the runs Piwi starts for it, with `PIWI_ENVIRONMENT` set to its key: the config reads them (`TEST_ENV=staging`). Never a secret, since commands and confirmations show them.',
       '- **Secrets** — stay in each machine’s own file, `.env.staging`, which the config loads with `dotenv` and git ignores. The **env file** names it; Piwi never reads it.',
       '- **Built from the checkout** — the app under test comes from the same commit as the tests (a `webServer`, a preview deployment), unlike a deployed environment.',
-      '- **Protected** — only the project’s managers start runs against it from Piwi, after a confirmation, and only for the tests carrying a required tag (`@smoke`). Never a default.',
+      '- **Protected** — only the project’s managers start runs against it from Piwi, after a confirmation, and only for the tests carrying a required tag (`@smoke`) and the setup and teardown projects they depend on, which Playwright runs whole. Never a default.',
       '- **Archived** — out of the pickers; its runs keep it. A deleted one comes back when a run reports its label again.',
     ].join('\n'),
     doc: 'features/environments',
