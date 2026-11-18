@@ -43,3 +43,43 @@ export function postgresPoolMax(url: string, env: NodeJS.ProcessEnv = process.en
   }
   return DEFAULT_DATABASE_POOL_MAX;
 }
+
+/** postgres.js's factory, as `import('postgres')` gives it. */
+type Postgres = typeof import('postgres');
+
+/** The options the server passes postgres.js. */
+type PostgresOptions = NonNullable<Parameters<Postgres>[1]>;
+
+/**
+ * The startup parameters each connection of the pool sends: JIT compilation off. With it on, PostgreSQL compiles every
+ * query whose plan's estimated cost is past `jit_above_cost` at each run, a prepared statement's included.
+ */
+export const POSTGRES_STARTUP_PARAMETERS = { jit: 'off' } as const;
+
+/** Whether `error`, the failure of a pool's first query, refuses a startup parameter of `POSTGRES_STARTUP_PARAMETERS`. */
+function refusesStartupParameter(error: unknown): boolean {
+  const message = error instanceof Error ? error.message : String(error);
+  return /startup parameter|\bjit\b/i.test(message);
+}
+
+/**
+ * Open the PostgreSQL pool of `url` with `options` and `POSTGRES_STARTUP_PARAMETERS`, and run a first query on it.
+ * When that query fails because the parameter is refused (PgBouncer answers `unsupported startup parameter: jit`
+ * unless its `ignore_startup_parameters` lists it), the pool is opened again without it, with a warning, and the
+ * server's own `jit` setting applies. Any other failure of that query is left to the pool's next query to report.
+ */
+export async function openPostgresPool(postgres: Postgres, url: string, options: PostgresOptions) {
+  const client = postgres(url, { ...options, connection: { ...options.connection, ...POSTGRES_STARTUP_PARAMETERS } });
+  try {
+    await client`SELECT 1`;
+    return client;
+  } catch (error) {
+    if (!refusesStartupParameter(error)) return client;
+    await client.end({ timeout: 0 });
+    const reason = error instanceof Error ? error.message : String(error);
+    console.warn(
+      `[Database] PostgreSQL refused the startup parameter jit=off, so JIT compilation follows the server's setting: ${reason}`,
+    );
+    return postgres(url, options);
+  }
+}
