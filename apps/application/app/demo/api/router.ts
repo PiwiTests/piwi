@@ -4244,7 +4244,9 @@ const routes: RouteEntry[] = [
       if (!demoCan(ctx, 'project:read', fromProjectId)) {
         throw demoHttpError(403, 'No access to the project to copy from');
       }
-      return copyEnvironments(await getDemoDb(), fromProjectId, projectId);
+      return copyEnvironments(await getDemoDb(), fromProjectId, projectId, {
+        canManageSource: demoCan(ctx, 'project:manage', fromProjectId),
+      });
     },
   },
   {

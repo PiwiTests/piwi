@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: "Copy another project's environments",
     description:
-      'Body: `{ fromProjectId }`. Copies the declared environments of that project into this one, every field but its URL patterns, each copy independent of its source. An environment whose key or an alias this project already names is left as it is and listed in `skipped`. Needs `project:manage` on this project and `project:read` on the other.',
+      'Body: `{ fromProjectId }`. Copies the declared environments of that project into this one, every field but its URL patterns, each copy independent of its source. An environment whose key or an alias this project already names is left as it is and listed in `skipped`, and so is a protected environment unless the caller manages the other project too. Needs `project:manage` on this project and `project:read` on the other.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },
@@ -25,8 +25,11 @@ export default eventHandler(async (event) => {
   if (!parsed.success) throw apiError({ statusCode: 400, message: 'Invalid request body', data: parsed.error.issues });
   const { fromProjectId } = parsed.data;
   if (fromProjectId === id) throw apiError({ statusCode: 400, message: 'Pick another project to copy from' });
-  if (!can(await getRequestAccess(event), 'project:read', fromProjectId)) {
+  const access = await getRequestAccess(event);
+  if (!can(access, 'project:read', fromProjectId)) {
     throw apiError({ statusCode: 403, message: 'No access to the project to copy from' });
   }
-  return copyEnvironments(await getDatabase(), fromProjectId, id);
+  return copyEnvironments(await getDatabase(), fromProjectId, id, {
+    canManageSource: can(access, 'project:manage', fromProjectId),
+  });
 });

@@ -182,7 +182,7 @@ describe('copying environments', () => {
     await createEnvironment(db as never, SHOP, { key: 'production', name: 'Production' });
     await resolveRunEnvironment(db as never, SHOP, 'preview');
     await createEnvironment(db as never, OTHER, { key: 'production', name: 'Prod' });
-    const result = await copyEnvironments(db as never, SHOP, OTHER);
+    const result = await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: true });
     expect(result.copied.map((e) => e.key)).toEqual(['staging']);
     expect(result.skipped).toEqual(['production']);
     expect((await listProjectEnvironments(db as never, OTHER)).map((e) => e.name)).toEqual(['Prod', 'Staging']);
@@ -252,5 +252,76 @@ describe('an environment filter', () => {
     expect(await ids(['production'])).toEqual([prod.id]);
     expect(await ids([NO_ENVIRONMENT_FILTER])).toEqual([none.id]);
     expect(environmentScopeSql([])).toBeNull();
+  });
+});
+
+describe('the review cases', () => {
+  test('saving the key of a discovered environment turns it into the declared one, its runs with it', async () => {
+    const staged = await run('staging');
+    await backfillRunEnvironments(db as never);
+    const before = await environmentOf(staged.id);
+    const saved = await createEnvironment(db as never, SHOP, { key: 'Staging', name: 'Staging' });
+    expect(saved).toMatchObject({ ok: true, environment: { id: before, key: 'Staging', discovered: false } });
+    expect(await environmentOf(staged.id)).toBe(before);
+    const other = await createEnvironment(db as never, SHOP, { key: 'qa', name: 'QA' });
+    await run('stg');
+    await backfillRunEnvironments(db as never);
+    if (!other.ok) throw new Error('not created');
+    expect(await updateEnvironment(db as never, SHOP, other.environment.id, { key: 'stg' })).toMatchObject({
+      ok: true,
+    });
+  });
+
+  test('a deleted environment stays deleted when another is saved', async () => {
+    const staged = await run('staging');
+    await backfillRunEnvironments(db as never);
+    const [discovered] = await listProjectEnvironments(db as never, SHOP);
+    expect(await deleteEnvironment(db as never, SHOP, discovered!.id)).toBe(true);
+    await createEnvironment(db as never, SHOP, { key: 'qa', name: 'QA' });
+    expect((await listProjectEnvironments(db as never, SHOP)).map((e) => e.key)).toEqual(['qa']);
+    expect(await environmentOf(staged.id)).toBeNull();
+  });
+
+  test('moving a discovered environment leaves it discovered', async () => {
+    await resolveRunEnvironment(db as never, SHOP, 'preview');
+    const [preview] = await listProjectEnvironments(db as never, SHOP);
+    expect(await updateEnvironment(db as never, SHOP, preview!.id, { position: 7 })).toMatchObject({
+      ok: true,
+      environment: { discovered: true, position: 7 },
+    });
+  });
+
+  test('a renamed key never takes the aliases past their limit', async () => {
+    const aliases = Array.from({ length: 20 }, (_, i) => `a${i}`);
+    const created = await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases });
+    if (!created.ok) throw new Error('not created');
+    expect(await updateEnvironment(db as never, SHOP, created.environment.id, { key: 'stage' })).toMatchObject({
+      ok: false,
+      statusCode: 400,
+    });
+  });
+
+  test('a protected environment is copied only for a manager of its project', async () => {
+    await createEnvironment(db as never, SHOP, {
+      key: 'production',
+      name: 'Production',
+      runVariables: [{ name: 'TEST_ENV', value: 'production' }],
+      protected: true,
+      requiredTags: ['@smoke'],
+    });
+    await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging' });
+    const result = await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: false });
+    expect(result.copied.map((e) => e.key)).toEqual(['staging']);
+    expect(result.skipped).toEqual(['production']);
+  });
+
+  test('the rollups read the labels of two environments at once', async () => {
+    const { environmentLabelsSql } = await import('../../shared/handlers/environment-scope');
+    const { sql } = await import('drizzle-orm');
+    await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases: ['stg'] });
+    await run('stg');
+    await backfillRunEnvironments(db as never);
+    const rows = await db.all<Record<string, string>>(sql`${environmentLabelsSql(['staging', 'production'])}`);
+    expect(rows.map((r) => Object.values(r)[0]).sort()).toEqual(['production', 'staging', 'stg']);
   });
 });

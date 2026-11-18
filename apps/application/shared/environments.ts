@@ -54,7 +54,6 @@ export const environmentPatchSchema = environmentInputSchema
   .extend({ archived: z.boolean().optional() })
   .strict();
 
-export type EnvironmentInput = z.infer<typeof environmentInputSchema>;
 export type EnvironmentPatch = z.infer<typeof environmentPatchSchema>;
 
 /** The fields of an environment once its input is checked. */
@@ -99,6 +98,11 @@ export function checkEnvironmentFields(input: {
   for (const alias of aliases) {
     const problem = environmentAliasProblem(alias);
     if (problem) problems.push(problem);
+  }
+  if (aliases.length > ENVIRONMENT_LIMITS.aliases) {
+    problems.push(
+      `An environment has at most ${ENVIRONMENT_LIMITS.aliases} aliases; a renamed key becomes one: remove one first.`,
+    );
   }
   const requiredTags = [...new Set(input.requiredTags ?? [])];
   for (const tag of requiredTags) {

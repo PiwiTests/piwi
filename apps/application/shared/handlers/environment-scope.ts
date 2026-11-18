@@ -30,12 +30,6 @@ export function environmentScopeSql(names: readonly string[]): SQL | null {
 export function environmentLabelsSql(names: readonly string[]): SQL {
   const named = names.filter((name) => name !== NO_ENVIRONMENT_FILTER);
   const folds = [...new Set(named.map((name) => name.toLowerCase()))];
-  return sql`SELECT ${
-    named.length > 0
-      ? sql.join(
-          named.map((name) => sql`${name}`),
-          sql`, `,
-        )
-      : sql`NULL`
-  } UNION SELECT DISTINCT ${testRuns.environment} FROM ${testRuns} WHERE ${testRuns.environmentId} IN (SELECT ${environments.id} FROM ${environments} WHERE ${folds.length > 0 ? inArray(environments.keyFold, folds) : sql`0 = 1`})`;
+  const ownLabels = sql`SELECT DISTINCT ${testRuns.environment} FROM ${testRuns} WHERE ${testRuns.environmentId} IN (SELECT ${environments.id} FROM ${environments} WHERE ${folds.length > 0 ? inArray(environments.keyFold, folds) : sql`0 = 1`})`;
+  return sql.join([...named.map((name) => sql`SELECT CAST(${name} AS TEXT)`), ownLabels], sql` UNION `);
 }
