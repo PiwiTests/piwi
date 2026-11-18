@@ -3,7 +3,8 @@
  * that are not archived (`useProjectEnvironments`) and, when its linked folder is also linked to a team project (Run
  * on my machine), that team project's, which the shell reads from the team instance with the target key each time
  * they are asked for (`desktop_team_environments`), never kept. When the instance cannot be reached, its environments
- * are not offered and `teamProblem` says why. `withTeam: false` reads the project's own only.
+ * are not offered and `teamProblem` says why. `withTeam: false` (or a getter answering it) reads the project's own
+ * only.
  *
  * What a run for an environment gets is the shell's to read when it starts; `readDesktopRunSettings` asks it the same
  * way, for the commands the window shows.
@@ -13,10 +14,10 @@ import type { RunVariable } from '@piwitests/core/run-variables';
 import {
   DESKTOP_ENVIRONMENT_STORAGE_KEY,
   lastPickFor,
-  pickOf,
   withLastPick,
   type DesktopEnvironmentChoice,
   type DesktopEnvironmentPick,
+  type DesktopEnvironmentRef,
 } from '#shared/desktop-environments';
 
 /** The team project's environments as the shell answers them. */
@@ -62,7 +63,7 @@ function readLastPicks(): unknown {
 /** The last environment picked for the linked folder `folder` on this machine; undefined when none was. */
 export function lastDesktopEnvironmentPick(
   folder: string | null | undefined,
-): DesktopEnvironmentPick | null | undefined {
+): DesktopEnvironmentRef | null | undefined {
   return lastPickFor(readLastPicks(), folder);
 }
 
@@ -71,7 +72,7 @@ export function rememberDesktopEnvironmentPick(folder: string, choice: DesktopEn
   try {
     localStorage.setItem(
       DESKTOP_ENVIRONMENT_STORAGE_KEY,
-      JSON.stringify(withLastPick(readLastPicks(), folder, pickOf(choice))),
+      JSON.stringify(withLastPick(readLastPicks(), folder, choice ? { id: choice.id, team: choice.team } : null)),
     );
   } catch {
     // Unavailable storage: the next picker starts on its own default.
@@ -80,9 +81,9 @@ export function rememberDesktopEnvironmentPick(folder: string, choice: DesktopEn
 
 export function useDesktopEnvironments(
   projectId: MaybeRefOrGetter<string | number | null | undefined>,
-  options: { withTeam?: boolean } = {},
+  options: { withTeam?: MaybeRefOrGetter<boolean> } = {},
 ) {
-  const withTeam = options.withTeam ?? true;
+  const withTeam = () => toValue(options.withTeam ?? true);
   const project = useProjectEnvironments(projectId);
   const team = ref<ShellTeamEnvironments | null>(null);
   const teamLoading = ref(false);
@@ -93,7 +94,7 @@ export function useDesktopEnvironments(
     const id = toValue(projectId);
     const core = tauriCore();
     const ask = ++asked;
-    if (!withTeam || id == null || !core) {
+    if (!withTeam() || id == null || !core) {
       team.value = null;
       return;
     }
@@ -110,11 +111,7 @@ export function useDesktopEnvironments(
   }
 
   onMounted(() => {
-    watch(
-      () => toValue(projectId),
-      () => void refreshTeam(),
-      { immediate: true },
-    );
+    watch([() => toValue(projectId), withTeam], () => void refreshTeam(), { immediate: true });
   });
 
   const projectChoices = computed<DesktopEnvironmentChoice[]>(() =>
@@ -126,13 +123,24 @@ export function useDesktopEnvironments(
       requiredTags: environment.protected ? environment.requiredTags : [],
       envFile: environment.envFile,
       team: false,
+      teamInstance: null,
+      teamProjectId: null,
       aliases: environment.aliases,
       appFromCheckout: environment.appFromCheckout,
+      discovered: environment.discovered,
+      ownVariables: environment.runVariables.length,
     })),
   );
 
   const teamChoices = computed<DesktopEnvironmentChoice[]>(() =>
-    (team.value?.environments ?? []).map((environment) => ({ ...environment, team: true })),
+    (team.value?.environments ?? []).map((environment) => ({
+      ...environment,
+      team: true,
+      teamInstance: team.value?.instance ?? null,
+      teamProjectId: team.value?.projectId ?? null,
+      discovered: false,
+      ownVariables: 0,
+    })),
   );
 
   /** Every environment offered: the project's, then the team project's. */

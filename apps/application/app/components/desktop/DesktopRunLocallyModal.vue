@@ -114,6 +114,7 @@ function run() {
     sourceRunId: props.sourceRunId,
     options: options.value,
     environment: environment.value,
+    confirmed: confirmed.value,
   });
   confirmed.value = false;
   open.value = false;

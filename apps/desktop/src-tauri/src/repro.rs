@@ -276,6 +276,10 @@ pub async fn desktop_run_repro(
     )?;
     // The config may read them (its project name, its server's tenant, the environment), so the listing gets them too.
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
+    settings.refuse_protected(
+        "A bug report's reproduction",
+        "its spec carries none of the required tags, so it would run no test",
+    )?;
 
     let listed = app
         .shell()

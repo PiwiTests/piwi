@@ -1148,7 +1148,8 @@ pub async fn desktop_reproduce_here(
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
-    let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
+    let settings =
+        crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
 
     let state = app.state::<LocalRuns>();
     let id = state.allocate_id();
@@ -1223,7 +1224,10 @@ async fn reproduce_driver(
     if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
         return None;
     }
-    if !place_env_file(app, id, folder, worktree, settings) {
+    if !place_env_file(app, id, folder, worktree, settings, None) {
+        return None;
+    }
+    if stop.load(Ordering::SeqCst) || !selects_a_test(app, id, worktree, args, settings).await {
         return None;
     }
     let env = origin_env("reproduce", origin_ref);
@@ -1232,15 +1236,112 @@ async fn reproduce_driver(
     run_test_phase(app, id, worktree, job, args, browser, &env, settings, stop, attended).await
 }
 
+/// For a protected environment, whether the reproduction's filters select a test once kept to its required tags: a
+/// `--list` of the worktree's Playwright with the same arguments, run variables and environment. When none is
+/// selected, or the tests cannot be listed, it says so and the reproduction stops before its test phase, with no
+/// verdict. True for any other environment.
+async fn selects_a_test(
+    app: &AppHandle,
+    id: u32,
+    worktree: &Path,
+    args: &[String],
+    settings: &RunSettings,
+) -> bool {
+    let Some(environment) = settings.environment.as_ref().filter(|environment| environment.protected) else {
+        return true;
+    };
+    let Some(cli) = resolve_playwright_cli(worktree) else {
+        emit_line(app, id, "error", "No Playwright installation found in the worktree.");
+        return false;
+    };
+    let cwd = crate::runner::playwright_folder(worktree);
+    let mut list_args = vec![
+        node_path(&cli),
+        "test".to_string(),
+        "--list".to_string(),
+        "--reporter=json".to_string(),
+        "--pass-with-no-tests".to_string(),
+    ];
+    list_args.extend(crate::spec_filter::anchored_filters(
+        &cwd,
+        args,
+        cfg!(windows),
+    ));
+    list_args.extend(settings.args());
+    let listed = match app.shell().sidecar(crate::NODE_SIDECAR) {
+        Ok(command) => {
+            command
+                .args(list_args)
+                .current_dir(worktree)
+                .envs(settings.envs())
+                .envs(run_path_env(app, worktree))
+                .env("NO_COLOR", "1")
+                .output()
+                .await
+        }
+        Err(e) => {
+            emit_line(app, id, "error", e.to_string());
+            return false;
+        }
+    };
+    let stdout = listed
+        .map(|output| String::from_utf8_lossy(&output.stdout).into_owned())
+        .unwrap_or_default();
+    let tags = environment.required_tags.join(", ");
+    match crate::environments::listed_tests(&stdout) {
+        Some(listed) if listed.count > 0 => true,
+        Some(listed) if listed.error.is_none() => {
+            emit_line(
+                app,
+                id,
+                "error",
+                format!(
+                    "None of these tests carries a required tag of {} ({tags}): nothing runs against a protected environment.",
+                    environment.name
+                ),
+            );
+            false
+        }
+        Some(listed) => {
+            emit_line(
+                app,
+                id,
+                "error",
+                format!(
+                    "The tests could not be listed to check the required tags of {}: {}",
+                    environment.name,
+                    listed.error.unwrap_or_default()
+                ),
+            );
+            false
+        }
+        None => {
+            emit_line(
+                app,
+                id,
+                "error",
+                format!(
+                    "The tests could not be listed to check the required tags of {}.",
+                    environment.name
+                ),
+            );
+            false
+        }
+    }
+}
+
 /// Copy the env file of the environment a job runs for from the linked folder `folder` into its worktree, before its
 /// test runs ([`crate::environments::copy_env_file`]), and say what it did. False when the copy is refused, which
-/// stops the job; a file the linked folder lacks is said, and the job goes on without it.
+/// stops the job; a file the linked folder lacks is said, and the job goes on without it. For a bisect, `tracked` is
+/// git and the range `good..bad` it checks out: a name a commit of the range tracks is not copied, since a checkout
+/// would replace or remove the copy, and the job goes on with what each commit holds.
 fn place_env_file(
     app: &AppHandle,
     id: u32,
     folder: &Path,
     worktree: &Path,
     settings: &RunSettings,
+    tracked: Option<(&Path, &str, &str)>,
 ) -> bool {
     let Some(name) = settings
         .environment
@@ -1249,6 +1350,17 @@ fn place_env_file(
     else {
         return true;
     };
+    if let Some((git, good, bad)) = tracked {
+        if tracked_in_range(git, worktree, good, bad, name) {
+            emit_line(
+                app,
+                id,
+                "stdout",
+                format!("{name} is tracked at a commit of the bisect: it is not copied, and each step reads the one its commit holds."),
+            );
+            return true;
+        }
+    }
     match crate::environments::copy_env_file(folder, worktree, name) {
         Ok(EnvFileCopy::Copied) => {
             emit_line(
@@ -1282,6 +1394,15 @@ fn place_env_file(
             false
         }
     }
+}
+
+/// Whether a commit of `good..bad` adds, changes or removes `name` at the worktree's root: git would replace or delete
+/// a copy of it as the bisect checks the commits out. A git that cannot answer counts as tracked.
+fn tracked_in_range(git: &Path, worktree: &Path, good: &str, bad: &str, name: &str) -> bool {
+    let range = format!("{good}..{bad}");
+    git_capture(git, worktree, &["log", "--format=", "--name-only", &range, "--", name])
+        .map(|out| !out.trim().is_empty())
+        .unwrap_or(true)
 }
 
 /// The browser + test phases shared by reproduce and each bisect step; the test
@@ -1346,9 +1467,10 @@ pub async fn desktop_bisect_here(
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
-    if flake_test_case_id.is_some() {
-        settings.refuse_protected("A flake-aware bisect")?;
-    }
+    settings.refuse_protected(
+        "A bisect",
+        "a test without a required tag would leave each step with no test to judge it",
+    )?;
     if !commit_exists(&git, &folder, &good) || !commit_exists(&git, &folder, &bad) {
         return Err(format!(
             "one of the commits is unknown to the linked repository — run `git fetch {}` in it first.",
@@ -1437,7 +1559,7 @@ async fn bisect_driver(
         );
     }
     // An untracked file stays in the worktree as the bisect checks out each commit.
-    if !place_env_file(app, id, folder, worktree, settings) {
+    if !place_env_file(app, id, folder, worktree, settings, Some((git, good, bad))) {
         return None;
     }
     let start = git_capture(git, worktree, &["bisect", "start", bad, good]);
@@ -1647,7 +1769,7 @@ pub async fn desktop_flake_lab_here(
     }
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
-    settings.refuse_protected("Flake Lab")?;
+    settings.refuse_protected("Flake Lab", "its runs cannot be kept to the required tags")?;
     let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
         .map(|out| is_dirty(&out))
         .unwrap_or(false);
@@ -1724,7 +1846,7 @@ async fn flake_lab_driver(
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
-    if !place_env_file(app, id, folder, worktree, settings) {
+    if !place_env_file(app, id, folder, worktree, settings, None) {
         return None;
     }
     let args = flake_lab_args(&cli, test_case_id, options);
@@ -1806,7 +1928,7 @@ pub async fn desktop_flake_lab_job(
     let (commit, plan) = parse_lab_job(&request)?;
     let (_record, folder, git) = resolve_repo(&app, &project_id)?;
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
-    settings.refuse_protected("Flake Lab")?;
+    settings.refuse_protected("Flake Lab", "its runs cannot be kept to the required tags")?;
     let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
         .map(|out| is_dirty(&out))
         .unwrap_or(false);
@@ -1877,7 +1999,7 @@ async fn lab_job_driver(
     stop: &AtomicBool,
 ) -> Option<i32> {
     let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
-    if !place_env_file(app, id, folder, worktree, settings) {
+    if !place_env_file(app, id, folder, worktree, settings, None) {
         return None;
     }
     let args = lab_job_args(&cli, plan_file);

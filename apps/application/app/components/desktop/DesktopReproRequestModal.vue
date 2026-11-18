@@ -147,6 +147,7 @@ async function run() {
         projectLabel: project.label || project.name,
         request,
         environment: environment.value,
+        confirmed: confirmed.value,
       });
       confirmed.value = false;
       remove(request.id);
@@ -161,6 +162,7 @@ async function run() {
       args: args.value,
       bugReportId: request.bugReportId,
       environment: environment.value,
+      confirmed: confirmed.value,
     });
     confirmed.value = false;
     remove(request.id);

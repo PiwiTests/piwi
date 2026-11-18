@@ -42,6 +42,8 @@
  * A run started for an environment names it on its line, with the command the
  * shell runs, and says when the label its Piwi run reported resolves to
  * another environment ("Started for Staging; the config reported production").
+ * Its Run again reads the environment again and, for a protected one, asks
+ * the person to confirm again (`DesktopEnvironmentQuestion`).
  *
  * A run's output can move to a separate window of the app (`separate`,
  * `DesktopRunOutputWindows`), which stays open when the tray closes or
@@ -312,6 +314,7 @@ function lineAction(run: LocalRun): LineAction | null {
 
 <template>
   <Teleport to="body">
+    <DesktopEnvironmentQuestion v-if="available" />
     <!-- Outside the tray, so a stop that opens it is read out from a region already there. -->
     <p v-if="available" class="sr-only" aria-live="polite">{{ announcement }}</p>
     <section
@@ -442,7 +445,7 @@ function lineAction(run: LocalRun): LineAction | null {
                   variant="soft"
                   icon="i-lucide-rotate-ccw"
                   aria-label="Run again"
-                  @click="store.rerun(run)"
+                  @click="void store.rerun(run)"
                 />
               </UTooltip>
               <UTooltip :text="separateLabel(run)">

@@ -1,13 +1,16 @@
 //! Environments: the deployment of the application a run the shell starts goes against (Local, Staging, Production).
 //! The window names the environment a run is for by its id, among the desktop project's own or, for a folder also
-//! linked to a team project (Run on my machine), the team project's ([`EnvironmentPick`]). The shell reads the run
-//! variables the run gets and the environment from its own server, or from the team instance with the target key, at
-//! each run and never from the window, checks them again with the rules of `@piwitests/core/environments` and
-//! `@piwitests/core/run-variables`, and applies them ([`RunSettings`]): the run variables, then `PIWI_ENVIRONMENT` set
-//! to the environment's key, as the process's environment before the shell's own variables, never through a shell
-//! line, and for a protected environment a `--grep-invert` that keeps the run to the tests carrying one of its required
-//! tags, built as core's `requiredTagsGrepInvert` builds it. `apps/application/tests/unit/environments-shell.test.ts`
-//! holds the limits and the pattern here to core's.
+//! linked to a team project (Run on my machine), the team project's, with the instance and the team project it read it
+//! from, and the key of a protected one the person confirmed the run against ([`EnvironmentPick`]). The shell reads the
+//! run variables the run gets and the environment from its own server, or from the team instance with the target key,
+//! at each run and never from the window, refuses a team pick whose folder is now linked elsewhere and a protected
+//! environment the pick does not confirm by its current key, checks them again with the rules of
+//! `@piwitests/core/environments` and `@piwitests/core/run-variables`, and applies them ([`RunSettings`]): the run
+//! variables, then `PIWI_ENVIRONMENT` set to the environment's key, as the process's environment before the shell's
+//! own variables, never through a shell line, and for a protected environment a `--grep-invert` built as core's
+//! `requiredTagsGrepInvert` builds it, which limits the run to the tests carrying one of its required tags, beside the
+//! setup and teardown projects they depend on, which Playwright runs whole.
+//! `apps/application/tests/unit/environments-shell.test.ts` holds the limits and the pattern here to core's.
 //!
 //! An environment may name the env file its config loads (`.env.staging`): the shell lists those a linked folder holds
 //! for its check ([`env_files_in`]), and copies the one of the environment from the linked folder into a worktree
@@ -50,13 +53,20 @@ const MAX_ENV_FILE_BYTES: u64 = 1024 * 1024;
 const TEAM_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// The environment a run is for, as the window names it: an id of the desktop project's environments, or with `team`
-/// of the environments of the team project the project's folder is also linked to.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+/// of the environments of the team project the project's folder is also linked to, named by its instance and id as the
+/// window read them. `confirmed` is the key of a protected environment the person confirmed this run against.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct EnvironmentPick {
     pub id: u64,
     #[serde(default)]
     pub team: bool,
+    #[serde(default)]
+    pub instance: Option<String>,
+    #[serde(default)]
+    pub team_project: Option<u64>,
+    #[serde(default)]
+    pub confirmed: Option<String>,
 }
 
 /// What the shell applies of the environment a run is for, as core's `EnvironmentForRun` holds it.
@@ -90,8 +100,9 @@ impl RunSettings {
         envs
     }
 
-    /// The arguments the shell adds to Playwright's: for a protected environment, the `--grep-invert` that keeps the
-    /// run to the tests carrying one of its required tags.
+    /// The arguments the shell adds to Playwright's: for a protected environment, the `--grep-invert` that limits the
+    /// run to the tests carrying one of its required tags, beside the setup and teardown projects they depend on, which
+    /// Playwright runs whole.
     pub(crate) fn args(&self) -> Vec<String> {
         match &self.environment {
             Some(environment) if environment.protected => {
@@ -104,16 +115,84 @@ impl RunSettings {
         }
     }
 
-    /// Refuses a protected environment for a process that cannot be kept to its required tags (`piwi flake`).
-    pub(crate) fn refuse_protected(&self, what: &str) -> Result<(), String> {
+    /// Refuses a protected environment for `what`, which never runs against one, saying `why`: `piwi flake` cannot be
+    /// kept to the required tags, a bisect would judge each step on no test, a bug report's spec carries no such tag.
+    pub(crate) fn refuse_protected(&self, what: &str, why: &str) -> Result<(), String> {
         match &self.environment {
             Some(environment) if environment.protected => Err(format!(
-                "{what} never runs against a protected environment ({}): its runs could not be kept to the required tags",
+                "{what} never runs against a protected environment ({}): {why}",
                 environment.name
             )),
             _ => Ok(()),
         }
     }
+
+    /// Refuses a protected environment the person did not confirm this run against: the pick names its key as it was
+    /// shown to them, and it must be the key the shell read.
+    pub(crate) fn check_confirmed(&self, pick: Option<&EnvironmentPick>) -> Result<(), String> {
+        match &self.environment {
+            Some(environment)
+                if environment.protected
+                    && pick.and_then(|pick| pick.confirmed.as_deref()) != Some(environment.key.as_str()) =>
+            {
+                Err(format!(
+                    "{} is protected: confirm the run against it in the window, which shows what it is limited to",
+                    environment.name
+                ))
+            }
+            _ => Ok(()),
+        }
+    }
+}
+
+/// What a `--list --reporter=json` of Playwright answered: how many tests it selects, and its first error.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) struct ListedTests {
+    pub count: usize,
+    pub error: Option<String>,
+}
+
+/// The tests of a JSON report a `--list` printed (output printed before the JSON, a config that logs, is skipped): the
+/// specs with at least one test, in every suite, and the report's first error. None when no report can be read.
+pub(crate) fn listed_tests(stdout: &str) -> Option<ListedTests> {
+    let start = stdout
+        .find("\n{")
+        .map(|i| i + 1)
+        .or_else(|| stdout.starts_with('{').then_some(0))?;
+    let report: Value = serde_json::from_str(stdout[start..].trim()).ok()?;
+    fn count(suites: Option<&Value>) -> usize {
+        suites.and_then(Value::as_array).map_or(0, |suites| {
+            suites
+                .iter()
+                .map(|suite| {
+                    let specs = suite
+                        .get("specs")
+                        .and_then(Value::as_array)
+                        .map_or(0, |specs| {
+                            specs
+                                .iter()
+                                .filter(|spec| {
+                                    spec.get("tests")
+                                        .and_then(Value::as_array)
+                                        .is_some_and(|tests| !tests.is_empty())
+                                })
+                                .count()
+                        });
+                    specs + count(suite.get("suites"))
+                })
+                .sum()
+        })
+    }
+    let error = report
+        .get("errors")
+        .and_then(Value::as_array)
+        .and_then(|errors| errors.first())
+        .and_then(|error| error.get("message").and_then(Value::as_str))
+        .map(|message| message.lines().next().unwrap_or_default().to_string());
+    Some(ListedTests {
+        count: count(report.get("suites")),
+        error,
+    })
 }
 
 /// The `--grep-invert` pattern that leaves out every test whose title and tags hold none of `tags` as a word: core's
@@ -274,7 +353,7 @@ pub(crate) fn checked_settings(answer: &Value) -> Result<RunSettings, String> {
 /// environment it names is the one picked (none without a pick).
 pub(crate) fn checked_run_settings(
     answer: &Value,
-    pick: Option<EnvironmentPick>,
+    pick: Option<&EnvironmentPick>,
 ) -> Result<RunSettings, String> {
     if answer.get("runVariables").is_none() {
         return Err("the run variables could not be read: the server did not name them".into());
@@ -295,6 +374,35 @@ fn checked_pick(pick: Option<EnvironmentPick>) -> Result<Option<EnvironmentPick>
     }
 }
 
+/// Refuses a team pick read from another team project than the one the folder is linked to now, on the connected
+/// instance: the instance or the link changed since the window read it, and the same id there is another environment.
+fn check_team_pick(
+    pick: &EnvironmentPick,
+    instance: &str,
+    team_project: u64,
+) -> Result<(), String> {
+    if pick.instance.as_deref() == Some(instance) && pick.team_project == Some(team_project) {
+        Ok(())
+    } else {
+        Err(
+            "the folder's team project changed since the environment was picked: pick it again"
+                .into(),
+        )
+    }
+}
+
+/// The run settings a run of the project `project_id` for `pick` starts with ([`read_run_settings`]), with a
+/// protected environment refused unless the person confirmed this run against it ([`RunSettings::check_confirmed`]).
+pub(crate) async fn read_settings_for_run(
+    app: &AppHandle,
+    project_id: &str,
+    pick: Option<EnvironmentPick>,
+) -> Result<RunSettings, String> {
+    let settings = read_run_settings(app, project_id, pick.clone()).await?;
+    settings.check_confirmed(pick.as_ref())?;
+    Ok(settings)
+}
+
 /// The run settings of the bundled server's project `project_id` (digits only) for `pick`, read from its own server
 /// (`GET /api/projects/:id/run-variables?environment=<id>`), or for a team environment from the team instance the
 /// project's linked folder is also linked to (`GET /api/run-targets/projects/:id/run-variables?environment=<id>`, with
@@ -308,8 +416,9 @@ pub(crate) async fn read_run_settings(
         return Err("not a project id".into());
     }
     let pick = checked_pick(pick)?;
-    if let Some(pick) = pick.filter(|pick| pick.team) {
+    if let Some(pick) = pick.as_ref().filter(|pick| pick.team) {
         let team = TeamLink::of(app, project_id)?;
+        check_team_pick(pick, &team.instance, team.project_id)?;
         let answer = team
             .get_json(&format!(
                 "/api/run-targets/projects/{}/run-variables?environment={}",
@@ -321,7 +430,7 @@ pub(crate) async fn read_run_settings(
     }
     let server = server_info(app)
         .ok_or("the run variables could not be read: the app's server is not running")?;
-    let path = match pick {
+    let path = match &pick {
         Some(pick) => format!(
             "/api/projects/{project_id}/run-variables?environment={}",
             pick.id
@@ -333,7 +442,7 @@ pub(crate) async fn read_run_settings(
             .await
             .map_err(|e| format!("the run variables could not be read: {e}"))?
             .map_err(|e| format!("the run variables could not be read: {e}"))?;
-    checked_run_settings(&answer, pick)
+    checked_run_settings(&answer, pick.as_ref())
 }
 
 fn server_info(app: &AppHandle) -> Option<crate::mcp_clients::ServerInfo> {
@@ -735,7 +844,7 @@ mod tests {
     fn a_protected_environment_keeps_the_run_to_its_required_tags() {
         let settings = checked_run_settings(
             &json!({ "runVariables": [{ "name": "TEST_ENV", "value": "production" }], "environment": production() }),
-            Some(EnvironmentPick { id: 4, team: false }),
+            Some(&EnvironmentPick { id: 4, team: false, ..Default::default() }),
         )
         .unwrap();
         assert_eq!(
@@ -749,17 +858,21 @@ mod tests {
             settings.args(),
             vec![r"--grep-invert=^(?!.*(?:^|\s)(?:@smoke|@read-only)(?:\s|$))".to_string()]
         );
-        assert!(settings.refuse_protected("Flake Lab").is_err());
+        assert!(settings.refuse_protected("Flake Lab", "why").is_err());
         // The shell adds it; the window can never pass one.
         assert!(crate::runner::validate_args(&settings.args()).is_err());
 
         let staging = checked_run_settings(
             &json!({ "runVariables": [], "environment": staging() }),
-            Some(EnvironmentPick { id: 3, team: true }),
+            Some(&EnvironmentPick {
+                id: 3,
+                team: true,
+                ..Default::default()
+            }),
         )
         .unwrap();
         assert!(staging.args().is_empty());
-        assert!(staging.refuse_protected("Flake Lab").is_ok());
+        assert!(staging.refuse_protected("Flake Lab", "why").is_ok());
         assert_eq!(
             staging.envs(),
             vec![("PIWI_ENVIRONMENT".to_string(), "staging".to_string())]
@@ -779,12 +892,20 @@ mod tests {
         .is_err());
         assert!(checked_run_settings(
             &json!({ "runVariables": [], "environment": null }),
-            Some(EnvironmentPick { id: 3, team: false })
+            Some(&EnvironmentPick {
+                id: 3,
+                team: false,
+                ..Default::default()
+            })
         )
         .is_err());
         assert!(checked_run_settings(
             &json!({ "runVariables": [], "environment": staging() }),
-            Some(EnvironmentPick { id: 4, team: false })
+            Some(&EnvironmentPick {
+                id: 4,
+                team: false,
+                ..Default::default()
+            })
         )
         .is_err());
         assert!(checked_run_settings(&json!({ "environment": null }), None).is_err());
@@ -799,7 +920,11 @@ mod tests {
                     .collect(),
             )
         };
-        let pick = Some(EnvironmentPick { id: 3, team: false });
+        let pick = Some(&EnvironmentPick {
+            id: 3,
+            team: false,
+            ..Default::default()
+        });
         assert!(checked_run_settings(
             &json!({ "runVariables": list(20), "environment": staging() }),
             pick
@@ -825,11 +950,96 @@ mod tests {
     }
 
     #[test]
+    fn a_protected_environment_runs_only_once_confirmed_by_its_key() {
+        let settings =
+            checked_settings(&json!({ "runVariables": [], "environment": production() })).unwrap();
+        let pick = |confirmed: Option<&str>| EnvironmentPick {
+            id: 4,
+            confirmed: confirmed.map(str::to_string),
+            ..Default::default()
+        };
+        assert!(settings.check_confirmed(None).is_err());
+        assert!(settings.check_confirmed(Some(&pick(None))).is_err());
+        assert!(settings.check_confirmed(Some(&pick(Some("prod")))).is_err());
+        assert!(settings
+            .check_confirmed(Some(&pick(Some("production"))))
+            .is_ok());
+        let staging =
+            checked_settings(&json!({ "runVariables": [], "environment": staging() })).unwrap();
+        assert!(staging.check_confirmed(Some(&pick(None))).is_ok());
+        assert!(RunSettings::default().check_confirmed(None).is_ok());
+        let refused = settings
+            .refuse_protected("A bisect", "each step would run no test")
+            .unwrap_err();
+        assert_eq!(
+            refused,
+            "A bisect never runs against a protected environment (Production): each step would run no test"
+        );
+    }
+
+    #[test]
+    fn a_team_pick_names_the_instance_and_project_the_folder_is_linked_to_now() {
+        let pick = EnvironmentPick {
+            id: 3,
+            team: true,
+            instance: Some("https://piwi.example.com".into()),
+            team_project: Some(12),
+            confirmed: None,
+        };
+        assert!(check_team_pick(&pick, "https://piwi.example.com", 12).is_ok());
+        assert!(check_team_pick(&pick, "https://other.example.com", 12).is_err());
+        assert!(check_team_pick(&pick, "https://piwi.example.com", 13).is_err());
+        let unnamed = EnvironmentPick {
+            id: 3,
+            team: true,
+            ..Default::default()
+        };
+        assert!(check_team_pick(&unnamed, "https://piwi.example.com", 12).is_err());
+    }
+
+    #[test]
+    fn counts_the_tests_a_listing_selects() {
+        let report = r#"{"config":{},"suites":[{"title":"a.spec.ts","specs":[{"title":"one","tests":[{}]},{"title":"two","tests":[]}],"suites":[{"title":"group","specs":[{"title":"three","tests":[{},{}]}]}]}],"errors":[]}"#;
+        assert_eq!(
+            listed_tests(&format!("config says hello\n{report}")),
+            Some(ListedTests {
+                count: 2,
+                error: None
+            })
+        );
+        assert_eq!(
+            listed_tests(r#"{"suites":[],"errors":[{"message":"Error: No tests found\nmore"}]}"#),
+            Some(ListedTests {
+                count: 0,
+                error: Some("Error: No tests found".into())
+            })
+        );
+        assert_eq!(listed_tests("Error: Cannot find module"), None);
+    }
+
+    #[test]
     fn a_pick_has_an_id_and_says_whether_it_is_the_team_s() {
         let pick: EnvironmentPick = serde_json::from_value(json!({ "id": 3 })).unwrap();
-        assert_eq!(pick, EnvironmentPick { id: 3, team: false });
+        assert_eq!(
+            pick,
+            EnvironmentPick {
+                id: 3,
+                team: false,
+                ..Default::default()
+            }
+        );
+        let team: EnvironmentPick = serde_json::from_value(json!({
+            "id": 3, "team": true, "instance": "https://piwi.example.com", "teamProject": 12, "confirmed": null
+        }))
+        .unwrap();
+        assert_eq!(team.team_project, Some(12));
         assert!(serde_json::from_value::<EnvironmentPick>(json!({ "id": 3, "key": "x" })).is_err());
-        assert!(checked_pick(Some(EnvironmentPick { id: 0, team: false })).is_err());
+        assert!(checked_pick(Some(EnvironmentPick {
+            id: 0,
+            team: false,
+            ..Default::default()
+        }))
+        .is_err());
         assert!(checked_pick(None).unwrap().is_none());
     }
 

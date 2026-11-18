@@ -1,13 +1,18 @@
 /**
  * The environments the desktop app's pickers offer for a run the shell starts: the desktop project's own and, for a
  * folder also linked to a team project (Run on my machine), that team project's, read from the team instance by the
- * shell. The window names the one picked by its id and whether it is the team project's (`DesktopEnvironmentPick`);
- * the shell reads the run variables and the environment itself and applies them (`apps/desktop/src-tauri/src/environments.rs`).
+ * shell. The window names the one picked by its id, whether it is the team project's (with the instance and the team
+ * project it read it from), and the key of a protected one the person confirmed this run against
+ * (`DesktopEnvironmentPick`); the shell reads the run variables and the environment itself, refuses a protected one
+ * the pick does not confirm by its current key, and applies them (`apps/desktop/src-tauri/src/environments.rs`).
  *
  * Which one a picker starts on, per path: a re-run and Reproduce the environment of the run its tests come from,
- * unless protected; Run with options and a bug report's reproduction the last one picked for the folder, kept on the
+ * unless protected, and the team project's of the same key when the desktop project's is one its runs discovered with
+ * no run variables; Run with options and a bug report's reproduction the last one picked for the folder, kept on the
  * machine; Bisect one built from the checkout; Flake Lab the one the test's runs carry most, unless protected. A
- * protected environment is never where a picker starts, and Flake Lab never runs against one.
+ * protected environment is never where a picker starts, and only a run of tests and Reproduce offer one: Bisect, a bug
+ * report's reproduction and Flake Lab never run against one. A protected run is limited to the tests carrying one of
+ * its required tags, beside the setup and teardown projects they depend on, which Playwright runs whole.
  */
 import { resolveEnvironment, type EnvironmentForRun } from '@piwitests/core/environments';
 
@@ -16,15 +21,27 @@ export interface DesktopEnvironmentPick {
   id: number;
   /** One of the team project's environments, rather than the desktop project's. */
   team: boolean;
+  /** For a team environment, the instance and the team project the window read it from; else null. */
+  instance: string | null;
+  teamProject: number | null;
+  /** The key of a protected environment the person confirmed this run against; else null. */
+  confirmed: string | null;
 }
 
 /** An environment a picker offers. */
 export interface DesktopEnvironmentChoice extends EnvironmentForRun {
   team: boolean;
+  /** For a team environment, the instance and the team project it was read from; else null. */
+  teamInstance: string | null;
+  teamProjectId: number | null;
   /** The other labels its runs report, `*` patterns included. */
   aliases: string[];
   /** The application under test is built from the run's checkout; else it is deployed. */
   appFromCheckout: boolean;
+  /** Created by a run's label, until a manager saves it. */
+  discovered: boolean;
+  /** How many run variables the environment sets itself. */
+  ownVariables: number;
 }
 
 /** What a picker is for: each path starts on its own environment and says what applies to it. */
@@ -33,18 +50,40 @@ export type DesktopEnvironmentPurpose = 'run' | 'repro' | 'reproduce' | 'bisect'
 /** Where the window keeps the last environment picked for each linked folder. */
 export const DESKTOP_ENVIRONMENT_STORAGE_KEY = 'piwi:desktop-local-run-environments';
 
-/** The last environment picked for each linked folder, by path; `null` is None. */
-export type DesktopLastPicks = Record<string, DesktopEnvironmentPick | null>;
+/** An environment as the window keeps it for a folder: its id, and whether it is the team project's. */
+export interface DesktopEnvironmentRef {
+  id: number;
+  team: boolean;
+}
 
+/** The last environment picked for each linked folder, by path; `null` is None. */
+export type DesktopLastPicks = Record<string, DesktopEnvironmentRef | null>;
+
+/**
+ * What the window names to the shell for a run for `choice`: `confirmedKey` is the key the person confirmed a protected
+ * environment by for this run, sent only for a protected one; the shell runs a protected environment only when it is
+ * its key now.
+ */
 export function pickOf(
-  choice: Pick<DesktopEnvironmentChoice, 'id' | 'team'> | null | undefined,
+  choice:
+    | Pick<DesktopEnvironmentChoice, 'id' | 'team' | 'protected' | 'teamInstance' | 'teamProjectId'>
+    | null
+    | undefined,
+  confirmedKey: string | null = null,
 ): DesktopEnvironmentPick | null {
-  return choice ? { id: choice.id, team: choice.team } : null;
+  if (!choice) return null;
+  return {
+    id: choice.id,
+    team: choice.team,
+    instance: choice.team ? choice.teamInstance : null,
+    teamProject: choice.team ? choice.teamProjectId : null,
+    confirmed: choice.protected ? confirmedKey : null,
+  };
 }
 
 export function samePick(
-  a: Pick<DesktopEnvironmentPick, 'id' | 'team'> | null | undefined,
-  b: Pick<DesktopEnvironmentPick, 'id' | 'team'> | null | undefined,
+  a: DesktopEnvironmentRef | null | undefined,
+  b: DesktopEnvironmentRef | null | undefined,
 ): boolean {
   if (!a || !b) return !a && !b;
   return a.id === b.id && a.team === b.team;
@@ -52,9 +91,14 @@ export function samePick(
 
 export function choiceOf(
   choices: readonly DesktopEnvironmentChoice[],
-  pick: DesktopEnvironmentPick | null | undefined,
+  pick: DesktopEnvironmentRef | null | undefined,
 ): DesktopEnvironmentChoice | null {
   return pick ? (choices.find((choice) => samePick(choice, pick)) ?? null) : null;
+}
+
+/** Whether a path offers a protected environment: a run of tests and Reproduce, never Bisect, a bug report or Flake Lab. */
+export function offersProtected(purpose: DesktopEnvironmentPurpose): boolean {
+  return purpose === 'run' || purpose === 'reproduce';
 }
 
 /** The choice unless it is protected: a protected environment is never where a picker starts. */
@@ -62,12 +106,23 @@ export function unlessProtected(choice: DesktopEnvironmentChoice | null | undefi
   return choice && !choice.protected ? choice : null;
 }
 
-/** The desktop project's environment `id`, unless protected: a re-run's and Reproduce's start. */
+/**
+ * The desktop project's environment `id`, unless protected: a re-run's and Reproduce's start. When the runs of a team
+ * environment discovered it (a desktop environment with no run variables of its own) and the team project has an
+ * environment of the same key, the team one: its run variables are the ones the run had.
+ */
 export function runEnvironmentChoice(
   choices: readonly DesktopEnvironmentChoice[],
   id: number | null | undefined,
 ): DesktopEnvironmentChoice | null {
-  return id == null ? null : unlessProtected(choiceOf(choices, { id, team: false }));
+  if (id == null) return null;
+  const own = choiceOf(choices, { id, team: false });
+  if (own?.discovered && own.ownVariables === 0) {
+    const key = own.key.toLowerCase();
+    const team = choices.find((choice) => choice.team && choice.key.toLowerCase() === key);
+    if (team) return unlessProtected(team);
+  }
+  return unlessProtected(own);
 }
 
 /** The first environment built from the checkout, the desktop project's before the team's: Bisect's start. */
@@ -95,7 +150,7 @@ export function mostCarriedChoice(
 export function lastPickFor(
   stored: unknown,
   folder: string | null | undefined,
-): DesktopEnvironmentPick | null | undefined {
+): DesktopEnvironmentRef | null | undefined {
   if (!folder || typeof stored !== 'object' || stored === null) return undefined;
   if (!Object.prototype.hasOwnProperty.call(stored, folder)) return undefined;
   const pick = (stored as Record<string, unknown>)[folder];
@@ -108,7 +163,7 @@ export function lastPickFor(
 }
 
 /** The stored picks with `pick` as the last one for `folder`. */
-export function withLastPick(stored: unknown, folder: string, pick: DesktopEnvironmentPick | null): DesktopLastPicks {
+export function withLastPick(stored: unknown, folder: string, pick: DesktopEnvironmentRef | null): DesktopLastPicks {
   const kept: DesktopLastPicks = {};
   if (typeof stored === 'object' && stored !== null && !Array.isArray(stored)) {
     for (const key of Object.keys(stored)) {
@@ -120,9 +175,20 @@ export function withLastPick(stored: unknown, folder: string, pick: DesktopEnvir
   return kept;
 }
 
-/** Whether a run for `choice` may start: any but a protected environment, which the person confirmed for this run. */
+/**
+ * Whether a run for `choice` may start: any but a protected environment, which the person confirmed for this run; the
+ * shell checks the confirmation again against the environment's key as it reads it.
+ */
 export function environmentReady(choice: DesktopEnvironmentChoice | null | undefined, confirmed: boolean): boolean {
   return !choice?.protected || confirmed;
+}
+
+/**
+ * What a protected environment's confirmation says the run is limited to: the tests carrying one of its required tags,
+ * and the setup and teardown projects they depend on, which Playwright runs whole.
+ */
+export function protectedRunScope(choice: Pick<EnvironmentForRun, 'requiredTags'>): string {
+  return `Only the tests tagged ${choice.requiredTags.join(', ')} run against it, beside the setup and teardown projects they depend on, which Playwright runs whole.`;
 }
 
 /** Whether the environment loads an env file the linked folder does not hold (`envFiles`, from the folder's check). */

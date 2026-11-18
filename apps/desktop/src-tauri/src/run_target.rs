@@ -1100,7 +1100,8 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
-    // A protected environment's run is kept to its required tags here, whatever the command approved.
+    // A protected environment's run is limited here to the tests carrying one of its required tags, beside the setup
+    // and teardown projects they depend on, whatever the command approved.
     let mut args = launch.args;
     args.extend(settings.args());
     // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and

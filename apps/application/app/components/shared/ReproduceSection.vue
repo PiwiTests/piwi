@@ -107,6 +107,7 @@ function reproduceHere() {
     browserName: ctx.browserName,
     clusterId: ctx.clusterId,
     environment: reproduceEnvironment.value,
+    confirmed: reproduceConfirmed.value,
   });
   reproduceConfirmed.value = false;
 }

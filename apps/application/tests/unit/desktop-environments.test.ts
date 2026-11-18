@@ -6,7 +6,9 @@ import {
   environmentReady,
   lastPickFor,
   mostCarriedChoice,
+  offersProtected,
   pickOf,
+  protectedRunScope,
   runEnvironmentChoice,
   samePick,
   withLastPick,
@@ -21,8 +23,12 @@ function choice(over: Partial<DesktopEnvironmentChoice> & { id: number; key: str
     requiredTags: [],
     envFile: null,
     team: false,
+    teamInstance: over.team ? 'https://piwi.example.com' : null,
+    teamProjectId: over.team ? 12 : null,
     aliases: [],
     appFromCheckout: false,
+    discovered: false,
+    ownVariables: 0,
     ...over,
   };
 }
@@ -65,6 +71,55 @@ describe('where an environment picker of the desktop app starts', () => {
     expect(lastPickFor('garbage', '/repo')).toBeUndefined();
     expect(samePick(lastPickFor(stored, '/repo'), teamStaging)).toBe(true);
     expect(samePick(lastPickFor(stored, '/repo'), staging)).toBe(false);
+  });
+});
+
+describe('a run of a team environment’s runs', () => {
+  const discovered = choice({ id: 9, key: 'Staging', discovered: true });
+  const discoveredWithVariables = choice({ id: 10, key: 'staging', discovered: true, ownVariables: 1 });
+
+  test('starts on the team environment of the key its runs discovered in the project', () => {
+    expect(runEnvironmentChoice([discovered, teamStaging], 9)).toBe(teamStaging);
+    expect(runEnvironmentChoice([discovered], 9)).toBe(discovered);
+    expect(runEnvironmentChoice([discoveredWithVariables, teamStaging], 10)).toBe(discoveredWithVariables);
+    const teamProtected = choice({ id: 4, key: 'staging', team: true, protected: true, requiredTags: ['@smoke'] });
+    expect(runEnvironmentChoice([discovered, teamProtected], 9)).toBeNull();
+  });
+});
+
+describe('what the window names to the shell', () => {
+  test('a team environment by its instance and team project, a protected one with the key confirmed', () => {
+    expect(pickOf(teamStaging)).toEqual({
+      id: 2,
+      team: true,
+      instance: 'https://piwi.example.com',
+      teamProject: 12,
+      confirmed: null,
+    });
+    expect(pickOf(staging, 'staging')).toEqual({
+      id: 2,
+      team: false,
+      instance: null,
+      teamProject: null,
+      confirmed: null,
+    });
+    expect(pickOf(production)?.confirmed).toBeNull();
+    expect(pickOf(production, 'production')?.confirmed).toBe('production');
+    expect(pickOf(null)).toBeNull();
+  });
+
+  test('only a run of tests and Reproduce offer a protected environment', () => {
+    expect(offersProtected('run')).toBe(true);
+    expect(offersProtected('reproduce')).toBe(true);
+    expect(offersProtected('bisect')).toBe(false);
+    expect(offersProtected('repro')).toBe(false);
+    expect(offersProtected('flake')).toBe(false);
+  });
+
+  test('a protected run says it keeps the setup and teardown projects its tests depend on', () => {
+    expect(protectedRunScope(production)).toBe(
+      'Only the tests tagged @smoke run against it, beside the setup and teardown projects they depend on, which Playwright runs whole.',
+    );
   });
 });
 

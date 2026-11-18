@@ -19,7 +19,7 @@
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
 import { commandWithEnvironment } from '#shared/run-variables';
-import { runEnvironmentChoice } from '#shared/desktop-environments';
+import { pickOf, runEnvironmentChoice } from '#shared/desktop-environments';
 import type { RetryCase } from '~/utils/retry-command';
 import {
   buildLocalRunPlan,
@@ -30,6 +30,7 @@ import {
   type LocalRunOptions,
 } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { DesktopRunSettings } from '~/composables/useDesktopEnvironments';
 
 const props = defineProps<{
   projectId?: string | number | null;
@@ -129,11 +130,23 @@ watch(
   },
   { immediate: true },
 );
-const { projectChoices } = useDesktopEnvironments(() => (available.value ? props.projectId : null), {
-  withTeam: false,
+/**
+ * The team project's environments are read only when the source run's environment is one the runs of a team
+ * environment discovered in the project, with no run variables of its own: the run then starts on the team one.
+ */
+const projectEnvironments = useProjectEnvironments(() => (available.value ? props.projectId : null));
+const sourceIsDiscovered = computed(() => {
+  const own = projectEnvironments.byId(sourceEnvironmentId.value);
+  return !!own?.discovered && own.runVariables.length === 0;
 });
+const { choices: environmentChoices, loaded: environmentsLoaded } = useDesktopEnvironments(
+  () => (available.value ? props.projectId : null),
+  { withTeam: sourceIsDiscovered },
+);
+/** A run from here waits for the team project's environments it may start on. */
+const environmentsReady = computed(() => !sourceIsDiscovered.value || environmentsLoaded.value);
 /** The environment a run from here is for: the source run's, unless protected. */
-const runEnvironment = computed(() => runEnvironmentChoice(projectChoices.value, sourceEnvironmentId.value));
+const runEnvironment = computed(() => runEnvironmentChoice(environmentChoices.value, sourceEnvironmentId.value));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
 /** The cases the plan names; the others have no file path, or no title, Playwright can select them by. */
 const namedCases = computed(() => localRunNamedCases(props.cases, options.value.mode));
@@ -219,7 +232,7 @@ const face = computed(() => {
 });
 
 function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
-  if (props.projectId == null) return;
+  if (props.projectId == null || !environmentsReady.value) return;
   store.startRun({
     projectId: props.projectId,
     projectLabel: props.projectLabel,
@@ -256,16 +269,40 @@ function setOption(patch: LocalRunOptions) {
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
+/**
+ * What the commands of a run from here start with: the project's run variables, or for an environment what the shell
+ * reads for it (`readDesktopRunSettings`), its team project's for a team one.
+ */
+const runVariables = useProjectRunVariables(() => props.projectId);
+const environmentSettings = ref<DesktopRunSettings | null>(null);
+watch(
+  () => JSON.stringify(pickOf(runEnvironment.value)),
+  async () => {
+    const environment = runEnvironment.value;
+    environmentSettings.value = null;
+    if (!environment || !available.value || props.projectId == null) return;
+    try {
+      const read = await readDesktopRunSettings(props.projectId, pickOf(environment));
+      if (runEnvironment.value === environment) environmentSettings.value = read;
+    } catch {
+      // The commands start with the project's run variables; the shell says why when the run starts.
+    }
+  },
+  { immediate: true },
+);
+const commandVariables = computed(() => environmentSettings.value?.runVariables ?? runVariables.variables.value);
+const commandEnvironment = computed(() => environmentSettings.value?.environment ?? null);
+
 /** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
-const runVariables = useProjectRunVariables(
-  () => props.projectId,
-  () => runEnvironment.value?.id ?? null,
-);
-const copyCommand = computed(() =>
-  runVariables.command(
-    buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
-  ),
-);
+const copyCommand = computed(() => {
+  const command = buildRetryCommand(props.cases, {
+    mode: options.value.mode,
+    options: localRunCopyOptions(options.value),
+  });
+  return command
+    ? commandWithEnvironment(command, commandVariables.value, commandEnvironment.value, runVariables.shell.value)
+    : command;
+});
 /** The tests the run names that the copied command leaves out: a shell would misread their title or path. */
 const copyLeavesOut = computed(() => namedCases.value.filter((c) => !retryCommandNames(c, options.value.mode)).length);
 
@@ -275,12 +312,7 @@ const commandPreview = computed(() => {
   const shown = plan.value
     .slice(0, MAX_PREVIEW_STEPS)
     .map((step) =>
-      commandWithEnvironment(
-        step.summary ?? step.display,
-        runVariables.variables.value,
-        runVariables.environment.value,
-        'bash',
-      ),
+      commandWithEnvironment(step.summary ?? step.display, commandVariables.value, commandEnvironment.value, 'bash'),
     );
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
@@ -490,7 +522,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy || !linkLoaded"
+          :disabled="busy || !linkLoaded || !environmentsReady"
           @click="onPrimaryClick"
         >
           {{ face.label }}

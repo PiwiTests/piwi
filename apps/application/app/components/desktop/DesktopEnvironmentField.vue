@@ -7,16 +7,19 @@
  * It starts, once its lists are read, on the environment its `purpose` starts on (`#shared/desktop-environments`):
  * the last one picked for the linked folder (`run`, `repro`, which it keeps on this machine as the person picks), the
  * run's environment unless protected (`reproduce`, `runEnvironmentId`), one built from the checkout (`bisect`), the one
- * the test's runs carry most unless protected (`flake`, `carriedEnvironmentIds`). A protected environment asks the
- * person to confirm the run naming it (`confirmed`, which the page sets back after each run), and is never offered to
- * Flake Lab. It says when the team instance cannot be reached, when the environment loads an env file the linked folder
- * lacks, and, for a bisect, what a deployed environment lets it find.
+ * the test's runs carry most unless protected (`flake`, `carriedEnvironmentIds`); never a protected one. A protected
+ * environment is offered to a run of tests and Reproduce alone, and asks the person to confirm the run naming it and
+ * what it is limited to (`confirmed`, which the page sets back after each run, and sends to the shell with its key). It
+ * says when the team instance cannot be reached, when the environment loads an env file the linked folder lacks, and,
+ * for a bisect, what a deployed environment lets it find.
  */
 import {
   builtFromCheckoutChoice,
   choiceOf,
   envFileMissing,
   mostCarriedChoice,
+  offersProtected,
+  protectedRunScope,
   runEnvironmentChoice,
   samePick,
   type DesktopEnvironmentChoice,
@@ -68,7 +71,7 @@ const mayRunProtected = computed(() => props.projectId != null && can('project:m
 
 function offered(choice: DesktopEnvironmentChoice): boolean {
   if (!choice.protected) return true;
-  if (props.purpose === 'flake') return false;
+  if (!offersProtected(props.purpose)) return false;
   return choice.team || mayRunProtected.value;
 }
 
@@ -121,7 +124,7 @@ function start(): DesktopEnvironmentChoice | null {
     default: {
       const last = lastDesktopEnvironmentPick(folder.value);
       const choice = choiceOf(choices.value, last ?? null);
-      return choice && offered(choice) ? choice : null;
+      return choice && offered(choice) && !choice.protected ? choice : null;
     }
   }
 }
@@ -149,7 +152,6 @@ watch(
   },
 );
 
-const tags = computed(() => environment.value?.requiredTags.join(', ') ?? '');
 const inWorktree = computed(() => ['reproduce', 'bisect', 'flake'].includes(props.purpose));
 const missingEnvFile = computed(() => envFileMissing(environment.value, envFiles.value));
 </script>
@@ -182,7 +184,7 @@ const missingEnvFile = computed(() => envFileMissing(environment.value, envFiles
       data-testid="desktop-environment-protected"
     >
       <template #description>
-        <p>Only the tests tagged {{ tags }} run against it.</p>
+        <p>{{ protectedRunScope(environment) }}</p>
         <UCheckbox v-model="confirmed" class="mt-2" :label="`Run against ${environment.name}`" />
       </template>
     </UAlert>

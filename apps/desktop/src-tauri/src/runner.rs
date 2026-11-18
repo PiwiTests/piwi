@@ -1052,7 +1052,8 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
-    let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
+    let settings =
+        crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
     let mut args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
     args.extend(settings.args());
     let id = spawn_tests(&app, &folder, &cli, args, settings.envs(), origin, |_, _| {}).await?;
