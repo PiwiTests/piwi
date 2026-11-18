@@ -83,8 +83,9 @@ export interface CatalogOptions {
  * over its runs: one result per run, Playwright project and repetition, read
  * from its final attempt (`testCaseAggregates`). Only executions of runs the
  * `selection-catalog` use reads count: lab runs, bisect steps and
- * reproductions stay out of every aggregate. One query reads it all, each
- * subquery per test leaving out the runs `ineligibleRunsInProject` lists once.
+ * reproductions stay out of every aggregate. Every read per test is in one
+ * query, whose subqueries leave out the runs `ineligibleRunsInProject` lists
+ * once for it; the quarantine is read apart.
  */
 export async function loadSelectionCatalog(
   db: DrizzleDB,

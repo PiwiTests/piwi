@@ -637,11 +637,8 @@ function ineligibleRunInProject(use: RunUse, projectId: number, within?: SQL): S
  * expression (`db.with(…)`), for a query that reads executions in a subquery
  * per row, such as one per test case: `eligibleExecutionAmong` keeps the
  * executions of the other runs. PostgreSQL computes a CTE that the query reads
- * more than once a single time, and counts its cost once in the plan. The list
- * `eligibleExecutionInProject` writes into each subquery counts once per row
- * and subquery instead: a plan cost that grows with the rows times the pages
- * of `test_runs`, and past `jit_above_cost` PostgreSQL compiles the query with
- * JIT, which can take longer than running it.
+ * more than once a single time, so the project's runs are read once for the
+ * query, where `eligibleExecutionInProject` reads them once per subquery.
  */
 export function ineligibleRunsInProject(db: DrizzleDB, use: RunUse, projectId: number) {
   return db

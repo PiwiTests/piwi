@@ -61,15 +61,19 @@ describe.skipIf(!postgresUrl)('the selection catalog on PostgreSQL', async () =>
     await admin.end();
   });
 
-  test('ranks the newest failure among the latest results of eligible runs', async () => {
-    const catalog = await loadSelectionCatalog(db as never, fixture.projectId, {
-      withFailRanks: true,
-      withAggregates: false,
-    });
-    const ranks = new Map(catalog.filter((row) => row.firstFailRank != null).map((row) => [row.id, row.firstFailRank]));
+  test('ranks the newest failure among the latest results of eligible runs, with the aggregates or without', async () => {
+    for (const withAggregates of [false, true]) {
+      const catalog = await loadSelectionCatalog(db as never, fixture.projectId, {
+        withFailRanks: true,
+        withAggregates,
+      });
+      const ranks = new Map(
+        catalog.filter((row) => row.firstFailRank != null).map((row) => [row.id, row.firstFailRank]),
+      );
 
-    expect(catalog.map((row) => row.id).sort((a, b) => a - b)).toEqual(fixture.testCaseIds);
-    expect(ranks).toEqual(fixture.expected);
+      expect(catalog.map((row) => row.id).sort((a, b) => a - b)).toEqual(fixture.testCaseIds);
+      expect(ranks, `withAggregates: ${withAggregates}`).toEqual(fixture.expected);
+    }
   });
 
   test("reads the project's runs once, in every subquery of every test", async () => {
@@ -85,11 +89,13 @@ describe.skipIf(!postgresUrl)('the selection catalog on PostgreSQL', async () =>
     ]) {
       statements.length = 0;
       await loadSelectionCatalog(logged as never, fixture.projectId, opts);
-      const catalog = statements.find((s) => s.query.includes('from "test_cases"'));
-      const [row] = await client!.unsafe(`EXPLAIN (FORMAT JSON) ${catalog!.query}`, catalog!.params as never[]);
-      const plan = (row!['QUERY PLAN'] as Array<{ Plan: PlanNode }>)[0]!.Plan;
+      let scans = 0;
+      for (const { query, params } of statements) {
+        const [row] = await client!.unsafe(`EXPLAIN (FORMAT JSON) ${query}`, params as never[]);
+        scans += scansOf((row!['QUERY PLAN'] as Array<{ Plan: PlanNode }>)[0]!.Plan, 'test_runs');
+      }
 
-      expect(scansOf(plan, 'test_runs'), JSON.stringify(opts)).toBe(1);
+      expect(scans, JSON.stringify(opts)).toBe(1);
     }
   });
 });
