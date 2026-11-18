@@ -86,6 +86,9 @@ async function submit() {
     saving.value = false;
   }
 }
+
+/** A field of a two-column row: its label and description on the row's first line, its input on the second. */
+const PAIRED_FIELD_UI = { root: 'sm:row-span-2 sm:grid sm:grid-rows-subgrid' };
 </script>
 
 <template>
@@ -103,11 +106,13 @@ async function submit() {
         data-shot="environment-editor"
         @submit.prevent="submit"
       >
-        <div class="grid gap-3 sm:grid-cols-2">
+        <!-- The two fields share the grid's rows, so their inputs line up whatever their descriptions' length. -->
+        <div class="grid gap-x-3 gap-y-3 sm:grid-cols-2 sm:gap-y-0">
           <UFormField
             label="Key"
             name="environmentKey"
             required
+            :ui="PAIRED_FIELD_UI"
             :error="shown.key"
             :description="
               keyRenamed
@@ -125,7 +130,14 @@ async function submit() {
               data-testid="environment-key"
             />
           </UFormField>
-          <UFormField label="Name" name="environmentName" required :error="shown.name" description="Shown everywhere.">
+          <UFormField
+            label="Name"
+            name="environmentName"
+            required
+            :ui="PAIRED_FIELD_UI"
+            :error="shown.name"
+            description="Shown everywhere."
+          >
             <UInput
               v-model="draft.name"
               placeholder="Staging"

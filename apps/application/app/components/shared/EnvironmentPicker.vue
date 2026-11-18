@@ -18,7 +18,7 @@ const { can } = useAuth();
 const mayRunProtected = computed(() => props.projectId != null && can('project:manage', props.projectId));
 
 const items = computed(() => [
-  { label: 'None (the config decides)', value: NONE, icon: 'i-lucide-circle-dashed' },
+  { label: 'None', value: NONE, icon: 'i-lucide-circle-dashed' },
   ...active.value.map((environment) => ({
     label: environment.name,
     value: String(environment.id),
