@@ -2320,7 +2320,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         }
         // Code of a desktop app's throwaway checkout is offered to copy, its sentence saying why; no file is edited.
         if (code.copy) return offerCopy(code)
-        val name = code.uri.orEmpty().substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, Charsets.UTF_8) }.getOrDefault(it) }
+        val name = Glue.pathOfUri(code.uri)?.fileName?.toString() ?: code.uri.orEmpty().substringAfterLast('/')
         val file = fileOfUri(code.uri) ?: return notWritten(code, "$name could not be found, so the code was not written.")
         val document = FileDocumentManager.getInstance().getDocument(file)
             ?: return notWritten(code, "$name cannot be edited as text, so the code was not written.")
