@@ -16,7 +16,7 @@ import {
   type ManifestRouteEntry,
 } from './manifest.js';
 import { declaredRoutes } from './route-table.js';
-import { buildServerEnvironment } from './environment.js';
+import { buildServerEnvironment, type PiwiPluginOptions } from './environment.js';
 import { requestScope } from './request-scope.js';
 import {
   beginRequestCoverage,
@@ -52,7 +52,12 @@ export {
 } from './probe.js';
 export { buildRouteManifest, recordObservedRoute, collapsePathPattern, type RouteManifest } from './manifest.js';
 export * from './faults.js';
-export { buildServerEnvironment, type ServerEnvironment, type EnvironmentReaders } from './environment.js';
+export {
+  buildServerEnvironment,
+  type ServerEnvironment,
+  type EnvironmentReaders,
+  type PiwiPluginOptions,
+} from './environment.js';
 
 const MAX_ENTRIES = 50;
 const MAX_MSG_LENGTH = 500;
@@ -309,7 +314,15 @@ function resolveHandlerFile(event: any): string | undefined {
   return typeof file === 'string' && file ? file : undefined;
 }
 
-const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
+/**
+ * The plugin with options, for a server plugin file that tells it about the application:
+ * `export default piwiPlugin({ appVersion: '1.4.0' })` in place of re-exporting the default export.
+ */
+export function piwiPlugin(options: PiwiPluginOptions = {}): NitroAppPlugin {
+  return (nitroApp) => install(nitroApp, options);
+}
+
+function install(nitroApp: Parameters<NitroAppPlugin>[0], options: PiwiPluginOptions): void {
   if (TEST_LOGS_DISABLED) return;
 
   const globals = globalThis as Record<symbol, unknown>;
@@ -357,7 +370,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       res.statusCode = 200;
       res.setHeader('Content-Type', 'application/json');
       res.setHeader('Cache-Control', 'no-store');
-      res.end(JSON.stringify(buildServerEnvironment()));
+      res.end(JSON.stringify(buildServerEnvironment(undefined, options)));
       return;
     }
 
@@ -574,7 +587,7 @@ const piwiTestLogs: NitroAppPlugin = (nitroApp) => {
       g.$fetch = Object.assign(patched, original);
     }
   }
-};
+}
 
 /** The request target of an outbound `$fetch` call, for dependency-fault matching. */
 function outboundCallTarget(args: unknown[]): string {
@@ -587,5 +600,8 @@ function outboundCallTarget(args: unknown[]): string {
   }
   return '';
 }
+
+/** The plugin, served as `export { default } from '@piwitests/instrumentation-nitro'` in a server plugin file. */
+const piwiTestLogs: NitroAppPlugin = piwiPlugin();
 
 export default piwiTestLogs;

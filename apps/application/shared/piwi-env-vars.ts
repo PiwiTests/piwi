@@ -1292,6 +1292,28 @@ export const PIWI_ENV_VARS = {
     notes:
       'Set on the ASP.NET Core backend. Used only when the app configures no environments itself (a `UsePiwiTestLogs` argument or `PiwiTestLogsOptions`). Names match case-insensitively.',
   },
+  PIWI_APP_COMMIT: {
+    description:
+      'The commit the application under test was built from, which its server reports as `appCommit` at `/__piwi/environment` (7 to 40 hexadecimal characters).',
+    category: 'testing',
+    type: 'string',
+    example: '4e6f5164b2a1c0d9e8f7a6b5c4d3e2f1a0b9c8d7',
+    docs: 'guide/backend-logs#server-environment',
+    since: '0.73.0',
+    notes:
+      'Set on the instrumented backend (Nitro or ASP.NET Core) by its deploy. The package’s option wins over it; unset, ASP.NET Core reads the source revision the .NET SDK writes into the entry assembly’s informational version, and Nitro the commit variable of its hosting platform (`VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`, `SOURCE_COMMIT`). Any other value is ignored. Served only where capture is on: a production deploy posts a deploy marker with the commit instead.',
+  },
+  PIWI_APP_VERSION: {
+    description:
+      'The version of the application under test, which a Nitro server reports as `appVersion` at `/__piwi/environment`.',
+    category: 'testing',
+    type: 'string',
+    example: '1.4.0',
+    docs: 'guide/backend-logs#server-environment',
+    since: '0.73.0',
+    notes:
+      'Set on a Nitro backend; the plugin’s `appVersion` option wins over it. ASP.NET Core reports the entry assembly’s informational version instead.',
+  },
 
   // ── Failure clustering ───────────────────────────────────────────────────
   PIWI_CLUSTER_SIMILARITY_THRESHOLD: {

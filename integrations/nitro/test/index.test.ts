@@ -404,6 +404,7 @@ describe('the server environment', () => {
         'globalization',
         'environmentName',
         'appVersion',
+        'appCommit',
         'hostname',
         'instance',
         'startedAt',
@@ -411,6 +412,17 @@ describe('the server environment', () => {
       ].sort(),
     );
     expect(body).toMatchObject({ v: 1, runtime: `Node.js ${process.version}`, environmentName: 'test' });
+  });
+
+  it("serves the application the plugin's options name", async () => {
+    const mod = await loadWithEnv({ NODE_ENV: 'test' });
+    const app = createApp();
+    const plugin = mod.piwiPlugin({ appVersion: '1.4.0', appCommit: '4E6F5164B' });
+    plugin({ h3App: app, hooks: { hook: () => {} } } as never);
+    await withServer(app, async (base) => {
+      const body = (await (await fetch(`${base}/__piwi/environment`)).json()) as Record<string, unknown>;
+      expect(body).toMatchObject({ appVersion: '1.4.0', appCommit: '4e6f5164b' });
+    });
   });
 
   it('is not served when capture is off', async () => {

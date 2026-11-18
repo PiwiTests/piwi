@@ -4,7 +4,8 @@
  * time zone, the locale and when the process started. The Piwi reporter reads it as a test first reaches the server and
  * again as the run's last test ends, so a failure that depends on the server's clock, zone or locale can be told from
  * one in the code. It carries only the fields below: never other environment variables, file paths or connection
- * strings.
+ * strings. `appVersion` and `appCommit` say which version of the application a run tested, for an environment deployed
+ * apart from the tests' checkout.
  */
 import { arch, hostname, platform, release } from 'node:os';
 import { instance } from './coverage-runtime.js';
@@ -21,6 +22,8 @@ export interface ServerEnvironment {
   globalization: string | null;
   environmentName: string | null;
   appVersion: string | null;
+  /** The commit the application was built from: 7 to 40 hexadecimal characters, lower-cased. */
+  appCommit: string | null;
   hostname: string | null;
   /** An id of the server process: another one after a restart. */
   instance: string | null;
@@ -29,6 +32,29 @@ export interface ServerEnvironment {
   /** The server's clock, epoch ms. */
   now: number | null;
 }
+
+/** What the plugin's options say of the application (`piwiPlugin`); each one left unset is read from the environment. */
+export interface PiwiPluginOptions {
+  /** The application's version, served as `appVersion`. Unset: `PIWI_APP_VERSION`, else null. */
+  appVersion?: string | null;
+  /**
+   * The commit the application was built from, served as `appCommit`. Unset: `PIWI_APP_COMMIT`, then the commit
+   * variable of the hosting platform (`VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`,
+   * `SOURCE_COMMIT`). Kept only when it is 7 to 40 hexadecimal characters.
+   */
+  appCommit?: string | null;
+}
+
+const APP_VERSION_VARIABLE = 'PIWI_APP_VERSION';
+/** Where the commit is read from after the option, in this order: Piwi's own variable, then the hosting platforms'. */
+const APP_COMMIT_VARIABLES = [
+  'PIWI_APP_COMMIT',
+  'VERCEL_GIT_COMMIT_SHA',
+  'RENDER_GIT_COMMIT',
+  'RAILWAY_GIT_COMMIT_SHA',
+  'SOURCE_COMMIT',
+] as const;
+const COMMIT = /^[0-9a-f]{7,40}$/i;
 
 /** Where {@link buildServerEnvironment} reads each fact from. */
 export interface EnvironmentReaders {
@@ -44,6 +70,8 @@ export interface EnvironmentReaders {
   /** True when the runtime carries locale data beyond English. */
   hasFullIcu: () => boolean;
   nodeEnv: () => string | undefined;
+  /** An environment variable of the process. */
+  variable: (name: string) => string | undefined;
   instanceId: () => string;
   /** Seconds since the process started. */
   uptime: () => number;
@@ -61,6 +89,7 @@ const defaultReaders: EnvironmentReaders = {
   icuVersion: () => process.versions.icu,
   hasFullIcu: () => Intl.DateTimeFormat.supportedLocalesOf(['fr']).length > 0,
   nodeEnv: () => process.env.NODE_ENV,
+  variable: (name) => process.env[name],
   instanceId: () => instance().id,
   uptime: () => process.uptime(),
   now: () => Date.now(),
@@ -84,8 +113,20 @@ function globalization(readers: EnvironmentReaders): string | null {
   return full === null ? `icu ${icu}` : `icu ${icu} ${full ? 'full' : 'small'}`;
 }
 
-/** Builds the `/__piwi/environment` body from {@link readers}. */
-export function buildServerEnvironment(readers: EnvironmentReaders = defaultReaders): ServerEnvironment {
+/** The first of the option and the commit variables that holds 7 to 40 hexadecimal characters, lower-cased; else null. */
+function appCommit(option: string | null | undefined, readers: EnvironmentReaders): string | null {
+  for (const candidate of [option, ...APP_COMMIT_VARIABLES.map((name) => read(() => readers.variable(name)))]) {
+    const commit = candidate?.trim();
+    if (commit && COMMIT.test(commit)) return commit.toLowerCase();
+  }
+  return null;
+}
+
+/** Builds the `/__piwi/environment` body from {@link readers} and the plugin's options. */
+export function buildServerEnvironment(
+  readers: EnvironmentReaders = defaultReaders,
+  app: PiwiPluginOptions = {},
+): ServerEnvironment {
   const now = readers.now();
   const options = read(readers.resolvedOptions);
   const os = [read(readers.platform), read(readers.release)].filter(Boolean).join(' ');
@@ -102,7 +143,8 @@ export function buildServerEnvironment(readers: EnvironmentReaders = defaultRead
     locale: options?.locale || null,
     globalization: globalization(readers),
     environmentName: read(readers.nodeEnv),
-    appVersion: null,
+    appVersion: read(() => app.appVersion?.trim() || readers.variable(APP_VERSION_VARIABLE)?.trim()),
+    appCommit: appCommit(app.appCommit, readers),
     hostname: read(readers.hostname),
     instance: read(readers.instanceId),
     startedAt: uptime === null ? null : new Date(now - uptime * 1000).toISOString(),

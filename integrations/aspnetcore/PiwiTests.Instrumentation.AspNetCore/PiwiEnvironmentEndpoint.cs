@@ -2,6 +2,7 @@ using System;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Text.Json;
@@ -9,6 +10,7 @@ using System.Threading.Tasks;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Hosting;
+using Microsoft.Extensions.Options;
 using PiwiTests.Instrumentation.Coverage;
 
 namespace PiwiTests.Instrumentation.AspNetCore;
@@ -24,6 +26,7 @@ internal sealed record PiwiServerEnvironment(
     string? Globalization,
     string? EnvironmentName,
     string? AppVersion,
+    string? AppCommit,
     string? Hostname,
     string? Instance,
     DateTimeOffset? StartedAt,
@@ -40,6 +43,7 @@ internal static class PiwiEnvironmentEndpoint
     internal const string Path = "/__piwi/environment";
 
     private const string InvariantVariable = "DOTNET_SYSTEM_GLOBALIZATION_INVARIANT";
+    internal const string AppCommitVariable = "PIWI_APP_COMMIT";
 
     internal static bool IsRequest(HttpRequest request) =>
         (HttpMethods.IsGet(request.Method) || HttpMethods.IsHead(request.Method)) &&
@@ -47,7 +51,9 @@ internal static class PiwiEnvironmentEndpoint
 
     internal static async Task WriteAsync(HttpContext context)
     {
-        var environment = Build(context.RequestServices.GetService<IHostEnvironment>()?.EnvironmentName);
+        var environment = Build(
+            context.RequestServices.GetService<IHostEnvironment>()?.EnvironmentName,
+            context.RequestServices.GetService<IOptions<PiwiTestLogsOptions>>()?.Value.AppCommit);
 
         context.Response.StatusCode = StatusCodes.Status200OK;
         context.Response.ContentType = "application/json";
@@ -55,10 +61,12 @@ internal static class PiwiEnvironmentEndpoint
         await context.Response.Body.WriteAsync(Serialize(environment));
     }
 
-    /// <summary>Reads the facts of the current process.</summary>
-    internal static PiwiServerEnvironment Build(string? environmentName)
+    /// <summary>Reads the facts of the current process; <paramref name="appCommit"/> is <see cref="PiwiTestLogsOptions.AppCommit"/>.</summary>
+    internal static PiwiServerEnvironment Build(string? environmentName, string? appCommit = null)
     {
         var local = TimeZoneInfo.Local;
+        var informationalVersion = Read(() => Assembly.GetEntryAssembly()
+            ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion);
         return new PiwiServerEnvironment(
             Runtime: Read(() => RuntimeInformation.FrameworkDescription),
             Os: Read(() => RuntimeInformation.OSDescription),
@@ -68,12 +76,32 @@ internal static class PiwiEnvironmentEndpoint
             Locale: Read(() => Locale(CultureInfo.CurrentCulture, CultureInfo.CurrentUICulture)),
             Globalization: Read(() => GlobalizationMode(Environment.GetEnvironmentVariable)),
             EnvironmentName: string.IsNullOrEmpty(environmentName) ? null : environmentName,
-            AppVersion: Read(() => Assembly.GetEntryAssembly()
-                ?.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion),
+            AppVersion: informationalVersion,
+            AppCommit: AppCommit(appCommit, Environment.GetEnvironmentVariable, informationalVersion),
             Hostname: Read(() => Environment.MachineName),
             Instance: PiwiCoverageRecorder.InstanceId,
             StartedAt: ProcessStart(),
             Now: DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+    }
+
+    /// <summary>
+    /// The commit the application was built from: the first of <paramref name="option"/>, <c>PIWI_APP_COMMIT</c> and
+    /// the source revision the .NET SDK appends to the informational version (after its <c>+</c>, or as the last
+    /// <c>.</c>-separated part of build metadata already there) that is 7 to 40 hexadecimal characters, lower-cased;
+    /// null when none is.
+    /// </summary>
+    internal static string? AppCommit(string? option, Func<string, string?> readVariable, string? informationalVersion)
+    {
+        var plus = informationalVersion?.IndexOf('+') ?? -1;
+        var revision = plus < 0 ? null : informationalVersion![(plus + 1)..].Split('.')[^1];
+        foreach (var candidate in new[] { option, readVariable(AppCommitVariable), revision })
+        {
+            var commit = candidate?.Trim();
+            if (commit is { Length: >= 7 and <= 40 } && commit.All(Uri.IsHexDigit))
+                return commit.ToLowerInvariant();
+        }
+
+        return null;
     }
 
     /// <summary>The zone's id, followed by its IANA id in parentheses when the id is a Windows one: <c>Romance Standard Time (Europe/Paris)</c>.</summary>
@@ -160,6 +188,7 @@ internal static class PiwiEnvironmentEndpoint
             WriteString(writer, "globalization", environment.Globalization);
             WriteString(writer, "environmentName", environment.EnvironmentName);
             WriteString(writer, "appVersion", environment.AppVersion);
+            WriteString(writer, "appCommit", environment.AppCommit);
             WriteString(writer, "hostname", environment.Hostname);
             WriteString(writer, "instance", environment.Instance);
             WriteString(writer, "startedAt", environment.StartedAt?.ToString("yyyy-MM-dd'T'HH:mm:ss.fff'Z'", CultureInfo.InvariantCulture));
