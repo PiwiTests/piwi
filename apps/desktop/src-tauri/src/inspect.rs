@@ -1,7 +1,8 @@
 // Read-only inspection of a folder on this machine, so the dashboard can tell
 // what a checkout is before creating or linking a Piwi project to it: the name
-// it would report under, whether Playwright is present, and whether the
-// `@piwitests/reporter` package is installed and wired into the config.
+// it would report under, whether Playwright is present, whether the
+// `@piwitests/reporter` package is installed and wired into the config, and the
+// env files it holds, by name, for the environments that load one.
 //
 // The heuristics deliberately mirror the reporter CLI's own `detect.ts`
 // (`packages/reporter/src/cli/detect.ts`): same config-file lookup order, same
@@ -48,6 +49,9 @@ pub struct FolderInspection {
     /// The Playwright config declares a `webServer` — Playwright starts the app
     /// under test itself, so a reproduction/bisect exercises the real app.
     web_server: bool,
+    /// The env files at the folder's root, by name (`.env.staging`), never read: an environment that loads one
+    /// says when the folder lacks it ([`crate::environments::env_files_in`]).
+    env_files: Vec<String>,
 }
 
 /// Whether the config source declares a `webServer` block. A `webServer:` key
@@ -197,6 +201,7 @@ fn inspect(folder: &Path) -> FolderInspection {
             configured_project_name: None,
             project_name_computed: false,
             web_server: false,
+            env_files: Vec::new(),
         };
     }
 
@@ -248,6 +253,7 @@ fn inspect(folder: &Path) -> FolderInspection {
         configured_project_name,
         project_name_computed,
         web_server: config_source.as_deref().is_some_and(has_web_server),
+        env_files: crate::environments::env_files_in(folder),
     }
 }
 
@@ -457,6 +463,20 @@ mod tests {
         assert!(!result.playwright_installed);
         assert!(!result.reporter_installed);
         assert!(!result.reporter_configured);
+        assert!(result.env_files.is_empty());
+    }
+
+    #[test]
+    fn names_the_env_files_the_folder_holds() {
+        let folder = Folder::new("env-files");
+        folder.write(".env.staging", "BASE_URL=https://staging.example.com");
+        folder.write(".env", "A=1");
+        folder.write("notes.env", "A=1");
+
+        assert_eq!(
+            inspect(&folder.0).env_files,
+            vec![".env".to_string(), ".env.staging".to_string()]
+        );
     }
 
     #[test]

@@ -10,6 +10,7 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod environments;
 mod folder_search;
 mod hub_env;
 mod ide_launcher;
@@ -58,6 +59,7 @@ use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 use tauri_plugin_window_state::{AppHandleExt as _, StateFlags};
 
+use environments::{desktop_environment_run_settings, desktop_team_environments};
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
 use mcp_clients::{
     desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal, desktop_skills_read,
@@ -3586,6 +3588,8 @@ pub fn run() {
             desktop_run_local_tests,
             desktop_stop_local_tests,
             desktop_local_runs,
+            desktop_team_environments,
+            desktop_environment_run_settings,
             desktop_keep_run_target_key,
             desktop_forget_run_target,
             desktop_request_folders,

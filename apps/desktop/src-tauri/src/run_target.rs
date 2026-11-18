@@ -503,29 +503,16 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
     let Some(server) = server_info(app) else {
         return;
     };
-    let cached = app
-        .try_state::<KeptKey>()
-        .and_then(|kept| kept.0.lock().unwrap().clone())
-        .filter(|(url, _)| *url == instance)
-        .map(|(_, key)| key);
-    let key = match cached {
-        Some(key) => key,
-        None => match keychain::read(&instance) {
-            Ok(Some(key)) => {
-                if let Some(kept) = app.try_state::<KeptKey>() {
-                    *kept.0.lock().unwrap() = Some((instance.clone(), key.clone()));
-                }
-                key
-            }
-            Ok(None) => {
-                log(app, "no key in the keychain for the connected instance");
-                return;
-            }
-            Err(e) => {
-                log(app, &format!("could not read the key from the keychain: {e}"));
-                return;
-            }
-        },
+    let key = match kept_key(app, &instance) {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            log(app, "no key in the keychain for the connected instance");
+            return;
+        }
+        Err(e) => {
+            log(app, &format!("could not read the key from the keychain: {e}"));
+            return;
+        }
     };
     let runs = app.try_state::<RequestedRuns>();
     let body = json!({
@@ -544,6 +531,43 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
         }
         Err(e) => log(app, &format!("could not hand the key to the server: {e}")),
     }
+}
+
+/// The key this app keeps for `instance`: the one read last, else the keychain's, which is read once a launch. None
+/// when the keychain holds none.
+pub(crate) fn kept_key(app: &AppHandle, instance: &str) -> Result<Option<String>, String> {
+    let cached = app
+        .try_state::<KeptKey>()
+        .and_then(|kept| kept.0.lock().unwrap().clone())
+        .filter(|(url, _)| url == instance)
+        .map(|(_, key)| key);
+    if cached.is_some() {
+        return Ok(cached);
+    }
+    let read = keychain::read(instance)?;
+    if let (Some(key), Some(kept)) = (&read, app.try_state::<KeptKey>()) {
+        *kept.0.lock().unwrap() = Some((instance.to_string(), key.clone()));
+    }
+    Ok(read)
+}
+
+/// The team project the folder `folder` is also linked to on the connected instance, as the instance and the project's
+/// id ([`team_project_in`]). None without a connected instance or such a link.
+pub(crate) fn team_project_of_folder(app: &AppHandle, folder: &Path) -> Option<(String, u64)> {
+    let instance = connected_instance(app)?;
+    let project = team_project_in(&links_of(app, &instance), folder)?;
+    Some((instance, project))
+}
+
+/// The project of `links` (`{ project id → folder }`) linked to `folder`, compared by real path, the lowest id when
+/// several are.
+fn team_project_in(links: &HashMap<String, String>, folder: &Path) -> Option<u64> {
+    let own = crate::runner::real_path(folder);
+    links
+        .iter()
+        .filter(|(_, linked)| crate::runner::real_path(Path::new(linked.as_str())) == own)
+        .filter_map(|(id, _)| id.parse::<u64>().ok().filter(|id| *id > 0))
+        .min()
 }
 
 /// The linked folders the local runs are going in, requested runs among them.
@@ -931,8 +955,8 @@ struct Launch {
     /// The folder **Run** approved, which the run's folder must still be.
     folder: String,
     args: Vec<String>,
-    /// The project's run variables the confirmation showed, checked again here, or why they cannot be set.
-    variables: Result<Vec<(String, String)>, String>,
+    /// The run variables and the environment the confirmation showed, checked again here, or why they cannot be set.
+    settings: Result<crate::environments::RunSettings, String>,
 }
 
 fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
@@ -964,15 +988,14 @@ fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
                 .collect::<Vec<_>>()
         })
         .ok_or("no command")?;
-    let variables = crate::run_variables::checked_run_variables(answer.get("runVariables").unwrap_or(&Value::Null))
-        .map_err(|e| format!("the project's run variables were not set: {e}"));
+    let settings = crate::environments::checked_settings(&answer);
     Ok(Launch {
         instance,
         token,
         project_id,
         folder,
         args,
-        variables,
+        settings,
     })
 }
 
@@ -1025,8 +1048,8 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         }
     };
 
-    let variables = match launch.variables.clone() {
-        Ok(variables) => variables,
+    let settings = match launch.settings.clone() {
+        Ok(settings) => settings,
         Err(e) => {
             forget(&app, &request_id);
             tell_started(&server, &request_id, Some(&e));
@@ -1077,9 +1100,12 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
+    // A protected environment's run is kept to its required tags here, whatever the command approved.
+    let mut args = launch.args;
+    args.extend(settings.args());
     // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and
     // only the quit sends an end once it began.
-    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, variables, envs, move |code, stopped| {
+    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, args, settings.envs(), envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
         let Some(runs) = ended_app.try_state::<RequestedRuns>() else {
             return;
@@ -1604,7 +1630,7 @@ mod tests {
             project_id: "3".into(),
             folder: folder.to_string_lossy().to_string(),
             args: args.iter().map(|a| a.to_string()).collect(),
-            variables: Ok(Vec::new()),
+            settings: Ok(Default::default()),
         }
     }
 
@@ -1645,6 +1671,44 @@ mod tests {
             refused(&launch(&gone, &["tests/cart.spec.ts:3"]), connected, &linked_gone),
             "the linked folder no longer exists: pick it again"
         );
+    }
+
+    #[test]
+    fn a_folder_s_team_project_is_the_lowest_linked_to_it() {
+        let root = TempRoot::new("team");
+        let shop = root.0.join("shop");
+        let admin = root.0.join("admin");
+        std::fs::create_dir_all(&shop).unwrap();
+        std::fs::create_dir_all(&admin).unwrap();
+        let path = |p: &Path| p.to_string_lossy().to_string();
+        let links = HashMap::from([
+            ("12".to_string(), path(&shop)),
+            ("4".to_string(), path(&shop.join("."))),
+            ("2".to_string(), path(&admin)),
+            ("x".to_string(), path(&shop)),
+        ]);
+        assert_eq!(team_project_in(&links, &shop), Some(4));
+        assert_eq!(team_project_in(&links, &admin), Some(2));
+        assert_eq!(team_project_in(&links, &root.0.join("blog")), None);
+        assert_eq!(team_project_in(&HashMap::new(), &shop), None);
+    }
+
+    #[test]
+    fn a_launch_applies_the_environment_it_names() {
+        let settings = crate::environments::checked_settings(&json!({
+            "runVariables": [{ "name": "TEST_ENV", "value": "production" }],
+            "environment": { "id": 4, "key": "production", "name": "Production", "protected": true, "requiredTags": ["@smoke"], "envFile": null },
+        }))
+        .unwrap();
+        assert_eq!(
+            settings.envs().last().unwrap(),
+            &("PIWI_ENVIRONMENT".to_string(), "production".to_string())
+        );
+        assert_eq!(settings.args().len(), 1);
+        let none = crate::environments::checked_settings(&json!({ "runVariables": [] })).unwrap();
+        assert!(none.envs().is_empty() && none.args().is_empty());
+        let refused = json!({ "runVariables": [], "environment": { "id": 4, "key": "production", "name": "Production", "protected": true, "requiredTags": [] } });
+        assert!(crate::environments::checked_settings(&refused).is_err());
     }
 
     #[test]

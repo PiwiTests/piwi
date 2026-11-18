@@ -2,7 +2,8 @@
 /**
  * Desktop shell only: the project's linked local folder, managed in the
  * project's Settings tab alongside the other project settings, with the
- * default options every run button of the project starts from. Changes apply
+ * default options every run button of the project starts from, and whether
+ * the folder holds the env files its environments load. Changes apply
  * immediately — the link lives in the shell's own store and the defaults in
  * the app's storage, both on this machine, never in the server database.
  * Renders nothing without the IPC bridge.
@@ -23,6 +24,14 @@ const runDefaults = computed({
 const { propose: proposePrevRuns } = useDesktopImportPrevRuns();
 
 const inspection = ref<DesktopFolderInspection | null>(null);
+
+/** The environments of the project, and of the team project its folder is also linked to, that load an env file. */
+const { choices: environmentChoices } = useDesktopEnvironments(() => (available.value ? props.projectId : null));
+const envFileEnvironments = computed(() =>
+  environmentChoices.value.flatMap((environment) =>
+    environment.envFile ? [{ name: environment.name, envFile: environment.envFile }] : [],
+  ),
+);
 
 watch(
   () => link.value?.path,
@@ -152,7 +161,7 @@ async function chooseAndPropose() {
         its Settings), so one app's folder can run the tests of each tenant it serves.
       </p>
 
-      <DesktopFolderChecklist v-if="inspection" :inspection="inspection" />
+      <DesktopFolderChecklist v-if="inspection" :inspection="inspection" :environments="envFileEnvironments" />
 
       <div class="space-y-2 pt-1" data-shot="local-folder-run-defaults">
         <h3 class="text-sm font-semibold text-highlighted">Default run options</h3>

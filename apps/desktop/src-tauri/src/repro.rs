@@ -240,7 +240,8 @@ pub(crate) fn remove_spec(spec: &Path) {
 /// what the spec recorded (`{ status, line, message }`, or null when it
 /// recorded nothing), then `exit`. `args` go through the same flag allowlist
 /// as any local run. The test runs as a reproduction, referencing the bug
-/// report it came from when `bug_report_id` names one, else `origin_ref`.
+/// report it came from when `bug_report_id` names one, else `origin_ref`, for
+/// `environment` when the window names one ([`crate::environments`]).
 #[tauri::command]
 pub async fn desktop_run_repro(
     app: AppHandle,
@@ -249,6 +250,7 @@ pub async fn desktop_run_repro(
     args: Vec<String>,
     bug_report_id: Option<u64>,
     origin_ref: Option<String>,
+    environment: Option<crate::environments::EnvironmentPick>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     let origin = crate::worktree::origin_env(
@@ -272,8 +274,8 @@ pub async fn desktop_run_repro(
     let cli = resolve_playwright_cli(&folder).ok_or(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
-    // The config may read them (its project name, its server's tenant), so the listing gets them too.
-    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
+    // The config may read them (its project name, its server's tenant, the environment), so the listing gets them too.
+    let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
 
     let listed = app
         .shell()
@@ -286,7 +288,7 @@ pub async fn desktop_run_repro(
             "--reporter=json".into(),
         ])
         .current_dir(&folder)
-        .envs(variables.clone())
+        .envs(settings.envs())
         .env("NO_COLOR", "1")
         .output()
         .await
@@ -319,6 +321,7 @@ pub async fn desktop_run_repro(
         repro_file_filter(&request_id),
     ];
     cmd_args.extend(args);
+    cmd_args.extend(settings.args());
     let sidecar = app.shell().sidecar(crate::NODE_SIDECAR).map_err(|e| e.to_string())?;
 
     let state = app.state::<LocalRuns>();
@@ -338,7 +341,7 @@ pub async fn desktop_run_repro(
     let command = sidecar
         .args(cmd_args)
         .current_dir(&folder)
-        .envs(variables)
+        .envs(settings.envs())
         .envs(crate::worktree::run_path_env(&app, &folder))
         .envs(crate::runner::COLOR_ENV)
         .env(

@@ -107,6 +107,11 @@ shell and are feature-equivalent.
   when the run ends. It refuses a request with no arguments, a folder linked since, a folder another local or
   requested run is going in, or arguments past `REQUEST_ARGS_MAX_CHARS`. How a quit, a restart and a leftover folder
   end a requested run: [`ARCHITECTURE.md`](ARCHITECTURE.md#requested-runs).
+- **A run's environment is read by the shell, never taken from the window** (`src-tauri/src/environments.rs`). The
+  window names it by id (`EnvironmentPick`); the shell reads the merged run variables and the environment from its
+  server, or from the team instance with the target key for the folder's team project, checks them again, sets them and
+  `PIWI_ENVIRONMENT` on the process, and adds a protected environment's `--grep-invert` itself (never in
+  `ALLOWED_FLAGS`); `piwi flake` refuses a protected one. `tests/unit/environments-shell.test.ts` holds it to core.
 - **The instance's key lives in the OS keychain and never reaches the window**: read only while `runTargetInstance` is
   set and handed to the server after each start (`hand_kept_key`), it is forgotten on `key-revoked` only when that
   names the connected instance (`key_revoked`).

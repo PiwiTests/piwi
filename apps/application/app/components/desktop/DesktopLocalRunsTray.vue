@@ -39,6 +39,10 @@
  * the linked folder) is the editor's to steer: its run says where its tests wait, in that editor, read only
  * (`DesktopEditorRunNote`), with no Hold failures switch, and still ends with its own verdict.
  *
+ * A run started for an environment names it on its line, with the command the
+ * shell runs, and says when the label its Piwi run reported resolves to
+ * another environment ("Started for Staging; the config reported production").
+ *
  * A run's output can move to a separate window of the app (`separate`,
  * `DesktopRunOutputWindows`), which stays open when the tray closes or
  * reloads, and closes with the run's entry or when the person closes it.
@@ -48,6 +52,7 @@ import {
   localRunCompareTo,
   localRunDetail,
   localRunDuration,
+  localRunEnvironmentNote,
   localRunProgressLabel,
   localRunTitle,
   type LocalRun,
@@ -461,6 +466,13 @@ function lineAction(run: LocalRun): LineAction | null {
             </div>
             <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="localRunDetail(run)">
               {{ localRunDetail(run) }}
+            </p>
+            <p
+              v-if="localRunEnvironmentNote(run)"
+              class="mt-0.5 text-xs text-warning"
+              data-testid="local-run-environment-note"
+            >
+              {{ localRunEnvironmentNote(run) }}
             </p>
             <DesktopRunHoldSwitch
               v-if="run.status === 'running' && !editorRunsOf(run).length"

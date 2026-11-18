@@ -18,6 +18,12 @@
  * in its Local folder settings; a run button's own choices apply to the runs it
  * starts, never to those defaults.
  *
+ * A run may be for an environment the page picked (`environment`): the shell
+ * reads its run variables and applies them with `PIWI_ENVIRONMENT`, the tray's
+ * line names it and shows its command, and once the run reported, says when its
+ * label resolves to another environment than the one it was started for
+ * (`localRunEnvironmentNote`). Run again keeps it unless it is protected.
+ *
  * A reload of the window keeps its runs: as the page goes (`keepForReload`) it
  * writes them to the window's session storage, with each one's Hold failures
  * and separate output, and the next page takes them back
@@ -39,7 +45,14 @@ import type { RetryCase, RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
-import { withRunVariables, type RunVariable } from '@piwitests/core/run-variables';
+import type { RunVariable } from '@piwitests/core/run-variables';
+import { commandWithEnvironment } from '#shared/run-variables';
+import {
+  environmentMismatch,
+  pickOf,
+  unlessProtected,
+  type DesktopEnvironmentChoice,
+} from '#shared/desktop-environments';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import {
   desktopFailedExecution,
@@ -261,6 +274,10 @@ export interface LocalRun {
   originRef: string | null;
   /** The project's run variables, which the shell sets on each Playwright process it starts for the run. */
   runVariables?: RunVariable[];
+  /** The environment the run is for, as the page picked it and the shell read it; null for none. */
+  environment?: DesktopEnvironmentChoice | null;
+  /** The label the Piwi run it produced reported, and the environment it resolves to, once read. */
+  reported?: { label: string | null; environmentId: number | null } | null;
   /** Shell id of the step currently spawned, for stopping it. */
   shellId: number | null;
   /** A step is being started: the shell has not answered with its id yet. */
@@ -348,13 +365,24 @@ export function localRunTitle(
   }
 }
 
-/** A run's second line: its project, then the command its current step runs, when it has one. */
+/**
+ * A run's second line: its project, the environment it is for, then the command its current step runs, when it has
+ * one, with the run variables and the environment the shell sets.
+ */
 export function localRunDetail(
-  run: Pick<LocalRun, 'projectLabel' | 'projectId' | 'steps' | 'stepIndex' | 'runVariables'>,
+  run: Pick<LocalRun, 'projectLabel' | 'projectId' | 'steps' | 'stepIndex' | 'runVariables' | 'environment'>,
 ): string {
   const project = run.projectLabel || `Project ${run.projectId}`;
+  const head = run.environment ? `${project} · ${run.environment.name}` : project;
   const command = run.steps[run.stepIndex]?.display;
-  return command ? `${project} · ${withRunVariables(command, run.runVariables ?? [], 'bash')}` : project;
+  return command
+    ? `${head} · ${commandWithEnvironment(command, run.runVariables ?? [], run.environment ?? null, 'bash')}`
+    : head;
+}
+
+/** What the run's line says when the run reported a label of another environment than the one it was started for. */
+export function localRunEnvironmentNote(run: Pick<LocalRun, 'environment' | 'reported'>): string | null {
+  return environmentMismatch(run.environment, run.reported);
 }
 
 /**
@@ -761,6 +789,7 @@ export function useDesktopLocalRuns() {
         projectId: run.projectId,
         args: step.args,
         originRef: run.originRef,
+        environment: pickOf(run.environment),
       });
       if (run.stopRequested) break;
       ended(code);
@@ -781,6 +810,7 @@ export function useDesktopLocalRuns() {
         args: run.repro.args,
         bugReportId: run.repro.bugReportId ?? null,
         originRef: run.originRef,
+        environment: pickOf(run.environment),
       });
     }
     if (run.kind === 'request' && run.teamRequest) {
@@ -793,6 +823,7 @@ export function useDesktopLocalRuns() {
       return spawnCommand(run, 'desktop_flake_lab_job', {
         projectId: run.projectId,
         requestId: run.jobRequestId,
+        environment: pickOf(run.environment),
       });
     }
     if (run.kind === 'flake' && run.flake) {
@@ -805,6 +836,7 @@ export function useDesktopLocalRuns() {
         all,
         runs,
         budgetMinutes,
+        environment: pickOf(run.environment),
       });
     }
     if (run.kind === 'bisect') {
@@ -817,6 +849,7 @@ export function useDesktopLocalRuns() {
         flakeTestCaseId: run.flakeTestCaseId,
         clusterId: run.bisectTarget?.clusterId ?? null,
         originRef: run.originRef,
+        environment: pickOf(run.environment),
       });
     }
     return spawnCommand(run, 'desktop_reproduce_here', {
@@ -826,6 +859,7 @@ export function useDesktopLocalRuns() {
       args: buildReproduceArgs(run.cases),
       clusterId: run.clusterId ?? null,
       originRef: run.originRef,
+      environment: pickOf(run.environment),
     });
   }
 
@@ -1074,6 +1108,8 @@ export function useDesktopLocalRuns() {
     /** The Piwi run the cases come from. */
     sourceRunId?: number | null;
     options?: LocalRunOptions;
+    /** The environment the run is for; none leaves it to the config. */
+    environment?: DesktopEnvironmentChoice | null;
   }): LocalRun | null {
     if (!tauriCore() || input.cases.length === 0) return null;
     const options = { ...getProjectOptions(input.projectId), ...input.options };
@@ -1088,6 +1124,7 @@ export function useDesktopLocalRuns() {
       sourceRunId: input.sourceRunId,
       options,
       steps,
+      environment: input.environment,
     });
   }
 
@@ -1116,6 +1153,7 @@ export function useDesktopLocalRuns() {
     flakeTestCaseId?: number | null;
     jobRequestId?: string | null;
     teamRequest?: { id: string; instance: string } | null;
+    environment?: DesktopEnvironmentChoice | null;
   }): LocalRun {
     // A run that starts before the page took back the runs of the page before takes a key none of them has.
     readKeptForReload();
@@ -1155,6 +1193,8 @@ export function useDesktopLocalRuns() {
       flakeTestCaseId: input.flakeTestCaseId ?? null,
       jobRequestId: input.jobRequestId ?? null,
       teamRequest: input.teamRequest ?? null,
+      environment: input.environment ? { ...input.environment } : null,
+      reported: null,
       originRef,
       status: 'running',
       lines: [],
@@ -1188,8 +1228,21 @@ export function useDesktopLocalRuns() {
     return tracked;
   }
 
-  /** Reads the run variables of the run's project, which the shell reads too when it starts each step. */
+  /**
+   * Reads the run variables of the run's project, which the shell reads too when it starts each step: for an
+   * environment, the merged ones and the environment, as the shell reads them.
+   */
   async function readRunVariables(run: LocalRun) {
+    if (run.environment) {
+      try {
+        const answer = await readDesktopRunSettings(run.projectId, pickOf(run.environment));
+        if (answer.runVariables.length > 0) run.runVariables = answer.runVariables;
+        if (answer.environment) run.environment = { ...run.environment, ...answer.environment };
+      } catch {
+        // The tray shows the command without them; the shell reads them itself, and says why when it cannot.
+      }
+      return;
+    }
     try {
       const answer = await $fetch<{ runVariables: RunVariable[] }>(
         `/api/projects/${encodeURIComponent(run.projectId)}/run-variables`,
@@ -1216,10 +1269,13 @@ export function useDesktopLocalRuns() {
     clusterId?: number | null;
     /** The editor's job this run answers. */
     jobRequestId?: string | null;
+    /** The environment the reproduction is for; none leaves it to the config. */
+    environment?: DesktopEnvironmentChoice | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null || buildReproduceArgs(input.cases).length === 0) return null;
     return spawn({
       kind: 'reproduce',
+      environment: input.environment,
       jobRequestId: input.jobRequestId ?? null,
       projectId: input.projectId,
       projectLabel: input.projectLabel,
@@ -1250,10 +1306,13 @@ export function useDesktopLocalRuns() {
     flakeTestCaseId?: number | null;
     /** The editor's job this run answers. */
     jobRequestId?: string | null;
+    /** The environment each step runs for; none leaves it to the config. */
+    environment?: DesktopEnvironmentChoice | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null || !canBisect(input.cases, input.flakeTestCaseId)) return null;
     return spawn({
       kind: 'bisect',
+      environment: input.environment,
       jobRequestId: input.jobRequestId ?? null,
       flakeTestCaseId: input.flakeTestCaseId ?? null,
       projectId: input.projectId,
@@ -1280,10 +1339,13 @@ export function useDesktopLocalRuns() {
     projectLabel?: string | null;
     testCaseId: number;
     options: FlakeLabOptions;
+    /** The environment the lab runs for, never a protected one; none leaves it to the config. */
+    environment?: DesktopEnvironmentChoice | null;
   }): LocalRun | null {
     if (!tauriCore() || input.projectId == null) return null;
     return spawn({
       kind: 'flake',
+      environment: input.environment,
       projectId: input.projectId,
       projectLabel: input.projectLabel,
       cases: [],
@@ -1377,14 +1439,31 @@ export function useDesktopLocalRuns() {
               continue;
             }
             run.piwiRunId = latest.id;
+            void readReported(run);
             break;
           }
           run.piwiRunIds = { ...run.piwiRunIds, [desktopRunOf(latest.name)]: latest.id };
           run.piwiRunId ??= latest.id;
+          void readReported(run);
         } catch {
           // Server briefly unavailable — the next stream event retries.
         }
       }
+    }
+  }
+
+  /**
+   * Reads, once, the label the Piwi run a run produced reported and the environment it resolves to, for a run started
+   * for an environment: the tray says when they differ (`localRunEnvironmentNote`).
+   */
+  async function readReported(run: LocalRun) {
+    if (!run.environment || run.reported || run.piwiRunId == null) return;
+    try {
+      run.reported = await $fetch<{ label: string | null; environmentId: number | null }>(
+        `/api/desktop/test-runs/${run.piwiRunId}/environment`,
+      );
+    } catch {
+      // The line names the environment the run was started for alone.
     }
   }
 
@@ -1427,6 +1506,8 @@ export function useDesktopLocalRuns() {
     args: string[];
     /** The bug report the request came from, recorded as the run's origin reference. */
     bugReportId?: number | null;
+    /** The environment the steps run for; none leaves it to the config. */
+    environment?: DesktopEnvironmentChoice | null;
   }): Promise<LocalRun | null> {
     if (!tauriCore()) return null;
     await $fetch(`/api/desktop/repro-requests/${input.requestId}`, {
@@ -1441,6 +1522,7 @@ export function useDesktopLocalRuns() {
       cases: [],
       options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
       steps: [{ args: input.args, display }],
+      environment: input.environment,
       repro: {
         requestId: input.requestId,
         steps: input.steps,
@@ -1464,6 +1546,8 @@ export function useDesktopLocalRuns() {
     projectId: string | number;
     projectLabel?: string | null;
     request: ReproRequestView;
+    /** The environment the job runs for; none leaves it to the config. */
+    environment?: DesktopEnvironmentChoice | null;
   }): Promise<LocalRun | null> {
     const job = input.request.job;
     if (!tauriCore() || !job) return null;
@@ -1480,6 +1564,7 @@ export function useDesktopLocalRuns() {
         cases: [],
         options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
         steps: [{ args: [], display: FLAKE_LAB_JOB_DISPLAY }],
+        environment: input.environment,
       });
     }
     const common = {
@@ -1488,6 +1573,7 @@ export function useDesktopLocalRuns() {
       cases: job.tests,
       browserName: job.browser,
       jobRequestId: input.request.id,
+      environment: input.environment,
     };
     return input.request.kind === 'bisect' && job.good
       ? startBisect({ ...common, good: job.good, bad: job.commit })
@@ -1510,6 +1596,7 @@ export function useDesktopLocalRuns() {
         steps,
         args,
         bugReportId,
+        environment: unlessProtected(run.environment),
       })
         .then(keepHold)
         .catch((error) =>
@@ -1521,7 +1608,8 @@ export function useDesktopLocalRuns() {
   }
 
   function startAgain(run: LocalRun): LocalRun | null {
-    // Re-running repeats the run exactly.
+    // Re-running repeats the run exactly, for its environment unless it is protected: one of those starts with none.
+    const environment = unlessProtected(run.environment);
     if (run.kind === 'reproduce' && run.commit) {
       return startReproduce({
         projectId: run.projectId,
@@ -1530,6 +1618,7 @@ export function useDesktopLocalRuns() {
         commit: run.commit,
         browserName: run.browserName,
         clusterId: run.clusterId,
+        environment,
       });
     }
     if (run.kind === 'bisect' && run.good && run.bad) {
@@ -1542,6 +1631,7 @@ export function useDesktopLocalRuns() {
         browserName: run.browserName,
         target: run.bisectTarget,
         flakeTestCaseId: run.flakeTestCaseId,
+        environment,
       });
     }
     // An editor's plan runs once: its experiment is the editor's to share.
@@ -1552,6 +1642,7 @@ export function useDesktopLocalRuns() {
         projectLabel: run.projectLabel,
         testCaseId: run.flake.testCaseId,
         options: run.flake.options,
+        environment,
       });
     }
     return startRun({
@@ -1561,6 +1652,7 @@ export function useDesktopLocalRuns() {
       title: run.title,
       sourceRunId: run.sourceRunId,
       options: run.options,
+      environment,
     });
   }
 
