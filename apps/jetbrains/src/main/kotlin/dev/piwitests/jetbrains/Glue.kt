@@ -4561,8 +4561,9 @@ object Glue {
         listOf(it.root, it.run?.id, it.live?.runId, it.failures, it.overlays, it.resolved).joinToString("|")
     }
 
-    /** What the Tests tab says while it shows no test. */
-    fun testsEmptyText(result: TestItemsResult?, filtered: Boolean): String = when {
+    /** What the Tests tab says while it shows no test: before the tree is read, why, when no editor service runs. */
+    fun testsEmptyText(result: TestItemsResult?, filtered: Boolean, serviceRuns: Boolean = true): String = when {
+        result == null && !serviceRuns -> SERVICE_NEEDS_A_FILE
         result == null -> "Reading the tests…"
         filtered -> "No test matches the filter."
         result.contexts.orEmpty().any { it.listing?.running == true } -> "Playwright is listing the tests…"

@@ -11,6 +11,7 @@ import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
   COVERAGE_FILES_REQUEST,
+  REFRESH_REQUEST,
   TEST_ITEMS_REQUEST,
   TEST_RUNS_REQUEST,
   type CoverageFilesParams,
@@ -173,7 +174,13 @@ export class TestExplorer implements vscode.Disposable {
     private readonly lc: LanguageClient,
     private readonly runTests: (args: RunTestsArgs) => Promise<RunCommand | null>,
   ) {
-    this.controller.refreshHandler = () => this.read().then(() => this.publish());
+    // Refresh lists each config again (`piwi/refresh`), then reads the tree, which the listings push as they end.
+    this.controller.refreshHandler = () =>
+      this.lc
+        .sendRequest(REFRESH_REQUEST)
+        .catch(() => null)
+        .then(() => this.read())
+        .then(() => this.publish());
     this.controller.createRunProfile(
       'Run with Piwi',
       vscode.TestRunProfileKind.Run,

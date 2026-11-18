@@ -4434,6 +4434,8 @@ class GlueTest {
         assertEquals(listOf("a.spec.ts", "Not in this checkout"), configs[0].children.map { it.label })
         assertEquals(emptyList<Glue.TestsNode>(), Glue.testsTree(null))
         assertEquals("Reading the tests…", Glue.testsEmptyText(null, false))
+        assertEquals(Glue.SERVICE_NEEDS_A_FILE, Glue.testsEmptyText(null, false, serviceRuns = false))
+        assertEquals("No test matches the filter.", Glue.testsEmptyText(testsAnswer, true, serviceRuns = false))
         assertEquals("No test matches the filter.", Glue.testsEmptyText(testsAnswer, true))
     }
 
