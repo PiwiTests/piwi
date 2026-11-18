@@ -71,6 +71,10 @@ merge keeps the branch's history as stable as it can:
   stepped once, it frees a single page and holds the write lock until the statement is garbage-collected, and every
   write on another connection fails with `SQLITE_BUSY` meanwhile (`reclaimSpace`, `server/utils/retention.ts`).
   `executeMultiple` waits for an open transaction, as writes do (`server/database/sqlite-connections.ts`).
+- **A subquery run once per row (one per test case) leaves out ineligible runs through a CTE**:
+  `ineligibleRunsInProject` in `db.with(…)` and `eligibleExecutionAmong`, never `eligibleExecutionInProject`, whose
+  list PostgreSQL's plan counts once per row and subquery, past its JIT thresholds (`loadSelectionCatalog`;
+  `tests/unit/selection-fail-ranks-pg.test.ts` counts the plan's scans of `test_runs`).
 - **A select from one table renders the columns of its fields' own `sql` without their table**, so a correlated
   subquery written there compares the subquery's own columns. Nest the subquery in a `sql` of its own (as
   `latestRunStatusSql` and `loadSelectionCatalog`'s `lastLine` do) or spell the outer column out;

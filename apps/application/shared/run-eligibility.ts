@@ -42,6 +42,7 @@ import {
   type RunOriginKind,
 } from '@piwitests/core/wire';
 import { testRuns } from '../server/database/schema';
+import type { DrizzleDB } from './handlers/db';
 import { INCIDENT_RUN_METADATA_KEY } from './run-incident';
 
 export { RUN_ORIGIN_KINDS, RUN_ORIGIN_METADATA_KEY, FLAKE_LAB_RUN_METADATA_KEY, type RunOriginKind };
@@ -623,8 +624,41 @@ export function eligibleExecutionSql(use: RunUse, testRunId: SQLWrapper): SQL {
  * project's runs.
  */
 export function eligibleExecutionInProject(use: RunUse, projectId: number, testRunId: SQLWrapper, within?: SQL): SQL {
-  const listed = and(eq(testRuns.projectId, projectId), within, sql`${eligibleRunSql(use)} IS NOT TRUE`);
-  return sql`${testRunId} NOT IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${listed})`;
+  return sql`${testRunId} NOT IN (SELECT ${testRuns.id} FROM ${testRuns} WHERE ${ineligibleRunInProject(use, projectId, within)})`;
+}
+
+/** SQL predicate on `test_runs`: a run of project `projectId`, among those `within` selects, that may not feed `use`. */
+function ineligibleRunInProject(use: RunUse, projectId: number, within?: SQL): SQL {
+  return and(eq(testRuns.projectId, projectId), within, sql`${eligibleRunSql(use)} IS NOT TRUE`)!;
+}
+
+/**
+ * The runs of project `projectId` that may not feed `use`, as a common table
+ * expression (`db.with(…)`), for a query that reads executions in a subquery
+ * per row, such as one per test case: `eligibleExecutionAmong` keeps the
+ * executions of the other runs. PostgreSQL computes a CTE that the query reads
+ * more than once a single time, and counts its cost once in the plan. The list
+ * `eligibleExecutionInProject` writes into each subquery counts once per row
+ * and subquery instead: a plan cost that grows with the rows times the pages
+ * of `test_runs`, and past `jit_above_cost` PostgreSQL compiles the query with
+ * JIT, which can take longer than running it.
+ */
+export function ineligibleRunsInProject(db: DrizzleDB, use: RunUse, projectId: number) {
+  return db
+    .$with('ineligible_runs')
+    .as(db.select({ id: testRuns.id }).from(testRuns).where(ineligibleRunInProject(use, projectId)));
+}
+
+/** The runs `ineligibleRunsInProject` lists, for a query that names it in `db.with(…)`. */
+export type IneligibleRuns = ReturnType<typeof ineligibleRunsInProject>;
+
+/**
+ * SQL predicate on an execution's run id, for a query over executions of one
+ * project's runs that names `ineligible` in `db.with(…)`: the execution's run
+ * is not on that list.
+ */
+export function eligibleExecutionAmong(testRunId: SQLWrapper, ineligible: IneligibleRuns): SQL {
+  return sql`${testRunId} NOT IN (SELECT ${ineligible.id} FROM ${ineligible})`;
 }
 
 /**

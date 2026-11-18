@@ -8,12 +8,12 @@
  * limit are applied in that order. The only persisted trace of a resolution is
  * the stamp on the runs it produces.
  */
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, sql, type SQL } from 'drizzle-orm';
 import { testCases, testRunsCases, testSelections } from '../../server/database/schema';
 import type { DrizzleDB } from './db';
 import { getQuarantinedCaseIds } from './quarantine';
 import { dropProjectTestFilters } from './analytics/test-filter-memo';
-import { eligibleExecutionInProject } from '../run-eligibility';
+import { eligibleExecutionAmong, ineligibleRunsInProject } from '../run-eligibility';
 import { latestRunStatusSql } from './latest-run-status';
 import { finalAttemptSql, recentFlakySql, testCaseAggregates } from './test-case-aggregates';
 import { foldText } from '#shared/utils/fold-text';
@@ -83,7 +83,8 @@ export interface CatalogOptions {
  * over its runs: one result per run, Playwright project and repetition, read
  * from its final attempt (`testCaseAggregates`). Only executions of runs the
  * `selection-catalog` use reads count: lab runs, bisect steps and
- * reproductions stay out of every aggregate.
+ * reproductions stay out of every aggregate. One query reads it all, each
+ * subquery per test leaving out the runs `ineligibleRunsInProject` lists once.
  */
 export async function loadSelectionCatalog(
   db: DrizzleDB,
@@ -91,7 +92,8 @@ export async function loadSelectionCatalog(
   opts: CatalogOptions = { withFailRanks: false },
 ): Promise<CatalogRow[]> {
   const withAggregates = opts.withAggregates !== false;
-  const eligible = () => eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId);
+  const ineligible = ineligibleRunsInProject(db, 'selection-catalog', projectId);
+  const eligible = () => eligibleExecutionAmong(testRunsCases.testRunId, ineligible);
   const recentFlaky = recentFlakySql(testCases.id, eligible());
   // The latest run's status: failed when one of the test's repetitions failed there.
   const lastStatus = latestRunStatusSql(eligible());
@@ -117,12 +119,14 @@ export async function loadSelectionCatalog(
     recentFlakyRuns: recentFlaky,
     lastStatus,
     lastLine,
+    ...(opts.withFailRanks ? { firstFailRank: recentFailRankSql(eligible()) } : {}),
   };
   const inProject = eq(testCases.projectId, projectId);
   let rows: any[];
   if (withAggregates) {
     const aggregates = testCaseAggregates();
     rows = await db
+      .with(ineligible)
       .select({
         ...fields,
         totalRuns: aggregates.totalRuns,
@@ -134,11 +138,10 @@ export async function loadSelectionCatalog(
       .where(inProject)
       .groupBy(testCases.id, testCases.filePath, testCases.suitePath, testCases.title);
   } else {
-    rows = await db.select(fields).from(testCases).where(inProject);
+    rows = await db.with(ineligible).select(fields).from(testCases).where(inProject);
   }
 
   const quarantined = await getQuarantinedCaseIds(db, projectId);
-  const failRanks = opts.withFailRanks ? await loadRecentFailRanks(db, projectId) : new Map<number, number>();
 
   return rows.map((row) => {
     const totalRuns = Number(row.totalRuns ?? 0);
@@ -160,38 +163,32 @@ export async function loadSelectionCatalog(
       lastLine: row.lastLine != null ? Number(row.lastLine) : null,
       quarantined: quarantined.has(row.id),
       neverRun: withAggregates && totalRuns === 0,
-      firstFailRank: failRanks.get(row.id) ?? null,
+      firstFailRank: row.firstFailRank != null ? Number(row.firstFailRank) : null,
     } satisfies CatalogRow;
   });
 }
 
 /**
- * Recency rank of each test's most recent failure within its last
- * `MAX_FAILED_IN_LAST_RUNS` runs (1 = the latest run), a run being one result
- * per run, Playwright project and repetition (`finalAttemptSql`): a pass on a
- * retry is not a failure. Each test reads only its latest results, through the
- * `(test_case_id, created_at)` index, numbered newest first; loaded only when a
- * definition needs it.
+ * Recency rank of a test's most recent failure within its last
+ * `MAX_FAILED_IN_LAST_RUNS` runs (1 = the latest run), as a SQL expression
+ * correlated on `test_cases`, a run being one result per run, Playwright
+ * project and repetition (`finalAttemptSql`): a pass on a retry is not a
+ * failure. The test reads only its latest results `eligible` keeps, through
+ * the `(test_case_id, created_at)` index, numbered newest first. Null without
+ * a failure among them.
  */
-async function loadRecentFailRanks(db: DrizzleDB, projectId: number): Promise<Map<number, number>> {
+function recentFailRankSql(eligible: SQL): SQL<number | null> {
   const latest = sql`SELECT ${testRunsCases.status} AS status, ${testRunsCases.createdAt} AS created_at, ${testRunsCases.id} AS id
       FROM ${testRunsCases}
       WHERE ${testRunsCases.testCaseId} = ${testCases.id}
-        AND ${eligibleExecutionInProject('selection-catalog', projectId, testRunsCases.testRunId)}
+        AND ${eligible}
         AND ${finalAttemptSql()}
       ORDER BY ${testRunsCases.createdAt} DESC, ${testRunsCases.id} DESC
       LIMIT ${sql.raw(String(MAX_FAILED_IN_LAST_RUNS))}`;
   const numbered = sql`SELECT status, ROW_NUMBER() OVER (ORDER BY created_at DESC, id DESC) AS rn FROM (${latest}) latest`;
-  const rank = sql<
+  return sql<
     number | null
   >`(SELECT MIN(rn) FROM (${numbered}) numbered WHERE status IN ('failed', 'timedOut', 'timedout'))`;
-
-  const rows: { testCaseId: number; rank: number | null }[] = await db
-    .select({ testCaseId: testCases.id, rank })
-    .from(testCases)
-    .where(eq(testCases.projectId, projectId));
-
-  return new Map(rows.filter((r) => r.rank != null).map((r) => [Number(r.testCaseId), Number(r.rank)]));
 }
 
 // ── Predicate evaluation ─────────────────────────────────────────────────────
