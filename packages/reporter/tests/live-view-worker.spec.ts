@@ -17,7 +17,6 @@ import {
 import { PIWI_RUN_LOG_ENV } from '../src/internal/config/env.js';
 import {
   closeLiveView,
-  liveViewPage,
   liveViewState,
   liveViewStopped,
   liveViewTestBegan,
@@ -26,8 +25,16 @@ import {
   openLiveView,
   shareLiveView,
 } from '../src/internal/capture/live-view.js';
-import { lanePage, laneTestBegan, laneTestEnded } from '../src/internal/capture/lane-feed.js';
+import {
+  laneCalled,
+  lanePage,
+  laneSawPage,
+  laneTestBegan,
+  laneTestEnded,
+  subscribeLane,
+} from '../src/internal/capture/lane-feed.js';
 import { jpegCodec } from '../src/internal/capture/live-mask.js';
+import type { PageFrame } from '../src/internal/capture/page-view.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
@@ -120,12 +127,18 @@ function sayViewers(count: number): void {
   streams[0]!.write(`data: ${JSON.stringify({ type: 'viewers', count })}\n\n`);
 }
 
-/** The fake page's screenshot: a JPEG of its viewport, at its size in CSS pixels. */
-const SHOT = jpegCodec()!.encode({ width: 1280, height: 720, data: new Uint8Array(1280 * 720 * 4).fill(255) }, 50).data;
+/** A screenshot of a page of one shade: a JPEG of its viewport, at its size in CSS pixels. */
+const shotOf = (shade: number): Buffer =>
+  jpegCodec()!.encode({ width: 1280, height: 720, data: new Uint8Array(1280 * 720 * 4).fill(shade) }, 50).data;
 
-/** A page as the view reads it: its viewport, and a screencast that paints when told. */
-function fakePage(): { page: Page; paint: (data: string) => void } {
+/** The fake page's screenshot. */
+const SHOT = shotOf(255);
+
+/** A page as the view reads it: its viewport, a screencast that paints when told, and its close. */
+function fakePage(shot: Buffer = SHOT): { page: Page; paint: (data: string) => void; close: () => void } {
   let onFrame: ((frame: { data: Buffer; viewportWidth: number; viewportHeight: number }) => unknown) | null = null;
+  let closed = false;
+  const onClose = new Set<() => void>();
   // One frame, which shows no secret field.
   const fields = { or: () => fields, evaluateAll: async () => ({ rects: [], width: 1280, height: 720 }) };
   const frame = { locator: () => fields, isDetached: () => false };
@@ -133,10 +146,16 @@ function fakePage(): { page: Page; paint: (data: string) => void } {
     viewportSize: () => ({ width: 1280, height: 720 }),
     frames: () => [frame],
     mainFrame: () => frame,
-    isClosed: () => false,
-    once: () => page,
-    off: () => page,
-    screenshot: async () => SHOT,
+    isClosed: () => closed,
+    once: (event: string, listener: () => void) => {
+      if (event === 'close') onClose.add(listener);
+      return page;
+    },
+    off: (event: string, listener: () => void) => {
+      if (event === 'close') onClose.delete(listener);
+      return page;
+    },
+    screenshot: async () => shot,
     screencast: {
       start: async (options: { onFrame: typeof onFrame }) => {
         onFrame = options.onFrame;
@@ -147,6 +166,13 @@ function fakePage(): { page: Page; paint: (data: string) => void } {
   return {
     page: page as unknown as Page,
     paint: (data) => void onFrame?.({ data: Buffer.from(data), viewportWidth: 1280, viewportHeight: 720 }),
+    close: () => {
+      closed = true;
+      for (const listener of onClose) {
+        onClose.delete(listener);
+        listener();
+      }
+    },
   };
 }
 
@@ -211,12 +237,11 @@ describe("the worker's live view connection", () => {
       refused: expect.stringMatching(/^No test runs on this worker now/),
     });
 
-    // The capture fixtures tell the lane and the live view of each test and its page.
+    // The capture fixtures tell the lane and the live view of each test, and the lane of its page: the view shows it.
     laneTestBegan('pays-1');
     liveViewTestBegan('pays', () => SECRET_CALL);
     const { page, paint } = fakePage();
     lanePage(page);
-    liveViewPage(page);
     // The page paints once its screencast started.
     await waitFor(() => {
       paint('a frame of the page');
@@ -241,6 +266,94 @@ describe("the worker's live view connection", () => {
     // A second viewer between two tests hears it too.
     sayViewers(2);
     await waitFor(() => posts.filter((p) => p.type === 'frame' && 'refused' in p).length === 2);
+  });
+
+  it('shows the page of the latest call of a test without the `page` fixture, and the page opened last before it', async () => {
+    await open();
+    sayViewers(1);
+    await waitFor(() => posts.length === 1);
+    // Two pages a `beforeAll` opened, one per portal, and a test that takes neither from the `page` fixture.
+    const firstShot = shotOf(40);
+    const secondShot = shotOf(200);
+    const first = fakePage(firstShot);
+    const second = fakePage(secondShot);
+    laneSawPage(first.page);
+    laneSawPage(second.page);
+    const framesOf = (shot: Buffer): number =>
+      posts.filter((p) => p.type === 'frame' && 'data' in p && p.data === shot.toString('base64')).length;
+    try {
+      laneTestBegan('two-portals-1');
+      liveViewTestBegan('two portals', () => null);
+      // Before its first call, the page opened last shows.
+      await waitFor(() => {
+        second.paint('a frame of the second portal');
+        return framesOf(secondShot) > 0;
+      });
+      // Its call lands on the first page: the view moves there.
+      laneCalled(first.page);
+      await waitFor(() => {
+        first.paint('a frame of the first portal');
+        return framesOf(firstShot) > 0;
+      });
+      // That page closes: the page opened last that is still open shows again.
+      const before = framesOf(secondShot);
+      first.close();
+      await waitFor(() => {
+        second.paint('a frame of the second portal');
+        return framesOf(secondShot) > before;
+      });
+      expect(posts.filter((p) => p.type === 'frame' && 'data' in p).every((p) => 'test' in p && p.test === 'two portals')).toBe(true);
+    } finally {
+      await liveViewTestEnded();
+      await laneTestEnded();
+      first.close();
+      second.close();
+    }
+  });
+
+  it('gives no frame of the page the lane left, again or to a viewer that comes later', async () => {
+    const firstShot = shotOf(40);
+    const secondShot = shotOf(200);
+    const first = fakePage(firstShot);
+    const second = fakePage(secondShot);
+    laneSawPage(first.page);
+    laneSawPage(second.page);
+    laneTestBegan('lane-moves-1');
+    const sent: PageFrame[] = [];
+    const lane = subscribeLane({
+      maxWidth: 1280,
+      maxHeight: 800,
+      quality: 50,
+      fps: 10,
+      maxFrameBytes: 512 * 1024,
+      lightQuality: 30,
+      shotMs: 500,
+      busy: () => false,
+      send: (frame) => void sent.push(frame),
+      refuse: () => undefined,
+    });
+    try {
+      await waitFor(() => {
+        second.paint('a frame of the second portal');
+        return sent.some((frame) => frame.data.equals(secondShot));
+      });
+      // A call lands on the first page: until it paints, the second page's latest frame goes nowhere.
+      laneCalled(first.page);
+      expect(lane.latest()).toBeNull();
+      const before = sent.length;
+      lane.resend();
+      expect(sent).toHaveLength(before);
+      await waitFor(() => {
+        first.paint('a frame of the first portal');
+        return sent.some((frame) => frame.data.equals(firstShot));
+      });
+      expect(lane.latest()?.data.equals(firstShot)).toBe(true);
+    } finally {
+      await lane.close();
+      await laneTestEnded();
+      first.close();
+      second.close();
+    }
   });
 
   it('keeps the key out of the environment it was read from until the connection closes', async () => {

@@ -6,7 +6,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import type { TestInfo } from '@playwright/test';
+import { chromium, type Browser, type TestInfo } from '@playwright/test';
 import {
   ResourceLedger,
   activeResourceLedger,
@@ -15,6 +15,7 @@ import {
   playwrightGlobalsFile,
   readLeakCheck,
   recordResourceCensus,
+  onTestCallPage,
   startResourceLedger,
   stopResourceLedger,
   userSite,
@@ -580,6 +581,75 @@ describe('following the calls a test makes', () => {
     // Pages are marked used by their calls: no page method is replaced.
     expect(Object.prototype.hasOwnProperty.call(page, 'evaluate')).toBe(false);
   });
+
+  it('tells the page each call or wait of the test lands on, through its frame or its element, never a close, an internal read or the page’s traffic', async () => {
+    const fake = fakePlaywright();
+    const { connection, call } = withConnection(fake);
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = await fake.playwright.chromium.launch();
+    const context = await browser.newContext();
+    const admin = await context.newPage();
+    const customer = await context.newPage();
+    Object.assign(browser, { _type: 'Browser', _parent: null });
+    Object.assign(context, { _type: 'BrowserContext', _parent: browser });
+    Object.assign(admin, { _type: 'Page', _parent: context });
+    Object.assign(customer, { _type: 'Page', _parent: context });
+    const heard: object[] = [];
+    const unhear = onTestCallPage((page) => heard.push(page));
+    try {
+      const frame = { _type: 'Frame', _parent: customer, _page: customer };
+      await call(frame, 'click', 12);
+      await call({ _type: 'ElementHandle', _parent: { _type: 'Frame', _parent: admin, _page: admin } }, 'fill', 13);
+      await call(admin, 'keyboardPress', 14);
+      // A frame whose parent is its context: the page it names.
+      await call({ _type: 'Frame', _parent: context, _page: customer }, 'goto', 15);
+      await call(context, 'newPage', 16);
+      await call(frame, 'evaluateExpression', 17, true);
+      await call({ _type: 'Route', _parent: context }, 'fulfill', 18);
+      await call(customer, 'close', 19);
+      // A wait on the client tells its page as it begins, not as its internal end comes.
+      const frames = [{ file: path.resolve('tests/cart.spec.ts'), line: 20 }];
+      await connection.sendMessageToServer(admin, '__waitInfo__', { waitId: 'w1', phase: 'before' }, { apiName: 'page.waitForURL', frames });
+      await connection.sendMessageToServer(admin, '__waitInfo__', { waitId: 'w1', phase: 'after' }, { internal: true });
+      expect(heard).toEqual([customer, admin, admin, customer, admin]);
+    } finally {
+      unhear();
+    }
+    await call(admin, 'keyboardPress', 21);
+    expect(heard).toHaveLength(5);
+  });
+
+  it('tells the page of a real call outside that call, so a call its listener makes is a call of its own', async () => {
+    const playwright = (chromium as unknown as { _playwright: ConstructorParameters<typeof ResourceLedger>[0] })
+      ._playwright;
+    const ledger = new ResourceLedger(playwright, 3, 'report', null, () => info('t1'));
+    expect(ledger.install()).toBe(true);
+    let browser: Browser | undefined;
+    try {
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      // The zone each call the listener makes runs in: Playwright's own for an internal call made outside any other.
+      const zones: Array<{ internal?: unknown; apiName?: unknown }> = [];
+      const unhear = onTestCallPage((told) => {
+        const wrap = (told as { _wrapApiCall: (run: (zone: object) => Promise<void>, options: object) => Promise<void> })
+          ._wrapApiCall;
+        void wrap.call(told, async (zone) => void zones.push(zone), { internal: true, title: 'listener' });
+      });
+      try {
+        await page.setContent('<button>Pay</button>');
+        await page.getByRole('button').click();
+      } finally {
+        unhear();
+      }
+      expect(zones.length).toBeGreaterThanOrEqual(2);
+      expect(zones.every((zone) => zone.internal === true)).toBe(true);
+    } finally {
+      ledger.uninstall();
+      await browser?.close();
+    }
+  }, 30_000);
 
   it('keeps an object in use until a wait on the client ends, and marks when a close began', async () => {
     let now = 1000;

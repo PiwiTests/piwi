@@ -160,14 +160,13 @@ import {
   closeLiveView,
   liveViewMayPause,
   liveViewOpen,
-  liveViewPage,
   liveViewStopped,
   liveViewTestBegan,
   liveViewTestEnded,
   openLiveView,
 } from './live-view.js';
 import { listenCalls, trackCalls } from './live-call-log.js';
-import { laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
+import { laneCalled, laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardTracing } from './live-inspect.js';
 import { guardScreencast } from './page-view.js';
 import type { LiveCall } from '@piwitests/core/live-view';
@@ -229,6 +228,7 @@ import {
   activeResourceLedger,
   noteResourceClosing,
   noteResourceUse,
+  onTestCallPage,
   recordResourceCensus,
   startResourceLedger,
   stopResourceLedger,
@@ -3009,7 +3009,7 @@ function instrumentPage(page: Page): void {
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
   watchPageEvents(page);
-  // A page the running test opens shows on its lane while it shows no other.
+  // A page the browser opens: the lane of a test without the `page` fixture may show it (`lane-feed.ts`).
   laneSawPage(page);
 
   // Probe mode: install the fault interception for this test's plan item on the
@@ -4103,13 +4103,18 @@ export const piwiFixtures: Fixtures<
       openLiveView(workerInfo);
       // The selector of the locator call running, for the live view's call log.
       if (liveViewOpen()) trackCalls(playwright);
-      if (await openRunChannel(workerInfo, runControl)) {
+      const channel = await openRunChannel(workerInfo, runControl);
+      if (channel) {
         watchCalls(playwright);
         trackCalls(playwright);
       }
+      // The page each call of a test lands on, which the lane shows for a test without the `page` fixture.
+      const unhearCallPages =
+        liveViewOpen() || channel ? onTestCallPage((page) => laneCalled(page as Page)) : () => undefined;
       try {
         await use();
       } finally {
+        unhearCallPages();
         closeLiveView();
         closeRunChannel();
         stopResourceLedger();
@@ -4145,9 +4150,8 @@ export const piwiFixtures: Fixtures<
     await armStops([pageContext(page)]);
     await awaitFlakeConditions();
     await maybeStartCodeReach(page);
-    // The page the lane shows, and the run page's live view, while someone watches this worker.
+    // The page the lane shows, and so the run page's live view, while someone watches this worker.
     lanePage(page);
-    liveViewPage(page);
     await use(page);
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
     // now, before the page's context closes.

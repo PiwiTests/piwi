@@ -110,7 +110,8 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 - **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
-- **The test's `page`.** The view shows the page of Playwright's `page` fixture, not a popup or a second page.
+- **One page at a time**: the `page` fixture's, else the page of the test's latest call
+  ([which](/guide/capture-fixtures#where-capture-works)).
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
   that person's oldest. Its workers send 4 MB of images a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
