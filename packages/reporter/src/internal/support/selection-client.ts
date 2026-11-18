@@ -163,7 +163,8 @@ export type PlanReason =
   | 'commit-unavailable'
   | 'widened'
   | 'changed'
-  | 'serial';
+  | 'serial'
+  | 'deployed-version-unknown';
 
 /** What every plan answer carries. */
 export interface PlanSummary {
@@ -211,16 +212,20 @@ async function planRequest<T>(url: string, init: RequestInit, apiKey: string | n
   return (await res.json()) as T;
 }
 
-/** The source commits a plan of `selection` diffs against. */
+/**
+ * The source commits a plan of `selection` diffs against: passes of the same Playwright version, in the environment
+ * the run reports (`environment`, null for none).
+ */
 export function fetchPlanSources(
   options: Pick<SelectionClientOptions, 'serverUrl' | 'apiKey'>,
   projectId: number,
   selection: string,
   playwrightVersion: string | null,
+  environment: string | null,
 ): Promise<{ candidates: number; commits: Array<{ commit: string; tests: number }> }> {
   return planRequest(
     `${options.serverUrl}/api/projects/${projectId}/run-plans/sources`,
-    { method: 'POST', body: JSON.stringify({ selection, playwrightVersion }) },
+    { method: 'POST', body: JSON.stringify({ selection, playwrightVersion, environment }) },
     options.apiKey,
     'finding the passes to reuse',
   );
@@ -233,6 +238,8 @@ export function createPlan(
   body: {
     selection: string;
     playwrightVersion: string | null;
+    /** The environment label the run reports; null for none. */
+    environment: string | null;
     commit: string | null;
     branch: string | null;
     /** Whether the working tree matched its commit; a plan of a dirty one is run only where it was made. */

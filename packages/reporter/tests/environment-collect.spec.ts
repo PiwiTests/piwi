@@ -160,6 +160,15 @@ describe('server environment', () => {
     expect(parseServerEnvironment('nope')).toBeNull();
   });
 
+  it('keeps an app commit of 7 to 40 hexadecimal characters, lower-cased', () => {
+    const read = (appCommit: unknown) => parseServerEnvironment(JSON.stringify({ ...answer, appCommit }))?.appCommit;
+    expect(read(' 4E6F5164B ')).toBe('4e6f5164b');
+    expect(read('a'.repeat(40))).toBe('a'.repeat(40));
+    expect(read('v1.2.3')).toBeNull();
+    expect(read('abc12')).toBeNull();
+    expect(read(undefined)).toBeNull();
+  });
+
   it('measures the clock offset against the midpoint of the request', () => {
     expect(clockOffset(10_000, 10_040, 13_020)).toEqual({ clockOffsetMs: 3000, clockOffsetErrorMs: 20 });
   });

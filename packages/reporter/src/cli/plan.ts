@@ -7,6 +7,9 @@
  * tests to run and the tests reused. It prints the plan's id, which every shard
  * of a CI matrix then runs with `piwi run --plan <id> --shard i/n`.
  *
+ * Only passes of the environment the run reports (`--environment`, else
+ * `PIWI_ENVIRONMENT`) are reused, and a run started here reports it.
+ *
  * As `piwi run` does, a planning problem never breaks the test run: when the
  * dashboard cannot plan, the run executes every test it would have without
  * reuse. `--strict` makes it exit 2 instead.
@@ -24,7 +27,7 @@ import {
   type PlanReason,
 } from '../internal/support/selection-client.js';
 import { privateTempDir, writePrivateFile } from '../internal/support/private-file.js';
-import { PIWI_PLAN_ENV } from '../internal/config/env.js';
+import { PIWI_ENV_KEYS, PIWI_PLAN_ENV } from '../internal/config/env.js';
 import { resolveCliConnection } from '../internal/support/connection.js';
 import { readInstalledPlaywrightVersion } from './add-reporter.js';
 import { findKey, git, gitChange, readOption, runRun, spawnPlaywrightForRun } from './select.js';
@@ -53,6 +56,10 @@ Connection:
   --api-key <key>       API key               (env PIWI_API_KEY, .env)
   --project <name|id>   Project               (env PIWI_PROJECT_NAME, .env)
 
+Run:
+  --environment <key>   The environment the run reports (env PIWI_ENVIRONMENT):
+                        only passes of that environment are reused
+
 Behavior:
   --json                Print the plan as JSON instead of its id
   -h, --help            Show this help
@@ -68,6 +75,8 @@ interface PlanArgs {
   planId: number | null;
   reuse: boolean;
   shard: string | null;
+  /** The environment label the run reports; null for none. */
+  environment: string | null;
   strict: boolean;
   json: boolean;
   pkgRunner: string;
@@ -84,6 +93,7 @@ const REASON_LABELS: Record<Exclude<PlanReason, 'reused'>, string> = {
   quarantined: 'quarantined',
   'no-reuse-tag': '@no-reuse',
   serial: 'serial group',
+  'deployed-version-unknown': 'deployed version unknown',
 };
 
 function parsePlanArgs(argv: string[], env: NodeJS.ProcessEnv, command: string): PlanArgs {
@@ -118,6 +128,7 @@ function parsePlanArgs(argv: string[], env: NodeJS.ProcessEnv, command: string):
     planId: planRaw === undefined ? null : Number(planRaw),
     reuse: own.includes('--reuse'),
     shard,
+    environment: (readOption(own, '--environment') ?? env[PIWI_ENV_KEYS.environment])?.trim() || null,
     strict: own.includes('--strict'),
     json: own.includes('--json'),
     pkgRunner: readOption(own, '--pkg-runner') ?? 'npx',
@@ -181,7 +192,7 @@ export function formatPlanReasons(reasons: Partial<Record<PlanReason, number>>):
 /** Find the passes to reuse, diff against their commits, and store the plan. */
 async function makePlan(args: PlanArgs, projectId: number, key: string): Promise<CreatedPlan> {
   const playwrightVersion = readInstalledPlaywrightVersion(process.cwd());
-  const sources = await fetchPlanSources(args, projectId, key, playwrightVersion);
+  const sources = await fetchPlanSources(args, projectId, key, playwrightVersion, args.environment);
   // Files git does not track yet are part of the change: a diff against a commit never names them.
   const untracked = (tryGit(['ls-files', '--others', '--exclude-standard', '--full-name', '--', ':/']) ?? '')
     .split('\n')
@@ -212,6 +223,7 @@ async function makePlan(args: PlanArgs, projectId: number, key: string): Promise
   return createPlan(args, projectId, {
     selection: key,
     playwrightVersion,
+    environment: args.environment,
     commit: tryGit(['rev-parse', 'HEAD']),
     branch: branch && branch !== 'HEAD' ? branch : null,
     worktree: worktreeState(),
@@ -248,6 +260,11 @@ export async function runPlanCommand(argv: string[], env: NodeJS.ProcessEnv = pr
     console.error(`piwi plan: ${(e as Error).message}`);
     return EXIT_ERROR;
   }
+}
+
+/** The environment of the Playwright process a planned run starts: `PIWI_ENVIRONMENT` set to the planned label. */
+function runEnv(args: PlanArgs, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  return args.environment ? { ...env, [PIWI_ENV_KEYS.environment]: args.environment } : env;
 }
 
 /** Whether `piwi run` was asked for pass reuse. */
@@ -296,7 +313,7 @@ async function runStoredPlan(
     `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
   // The reporter records the plan, and the dashboard the tests it skipped as the run's reused results.
-  const planEnv: NodeJS.ProcessEnv = { ...env, [PIWI_PLAN_ENV]: String(planId) };
+  const planEnv: NodeJS.ProcessEnv = { ...runEnv(args, env), [PIWI_PLAN_ENV]: String(planId) };
   if (plan.skip.length === 0) {
     return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], planEnv);
   }
@@ -369,10 +386,10 @@ export async function runPlannedRun(argv: string[], env: NodeJS.ProcessEnv = pro
 function fallBack(args: PlanArgs, argv: string[], env: NodeJS.ProcessEnv, reason: string): Promise<number> {
   if (args.reuse && args.key && args.key !== 'full') {
     console.error(`piwi run: ${reason} — running "${args.key}" without reuse`);
-    return runRun(withoutReuse(argv), env);
+    return runRun(withoutReuse(argv), runEnv(args, env));
   }
   console.error(
     `piwi run: ${reason} — running the full suite${args.shard ? ` (all of it, not shard ${args.shard})` : ''}`,
   );
-  return spawnPlaywrightForRun(args.pkgRunner, args.extra, env);
+  return spawnPlaywrightForRun(args.pkgRunner, args.extra, runEnv(args, env));
 }

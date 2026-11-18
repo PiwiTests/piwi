@@ -61,6 +61,8 @@ Pass reuse (experimental, run only):
   --reuse               Skip each test whose code has not changed since it last
                         passed (see piwi plan); "full" plans the whole suite
   --plan <id>           Run the tests of a plan made by piwi plan
+  --environment <key>   The environment the run reports (env PIWI_ENVIRONMENT):
+                        only passes of that environment are reused
 
 Behavior:
   --strict              Fail (exit 2) instead of falling back when unreachable
@@ -108,6 +110,7 @@ const VALUE_FLAGS = new Set([
   '--base',
   '--pkg-runner',
   '--plan',
+  '--environment',
 ]);
 
 /** Read `--flag value` / `--flag=value`, or undefined when absent. */

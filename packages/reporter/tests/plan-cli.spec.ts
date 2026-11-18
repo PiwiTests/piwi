@@ -26,6 +26,7 @@ describe('formatPlanReasons', () => {
   it('lists the reasons tests run, never the reused ones', () => {
     expect(formatPlanReasons({ reused: 9, changed: 2, flaky: 1 })).toBe('2 changed, 1 flaky');
     expect(formatPlanReasons({ reused: 3 })).toBe('');
+    expect(formatPlanReasons({ 'deployed-version-unknown': 4 })).toBe('4 deployed version unknown');
   });
 });
 
@@ -195,6 +196,24 @@ describe('planned runs', () => {
     const created = requests.find((r) => r.url.endsWith('/run-plans'))!;
     expect(created.body).toMatchObject({ selection: 'full', diffs: [], commit: head, worktree: 'clean' });
     expect(spawned()[0]!.args[0]).toBe('--test-list-invert');
+  });
+
+  it('plans for the environment the run reports, and has the run report it', async () => {
+    dashboard();
+    expect(await runPlannedRun(['full', '--reuse', '--environment', 'staging'], env)).toBe(0);
+    const sources = requests.find((r) => r.url.endsWith('/run-plans/sources'))!;
+    const created = requests.find((r) => r.url.endsWith('/run-plans'))!;
+    expect(sources.body).toMatchObject({ selection: 'full', environment: 'staging' });
+    expect(created.body).toMatchObject({ environment: 'staging' });
+    expect(spawned()[0]!.env.PIWI_ENVIRONMENT).toBe('staging');
+
+    dashboard();
+    expect(await runPlanCommand(['full'], { ...env, PIWI_ENVIRONMENT: ' qa ' })).toBe(0);
+    expect(requests.find((r) => r.url.endsWith('/run-plans'))!.body).toMatchObject({ environment: 'qa' });
+
+    dashboard();
+    expect(await runPlanCommand(['full'], env)).toBe(0);
+    expect(requests.find((r) => r.url.endsWith('/run-plans'))!.body).toMatchObject({ environment: null });
   });
 
   it('runs the selection without reuse when the dashboard refuses to plan', async () => {
