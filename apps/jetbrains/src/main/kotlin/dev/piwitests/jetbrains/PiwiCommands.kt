@@ -78,8 +78,7 @@ object PiwiCommands {
             }
             "piwi.desktopJob" -> arg<DesktopJobParams>(arguments.firstOrNull())?.let { desktopJob(project, it) }
             "piwi.record" -> {
-                val file = arg<String>(arguments.getOrNull(0))
-                    ?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(it))) }.getOrNull() }
+                val file = fileOfUri(arg<String>(arguments.getOrNull(0)))
                 val line = arg<Int>(arguments.getOrNull(1))
                 if (file != null && line != null) recordAt(project, file, line)
             }

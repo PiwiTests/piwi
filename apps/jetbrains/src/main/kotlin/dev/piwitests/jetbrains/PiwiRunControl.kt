@@ -120,8 +120,6 @@ import java.awt.event.MouseEvent
 import java.awt.event.MouseMotionAdapter
 import java.awt.image.BufferedImage
 import java.io.ByteArrayInputStream
-import java.net.URI
-import java.nio.file.Path
 import java.util.Collections
 import java.util.WeakHashMap
 import java.util.concurrent.CompletableFuture
@@ -951,7 +949,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private fun refresh(uri: String?) {
         if (uri == null || !refreshed.add(uri)) return
         ApplicationManager.getApplication().executeOnPooledThread {
-            runCatching { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(Path.of(URI(uri))) }
+            Glue.pathOfUri(uri)?.let { path -> runCatching { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) } }
             ApplicationManager.getApplication().invokeLater({ draw() }, gone)
         }
     }

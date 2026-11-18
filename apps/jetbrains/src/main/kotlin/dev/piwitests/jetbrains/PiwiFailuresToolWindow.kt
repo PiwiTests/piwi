@@ -586,7 +586,7 @@ class GoToFailureTestAction : FailureNodeAction(AllIcons.Nodes.Test) {
 
     override fun perform(project: Project, failure: WorkspaceFailure) {
         val test = failure.test ?: return
-        val file = com.intellij.openapi.vfs.VfsUtil.findFileByURL(java.net.URI(test.uri).toURL()) ?: return
+        val file = fileOfUri(test.uri) ?: return
         OpenFileDescriptor(project, file, test.line, 0).navigate(true)
     }
 }

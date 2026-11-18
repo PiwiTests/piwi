@@ -4439,10 +4439,21 @@ class GlueTest {
 
     @Test
     fun testTheServicesUrisAreReadByFileOfUriNeverAsVfsUrls() {
-        val calls = java.io.File("src/main/kotlin").walkTopDown().filter { it.extension == "kt" }
-            .flatMap { file -> file.readLines().withIndex().filter { "findFileByUrl(" in it.value }.map { "${file.name}:${it.index + 1}" } }
-            .toList()
+        val sources = listOf("src/main/kotlin", "src/main/java").map { java.io.File(it) }
+        assertTrue(sources.all { it.isDirectory })
+        val vfsUrl = Regex("findFileByUrl\\(", RegexOption.IGNORE_CASE)
+        val calls = sources.flatMap { it.walkTopDown().filter { file -> file.extension in setOf("kt", "java") } }
+            .flatMap { file -> file.readLines().withIndex().filter { vfsUrl.containsMatchIn(it.value) }.map { "${file.name}:${it.index + 1}" } }
         assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun testAServiceUriIsReadAsAPathWithItsEscapesAndWhatAnOlderNodeLeftUnescaped() {
+        assertEquals(Path.of("/w/Jean Dupont/a.spec.ts"), Glue.pathOfUri("file:///w/Jean%20Dupont/a.spec.ts"))
+        assertEquals(Path.of("/w/app/[locale]/a.spec.ts"), Glue.pathOfUri("file:///w/app/%5Blocale%5D/a.spec.ts"))
+        assertEquals(Path.of("/w/app/[locale]/a|b^c.spec.ts"), Glue.pathOfUri("file:///w/app/[locale]/a|b^c.spec.ts"))
+        assertNull(Glue.pathOfUri("https://example.com/a.spec.ts"))
+        assertNull(Glue.pathOfUri(null))
     }
 
     @Test

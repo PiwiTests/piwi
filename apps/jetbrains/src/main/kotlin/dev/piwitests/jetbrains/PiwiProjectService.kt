@@ -51,7 +51,6 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.SuspendPolicy
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -63,12 +62,12 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * The file a `file:` URI of the editor service names (`file:///C:/Users/Jean%20Dupont/a.spec.ts`), its escapes read;
- * null for another URI or a file the IDE does not find. A service URI is not a VFS URL, which escapes nothing: never
+ * The file a `file:` URI of the editor service names (`file:///C:/Users/Jean%20Dupont/a.spec.ts`), read by
+ * `Glue.pathOfUri`; null for another URI or a file the IDE does not find. A service URI is not a VFS URL, which escapes nothing: never
  * `VirtualFileManager.findFileByUrl` on one.
  */
 internal fun fileOfUri(uri: String?): VirtualFile? =
-    uri?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(it))) }.getOrNull() }
+    Glue.pathOfUri(uri)?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(it) }.getOrNull() }
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name

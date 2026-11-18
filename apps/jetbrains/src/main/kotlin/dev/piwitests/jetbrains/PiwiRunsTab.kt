@@ -9,7 +9,6 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.PopupHandler
@@ -24,8 +23,6 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.net.URI
-import java.nio.file.Path
 import javax.swing.DefaultListModel
 import javax.swing.JList
 
@@ -154,7 +151,7 @@ class PiwiRunsTab(private val project: Project) : Disposable {
 
     private fun open(row: Glue.RunRow) {
         row.url?.let { return BrowserUtil.browse(it) }
-        val file = row.uri?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(it))) }.getOrNull() } ?: return
+        val file = fileOfUri(row.uri) ?: return
         OpenFileDescriptor(project, file, row.line, 0).navigate(true)
     }
 
