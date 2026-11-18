@@ -6,7 +6,13 @@ the desktop app, Piwi Runner and the editors, and changes the application under 
 by the Playwright config (`TEST_ENV=staging`): no path that starts a run lets them choose the environment, and the
 label their runs report is free text that eleven features read and eight settings copy.
 
-**Status.** Proposed 2026-11-18. Nothing is built. The maintainer settled the six open questions the same day: an
+**Status.** Proposed 2026-11-18. The first pull request builds steps 1 and 2 of the delivery and the copy of D14:
+the records and their routes, the resolution of each run's label (trimmed, by key or alias, discovering a new one) at
+every route that stores a run and for the runs stored before, the filters matching an environment by key, the
+settings section and the pickers, the choice of an environment on every path that starts a run with its run
+variables, `PIWI_ENVIRONMENT` and a protected environment's rules, the run page's warnings of D7, the env file of D8
+and the team environments of D13. The references of D4 and D12 (the settings that copy names), the default
+environment (D10) and D11 remain for the second. The maintainer settled the six open questions the same day: an
 environment sets variables only, never Playwright projects (D1); filters keep their `*` patterns (D4); a protected
 environment is confirmed, limited to its required tags and started by a project manager only (D9); the deployed commit
 comes from the server snapshot and from deploy markers (D11); the desktop app offers the environments of the team
