@@ -25,6 +25,7 @@ import {
   resolveContextConnection,
   withServerUrl,
 } from '../src/context';
+import { environmentChoices, ownCommandEnv, statusEnvironment } from '../src/server';
 
 const dirs: string[] = [];
 function workspace(dotEnv?: string): string {
@@ -344,5 +345,67 @@ describe('withServerUrl', () => {
   test('the desktop app the command finds by itself needs no flag', () => {
     const desktop = { url: 'http://127.0.0.1:3000', token: 'pd_desktop', projects: [] };
     expect(withServerUrl(command, 'http://127.0.0.1:3000', workspace(), env, desktop)).toBe(command);
+  });
+});
+
+describe('the environment chosen for a context', () => {
+  const staging = {
+    id: 4,
+    key: 'staging',
+    name: 'Staging',
+    protected: false,
+    requiredTags: [],
+    envFile: null,
+    description: null,
+  };
+  const production = {
+    ...staging,
+    id: 5,
+    key: 'production',
+    name: 'Production',
+    protected: true,
+    requiredTags: ['@smoke'],
+  };
+
+  test('is shown by the environment item, and offered with None first', () => {
+    const context = new PiwiContext(workspace());
+    context.project = { id: 7, name: 'Acme Mugs' };
+    // A project that lists none shows no item.
+    expect(statusEnvironment(context)).toBeNull();
+    context.environments = [staging, production];
+    expect(statusEnvironment(context)).toMatchObject({ id: null, text: 'No environment', protected: false });
+    expect(context.chooseEnvironment(5)).toBe(true);
+    expect(context.chooseEnvironment(5)).toBe(false);
+    expect(statusEnvironment(context)).toEqual({
+      id: 5,
+      text: 'Production',
+      tooltip:
+        'The runs Piwi starts for Acme Mugs are for Production (PIWI_ENVIRONMENT=production). It is protected: each run is confirmed, and keeps to the tests tagged @smoke. Piwi: Choose environment… changes it.',
+      protected: true,
+    });
+    expect(environmentChoices(context).items.map((item) => [item.label, item.picked])).toEqual([
+      ['None', false],
+      ['Staging', false],
+      ['Production', true],
+    ]);
+    context.chooseEnvironment(9);
+    expect(statusEnvironment(context)).toMatchObject({ id: 9, text: 'Environment #9' });
+  });
+
+  test('reaches the commands the client runs on its own once allowed, and never a protected one', () => {
+    const context = new PiwiContext(workspace());
+    const variables = [{ name: 'TEST_ENV', value: 'staging' }];
+    expect(ownCommandEnv(context, { ok: true, value: variables, environment: staging })).toBe(
+      'The project’s run variables are not allowed yet.',
+    );
+    context.allowRunVariables(variables);
+    expect(ownCommandEnv(context, { ok: true, value: variables, environment: staging })).toEqual({
+      TEST_ENV: 'staging',
+      PIWI_ENVIRONMENT: 'staging',
+    });
+    expect(ownCommandEnv(context, { ok: true, value: [], environment: production })).toBe(
+      'Production is protected: each run against it is confirmed, so only a run Piwi starts runs against it.',
+    );
+    expect(ownCommandEnv(context, { ok: true, value: [] })).toEqual({});
   });
 });

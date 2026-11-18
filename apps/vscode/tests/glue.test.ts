@@ -88,6 +88,8 @@ import {
   testActionPicks,
   TEST_HOVER_COMMANDS,
   withBaseline,
+  environmentItem,
+  withEnvironment,
   writeBlock,
   SPEC_FILE,
   failureMessage,
@@ -2854,5 +2856,50 @@ describe('the coverage view', () => {
     });
     // A run that recorded no executable lines: those run, and those known not run, are the total.
     expect(testCoverageOf({ ...result, executableLines: null }).count).toEqual({ covered: 5, total: 6 });
+  });
+});
+
+describe('the environment item', () => {
+  const context = (root: string, environment: StatusResult['contexts'][number]['environment']) => ({
+    root,
+    connected: true,
+    serverUrl: 'https://piwi.example.com',
+    source: 'environment' as const,
+    projectId: 7,
+    projectName: 'Acme',
+    environment,
+    branch: 'main',
+    locators: 0,
+    reachedFiles: 0,
+    problem: null,
+  });
+  const staging = {
+    id: 4,
+    text: 'Staging',
+    tooltip: 'The runs Piwi starts for Acme are for Staging.',
+    protected: false,
+  };
+  const production = { id: 5, text: 'Production', tooltip: 'Protected.', protected: true };
+
+  test('shows the environment of the active file’s config, else of the first that lists environments', () => {
+    const status = { contexts: [context('/w/a', null), context('/w/b', staging), context('/w/b/c', production)] };
+    expect(environmentItem(status, '/w/b/c/tests/x.spec.ts')).toEqual({
+      root: '/w/b/c',
+      text: '$(lock) Production',
+      tooltip: 'Protected.',
+      protected: true,
+    });
+    expect(environmentItem(status, '/w/a/x.spec.ts')).toMatchObject({
+      root: '/w/b',
+      text: '$(server-environment) Staging',
+    });
+    expect(environmentItem({ contexts: [context('/w/a', null)] }, null)).toBeNull();
+    expect(environmentItem(null, null)).toBeNull();
+  });
+
+  test('keeps a choice per root, none as no entry', () => {
+    const kept = withEnvironment({ '/a': 4 }, '/b', 5);
+    expect(kept).toEqual({ '/a': 4, '/b': 5 });
+    expect(withEnvironment(kept, '/a', null)).toEqual({ '/b': 5 });
   });
 });

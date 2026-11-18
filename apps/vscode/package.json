@@ -533,6 +533,12 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "piwi.chooseEnvironment",
+        "title": "Choose environment…",
+        "category": "Piwi",
+        "icon": "$(server-environment)"
+      },
+      {
         "command": "piwi.toggleFollowEditor",
         "title": "Follow the active editor",
         "category": "Piwi",
@@ -833,6 +839,10 @@
         },
         {
           "command": "piwi.compareWith",
+          "when": "piwi.active"
+        },
+        {
+          "command": "piwi.chooseEnvironment",
           "when": "piwi.active"
         },
         {

@@ -460,3 +460,73 @@ class ShowStopAction : RunControlAction() {
         sessions.atCaret(e.getData(CommonDataKeys.EDITOR), clicked = e.getData(PiwiRunSessions.STOP)) { sessions.goTo(it) }
     }
 }
+
+/**
+ * The environment the runs Piwi starts for the selected file's Playwright config are for, beside the status item
+ * (`Glue.environmentContext`): its name, a lock for a protected one, hidden while no project lists an environment. A
+ * click chooses another (`ChooseEnvironmentAction`).
+ */
+class PiwiEnvironmentWidgetFactory : StatusBarWidgetFactory {
+    override fun getId() = ID
+
+    override fun getDisplayName() = "Piwi environment"
+
+    override fun isAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
+
+    override fun createWidget(project: Project): StatusBarWidget = PiwiEnvironmentWidget(project)
+
+    override fun disposeWidget(widget: StatusBarWidget) = Disposer.dispose(widget)
+
+    override fun canBeEnabledOn(statusBar: StatusBar) = true
+
+    companion object {
+        const val ID = "piwi.environment"
+    }
+}
+
+/** The environment widget: a label drawn again when the service's status or the selected editor change. */
+class PiwiEnvironmentWidget(private val project: Project) : CustomStatusBarWidget {
+    private val label = StatusLabel()
+
+    /** The Playwright config folder the label speaks for, which a click chooses the environment of. */
+    private var root: String? = null
+
+    init {
+        object : ClickListener() {
+            override fun onClick(event: MouseEvent, clickCount: Int): Boolean {
+                ChooseEnvironmentAction.choose(project, root)
+                return true
+            }
+        }.installOn(label, true)
+    }
+
+    override fun ID() = PiwiEnvironmentWidgetFactory.ID
+
+    override fun getComponent(): JComponent = label
+
+    override fun install(statusBar: StatusBar) {
+        project.service<PiwiProjectService>().onChange(this) { update() }
+        project.messageBus.connect(this).subscribe(
+            FileEditorManagerListener.FILE_EDITOR_MANAGER,
+            object : FileEditorManagerListener {
+                override fun selectionChanged(event: FileEditorManagerEvent) = update()
+            },
+        )
+        update()
+    }
+
+    /** Draws the label again from the selected file's context, or hides it. On the event thread. */
+    fun update() {
+        val context = Glue.environmentContext(
+            project.service<PiwiProjectService>().status,
+            PiwiStatusBarWidget.shownFile(project),
+        )
+        val environment = context?.environment
+        root = context?.root
+        label.isVisible = environment != null
+        if (environment == null) return
+        label.text = environment.text
+        label.icon = if (environment.protected) AllIcons.Ide.Readonly else AllIcons.Webreferences.Server
+        label.toolTipText = Glue.htmlTooltip("${environment.tooltip}\nClick to choose another.")
+    }
+}

@@ -17,7 +17,8 @@ import type {
   RunRequestOutcome,
 } from '@piwitests/core/run-request';
 import { RUN_REQUEST_ID } from '@piwitests/core/run-request';
-import type { RunVariable, RunVariablesParse } from '@piwitests/core/run-variables';
+import type { EnvironmentForRun } from '@piwitests/core/environments';
+import type { RunVariable } from '@piwitests/core/run-variables';
 import {
   postDeviceFlow,
   REQUEST_TOKEN_LIFETIME_MS,
@@ -25,7 +26,7 @@ import {
   RequestHostError,
   type RequestHostStatus,
 } from './request-host';
-import { planRequestedRun, type RequestPlan } from './request-run';
+import { planRequestedRun, requiredTagsFilterArg, type RequestPlan, type RequestRunVariables } from './request-run';
 import {
   runTargetErrorSentence,
   type RunRequestPromptView,
@@ -48,15 +49,15 @@ interface HeldRequest {
   /** After **Run**: the request token, until the shell takes it, and whether the run started. */
   token: string | null;
   /**
-   * The project's run variables as the instance gave them, read at the claim and again at **Run**, and by the next
-   * check after a read the instance did not answer (`unreadable`).
+   * The run variables and the environment as the instance gave them, read at the claim and again at **Run**, and by
+   * the next check after a read the instance did not answer (`unreadable`).
    */
-  variables: RunVariablesParse & { unreadable?: true };
+  variables: RequestRunVariables;
   /**
    * What **Run** approved: the arguments the window showed, the folder they were checked in, and the run variables
-   * its command started with.
+   * and the environment its command started with.
    */
-  approved: { args: string[]; folder: string; variables: RunVariable[] } | null;
+  approved: { args: string[]; folder: string; variables: RunVariable[]; environment: EnvironmentForRun | null } | null;
   launched: boolean;
   /** Whether the requester asked to stop it. */
   stopRequested: boolean;
@@ -196,6 +197,12 @@ function promptOf(held: HeldRequest): RunRequestPromptView {
     checks: plan.checks,
     runnable: plan.runnable,
     command: plan.display,
+    environment: plan.environment && {
+      key: plan.environment.key,
+      name: plan.environment.name,
+      protected: plan.environment.protected,
+      requiredTags: plan.environment.requiredTags,
+    },
     hasFolder: state.links.has(request.projectId),
     answerBy: new Date(held.answerBy).toISOString(),
   };
@@ -640,7 +647,7 @@ export async function planAgain(id: string): Promise<RunRequestPromptView | null
 
 /** Reads a held request's run variables again when the last read was not answered. */
 async function readVariablesAgain(held: HeldRequest): Promise<void> {
-  if (!held.variables.unreadable || !state.host) return;
+  if (held.variables.ok || !held.variables.unreadable || !state.host) return;
   held.variables = await state.host.runVariables(held.request.id);
 }
 
@@ -687,12 +694,14 @@ export function isRequestId(value: unknown): value is string {
 
 /**
  * The person's answer in the window. **Run** on a request whose checks pass takes the request token, for the shell;
- * **Not now** declines it, or refuses it with the checks that failed.
+ * **Not now** declines it, or refuses it with the checks that failed. **Run** for a protected environment needs the
+ * person's confirmation naming it (`confirmedEnvironment`, its key), else it shows the request again.
  */
 export async function answerRunRequest(
   id: string,
   decision: 'run' | 'not-now',
   shownCommand: string | null = null,
+  confirmedEnvironment: string | null = null,
 ): Promise<{ ok: true; launch: boolean } | { ok: false; statusCode: number; message: string }> {
   const held = state.held.get(id);
   const host = state.host;
@@ -711,19 +720,31 @@ export async function answerRunRequest(
         return { ok: false, statusCode: 409, message: 'This request was stopped' };
       }
       held.plan = await planRequestedRun(held.request, folder, foldersRunning(held), held.variables);
-      // The folder or the run variables changed since the window showed them: it shows the checks and the command
-      // again.
+      // The folder, the run variables or the environment changed since the window showed them: it shows the checks and
+      // the command again.
       if (!folder || !held.plan.runnable || held.plan.args.length === 0 || held.plan.display !== shownCommand) {
         tellWindow({ type: 'run-request', request: promptOf(held) });
         return {
           ok: false,
           statusCode: 409,
           message: held.plan.runnable
-            ? 'The folder or the run variables changed since: check the command again'
+            ? 'The folder, the run variables or the environment changed since: check the command again'
             : 'A check failed: the run cannot start',
         };
       }
-      const approved = { args: [...held.plan.args], folder, variables: [...held.plan.variables] };
+      const environment = held.plan.environment;
+      if (environment?.protected && confirmedEnvironment !== environment.key) {
+        tellWindow({ type: 'run-request', request: promptOf(held) });
+        return { ok: false, statusCode: 409, message: `Confirm the run for ${environment.name} first` };
+      }
+      // The shell keeps a protected environment's run to its required tags itself, from the environment it is handed.
+      const filter = environment?.protected ? requiredTagsFilterArg(environment) : null;
+      const approved = {
+        args: held.plan.args.filter((arg) => arg !== filter),
+        folder,
+        variables: [...held.plan.variables],
+        environment: environment && { ...environment, requiredTags: [...environment.requiredTags] },
+      };
       const { requestToken } = await host.answer(id, { decision: 'run' });
       if (!requestToken) throw new RequestHostError(502, 'The instance gave no request token');
       if (state.held.get(id) !== held || held.stopRequested) {
@@ -757,9 +778,12 @@ export async function answerRunRequest(
 
 /**
  * What the shell starts for a request after **Run**: the instance and the request token, once, the project, the
- * folder **Run** approved, the arguments after `playwright test` it approved, and the run variables its command
- * started with, which the shell checks again and sets on the process. Null for any other request, and for one
- * approved with no arguments, which would run every test.
+ * folder **Run** approved, the arguments after `playwright test` it approved, the run variables its command started
+ * with, which the shell checks again and sets on the process, and the environment it is for, whose key the shell sets
+ * as `PIWI_ENVIRONMENT` (null for none). The `--grep-invert` that keeps a protected environment's run to its required
+ * tags, which the confirmation showed, is not among the arguments: the shell adds it from the environment
+ * (`requiredTagsFilterArg`). Null for any other request, and for one approved with no arguments, which would run every
+ * test.
  */
 export function launchOf(id: string): {
   instance: string;
@@ -768,6 +792,7 @@ export function launchOf(id: string): {
   folder: string;
   args: string[];
   runVariables: RunVariable[];
+  environment: EnvironmentForRun | null;
 } | null {
   const held = state.held.get(id);
   const approved = held?.approved;
@@ -784,6 +809,7 @@ export function launchOf(id: string): {
     folder: approved.folder,
     args: approved.args,
     runVariables: approved.variables,
+    environment: approved.environment,
   };
 }
 

@@ -19,8 +19,10 @@ import {
   type RunRequestOutcome,
   type RunRequestFolderHints,
 } from '@piwitests/core/run-request';
-import { parseRunVariables, type RunVariablesParse } from '@piwitests/core/run-variables';
+import { parseEnvironmentForRun } from '@piwitests/core/environments';
+import { parseRunVariables, RUN_VARIABLE_LIMITS } from '@piwitests/core/run-variables';
 import { instanceFetch } from './http';
+import type { RequestRunVariables } from './request-run';
 
 /** What the target's stream and its list say, in the instance's words. */
 type StreamEvent =
@@ -339,20 +341,25 @@ export class RequestHost {
   }
 
   /**
-   * The run variables of the project of a request this app claimed, as `parseRunVariables` reads them: a list it
-   * refuses, or one it cannot read, is a problem the plan fails with. An instance that predates them answers 404:
-   * its projects set none.
+   * The run variables of a request this app claimed and the environment it names, as `parseEnvironmentForRun` and
+   * `parseRunVariables` read them (the project's and the environment's merged, `RUN_VARIABLE_LIMITS.merged` at most):
+   * a list or an environment either refuses, or an answer it cannot read, is a problem the plan fails with. An
+   * instance that predates them answers 404: its projects set none, and its requests name no environment.
    */
-  async runVariables(id: string): Promise<RunVariablesParse & { unreadable?: true }> {
+  async runVariables(id: string): Promise<RequestRunVariables> {
     if (!isRequestId(id)) return { ok: false, problems: ['No run request has this id.'] };
     try {
-      const answer = await this.call<{ runVariables?: unknown }>(
+      const answer = await this.call<{ runVariables?: unknown; environment?: unknown }>(
         'GET',
         `/api/run-targets/requests/${id}/run-variables`,
         undefined,
         { onlyRequest: true, timeoutMs: RUN_VARIABLES_WAIT_MS },
       );
-      return parseRunVariables(answer?.runVariables);
+      const environment = parseEnvironmentForRun(answer?.environment);
+      const variables = parseRunVariables(answer?.runVariables, RUN_VARIABLE_LIMITS.merged);
+      const problems = [...(environment.ok ? [] : environment.problems), ...(variables.ok ? [] : variables.problems)];
+      if (!environment.ok || !variables.ok) return { ok: false, problems };
+      return environment.value ? { ...variables, environment: environment.value } : variables;
     } catch (error) {
       if (error instanceof RequestHostError && error.status === 404) return { ok: true, value: [] };
       return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };

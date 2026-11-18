@@ -388,9 +388,9 @@ describe('the request host', () => {
     cleanups.push(instance.close);
     const { made } = host(instance.url);
     expect((await made.claim(id(1))).id).toBe(id(1));
-    // The claim says the app applies a project's run variables.
+    // The claim says the app applies a project's run variables, and the environment a request names.
     expect(JSON.parse(instance.calls.find((c) => c.path.endsWith('/claim'))!.body)).toEqual({
-      features: ['run-variables'],
+      features: ['run-variables', 'environments'],
     });
     expect(await made.answer(id(1), { decision: 'run' })).toEqual({ requestToken: `pdq_${'b'.repeat(64)}` });
     await made.report(id(1), { state: 'ended', outcome: 'passed' });
@@ -423,6 +423,45 @@ describe('the request host', () => {
     });
     expect(await made.runVariables('not-an-id')).toMatchObject({ ok: false });
     expect(made.state).not.toBe('revoked');
+  });
+
+  test('reads the environment a request names with its merged run variables, and refuses both when either fails', async () => {
+    const staging = { id: 4, key: 'staging', name: 'Staging', protected: false, requiredTags: [], envFile: null };
+    let answer: unknown = {
+      runVariables: [
+        { name: 'TENANT', value: 'acme' },
+        { name: 'TEST_ENV', value: 'staging' },
+      ],
+      environment: staging,
+    };
+    const instance = await fakeInstance({ runVariables: () => answer });
+    cleanups.push(instance.close);
+    const { made } = host(instance.url);
+    expect(await made.runVariables(id(1))).toEqual({
+      ok: true,
+      value: [
+        { name: 'TENANT', value: 'acme' },
+        { name: 'TEST_ENV', value: 'staging' },
+      ],
+      environment: staging,
+    });
+    // A merged list holds up to 20: the project's 10 and the environment's 10.
+    const twenty = Array.from({ length: 20 }, (_, i) => ({ name: `VAR_${i}`, value: 'x' }));
+    answer = { runVariables: twenty, environment: staging };
+    expect((await made.runVariables(id(1))).ok).toBe(true);
+    answer = { runVariables: [...twenty, { name: 'VAR_20', value: 'x' }], environment: staging };
+    expect((await made.runVariables(id(1))).ok).toBe(false);
+    // A protected environment with no required tag, or a key a value cannot hold, refuses the run.
+    answer = { runVariables: [], environment: { ...staging, protected: true } };
+    expect(await made.runVariables(id(1))).toEqual({
+      ok: false,
+      problems: ['A protected environment needs a required tag.'],
+    });
+    answer = { runVariables: [], environment: { ...staging, key: 'stag$ing' } };
+    expect((await made.runVariables(id(1))).ok).toBe(false);
+    // None: the project's variables alone, as an instance names no environment.
+    answer = { runVariables: [{ name: 'TENANT', value: 'acme' }], environment: null };
+    expect(await made.runVariables(id(1))).toEqual({ ok: true, value: [{ name: 'TENANT', value: 'acme' }] });
   });
 
   test('reads a request’s folder hints, and none from an instance that answers none or refuses them', async () => {

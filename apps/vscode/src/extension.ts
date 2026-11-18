@@ -93,6 +93,8 @@ import {
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_BASELINE_NOTIFICATION,
+  SET_ENVIRONMENT_NOTIFICATION,
+  ENVIRONMENTS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   SET_RUN_PAIRING_NOTIFICATION,
   START_RUN_REQUEST,
@@ -116,6 +118,9 @@ import {
   type McpAuthorization,
   type RunningLinesChoice,
   type SetBaselineParams,
+  type SetEnvironmentParams,
+  type EnvironmentsParams,
+  type EnvironmentsResult,
   type SetRunPairingParams,
   type StartRunParams,
   type StartRunResult,
@@ -211,6 +216,8 @@ import {
   statusBarView,
   baselinePicks,
   withBaseline,
+  environmentItem,
+  withEnvironment,
   serviceEnvironment,
   openLink,
   openLinkMissing,
@@ -304,6 +311,11 @@ const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
 /** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
 const BASELINES = 'piwi.baseline';
+/**
+ * The environment chosen with Choose environment… for each context, by its root (an environment's id): workspace
+ * state, on this machine only.
+ */
+const ENVIRONMENTS = 'piwi.environments';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -388,6 +400,7 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
+    environments: context.workspaceState.get<Record<string, number | null>>(ENVIRONMENTS) ?? {},
     failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
     codeLens: settings.get<CodeLensChoice>('codeLens') ?? 'all',
     locatorWarnings: settings.get<boolean>('locatorWarnings') ?? true,
@@ -798,11 +811,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
+  // The environment the runs of the active file's config are for, beside the status item; a click chooses another.
+  const environmentStatusItem = vscode.window.createStatusBarItem(
+    'piwi.environment',
+    vscode.StatusBarAlignment.Left,
+    49,
+  );
+  environmentStatusItem.name = 'Piwi environment';
   let statusUrl: string | null = null;
   /** The page of the run in progress the status bar item counts, which `piwi.openLiveRun` opens. */
   let liveUrl: string | null = null;
   let lastServers = '';
-  context.subscriptions.push(lensesChanged, mcpChanged, statusItem);
+  context.subscriptions.push(lensesChanged, mcpChanged, statusItem, environmentStatusItem);
 
   /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
@@ -955,6 +975,22 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
           ? new vscode.ThemeColor('statusBarItem.errorBackground')
           : undefined;
     statusItem.show();
+    const environment = serviceDown ? null : environmentItem(status, activeFile());
+    if (environment) {
+      environmentStatusItem.text = environment.text;
+      environmentStatusItem.tooltip = environment.tooltip;
+      environmentStatusItem.command = {
+        title: 'Choose environment…',
+        command: 'piwi.chooseEnvironment',
+        arguments: [environment.root],
+      };
+      environmentStatusItem.backgroundColor = environment.protected
+        ? new vscode.ThemeColor('statusBarItem.warningBackground')
+        : undefined;
+      environmentStatusItem.show();
+    } else {
+      environmentStatusItem.hide();
+    }
   };
   // The item speaks for the active file's Playwright config: drawn again from the answers it holds.
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => render()));
@@ -1664,6 +1700,51 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await context.workspaceState.update(BASELINES, baselines);
       if (handed) handed = { ...handed, baselines };
       await lc.sendNotification(SET_BASELINE_NOTIFICATION, { root: target.root, choice } satisfies SetBaselineParams);
+    }),
+    // From the environment item, its config; else the active file's, else the one picked among those with a project.
+    vscode.commands.registerCommand('piwi.chooseEnvironment', async (root?: string) => {
+      if (!connectedOrSay()) return;
+      const contexts = (status?.contexts ?? []).filter((c) => c.projectId !== null);
+      const file = activeFile();
+      const inFile = file
+        ? contexts.filter((c) => isUnder(c.root, file)).sort((a, b) => b.root.length - a.root.length)
+        : [];
+      const target =
+        (typeof root === 'string' ? contexts.find((c) => c.root === root) : undefined) ??
+        inFile[0] ??
+        (contexts.length > 1
+          ? await vscode.window
+              .showQuickPick(
+                contexts.map((c) => ({ label: c.label ?? c.root, description: c.projectName ?? '', c })),
+                { placeHolder: 'Choose the environment of which Playwright config?' },
+              )
+              .then((p) => p?.c)
+          : contexts[0]);
+      if (!target) return;
+      const choices = await lc
+        .sendRequest<EnvironmentsResult | null>(ENVIRONMENTS_REQUEST, {
+          root: target.root,
+        } satisfies EnvironmentsParams)
+        .catch(() => null);
+      if (!choices) return;
+      const picked = await vscode.window.showQuickPick(
+        choices.items.map((item) => ({
+          label: `${item.protected ? '$(lock) ' : ''}${item.label}`,
+          description: item.picked ? `${item.description} · current` : item.description,
+          detail: item.detail ?? undefined,
+          id: item.id,
+        })),
+        { placeHolder: choices.title, matchOnDescription: true, matchOnDetail: true },
+      );
+      if (!picked) return;
+      const kept = context.workspaceState.get<Record<string, number | null>>(ENVIRONMENTS);
+      const environments = withEnvironment(kept, target.root, picked.id);
+      await context.workspaceState.update(ENVIRONMENTS, environments);
+      if (handed) handed = { ...handed, environments };
+      await lc.sendNotification(SET_ENVIRONMENT_NOTIFICATION, {
+        root: target.root,
+        environmentId: picked.id,
+      } satisfies SetEnvironmentParams);
     }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.toggleCoverage', async () => {

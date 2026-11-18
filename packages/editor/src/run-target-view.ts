@@ -88,6 +88,14 @@ export interface RunRequestCheckView {
   message: string;
 }
 
+/** The environment of a run request, as the window shows it. */
+export interface RunRequestEnvironmentView {
+  key: string;
+  name: string;
+  protected: boolean;
+  requiredTags: string[];
+}
+
 /** A run request the window asks the person about, after the app claimed it. */
 export interface RunRequestPromptView {
   id: string;
@@ -103,6 +111,12 @@ export interface RunRequestPromptView {
   runnable: boolean;
   /** The command it runs, as shown. */
   command: string;
+  /**
+   * The environment it runs for, while the checks pass: its key (`PIWI_ENVIRONMENT`), its name, and whether it is
+   * protected, whose run keeps to the tests carrying one of its required tags and needs the person's confirmation
+   * naming it before **Run** (the answer's `environment`). Null for none.
+   */
+  environment: RunRequestEnvironmentView | null;
   /** Whether a folder is linked to its project on this machine. */
   hasFolder: boolean;
   /** When the instance ends the request unanswered (ISO 8601). */

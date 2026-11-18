@@ -92,6 +92,7 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
   { title: 'Go to the test', vscode: 'piwi.goToFailureTest', jetbrains: ['Piwi.Failure.GoToTest'] },
   { title: 'Re-run the failing tests', vscode: 'piwi.rerunFailing', jetbrains: ['Piwi.RerunFailing'] },
   { title: 'Compare with…', vscode: 'piwi.compareWith', jetbrains: ['Piwi.CompareWith'] },
+  { title: 'Choose environment…', vscode: 'piwi.chooseEnvironment', jetbrains: ['Piwi.ChooseEnvironment'] },
   { title: 'Copy context for agent', vscode: 'piwi.copyAgentContext', jetbrains: ['Piwi.Failure.CopyContext'] },
   { title: 'Show or hide the coverage marks', vscode: 'piwi.toggleCoverage', jetbrains: ['Piwi.ToggleCoverageMarks'] },
   { title: 'Reproduce in the desktop app', vscode: 'piwi.reproduceInDesktop', jetbrains: ['Piwi.Failure.Reproduce'] },

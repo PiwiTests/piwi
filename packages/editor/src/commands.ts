@@ -1,3 +1,5 @@
+import { requiredTagsGrepInvert } from '@piwitests/core/environments';
+
 /**
  * The command lines the editor runs in a terminal: built here from arguments checked one by one, never taken as an
  * instance's command text. An instance names what to run (the Playwright arguments of a test or a selection, the
@@ -38,9 +40,31 @@ const PLAYWRIGHT_OPTIONS = new Map<string, boolean>([
   ['--pass-with-no-tests', false],
 ]);
 
+/**
+ * A `--grep-invert` value `requiredTagsGrepInvert` writes: a run's own pattern in `(?:…)|` (group 1), then the
+ * lookahead over the required tags (group 2).
+ */
+const REQUIRED_TAGS_FILTER =
+  /^(?:\(\?:(.+)\)\|)?\^\(\?!\.\*\(\?:\^\|\\s\)\(\?:(@[A-Za-z0-9_-]{1,63}(?:\|@[A-Za-z0-9_-]{1,63})*)\)\(\?:\\s\|\$\)\)$/;
+
+/**
+ * Whether `arg` is the filter that keeps a run to the tests carrying a protected environment's required tags, as
+ * `requiredTagsGrepInvert` writes it from tags and a run's own pattern that a shell leaves as they are in double quotes.
+ * Its own characters a shell could expand (`!`, `\s`, `$` before `)`) are left as they are in double quotes by bash
+ * and zsh run with a command (no history expansion), PowerShell and cmd, so it is a shell word in double quotes too.
+ */
+export function isRequiredTagsFilter(arg: string): boolean {
+  const match = REQUIRED_TAGS_FILTER.exec(arg);
+  if (!match) return false;
+  const own = match[1];
+  if (own !== undefined && (!own || SHELL_EXPANDED.test(own))) return false;
+  return requiredTagsGrepInvert(match[2]!.split('|'), own) === arg;
+}
+
 /** `arg` as a shell word: bare when no shell changes it, else double-quoted; null when a shell would expand it. */
 export function shellWord(arg: string): string | null {
   if (SHELL_PLAIN.test(arg)) return arg;
+  if (isRequiredTagsFilter(arg)) return `"${arg}"`;
   return arg && !SHELL_EXPANDED.test(arg) ? `"${arg}"` : null;
 }
 
@@ -81,6 +105,26 @@ export function repeatArgs(args: unknown[], repeat: unknown): string[] | null {
     if (!name || !REPEAT_OPTIONS.has(name)) kept.push(...words);
   }
   return [...kept, `--repeat-each=${repeat}`, '--retries=0'];
+}
+
+/**
+ * `args` kept to the tests carrying one of `tags`, a protected environment's required tags: the run's own
+ * `--grep-invert` (the last, as Playwright reads it) taken out and merged into one with `requiredTagsGrepInvert`,
+ * written last. Null when `args` are not {@link validPlaywrightArgs}.
+ */
+export function withRequiredTags(args: unknown[], tags: readonly string[]): string[] | null {
+  if (!validPlaywrightArgs(args)) return null;
+  const kept: string[] = [];
+  let own: string | null = null;
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i]!;
+    const eq = arg.indexOf('=');
+    const name = arg.startsWith('-') ? (eq < 0 ? arg : arg.slice(0, eq)) : null;
+    const words = name && eq < 0 && PLAYWRIGHT_OPTIONS.get(name) ? [arg, args[++i]!] : [arg];
+    if (name === '--grep-invert') own = eq < 0 ? words[1]! : arg.slice(eq + 1);
+    else kept.push(...words);
+  }
+  return [...kept, '--grep-invert', requiredTagsGrepInvert(tags, own)];
 }
 
 /**

@@ -225,6 +225,16 @@
     "message": "Run on this machine?",
     "description": "Title of the dialog that confirms a run request from the team instance."
   },
+  "runui_requestTitleFor": {
+    "message": "Run on this machine for $environment$?",
+    "description": "Title of the dialog that confirms a run request from the team instance, when the request names an environment. $environment$ is its name.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestIntro": {
     "message": "You asked $host$ to run $tests$ of $project$ here, in the folder linked to that project. It runs the code of that folder on this machine; nothing runs until you click $run$. The request ends unanswered at $time$.",
     "description": "First paragraph of the confirmation. $host$ is the instance's address and $project$ the project's name, both highlighted; $tests$ is runui_aTest or runui_tests; $run$ is the Run button's label in bold; $time$ a time of day.",
@@ -479,6 +489,30 @@
       }
     }
   },
+  "runui_requestProtectedNote": {
+    "message": "$environment$ is protected: this run keeps to the tests tagged $tags$, and starts only once you confirm it.",
+    "description": "Under the command of a request for a protected environment (production, as a rule). $environment$ is its name; $tags$ the tags its runs are limited to, joined by commas.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_requestProtectedConfirm": {
+    "message": "Yes, run these tests against $environment$",
+    "description": "Label of the checkbox the person ticks before Run is enabled, for a request of a protected environment. $environment$ is its name.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestNotNow": {
     "message": "Not now",
     "description": "Button: declines the run request."
@@ -534,6 +568,34 @@
       "variables": {
         "content": "$1",
         "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
+  "runui_checkEnvironmentSet": {
+    "message": "Runs for $environment$: PIWI_ENVIRONMENT=$key$.",
+    "description": "A passed check of a run request: the run is for an environment of the project, whose key it gets as PIWI_ENVIRONMENT. $environment$ is its name, $key$ its key.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "key": {
+        "content": "$2",
+        "example": "staging"
+      }
+    }
+  },
+  "runui_checkEnvironmentProtected": {
+    "message": "Runs for $environment$, a protected environment: only the tests tagged $tags$ run.",
+    "description": "A warning of a run request: the run is for a protected environment, and only the tests carrying one of its required tags run. $environment$ is its name; $tags$ the tags, joined by commas.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
       }
     }
   },

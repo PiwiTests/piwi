@@ -87,6 +87,8 @@
         <!-- The New UI's outline mark at 16 and 20 px in place of the classic filled one, written by the brand generator. -->
         <iconMapper mappingFile="PiwiIconMappings.json"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
+        <statusBarWidgetFactory id="piwi.environment" implementation="dev.piwitests.jetbrains.PiwiEnvironmentWidgetFactory"
+                                order="after piwi.status"/>
         <!-- The Paused page and Worker tabs close; the failures tab does not (isCloseable = false). -->
         <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg" canCloseContents="true"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
@@ -297,6 +299,9 @@
                 <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare with…"
                         icon="AllIcons.Actions.Diff"
                         description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
+                <action id="Piwi.ChooseEnvironment" class="dev.piwitests.jetbrains.ChooseEnvironmentAction"
+                        text="Choose environment…" icon="AllIcons.Webreferences.Server"
+                        description="Choose the environment the runs Piwi starts for this config's tests are for, or none"/>
                 <action id="Piwi.GroupFailuresBy" class="dev.piwitests.jetbrains.GroupFailuresByAction"
                         text="Group the failures by…" icon="AllIcons.Actions.ShowAsTree"
                         description="Group the failures of the Piwi tool window by file, cluster or owner, or list them flat"/>

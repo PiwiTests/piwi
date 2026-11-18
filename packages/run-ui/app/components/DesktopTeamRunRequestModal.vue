@@ -10,6 +10,11 @@
  * the place of the one shown, answers nothing. Once the shell is told to run a request, the modal emits `start`: the
  * host decides what shows the run.
  *
+ * A request that names an environment says so in the title, and its checks and command show its key
+ * (`PIWI_ENVIRONMENT`). A protected one's run keeps to the tests carrying one of its required tags, and **Run** stays
+ * off until the person ticks the box naming it; the answer names the environment they confirmed, and the host
+ * refuses **Run** without it.
+ *
  * While the request has no folder it can run in (none linked, one that is not the project's, or an older copy without
  * all the tests), the dialog says in plain words which folder that is, and offers **Find it for me**, which asks the
  * shell to look for it on this machine and lists what it found, and **Choose the folder…**, the shell's own picker. A
@@ -69,9 +74,15 @@ const armed = ref(false);
 const inFront = ref(false);
 const readFront = () => (inFront.value = document.visibilityState === 'visible' && document.hasFocus());
 let armTimer: ReturnType<typeof setTimeout> | null = null;
-const shown = computed(() =>
-  current.value && inFront.value ? `${current.value.id}\n${current.value.command}\n${current.value.runnable}` : null,
+/** What the person is asked: the request, its command, whether it runs, and the environment it is for. */
+const asked = computed(() =>
+  current.value
+    ? `${current.value.id}\n${current.value.command}\n${current.value.runnable}\n${current.value.environment?.key ?? ''}`
+    : null,
 );
+const shown = computed(() => (inFront.value ? asked.value : null));
+/** Whether the person ticked the box naming the protected environment of the request shown, as it is shown now. */
+const confirmedProtected = ref(false);
 watch(
   shown,
   (value) => {
@@ -81,6 +92,8 @@ watch(
   },
   { immediate: true },
 );
+// A request or a command shown anew is confirmed anew; the window coming to the front keeps the answer.
+watch(asked, () => (confirmedProtected.value = false));
 onMounted(() => {
   readFront();
   window.addEventListener('focus', readFront);
@@ -109,6 +122,16 @@ const project = computed(() =>
 const testCount = computed(() => current.value?.tests.length ?? 0);
 const answerBy = computed(() => (current.value ? words.time(new Date(current.value.answerBy)) : ''));
 const options = computed(() => optionWords(current.value?.options, words));
+/** The environment the request runs for, and whether it is a protected one that waits for the person's confirmation. */
+const environment = computed(() => current.value?.environment ?? null);
+const protectedEnvironment = computed(() => (environment.value?.protected ? environment.value : null));
+const title = computed(() =>
+  environment.value ? t('runui_requestTitleFor', { environment: environment.value.name }) : t('runui_requestTitle'),
+);
+/** Whether **Run** may be clicked: the checks pass and, for a protected environment, the person confirmed it. */
+const runAllowed = computed(
+  () => !!current.value?.runnable && (!protectedEnvironment.value || confirmedProtected.value),
+);
 
 const finding = computed(() => !!current.value && findingFor.value === current.value.id);
 const linking = computed(() => !!current.value && linkingFor.value === current.value.id);
@@ -224,12 +247,14 @@ async function chooseFolder(place: number | null = null) {
 async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) {
   const request = current.value;
   if (!request || request.id !== shownId || starting.value || !armed.value) return;
+  if (decision === 'run' && !runAllowed.value) return;
   if (decision === 'not-now') remove(request.id);
   else starting.value = true;
   try {
+    const confirmed = decision === 'run' && request.environment?.protected ? request.environment.key : undefined;
     const answered = await $fetch<{ launch: boolean }>(`/api/desktop/run-target/requests/${request.id}/answer`, {
       method: 'POST',
-      body: { decision, command: request.command },
+      body: { decision, command: request.command, ...(confirmed ? { environment: confirmed } : {}) },
     });
     if (decision === 'run' && answered.launch) {
       emit('start', {
@@ -260,7 +285,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
 </script>
 
 <template>
-  <UModal v-model:open="open" :title="t('runui_requestTitle')" :ui="{ content: 'max-w-2xl' }">
+  <UModal v-model:open="open" :title="title" :ui="{ content: 'max-w-2xl' }">
     <template #body>
       <div v-if="current" :key="current.id" class="space-y-4" data-shot="desktop-team-run-request">
         <p class="text-sm text-muted">
@@ -383,6 +408,27 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
           <div class="text-xs text-muted">{{ t('runui_requestRunsIn', { host }) }}</div>
           <CodeBlock :code="current.command" lang="text" />
         </div>
+
+        <div
+          v-if="protectedEnvironment && current.runnable"
+          class="space-y-2 rounded-md border border-warning/40 bg-warning/10 p-3"
+          data-testid="team-run-request-protected"
+        >
+          <p class="flex items-start gap-2 text-sm text-highlighted leading-relaxed">
+            <UIcon :name="CHECK_ICONS.warn" :class="['size-4 mt-0.5 shrink-0', CHECK_COLORS.warn]" />
+            <span>{{
+              t('runui_requestProtectedNote', {
+                environment: protectedEnvironment.name,
+                tags: protectedEnvironment.requiredTags.join(', '),
+              })
+            }}</span>
+          </p>
+          <UCheckbox
+            v-model="confirmedProtected"
+            :disabled="!armed"
+            :label="t('runui_requestProtectedConfirm', { environment: protectedEnvironment.name })"
+          />
+        </div>
       </div>
     </template>
 
@@ -393,7 +439,7 @@ async function answer(decision: 'run' | 'not-now', shownId = current.value?.id) 
         </UButton>
         <UButton
           icon="i-lucide-play"
-          :disabled="!current?.runnable || !armed"
+          :disabled="!runAllowed || !armed"
           :loading="starting"
           @click="answer('run', current?.id)"
           >{{ t('runui_requestRun') }}</UButton

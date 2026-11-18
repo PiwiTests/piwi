@@ -331,6 +331,26 @@ object Glue {
             ?: contexts.firstOrNull { it.problemKind == "unreachable" || it.problemKind == "desktop-unproven" }
             ?: contexts.firstOrNull()
 
+    /**
+     * The context the environment widget speaks for: the one whose Playwright config folder holds `file`, the deepest
+     * when several do, when it shows an environment, else the first context that shows one; null when none does
+     * (`ContextStatus.environment`).
+     */
+    fun environmentContext(status: StatusResult?, file: String?): ContextStatus? {
+        val contexts = status?.contexts.orEmpty()
+        val holding = contexts.filter { holds(it.root, file) }.maxByOrNull { folderPath(it.root!!).length }
+        return holding?.takeIf { it.environment != null } ?: contexts.firstOrNull { it.environment != null }
+    }
+
+    /** A choice of **Choose environment…** in its popup: `Production · production · protected · current`. */
+    fun environmentEntryText(item: EnvironmentItem): String =
+        listOfNotNull(
+            item.label,
+            item.description.ifBlank { null },
+            "protected".takeIf { item.protected },
+            "current".takeIf { item.picked },
+        ).joinToString(" · ")
+
     /** A path with `/` separators and one trailing `/`, so a folder holds what starts with it. */
     private fun folderPath(path: String) = path.replace('\\', '/').trimEnd('/') + "/"
 

@@ -916,6 +916,42 @@ export function withBaseline(
   return next;
 }
 
+/**
+ * The environment item: the environment of the config whose folder holds the active file, the deepest when several
+ * do, else of the first config whose project lists environments; null when none shows one
+ * (`StatusResult.contexts[].environment`). Its text leads with the glyph of an environment, a lock for a protected one.
+ */
+export function environmentItem(
+  status: StatusResult | null,
+  activeFile: string | null,
+): { root: string; text: string; tooltip: string; protected: boolean } | null {
+  const contexts = status?.contexts ?? [];
+  const holding = activeFile
+    ? contexts.filter((c) => isUnder(c.root, activeFile)).sort((a, b) => b.root.length - a.root.length)[0]
+    : undefined;
+  const shown = holding?.environment ? holding : contexts.find((c) => c.environment);
+  const environment = shown?.environment;
+  if (!shown || !environment) return null;
+  return {
+    root: shown.root,
+    text: `${environment.protected ? '$(lock)' : '$(server-environment)'} ${environment.text}`,
+    tooltip: environment.tooltip,
+    protected: environment.protected,
+  };
+}
+
+/** The environments kept for each config, by its root, with `root`'s set to `id`: none (null) is left out. */
+export function withEnvironment(
+  kept: Record<string, number | null> | undefined,
+  root: string,
+  id: number | null,
+): Record<string, number | null> {
+  const next = { ...kept };
+  if (id === null) delete next[root];
+  else next[root] = id;
+  return next;
+}
+
 /** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
 export function failureRunArgs(failure: WorkspaceFailure): RunTestsArgs | null {
   if (failure.testCaseId === undefined) return null;

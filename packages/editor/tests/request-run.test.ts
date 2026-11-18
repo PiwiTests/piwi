@@ -8,8 +8,32 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { requiredTagsGrepInvert, type EnvironmentForRun } from '@piwitests/core/environments';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
-import { argsLength, planRequestedRun, REQUESTED_RUN_ARGS_MAX_CHARS, requestedRunArgs } from '../src/request-run';
+import {
+  argsLength,
+  planRequestedRun,
+  REQUESTED_RUN_ARGS_MAX_CHARS,
+  requestedRunArgs,
+  requestedRunDisplay,
+} from '../src/request-run';
+
+const STAGING: EnvironmentForRun = {
+  id: 4,
+  key: 'staging',
+  name: 'Staging',
+  protected: false,
+  requiredTags: [],
+  envFile: '.env.staging',
+};
+const PRODUCTION: EnvironmentForRun = {
+  id: 5,
+  key: 'production',
+  name: 'Production',
+  protected: true,
+  requiredTags: ['@smoke', '@readonly'],
+  envFile: null,
+};
 
 let folder: string;
 
@@ -99,6 +123,22 @@ describe('requestedRunArgs', () => {
     ]);
   });
 
+  test('for a protected environment, keeps the run to the tests carrying one of its required tags, last', () => {
+    const spec = path.join(folder, 'tests', 'checkout.spec.ts');
+    const args = requestedRunArgs(request(), folder, false, false, PRODUCTION);
+    expect(args).toEqual([
+      specFileArgument(spec, 12),
+      specFileArgument(spec, 30),
+      '--project=chromium',
+      '--headed',
+      `--grep-invert=${requiredTagsGrepInvert(['@smoke', '@readonly'])}`,
+    ]);
+    // Another environment adds nothing: its variables go to the process.
+    expect(requestedRunArgs(request(), folder, false, false, STAGING)).toEqual(
+      requestedRunArgs(request(), folder, false, false),
+    );
+  });
+
   test('a test with no line never runs its whole file: the request goes by title', () => {
     const args = requestedRunArgs(
       request({
@@ -157,6 +197,61 @@ describe('planRequestedRun', () => {
     expect(plan.args.some((arg) => arg.includes('TENANT'))).toBe(false);
   });
 
+  test('runs for the environment the request names: its key and variables in the command, a check naming it', async () => {
+    const commit = git('rev-parse', 'HEAD');
+    const variables = [{ name: 'TEST_ENV', value: 'staging' }];
+    const plan = await planRequestedRun(request({ source: { commit } }), folder, [], {
+      ok: true,
+      value: variables,
+      environment: STAGING,
+    });
+    expect(plan).toMatchObject({ runnable: true, variables, environment: STAGING });
+    expect(plan.checks.find((c) => c.id === 'environment')).toEqual({
+      id: 'environment',
+      level: 'ok',
+      code: 'environment-set',
+      args: { environment: 'Staging', key: 'staging' },
+      message: 'Runs for Staging: PIWI_ENVIRONMENT=staging.',
+    });
+    expect(plan.display).toMatch(
+      process.platform === 'win32'
+        ? /^\$env:TEST_ENV='staging'; \$env:PIWI_ENVIRONMENT='staging'; npx playwright test /
+        : /^TEST_ENV=staging PIWI_ENVIRONMENT=staging npx playwright test /,
+    );
+    expect(plan.args.some((arg) => arg.includes('staging'))).toBe(false);
+  });
+
+  test('a protected environment warns, keeps the run to its required tags and shows the filter in the command', async () => {
+    const commit = git('rev-parse', 'HEAD');
+    const plan = await planRequestedRun(request({ source: { commit } }), folder, [], {
+      ok: true,
+      value: [],
+      environment: PRODUCTION,
+    });
+    expect(plan.runnable).toBe(true);
+    expect(plan.checks.find((c) => c.id === 'environment')).toEqual({
+      id: 'environment',
+      level: 'warn',
+      code: 'environment-protected',
+      args: { environment: 'Production', key: 'production', tags: '@smoke, @readonly' },
+      message: 'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run.',
+    });
+    const filter = `--grep-invert=${requiredTagsGrepInvert(['@smoke', '@readonly'])}`;
+    expect(plan.args[plan.args.length - 1]).toBe(filter);
+    expect(plan.display.endsWith(` '${filter}'`)).toBe(true);
+  });
+
+  test('the command shown quotes what a shell would read, in the shell of the machine', () => {
+    const args = ['tests/a.spec.ts:3', '--grep=(?:^| )(?:it’s paid)$', '--project=chromium'];
+    expect(requestedRunDisplay(args, [{ name: 'TENANT', value: 'acme' }], STAGING, 'bash')).toBe(
+      "TENANT=acme PIWI_ENVIRONMENT=staging npx playwright test tests/a.spec.ts:3 '--grep=(?:^| )(?:it’s paid)$' --project=chromium",
+    );
+    expect(requestedRunDisplay(args, [{ name: 'TENANT', value: 'acme' }], STAGING, 'powershell')).toBe(
+      "$env:TENANT='acme'; $env:PIWI_ENVIRONMENT='staging'; npx playwright test tests/a.spec.ts:3 '--grep=(?:^| )(?:it’’s paid)$' --project=chromium",
+    );
+    expect(requestedRunDisplay(['tests/a.spec.ts'], [], null, 'bash')).toBe('npx playwright test tests/a.spec.ts');
+  });
+
   test('a list of run variables a target refuses fails the check and leaves no command', async () => {
     const plan = await planRequestedRun(request(), folder, [], {
       ok: false,
@@ -166,6 +261,7 @@ describe('planRequestedRun', () => {
     expect(plan.args).toEqual([]);
     expect(plan.display).toBe('');
     expect(plan.variables).toEqual([]);
+    expect(plan.environment).toBeNull();
     expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
       id: 'variables',
       level: 'fail',

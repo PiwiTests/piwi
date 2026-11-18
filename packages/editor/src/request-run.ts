@@ -6,12 +6,15 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import { ENVIRONMENT_VARIABLE, requiredTagsGrepInvert, type EnvironmentForRun } from '@piwitests/core/environments';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
 import {
+  bashQuote,
+  powerShellQuote,
   runVariableAssignments,
   withRunVariables,
   type RunVariable,
-  type RunVariablesParse,
+  type RunVariableShell,
 } from '@piwitests/core/run-variables';
 import { currentBranch, hasUncommittedChanges, headCommit, playwrightConfigFile, repositoryRoot } from './workspace';
 
@@ -25,6 +28,8 @@ export type RequestCheckCode =
   | 'folder-linked'
   | 'variables-invalid'
   | 'variables-set'
+  | 'environment-set'
+  | 'environment-protected'
   | 'folder-busy'
   | 'config-missing'
   | 'specs-missing'
@@ -39,7 +44,8 @@ export type RequestCheckCode =
 /**
  * The values a check's sentence names, by code: the linked folder (`folder`), why the project's run variables cannot
  * be set (`problems`, the instance's English sentences) or how they are set (`variables`, as the shell writes them),
- * the missing specs named and how many
+ * the environment the run is for (`environment`, its name; `key`; and a protected one's required tags, `tags`, joined
+ * by `, `), the missing specs named and how many
  * more (`files`, `more`), the folder's branch and short commit and the run's (`branch`, `commit`, `sourceBranch`,
  * `sourceCommit`, empty when unknown), and the longest command (`max`).
  */
@@ -47,7 +53,17 @@ export type RequestCheckArgs = Readonly<Record<string, string | number>>;
 
 /** One row of the confirmation: a check that failed stops **Run**, a warning does not. */
 export interface RequestCheck {
-  id: 'folder' | 'variables' | 'busy' | 'config' | 'specs' | 'playwright' | 'command' | 'commit' | 'changes';
+  id:
+    | 'folder'
+    | 'variables'
+    | 'environment'
+    | 'busy'
+    | 'config'
+    | 'specs'
+    | 'playwright'
+    | 'command'
+    | 'commit'
+    | 'changes';
   level: 'ok' | 'warn' | 'fail';
   code: RequestCheckCode;
   args: RequestCheckArgs;
@@ -68,6 +84,10 @@ export function requestCheckSentence(code: RequestCheckCode, args: RequestCheckA
       return `The project's run variables cannot be set: ${value('problems')}`;
     case 'variables-set':
       return `Runs with the project's run variables: ${value('variables')}.`;
+    case 'environment-set':
+      return `Runs for ${value('environment')}: ${ENVIRONMENT_VARIABLE}=${value('key')}.`;
+    case 'environment-protected':
+      return `Runs for ${value('environment')}, a protected environment: only the tests tagged ${value('tags')} run.`;
     case 'folder-busy':
       return 'Another run is going in this folder: this one can run once it ends.';
     case 'config-missing':
@@ -107,6 +127,15 @@ function check(
   return { id, level, code, args, message: requestCheckSentence(code, args) };
 }
 
+/**
+ * What a target reads for a request's run: the run variables it gets (the project's, and when the request names an
+ * environment, the environment's over them) and that environment, both checked (`parseRunVariables`,
+ * `parseEnvironmentForRun`); any problem refuses both, and `unreadable` says the instance did not answer.
+ */
+export type RequestRunVariables =
+  | { ok: true; value: RunVariable[]; environment?: EnvironmentForRun | null }
+  | { ok: false; problems: string[]; unreadable?: true };
+
 /** What the target found in the folder, and the command it would run there. */
 export interface RequestPlan {
   checks: RequestCheck[];
@@ -114,10 +143,15 @@ export interface RequestPlan {
   runnable: boolean;
   /** The arguments after `playwright test`, each one argv element; empty while a check fails. */
   args: string[];
-  /** The command as the confirmation shows it, starting with the run variables. */
+  /** The command as the confirmation shows it, starting with the run variables and `PIWI_ENVIRONMENT`. */
   display: string;
-  /** The project's run variables the run gets, checked; empty while a check fails. */
+  /** The run variables the run gets, checked; empty while a check fails. */
   variables: RunVariable[];
+  /**
+   * The environment the run is for, whose key the run gets as `PIWI_ENVIRONMENT` and whose required tags keep a
+   * protected one's run to them (`args`); null for none, and while a check fails.
+   */
+  environment: EnvironmentForRun | null;
   /** Whether the tests are selected by title, because the folder is not on the request's commit or has changes. */
   byTitle: boolean;
   branch: string | null;
@@ -189,15 +223,18 @@ export function picksByTitle(request: RunRequest, offCommit: boolean): boolean {
 /**
  * The arguments after `playwright test` for `request` in `folder` (its real path, as Playwright resolves the
  * config's folder): each test by `file:line`, or with `byTitle` each spec file and one `--grep` of the titles, then
- * the project and the options. A test with no line is never run as its whole file: the request goes by title. A
- * `--grep` value is one element written `--grep=<pattern>`, so it never reads as an option. `windows`: whether
- * Playwright runs on Windows, where each spec is also matched by its `file:` URL.
+ * the project and the options, then for a protected `environment` the `--grep-invert` that keeps the run to the tests
+ * carrying one of its required tags (`requiredTagsGrepInvert`). A test with no line is never run as its whole file:
+ * the request goes by title. A `--grep` or `--grep-invert` value is one element written `--grep=<pattern>`, so it
+ * never reads as an option. `windows`: whether Playwright runs on Windows, where each spec is also matched by its
+ * `file:` URL.
  */
 export function requestedRunArgs(
   request: RunRequest,
   folder: string,
   byTitle: boolean,
   windows = process.platform === 'win32',
+  environment: EnvironmentForRun | null = null,
 ): string[] {
   byTitle = picksByTitle(request, byTitle);
   const unique = (values: string[]) => [...new Set(values)];
@@ -225,43 +262,79 @@ export function requestedRunArgs(
   // Each repetition reports its own result, as the editors' repeat does.
   if (options.repeatEach && options.repeatEach > 1) args.push(`--repeat-each=${options.repeatEach}`, '--retries=0');
   if (options.workers) args.push(`--workers=${options.workers}`);
+  if (environment?.protected) args.push(requiredTagsFilterArg(environment));
   return args;
 }
 
-/** One argument as the confirmation shows it: quoted when it holds a space or a quote. */
-function displayArg(arg: string): string {
-  return /[\s"']/.test(arg) ? `"${arg.replaceAll('"', '\\"')}"` : arg;
+/**
+ * The argument that keeps a run for a protected environment to the tests carrying one of its required tags:
+ * `--grep-invert=<pattern>` (`requiredTagsGrepInvert`), as the desktop app's shell adds it too.
+ */
+export function requiredTagsFilterArg(environment: Pick<EnvironmentForRun, 'requiredTags'>): string {
+  return `--grep-invert=${requiredTagsGrepInvert(environment.requiredTags)}`;
 }
 
-/** The shell the confirmation writes the run variables for: this machine's. */
-const DISPLAY_SHELL = process.platform === 'win32' ? 'powershell' : 'bash';
+/** Characters an argument the confirmation shows holds bare: what neither shell changes. */
+const DISPLAY_PLAIN = /^[A-Za-z0-9_@+:,./=-]+$/;
+
+/** The shell the confirmation writes the command for: this machine's. */
+const DISPLAY_SHELL: RunVariableShell = process.platform === 'win32' ? 'powershell' : 'bash';
+
+/** One argument as the confirmation shows it: bare when plain, else single-quoted as `shell` reads it. */
+function displayArg(arg: string, shell: RunVariableShell): string {
+  if (DISPLAY_PLAIN.test(arg)) return arg;
+  return shell === 'bash' ? bashQuote(arg) : powerShellQuote(arg);
+}
+
+/**
+ * The command the confirmation shows: `npx playwright test` and `args`, after `PIWI_ENVIRONMENT` set to the
+ * environment's key and, first, the run variables, as `shell` writes them (`withRunVariables`).
+ */
+export function requestedRunDisplay(
+  args: readonly string[],
+  variables: readonly RunVariable[],
+  environment: EnvironmentForRun | null,
+  shell: RunVariableShell = DISPLAY_SHELL,
+): string {
+  const command = ['npx', 'playwright', 'test', ...args.map((arg) => displayArg(arg, shell))].join(' ');
+  if (!environment) return withRunVariables(command, variables, shell);
+  const label =
+    shell === 'bash'
+      ? `${ENVIRONMENT_VARIABLE}=${bashQuote(environment.key)} ${command}`
+      : `$env:${ENVIRONMENT_VARIABLE}=${powerShellQuote(environment.key)}; ${command}`;
+  return withRunVariables(label, variables, shell);
+}
 
 /**
  * Check `folder`, the folder linked to the request's project on this machine (null when none is), against
  * `request`, and build the command. A failed check names its fix and leaves the command empty; a branch or a commit
  * other than the request's, or uncommitted changes, warns and selects the tests by title, since a line may have moved.
  * `runningIn` names the folders a run of this app is going in, requested or the person's own: one of them fails the
- * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`. `variables` are the project's run variables as
- * `parseRunVariables` read them from the instance: a problem fails the check, and the command starts with them.
+ * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`. `variables` are the run variables and the
+ * environment as the target read them from the instance (`RequestRunVariables`): a problem fails the check, and the
+ * command starts with them, `PIWI_ENVIRONMENT` set to the environment's key, a protected one's run kept to its
+ * required tags.
  */
 export async function planRequestedRun(
   request: RunRequest,
   folder: string | null,
   runningIn: string[] = [],
-  variables: RunVariablesParse = { ok: true, value: [] },
+  variables: RequestRunVariables = { ok: true, value: [] },
 ): Promise<RequestPlan> {
   const checks: RequestCheck[] = [];
+  const environment = variables.ok ? (variables.environment ?? null) : null;
   const done = (extra: Partial<RequestPlan> = {}): RequestPlan => {
     const runnable = !checks.some((c) => c.level === 'fail');
     const args = runnable ? (extra.args ?? []) : [];
     const applied = runnable && variables.ok ? variables.value : [];
-    const command = ['npx', 'playwright', 'test', ...args.map(displayArg)].join(' ');
+    const appliedEnvironment = runnable ? environment : null;
     return {
       checks,
       runnable,
       args,
-      display: runnable ? withRunVariables(command, applied, DISPLAY_SHELL) : '',
+      display: runnable ? requestedRunDisplay(args, applied, appliedEnvironment) : '',
       variables: applied,
+      environment: appliedEnvironment,
       byTitle: extra.byTitle ?? false,
       branch: extra.branch ?? null,
       commit: extra.commit ?? null,
@@ -289,6 +362,17 @@ export async function planRequestedRun(
         variables: runVariableAssignments(variables.value, DISPLAY_SHELL),
       }),
     );
+  }
+  if (environment?.protected) {
+    checks.push(
+      check('environment', 'warn', 'environment-protected', {
+        environment: environment.name,
+        key: environment.key,
+        tags: environment.requiredTags.join(', '),
+      }),
+    );
+  } else if (environment) {
+    checks.push(check('environment', 'ok', 'environment-set', { environment: environment.name, key: environment.key }));
   }
   if (runningIn.some((other) => realFolder(other) === real)) checks.push(check('busy', 'fail', 'folder-busy'));
 
@@ -327,7 +411,7 @@ export async function planRequestedRun(
   }
   if (changed) checks.push(check('changes', 'warn', 'changes-uncommitted'));
   const byTitle = picksByTitle(request, !onCommit || changed);
-  const args = requestedRunArgs(request, real, byTitle);
+  const args = requestedRunArgs(request, real, byTitle, undefined, environment);
   if (argsLength(args) > REQUESTED_RUN_ARGS_MAX_CHARS) {
     checks.push(check('command', 'fail', 'command-too-long', { max: REQUESTED_RUN_ARGS_MAX_CHARS }));
   }

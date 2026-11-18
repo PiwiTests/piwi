@@ -40,9 +40,9 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   `tests/commands.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#how-a-command-is-built))
 - **A command runs in the config's folder as the file system spells it** (`commandFolder`, `canonicalPath`), in every
   `cwd` handed to a client. Checked by `tests/lsp.test.ts`. ([ARCHITECTURE.md](ARCHITECTURE.md#the-folder-a-command-runs-in))
-- **A project's run variables reach a run only once `parseRunVariables` passed them and, in an editor, the person
-  allowed them** (`runVariablesFor`, `src/run-target.ts`); else it runs nothing.
-  ([ARCHITECTURE.md](ARCHITECTURE.md#run-variables))
+- **Run variables and an environment reach a run only once core's parsers passed them and, in an editor, the person
+  allowed them; a protected environment's run is confirmed each time, kept to its required tags, never an agent's**
+  (`runSettingsFor`, `src/run-target.ts`, [ARCHITECTURE.md](ARCHITECTURE.md#environments)).
 - **A commit, a branch or a blob id reaches git only when it matches its pattern, never as an option** (`COMMIT`,
   `BRANCH`, `BLOB` in `src/workspace.ts`). Checked by `tests/lsp.test.ts` and `tests/workspace.test.ts`, the blob check
   aside.
@@ -84,9 +84,8 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
   (`tests/request-host.test.ts`).
 - **A requested run's command is built by `src/request-run.ts` from the request's tests and options**, by `file:line`
   on the request's commit and by title off it, never taken from the instance (`tests/request-run.test.ts`). The plan
-  fails in a folder another approved request or a local run of the shell runs in (`busy`; the shell names its local
-  runs' folders in `PUT /local-runs` and `PUT /key`'s `localRuns`), and a request still asked about is checked again
-  whenever such a run starts or ends (`planWaiting`). It also fails past `REQUESTED_RUN_ARGS_MAX_CHARS` (24,000, each
+  fails in a folder another approved request or a local run of the shell runs in (`busy`), and a request still asked
+  about is checked again whenever such a run starts or ends (`planWaiting`). It also fails past `REQUESTED_RUN_ARGS_MAX_CHARS` (24,000, each
   argument plus one): the shell refuses both again (`run_target.rs`), and keeps its cap equal to this one.
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake

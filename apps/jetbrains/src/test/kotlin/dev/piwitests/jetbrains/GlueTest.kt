@@ -28,6 +28,24 @@ class GlueTest {
     )
 
     @Test
+    fun `the environment widget speaks for the selected file's config, else the first that shows an environment`() {
+        val staging = StatusEnvironment(id = 4, text = "Staging", tooltip = "For Staging.")
+        val production = StatusEnvironment(id = 5, text = "Production", tooltip = "Protected.", protected = true)
+        val plain = ContextStatus(root = "/w/a")
+        val shop = ContextStatus(root = "/w/shop", environment = staging)
+        val admin = ContextStatus(root = "/w/shop/admin", environment = production)
+        val status = StatusResult(listOf(plain, shop, admin))
+        assertEquals(admin, Glue.environmentContext(status, "/w/shop/admin/tests/users.spec.ts"))
+        assertEquals(shop, Glue.environmentContext(status, "/w/a/tests/cart.spec.ts"))
+        assertNull(Glue.environmentContext(StatusResult(listOf(plain)), "/w/a/x.spec.ts"))
+        assertEquals(
+            "Production · production · protected · current",
+            Glue.environmentEntryText(EnvironmentItem(5, "Production", "production", null, picked = true, protected = true)),
+        )
+        assertEquals("None · the Playwright config decides", Glue.environmentEntryText(EnvironmentItem(null, "None", "the Playwright config decides")))
+    }
+
+    @Test
     fun `before the service starts, says when it will and leads to the settings`() {
         val view = Glue.statusView(null, null)
         assertEquals("Piwi", view.text)

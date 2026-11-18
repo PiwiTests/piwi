@@ -21,6 +21,7 @@ does with it. It is reference material: open the section for the area you change
   - [Tree and nodes](#tree-and-nodes)
   - [Navigation and actions](#navigation-and-actions)
   - [Compare with](#compare-with)
+  - [Choose environment](#choose-environment)
   - [Tests tab](#tests-tab)
 - [Status bar](#status-bar)
 - [Runs](#runs)
@@ -371,6 +372,18 @@ The entries are:
 `baselines`. The header line names the baseline, a link to Compare with… (`Glue.toolWindowHeader`). What the ladder is:
 [Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
 reference.
+
+### Choose environment
+
+The environment widget (`PiwiEnvironmentWidgetFactory`, `piwi.environment`, after the status item) shows the
+environment the runs of the selected file's config are for, else of the first config whose project lists environments
+(`Glue.environmentContext`, from `ContextStatus.environment`), with a lock for a protected one; it hides while no project
+lists one. A click, or **Choose environment…** (`Piwi.ChooseEnvironment`, under **Tools → Piwi**), is a popup of the
+choices `piwi/environments` answers on a pooled thread, **None** first (`ChooseEnvironmentAction.choose`,
+`Glue.environmentEntryText`). `PiwiProjectService.setEnvironment` keeps the choice in `PiwiLocalSettings.environments`
+(by config folder, an environment's id, none as no entry) and sends `piwi/setEnvironment`; `credentials()` sends them
+all as `environments`. What a run for an environment gets, and the confirmation a protected one asks:
+[Environments](../../packages/editor/ARCHITECTURE.md#environments) in the editor service's reference.
 
 ### Tests tab
 

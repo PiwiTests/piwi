@@ -25,7 +25,10 @@ const FOLDER = '/home/dana/shop';
 const REF = 'runner-run-7';
 const VIEWER = 'f'.repeat(32);
 
-/** A run request the instance sent, with a check of each level, by code. */
+/** The protected environment the request runs for. */
+const ENVIRONMENT = { key: 'production', name: 'Production', protected: true, requiredTags: ['@smoke', '@readonly'] };
+
+/** A run request the instance sent, for a protected environment, with a check of each level, by code. */
 function runRequest() {
   return {
     id: 'a1b2c3d4',
@@ -50,6 +53,13 @@ function runRequest() {
         args: { folder: FOLDER },
         message: `Linked folder: ${FOLDER}`,
       },
+      {
+        id: 'environment',
+        level: 'warn',
+        code: 'environment-protected',
+        args: { environment: ENVIRONMENT.name, key: ENVIRONMENT.key, tags: ENVIRONMENT.requiredTags.join(', ') },
+        message: 'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run.',
+      },
       { id: 'specs', level: 'ok', code: 'specs-found', args: {}, message: 'The specs are in the folder.' },
       { id: 'playwright', level: 'ok', code: 'playwright-installed', args: {}, message: 'Playwright is installed.' },
       {
@@ -68,7 +78,9 @@ function runRequest() {
       },
     ],
     runnable: true,
-    command: 'npx playwright test tests/checkout.spec.ts:3 --headed --trace=on --repeat-each=2',
+    command:
+      "PIWI_ENVIRONMENT=production npx playwright test tests/checkout.spec.ts:3 --headed --trace=on --repeat-each=2 '--grep-invert=^(?!.*(?:^|\\s)(?:@smoke|@readonly)(?:\\s|$))'",
+    environment: ENVIRONMENT,
     hasFolder: true,
     answerBy: new Date(Date.now() + 10 * 60_000).toISOString(),
   };
@@ -248,10 +260,27 @@ for (const { code, tag, close } of LANGUAGES) {
     // A request: its confirmation, its checks said from their codes, and Nuxt UI's own close button.
     await page.evaluate((request) => window.__events.send('host', { type: 'run-request', request }), runRequest());
     const dialog = page.getByRole('dialog');
-    await expect(dialog.getByText(said(layer, 'runui_requestTitle'))).toBeVisible();
+    await expect(
+      dialog.getByText(said(layer, 'runui_requestTitleFor', { environment: ENVIRONMENT.name })),
+    ).toBeVisible();
     const checks = dialog.getByTestId('team-run-request-checks');
     await expect(checks).toContainText(said(layer, 'runui_checkFolderLinked', { folder: FOLDER }));
     await expect(checks).toContainText(said(layer, 'runui_checkChangesUncommitted'));
+    const tags = ENVIRONMENT.requiredTags.join(', ');
+    await expect(checks).toContainText(
+      said(layer, 'runui_checkEnvironmentProtected', { environment: ENVIRONMENT.name, tags }),
+    );
+    // A protected environment: Run waits for the box that names it.
+    const protectedBox = dialog.getByTestId('team-run-request-protected');
+    await expect(protectedBox).toContainText(
+      said(layer, 'runui_requestProtectedNote', { environment: ENVIRONMENT.name, tags }),
+    );
+    const confirm = protectedBox.getByRole('checkbox', {
+      name: said(layer, 'runui_requestProtectedConfirm', { environment: ENVIRONMENT.name }),
+    });
+    await expect(dialog.getByRole('button', { name: said(layer, 'runui_requestRun') })).toBeDisabled();
+    await confirm.check();
+    await expect(dialog.getByRole('button', { name: said(layer, 'runui_requestRun') })).toBeEnabled();
     await expect(dialog.getByRole('button', { name: close })).toBeVisible();
     expect(await clipped(dialog)).toEqual([]);
     await expect(dialog.getByRole('button', { name: said(layer, 'runui_requestNotNow') })).toBeEnabled();

@@ -32,7 +32,7 @@ import {
 import type { TimeoutAdvice } from './analysis.js';
 import { shellWord } from './commands.js';
 import { DesktopNotProvenError, holdDesktopToken } from './http.js';
-import type { RunVariablesRead } from './piwi-client.js';
+import type { EnvironmentOption, RunVariablesRead } from './piwi-client.js';
 import type {
   BaselineChoice,
   ConnectionSource,
@@ -421,6 +421,17 @@ export class PiwiContext {
   private resolving: Promise<unknown> | null = null;
   /** The sets of run variables the person allowed for this context's project, while the service runs. */
   private allowedRunVariables = new Set<string>();
+  /**
+   * The project's environments to choose from, read once per refresh (`GET /api/projects/:id/environments`): none
+   * before the first read, from an instance that lists none, and without a project.
+   */
+  environments: EnvironmentOption[] = [];
+  /**
+   * The environment chosen for the runs of this context's tests (`piwi/setEnvironment`), kept while the service runs and
+   * by the client; null for none, where the Playwright config decides. Every run reads it again
+   * (`readRunVariables`), so one the project no longer has refuses the run.
+   */
+  environmentId: number | null = null;
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
   index: LocatorIndex | null = null;
@@ -569,10 +580,11 @@ export class PiwiContext {
         return;
       }
       if (!this.project || this.project.name !== connection.project) {
-        // Another project's run variables, and the person's answer about them, are not this one's.
+        // Another project's run variables and environments, and the person's answer about them, are not this one's.
         this.runVariables = null;
         this.runVariablesRead = null;
         this.allowedRunVariables.clear();
+        this.environments = [];
         const resolving = this.client.resolveProject(connection.project);
         this.resolving = resolving;
         try {
@@ -647,6 +659,10 @@ export class PiwiContext {
           .timeoutOpportunities(projectId)
           .then((timeouts) => (this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]))))
           .catch(() => {}),
+        client
+          .environments(projectId)
+          .then((environments) => (this.environments = environments))
+          .catch(() => {}),
         // Completion reads these: fetched here, so no keystroke waits on them.
         this.functionCatalog(),
         this.vocabulary(),
@@ -669,9 +685,11 @@ export class PiwiContext {
   }
 
   /**
-   * The project's run variables, read from the instance once per refresh, for a run about to start. None without a
-   * client: the run reports nowhere this service knows. A run waits for a project a refresh is resolving; with none
-   * known, the read says why (`unknown`). A read the instance did not answer is not kept: the next run asks again.
+   * The project's run variables, read from the instance once per refresh, for a run about to start: with an
+   * environment chosen, the project's and the environment's merged, and the environment (`PiwiClient.runVariables`).
+   * None without a client: the run reports nowhere this service knows. A run waits for a project a refresh is
+   * resolving; with none known, the read says why (`unknown`). A read the instance did not answer is not kept: the
+   * next run asks again.
    */
   async readRunVariables(): Promise<RunVariablesRead> {
     if (this.client && !this.project && this.resolving) await this.resolving.catch(() => {});
@@ -680,10 +698,10 @@ export class PiwiContext {
     if (!client) return { ok: true, value: [] };
     if (!project) return { ok: true, value: [], unknown: this.problem ?? 'its project is not known yet' };
     if (!this.runVariablesRead) {
-      const read: Promise<RunVariablesRead> = client.runVariables(project.id).then((parsed) => {
+      const read: Promise<RunVariablesRead> = client.runVariables(project.id, this.environmentId).then((parsed) => {
         if (this.runVariablesRead !== read) return parsed;
         this.runVariables = parsed;
-        if (parsed.unreadable) this.runVariablesRead = null;
+        if (!parsed.ok && parsed.unreadable) this.runVariablesRead = null;
         return parsed;
       });
       this.runVariablesRead = read;
@@ -706,6 +724,26 @@ export class PiwiContext {
     this.allowedRunVariables.add(JSON.stringify(variables));
   }
 
+  /**
+   * Choose the environment of this context's runs: its id, or null for none. The run variables are read again for it,
+   * and a run started meanwhile waits for that read. Answers whether the choice changed.
+   */
+  chooseEnvironment(environmentId: number | null): boolean {
+    if (this.environmentId === environmentId) return false;
+    this.environmentId = environmentId;
+    this.runVariables = null;
+    this.runVariablesRead = null;
+    if (this.client && this.project) void this.readRunVariables();
+    return true;
+  }
+
+  /** The environment chosen, as the project lists it; null for none, and for one it does not list (any more). */
+  chosenEnvironment(): EnvironmentOption | null {
+    return this.environmentId === null
+      ? null
+      : (this.environments.find((environment) => environment.id === this.environmentId) ?? null);
+  }
+
   private fail(kind: ProblemKind, problem: string): void {
     this.problemKind = kind;
     this.problem = problem;
@@ -720,6 +758,7 @@ export class PiwiContext {
     this.runVariables = null;
     this.runVariablesRead = null;
     this.allowedRunVariables.clear();
+    this.environments = [];
     this.branch = null;
     this.index = null;
     this.codeIndex = null;

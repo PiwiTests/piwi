@@ -186,6 +186,15 @@
   "runui_requestTitle": {
     "message": "¿Ejecutar en esta máquina?"
   },
+  "runui_requestTitleFor": {
+    "message": "¿Ejecutar en esta máquina para $environment$?",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestIntro": {
     "message": "Pediste a $host$ ejecutar aquí $tests$ de $project$, en la carpeta vinculada a ese proyecto. Se ejecuta el código de esa carpeta en esta máquina; nada se ejecuta hasta que hagas clic en $run$. Si no la respondes, la solicitud caduca a las $time$.",
     "placeholders": {
@@ -412,6 +421,28 @@
       }
     }
   },
+  "runui_requestProtectedNote": {
+    "message": "$environment$ está protegido: esta ejecución se limita a las pruebas etiquetadas $tags$ y solo empieza cuando la confirmas.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_requestProtectedConfirm": {
+    "message": "Sí, ejecutar estas pruebas contra $environment$",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestNotNow": {
     "message": "Ahora no"
   },
@@ -457,6 +488,32 @@
       "variables": {
         "content": "$1",
         "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
+  "runui_checkEnvironmentSet": {
+    "message": "Se ejecuta para $environment$: PIWI_ENVIRONMENT=$key$.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "key": {
+        "content": "$2",
+        "example": "staging"
+      }
+    }
+  },
+  "runui_checkEnvironmentProtected": {
+    "message": "Se ejecuta para $environment$, un entorno protegido: solo se ejecutan las pruebas etiquetadas $tags$.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
       }
     }
   },

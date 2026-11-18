@@ -418,6 +418,54 @@ class CompareWithAction : AnAction(), DumbAware {
     }
 }
 
+/**
+ * Piwi: Choose environment… — the environment the runs Piwi starts for a Playwright config's tests are for: **None**
+ * (the config decides), or one of its project's, as the service offers them (`piwi/environments`). The choice is kept
+ * on this machine and sent to the service (`PiwiProjectService.setEnvironment`).
+ */
+class ChooseEnvironmentAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = service?.status?.contexts.orEmpty().any { it.projectId != null }
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) }
+        choose(project, Glue.contextRootOf(project.service<PiwiProjectService>().status, uri))
+    }
+
+    companion object {
+        /**
+         * Offer the environments of the context at `root` (the first one with a project when no context is there), from
+         * the action or the environment widget, and keep the one chosen.
+         */
+        fun choose(project: Project, root: String?) {
+            val service = project.service<PiwiProjectService>()
+            val contexts = service.status?.contexts.orEmpty().filter { it.projectId != null }
+            val target = (contexts.firstOrNull { it.root == root } ?: contexts.firstOrNull())?.root ?: return
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val choices = service.server()?.environments(EnvironmentsParams(target))?.orNull()
+                val items = choices?.items.orEmpty()
+                if (choices == null || items.isEmpty()) return@executeOnPooledThread
+                ApplicationManager.getApplication().invokeLater({
+                    JBPopupFactory.getInstance()
+                        .createPopupChooserBuilder(items)
+                        .setRenderer(textRenderer<EnvironmentItem> { Glue.environmentEntryText(it) })
+                        .setTitle(choices.title)
+                        .setItemChosenCallback { item ->
+                            ApplicationManager.getApplication().executeOnPooledThread { service.setEnvironment(target, item.id) }
+                        }
+                        .createPopup()
+                        .showCenteredInCurrentWindow(project)
+                }, project.disposed)
+            }
+        }
+    }
+}
+
 /** Piwi: Re-run the failing tests — every test still failing, or edited since its run, in the Run tool window. */
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT

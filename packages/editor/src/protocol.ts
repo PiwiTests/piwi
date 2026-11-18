@@ -733,6 +733,12 @@ export interface StatusResult {
     source: ConnectionSource | null;
     projectId: number | null;
     projectName: string | null;
+    /**
+     * The environment the runs Piwi starts for this config's tests are for (`piwi/setEnvironment`), as the clients'
+     * environment item shows it; null while the project lists no environment and none is chosen, where the clients
+     * show no item.
+     */
+    environment?: StatusEnvironment | null;
     branch: string | null;
     locators: number;
     reachedFiles: number;
@@ -749,6 +755,18 @@ export interface StatusResult {
   }>;
   /** The address of the desktop app running on this machine; null when it does not run. */
   desktopUrl?: string | null;
+}
+
+/** A context's environment as the clients' environment item shows it (`StatusResult.contexts[].environment`). */
+export interface StatusEnvironment {
+  /** The environment chosen; null for none, where the Playwright config decides. */
+  id: number | null;
+  /** What the item says: the environment's name, `No environment` for none. */
+  text: string;
+  /** What hovering the item says: the project, the environment's key and what choosing another does. */
+  tooltip: string;
+  /** A protected environment: every run against it is confirmed, and keeps to the tests carrying its required tags. */
+  protected: boolean;
 }
 
 export const STATUS_REQUEST = 'piwi/status';
@@ -807,6 +825,13 @@ export interface EditorCredentials {
    * choices stay.
    */
   baselines?: Record<string, BaselineChoice> | null;
+  /**
+   * The environment chosen for each context, by its root (`piwi/setEnvironment`): an environment's id, or null for
+   * none. Kept on this machine by the client and sent again with every `piwi/setCredentials` and in the initialization
+   * options, so a restarted service has it. When present, it replaces every choice the service holds: a context it
+   * does not name runs with none. Absent, the choices stay.
+   */
+  environments?: Record<string, number | null> | null;
   /**
    * The severity of a `ci-failure` diagnostic: a failure of a run on the checked-out branch gets it, one of a run on
    * another branch is a warning at most, one whose line changed since its run an information; `off` publishes none,
@@ -943,6 +968,52 @@ export interface SetBaselineParams {
 }
 
 export const SET_BASELINE_NOTIFICATION = 'piwi/setBaseline';
+
+/**
+ * `piwi/environments`: the environments the runs of the context at `root` can be for, as **Choose environment…**
+ * offers them, **None** first (the Playwright config decides). Null for a root that is no context's.
+ */
+export interface EnvironmentsParams {
+  root: string;
+}
+
+export interface EnvironmentsResult {
+  root: string;
+  /** What the picker asks, naming the project: `Run the tests of Acme Mugs for…`. */
+  title: string;
+  /** **None**, then the project's environments in its order. */
+  items: EnvironmentItem[];
+}
+
+/** One choice of **Choose environment…**. */
+export interface EnvironmentItem {
+  /** The environment's id; null for **None**. */
+  id: number | null;
+  /** Its name, or `None`. */
+  label: string;
+  /** Its key, the label its runs report (`PIWI_ENVIRONMENT`), or what **None** does. */
+  description: string;
+  /** Its description, and for a protected one what its runs keep to; null for none. */
+  detail: string | null;
+  /** The choice in force. */
+  picked: boolean;
+  protected: boolean;
+}
+
+export const ENVIRONMENTS_REQUEST = 'piwi/environments';
+
+/**
+ * `piwi/setEnvironment` (notification, client to server): the environment chosen for the runs of the context at
+ * `root`, its id or null for none, which every run the service builds for it reads from then on. The client keeps it
+ * and sends it again in `EditorCredentials.environments`.
+ */
+export interface SetEnvironmentParams {
+  root: string;
+  /** The environment's id; null, or left out, for none. */
+  environmentId?: number | null;
+}
+
+export const SET_ENVIRONMENT_NOTIFICATION = 'piwi/setEnvironment';
 
 /** `piwi/trace`: download an execution's trace and return the command that opens it in Playwright's trace viewer. */
 export interface TraceParams {
