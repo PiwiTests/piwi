@@ -5,7 +5,8 @@
  * notifications, a whole new text by its line diff), so a stopped line maps to the line its statement stands on now,
  * whoever wrote above it: the person, or Piwi's own code from an earlier action. A file no editor held since the run
  * started is taken as its disk text, unchanged while its modification time is older than the run. A file the map
- * cannot follow is refused, with why: one written on disk since, one opened since with a text other than its disk's,
+ * cannot follow is refused, with why: one written on disk since, one opened since with a text other than its disk's
+ * (line endings aside),
  * one an editor held with unsaved changes as the run started, one whose edits since were more than it keeps, and a
  * stopped line an edit removed or rewrote from its start.
  */

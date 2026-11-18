@@ -491,9 +491,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
             runs = null
             failuresResult = null
             failures = emptyList()
+            testItems = null
             statusPushes++
             runsPushes++
             failuresPushes++
+            testItemsPushes++
         }
         changed()
     }
@@ -905,7 +907,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     /**
      * The status `piwi/statusChanged` carries: the connection of each context, and the desktop app. The open files'
      * coverage is asked again, from the service as it is now connected, and the test tree is read when the Tests tab
-     * asked for it before the service ran.
+     * asked for it and holds none: the service started, or started again, since.
      */
     fun statusChanged(result: StatusResult) {
         synchronized(lock) {

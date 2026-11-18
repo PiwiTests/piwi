@@ -150,7 +150,11 @@ class PiwiTestsTab(private val project: Project) : Disposable {
         val service = project.service<PiwiProjectService>()
         val result = service.testItems
         val nodes = Glue.testsFiltered(Glue.testsTree(result), filterField.text)
-        tree.emptyText.text = Glue.testsEmptyText(result, filtered(), service.serverStarted())
+        if (result == null && service.status == null) {
+            showServiceDown(tree, service)
+        } else {
+            tree.emptyText.text = Glue.testsEmptyText(result, filtered())
+        }
         if (nodes == drawn) {
             tree.repaint()
             return

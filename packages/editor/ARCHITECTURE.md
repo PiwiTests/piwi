@@ -532,7 +532,7 @@ whose text differs from the file's, line endings aside: `sameText`), listed sinc
 title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
 spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
 `testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, a title
-written on the call's line or the next, with the titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
+written on the call's line or on the first line of code below it, with the titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
 are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
 (`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
 `specTests` in `src/server.ts`.

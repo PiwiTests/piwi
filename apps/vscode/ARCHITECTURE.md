@@ -931,7 +931,8 @@ It is a `TestController` whose items are the tree the service builds (`piwi/test
 each config, a spec with changes read from its text, and the catalog's tests the checkout does not hold in a **Not in
 this checkout** group. It is read again in full when the connection or the runs change, and one spec alone 300 ms after
 its last edit or when it opens (`withSpec`, which puts the spec and the folders above it in place); the tree a listing
-changes comes pushed (`piwi/testItemsChanged`, `itemsChanged`). What the service answers:
+changes comes pushed (`piwi/testItemsChanged`, `itemsChanged`). The view's Refresh lists every config again
+(`piwi/refresh`), then reads the tree. What the service answers:
 [Test items](../../packages/editor/ARCHITECTURE.md#test-items) in the editor service's reference.
 
 `testTree` in `src/glue.ts` adds a node per Playwright config above the service's nodes when there are several, or

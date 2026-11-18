@@ -453,6 +453,13 @@ describe('testCalls', () => {
     expect(testCalls(lines)).toEqual([
       { line: 3, endLine: 6, title: 'Portail ${portail}', suite: ['Création d’une configuration'], suiteUnread: false },
     ]);
+    // A test in the line joined for a title is read on its own line, once.
+    expect(testCalls(['test.describe(', "  'cart', () => { test('pays', async () => {}); });"])).toEqual([
+      { line: 1, endLine: 1, title: 'pays', suite: ['cart'], suiteUnread: false },
+    ]);
+    expect(testCalls(['test.describe(', "  () => { test('pays', async () => {}); });"])).toEqual([
+      { line: 1, endLine: 1, title: 'pays', suite: [], suiteUnread: false },
+    ]);
     // Another call's `(` ending a line leaves the test below on its own line.
     expect(
       testCalls(['portails.forEach(', '  (portail) => test(`Portail ${portail}`, async () => {}),', ');']),

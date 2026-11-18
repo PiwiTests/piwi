@@ -43,6 +43,32 @@ describe('timeoutEdit', () => {
     expect(timeoutEdit(SPEC, 0, oversized)).toEqual({ line: 1, replace: false, text: '  test.setTimeout(12000);' });
   });
 
+  test('reads a test whose title and function sit on the lines below its call, up to the next such test', () => {
+    const spec = [
+      'test(',
+      "  'pays',",
+      '  async ({ page }) => {',
+      "    await page.goto('/cart');",
+      '  },',
+      ');',
+      'test(',
+      "  'adds',",
+      "  { tag: '@cart' },",
+      '  async ({ page }) => {',
+      '    test.slow();',
+      '    test.setTimeout(120_000);',
+      '  },',
+      ');',
+    ];
+    expect(timeoutEdit(spec, 0, staleSlow)).toBeNull();
+    expect(timeoutEdit(spec, 0, oversized)).toEqual({ line: 3, replace: false, text: '    test.setTimeout(12000);' });
+    expect(timeoutEdit(spec, 6, staleSlow)).toEqual({ line: 10, replace: true, text: '' });
+    expect(timeoutEdit(spec, 6, oversized)).toEqual({ line: 11, replace: true, text: '    test.setTimeout(12000);' });
+    // Details before the function: the statement goes in the function, not in the details.
+    const details = ["test('x', {", "  tag: '@a',", '}, async () => {', '  await a();', '});'];
+    expect(timeoutEdit(details, 0, oversized)).toEqual({ line: 3, replace: false, text: '  test.setTimeout(12000);' });
+  });
+
   test('leaves a one-line test alone', () => {
     expect(timeoutEdit(["test('x', async () => {});"], 0, oversized)).toBeNull();
   });
