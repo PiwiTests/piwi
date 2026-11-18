@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readWorkerToInstance, type WorkerToInstance } from '@piwitests/core/live-view';
 import { detectCi } from '../src/internal/support/ci.js';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, orError, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The run page's live view of tests that take no page from the `page` fixture, in a real CI run through the built
@@ -130,11 +130,11 @@ interface Posted {
   message: WorkerToInstance;
 }
 
-/** A frame of a test the worker posted, and the color it shows (`colorOf`). */
-interface Frame {
+/** A frame the worker posted, the test it belongs to (null outside one), and its color, or why it could not be read. */
+interface DecodedFrame {
   at: number;
   test: string | null;
-  color: ReturnType<typeof colorOf>;
+  color: ReturnType<typeof colorOf> | Error;
 }
 
 let server: FakeServer;
@@ -142,7 +142,7 @@ let server: FakeServer;
 const streams: http.ServerResponse[] = [];
 const posts: Posted[] = [];
 /** The frames of `posts`, each decoded once the run ended. */
-const frames: Frame[] = [];
+const decodedFrames: DecodedFrame[] = [];
 const marks: Record<string, number> = {};
 let exitCode: number | null = null;
 let output = '';
@@ -169,7 +169,12 @@ function colorOf(data: Buffer): 'blue' | 'red' | 'green' | 'other' {
 function colorsBetween(test: string, from: string, to: string): string[] {
   const start = marks[from]! + SETTLE_MS;
   const end = marks[to]!;
-  return frames.filter((f) => f.test === test && f.at >= start && f.at < end).map((f) => f.color);
+  return decodedFrames
+    .filter((f) => f.test === test && f.at >= start && f.at < end)
+    .map(({ color }) => {
+      if (color instanceof Error) throw color;
+      return color;
+    });
 }
 
 /** The view showed `color` in these frames: from the first of that color on, every one is. */
@@ -272,7 +277,8 @@ module.exports = wrapConfig(defineConfig({
   });
   for (const { at, message } of posts) {
     if (message.type === 'frame' && 'data' in message) {
-      frames.push({ at, test: message.test, color: colorOf(Buffer.from(message.data, 'base64')) });
+      const color = orError(() => colorOf(Buffer.from(message.data, 'base64')));
+      decodedFrames.push({ at, test: message.test, color });
     }
   }
 }, 150_000);
