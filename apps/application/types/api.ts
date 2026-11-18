@@ -141,7 +141,14 @@ export interface MarkerInfo {
   label: string;
   description: string | null;
   category: string;
+  /** The environment's label as written; null for every environment. */
   environment: string | null;
+  /** The environment the label resolves to. */
+  environmentId: number | null;
+  /** That environment's name, where the list answers it. */
+  environmentName?: string | null;
+  /** A deploy marker's deployed commit. */
+  commit: string | null;
   source: string; // 'manual' | 'auto'
   runId: number | null;
   createdAt: string | Date;
@@ -447,6 +454,10 @@ export interface ProjectWithTestRuns {
   defaultBranch?: string | null;
   /** The project's setting, else its most common run branch, else `main`: what a run scope reads with no branch picked. */
   effectiveDefaultBranch?: string;
+  /** The environment the project's views read by default, as they read the default branch; null for every environment. */
+  defaultEnvironmentId?: number | null;
+  /** The default environment a run scope reads with no environment picked; null for none, or when it is archived. */
+  effectiveDefaultEnvironment?: Pick<import('#shared/environments').EnvironmentRecord, 'id' | 'key' | 'name'> | null;
   openApiUrl?: string | null;
   /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
   externalIdUrl?: string | null;
@@ -624,6 +635,17 @@ export interface TestRunDetails {
   environmentArchived?: boolean;
   /** Why the run may not have tested its environment: another label than the one it was started for, a `baseURL` outside its URL patterns. */
   environmentWarnings?: string[];
+  /** Whether that environment's application is built from the run's checkout; null for no environment. */
+  environmentAppFromCheckout?: boolean | null;
+  /** The application's commit a run of a deployed environment ran against: its server's, else its latest deploy marker's. */
+  deployedCommit?: {
+    commit: string;
+    source: 'server' | 'marker';
+    origin?: string;
+    markerId?: number;
+    markerLabel?: string;
+    deployedAt?: string | Date;
+  } | null;
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
@@ -1239,6 +1261,11 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   firstSeenRunId: number;
   lastSeenRunId: number;
   firstSeenAt: string | Date | null;
+  /**
+   * For a cluster first seen in a deployed environment: the deploys between the last run of it where one of its tests
+   * passed and the run it first failed in, the last one its first failing deploy. Null otherwise.
+   */
+  firstFailingDeploy?: Serialize<import('#shared/handlers/deployed-changes').FirstFailingDeploy> | null;
   occurrences: number;
   affectedTests: number;
   /** How many of those tests are quarantined, beyond the listed `affectedTestCases` too. */
@@ -1769,6 +1796,11 @@ export interface DiagnosisContextCoverage {
     changedLines: number;
     executedLines: number;
   } | null;
+  /**
+   * The environment the failing run tested: its name, whether it is built from the checkout, and for a deployed one
+   * its deployed commit and the deploy markers listed. null for a run with no environment.
+   */
+  environmentUnderTest?: import('#shared/handlers/environment-context').EnvironmentContextCoverage | null;
   /**
    * The code the execution ran that the test's last passing execution with coverage did not, and the reverse:
    * the baseline execution and the counts the context carried. null when there is nothing to compare.

@@ -74,7 +74,7 @@ export async function* rollupExportChunks(
       projectIds: ctx.allowed,
       fromDay: dayKey(start),
       toDay: dayKey(end),
-      environments: ctx.scope.environments,
+      environmentPolicy: ctx.environmentPolicy,
       branchPolicy: ctx.branchPolicy,
       fullRunsOnly: ctx.scope.fullRunsOnly,
     });

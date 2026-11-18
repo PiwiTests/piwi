@@ -190,6 +190,7 @@ export function scheduleFilters(query: Record<string, string>): Partial<Analytic
   if (scope.projectIds) keep.projectIds = scope.projectIds;
   if (scope.projectTags) keep.projectTags = scope.projectTags;
   if (scope.environments) keep.environments = scope.environments;
+  if (scope.allEnvironments) keep.allEnvironments = true;
   if (scope.branches) keep.branches = scope.branches;
   if (scope.selection) keep.selection = scope.selection;
   if (scope.tests) keep.tests = scope.tests;

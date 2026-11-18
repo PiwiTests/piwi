@@ -16,12 +16,29 @@ no environment variable is copied whole.
 |---|---|---|
 | **Runner** | shard | time zone, `TZ`, locale, `LANG` / `LC_ALL` / `LC_TIME`, OS and distribution, architecture, Node.js and ICU versions, CI runner image, container; host name, CPU and memory |
 | **Browser** | shard and project | browser version, time zone, locale, languages, how it formats a number and a date, color scheme and reduced motion, headless; screen and user agent |
-| **Server** | instrumented origin | runtime, OS, time zone, culture, globalization mode, environment name, app version; host name, process, start time, clock offset from the runner |
+| **Server** | instrumented origin | runtime, OS, time zone, culture, globalization mode, environment name, app version; app commit, host name, process, start time, clock offset from the runner |
 
 The browser snapshot needs the [capture fixtures](/guide/capture-fixtures): it is read from the test's page before the
 test navigates. The server snapshot needs an [instrumentation package](/guide/backend-logs#server-environment). The
 last fields of each row (after the semicolon) change by nature between runs and are never shown as a possible cause.
 `collectEnvironmentInfo: false` in the reporter options, or `PIWI_COLLECT_ENVIRONMENT_INFO=false`, turns it all off.
+
+## The application's commit
+
+A server snapshot names the version of its application (`appVersion`) and the commit it was built from (`appCommit`,
+7 to 40 hexadecimal characters, else nothing), which tell a run of a [deployed environment](./deployed-environments) which code
+it tested. The instrumentation package's option wins, then `PIWI_APP_COMMIT` and `PIWI_APP_VERSION` set by the deploy,
+then:
+
+- **ASP.NET Core**: the commit from the source revision the .NET SDK writes into the entry assembly's informational
+  version (`1.4.0+4e6f516…`), that informational version being `appVersion`. The option is
+  `PiwiTestLogsOptions.AppCommit`.
+- **Nitro**: the commit from the hosting platform's variable (`VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`,
+  `RAILWAY_GIT_COMMIT_SHA`, `SOURCE_COMMIT`). The options go through `piwiPlugin({ appVersion, appCommit })`, exported
+  from the server plugin file in place of the default export.
+
+Instrumentation is off in production by default, so no server snapshot names production's commit: its deploy pipeline
+records it with a [deploy marker](./timeline-markers#recording-deploys-from-ci) instead.
 
 ## Where it shows
 

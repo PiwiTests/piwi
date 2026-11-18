@@ -110,7 +110,13 @@ describe('test case stats leave lab runs out', () => {
 
   // These runs name no environment: a scope that names one leaves them all out.
   test('the test-cases list sorted by file leaves out a run with no environment from an environment scope', async () => {
-    const scope = { environments: ['ci'], branches: [], allBranches: true, fullRunsOnly: false };
+    const scope = {
+      environments: ['ci'],
+      allEnvironments: false,
+      branches: [],
+      allBranches: true,
+      fullRunsOnly: false,
+    };
     const { items } = await getProjectTestCases(db as never, 1, { sort: 'file', scope });
     expect(items[0]).toMatchObject({ totalRuns: 0, passedRuns: 0, failedRuns: 0 });
   });

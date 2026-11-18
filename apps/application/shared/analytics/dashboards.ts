@@ -442,6 +442,7 @@ const STORED_SCOPE_KEYS = [
   'projectIds',
   'projectTags',
   'environments',
+  'allEnvironments',
   'branches',
   'defaultBranchOnly',
   'fullRunsOnly',

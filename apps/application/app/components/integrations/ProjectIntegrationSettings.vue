@@ -450,7 +450,7 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
             <p class="text-sm font-semibold text-highlighted mb-2 flex items-center gap-1">
               Runs that write to the ticket <HelpHint topic="integrations.run-scope" />
             </p>
-            <TrackerRunScopeFields v-model="form.policies.scope" />
+            <TrackerRunScopeFields v-model="form.policies.scope" :project-id="projectId" />
           </div>
           <div class="space-y-2">
             <USwitch v-model="form.policies.commentOnFix" label="Comment when the fix lands" />
@@ -608,7 +608,7 @@ const requiredFields = computed(() => requiredFieldsToAsk(screenFields.value));
               description="After each run, file an issue for every failure that meets a rule below, through the destination and owner routes above."
             />
           </div>
-          <AutoCreateRulesEditor v-model="form.autoCreate.rules" />
+          <AutoCreateRulesEditor v-model="form.autoCreate.rules" :project-id="projectId" />
           <div class="space-y-2">
             <USwitch
               v-model="form.autoCreate.skipFlaky"

@@ -57,7 +57,7 @@ describe('a run label resolves to an environment', () => {
     expect(first.environmentId).not.toBeNull();
     expect((await resolveRunEnvironment(db as never, SHOP, 'Staging')).environmentId).toBe(first.environmentId);
     const [listed] = await listProjectEnvironments(db as never, SHOP);
-    expect(listed).toMatchObject({ key: 'staging', name: 'staging', discovered: true });
+    expect(listed).toMatchObject({ key: 'staging', name: 'staging', discovered: true, appFromCheckout: true });
   });
 
   test('no label, and a label a key cannot hold, resolve to none', async () => {
@@ -193,7 +193,11 @@ describe('copying environments', () => {
 
 describe('the run page facts', () => {
   test('names the environment and warns of a baseURL outside its URL patterns', async () => {
-    const created = await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging' });
+    const created = await createEnvironment(db as never, SHOP, {
+      key: 'staging',
+      name: 'Staging',
+      appFromCheckout: false,
+    });
     if (!created.ok) throw new Error('not created');
     await db.insert(schema.projectUrlPatterns).values({
       projectId: SHOP,
@@ -208,12 +212,49 @@ describe('the run page facts', () => {
       environmentProtected: false,
       environmentArchived: false,
       environmentWarnings: ['The tests opened http://localhost:3000, which no URL pattern of Staging matches.'],
+      environmentAppFromCheckout: false,
+      deployedCommit: null,
     });
     const inside = await run('staging', {
       environmentId: created.environment.id,
       metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://staging.example.com' } }] } },
     });
     expect((await runEnvironmentFacts(db as never, inside as never, row as never)).environmentWarnings).toEqual([]);
+  });
+
+  test('reads the URL patterns of the run’s environment by id, whatever label they were written with', async () => {
+    const created = await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases: ['stg'] });
+    if (!created.ok) throw new Error('not created');
+    const other = await createEnvironment(db as never, SHOP, { key: 'production', name: 'Production' });
+    if (!other.ok) throw new Error('not created');
+    await db.insert(schema.projectUrlPatterns).values([
+      // Written as an alias: it names Staging by id.
+      {
+        projectId: SHOP,
+        pattern: 'https://stg.example.com/**',
+        environment: 'STG',
+        environmentId: created.environment.id,
+      },
+      // A label that reads like Staging's key, held by another environment: not one of Staging's.
+      {
+        projectId: SHOP,
+        pattern: 'https://elsewhere.example.com/**',
+        environment: 'staging',
+        environmentId: other.environment.id,
+      },
+    ]);
+    const [row] = await db.select().from(schema.environments).where(eq(schema.environments.id, created.environment.id));
+    const opened = (baseURL: string) =>
+      run('staging', {
+        environmentId: created.environment.id,
+        metadata: { htmlReport: { projects: [{ use: { baseURL } }] } },
+      });
+    const inside = await opened('https://stg.example.com');
+    expect((await runEnvironmentFacts(db as never, inside as never, row as never)).environmentWarnings).toEqual([]);
+    const outside = await opened('https://elsewhere.example.com');
+    expect((await runEnvironmentFacts(db as never, outside as never, row as never)).environmentWarnings).toEqual([
+      'The tests opened https://elsewhere.example.com, which no URL pattern of Staging matches.',
+    ]);
   });
 
   test('warns when a requested run reported another environment than the one it was started for', async () => {
@@ -454,11 +495,39 @@ describe('the environments across projects', () => {
     await updateEnvironment(db as never, OTHER, qa.environment.id, { archived: true });
 
     expect(await listInstanceEnvironments(db as never, 'all')).toEqual([
-      { key: 'staging', names: ['Staging', 'Staging (Globex)'], projects: 2 },
+      { key: 'staging', names: ['Staging', 'Staging (Globex)'], projects: 2, defaults: 0 },
     ]);
     expect(await listInstanceEnvironments(db as never, new Set([OTHER]))).toEqual([
-      { key: 'Staging', names: ['Staging (Globex)'], projects: 1 },
+      { key: 'Staging', names: ['Staging (Globex)'], projects: 1, defaults: 0 },
     ]);
     expect(await listInstanceEnvironments(db as never, new Set())).toEqual([]);
   });
+});
+
+describe('the MCP list_runs tool', () => {
+  test('filters by an environment named by its key, an alias or a label, and answers each run’s environment', async () => {
+    const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
+    const listRuns = MCP_TOOLS.find((tool) => tool.name === 'list_runs')!;
+    const created = await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases: ['stg'] });
+    if (!created.ok) throw new Error('not created');
+    const staging = created.environment.id;
+    const stg = await run('stg', { environmentId: staging });
+    const exact = await run('staging', { environmentId: staging });
+    await run('production');
+    const loose = await run('Preview-1');
+    const ctx = { user: { id: 1, role: 'administrator' }, access: { role: 'administrator' }, scope: 'all' };
+    const ids = async (environment: string) => {
+      const answer = (await listRuns.handler(db as never, { projectId: SHOP, environment }, ctx as never)) as {
+        items: Array<{ id: number; environmentId?: number }>;
+      };
+      return answer.items.map((item) => item.id).sort((a, b) => a - b);
+    };
+    expect(await ids('STG')).toEqual([stg.id, exact.id]);
+    expect(await ids('staging')).toEqual([stg.id, exact.id]);
+    expect(await ids('Preview-1')).toEqual([loose.id]);
+    const all = (await listRuns.handler(db as never, { projectId: SHOP }, ctx as never)) as {
+      items: Array<{ id: number; environmentId?: number }>;
+    };
+    expect(all.items.find((item) => item.id === stg.id)?.environmentId).toBe(staging);
+  }, 60_000);
 });

@@ -4,9 +4,11 @@ import {
   envFileProblem,
   environmentAliasProblem,
   environmentKeyProblem,
+  environmentMatchesPattern,
   environmentNameProblem,
   requiredTagProblem,
 } from '@piwitests/core/environments';
+import { globMatcher } from '@piwitests/core/glob';
 import { parseRunVariables, type RunVariable } from '@piwitests/core/run-variables';
 
 /**
@@ -129,10 +131,40 @@ export function checkEnvironmentFields(input: {
       description: input.description ? input.description : null,
       aliases,
       runVariables: runVariables.value,
-      appFromCheckout: input.appFromCheckout === true,
+      appFromCheckout: input.appFromCheckout !== false,
       protected: isProtected,
       requiredTags,
       envFile,
     },
   };
+}
+
+/**
+ * A run's environment as a filter-like setting reads it (a notification filter, an issue automation or test
+ * management scope): its label, and the key and aliases of the environment the label resolved to, when it has one.
+ */
+export interface RunEnvironmentSelectable {
+  environment?: string | null;
+  environmentKey?: string | null;
+  environmentAliases?: readonly string[] | null;
+}
+
+/**
+ * Whether a run is in a setting's environments (`selectors`: keys, labels and `*` patterns). A selector names the run
+ * when it equals, or `*`-matches, the key or an exact alias of the run's environment, ignoring case
+ * (`environmentMatchesPattern`); for a run whose label resolved to no environment, when it equals or matches the label,
+ * ignoring case. A run with no label is in none.
+ */
+export function runEnvironmentMatches(run: RunEnvironmentSelectable, selectors: readonly string[]): boolean {
+  if (run.environmentKey) {
+    const environment = { key: run.environmentKey, aliases: run.environmentAliases ?? [] };
+    return selectors.some((selector) => environmentMatchesPattern(environment, selector));
+  }
+  const label = run.environment?.trim();
+  if (!label) return false;
+  return selectors.some((selector) =>
+    selector.includes('*')
+      ? globMatcher(selector, { ignoreCase: true })(label)
+      : selector.toLowerCase() === label.toLowerCase(),
+  );
 }

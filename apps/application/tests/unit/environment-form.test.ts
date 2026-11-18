@@ -55,6 +55,7 @@ describe('environmentDraft', () => {
     });
     expect(environmentDraft(null).key).toBe('');
     expect(environmentDraft(null).runVariables).toEqual([]);
+    expect(environmentDraft(null).appFromCheckout).toBe(true);
   });
 });
 
@@ -167,7 +168,7 @@ describe('environmentDraftBody', () => {
       description: null,
       aliases: ['stg'],
       runVariables: [{ name: 'TEST_ENV', value: 'staging' }],
-      appFromCheckout: false,
+      appFromCheckout: true,
       protected: true,
       requiredTags: ['@smoke'],
       envFile: null,

@@ -31,6 +31,13 @@ defineRouteMeta({
         schema: { type: 'boolean' },
         description: 'Count every branch instead of each project’s default branch',
       },
+      {
+        name: 'allEnvironments',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean' },
+        description: 'Count every environment instead of each project’s default environment',
+      },
     ],
   },
 });

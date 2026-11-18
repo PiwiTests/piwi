@@ -10,7 +10,6 @@ import {
   CI_ACTION_KIND_LABELS,
   CI_ACTION_KINDS,
   MAX_CI_ACTION_NAME_LENGTH,
-  MAX_CI_ENVIRONMENT_LENGTH,
   MAX_CI_INPUT_VALUE_LENGTH,
   type CiAction,
   type CiActionKind,
@@ -316,13 +315,15 @@ function submit() {
         <UFormField
           label="Environment"
           name="ciActionEnvironment"
-          description="The environment this action runs in, such as staging. A run in that environment starts this action first."
+          description="The environment this action runs in. A run of that environment starts this action first."
         >
-          <UInput
-            v-model="draft.environment"
-            placeholder="optional, e.g. staging"
-            :maxlength="MAX_CI_ENVIRONMENT_LENGTH"
+          <SettingEnvironmentPicker
+            v-model:environment-id="draft.environmentId"
+            v-model:label="draft.environment"
+            :project-id="projectId"
+            none-label="Any environment"
             class="w-full sm:max-w-xs"
+            data-testid="ci-action-environment"
           />
         </UFormField>
 

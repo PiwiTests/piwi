@@ -1,9 +1,9 @@
 /**
  * Pure helpers for the project's tracker binding form
  * (`ProjectIntegrationSettings.vue` and its parts): run scopes and
- * automatic-creation rules are edited as text (comma-separated lists) and
- * numbers, and turned back into the binding's shapes on save; the server
- * normalizes and clamps them again.
+ * automatic-creation rules are edited as text (comma-separated lists), a list
+ * of environment selectors and numbers, and turned back into the binding's
+ * shapes on save; the server normalizes and clamps them again.
  */
 import { DEFAULT_AUTO_CREATE_RULE, type AutoCreateRule, type TrackerRunScope } from '#shared/integrations/automation';
 import type { TrackerIssueTypeOption } from '#shared/integrations/types';
@@ -12,7 +12,8 @@ import type { TrackerIssueTypeOption } from '#shared/integrations/types';
 export interface RunScopeForm {
   branches: string;
   defaultBranch: boolean;
-  environments: string;
+  /** Environment keys, labels or `*` patterns. */
+  environments: string[];
 }
 
 /** An automatic-creation rule as the form edits it. */
@@ -36,7 +37,7 @@ export function runScopeToForm(scope: TrackerRunScope): RunScopeForm {
   return {
     branches: scope.branches.join(', '),
     defaultBranch: scope.defaultBranch,
-    environments: scope.environments.join(', '),
+    environments: [...scope.environments],
   };
 }
 
@@ -44,7 +45,7 @@ export function runScopeFromForm(form: RunScopeForm): TrackerRunScope {
   return {
     branches: commaSeparatedList(form.branches),
     defaultBranch: form.defaultBranch,
-    environments: commaSeparatedList(form.environments),
+    environments: form.environments.map((environment) => environment.trim()).filter(Boolean),
   };
 }
 

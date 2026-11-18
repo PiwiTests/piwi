@@ -11,7 +11,9 @@ import { metricValue } from './metric-values';
  * Pass rate and run success side by side per environment ("staging is green
  * and production is not"): each environment's values and change against the
  * comparison period, and its pass rate over time. The same breakdown the
- * metric widget computes by environment, from the daily rollups.
+ * metric widget computes by environment, from the daily rollups. With no
+ * environment picked it compares every environment, never only each
+ * project's default one.
  */
 export async function getAnalyticsEnvironmentComparison(
   db: DrizzleDB,
@@ -20,7 +22,8 @@ export async function getAnalyticsEnvironmentComparison(
   rawOptions: unknown = {},
 ): Promise<AnalyticsEnvironmentComparison> {
   const { limit } = environmentComparisonOptionsSchema.parse(rawOptions ?? {});
-  const ctx = await getAnalyticsContext(db, scope, access);
+  const compared = scope.environments?.length || scope.allEnvironments ? scope : { ...scope, allEnvironments: true };
+  const ctx = await getAnalyticsContext(db, compared, access);
   const { cost } = await resolveCiCost(db);
   const base: Omit<BreakdownRequest, 'metric' | 'series'> = {
     dimension: 'environment',

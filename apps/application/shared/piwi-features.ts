@@ -521,6 +521,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/environments',
       },
       {
+        title: 'Deployed environments',
+        summary:
+          'For a run against a deployed environment, the application’s commit it ran against, from its server or its deploy markers: the Changes tab, suspect lines and the AI diagnosis read its changes, and a failure cluster names its first failing deploy.',
+        needs: [],
+        where: 'Test run header → Application; Test run → Changes; failure pages; Project → Settings → Environments',
+        doc: 'features/deployed-environments',
+        parent: 'Environments',
+      },
+      {
         title: 'Reuse forecast',
         summary:
           'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',

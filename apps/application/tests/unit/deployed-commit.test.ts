@@ -67,8 +67,9 @@ describe('the deployed commit of a run', () => {
     ]);
     const deployed = await run(staging, new Date(NOW));
     const before = await run(staging, new Date(NOW - 3 * DAY));
+    const between = await run(staging, new Date(NOW - 1.5 * DAY));
 
-    const commits = await runsDeployedCommits(db as never, [reported, deployed, before]);
+    const commits = await runsDeployedCommits(db as never, [reported, deployed, before, between]);
     expect(commits.get(reported.id)).toEqual({
       commit: 'ddddddd4',
       source: 'server',
@@ -76,6 +77,7 @@ describe('the deployed commit of a run', () => {
     });
     expect(commits.get(deployed.id)).toMatchObject({ commit: 'bbbbbbb2', source: 'marker' });
     expect(commits.get(before.id)).toBeNull();
+    expect(commits.get(between.id)).toMatchObject({ commit: 'aaaaaaa1', source: 'marker', markerLabel: 'Deploy 41' });
   });
 
   test('an environment built from the checkout, or none, has no deployed commit', async () => {

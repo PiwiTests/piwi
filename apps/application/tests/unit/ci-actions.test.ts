@@ -298,6 +298,22 @@ describe('resolveCiActionsSettings', () => {
     const resolved = resolveCiActionsSettings({ enabled: true, actions: [{ ...github(), accepts: [] }] });
     expect(resolved.actions[0]!.accepts).toEqual(['tests']);
   });
+
+  test('keeps an environment’s label and id, and drops an id that is not a positive integer', () => {
+    const resolved = resolveCiActionsSettings({
+      enabled: true,
+      actions: [
+        github({ environment: ' staging ', environmentId: 4 }),
+        { ...github({ id: 'b', name: 'B' }), environmentId: '4' },
+        { ...github({ id: 'c', name: 'C' }), environmentId: -1 },
+      ],
+    });
+    expect(resolved.actions.map((a) => [a.environment, a.environmentId])).toEqual([
+      ['staging', 4],
+      [undefined, undefined],
+      [undefined, undefined],
+    ]);
+  });
 });
 
 describe('ciActionsProblem', () => {
@@ -395,9 +411,26 @@ describe('pickCiAction', () => {
 
   test('prefers the action of the run’s environment, then the default, then the first', () => {
     expect(pickCiAction(all, 'tests', { provider: 'github', environment: 'staging' }).action?.id).toBe('staging');
+    expect(pickCiAction(all, 'tests', { provider: 'github', environment: 'Staging' }).action?.id).toBe('staging');
     expect(pickCiAction(all, 'tests', { provider: 'github', environment: 'qa' }).action?.id).toBe('prod');
     expect(pickCiAction(all, 'tests', { provider: 'github' }).action?.id).toBe('prod');
     expect(pickCiAction(settings([plain, staging]), 'tests', { provider: 'github' }).action?.id).toBe('plain');
+  });
+
+  test('picks the action of the run’s environment by id before its label', () => {
+    const byId = github({ id: 'eu', name: 'EU', environment: 'prod-eu', environmentId: 7 });
+    const named = settings([plain, staging, prod, byId], { rerun: 'plain' });
+    // The run's label is an alias of the environment the action names.
+    expect(pickCiAction(named, 'tests', { provider: 'github', environment: 'eu', environmentId: 7 }).action?.id).toBe(
+      'eu',
+    );
+    // An environment no action names falls back to the label, then to the default.
+    expect(
+      pickCiAction(named, 'tests', { provider: 'github', environment: 'PRODUCTION', environmentId: 9 }).action?.id,
+    ).toBe('prod');
+    expect(pickCiAction(named, 'tests', { provider: 'github', environment: 'qa', environmentId: 9 }).action?.id).toBe(
+      'plain',
+    );
   });
 
   test('serves a run only through an action of its provider, or a CI server', () => {

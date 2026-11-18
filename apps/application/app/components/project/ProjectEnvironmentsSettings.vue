@@ -3,7 +3,8 @@
  * Project settings → Environments: the deployments this project's tests run against (Local, Integration, Staging,
  * Production), in the order every picker shows them, the archived ones apart. A run's label resolves to one by its key
  * or an alias; a label nothing takes adds a discovered one. The project's managers add, edit, reorder, archive and
- * delete them, and copy another project's; everyone else reads the list.
+ * delete them, and copy another project's; everyone else reads the list. Each row opens the environment's activity
+ * (`ProjectEnvironmentActivity`): its last run, last incident, deploys and deployed versions.
  */
 import type { ProjectWithStats, ProjectWithTestRuns } from '~~/types/api';
 import type { EnvironmentRecord } from '#shared/environments';
@@ -85,6 +86,14 @@ async function move(environment: EnvironmentRecord, step: -1 | 1) {
     busy.value = null;
     await refresh();
   }
+}
+
+// ── Activity: the last run, incident, deploys and deployed versions ───────
+const activityOpen = ref(false);
+const activityOf = ref<EnvironmentRecord | null>(null);
+function showActivity(environment: EnvironmentRecord) {
+  activityOf.value = environment;
+  activityOpen.value = true;
 }
 
 // ── Add and edit ──────────────────────────────────────────────────────────
@@ -278,6 +287,14 @@ export default wrapConfig(
               <p v-if="environment.description" class="text-xs text-muted break-words">
                 {{ environment.description }}
               </p>
+              <button
+                type="button"
+                :class="[SENTENCE_LINK_CLASS, 'text-xs text-muted']"
+                data-testid="environment-activity-open"
+                @click="showActivity(environment)"
+              >
+                Last run, incidents and deploys
+              </button>
             </div>
             <div v-if="canManage" class="flex shrink-0 flex-wrap items-center gap-1">
               <UButton
@@ -402,6 +419,8 @@ export default wrapConfig(
         </template>
       </UCollapsible>
     </div>
+
+    <ProjectEnvironmentActivity v-model:open="activityOpen" :project-id="project.id" :environment="activityOf" />
 
     <ProjectEnvironmentEditor
       v-if="canManage"

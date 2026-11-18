@@ -55,14 +55,14 @@ describe('MCP tool descriptions', () => {
     expect(toolSummary(fixPlan)).toBe('Get everything needed to fix one failure cluster, in one answer.');
     expect(toolDetails(fixPlan)).toMatch(/^Prefer it over assembling/);
     expect(toolDetails(fixPlan)).toContain('It carries:\n- the diagnosis and its validated patch\n- ');
-    expect(toolDetails(byName('list_runs').description)).toBe('');
+    expect(toolDetails(byName('get_project').description)).toBe('');
   });
 });
 
 describe('toolParameters', () => {
   test('lists the top-level arguments with their type, whether they are required and their values', () => {
     const params = toolParameters(byName('list_runs'));
-    expect(params.map((p) => p.name)).toEqual(['projectId', 'status', 'branch', 'pageSize', 'cursor']);
+    expect(params.map((p) => p.name)).toEqual(['projectId', 'status', 'branch', 'environment', 'pageSize', 'cursor']);
     expect(params[0]).toMatchObject({ type: 'number', required: true, values: [] });
     expect(params[1]).toMatchObject({ type: 'string', required: false });
     expect(params[1]!.values).toContain('timedout');

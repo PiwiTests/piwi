@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { EnvironmentFilterItem } from '~/utils/environment-filter';
+import type { HelpTopicKey } from '~/utils/help-content';
 
 /**
  * The scope controls shared by every list on a screen: an environment select, a
@@ -12,7 +13,9 @@ import type { EnvironmentFilterItem } from '~/utils/environment-filter';
  * of the chosen values. An environment choice is a value or a `{ label, value }`
  * (a project's environment, stored by its key and shown by its name). With
  * `branchPolicy`, a branch select with nothing picked sits beside the policy for
- * that case: the default branch, or every branch.
+ * that case: the default branch, or every branch; with `environmentPolicy`, an
+ * environment select with nothing picked sits beside its own: the default
+ * environment, or every environment.
  * A control renders only when the data offers more than nothing to pick from.
  *
  * Slots: `leading` before the environment select, `after-branches` right after
@@ -20,6 +23,8 @@ import type { EnvironmentFilterItem } from '~/utils/environment-filter';
  */
 export interface FilterBarState {
   environments: string[];
+  /** With no environment picked: every environment, or only the default one. Read where the bar offers the policy. */
+  allEnvironments?: boolean;
   branches: string[];
   fullRunsOnly: boolean;
   /** With no branch picked: every branch, or only the default branch. Read where the bar offers the policy. */
@@ -39,8 +44,25 @@ const props = withDefaults(
     branchPolicy?: boolean;
     /** The default branch the policy names. */
     defaultBranch?: string | null;
+    /** Offer the environment policy (the default environment or every environment) while no environment is picked. */
+    environmentPolicy?: boolean;
+    /** The name of the default environment the policy names. */
+    defaultEnvironment?: string | null;
+    /** The help topic beside the environment policy. */
+    environmentPolicyHelp?: HelpTopicKey;
+    /** Attributes the environment policy's select carries (a guide anchor, a test id). */
+    environmentPolicyAttrs?: Record<string, string>;
   }>(),
-  { showReset: true, branchPlaceholder: 'All branches', branchPolicy: false, defaultBranch: null },
+  {
+    showReset: true,
+    branchPlaceholder: 'All branches',
+    branchPolicy: false,
+    defaultBranch: null,
+    environmentPolicy: false,
+    defaultEnvironment: null,
+    environmentPolicyHelp: undefined,
+    environmentPolicyAttrs: () => ({ 'data-testid': 'environment-policy' }),
+  },
 );
 
 const emit = defineEmits<{
@@ -76,6 +98,18 @@ const allBranches = computed({
   set: (val) => emit('update:modelValue', { ...props.modelValue, allBranches: val }),
 });
 
+const allEnvironments = computed({
+  get: () => !!props.modelValue.allEnvironments,
+  set: (val) => emit('update:modelValue', { ...props.modelValue, allEnvironments: val }),
+});
+
+// The policy matters only while no environment is picked.
+const showEnvironmentPolicy = computed(
+  () => props.environmentPolicy && props.modelValue.environments.length === 0 && environmentItems.value.length > 0,
+);
+
+const environmentPlaceholder = computed(() => (showEnvironmentPolicy.value ? 'Pick environments' : 'All environments'));
+
 // The policy matters only while no branch is picked and some run is off the default branch.
 const showBranchPolicy = computed(
   () =>
@@ -91,11 +125,18 @@ const hasActiveFilters = computed(
     props.modelValue.environments.length > 0 ||
     props.modelValue.branches.length > 0 ||
     !props.modelValue.fullRunsOnly ||
-    (props.branchPolicy && !!props.modelValue.allBranches),
+    (props.branchPolicy && !!props.modelValue.allBranches) ||
+    (props.environmentPolicy && !!props.modelValue.allEnvironments),
 );
 
 function reset() {
-  emit('update:modelValue', { environments: [], branches: [], fullRunsOnly: true, allBranches: false });
+  emit('update:modelValue', {
+    environments: [],
+    allEnvironments: false,
+    branches: [],
+    fullRunsOnly: true,
+    allBranches: false,
+  });
 }
 </script>
 
@@ -110,7 +151,7 @@ function reset() {
       value-key="value"
       label-key="label"
       multiple
-      placeholder="All environments"
+      :placeholder="environmentPlaceholder"
       size="sm"
       class="min-w-[160px]"
     >
@@ -121,7 +162,7 @@ function reset() {
             class="size-3.5 shrink-0"
             :class="(selected as string[]).length ? 'text-primary' : 'text-gray-400'"
           />
-          <span v-if="!(selected as string[]).length" class="text-gray-500">All environments</span>
+          <span v-if="!(selected as string[]).length" class="text-gray-500">{{ environmentPlaceholder }}</span>
           <span v-else-if="(selected as string[]).length === 1">{{
             environmentLabel((selected as string[])[0]!)
           }}</span>
@@ -129,6 +170,14 @@ function reset() {
         </div>
       </template>
     </USelectMenu>
+
+    <EnvironmentPolicySelect
+      v-if="showEnvironmentPolicy"
+      v-model="allEnvironments"
+      :default-environment="defaultEnvironment"
+      :help="environmentPolicyHelp"
+      v-bind="environmentPolicyAttrs"
+    />
 
     <USelectMenu
       v-if="availableBranches.length > 0"

@@ -208,6 +208,8 @@ import {
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   InvalidRunVariablesError,
+  InvalidCiActionsError,
+  InvalidDefaultEnvironmentError,
   InvalidTagKeysError,
   updateProject,
   createProject,
@@ -217,6 +219,7 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { projectDefaultEnvironment } from '#shared/handlers/default-environment';
 import {
   copyEnvironments,
   createEnvironment,
@@ -289,6 +292,8 @@ import {
   type ProbeResultInput,
 } from '#shared/handlers/probes';
 import { computeChangeCoverage } from '#shared/handlers/change-coverage';
+import { runChangeCoverageNote } from '#shared/handlers/deployed-changes';
+import { getEnvironmentActivity } from '#shared/handlers/environment-activity';
 import {
   isBuiltinKey,
   parseRankBy,
@@ -1116,7 +1121,12 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
-        if (e instanceof InvalidTagKeysError || e instanceof InvalidRunVariablesError)
+        if (
+          e instanceof InvalidTagKeysError ||
+          e instanceof InvalidRunVariablesError ||
+          e instanceof InvalidCiActionsError ||
+          e instanceof InvalidDefaultEnvironmentError
+        )
           throw demoHttpError(400, e.message);
         throw e;
       }
@@ -3314,7 +3324,8 @@ const routes: RouteEntry[] = [
       const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
       // The demo has no SCM provider; show a small representative diff so the
       // uncovered-changes join renders against the seeded reach.
-      return computeChangeCoverage(await getDemoDb(), +m[1]!, {
+      const db = await getDemoDb();
+      const coverage = await computeChangeCoverage(db, +m[1]!, {
         changedFiles: [
           { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
           { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
@@ -3325,6 +3336,25 @@ const routes: RouteEntry[] = [
         tickets: ['PROJ-418'],
         scmAvailable: true,
       });
+      // A run of a deployed environment says what its reach of the application is of, as the server's answer does.
+      const [inspected] =
+        runId != null
+          ? await db
+              .select({
+                id: testRuns.id,
+                projectId: testRuns.projectId,
+                environmentId: testRuns.environmentId,
+                startTime: testRuns.startTime,
+                metadata: testRuns.metadata,
+              })
+              .from(testRuns)
+              .where(eq(testRuns.id, runId))
+          : [];
+      if (inspected && inspected.projectId === +m[1]!) {
+        const head = (inspected.metadata as { scm?: { commit?: string | null } } | null)?.scm?.commit ?? null;
+        coverage.deployedNote = await runChangeCoverageNote(db, inspected, head);
+      }
+      return coverage;
     },
   },
   {
@@ -4238,7 +4268,22 @@ const routes: RouteEntry[] = [
       const projectId = +m[1]!;
       await assertDemoEntityScope(ctx, 'project', projectId);
       const canManage = demoCan(ctx, 'project:manage', projectId);
-      return { environments: await listProjectEnvironments(await getDemoDb(), projectId, { canManage }) };
+      const db = await getDemoDb();
+      return {
+        environments: await listProjectEnvironments(db, projectId, { canManage }),
+        defaultEnvironmentId: (await projectDefaultEnvironment(db, projectId))?.id ?? null,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)\/activity$/,
+    handler: async (m, _b, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const activity = await getEnvironmentActivity(await getDemoDb(), projectId, +m[2]!);
+      if (!activity) throw demoHttpError(404, 'No such environment in this project');
+      return activity;
     },
   },
   {

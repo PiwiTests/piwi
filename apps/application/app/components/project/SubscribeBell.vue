@@ -12,8 +12,6 @@ const props = defineProps<{
   projectLabel?: string;
   /** Branch names the project's runs reported, offered by the branch filter. */
   knownBranches?: string[];
-  /** Environment names the project's runs reported, offered by the environment filter. */
-  knownEnvironments?: string[];
 }>();
 
 const config = useRuntimeConfig();
@@ -59,6 +57,8 @@ function toggleCookieEvent(evt: NotificationEvent) {
 interface Subscription {
   id: number;
   userId?: number | null;
+  /** Null for a subscription on every project. */
+  projectId?: number | null;
   events: string[];
   filters: SubscriptionFilters | null;
   mode: string;
@@ -399,8 +399,8 @@ const bellSubscribed = computed(() =>
               <SubscriptionScopeFields
                 v-model:branches="editBranches"
                 v-model:environments="editEnvironments"
+                :project-id="editingSub?.projectId === null ? null : projectId"
                 :known-branches="knownBranches"
-                :known-environments="knownEnvironments"
               />
               <div class="flex gap-1.5 justify-end">
                 <UButton size="xs" color="neutral" variant="ghost" @click="cancelEdit">Cancel</UButton>
@@ -497,8 +497,8 @@ const bellSubscribed = computed(() =>
           <SubscriptionScopeFields
             v-model:branches="selectedBranches"
             v-model:environments="selectedEnvironments"
+            :project-id="projectId"
             :known-branches="knownBranches"
-            :known-environments="knownEnvironments"
           />
           <label
             v-if="canSubscribeGlobal"

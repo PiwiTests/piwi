@@ -253,7 +253,7 @@ const PAIRED_FIELD_UI = { root: 'sm:row-span-2 sm:grid sm:grid-rows-subgrid' };
         <USwitch
           v-model="draft.appFromCheckout"
           label="Built from the checkout"
-          description="The app under test is built from the same commit as the tests: a webServer in the config, a preview deployment."
+          description="The app under test is built from the same commit as the tests: a webServer in the config, a preview deployment. Turn it off for a deployment such as Staging: Piwi then reads the deployed commit from its deploy markers or its instrumented server."
           data-testid="environment-app-from-checkout"
         />
 

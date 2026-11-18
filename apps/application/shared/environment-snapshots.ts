@@ -3,7 +3,7 @@
  * its scope (one stored row per run, kind and scope) and its digest. Pure, shared by the server, the demo and the UI.
  */
 import { fnv1a32 } from '@piwitests/core/hash';
-import { deployedCommitOf } from '@piwitests/core/environments';
+import { deployedCommitOf } from '@piwitests/core/deployed-commit';
 import {
   ENVIRONMENT_SNAPSHOTS_MAX,
   ENVIRONMENT_STRING_MAX,

@@ -108,6 +108,15 @@ describe('writes', () => {
 });
 
 describe('what the extension reads', () => {
+  test('names the environment of a pattern by its name, the label it was written with kept', async () => {
+    await db
+      .insert(schema.environments)
+      .values({ projectId: shop, key: 'staging', keyFold: 'staging', name: 'Staging', aliases: ['stg'] });
+    await replaceProjectUrlPatterns(anyDb(), shop, [{ pattern: 'https://stg.shop.test/**', environment: 'STG' }]);
+    const [item] = await listVisibleUrlPatterns(anyDb(), 'all');
+    expect(item).toMatchObject({ environment: 'STG', environmentName: 'Staging' });
+  });
+
   test('ordered by project then position, filtered by scope, labeled', async () => {
     await replaceProjectUrlPatterns(anyDb(), admin, [{ pattern: 'https://admin.test/**' }]);
     await replaceProjectUrlPatterns(anyDb(), shop, [
@@ -129,6 +138,9 @@ describe('what the extension reads', () => {
       testPathPrefix: null,
     });
     expect(all[1]!.testPathPrefix).toBe('/shop');
+    // A label resolves to an environment as a run's does; the extension shows its name.
+    expect(all[1]).toMatchObject({ environment: 'prod', environmentId: expect.any(Number), environmentName: 'prod' });
+    expect(all[0]).toMatchObject({ environmentId: null, environmentName: null });
     expect(all[2]!.projectLabel).toBe('admin');
     expect((await listVisibleUrlPatterns(anyDb(), new Set([admin]))).map((p) => p.projectId)).toEqual([admin]);
     expect(await listVisibleUrlPatterns(anyDb(), new Set())).toEqual([]);
@@ -178,7 +190,7 @@ describe('suggestions', () => {
         ...Array.from({ length: 30 }, (_, i) => run(100 - i, 'staging', 'https://staging.shop.test/app')),
         run(50, 'qa', 'https://staging.shop.test/'),
         run(40, ' ', 'http://localhost:3000/'),
-        run(30, 'a'.repeat(41), 'https://preview.shop.test/'),
+        run(30, 'a'.repeat(81), 'https://preview.shop.test/'),
       ]);
     await db
       .insert(schema.graphNodes)

@@ -69,7 +69,16 @@ defineRouteMeta({
         in: 'query',
         required: false,
         schema: { type: 'string' },
-        description: 'Comma-separated environments (`environment` is accepted too)',
+        description:
+          'Comma-separated environments (`environment` is accepted too); turns the default-environment policy off',
+      },
+      {
+        name: 'allEnvironments',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean' },
+        description:
+          'Count every environment instead of each project’s default environment (every environment for a project without one)',
       },
       {
         name: 'branches',

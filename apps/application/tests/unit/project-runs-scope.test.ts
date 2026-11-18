@@ -11,7 +11,13 @@ const { getProject } = await import('../../shared/handlers/projects');
 
 const MINUTE = 60_000;
 const NOW = Date.now();
-const DEFAULT_SCOPE = { environments: [], branches: [], allBranches: false, fullRunsOnly: true };
+const DEFAULT_SCOPE = {
+  environments: [],
+  allEnvironments: false,
+  branches: [],
+  allBranches: false,
+  fullRunsOnly: true,
+};
 
 let db: ReturnType<typeof drizzle<typeof schema>>;
 

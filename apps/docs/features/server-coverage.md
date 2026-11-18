@@ -77,7 +77,8 @@ lines inside a function that ran, and file coverage the whole hunk. When the hos
 head (GitHub, or a local clone in the desktop app), coverage of another version counts as file coverage. The failure
 pages' **What changed** line names the first, the cluster's diff marks them, the
 [AI diagnosis](./ai-diagnosis#scm-grounded-context) lists them and sends their files' patches first, and the
-[fix plan](./fix-plans) carries the top five.
+[fix plan](./fix-plans) carries the top five. For a run of a [deployed environment](./deployed-environments), the
+range runs between the deployed commits of the last green run and the failing run.
 
 ## How it is collected
 

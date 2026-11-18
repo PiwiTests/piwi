@@ -13,7 +13,7 @@ defineRouteMeta({
     tags: ['Analytics'],
     summary: 'Flaky test analysis',
     description:
-      'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment or SCM branch. A test whose Flake Lab verify experiment held, and that has not retry-passed in a run started since, leaves `items` and is listed in `verifiedFixed` (`{ testCaseId, title, filePath, retryPassRuns, lastFlakeAt, verifiedFix }`) until it retry-passes again. A test with no root cause yet is classified as the list is read, so `rootCause` is set on every item, unless `enrich=false`.',
+      'Analyzes test flakiness across recent runs using retry-pass detection and pass/fail alternation scoring. Pass an environment and/or branch to scope the analysis to runs from that deployment environment (its key, an alias or a label, ignoring case) or SCM branch; without one, the project’s default branch and, when it has one, its default environment. A test whose Flake Lab verify experiment held, and that has not retry-passed in a run started since, leaves `items` and is listed in `verifiedFixed` (`{ testCaseId, title, filePath, retryPassRuns, lastFlakeAt, verifiedFix }`) until it retry-passes again. A test with no root cause yet is classified as the list is read, so `rootCause` is set on every item, unless `enrich=false`.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -22,7 +22,14 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string' },
         description:
-          'Run scope: comma-separated environments; only their runs count. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+          'Run scope: comma-separated environments; only their runs count. Without it, the project’s default environment when it has one, unless `allEnvironments`. Any of `environments`, `allEnvironments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'allEnvironments',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `environments`, count every environment instead of the default environment.',
       },
       {
         name: 'branches',

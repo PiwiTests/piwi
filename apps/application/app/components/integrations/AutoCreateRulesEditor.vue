@@ -8,6 +8,10 @@ import { MAX_AUTO_CREATE_RULES, describeAutoCreateRule } from '#shared/integrati
 import { autoCreateRuleFromForm, newAutoCreateRuleForm, type AutoCreateRuleForm } from '~/utils/tracker-binding-form';
 
 const rules = defineModel<AutoCreateRuleForm[]>({ required: true });
+defineProps<{
+  /** The project whose environments each rule's scope picks from. */
+  projectId: number;
+}>();
 
 function addRule() {
   rules.value.push(newAutoCreateRuleForm());
@@ -37,7 +41,7 @@ function removeRule(index: number) {
           @click="removeRule(i)"
         />
       </div>
-      <TrackerRunScopeFields v-model="rules[i]!" hide-summary />
+      <TrackerRunScopeFields v-model="rules[i]!" :project-id="projectId" hide-summary />
       <div class="grid gap-3 grid-cols-3">
         <UFormField label="Occurrences">
           <UInput v-model.number="rule.minOccurrences" type="number" min="1" class="w-full" />

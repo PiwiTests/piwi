@@ -4,7 +4,8 @@
  * failure locally (checkout, pinned install, browser, exact test command) and,
  * when the regression window is known, a generated `git bisect` that finds the
  * breaking commit. Both are shown in Linux/macOS and Windows forms; a missing
- * bisect window degrades to a one-line muted note with the reason.
+ * bisect window degrades to a one-line muted note with the reason. Against a
+ * deployed environment the bisect lists the deploys between the two runs.
  *
  * Inside the desktop shell (and only there — everything below feature-detects
  * the Tauri bridge, never a user agent) the same section drives the recipe and
@@ -16,6 +17,7 @@
  * to confirm it.
  */
 import { reproScript, type ReproRecipe, type BisectResult, type ReproduceDesktopContext } from '#shared/reproduce';
+import { deployText } from '#shared/deployed-words';
 import { environmentReady, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
 import { buildReproduceArgs, canBisect } from '~/utils/local-run-args';
@@ -267,6 +269,15 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         </ClientOnly>
       </template>
       <p v-else class="text-xs text-dimmed">{{ bisect.reason }}</p>
+      <div v-if="bisect.deployed?.deploys.length" class="space-y-0.5 text-xs text-muted" data-testid="bisect-deploys">
+        <p>Deploys of {{ bisect.deployed.environment }} between the two runs:</p>
+        <ul class="space-y-0.5">
+          <li v-if="bisect.deployed.more">Earlier deploys left out</li>
+          <li v-for="deploy in bisect.deployed.deploys" :key="`${deploy.label}-${deploy.deployedAt}`">
+            {{ deployText(deploy) }} · {{ formatRelativeTime(deploy.deployedAt) }}
+          </li>
+        </ul>
+      </div>
 
       <!-- The bisected first bad commit — live, or persisted on the cluster. -->
       <ClientOnly>

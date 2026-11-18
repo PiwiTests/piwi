@@ -5,13 +5,18 @@
  * A **source** of a test is its newest run, at most 14 days old, from a clean
  * checkout of a commit with the planned run's Playwright version, in which every
  * one of its results passed on its first attempt with complete coverage naming
- * its file versions. A test is **reused** when it has a source at commit _C_,
- * the impact of the change _C_ → working tree does not select it and does not
- * widen to the whole suite, and no file the source's coverage names is among
- * the changed files. It is skipped only in the Playwright projects its source
- * ran it in; every other project runs it. A test that is quarantined, in an open
- * failure cluster, failed or was retried in its last 20 executions of the last
- * 90 days on any branch, or tagged `@no-reuse`, always runs.
+ * its file versions. A planned run that names its environment takes sources of
+ * that environment only; one that names none takes them from any. For a
+ * deployed environment (its application not built from the run's checkout), the
+ * source run must also have run the version of the application the environment
+ * runs now (`#shared/handlers/deployed-version`); when nothing says which, none
+ * of that environment's passes is reused. A test is **reused** when it has a source at
+ * commit _C_, the impact of the change _C_ → working tree does not select it
+ * and does not widen to the whole suite, and no file the source's coverage names
+ * is among the changed files. It is skipped only in the Playwright projects its
+ * source ran it in; every other project runs it. A test that is quarantined, in
+ * an open failure cluster, failed or was retried in its last 20 executions of
+ * the last 90 days on any branch, or tagged `@no-reuse`, always runs.
  *
  * A plan names the tests to skip, never the tests to run, so a test the
  * dashboard has not seen yet (new, renamed, moved) runs. Uncertainty runs the
@@ -32,6 +37,9 @@ import {
 } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { eligibleRunSql, runCommit } from '#shared/run-eligibility';
+import { normalizeEnvironmentLabel } from '@piwitests/core/environments';
+import { findLabelEnvironment } from '#shared/handlers/environments';
+import { environmentDeployedVersion, runsDeployedVersions } from '#shared/handlers/deployed-version';
 import { runPlanId } from '#shared/run-plan';
 import { getQuarantinedCaseIds } from '#shared/handlers/quarantine';
 import { getSelection, resolveSelectionDefinition } from '#shared/handlers/selections';
@@ -71,11 +79,27 @@ export type PlanReason =
   | 'commit-unavailable'
   | 'widened'
   | 'changed'
-  | 'serial';
+  | 'serial'
+  | 'deployed-version-unknown';
 
-/** What the planned run must match in a source: its Playwright version; null finds no source. */
+/** What the planned run must match in a source (`planFingerprint`). */
 export interface ReuseFingerprint {
+  /** Its Playwright version; null finds no source. */
   playwrightVersion: string | null;
+  /** The label the planned run names (`--environment`, else `PIWI_ENVIRONMENT`); null when it names none. */
+  environment: string | null;
+  /**
+   * The environment that label resolves to, without discovering one: a source is a run of it. A plan that names no
+   * label takes sources of any environment; one whose label names no environment yet finds none.
+   */
+  environmentId: number | null;
+  /** Whether that environment is deployed: its application is not built from the run's checkout. */
+  deployed: boolean;
+  /**
+   * For a deployed environment, the version of its application when the plan is made (`environmentDeployedVersion`):
+   * a source ran that one. Null finds no source.
+   */
+  deployedVersion: string | null;
 }
 
 /** A test's newest source. */
@@ -136,6 +160,46 @@ export class PassReuseError extends Error {
   ) {
     super(message);
   }
+}
+
+/**
+ * The fingerprint of a planned run: its Playwright version, and the environment its label resolves to, as a run's
+ * label would but without discovering one, with the version of the application a deployed one runs at `now`.
+ */
+export async function planFingerprint(
+  db: DrizzleDB,
+  projectId: number,
+  input: { playwrightVersion: string | null; environment?: unknown },
+  now: Date = new Date(),
+): Promise<ReuseFingerprint> {
+  const environment = normalizeEnvironmentLabel(input.environment);
+  const row = environment === null ? null : await findLabelEnvironment(db, projectId, environment);
+  const deployed = !!row && !row.appFromCheckout;
+  return {
+    playwrightVersion: input.playwrightVersion,
+    environment,
+    environmentId: row?.id ?? null,
+    deployed,
+    deployedVersion: deployed ? await environmentDeployedVersion(db, row!.id, now) : null,
+  };
+}
+
+/**
+ * The runs of `runs` that ran against the fingerprint's environment and, for a deployed one, its application's
+ * version; every run when the fingerprint names no environment.
+ */
+async function sameTarget(
+  db: DrizzleDB,
+  fingerprint: ReuseFingerprint,
+  runs: ReadonlyArray<{ id: number; environmentId: number | null; startTime: Date }>,
+): Promise<Set<number>> {
+  if (fingerprint.environment === null) return new Set(runs.map((run) => run.id));
+  if (fingerprint.environmentId === null) return new Set();
+  const own = runs.filter((run) => run.environmentId === fingerprint.environmentId);
+  if (!fingerprint.deployed) return new Set(own.map((run) => run.id));
+  if (!fingerprint.deployedVersion) return new Set();
+  const versions = await runsDeployedVersions(db, own);
+  return new Set(own.filter((run) => versions.get(run.id) === fingerprint.deployedVersion).map((run) => run.id));
 }
 
 function normalizePath(p: string): string {
@@ -263,7 +327,10 @@ interface SourceRun {
   serialFiles: ReadonlySet<string>;
 }
 
-/** The project's runs that may hold sources: the last 14 days, clean, at a commit, with the planned Playwright version. */
+/**
+ * The project's runs that may hold sources: the last 14 days, clean, at a commit, with the planned Playwright version,
+ * of the planned environment and, for a deployed one, of its application's version.
+ */
 async function sourceRuns(
   db: DrizzleDB,
   projectId: number,
@@ -273,7 +340,12 @@ async function sourceRuns(
   const runs = new Map<number, SourceRun>();
   if (!fingerprint.playwrightVersion) return runs;
   const rows = await db
-    .select({ id: testRuns.id, startTime: testRuns.startTime, metadata: testRuns.metadata })
+    .select({
+      id: testRuns.id,
+      startTime: testRuns.startTime,
+      environmentId: testRuns.environmentId,
+      metadata: testRuns.metadata,
+    })
     .from(testRuns)
     .where(
       and(
@@ -299,6 +371,12 @@ async function sourceRuns(
       });
     }
   }
+  const targeted = await sameTarget(
+    db,
+    fingerprint,
+    rows.filter((row) => runs.has(row.id)),
+  );
+  for (const id of runs.keys()) if (!targeted.has(id)) runs.delete(id);
   return runs;
 }
 
@@ -514,6 +592,7 @@ export async function decideRunPlan(
   function decide(testCaseId: number): PlanReason {
     const exclusion = excluded.get(testCaseId);
     if (exclusion) return exclusion;
+    if (fingerprint.deployed && !fingerprint.deployedVersion) return 'deployed-version-unknown';
     const source = sources.get(testCaseId);
     if (!source || unnamed.has(testCaseId) || source.projects.some(badListPart)) return 'no-source';
     if (source.serialFiles.has(normalizePath(fileOf.get(testCaseId)!))) return 'serial';
@@ -591,6 +670,37 @@ export async function getRunPlan(
   return { id: row.id, plan: row.plan as StoredRunPlan, commit: row.commit, expiresAt: row.expiresAt };
 }
 
+/**
+ * Whether a run reported the environment its plan was made for: the one the plan's label resolved to, else, for a
+ * label that named no environment yet, the same label; any for a plan that names none.
+ */
+function sameEnvironment(
+  fingerprint: Partial<ReuseFingerprint>,
+  run: { environment: string | null; environmentId: number | null },
+): boolean {
+  const planned = fingerprint.environment ?? null;
+  if (planned === null) return true;
+  if ((fingerprint.environmentId ?? null) === null) {
+    return normalizeEnvironmentLabel(run.environment)?.toLowerCase() === planned.toLowerCase();
+  }
+  return run.environmentId === (fingerprint.environmentId ?? null);
+}
+
+/**
+ * Whether a run of a plan that reuses tests of a deployed environment ran the version of the application the plan was
+ * made for (`runsDeployedVersions`); any other plan has nothing to compare.
+ */
+async function ranPlannedVersion(
+  db: DrizzleDB,
+  run: { id: number; environmentId: number | null; startTime: Date },
+  plan: StoredRunPlan,
+): Promise<boolean> {
+  if (!plan.fingerprint.deployed || plan.reused.length === 0) return true;
+  if (!plan.fingerprint.deployedVersion) return false;
+  const versions = await runsDeployedVersions(db, [run]);
+  return versions.get(run.id) === plan.fingerprint.deployedVersion;
+}
+
 /** `test_runs.reused_count` of a run that claimed a plan whose reused tests could not be recorded. */
 export const REUSE_UNRECORDED = -1;
 
@@ -598,9 +708,11 @@ export const REUSE_UNRECORDED = -1;
  * Record the tests a finished run skipped under its plan as its reused results,
  * and their count on the run. A test counts only when the run executed it in
  * none of the projects the plan skipped it in. The run must be the plan's own:
- * at its commit, with its Playwright version, started before it expired, and
- * from a clean checkout unless the plan itself was made in a dirty one (a
- * `piwi run --reuse` that planned and ran in one tree). A run that claims a plan
+ * at its commit, with its Playwright version, of its environment, started
+ * before it expired, and from a clean checkout unless the plan itself was made
+ * in a dirty one (a `piwi run --reuse` that planned and ran in one tree); for a
+ * plan that reuses tests of a deployed environment, against the version of the
+ * application the plan was made for. A run that claims a plan
  * and fails any of that, or whose rows cannot be written, gets
  * `REUSE_UNRECORDED`, which the gate's reuse rules refuse. Idempotent: a run
  * finalized again keeps one row per test it did not execute.
@@ -621,6 +733,8 @@ export async function attachRunPlan(
       .select({
         startTime: testRuns.startTime,
         playwrightVersion: testRuns.playwrightVersion,
+        environment: testRuns.environment,
+        environmentId: testRuns.environmentId,
         metadata: testRuns.metadata,
       })
       .from(testRuns)
@@ -641,7 +755,9 @@ export async function attachRunPlan(
       stored.startTime.getTime() <= row.expiresAt.getTime() &&
       !!stored.playwrightVersion &&
       stored.playwrightVersion === plan.fingerprint.playwrightVersion &&
-      (scm.worktree === 'clean' || plan.worktree === 'dirty');
+      (scm.worktree === 'clean' || plan.worktree === 'dirty') &&
+      sameEnvironment(plan.fingerprint, stored) &&
+      (await ranPlannedVersion(db, { id: runId, ...stored }, plan));
     if (!ownRun) return await unrecorded();
 
     const executedRows = await db

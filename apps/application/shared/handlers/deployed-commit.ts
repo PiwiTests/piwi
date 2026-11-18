@@ -1,4 +1,4 @@
-import { and, desc, eq, inArray, isNotNull, lte } from 'drizzle-orm';
+import { and, desc, eq, gt, inArray, isNotNull, lte } from 'drizzle-orm';
 import { environments, markers } from '../../server/database/schema';
 import { loadRunsSnapshots } from './environment-snapshots';
 import type { DrizzleDB } from './db';
@@ -15,6 +15,8 @@ export interface DeployedCommit {
   origin?: string;
   /** The deploy marker, for a commit it carried. */
   markerId?: number;
+  /** The deploy marker's label. */
+  markerLabel?: string;
   /** When the deploy marker says it was deployed. */
   deployedAt?: Date;
 }
@@ -28,8 +30,8 @@ export interface DeployedCommitRun {
 
 /**
  * The deployed commit of each run, by run id: null for a run with no environment, one built from the checkout, or a
- * deployed one whose servers and deploy markers named no commit. One read of the runs' server snapshots, then one
- * read per run left of its environment's latest deploy marker before it started.
+ * deployed one whose servers and deploy markers named no commit. One read of the runs' server snapshots, then, for
+ * each environment of the runs left, its deploy markers between their starts and the last one before the earliest.
  */
 export async function runsDeployedCommits(
   db: DrizzleDB,
@@ -65,22 +67,43 @@ export async function runsDeployedCommits(
   }
   if (pending.length === 0) return out;
 
-  for (const run of pending) {
-    const [marker] = await db
-      .select({ id: markers.id, commit: markers.commit, occurredAt: markers.occurredAt })
+  const byEnvironment = new Map<number, DeployedCommitRun[]>();
+  for (const run of pending)
+    byEnvironment.set(run.environmentId!, [...(byEnvironment.get(run.environmentId!) ?? []), run]);
+  for (const [environmentId, envRuns] of byEnvironment) {
+    const starts = envRuns.map((run) => run.startTime.getTime());
+    const earliest = new Date(Math.min(...starts));
+    const latest = new Date(Math.max(...starts));
+    const deploy = and(
+      eq(markers.environmentId, environmentId),
+      eq(markers.category, 'deploy'),
+      isNotNull(markers.commit),
+    );
+    const fields = { id: markers.id, label: markers.label, commit: markers.commit, occurredAt: markers.occurredAt };
+    const newest = [desc(markers.occurredAt), desc(markers.id)] as const;
+    // The deploys between the runs, newest first, then the last one before the earliest run.
+    const within = await db
+      .select(fields)
       .from(markers)
-      .where(
-        and(
-          eq(markers.environmentId, run.environmentId!),
-          eq(markers.category, 'deploy'),
-          isNotNull(markers.commit),
-          lte(markers.occurredAt, run.startTime),
-        ),
-      )
-      .orderBy(desc(markers.occurredAt), desc(markers.id))
+      .where(and(deploy, gt(markers.occurredAt, earliest), lte(markers.occurredAt, latest)))
+      .orderBy(...newest);
+    const before = await db
+      .select(fields)
+      .from(markers)
+      .where(and(deploy, lte(markers.occurredAt, earliest)))
+      .orderBy(...newest)
       .limit(1);
-    if (marker?.commit) {
-      out.set(run.id, { commit: marker.commit, source: 'marker', markerId: marker.id, deployedAt: marker.occurredAt });
+    const deploys = [...within, ...before];
+    for (const run of envRuns) {
+      const marker = deploys.find((candidate) => candidate.occurredAt.getTime() <= run.startTime.getTime());
+      if (!marker?.commit) continue;
+      out.set(run.id, {
+        commit: marker.commit,
+        source: 'marker',
+        markerId: marker.id,
+        markerLabel: marker.label,
+        deployedAt: marker.occurredAt,
+      });
     }
   }
   return out;

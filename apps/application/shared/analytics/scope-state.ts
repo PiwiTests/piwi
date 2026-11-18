@@ -34,8 +34,10 @@ export interface AnalyticsScopeState {
   projectIds: number[];
   /** Project tags; empty = no project tag filter. */
   projectTags: string[];
-  /** Selected environments; empty = every environment. */
+  /** Selected environments; empty = the environment policy applies. */
   environments: string[];
+  /** The environment policy: false = each project's default environment (every one for a project without), true = every environment. */
+  allEnvironments: boolean;
   /** Selected branches; empty = the branch policy applies. */
   branches: string[];
   /** The branch policy: false = each project's default branch, true = every branch. */
@@ -56,6 +58,7 @@ export const DEFAULT_ANALYTICS_SCOPE_STATE: AnalyticsScopeState = {
   projectIds: [],
   projectTags: [],
   environments: [],
+  allEnvironments: false,
   branches: [],
   allBranches: false,
   fullRunsOnly: true,
@@ -103,6 +106,7 @@ export function decodeScopeCookie(raw: unknown): AnalyticsScopeState {
     projectIds: idList(value.projectIds),
     projectTags: stringList(value.projectTags),
     environments: stringList(value.environments),
+    allEnvironments: value.allEnvironments === true,
     branches: stringList(value.branches),
     allBranches: value.allBranches === true,
     fullRunsOnly: value.fullRunsOnly !== false,
@@ -125,6 +129,7 @@ export function scopeFromState(state: AnalyticsScopeState): AnalyticsScope {
     projectIds: state.projectIds.length > 0 ? state.projectIds : undefined,
     projectTags: state.projectTags.length > 0 ? state.projectTags : undefined,
     environments: state.environments.length > 0 ? state.environments : undefined,
+    allEnvironments: state.environments.length === 0 && state.allEnvironments ? true : undefined,
     branches: state.branches.length > 0 ? state.branches : undefined,
     defaultBranchOnly: state.branches.length === 0 && !state.allBranches,
     fullRunsOnly: state.fullRunsOnly,
@@ -145,6 +150,7 @@ export function stateFromScope(scope: AnalyticsScope): AnalyticsScopeState {
     projectIds: scope.projectIds ?? [],
     projectTags: scope.projectTags ?? [],
     environments: scope.environments ?? [],
+    allEnvironments: !scope.environments?.length && !!scope.allEnvironments,
     branches: scope.branches ?? [],
     allBranches: !scope.branches?.length && !scope.defaultBranchOnly,
     fullRunsOnly: scope.fullRunsOnly,

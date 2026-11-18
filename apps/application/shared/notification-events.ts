@@ -4,6 +4,7 @@ import { parseSourceSnippet } from '#shared/source-snippet';
 import { splitSuitePath } from '#shared/utils/suites';
 import { formatTestSearchValue } from '#shared/test-search';
 import { liveWatchAddress } from '#shared/live-view';
+import { runEnvironmentMatches } from '#shared/environments';
 import { globMatcher } from '@piwitests/core/glob';
 
 /** All notification event keys supported by the subscription system. */
@@ -148,7 +149,12 @@ export interface RunCommit {
  */
 export interface RunScope {
   branch?: string;
+  /** The run's environment label, as reported. */
   environment?: string;
+  /** The environment the label resolves to: its name, and the key and aliases the environment filters match. */
+  environmentName?: string;
+  environmentKey?: string;
+  environmentAliases?: string[];
 }
 
 export interface RunFinishedPayload extends RunScope {
@@ -538,7 +544,10 @@ export type NotificationPayload =
 export interface SubscriptionFilters {
   /** Only deliver events from runs on these branches; `*` matches any characters (`release/*`). */
   branches?: string[];
-  /** Only deliver events from runs in these environments; `*` matches any characters. */
+  /**
+   * Only deliver events from runs in these environments: keys, labels or `*` patterns, matched against the run's
+   * environment ignoring case (`runEnvironmentMatches`).
+   */
   environments?: string[];
   tags?: string[];
   statuses?: string[];
@@ -586,7 +595,7 @@ export const OWNER_SCOPED_EVENTS: ReadonlySet<NotificationEvent> = new Set<Notif
   'test.stuck',
 ]);
 
-/** The most compiled branch and environment patterns kept, the least recently used dropped first. */
+/** The most compiled branch patterns kept, the least recently used dropped first. */
 const MAX_CACHED_NAME_PATTERNS = 500;
 const namePatternMatchers = new Map<string, (name: string) => boolean>();
 
@@ -606,7 +615,7 @@ function namePatternMatcher(pattern: string): (name: string) => boolean {
 }
 
 /**
- * Whether a branch or environment name matches one of the patterns: an exact
+ * Whether a branch name matches one of the patterns: an exact
  * name, or a pattern where `*` matches any run of characters but a line
  * terminator, `/` included. Case matters. Matched by `globMatcher`, in steps
  * that grow with the pattern's length times the name's, whatever the pattern
@@ -628,11 +637,9 @@ export function passesSubscriptionFilters(
 
   if (RUN_SCOPED_EVENTS.has(event)) {
     // A run that reported no branch (or environment) is on none of the listed ones.
-    const { branch, environment } = payload as RunScope;
-    if (filters.branches?.length && !(branch && matchesNamePattern(branch, filters.branches))) return false;
-    if (filters.environments?.length && !(environment && matchesNamePattern(environment, filters.environments))) {
-      return false;
-    }
+    const scope = payload as RunScope;
+    if (filters.branches?.length && !(scope.branch && matchesNamePattern(scope.branch, filters.branches))) return false;
+    if (filters.environments?.length && !runEnvironmentMatches(scope, filters.environments)) return false;
   }
   if (filters.defaultBranchOnly && (event.startsWith('run.') || event === 'test.stuck')) {
     if (!runPayload.isDefaultBranch) return false;

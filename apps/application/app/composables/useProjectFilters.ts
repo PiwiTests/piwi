@@ -1,14 +1,21 @@
 import { computed, type WritableComputedRef } from 'vue';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
 
-/** The project page's filters with nothing picked: the default branch, every environment, full runs only. */
+/**
+ * The project page's filters with nothing picked: the default branch, the default environment (every environment for
+ * a project without one), full runs only.
+ */
 export function defaultProjectFilters(): FilterBarState {
-  return { environments: [], branches: [], fullRunsOnly: true, allBranches: false };
+  return { environments: [], allEnvironments: false, branches: [], fullRunsOnly: true, allBranches: false };
 }
 
 function isDefaultProjectFilters(filters: FilterBarState): boolean {
   return (
-    filters.environments.length === 0 && filters.branches.length === 0 && filters.fullRunsOnly && !filters.allBranches
+    filters.environments.length === 0 &&
+    !filters.allEnvironments &&
+    filters.branches.length === 0 &&
+    filters.fullRunsOnly &&
+    !filters.allBranches
   );
 }
 

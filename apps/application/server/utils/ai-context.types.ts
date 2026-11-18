@@ -64,6 +64,7 @@ export type SectionId =
   | 'traceNetwork'
   | 'locatorHealing'
   | 'environmentDiff'
+  | 'environmentUnderTest'
   | 'coverageDivergence'
   | 'visualDiff'
   | 'domSnapshot'

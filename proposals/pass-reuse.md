@@ -19,8 +19,8 @@ the `run_plans` table, the rule in `server/utils/pass-reuse.ts`, the routes unde
 shard uses Playwright's own `--shard`. A test in a spec file holding a serial group (`describe.serial`, `configure({ mode: 'serial' })`) is never skipped, and
 a plan made in one job is used by another only when both checkouts are clean at its commit. It departs from the design
 in four places: the fingerprint is the Playwright
-version alone (the browser revisions, the operating system and the environment wait for the wire's `reuse` object of
-PR 3); the check against the source's own coverage is at file level (a changed file the source ran keeps the test);
+version and the target environment (the browser revisions and the operating system wait for the wire's `reuse` object
+of PR 3); the check against the source's own coverage is at file level (a changed file the source ran keeps the test);
 a source's coverage blobs are not compared with its commit's, so an application built from another tree than the
 checkout goes unnoticed; and it ships before the safety loop of PR 4 and the recording of PR 3, so nothing yet measures
 a wrong reuse: the capability stays experimental until they land. Changes to documentation files never widen, as in
@@ -35,7 +35,15 @@ run that passed with no run error, and a run with unrecorded reuse fails the reu
 one row per reused test with its projects, not one per project; the source executions are an id list, not a foreign
 key; the run page names no "reason it held"; reuse never touches the run's status or counters (the verdict row of the
 table); and a run whose shards' blob reports are merged by `merge-reports` claims no plan. The plan id travels in the
-run's metadata rather than a `reuse` wire object, and the fingerprint is still the Playwright version alone. Carried
+run's metadata rather than a `reuse` wire object. The fingerprint's target environment is
+[environments.md](environments.md) D11's, built with its second pull request: the plan request names the label the run
+reports (`--environment`, else `PIWI_ENVIRONMENT`), resolved without discovering an environment; a source is a run of
+that environment (of any, for a plan that names none, so a config that sets its label through the reporter's option
+keeps reusing), and for a deployed one a run against the version of the
+application it runs now, its deployed commit (the latest deploy marker after its latest run, else that run's commit
+from its server snapshot or the deploy marker before it), else the application versions its servers reported. With
+neither, its passes are not reused (`deployed-version-unknown`). A run of another environment or version records no
+reuse, and the forecast compares results within one environment and version. Carried
 coverage (D12) is not built. PRs 4 to 6 are not started. The contracts it would add are entry D66 of
 [1.0-stabilization.md](1.0-stabilization.md). Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet.
 

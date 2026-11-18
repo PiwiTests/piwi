@@ -189,3 +189,4 @@ the others stream a simulated one.
 - [Privacy & data flow](/guide/privacy): what a diagnosis sends, and where
 - [Notifications & alerts](./notifications): `diagnosis.completed` and the cluster events
 - [MCP server](/features/mcp): clusters and diagnoses for agents
+- [Deployed environments](./deployed-environments)

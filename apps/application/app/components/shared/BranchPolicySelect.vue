@@ -10,36 +10,21 @@ defineOptions({ inheritAttrs: false });
 
 const allBranches = defineModel<boolean>({ required: true });
 
-const props = defineProps<{
+defineProps<{
   /** Names the default branch in its option, where one project's is known. */
   defaultBranch?: string | null;
   help?: HelpTopicKey;
 }>();
-
-const items = computed(() => [
-  { label: props.defaultBranch ? `Default branch (${props.defaultBranch})` : 'Default branch', value: 'default' },
-  { label: 'All branches', value: 'all' },
-]);
-
-const policy = computed({
-  get: () => (allBranches.value ? 'all' : 'default'),
-  set: (value: string) => {
-    allBranches.value = value === 'all';
-  },
-});
 </script>
 
 <template>
-  <div class="flex items-center gap-1">
-    <USelect
-      v-model="policy"
-      :items="items"
-      size="sm"
-      icon="i-lucide-git-branch"
-      class="min-w-[150px]"
-      aria-label="Branch policy"
-      v-bind="$attrs"
-    />
-    <HelpHint v-if="help" :topic="help" />
-  </div>
+  <ScopePolicySelect
+    v-model="allBranches"
+    :default-label="defaultBranch ? `Default branch (${defaultBranch})` : 'Default branch'"
+    all-label="All branches"
+    icon="i-lucide-git-branch"
+    accessible-name="Branch policy"
+    :help="help"
+    v-bind="$attrs"
+  />
 </template>

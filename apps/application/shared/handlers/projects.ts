@@ -1,5 +1,6 @@
 import { INVALID_EXTERNAL_ID_URL, normalizeExternalIdUrl } from '#shared/external-id-link';
-import { resolveCiActionsSettings } from '#shared/ci-actions';
+import { hasCiActions, resolveCiActionsSettings } from '#shared/ci-actions';
+import { settleCiActionEnvironments } from './environments';
 import { parseRunVariables } from '@piwitests/core/run-variables';
 import { storedRunVariables, type RunVariable } from '#shared/run-variables';
 import {
@@ -64,6 +65,8 @@ import {
   scopedExecutionInProjectJoin,
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
+import { defaultEnvironmentProblem, namedProjectEnvironment, projectDefaultEnvironment } from './default-environment';
+import { environmentScopeSql } from './environment-scope';
 import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
 import { mineFlag, ownRunColumn, ownRunSql, type RunViewer } from '../own-runs';
 import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
@@ -465,13 +468,16 @@ export async function getProject(
 
   if (!project) throw new Error('Project not found');
 
-  // The branch a project run scope reads when no branch is picked.
+  // The branch and the environment a project run scope reads when none is picked.
   const effectiveDefaultBranch = await resolveStoredDefaultBranch(db, project);
+  const effectiveDefaultEnvironment =
+    project.defaultEnvironmentId == null ? null : await projectDefaultEnvironment(db, id);
+  const defaultEnvironmentKey = effectiveDefaultEnvironment?.key ?? null;
   const scope = options?.scope ?? null;
   const viewer = options?.viewer ?? null;
   const own = ownRunColumn(viewer);
   // The scope's own conditions: none when it reads every run, which leaves no own run out.
-  const inScope = scope ? and(...runScopeConditions(scope, effectiveDefaultBranch)) : undefined;
+  const inScope = scope ? and(...runScopeConditions(scope, effectiveDefaultBranch, defaultEnvironmentKey)) : undefined;
 
   // Select only the columns needed for the run list — omit wide JSON columns
   const runs: any[] = await db
@@ -509,7 +515,7 @@ export async function getProject(
               eq(testRuns.projectId, id),
               notPrivateRun(),
               ownRunSql(viewer),
-              ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch),
+              ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch, defaultEnvironmentKey),
               listedIds.length > 0 ? notInArray(testRuns.id, listedIds) : undefined,
               oldestListed ? or(sql`(${inScope}) IS NOT TRUE`, gt(testRuns.startTime, oldestListed)) : undefined,
             ),
@@ -528,6 +534,7 @@ export async function getProject(
   return {
     ...project,
     effectiveDefaultBranch,
+    effectiveDefaultEnvironment,
     hasScmToken: project.scmCredentialId != null,
     ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
     tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
@@ -555,7 +562,13 @@ export async function getProject(
 
 /** A scope's environments alone: what an own run must match to be listed despite the partial-run and branch filters. */
 function environmentsOnly(scope: ProjectRunScope): ProjectRunScope {
-  return { environments: scope.environments, branches: [], allBranches: true, fullRunsOnly: false };
+  return {
+    environments: scope.environments,
+    allEnvironments: scope.allEnvironments,
+    branches: [],
+    allBranches: true,
+    fullRunsOnly: false,
+  };
 }
 
 // ─── listKeptRuns ────────────────────────────────────────────────
@@ -650,6 +663,22 @@ export class InvalidRunVariablesError extends Error {
   }
 }
 
+/** The error `updateProject` throws for a default environment `defaultEnvironmentProblem` refuses; the message says why. */
+export class InvalidDefaultEnvironmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidDefaultEnvironmentError';
+  }
+}
+
+/** The error `updateProject` throws for a CI action naming an environment it may not (`settleCiActionEnvironments`). */
+export class InvalidCiActionsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCiActionsError';
+  }
+}
+
 /**
  * The status filter `updateProject` stores: null for none, and for a filter
  * every non-lab run passes (every branch, every environment, partial runs too).
@@ -704,6 +733,8 @@ export async function updateProject(
     tagKeys?: unknown;
     /** The run variables (`RunVariable[]`), checked by `parseRunVariables`; null or [] removes them. */
     runVariables?: unknown;
+    /** The environment the project's views read by default: one of its environments, not archived; null clears it. */
+    defaultEnvironmentId?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -734,6 +765,7 @@ export async function updateProject(
     statusFilter,
     tagKeys,
     runVariables,
+    defaultEnvironmentId,
     tagIds: dataTagIds,
   } = data;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
@@ -768,7 +800,18 @@ export async function updateProject(
     if (!parsed.ok) throw new InvalidRunVariablesError(parsed.problems.join(' '));
     storedVariables = parsed.value.length > 0 ? parsed.value : null;
   }
+  if (defaultEnvironmentId !== undefined) {
+    const problem = await defaultEnvironmentProblem(db, id, defaultEnvironmentId);
+    if (problem) throw new InvalidDefaultEnvironmentError(problem);
+  }
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
+  let storedCiRerun = ciRerun;
+  if (hasCiActions(ciRerun)) {
+    const settings = resolveCiActionsSettings(ciRerun);
+    const settled = await settleCiActionEnvironments(db, id, settings.actions, projectResults[0].ciRerun);
+    if (!settled.ok) throw new InvalidCiActionsError(settled.problem);
+    storedCiRerun = { ...settings, actions: settled.actions };
+  }
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
   await db.transaction(async (tx) => {
@@ -785,7 +828,7 @@ export async function updateProject(
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
         externalIdUrl: linkTemplate,
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
-        ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+        ciRerun: storedCiRerun !== undefined ? (storedCiRerun as any) : undefined,
         quarantineFailsStatus,
         gateStatus,
         liveView,
@@ -796,6 +839,7 @@ export async function updateProject(
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),
         tagKeys: storedTagKeys,
         runVariables: storedVariables,
+        defaultEnvironmentId: defaultEnvironmentId as number | null | undefined,
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),
@@ -2013,9 +2057,11 @@ export interface FlakyTestsFilter {
  * explicit branch filter scopes to exactly that branch. Otherwise the leaderboard reads the runs of the project's
  * default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus runs with no branch (local or
  * pre-migration), so a work-in-progress branch stops contaminating the project's health signal. Environment scopes
- * independently. A project run scope replaces all three with the project page's filters, and a filter's run
- * conditions replace them all. Only runs the `flakiness` use reads count: lab runs inject faults and conditions,
- * bisect and reproduction runs replay an older commit, and an environment incident fails every test at once.
+ * independently: an explicit environment matches as a filter's does (its key, an alias or its label, ignoring case),
+ * else the project's default environment (`projectDefaultEnvironment`) when it has one, else every environment. A
+ * project run scope replaces all three with the project page's filters, and a filter's run conditions replace them
+ * all. Only runs the `flakiness` use reads count: lab runs inject faults and conditions, bisect and reproduction runs
+ * replay an older commit, and an environment incident fails every test at once.
  */
 async function flakyRunConditions(
   db: DrizzleDB,
@@ -2037,7 +2083,11 @@ async function flakyRunConditions(
   } else if (opts.scope) {
     conditions.push(...(await projectRunScopeConditions(db, project.id, opts.scope)));
   } else {
-    if (opts.environment) conditions.push(eq(testRuns.environment, opts.environment));
+    const environment = opts.environment
+      ? ((await namedProjectEnvironment(db, project.id, opts.environment))?.key ?? opts.environment)
+      : (await projectDefaultEnvironment(db, project.id))?.key;
+    const inEnvironment = environment ? environmentScopeSql([environment]) : null;
+    if (inEnvironment) conditions.push(inEnvironment);
     if (opts.branch) {
       conditions.push(eq(testRuns.branch, opts.branch));
     } else {

@@ -192,7 +192,8 @@ views are exempt only where a rule says so.
   environments, branches, branch policy, full runs only). The page passes `projectRunScopeQuery(scope)`, the endpoint
   reads it with `parseProjectRunScope`, and its handler adds `projectRunScopeConditions`
   (`shared/handlers/project-run-scope.ts`). With no branch picked, the scope reads the default branch
-  (`projectDefaultBranch`) and the runs that report none, as Analytics does. A new tab or endpoint that reads runs takes
+  (`projectDefaultBranch`) and the runs that report none, and with no environment picked the default environment
+  (`projectDefaultEnvironment`), never a run with none, as Analytics does. A new tab or endpoint that reads runs takes
   the scope; a request without its keys keeps its unscoped reading for API callers.
 
 ## Brand assets

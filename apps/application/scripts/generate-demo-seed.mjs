@@ -121,10 +121,13 @@ function q(v) {
   return `'${String(v).replace(/'/g, "''")}'`;
 }
 
+// Column names are quoted: a column may be an SQL keyword (`markers.commit`).
 function insert(table, rows) {
   return rows
     .map((row) => {
-      const cols = Object.keys(row).join(', ');
+      const cols = Object.keys(row)
+        .map((column) => `"${column}"`)
+        .join(', ');
       const vals = Object.values(row).map(q).join(', ');
       return `INSERT INTO ${table} (${cols}) VALUES (${vals});`;
     })
@@ -835,8 +838,10 @@ const CHECKOUT_BASE_URLS = {
 // Each project's environments, as `environments` stores them (`shared/handlers/environments.ts`). A manager declared
 // the four the runs report (`ENVIRONMENTS`), Local taking `development` by its alias. Each sets `TEST_ENV`, which the
 // suite's config reads to load `.env.<TEST_ENV>`, and the checkout project's deployments also set their `BASE_URL`.
-// Production is protected: a run Piwi starts there runs the @smoke tests only, for a project manager. The checkout
-// project also keeps `preview`, discovered from the label of a preview deployment's run and never saved by a manager.
+// Production is protected: a run Piwi starts there runs the @smoke tests only, for a project manager. Local is built
+// from the checkout; Integration, Staging and Production are marked deployed. The checkout project also keeps
+// `preview`, discovered from the label of a preview deployment's run and never saved by a manager: built from the
+// checkout, as every environment is until a manager marks it deployed.
 const ENVIRONMENT_TIME = ts('2025-04-10T09:00:00Z');
 const DISCOVERED_ENVIRONMENT_TIME = ts('2025-04-18T14:00:00Z');
 
@@ -912,7 +917,7 @@ for (const project of PROJECTS) {
       description: null,
       aliases: null,
       run_variables: null,
-      app_from_checkout: 0,
+      app_from_checkout: 1,
       protected: 0,
       required_tags: null,
       env_file: null,
@@ -955,6 +960,15 @@ function seedEnvironmentId(projectId, label) {
   if (!found) throw new Error(`Project ${projectId}: no seeded environment takes the run label ${trimmed}`);
   return found.id;
 }
+
+// API Integration reads Staging by default: its project page, its tabs and Analytics count Staging's runs until another
+// environment, or All environments, is picked. The other projects read every environment.
+const DEFAULT_ENVIRONMENTS = [
+  {
+    projectId: 2,
+    environmentId: PROJECT_ENVIRONMENTS.find((e) => e.project_id === 2 && e.key === 'staging').id,
+  },
+];
 
 function escapeRegExp(text) {
   return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -7132,7 +7146,8 @@ for (const gap of SCENARIO_GAPS) {
 
 // ── Environment change markers (rng-free) ───────────────────────────────────
 // What `syncEnvironmentMarkersForRun` writes as each run finishes: against the
-// previous run of its project on the same branch and environment label,
+// previous run of its project on the same branch and environment (every seeded
+// label resolves to one),
 // incident runs left out on both sides, one marker per kind that changed, none
 // for a project that declines markers.
 {
@@ -7146,7 +7161,7 @@ for (const gap of SCENARIO_GAPS) {
         (p) =>
           p.project_id === run.project_id &&
           p.start_time < run.start_time &&
-          (p.environment ?? null) === (run.environment ?? null) &&
+          seedEnvironmentId(p.project_id, p.environment) === seedEnvironmentId(run.project_id, run.environment) &&
           (p.branch ?? null) === (run.branch ?? null),
       )
       .at(-1);
@@ -7772,6 +7787,59 @@ const INTEGRATION_ACTIONS = SYNC_RUNS.map((run, index) => {
 // The environment each run's label resolves to, as ingest stores it with the run.
 for (const run of TEST_RUNS) run.environment_id = seedEnvironmentId(run.project_id, run.environment);
 
+// ── What else names an environment (rng-free) ──────────────────────────────
+// Markers, URL patterns and CI actions keep their label as written and the environment it resolves to, as the routes
+// and the server's automatic markers store them.
+for (const row of [
+  ...MARKERS,
+  ...RELEASE_MARKERS,
+  ...EARLIER_RELEASES,
+  ...INCIDENT_MARKERS,
+  ...ENVIRONMENT_MARKERS,
+  ...PROJECT_URL_PATTERNS,
+]) {
+  row.environment_id = seedEnvironmentId(row.project_id, row.environment);
+}
+for (const project of PROJECTS) {
+  for (const action of project.ci_rerun?.actions ?? []) {
+    if (action.environment) action.environmentId = seedEnvironmentId(project.id, action.environment);
+  }
+}
+
+// ── Deploys of the checkout project's Staging (rng-free) ──────────────────
+// Staging is a deployed environment: its deploy pipeline posts a deploy marker with the commit it deployed, half an
+// hour before the first Staging run that tested it, so each Staging run reads its deployed commit from the latest
+// one and the Changes tab, the failure pages and the environment's activity name its deploys.
+const STAGING_ENVIRONMENT_ID = seedEnvironmentId(1, 'staging');
+const DEPLOY_MARKERS = [];
+{
+  const stagingRuns = TEST_RUNS.filter(
+    (run) => run.project_id === 1 && run.environment_id === STAGING_ENVIRONMENT_ID,
+  ).sort((a, b) => a.start_time - b.start_time || a.id - b.id);
+  let deployed = null;
+  for (const run of stagingRuns) {
+    const meta = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : run.metadata;
+    const commit = meta?.scm?.commit ?? null;
+    if (!commit || commit === deployed) continue;
+    deployed = commit;
+    const at = run.start_time - 1800;
+    DEPLOY_MARKERS.push({
+      project_id: 1,
+      occurred_at: at,
+      label: `Staging deploy ${DEPLOY_MARKERS.length + 1}`,
+      description: 'Posted by the deploy pipeline.',
+      category: 'deploy',
+      environment: 'staging',
+      environment_id: STAGING_ENVIRONMENT_ID,
+      commit: commit.toLowerCase(),
+      source: 'manual',
+      run_id: null,
+      created_at: at,
+      updated_at: at,
+    });
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -7819,6 +7887,12 @@ const lines = [
   '-- Project environments (referenced by test_runs)',
   insert('environments', PROJECT_ENVIRONMENTS),
   '',
+  '-- Default environments (the environment a project reads when none is picked)',
+  ...DEFAULT_ENVIRONMENTS.map(
+    ({ projectId, environmentId }) =>
+      `UPDATE projects SET default_environment_id = ${environmentId} WHERE id = ${projectId};`,
+  ),
+  '',
   "-- Test management: the checkout project's Zephyr Scale binding and the catalog of its project",
   insert('integration_connections', TEST_MANAGEMENT_CONNECTIONS),
   insert('project_test_management', PROJECT_TEST_MANAGEMENT),
@@ -7862,6 +7936,7 @@ const lines = [
       ...m,
     })),
   ),
+  insert('markers', DEPLOY_MARKERS),
   '',
   '-- Test selections',
   insert('test_selections', SELECTIONS),

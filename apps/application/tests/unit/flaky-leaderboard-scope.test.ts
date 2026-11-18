@@ -1,4 +1,5 @@
-import { describe, test, expect, beforeAll } from 'vitest';
+import { describe, test, expect, beforeAll, afterAll } from 'vitest';
+import { eq, inArray } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
@@ -13,7 +14,7 @@ import { withStoredVerdicts } from './stored-verdicts';
  */
 
 delete process.env.PIWI_DATABASE_URL;
-const { getProjectFlakyTests } = await import('../../shared/handlers/projects');
+const { getProjectFlakyTests, newestFlakyRunId } = await import('../../shared/handlers/projects');
 const { getAnalyticsFlakyLeaderboard } = await import('../../shared/handlers/analytics/flaky-leaderboard');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
 
@@ -139,5 +140,62 @@ describe('the unscoped flaky leaderboard', () => {
   test('reads exactly the branch it is given', async () => {
     const titles = (await getProjectFlakyTests(db as any, 1, 50, null, undefined, 'feature/x')).map((t) => t.title);
     expect(titles).toEqual(['flaky on a feature branch']);
+  });
+});
+
+describe('a project with a default environment', () => {
+  // Project 3 declares prod, which `production` names too, and firefox-only; prod is its default environment.
+  beforeAll(async () => {
+    await db.insert(schema.environments).values([
+      { id: 31, projectId: 3, key: 'prod', keyFold: 'prod', name: 'Production', aliases: ['production'] },
+      { id: 32, projectId: 3, key: 'firefox-only', keyFold: 'firefox-only', name: 'Firefox', position: 1 },
+    ]);
+    await db.update(schema.testRuns).set({ environmentId: 31 }).where(eq(schema.testRuns.environment, 'prod'));
+    await db.update(schema.testRuns).set({ environmentId: 32 }).where(eq(schema.testRuns.environment, 'firefox-only'));
+    await db.update(schema.projects).set({ defaultEnvironmentId: 31 }).where(eq(schema.projects.id, 3));
+  });
+
+  afterAll(async () => {
+    await db.update(schema.projects).set({ defaultEnvironmentId: null }).where(eq(schema.projects.id, 3));
+    await db
+      .update(schema.testRuns)
+      .set({ environmentId: null })
+      .where(inArray(schema.testRuns.environmentId, [31, 32]));
+    await db.delete(schema.environments).where(inArray(schema.environments.id, [31, 32]));
+  });
+
+  test('the unscoped leaderboard, as quarantine candidates and pull request feedback read it, reads it alone', async () => {
+    expect((await getProjectFlakyTests(db as any, 3, 50)).map((t) => t.title).sort()).toEqual([
+      'flaky long ago',
+      'flaky on prod',
+    ]);
+  });
+
+  test('an explicit environment wins, matched by its key or an alias ignoring case', async () => {
+    expect((await getProjectFlakyTests(db as any, 3, 50, 'firefox-only')).map((t) => t.title)).toEqual([
+      'flaky in firefox',
+    ]);
+    expect((await getProjectFlakyTests(db as any, 3, 50, 'PRODUCTION')).map((t) => t.title).sort()).toEqual([
+      'flaky long ago',
+      'flaky on prod',
+    ]);
+  });
+
+  test('the newest run the quarantine dismissals key on is the default environment’s', async () => {
+    const [newest] = await db
+      .select({ environmentId: schema.testRuns.environmentId })
+      .from(schema.testRuns)
+      .where(eq(schema.testRuns.id, (await newestFlakyRunId(db as any, 3))!));
+    expect(newest!.environmentId).toBe(31);
+  });
+
+  test('Analytics reads it for this project, and every environment under All environments', async () => {
+    expect(await leaderboard({ projects: '3' })).toEqual(['flaky on prod']);
+    expect((await leaderboard({ projects: '3', allEnvironments: 'true' })).sort()).toEqual([
+      'flaky in firefox',
+      'flaky on prod',
+    ]);
+    // A project with no default environment reads them all.
+    expect(await leaderboard({ projects: '2', files: 'wanted.spec.ts' })).toEqual(['wanted']);
   });
 });

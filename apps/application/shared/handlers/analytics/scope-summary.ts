@@ -1,5 +1,13 @@
-import { and, desc, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
-import { markers, projects, testRuns, testRunsCases, testSelections } from '../../../server/database/schema';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import {
+  environments,
+  markers,
+  projects,
+  testRuns,
+  testRunsCases,
+  testSelections,
+} from '../../../server/database/schema';
+import { markerEnvironmentScopeSql } from '../environment-scope';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsMarker, AnalyticsScopeSummary } from '../../analytics/types';
@@ -46,6 +54,9 @@ export async function getAnalyticsScopeSummary(
     description: markers.description,
     category: markers.category,
     environment: markers.environment,
+    environmentId: markers.environmentId,
+    environmentName: environments.name,
+    commit: markers.commit,
     source: markers.source,
     runId: markers.runId,
     createdAt: markers.createdAt,
@@ -58,8 +69,10 @@ export async function getAnalyticsScopeSummary(
     projectFilter(markers.projectId),
   ];
   if (!singleProject) inPeriodConditions.push(inArray(markers.category, CROSS_PROJECT_MARKER_CATEGORIES));
+  // A marker counts under the filter's environments through its environment's key or its label; one of every
+  // environment always counts.
   if (scope.environments && scope.environments.length > 0) {
-    inPeriodConditions.push(or(isNull(markers.environment), inArray(markers.environment, scope.environments)));
+    inPeriodConditions.push(markerEnvironmentScopeSql(scope.environments) ?? undefined);
   }
 
   const [periodMarkers, anchors, selectionRows, browserRows, firstDay] = await Promise.all([
@@ -68,6 +81,7 @@ export async function getAnalyticsScopeSummary(
       : db
           .select(markerFields)
           .from(markers)
+          .leftJoin(environments, eq(environments.id, markers.environmentId))
           .where(and(...inPeriodConditions))
           .orderBy(markers.occurredAt),
     none
@@ -75,6 +89,7 @@ export async function getAnalyticsScopeSummary(
       : db
           .select(markerFields)
           .from(markers)
+          .leftJoin(environments, eq(environments.id, markers.environmentId))
           .where(projectFilter(markers.projectId))
           .orderBy(desc(markers.occurredAt))
           .limit(ANCHOR_LIMIT),

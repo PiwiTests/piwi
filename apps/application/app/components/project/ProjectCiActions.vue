@@ -41,9 +41,13 @@ const DEFAULT_BADGES: Record<CiActionKind, string> = {
 /** The badges in the order the editor lists the defaults. */
 const BADGE_KINDS: CiActionKind[] = ['tests', 'flakeLab', 'suite'];
 
+const { byId: environmentById } = useProjectEnvironments(() => props.projectId);
+
 const rows = computed(() =>
   settings.value.actions.map((action) => ({
     action,
+    environment:
+      (action.environmentId != null ? environmentById(action.environmentId)?.name : null) ?? action.environment,
     summary: ciActionTargetSummary(action.target),
     accepts: action.accepts.map((kind) => CI_ACTION_KIND_LABELS[kind]).join(', '),
     inputs: action.inputs.map((input) =>
@@ -178,7 +182,7 @@ const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-mut
               <p class="break-words text-xs text-muted">
                 <span class="font-mono">{{ row.summary }}</span>
                 · Accepts {{ row.accepts }}
-                <template v-if="row.action.environment"> · Environment {{ row.action.environment }}</template>
+                <template v-if="row.environment"> · Environment {{ row.environment }}</template>
                 <template v-if="row.inputs.length">
                   · Inputs <span class="font-mono">{{ row.inputs.join(', ') }}</span></template
                 >

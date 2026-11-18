@@ -16,7 +16,7 @@
  * into links. Pure assembly over the verdict and the latest-execution summary the
  * endpoints already build; every clause is omitted when its fact is unknown.
  */
-import type { FailureVerdict, FailureWhy } from '#shared/failure-verdict';
+import type { FailureVerdict, FailureWhy, VerdictDeploy } from '#shared/failure-verdict';
 import type { LatestExecution } from '#shared/latest-execution';
 import { relativeTimeAgo } from '#shared/relative-time';
 import { isFailedStatus } from '#shared/utils/test-counts';
@@ -107,16 +107,58 @@ function pushOwner(line: LineBuilder, owner: FailureVerdict['owner']) {
   line.push('text', 'Owner ').push('owner', owner.name, { id: owner.name });
 }
 
-/** Why and since when, then the commit and author: the line under the headline. */
+/**
+ * Where a deployed environment's failure was first seen, in place of the tests' commit: "after Deploy 42 (a1b2c3d)
+ * on Staging", "on Staging at a1b2c3d", with no deploy since the last pass, or with its version unknown.
+ */
+function pushDeploy(line: LineBuilder, deploy: VerdictDeploy) {
+  const short = deploy.commit ? deploy.commit.slice(0, 7) : null;
+  if (deploy.label) {
+    line.push('text', `after ${deploy.label}`);
+    if (short && !deploy.label.includes(short)) {
+      line.push('text', ' (').push('commit', short, { id: deploy.commit! }).push('text', ')');
+    }
+    line.push('text', ` on ${deploy.environment}`);
+    return;
+  }
+  line.push('text', `on ${deploy.environment}`);
+  if (short) line.push('text', ' at ').push('commit', short, { id: deploy.commit! });
+  if (deploy.noDeploySinceLastPass) line.push('text', ', with no deploy since the last pass');
+  else if (!short) line.push('text', ', deployed version unknown');
+}
+
+/** Why and since when, then the commit and author (the deploy, for a deployed environment): the line under the headline. */
 function sinceLine(input: SituationInput, now: Date): SituationLine {
   const line = new LineBuilder();
   const since = input.since;
   const commit = since.commit;
+  const deploy = since.deploy ?? null;
   const rel = relativeTimeAgo(since.firstFailingAt, now);
   const by = commit?.author ? ` by ${commit.author}` : '';
   const attempt = input.why === 'passed-on-retry' ? input.attempt : null;
 
-  if (attempt) {
+  if (deploy && !attempt) {
+    // "New regression after Deploy 42 (a1b2c3d) on Staging, 1 day ago"; "Failing since run #4, 2 days ago, first on
+    // Staging at a1b2c3d": the tests' commit says nothing of the application's version.
+    if (!since.isFirstFailure) {
+      line.push('text', `${input.why ? `${WHY_LEAD[input.why]}, failing` : 'failing'} since `);
+      line.push('run', `run #${since.firstFailingRunId}`, {
+        id: since.firstFailingRunId,
+        href: `/test-runs/${since.firstFailingRunId}`,
+      });
+      line.push('text', `${rel ? `, ${rel}` : ''}, first `);
+      pushDeploy(line, deploy);
+    } else {
+      line.push(
+        'text',
+        input.why === 'new-regression'
+          ? `${WHY_LEAD['new-regression']} `
+          : `${input.why ? `${WHY_LEAD[input.why]}, first` : 'first'} failed in this run, `,
+      );
+      pushDeploy(line, deploy);
+      if (rel) line.push('text', `, ${rel}`);
+    }
+  } else if (attempt) {
     // "Newly flaky, failed on attempt 1, passed on attempt 2, on a1b2c3d by Alice
     // Chen": the status chip says it passed on retry, the line which attempt failed.
     if (input.newFlaky) line.push('text', `${WHY_LEAD['new-flaky']}, `);

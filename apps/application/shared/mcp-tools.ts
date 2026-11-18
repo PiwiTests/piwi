@@ -139,7 +139,13 @@ const ANALYTICS_SCOPE_PROPERTIES = {
     type: 'string',
     description: 'Comparison: previous (default), previous-unit, year, none, or YYYY-MM-DD..YYYY-MM-DD',
   },
-  environments: { type: 'array', items: { type: 'string' }, description: 'Only runs reported for these environments' },
+  environments: {
+    type: 'array',
+    items: { type: 'string' },
+    description:
+      'Only runs reported for these environments (default: each project’s default environment, every environment for a project without one)',
+  },
+  allEnvironments: { type: 'boolean', description: 'Count every environment instead of the default environments' },
   branches: {
     type: 'array',
     items: { type: 'string' },
@@ -197,7 +203,10 @@ export const MCP_TOOL_DEFS = [
   {
     name: 'list_runs',
     module: 'core',
-    description: 'List a project’s test runs, newest first, optionally filtered by status or branch.',
+    description: md(
+      'List a project’s test runs, newest first, optionally filtered by status, branch or environment.',
+      'Each run answers `env`, the environment label it reported, and `environmentId`, the environment of the project that label resolves to (`list_environments` names it).',
+    ),
     inputSchema: {
       type: 'object',
       properties: {
@@ -208,6 +217,11 @@ export const MCP_TOOL_DEFS = [
           description: 'Filter by run status (exact match against the stored value)',
         },
         branch: { type: 'string', description: 'Filter by branch name (exact match against the run branch)' },
+        environment: {
+          type: 'string',
+          description:
+            'Filter by environment: a key, an alias or a run’s label, resolved as a run’s label is, so every run of that environment matches whatever label it reported',
+        },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
         cursor: { type: 'string', description: 'Opaque cursor from a previous response to get the next page' },
       },
@@ -259,12 +273,18 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'List a project’s flaky tests, highest flakiness score first.',
+      'It reads the runs of the project’s default branch, and of its default environment when it has one (every environment otherwise); `environment` reads another one instead.',
       'A test whose Flake Lab verify experiment held is left out until it passes on retry again.',
     ),
     inputSchema: {
       type: 'object',
       properties: {
         projectId: { type: 'number', description: 'Project ID' },
+        environment: {
+          type: 'string',
+          description:
+            'Environment key, or one of its aliases, ignoring case (default: the project’s default environment)',
+        },
         runs: { type: 'number', description: 'Number of recent runs to analyze (default 50, max 200)' },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
         cursor: {
@@ -327,6 +347,7 @@ export const MCP_TOOL_DEFS = [
     description: md(
       'Get a failure cluster with its affected tests, a short diagnosis summary and the locator fixes of up to five of its failures.',
       'Each locator fix names the failing locator, the recommended replacement and how many alternatives exist. `mergeSuggestions` lists the pending suggestions to merge it with another cluster (`suggestionId`, `otherClusterId`), decided with `decide_merge_suggestion`.',
+      'A cluster first seen in a deployed environment (one whose application is not built from the run’s checkout) carries `firstFailingDeploy`: the `environment`, the `lastPassingRunId` (the last run of it where one of the cluster’s tests passed) and the `firstFailingRunId`, the application’s commit each ran against (`lastPassingCommit`, `firstFailingCommit`), the `applicationRange` between them, and the environment’s `deploys` in between, oldest first: the last one is the deploy the failure was first seen on.',
       'To fix the cluster, `get_fix_plan` has everything in one answer; `get_cluster_diagnosis` has the full diagnosis and `get_cluster_context` the raw evidence.',
     ),
     inputSchema: {
@@ -350,7 +371,7 @@ export const MCP_TOOL_DEFS = [
         '`suspectLines`: the top five changed lines since the last green run that the failing tests executed, with their files, line ranges and scores, so you know where to look first (`available: false` with a `reason` when the tests recorded no coverage or the diff could not be read)',
         '`verify`: the `command` that runs the failing tests by file and title (so it still matches once your fix moves lines), the `cases` it names (each test at the line and in the project of its latest failure, the tests a CI re-run runs), `leftOut`, the tests the command cannot name (empty unless a test’s file path or title cannot be passed on: run those yourself), the `expectation` (what the dashboard records once they pass, so you can confirm the fix landed) and the `commitTrailer` to put in your commit message',
         '`reproduce`: checkout, pinned install, browser install and the exact test command, as `{ bash, powershell }` steps',
-        '`bisect`: a `git bisect` script between the last green and the failing commit (`available: false` with a `reason` when there is none)',
+        '`bisect`: a `git bisect` script between the last green and the failing commit (`available: false` with a `reason` when there is none); against a deployed environment it finds a change of the tests only, and `bisect.deployed` lists the environment’s `deploys` between the two runs',
         '`story`, `situation` (since when, whether a newer execution failed again or passed, the cluster and its owner) and the computed `nextStep`',
       ],
     ),
@@ -1046,7 +1067,7 @@ export const MCP_TOOL_DEFS = [
     module: 'workflow',
     description: md(
       'Get how much of a project’s recent test time ran code identical to an earlier pass, and the tests that failed anyway, read-only.',
-      'Over the 30 days before the project’s latest run, a result is reusable when an earlier first-attempt pass of the same test and Playwright project, at most 14 days older and in another run, recorded file versions (runtime, path, git blob) that are all among the versions the result’s own coverage recorded, or ran at the same commit with both runs on CI. It is what a run that skips unchanged tests could have saved.',
+      'Over the 30 days before the project’s latest run, a result is reusable when an earlier first-attempt pass of the same test, Playwright project and environment (for a deployed environment, against the same version of the application), at most 14 days older and in another run, recorded file versions (runtime, path, git blob) that are all among the versions the result’s own coverage recorded, or ran at the same commit with both runs on CI. It is what a run that skips unchanged tests could have saved.',
       'Each of `total` and `scopes` (`default-branch`, `other-branches`) gives `results`, `comparable` (results whose coverage names file versions; a result without them can still be reusable by a same-commit match, so `reusable` may exceed it), `reusable`, `durationMs`, `reusableDurationMs`, and the reusable results that `failed` or were `flaky`. `tests` lists the tests with such identical-code failures, with the execution of the last one and of the pass it matched: their failure came from the test, its data or its environment, not the code.',
       'An upper bound: test-side code and configuration are not seen. A project without coverage at `functions` or `lines` has no comparable result.',
     ),

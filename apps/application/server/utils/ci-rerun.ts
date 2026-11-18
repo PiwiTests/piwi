@@ -70,13 +70,16 @@ export async function clusterRepositoryUrl(db: DbClient, lastSeenRunId: number):
   return normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
 }
 
-/** The environment of a cluster's most recent run, or null when it has none. */
-export async function clusterEnvironment(db: DbClient, lastSeenRunId: number): Promise<string | null> {
+/** The environment of a cluster's most recent run: the one its label resolved to, and the label; null when none. */
+export async function clusterEnvironment(
+  db: DbClient,
+  lastSeenRunId: number,
+): Promise<{ environmentId: number | null; environment: string | null }> {
   const [run] = await db
-    .select({ environment: testRuns.environment })
+    .select({ environment: testRuns.environment, environmentId: testRuns.environmentId })
     .from(testRuns)
     .where(eq(testRuns.id, lastSeenRunId));
-  return run?.environment?.trim() || null;
+  return { environmentId: run?.environmentId ?? null, environment: run?.environment?.trim() || null };
 }
 
 /** Why a cluster's "Re-run in CI" button is not available, or null when it is. */
@@ -171,7 +174,7 @@ async function dispatchReadiness(
   const repositoryUrl = runId ? await clusterRepositoryUrl(db, runId) : null;
   const detected = detectScmProvider(repositoryUrl);
   const environment = runId ? await clusterEnvironment(db, runId) : null;
-  const pick = pickCiAction(settings, kind, { provider: detected, environment, actionId });
+  const pick = pickCiAction(settings, kind, { provider: detected, ...environment, actionId });
   const action = pick.action;
   const provider = action ? action.target.type : detected;
   const scmCredentialId = action && action.target.type !== 'ci-server' ? (action.target.credentialId ?? null) : null;
@@ -366,7 +369,7 @@ async function actionFor(
   const settings: CiActionsSettings = await getCiActionsSettings(db, projectId);
   const provider = detectScmProvider(runId ? await clusterRepositoryUrl(db, runId) : null);
   const environment = runId ? await clusterEnvironment(db, runId) : null;
-  const pick = pickCiAction(settings, kind, { provider, environment, actionId });
+  const pick = pickCiAction(settings, kind, { provider, ...environment, actionId });
   if (!pick.action) throw new Error(pick.reason);
   return pick.action;
 }

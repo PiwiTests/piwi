@@ -12,6 +12,7 @@
 import { computed, ref, watch } from 'vue';
 import type { TestRunDetails, TestCaseResult, RunClusterMeta } from '~~/types/api';
 import type { RunInsightsResult } from '#shared/handlers/run-insights';
+import { deployedCommitSource as deployedSource, sameDeployedCommit } from '#shared/deployed-words';
 import { describeRunBaselineParts, type RunBaselinePart } from '#shared/run-baseline';
 
 const props = defineProps<{
@@ -29,7 +30,6 @@ const props = defineProps<{
 const route = useRoute();
 const router = useRouter();
 const runId = Number(route.params.id);
-const { copy, copied } = useCopy();
 
 const isLive = computed(() => props.testRun?.status === 'running' || props.testRun?.status === 'finalizing');
 
@@ -162,6 +162,7 @@ const hasAnyChange = computed(() => {
     flakyRows.value.length > 0 ||
     hasDurationChanges.value ||
     d.commitRange != null ||
+    d.deployed != null ||
     d.metadataDiff.length > 0 ||
     (d.shardDisagreement?.length ?? 0) > 0
   );
@@ -184,6 +185,12 @@ const metadataGroups = computed(() => {
       entries: entries.filter((e) => (e.group ?? 'run') === group),
     }))
     .filter((g) => g.entries.length > 0);
+});
+
+/** Both runs tested the same deployed commit. */
+const bothOnOneCommit = computed(() => {
+  const deployed = data.value?.deployed;
+  return sameDeployedCommit(deployed?.current?.commit, deployed?.baseline?.commit);
 });
 
 function clusterName(tc: TestCaseResult): string | null {
@@ -420,38 +427,61 @@ function clusterIssue(tc: TestCaseResult) {
         icon="i-lucide-git-commit-horizontal"
         icon-class="text-gray-500"
         title="Commits since the baseline"
+        :subtitle="data.deployed ? 'The tests’ checkout; the deployed application is below' : undefined"
       >
-        <div class="space-y-3">
-          <div class="flex flex-wrap items-center gap-2 text-sm font-mono">
-            <UBadge color="success" variant="soft" size="sm">{{ data.commitRange.fromShort }}</UBadge>
-            <UIcon name="i-lucide-arrow-right" class="size-3 text-muted" />
-            <UBadge color="error" variant="soft" size="sm">{{ data.commitRange.toShort }}</UBadge>
-          </div>
-          <div class="flex flex-wrap items-center gap-2">
-            <UButton
-              v-if="data.commitRange.compareUrl"
-              :to="data.commitRange.compareUrl"
-              target="_blank"
-              external
-              icon="i-lucide-external-link"
-              size="sm"
-              variant="soft"
-              color="primary"
-              label="View commits"
-            />
-            <div class="flex items-center gap-1.5 flex-1 min-w-0">
-              <code class="flex-1 text-xs bg-elevated px-3 py-1.5 rounded font-mono truncate select-all">{{
-                data.commitRange.gitCommand
-              }}</code>
-              <UButton
-                :icon="copied ? 'i-lucide-check' : 'i-lucide-clipboard'"
-                size="xs"
-                color="neutral"
-                variant="ghost"
-                :title="copied ? 'Copied' : 'Copy git command'"
-                @click="copy(data.commitRange.gitCommand)"
-              />
-            </div>
+        <CommitRangeLinks :range="data.commitRange" />
+      </SectionCard>
+
+      <!-- A deployed environment: the application's commits and the deploys between the two runs -->
+      <SectionCard
+        v-if="data.deployed"
+        icon="i-lucide-rocket"
+        icon-class="text-gray-500"
+        :title="`Deployed to ${data.deployed.environment.name}`"
+        subtitle="The application's version is the deployed one, not the tests' checkout"
+        help="run.deployedCommit"
+        data-shot="run-changes-deployed"
+      >
+        <div class="space-y-4">
+          <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-sm">
+            <dt class="text-muted">This run</dt>
+            <dd class="min-w-0 break-words text-highlighted">
+              <template v-if="data.deployed.current"
+                ><code class="font-mono">{{ data.deployed.current.commit.slice(0, 7) }}</code
+                >, {{ deployedSource(data.deployed.current) }}</template
+              >
+              <template v-else>Unknown: it may differ from the run's commit</template>
+            </dd>
+            <dt class="text-muted">Baseline</dt>
+            <dd class="min-w-0 break-words text-highlighted">
+              <template v-if="data.deployed.baseline"
+                ><code class="font-mono">{{ data.deployed.baseline.commit.slice(0, 7) }}</code
+                >, {{ deployedSource(data.deployed.baseline) }}</template
+              >
+              <template v-else>Unknown</template>
+            </dd>
+          </dl>
+          <CommitRangeLinks v-if="data.deployed.range" :range="data.deployed.range" />
+          <p v-else-if="bothOnOneCommit" class="text-sm text-highlighted">
+            Both runs tested the same deployed commit: the application did not change between them.
+          </p>
+          <div class="space-y-1.5" data-testid="run-changes-deploys">
+            <p class="text-sm font-semibold text-highlighted">Deploys between the two runs</p>
+            <p v-if="data.deployed.deploys.length === 0" class="text-sm text-muted">
+              No deploy marker of {{ data.deployed.environment.name }} between them.
+            </p>
+            <ul v-else class="divide-y divide-default rounded-md border border-default">
+              <li v-if="data.deployed.more" class="px-3 py-1.5 text-xs text-muted">Earlier deploys left out</li>
+              <li
+                v-for="deploy in data.deployed.deploys"
+                :key="deploy.markerId"
+                class="flex flex-wrap items-baseline gap-x-2 px-3 py-1.5 text-sm"
+              >
+                <span class="text-highlighted break-words">{{ deploy.label }}</span>
+                <code v-if="deploy.commit" class="font-mono text-xs text-muted">{{ deploy.commit.slice(0, 7) }}</code>
+                <span class="ml-auto text-xs text-muted">{{ formatRelativeTime(deploy.deployedAt) }}</span>
+              </li>
+            </ul>
           </div>
         </div>
       </SectionCard>

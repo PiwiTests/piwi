@@ -84,6 +84,20 @@ project. A run reports a **label**, the reporter's `environment` option or `PIWI
 environment by its key or an alias, ignoring case; a label nothing takes adds a **discovered** one. Filters and
 analytics narrow to one, and a run Piwi starts for one gets its run variables: [Environments](/features/environments).
 
+### Default environment
+
+The [environment](#environment) a project's views read when none is picked, as they read its default branch: the
+project page and its tabs, Analytics, quarantine candidates and pull-request feedback. A run with no environment counts
+only under **All environments**. Unset, every environment counts:
+[Default environment](/features/environments#default-environment).
+
+### Deployed environment
+
+An [environment](#environment) a project admin marks as not built from the run's checkout, the default, such as
+Staging: it runs whatever was last deployed there. A run of one tested a **deployed commit**, which its server under test reports or
+the environment's latest deploy marker carries. Suspect lines, the Changes tab and the AI diagnosis read the
+application's changes between deployed commits: [Deployed environments](/features/deployed-environments).
+
 ### Protected environment
 
 An [environment](#environment), Production as a rule, that Piwi starts a run against only for a project admin, after

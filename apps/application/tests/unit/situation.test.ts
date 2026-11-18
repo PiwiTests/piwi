@@ -77,6 +77,47 @@ describe('the since line', () => {
     expect(buildSituation(base()).since.text).toBe('New regression since a1b2c3d by Alice Chen, 1 day ago');
   });
 
+  describe('of a deployed environment, which names the deploy rather than the tests’ commit', () => {
+    const deploy = { environment: 'Staging', commit: 'b2c3d4e5f6', label: 'Deploy 42', noDeploySinceLastPass: false };
+
+    test('a new regression names its first failing deploy, with the commit as a part', () => {
+      const line = buildSituation(base({ since: since({ deploy }) })).since;
+      expect(line.text).toBe('New regression after Deploy 42 (b2c3d4e) on Staging, 1 day ago');
+      expect(line.parts.find((p) => p.kind === 'commit')).toMatchObject({ text: 'b2c3d4e', id: 'b2c3d4e5f6' });
+    });
+
+    test('a deployed commit with no deploy marker, none since the last pass, and an unknown one', () => {
+      const commitOnly = { ...deploy, label: null };
+      expect(buildSituation(base({ since: since({ deploy: commitOnly }) })).since.text).toBe(
+        'New regression on Staging at b2c3d4e, 1 day ago',
+      );
+      const noDeploy = { ...commitOnly, noDeploySinceLastPass: true };
+      expect(buildSituation(base({ why: null, since: since({ deploy: noDeploy }) })).since.text).toBe(
+        'First failed in this run, on Staging at b2c3d4e, with no deploy since the last pass, 1 day ago',
+      );
+      const unknown = { ...commitOnly, commit: null };
+      expect(buildSituation(base({ since: since({ deploy: unknown }) })).since.text).toBe(
+        'New regression on Staging, deployed version unknown, 1 day ago',
+      );
+    });
+
+    test('a failure that goes on names the run it started in, then the deploy', () => {
+      const line = buildSituation(base({ why: null, since: since({ deploy, isFirstFailure: false }) })).since;
+      expect(line.text).toBe('Failing since run #4, 1 day ago, first after Deploy 42 (b2c3d4e) on Staging');
+    });
+
+    test('a pass on retry keeps the tests’ commit', () => {
+      const line = buildSituation(
+        base({
+          why: 'passed-on-retry',
+          since: since({ deploy }),
+          attempt: { failedRetry: 0, failedExecutionId: 9, passedRetry: 1 },
+        }),
+      ).since;
+      expect(line.text).toContain('on a1b2c3d by Alice Chen');
+    });
+  });
+
   test('a first failure without a why', () => {
     expect(buildSituation(base({ why: null })).since.text).toBe(
       'First failed in this run, on a1b2c3d by Alice Chen, 1 day ago',

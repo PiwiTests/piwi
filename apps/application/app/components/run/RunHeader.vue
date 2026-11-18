@@ -21,6 +21,9 @@ import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
 import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
 import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
+import { commitUrl } from '#shared/scm-urls';
+import { deployedCommitSource } from '#shared/deployed-words';
+import { normalizeGitUrl } from '~~/server/utils/scm/git-url';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -116,6 +119,22 @@ const environmentWarning = computed(() => {
   return null;
 });
 const scm = computed(() => props.testRun?.metadata?.scm);
+/** The application's commit a run of a deployed environment ran against, linked in the run's repository. */
+const deployed = computed(() => {
+  const found = props.testRun?.deployedCommit;
+  if (!found) return null;
+  const source = deployedCommitSource(found);
+  return {
+    short: found.commit.slice(0, 7),
+    title: `The application's deployed commit ${found.commit}, ${source}`,
+    href: commitUrl(normalizeGitUrl(scm.value?.remoteUrl ?? null), found.commit),
+    source,
+  };
+});
+/** A deployed environment whose deployed commit nothing named. */
+const deployedUnknown = computed(
+  () => props.testRun?.environmentAppFromCheckout === false && !props.testRun?.deployedCommit,
+);
 /** Where the run started and the editor that steers it (`runStartedFrom`). */
 const startedFrom = computed(() => runStartedFrom(props.testRun?.metadata));
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
@@ -541,6 +560,21 @@ function onLabelKeydown(e: KeyboardEvent) {
       <template v-if="testRun?.environment">
         <span class="text-dimmed">·</span>
         <EnvironmentBadge :name="testRun.environmentName ?? testRun.environment" :label="testRun.environment" />
+        <template v-if="deployed">
+          <a
+            v-if="deployed.href"
+            :href="deployed.href"
+            target="_blank"
+            rel="noopener"
+            class="hover:underline decoration-dotted underline-offset-2"
+            :title="deployed.title"
+            data-testid="run-deployed-commit"
+            >app <code class="font-mono">{{ deployed.short }}</code></a
+          >
+          <span v-else :title="deployed.title" data-testid="run-deployed-commit"
+            >app <code class="font-mono">{{ deployed.short }}</code></span
+          >
+        </template>
       </template>
       <template v-if="(testRun?.reusedCount ?? 0) > 0">
         <span class="text-dimmed">·</span>
@@ -641,6 +675,24 @@ function onLabelKeydown(e: KeyboardEvent) {
             · {{ environmentWarning }}</span
           >
         </span>
+      </div>
+      <div
+        v-if="deployed || deployedUnknown || testRun?.environmentAppFromCheckout"
+        class="flex items-start gap-1.5 min-w-0"
+        data-testid="run-application"
+        data-tour="run-deployed-commit"
+      >
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Application <HelpHint topic="run.deployedCommit"
+        /></span>
+        <span v-if="deployed" class="min-w-0 break-words"
+          >Deployed <code class="font-mono" :title="deployed.title">{{ deployed.short }}</code
+          >, {{ deployed.source }}</span
+        >
+        <span v-else-if="deployedUnknown" class="min-w-0 break-words"
+          >Deployed, at a commit nothing reported: it may differ from the run's commit</span
+        >
+        <span v-else>Built from the run's checkout</span>
       </div>
       <UModal v-model:open="environmentOpen" title="Run environment" :ui="{ content: 'max-w-3xl' }">
         <template #body>

@@ -201,11 +201,10 @@ const activeIcon = computed(() => sections.value.find((s) => s.id === active.val
         @saved="emit('saved')"
       />
 
-      <ProjectEnvironmentsSettings
-        v-else-if="active === 'environments'"
-        :project="project"
-        data-tour="project-settings-environments"
-      />
+      <div v-else-if="active === 'environments'" class="space-y-4">
+        <ProjectEnvironmentsSettings :project="project" data-tour="project-settings-environments" />
+        <ProjectDefaultEnvironmentSettings :project="project" @saved="emit('saved')" />
+      </div>
 
       <div v-else-if="active === 'capabilities'" data-tour="project-settings-capabilities">
         <ProjectCapabilityDecisions

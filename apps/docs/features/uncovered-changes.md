@@ -130,6 +130,8 @@ jobs uploaded their reports.
 - **Naming conventions.** Files map to routes and pages through Nitro and Nuxt file naming; other frameworks rely on
   locators, code reach and coverage, so without those more of their files are *not observable* and not counted.
 - **Ten files listed.** The comment names at most ten files per list and counts the rest.
+- **A deployed environment.** A run against one reached the [deployed](/features/deployed-environments) application's
+  lines: when its deployed commit is not the change's head, or is unknown, the section says so.
 
 ## Related
 

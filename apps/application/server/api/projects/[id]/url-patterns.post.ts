@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Add a URL pattern to a project',
     description:
-      'Body: `{ pattern, environment?, branch?, pathPrefix?, testPathPrefix? }`, appended after the project’s other patterns. Piwi Picker calls it to add the site of the current tab. `pathPrefix` and `testPathPrefix` follow the rules of the list endpoint. 409 when the project has this pattern already.',
+      'Body: `{ pattern, environment?, branch?, pathPrefix?, testPathPrefix? }`, appended after the project’s other patterns. `environment` names one of the project’s environments by its key, an alias or a run’s label, resolved as a run’s label is (a label nothing takes creates a discovered environment); none applies the pattern to every environment. Piwi Picker calls it to add the site of the current tab. `pathPrefix` and `testPathPrefix` follow the rules of the list endpoint. 409 when the project has this pattern already.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },

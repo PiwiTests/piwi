@@ -18,6 +18,7 @@ const { getProjectFailureClusters, getProjectTestCases, getProjectPerformance } 
 
 const scope = (change: Partial<ProjectRunScope> = {}): ProjectRunScope => ({
   environments: [],
+  allEnvironments: false,
   branches: [],
   allBranches: false,
   fullRunsOnly: true,
@@ -34,14 +35,22 @@ describe('parseProjectRunScope', () => {
   test('reads the analytics keys: comma lists, the branch policy and the run kind', () => {
     expect(
       parseProjectRunScope({ environments: 'staging, production', branches: 'main,', fullRunsOnly: 'false' }),
-    ).toEqual({ environments: ['staging', 'production'], branches: ['main'], allBranches: false, fullRunsOnly: false });
+    ).toEqual({
+      environments: ['staging', 'production'],
+      allEnvironments: false,
+      branches: ['main'],
+      allBranches: false,
+      fullRunsOnly: false,
+    });
     expect(parseProjectRunScope(new URLSearchParams('allBranches=true'))).toEqual(scope({ allBranches: true }));
+    expect(parseProjectRunScope(new URLSearchParams('allEnvironments=true'))).toEqual(scope({ allEnvironments: true }));
   });
 
   test('round-trips through its query, which always reads as scoped', () => {
     for (const value of [
       scope(),
       scope({ allBranches: true, fullRunsOnly: false }),
+      scope({ allEnvironments: true }),
       scope({ environments: ['ci'], branches: ['main', 'release/2.0'] }),
     ]) {
       expect(parseProjectRunScope(projectRunScopeQuery(value))).toEqual(value);
@@ -78,6 +87,34 @@ describe('runInProjectScope', () => {
     expect(runInProjectScope(run('main', { isFullRun: false }), scope(), 'main')).toBe(false);
     expect(runInProjectScope(run('main', { isFullRun: false }), scope({ fullRunsOnly: false }), 'main')).toBe(true);
   });
+
+  test('with no environment picked, reads the default environment, never a run with none', () => {
+    const staging = 'staging';
+    expect(runInProjectScope(run('main', { environment: 'Staging' }), scope(), 'main', staging)).toBe(true);
+    expect(
+      runInProjectScope(
+        { ...run('main', { environment: 'stg' }), environmentKey: 'staging' },
+        scope(),
+        'main',
+        staging,
+      ),
+    ).toBe(true);
+    expect(runInProjectScope(run('main', { environment: 'production' }), scope(), 'main', staging)).toBe(false);
+    expect(runInProjectScope({ branch: 'main', environment: null }, scope(), 'main', staging)).toBe(false);
+    // All environments reads every one, a picked environment wins, and a project without a default reads all.
+    expect(
+      runInProjectScope(run('main', { environment: 'production' }), scope({ allEnvironments: true }), 'main', staging),
+    ).toBe(true);
+    expect(
+      runInProjectScope(
+        run('main', { environment: 'production' }),
+        scope({ environments: ['production'] }),
+        'main',
+        staging,
+      ),
+    ).toBe(true);
+    expect(runInProjectScope({ branch: 'main', environment: null }, scope(), 'main', null)).toBe(true);
+  });
 });
 
 describe('the scope in SQL', () => {
@@ -89,7 +126,14 @@ describe('the scope in SQL', () => {
     await db.insert(schema.projects).values([
       { id: 1, name: 'configured', defaultBranch: 'main' },
       { id: 2, name: 'unconfigured' },
+      { id: 3, name: 'with a default environment', defaultBranch: 'main' },
     ]);
+    await db.insert(schema.environments).values([
+      { id: 1, projectId: 1, key: 'staging', keyFold: 'staging', name: 'Staging' },
+      { id: 2, projectId: 3, key: 'staging', keyFold: 'staging', name: 'Staging', aliases: ['stg'] },
+      { id: 3, projectId: 3, key: 'production', keyFold: 'production', name: 'Production', position: 1 },
+    ]);
+    await db.update(schema.projects).set({ defaultEnvironmentId: 2 }).where(eq(schema.projects.id, 3));
     const start = Date.parse('2026-10-01T12:00:00Z');
     const run = (id: number, projectId: number, branch: string | null, extra: Record<string, unknown> = {}) => ({
       id,
@@ -109,6 +153,10 @@ describe('the scope in SQL', () => {
         run(3, 1, 'feature/x'),
         run(4, 1, null),
         run(5, 1, 'main', { environment: 'staging' }),
+        run(9, 3, 'main', { environment: 'staging', environmentId: 2 }),
+        run(10, 3, 'main', { environment: 'stg', environmentId: 2 }),
+        run(11, 3, 'main', { environment: 'production', environmentId: 3 }),
+        run(12, 3, 'main', { environment: null }),
         run(6, 2, 'develop'),
         run(7, 2, 'develop'),
         run(8, 2, 'feature/y'),
@@ -209,6 +257,23 @@ describe('the scope in SQL', () => {
       );
     expect(await ids(scope())).toEqual([1, 4, 5]);
     expect(await ids(scope({ environments: ['ci'], allBranches: true }))).toEqual([1, 3, 4]);
+  });
+
+  test('a project with a default environment reads it as a pick of its key, and every one under All environments', async () => {
+    expect(await runIds(3, scope())).toEqual([9, 10]);
+    expect(await runIds(3, scope())).toEqual(await runIds(3, scope({ environments: ['staging'] })));
+    expect(await runIds(3, scope({ allEnvironments: true }))).toEqual([9, 10, 11, 12]);
+    expect(await runIds(3, scope({ environments: ['production'] }))).toEqual([11]);
+    expect(await runIds(3, scope({ environments: ['(none)'] }))).toEqual([12]);
+  });
+
+  test('an archived default environment reads as none', async () => {
+    await db.update(schema.environments).set({ archivedAt: new Date() }).where(eq(schema.environments.id, 2));
+    try {
+      expect(await runIds(3, scope())).toEqual([9, 10, 11, 12]);
+    } finally {
+      await db.update(schema.environments).set({ archivedAt: null }).where(eq(schema.environments.id, 2));
+    }
   });
 
   test('a run of another project never leaks into a scope', async () => {

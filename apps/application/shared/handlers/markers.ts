@@ -1,5 +1,5 @@
-import { markers, testRuns } from '../../server/database/schema';
-import { eq, and, asc, desc, isNull, like, lt, ne, notLike, or } from 'drizzle-orm';
+import { environments, markers, testRuns } from '../../server/database/schema';
+import { eq, and, asc, desc, isNull, like, lt, ne, notLike, or, sql } from 'drizzle-orm';
 import { eligibleRunSql, isEligibleRun, notPrivateRun } from '../run-eligibility';
 import { loadRunsSnapshots } from './environment-snapshots';
 import { isPassiveCapabilityDeclined } from './capabilities';
@@ -9,7 +9,7 @@ import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categori
 import type { DrizzleDB } from './db';
 import { syncReleaseMarkerKeep } from './run-keep';
 import { resolveRunEnvironment } from './environments';
-import { deployedCommitOf } from '@piwitests/core/environments';
+import { deployedCommitOf } from '@piwitests/core/deployed-commit';
 
 export interface MarkerInput {
   label: string;
@@ -27,9 +27,15 @@ function normalizeCategory(category: string | undefined | null): string {
   return category && MARKER_CATEGORY_IDS.includes(category) ? category : DEFAULT_MARKER_CATEGORY;
 }
 
+/** A project's markers, oldest first, each with the name of the environment it names (`environmentName`). */
 export async function listProjectMarkers(db: DrizzleDB, projectId: number) {
-  const rows = await db.select().from(markers).where(eq(markers.projectId, projectId)).orderBy(asc(markers.occurredAt));
-  return { markers: rows };
+  const rows = await db
+    .select({ marker: markers, environmentName: environments.name })
+    .from(markers)
+    .leftJoin(environments, eq(environments.id, markers.environmentId))
+    .where(eq(markers.projectId, projectId))
+    .orderBy(asc(markers.occurredAt));
+  return { markers: rows.map((row) => ({ ...row.marker, environmentName: row.environmentName ?? null })) };
 }
 
 /** A marker may link only to a run of its own project, never a private run. */
@@ -92,6 +98,32 @@ export async function deleteMarker(db: DrizzleDB, id: number) {
   return { success: true };
 }
 
+/** What decides a run's environment lineage: the environment its label resolved to, else the label. */
+interface RunEnvironmentOf {
+  environment: string | null;
+  environmentId: number | null;
+}
+
+/**
+ * Whether two runs are of one environment lineage: the same environment, else, for two runs with none, the same label
+ * ignoring case (no label being one lineage too).
+ */
+function sameEnvironmentLineage(a: RunEnvironmentOf, b: RunEnvironmentOf): boolean {
+  if (a.environmentId != null || b.environmentId != null) return a.environmentId === b.environmentId;
+  return (a.environment ?? '').toLowerCase() === (b.environment ?? '').toLowerCase();
+}
+
+/** The runs of `run`'s environment lineage (`sameEnvironmentLineage`), as SQL over `test_runs`. */
+function environmentLineageSql(run: RunEnvironmentOf) {
+  if (run.environmentId != null) return eq(testRuns.environmentId, run.environmentId);
+  return and(
+    isNull(testRuns.environmentId),
+    run.environment == null
+      ? isNull(testRuns.environment)
+      : sql`lower(${testRuns.environment}) = ${run.environment.toLowerCase()}`,
+  );
+}
+
 /**
  * Auto-create a timeline marker when a finished run's tooling versions changed
  * from the previous run in the same environment. Conservative (only high-signal
@@ -122,7 +154,7 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
   if (alreadyMarked.length > 0) return;
 
   // Previous runs of this project, most recent first. Filter to the same
-  // environment (null-safe) in JS so environment lineages stay independent.
+  // environment lineage in JS so environment lineages stay independent.
   const candidates = await db
     .select()
     .from(testRuns)
@@ -131,7 +163,7 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
     )
     .orderBy(desc(testRuns.startTime))
     .limit(25);
-  const prev = candidates.find((c) => (c.environment ?? null) === (run.environment ?? null));
+  const prev = candidates.find((c) => sameEnvironmentLineage(c, run));
   if (!prev) return;
 
   const changes: string[] = [];
@@ -149,6 +181,7 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
     occurredAt: run.startTime,
     category: 'config',
     environment: run.environment ?? null,
+    environmentId: run.environmentId ?? null,
     source: 'auto',
     runId: run.id,
   });
@@ -156,7 +189,7 @@ export async function syncAutoMarkersForRun(db: DrizzleDB, runId: number): Promi
 
 /**
  * Auto-create one timeline marker per kind of environment that changed between a finished run and the previous
- * eligible run on the same branch and environment label: its runner or browser (category `infra`), or a server under
+ * eligible run on the same branch and environment lineage (`sameEnvironmentLineage`): its runner or browser (category `infra`), or a server under
  * test (`config`), labeled with the fields that changed. A kind either run did not record is no change, so a change
  * is marked once, on the run where it appeared. Idempotent per run and kind; gated by `PIWI_AUTO_MARKERS` like
  * `syncAutoMarkersForRun`, and by the project's `markers` capability.
@@ -171,7 +204,7 @@ export async function syncEnvironmentMarkersForRun(db: DrizzleDB, runId: number)
     eq(testRuns.projectId, run.projectId),
     lt(testRuns.startTime, run.startTime),
     eligibleRunSql('baseline'),
-    run.environment == null ? isNull(testRuns.environment) : eq(testRuns.environment, run.environment),
+    environmentLineageSql(run),
     run.branch == null ? isNull(testRuns.branch) : eq(testRuns.branch, run.branch),
   ];
   const [prev] = await db
@@ -205,6 +238,7 @@ export async function syncEnvironmentMarkersForRun(db: DrizzleDB, runId: number)
       occurredAt: run.startTime,
       category: change.category,
       environment: run.environment ?? null,
+      environmentId: run.environmentId ?? null,
       source: 'auto',
       runId: run.id,
     });

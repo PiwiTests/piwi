@@ -3907,6 +3907,26 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'project-default-environment', width: 1280 },
+    { name: 'project-default-environment-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Project → Settings → Environments: the default environment the project's views read, Staging for API Integration, at ${width} px`,
+    route: '/projects/2?tab=settings&section=environments',
+    viewport: { width, height: 700 },
+    of: '[data-shot="project-default-environment"]',
+  })),
+  ...[
+    { name: 'project-filters-default-environment', width: 1280 },
+    { name: 'project-filters-default-environment-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `A project page's Filters reading its default environment, Default environment (Staging), with the runs of the other environments it hides, at ${width} px`,
+    route: '/projects/2',
+    viewport: { width, height: 900 },
+    of: '[data-shot="project-filters"]',
+  })),
+  ...[
     { name: 'project-url-patterns-empty', width: 1280 },
     { name: 'project-url-patterns-empty-mobile', width: 375 },
   ].map(({ name, width }) => ({

@@ -5,6 +5,8 @@ import {
   commandEnvironmentOf,
   environmentFilterItems,
   environmentFilterLabel,
+  instanceEnvironmentFilterItems,
+  sharedDefaultEnvironment,
 } from '../../app/utils/environment-filter';
 import { filterBarSummary } from '../../app/utils/filter-summary';
 import { NO_ENVIRONMENT_FILTER, type EnvironmentRecord } from '../../shared/environments';
@@ -131,5 +133,27 @@ describe('commandEnvironmentOf', () => {
   test('reads a protected pick as none for a command that cannot keep to its tags', () => {
     expect(commandEnvironmentOf({ picked: PRODUCTION.id, active, shown: null })).toBe(PRODUCTION.id);
     expect(commandEnvironmentOf({ picked: PRODUCTION.id, active, shown: null, protectedAllowed: false })).toBeNull();
+  });
+});
+
+describe('the environments of every project a filter spans', () => {
+  const staging = { key: 'staging', names: ['Staging', 'Pre-production'], defaults: 1 };
+  const production = { key: 'production', names: ['Production'], defaults: 0 };
+
+  test('offers each key by the names the projects give it, then a stored value, then No environment', () => {
+    expect(instanceEnvironmentFilterItems({ environments: [staging, production], selected: ['qa'] })).toEqual([
+      { label: 'Staging / Pre-production', value: 'staging' },
+      { label: 'Production', value: 'production' },
+      { label: 'qa', value: 'qa' },
+      { label: NO_ENVIRONMENT_LABEL, value: NO_ENVIRONMENT_FILTER },
+    ]);
+    expect(instanceEnvironmentFilterItems({ environments: [] })).toEqual([]);
+  });
+
+  test('names the default environment only when the projects read one key', () => {
+    expect(sharedDefaultEnvironment([{ ...staging, names: ['Staging'] }, production])).toBe('Staging');
+    expect(sharedDefaultEnvironment([staging, production])).toBe('staging');
+    expect(sharedDefaultEnvironment([staging, { ...production, defaults: 2 }])).toBeNull();
+    expect(sharedDefaultEnvironment([production])).toBeNull();
   });
 });

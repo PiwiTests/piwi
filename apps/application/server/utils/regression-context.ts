@@ -12,6 +12,7 @@ import { FALLBACK_DEFAULT_BRANCH } from './scm/git-url';
 import { selectBaselineRun } from './branch-baseline';
 import { resolveFallbackBranch } from '#shared/handlers/baseline-scope';
 import { describeRunBaseline } from '#shared/run-baseline';
+import { deployedChanges, type DeployedChanges } from '#shared/handlers/deployed-changes';
 
 export interface RunForRegression {
   id: number;
@@ -19,6 +20,8 @@ export interface RunForRegression {
   status: string;
   startTime: Date;
   environment: string | null;
+  /** The environment the label resolves to; a deployed one adds its application's changes (`deployed`). */
+  environmentId?: number | null;
   branch?: string | null;
   metadata: unknown;
   playwrightVersion?: string | null;
@@ -47,6 +50,11 @@ export type RegressionContextResult =
       } | null;
       metadataDiff: MetaDiffEntry[];
       newFailures: number;
+      /**
+       * For a run of a deployed environment: the deployed commits of the last green run and this one, the
+       * application's range between them and the deploys in between. Null for one built from the checkout, or none.
+       */
+      deployed: DeployedChanges | null;
     };
 
 const FAIL_STATUSES = new Set<string>(FAILED_STATUS_KEYS);
@@ -127,6 +135,21 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
     if (FAIL_STATUSES.has(status) && greenBestStatus.get(tcId) === 'passed') newFailures++;
   }
 
+  const deployed =
+    run.environmentId != null
+      ? await deployedChanges(
+          db,
+          {
+            id: run.id,
+            projectId: run.projectId,
+            environmentId: run.environmentId,
+            startTime: run.startTime,
+            metadata: run.metadata,
+          },
+          lastGreen,
+        )
+      : null;
+
   return {
     hasGreen: true,
     lastGreenRunId: lastGreen.id,
@@ -139,5 +162,6 @@ export async function computeRegressionContext(db: DbClient, run: RunForRegressi
     commitRange,
     metadataDiff,
     newFailures,
+    deployed,
   };
 }

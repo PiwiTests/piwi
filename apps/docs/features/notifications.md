@@ -120,10 +120,10 @@ A subscription controls *what* is delivered and *how*. The project **bell** crea
 
 ### Branches and environments
 
-The bell offers the branches and environments the project's runs reported, and takes a typed name too: `*` matches
-any characters, so `release/*` covers every release branch. A subscription delivers only events from runs on one of
-its branches **and** in one of its environments; a run that reported no branch (or environment) matches none, and an
-empty list matches every run. The filters apply to every event that comes from a run: the `run.*` events,
+The bell offers the branches the project's runs reported, its [environments](./environments), and takes a typed name
+too: `*` matches any characters, so `release/*` covers every release branch. A subscription delivers only events from
+runs on one of its branches **and** in one of its environments (by key or alias); a run that reported no branch (or
+environment) matches none, and an empty list matches every run. The filters apply to every event that comes from a run: the `run.*` events,
 `flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. `diagnosis.completed` and
 `auto_heal.pr_opened` are not filtered.
 
