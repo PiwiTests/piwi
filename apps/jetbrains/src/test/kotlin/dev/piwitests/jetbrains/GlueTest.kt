@@ -4460,10 +4460,12 @@ class GlueTest {
 
     @Test
     fun testOnlyPathOfUriReadsAUriAsAPath() {
-        val parse = Regex("(Path\\.of|Paths\\.get)\\((java\\.net\\.)?URI\\(")
-        val reads = java.io.File("src/main/kotlin").walkTopDown().filter { it.extension == "kt" }
-            .flatMap { file -> file.readLines().filter { parse.containsMatchIn(it) }.map { file.name } }
-            .toList()
+        // `Path.of(URI(…))`, `Paths.get`, `File(URI…)` or `URI.create`, and `URLDecoder`, which reads `+` as a space.
+        val read = Regex("(Path\\.of|Paths\\.get|File)\\((java\\.net\\.)?URI(\\.create)?\\(|URLDecoder")
+        val sources = listOf("src/main/kotlin", "src/main/java").map { java.io.File(it) }
+        assertTrue(sources.all { it.isDirectory })
+        val reads = sources.flatMap { it.walkTopDown().filter { file -> file.extension in setOf("kt", "java") } }
+            .flatMap { file -> file.readLines().filter { read.containsMatchIn(it) }.map { file.name } }
         assertEquals(listOf("Glue.kt"), reads)
     }
 
