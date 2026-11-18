@@ -92,6 +92,10 @@ Semantics worth knowing:
 
 - **`beforeAll` / `afterAll` activity is not captured**: only a test's own activity is attributed to it.
 - **Multi-page tests** attribute Web Vitals, the failure ARIA snapshot and screenshot to the most recently active page.
+- **[Watch](/features/live-view) shows one page**: the `page` fixture's for a test that takes it, never a popup; else
+  the page of the test's latest call, whichever context it is in, and before its first call the page opened last, a
+  `beforeAll`'s too (reporter 0.73.0 or later, [`captureResources`](/reference/reporter-options#what-gets-captured)
+  on).
 - **Repeated call sites** (actions in a loop, a page-object method called several times) probe the element once per test; a failed probe is retried on the line's next run.
 - **Assertion capture is positive-presence only** — negated (`.not.…`), absence (`toBeHidden`), multi-element (`toHaveCount`) and page-level (`toHaveURL`) assertions never probe.
 

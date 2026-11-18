@@ -94,7 +94,10 @@ What the package does to a user's run, process by process.
   call a test makes to know when and from which line it last used each page, context,
   browser and API request context, a wait on the client until it ends; a page of a
   connection it does not follow has the page methods that count as using it wrapped
-  instead (`internal/capture/resource-ledger.ts`).
+  instead (`internal/capture/resource-ledger.ts`). In a worker that can show a view, it
+  also tells the lane the page each call lands on (`onTestCallPage`), outside that call's
+  async context (`outsideCalls`), so a read the view makes then is an internal call of
+  its own, never a part of the test's.
 - On Linux, `5` written to `/proc/<pid>/clear_refs` of the processes the worker started,
   at each test's start, which resets their peak RSS for the test
   (`internal/capture/worker-metrics.ts`). In Chromium, a DevTools session on each page
@@ -264,8 +267,10 @@ What the package does to a user's run, process by process.
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.
 - **The lane** (`lane-feed.ts`): the test the worker runs, the page it shows (its `page`
-  fixture's, else the first page the browser opened during it, else the next one still
-  open once that one closes), and the stop it stands at, whose page shows while it stands
+  fixture's, else the page its latest call landed on, which the resource ledger tells as
+  it follows each call (`onTestCallPage`, `laneCalled`), else the page the browser opened
+  last that is still open, a `beforeAll`'s included; only a page the capture fixtures
+  instrumented shows), and the stop it stands at, whose page shows while it stands
   there. Every view outside the page is a sink of one live view of the page shown: the
   editor's view of a stop (`view`), its view of the lane (`view-lane`) and the instance's
   live view, each at its own pace (`LatestPacer`), each frame masked once with the masks
@@ -531,7 +536,8 @@ What the package does to a user's run, process by process.
   second for a full view or one for tiles alone, and whether one shows it in full, `full`, true
   from an instance that does not say it), and asks for the latest frame and call log again as a
   watch that showed it as a tile shows it in full (`resend`). While anyone watches,
-  the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
+  the page the lane shows for the test goes out as its screencast, the view's call log,
+  text and Inspect moving with it as it changes (`onLanePage`) (the lane's one view, `lane-feed.ts`, which
   the editor's views share, its subscription told as `view` changes, `asked`), through internal calls:
   at the size `view` asks at quality 50, else at most 640 by 400 from an instance that never says it, unless the
   test's trace or video came first (their size and quality, 800 wide at 90), or an editor's

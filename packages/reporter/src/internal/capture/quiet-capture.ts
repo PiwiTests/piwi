@@ -1,3 +1,4 @@
+import { AsyncResource } from 'node:async_hooks';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { findOwnPackageJson } from '../support/reporter-version.js';
@@ -111,6 +112,15 @@ export function callMethod(target: object, prop: string | symbol, args: unknown[
 type ApiCallOwner = {
   _wrapApiCall?: (run: () => Promise<unknown>, options: { internal: boolean; title?: string }) => Promise<unknown>;
 };
+
+/**
+ * Run `run` outside the Playwright call it is told from, in the async context
+ * this module loaded in. Playwright keeps the call running in its async
+ * context, so a call made from a hook it runs (the ledger's following of each
+ * call) joins that call, `internalCall`'s included: here it is a call of its
+ * own.
+ */
+export const outsideCalls: <T>(run: () => T) => T = AsyncResource.bind(<T>(run: () => T): T => run());
 
 /**
  * Run a page read as an internal Playwright call: every API call made inside

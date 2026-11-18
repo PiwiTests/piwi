@@ -40,7 +40,7 @@ import { printRunLine } from '../support/run-log.js';
 import { resolveShardInfo } from '../support/shard-info.js';
 import { followCallLog } from './live-call-log.js';
 import { LiveByteBudget, LiveInspect } from './live-inspect.js';
-import { subscribeLane, type LaneSubscription } from './lane-feed.js';
+import { lanePageNow, onLanePage, subscribeLane, type LaneSubscription } from './lane-feed.js';
 import {
   LaneFilmstrip,
   LaneTexts,
@@ -62,12 +62,14 @@ import type { PageFrame } from './page-view.js';
  * opens nothing until a person shares the run (**Share live**, `shareLiveView` from the run channel's `share`), and
  * closes the stream as they stop sharing it, the viewers hearing why (`unshared`); `liveViewState` says how it stands,
  * and why a run without a key cannot be shared (`none:<why>` in place of the address), for the run channel to tell.
- * Nothing goes to the instance while the run is not shared. While someone watches, the running test's page goes out as
- * its screencast (`page-view.ts`, through internal calls: nothing shows among the test's steps), at the size and pace
- * the instance says its viewers ask (`view`: the largest image one of them shows, within 1280 by 800 device pixels,
- * and `LIVE_FRAME_FPS` frames a second for a full view, one for tiles alone), else at most `LIVE_FRAME_WIDTH` by
- * `LIVE_FRAME_HEIGHT` and `LIVE_FRAME_FPS` frames a second, at `LIVE_FRAME_QUALITY` and `LIVE_FRAME_BYTE_RATE` bytes a
- * second at most; a page whose video records keeps the video's size, its screencast's first client. Each frame is
+ * Nothing goes to the instance while the run is not shared. While someone watches, the page the lane shows for the
+ * running test (`lane-feed.ts`: its `page` fixture's, else the page of its latest call) goes out as its screencast,
+ * following that page as it changes (`page-view.ts`, through internal calls: nothing shows among the test's steps), at
+ * the size and pace the instance says its viewers ask (`view`: the largest image one of them shows, within 1280 by 800
+ * device pixels, and `LIVE_FRAME_FPS` frames a second for a full view, one for tiles alone), else at most
+ * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` and `LIVE_FRAME_FPS` frames a second, at `LIVE_FRAME_QUALITY` and
+ * `LIVE_FRAME_BYTE_RATE` bytes a second at most; a page whose video records keeps the video's size, its screencast's
+ * first client. Each frame is
  * posted with the call it was taken at, one post in flight, the latest frame alone waiting: as its JPEG's bytes behind
  * a JSON header (`LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside JSON to an older one. Before a frame goes, the page's secret fields and the elements its project masks (`masks`, which the
  * instance sends on the stream) are painted over in it, or it does not go (`live-mask.ts`), and a headed stop's pause
@@ -241,6 +243,8 @@ function shownInFull(own: Link): boolean {
 }
 
 let link: Link | null = null;
+/** What stops hearing the lane's page change, while the worker holds a key. */
+let unhearLane: (() => void) | null = null;
 /** Why the worker's run cannot be shared, while it holds no key; null with one, and before the worker opened. */
 let missing: string | null = null;
 /** Who hears each change of `liveViewState`: the run channel. */
@@ -248,10 +252,9 @@ const changes = new Set<() => void>();
 /** The shares and their ends a person asks for, one after the other. */
 let shareTurn: Promise<unknown> = Promise.resolve();
 
-/** The test the worker runs: its title, its page once known, and the call it is on. */
+/** The test the worker runs: its title, and the call it is on. */
 interface RunningTest {
   title: string;
-  page: Page | null;
   call: () => LiveCall | null;
   /** Something may pause it: its call log is not followed, which would move where the debugger stops. */
   mayPause: boolean;
@@ -259,7 +262,10 @@ interface RunningTest {
 }
 
 let running: RunningTest | null = null;
-/** The view of the running test's page, while someone watches: its hold on the lane's frames. */
+/**
+ * The view of the page the lane shows for the running test, while someone watches: that page, which changes as the
+ * lane's does, and its hold on the lane's frames.
+ */
 let view: {
   page: Page;
   frames: LaneSubscription;
@@ -402,6 +408,7 @@ export function openLiveView(
     asked: null,
   };
   if (link.sharing) connect(link);
+  unhearLane = onLanePage(lanePageChanged);
   inspectSent.clear();
   filmstrip?.close();
   filmstrip = new LaneFilmstrip(watchedLane, (kept, test) => {
@@ -419,6 +426,8 @@ export function closeLiveView(): void {
   link = null;
   running = null;
   missing = null;
+  unhearLane?.();
+  unhearLane = null;
   filmstrip?.close();
   filmstrip = null;
   thumbPosts.queue = [];
@@ -473,20 +482,35 @@ async function stopSharing(): Promise<void> {
   changed();
 }
 
-/** A test titled `title` begins: `call` names the call it is on, for each frame; `mayPause` when it may pause. */
+/**
+ * A test titled `title` begins: `call` names the call it is on, for each frame; `mayPause` when it may pause. The page
+ * the lane shows for it is watched from now on, at once when someone already watches.
+ */
 export function liveViewTestBegan(title: string, call: () => LiveCall | null, mayPause = false): void {
   if (!link) return;
-  running = { title, page: null, call, mayPause, began: Date.now() };
+  running = { title, call, mayPause, began: Date.now() };
   textGeneration++;
   filmstrip?.forget();
   thumbPosts.queue = [];
+  lanePageChanged();
 }
 
-/** The running test's page: watched from now on, at once when someone already watches. */
-export function liveViewPage(page: Page): void {
-  if (!link || !running || running.page) return;
-  running.page = page;
-  if (link.viewers > 0 && active(link)) startView();
+/**
+ * The page the lane shows changed (`onLanePage`), or the running test began: while someone watches, the view starts on
+ * it, moves to it, or stops as the test shows no page any more.
+ */
+function lanePageChanged(): void {
+  const own = link;
+  if (!own || !running || !active(own) || own.viewers === 0) return;
+  const page = lanePageNow();
+  if (view?.page === page) return;
+  if (!view) {
+    if (page) startView();
+  } else if (!page) {
+    void stopView();
+  } else {
+    moveView(own, page);
+  }
 }
 
 /** The test ended (`status`, Playwright's): its view stops, and the people watching hear how it ended. */
@@ -912,18 +936,20 @@ function startThumbPosts(own: Link): ReturnType<typeof setInterval> {
   return timer;
 }
 
-/** Start the view of the running test's page; say why there is none while it has no page. */
+/** Start the view of the page the lane shows for the running test; say why there is none while it shows none. */
 function startView(): void {
   const own = link;
-  const page = running?.page ?? null;
+  const page = running ? lanePageNow() : null;
   if (!own || !active(own) || view) return;
   if (!page || page.isClosed()) {
     void post(own, { type: 'frame', ...own.id, refused: NO_PAGE });
     return;
   }
-  const live = (): boolean => view?.page === page && link === own && active(own) && own.viewers > 0;
+  // The view goes on as the lane's page changes: its frames go while it holds this subscription.
+  let frames: LaneSubscription | null = null;
+  const live = (): boolean => !!frames && view?.frames === frames && link === own && active(own) && own.viewers > 0;
   // The lane's frames, masked with the project's masks and the page's secret fields.
-  const frames = subscribeLane({
+  frames = subscribeLane({
     get maxWidth() {
       return own.asked?.width ?? LIVE_FRAME_WIDTH;
     },
@@ -948,13 +974,32 @@ function startView(): void {
       if (live()) void post(own, { type: 'frame', ...own.id, refused: why ?? TOO_HEAVY });
     },
   });
-  const onClose = (): void => {
-    if (view?.page === page) void stopView();
-  };
+  // The page closing moves the view to the page the lane shows next, or stops it.
+  const onClose = (): void => lanePageChanged();
   page.once('close', onClose);
   view = { page, frames, onClose, following: null };
   followCalls(own);
   applyLayers(own, new Set());
+}
+
+/**
+ * The lane shows `page` now, in place of the view's: its frames follow it already, and the call log, the text and
+ * Inspect follow it from now on, the text taken again at once; the filmstrip goes on.
+ */
+function moveView(own: Link, page: Page): void {
+  const shown = view;
+  if (!shown) return;
+  shown.page.off('close', shown.onClose);
+  void shown.following?.then((stop) => stop?.());
+  shown.following = null;
+  forgetLog(own);
+  shown.page = page;
+  page.once('close', shown.onClose);
+  // A text taken of the page left goes nowhere, and Inspect opens again on the new one.
+  textGeneration++;
+  void stopInspect();
+  followCalls(own);
+  applyLayers(own, new Set((own.asked?.layers ?? []).filter((layer) => layer !== 'text')));
 }
 
 /**
