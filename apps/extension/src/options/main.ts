@@ -549,7 +549,7 @@ function renderServerMappings(): void {
     meta.className = 'meta';
     const facts: Array<Array<Node | string>> = [
       mapping.projectLabel ? [strong(mapping.projectLabel)] : [],
-      mapping.environment ? [mapping.environment] : [],
+      mapping.environment ? [mapping.environmentName ?? mapping.environment] : [],
       mapping.branch ? [codeChip(mapping.branch)] : [],
       mapping.pathPrefix ? tNodes('options_serverPathPrefix', { prefix: codeChip(mapping.pathPrefix) }) : [],
       mapping.testPathPrefix
