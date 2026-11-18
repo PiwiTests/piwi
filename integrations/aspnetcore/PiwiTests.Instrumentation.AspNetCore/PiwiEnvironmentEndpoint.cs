@@ -85,23 +85,23 @@ internal static class PiwiEnvironmentEndpoint
     }
 
     /// <summary>
-    /// The commit the application was built from: the first of <paramref name="option"/>, <c>PIWI_APP_COMMIT</c> and
-    /// the source revision the .NET SDK appends to the informational version (after its <c>+</c>, or as the last
-    /// <c>.</c>-separated part of build metadata already there) that is 7 to 40 hexadecimal characters, lower-cased;
-    /// null when none is.
+    /// The commit the application was built from: the first of <paramref name="option"/> and <c>PIWI_APP_COMMIT</c>
+    /// that is 7 to 40 hexadecimal characters, else the source revision the .NET SDK appends to the informational
+    /// version (after its <c>+</c>, or as the last <c>.</c>-separated part of build metadata already there) when it is a
+    /// full 40-character commit, since shorter build metadata such as a date is no commit; lower-cased, null when none.
     /// </summary>
     internal static string? AppCommit(string? option, Func<string, string?> readVariable, string? informationalVersion)
     {
-        var plus = informationalVersion?.IndexOf('+') ?? -1;
-        var revision = plus < 0 ? null : informationalVersion![(plus + 1)..].Split('.')[^1];
-        foreach (var candidate in new[] { option, readVariable(AppCommitVariable), revision })
+        foreach (var candidate in new[] { option, readVariable(AppCommitVariable) })
         {
             var commit = candidate?.Trim();
             if (commit is { Length: >= 7 and <= 40 } && commit.All(Uri.IsHexDigit))
                 return commit.ToLowerInvariant();
         }
 
-        return null;
+        var plus = informationalVersion?.IndexOf('+') ?? -1;
+        var revision = plus < 0 ? null : informationalVersion![(plus + 1)..].Split('.')[^1].Trim();
+        return revision is { Length: 40 } && revision.All(Uri.IsHexDigit) ? revision.ToLowerInvariant() : null;
     }
 
     /// <summary>The zone's id, followed by its IANA id in parentheses when the id is a Windows one: <c>Romance Standard Time (Europe/Paris)</c>.</summary>

@@ -27,15 +27,13 @@ last fields of each row (after the semicolon) change by nature between runs and 
 
 A server snapshot names the version of its application (`appVersion`) and the commit it was built from (`appCommit`,
 7 to 40 hexadecimal characters, else nothing), which tell a run of a [deployed environment](./deployed-environments) which code
-it tested. The instrumentation package's option wins, then `PIWI_APP_COMMIT` and `PIWI_APP_VERSION` set by the deploy,
-then:
+it tested:
 
-- **ASP.NET Core**: the commit from the source revision the .NET SDK writes into the entry assembly's informational
-  version (`1.4.0+4e6f516…`), that informational version being `appVersion`. The option is
-  `PiwiTestLogsOptions.AppCommit`.
-- **Nitro**: the commit from the hosting platform's variable (`VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`,
-  `RAILWAY_GIT_COMMIT_SHA`, `SOURCE_COMMIT`). The options go through `piwiPlugin({ appVersion, appCommit })`, exported
-  from the server plugin file in place of the default export.
+- **ASP.NET Core**: `appCommit` from the `PiwiTestLogsOptions.AppCommit` option, else `PIWI_APP_COMMIT`, else the full
+  commit the .NET SDK writes into the entry assembly's informational version (`1.4.0+4e6f516…`), which is `appVersion`.
+- **Nitro**: the options of `piwiPlugin({ appVersion, appCommit })`, exported from the server plugin file in place of
+  the default export, else `PIWI_APP_VERSION` and `PIWI_APP_COMMIT`, else, for the commit, the hosting platform's
+  variable (`VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`, `SOURCE_COMMIT`).
 
 Instrumentation is off in production by default, so no server snapshot names production's commit: its deploy pipeline
 records it with a [deploy marker](./timeline-markers#recording-deploys-from-ci) instead.

@@ -89,8 +89,9 @@ On GitHub Actions, after the deploy step:
   env:
     PIWI_DASHBOARD_URL: ${{ vars.PIWI_DASHBOARD_URL }}
     PIWI_API_KEY: ${{ secrets.PIWI_API_KEY }}
+  shell: bash
   run: >-
-    curl --fail-with-body -X POST "$PIWI_DASHBOARD_URL/api/projects/12/markers"
+    curl --fail --show-error -X POST "$PIWI_DASHBOARD_URL/api/projects/12/markers"
     -H "Authorization: Bearer $PIWI_API_KEY" -H "Content-Type: application/json"
     -d "{\"label\":\"Deploy to staging\",\"category\":\"deploy\",\"environment\":\"staging\",\"commit\":\"$GITHUB_SHA\",\"occurredAt\":\"$(date -u +%FT%TZ)\"}"
 ```
@@ -103,7 +104,7 @@ deploy-staging:
   script:
     - ./deploy.sh staging
     - >-
-      curl --fail-with-body -X POST "$PIWI_DASHBOARD_URL/api/projects/12/markers"
+      curl --fail --show-error -X POST "$PIWI_DASHBOARD_URL/api/projects/12/markers"
       -H "Authorization: Bearer $PIWI_API_KEY" -H "Content-Type: application/json"
       -d "{\"label\":\"Deploy to staging\",\"category\":\"deploy\",\"environment\":\"staging\",\"commit\":\"$CI_COMMIT_SHA\",\"occurredAt\":\"$(date -u +%FT%TZ)\"}"
 ```

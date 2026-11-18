@@ -67,6 +67,8 @@ public class EnvironmentTests
         Assert.Equal(Sha, PiwiEnvironmentEndpoint.AppCommit("main", None, "1.0.0+" + Sha));
         Assert.Null(PiwiEnvironmentEndpoint.AppCommit(null, None, "1.0.0"));
         Assert.Null(PiwiEnvironmentEndpoint.AppCommit(null, None, "1.0.0+build.7"));
+        Assert.Null(PiwiEnvironmentEndpoint.AppCommit(null, None, "1.0.0+20261118"));
+        Assert.Null(PiwiEnvironmentEndpoint.AppCommit(null, None, "1.0.0+build.1234567"));
         Assert.Null(PiwiEnvironmentEndpoint.AppCommit(null, None, null));
         Assert.Null(PiwiEnvironmentEndpoint.AppCommit("abc12", None, "1.0.0+" + new string('a', 41)));
     }

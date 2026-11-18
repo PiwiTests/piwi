@@ -70,8 +70,8 @@ export interface EnvironmentReaders {
   /** True when the runtime carries locale data beyond English. */
   hasFullIcu: () => boolean;
   nodeEnv: () => string | undefined;
-  /** An environment variable of the process. */
-  variable: (name: string) => string | undefined;
+  /** An environment variable of the process; `process.env` when left out. */
+  variable?: (name: string) => string | undefined;
   instanceId: () => string;
   /** Seconds since the process started. */
   uptime: () => number;
@@ -89,11 +89,16 @@ const defaultReaders: EnvironmentReaders = {
   icuVersion: () => process.versions.icu,
   hasFullIcu: () => Intl.DateTimeFormat.supportedLocalesOf(['fr']).length > 0,
   nodeEnv: () => process.env.NODE_ENV,
-  variable: (name) => process.env[name],
+  variable: (name) => readProcessVariable(name),
   instanceId: () => instance().id,
   uptime: () => process.uptime(),
   now: () => Date.now(),
 };
+
+/** An environment variable of the process. */
+function readProcessVariable(name: string): string | undefined {
+  return process.env[name];
+}
 
 /** Reads one fact, null when the reader throws or gives nothing. */
 function read<T>(reader: () => T | null | undefined): T | null {
@@ -115,7 +120,7 @@ function globalization(readers: EnvironmentReaders): string | null {
 
 /** The first of the option and the commit variables that holds 7 to 40 hexadecimal characters, lower-cased; else null. */
 function appCommit(option: string | null | undefined, readers: EnvironmentReaders): string | null {
-  for (const candidate of [option, ...APP_COMMIT_VARIABLES.map((name) => read(() => readers.variable(name)))]) {
+  for (const candidate of [option, ...APP_COMMIT_VARIABLES.map((name) => read(() => (readers.variable ?? readProcessVariable)(name)))]) {
     const commit = candidate?.trim();
     if (commit && COMMIT.test(commit)) return commit.toLowerCase();
   }
@@ -143,7 +148,7 @@ export function buildServerEnvironment(
     locale: options?.locale || null,
     globalization: globalization(readers),
     environmentName: read(readers.nodeEnv),
-    appVersion: read(() => app.appVersion?.trim() || readers.variable(APP_VERSION_VARIABLE)?.trim()),
+    appVersion: read(() => app.appVersion?.trim() || (readers.variable ?? readProcessVariable)(APP_VERSION_VARIABLE)?.trim()),
     appCommit: appCommit(app.appCommit, readers),
     hostname: read(readers.hostname),
     instance: read(readers.instanceId),

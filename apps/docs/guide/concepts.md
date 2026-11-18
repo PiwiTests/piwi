@@ -93,8 +93,8 @@ only under **All environments**. Unset, every environment counts:
 
 ### Deployed environment
 
-An [environment](#environment) a project admin marks as not built from the run's checkout, the default, such as
-Staging: it runs whatever was last deployed there. A run of one tested a **deployed commit**, which its server under test reports or
+An [environment](#environment) a project admin marks as not built from the run's checkout, such as Staging (every
+environment is built from the checkout until then): it runs whatever was last deployed there. A run of one tested a **deployed commit**, which its server under test reports or
 the environment's latest deploy marker carries. Suspect lines, the Changes tab and the AI diagnosis read the
 application's changes between deployed commits: [Deployed environments](/features/deployed-environments).
 
