@@ -36,7 +36,7 @@ one row per reused test with its projects, not one per project; the source execu
 key; the run page names no "reason it held"; reuse never touches the run's status or counters (the verdict row of the
 table); and a run whose shards' blob reports are merged by `merge-reports` claims no plan. The plan id travels in the
 run's metadata rather than a `reuse` wire object. The fingerprint's target environment is
-[environments.md](environments.md) D11's, built with its second pull request: the plan request names the label the run
+[environments.md](../adr/environments.md) D11's, built with its second pull request: the plan request names the label the run
 reports (`--environment`, else `PIWI_ENVIRONMENT`), resolved without discovering an environment; a source is a run of
 that environment (of any, for a plan that names none, so a config that sets its label through the reporter's option
 keeps reusing), and for a deployed one a run against the version of the

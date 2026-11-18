@@ -2110,7 +2110,7 @@ says the app applies them (`features`), and the launch hands them to the shell, 
 
 ### Environments
 
-A project's environments (`@piwitests/core/environments`, `proposals/environments.md`) are the deployments its tests
+A project's environments (`@piwitests/core/environments`, `adr/environments.md`) are the deployments its tests
 run against. A context reads them once per refresh (`PiwiContext.environments`, `GET /api/projects/:id/environments`,
 archived ones left out; a 404 from an older instance reads as none) and runs for the one chosen for it: **None** by
 default, where the Playwright config decides, else what the client chose with `piwi/setEnvironment`. The choice
