@@ -220,7 +220,14 @@ test.describe('Flake Lab in the desktop app', () => {
       window.__piwiFlake.invocations.find((i) => i.cmd === 'desktop_flake_lab_here'),
     );
     // The test and the options only: no project, commit, path or argument list.
-    expect(invoked!.args).toEqual({ testCaseId, suspect: 1, all: false, runs: 6, budgetMinutes: 20 });
+    expect(invoked!.args).toEqual({
+      testCaseId,
+      suspect: 1,
+      all: false,
+      runs: 6,
+      budgetMinutes: 20,
+      environment: null,
+    });
     await expect(page.getByTestId('flake-lab-desktop')).toContainText('Running the lab…');
 
     await page.evaluate(() => window.__piwiFlake.phase('checkout'));
@@ -271,7 +278,14 @@ test.describe('Flake Lab in the desktop app', () => {
     const invoked = await page.evaluate(() =>
       window.__piwiFlake.invocations.find((i) => i.cmd === 'desktop_flake_lab_here'),
     );
-    expect(invoked!.args).toEqual({ testCaseId, suspect: null, all: false, runs: null, budgetMinutes: null });
+    expect(invoked!.args).toEqual({
+      testCaseId,
+      suspect: null,
+      all: false,
+      runs: null,
+      budgetMinutes: null,
+      environment: null,
+    });
     await page.evaluate(() => window.__piwiFlake.finish(2));
     await expect(tray(page).getByText('Failed (exit 2)')).toBeVisible();
   });

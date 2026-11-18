@@ -229,6 +229,7 @@ test.describe('Desktop repro request', () => {
           args: ['--headed', '--trace=on'],
           bugReportId: 37,
           originRef: '37',
+          environment: null,
         },
       },
     ]);
@@ -309,6 +310,7 @@ test.describe('Desktop repro request', () => {
           flakeTestCaseId: null,
           clusterId: null,
           originRef: `job:${REQUEST_ID}`,
+          environment: null,
         },
       },
     ]);
@@ -403,7 +405,10 @@ test.describe('Desktop repro request', () => {
       window.__piwiReproTauri.invocations.filter((i) => i.cmd === 'desktop_flake_lab_job'),
     );
     expect(runs).toEqual([
-      { cmd: 'desktop_flake_lab_job', args: { projectId: String(projectId), requestId: REQUEST_ID } },
+      {
+        cmd: 'desktop_flake_lab_job',
+        args: { projectId: String(projectId), requestId: REQUEST_ID, environment: null },
+      },
     ]);
     await expect.poll(() => patches.length).toBe(2);
     expect(patches[0]).toEqual({ status: 'running', projectId });
