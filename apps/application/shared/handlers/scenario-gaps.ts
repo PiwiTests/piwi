@@ -62,7 +62,13 @@ import {
   pageKeyMatchesTarget,
 } from '../graph';
 import { pathSegments } from '@piwitests/core/file-routes';
-import { LOCATING_METHODS, isInteractionAction, tryParseLocatorChain, type LocatorArg } from '../locator-chain';
+import {
+  LOCATING_METHODS,
+  isInteractionAction,
+  quoteJsString,
+  tryParseLocatorChain,
+  type LocatorArg,
+} from '../locator-chain';
 import {
   scoreTargetMatch,
   urlMatches,
@@ -4355,13 +4361,13 @@ const PAGE_KEY_PLACEHOLDER = /\/:(id|uuid|ulid|jwt|token)(?=\/|$)/g;
 export function gotoStep(key: string): string {
   const placeholders = [...new Set([...key.matchAll(PAGE_KEY_PLACEHOLDER)].map((m) => `:${m[1]}`))];
   return placeholders.length
-    ? `// TODO: a real ${placeholders.join(' and ')} in place of the key's: await page.goto(${q(key)});`
-    : `await page.goto(${q(key)});`;
+    ? `// TODO: a real ${placeholders.join(' and ')} in place of the key's: await page.goto(${quoteJsString(key)});`
+    : `await page.goto(${quoteJsString(key)});`;
 }
 
-/** A safe single-quoted string for the generated source. */
-function q(s: string): string {
-  return `'${s.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+/** A `//` comment line of the generated source holding `text`, its line breaks and control characters as spaces. */
+function commentLine(text: string, indent = ''): string {
+  return `${indent}// ${text.replace(/[\p{Cc}\u2028\u2029]+/gu, ' ')}`;
 }
 
 /** The TODO assertion a gap's class suggests. */
@@ -4390,17 +4396,17 @@ export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
   const lines: string[] = [];
   lines.push(`import { test, expect } from '@playwright/test';`);
   lines.push('');
-  lines.push(`// Draft for a ${input.gapClass} gap: ${input.gapTitle}`);
-  for (const e of input.evidence) lines.push(`// ${e}`);
+  lines.push(commentLine(`Draft for a ${input.gapClass} gap: ${input.gapTitle}`));
+  for (const e of input.evidence) lines.push(commentLine(e));
   if (input.nearestTest?.location)
-    lines.push(`// Nearest test: ${input.nearestTest.title} (${input.nearestTest.location})`);
+    lines.push(commentLine(`Nearest test: ${input.nearestTest.title} (${input.nearestTest.location})`));
   lines.push('');
 
   const annotationArg =
     annotations.length > 0
-      ? `, {\n  annotation: [${annotations.map((a) => `{ type: ${q(a.type)}, description: ${q(a.description ?? '')} }`).join(', ')}],\n}`
+      ? `, {\n  annotation: [${annotations.map((a) => `{ type: ${quoteJsString(a.type)}, description: ${quoteJsString(a.description ?? '')} }`).join(', ')}],\n}`
       : '';
-  lines.push(`test(${q(input.gapTitle)}${annotationArg}, async ({ page }) => {`);
+  lines.push(`test(${quoteJsString(input.gapTitle)}${annotationArg}, async ({ page }) => {`);
 
   if (input.path.length > 0) {
     lines.push('  // Path to the gap:');
@@ -4413,11 +4419,11 @@ export function renderScenarioDraft(input: ScenarioDraftInput): ScenarioDraft {
     lines.push('  // Catalog methods that match this page:');
     for (const m of input.catalogMethods) {
       const recv = m.receiver ? `${m.receiver}.` : '';
-      lines.push(`  // await ${recv}${m.name}(); // from ${m.module}`);
+      lines.push(commentLine(`await ${recv}${m.name}(); // from ${m.module}`, '  '));
     }
   }
 
-  lines.push(`  // ${assertionForClass(input.gapClass, input.subject.key)}`);
+  lines.push(commentLine(assertionForClass(input.gapClass, input.subject.key), '  '));
   lines.push('});');
   lines.push('');
 
@@ -4660,7 +4666,7 @@ export async function draftScenario(db: DrizzleDB, projectId: number, gapId: num
     if (anchor.kind === 'control') {
       const [role, ...nameParts] = anchor.key.split(':');
       const name = nameParts.join(':');
-      path.push(`await page.getByRole(${q(role ?? 'button')}, { name: ${q(name)} }).click();`);
+      path.push(`await page.getByRole(${quoteJsString(role ?? 'button')}, { name: ${quoteJsString(name)} }).click();`);
     }
   }
 

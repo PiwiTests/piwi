@@ -828,26 +828,62 @@ function segmentRank(declared: DeclaredSegment, observed: string): number {
   }
 }
 
+/** A match's ranks from one declared segment on: the first segment's, then the rest's; null past the last segment. */
+interface RankChain {
+  rank: number;
+  rest: RankChain | null;
+}
+
 /**
- * The rank of each declared segment against the observed segments from `j` on,
- * or null when the pattern does not match them. An optional parameter is tried
- * both holding a segment and left out, and the closer match is kept.
+ * The rank of each declared segment against the observed segments, or null when
+ * the pattern does not match them. An optional parameter is tried both holding a
+ * segment and left out, and the closer match is kept. Each (declared, observed)
+ * position is matched once and its match kept as a chain the matches before it
+ * share, and two matches differ at their first segment (one holds it, the other
+ * leaves it out), so the work grows with the product of the two lengths, whatever
+ * number of optional parameters the pattern holds.
  */
-function matchSegments(segments: DeclaredSegment[], i: number, observed: string[], j: number): number[] | null {
-  if (i === segments.length) return j === observed.length ? [] : null;
-  const segment = segments[i]!;
-  if (segment.kind === 'catch-all') return observed.length - j >= segment.min ? [0] : null;
-  let best: number[] | null = null;
-  if (j < observed.length) {
-    const rank = segmentRank(segment, observed[j]!);
-    const rest = rank < 0 ? null : matchSegments(segments, i + 1, observed, j + 1);
-    if (rest) best = [rank, ...rest];
+function matchSegments(segments: DeclaredSegment[], observed: string[]): number[] | null {
+  const width = observed.length + 1;
+  // Per position: its closest match, null for the empty one (both ends reached), false for none.
+  const known = new Map<number, RankChain | null | false>();
+  const from = (i: number, j: number): RankChain | null | false => {
+    const key = i * width + j;
+    const seen = known.get(key);
+    if (seen !== undefined) return seen;
+    let best: RankChain | null | false = false;
+    const segment = segments[i];
+    if (!segment) best = j === observed.length ? null : false;
+    else if (segment.kind === 'catch-all') best = observed.length - j >= segment.min ? { rank: 0, rest: null } : false;
+    else {
+      if (j < observed.length) {
+        const rank = segmentRank(segment, observed[j]!);
+        const rest = rank < 0 ? false : from(i + 1, j + 1);
+        if (rest !== false) best = { rank, rest };
+      }
+      if (segment.kind === 'param' && segment.optional) {
+        const rest = from(i + 1, j);
+        const skipped = rest === false ? false : { rank: 0, rest };
+        if (skipped && (best === false || compareRankChains(skipped, best) > 0)) best = skipped;
+      }
+    }
+    known.set(key, best);
+    return best;
+  };
+  const match = from(0, 0);
+  if (match === false) return null;
+  const ranks: number[] = [];
+  for (let chain: RankChain | null = match; chain; chain = chain.rest) ranks.push(chain.rank);
+  return ranks;
+}
+
+/** `compareRanks` of two chains. */
+function compareRankChains(a: RankChain | null, b: RankChain | null): number {
+  for (let x = a, y = b; x || y; x = x?.rest ?? null, y = y?.rest ?? null) {
+    const order = (x?.rank ?? 5) - (y?.rank ?? 5);
+    if (order !== 0) return order;
   }
-  if (segment.kind === 'param' && segment.optional) {
-    const rest = matchSegments(segments, i + 1, observed, j);
-    if (rest && (!best || compareRanks([0, ...rest], best) > 0)) best = [0, ...rest];
-  }
-  return best;
+  return 0;
 }
 
 /**
@@ -940,7 +976,7 @@ export function createDeclaredMatcher(nodes: DeclaredSurfaceNode[]): (kind: stri
       for (const candidate of candidates) {
         const { pattern } = candidate;
         if (observed.length < pattern.min || observed.length > pattern.max) continue;
-        const ranks = matchSegments(pattern.segments, 0, observed, 0);
+        const ranks = matchSegments(pattern.segments, observed);
         if (!ranks) continue;
         const order = best ? compareRanks(ranks, best) : 1;
         if (order > 0) {

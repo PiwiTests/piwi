@@ -2,9 +2,13 @@
  * Renders a report bundle as Markdown that pastes into Confluence, Jira, a pull
  * request or Slack: tables for tables, a text sparkline under each series.
  * Run-derived text is escaped (pipes, backticks, a leading `#`, link and
- * emphasis characters) so a test title can never change the document's shape.
+ * emphasis characters) so a test title can never change the document's shape,
+ * and its mentions, issue numbers and URLs are cut (`withoutReferences`), so a
+ * report pasted into a pull request or an issue notifies nobody. The escapes
+ * stay few, since the Markdown is also read as it is.
  */
 import { piwiCreditMarkdown } from '#shared/brand';
+import { markdownLinkTarget, withoutReferences } from '#shared/markdown-text';
 import { sparkline } from './chart';
 import { makeFormatter, type ValueFormatter } from './format';
 import { sentencesFor, type ReportSentences } from './sentences';
@@ -12,14 +16,16 @@ import { hasVerdictWidget, type ReportBlock, type ReportBundle } from './types';
 
 /** Escape a run-derived string for a Markdown line or table cell. */
 export function escapeMarkdown(text: string): string {
-  return text
-    .replace(/\r?\n/g, ' ')
-    .replace(/([\\`*_[\]|<>])/g, '\\$1')
-    .replace(/^(\s*)([#>+-]|\d+\.)(\s)/, '$1\\$2$3');
+  return withoutReferences(
+    text
+      .replace(/\r?\n/g, ' ')
+      .replace(/([\\`*_[\]|<>])/g, '\\$1')
+      .replace(/^(\s*)([#>+-]|\d+\.)(\s)/, '$1\\$2$3'),
+  );
 }
 
 function linked(text: string, href: string | null | undefined): string {
-  return href ? `[${escapeMarkdown(text)}](${href.replace(/[()\s]/g, encodeURIComponent)})` : escapeMarkdown(text);
+  return href ? `[${escapeMarkdown(text)}](${markdownLinkTarget(href)})` : escapeMarkdown(text);
 }
 
 function renderBlock(block: ReportBlock, s: ReportSentences, f: ValueFormatter): string[] {

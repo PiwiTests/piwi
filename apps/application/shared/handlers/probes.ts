@@ -26,6 +26,7 @@ import { eligibleExecutionSql, eligibleRunSql } from '../run-eligibility';
 import { detectNotHandled, rankFinding, upsertScenarioGaps, type ResilienceSignal } from './scenario-gaps';
 import { resolveProjectStates } from './capabilities';
 import {
+  isServerProbeFault,
   resolveServerProbeSettings,
   serverProbeAllowed,
   type ServerProbeFault,
@@ -651,22 +652,23 @@ export async function recordProbeResults(
     for (const r of rows) ownTestIds.add(r.id);
   }
 
-  // The per-project fault allow-list is enforced here too, not only in the
-  // planner: a server-level result whose fault the project did not allow-list is
-  // dropped, so a crafted result body cannot record an un-allowed server fault.
+  // A result is what its level can produce: a client result names a client fault and
+  // says nothing of how the application handled it or of a dependency; a server
+  // result names a server fault the project's allow-list permits on its route.
   const [project] = await db
     .select({ serverProbes: projects.serverProbes })
     .from(projects)
     .where(eq(projects.id, projectId));
   const settings = resolveServerProbeSettings(project?.serverProbes);
-  // A result names its route without the query, as the route node does.
-  results = results.map((r) => ({ ...r, routeKey: routeKeyWithoutQuery(r.routeKey) }));
-  results = results.filter((r) => {
-    if (!ownTestIds.has(r.testCaseId)) return false;
-    if (r.level === 'server' && !serverProbeAllowed(settings, r.routeKey, r.fault as ServerProbeFault)) return false;
-    return true;
-  });
+  const routeDependencies = results.some((r) => r.level === 'server' && r.dependency)
+    ? await loadRouteDependencies(db, projectId)
+    : new Map<string, string[]>();
+  results = results
+    .filter((r) => ownTestIds.has(r.testCaseId))
+    .map((r) => probeResultAtItsLevel(r, settings, routeDependencies))
+    .filter((r): r is ProbeResultInput => r !== null);
   if (results.length === 0) return { recorded: 0 };
+  runId = await runIdOfProject(db, projectId, runId);
   const findingResults = results.filter((r) => r.outcome === 'noticed' || r.outcome === 'not-noticed');
   results = strongestPerPair(results);
 
@@ -851,6 +853,52 @@ export async function recordProbeResults(
   }
 
   return { recorded };
+}
+
+/** The handling a server probe can report. */
+const PROBE_HANDLING = new Set(['graceful', 'degraded', 'unhandled', 'n/a']);
+
+/** Largest evidence kept with a probe result, in characters of its JSON. */
+const MAX_PROBE_EVIDENCE_CHARS = 4096;
+
+/**
+ * A result as its level permits it, or null when its fault is not one of that
+ * level's: no level reads as client; a client result keeps no handling and no
+ * dependency; a server result needs a fault the project's settings allow on its
+ * route, and keeps a dependency only for a `dependency` fault on one its route's
+ * handler calls (`routeDependencies`). Its route loses its query, as the route
+ * node's key does, and evidence past `MAX_PROBE_EVIDENCE_CHARS` is dropped.
+ */
+function probeResultAtItsLevel(
+  r: ProbeResultInput,
+  settings: ServerProbeSettings,
+  routeDependencies: Map<string, string[]>,
+): ProbeResultInput | null {
+  const routeKey = routeKeyWithoutQuery(r.routeKey);
+  const evidenceJson = r.evidence === undefined ? undefined : JSON.stringify(r.evidence);
+  const evidence =
+    evidenceJson !== undefined && evidenceJson.length <= MAX_PROBE_EVIDENCE_CHARS ? r.evidence : undefined;
+  if (r.level === 'server') {
+    if (!isServerProbeFault(r.fault) || !serverProbeAllowed(settings, routeKey, r.fault)) return null;
+    const handled = r.handled && PROBE_HANDLING.has(r.handled) ? r.handled : 'n/a';
+    const dependency =
+      r.fault === 'dependency' && r.dependency && routeDependencies.get(routeKey)?.includes(r.dependency)
+        ? r.dependency
+        : null;
+    return { ...r, routeKey, level: 'server', handled, dependency, evidence };
+  }
+  if (!(PROBE_FAULTS as readonly string[]).includes(r.fault)) return null;
+  return { ...r, routeKey, level: 'client', handled: 'n/a', dependency: null, evidence };
+}
+
+/** `runId` when it names a run of the project, else null. */
+async function runIdOfProject(db: DrizzleDB, projectId: number, runId: number | null): Promise<number | null> {
+  if (runId == null) return null;
+  const [run] = await db
+    .select({ id: testRuns.id })
+    .from(testRuns)
+    .where(and(eq(testRuns.id, runId), eq(testRuns.projectId, projectId)));
+  return run ? run.id : null;
 }
 
 /** One result per (test, route, fault): the one whose outcome says most, the later one on a tie. */
