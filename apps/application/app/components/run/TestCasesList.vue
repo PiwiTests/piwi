@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, watch, ref } from 'vue';
 import type { CacheSnapshot } from 'vue-virtual-scroller';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
+import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
@@ -68,6 +69,8 @@ const props = defineProps<{
   runId?: number | null;
   /** The environment of that run, which a copied command of the selection starts on unless protected or archived. */
   environmentId?: number | null;
+  /** That environment's facts, with the run, so the selection's command starts on it without the project's list. */
+  shownEnvironment?: ShownEnvironment | null;
 }>();
 
 const emit = defineEmits<{ 'quarantine-changed': []; watch: [worker: LiveWorkerState, testCase: TestCaseResult] }>();
@@ -679,7 +682,7 @@ const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
 const { environmentId: selectionEnvironmentId } = useCommandEnvironment(
   () => props.projectKey,
-  () => props.environmentId,
+  () => props.shownEnvironment ?? props.environmentId,
 );
 const selectionRunVariables = useProjectRunVariables(
   () => props.projectKey,

@@ -199,16 +199,19 @@ describe('the run page facts', () => {
       environment: 'staging',
     });
     const metadata = { htmlReport: { projects: [{ use: { baseURL: 'http://localhost:3000' } }] } };
+    const [row] = await db.select().from(schema.environments).where(eq(schema.environments.id, created.environment.id));
     const outside = await run('staging', { environmentId: created.environment.id, metadata });
-    expect(await runEnvironmentFacts(db as never, outside as never)).toEqual({
+    expect(await runEnvironmentFacts(db as never, outside as never, row as never)).toEqual({
       environmentName: 'Staging',
+      environmentProtected: false,
+      environmentArchived: false,
       environmentWarnings: ['The tests opened http://localhost:3000, which no URL pattern of Staging matches.'],
     });
     const inside = await run('staging', {
       environmentId: created.environment.id,
       metadata: { htmlReport: { projects: [{ use: { baseURL: 'https://staging.example.com' } }] } },
     });
-    expect((await runEnvironmentFacts(db as never, inside as never)).environmentWarnings).toEqual([]);
+    expect((await runEnvironmentFacts(db as never, inside as never, row as never)).environmentWarnings).toEqual([]);
   });
 
   test('warns when a requested run reported another environment than the one it was started for', async () => {
@@ -230,7 +233,8 @@ describe('the run page facts', () => {
       expiresAt: new Date(),
     });
     expect(
-      (await runEnvironmentFacts(db as never, { ...requested, environmentId: null } as never)).environmentWarnings,
+      (await runEnvironmentFacts(db as never, { ...requested, environmentId: null } as never, null))
+        .environmentWarnings,
     ).toEqual(['Started for Staging; the config reported production.']);
   });
 });

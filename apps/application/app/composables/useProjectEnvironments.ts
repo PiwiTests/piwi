@@ -14,9 +14,13 @@ interface Stored {
 /**
  * A project's environments, read from `GET /api/projects/:id/environments` and kept for the page a minute: every
  * picker and filter of the project reads them. `active` leaves the archived ones out; `forLabel` names the environment
- * a run's label resolves to, as the instance resolved it when the run was stored.
+ * a run's label resolves to, as the instance resolved it when the run was stored. With `onMount: false` the list is
+ * read only once another caller of the page reads it (a picker that opens), which every caller then shares.
  */
-export function useProjectEnvironments(projectId: MaybeRefOrGetter<number | string | null | undefined>) {
+export function useProjectEnvironments(
+  projectId: MaybeRefOrGetter<number | string | null | undefined>,
+  { onMount = true }: { onMount?: boolean } = {},
+) {
   const store = useState<Record<string, Stored>>('project-environments', () => ({}));
 
   const id = computed(() => {
@@ -48,15 +52,17 @@ export function useProjectEnvironments(projectId: MaybeRefOrGetter<number | stri
     return asked;
   }
 
-  onMounted(() => {
-    watch(
-      id,
-      (value) => {
-        if (value != null) void read(value);
-      },
-      { immediate: true },
-    );
-  });
+  if (onMount) {
+    onMounted(() => {
+      watch(
+        id,
+        (value) => {
+          if (value != null) void read(value);
+        },
+        { immediate: true },
+      );
+    });
+  }
 
   /** Reads the list again now, after a change. */
   function refresh(): Promise<void> {

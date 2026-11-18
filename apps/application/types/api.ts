@@ -618,6 +618,10 @@ export interface TestRunDetails {
   environmentId?: number | null;
   /** That environment's name; null for none. */
   environmentName?: string | null;
+  /** Whether that environment is protected; a copied command never starts on a protected one. */
+  environmentProtected?: boolean;
+  /** Whether that environment is archived; a copied command never starts on an archived one. */
+  environmentArchived?: boolean;
   /** Why the run may not have tested its environment: another label than the one it was started for, a `baseURL` outside its URL patterns. */
   environmentWarnings?: string[];
   label?: string | null;

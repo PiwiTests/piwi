@@ -75,7 +75,7 @@ const runIssueOpen = ref(false);
 // The environment the page's copied commands and run requests are for: the run's, unless protected or archived.
 const { environmentId: commandEnvironmentId } = useCommandEnvironment(
   () => props.testRun?.projectId,
-  () => props.testRun?.environmentId,
+  () => shownEnvironmentOf(props.testRun),
 );
 /** Why the run may not have tested its environment, one sentence each. */
 const environmentWarnings = computed(() => props.testRun?.environmentWarnings ?? []);

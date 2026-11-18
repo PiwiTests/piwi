@@ -1,6 +1,7 @@
 import { runPlanId } from '../run-plan';
 import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, gte, getTableColumns } from 'drizzle-orm';
 import {
+  environments,
   testRuns,
   testCases,
   testRunsCases,
@@ -148,8 +149,13 @@ export async function getTestRun(
   // stored per-case wasted_time_ms (computed at ingest) is authoritative.
   wastedPatterns: readonly string[] | null = null,
 ) {
-  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  const testRun = testRunResults[0];
+  // The run's environment comes with it, for the facts the page shows of it (`runEnvironmentFacts`).
+  const [found] = await db
+    .select({ run: testRuns, environment: environments })
+    .from(testRuns)
+    .leftJoin(environments, eq(environments.id, testRuns.environmentId))
+    .where(eq(testRuns.id, id));
+  const testRun = found?.run;
   if (!testRun) return null;
 
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
@@ -392,7 +398,7 @@ export async function getTestRun(
     machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
     project: projectPublic,
     environments: await loadRunEnvironments(db, id),
-    ...(await runEnvironmentFacts(db, testRun)),
+    ...(await runEnvironmentFacts(db, testRun, found.environment ?? null)),
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
       id: r.id,

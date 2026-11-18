@@ -451,9 +451,14 @@ export async function environmentRunSettings(
   return { ok: true, runVariables: merged.value, environment: environment.value };
 }
 
-/** What the run page shows of a run's environment: its name, and why the run may not have tested it. */
+/**
+ * What the run page shows of a run's environment: its name, whether it is protected or archived (a copied command
+ * starts on it only when it is neither), and why the run may not have tested it.
+ */
 export interface RunEnvironmentFacts {
   environmentName: string | null;
+  environmentProtected: boolean;
+  environmentArchived: boolean;
   environmentWarnings: string[];
 }
 
@@ -466,7 +471,8 @@ function urlOrigin(url: string): string | null {
 }
 
 /**
- * A run's environment facts: the name of the environment its label resolved to, and two warnings. A requested run
+ * A run's environment facts, from its environment's row (`own`, which the caller read with the run): its name, whether
+ * it is protected or archived, and two warnings. A requested run
  * started for an environment whose label resolved to another one says so ("Started for Staging; the config reported
  * production"). A run whose environment has URL patterns, none of which a Playwright project's `baseURL` matches, says
  * which addresses its tests opened instead, which catches a config that ignores the variable.
@@ -481,31 +487,30 @@ export async function runEnvironmentFacts(
     origin: string;
     metadata: unknown;
   },
+  own: EnvironmentRow | null,
 ): Promise<RunEnvironmentFacts> {
-  const rows = await projectEnvironmentRows(db, run.projectId);
-  const own = rows.find((row) => row.id === run.environmentId) ?? null;
   const warnings: string[] = [];
   if (run.origin === 'request') {
-    const [request] = await db
-      .select({ environmentId: runRequests.environmentId })
+    const [startedFor] = await db
+      .select({ id: environments.id, name: environments.name })
       .from(runRequests)
+      .innerJoin(environments, eq(environments.id, runRequests.environmentId))
       .where(eq(runRequests.runId, run.id));
-    const startedFor = request?.environmentId ? rows.find((row) => row.id === request.environmentId) : undefined;
     if (startedFor && startedFor.id !== run.environmentId) {
       warnings.push(
         `Started for ${startedFor.name}; the config reported ${run.environment ? run.environment : 'no environment'}.`,
       );
     }
   }
-  if (own) {
+  const baseUrls = runBaseUrls(run.metadata);
+  if (own && baseUrls.length > 0) {
     const patterns = (
       await db
         .select({ pattern: projectUrlPatterns.pattern, environment: projectUrlPatterns.environment })
         .from(projectUrlPatterns)
         .where(eq(projectUrlPatterns.projectId, run.projectId))
     ).filter((row) => row.environment && environmentMatchesPattern(matchSourceOf(own), row.environment));
-    const baseUrls = runBaseUrls(run.metadata);
-    if (patterns.length > 0 && baseUrls.length > 0) {
+    if (patterns.length > 0) {
       const outside = baseUrls.filter((url) => {
         const candidates = [url, url.endsWith('/') ? url : `${url}/`];
         return !patterns.some((row) => candidates.some((candidate) => urlMatches(row.pattern, candidate)));
@@ -516,5 +521,10 @@ export async function runEnvironmentFacts(
       }
     }
   }
-  return { environmentName: own?.name ?? null, environmentWarnings: warnings };
+  return {
+    environmentName: own?.name ?? null,
+    environmentProtected: own?.protected ?? false,
+    environmentArchived: own?.archivedAt != null,
+    environmentWarnings: warnings,
+  };
 }

@@ -1,5 +1,27 @@
 import { commandEnvironmentOf } from '~/utils/environment-filter';
 
+/** What a page knows of the environment of the run it shows, with the run: enough to tell the default. */
+export interface ShownEnvironment {
+  id: number;
+  protected: boolean;
+  archived: boolean;
+}
+
+/** The environment facts of a run the page shows, or null for a run with no environment. */
+export function shownEnvironmentOf(
+  run:
+    | { environmentId?: number | null; environmentProtected?: boolean; environmentArchived?: boolean }
+    | null
+    | undefined,
+): ShownEnvironment | null {
+  if (run?.environmentId == null) return null;
+  return {
+    id: run.environmentId,
+    protected: run.environmentProtected === true,
+    archived: run.environmentArchived === true,
+  };
+}
+
 function idOf(raw: number | string | null | undefined): number | null {
   const value = Number(raw ?? Number.NaN);
   return Number.isInteger(value) && value > 0 ? value : null;
@@ -8,7 +30,8 @@ function idOf(raw: number | string | null | undefined): number | null {
 /**
  * The environment a page's copied commands and its **Run on my machine** requests are for: one choice per project on
  * a page (kept with the page's view state), so every copy button and request of the page agree. Until the person picks
- * one, the environment of the run the page shows (`shown`, its id), unless it is archived or protected; on a page
+ * one, the environment of the run the page shows (`shown`: its id, or its facts, `shownEnvironmentOf`, which spare the
+ * page reading the project's environments until a picker opens), unless it is archived or protected; on a page
  * that shows no run, none. A pick no longer among the project's environments that are not archived reads as that
  * start. Every caller on a page passes the same `shown`. With `protectedAllowed` false (a command that cannot keep to
  * a protected environment's required tags, such as Flake Lab's), a protected pick reads as none. `offered` is whether
@@ -16,12 +39,20 @@ function idOf(raw: number | string | null | undefined): number | null {
  */
 export function useCommandEnvironment(
   projectId: MaybeRefOrGetter<number | string | null | undefined>,
-  shown: MaybeRefOrGetter<number | null | undefined> = null,
+  shown: MaybeRefOrGetter<number | ShownEnvironment | null | undefined> = null,
   { protectedAllowed = true }: { protectedAllowed?: boolean } = {},
 ) {
   const picks = useViewState<Record<string, number | null>>('command-environment', () => ({}));
-  const { active, byId } = useProjectEnvironments(projectId);
+  // Facts of the shown run's environment are enough for the default: the list loads when a picker opens.
+  const knowsShown = typeof toValue(shown) === 'object' && toValue(shown) !== null;
+  const { active, byId } = useProjectEnvironments(projectId, { onMount: !knowsShown });
   const project = computed(() => idOf(toValue(projectId)));
+  const shownEnvironment = computed(() => {
+    const value = toValue(shown);
+    if (value == null) return null;
+    if (typeof value === 'number') return byId(value);
+    return byId(value.id) ?? value;
+  });
 
   const environmentId = computed<number | null>({
     get: () =>
@@ -30,7 +61,7 @@ export function useCommandEnvironment(
         : commandEnvironmentOf({
             picked: picks.value[project.value],
             active: active.value,
-            shown: byId(toValue(shown)),
+            shown: shownEnvironment.value,
             protectedAllowed,
           }),
     set: (value) => {

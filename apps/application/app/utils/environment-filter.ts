@@ -73,7 +73,9 @@ export function environmentFilterLabel(value: string, environments: readonly Env
  * The environment a page's copied commands and run requests start on, given the environment of the run it shows: that
  * one, unless it is archived or protected (a protected environment is never a default), else none.
  */
-export function commandEnvironmentDefault(shown: EnvironmentRecord | null | undefined): number | null {
+export function commandEnvironmentDefault(
+  shown: Pick<EnvironmentRecord, 'id' | 'archived' | 'protected'> | null | undefined,
+): number | null {
   return shown && !shown.archived && !shown.protected ? shown.id : null;
 }
 
@@ -85,7 +87,7 @@ export function commandEnvironmentDefault(shown: EnvironmentRecord | null | unde
 export function commandEnvironmentOf(input: {
   picked: number | null | undefined;
   active: readonly EnvironmentRecord[];
-  shown: EnvironmentRecord | null | undefined;
+  shown: Pick<EnvironmentRecord, 'id' | 'archived' | 'protected'> | null | undefined;
   protectedAllowed?: boolean;
 }): number | null {
   if (input.picked === null) return null;

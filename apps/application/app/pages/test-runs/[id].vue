@@ -1419,6 +1419,9 @@ watch(activeTab, (tab) => {
   router.replace({ query });
 });
 
+/** The run's environment as the copied commands read it: their default, with no read of the project's list. */
+const shownEnvironment = computed(() => shownEnvironmentOf(testRun.value));
+
 // Ref for TestCasesList to call scrollToCase
 const testCasesListRef: {
   value: { scrollToCase: (id: number) => void } | null;
@@ -1653,6 +1656,7 @@ const moreMenuItems = computed(() => {
               :project-name="testRun?.project?.name"
               :run-id="Number(runId)"
               :environment-id="testRun?.environmentId ?? null"
+              :shown-environment="shownEnvironment"
               class="flex-1 min-h-0"
               @quarantine-changed="reloadQuarantine"
               @watch="chooseWorker"
