@@ -603,7 +603,7 @@ describe('following the calls a test makes', () => {
       await call(frame, 'click', 12);
       await call({ _type: 'ElementHandle', _parent: { _type: 'Frame', _parent: admin, _page: admin } }, 'fill', 13);
       await call(admin, 'keyboardPress', 14);
-      // A frame as an older Playwright links it: to its context, naming its page.
+      // A frame whose parent is its context: the page it names.
       await call({ _type: 'Frame', _parent: context, _page: customer }, 'goto', 15);
       await call(context, 'newPage', 16);
       await call(frame, 'evaluateExpression', 17, true);

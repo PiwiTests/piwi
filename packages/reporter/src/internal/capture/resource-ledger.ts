@@ -254,8 +254,8 @@ interface ChannelOwnerLike {
 const callPageListeners = new Set<(page: object) => void>();
 
 /**
- * The page a call's object belongs to: itself, or the first page or frame's page up its `_parent` chain (a frame names
- * its page, whether its parent is that page or its context, as Playwright's version links it); null for none.
+ * The page a call's object belongs to: itself, or up its `_parent` chain the first page, or the page a frame names
+ * (`_page`), whatever the frame's parent; null for none.
  */
 function pageOfCall(object: ChannelOwnerLike): object | null {
   for (let owner: ChannelOwnerLike | null | undefined = object; owner; owner = owner._parent) {
