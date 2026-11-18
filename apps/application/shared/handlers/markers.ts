@@ -8,12 +8,17 @@ import { ENVIRONMENT_MARKER_PREFIX, environmentChangeMarkers } from '../environm
 import { DEFAULT_MARKER_CATEGORY, MARKER_CATEGORY_IDS } from '../marker-categories';
 import type { DrizzleDB } from './db';
 import { syncReleaseMarkerKeep } from './run-keep';
+import { resolveRunEnvironment } from './environments';
+import { deployedCommitOf } from '@piwitests/core/environments';
 
 export interface MarkerInput {
   label: string;
   occurredAt: Date;
   category?: string;
+  /** The environment's label: a key, an alias or a run's label, resolved as a run's (`resolveRunEnvironment`). */
   environment?: string | null;
+  /** A deploy marker's deployed commit: 7 to 40 hexadecimal characters (`deployedCommitOf`). */
+  commit?: string | null;
   description?: string | null;
   runId?: number | null;
 }
@@ -36,6 +41,10 @@ export async function markerRunBelongsToProject(db: DrizzleDB, projectId: number
   return rows.length > 0;
 }
 
+/**
+ * Store a marker: its environment label resolves as a run's does, discovering an environment nothing takes, and a
+ * commit is kept only when it is one (`deployedCommitOf`).
+ */
 export async function createMarker(db: DrizzleDB, projectId: number, data: MarkerInput) {
   const result = await db
     .insert(markers)
@@ -44,7 +53,8 @@ export async function createMarker(db: DrizzleDB, projectId: number, data: Marke
       label: data.label,
       occurredAt: data.occurredAt,
       category: normalizeCategory(data.category),
-      environment: data.environment ?? null,
+      ...(await resolveRunEnvironment(db, projectId, data.environment ?? null)),
+      commit: deployedCommitOf(data.commit),
       description: data.description ?? null,
       runId: data.runId ?? null,
       source: 'manual',
@@ -62,7 +72,10 @@ export async function updateMarker(db: DrizzleDB, id: number, data: Partial<Omit
   if (data.label !== undefined) updates.label = data.label;
   if (data.occurredAt !== undefined) updates.occurredAt = data.occurredAt;
   if (data.category !== undefined) updates.category = normalizeCategory(data.category);
-  if (data.environment !== undefined) updates.environment = data.environment;
+  if (data.environment !== undefined) {
+    Object.assign(updates, await resolveRunEnvironment(db, existing[0].projectId, data.environment));
+  }
+  if (data.commit !== undefined) updates.commit = deployedCommitOf(data.commit);
   if (data.description !== undefined) updates.description = data.description;
 
   await db.update(markers).set(updates).where(eq(markers.id, id));

@@ -13,6 +13,7 @@ import {
 } from '../../server/database/schema';
 import { projectRouteOrigins, runBaseUrls, urlOrigin } from '#shared/graph';
 import type { DrizzleDB } from './db';
+import { resolveRunEnvironment } from './environments';
 import { notPrivateRun } from '../run-eligibility';
 
 /**
@@ -70,7 +71,10 @@ export type UrlPatternInput = z.input<typeof urlPatternInputSchema>;
 export interface UrlPatternItem {
   id: number;
   pattern: string;
+  /** The environment's label as written (its key); null for every environment. */
   environment: string | null;
+  /** The environment the label resolves to, or null. */
+  environmentId: number | null;
   branch: string | null;
   pathPrefix: string | null;
   testPathPrefix: string | null;
@@ -93,6 +97,7 @@ export async function listProjectUrlPatterns(db: DrizzleDB, projectId: number): 
       id: projectUrlPatterns.id,
       pattern: projectUrlPatterns.pattern,
       environment: projectUrlPatterns.environment,
+      environmentId: projectUrlPatterns.environmentId,
       branch: projectUrlPatterns.branch,
       pathPrefix: projectUrlPatterns.pathPrefix,
       testPathPrefix: projectUrlPatterns.testPathPrefix,
@@ -112,7 +117,10 @@ async function projectExists(db: DrizzleDB, projectId: number): Promise<boolean>
   return !!row;
 }
 
-/** Replaces the project's list with `items`, in that order. */
+/**
+ * Replaces the project's list with `items`, in that order. Each environment label resolves as a run's does
+ * (`resolveRunEnvironment`), discovering an environment nothing takes.
+ */
 export async function replaceProjectUrlPatterns(
   db: DrizzleDB,
   projectId: number,
@@ -126,13 +134,15 @@ export async function replaceProjectUrlPatterns(
     seen.add(pattern);
   }
   const now = new Date();
+  const environments = [];
+  for (const item of items) environments.push(await resolveRunEnvironment(db, projectId, clean(item.environment)));
   await db.delete(projectUrlPatterns).where(eq(projectUrlPatterns.projectId, projectId));
   if (items.length > 0) {
     await db.insert(projectUrlPatterns).values(
       items.map((item, position) => ({
         projectId,
         pattern: item.pattern.trim(),
-        environment: clean(item.environment),
+        ...environments[position]!,
         branch: clean(item.branch),
         pathPrefix: cleanPrefix(item.pathPrefix),
         testPathPrefix: cleanPrefix(item.testPathPrefix),
@@ -145,7 +155,7 @@ export async function replaceProjectUrlPatterns(
   return { ok: true, items: await listProjectUrlPatterns(db, projectId) };
 }
 
-/** Appends one pattern; refuses one the project already has. */
+/** Appends one pattern, its environment label resolved as a run's; refuses one the project already has. */
 export async function addProjectUrlPattern(
   db: DrizzleDB,
   projectId: number,
@@ -160,7 +170,7 @@ export async function addProjectUrlPattern(
   await db.insert(projectUrlPatterns).values({
     projectId,
     pattern,
-    environment: clean(input.environment),
+    ...(await resolveRunEnvironment(db, projectId, clean(input.environment))),
     branch: clean(input.branch),
     pathPrefix: cleanPrefix(input.pathPrefix),
     testPathPrefix: cleanPrefix(input.testPathPrefix),

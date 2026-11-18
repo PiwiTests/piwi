@@ -108,6 +108,18 @@ export function envFileProblem(name: string): string | null {
     : `${JSON.stringify(name.slice(0, ENV_FILE_CHARS))} is not an env file name: .env, then parts of letters, digits, _ or - after a dot (.env.staging).`;
 }
 
+const DEPLOYED_COMMIT = /^[0-9a-f]{7,40}$/i;
+
+/**
+ * A deployed commit as Piwi keeps it (a server snapshot's `appCommit`, a deploy marker's `commit`): 7 to 40
+ * hexadecimal characters, lower-cased; null for any other value.
+ */
+export function deployedCommitOf(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null;
+  const value = raw.trim();
+  return DEPLOYED_COMMIT.test(value) ? value.toLowerCase() : null;
+}
+
 /** What resolving a label reads of an environment. */
 export interface EnvironmentMatchSource {
   id: number;

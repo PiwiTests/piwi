@@ -7,7 +7,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Markers'],
     summary: 'Update a timeline marker',
-    description: 'Updates a project timeline marker. Requires `marker:write` (Contributor and above on the project).',
+    description:
+      'Updates a project timeline marker. `environment` and `commit` follow the rules of `POST /api/projects/:id/markers`. Requires `marker:write` (Contributor and above on the project).',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'marker:write',
   },
@@ -18,6 +19,11 @@ const updateMarkerSchema = z.object({
   occurredAt: z.coerce.date().optional(),
   category: z.enum(MARKER_CATEGORY_IDS as [string, ...string[]]).optional(),
   environment: z.string().max(120).nullish(),
+  commit: z
+    .string()
+    .trim()
+    .regex(/^[0-9a-f]{7,40}$/i, 'commit must be 7 to 40 hexadecimal characters')
+    .nullish(),
   description: z.string().max(2000).nullish(),
 });
 

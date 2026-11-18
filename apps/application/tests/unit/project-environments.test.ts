@@ -7,6 +7,7 @@ import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 const {
+  backfillEnvironmentReferences,
   backfillRunEnvironments,
   copyEnvironments,
   createEnvironment,
@@ -118,9 +119,9 @@ describe('saving an environment', () => {
     const created = await createEnvironment(db as never, SHOP, { key: 'qa', name: 'QA' });
     if (!created.ok) throw new Error('not created');
     const qa = await run('qa', { environmentId: created.environment.id });
-    expect(await deleteEnvironment(db as never, SHOP, created.environment.id)).toBe(true);
+    expect(await deleteEnvironment(db as never, SHOP, created.environment.id)).toEqual({ ok: true });
     expect(await environmentOf(qa.id)).toBeNull();
-    expect(await deleteEnvironment(db as never, OTHER, created.environment.id)).toBe(false);
+    expect((await deleteEnvironment(db as never, OTHER, created.environment.id)).ok).toBe(false);
   });
 });
 
@@ -280,7 +281,7 @@ describe('the review cases', () => {
     const staged = await run('staging');
     await backfillRunEnvironments(db as never);
     const [discovered] = await listProjectEnvironments(db as never, SHOP);
-    expect(await deleteEnvironment(db as never, SHOP, discovered!.id)).toBe(true);
+    expect(await deleteEnvironment(db as never, SHOP, discovered!.id)).toEqual({ ok: true });
     await createEnvironment(db as never, SHOP, { key: 'qa', name: 'QA' });
     expect((await listProjectEnvironments(db as never, SHOP)).map((e) => e.key)).toEqual(['qa']);
     expect(await environmentOf(staged.id)).toBeNull();
@@ -327,5 +328,118 @@ describe('the review cases', () => {
     await backfillRunEnvironments(db as never);
     const rows = await db.all<Record<string, string>>(sql`${environmentLabelsSql(['staging', 'production'])}`);
     expect(rows.map((r) => Object.values(r)[0]).sort()).toEqual(['production', 'staging', 'stg']);
+  });
+});
+
+describe('the settings that name an environment', () => {
+  async function declare(key: string, aliases: string[] = []) {
+    const created = await createEnvironment(db as never, SHOP, { key, name: key, aliases });
+    if (!created.ok) throw new Error(created.problems.join(' '));
+    return created.environment.id;
+  }
+
+  test('a URL pattern or a CI action holds a delete back; a marker keeps its label', async () => {
+    const staging = await declare('staging');
+    await db.insert(schema.projectUrlPatterns).values({
+      projectId: SHOP,
+      pattern: 'https://staging.shop.test/*',
+      environment: 'staging',
+      environmentId: staging,
+    });
+    const refused = await deleteEnvironment(db as never, SHOP, staging);
+    expect(refused).toMatchObject({ ok: false, statusCode: 409 });
+    expect(refused.ok ? '' : refused.problems[0]).toContain('1 URL pattern');
+
+    await db.delete(schema.projectUrlPatterns);
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [{ name: 'Smoke', environment: 'staging', environmentId: staging }],
+        } as never,
+      })
+      .where(eq(schema.projects.id, SHOP));
+    const byAction = await deleteEnvironment(db as never, SHOP, staging);
+    expect(byAction.ok ? '' : byAction.problems[0]).toContain('the CI action “Smoke”');
+
+    await db
+      .update(schema.projects)
+      .set({ ciRerun: null, defaultEnvironmentId: staging })
+      .where(eq(schema.projects.id, SHOP));
+    const [marker] = await db
+      .insert(schema.markers)
+      .values({
+        projectId: SHOP,
+        occurredAt: new Date(),
+        label: 'Deploy',
+        environment: 'staging',
+        environmentId: staging,
+      })
+      .returning();
+    expect(await deleteEnvironment(db as never, SHOP, staging)).toEqual({ ok: true });
+    const [kept] = await db.select().from(schema.markers).where(eq(schema.markers.id, marker!.id));
+    expect(kept).toMatchObject({ environment: 'staging', environmentId: null });
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, SHOP));
+    expect(project!.defaultEnvironmentId).toBeNull();
+  });
+
+  test('a discovered environment taken over hands its references to the one that takes it', async () => {
+    const stg = (await resolveRunEnvironment(db as never, SHOP, 'stg')).environmentId!;
+    await db
+      .insert(schema.markers)
+      .values({ projectId: SHOP, occurredAt: new Date(), label: 'Deploy', environment: 'stg', environmentId: stg });
+    await db
+      .insert(schema.projectUrlPatterns)
+      .values({ projectId: SHOP, pattern: 'https://stg.shop.test/*', environment: 'stg', environmentId: stg });
+    await db
+      .update(schema.projects)
+      .set({
+        defaultEnvironmentId: stg,
+        ciRerun: { enabled: true, actions: [{ name: 'Smoke', environment: 'stg', environmentId: stg }] } as never,
+      })
+      .where(eq(schema.projects.id, SHOP));
+
+    const staging = await declare('staging', ['stg']);
+    const [marker] = await db.select().from(schema.markers);
+    const [pattern] = await db.select().from(schema.projectUrlPatterns);
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, SHOP));
+    expect(marker!.environmentId).toBe(staging);
+    expect(pattern!.environmentId).toBe(staging);
+    expect(project!.defaultEnvironmentId).toBe(staging);
+    expect((project!.ciRerun as { actions: Array<{ environmentId: number }> }).actions[0]!.environmentId).toBe(staging);
+  });
+
+  test('the startup pass gives stored markers, URL patterns and CI actions their environment', async () => {
+    const staging = await declare('staging', ['stg']);
+    await db.insert(schema.markers).values([
+      { projectId: SHOP, occurredAt: new Date(), label: 'Deploy', environment: 'stg' },
+      { projectId: SHOP, occurredAt: new Date(), label: 'Release', environment: 'preview' },
+    ]);
+    await db
+      .insert(schema.projectUrlPatterns)
+      .values({ projectId: SHOP, pattern: 'https://staging.shop.test/*', environment: 'Staging' });
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: { enabled: true, actions: [{ name: 'Smoke', environment: 'staging' }, { name: 'All' }] } as never,
+      })
+      .where(eq(schema.projects.id, SHOP));
+
+    expect(await backfillEnvironmentReferences(db as never)).toBe(4);
+    const rows = await db.select().from(schema.markers);
+    const preview = (await listProjectEnvironments(db as never, SHOP)).find(
+      (environment) => environment.key === 'preview',
+    );
+    expect(preview?.discovered).toBe(true);
+    expect(rows.map((row) => row.environmentId)).toEqual([staging, preview!.id]);
+    const [pattern] = await db.select().from(schema.projectUrlPatterns);
+    expect(pattern!.environmentId).toBe(staging);
+    const [project] = await db.select().from(schema.projects).where(eq(schema.projects.id, SHOP));
+    expect((project!.ciRerun as { actions: unknown[] }).actions).toEqual([
+      { name: 'Smoke', environment: 'staging', environmentId: staging },
+      { name: 'All' },
+    ]);
+    expect(await backfillEnvironmentReferences(db as never)).toBe(0);
   });
 });
