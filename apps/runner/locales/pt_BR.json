@@ -215,6 +215,58 @@
   "runner_reportProblem": {
     "message": "Relatar um problema"
   },
+  "runner_navConnection": {
+    "message": "Conexão"
+  },
+  "runner_navFolders": {
+    "message": "Pastas"
+  },
+  "runner_navGeneral": {
+    "message": "Geral"
+  },
+  "runner_runningHeading": {
+    "message": "Em execução"
+  },
+  "runner_finishedHeading": {
+    "message": "Concluídas"
+  },
+  "runner_foldersHint": {
+    "message": "Os testes de cada projeto rodam na pasta vinculada a ele, com suas próprias ferramentas e seu ambiente."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Desconectar de $host$?",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Os pedidos da instância deixam de chegar a esta máquina. Para conectar de novo, você precisará autorizar o Piwi Runner na instância outra vez."
+  },
+  "runner_offline": {
+    "message": "$host$ não responde: os pedidos dela voltam a chegar a esta máquina assim que ela responder.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ e $logs$ ficam no menu do ícone da área de notificação.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
+  },
   "shell_trayTooltip": {
     "message": "$app$ (clique para abrir)",
     "placeholders": {

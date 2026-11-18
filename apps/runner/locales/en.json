@@ -9,7 +9,7 @@
   },
   "runner_runsHeading": {
     "message": "Runs",
-    "description": "Tab of the window that shows the runs, and the heading of their list."
+    "description": "Tab of the window that shows the runs."
   },
   "runner_noRuns": {
     "message": "No runs yet. When a team instance asks for tests, you confirm them here first.",
@@ -193,7 +193,7 @@
   },
   "runner_clearFinished": {
     "message": "Clear finished",
-    "description": "Button above the list of runs: removes the runs that ended from the list. The running ones stay."
+    "description": "Button beside runner_finishedHeading: removes the runs that ended from the list."
   },
   "runner_openInstance": {
     "message": "Open $host$",
@@ -264,6 +264,68 @@
   "runner_reportProblem": {
     "message": "Report a problem",
     "description": "Link of the About card: opens the form to report a bug in the browser."
+  },
+  "runner_navConnection": {
+    "message": "Connection",
+    "description": "Section of the settings: the connection to the team instance. One or two words."
+  },
+  "runner_navFolders": {
+    "message": "Folders",
+    "description": "Section of the settings: the folders linked to the instance's projects. One or two words."
+  },
+  "runner_navGeneral": {
+    "message": "General",
+    "description": "Section of the settings: running in the background, starting on login and the language. One or two words."
+  },
+  "runner_runningHeading": {
+    "message": "Running now",
+    "description": "Heading of the runs going on, above their cards."
+  },
+  "runner_finishedHeading": {
+    "message": "Finished",
+    "description": "Heading of the runs that ended, above their list. runner_clearFinished empties it."
+  },
+  "runner_foldersHint": {
+    "message": "Each project's tests run in the folder linked to it, with your own tools and environment.",
+    "description": "Under the heading of the linked folders, in the settings."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Disconnect from $host$?",
+    "description": "Title of the question asked before disconnecting. $host$ is the instance's address without the scheme.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Requests from the instance stop reaching this machine. To connect again, you allow Piwi Runner on the instance again.",
+    "description": "Body of the question asked before disconnecting."
+  },
+  "runner_offline": {
+    "message": "$host$ does not answer: its requests reach this machine again once it does.",
+    "description": "Above the runs while the instance does not answer and the app tries again. $host$ is its address without the scheme.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ and $logs$ are in the tray icon's menu.",
+    "description": "In the About card. $updates$ and $logs$ are the tray menu's items shell_checkUpdates and shell_showLogs.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
   },
   "shell_trayTooltip": {
     "message": "$app$ (click to open)",

@@ -1,11 +1,13 @@
 <script setup lang="ts">
 /**
  * The top of the window: Piwi Runner's mark and name, where its connection stands, with a dot of its state (a click
- * opens the settings), and the window's two views, the runs, with how many run now, and the settings.
+ * opens the connection's settings, `connection`), and the window's two views, the runs, with how many run now, and the
+ * settings.
  */
 import type { TabsItem } from '@nuxt/ui';
 
 const view = defineModel<string>('view', { required: true });
+const emit = defineEmits<{ connection: [] }>();
 
 const { connection } = useDesktopTeamRequests();
 const { runs } = useRunnerRuns();
@@ -51,7 +53,7 @@ const views = computed<TabsItem[]>(() => [
           :title="t('runner_connectionSettings')"
           class="mt-0.5 flex max-w-full items-center gap-1.5 rounded text-left text-xs text-muted hover:text-default focus-visible:outline-2 focus-visible:outline-primary"
           data-testid="runner-status"
-          @click="view = 'settings'"
+          @click="emit('connection')"
         >
           <span aria-hidden="true" :class="['size-2 shrink-0 rounded-full', CONNECTION_STATE_DOTS[connection.state]]" />
           <span class="min-w-0 break-words">{{ status }}</span>

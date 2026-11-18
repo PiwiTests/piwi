@@ -1,7 +1,8 @@
 <script setup lang="ts">
 /**
- * The window while it is not connected: Piwi Runner's mark and what it does, the connection card (the instance's
- * address, then the code to allow it there), and the three steps from a test on the instance to its run here.
+ * The window while it is not connected: Piwi Runner's mark and what it does, the instance's address to connect to (or
+ * the code to allow it there, while the sign-in waits), and the three steps from a test on the instance to its run
+ * here.
  */
 const words = useRunUiWords();
 const { t } = useRunnerWords();
@@ -23,7 +24,7 @@ const steps = computed(() => [
       </div>
     </div>
     <UCard :ui="{ body: 'p-4 sm:p-5' }">
-      <DesktopTeamInstance app-name="Piwi Runner" />
+      <RunnerConnection />
     </UCard>
     <div class="space-y-3">
       <h3 class="text-xs font-semibold tracking-wide text-muted uppercase">{{ t('runner_stepsHeading') }}</h3>

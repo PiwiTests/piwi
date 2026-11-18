@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * The About card: Piwi Runner's mark, the version installed and what it does, and its documentation, its release
- * notes and the form to report a problem, which open in the browser.
+ * The About card: Piwi Runner's mark, the version installed and what it does, where the tray menu's updates and logs
+ * are, and its documentation, its release notes and the form to report a problem, which open in the browser.
  */
 const { t } = useRunnerWords();
 const version = String(useRuntimeConfig().public.runnerVersion ?? '');
@@ -26,6 +26,10 @@ const links = computed(() => [
         </div>
       </div>
       <p class="text-sm text-muted">{{ t('runner_tagline') }}</p>
+      <p class="flex items-start gap-2 text-xs text-muted">
+        <UIcon name="i-lucide-app-window" class="mt-0.5 size-3.5 shrink-0" />
+        <span>{{ t('runner_trayHint', { updates: t('shell_checkUpdates'), logs: t('shell_showLogs') }) }}</span>
+      </p>
       <div class="flex flex-wrap gap-2">
         <UButton
           v-for="link in links"

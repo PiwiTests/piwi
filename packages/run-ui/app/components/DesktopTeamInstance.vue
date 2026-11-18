@@ -5,100 +5,19 @@
  * connected, the folders linked to the instance's projects are listed here, each by the name the instance gives its
  * project (its id when it gives none); a request for a project with none asks for its folder in its confirmation.
  * Disconnecting removes the key from the keychain; it stays listed in the instance's Connected apps until it is revoked
- * there.
+ * there. What it does is `useDesktopTeamConnection`'s.
  */
-import type { RunTargetConnectionView } from '@piwitests/editor/run-target-view';
-
 /** The app's name, as the instance's page asks the person to allow it. */
 defineProps<{ appName: string }>();
 
-const { connection } = useDesktopTeamRequests();
-const toast = useToast();
+const { connection, connected, folders, busy, loadConnection, loadFolders, openPage, connect, disconnect, unlink } =
+  useDesktopTeamConnection();
 const words = useRunUiWords();
 const { t } = words;
 const instanceUrl = ref('');
-const busy = ref(false);
-const folders = ref<Record<string, string>>({});
 
-const { data: initial } = useFetch<{ connection: RunTargetConnectionView }>('/api/desktop/run-target', {
-  server: false,
-  default: () => ({ connection: connection.value }),
-});
-watch(
-  () => initial.value?.connection,
-  (value) => {
-    if (value) connection.value = value;
-  },
-  { immediate: true },
-);
-
-const connected = computed(() => ['connecting', 'online', 'offline'].includes(connection.value.state));
-
-async function loadFolders() {
-  const core = tauriCore();
-  if (!core || !connected.value) {
-    folders.value = {};
-    return;
-  }
-  folders.value = (await core.invoke<Record<string, string> | null>('desktop_request_folders').catch(() => null)) ?? {};
-}
+onMounted(loadConnection);
 watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')], loadFolders, { immediate: true });
-
-async function connect() {
-  if (!instanceUrl.value.trim() || busy.value) return;
-  busy.value = true;
-  try {
-    connection.value = await $fetch<RunTargetConnectionView>('/api/desktop/run-target/connect', {
-      method: 'POST',
-      body: { instance: instanceUrl.value.trim() },
-    });
-    if (connection.value.verificationUrl) openPage(connection.value.verificationUrl);
-  } catch (error) {
-    toast.add({
-      title: t('runui_connectionConnectFailed'),
-      description: errorMessage(error, t('runui_commonUnknownError')),
-      color: 'error',
-    });
-  } finally {
-    busy.value = false;
-  }
-}
-
-function openPage(url: string) {
-  tauriCore()
-    ?.invoke('desktop_open_external', { url })
-    .catch(() => {});
-}
-
-async function disconnect() {
-  const core = tauriCore();
-  if (!core || busy.value) return;
-  busy.value = true;
-  try {
-    await core.invoke('desktop_forget_run_target');
-  } catch (error) {
-    toast.add({
-      title: t('runui_connectionDisconnectFailed'),
-      description: errorMessage(error, t('runui_commonUnknownError')),
-      color: 'error',
-    });
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function unlink(projectId: string) {
-  await tauriCore()
-    ?.invoke('desktop_unlink_request_folder', { projectId })
-    .catch((error: unknown) =>
-      toast.add({
-        title: t('runui_connectionUnlinkFailed'),
-        description: errorMessage(error, t('runui_commonUnknownError')),
-        color: 'error',
-      }),
-    );
-  await loadFolders();
-}
 </script>
 
 <template>
@@ -154,7 +73,12 @@ async function unlink(projectId: string) {
       </div>
     </div>
 
-    <form v-else-if="!connected" method="post" class="flex flex-col sm:flex-row gap-2" @submit.prevent="connect">
+    <form
+      v-else-if="!connected"
+      method="post"
+      class="flex flex-col sm:flex-row gap-2"
+      @submit.prevent="connect(instanceUrl)"
+    >
       <UInput
         v-model="instanceUrl"
         type="url"

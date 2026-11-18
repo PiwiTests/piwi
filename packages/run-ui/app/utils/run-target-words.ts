@@ -14,6 +14,11 @@ const CONNECTION_STATE_KEYS: Record<RunTargetConnectionView['state'], RunUiPlain
   revoked: 'runui_connectionStateRevoked',
 };
 
+/** Whether the app holds a connection to a team instance: connected, connecting, or waiting for it to answer. */
+export function teamInstanceConnected(state: RunTargetConnectionView['state']): boolean {
+  return state === 'connecting' || state === 'online' || state === 'offline';
+}
+
 /**
  * The dot of each state of the connection to a team instance: green while requests come, amber while it waits on the
  * instance or the person, grey without a connection, red once the instance disconnected the app.

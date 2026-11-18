@@ -215,6 +215,58 @@
   "runner_reportProblem": {
     "message": "Problem melden"
   },
+  "runner_navConnection": {
+    "message": "Verbindung"
+  },
+  "runner_navFolders": {
+    "message": "Ordner"
+  },
+  "runner_navGeneral": {
+    "message": "Allgemein"
+  },
+  "runner_runningHeading": {
+    "message": "Laufend"
+  },
+  "runner_finishedHeading": {
+    "message": "Beendet"
+  },
+  "runner_foldersHint": {
+    "message": "Die Tests jedes Projekts laufen in dem damit verknüpften Ordner, mit Ihren eigenen Werkzeugen und Ihrer Umgebung."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Von $host$ trennen?",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Anforderungen der Instanz erreichen diesen Rechner nicht mehr. Um sich wieder zu verbinden, erlauben Sie Piwi Runner erneut auf der Instanz."
+  },
+  "runner_offline": {
+    "message": "$host$ antwortet nicht: Ihre Anforderungen erreichen diesen Rechner wieder, sobald sie antwortet.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ und $logs$ finden Sie im Menü des Symbols im Infobereich.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
+  },
   "shell_trayTooltip": {
     "message": "$app$ (zum Öffnen klicken)",
     "placeholders": {
