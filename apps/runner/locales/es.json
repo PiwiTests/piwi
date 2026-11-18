@@ -90,10 +90,10 @@
     "message": "No se pudo cambiar el idioma"
   },
   "runner_settingsHeading": {
-    "message": "Ajustes"
+    "message": "Configuración"
   },
   "runner_connectionSettings": {
-    "message": "Ajustes de la conexión"
+    "message": "Configuración de la conexión"
   },
   "runner_connectedTo": {
     "message": "Conectado a $host$",
@@ -165,7 +165,7 @@
     }
   },
   "runner_startedAt": {
-    "message": "Iniciada a las $time$",
+    "message": "Inicio: $time$",
     "placeholders": {
       "time": {
         "content": "$1",
@@ -243,7 +243,7 @@
     }
   },
   "runner_disconnectBody": {
-    "message": "Las solicitudes de la instancia dejan de llegar a esta máquina. Para volver a conectarte, tendrás que autorizar de nuevo Piwi Runner en la instancia."
+    "message": "Las solicitudes de la instancia dejarán de llegar a esta máquina. Para volver a conectarte, tendrás que autorizar de nuevo Piwi Runner en la instancia."
   },
   "runner_offline": {
     "message": "$host$ no responde: sus solicitudes volverán a llegar a esta máquina en cuanto responda.",

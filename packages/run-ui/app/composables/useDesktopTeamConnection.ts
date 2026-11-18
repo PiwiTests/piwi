@@ -3,8 +3,12 @@
  * starts on the instance's page, which opens in the browser), disconnect (the shell removes the key from the OS
  * keychain), and the folders linked to the instance's projects, each unlinked on its own. The folders and whether an
  * action is on its way are shared by every view, and a failed action says why in a notification, in the host's words.
+ * A disconnect waits while the shell keeps a key the instance just gave (`keeping`), which would connect it again.
  */
 import type { RunTargetConnectionView } from '@piwitests/editor/run-target-view';
+
+/** How long Connect waits for the host to start the sign-in on the instance. */
+const CONNECT_TIMEOUT_MS = 30_000;
 
 export function useDesktopTeamConnection() {
   const { connection } = useDesktopTeamRequests();
@@ -12,6 +16,8 @@ export function useDesktopTeamConnection() {
   const folders = useState<Record<string, string>>('desktop-team-folders', () => ({}));
   /** A connect or a disconnect is on its way. */
   const busy = useState('desktop-team-busy', () => false);
+  /** The shell is keeping in the OS keychain the key the instance just gave (`desktop-team-requests.client.ts`). */
+  const keeping = useState('desktop-team-keeping', () => false);
   const toast = useToast();
   const { t } = useRunUiWords();
 
@@ -21,10 +27,15 @@ export function useDesktopTeamConnection() {
     toast.add({ title, description: errorMessage(error, t('runui_commonUnknownError')), color: 'error' });
   }
 
-  /** Reads the connection from the host, as the window opens; the host's event stream tells each change after. */
+  /**
+   * Reads the connection from the host, as the window opens. The host's event stream tells each change after, and a
+   * change it told while the read was on its way stays.
+   */
   async function loadConnection(): Promise<void> {
+    const before = connection.value;
     try {
-      connection.value = (await $fetch<{ connection: RunTargetConnectionView }>('/api/desktop/run-target')).connection;
+      const answer = await $fetch<{ connection?: RunTargetConnectionView }>('/api/desktop/run-target');
+      if (answer.connection && connection.value === before) connection.value = answer.connection;
     } catch {
       // The event stream tells the connection once it opens.
     }
@@ -56,6 +67,7 @@ export function useDesktopTeamConnection() {
       connection.value = await $fetch<RunTargetConnectionView>('/api/desktop/run-target/connect', {
         method: 'POST',
         body: { instance: address.trim() },
+        timeout: CONNECT_TIMEOUT_MS,
       });
       if (connection.value.verificationUrl) openPage(connection.value.verificationUrl);
     } catch (error) {
@@ -68,7 +80,7 @@ export function useDesktopTeamConnection() {
   /** Ends the connection, or the sign-in on its way, and removes the key from the keychain. */
   async function disconnect(): Promise<void> {
     const core = tauriCore();
-    if (!core || busy.value) return;
+    if (!core || busy.value || keeping.value) return;
     busy.value = true;
     try {
       await core.invoke('desktop_forget_run_target');
@@ -87,5 +99,17 @@ export function useDesktopTeamConnection() {
     await loadFolders();
   }
 
-  return { connection, connected, folders, busy, loadConnection, loadFolders, openPage, connect, disconnect, unlink };
+  return {
+    connection,
+    connected,
+    folders,
+    busy,
+    keeping,
+    loadConnection,
+    loadFolders,
+    openPage,
+    connect,
+    disconnect,
+    unlink,
+  };
 }

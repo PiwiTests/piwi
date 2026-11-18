@@ -2,8 +2,8 @@
 /**
  * A run that ended, as a row of the Finished list: how it ended, its name, its project, when it started and how long
  * it took, and its number and page on the instance (**Run #78 · Open**) once its process named them. A click on the row
- * shows the tests and the output (`RunnerRunOutput`, open on its own when the run failed). A run that ended a moment
- * ago shows them already, as its card did while it ran.
+ * shows the tests and the output (`RunnerRunOutput`, open on its own when the run failed), each as the person left it
+ * on the run's card. A run that ended a moment ago comes in open.
  */
 import type { RunnerRun } from '~/utils/runner-runs';
 
@@ -13,11 +13,14 @@ const props = defineProps<{ run: RunnerRun }>();
 const OPEN_AFTER_END_MS = 10_000;
 
 const { status, name, details } = useRunnerRunView(() => props.run);
-const open = ref(Date.now() - (props.run.endedAt ?? 0) < OPEN_AFTER_END_MS);
+const disclosures = useRunnerDisclosures();
+const endedJustNow = Date.now() - (props.run.endedAt ?? 0) < OPEN_AFTER_END_MS;
+const id = computed(() => `row:${props.run.key}`);
+const open = computed(() => disclosures.isOpen(id.value, endedJustNow));
 const hasMore = computed(() => props.run.tests.length > 0 || props.run.lines.length > 0);
 
 function toggle() {
-  if (hasMore.value) open.value = !open.value;
+  if (hasMore.value) disclosures.choose(id.value, !open.value);
 }
 </script>
 

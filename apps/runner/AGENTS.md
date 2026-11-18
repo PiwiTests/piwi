@@ -9,9 +9,10 @@ built with the `runner` feature.
 
 ## Rules
 
-- **The window shares, it does not copy.** The connection card, the confirmation, the host's event stream and the live
-  view of a run (`useDesktopRunHub`, `DesktopRunSession`) come from `packages/run-ui` by auto-import, and a change both
-  windows need goes there. The window has no router, no store beyond the run list and no network call but the
+- **The window shares, it does not copy.** The connection's parts and what they do (`DesktopTeamConnectForm`,
+  `DesktopTeamSignIn`, `DesktopTeamFolders`, `useDesktopTeamConnection`), the confirmation, the host's event stream and
+  the live view of a run (`useDesktopRunHub`, `DesktopRunSession`) come from `packages/run-ui` by auto-import, and a
+  change both windows need goes there. The window has no router, no store beyond the run list and no network call but the
   layer's.
 - **Every text Runner shows comes from a catalog.** The window's own and the shell's are in `locales/<code>.json`
   (`runner_` through `useRunnerWords()`, `shell_` read by the shell, which also reads `runner_runInBackground` and

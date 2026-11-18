@@ -2,7 +2,8 @@
 /**
  * A run's output as its terminal printed it, Playwright's colors included (`renderAnsi`), on a dark pane: its last
  * `SHOWN_LINES` lines, following the end while the reader is there, and **Copy output**, which copies every line the
- * window keeps, without colors. It opens on its own once the run failed or could not run.
+ * window keeps, without colors. Folded until the person opens it, or until the run failed or could not run; the run's
+ * card and its row both keep what the person chose (`useRunnerDisclosures`).
  */
 import type { RunnerRun } from '~/utils/runner-runs';
 
@@ -15,10 +16,14 @@ const AT_END = 24;
 const { t, tn } = useRunnerWords();
 const words = useRunUiWords();
 const { copy, copied } = useCopy();
+const disclosures = useRunnerDisclosures();
 const pane = useTemplateRef<HTMLElement>('pane');
 
 const html = computed(() => renderAnsi(props.run.lines.slice(-SHOWN_LINES).join('\n'), { onDark: true }));
-const ended = computed(() => props.run.status === 'failed' || props.run.status === 'error');
+const id = computed(() => `output:${props.run.key}`);
+const open = computed(() =>
+  disclosures.isOpen(id.value, props.run.status === 'failed' || props.run.status === 'error'),
+);
 
 function toEnd() {
   if (pane.value) pane.value.scrollTop = pane.value.scrollHeight;
@@ -36,12 +41,14 @@ watch(
 );
 
 function onToggle(event: Event) {
-  if ((event.target as HTMLDetailsElement).open) void nextTick(toEnd);
+  const shown = (event.target as HTMLDetailsElement).open;
+  if (shown !== open.value) disclosures.choose(id.value, shown);
+  if (shown) void nextTick(toEnd);
 }
 </script>
 
 <template>
-  <details :open="ended" class="group" data-testid="runner-run-output" @toggle="onToggle">
+  <details :open="open" class="group" data-testid="runner-run-output" @toggle="onToggle">
     <summary
       class="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs text-muted hover:text-default [&::-webkit-details-marker]:hidden"
     >
@@ -49,16 +56,18 @@ function onToggle(event: Event) {
       <span class="font-medium">{{ t('runner_output') }}</span>
       <span aria-hidden="true">·</span>
       <span class="min-w-0 flex-1">{{ tn('runner_outputLines', run.lines.length) }}</span>
-      <UButton
-        size="xs"
-        color="neutral"
-        variant="ghost"
-        :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
-        @click.prevent="copy(stripAnsi(run.lines.join('\n')))"
-        >{{ copied ? words.t('runui_commonCopied') : t('runner_copyOutput') }}</UButton
-      >
     </summary>
-    <div class="px-4 pb-4">
+    <div class="space-y-2 px-4 pb-4">
+      <div class="flex justify-end">
+        <UButton
+          size="xs"
+          color="neutral"
+          variant="ghost"
+          :icon="copied ? 'i-lucide-check' : 'i-lucide-copy'"
+          @click="copy(stripAnsi(run.lines.join('\n')))"
+          >{{ copied ? words.t('runui_commonCopied') : t('runner_copyOutput') }}</UButton
+        >
+      </div>
       <!-- eslint-disable vue/no-v-html — renderAnsi escapes the text before wrapping it in styled spans -->
       <pre
         ref="pane"

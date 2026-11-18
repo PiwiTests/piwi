@@ -1,13 +1,25 @@
 <script setup lang="ts">
-/** The tests a run's request asked for, folded under how many they are: each test's title, file, line and project. */
+/**
+ * The tests a run's request asked for, folded under how many they are: each test's title, file, line and project.
+ * Folded until the person opens it, which the run's card and its row both keep (`useRunnerDisclosures`).
+ */
 import type { RunnerRun } from '~/utils/runner-runs';
 
-defineProps<{ run: RunnerRun; open?: boolean }>();
+const props = defineProps<{ run: RunnerRun }>();
 const words = useRunUiWords();
+const disclosures = useRunnerDisclosures();
+
+const id = computed(() => `tests:${props.run.key}`);
+const open = computed(() => disclosures.isOpen(id.value, false));
+
+function onToggle(event: Event) {
+  const shown = (event.target as HTMLDetailsElement).open;
+  if (shown !== open.value) disclosures.choose(id.value, shown);
+}
 </script>
 
 <template>
-  <details :open="open" class="group" data-testid="runner-run-tests">
+  <details :open="open" class="group" data-testid="runner-run-tests" @toggle="onToggle">
     <summary
       class="flex cursor-pointer list-none items-center gap-2 px-4 py-2 text-xs text-muted hover:text-default [&::-webkit-details-marker]:hidden"
     >

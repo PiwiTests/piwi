@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { expect, test, type Locator, type Page } from '@playwright/test';
+import { expect, test } from '@playwright/test';
+import { ENVIRONMENT, FOLDER, VIEWER, clipped, hubRun, playShell, read, root, runRequest, said } from './shell';
 
 /**
  * Piwi Runner's window in another language than English, at its smallest size: the language the shell answers reaches
@@ -9,250 +10,6 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
  * button), and no text is cut. The shell's bridge (`window.__TAURI__`) and the host's streams are played by the spec;
  * what each says comes from the catalogs.
  */
-
-type Catalog = Record<string, { message: string }>;
-
-const root = path.resolve(import.meta.dirname, '..', '..', '..', '..');
-const read = (file: string) => JSON.parse(readFileSync(path.join(root, file), 'utf8')) as Catalog;
-
-/** A message of a catalog with its placeholders filled. */
-function said(catalog: Catalog, key: string, args: Record<string, string> = {}): string {
-  const message = catalog[key]?.message;
-  if (message === undefined) throw new Error(`no ${key}`);
-  return message.replace(/\$([A-Za-z0-9_]+)\$/g, (_whole, name: string) => args[name] ?? '');
-}
-
-const FOLDER = '/home/dana/shop';
-const REF = 'runner-run-7';
-const VIEWER = 'f'.repeat(32);
-
-/** The protected environment the request runs for. */
-const ENVIRONMENT = { key: 'production', name: 'Production', protected: true, requiredTags: ['@smoke', '@readonly'] };
-
-/** A run request the instance sent, for a protected environment, with a check of each level, by code. */
-function runRequest() {
-  return {
-    id: 'a1b2c3d4',
-    instance: 'https://piwi.example.com',
-    projectId: 12,
-    projectName: 'Acme Checkout',
-    tests: [
-      {
-        title: 'checkout › pays with a saved card',
-        filePath: 'tests/checkout.spec.ts',
-        line: 3,
-        projectName: 'chromium',
-      },
-    ],
-    options: { headed: true, trace: 'on', repeatEach: 2, workers: 1, project: 'chromium' },
-    source: { branch: 'feat/pay', commit: '5d6e7f8a9b0c' },
-    checks: [
-      {
-        id: 'folder',
-        level: 'ok',
-        code: 'folder-linked',
-        args: { folder: FOLDER },
-        message: `Linked folder: ${FOLDER}`,
-      },
-      {
-        id: 'environment',
-        level: 'warn',
-        code: 'environment-protected',
-        args: { environment: ENVIRONMENT.name, key: ENVIRONMENT.key, tags: ENVIRONMENT.requiredTags.join(', ') },
-        message:
-          'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run, beside the setup and teardown projects they depend on, which Playwright runs whole.',
-      },
-      { id: 'specs', level: 'ok', code: 'specs-found', args: {}, message: 'The specs are in the folder.' },
-      { id: 'playwright', level: 'ok', code: 'playwright-installed', args: {}, message: 'Playwright is installed.' },
-      {
-        id: 'commit',
-        level: 'warn',
-        code: 'commit-differs',
-        args: { branch: 'main', commit: '1a2b3c4', sourceBranch: 'feat/pay', sourceCommit: '5d6e7f8' },
-        message: 'Your folder is on main at 1a2b3c4; the run you came from was on feat/pay at 5d6e7f8. …',
-      },
-      {
-        id: 'changes',
-        level: 'warn',
-        code: 'changes-uncommitted',
-        args: {},
-        message: 'Your folder has uncommitted changes.',
-      },
-    ],
-    runnable: true,
-    command:
-      "PIWI_ENVIRONMENT=production npx playwright test tests/checkout.spec.ts:3 --headed --trace=on --repeat-each=2 '--grep-invert=^(?!.*(?:^|\\s)(?:@smoke|@readonly)(?:\\s|$))'",
-    environment: ENVIRONMENT,
-    hasFolder: true,
-    answerBy: new Date(Date.now() + 10 * 60_000).toISOString(),
-  };
-}
-
-/** The hub's run, its worker stopped at a Pause. */
-function stoppedRun() {
-  const test = {
-    id: 't1',
-    title: ['checkout', 'pays with a saved card'],
-    uri: `file://${FOLDER}/tests/checkout.spec.ts`,
-    line: 3,
-    project: 'chromium',
-    retry: 0,
-    cannotPause: null,
-  };
-  const worker = {
-    worker: 0,
-    parallelIndex: 0,
-    state: 'stopped',
-    test,
-    pausing: false,
-    intents: [],
-    stop: {
-      reason: 'pause',
-      title: "Click getByRole('button', { name: 'Pay' })",
-      uri: test.uri,
-      line: 4,
-      character: 2,
-      locator: "getByRole('button', { name: 'Pay' })",
-      bar: false,
-      since: '2026-11-17T10:00:00.000Z',
-      intents: ['mock', 'view'],
-    },
-  };
-  return {
-    type: 'session',
-    session: {
-      ref: REF,
-      root: FOLDER,
-      label: 'shop',
-      command: null,
-      project: 'Acme Checkout',
-      workers: [worker],
-      ended: false,
-    },
-  };
-}
-
-declare global {
-  interface Window {
-    __events: { send(stream: 'host' | 'hub', message: unknown): void; emit(event: string, payload: unknown): void };
-  }
-}
-
-type ConnectionState = 'online' | 'offline' | 'none';
-
-/** The connection the host answers: online (or not answering) with the project's folder linked, or none yet. */
-function connectionView(state: ConnectionState) {
-  const linked = state !== 'none';
-  return {
-    state,
-    instance: linked ? 'https://piwi.example.com' : null,
-    userCode: null,
-    verificationUrl: null,
-    error: null,
-    errorCode: null,
-    errorArgs: {},
-    keyToKeep: false,
-    linkedProjectIds: linked ? [12] : [],
-    projectNames: linked ? { 12: 'Acme Checkout' } : {},
-  };
-}
-
-/**
- * The shell's bridge, answering in `language`, and the window's two streams (the host's events and the runs' hub),
- * which `window.__events.send` speaks on; `window.__events.emit` says a shell event (`piwi:local-run`). A run the
- * person confirms starts as the shell's run 1.
- */
-async function playShell(page: Page, language: string, state: ConnectionState = 'online') {
-  await page.addInitScript((code) => {
-    const listeners: Record<string, Array<(event: { payload: unknown }) => void>> = {};
-    const streams: Array<{ kind: 'host' | 'hub'; closed: boolean; onmessage: ((e: { data: string }) => void) | null }> =
-      [];
-    function Stream(url: string | URL) {
-      const stream = {
-        kind: String(url).includes('/api/desktop/runs/events') ? ('hub' as const) : ('host' as const),
-        url: String(url),
-        readyState: 1,
-        closed: false,
-        onmessage: null as ((e: { data: string }) => void) | null,
-        onerror: null,
-        addEventListener() {},
-        close() {
-          this.closed = true;
-          this.readyState = 2;
-        },
-      };
-      streams.push(stream);
-      return stream;
-    }
-    Object.assign(Stream, { CONNECTING: 0, OPEN: 1, CLOSED: 2 });
-    Object.assign(window, {
-      EventSource: Stream,
-      __events: {
-        send: (kind: 'host' | 'hub', message: unknown) => {
-          for (const stream of streams) {
-            if (stream.kind === kind && !stream.closed) stream.onmessage?.({ data: JSON.stringify(message) });
-          }
-        },
-        emit: (event: string, payload: unknown) => {
-          for (const listener of listeners[event] ?? []) listener({ payload });
-        },
-      },
-      __TAURI__: {
-        core: {
-          invoke: async (cmd: string) => {
-            switch (cmd) {
-              case 'desktop_get_language':
-                return { language: code, chosen: code, system: 'en' };
-              case 'desktop_get_service_settings':
-                return { run_in_background: true, start_on_login: false };
-              case 'desktop_request_folders':
-                return { '12': '/home/dana/shop' };
-              case 'desktop_run_requested_tests':
-                return 1;
-              default:
-                return null;
-            }
-          },
-        },
-        event: {
-          listen: async (event: string, listener: (event: { payload: unknown }) => void) => {
-            (listeners[event] ??= []).push(listener);
-            return () => {};
-          },
-        },
-        window: { getCurrentWindow: () => ({ label: 'main' }) },
-      },
-    });
-  }, language);
-  await page.route('**/api/desktop/run-target', (route) =>
-    route.fulfill({ json: { connection: connectionView(state) } }),
-  );
-  await page.route('**/api/desktop/run-target/requests/*/answer', (route) =>
-    route.fulfill({ json: { launch: (route.request().postDataJSON() as { decision: string }).decision === 'run' } }),
-  );
-  await page.route('**/api/desktop/runs/commands', (route) =>
-    route.fulfill({ json: { type: 'answer', id: 1, ok: true, message: '' } }),
-  );
-}
-
-/**
- * The elements under `scope` whose own text is wider than their box, cut or spilling out, as `tag: text`. Code is left
- * out, and so is a box that scrolls, whose text the reader reaches.
- */
-function clipped(scope: Locator): Promise<string[]> {
-  return scope.evaluate((root) =>
-    [...root.querySelectorAll<HTMLElement>('*')]
-      .filter((element) => {
-        if (element.closest('code, pre, kbd')) return false;
-        const own = [...element.childNodes].some((node) => node.nodeType === 3 && node.textContent?.trim());
-        if (!own) return false;
-        const style = getComputedStyle(element);
-        if (style.visibility === 'hidden' || ['auto', 'scroll'].includes(style.overflowX)) return false;
-        return element.scrollWidth > element.clientWidth + 1;
-      })
-      .map((element) => `${element.tagName.toLowerCase()}: ${element.textContent?.trim()}`),
-  );
-}
 
 const LANGUAGES = [
   { code: 'fr', tag: 'fr', close: 'Fermer' },
@@ -286,9 +43,13 @@ for (const { code, tag, close } of LANGUAGES) {
     expect(await clipped(header)).toEqual([]);
     expect(await clipped(page.locator('main'))).toEqual([]);
 
-    // The settings, a section at a time: the connection (Disconnect asks first), the folders, the general settings
-    // and About.
-    await header.getByRole('tab', { name: said(runner, 'runner_settingsHeading') }).click();
+    // The settings, a section at a time, from the connection's line: the connection (Disconnect asks first), the
+    // folders, the general settings and About.
+    await page.getByTestId('runner-status').click();
+    await expect(header.getByRole('tab', { name: said(runner, 'runner_settingsHeading') })).toHaveAttribute(
+      'aria-selected',
+      'true',
+    );
     const settings = page.getByTestId('runner-settings');
     const section = (key: string) => settings.getByRole('tab', { name: said(runner, key) }).click();
     await expect(settings.getByText(said(layer, 'runui_connectionStateOnline'))).toBeVisible();
@@ -301,6 +62,11 @@ for (const { code, tag, close } of LANGUAGES) {
     expect(await clipped(question)).toEqual([]);
     await question.getByRole('button', { name: said(layer, 'runui_commonCancel') }).click();
     await expect(question).toBeHidden();
+    expect(await page.evaluate(() => window.__invoked)).not.toContain('desktop_forget_run_target');
+    await page.getByTestId('runner-disconnect').click();
+    await question.getByRole('button', { name: said(layer, 'runui_connectionDisconnect') }).click();
+    await expect(question).toBeHidden();
+    expect(await page.evaluate(() => window.__invoked)).toContain('desktop_forget_run_target');
     await section('runner_navFolders');
     await expect(page.getByTestId('runner-folders').getByText('Acme Checkout')).toBeVisible();
     await expect(page.getByTestId('runner-folders')).toContainText(FOLDER);
@@ -347,13 +113,27 @@ for (const { code, tag, close } of LANGUAGES) {
       said(runner, 'runner_runningHeading'),
     );
     await expect(run.getByText(said(runner, 'runner_statusRunning'))).toBeVisible();
+    await expect(run).toContainText('checkout › pays with a saved card');
+    await expect(run).not.toContainText('piwi.example.com');
     await expect(run).toContainText('Acme Checkout');
     await expect(run.getByText(said(layer, 'runui_tests_one', { count: '1' }))).toBeVisible();
+    await expect(header.getByRole('tab', { name: said(runner, 'runner_runsHeading') })).toContainText('1');
+    // Its workers live, once the hub names the run, with Hold failures; then its page on the instance.
+    await page.evaluate((viewer) => window.__events.send('hub', { type: 'hello', viewer }), VIEWER);
+    await page.evaluate(
+      (event) => window.__events.send('hub', event),
+      hubRun('desktop-1', { stopped: false, page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } }),
+    );
+    await expect(run.getByTestId('runner-hold-failures')).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
     for (const line of OUTPUT) {
       await page.evaluate((l) => window.__events.emit('piwi:local-run', { id: 1, kind: 'stdout', line: l }), line);
     }
     await page.evaluate(() => window.__events.emit('piwi:local-run', { id: 1, kind: 'exit', code: 1 }));
+    await page.evaluate(
+      (event) => window.__events.send('hub', event),
+      hubRun('desktop-1', { ended: true, page: { id: 78, url: 'https://piwi.example.com/test-runs/78' } }),
+    );
     await expect(run).toBeHidden();
     const ended = page.getByTestId('runner-finished').getByTestId('runner-run');
     await expect(page.getByTestId('runner-finished').getByRole('heading')).toContainText(
@@ -364,19 +144,32 @@ for (const { code, tag, close } of LANGUAGES) {
     await expect(output.locator('pre')).toBeVisible();
     await expect(output.locator('pre')).toContainText('Received: "Total: $50.00"');
     expect(await output.locator('pre').innerText()).not.toContain(ESC);
+    await expect(output.locator('pre span[style*="color"]').first()).toBeVisible();
     await expect(output.getByRole('button', { name: said(runner, 'runner_copyOutput') })).toBeVisible();
+    await expect(ended.getByText(runWords.runs_runNumber!.replace('$id$', '78'))).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
+    // Its row folds, and opens again with its output as it was.
+    const toggle = ended.getByRole('button', { name: 'checkout › pays with a saved card' });
+    await toggle.click();
+    await expect(toggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(output).toBeHidden();
+    await toggle.click();
+    await expect(output.locator('pre')).toBeVisible();
 
     // Clear finished takes the ended run away.
     await page.getByTestId('runner-clear-finished').click();
     await expect(ended).toBeHidden();
     await expect(page.getByText(said(runner, 'runner_noRuns'))).toBeVisible();
 
-    // A run the hub has and this window holds no entry for: its worker stopped at a Pause, in the run model's words.
-    await page.evaluate((viewer) => window.__events.send('hub', { type: 'hello', viewer }), VIEWER);
-    await page.evaluate((event) => window.__events.send('hub', event), stoppedRun());
+    // A run the hub has and this window holds no entry for: its worker stopped at a Pause, in the run model's words,
+    // counted on the Runs tab. The stop brings the runs back from the settings.
+    await header.getByRole('tab', { name: said(runner, 'runner_settingsHeading') }).click();
+    await expect(page.getByTestId('runner-settings')).toBeVisible();
+    await page.evaluate((event) => window.__events.send('hub', event), hubRun());
+    await expect(page.getByTestId('runner-settings')).toBeHidden();
     const unlisted = page.getByTestId('runner-unlisted-run');
     await expect(unlisted.getByText(said(runner, 'runner_stillRunning'))).toBeVisible();
+    await expect(header.getByRole('tab', { name: said(runner, 'runner_runsHeading') })).toContainText('1');
     await expect(unlisted.getByText(runWords.runs_stoppedPause!, { exact: true }).first()).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
   });

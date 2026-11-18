@@ -1,16 +1,20 @@
 <script setup lang="ts">
 /**
- * The top of the window: Piwi Runner's mark and name, where its connection stands, with a dot of its state (a click
- * opens the connection's settings, `connection`), and the window's two views, the runs, with how many run now, and the
- * settings.
+ * The top of the window: Piwi Runner's mark and name, where its connection stands once it is `known`, with a dot of its
+ * state (a click opens the connection's settings, `connection`), and the window's two views, the runs, with how many run
+ * now, those the hub still has from before the window reloaded included, and the settings.
  */
 import type { TabsItem } from '@nuxt/ui';
+import type { HubSession } from '@piwitests/core/run-hub';
+import { runnerUnlistedSessions } from '~/utils/runner-runs';
 
 const view = defineModel<string>('view', { required: true });
+defineProps<{ known: boolean }>();
 const emit = defineEmits<{ connection: [] }>();
 
 const { connection } = useDesktopTeamRequests();
 const { runs } = useRunnerRuns();
+const hub = useDesktopRunHub();
 const words = useRunUiWords();
 const { t } = useRunnerWords();
 
@@ -30,7 +34,11 @@ const status = computed(() => {
       return connectionStateWords(connection.value.state, words);
   }
 });
-const running = computed(() => runs.value.filter((run) => run.status === 'running').length);
+const running = computed(
+  () =>
+    runs.value.filter((run) => run.status === 'running').length +
+    runnerUnlistedSessions(Object.values(hub.state.sessions) as HubSession[], runs.value).length,
+);
 const views = computed<TabsItem[]>(() => [
   {
     label: t('runner_runsHeading'),
@@ -49,6 +57,7 @@ const views = computed<TabsItem[]>(() => [
       <div class="min-w-0 flex-1">
         <h1 class="text-base leading-tight font-semibold text-highlighted">Piwi Runner</h1>
         <button
+          v-if="known"
           type="button"
           :title="t('runner_connectionSettings')"
           class="mt-0.5 flex max-w-full items-center gap-1.5 rounded text-left text-xs text-muted hover:text-default focus-visible:outline-2 focus-visible:outline-primary"

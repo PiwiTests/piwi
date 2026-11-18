@@ -144,7 +144,7 @@
     "message": "Na instância, abra um teste e peça para executá-lo na sua máquina."
   },
   "runner_stepConfirm": {
-    "message": "Confira o pedido aqui e clique em $run$: os testes rodam na sua pasta, em um navegador na sua tela.",
+    "message": "Confira o pedido aqui e clique em $run$: os testes são executados na sua pasta, em um navegador na sua tela.",
     "placeholders": {
       "run": {
         "content": "$1",
@@ -165,7 +165,7 @@
     }
   },
   "runner_startedAt": {
-    "message": "Iniciada às $time$",
+    "message": "Início: $time$",
     "placeholders": {
       "time": {
         "content": "$1",
@@ -231,7 +231,7 @@
     "message": "Concluídas"
   },
   "runner_foldersHint": {
-    "message": "Os testes de cada projeto rodam na pasta vinculada a ele, com suas próprias ferramentas e seu ambiente."
+    "message": "Os testes de cada projeto são executados na pasta vinculada a ele, com suas próprias ferramentas e seu ambiente."
   },
   "runner_disconnectQuestion": {
     "message": "Desconectar de $host$?",
@@ -243,7 +243,7 @@
     }
   },
   "runner_disconnectBody": {
-    "message": "Os pedidos da instância deixam de chegar a esta máquina. Para conectar de novo, você precisará autorizar o Piwi Runner na instância outra vez."
+    "message": "Os pedidos da instância deixarão de chegar a esta máquina. Para conectar de novo, você precisará autorizar o Piwi Runner na instância outra vez."
   },
   "runner_offline": {
     "message": "$host$ não responde: os pedidos dela voltam a chegar a esta máquina assim que ela responder.",

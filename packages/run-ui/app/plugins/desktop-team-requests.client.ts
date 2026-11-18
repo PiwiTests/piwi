@@ -12,15 +12,15 @@ export default defineNuxtPlugin((nuxtApp) => {
   if (!core || tauriWindowLabel() !== 'main') return;
 
   const { connection, add, remove } = useDesktopTeamRequests();
-  let keeping = false;
+  const { keeping } = useDesktopTeamConnection();
   const seen = new Set<string>();
   subscribeDesktopEvents((message) => {
     if (message.type === 'run-target' && message.connection && typeof message.connection === 'object') {
       const next = message.connection as RunTargetConnectionView;
       const wasRevoked = connection.value.state === 'revoked';
       connection.value = next;
-      if (next.keyToKeep && !keeping) {
-        keeping = true;
+      if (next.keyToKeep && !keeping.value) {
+        keeping.value = true;
         core
           .invoke('desktop_keep_run_target_key')
           .catch((error: unknown) => {
@@ -33,7 +33,7 @@ export default defineNuxtPlugin((nuxtApp) => {
             });
             return core.invoke('desktop_forget_run_target').catch(() => {});
           })
-          .finally(() => (keeping = false));
+          .finally(() => (keeping.value = false));
       }
       if (next.state === 'revoked' && !wasRevoked) core.invoke('desktop_forget_run_target').catch(() => {});
       return;

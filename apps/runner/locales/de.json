@@ -114,7 +114,7 @@
     }
   },
   "runner_reconnectingTo": {
-    "message": "Erneute Verbindung mit $host$",
+    "message": "Verbindung mit $host$ wird wiederhergestellt",
     "placeholders": {
       "host": {
         "content": "$1",
@@ -123,7 +123,7 @@
     }
   },
   "runner_signingInAt": {
-    "message": "Wartet auf Ihre Freigabe auf $host$",
+    "message": "Wartet, bis Sie Piwi Runner auf $host$ zulassen",
     "placeholders": {
       "host": {
         "content": "$1",
@@ -138,13 +138,13 @@
     "message": "So funktioniert es"
   },
   "runner_stepConnect": {
-    "message": "Geben Sie die Adresse Ihrer Team-Instanz ein und erlauben Sie Piwi Runner auf der Seite, die sich öffnet."
+    "message": "Geben Sie die Adresse Ihrer Team-Instanz ein und lassen Sie Piwi Runner auf der Seite zu, die sich öffnet."
   },
   "runner_stepRequest": {
     "message": "Öffnen Sie auf der Instanz einen Test und lassen Sie ihn auf Ihrem Rechner ausführen."
   },
   "runner_stepConfirm": {
-    "message": "Prüfen Sie die Anforderung hier und klicken Sie dann auf $run$: Die Tests laufen in Ihrem Ordner, in einem Browser auf Ihrem Bildschirm.",
+    "message": "Prüfen Sie die Anfrage hier und klicken Sie dann auf $run$: Die Tests laufen in Ihrem Ordner, in einem Browser auf Ihrem Bildschirm.",
     "placeholders": {
       "run": {
         "content": "$1",
@@ -243,10 +243,10 @@
     }
   },
   "runner_disconnectBody": {
-    "message": "Anforderungen der Instanz erreichen diesen Rechner nicht mehr. Um sich wieder zu verbinden, erlauben Sie Piwi Runner erneut auf der Instanz."
+    "message": "Die Anfragen der Instanz erreichen diesen Rechner dann nicht mehr. Um sich wieder zu verbinden, lassen Sie Piwi Runner erneut auf der Instanz zu."
   },
   "runner_offline": {
-    "message": "$host$ antwortet nicht: Ihre Anforderungen erreichen diesen Rechner wieder, sobald sie antwortet.",
+    "message": "$host$ antwortet nicht: Die Anfragen der Instanz erreichen diesen Rechner wieder, sobald sie antwortet.",
     "placeholders": {
       "host": {
         "content": "$1",

@@ -1,14 +1,14 @@
 <script setup lang="ts">
 /**
  * The runs of this window, in two lists: **Running now**, a card each with its live view (`RunnerRunCard`), and
- * **Finished**, a row each (`RunnerRunRow`), newest first, with **Clear finished**. A run the hub still has that this
+ * **Finished**, a row each (`RunnerRunRow`), the last to end first, with **Clear finished**. A run the hub still has that this
  * window holds no entry for (the window was reloaded while it went on) shows live under its name, with Stop. While
  * there is none, the window says how one comes and opens the instance in the browser; while the instance does not
  * answer, a line above says so. The code made at a stop and the locators picked wait on top, to copy
  * (`DesktopRunCopyList`).
  */
 import type { HubSession } from '@piwitests/core/run-hub';
-import { isRunnerRunRef, runnerShellIdOf } from '~/utils/runner-runs';
+import { runnerFinishedRuns, runnerShellIdOf, runnerUnlistedSessions } from '~/utils/runner-runs';
 
 const { runs, stopShellRun, clearFinished } = useRunnerRuns();
 const { connection } = useDesktopTeamRequests();
@@ -18,14 +18,10 @@ const { t } = useRunnerWords();
 
 const sessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
 const running = computed(() => runs.value.filter((run) => run.status === 'running'));
-const finished = computed(() => runs.value.filter((run) => run.status !== 'running'));
+const finished = computed(() => runnerFinishedRuns(runs.value));
 
 /** The hub's live runs no run of this window is: the window was reloaded while they went on. */
-const unlisted = computed(() =>
-  sessions.value.filter(
-    (session) => !session.ended && !runs.value.some((run) => isRunnerRunRef(session.ref, run.shellId)),
-  ),
-);
+const unlisted = computed(() => runnerUnlistedSessions(sessions.value, runs.value));
 /** The runs of `unlisted` whose Stop was asked. */
 const stopping = ref(new Set<string>());
 function stopUnlisted(session: HubSession) {

@@ -5,16 +5,15 @@
  * connected, the folders linked to the instance's projects are listed here, each by the name the instance gives its
  * project (its id when it gives none); a request for a project with none asks for its folder in its confirmation.
  * Disconnecting removes the key from the keychain; it stays listed in the instance's Connected apps until it is revoked
- * there. What it does is `useDesktopTeamConnection`'s.
+ * there. Its parts are shared with each host's own views (`DesktopTeamSignIn`, `DesktopTeamConnectForm`,
+ * `DesktopTeamFolders`), and what they do is `useDesktopTeamConnection`'s.
  */
 /** The app's name, as the instance's page asks the person to allow it. */
 defineProps<{ appName: string }>();
 
-const { connection, connected, folders, busy, loadConnection, loadFolders, openPage, connect, disconnect, unlink } =
-  useDesktopTeamConnection();
+const { connection, connected, busy, keeping, loadConnection, loadFolders, disconnect } = useDesktopTeamConnection();
 const words = useRunUiWords();
 const { t } = words;
-const instanceUrl = ref('');
 
 onMounted(loadConnection);
 watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')], loadFolders, { immediate: true });
@@ -48,71 +47,14 @@ watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')
       <p v-if="connection.error" class="text-xs text-error">{{ connectionErrorWords(connection, words) }}</p>
     </div>
 
-    <div v-if="connection.state === 'signing-in'" class="space-y-2">
-      <p class="text-muted">
-        <RunUiText name="runui_connectionAllowWithCode">
-          <template #app>
-            <strong>{{ appName }}</strong>
-          </template>
-          <template #code>
-            <code class="text-highlighted">{{ connection.userCode }}</code>
-          </template>
-        </RunUiText>
-      </p>
-      <div class="flex flex-wrap gap-2">
-        <UButton
-          v-if="connection.verificationUrl"
-          color="neutral"
-          variant="outline"
-          @click="openPage(connection.verificationUrl)"
-          >{{ t('runui_connectionOpenPageAgain') }}</UButton
-        >
-        <UButton color="neutral" variant="ghost" :loading="busy" @click="disconnect">{{
-          t('runui_commonCancel')
-        }}</UButton>
-      </div>
-    </div>
-
-    <form
-      v-else-if="!connected"
-      method="post"
-      class="flex flex-col sm:flex-row gap-2"
-      @submit.prevent="connect(instanceUrl)"
-    >
-      <UInput
-        v-model="instanceUrl"
-        type="url"
-        placeholder="https://piwi.example.com"
-        class="flex-1"
-        :aria-label="t('runui_connectionAddressLabel')"
-      />
-      <UButton type="submit" :loading="busy" :disabled="!instanceUrl.trim()">{{
-        t('runui_connectionConnect')
-      }}</UButton>
-    </form>
-
+    <DesktopTeamSignIn v-if="connection.state === 'signing-in'" :app-name="appName" />
+    <DesktopTeamConnectForm v-else-if="!connected" />
     <template v-else>
       <div class="space-y-1">
         <div class="text-muted">{{ t('runui_connectionLinkedFolders') }}</div>
-        <p v-if="Object.keys(folders).length === 0" class="text-xs text-muted">
-          {{ t('runui_connectionNoLinkedFolder') }}
-        </p>
-        <ul v-else class="divide-y divide-default rounded-md border border-default">
-          <li v-for="(folder, projectId) in folders" :key="projectId" class="flex items-center gap-3 min-w-0 px-3 py-2">
-            <UIcon name="i-lucide-folder" class="size-4 shrink-0 text-muted" />
-            <div class="min-w-0 flex-1">
-              <div class="text-xs font-medium text-highlighted">
-                {{ connection.projectNames[Number(projectId)] || t('runui_connectionProject', { id: projectId }) }}
-              </div>
-              <code class="block text-xs text-muted break-all">{{ folder }}</code>
-            </div>
-            <UButton color="neutral" variant="ghost" size="xs" @click="unlink(String(projectId))">{{
-              t('runui_connectionUnlink')
-            }}</UButton>
-          </li>
-        </ul>
+        <DesktopTeamFolders />
       </div>
-      <UButton color="neutral" variant="outline" :loading="busy" @click="disconnect">{{
+      <UButton color="neutral" variant="outline" :loading="busy" :disabled="keeping" @click="disconnect">{{
         t('runui_connectionDisconnect')
       }}</UButton>
     </template>

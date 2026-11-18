@@ -127,6 +127,21 @@ export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent, at: number 
   }
 }
 
+/** The runs that ended, the last to end first. */
+export function runnerFinishedRuns(runs: readonly RunnerRun[]): RunnerRun[] {
+  return runs.filter((run) => run.status !== 'running').sort((a, b) => (b.endedAt ?? 0) - (a.endedAt ?? 0));
+}
+
+/**
+ * The hub's live runs no run of `runs` is: the window was reloaded while they went on, so it holds no entry for them.
+ */
+export function runnerUnlistedSessions<S extends { ref: string; ended: boolean }>(
+  sessions: readonly S[],
+  runs: readonly RunnerRun[],
+): S[] {
+  return sessions.filter((session) => !session.ended && !runs.some((run) => isRunnerRunRef(session.ref, run.shellId)));
+}
+
 /** How long a run took, or has taken so far at `now`, in ms. */
 export function runnerRunDuration(run: Pick<RunnerRun, 'startedAt' | 'endedAt'>, now: number): number {
   return Math.max(0, (run.endedAt ?? now) - run.startedAt);
@@ -140,15 +155,11 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
   let nextKey = 1;
   let waiting: RunnerRunEvent[] = [];
 
+  /** Drops the runs that ended longest ago beyond `RUNNER_MAX_FINISHED`: never a running one, nor one that just ended. */
   function trim(): void {
-    let finished = 0;
-    for (let i = 0; i < runs.length; i++) {
-      if (runs[i]!.status === 'running') continue;
-      finished++;
-      if (finished > RUNNER_MAX_FINISHED) {
-        runs.splice(i, 1);
-        i--;
-      }
+    const dropped = new Set(runnerFinishedRuns(runs).slice(RUNNER_MAX_FINISHED));
+    for (let i = runs.length - 1; i >= 0; i--) {
+      if (dropped.has(runs[i]!)) runs.splice(i, 1);
     }
   }
 

@@ -69,19 +69,19 @@
   },
   "runner_runInBackground": {
     "message": "Run in background",
-    "description": "Checkbox of the window, and the same item in the tray menu: closing the window keeps Piwi Runner in the tray."
+    "description": "Switch of the window's settings, and the same item in the tray menu: closing the window keeps Piwi Runner in the tray."
   },
   "runner_runInBackgroundHint": {
     "message": "Closing the window keeps Piwi Runner in the tray: the instance reaches this machine only while it runs. Turned off, closing the window quits it.",
-    "description": "Under the Run in background checkbox: what it does."
+    "description": "Under the Run in background switch: what it does."
   },
   "runner_startOnLogin": {
     "message": "Start on login",
-    "description": "Checkbox, and the same item in the tray menu: Piwi Runner starts when the person signs in to their computer."
+    "description": "Switch of the window's settings, and the same item in the tray menu: Piwi Runner starts when the person signs in to their computer."
   },
   "runner_startOnLoginHint": {
     "message": "Starts Piwi Runner in the tray when you sign in.",
-    "description": "Under the Start on login checkbox: what it does."
+    "description": "Under the Start on login switch: what it does."
   },
   "runner_saveFailed": {
     "message": "Could not save the setting",
@@ -119,7 +119,7 @@
   },
   "runner_settingsHeading": {
     "message": "Settings",
-    "description": "Tab of the window that holds the connection, the background settings, the language and the app's version. One short word."
+    "description": "Tab of the window that holds the settings: the connection, the linked folders, the background settings, the language and About. One short word."
   },
   "runner_connectionSettings": {
     "message": "Connection settings",
@@ -197,7 +197,7 @@
   },
   "runner_openInstance": {
     "message": "Open $host$",
-    "description": "Button under the empty list of runs: opens the team instance in the browser. $host$ is its address without the scheme.",
+    "description": "Button: opens the team instance in the browser, under the empty list of runs and in the connection's settings. $host$ is its address without the scheme.",
     "placeholders": {
       "host": {
         "content": "$1",
@@ -217,7 +217,7 @@
   },
   "runner_outputLines_one": {
     "message": "$count$ line",
-    "description": "Beside runner_output: how many lines of output the run printed, singular.",
+    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), singular.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -227,7 +227,7 @@
   },
   "runner_outputLines_other": {
     "message": "$count$ lines",
-    "description": "Beside runner_output: how many lines of output the run printed, plural.",
+    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), plural.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -241,7 +241,7 @@
   },
   "runner_aboutHeading": {
     "message": "About",
-    "description": "Heading of the card of the settings that shows the app's version and its links."
+    "description": "Heading of the card that shows the app's version and its links, and its item in the list of the settings' sections. One or two words."
   },
   "runner_version": {
     "message": "Version $version$",

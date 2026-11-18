@@ -7,7 +7,9 @@ import {
   finishedStatus,
   isRunnerRunRef,
   noteRunPages,
+  runnerFinishedRuns,
   runnerRunDuration,
+  runnerUnlistedSessions,
   runnerShellIdOf,
   runnerShownRefs,
   type RunnerRun,
@@ -169,6 +171,38 @@ describe('a run', () => {
     expect(runs).toContain(first);
   });
 
+  test('a run that ends after many shorter ones keeps its place, and the one that ended longest ago goes', async () => {
+    let id = 0;
+    const { runs, book, clock } = setup(async () => ++id as never);
+    const long = await book.start(input);
+    for (let i = 0; i < RUNNER_MAX_FINISHED; i++) {
+      clock.now += 1_000;
+      await book.start(input);
+      book.handle({ id: id, kind: 'exit', code: 0 });
+    }
+    const finishedBefore = runnerFinishedRuns(runs);
+    const endedFirst = finishedBefore[finishedBefore.length - 1];
+    clock.now += 1_000;
+    book.handle({ id: long.shellId!, kind: 'exit', code: 1 });
+    expect(runs).toContain(long);
+    expect(runs).not.toContain(endedFirst);
+    expect(runnerFinishedRuns(runs)).toHaveLength(RUNNER_MAX_FINISHED);
+    expect(runnerFinishedRuns(runs)[0]).toBe(long);
+  });
+
+  test('the runs that ended are listed the last to end first', async () => {
+    let id = 0;
+    const { runs, book, clock } = setup(async () => ++id as never);
+    const first = await book.start(input);
+    const second = await book.start(input);
+    clock.now = 2_000;
+    book.handle({ id: 2, kind: 'exit', code: 0 });
+    clock.now = 3_000;
+    book.handle({ id: 1, kind: 'exit', code: 1 });
+    expect(runs).toEqual([second, first]);
+    expect(runnerFinishedRuns(runs)).toEqual([first, second]);
+  });
+
   test('Clear finished removes the runs that ended and keeps the running ones', async () => {
     let id = 0;
     const { runs, book } = setup(async () => ++id as never);
@@ -206,6 +240,19 @@ describe('the hub’s name of a run', () => {
     expect(runnerShownRefs(runs)).toEqual(['desktop-7']);
     book.handle({ id: 7, kind: 'exit', code: 0 });
     expect(runnerShownRefs(runs)).toEqual([]);
+  });
+});
+
+describe('the hub’s runs this window holds no entry for', () => {
+  test('are its live runs that no run of the window is', async () => {
+    const { runs, book } = setup();
+    await book.start(input);
+    const sessions = [
+      { ref: 'desktop-7', ended: false },
+      { ref: 'desktop-8', ended: false },
+      { ref: 'desktop-9', ended: true },
+    ];
+    expect(runnerUnlistedSessions(sessions, runs)).toEqual([{ ref: 'desktop-8', ended: false }]);
   });
 });
 
