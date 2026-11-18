@@ -304,3 +304,23 @@ export function duplicateCiActionName(name: string, taken: string[]): string {
   for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = named(` (copy ${n})`);
   return candidate;
 }
+
+/**
+ * A duplicate of an action: a new id, a name unlike any `taken` one (`duplicateCiActionName`), and every other field
+ * copied, except an environment `archived` says is archived, which the duplicate leaves for any environment.
+ */
+export function duplicateCiAction(
+  action: CiAction,
+  taken: string[],
+  archived: (environmentId: number) => boolean,
+): CiAction {
+  const { environment, environmentId, ...fields } = structuredClone(action);
+  const keepsEnvironment = environmentId === undefined || !archived(environmentId);
+  return {
+    ...fields,
+    ...(keepsEnvironment && environment !== undefined ? { environment } : {}),
+    ...(keepsEnvironment && environmentId !== undefined ? { environmentId } : {}),
+    id: newCiActionId(),
+    name: duplicateCiActionName(action.name, taken),
+  };
+}

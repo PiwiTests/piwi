@@ -1,18 +1,24 @@
 <script setup lang="ts">
 /**
  * A commit range as the Changes tab shows it: its two ends, the host's compare page when there is one, and the
- * `git log` command to copy.
+ * `git log` command to copy. A `plain` range shows its ends as mono text and its compare page as a neutral outline
+ * button, for a second range on a screen whose first one carries the accent.
  */
 import type { CommitRange } from '#shared/utils/run-metadata';
 
-defineProps<{ range: CommitRange }>();
+withDefaults(defineProps<{ range: CommitRange; plain?: boolean }>(), { plain: false });
 
 const { copy, copied } = useCopy();
 </script>
 
 <template>
   <div class="space-y-3">
-    <div class="flex flex-wrap items-center gap-2 text-sm font-mono">
+    <div v-if="plain" class="flex flex-wrap items-center gap-2 text-sm font-mono text-highlighted">
+      <span>{{ range.fromShort }}</span>
+      <UIcon name="i-lucide-arrow-right" class="size-3 text-muted" />
+      <span>{{ range.toShort }}</span>
+    </div>
+    <div v-else class="flex flex-wrap items-center gap-2 text-sm font-mono">
       <UBadge color="success" variant="soft" size="sm">{{ range.fromShort }}</UBadge>
       <UIcon name="i-lucide-arrow-right" class="size-3 text-muted" />
       <UBadge color="error" variant="soft" size="sm">{{ range.toShort }}</UBadge>
@@ -25,8 +31,8 @@ const { copy, copied } = useCopy();
         external
         icon="i-lucide-external-link"
         size="sm"
-        variant="soft"
-        color="primary"
+        :variant="plain ? 'outline' : 'soft'"
+        :color="plain ? 'neutral' : 'primary'"
         label="View commits"
       />
       <div class="flex items-center gap-1.5 flex-1 min-w-0">

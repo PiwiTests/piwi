@@ -6,7 +6,7 @@
  * Duplicate, Check and Remove. Edits stay in the form until the settings are
  * saved; Check reads the action as it is in the form.
  */
-import { duplicateCiActionName } from '~/utils/ci-action-form';
+import { duplicateCiAction } from '~/utils/ci-action-form';
 import {
   CI_ACTION_DEFAULT_KEYS,
   CI_ACTION_KINDS,
@@ -14,7 +14,6 @@ import {
   MAX_CI_ACTIONS,
   ciActionDefaultKinds,
   ciActionTargetSummary,
-  newCiActionId,
   type CiAction,
   type CiActionCheckResult,
   type CiActionKind,
@@ -90,11 +89,11 @@ function saveAction(action: CiAction, defaultFor: CiActionKind[]) {
 
 function duplicate(action: CiAction) {
   if (full.value) return;
-  const name = duplicateCiActionName(
-    action.name,
+  const copy = duplicateCiAction(
+    toRaw(action),
     settings.value.actions.map((a) => a.name),
+    (environmentId) => environmentById(environmentId)?.archived === true,
   );
-  const copy: CiAction = { ...structuredClone(toRaw(action)), id: newCiActionId(), name };
   const at = settings.value.actions.findIndex((a) => a.id === action.id);
   const actions = [...settings.value.actions];
   actions.splice(at + 1, 0, copy);

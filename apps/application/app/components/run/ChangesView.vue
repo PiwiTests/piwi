@@ -461,7 +461,7 @@ function clusterIssue(tc: TestCaseResult) {
               <template v-else>Unknown</template>
             </dd>
           </dl>
-          <CommitRangeLinks v-if="data.deployed.range" :range="data.deployed.range" />
+          <CommitRangeLinks v-if="data.deployed.range" :range="data.deployed.range" plain />
           <p v-else-if="bothOnOneCommit" class="text-sm text-highlighted">
             Both runs tested the same deployed commit: the application did not change between them.
           </p>

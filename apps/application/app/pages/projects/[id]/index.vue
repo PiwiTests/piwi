@@ -160,6 +160,8 @@ const drillText = computed(() => drill.value?.period?.label ?? null);
 interface ScopedRun {
   startTime: string | Date;
   environment?: string | null;
+  /** The key of the environment the run's label resolves to, as the server read it; null for none. */
+  environmentKey?: string | null;
   branch?: string | null;
   isFullRun?: boolean;
   metadata?: { scm?: { branch?: string | null } } | null;
@@ -187,8 +189,12 @@ const environmentFilterChoices = computed(() =>
   }),
 );
 
-/** The key of the environment a run's label resolves to, which the filter matches like the label. */
-function environmentKeyOf(run: { environment?: string | null }): string | null {
+/**
+ * The key of the environment a run's label resolves to, which the filter matches like the label: the one the run was
+ * read with, else the one the project's environments name.
+ */
+function environmentKeyOf(run: { environment?: string | null; environmentKey?: string | null }): string | null {
+  if (run.environmentKey !== undefined) return run.environmentKey;
   return environmentForLabel(run.environment)?.key ?? null;
 }
 
@@ -264,7 +270,7 @@ function resetFilters(): void {
 const filtersActive = computed(
   () =>
     filters.value.environments.length > 0 ||
-    !!filters.value.allEnvironments ||
+    (!!defaultEnvironment.value && !!filters.value.allEnvironments) ||
     filters.value.branches.length > 0 ||
     !!filters.value.allBranches ||
     !filters.value.fullRunsOnly,

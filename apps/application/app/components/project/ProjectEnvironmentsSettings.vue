@@ -4,13 +4,16 @@
  * Production), in the order every picker shows them, the archived ones apart. A run's label resolves to one by its key
  * or an alias; a label nothing takes adds a discovered one. The project's managers add, edit, reorder, archive and
  * delete them, and copy another project's; everyone else reads the list. Each row opens the environment's activity
- * (`ProjectEnvironmentActivity`): its last run, last incident, deploys and deployed versions.
+ * (`ProjectEnvironmentActivity`): its last run, last incident, deploys and deployed versions. Emits `saved` after a
+ * change, since the project's default environment can follow it.
  */
 import type { ProjectWithStats, ProjectWithTestRuns } from '~~/types/api';
 import type { EnvironmentRecord } from '#shared/environments';
+import type { DefaultEnvironment } from '#shared/handlers/default-environment';
 import { environmentMoves } from '~/utils/environment-form';
 
 const props = defineProps<{ project: ProjectWithTestRuns }>();
+const emit = defineEmits<{ saved: [] }>();
 
 const toast = useToast();
 const { can } = useAuth();
@@ -18,10 +21,11 @@ const canManage = computed(() => can('project:manage', props.project.id));
 const { environments, loaded, refresh } = useProjectEnvironments(() => props.project.id);
 const { forget: forgetRunVariables } = useProjectRunVariables(() => props.project.id);
 
-/** After a change: the list read again, and the commands' run variables read again when next asked. */
+/** After a change: the list and the project read again, and the commands' run variables read again when next asked. */
 async function changed() {
   forgetRunVariables();
   await refresh();
+  emit('saved');
 }
 
 const reading = ref(true);
@@ -38,14 +42,14 @@ const ordered = computed(() => [...environments.value].sort((a, b) => a.position
 const current = computed(() => ordered.value.filter((environment) => !environment.archived));
 const archived = computed(() => ordered.value.filter((environment) => environment.archived));
 
-/** One environment's facts in a line: its key, aliases, run variables, env file, and how it runs. */
+/** One environment's facts in a line: its aliases, run variables, env file, and whether it is deployed. */
 function facts(environment: EnvironmentRecord): string[] {
   const parts: string[] = [];
   if (environment.aliases.length) parts.push(`also ${environment.aliases.join(', ')}`);
   const variables = environment.runVariables.length;
   if (variables) parts.push(variables === 1 ? '1 run variable' : `${variables} run variables`);
   if (environment.envFile) parts.push(environment.envFile);
-  if (environment.appFromCheckout) parts.push('built from the checkout');
+  if (!environment.appFromCheckout) parts.push('deployed');
   if (environment.protected) parts.push(`protected, ${environment.requiredTags.join(' ')}`);
   if (environment.discovered) parts.push('discovered from a run’s label');
   return parts;
@@ -156,7 +160,14 @@ const copyOpen = ref(false);
 const copyFrom = ref<number | undefined>(undefined);
 const copying = ref(false);
 const copyError = ref<string | null>(null);
-const copyResult = ref<{ copied: EnvironmentRecord[]; skipped: string[] } | null>(null);
+/** What `POST /api/projects/:id/environments/copy` answers. */
+interface CopyResult {
+  copied: EnvironmentRecord[];
+  skipped: string[];
+  /** The default environment the copy gave this project, which had none; null when it gave none. */
+  defaultEnvironment: DefaultEnvironment | null;
+}
+const copyResult = ref<CopyResult | null>(null);
 const sources = ref<ProjectWithStats[]>([]);
 const sourcesLoaded = ref(false);
 
@@ -186,10 +197,10 @@ async function copy() {
   copying.value = true;
   copyError.value = null;
   try {
-    copyResult.value = await $fetch<{ copied: EnvironmentRecord[]; skipped: string[] }>(
-      `/api/projects/${props.project.id}/environments/copy`,
-      { method: 'POST', body: { fromProjectId: copyFrom.value } },
-    );
+    copyResult.value = await $fetch<CopyResult>(`/api/projects/${props.project.id}/environments/copy`, {
+      method: 'POST',
+      body: { fromProjectId: copyFrom.value },
+    });
   } catch (e) {
     copyError.value = errorMessage(e, 'The environments could not be copied.');
   } finally {
@@ -209,7 +220,10 @@ const copySummary = computed(() => {
     result.skipped.length === 0
       ? ''
       : ` Left as they were, since this project already names them: ${result.skipped.join(', ')}.`;
-  return copied + skipped;
+  const carried = result.defaultEnvironment
+    ? ` ${result.defaultEnvironment.name} is now this project's default environment, as it is the other project's.`
+    : '';
+  return copied + skipped + carried;
 });
 
 /** The Playwright config that reads an environment's run variables, as the docs show it. */
@@ -290,6 +304,7 @@ export default wrapConfig(
               <button
                 type="button"
                 :class="[SENTENCE_LINK_CLASS, 'text-xs text-muted']"
+                :aria-label="`Last run, incidents and deploys of ${environment.name}`"
                 data-testid="environment-activity-open"
                 @click="showActivity(environment)"
               >

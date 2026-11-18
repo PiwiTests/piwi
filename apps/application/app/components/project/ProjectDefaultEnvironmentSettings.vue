@@ -3,6 +3,7 @@
  * Project settings → Environments: the default environment, which the project page and its tabs, the flaky list,
  * Analytics, quarantine candidates, pull request feedback and MCP's flaky list read when no environment is picked, as
  * they read the default branch. Its managers pick one of the environments that are not archived, or every environment.
+ * An archived default reads as every environment, and the select keeps it as the current value until it is changed.
  */
 import type { ProjectWithTestRuns } from '~~/types/api';
 
@@ -14,17 +15,26 @@ const ALL = 'all';
 
 const { can } = useAuth();
 const canManage = computed(() => can('project:manage', props.project.id));
-const { active } = useProjectEnvironments(() => props.project.id);
+const { active, byId } = useProjectEnvironments(() => props.project.id);
 
-const stored = () => ({ value: String(props.project.effectiveDefaultEnvironment?.id ?? ALL) });
+const stored = () => ({ value: String(props.project.defaultEnvironmentId ?? ALL) });
 const { state, dirty } = useStoredForm(stored);
 const { saving, save } = useProjectPatch(() => props.project.id);
+
+/** The stored default when it is archived: the views read every environment until it is changed. */
+const archivedDefault = computed(() => {
+  const environment = byId(props.project.defaultEnvironmentId);
+  return environment?.archived ? environment : null;
+});
 
 const items = computed(() => [
   { label: 'All environments', value: ALL },
   ...[...active.value]
     .sort((a, b) => a.position - b.position || a.id - b.id)
     .map((environment) => ({ label: environment.name, value: String(environment.id) })),
+  ...(archivedDefault.value
+    ? [{ label: `${archivedDefault.value.name} (archived)`, value: String(archivedDefault.value.id) }]
+    : []),
 ]);
 
 async function submit() {
@@ -60,6 +70,10 @@ async function submit() {
           aria-label="Default environment"
           data-testid="default-environment-select"
         />
+        <p v-if="archivedDefault" class="text-xs text-muted" data-testid="default-environment-archived">
+          {{ archivedDefault.name }} is archived, so the views read every environment until you pick another one or
+          unarchive it.
+        </p>
       </div>
 
       <template v-if="canManage" #footer>
