@@ -287,10 +287,15 @@ Supplying secrets from the instance (the credential manager) is not in this plan
 A protected environment (production, as a rule) holds at least one required tag. Every run Piwi starts against it:
 
 - **is confirmed**: the person confirms with the environment's name shown, in the desktop app, in a target's
-  confirmation and in the editors' question;
-- **runs only the tests carrying one of its required tags**: the path adds one `--grep` that requires a tag and keeps
-  the run's own pattern (`(?=.*(@smoke|@readonly))(?=.*<the run's grep>)`), and the command shown carries it. A
-  request's tests that carry none are listed as left out;
+  confirmation and in the editors' question, and the desktop shell and a target refuse a protected environment whose
+  key the person did not confirm for that run;
+- **runs only the tests carrying one of its required tags**: the path adds one `--grep-invert` that leaves out every
+  test carrying none (`requiredTagsGrepInvert`, merged with the run's own `--grep-invert`), and the command shown
+  carries it. Playwright still runs the setup and teardown projects the selected tests depend on, whole: every
+  confirmation says so. A Reproduce that would select no test stops with words, never a verdict; Bisect, Flake Lab and
+  a bug report's reproduction never run against a protected environment; a copied command that cannot take the
+  filter (a Flake Lab command) is never offered for one. On Windows, the editors start a protected run with the
+  folder's Playwright CLI under `node`, so cmd never reads the filter;
 - **is started by a project manager only**: the instance answers a protected environment's variables, and takes a
   request naming it, only for someone holding `project:manage` on the project; the desktop app's own server has one
   person, who manages its projects;
