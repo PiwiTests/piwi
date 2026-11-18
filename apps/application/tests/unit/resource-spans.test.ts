@@ -4,10 +4,12 @@ import {
   buildSpanTails,
   leftOpenAcross,
   leftOpenPages,
+  leftOpenSeries,
   minSteps,
   tailAt,
   tailsPath,
 } from '../../app/utils/resource-spans';
+import { buildResourceBands } from '../../app/utils/resource-tracks';
 import type { WorkerRow } from '../../app/composables/useTimelineModel';
 import type { RunResourceTimelinePart } from '../../shared/handlers/run-resources';
 import type { WireResourceSpan } from '../../shared/types';
@@ -123,6 +125,68 @@ describe('the pages left open, and the tail under the pointer', () => {
   test('draws each verdict’s tails at their sub-lines', () => {
     expect(tailsPath(tails!.tails, 'lingering', 4, 6)).toBe('M2500,12H2600V16H2500Z');
     expect(tailsPath(tails!.tails, 'leaked', 4, 6)).toBe('M1000,0H5000V4H1000ZM2000,6H3000V10H2000Z');
+  });
+});
+
+describe('leftOpenSeries', () => {
+  // Worker 0 holds a leaked browser whose four pages closed one after another: never more than two at once.
+  const open: Array<[number, number]> = [
+    [0, 2],
+    [1000, 4],
+    [3000, 2],
+    [9000, 0],
+  ];
+  const browser = span(0, 1000, 9000, { kind: 'browser', pages: 4, untilWorkerEnd: true, scope: 'describe' });
+  const rows = [row(null, 0, [0], 0)];
+  const seriesOf = (pages: RunResourceTimelinePart['timeline']['pages']) => {
+    const base = part(null, [browser]);
+    const parts = [{ ...base, timeline: { ...base.timeline, pages } }];
+    return leftOpenSeries(
+      buildResourceBands(parts, rows, 9_000, false),
+      buildSpanTails(parts, rows, 9_000, false),
+      rows,
+    );
+  };
+
+  test('takes the series the reporter sent, each page over its own stretch', () => {
+    const leftOpen: Array<[number, number]> = [
+      [1000, 2],
+      [3000, 1],
+      [9000, 0],
+    ];
+    const { byLane, byBand } = seriesOf([{ worker: 0, points: open, leftOpen }]);
+    const expected = [
+      [0, 0],
+      [1000, 2],
+      [3000, 1],
+      [9000, 0],
+    ];
+    expect(byLane.get(0)).toEqual(expected);
+    expect(byBand.get('resources-all')).toEqual(expected);
+  });
+
+  test('counts the leaks’ pages over their spans from a reporter that sent no series', () => {
+    const { byLane, byBand } = seriesOf([{ worker: 0, points: open }]);
+    const expected = [
+      [0, 0],
+      [1000, 4],
+      [3000, 2],
+      [9000, 0],
+    ];
+    expect(byLane.get(0)).toEqual(expected);
+    expect(byBand.get('resources-all')).toEqual(expected);
+  });
+
+  test('leaves out the rows and bands with no page left open', () => {
+    const { byLane, byBand } = seriesOf([
+      { worker: 0, points: open, leftOpen: [] },
+      { worker: 1, points: open, leftOpen: [[0, 1]] },
+    ]);
+    expect(byLane.size).toBe(0);
+    expect(byBand.get('resources-all')).toEqual([
+      [0, 1],
+      [9000, 0],
+    ]);
   });
 });
 

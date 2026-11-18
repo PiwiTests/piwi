@@ -115,6 +115,7 @@ describe('buildResourceBands', () => {
           [6000, 1],
           [7000, 0],
         ],
+        leftOpen: null,
       },
       {
         name: 'Worker 2',
@@ -123,14 +124,62 @@ describe('buildResourceBands', () => {
           [500, 1],
           [2000, 0],
         ],
+        leftOpen: null,
       },
     ]);
+    expect(band!.leftOpen).toBeNull();
     expect(band!.tracks.pages).toMatchObject({ yMax: 3, step: true, scaleLabel: 'peak 3' });
     expect(band!.tracks.pages!.points).toEqual([
       [0, 1],
       [500, 2],
       [1000, 3],
       [2000, 2],
+      [5000, 0],
+      [6000, 1],
+      [7000, 0],
+    ]);
+  });
+
+  test('sums the pages left open of a lane’s processes, and of the band’s, when the reporter sent them', () => {
+    const base = part(null);
+    const [worker0, worker2, worker1] = base.timeline.pages;
+    const pages = [
+      {
+        ...worker0!,
+        leftOpen: [
+          [2000, 1],
+          [6000, 0],
+        ] as Array<[number, number]>,
+      },
+      {
+        ...worker2!,
+        leftOpen: [
+          [7000, 1],
+          [8000, 0],
+        ] as Array<[number, number]>,
+      },
+      worker1!,
+    ];
+    const [band] = buildResourceBands(
+      [{ ...base, timeline: { ...base.timeline, pages } }],
+      [row(null, 0, [0, 2], 0), row(null, 1, [1], 1)],
+      10_000,
+      false,
+    );
+    expect(band!.workers.map((w) => [w.name, w.leftOpen])).toEqual([
+      [
+        'Worker 1',
+        [
+          [1000, 1],
+          [5000, 0],
+          [6000, 1],
+          [7000, 0],
+        ],
+      ],
+      ['Worker 2', []],
+    ]);
+    expect(band!.leftOpen).toEqual([
+      [1000, 1],
       [5000, 0],
       [6000, 1],
       [7000, 0],

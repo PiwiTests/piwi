@@ -67,6 +67,7 @@ describe('sanitizeResourceReport', () => {
     expect(sanitizeResourceReport(JSON.parse(JSON.stringify(sent)))).toEqual(sent);
     const timed = timedReport(null);
     expect(timed.timeline).not.toBeNull();
+    expect(timed.timeline!.pages.every((entry) => entry.leftOpen?.length)).toBe(true);
     expect(sanitizeResourceReport(JSON.parse(JSON.stringify(timed)))).toEqual(timed);
   });
 
@@ -84,8 +85,9 @@ describe('sanitizeResourceReport', () => {
               [0, 1.6],
               [10, 'x'],
             ],
+            leftOpen: [[5, 0.6], [8, 'x'], [9, 0], 'y'],
           },
-          { worker: 1, points: [] },
+          { worker: 1, points: [], leftOpen: [[0, 1]] },
           { worker: 'a', points: [[0, 1]] },
         ],
         workers: [
@@ -110,7 +112,16 @@ describe('sanitizeResourceReport', () => {
         [3001, 50],
       ],
       memoryBytes: Array.from({ length: 600 }, (_, i) => [i * 5000, 1e9]),
-      pages: [{ worker: 0, points: [[0, 2]] }],
+      pages: [
+        {
+          worker: 0,
+          points: [[0, 2]],
+          leftOpen: [
+            [5, 1],
+            [9, 0],
+          ],
+        },
+      ],
       workers: [
         {
           worker: 0,

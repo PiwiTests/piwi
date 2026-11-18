@@ -60,8 +60,13 @@ export interface ResourceBand {
   /** The first lane of the band's shard: the band sits above it. */
   firstLane: number;
   tracks: Record<ResourceTrackKind, ResourceTrack | null>;
-  /** Each lane's open pages, named as its row is, with the row's first lane when the lane has a row. */
-  workers: Array<{ name: string; lane: number | null; points: SeriesPoint[] }>;
+  /**
+   * Each lane's open pages, named as its row is, with the row's first lane when the lane has a row, and how many of
+   * them were left open past their scope (`leftOpen`), null when the reporter sent no such series.
+   */
+  workers: Array<{ name: string; lane: number | null; points: SeriesPoint[]; leftOpen: SeriesPoint[] | null }>;
+  /** The pages left open across the band's workers, null when the reporter sent no such series. */
+  leftOpen: SeriesPoint[] | null;
   /** Each lane's worker processes with the browsers they started, as the run sampler read them. */
   sampled: Array<{ lane: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
   memoryKind: 'pss' | 'rss' | null;
@@ -138,16 +143,26 @@ export function buildResourceBands(
     const capacity = part.memoryCapacityBytes;
     const atCapacity = capacity !== null && capacity > 0 && capacity <= memoryPeak * CAPACITY_SCALE_RATIO;
 
-    // A lane's processes run one after another, so its pages are their sum.
-    const byLane = new Map<string, { name: string; lane: number | null; series: SeriesPoint[][] }>();
-    for (const { worker, points } of part.timeline.pages) {
+    // A lane's processes run one after another, so its pages, and the ones left open, are their sum.
+    const byLane = new Map<
+      string,
+      { name: string; lane: number | null; series: SeriesPoint[][]; left: SeriesPoint[][] }
+    >();
+    for (const { worker, points, leftOpen } of part.timeline.pages) {
       const row = shardRows.find((r) => r.processes.includes(worker));
       const name = row ? rowName(row, sharded) : `Process ${worker}`;
-      const entry = byLane.get(name) ?? { name, lane: row?.baseLane ?? null, series: [] };
+      const entry = byLane.get(name) ?? { name, lane: row?.baseLane ?? null, series: [], left: [] };
       entry.series.push(onClock(points));
+      if (leftOpen) entry.left.push(onClock(leftOpen));
       byLane.set(name, entry);
     }
-    const workers = [...byLane.values()].map(({ name, lane, series }) => ({ name, lane, points: sumSteps(series) }));
+    const sentLeftOpen = part.timeline.pages.some((entry) => entry.leftOpen);
+    const workers = [...byLane.values()].map(({ name, lane, series, left }) => ({
+      name,
+      lane,
+      points: sumSteps(series),
+      leftOpen: sentLeftOpen ? sumSteps(left) : null,
+    }));
 
     // A lane's processes ran one after another: their readings join in time order.
     const sampledByLane = new Map<number, { lane: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>();
@@ -196,6 +211,7 @@ export function buildResourceBands(
             : null,
       },
       workers,
+      leftOpen: sentLeftOpen ? sumSteps(workers.map((w) => w.leftOpen ?? [])) : null,
       sampled: [...sampledByLane.values()],
       memoryKind: part.memoryKind,
     });
