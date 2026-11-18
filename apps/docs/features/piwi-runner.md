@@ -58,6 +58,11 @@ requests reach the machine again once it answers. A click on it opens the connec
 folder linked to each project, with **Unlink**: the next request for that project asks for its folder again),
 **General** (the two background settings and the language) and **About**.
 
+<figure>
+  <img src="/screenshots/runner-settings.png" alt="Piwi Runner's Settings on its Connection section: the instance it is connected to, Open piwi.example.com, Disconnect, and the list of sections: Connection, Folders, General and About">
+  <figcaption>Settings, on the Connection section; the header says which instance Piwi Runner takes requests from.</figcaption>
+</figure>
+
 ## Pause and watch a run
 
 Each run Piwi Runner starts shows in its window live, as the desktop app's runs show in its
@@ -79,6 +84,11 @@ a moment ago comes in open, with what you had open on its card. The output keeps
 300 lines on screen: it opens on its own once the run failed or could not run, and **Copy output** copies all of it,
 up to its last 2,000 lines, without the colors. **Clear finished** empties the Finished list; the window keeps the
 last 15 runs that ended in any case, never dropping one the moment it ends.
+
+<figure>
+  <img src="/screenshots/runner-runs.png" alt="Piwi Runner's runs: under Running now, a run's card with its worker running, Pause, Watch, Hold failures and Stop; under Finished, a run that failed, open on its output in Playwright's colors">
+  <figcaption>A run going on, and one that just failed, open on its output.</figcaption>
+</figure>
 
 Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an
 editor starts, not Piwi Runner's.

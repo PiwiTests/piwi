@@ -58,6 +58,7 @@ npm run runner:format:check
 npm run runner:build         # dist/server.cjs (the host)
 npm run runner:window        # .output/public (the window, `nuxt generate`)
 npm run runner:e2e           # the window in French and German (Playwright), after runner:window
+PIWI_DOCS_SHOTS=1 npm run runner:e2e -- docs-screenshots   # the docs' runner-*.png, after runner:window
 npm run runner:stage         # copies dist/server.cjs and .output/public into the shell's resources/runner-host
 ```
 
