@@ -6,10 +6,11 @@ the desktop app, Piwi Runner and the editors, and changes the application under 
 by the Playwright config (`TEST_ENV=staging`): no path that starts a run lets them choose the environment, and the
 label their runs report is free text that eleven features read and eight settings copy.
 
-**Status.** Proposed 2026-11-18. Nothing is built. The maintainer settled four questions the same day: an environment
-sets variables only, never Playwright projects (D1); filters keep their `*` patterns (D4); a protected environment is
-confirmed, limited to its required tags and started by a project manager only (D9); the desktop app offers the
-environments of the team project a folder is linked to (D13).
+**Status.** Proposed 2026-11-18. Nothing is built. The maintainer settled the six open questions the same day: an
+environment sets variables only, never Playwright projects (D1); filters keep their `*` patterns (D4); a protected
+environment is confirmed, limited to its required tags and started by a project manager only (D9); the deployed commit
+comes from the server snapshot and from deploy markers (D11); the desktop app offers the environments of the team
+project a folder is linked to (D13); a project copies another's environments (D14).
 
 ## Summary
 
@@ -135,7 +136,7 @@ Each project keeps its own list of environments. Alternatives:
   copies, the variant labels and the missing default would stay.
 - **Environments of the instance, shared by projects**: a project's Staging is its own deployment, with its own URL
   and variables. Cross-project views (Home, Analytics across projects, the environment comparison) group environments
-  of the same key. Copying a project's environments to another is an open question.
+  of the same key. A project copies another's environments instead (D14).
 - **Playwright projects per environment** keep working as they are, where Piwi already lets the person pick a
   Playwright project: the environment is in the project's name. An environment sets variables only and never names
   Playwright projects (settled): a `--project` filter or a mapping of names (`chromium-staging` to
@@ -310,17 +311,36 @@ checkout:
 - **Bisect** walks the commits of the tests' repository. Against a deployed environment it can find a change of the
   tests, never one of the application: the dialog says so, and its picker starts on an environment built from the
   checkout.
-- **Suspect lines** and **change coverage** read the application's lines at the run's commit. For a deployed
-  environment they say that the deployed version may differ, until the server snapshot names its commit (open
-  question).
-- **The baseline's "what changed"** adds, for a deployed environment, the application version the server snapshots
-  saw at the baseline and at the run (`appVersion`, already compared by the automatic markers), and the deploy
-  markers between them; the AI diagnosis reads the same, with the environment's name and description.
+- **Suspect lines** and **change coverage** read the application's lines at the **deployed commit** below, and say
+  that the deployed version may differ from the run's commit when it is unknown.
+- **The baseline's "what changed"** adds, for a deployed environment, the application's commits between the
+  baseline's deployed commit and the run's (the commit range the Changes tab builds, `buildCommitRange`), else the
+  application versions the server snapshots saw, and the deploy markers between the two runs. The AI diagnosis reads
+  the same, with the environment's name and description.
+- **The first failing deploy**: a failure cluster of a deployed environment names the deploy marker between its last
+  passing run and its first failing one, as bisect names the first bad commit of an environment built from the
+  checkout.
 - **Pass reuse** ([pass-reuse.md](pass-reuse.md)) fingerprints the environment by id and, for a deployed one, by its
-  application version: a pass against yesterday's Staging says nothing about today's deploy. Without a known version,
-  a deployed environment's passes are not reused.
-- **The environment's page** in the settings lists its recent application versions, its last run and its last
-  environment incident.
+  deployed commit, else its application version: a pass against yesterday's Staging says nothing about today's
+  deploy. Without either, a deployed environment's passes are not reused.
+- **The environment's page** in the settings lists its recent deployed commits and application versions, its last
+  run and its last environment incident.
+
+**The deployed commit** (settled) comes from two sources, the first that answers winning:
+
+1. **The server snapshot** gains an optional `appCommit` (`ServerEnvironmentResponse` and `WireServerEnvironment` of
+   `@piwitests/core/wire`: an addition an older dashboard ignores, `v: 1` kept). The ASP.NET Core package takes it
+   from its option, else `PIWI_APP_COMMIT`, else the part after `+` of the entry assembly's informational version,
+   where the .NET SDK writes the source revision. The Nitro package takes it from its option, else
+   `PIWI_APP_COMMIT`, else the commit variable of the hosting platform it runs on (`VERCEL_GIT_COMMIT_SHA`,
+   `RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`, `SOURCE_COMMIT`). Nitro sends `appVersion: null` today, and gains
+   the same option and variable (`PIWI_APP_VERSION`) for it.
+2. **A deploy marker** gains a `commit`: the deploy pipeline posts it (`POST /api/projects/:id/markers`, category
+   `deploy`, the environment's key, the commit), for an application with no instrumentation package. The run takes
+   the commit of the environment's latest deploy marker before it starts. The docs show the step for GitHub Actions
+   and GitLab CI.
+
+A commit is 7 to 40 hexadecimal characters; any other value is ignored.
 
 ### D12. The integrations
 
@@ -349,6 +369,15 @@ team project's environments, read-only, beside the desktop project's own:
 
 A folder with no team project keeps the desktop project's own list.
 
+### D14. Copying environments from another project (settled)
+
+**Copy from another project**, in **Project → Settings → Environments**, copies the environments of a project the
+person can read into one they manage: key, name, description, aliases, run variables, built from the checkout,
+protection and required tags, env file and position, and the default environment when the project has none. URL
+patterns are not copied: they name the project's own site. An environment whose key the project already has is left
+as it is, and listed. The copies belong to the project from then on: nothing links them to their source, and a
+tenant's `BASE_URL` is edited on each copy.
+
 ## The instance's routes
 
 - `GET /api/projects/:id/environments` (`project:read`): the list and `defaultEnvironmentId`.
@@ -361,6 +390,9 @@ A folder with no team project keeps the desktop project's own list.
 - `POST /api/run-requests` takes `environmentId` (403 for a protected one without `project:manage`, refused for an
   agent); `GET /api/run-targets/requests/:id/run-variables` answers the
   merged list and the environment; the claim takes the `environments` feature.
+- `POST /api/projects/:id/environments/copy` (`{ fromProjectId }`, `project:manage` on the project, `project:read` on
+  the source): D14, answering the environments copied and those left as they were.
+- `POST /api/projects/:id/markers` and `PATCH /api/markers/:id` take `commit` (D11).
 - Run responses gain `environmentId` beside `environment`, the label. The demo's handlers and seed mirror them.
 
 ## Security
@@ -385,6 +417,8 @@ A folder with no team project keeps the desktop project's own list.
 - [1.0-stabilization.md](1.0-stabilization.md): a new entry for the environment routes, `environmentId` on runs, the
   `environments` claim feature and `PIWI_ENVIRONMENT` set by Piwi.
 - [pass-reuse.md](pass-reuse.md): the fingerprint's target environment is D11's.
+- [1.0-stabilization.md](1.0-stabilization.md) D65: the server snapshot gains `appCommit`, an addition to its frozen
+  field list; the markers routes gain `commit`.
 - The docs' **Environment** concept stops saying "not a configuration one".
 
 ## Delivery
@@ -397,14 +431,13 @@ A folder with no team project keeps the desktop project's own list.
    project's environments in the desktop app (D13). This is the step
    the asking team needs; steps 1 and 2 can ship together.
 3. **Analysis**: the default environment (D10), D11's effects on bisect, suspect lines, the baseline's changes, pass
-   reuse and the AI diagnosis.
-4. **Integrations**: the test management mapping, incidents on the environment, the rest of D12.
+   reuse and the AI diagnosis, the deployed commit in both instrumentation packages and on deploy markers, the first
+   failing deploy.
+4. **Integrations**: the test management mapping, incidents on the environment, the rest of D12, the copy of D14.
 
 ## Open questions
 
-- **Copying environments to other projects**: a multi-tenant team sets the same Staging on every tenant project.
-- **The deployed commit**: an `appCommit` in the server snapshot (`ServerEnvironmentResponse`) would let suspect lines
-  and change coverage read the deployed code.
+None: the six raised while writing this plan were settled on 2026-11-18 (see Status).
 
 ## Not in this plan
 
@@ -412,3 +445,4 @@ A folder with no team project keeps the desktop project's own list.
 - Deploying or provisioning an environment: Piwi records deploys (markers, server snapshots), it does not make them.
 - A config file per environment.
 - An environment naming Playwright projects (D1).
+- Environment templates of the instance that projects inherit (D14).
