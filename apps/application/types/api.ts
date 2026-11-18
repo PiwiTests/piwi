@@ -326,6 +326,8 @@ export interface ProjectUnscopedRun {
   id: number;
   startTime: string | Date;
   environment: string | null;
+  /** The key of the environment `environment` resolves to; null for none. */
+  environmentKey: string | null;
   branch: string | null;
   isFullRun: boolean;
   /** The viewer's own run, which the filters never hide. */
@@ -568,6 +570,8 @@ export interface TestRunSummary {
   reports?: ReportInfo[];
   browsers?: string[];
   environment?: string | null;
+  /** The key of the environment `environment` resolves to; null for none. Set on a project's run lists. */
+  environmentKey?: string | null;
   branch?: string | null;
   label?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

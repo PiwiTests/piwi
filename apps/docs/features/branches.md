@@ -59,7 +59,7 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 
 ## From an agent (MCP)
 
-The MCP `list_runs` tool takes a `branch` argument, so an agent can ask "what is failing on `main`" without pulling every run. `list_flaky_tests` takes no branch; it reads the same default-branch view as the dashboard's flaky leaderboard, in the project's default environment unless its `environment` argument names another. See the [MCP server](/features/mcp).
+The MCP `list_runs` tool takes a `branch` argument, so an agent can ask "what is failing on `main`" without pulling every run. `list_flaky_tests` takes no branch; it reads the same default-branch view as the dashboard's flaky leaderboard, in the project's default environment unless its `environment` argument names another or `allEnvironments` asks for every one. See the [MCP server](/features/mcp).
 
 ## Notifications
 

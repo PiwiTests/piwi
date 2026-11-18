@@ -145,13 +145,21 @@ const ANALYTICS_SCOPE_PROPERTIES = {
     description:
       'Only runs reported for these environments (default: each project’s default environment, every environment for a project without one)',
   },
-  allEnvironments: { type: 'boolean', description: 'Count every environment instead of the default environments' },
+  allEnvironments: {
+    type: 'boolean',
+    description:
+      'Count every environment instead of the default environments; false reads the default environments even over a dashboard that counts every one',
+  },
   branches: {
     type: 'array',
     items: { type: 'string' },
     description: 'Only runs on these branches (default: each project’s default branch plus runs with no known branch)',
   },
-  allBranches: { type: 'boolean', description: 'Count every branch instead of the default branches' },
+  allBranches: {
+    type: 'boolean',
+    description:
+      'Count every branch instead of the default branches; false reads the default branches even over a dashboard that counts every one',
+  },
   selection: { type: 'string', description: 'Test filter: a selection key (e.g. smoke), resolved in each project' },
   tags: { type: 'array', items: { type: 'string' }, description: 'Test filter: tests carrying all of these tags' },
   owners: {
@@ -273,7 +281,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'List a project’s flaky tests, highest flakiness score first.',
-      'It reads the runs of the project’s default branch, and of its default environment when it has one (every environment otherwise); `environment` reads another one instead.',
+      'It reads the runs of the project’s default branch, and of its default environment when it has one (every environment otherwise); `environment` reads another one instead, and `allEnvironments` every one.',
       'A test whose Flake Lab verify experiment held is left out until it passes on retry again.',
     ),
     inputSchema: {
@@ -284,6 +292,10 @@ export const MCP_TOOL_DEFS = [
           type: 'string',
           description:
             'Environment key, or one of its aliases, ignoring case (default: the project’s default environment)',
+        },
+        allEnvironments: {
+          type: 'boolean',
+          description: 'Read every environment instead of the project’s default environment (ignored with environment)',
         },
         runs: { type: 'number', description: 'Number of recent runs to analyze (default 50, max 200)' },
         pageSize: { type: 'number', description: 'Results per page (default 10, max 50)' },
@@ -1412,7 +1424,7 @@ export const MCP_TOOL_DEFS = [
         '`quarantine`: for a quarantine candidate, one of the costliest flaky tests by the CI minutes their flakiness wastes, which the flaky list marks proposed',
         '`release`: for a quarantined test whose passing streak or verified fix earned its way out (`list_open_clusters` with queue `quarantine-ready` finds their clusters)',
       ],
-      'It records the proposal as rejected, with your optional `reason`; nothing else changes, so the test stays out of quarantine, or in it. Dismissing the same proposal again records nothing more, and a dismissed quarantine proposal counts again once a newer run of those the candidates read arrives (a finished run on the default branch, or on none, that is no lab, bisect or reproduction run). Fails when the test has no such proposal.',
+      'It records the proposal as rejected, with your optional `reason`; nothing else changes, so the test stays out of quarantine, or in it. Dismissing the same proposal again records nothing more, and a dismissed quarantine proposal counts again once a newer run of those the candidates read arrives (a finished run on the default branch, or on none, in the project’s default environment when it has one, that is no lab, bisect or reproduction run). Fails when the test has no such proposal.',
       'Requires `quarantine:write` (Maintainer and above on the project).',
     ),
     inputSchema: {

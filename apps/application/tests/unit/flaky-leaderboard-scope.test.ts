@@ -5,6 +5,7 @@ import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 import { withStoredVerdicts } from './stored-verdicts';
+import { ADMIN_ACCESS } from '#shared/permissions';
 
 /**
  * Which runs the flaky leaderboard reads: with no branch named, those of the
@@ -17,6 +18,7 @@ delete process.env.PIWI_DATABASE_URL;
 const { getProjectFlakyTests, newestFlakyRunId } = await import('../../shared/handlers/projects');
 const { getAnalyticsFlakyLeaderboard } = await import('../../shared/handlers/analytics/flaky-leaderboard');
 const { parseAnalyticsScope } = await import('../../shared/analytics/scope');
+const { MCP_TOOLS } = await import('../../server/utils/mcp/tools');
 
 const HOUR_MS = 60 * 60 * 1000;
 const NOW = Date.now();
@@ -179,6 +181,20 @@ describe('a project with a default environment', () => {
       'flaky long ago',
       'flaky on prod',
     ]);
+  });
+
+  test('MCP’s list_flaky_tests reads it, every environment with allEnvironments, and a named one first', async () => {
+    const listFlakyTests = MCP_TOOLS.find((tool) => tool.name === 'list_flaky_tests')!.handler;
+    const ctx = { user: null, access: ADMIN_ACCESS, scope: 'all' as const };
+    const titles = async (params: Record<string, unknown>) => {
+      const page = (await listFlakyTests(db as any, { projectId: 3, pageSize: 50, ...params }, ctx)) as {
+        items: Array<{ title: string }>;
+      };
+      return page.items.map((item) => item.title).sort();
+    };
+    expect(await titles({})).toEqual(['flaky long ago', 'flaky on prod']);
+    expect(await titles({ allEnvironments: true })).toEqual(['flaky in firefox', 'flaky long ago', 'flaky on prod']);
+    expect(await titles({ allEnvironments: true, environment: 'firefox-only' })).toEqual(['flaky in firefox']);
   });
 
   test('the newest run the quarantine dismissals key on is the default environment’s', async () => {

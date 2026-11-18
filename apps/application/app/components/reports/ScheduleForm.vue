@@ -275,7 +275,7 @@ const filterSummary = computed(() => {
       : scopeProjects.value.map((id) => projectNames.value.get(id) ?? `#${id}`).join(', '),
   );
   if (f.environments) parts.push(`environments ${f.environments}`);
-  else if (f.allEnvironments === 'true') parts.push('all environments');
+  else parts.push(f.allEnvironments === 'true' ? 'all environments' : 'default environments');
   if (f.branches) parts.push(`branches ${f.branches}`);
   else parts.push(f.allBranches === 'true' ? 'all branches' : 'default branches');
   if (f.sel) parts.push(`selection ${f.sel}`);

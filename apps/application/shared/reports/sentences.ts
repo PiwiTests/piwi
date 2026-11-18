@@ -37,6 +37,11 @@ export interface ReportLabels {
   defaultBranch: string;
   allBranches: string;
   branches: string;
+  environmentPolicy: string;
+  defaultEnvironment: string;
+  allEnvironments: string;
+  /** A picked "No environment", among the environments a report names. */
+  noEnvironment: string;
   fullRunsOnly: string;
   allRuns: string;
   testFilter: string;

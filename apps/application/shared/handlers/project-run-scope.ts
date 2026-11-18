@@ -8,6 +8,7 @@ import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-defaul
 import { scopeEnvironments, type ProjectRunScope } from '../project-run-scope';
 import { notLabRun } from './probes';
 import { environmentScopeSql } from './environment-scope';
+import { defaultEnvironmentJoin } from './default-environment';
 import type { DrizzleDB } from './db';
 
 /**
@@ -28,14 +29,7 @@ export async function projectRunScopeConditions(
   const [project] = await db
     .select({ id: projects.id, defaultBranch: projects.defaultBranch, defaultEnvironment: environments.key })
     .from(projects)
-    .leftJoin(
-      environments,
-      and(
-        eq(environments.id, projects.defaultEnvironmentId),
-        eq(environments.projectId, projects.id),
-        isNull(environments.archivedAt),
-      ),
-    )
+    .leftJoin(environments, defaultEnvironmentJoin())
     .where(eq(projects.id, projectId));
   const defaultBranch = readsBranch ? await resolveStoredDefaultBranch(db, project ?? { id: projectId }) : '';
   return runScopeConditions(scope, defaultBranch, project?.defaultEnvironment ?? null);

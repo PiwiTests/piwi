@@ -177,7 +177,9 @@ export function parseScheduleBody<T>(schema: z.ZodType<T>, body: unknown): T {
 
 /**
  * The filters a schedule keeps from a scope: its period comes from the cadence, its comparison from the schedule.
- * A `files` list past the limits of a selection's is refused.
+ * With no environment picked, `allEnvironments` is always kept, true or false, as `defaultBranchOnly` is, so the
+ * dashboard's own environment policy never replaces the schedule's. A `files` list past the limits of a selection's
+ * is refused.
  */
 export function scheduleFilters(query: Record<string, string>): Partial<AnalyticsScope> {
   const filesErrors = scopeFilesErrors(query, 'scope.files');
@@ -190,7 +192,7 @@ export function scheduleFilters(query: Record<string, string>): Partial<Analytic
   if (scope.projectIds) keep.projectIds = scope.projectIds;
   if (scope.projectTags) keep.projectTags = scope.projectTags;
   if (scope.environments) keep.environments = scope.environments;
-  if (scope.allEnvironments) keep.allEnvironments = true;
+  else keep.allEnvironments = scope.allEnvironments === true;
   if (scope.branches) keep.branches = scope.branches;
   if (scope.selection) keep.selection = scope.selection;
   if (scope.tests) keep.tests = scope.tests;
@@ -768,6 +770,10 @@ async function collectScheduleBundle(
     granularity: 'auto',
     timeZone: ctx.timeZone,
   };
+  // Filters that pick no environment set the environment policy: every environment only when they say so.
+  if (values.filters && !values.filters.environments?.length) {
+    scope.allEnvironments = values.filters.allEnvironments === true;
+  }
   const bundle = await collectReportBundle(db, {
     dashboard: values.dashboard,
     scope,

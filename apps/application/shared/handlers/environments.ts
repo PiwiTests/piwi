@@ -29,7 +29,7 @@ import {
 } from '#shared/environments';
 import { storedRunVariables, type RunVariable } from '#shared/run-variables';
 import { runDeployedCommit, type DeployedCommit } from './deployed-commit';
-import { carryDefaultEnvironment } from './default-environment';
+import { carryDefaultEnvironment, type DefaultEnvironment } from './default-environment';
 import type { DrizzleDB } from './db';
 
 /**
@@ -687,14 +687,14 @@ export async function deleteEnvironment(
  * independent of its source. A protected environment is copied only for someone who manages the source project, since
  * its run variables are theirs to read; the others it holds are listed in `skipped`, as is an environment whose key or
  * one of its exact aliases the target already names. A target with no default environment takes the source's
- * (`carryDefaultEnvironment`).
+ * (`carryDefaultEnvironment`), which `defaultEnvironment` names; null when it took none.
  */
 export async function copyEnvironments(
   db: DrizzleDB,
   fromProjectId: number,
   toProjectId: number,
   { canManageSource }: { canManageSource: boolean },
-): Promise<{ copied: EnvironmentRecord[]; skipped: string[] }> {
+): Promise<{ copied: EnvironmentRecord[]; skipped: string[]; defaultEnvironment: DefaultEnvironment | null }> {
   const source = (await projectEnvironmentRows(db, fromProjectId)).filter((row) => !row.discovered);
   const copied: EnvironmentRecord[] = [];
   const skipped: string[] = [];
@@ -724,8 +724,8 @@ export async function copyEnvironments(
     else skipped.push(record.key);
   }
   if (copied.length > 0) await reresolveProjectRuns(db, toProjectId);
-  await carryDefaultEnvironment(db, fromProjectId, toProjectId);
-  return { copied, skipped };
+  const defaultEnvironment = await carryDefaultEnvironment(db, fromProjectId, toProjectId);
+  return { copied, skipped, defaultEnvironment };
 }
 
 export type EnvironmentRunSettings =

@@ -41,7 +41,7 @@ Each marker belongs to one project and carries:
 
 ## Environment scoping
 
-Markers tie into the project's existing **environment filter**. When you filter the project view to one or more environments, the charts show only markers of the selected environment(s) plus any global (no-environment) markers. This keeps a staging-only event from cluttering your production view. A marker belongs to an environment as a run does: a marker written for `stg`, an alias of Staging, shows under Staging, and so does the analytics period's count of markers.
+Markers tie into the project's existing **environment filter**. When you filter the project view to one or more environments, the charts show only markers of the selected environment(s) plus any global (no-environment) markers. This keeps a staging-only event from cluttering your production view. The analytics charts follow each project's environments the same way: with none picked, a project with a [default environment](./environments#default-environment) shows that environment's markers and the global ones, unless **All environments** is on. A marker belongs to an environment as a run does: a marker written for `stg`, an alias of Staging, shows under Staging, and so does the analytics period's count of markers.
 
 A marker keeps the label it was written with and the environment that label resolved to. Deleting the environment leaves the marker its label, matched as text.
 

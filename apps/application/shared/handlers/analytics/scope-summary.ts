@@ -7,13 +7,13 @@ import {
   testRunsCases,
   testSelections,
 } from '../../../server/database/schema';
-import { markerEnvironmentScopeSql } from '../environment-scope';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsMarker, AnalyticsScopeSummary } from '../../analytics/types';
 import { BUILTIN_SELECTIONS } from '../../selection/builtins';
 import { contextRunConditions, dayRange, getAnalyticsContext, type ProjectAccess } from './common';
 import { firstRollupDay } from './rollups';
+import { environmentPolicyMarkerCondition } from './environment-policy';
 
 /** Categories drawn on a cross-project trend; with one project in scope every marker is drawn. */
 const CROSS_PROJECT_MARKER_CATEGORIES = ['release', 'infra', 'incident'];
@@ -69,11 +69,9 @@ export async function getAnalyticsScopeSummary(
     projectFilter(markers.projectId),
   ];
   if (!singleProject) inPeriodConditions.push(inArray(markers.category, CROSS_PROJECT_MARKER_CATEGORIES));
-  // A marker counts under the filter's environments through its environment's key or its label; one of every
-  // environment always counts.
-  if (scope.environments && scope.environments.length > 0) {
-    inPeriodConditions.push(markerEnvironmentScopeSql(scope.environments) ?? undefined);
-  }
+  // A marker counts under the environments the scope reads, in its own project, through its environment's key or its
+  // label; one of every environment always counts.
+  inPeriodConditions.push(environmentPolicyMarkerCondition(ctx.environmentPolicy) ?? undefined);
 
   const [periodMarkers, anchors, selectionRows, browserRows, firstDay] = await Promise.all([
     none

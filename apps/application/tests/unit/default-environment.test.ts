@@ -111,6 +111,37 @@ describe('the project', () => {
     await updateEnvironment(db as never, SHOP, staging, { archived: true });
     expect((await getProject(db as never, SHOP)).effectiveDefaultEnvironment).toBeNull();
   });
+
+  test('gives each run the key of its environment, which an alias’s run shares, for the filters to match', async () => {
+    const created = await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases: ['stg'] });
+    if (!created.ok) throw new Error(created.problems.join(' '));
+    const staging = created.environment.id;
+    await updateProject(db as never, SHOP, { defaultEnvironmentId: staging });
+    const start = Date.parse('2026-10-01T12:00:00Z');
+    await db.insert(schema.testRuns).values(
+      ['stg', 'staging', null].map((label, i) => ({
+        projectId: SHOP,
+        status: 'passed',
+        branch: 'main',
+        environment: label,
+        environmentId: label ? staging : null,
+        startTime: new Date(start + i * 60_000),
+        metadata: {},
+        isFullRun: 1,
+      })),
+    );
+    const project = await getProject(db as never, SHOP, {
+      scope: { environments: [], allEnvironments: true, branches: [], allBranches: false, fullRunsOnly: true },
+    });
+    const keys = (runs: Array<{ environment?: string | null; environmentKey?: string | null }>) =>
+      runs.map((run) => [run.environment, run.environmentKey]);
+    expect(keys(project.testRuns)).toEqual([
+      [null, null],
+      ['staging', 'staging'],
+      ['stg', 'staging'],
+    ]);
+    expect(keys(project.unscopedRuns!)).toEqual(keys(project.testRuns));
+  });
 });
 
 describe('copying environments', () => {
@@ -119,13 +150,16 @@ describe('copying environments', () => {
     await environmentId(SHOP, 'production', 'Production');
     await updateProject(db as never, SHOP, { defaultEnvironmentId: staging });
 
-    const { copied } = await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: true });
-    expect(await storedDefault(OTHER)).toBe(copied.find((environment) => environment.key === 'staging')!.id);
+    const { copied, defaultEnvironment } = await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: true });
+    const carried = copied.find((environment) => environment.key === 'staging')!.id;
+    expect(await storedDefault(OTHER)).toBe(carried);
+    expect(defaultEnvironment).toEqual({ id: carried, key: 'staging', name: 'Staging' });
 
     const production = copied.find((environment) => environment.key === 'production')!.id;
     await updateProject(db as never, OTHER, { defaultEnvironmentId: production });
-    await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: true });
+    const again = await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: true });
     expect(await storedDefault(OTHER)).toBe(production);
+    expect(again.defaultEnvironment).toBeNull();
   });
 
   test('a copy that adds nothing still carries it to the target’s environment of that key', async () => {
@@ -135,6 +169,7 @@ describe('copying environments', () => {
     const result = await copyEnvironments(db as never, SHOP, OTHER, { canManageSource: true });
     expect(result.copied).toEqual([]);
     expect(await storedDefault(OTHER)).toBe(own);
+    expect(result.defaultEnvironment).toEqual({ id: own, key: 'Staging', name: 'Staging (Globex)' });
   });
 });
 

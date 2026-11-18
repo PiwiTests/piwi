@@ -817,6 +817,11 @@ export const FR_SENTENCES: ReportSentences = {
     defaultBranch: 'La branche par défaut de chaque projet, plus les exécutions sans branche connue',
     allBranches: 'Toutes les branches',
     branches: 'Branches',
+    environmentPolicy: 'Environnements',
+    defaultEnvironment:
+      'L’environnement par défaut de chaque projet, ou tous les environnements pour un projet qui n’en a pas',
+    allEnvironments: 'Tous les environnements',
+    noEnvironment: 'Aucun environnement',
     fullRunsOnly: 'Exécutions complètes seulement',
     allRuns: 'Exécutions complètes et partielles',
     testFilter: 'Tests',

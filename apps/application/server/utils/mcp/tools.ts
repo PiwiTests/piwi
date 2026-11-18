@@ -3,6 +3,7 @@ import { notPrivateExecution, notPrivateRun } from '#shared/run-eligibility';
 import {
   listProjects,
   getProjectFlakyTests,
+  getProjectFlakyTestsWithVerified,
   getProjectSlowTests,
   getProjectPerformance,
   getProjectTestCases,
@@ -11,7 +12,7 @@ import {
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { workerNumber } from '#shared/worker-lane';
-import { describeProjectRunScope } from '#shared/project-run-scope';
+import { describeProjectRunScope, type ProjectRunScope } from '#shared/project-run-scope';
 import { buildFixPlan } from '../fix-plan';
 import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
 import { withFixPlanSuspectLines } from '../suspect-lines';
@@ -537,6 +538,18 @@ function missingFieldsForAgent(missing: { id: string; name: string }[], screen: 
   return `Jira requires ${names} for this issue type. Pass ${missing.length === 1 ? 'it' : 'them'} in \`fields\`, keyed by field id: ${each.join('; ')}. Or set a default in the project's issue tracker settings.`;
 }
 
+/**
+ * The runs `list_flaky_tests` reads with `allEnvironments`: those of the default branch and with no branch, as with no
+ * argument, in every environment.
+ */
+const EVERY_ENVIRONMENT_FLAKY_SCOPE: ProjectRunScope = {
+  environments: [],
+  allEnvironments: true,
+  branches: [],
+  allBranches: false,
+  fullRunsOnly: false,
+};
+
 // ── Tool handlers ────────────────────────────────────────────────────────────
 //
 // Keyed by tool name. The catalog (name/description/inputSchema) lives in
@@ -935,8 +948,21 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const runsLimit = Math.min(200, Number(params.runs) || 50);
     const environment = typeof params.environment === 'string' ? params.environment.trim() || null : null;
 
-    const result = await getProjectFlakyTests(db, projectId, runsLimit, environment);
-    const items: any[] = (result as any)?.items ?? result ?? [];
+    // A named environment wins over `allEnvironments`.
+    const items: any[] =
+      params.allEnvironments === true && !environment
+        ? (
+            await getProjectFlakyTestsWithVerified(
+              db,
+              projectId,
+              runsLimit,
+              null,
+              undefined,
+              null,
+              EVERY_ENVIRONMENT_FLAKY_SCOPE,
+            )
+          ).items
+        : await getProjectFlakyTests(db, projectId, runsLimit, environment);
 
     // Cursor is the flakiness `score` (descending). getProjectFlakyTests already
     // returns the list sorted by impact; re-sort by score for stable cursoring.
@@ -3610,10 +3636,11 @@ function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Recor
   if (params.by) query.by = String(params.by);
   const environments = list(params.environments);
   if (environments) query.environments = environments;
-  if (params.allEnvironments === true) query.allEnvironments = 'true';
+  // An explicit false is kept: laid over a dashboard's scope, it reads the default environments or branches.
+  if (typeof params.allEnvironments === 'boolean') query.allEnvironments = String(params.allEnvironments);
   const branches = list(params.branches);
   if (branches) query.branches = branches;
-  if (params.allBranches === true) query.allBranches = 'true';
+  if (typeof params.allBranches === 'boolean') query.allBranches = String(params.allBranches);
   if (params.selection) query.sel = String(params.selection);
   const tags = list(params.tags);
   if (tags) query.tags = tags;

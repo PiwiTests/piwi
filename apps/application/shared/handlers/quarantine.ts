@@ -572,7 +572,8 @@ async function dismissedReleases(db: DrizzleDB, projectId: number): Promise<Set<
 
 /**
  * Marks `dismissed` on each of a project's quarantine candidates dismissed since the newest run the candidates read
- * (`newestFlakyRunId`): a run of another branch, a lab or bisect run, or an older report imported later brings none back.
+ * (`newestFlakyRunId`): a run of another branch, of an environment other than the project's default one, a lab or
+ * bisect run, or an older report imported later brings none back.
  */
 async function markDismissedCandidates<C extends { testCaseId: number }>(
   db: DrizzleDB,

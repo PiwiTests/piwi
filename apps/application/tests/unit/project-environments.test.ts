@@ -362,14 +362,14 @@ describe('the review cases', () => {
     expect(result.skipped).toEqual(['production']);
   });
 
-  test('the rollups read the labels of two environments at once', async () => {
-    const { environmentLabelsSql } = await import('../../shared/handlers/environment-scope');
-    const { sql } = await import('drizzle-orm');
+  test('the rollups read the labels of two environments at once, with their project', async () => {
+    const { namedEnvironmentRunLabels } = await import('../../shared/handlers/environment-scope');
     await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases: ['stg'] });
     await run('stg');
     await backfillRunEnvironments(db as never);
-    const rows = await db.all<Record<string, string>>(sql`${environmentLabelsSql(['staging', 'production'])}`);
-    expect(rows.map((r) => Object.values(r)[0]).sort()).toEqual(['production', 'staging', 'stg']);
+    const names = ['staging', 'production'];
+    expect(await namedEnvironmentRunLabels(db as never, names, 'all')).toEqual([{ projectId: SHOP, label: 'stg' }]);
+    expect(await namedEnvironmentRunLabels(db as never, names, [OTHER])).toEqual([]);
   });
 });
 

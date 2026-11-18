@@ -177,7 +177,13 @@ export function renderReportEmail(
     }</p>`,
     p(
       meta(
-        [bundle.scopeText.projects, bundle.scopeText.branches, bundle.scopeText.runs, bundle.scopeText.tests]
+        [
+          bundle.scopeText.projects,
+          bundle.scopeText.branches,
+          bundle.scopeText.environments,
+          bundle.scopeText.runs,
+          bundle.scopeText.tests,
+        ]
           .filter(Boolean)
           .map((v) => escapeHtml(v!))
           .join(' · '),

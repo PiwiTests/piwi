@@ -409,10 +409,16 @@ export function applyWidgetScope(base: AnalyticsScope, override: Partial<Analyti
     fullRunsOnly: base.fullRunsOnly || override.fullRunsOnly === true,
   };
   if (override.projectIds) scope.projectIds = narrowList(base.projectIds, override.projectIds, NO_PROJECT);
-  const lists = ['projectTags', 'environments', 'browsers'] as const;
+  const lists = ['projectTags', 'browsers'] as const;
   for (const key of lists) {
     const value = narrowList(base[key], override[key], NO_VALUE);
     if (value) scope[key] = value;
+  }
+  // An environment list narrows an explicit environment list or every environment, never the default-environment
+  // policy.
+  const baseEnvironmentPolicy = !base.environments?.length && !base.allEnvironments;
+  if (override.environments?.length && !baseEnvironmentPolicy) {
+    scope.environments = narrowList(base.environments, override.environments, NO_VALUE);
   }
   // A branch list narrows an explicit branch list or every branch, never the default-branch policy.
   const basePolicy = !base.branches?.length && base.defaultBranchOnly;

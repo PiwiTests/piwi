@@ -3,14 +3,35 @@
  * environment is picked, as they read the default branch. An archived default reads as none, so the views then read
  * every environment. Also the environment a name picks in a project, for a reader given one.
  */
-import { and, asc, eq, inArray, isNull } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, type SQL } from 'drizzle-orm';
 import { resolveEnvironment } from '@piwitests/core/environments';
-import { environments, projects } from '../../server/database/schema';
+import { environments, projects, testRuns } from '../../server/database/schema';
 import type { EnvironmentRecord } from '../environments';
+import { projectLabels, type ProjectLabel } from './environment-scope';
 import type { DrizzleDB } from './db';
 
 /** The default environment as the views name it. */
 export type DefaultEnvironment = Pick<EnvironmentRecord, 'id' | 'key' | 'name'>;
+
+/**
+ * The join of a project to its default environment, left out when archived: a select from `projects` that joins
+ * `environments` on it reads the default environment beside the project's row.
+ */
+export function defaultEnvironmentJoin(): SQL {
+  return and(
+    eq(environments.id, projects.defaultEnvironmentId),
+    eq(environments.projectId, projects.id),
+    isNull(environments.archivedAt),
+  )!;
+}
+
+/** `projectIds` in chunks of 500, or one chunk of every project (null). */
+function projectChunks(projectIds: readonly number[] | 'all'): Array<readonly number[] | null> {
+  if (projectIds === 'all') return [null];
+  const chunks: Array<readonly number[]> = [];
+  for (let i = 0; i < projectIds.length; i += 500) chunks.push(projectIds.slice(i, i + 500));
+  return chunks;
+}
 
 /**
  * The default environments of `projectIds` (`'all'` for every project), by project; a project without one, or whose
@@ -21,21 +42,45 @@ export async function projectDefaultEnvironments(
   projectIds: readonly number[] | 'all',
 ): Promise<Map<number, DefaultEnvironment>> {
   const found = new Map<number, DefaultEnvironment>();
-  const chunks: Array<readonly number[] | null> = [];
-  if (projectIds === 'all') chunks.push(null);
-  else for (let i = 0; i < projectIds.length; i += 500) chunks.push(projectIds.slice(i, i + 500));
-  for (const chunk of chunks) {
+  for (const chunk of projectChunks(projectIds)) {
     const rows = await db
       .select({ projectId: projects.id, id: environments.id, key: environments.key, name: environments.name })
       .from(projects)
-      .innerJoin(
-        environments,
-        and(eq(environments.id, projects.defaultEnvironmentId), eq(environments.projectId, projects.id)),
-      )
-      .where(and(chunk ? inArray(projects.id, [...chunk]) : undefined, isNull(environments.archivedAt)));
+      .innerJoin(environments, defaultEnvironmentJoin())
+      .where(chunk ? inArray(projects.id, [...chunk]) : undefined);
     for (const row of rows) found.set(row.projectId, { id: row.id, key: row.key, name: row.name });
   }
   return found;
+}
+
+/**
+ * `projectDefaultEnvironments`, with the labels the stored runs of each default environment reported (`labels`): what
+ * a table keyed by a run's project and label (the analytics rollups) reads for it, beside its key. One query per 500
+ * projects.
+ */
+export async function projectDefaultEnvironmentLabels(
+  db: DrizzleDB,
+  projectIds: readonly number[] | 'all',
+): Promise<{ defaults: Map<number, DefaultEnvironment>; labels: ProjectLabel[] }> {
+  const defaults = new Map<number, DefaultEnvironment>();
+  const labels: ProjectLabel[] = [];
+  for (const chunk of projectChunks(projectIds)) {
+    const rows = await db
+      .selectDistinct({
+        projectId: projects.id,
+        id: environments.id,
+        key: environments.key,
+        name: environments.name,
+        label: testRuns.environment,
+      })
+      .from(projects)
+      .innerJoin(environments, defaultEnvironmentJoin())
+      .leftJoin(testRuns, and(eq(testRuns.projectId, projects.id), eq(testRuns.environmentId, environments.id)))
+      .where(chunk ? inArray(projects.id, [...chunk]) : undefined);
+    for (const row of rows) defaults.set(row.projectId, { id: row.id, key: row.key, name: row.name });
+    labels.push(...projectLabels(rows));
+  }
+  return { defaults, labels };
 }
 
 /** `projectDefaultEnvironments` for one project: its default environment, or null. */

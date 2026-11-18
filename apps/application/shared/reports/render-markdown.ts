@@ -110,6 +110,9 @@ export function renderReportMarkdown(bundle: ReportBundle): string {
   out.push(`- **${L.dashboard}**${s.colon}${escapeMarkdown(bundle.dashboard.name)}`);
   out.push(`- **${L.projects}**${s.colon}${escapeMarkdown(bundle.scopeText.projects)}`);
   out.push(`- **${L.branchPolicy}**${s.colon}${escapeMarkdown(bundle.scopeText.branches)}`);
+  if (bundle.scopeText.environments) {
+    out.push(`- **${L.environmentPolicy}**${s.colon}${escapeMarkdown(bundle.scopeText.environments)}`);
+  }
   out.push(`- ${escapeMarkdown(bundle.scopeText.runs)}`);
   if (bundle.scopeText.tests) out.push(`- **${L.testFilter}**${s.colon}${escapeMarkdown(bundle.scopeText.tests)}`);
   out.push('');
