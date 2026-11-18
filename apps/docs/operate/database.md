@@ -72,6 +72,24 @@ A `max` in the connection string (`?max=4`), then postgres.js's own `PGMAX`, set
 over both. A value that is not a whole number of at least 1 is left out, and one above 1,000 is lowered to 1,000, each
 with a warning in the server's log.
 
+### JIT compilation
+
+Each connection turns PostgreSQL's JIT compilation off (`jit=off`, sent as the connection opens). With it on,
+PostgreSQL compiles every query whose estimated cost passes `jit_above_cost`, at each run. The queries that read each
+test's latest results leave out the runs that never count toward its history (Flake Lab and probe runs, bisect steps,
+reproductions, private runs and incidents), and their estimate grows with the tests times those runs, which accumulate
+while retention is off: with 300 tests and 20,000 such runs, resolving a test selection takes 812 ms with JIT and
+40 ms without.
+
+A connection pooler may not pass the parameter on. PgBouncer refuses it unless `jit` is in its
+`ignore_startup_parameters`, and then drops it. When a connection with the parameter is refused and one without it is
+accepted, Piwi keeps the second and logs a warning. Either way JIT then follows the server's setting, which you can
+turn off for Piwi's database alone:
+
+```sql
+ALTER DATABASE piwi_dashboard SET jit = off;
+```
+
 ## Switching backends
 
 There is **no migration path between SQLite and PostgreSQL** — pointing an instance at a new backend

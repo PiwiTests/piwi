@@ -21,6 +21,13 @@ describe('firstFailRank on SQLite', () => {
 
     const catalog = await loadSelectionCatalog(db, fixture.projectId, { withFailRanks: true, withAggregates: false });
     const ranks = new Map(catalog.filter((row) => row.firstFailRank != null).map((row) => [row.id, row.firstFailRank]));
+    const withAggregates = await loadSelectionCatalog(db, fixture.projectId, {
+      withFailRanks: true,
+      withAggregates: true,
+    });
+    expect(new Map(withAggregates.map((row) => [row.id, row.firstFailRank]))).toEqual(
+      new Map(catalog.map((row) => [row.id, row.firstFailRank])),
+    );
 
     expect(catalog.map((row) => row.id).sort((a, b) => a - b)).toEqual(fixture.testCaseIds);
     expect(ranks).toEqual(fixture.expected);

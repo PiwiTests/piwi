@@ -1,9 +1,14 @@
 import { afterAll, afterEach, describe, expect, test, vi } from 'vitest';
-import { DEFAULT_DATABASE_POOL_MAX, MAX_DATABASE_POOL_MAX, postgresPoolMax } from '../../server/database/postgres-pool';
+import {
+  DEFAULT_DATABASE_POOL_MAX,
+  MAX_DATABASE_POOL_MAX,
+  openPostgresPool,
+  postgresPoolMax,
+} from '../../server/database/postgres-pool';
 
 /**
  * The PostgreSQL pool's size is a number, from `PIWI_DATABASE_POOL_MAX`, else the URL's `max`, else `PGMAX`, else 10,
- * and the server opens PostgreSQL with it.
+ * and the server opens PostgreSQL with it and JIT compilation off, or without the parameter when a pooler refuses it.
  */
 
 const URL_WITHOUT_MAX = 'postgres://piwi:secret@db:5432/piwi';
@@ -69,12 +74,79 @@ describe('postgresPoolMax', () => {
   });
 });
 
-test('the server opens PostgreSQL with that pool size', async () => {
+test('the server opens PostgreSQL with that pool size and JIT compilation off', async () => {
   process.env.PIWI_DATABASE_URL = `${URL_WITHOUT_MAX}?max=3`;
   delete process.env.PIWI_DATABASE_POOL_MAX;
   delete process.env.PGMAX;
   vi.resetModules();
   const { initDatabase } = await import('../../server/database');
   await expect(initDatabase()).rejects.toThrow('The test stops at the driver.');
-  expect(opened).toEqual([[`${URL_WITHOUT_MAX}?max=3`, { max: 3 }]]);
+  expect(opened).toEqual([[`${URL_WITHOUT_MAX}?max=3`, { max: 3, connection: { jit: 'off' } }]]);
+});
+
+/** An error the server or a pooler answers, as postgres.js throws it (`PostgresError`). */
+function serverError(message: string, code: string): Error {
+  return Object.assign(new Error(message), { severity: 'FATAL', code });
+}
+
+/** A postgres.js factory whose pools answer their first query with `answer(options)`: an error, or rows. */
+function fakePostgres(answer: (options: { connection?: Record<string, string> }) => Error | null) {
+  const pools: Array<{ options: { max?: number; connection?: Record<string, string> }; ended: boolean }> = [];
+  const factory = (_url: string, options: { max?: number; connection?: Record<string, string> }) => {
+    const pool = { options, ended: false };
+    pools.push(pool);
+    const query = async () => {
+      const error = answer(options);
+      if (error) throw error;
+      return [];
+    };
+    return Object.assign(query, { end: async () => void (pool.ended = true) });
+  };
+  return { postgres: factory as never, pools };
+}
+
+describe('openPostgresPool', () => {
+  const JIT_OFF = { max: 4, connection: { jit: 'off' } };
+
+  test('opens the pool with JIT compilation off', async () => {
+    const { postgres, pools } = fakePostgres(() => null);
+    await openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 });
+    expect(pools).toEqual([{ options: JIT_OFF, ended: false }]);
+  });
+
+  test('opens it again without the parameter when a pooler refuses it, with a warning', async () => {
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const { postgres, pools } = fakePostgres((options) =>
+      options.connection?.jit ? serverError('unsupported startup parameter: jit', '08P01') : null,
+    );
+    await openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 });
+    expect(pools).toEqual([
+      { options: JIT_OFF, ended: true },
+      { options: { max: 4 }, ended: false },
+    ]);
+    expect(warn).toHaveBeenCalledTimes(1);
+    expect(warn.mock.calls[0]!.join(' ')).toContain('unsupported startup parameter: jit');
+  });
+
+  test('throws a refusal the pool without the parameter gets too, and leaves no pool open', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+    const refused = serverError('password authentication failed for user "piwi"', '28P01');
+    const { postgres, pools } = fakePostgres(() => refused);
+    await expect(openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 })).rejects.toBe(refused);
+    expect(pools).toEqual([
+      { options: JIT_OFF, ended: true },
+      { options: { max: 4 }, ended: true },
+    ]);
+    expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('throws a network failure at once, a host named jit included, without a second pool', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const unreachable = new Error('getaddrinfo ENOTFOUND jit.internal');
+    const { postgres, pools } = fakePostgres(() => unreachable);
+    await expect(openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 })).rejects.toBe(unreachable);
+    expect(pools).toEqual([{ options: JIT_OFF, ended: true }]);
+    expect(logged).toHaveBeenCalledTimes(1);
+  });
 });

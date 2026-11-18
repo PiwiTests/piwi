@@ -43,3 +43,56 @@ export function postgresPoolMax(url: string, env: NodeJS.ProcessEnv = process.en
   }
   return DEFAULT_DATABASE_POOL_MAX;
 }
+
+/** postgres.js's factory, as `import('postgres')` gives it. */
+type Postgres = typeof import('postgres');
+
+/** The options the server passes postgres.js. */
+type PostgresOptions = NonNullable<Parameters<Postgres>[1]>;
+
+/**
+ * The startup parameters each connection of the pool sends: JIT compilation off. With it on, PostgreSQL compiles every
+ * query whose plan's estimated cost is past `jit_above_cost` at each run, a prepared statement's included.
+ */
+export const POSTGRES_STARTUP_PARAMETERS = { jit: 'off' } as const;
+
+/** Whether `error` is an answer of the server or of a pooler (postgres.js's `PostgresError`), not a network failure. */
+function answeredByServer(error: unknown): boolean {
+  return error instanceof Error && 'severity' in error;
+}
+
+/** The message of `error`, for the server's log. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Open the PostgreSQL pool of `url` with `options` and `POSTGRES_STARTUP_PARAMETERS`, and run a first query on it.
+ * When the server or a pooler refuses that query (PgBouncer answers `unsupported startup parameter: jit` unless its
+ * `ignore_startup_parameters` lists it) and accepts one from a pool opened without the parameters, that pool is used,
+ * with a warning, and the server's own `jit` setting applies. Any other failure of the first query (the network, or a
+ * refusal the second pool gets too) is logged and thrown, and no pool is left open.
+ */
+export async function openPostgresPool(postgres: Postgres, url: string, options: PostgresOptions) {
+  const client = postgres(url, { ...options, connection: { ...options.connection, ...POSTGRES_STARTUP_PARAMETERS } });
+  try {
+    await client`SELECT 1`;
+    return client;
+  } catch (error) {
+    await client.end({ timeout: 0 });
+    if (answeredByServer(error)) {
+      const plain = postgres(url, options);
+      try {
+        await plain`SELECT 1`;
+        console.warn(
+          `[Database] PostgreSQL refused a connection with jit=off and accepted one without it, so JIT compilation follows the server's setting: ${messageOf(error)}`,
+        );
+        return plain;
+      } catch {
+        await plain.end({ timeout: 0 });
+      }
+    }
+    console.error('[Database] Could not connect to PostgreSQL:', error);
+    throw error;
+  }
+}
