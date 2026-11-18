@@ -6,7 +6,10 @@ the desktop app, Piwi Runner and the editors, and changes the application under 
 by the Playwright config (`TEST_ENV=staging`): no path that starts a run lets them choose the environment, and the
 label their runs report is free text that eleven features read and eight settings copy.
 
-**Status.** Proposed 2026-11-18. Nothing is built.
+**Status.** Proposed 2026-11-18. Nothing is built. The maintainer settled four questions the same day: an environment
+sets variables only, never Playwright projects (D1); filters keep their `*` patterns (D4); a protected environment is
+confirmed, limited to its required tags and started by a project manager only (D9); the desktop app offers the
+environments of the team project a folder is linked to (D13).
 
 ## Summary
 
@@ -24,6 +27,10 @@ label their runs report is free text that eleven features read and eight setting
   may assume about the code under test (D11).
 - Secrets stay on each machine: an environment may name the `.env` file its config loads, which Piwi checks for and
   copies into a reproduction's worktree, and never reads (D8).
+- A **protected environment** (production) runs only the tests carrying its required tags, only for the project's
+  managers, after a confirmation, and never for an agent (D9).
+- The desktop app's local runs offer the environments of the team project their folder is linked to, read from the team
+  instance, so Staging is set once (D13).
 
 ## Terms
 
@@ -40,7 +47,9 @@ label their runs report is free text that eleven features read and eight setting
 - **App built from the checkout**: an environment whose application under test is built from the same commit as the
   tests (a `webServer` in the config, an ephemeral CI deployment). Its opposite is a **deployed environment**, whose
   application version is independent of the run's commit.
-- **Protected environment**: one Piwi never starts a run against without the person naming it (D9).
+- **Protected environment**: one Piwi starts a run against only when a project manager confirms it, only for the
+  tests carrying its required tags, and never for an agent (D9).
+- **Required tags**: the Playwright tags (`@smoke`) a protected environment's runs are limited to.
 - **Discovered environment**: one created by a run reporting a label nobody declared (D3).
 
 ## How teams choose an environment
@@ -127,8 +136,10 @@ Each project keeps its own list of environments. Alternatives:
 - **Environments of the instance, shared by projects**: a project's Staging is its own deployment, with its own URL
   and variables. Cross-project views (Home, Analytics across projects, the environment comparison) group environments
   of the same key. Copying a project's environments to another is an open question.
-- **Playwright projects per environment** keep working as they are: the environment is in the project's name. Mapping
-  one to the other is an open question.
+- **Playwright projects per environment** keep working as they are, where Piwi already lets the person pick a
+  Playwright project: the environment is in the project's name. An environment sets variables only and never names
+  Playwright projects (settled): a `--project` filter or a mapping of names (`chromium-staging` to
+  `chromium-production`) would tie Piwi to one naming scheme.
 - **A config per environment** stays out: a path to code is refused everywhere.
 
 A multi-tenant app keeps one project per tenant ([run-variables.md](../adr/run-variables.md) D1): the tenant variable
@@ -146,6 +157,7 @@ stays on the project, the environment's variables add to it.
 | URL patterns | the project's URL patterns move under their environment (`project_url_patterns.environment_id`). |
 | `appFromCheckout` | whether the app under test is built from the run's checkout (D11). |
 | `protected` | D9. |
+| `requiredTags` | a protected environment's Playwright tags, 1 to 10, each `@` then letters, digits, `-` and `_` (D9). |
 | `envFile` | an optional file name the config loads for this environment (D8). |
 | `position` | the order pickers show (Local, Integration, Staging, Production). |
 | `discovered` | true until a manager saves it (D3). |
@@ -172,7 +184,10 @@ they counted, and their reads group the labels by environment, so the archived p
 - The eight settings and the markers reference environments by id instead of copying names: URL patterns, markers, CI actions, notification
   filters, issue automation and test management scopes, report schedules, saved dashboards and the project's status
   filter. A migration resolves each stored name as a run's label would be, creating discovered environments when
-  needed. What a stored `*` pattern becomes is an open question.
+  needed.
+- **A filter keeps its `*` patterns** (settled): a notification filter or an issue automation scope holds picked
+  environments and patterns, a pattern matching an environment's key or one of its aliases ignoring case, so an
+  environment created later (`prod-eu-2`) is included, as it is today. Only aliases and filters take patterns.
 - The API's filters keep taking a key (`?environment=staging`), resolved like a label, so scripts, the quality report
   CLI and the MCP tools keep working.
 
@@ -260,12 +275,24 @@ file (`envFile`, a name matching `^\.env(\.[A-Za-z0-9_-]+)*$`, no folder), which
 
 Supplying secrets from the instance (the credential manager) is not in this plan.
 
-### D9. Protected environments
+### D9. Protected environments (settled)
 
-A protected environment (production, as a rule) is never chosen by default: a re-run of one of its runs starts with
-**None**. A run against it, from any path, asks the person to confirm with the environment's name shown. An agent's
-request never names one. Which tests a protected environment allows (only `@smoke` on production) is an open
-question.
+A protected environment (production, as a rule) holds at least one required tag. Every run Piwi starts against it:
+
+- **is confirmed**: the person confirms with the environment's name shown, in the desktop app, in a target's
+  confirmation and in the editors' question;
+- **runs only the tests carrying one of its required tags**: the path adds one `--grep` that requires a tag and keeps
+  the run's own pattern (`(?=.*(@smoke|@readonly))(?=.*<the run's grep>)`), and the command shown carries it. A
+  request's tests that carry none are listed as left out;
+- **is started by a project manager only**: the instance answers a protected environment's variables, and takes a
+  request naming it, only for someone holding `project:manage` on the project; the desktop app's own server has one
+  person, who manages its projects;
+- **is never a default**: a re-run of one of its runs starts with **None**;
+- **is never an agent's**: an agent's request naming it is refused.
+
+These rules govern what Piwi starts. A command typed in a terminal stays the person's: the command block offers a
+protected environment to managers only, since it reads the variables the same way, and its command carries the
+required tags.
 
 ### D10. The default environment
 
@@ -306,13 +333,33 @@ checkout:
 - **Environment incidents** are recorded on the environment, and their notification names it.
 - **MCP**: a `list_environments` tool; an environment filter on `list_runs` and `list_flaky_tests`.
 
+### D13. The desktop app offers the team project's environments (settled)
+
+The desktop app's local runs report to its own server, whose projects are not the team instance's. When a folder is
+also linked to a team project (the link **Run on my machine** uses), the pickers of D6 in the desktop app offer that
+team project's environments, read-only, beside the desktop project's own:
+
+- the shell reads them, and the merged variables of the one picked, from the team instance at each run, with the
+  target key (the routes below); the list is changed on the team instance only;
+- with a team environment picked, the variables are the team project's run variables and the environment's; with
+  **None** or one of the desktop project's environments, the desktop project's, as today;
+- when the team instance cannot be reached, its environments cannot be picked, and the picker says why: no copy is
+  kept, so a run never applies values the team has since changed;
+- the run reports the key as its label to the desktop app's server, which resolves it like any label (D3).
+
+A folder with no team project keeps the desktop project's own list.
+
 ## The instance's routes
 
 - `GET /api/projects/:id/environments` (`project:read`): the list and `defaultEnvironmentId`.
 - `POST /api/projects/:id/environments`, `PATCH` and `DELETE /api/projects/:id/environments/:environmentId`
   (`project:manage`). Deleting one sets its runs' `environment_id` to null; their label stays.
-- `GET /api/projects/:id/run-variables?environment=:environmentId`: the merged list of D5.
-- `POST /api/run-requests` takes `environmentId`; `GET /api/run-targets/requests/:id/run-variables` answers the
+- `GET /api/projects/:id/run-variables?environment=:environmentId`: the merged list of D5, with the environment's
+  `protected` and `requiredTags`; 403 for a protected environment without `project:manage`.
+- `GET /api/run-targets/projects/:id/environments` and `GET /api/run-targets/projects/:id/run-variables?environment=`
+  (target key, for a project its owner can read): what the desktop app reads for D13, under the same rules.
+- `POST /api/run-requests` takes `environmentId` (403 for a protected one without `project:manage`, refused for an
+  agent); `GET /api/run-targets/requests/:id/run-variables` answers the
   merged list and the environment; the claim takes the `environments` feature.
 - Run responses gain `environmentId` beside `environment`, the label. The demo's handlers and seed mirror them.
 
@@ -324,12 +371,15 @@ checkout:
 - **The key reaches a process** as `PIWI_ENVIRONMENT`, so it follows the value rules of a run variable.
 - **The env file** is a name, never a path; Piwi copies it only between two folders of the same machine.
 - **Discovery is capped** (D3), since any key that may report runs may report any label.
-- **Protected environments** are never a default, always confirmed, never an agent's.
+- **Protected environments** are never a default, always confirmed, limited to their required tags, started by a
+  project manager only, never an agent's. The instance enforces the manager rule on the routes that answer an
+  environment's variables and take a request; each target enforces the tags and the confirmation, and checks the tags
+  again in the command it runs.
 
 ## What changes in other records
 
-- [run-variables.md](../adr/run-variables.md): its open question "values per deployment environment" is answered by
-  D5.
+- [run-variables.md](../adr/run-variables.md): its open questions "values per deployment environment" and "the
+  desktop app's own projects" are answered by D5 and D13.
 - [run-on-my-machine.md](run-on-my-machine.md) D3: a request may name an environment of its project, kept on the
   request row, never in the request a target parses.
 - [1.0-stabilization.md](1.0-stabilization.md): a new entry for the environment routes, `environmentId` on runs, the
@@ -343,7 +393,8 @@ checkout:
    settings section, the pickers with **No environment**, the migration of the eight settings, `list_environments`,
    the demo's seed. Alone it fixes the variant labels and the incomplete pickers.
 2. **Choosing where to run**: an environment's run variables and `PIWI_ENVIRONMENT`, the pickers of D6 on every path,
-   the claim feature, the copied commands, protected environments, the env file, the checks of D7. This is the step
+   the claim feature, the copied commands, protected environments, the env file, the checks of D7, the team
+   project's environments in the desktop app (D13). This is the step
    the asking team needs; steps 1 and 2 can ship together.
 3. **Analysis**: the default environment (D10), D11's effects on bisect, suspect lines, the baseline's changes, pass
    reuse and the AI diagnosis.
@@ -351,19 +402,13 @@ checkout:
 
 ## Open questions
 
-- **A stored `*` pattern** in a notification or issue automation filter: become the environments it matches at
-  migration (and miss later ones), or stay allowed over keys.
-- **The desktop app's own projects**: its local runs read its own server's project, so a team would set Staging twice.
-  A folder also linked to a team project could offer that project's environments.
 - **Copying environments to other projects**: a multi-tenant team sets the same Staging on every tenant project.
-- **The tests a protected environment allows**: a grep or tag every run against it applies.
 - **The deployed commit**: an `appCommit` in the server snapshot (`ServerEnvironmentResponse`) would let suspect lines
   and change coverage read the deployed code.
-- **Playwright projects per environment**: whether an environment may name the Playwright projects it runs, mapping
-  `chromium-staging` to `chromium-production` on a re-run.
 
 ## Not in this plan
 
 - Secrets supplied by the instance to runs.
 - Deploying or provisioning an environment: Piwi records deploys (markers, server snapshots), it does not make them.
 - A config file per environment.
+- An environment naming Playwright projects (D1).
