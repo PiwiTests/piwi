@@ -31,7 +31,8 @@ function idOf(raw: number | string | null | undefined): number | null {
  * The environment a page's copied commands and its **Run on my machine** requests are for: one choice per project on
  * a page (kept with the page's view state), so every copy button and request of the page agree. Until the person picks
  * one, the environment of the run the page shows (`shown`: its id, or its facts, `shownEnvironmentOf`, which spare the
- * page reading the project's environments until a picker opens), unless it is archived or protected; on a page
+ * page reading the project's environments until a picker opens, with `listOnMount: false`), unless it is archived or
+ * protected; on a page
  * that shows no run, none. A pick no longer among the project's environments that are not archived reads as that
  * start. Every caller on a page passes the same `shown`. With `protectedAllowed` false (a command that cannot keep to
  * a protected environment's required tags, such as Flake Lab's), a protected pick reads as none. `offered` is whether
@@ -40,12 +41,11 @@ function idOf(raw: number | string | null | undefined): number | null {
 export function useCommandEnvironment(
   projectId: MaybeRefOrGetter<number | string | null | undefined>,
   shown: MaybeRefOrGetter<number | ShownEnvironment | null | undefined> = null,
-  { protectedAllowed = true }: { protectedAllowed?: boolean } = {},
+  { protectedAllowed = true, listOnMount = true }: { protectedAllowed?: boolean; listOnMount?: boolean } = {},
 ) {
   const picks = useViewState<Record<string, number | null>>('command-environment', () => ({}));
-  // Facts of the shown run's environment are enough for the default: the list loads when a picker opens.
-  const knowsShown = typeof toValue(shown) === 'object' && toValue(shown) !== null;
-  const { active, byId } = useProjectEnvironments(projectId, { onMount: !knowsShown });
+  // With the shown run's facts, the default needs no list: it loads when a picker opens.
+  const { active, byId } = useProjectEnvironments(projectId, { onMount: listOnMount });
   const project = computed(() => idOf(toValue(projectId)));
   const shownEnvironment = computed(() => {
     const value = toValue(shown);

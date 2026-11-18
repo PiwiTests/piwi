@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 /**
  * **Run on my machine**: asks one of the person's own apps (the desktop app) to run tests of this page. The menu picks
  * what runs, which app, the environment (the page's choice, `useCommandEnvironment`: the run the page shows starts on
@@ -24,8 +25,13 @@ const props = withDefaults(
     projects?: readonly string[];
     /** The environment of the run the page shows, which the request starts on unless it is protected or archived. */
     shownEnvironmentId?: number | null;
+    /**
+     * That environment's facts, with the run (`shownEnvironmentOf`): with them the request starts on it before the
+     * project's environments are read, which happens when the window opens.
+     */
+    shownEnvironment?: ShownEnvironment | null;
   }>(),
-  { machineRuns: undefined, projects: undefined, shownEnvironmentId: null },
+  { machineRuns: undefined, projects: undefined, shownEnvironmentId: null, shownEnvironment: undefined },
 );
 
 const { shown, apps, appsLoaded, loadApps, send } = await useRunOnMyMachine(props.projectId, props.machineRuns);
@@ -33,9 +39,14 @@ const { prefs, project } = useRetryOptions();
 const { request, error: progressError, follow, stop, reset } = useRunRequestProgress();
 const { environmentId, offered: environmentOffered } = useCommandEnvironment(
   () => props.projectId,
-  () => props.shownEnvironmentId,
+  () => (props.shownEnvironment === undefined ? props.shownEnvironmentId : props.shownEnvironment),
+  { listOnMount: props.shownEnvironment === undefined },
 );
-const { byId: environmentById } = useProjectEnvironments(() => props.projectId);
+const {
+  byId: environmentById,
+  loaded: environmentsLoaded,
+  refresh: readEnvironments,
+} = useProjectEnvironments(() => props.projectId, { onMount: props.shownEnvironment === undefined });
 /** The protected environment picked, whose run keeps to the tests carrying its required tags; null for another pick. */
 const protectedPick = computed(() => {
   const picked = environmentById(environmentId.value);
@@ -44,6 +55,10 @@ const protectedPick = computed(() => {
 const config = useRuntimeConfig();
 
 const open = ref(false);
+// The window's picker offers the project's environments: read them when it opens, unless the page already has.
+watch(open, (isOpen) => {
+  if (isOpen && !environmentsLoaded.value) void readEnvironments();
+});
 const sending = ref(false);
 const stopping = ref(false);
 const sendError = ref<string | null>(null);

@@ -73,9 +73,11 @@ const canFileRunIssue = computed(
 const runIssueOpen = ref(false);
 
 // The environment the page's copied commands and run requests are for: the run's, unless protected or archived.
+const shownEnvironment = computed(() => shownEnvironmentOf(props.testRun));
 const { environmentId: commandEnvironmentId } = useCommandEnvironment(
   () => props.testRun?.projectId,
-  () => shownEnvironmentOf(props.testRun),
+  () => shownEnvironment.value,
+  { listOnMount: false },
 );
 /** Why the run may not have tested its environment, one sentence each. */
 const environmentWarnings = computed(() => props.testRun?.environmentWarnings ?? []);
@@ -466,6 +468,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :machine-runs="testRun.machineRuns ?? false"
         :choices="machineChoices"
         :shown-environment-id="testRun.environmentId ?? null"
+        :shown-environment="shownEnvironment"
       />
 
       <UButton

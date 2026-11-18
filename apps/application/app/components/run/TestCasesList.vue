@@ -682,7 +682,8 @@ const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
 const { environmentId: selectionEnvironmentId } = useCommandEnvironment(
   () => props.projectKey,
-  () => props.shownEnvironment ?? props.environmentId,
+  () => (props.shownEnvironment === undefined ? props.environmentId : props.shownEnvironment),
+  { listOnMount: props.shownEnvironment === undefined },
 );
 const selectionRunVariables = useProjectRunVariables(
   () => props.projectKey,
