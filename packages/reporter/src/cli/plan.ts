@@ -308,12 +308,22 @@ async function runStoredPlan(
       throw new Error(`plan ${planId} and this checkout must both match their commit to skip tests in another job`);
     }
   }
+  // The run reports the environment its plan was made for: the plan's when the run names none, never another.
+  const planned = plan.environment?.trim() || null;
+  const named = args.environment;
+  if (planned && named && planned.toLowerCase() !== named.toLowerCase()) {
+    throw new Error(`plan ${planId} was made for the environment ${planned}, and this run names ${named}`);
+  }
   const shardArgs = args.shard ? [`--shard=${args.shard.replace(/\s+/g, '')}`] : [];
   console.error(
     `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
   // The reporter records the plan, and the dashboard the tests it skipped as the run's reused results.
-  const planEnv: NodeJS.ProcessEnv = { ...runEnv(args, env), [PIWI_PLAN_ENV]: String(planId) };
+  const planEnv: NodeJS.ProcessEnv = {
+    ...runEnv(args, env),
+    ...(planned && !named ? { [PIWI_ENV_KEYS.environment]: planned } : {}),
+    [PIWI_PLAN_ENV]: String(planId),
+  };
   if (plan.skip.length === 0) {
     return spawnPlaywrightForRun(args.pkgRunner, [...plan.args, ...shardArgs, ...args.extra], planEnv);
   }

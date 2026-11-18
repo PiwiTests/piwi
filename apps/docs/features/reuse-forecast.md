@@ -60,7 +60,8 @@ with the failing execution and the pass it matched, which is strong evidence whe
 would count as reusable, with a stricter rule. A test's pass stands in for it only when that pass came from a clean
 checkout of a commit, with the same Playwright version and environment, and every result of the test in that run passed
 on its first attempt with coverage naming its file versions. The environment is the label the run reports (`--environment`,
-else `PIWI_ENVIRONMENT`; `piwi run` passes the flag to Playwright as the variable), resolved as a run's label is; a run
+else `PIWI_ENVIRONMENT`; `piwi run` passes the flag to Playwright as the variable, which the reporter's `environment`
+option overrides when the config sets one), resolved as a run's label is; a run
 that names none reuses the passes of any environment. For a [deployed environment](/features/deployed-environments), the
 pass ran against the application it runs now: the same commit, from its latest
 [deploy marker](/features/timeline-markers#recording-deploys-from-ci) or its servers'

@@ -185,6 +185,8 @@ export interface StoredPlan extends PlanSummary {
   commit: string | null;
   /** Whether the checkout the plan was made in matched its commit. */
   worktree: 'clean' | 'dirty' | null;
+  /** The environment label the plan was made for; null for none, absent from an older dashboard. */
+  environment?: string | null;
   expiresAt: string;
   /** The selection's Playwright arguments; none for the whole suite. */
   args: string[];

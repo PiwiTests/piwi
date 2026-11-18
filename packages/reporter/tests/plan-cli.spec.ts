@@ -47,7 +47,14 @@ describe('planned runs', () => {
 
   /** A dashboard that plans `full`, serves plan 9, or answers `status` to every plan route. */
   function dashboard(
-    options: { up?: boolean; skip?: string[]; commit?: string | null; worktree?: string; status?: number } = {},
+    options: {
+      up?: boolean;
+      skip?: string[];
+      commit?: string | null;
+      worktree?: string;
+      status?: number;
+      environment?: string | null;
+    } = {},
   ): void {
     requests = [];
     vi.stubGlobal(
@@ -84,6 +91,7 @@ describe('planned runs', () => {
             id: 9,
             commit: options.commit === undefined ? head : options.commit,
             worktree: options.worktree ?? 'clean',
+            ...(options.environment !== undefined ? { environment: options.environment } : {}),
             expiresAt: '',
             ...SUMMARY,
             args: [],
@@ -146,6 +154,24 @@ describe('planned runs', () => {
     expect(lists).toEqual([`${SKIP.join('\n')}\n`]);
     expect(run!.env.PIWI_PLAN).toBe('9');
     expect(fs.existsSync(listPath)).toBe(false);
+  });
+
+  it('runs a stored plan in the environment it was made for, and never in another', async () => {
+    dashboard({ environment: 'staging' });
+    expect(await runPlannedRun(['--plan', '9'], env)).toBe(0);
+    expect(spawned()[0]!.env.PIWI_ENVIRONMENT).toBe('staging');
+    expect(spawned()[0]!.args[0]).toBe('--test-list-invert');
+
+    vi.mocked(spawn).mockClear();
+    dashboard({ environment: 'staging' });
+    expect(await runPlannedRun(['--plan', '9', '--environment', 'STAGING'], env)).toBe(0);
+    expect(spawned()[0]!.args[0]).toBe('--test-list-invert');
+
+    vi.mocked(spawn).mockClear();
+    dashboard({ environment: 'staging' });
+    expect(await runPlannedRun(['--plan', '9', '--environment', 'qa'], env)).toBe(0);
+    expect(spawned()[0]!.args).toEqual([]);
+    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('was made for the environment staging'));
   });
 
   it('runs the selection plain when the plan reuses nothing', async () => {
