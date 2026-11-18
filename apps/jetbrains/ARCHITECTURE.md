@@ -380,7 +380,11 @@ reference.
 - **When it reads.** `PiwiProjectService.readTestItems` reads `piwi/testItems` once the tab is first selected, which
   starts the service's listing, then again whenever the runs the tree's results stand for change
   (`Glue.testsResultsKey`), one read at a time. The tree a listing changes comes pushed (`piwi/testItemsChanged`), and
-  a read started before a push keeps the pushed tree, as the other answers do.
+  a read started before a push keeps the pushed tree, as the other answers do. The IDE starts the service only for an
+  open JavaScript or TypeScript file: while no service answers, the tab says why as the Failures tab does
+  (`showServiceDown`, `Glue.serviceDownText`). A stopped service's tree is dropped, and a service's status push reads
+  the tree the tab asked for while it holds none, after a start or a restart. **Read the instance and the configs again** (`Piwi.Refresh`), on the
+  tab's toolbar too, lists every config again (`piwi/refresh`), then reads the tree.
 - **The tree.** `Glue.testsTree` adds a node per config above the service's nodes when there are several or when one
   could not be listed, its error drawn in red; children in the service's order (`sortText`). Each node draws its
   result's icon (`PiwiIcons.outcome`, a group's the first of running, failed, flaky, passed, skipped its tests have,

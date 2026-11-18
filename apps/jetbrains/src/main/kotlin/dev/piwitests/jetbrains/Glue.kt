@@ -4561,7 +4561,7 @@ object Glue {
         listOf(it.root, it.run?.id, it.live?.runId, it.failures, it.overlays, it.resolved).joinToString("|")
     }
 
-    /** What the Tests tab says while it shows no test. */
+    /** What the Tests tab says while it shows no test and the editor service answers. */
     fun testsEmptyText(result: TestItemsResult?, filtered: Boolean): String = when {
         result == null -> "Reading the tests…"
         filtered -> "No test matches the filter."

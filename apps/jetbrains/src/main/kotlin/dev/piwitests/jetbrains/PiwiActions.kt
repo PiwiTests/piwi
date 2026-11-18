@@ -92,10 +92,13 @@ class RefreshAction : AnAction(), DumbAware {
         val project = e.project ?: return
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = project.service<PiwiProjectService>()
-            // A service that could not start, such as without Node.js, is started again.
-            val server = service.server() ?: return@executeOnPooledThread service.restartServer()
+            // A service that could not start, such as without Node.js, is started again, said in a balloon when no file
+            // is open to start it for; an untrusted project asks for trust instead.
+            val server = service.server()
+                ?: return@executeOnPooledThread if (service.trusted()) service.restartService() else service.restartServer()
             server.refresh().orNull()
             service.refreshStatus()
+            service.refreshTestItems()
         }
         // A Playwright config added since the project opened shows the tool window and starts the service.
         project.service<PiwiProjectService>().findPlaywright()
