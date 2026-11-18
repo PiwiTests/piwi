@@ -1023,14 +1023,16 @@ pub(crate) fn playwright_folder(folder: &Path) -> String {
 }
 
 /// Run `playwright test <args>` for `project_id` in its linked folder, using the
-/// bundled Node sidecar and the folder's own Playwright package. Returns a run
-/// id; progress arrives as `piwi:local-run` events carrying that id.
+/// bundled Node sidecar and the folder's own Playwright package, for
+/// `environment` when the window names one ([`crate::environments`]). Returns a
+/// run id; progress arrives as `piwi:local-run` events carrying that id.
 #[tauri::command]
 pub async fn desktop_run_local_tests(
     app: AppHandle,
     project_id: String,
     args: Vec<String>,
     origin_ref: Option<String>,
+    environment: Option<crate::environments::EnvironmentPick>,
 ) -> Result<u32, String> {
     validate_args(&args)?;
     if !valid_project_id(&project_id) {
@@ -1050,9 +1052,11 @@ pub async fn desktop_run_local_tests(
         "no Playwright installation found in the linked folder (or its parents) — run your package manager's install first",
     )?;
 
-    let variables = crate::run_variables::read_project_run_variables(&app, &project_id).await?;
-    let args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
-    let id = spawn_tests(&app, &folder, &cli, args, variables, origin, |_, _| {}).await?;
+    let settings =
+        crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
+    let mut args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
+    args.extend(settings.args());
+    let id = spawn_tests(&app, &folder, &cli, args, settings.envs(), origin, |_, _| {}).await?;
     if let Some(origin_ref) = origin_ref {
         app.state::<LocalRuns>().note_origin(id, origin_ref);
     }
@@ -1069,10 +1073,11 @@ pub(crate) fn emit_verdict(app: &AppHandle, payload: RunEventPayload) {
 }
 
 /// Spawn `playwright test <args>` with `cli`, the folder's Playwright, in
-/// `folder` with the bundled Node sidecar, the project's checked run variables
-/// (`variables`, [`crate::run_variables`]) first, then `envs` beside the run's
-/// own (the hub's, the colors, the folder's `PATH`), which a run variable never
-/// names, and stream its output as `piwi:local-run` events. `on_exit` hears its
+/// `folder` with the bundled Node sidecar, the checked run variables and the
+/// environment's `PIWI_ENVIRONMENT` (`variables`, [`crate::environments::RunSettings::envs`])
+/// first, then `envs` beside the run's own (the hub's, the colors, the folder's
+/// `PATH`), which a run variable never names, and stream its output as
+/// `piwi:local-run` events. `on_exit` hears its
 /// exit code once it ends, before the window does, and whether a stop was asked
 /// for it. Returns the run id.
 pub(crate) async fn spawn_tests(

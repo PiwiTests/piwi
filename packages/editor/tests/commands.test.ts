@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
+import { requiredTagsGrepInvert } from '@piwitests/core/environments';
 import {
   commandWords,
+  isRequiredTagsFilter,
+  playwrightNodeCommand,
   flakeCommand,
   isTestLocation,
   locationSpec,
@@ -11,6 +14,7 @@ import {
   commandName,
   shellWord,
   verificationCommand,
+  withRequiredTags,
 } from '../src/commands';
 
 describe('shellWord', () => {
@@ -31,6 +35,69 @@ describe('shellWord', () => {
       expect(shellWord(`--project=chromium${quote} ; calc.exe ; #`), quote).toBeNull();
     }
     expect(shellWord('--project=Chrome ‘mobile’')).toBe('"--project=Chrome ‘mobile’"');
+  });
+});
+
+describe('a protected environment’s required tags', () => {
+  test('keep a run to the tests carrying one of them, merged with the run’s own --grep-invert, last', () => {
+    const only = requiredTagsGrepInvert(['@smoke', '@readonly']);
+    expect(withRequiredTags(['tests/a.spec.ts:3', '--headed'], ['@smoke', '@readonly'])).toEqual([
+      'tests/a.spec.ts:3',
+      '--headed',
+      '--grep-invert',
+      only,
+    ]);
+    const merged = requiredTagsGrepInvert(['@smoke'], 'slow');
+    expect(withRequiredTags(['--grep-invert', 'slow', 'tests/a.spec.ts'], ['@smoke'])).toEqual([
+      'tests/a.spec.ts',
+      '--grep-invert',
+      merged,
+    ]);
+    expect(withRequiredTags(['--grep-invert=slow', '--repeat-each=3'], ['@smoke'])).toEqual([
+      '--repeat-each=3',
+      '--grep-invert',
+      merged,
+    ]);
+    expect(withRequiredTags(['--config', 'other.config.ts'], ['@smoke'])).toBeNull();
+  });
+
+  test('write a filter every shell reads as it is in double quotes, and nothing else past the usual checks', () => {
+    const filter = requiredTagsGrepInvert(['@smoke'], 'slow|wip');
+    expect(isRequiredTagsFilter(filter)).toBe(true);
+    expect(playwrightTestCommand(['tests/a.spec.ts', '--grep-invert', filter])).toBe(
+      `npx playwright test tests/a.spec.ts --grep-invert "${filter}"`,
+    );
+    // A run's own pattern a shell would expand, or a filter changed by a character, stays refused.
+    for (const word of [
+      requiredTagsGrepInvert(['@smoke'], '$(id)'),
+      requiredTagsGrepInvert(['@smoke'], 'a"b'),
+      `${requiredTagsGrepInvert(['@smoke'])}$(id)`,
+      requiredTagsGrepInvert(['@smoke']).replace('(?!', '(?!$(id)'),
+    ]) {
+      expect(isRequiredTagsFilter(word), word).toBe(false);
+      expect(shellWord(word), word).toBeNull();
+    }
+  });
+});
+
+describe('playwrightNodeCommand', () => {
+  test('starts the project’s Playwright CLI with node, its path written with /', () => {
+    const filter = requiredTagsGrepInvert(['@smoke']);
+    expect(
+      playwrightNodeCommand('C:\\Users\\Dana Lee\\shop\\node_modules\\@playwright\\test\\cli.js', [
+        'tests/a.spec.ts:3',
+        '--grep-invert',
+        filter,
+      ]),
+    ).toBe(
+      `node "C:/Users/Dana Lee/shop/node_modules/@playwright/test/cli.js" test tests/a.spec.ts:3 --grep-invert "${filter}"`,
+    );
+  });
+
+  test('writes nothing without the CLI, or for arguments it would not run', () => {
+    expect(playwrightNodeCommand(null, ['tests/a.spec.ts'])).toBeNull();
+    expect(playwrightNodeCommand('/w/cli.js', ['--config', 'x.ts'])).toBeNull();
+    expect(playwrightNodeCommand('/w/$(id)/cli.js', ['tests/a.spec.ts'])).toBeNull();
   });
 });
 

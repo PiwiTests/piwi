@@ -330,6 +330,12 @@ object PiwiCommands {
         val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)
         val address = if (pauses) PiwiSendHandler.runPairing() else null
         val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
+        // A run for a protected environment is confirmed for that run alone: the console runs it, with no Rerun, and no
+        // run configuration of the IDE's runner keeps it.
+        if (command.protected == true) {
+            run(project, cwd, line, env, command.ref, command.label, command.name, rerunnable = false)
+            return true
+        }
         val args = Glue.playwrightTestArgs(line)
         if (args != null && PiwiUserSettings.state().playwrightRunner && PlaywrightRunnerGate.available()) {
             val ref = command.ref
@@ -439,8 +445,9 @@ object PiwiCommands {
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
      * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
      * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included,
-     * once the process ended and the service heard so: the rerun's workers start a session of their own. Its tab says
-     * who started it when a person did not (`label`).
+     * once the process ended and the service heard so: the rerun's workers start a session of their own; a command
+     * not `rerunnable` (a protected environment's run) has no Rerun. Its tab says who started it when a person did not
+     * (`label`).
      */
     fun run(
         project: Project,
@@ -450,6 +457,7 @@ object PiwiCommands {
         ref: String? = null,
         label: String? = null,
         name: String? = null,
+        rerunnable: Boolean = true,
     ) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
@@ -494,6 +502,12 @@ object PiwiCommands {
                 if (project.isDisposed) {
                     handler.destroyProcess()
                 } else {
+                    val rerun: (() -> Unit)? = if (!rerunnable) null else {
+                        {
+                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label, name) }
+                            handler.destroyProcess()
+                        }
+                    }
                     PiwiRunTab.show(
                         project,
                         handler,
@@ -501,10 +515,8 @@ object PiwiCommands {
                         Glue.labeledRunName(name?.let { "Piwi: $it" } ?: Glue.runTabName(command), label),
                         RunOutputLinks(project, cwd),
                         ref,
-                    ) {
-                        ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label, name) }
-                        handler.destroyProcess()
-                    }
+                        rerun,
+                    )
                 }
             }
         }

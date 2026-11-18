@@ -186,6 +186,15 @@
   "runui_requestTitle": {
     "message": "Exécuter sur cette machine ?"
   },
+  "runui_requestTitleFor": {
+    "message": "Exécuter sur cette machine pour $environment$ ?",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestIntro": {
     "message": "Vous avez demandé à $host$ d’exécuter ici $tests$ de $project$, dans le dossier lié à ce projet. Le code de ce dossier s’exécute alors sur cette machine ; rien ne démarre avant que vous cliquiez sur $run$. Sans réponse, la demande prend fin à $time$.",
     "placeholders": {
@@ -412,6 +421,28 @@
       }
     }
   },
+  "runui_requestProtectedNote": {
+    "message": "$environment$ est protégé : seuls les tests étiquetés $tags$ s’exécutent, avec les projets de préparation et de nettoyage dont ils dépendent, que Playwright exécute en entier. L’exécution ne démarre qu’une fois que vous l’avez confirmée.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_requestProtectedConfirm": {
+    "message": "Oui, exécuter ces tests sur $environment$",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestNotNow": {
     "message": "Pas maintenant"
   },
@@ -457,6 +488,32 @@
       "variables": {
         "content": "$1",
         "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
+  "runui_checkEnvironmentSet": {
+    "message": "S’exécute pour $environment$ : PIWI_ENVIRONMENT=$key$.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "key": {
+        "content": "$2",
+        "example": "staging"
+      }
+    }
+  },
+  "runui_checkEnvironmentProtected": {
+    "message": "S’exécute pour $environment$, un environnement protégé : seuls les tests étiquetés $tags$ s’exécutent, avec les projets de préparation et de nettoyage dont ils dépendent, que Playwright exécute en entier.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
       }
     }
   },

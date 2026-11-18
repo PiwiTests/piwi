@@ -28,6 +28,31 @@ class GlueTest {
     )
 
     @Test
+    fun `the environment widget speaks for the selected file's config alone, else the first that shows an environment`() {
+        val staging = StatusEnvironment(id = 4, text = "Staging", tooltip = "For Staging.")
+        val production = StatusEnvironment(id = 5, text = "Production", tooltip = "Protected.", protected = true)
+        val plain = ContextStatus(root = "/w/a")
+        val shop = ContextStatus(root = "/w/shop", projectId = 7, environment = staging)
+        val admin = ContextStatus(root = "/w/shop/admin", environment = production)
+        val status = StatusResult(listOf(plain, shop, admin))
+        assertEquals(admin, Glue.environmentContext(status, "/w/shop/admin/tests/users.spec.ts"))
+        // The selected file's config shows none: no other config's environment stands in for it.
+        assertNull(Glue.environmentContext(status, "/w/a/tests/cart.spec.ts"))
+        assertEquals(shop, Glue.environmentContext(status, "/elsewhere/notes.md"))
+        assertNull(Glue.environmentContext(StatusResult(listOf(plain)), "/w/a/x.spec.ts"))
+        // A config with an environment chosen is offered whatever the connection, so it can be set to none.
+        assertEquals(listOf(shop, admin), Glue.environmentContexts(status))
+        val kept = KeptEnvironment(5, "Production", "https://piwi.example.com", 7)
+        assertEquals(kept, Glue.decodeEnvironment(Glue.encodeEnvironment(kept)))
+        assertNull(Glue.decodeEnvironment("5"))
+        assertEquals(
+            "Production · production · protected · current",
+            Glue.environmentEntryText(EnvironmentItem(5, "Production", "production", null, picked = true, protected = true)),
+        )
+        assertEquals("None · the Playwright config decides", Glue.environmentEntryText(EnvironmentItem(null, "None", "the Playwright config decides")))
+    }
+
+    @Test
     fun `before the service starts, says when it will and leads to the settings`() {
         val view = Glue.statusView(null, null)
         assertEquals("Piwi", view.text)

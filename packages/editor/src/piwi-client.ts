@@ -16,13 +16,23 @@ import type { PiwiConnection } from '@piwitests/core/dotenv';
 import type { BisectResultBody } from '@piwitests/core/bisect';
 import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
 import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
-import { parseRunVariables, type RunVariablesParse } from '@piwitests/core/run-variables';
+import { parseEnvironmentForRun, type EnvironmentForRun } from '@piwitests/core/environments';
+import { parseRunVariables, RUN_VARIABLE_LIMITS, type RunVariable } from '@piwitests/core/run-variables';
 
 /**
- * A project's run variables as a client read them: `parseRunVariables`' answer, `unreadable` when the instance did not
- * answer them (a later run asks again), `unknown` (the words why) when no project is known to read them for.
+ * A project's run variables as a client read them, with the environment chosen for the runs: the run variables the
+ * runs get (the project's, and the environment's over them) and that environment, as `parseRunVariables` and
+ * `parseEnvironmentForRun` read them; `unreadable` when the instance did not answer them (a later run asks again),
+ * `unknown` (the words why) when no project is known to read them for.
  */
-export type RunVariablesRead = RunVariablesParse & { unreadable?: true; unknown?: string };
+export type RunVariablesRead =
+  | { ok: true; value: RunVariable[]; environment?: EnvironmentForRun | null; unknown?: string }
+  | { ok: false; problems: string[]; unreadable?: true; unknown?: string };
+
+/** One of a project's environments, as the editors offer it to choose: its own fields, and its description. */
+export interface EnvironmentOption extends EnvironmentForRun {
+  description: string | null;
+}
 import type { TimeoutAdvice } from './analysis.js';
 import { instanceFetch } from './http.js';
 
@@ -562,16 +572,64 @@ export class PiwiClient {
 
   /**
    * A project's run variables, as `parseRunVariables` reads them: a list it refuses, or one that cannot be read, is a
-   * problem every run refuses. An instance that predates them answers 404: its projects set none.
+   * problem every run refuses. An instance that predates them answers 404: its projects set none. With
+   * `environmentId`, the project's and that environment's merged (`RUN_VARIABLE_LIMITS.merged` at most) and the
+   * environment as `parseEnvironmentForRun` reads it, which must be the one asked for: an environment the project no
+   * longer has (404), one only its managers run against (403), and an answer that names no environment refuse it.
    */
-  async runVariables(projectId: number): Promise<RunVariablesRead> {
+  async runVariables(projectId: number, environmentId: number | null = null): Promise<RunVariablesRead> {
+    const query = environmentId === null ? '' : `?environment=${environmentId}`;
     try {
-      const body = await this.get<{ runVariables?: unknown }>(`/api/projects/${projectId}/run-variables`, true);
-      return parseRunVariables(body?.runVariables);
+      const body = await this.get<{ runVariables?: unknown; environment?: unknown }>(
+        `/api/projects/${projectId}/run-variables${query}`,
+        true,
+      );
+      if (environmentId === null) return parseRunVariables(body?.runVariables);
+      const environment = parseEnvironmentForRun(body?.environment);
+      const variables = parseRunVariables(body?.runVariables, RUN_VARIABLE_LIMITS.merged);
+      if (!environment.ok || !variables.ok) {
+        return {
+          ok: false,
+          problems: [...(environment.ok ? [] : environment.problems), ...(variables.ok ? [] : variables.problems)],
+        };
+      }
+      if (environment.value?.id !== environmentId) {
+        return { ok: false, problems: ['The instance did not name the environment chosen: update it.'] };
+      }
+      return { ...variables, environment: environment.value };
     } catch (error) {
-      if (error instanceof PiwiHttpError && error.status === 404) return { ok: true, value: [] };
+      const status = error instanceof PiwiHttpError ? error.status : null;
+      if (status === 404 && environmentId === null) return { ok: true, value: [] };
+      if (status === 404) {
+        return { ok: false, problems: ['The environment chosen is no longer one of the project’s: choose another.'] };
+      }
+      if (status === 403 && environmentId !== null) {
+        return { ok: false, problems: ['Only the project’s managers run its tests against this environment.'] };
+      }
       return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };
     }
+  }
+
+  /**
+   * A project's environments to choose from for its runs, in the order the instance lists them: those archived, and
+   * any `parseEnvironmentForRun` refuses, left out. None from an instance that predates them (404).
+   */
+  async environments(projectId: number): Promise<EnvironmentOption[]> {
+    let body: { environments?: unknown };
+    try {
+      body = await this.get<{ environments?: unknown }>(`/api/projects/${projectId}/environments`);
+    } catch (error) {
+      if (error instanceof PiwiHttpError && error.status === 404) return [];
+      throw error;
+    }
+    const listed = Array.isArray(body?.environments) ? body.environments : [];
+    return listed.flatMap((raw: unknown): EnvironmentOption[] => {
+      const record = (raw ?? {}) as { archived?: unknown; description?: unknown };
+      const parsed = parseEnvironmentForRun(raw);
+      if (record.archived === true || !parsed.ok || !parsed.value) return [];
+      const description = typeof record.description === 'string' && record.description ? record.description : null;
+      return [{ ...parsed.value, description: description && description.slice(0, 500) }];
+    });
   }
 
   /** The project a name or a numeric id names; null when none does. */

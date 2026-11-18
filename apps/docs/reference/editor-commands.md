@@ -74,6 +74,7 @@ script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes t
 | **Piwi: Open in dashboard** | Open the selected failure, run or test in the dashboard; from the palette, this file's test, else the latest run |
 | **Piwi: Open the latest run** | Open the run the status bar shows |
 | **Piwi: Compare with…** | Choose the run the failures are read against: [Compare with another run](/features/editor-status-bar#compare-with-another-run) |
+| **Piwi: Choose environment…** | Choose the environment the folder's runs are for, or None: [Environments](/features/environments) |
 | **Piwi: Group the failures by…** | File, cluster or owner, or a flat list: [The failures view](/features/editor-failures#the-failures-view) |
 | **Piwi: Follow the active editor**, **Piwi: Stop following the active editor** | VS Code: select the active file's first failure in the failures view, or stop |
 | **Piwi: Open the failures** | Open the failures view, the Piwi tool window's in a JetBrains IDE |

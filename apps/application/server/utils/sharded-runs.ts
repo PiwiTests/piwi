@@ -26,6 +26,7 @@ import { resolveBrowserName } from '#shared/browser-name';
 import type { TestCasePayload, TestRunSubmitPayload, WireRunError } from '#shared/types';
 import { storableRunErrors } from './storable-values';
 import { addRunTagsTruncated, withoutTagsTruncated } from '#shared/tags-truncated';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 
 /**
  * The initializing or running sharded run of a project instance, split into
@@ -154,7 +155,7 @@ export function batchShardRun(
         failedTests: 0,
         skippedTests: 0,
         didNotRunTests: 0,
-        environment: body.environment || null,
+        ...(await resolveRunEnvironment(db as never, projectId, body.environment)),
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
         metadata,

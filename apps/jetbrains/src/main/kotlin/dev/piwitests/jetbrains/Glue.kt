@@ -331,6 +331,34 @@ object Glue {
             ?: contexts.firstOrNull { it.problemKind == "unreachable" || it.problemKind == "desktop-unproven" }
             ?: contexts.firstOrNull()
 
+    /**
+     * The context the environment widget speaks for: the one whose Playwright config folder holds `file`, the deepest
+     * when several do, which shows its own environment or none; with `file` in no config, the first context that shows
+     * one; null when none does (`ContextStatus.environment`).
+     */
+    fun environmentContext(status: StatusResult?, file: String?): ContextStatus? {
+        val contexts = status?.contexts.orEmpty()
+        val holding = contexts.filter { holds(it.root, file) }.maxByOrNull { folderPath(it.root!!).length }
+        val shown = holding ?: contexts.firstOrNull { it.environment != null }
+        return shown?.takeIf { it.environment != null }
+    }
+
+    /**
+     * The contexts **Choose environment…** offers: those that read a project, and those with an environment chosen,
+     * which can always be set to none, whatever the connection.
+     */
+    fun environmentContexts(status: StatusResult?): List<ContextStatus> =
+        status?.contexts.orEmpty().filter { it.projectId != null || it.environment?.id != null }
+
+    /** A choice of **Choose environment…** in its popup: `Production · production · protected · current`. */
+    fun environmentEntryText(item: EnvironmentItem): String =
+        listOfNotNull(
+            item.label,
+            item.description.ifBlank { null },
+            "protected".takeIf { item.protected },
+            "current".takeIf { item.picked },
+        ).joinToString(" · ")
+
     /** A path with `/` separators and one trailing `/`, so a folder holds what starts with it. */
     private fun folderPath(path: String) = path.replace('\\', '/').trimEnd('/') + "/"
 
@@ -833,6 +861,14 @@ object Glue {
         text?.startsWith("run:") == true -> text.removePrefix("run:").toIntOrNull()?.takeIf { it > 0 }?.let { BaselineChoice("run", runId = it) }
         else -> null
     }
+
+    /** An environment choice as `PiwiLocalSettings` keeps it: the service's answer, as JSON. */
+    fun encodeEnvironment(kept: KeptEnvironment): String = com.google.gson.Gson().toJson(kept)
+
+    /** An environment choice `PiwiLocalSettings` keeps; null for a value it cannot read. */
+    fun decodeEnvironment(text: String?): KeptEnvironment? =
+        runCatching { com.google.gson.Gson().fromJson(text, KeptEnvironment::class.java) }.getOrNull()
+            ?.takeIf { it.id > 0 && it.projectId > 0 && it.name.isNotBlank() && it.serverUrl.isNotBlank() }
 
     /** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
     fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {

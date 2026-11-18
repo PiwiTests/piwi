@@ -88,6 +88,8 @@ import {
   testActionPicks,
   TEST_HOVER_COMMANDS,
   withBaseline,
+  environmentItem,
+  withEnvironment,
   writeBlock,
   SPEC_FILE,
   failureMessage,
@@ -2854,5 +2856,53 @@ describe('the coverage view', () => {
     });
     // A run that recorded no executable lines: those run, and those known not run, are the total.
     expect(testCoverageOf({ ...result, executableLines: null }).count).toEqual({ covered: 5, total: 6 });
+  });
+});
+
+describe('the environment item', () => {
+  const context = (root: string, environment: StatusResult['contexts'][number]['environment']) => ({
+    root,
+    connected: true,
+    serverUrl: 'https://piwi.example.com',
+    source: 'environment' as const,
+    projectId: 7,
+    projectName: 'Acme',
+    environment,
+    branch: 'main',
+    locators: 0,
+    reachedFiles: 0,
+    problem: null,
+  });
+  const staging = {
+    id: 4,
+    text: 'Staging',
+    tooltip: 'The runs Piwi starts for Acme are for Staging.',
+    protected: false,
+  };
+  const production = { id: 5, text: 'Production', tooltip: 'Protected.', protected: true };
+
+  test('shows the environment of the active file’s config, or none, and else of the first that shows one', () => {
+    const status = { contexts: [context('/w/a', null), context('/w/b', staging), context('/w/b/c', production)] };
+    expect(environmentItem(status, '/w/b/c/tests/x.spec.ts')).toEqual({
+      root: '/w/b/c',
+      text: '$(lock) Production',
+      tooltip: 'Protected.',
+      protected: true,
+    });
+    // The active file's config shows none: no other config's environment stands in for it.
+    expect(environmentItem(status, '/w/a/x.spec.ts')).toBeNull();
+    expect(environmentItem(status, '/elsewhere/notes.md')).toMatchObject({
+      root: '/w/b',
+      text: '$(server-environment) Staging',
+    });
+    expect(environmentItem({ contexts: [context('/w/a', null)] }, null)).toBeNull();
+    expect(environmentItem(null, null)).toBeNull();
+  });
+
+  test('keeps a choice per root, none as no entry', () => {
+    const qa = { id: 6, name: 'QA', serverUrl: 'https://piwi.example.com', projectId: 7 };
+    const kept = withEnvironment({ '/a': { ...qa, id: 4, name: 'Staging' } }, '/b', qa);
+    expect(kept).toEqual({ '/a': { ...qa, id: 4, name: 'Staging' }, '/b': qa });
+    expect(withEnvironment(kept, '/a', null)).toEqual({ '/b': qa });
   });
 });

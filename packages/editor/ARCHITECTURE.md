@@ -62,6 +62,8 @@ run control, coverage, the recorder, the build, and the reads and the connection
 - [Build output](#build-output)
 - [Commands](#commands)
   - [How a command is built](#how-a-command-is-built)
+  - [Run variables](#run-variables)
+  - [Environments](#environments)
   - [The folder a command runs in](#the-folder-a-command-runs-in)
 - [Reads and caching](#reads-and-caching)
   - [Background reads](#background-reads)
@@ -226,7 +228,7 @@ the custom messages of `src/protocol.ts`:
   - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testRuns`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
-    `piwi/refreshRun`, `piwi/runId`;
+    `piwi/refreshRun`, `piwi/runId`, `piwi/environments`, `piwi/setEnvironment`;
   - CI runs: `piwi/ciWatch`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
@@ -1701,6 +1703,10 @@ each says; the host only carries it:
 `tests/run-target-routes.test.ts` calls all three on the bare `node:http` host; the desktop app's Nitro routes answer
 the same (`apps/application/tests/unit/desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 
+The shell names the folders its local runs are going in (`PUT /local-runs`, and `PUT /key`'s `localRuns`): a request
+whose folder one of them or another approved request runs in fails its `busy` check (`planRequestedRun`), and is
+checked again as such a run starts or ends (`planWaiting`).
+
 ### The discovery file
 
 `src/discovery.ts` writes and reads `~/.piwi/editors/<pid>.json` (`@piwitests/core/editor-discovery`;
@@ -2101,6 +2107,51 @@ answer, runs nothing and says why (`piwi/notice`); a read that failed is asked a
 known (the instance unreachable), a run gets none and the person hears it once. A requested run reads them at its
 claim, again at **Run** (a change shows the new command) and again at the next check after a failed read; the claim
 says the app applies them (`features`), and the launch hands them to the shell, which checks them once more.
+
+### Environments
+
+A project's environments (`@piwitests/core/environments`, `proposals/environments.md`) are the deployments its tests
+run against. A context reads them once per refresh (`PiwiContext.environments`, `GET /api/projects/:id/environments`,
+archived ones left out; a 404 from an older instance reads as none) and runs for the one chosen for it: **None** by
+default, where the Playwright config decides, else what the client chose with `piwi/setEnvironment`. The choice
+(`KeptEnvironment`) names the environment's id and name with the instance and the project it belongs to, and the client
+keeps it per config folder (`EditorCredentials.environments`); it applies only while the context reads that instance
+and that project (`PiwiContext.environmentId`), so an id never names another instance's or project's environment. Only
+an environment the project lists can be chosen; **None** always can, also while the instance or the project cannot be
+read. `piwi/environments` answers the choices, and the status says the one in force
+(`StatusResult.contexts[].environment`), which both clients show in an item of their status bar with **Choose
+environment…**, for the active file's config alone.
+
+With one chosen, `readRunVariables` reads `GET /api/projects/:id/run-variables?environment=<id>`: the project's and the
+environment's run variables merged (`parseRunVariables` with `RUN_VARIABLE_LIMITS.merged`) and the environment
+(`parseEnvironmentForRun`), which must be the one asked for; a 404 (an environment the project no longer has) or a 403
+(a protected one, for someone who does not manage the project) refuses every run. Every run the service builds
+(`runSettingsFor`) gets the merged variables and `PIWI_ENVIRONMENT` set to the key (`runVariablesEnv`), and the
+**Allow** question covers each new set: the merged variables with the environment's key. A protected environment asks
+before every run instead (`confirmProtected`), and its arguments keep to the tests carrying one of its required tags:
+the run's own `--grep-invert` merged into one with `requiredTagsGrepInvert` (`withRequiredTags`), which `shellWord`
+double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). Playwright applies a
+CLI filter before it adds the projects a run's projects depend on, so their setup and teardown tests run whole: every
+sentence that states the rule says so (`requiredTagsWords`). On Windows such a run starts the project's Playwright CLI
+with `node` (`playwrightNodeCommand`), since PowerShell hands `npx.cmd` the filter bare and cmd would read its `^` and
+`|`; without the CLI in the folder it runs nothing and says why. Its `RunCommand` says it is protected (`protected`):
+the clients offer no Rerun of it and keep no run configuration of it, so each run against it is asked here; VS Code
+cannot keep **Tasks: Rerun Last Task** from starting its task again, and ends it as it starts. An
+agent's `run_start` against a protected environment is refused, with a `piwi/notice`. The Flake Lab lines and the fix
+plan's verification, which the client runs on its own, carry the environment once its set is allowed, and are offered
+no run for a protected one (`ownCommandEnv`). While the environment chosen cannot be read (no client, no project
+known, the instance unreachable), nothing runs, and the notice and the status item say the instance or the project
+cannot be read.
+
+A requested run reads the environment with its run variables (`GET /api/run-targets/requests/:id/run-variables`,
+`RequestHost.runVariables`), and its claim says the app applies environments (`RUN_TARGET_FEATURES`). The plan
+(`planRequestedRun`) checks it (an `environment` check, a warning for a protected one), the command the confirmation
+shows sets `PIWI_ENVIRONMENT` after the run variables (`requestedRunDisplay`, PowerShell's form on Windows) and a
+protected one's run keeps to its required tags, beside the setup and teardown projects they depend on
+(`requestedRunArgs`). **Run** for a protected environment needs the person's confirmation naming its key (the
+answer's `environment`), and the launch hands the shell the environment (`launchOf`), whose key it sets as
+`PIWI_ENVIRONMENT`, and whose required tags it keeps the run to itself: the arguments it hands leave out the filter the
+confirmation showed (`requiredTagsFilterArg`).
 
 ### The folder a command runs in
 

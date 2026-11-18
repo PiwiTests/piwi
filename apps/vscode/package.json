@@ -533,6 +533,12 @@
         "icon": "$(git-compare)"
       },
       {
+        "command": "piwi.chooseEnvironment",
+        "title": "Choose environment…",
+        "category": "Piwi",
+        "icon": "$(server-environment)"
+      },
+      {
         "command": "piwi.toggleFollowEditor",
         "title": "Follow the active editor",
         "category": "Piwi",
@@ -834,6 +840,10 @@
         {
           "command": "piwi.compareWith",
           "when": "piwi.active"
+        },
+        {
+          "command": "piwi.chooseEnvironment",
+          "when": "piwi.active || piwi.environmentShown"
         },
         {
           "command": "piwi.copyMcpConfiguration",
@@ -2074,6 +2084,10 @@
           "ref": {
             "type": "string",
             "description": "The ref of the test run: the `PIWI_ORIGIN_REF` its command sets, by which Piwi follows the run."
+          },
+          "protected": {
+            "type": "boolean",
+            "description": "The run is for a protected environment, confirmed for this run alone: started again outside Piwi, it is ended."
           }
         }
       }

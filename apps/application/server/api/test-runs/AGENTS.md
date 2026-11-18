@@ -28,6 +28,12 @@ Rules for the routes that write runs (the reporter's `setup`, `start`, `begin`, 
   passes them through `storedTestIdentity` first (`storedIdentityForms` without the describe path), as
   `[id]/case-files` does (`tests/unit/stored-identity-lookups.test.ts`).
 
+## A run's environment
+
+- **Every write of a run's label goes through `resolveRunEnvironment`** (`shared/handlers/environments.ts`), which
+  trims it and sets `environment_id` to the environment of the project it resolves to, discovering one for a new
+  label: spread its result, never set `environment` on its own (`tests/unit/run-environment-column.test.ts`).
+
 ## Timed-out tests fold into `failedTests`
 
 `test_runs` has no `timedOutTests` column. Playwright's `'timedOut'` (stored as `'timedout'`) counts as failed, so that

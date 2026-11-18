@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { requiredTagsGrepInvert } from '@piwitests/core/environments';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
 import { cookiesOf, isBrowserRequest, presentsToken, TOKEN_COOKIE } from '../src/host-guard';
 import type * as RunTargetStream from '../src/run-target-stream';
@@ -475,6 +476,75 @@ describe('every host of the run-target routes', () => {
       expect(answered).toMatchObject({ status: 200, body: { launch: true } });
       const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
       expect(launch.body).toMatchObject({ runVariables: [{ name: 'TENANT', value: 'globex' }] });
+    } finally {
+      runVariables = { runVariables: [] };
+    }
+  });
+
+  test('runs for the environment the request names, and for a protected one only once the person confirmed it', async () => {
+    const production = {
+      id: 5,
+      key: 'production',
+      name: 'Production',
+      protected: true,
+      requiredTags: ['@smoke'],
+      envFile: null,
+    };
+    runVariables = { runVariables: [{ name: 'TEST_ENV', value: 'production' }], environment: production };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        command: string;
+        environment: unknown;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.environment).toEqual({
+        key: 'production',
+        name: 'Production',
+        protected: true,
+        requiredTags: ['@smoke'],
+      });
+      expect(asked!.command).toMatch(
+        process.platform === 'win32'
+          ? /^\$env:TEST_ENV='production'; \$env:PIWI_ENVIRONMENT='production'; npx playwright test .* '--grep-invert=/
+          : /^TEST_ENV=production PIWI_ENVIRONMENT=production npx playwright test .* '--grep-invert=/,
+      );
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'environment', level: 'warn' }));
+
+      // Run without the person's confirmation naming the environment shows the request again.
+      const unconfirmed = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+      });
+      expect(unconfirmed).toMatchObject({ status: 409, body: { message: 'Confirm the run for Production first' } });
+      const wrong = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+        environment: 'staging',
+      });
+      expect(wrong.status).toBe(409);
+
+      const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+        environment: 'production',
+      });
+      expect(answered).toMatchObject({ status: 200, body: { launch: true } });
+      const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
+      expect(launch.body).toMatchObject({
+        runVariables: [{ name: 'TEST_ENV', value: 'production' }],
+        environment: production,
+      });
+      // The command showed the filter that keeps the run to the required tags, which the shell adds from the
+      // environment it is handed.
+      const filter = `--grep-invert=${requiredTagsGrepInvert(['@smoke'])}`;
+      expect(asked!.command).toContain(filter);
+      expect((launch.body!.args as string[]).some((arg) => arg.startsWith('--grep-invert'))).toBe(false);
+      expect((launch.body!.args as string[]).slice(-2)).toEqual(['--project=chromium', '--headed']);
     } finally {
       runVariables = { runVariables: [] };
     }

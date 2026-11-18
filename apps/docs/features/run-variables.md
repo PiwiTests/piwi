@@ -59,6 +59,14 @@ again before it runs anything: a variable refused there runs nothing, rather tha
 A re-run in CI passes arguments only: a CI action picks its tenant with its fixed inputs, per
 [deployment environment](./ci-rerun).
 
+## Per environment
+
+Each [environment](./environments) of the project (Local, Staging, Production) holds up to 10 run variables of its
+own, with the same rules. A run Piwi starts for one gets the project's, then the environment's, the environment's
+value winning for a name both set, at most 20 together, and `PIWI_ENVIRONMENT` set to its key. The runs above and
+most copied commands offer the environment to pick ([where](./environments#choose-the-environment-of-a-run)); **None**,
+a fix plan's verify command and the reproduce recipe apply the project's alone.
+
 ## Building and starting the app
 
 Piwi runs no command of a project's settings before a run. Building and starting the app for a tenant belong in the
@@ -93,7 +101,6 @@ An editor follows one project per folder: the one with the lowest id.
 
 ## Limits
 
-- One value per project: a project whose tenant also differs by deployment environment needs a project per pair.
 - The PowerShell form keeps the variables set in that window: a command copied later for another project, in the same
   window, runs with them too. Copied commands are written for bash, zsh and PowerShell.
 - The commands the MCP tools return name no variable. The fix plan lists the project's run variables beside its verify
@@ -102,6 +109,7 @@ An editor follows one project per folder: the one with the lowest id.
 
 ## Related
 
+- [Environments](./environments)
 - [Run on my machine](./run-on-my-machine)
 - [Desktop app](./desktop)
 - [Re-run in CI](./ci-rerun)

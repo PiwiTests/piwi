@@ -578,6 +578,17 @@ export const PROJECTS_ANCHORS = [
     sample: { route: '/projects/1?tab=settings&section=run-variables', expect: PROJECT_1 },
   },
   {
+    id: 'project-settings-environments',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'environments' } }],
+    describes:
+      'The Environments section: the deployments the project’s tests run against, each with its key, aliases, run variables and protection, in picker order.',
+    help: 'project.environments',
+    doc: 'features/environments',
+    sample: { route: '/projects/1?tab=settings&section=environments', expect: PROJECT_1 },
+  },
+  {
     id: 'project-settings-capabilities',
     kind: 'tab',
     pages: ['/projects/[id]'],

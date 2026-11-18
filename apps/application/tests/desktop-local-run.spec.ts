@@ -78,6 +78,9 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
                 return { folder: '/home/dev/acme', missing: opts.missingSpecs ?? [] };
               case 'desktop_suggest_project_folders':
                 return [];
+              // The project sets no run variables, and a run for no environment gets none.
+              case 'desktop_environment_run_settings':
+                return { runVariables: [], environment: null };
               case 'desktop_check_project_folder':
                 return {
                   path: args?.path,

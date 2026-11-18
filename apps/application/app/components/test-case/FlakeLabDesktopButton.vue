@@ -6,19 +6,28 @@
  * streaming its output into the Local runs tray. The webview passes the test
  * and the options only; the shell reads the commit and builds the command.
  *
+ * The lab runs for the environment its field picks (`DesktopEnvironmentField`), starting on the one the test's runs
+ * carry most, never a protected one.
+ *
  * Renders nothing outside the desktop app (no bridge) and in the demo. Emits
  * `finished` when a session on this test ends, so the tab reloads its
  * experiments.
  */
 import type { FlakeLabOptions } from '~/composables/useDesktopLocalRuns';
+import { environmentReady, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 
-const props = defineProps<{
-  testCaseId: number;
-  projectId: number | null;
-  projectLabel?: string | null;
-  /** How many suspects the profile ranks, for the arm picker. */
-  suspectCount: number;
-}>();
+const props = withDefaults(
+  defineProps<{
+    testCaseId: number;
+    projectId: number | null;
+    projectLabel?: string | null;
+    /** How many suspects the profile ranks, for the arm picker. */
+    suspectCount: number;
+    /** The environment of each of the test's recent runs, one per run. */
+    carriedEnvironmentIds?: readonly (number | null)[];
+  }>(),
+  { projectLabel: null, carriedEnvironmentIds: () => [] },
+);
 const emit = defineEmits<{ finished: [] }>();
 
 const config = useRuntimeConfig();
@@ -77,14 +86,22 @@ function options(): FlakeLabOptions {
   };
 }
 
+/** The environment the lab runs for, and whether the person confirmed it for the next session. */
+const environment = ref<DesktopEnvironmentChoice | null>(null);
+const confirmed = ref(false);
+const ready = computed(() => environmentReady(environment.value, confirmed.value));
+
 function start() {
+  if (!ready.value) return;
   open.value = false;
   store.startFlakeLab({
     projectId: props.projectId,
     projectLabel: props.projectLabel,
     testCaseId: props.testCaseId,
     options: options(),
+    environment: environment.value,
   });
+  confirmed.value = false;
 }
 
 const current = computed(() =>
@@ -128,7 +145,12 @@ watch(
         {{ running ? 'Running the lab…' : 'Reproduce this flake' }}
       </UButton>
       <template #content>
-        <form class="w-72 p-3 space-y-3" data-testid="flake-lab-desktop-options" method="post" @submit.prevent="start">
+        <form
+          class="w-80 max-w-[calc(100vw-2rem)] p-3 space-y-3"
+          data-testid="flake-lab-desktop-options"
+          method="post"
+          @submit.prevent="start"
+        >
           <p class="text-xs text-muted leading-relaxed">
             Runs the lab at the commit of the latest failure, in a throwaway worktree of the linked folder. Your
             checkout is untouched.
@@ -160,7 +182,21 @@ watch(
               />
             </UFormField>
           </div>
-          <UButton type="submit" block size="sm" icon="i-lucide-play" data-testid="flake-lab-desktop-run">
+          <DesktopEnvironmentField
+            v-model="environment"
+            v-model:confirmed="confirmed"
+            :project-id="projectId"
+            purpose="flake"
+            :carried-environment-ids="carriedEnvironmentIds"
+          />
+          <UButton
+            type="submit"
+            block
+            size="sm"
+            icon="i-lucide-play"
+            :disabled="!ready"
+            data-testid="flake-lab-desktop-run"
+          >
             Run the lab
           </UButton>
         </form>

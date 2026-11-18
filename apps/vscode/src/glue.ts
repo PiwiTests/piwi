@@ -39,6 +39,7 @@ import type {
   RunStatusResult,
   RunTestsArgs,
   StatusResult,
+  KeptEnvironment,
   FileSummary,
   SummaryLine,
   TestAtResult,
@@ -912,6 +913,43 @@ export function withBaseline(
 ): Record<string, BaselineChoice> {
   const next = { ...kept };
   if (choice.kind === 'ladder') delete next[root];
+  else next[root] = choice;
+  return next;
+}
+
+/**
+ * The environment item: the environment of the config whose folder holds the active file, the deepest when several
+ * do, or none when that config shows none; with the active file in no config, of the first config that shows one; null
+ * when none shows one (`StatusResult.contexts[].environment`). Its text leads with the glyph of an environment, a lock
+ * for a protected one.
+ */
+export function environmentItem(
+  status: StatusResult | null,
+  activeFile: string | null,
+): { root: string; text: string; tooltip: string; protected: boolean } | null {
+  const contexts = status?.contexts ?? [];
+  const holding = activeFile
+    ? contexts.filter((c) => isUnder(c.root, activeFile)).sort((a, b) => b.root.length - a.root.length)[0]
+    : undefined;
+  const shown = holding ?? contexts.find((c) => c.environment);
+  const environment = shown?.environment;
+  if (!shown || !environment) return null;
+  return {
+    root: shown.root,
+    text: `${environment.protected ? '$(lock)' : '$(server-environment)'} ${environment.text}`,
+    tooltip: environment.tooltip,
+    protected: environment.protected,
+  };
+}
+
+/** The environments kept for each config, by its root, with `root`'s set to `kept`: none (null) is left out. */
+export function withEnvironment(
+  kept: Record<string, KeptEnvironment> | undefined,
+  root: string,
+  choice: KeptEnvironment | null,
+): Record<string, KeptEnvironment> {
+  const next = { ...kept };
+  if (choice === null) delete next[root];
   else next[root] = choice;
   return next;
 }

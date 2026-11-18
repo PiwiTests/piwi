@@ -35,8 +35,14 @@ const recentRuns = computed<Array<{ environment: string | null; branch: string |
         branch: run.branch ?? run.metadata?.scm?.branch ?? null,
       })),
 );
+// The project's environments by key, shown by name, with the labels of recent runs none takes, and No environment.
+const { environments } = useProjectEnvironments(() => props.project.id);
 const availableEnvironments = computed(() =>
-  [...new Set(recentRuns.value.map((run) => run.environment).filter((env): env is string => !!env))].sort(),
+  environmentFilterItems({
+    environments: environments.value,
+    labels: recentRuns.value.map((run) => run.environment),
+    selected: state.value.filter.environments,
+  }),
 );
 const availableBranches = computed(() =>
   [...new Set(recentRuns.value.map((run) => run.branch).filter((branch): branch is string => !!branch))].sort(),
@@ -50,7 +56,11 @@ function copyPageFilters() {
 const summary = computed(() => {
   const scope = statusFilter.value;
   if (!scope) return 'The latest run sets the status, whatever its environment and branch.';
-  return `Sets the status: the latest run on ${describeProjectRunScope(scope, defaultBranch.value)}.`;
+  const named = {
+    ...scope,
+    environments: scope.environments.map((value) => environmentFilterLabel(value, environments.value)),
+  };
+  return `Sets the status: the latest run on ${describeProjectRunScope(named, defaultBranch.value)}.`;
 });
 
 const { saving, save } = useProjectPatch(() => props.project.id);

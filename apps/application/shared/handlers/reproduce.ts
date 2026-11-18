@@ -91,6 +91,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
       startTime: testRuns.startTime,
       branch: testRuns.branch,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       metadata: testRuns.metadata,
       playwrightVersion: testRuns.playwrightVersion,
     })
@@ -144,6 +145,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
     cases: input.cases,
     browserName: input.browserName,
     commit,
+    environmentId: run?.environmentId ?? null,
     good: lastGreenCommit,
     bad: commit,
     clusterId: input.clusterId ?? null,

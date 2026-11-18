@@ -513,6 +513,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-variables',
       },
       {
+        title: 'Environments',
+        summary:
+          'The deployments a project’s tests run against (Local, Staging, Production), kept as records: each run’s label resolves to one, and a run Piwi starts for one gets its run variables.',
+        needs: [],
+        where: 'Project → Settings → Environments',
+        doc: 'features/environments',
+      },
+      {
         title: 'Reuse forecast',
         summary:
           'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',

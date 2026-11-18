@@ -172,7 +172,7 @@ describe('parseRunVariables', () => {
 
   test('refuses more than 10 variables', () => {
     const many = Array.from({ length: 11 }, (_, i) => ({ name: `V${i}`, value: 'x' }));
-    expect(problemsOf(many)).toEqual(['A project has at most 10 run variables.']);
+    expect(problemsOf(many)).toEqual(['A list of run variables holds at most 10 of them.']);
     expect(problemsOf(many.slice(0, 10))).toEqual([]);
   });
 

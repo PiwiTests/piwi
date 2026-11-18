@@ -18,6 +18,7 @@ import type { AnalyticsTagInfo } from '../../analytics/types';
 import { branchPolicyCondition, defaultBranchPolicy, type BranchPolicy } from './branch-policy';
 import { resolveStoredDefaultBranches } from '../../../server/utils/scm/stored-default-branch';
 import { memoizedTestFilter } from './test-filter-memo';
+import { environmentScopeSql } from '../environment-scope';
 
 export type ProjectAccess = 'all' | Set<number>;
 
@@ -322,8 +323,8 @@ function runConditions(
   if (toMs != null) conditions.push(lt(testRuns.startTime, new Date(toMs)));
   if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
   if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
+  const environment = environmentScopeSql(scope.environments ?? []);
+  if (environment) conditions.push(environment);
   const branch = branchPolicyCondition(
     branchPolicy,
     { branch: testRuns.branch, projectId: testRuns.projectId },

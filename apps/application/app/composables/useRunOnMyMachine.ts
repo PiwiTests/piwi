@@ -62,14 +62,21 @@ export async function useRunOnMyMachine(projectId: number, machineRuns?: boolean
     }
   }
 
+  /** Sends a request; `environmentId` names the environment of the project the run is for, null for none. */
   async function send(
     source: RunRequestSourceChoice,
     options: RunRequestOptions,
     targetId: number | null,
+    environmentId: number | null = null,
   ): Promise<RunRequestView & { skipped: number }> {
     return $fetch<RunRequestView & { skipped: number }>('/api/run-requests', {
       method: 'POST',
-      body: { source, options, ...(targetId != null ? { targetId } : {}) },
+      body: {
+        source,
+        options,
+        ...(targetId != null ? { targetId } : {}),
+        ...(environmentId != null ? { environmentId } : {}),
+      },
     });
   }
 

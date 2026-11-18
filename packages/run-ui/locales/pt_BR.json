@@ -186,6 +186,15 @@
   "runui_requestTitle": {
     "message": "Executar nesta máquina?"
   },
+  "runui_requestTitleFor": {
+    "message": "Executar nesta máquina para $environment$?",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestIntro": {
     "message": "Você pediu em $host$ para executar aqui $tests$ de $project$, na pasta vinculada a esse projeto. Isso executa o código dessa pasta nesta máquina; nada é executado até você clicar em $run$. O pedido termina sem resposta às $time$.",
     "placeholders": {
@@ -412,6 +421,28 @@
       }
     }
   },
+  "runui_requestProtectedNote": {
+    "message": "$environment$ é protegido: só os testes marcados com $tags$ são executados, além dos projetos de preparação e limpeza de que dependem, que o Playwright executa por inteiro. A execução só começa depois que você a confirmar.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_requestProtectedConfirm": {
+    "message": "Sim, executar estes testes em $environment$",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestNotNow": {
     "message": "Agora não"
   },
@@ -457,6 +488,32 @@
       "variables": {
         "content": "$1",
         "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
+  "runui_checkEnvironmentSet": {
+    "message": "Executa para $environment$: PIWI_ENVIRONMENT=$key$.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "key": {
+        "content": "$2",
+        "example": "staging"
+      }
+    }
+  },
+  "runui_checkEnvironmentProtected": {
+    "message": "Executa para $environment$, um ambiente protegido: só os testes marcados com $tags$ são executados, além dos projetos de preparação e limpeza de que dependem, que o Playwright executa por inteiro.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
       }
     }
   },

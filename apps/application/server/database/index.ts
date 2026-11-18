@@ -108,6 +108,27 @@ function backfillAnalyticsRollups(): void {
 }
 
 /**
+ * Give the runs stored before environments existed theirs (`backfillRunEnvironments`), discovering an environment
+ * for each label nothing takes, once per instance, without blocking startup; an interrupted pass runs again at the next
+ * start. Once it has run, a run whose environment was deleted keeps its label and no environment.
+ */
+function backfillRunEnvironmentIds(): void {
+  void (async () => {
+    try {
+      const { getAppSetting, setAppSetting } = await import('../utils/app-settings');
+      const { backfillRunEnvironments, RUN_ENVIRONMENTS_BACKFILLED_SETTING } =
+        await import('#shared/handlers/environments');
+      if (await getAppSetting(db as any, RUN_ENVIRONMENTS_BACKFILLED_SETTING)) return;
+      const given = await backfillRunEnvironments(db as any);
+      await setAppSetting(db as any, RUN_ENVIRONMENTS_BACKFILLED_SETTING, new Date().toISOString());
+      if (given > 0) console.log(`[Database] Environment backfill gave ${given} run(s) their environment`);
+    } catch (err) {
+      console.error('[Database] Environment backfill failed:', err);
+    }
+  })();
+}
+
+/**
  * Give the retries stored without an attempt history one from their run's
  * stored attempts (`backfillAttemptHistoriesOnce`), once per instance, without
  * blocking startup; an interrupted backfill resumes at the next start.
@@ -319,6 +340,7 @@ async function openDatabase(): Promise<DB> {
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          backfillRunEnvironmentIds();
           hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
@@ -377,6 +399,7 @@ async function openDatabase(): Promise<DB> {
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          backfillRunEnvironmentIds();
           hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);

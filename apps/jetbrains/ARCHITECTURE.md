@@ -21,6 +21,7 @@ does with it. It is reference material: open the section for the area you change
   - [Tree and nodes](#tree-and-nodes)
   - [Navigation and actions](#navigation-and-actions)
   - [Compare with](#compare-with)
+  - [Choose environment](#choose-environment)
   - [Tests tab](#tests-tab)
 - [Status bar](#status-bar)
 - [Runs](#runs)
@@ -371,6 +372,22 @@ The entries are:
 `baselines`. The header line names the baseline, a link to Compare with… (`Glue.toolWindowHeader`). What the ladder is:
 [Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
 reference.
+
+### Choose environment
+
+The environment widget (`PiwiEnvironmentWidgetFactory`, `piwi.environment`, after the status item) shows the
+environment the runs of the selected file's config are for, or nothing when that config shows none; with the file in
+no config, the first config's that shows one (`Glue.environmentContext`, from `ContextStatus.environment`), with a
+lock for a protected one. A click, or **Choose environment…** (`Piwi.ChooseEnvironment`, under **Tools → Piwi**), is a
+popup of the choices `piwi/environments` answers on a pooled thread, **None** first (`ChooseEnvironmentAction.choose`,
+`Glue.environmentEntryText`), for a config with a project or an environment chosen (`Glue.environmentContexts`), so
+**None** stays reachable while the instance or the project cannot be read. `PiwiProjectService.setEnvironment` sends
+`piwi/setEnvironment` and keeps the choice it answers, the environment with its instance and project, in
+`PiwiLocalSettings.environments` (by config folder, `Glue.encodeEnvironment`, none as no entry); `credentials()` sends
+them all as `environments`. A run for a protected environment (`RunCommand.protected`) runs in the plugin's console
+whatever the runner setting, with no Rerun, and the IDE's Playwright runner keeps no configuration of it, so each run
+against it is asked through the service. What a run for an environment gets, and the confirmation a protected one asks:
+[Environments](../../packages/editor/ARCHITECTURE.md#environments) in the editor service's reference.
 
 ### Tests tab
 

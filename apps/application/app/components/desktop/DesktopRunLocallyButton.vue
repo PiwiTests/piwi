@@ -10,12 +10,16 @@
  * holds one-off runs, the other test sets of the page, option toggles and
  * fix-it entries. The options start from the
  * project's defaults (its Local folder settings) and the button's preset; a
- * choice here applies to this button only. Renders nothing without the IPC
- * bridge (plain browsers, web deployments), so pages can mount it
- * unconditionally next to the copyable retry command.
+ * choice here applies to this button only. A run from here is for the
+ * environment of the run its tests come from (`environmentId`, else read from
+ * `sourceRunId`), unless that one is protected: it then runs for none, and Run
+ * with options picks another. Renders nothing without the IPC bridge (plain
+ * browsers, web deployments), so pages can mount it unconditionally next to
+ * the copyable retry command.
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
-import { withRunVariables } from '@piwitests/core/run-variables';
+import { commandWithEnvironment } from '#shared/run-variables';
+import { pickOf, runEnvironmentChoice } from '#shared/desktop-environments';
 import type { RetryCase } from '~/utils/retry-command';
 import {
   buildLocalRunPlan,
@@ -26,6 +30,7 @@ import {
   type LocalRunOptions,
 } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { DesktopRunSettings } from '~/composables/useDesktopEnvironments';
 
 const props = defineProps<{
   projectId?: string | number | null;
@@ -43,6 +48,8 @@ const props = defineProps<{
   sourceRunId?: number | null;
   /** Other sets of tests of the page the menu runs instead ("Re-run all 12 tests"), each once. */
   otherSets?: LocalRunSet[];
+  /** The environment of the run the tests come from; read from `sourceRunId` when not given. */
+  environmentId?: number | null;
 }>();
 
 const available = ref(false);
@@ -99,6 +106,47 @@ watch(
 );
 
 const options = computed(() => ({ ...store.getProjectOptions(props.projectId ?? ''), ...overrides.value }));
+
+/** The environment of the run the tests come from, as the page names it or the run reported it. */
+const sourceEnvironmentId = ref<number | null>(null);
+watch(
+  [available, () => props.environmentId, () => props.sourceRunId],
+  async () => {
+    if (props.environmentId !== undefined) {
+      sourceEnvironmentId.value = props.environmentId;
+      return;
+    }
+    sourceEnvironmentId.value = null;
+    const runId = props.sourceRunId;
+    if (!available.value || runId == null) return;
+    try {
+      const reported = await $fetch<{ label: string | null; environmentId: number | null }>(
+        `/api/desktop/test-runs/${runId}/environment`,
+      );
+      if (props.sourceRunId === runId) sourceEnvironmentId.value = reported.environmentId;
+    } catch {
+      // The run is gone or not readable: a run from here is for no environment.
+    }
+  },
+  { immediate: true },
+);
+/**
+ * The team project's environments are read only when the source run's environment is one the runs of a team
+ * environment discovered in the project, with no run variables of its own: the run then starts on the team one.
+ */
+const projectEnvironments = useProjectEnvironments(() => (available.value ? props.projectId : null));
+const sourceIsDiscovered = computed(() => {
+  const own = projectEnvironments.byId(sourceEnvironmentId.value);
+  return !!own?.discovered && own.runVariables.length === 0;
+});
+const { choices: environmentChoices, loaded: environmentsLoaded } = useDesktopEnvironments(
+  () => (available.value ? props.projectId : null),
+  { withTeam: sourceIsDiscovered },
+);
+/** A run from here waits for the team project's environments it may start on. */
+const environmentsReady = computed(() => !sourceIsDiscovered.value || environmentsLoaded.value);
+/** The environment a run from here is for: the source run's, unless protected. */
+const runEnvironment = computed(() => runEnvironmentChoice(environmentChoices.value, sourceEnvironmentId.value));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
 /** The cases the plan names; the others have no file path, or no title, Playwright can select them by. */
 const namedCases = computed(() => localRunNamedCases(props.cases, options.value.mode));
@@ -132,8 +180,10 @@ const idleLabel = computed(() => props.label ?? `Run ${testsLabel.value} locally
 const runModeLabel = computed(
   () => LOCAL_RUN_MODE_ITEMS.find((i) => i.value === options.value.runMode)?.label ?? 'Headless',
 );
-/** The options a run from here takes that are not the defaults, as the face appends them. */
-const optionsSuffix = computed(() => localRunOptionsSummary(options.value));
+/** The options a run from here takes that are not the defaults, and its environment, as the face appends them. */
+const optionsSuffix = computed(() =>
+  [localRunOptionsSummary(options.value), runEnvironment.value?.name].filter(Boolean).join(' · '),
+);
 
 const face = computed(() => {
   const run = contextRun.value;
@@ -182,7 +232,7 @@ const face = computed(() => {
 });
 
 function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
-  if (props.projectId == null) return;
+  if (props.projectId == null || !environmentsReady.value) return;
   store.startRun({
     projectId: props.projectId,
     projectLabel: props.projectLabel,
@@ -190,6 +240,7 @@ function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
     title: set ? set.runTitle : props.runTitle,
     sourceRunId: props.sourceRunId,
     options: { ...overrides.value, ...set?.options, ...patch },
+    environment: runEnvironment.value,
   });
 }
 
@@ -218,13 +269,40 @@ function setOption(patch: LocalRunOptions) {
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
-/** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
+/**
+ * What the commands of a run from here start with: the project's run variables, or for an environment what the shell
+ * reads for it (`readDesktopRunSettings`), its team project's for a team one.
+ */
 const runVariables = useProjectRunVariables(() => props.projectId);
-const copyCommand = computed(() =>
-  runVariables.command(
-    buildRetryCommand(props.cases, { mode: options.value.mode, options: localRunCopyOptions(options.value) }),
-  ),
+const environmentSettings = ref<DesktopRunSettings | null>(null);
+watch(
+  () => JSON.stringify(pickOf(runEnvironment.value)),
+  async () => {
+    const environment = runEnvironment.value;
+    environmentSettings.value = null;
+    if (!environment || !available.value || props.projectId == null) return;
+    try {
+      const read = await readDesktopRunSettings(props.projectId, pickOf(environment));
+      if (runEnvironment.value === environment) environmentSettings.value = read;
+    } catch {
+      // The commands start with the project's run variables; the shell says why when the run starts.
+    }
+  },
+  { immediate: true },
 );
+const commandVariables = computed(() => environmentSettings.value?.runVariables ?? runVariables.variables.value);
+const commandEnvironment = computed(() => environmentSettings.value?.environment ?? null);
+
+/** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
+const copyCommand = computed(() => {
+  const command = buildRetryCommand(props.cases, {
+    mode: options.value.mode,
+    options: localRunCopyOptions(options.value),
+  });
+  return command
+    ? commandWithEnvironment(command, commandVariables.value, commandEnvironment.value, runVariables.shell.value)
+    : command;
+});
 /** The tests the run names that the copied command leaves out: a shell would misread their title or path. */
 const copyLeavesOut = computed(() => namedCases.value.filter((c) => !retryCommandNames(c, options.value.mode)).length);
 
@@ -233,7 +311,9 @@ const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
   const shown = plan.value
     .slice(0, MAX_PREVIEW_STEPS)
-    .map((step) => withRunVariables(step.summary ?? step.display, runVariables.variables.value, 'bash'));
+    .map((step) =>
+      commandWithEnvironment(step.summary ?? step.display, commandVariables.value, commandEnvironment.value, 'bash'),
+    );
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
 });
@@ -442,7 +522,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy || !linkLoaded"
+          :disabled="busy || !linkLoaded || !environmentsReady"
           @click="onPrimaryClick"
         >
           {{ face.label }}

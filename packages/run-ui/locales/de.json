@@ -186,6 +186,15 @@
   "runui_requestTitle": {
     "message": "Auf diesem Rechner ausführen?"
   },
+  "runui_requestTitleFor": {
+    "message": "Auf diesem Rechner für $environment$ ausführen?",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestIntro": {
     "message": "Sie haben $host$ gebeten, $tests$ von $project$ hier auszuführen, im mit diesem Projekt verknüpften Ordner. Dabei läuft der Code dieses Ordners auf diesem Rechner; nichts läuft, bevor Sie auf $run$ klicken. Ohne Antwort verfällt die Anfrage um $time$.",
     "placeholders": {
@@ -412,6 +421,28 @@
       }
     }
   },
+  "runui_requestProtectedNote": {
+    "message": "$environment$ ist geschützt: Nur die Tests mit dem Tag $tags$ laufen, dazu die Setup- und Teardown-Projekte, von denen sie abhängen und die Playwright vollständig ausführt. Der Lauf startet erst, wenn Sie ihn bestätigen.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_requestProtectedConfirm": {
+    "message": "Ja, diese Tests gegen $environment$ ausführen",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
   "runui_requestNotNow": {
     "message": "Nicht jetzt"
   },
@@ -457,6 +488,32 @@
       "variables": {
         "content": "$1",
         "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
+  "runui_checkEnvironmentSet": {
+    "message": "Läuft für $environment$: PIWI_ENVIRONMENT=$key$.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "key": {
+        "content": "$2",
+        "example": "staging"
+      }
+    }
+  },
+  "runui_checkEnvironmentProtected": {
+    "message": "Läuft für $environment$, eine geschützte Umgebung: Nur die Tests mit dem Tag $tags$ laufen, dazu die Setup- und Teardown-Projekte, von denen sie abhängen und die Playwright vollständig ausführt.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
       }
     }
   },

@@ -26,6 +26,7 @@ import {
 } from '#shared/handlers/test-cases';
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
 import { getRunResources } from '#shared/handlers/run-resources';
+import { listProjectEnvironments } from '#shared/handlers/environments';
 import { isPassiveCapabilityDeclined } from '#shared/handlers/capabilities';
 import { latestOccurrences, listResourceFindings, runFindingsNovelty } from '#shared/handlers/resource-findings';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
@@ -569,6 +570,29 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       }),
     );
     return { items };
+  },
+
+  // ── list_environments ──────────────────────────────────────────────────────
+  async list_environments(db, params, ctx) {
+    const id = numericParam(params.projectId, 'projectId');
+    assertProject(ctx, id);
+    const items = await listProjectEnvironments(db as never, id);
+    return {
+      items: items.map((environment) =>
+        dropNulls({
+          id: environment.id,
+          key: environment.key,
+          name: environment.name,
+          description: environment.description,
+          aliases: environment.aliases,
+          appFromCheckout: environment.appFromCheckout,
+          protected: environment.protected,
+          requiredTags: environment.requiredTags,
+          discovered: environment.discovered || null,
+          archived: environment.archived || null,
+        }),
+      ),
+    };
   },
 
   // ── get_project ────────────────────────────────────────────────────────────

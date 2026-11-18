@@ -15,6 +15,8 @@ defineProps<{
   menuItems: (run: TestRunSummary) => DropdownMenuItem[];
   /** Why an own run the filters leave out is listed ("Yours · partial run"), as the table's run cell says it. */
   ownMark?: (run: TestRunSummary) => string | null;
+  /** A run's environment as the table shows it: its environment's name, else its label. */
+  environmentName?: (run: TestRunSummary) => string | null;
 }>();
 
 const emit = defineEmits<{ toggle: [runId: number] }>();
@@ -41,7 +43,12 @@ const emit = defineEmits<{ toggle: [runId: number] }>();
               class="size-3.5 shrink-0 text-muted"
               :aria-label="`Run #${run.id} is kept forever`"
             />
-            <EnvironmentBadge v-if="run.environment" :name="run.environment" class="text-xs text-muted" />
+            <EnvironmentBadge
+              v-if="run.environment"
+              :name="environmentName?.(run) ?? run.environment"
+              :label="run.environment"
+              class="text-xs text-muted"
+            />
             <span v-if="ownMark?.(run)" class="text-xs text-muted" data-testid="own-run-mark">{{
               ownMark?.(run)
             }}</span>

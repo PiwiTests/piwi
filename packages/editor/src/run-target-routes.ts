@@ -190,15 +190,23 @@ export const RUN_TARGET_ROUTES = {
       return prompt ? ok(prompt) : refused(404, 'This request is no longer asked about');
     },
   },
-  /** The person's answer in the window. */
+  /**
+   * The person's answer in the window: the command it showed, and for a protected environment the key of the one the
+   * person confirmed (`environment`).
+   */
   answer: {
     method: 'POST',
     path: '/requests/:id/answer',
     shellOnly: false,
     handle: async (request) => {
-      const { decision, command } = bodyOf(request);
+      const { decision, command, environment } = bodyOf(request);
       if (decision !== 'run' && decision !== 'not-now') return refused(400, 'The decision is run or not-now');
-      const answered = await answerRunRequest(request.id!, decision, typeof command === 'string' ? command : null);
+      const answered = await answerRunRequest(
+        request.id!,
+        decision,
+        typeof command === 'string' ? command : null,
+        typeof environment === 'string' ? environment : null,
+      );
       return answered.ok ? ok({ launch: answered.launch }) : refused(answered.statusCode, answered.message);
     },
   },

@@ -632,6 +632,12 @@ export interface RunCommand {
    * register on the run channel.
    */
   name?: string;
+  /**
+   * The run is for a protected environment, which the person confirmed for this run alone: the client offers no way
+   * to start it again (a Rerun, a run configuration it keeps), so each run against it is asked through the service.
+   * Absent otherwise.
+   */
+  protected?: boolean;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -733,6 +739,12 @@ export interface StatusResult {
     source: ConnectionSource | null;
     projectId: number | null;
     projectName: string | null;
+    /**
+     * The environment the runs Piwi starts for this config's tests are for (`piwi/setEnvironment`), as the clients'
+     * environment item shows it; null while the project lists no environment and none is chosen, where the clients
+     * show no item.
+     */
+    environment?: StatusEnvironment | null;
     branch: string | null;
     locators: number;
     reachedFiles: number;
@@ -749,6 +761,18 @@ export interface StatusResult {
   }>;
   /** The address of the desktop app running on this machine; null when it does not run. */
   desktopUrl?: string | null;
+}
+
+/** A context's environment as the clients' environment item shows it (`StatusResult.contexts[].environment`). */
+export interface StatusEnvironment {
+  /** The environment chosen; null for none, where the Playwright config decides. */
+  id: number | null;
+  /** What the item says: the environment's name, `No environment` for none. */
+  text: string;
+  /** What hovering the item says: the project, the environment's key and what choosing another does. */
+  tooltip: string;
+  /** A protected environment: every run against it is confirmed, and keeps to the tests carrying its required tags. */
+  protected: boolean;
 }
 
 export const STATUS_REQUEST = 'piwi/status';
@@ -807,6 +831,13 @@ export interface EditorCredentials {
    * choices stay.
    */
   baselines?: Record<string, BaselineChoice> | null;
+  /**
+   * The environment chosen for each context, by its root, as `piwi/setEnvironment` answered it. Kept on this machine by
+   * the client and sent again with every `piwi/setCredentials` and in the initialization options, so a restarted
+   * service has it. When present, it replaces every choice the service holds: a context it does not name runs with
+   * none. Absent, the choices stay.
+   */
+  environments?: Record<string, KeptEnvironment> | null;
   /**
    * The severity of a `ci-failure` diagnostic: a failure of a run on the checked-out branch gets it, one of a run on
    * another branch is a warning at most, one whose line changed since its run an information; `off` publishes none,
@@ -943,6 +974,70 @@ export interface SetBaselineParams {
 }
 
 export const SET_BASELINE_NOTIFICATION = 'piwi/setBaseline';
+
+/**
+ * `piwi/environments`: the environments the runs of the context at `root` can be for, as **Choose environment…**
+ * offers them, **None** first (the Playwright config decides). Null for a root that is no context's.
+ */
+export interface EnvironmentsParams {
+  root: string;
+}
+
+export interface EnvironmentsResult {
+  root: string;
+  /** What the picker asks, naming the project: `Run the tests of Acme Mugs for…`. */
+  title: string;
+  /** **None**, then the project's environments in its order. */
+  items: EnvironmentItem[];
+}
+
+/** One choice of **Choose environment…**. */
+export interface EnvironmentItem {
+  /** The environment's id; null for **None**. */
+  id: number | null;
+  /** Its name, or `None`. */
+  label: string;
+  /** Its key, the label its runs report (`PIWI_ENVIRONMENT`), or what **None** does. */
+  description: string;
+  /** Its description, and for a protected one what its runs keep to; null for none. */
+  detail: string | null;
+  /** The choice in force. */
+  picked: boolean;
+  protected: boolean;
+}
+
+export const ENVIRONMENTS_REQUEST = 'piwi/environments';
+
+/**
+ * An environment chosen for a context's runs: its id and name, and the instance (`serverUrl`) and the project whose
+ * environment it is. It applies to the context only while the context reads that instance and that project, or one
+ * not known yet, where nothing runs until it is: an id names another environment, or none, anywhere else.
+ */
+export interface KeptEnvironment {
+  id: number;
+  name: string;
+  serverUrl: string;
+  projectId: number;
+}
+
+/**
+ * `piwi/setEnvironment`: choose the environment of the runs of the context at `root`, its id or null for none, which
+ * every run the service builds for it reads from then on. An id the project does not list, or a context with no
+ * project read, keeps the choice it holds. The answer is the choice the context holds after it (`kept`, null for
+ * none), which the client keeps for the root and sends again in `EditorCredentials.environments`; null for a root that
+ * is no context's.
+ */
+export interface SetEnvironmentParams {
+  root: string;
+  /** The environment's id; null, or left out, for none. */
+  environmentId?: number | null;
+}
+
+export interface SetEnvironmentResult {
+  kept: KeptEnvironment | null;
+}
+
+export const SET_ENVIRONMENT_REQUEST = 'piwi/setEnvironment';
 
 /** `piwi/trace`: download an execution's trace and return the command that opens it in Playwright's trace viewer. */
 export interface TraceParams {

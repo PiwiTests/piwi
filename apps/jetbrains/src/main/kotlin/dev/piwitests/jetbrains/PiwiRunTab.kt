@@ -54,7 +54,8 @@ import javax.swing.JPanel
 object PiwiRunTab {
     /**
      * The process's tab, titled `title`, its output read through `filter` (through `relay` with the test tree, for a
-     * test run), `rerun` run by Rerun, the controls of the run `ref` names in its toolbar. On the event thread.
+     * test run), `rerun` run by Rerun (no Rerun without it), the controls of the run `ref` names in its toolbar. On the
+     * event thread.
      */
     fun show(
         project: Project,
@@ -63,7 +64,7 @@ object PiwiRunTab {
         title: String,
         filter: Filter,
         ref: String?,
-        rerun: () -> Unit,
+        rerun: (() -> Unit)?,
     ) {
         val executor = DefaultRunExecutor.getRunExecutorInstance()
         val console: ExecutionConsole = if (relay != null) {
@@ -77,7 +78,7 @@ object PiwiRunTab {
         descriptor.isActivateToolWindowWhenAdded = true
         descriptor.isAutoFocusContent = true
         val actions = DefaultActionGroup()
-        actions.add(Rerun(rerun).also { it.registerCustomShortcutSet(CommonShortcuts.getRerun(), panel) })
+        if (rerun != null) actions.add(Rerun(rerun).also { it.registerCustomShortcutSet(CommonShortcuts.getRerun(), panel) })
         actions.add(Stop(handler))
         if (ref != null) {
             actions.addSeparator()

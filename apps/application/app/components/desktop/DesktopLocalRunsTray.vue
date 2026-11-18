@@ -39,6 +39,12 @@
  * the linked folder) is the editor's to steer: its run says where its tests wait, in that editor, read only
  * (`DesktopEditorRunNote`), with no Hold failures switch, and still ends with its own verdict.
  *
+ * A run started for an environment names it on its line, with the command the
+ * shell runs, and says when the label its Piwi run reported resolves to
+ * another environment ("Started for Staging; the config reported production").
+ * Its Run again reads the environment again and, for a protected one, asks
+ * the person to confirm again (`DesktopEnvironmentQuestion`).
+ *
  * A run's output can move to a separate window of the app (`separate`,
  * `DesktopRunOutputWindows`), which stays open when the tray closes or
  * reloads, and closes with the run's entry or when the person closes it.
@@ -48,6 +54,7 @@ import {
   localRunCompareTo,
   localRunDetail,
   localRunDuration,
+  localRunEnvironmentNote,
   localRunProgressLabel,
   localRunTitle,
   type LocalRun,
@@ -307,6 +314,7 @@ function lineAction(run: LocalRun): LineAction | null {
 
 <template>
   <Teleport to="body">
+    <DesktopEnvironmentQuestion v-if="available" />
     <!-- Outside the tray, so a stop that opens it is read out from a region already there. -->
     <p v-if="available" class="sr-only" aria-live="polite">{{ announcement }}</p>
     <section
@@ -437,7 +445,7 @@ function lineAction(run: LocalRun): LineAction | null {
                   variant="soft"
                   icon="i-lucide-rotate-ccw"
                   aria-label="Run again"
-                  @click="store.rerun(run)"
+                  @click="void store.rerun(run)"
                 />
               </UTooltip>
               <UTooltip :text="separateLabel(run)">
@@ -461,6 +469,13 @@ function lineAction(run: LocalRun): LineAction | null {
             </div>
             <p class="mt-0.5 font-mono text-[11px] text-muted truncate" :title="localRunDetail(run)">
               {{ localRunDetail(run) }}
+            </p>
+            <p
+              v-if="localRunEnvironmentNote(run)"
+              class="mt-0.5 text-xs text-warning"
+              data-testid="local-run-environment-note"
+            >
+              {{ localRunEnvironmentNote(run) }}
             </p>
             <DesktopRunHoldSwitch
               v-if="run.status === 'running' && !editorRunsOf(run).length"

@@ -1268,6 +1268,20 @@
       "when": 1794932059932,
       "tag": "0180_mighty_gauntlet",
       "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "6",
+      "when": 1795007575511,
+      "tag": "0181_safe_hex",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "6",
+      "when": 1795011691078,
+      "tag": "0182_bent_chimera",
+      "breakpoints": true
     }
   ]
 }

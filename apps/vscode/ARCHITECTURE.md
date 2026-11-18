@@ -25,6 +25,7 @@ extension does with it. It is reference material: open the section for the area 
   - [CI runs of the branch](#ci-runs-of-the-branch)
 - [Status bar](#status-bar)
   - [Compare with](#compare-with)
+  - [Choose environment](#choose-environment)
 - [Open in IDE](#open-in-ide)
   - [Debug in my editor](#debug-in-my-editor)
 - [Send to editor](#send-to-editor)
@@ -199,7 +200,7 @@ What the extension stores:
   `piwi.sharedKeyForgotten`.
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
   Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
-  (`piwi.baseline`), `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
+  (`piwi.baseline`), the environments (`piwi.environments`), `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
   (`piwi.recordStartUrl`, `piwi.recordPage`, `piwi.recordProject`), and the runs' MCP server's port
   (`piwi.agentsPort`).
 
@@ -778,6 +779,25 @@ sent with `piwi/setBaseline`; the credentials carry the whole map (`baselines`).
 name the baseline (`baselineLine`); with the local runs alone, the run node reads `Your local runs`. What the ladder is:
 [Latest run and baseline](../../packages/editor/ARCHITECTURE.md#latest-run-and-baseline) in the editor service's
 reference.
+
+### Choose environment
+
+The environment item (`piwi.environment`, beside the status item) shows the environment the runs of the active file's
+config are for, or nothing when that config shows none; with the active file in no config, the first config's that
+shows one (`environmentItem` in `src/glue.ts`, from `StatusResult.contexts[].environment`), a lock and the warning
+background for a protected one. A click, or **Piwi: Choose environment…** (`piwi.chooseEnvironment`, in the palette
+while a context is connected or the item shows: `piwi.environmentShown`), offers that config's choices as
+`piwi/environments` answers them, **None** first, also for a config whose instance or project cannot be read now but
+that has an environment chosen. `piwi/setEnvironment` answers the choice the config holds (`KeptEnvironment`: the
+environment with its instance and project), which is kept in workspace state (`piwi.environments`, by config folder,
+none as no entry: `withEnvironment`); the credentials carry the whole map (`environments`). What a run for an
+environment gets, and the confirmation a protected one asks:
+[Environments](../../packages/editor/ARCHITECTURE.md#environments) in the editor service's reference.
+
+A run for a protected environment (`RunCommand.protected`) is confirmed for that run alone, and its task says so in its
+definition (`protected`). **Tasks: Rerun Last Task** cannot be kept from starting it again: the extension ends such a
+task as it starts (`tasks.onDidStartTask`) and says to start it from Piwi. That is a known limit: the task's shell has
+started by then, and Playwright may have begun before the task ends.
 
 ## Open in IDE
 

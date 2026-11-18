@@ -1,7 +1,7 @@
 /**
  * Read-only inspection of a folder on this machine (desktop shell only): the
- * Piwi project name it would report under and whether Playwright and the
- * `@piwitests/reporter` package are set up. Backs "new project from a folder"
+ * Piwi project name it would report under, whether Playwright and the
+ * `@piwitests/reporter` package are set up, and the env files it holds. Backs "new project from a folder"
  * and the setup status shown next to a project's linked folder. Every helper
  * feature-detects the IPC bridge and resolves `null` in a plain browser.
  */
@@ -24,6 +24,8 @@ export interface DesktopFolderInspection {
   projectNameComputed: boolean;
   /** The Playwright config declares a `webServer` — Playwright starts the app itself. */
   webServer: boolean;
+  /** The env files at the folder's root, by name (`.env.staging`), whose content is never read. */
+  envFiles: string[];
 }
 
 /**

@@ -97,6 +97,10 @@ export function requestCheckWords(
       return words.t('runui_checkVariablesInvalid', { problems: value('problems') });
     case 'variables-set':
       return words.t('runui_checkVariablesSet', { variables: value('variables') });
+    case 'environment-set':
+      return words.t('runui_checkEnvironmentSet', { environment: value('environment'), key: value('key') });
+    case 'environment-protected':
+      return words.t('runui_checkEnvironmentProtected', { environment: value('environment'), tags: value('tags') });
     case 'folder-busy':
       return words.t('runui_checkFolderBusy');
     case 'config-missing':

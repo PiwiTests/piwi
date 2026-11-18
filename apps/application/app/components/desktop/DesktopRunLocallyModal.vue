@@ -1,14 +1,18 @@
 <script setup lang="ts">
-import { withRunVariables } from '@piwitests/core/run-variables';
 /**
  * Desktop shell only: the "run with options" dialog — first-time folder setup,
- * the full options form, the spec check and the exact command preview. The
- * form starts from the run button's options and applies to the run it starts
- * alone: neither the button nor the project's defaults (those are in the
- * project's Local folder settings) change. Running hands the plan to the
- * app-wide local runs store and closes; progress streams in the runs tray, so
- * this dialog never holds a process hostage.
+ * the full options form, the environment, the spec check and the exact command
+ * preview. The form starts from the run button's options and applies to the
+ * run it starts alone: neither the button nor the project's defaults (those
+ * are in the project's Local folder settings) change. The environment starts on
+ * the last one picked for the folder, and a protected one is confirmed for
+ * each run (`DesktopEnvironmentField`). Running hands the plan to the app-wide
+ * local runs store and closes; progress streams in the runs tray, so this
+ * dialog never holds a process hostage.
  */
+import { commandWithEnvironment, type RunVariable } from '#shared/run-variables';
+import type { EnvironmentForRun } from '@piwitests/core/environments';
+import { environmentReady, pickOf, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 import type { RetryCase } from '~/utils/retry-command';
 import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
 import type { SavedLocalRunOptions } from '~/composables/useDesktopLocalRuns';
@@ -63,9 +67,42 @@ watch([open, () => link.value?.path, linked], () => {
 });
 
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
-const runVariables = useProjectRunVariables(() => props.projectId);
+
+/** The environment this run is for, and whether its protection was confirmed for this run. */
+const environment = ref<DesktopEnvironmentChoice | null>(null);
+const confirmed = ref(false);
+const ready = computed(() => environmentReady(environment.value, confirmed.value));
+
+/** What the shell sets for the environment picked, as it reads it; why it cannot, when it cannot. */
+const settings = ref<{ runVariables: RunVariable[]; environment: EnvironmentForRun | null }>({
+  runVariables: [],
+  environment: null,
+});
+const settingsProblem = ref<string | null>(null);
+let settingsAsked = 0;
+watch(
+  [open, () => props.projectId, () => pickOf(environment.value)?.id, () => environment.value?.team],
+  async () => {
+    if (!open.value) return;
+    const ask = ++settingsAsked;
+    try {
+      const answer = await readDesktopRunSettings(props.projectId, pickOf(environment.value));
+      if (ask !== settingsAsked) return;
+      settings.value = answer;
+      settingsProblem.value = null;
+    } catch (error) {
+      if (ask !== settingsAsked) return;
+      settings.value = { runVariables: [], environment: null };
+      settingsProblem.value = errorMessage(error);
+    }
+  },
+  { immediate: true },
+);
+
 const preview = computed(() =>
-  plan.value.map((s) => withRunVariables(s.display, runVariables.variables.value, 'bash')).join('\n'),
+  plan.value
+    .map((s) => commandWithEnvironment(s.display, settings.value.runVariables, settings.value.environment, 'bash'))
+    .join('\n'),
 );
 
 function run() {
@@ -76,7 +113,10 @@ function run() {
     title: props.runTitle,
     sourceRunId: props.sourceRunId,
     options: options.value,
+    environment: environment.value,
+    confirmed: confirmed.value,
   });
+  confirmed.value = false;
   open.value = false;
 }
 </script>
@@ -131,6 +171,12 @@ function run() {
           </div>
 
           <DesktopRunOptionsFields v-model="options" />
+          <DesktopEnvironmentField
+            v-model="environment"
+            v-model:confirmed="confirmed"
+            :project-id="projectId"
+            purpose="run"
+          />
           <p class="text-xs text-muted">
             For this run only. The project's defaults are in
             <NuxtLink
@@ -195,6 +241,9 @@ function run() {
           <div class="space-y-1">
             <div class="text-xs text-muted">Runs in the linked folder</div>
             <CodeBlock :code="preview" lang="sh" />
+            <p v-if="settingsProblem" class="text-xs text-warning">
+              The run would not start: <ErrorText :text="settingsProblem" />
+            </p>
           </div>
 
           <p class="text-xs text-muted">
@@ -209,7 +258,12 @@ function run() {
     <template #footer>
       <div class="flex items-center justify-end w-full gap-2">
         <UButton color="neutral" variant="ghost" @click="open = false">Close</UButton>
-        <UButton icon="i-lucide-play" :disabled="!linked || plan.length === 0 || busy" @click="run()">Run</UButton>
+        <UButton
+          icon="i-lucide-play"
+          :disabled="!linked || plan.length === 0 || busy || !ready || !!settingsProblem"
+          @click="run()"
+          >Run</UButton
+        >
       </div>
     </template>
   </UModal>

@@ -522,7 +522,6 @@ type RepresentativeRow = NonNullable<Awaited<ReturnType<typeof loadExecutionRow>
 function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   const lines: string[] = [];
   const meta = rep.runMetadata as RunMetadata | null;
-  const env = rep.runEnvironment as Record<string, string> | null;
 
   if (meta?.scm?.commit) {
     const short = meta.scm.commit.slice(0, 7);
@@ -530,8 +529,7 @@ function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   }
   if (meta?.scm?.branch) lines.push(`- Branch: ${meta.scm.branch}`);
   if (meta?.ci?.provider) lines.push(`- CI: ${meta.ci.provider}`);
-  if (env?.os) lines.push(`- OS: ${env.os}`);
-  if (env?.hostname) lines.push(`- Hostname: ${env.hostname}`);
+  if (rep.runEnvironment) lines.push(`- Environment: ${rep.runEnvironment}`);
   return lines;
 }
 

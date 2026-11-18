@@ -354,6 +354,14 @@ const PROJECT_URL_PATTERNS = [
     path_prefix: null,
     test_path_prefix: '/shop',
   },
+  // The two dev servers developers' runs open (`CHECKOUT_BASE_URLS.development`), which Local takes by its alias.
+  ...['http://localhost:3000/**', 'http://localhost:5173/**'].map((pattern) => ({
+    pattern,
+    environment: 'local',
+    branch: null,
+    path_prefix: null,
+    test_path_prefix: null,
+  })),
 ].map((p, position) => ({
   id: position + 1,
   project_id: 1,
@@ -822,6 +830,136 @@ const CHECKOUT_BASE_URLS = {
   integration: ['https://integration.checkout.example.com'],
   development: ['http://localhost:3000', 'http://localhost:5173'],
 };
+
+// ── Environments ──────────────────────────────────────────────────────────
+// Each project's environments, as `environments` stores them (`shared/handlers/environments.ts`). A manager declared
+// the four the runs report (`ENVIRONMENTS`), Local taking `development` by its alias. Each sets `TEST_ENV`, which the
+// suite's config reads to load `.env.<TEST_ENV>`, and the checkout project's deployments also set their `BASE_URL`.
+// Production is protected: a run Piwi starts there runs the @smoke tests only, for a project manager. The checkout
+// project also keeps `preview`, discovered from the label of a preview deployment's run and never saved by a manager.
+const ENVIRONMENT_TIME = ts('2025-04-10T09:00:00Z');
+const DISCOVERED_ENVIRONMENT_TIME = ts('2025-04-18T14:00:00Z');
+
+/** A project's declared environments, setting `BASE_URL` for each deployment `baseUrls` names by key. */
+function declaredEnvironments(baseUrls = {}) {
+  const runVariables = (key) => [
+    { name: 'TEST_ENV', value: key },
+    ...(baseUrls[key] ? [{ name: 'BASE_URL', value: baseUrls[key] }] : []),
+  ];
+  return [
+    {
+      key: 'local',
+      name: 'Local',
+      description: 'Built from the run’s checkout and served by the config’s webServer.',
+      aliases: ['development'],
+      run_variables: runVariables('local'),
+      app_from_checkout: 1,
+      protected: 0,
+      required_tags: null,
+      env_file: null,
+    },
+    {
+      key: 'integration',
+      name: 'Integration',
+      description: 'Deployed from main after every merge.',
+      aliases: null,
+      run_variables: runVariables('integration'),
+      app_from_checkout: 0,
+      protected: 0,
+      required_tags: null,
+      env_file: '.env.integration',
+    },
+    {
+      key: 'staging',
+      name: 'Staging',
+      description: 'Deployed from develop. Its data is reset every night at 02:00.',
+      aliases: ['stg'],
+      run_variables: runVariables('staging'),
+      app_from_checkout: 0,
+      protected: 0,
+      required_tags: null,
+      env_file: '.env.staging',
+    },
+    {
+      key: 'production',
+      name: 'Production',
+      description: 'The live application, used by customers.',
+      aliases: ['prod'],
+      run_variables: runVariables('production'),
+      app_from_checkout: 0,
+      protected: 1,
+      required_tags: ['@smoke'],
+      env_file: '.env.production',
+    },
+  ];
+}
+
+const PROJECT_ENVIRONMENTS = [];
+for (const project of PROJECTS) {
+  const baseUrls =
+    project.id === 1
+      ? Object.fromEntries(['integration', 'staging', 'production'].map((key) => [key, CHECKOUT_BASE_URLS[key][0]]))
+      : {};
+  const own = declaredEnvironments(baseUrls).map((environment) => ({
+    ...environment,
+    discovered: 0,
+    created_at: ENVIRONMENT_TIME,
+  }));
+  if (project.id === 1) {
+    own.push({
+      key: 'preview',
+      name: 'preview',
+      description: null,
+      aliases: null,
+      run_variables: null,
+      app_from_checkout: 0,
+      protected: 0,
+      required_tags: null,
+      env_file: null,
+      discovered: 1,
+      created_at: DISCOVERED_ENVIRONMENT_TIME,
+    });
+  }
+  own.forEach(({ created_at, ...environment }, position) => {
+    PROJECT_ENVIRONMENTS.push({
+      id: PROJECT_ENVIRONMENTS.length + 1,
+      project_id: project.id,
+      ...environment,
+      key_fold: environment.key.toLowerCase(),
+      position,
+      archived_at: null,
+      created_at,
+      updated_at: created_at,
+    });
+  });
+}
+
+/**
+ * The environment of a project a run's label resolves to, by the rule of `resolveEnvironment`
+ * (`@piwitests/core/environments`): the label trimmed, then the key ignoring case, then an exact alias, then a `*`
+ * alias, in position order. No label resolves to none; a label nothing takes stops the seed, since the server would
+ * discover an environment for it.
+ */
+function seedEnvironmentId(projectId, label) {
+  const trimmed = typeof label === 'string' ? label.trim() : '';
+  if (trimmed === '') return null;
+  const lower = trimmed.toLowerCase();
+  const own = PROJECT_ENVIRONMENTS.filter((e) => e.project_id === projectId);
+  const exact = (alias) => !alias.includes('*') && alias.toLowerCase() === lower;
+  const glob = (alias) =>
+    alias.includes('*') && new RegExp(`^${alias.split('*').map(escapeRegExp).join('.*')}$`, 'i').test(trimmed);
+  const found =
+    own.find((e) => e.key_fold === lower) ??
+    own.find((e) => (e.aliases ?? []).some(exact)) ??
+    own.find((e) => (e.aliases ?? []).some(glob));
+  if (!found) throw new Error(`Project ${projectId}: no seeded environment takes the run label ${trimmed}`);
+  return found.id;
+}
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** The `use.baseURL` of each run's Playwright projects, by run id, for the runs that record one. */
 const RUN_BASE_URLS = new Map();
 const RUN_GREPS = {
@@ -6128,6 +6266,8 @@ const REBASE_SQL = [
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  // archived_at is nullable; NULL + delta stays NULL.
+  `UPDATE environments SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, archived_at = archived_at + ${D};`,
   `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, closed_at = closed_at + ${D};`,
   `UPDATE bug_reproductions SET created_at = created_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -7628,6 +7768,10 @@ const INTEGRATION_ACTIONS = SYNC_RUNS.map((run, index) => {
   }
 }
 
+// ── Each run's environment (rng-free) ──────────────────────────────────────
+// The environment each run's label resolves to, as ingest stores it with the run.
+for (const run of TEST_RUNS) run.environment_id = seedEnvironmentId(run.project_id, run.environment);
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -7671,6 +7815,9 @@ const lines = [
   '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
+  '',
+  '-- Project environments (referenced by test_runs)',
+  insert('environments', PROJECT_ENVIRONMENTS),
   '',
   "-- Test management: the checkout project's Zephyr Scale binding and the catalog of its project",
   insert('integration_connections', TEST_MANAGEMENT_CONNECTIONS),
@@ -7829,6 +7976,7 @@ console.log(`✅  Demo seed written to ${OUTPUT}`);
 console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
+console.log(`   Environments: ${PROJECT_ENVIRONMENTS.length}`);
 console.log(`   Users      : ${USERS.length}`);
 console.log(`   Groups     : ${GROUPS.length}`);
 console.log(`   Bindings   : ${ROLE_BINDINGS.length}`);

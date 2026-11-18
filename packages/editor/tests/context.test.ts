@@ -24,7 +24,10 @@ import {
   readDesktopDiscovery,
   resolveContextConnection,
   withServerUrl,
+  keptEnvironmentOf,
 } from '../src/context';
+import { PiwiClient } from '../src/piwi-client';
+import { environmentChoices, ownCommandEnv, statusEnvironment } from '../src/server';
 
 const dirs: string[] = [];
 function workspace(dotEnv?: string): string {
@@ -344,5 +347,128 @@ describe('withServerUrl', () => {
   test('the desktop app the command finds by itself needs no flag', () => {
     const desktop = { url: 'http://127.0.0.1:3000', token: 'pd_desktop', projects: [] };
     expect(withServerUrl(command, 'http://127.0.0.1:3000', workspace(), env, desktop)).toBe(command);
+  });
+});
+
+describe('the environment chosen for a context', () => {
+  const staging = {
+    id: 4,
+    key: 'staging',
+    name: 'Staging',
+    protected: false,
+    requiredTags: [],
+    envFile: null,
+    description: null,
+  };
+  const production = {
+    ...staging,
+    id: 5,
+    key: 'production',
+    name: 'Production',
+    protected: true,
+    requiredTags: ['@smoke'],
+  };
+
+  const SERVER = 'https://piwi.example.com';
+  /** A context reading project 7 of `SERVER`, whose environments were read. */
+  const reading = () => {
+    const context = new PiwiContext(workspace());
+    context.client = new PiwiClient({ serverUrl: SERVER, apiKey: null, project: 'Acme Mugs' });
+    context.project = { id: 7, name: 'Acme Mugs' };
+    context.environments = [staging, production];
+    context.environmentsRead = true;
+    return context;
+  };
+
+  test('is shown by the environment item, and offered with None first', () => {
+    const context = reading();
+    context.environments = [];
+    // A project that lists none shows no item.
+    expect(statusEnvironment(context)).toBeNull();
+    context.environments = [staging, production];
+    expect(statusEnvironment(context)).toMatchObject({ id: null, text: 'No environment', protected: false });
+    expect(context.chooseEnvironment(5)).toBe(true);
+    expect(context.chooseEnvironment(5)).toBe(false);
+    // An id the project does not list keeps the choice.
+    expect(context.chooseEnvironment(9)).toBe(false);
+    expect(context.environmentChoice).toEqual({ id: 5, name: 'Production', serverUrl: SERVER, projectId: 7 });
+    expect(statusEnvironment(context)).toEqual({
+      id: 5,
+      text: 'Production',
+      tooltip:
+        'The runs Piwi starts for Acme Mugs are for Production (PIWI_ENVIRONMENT=production). It is protected: each run is confirmed, and only the tests tagged @smoke run, beside the setup and teardown projects they depend on, which Playwright runs whole. Piwi: Choose environment… changes it.',
+      protected: true,
+    });
+    expect(environmentChoices(context).items.map((item) => [item.label, item.picked])).toEqual([
+      ['None', false],
+      ['Staging', false],
+      ['Production', true],
+    ]);
+    context.environments = [staging];
+    expect(statusEnvironment(context)).toMatchObject({ id: 5, text: 'Production' });
+    expect(statusEnvironment(context)!.tooltip).toMatch(/^Production is no longer one of Acme Mugs’s environments/);
+  });
+
+  test('applies only to the instance and the project it was chosen for, and waits while they are not read', () => {
+    const context = reading();
+    context.chooseEnvironment(4);
+    expect(context.environmentId).toBe(4);
+    context.project = { id: 8, name: 'Other' };
+    expect(context.environmentId).toBeNull();
+    context.project = { id: 7, name: 'Acme Mugs' };
+    context.client = new PiwiClient({ serverUrl: 'http://127.0.0.1:7777', apiKey: null, project: '' });
+    expect(context.environmentId).toBeNull();
+    // Not read yet: it applies, and nothing runs until it is read.
+    context.client = null;
+    context.project = null;
+    context.environmentsRead = false;
+    context.problem = 'Could not reach https://piwi.example.com.';
+    expect(context.environmentId).toBe(4);
+    expect(statusEnvironment(context)).toMatchObject({ id: 4, text: 'Staging' });
+    expect(statusEnvironment(context)!.tooltip).toBe(
+      'Piwi cannot read the instance or the project (Could not reach https://piwi.example.com.), so it runs nothing for Staging. Piwi: Choose environment… can choose None, to run without one.',
+    );
+    // None is always chosen.
+    expect(context.chooseEnvironment(null)).toBe(true);
+    expect(context.environmentChoice).toBeNull();
+  });
+
+  test('keeps a choice a client kept only when it reads as one', () => {
+    expect(keptEnvironmentOf({ id: 4, name: 'Staging', serverUrl: SERVER, projectId: 7 })).toEqual({
+      id: 4,
+      name: 'Staging',
+      serverUrl: SERVER,
+      projectId: 7,
+    });
+    for (const bad of [
+      4,
+      null,
+      { id: 4, name: 'Staging', serverUrl: SERVER },
+      { id: 0, name: 'x', serverUrl: SERVER, projectId: 7 },
+    ]) {
+      expect(keptEnvironmentOf(bad)).toBeNull();
+    }
+    expect(keptEnvironmentOf({ id: 4, name: 'Staging', serverUrl: 'file:///x', projectId: 7 })).toBeNull();
+  });
+
+  test('reaches the commands the client runs on its own once allowed, and never a protected one', () => {
+    const context = new PiwiContext(workspace());
+    const variables = [{ name: 'TEST_ENV', value: 'staging' }];
+    expect(ownCommandEnv(context, { ok: true, value: variables, environment: staging })).toBe(
+      'The project’s run variables are not allowed yet.',
+    );
+    context.allowRunVariables(variables, 'staging');
+    expect(ownCommandEnv(context, { ok: true, value: variables, environment: staging })).toEqual({
+      TEST_ENV: 'staging',
+      PIWI_ENVIRONMENT: 'staging',
+    });
+    // The same variables for another environment are another set.
+    expect(ownCommandEnv(context, { ok: true, value: variables, environment: { ...staging, key: 'qa' } })).toBe(
+      'The project’s run variables are not allowed yet.',
+    );
+    expect(ownCommandEnv(context, { ok: true, value: [], environment: production })).toBe(
+      'Production is protected: each run against it is confirmed, so only a run Piwi starts runs against it.',
+    );
+    expect(ownCommandEnv(context, { ok: true, value: [] })).toEqual({});
   });
 });

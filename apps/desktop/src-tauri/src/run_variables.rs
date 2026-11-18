@@ -1,16 +1,20 @@
 //! A project's run variables: the environment variables every Playwright process the shell starts for the project
-//! gets. The shell reads them from its own server by project id (`GET /api/projects/:id/run-variables`) or from a
-//! requested run's launch, never from the window, and checks them again with the rules of
-//! `@piwitests/core/run-variables` before it sets them: any problem refuses the run, so a process never starts with
-//! part of them or with a name core refuses. `apps/application/tests/unit/run-variables-shell.test.ts` holds the
-//! refused names and prefixes here to core's.
+//! gets, with an environment's merged over them. The shell reads them from its own server by project id
+//! (`GET /api/projects/:id/run-variables`), from the team instance for an environment of the team project the folder
+//! is also linked to, or from a requested run's launch, never from the window ([`crate::environments`]), and checks them
+//! again with the rules of `@piwitests/core/run-variables` before it sets them: any problem refuses the run, so a
+//! process never starts with part of them or with a name core refuses.
+//! `apps/application/tests/unit/run-variables-shell.test.ts` holds the refused names, prefixes and limits here to
+//! core's.
 //!
 //! They go to the process as its environment, before the variables the shell sets itself, never through a shell line.
 
 use serde_json::Value;
 
-/// Run variables per project.
-const MAX_RUN_VARIABLES: usize = 10;
+/// Run variables per project, and per environment.
+pub(crate) const MAX_RUN_VARIABLES: usize = 10;
+/// Run variables a run gets for an environment: its project's and the environment's together.
+pub(crate) const MAX_MERGED_RUN_VARIABLES: usize = 20;
 /// Characters of a name.
 const MAX_NAME_CHARS: usize = 64;
 /// UTF-16 code units of a value, as JavaScript counts a string's length.
@@ -193,7 +197,7 @@ fn is_variable_name(name: &str) -> bool {
 
 /// A control, format or default-ignorable character: line breaks, NUL, bidi overrides, zero-width characters,
 /// variation selectors and tags, as core's `HIDDEN_CHARACTER` refuses them.
-fn is_hidden(c: char) -> bool {
+pub(crate) fn is_hidden(c: char) -> bool {
     c.is_control()
         || matches!(
             c as u32,
@@ -227,25 +231,58 @@ fn is_hidden(c: char) -> bool {
 
 /// A value made of letters and digits of any script, spaces and `_ - . , : / @ + =`, with no space at either end and
 /// not starting with `//`: core's `PLAIN_VALUE`, or narrower for a combining mark Rust does not count as alphabetic.
-fn is_plain_value(value: &str) -> bool {
+pub(crate) fn is_plain_value(value: &str) -> bool {
     value.chars().all(|c| c.is_alphanumeric() || " _.,:/@+=-".contains(c))
         && value.trim() == value
         && !value.starts_with("//")
 }
 
+/// Why `text` cannot be the value of the variable `name`, or None when it can: empty, longer than 500 characters, with
+/// a character other than letters, digits, spaces and `_ - . , : / @ + =`, a space at either end, starting with `//`,
+/// or with a hidden character, as core's `runVariableValueProblem` refuses it.
+pub(crate) fn value_problem(name: &str, text: &str) -> Option<String> {
+    if text.is_empty() {
+        return Some(format!("the value of {name} is empty"));
+    }
+    if text.encode_utf16().count() > MAX_VALUE_UNITS {
+        return Some(format!(
+            "the value of {name} is longer than {MAX_VALUE_UNITS} characters"
+        ));
+    }
+    if !is_plain_value(text) {
+        return Some(format!(
+            "the value of {name} must be letters, digits, spaces and _ - . , : / @ + = only"
+        ));
+    }
+    if text.chars().any(is_hidden) {
+        return Some(format!(
+            "the value of {name} holds a line break, a control or an invisible character"
+        ));
+    }
+    None
+}
+
 /// The run variables of `value` (a list of `{ name, value }`, null for none) as `(name, value)` pairs, in order, or
 /// why they cannot be set: more than 10, a field other than the name and the value, a name set twice, a name core
 /// refuses, or a value that is empty, longer than 500 characters or with a hidden character.
+#[cfg(test)]
 pub(crate) fn checked_run_variables(value: &Value) -> Result<Vec<(String, String)>, String> {
+    checked_run_variables_within(value, MAX_RUN_VARIABLES)
+}
+
+/// [`checked_run_variables`], with at most `limit` variables: a project's or an environment's 10, or the 20 a run
+/// gets for an environment ([`MAX_MERGED_RUN_VARIABLES`]).
+pub(crate) fn checked_run_variables_within(
+    value: &Value,
+    limit: usize,
+) -> Result<Vec<(String, String)>, String> {
     let items = match value {
         Value::Null => return Ok(Vec::new()),
         Value::Array(items) => items,
         _ => return Err("the run variables are not a list".into()),
     };
-    if items.len() > MAX_RUN_VARIABLES {
-        return Err(format!(
-            "a project has at most {MAX_RUN_VARIABLES} run variables"
-        ));
+    if items.len() > limit {
+        return Err(format!("a run gets at most {limit} run variables"));
     }
     let mut checked: Vec<(String, String)> = Vec::with_capacity(items.len());
     for item in items {
@@ -267,23 +304,8 @@ pub(crate) fn checked_run_variables(value: &Value) -> Result<Vec<(String, String
         if is_refused_name(name) {
             return Err(format!("{name} is not a variable a project can set"));
         }
-        if text.is_empty() {
-            return Err(format!("the value of {name} is empty"));
-        }
-        if text.encode_utf16().count() > MAX_VALUE_UNITS {
-            return Err(format!(
-                "the value of {name} is longer than {MAX_VALUE_UNITS} characters"
-            ));
-        }
-        if !is_plain_value(text) {
-            return Err(format!(
-                "the value of {name} must be letters, digits, spaces and _ - . , : / @ + = only"
-            ));
-        }
-        if text.chars().any(is_hidden) {
-            return Err(format!(
-                "the value of {name} holds a line break, a control or an invisible character"
-            ));
+        if let Some(problem) = value_problem(name, text) {
+            return Err(problem);
         }
         if checked.iter().any(|(seen, _)| seen == name) {
             return Err(format!("{name} is set twice"));
@@ -291,48 +313,6 @@ pub(crate) fn checked_run_variables(value: &Value) -> Result<Vec<(String, String
         checked.push((name.to_string(), text.to_string()));
     }
     Ok(checked)
-}
-
-/// The run variables of the bundled server's project `project_id` (digits only), checked. Errors when the server does
-/// not answer them or a check fails, so the run does not start.
-pub(crate) fn project_run_variables(
-    server: &crate::mcp_clients::ServerInfo,
-    project_id: &str,
-) -> Result<Vec<(String, String)>, String> {
-    if !crate::runner::valid_project_id(project_id) {
-        return Err("not a project id".into());
-    }
-    let body =
-        crate::repro::local_get_json(server, &format!("/api/projects/{project_id}/run-variables"))
-            .map_err(|e| format!("the project's run variables could not be read: {e}"))?;
-    let listed = body
-        .get("runVariables")
-        .ok_or("the project's run variables could not be read: the server did not name them")?;
-    checked_run_variables(listed).map_err(|e| format!("the project's run variables were not set: {e}"))
-}
-
-/// [`project_run_variables`] off the async runtime, with the app's server. Errors without a server.
-pub(crate) async fn read_project_run_variables(
-    app: &tauri::AppHandle,
-    project_id: &str,
-) -> Result<Vec<(String, String)>, String> {
-    use tauri::Manager;
-    let server = {
-        let Some(server) = app.try_state::<crate::mcp_clients::ServerInfo>() else {
-            return Err(
-                "the project's run variables could not be read: the app's server is not running"
-                    .into(),
-            );
-        };
-        crate::mcp_clients::ServerInfo {
-            port: server.port,
-            token: server.token.clone(),
-        }
-    };
-    let project_id = project_id.to_string();
-    tauri::async_runtime::spawn_blocking(move || project_run_variables(&server, &project_id))
-        .await
-        .map_err(|e| format!("the project's run variables could not be read: {e}"))?
 }
 
 #[cfg(test)]
@@ -428,6 +408,24 @@ mod tests {
             .collect();
         assert!(refused(Value::Array(eleven.clone())));
         assert!(!refused(Value::Array(eleven[..10].to_vec())));
+        assert!(checked_run_variables_within(
+            &Value::Array(eleven.clone()),
+            MAX_MERGED_RUN_VARIABLES
+        )
+        .is_ok());
+        let twenty_one: Vec<Value> = (0..21)
+            .map(|i| json!({ "name": format!("V{i}"), "value": "x" }))
+            .collect();
+        assert!(checked_run_variables_within(
+            &Value::Array(twenty_one.clone()),
+            MAX_MERGED_RUN_VARIABLES
+        )
+        .is_err());
+        assert!(checked_run_variables_within(
+            &Value::Array(twenty_one[..20].to_vec()),
+            MAX_MERGED_RUN_VARIABLES
+        )
+        .is_ok());
         assert!(!refused(
             json!([{ "name": "TENANT", "value": "a".repeat(500) }])
         ));

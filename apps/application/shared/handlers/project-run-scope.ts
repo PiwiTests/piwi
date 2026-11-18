@@ -7,6 +7,7 @@ import { testRuns } from '../../server/database/schema';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
 import type { ProjectRunScope } from '../project-run-scope';
 import { notLabRun } from './probes';
+import { environmentScopeSql } from './environment-scope';
 import type { DrizzleDB } from './db';
 
 /**
@@ -32,7 +33,8 @@ export function scopeReadsDefaultBranch(scope: ProjectRunScope): boolean {
 export function runScopeConditions(scope: ProjectRunScope, defaultBranch: string): SQL[] {
   const conditions: SQL[] = [];
   if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments.length > 0) conditions.push(inArray(testRuns.environment, scope.environments));
+  const environment = environmentScopeSql(scope.environments);
+  if (environment) conditions.push(environment);
   if (scope.branches.length > 0) {
     conditions.push(inArray(testRuns.branch, scope.branches));
   } else if (!scope.allBranches) {

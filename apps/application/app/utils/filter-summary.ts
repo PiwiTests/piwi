@@ -14,6 +14,8 @@ export interface FilterSummaryOptions {
   defaultBranch?: string | null;
   /** What the filters hide, in words ("3 partial runs hidden"). */
   hidden?: string[];
+  /** The words an environment value shows (a project's environment by its name); the value itself by default. */
+  environmentLabel?: (value: string) => string;
 }
 
 function picked(values: string[], none: string, plural: string): string {
@@ -24,7 +26,10 @@ function picked(values: string[], none: string, plural: string): string {
 
 export function filterBarSummary(state: FilterBarState, options: FilterSummaryOptions = {}): string {
   const parts: string[] = [];
-  if (options.environments !== false) parts.push(picked(state.environments, 'All environments', 'environments'));
+  if (options.environments !== false) {
+    const label = options.environmentLabel ?? ((value: string) => value);
+    parts.push(picked(state.environments.map(label), 'All environments', 'environments'));
+  }
   if (options.branches !== false) {
     if (state.branches.length > 0) parts.push(picked(state.branches, '', 'branches'));
     else if (options.branchPolicy && !state.allBranches)
