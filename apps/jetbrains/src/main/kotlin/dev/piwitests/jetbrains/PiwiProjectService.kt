@@ -31,6 +31,7 @@ import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -59,6 +60,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * The file a `file:` URI of the editor service names (`file:///C:/Users/Jean%20Dupont/a.spec.ts`), read by
+ * `Glue.pathOfUri`; null for another URI or a file the IDE does not find. A service URI is not a VFS URL, which escapes nothing: never
+ * `VirtualFileManager.findFileByUrl` on one.
+ */
+internal fun fileOfUri(uri: String?): VirtualFile? =
+    Glue.pathOfUri(uri)?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(it) }.getOrNull() }
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name

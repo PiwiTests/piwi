@@ -20,7 +20,6 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
-import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.DocumentAdapter
@@ -194,7 +193,7 @@ class PiwiTestsTab(private val project: Project) : Disposable {
         node ?: return false
         val uri = node.uri
         if (uri != null && node.line != null) {
-            val file = VirtualFileManager.getInstance().findFileByUrl(uri) ?: return false
+            val file = fileOfUri(uri) ?: return false
             OpenFileDescriptor(project, file, node.line, 0).navigate(true)
             return true
         }

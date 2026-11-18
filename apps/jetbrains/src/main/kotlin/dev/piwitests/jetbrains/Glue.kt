@@ -2015,6 +2015,18 @@ object Glue {
         else -> null
     }
 
+    /**
+     * The path a `file:` URI of the editor service names, its escapes read; null for another URI. The `[`, `]`, `|` and
+     * `^` that Node.js before 20.18.3 and 22.12 leaves unescaped in a path are read as themselves, which
+     * `java.net.URI` refuses as they are.
+     */
+    fun pathOfUri(uri: String?): Path? = uri?.let {
+        val escaped = it.replace(URI_UNESCAPED) { c -> "%%%02X".format(c.value[0].code) }
+        runCatching { Path.of(java.net.URI(escaped)) }.getOrNull()
+    }
+
+    private val URI_UNESCAPED = Regex("[\\[\\]|^]")
+
     /** What names a file in the edits: its normalized path, which two spellings of its URI share. */
     fun fileKey(uri: String?): String? = uri?.let { runCatching { Path.of(java.net.URI(it)).normalize().toString() }.getOrNull() ?: it }
 
