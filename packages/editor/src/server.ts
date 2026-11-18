@@ -96,7 +96,6 @@ import {
   rewriteEdits,
   stabilityFindings,
   stableReplacement,
-  TEST_CALL,
   testCalls,
   describeEnds,
   caseOfCall,
@@ -112,6 +111,7 @@ import {
   locatorLineTellsMore,
   piwiActionTitle,
   testActions,
+  sameText,
 } from './analysis.js';
 import {
   BlobTexts,
@@ -643,14 +643,9 @@ function testCallAt(lines: string[], line: number): TestCall | null {
   return testCalls(lines).find((call) => call.line <= line && call.endLine >= line) ?? null;
 }
 
-/** The titles of the `test(…)` calls of a file's text. */
+/** The titles of the `test(…)` calls of a file's text, as `testCalls` reads them. */
 function testTitles(text: string): Set<string> {
-  const titles = new Set<string>();
-  for (const line of text.split(/\r?\n/)) {
-    const m = TEST_CALL.exec(line);
-    if (m) titles.add(m[2]!);
-  }
-  return titles;
+  return new Set(testCalls(text.split(/\r?\n/)).map((call) => call.title));
 }
 
 /**
@@ -2457,7 +2452,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const file = uriToPath(document.uri);
       if (!file || !contextFor(file)) return [];
       const disk = diskFile(file);
-      return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
+      return disk && !sameText(disk.text, document.getText()) ? [lineKey(file)] : [];
     });
   /** The run line the client holds (`piwi/runLineChanged`), as last sent. */
   let lineSent = JSON.stringify(null);
@@ -4070,12 +4065,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     };
   });
 
-  /** Whether a spec open in the editor has changes it did not save: its text differs from the file's. */
+  /** Whether a spec open in the editor has changes it did not save: its text differs from the file's, line endings aside. */
   const unsaved = (file: string): boolean => {
     const open = openDocument(file);
     if (!open) return false;
     try {
-      return open.getText() !== fs.readFileSync(file, 'utf-8');
+      return !sameText(open.getText(), fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, ''));
     } catch {
       return true;
     }

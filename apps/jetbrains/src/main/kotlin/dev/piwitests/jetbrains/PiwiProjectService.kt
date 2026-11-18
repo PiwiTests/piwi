@@ -31,6 +31,7 @@ import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -59,6 +60,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * The file a `file:` URI of the editor service names (`file:///C:/Users/Jean%20Dupont/a.spec.ts`), read by
+ * `Glue.pathOfUri`; null for another URI or a file the IDE does not find. A service URI is not a VFS URL, which escapes nothing: never
+ * `VirtualFileManager.findFileByUrl` on one.
+ */
+internal fun fileOfUri(uri: String?): VirtualFile? =
+    Glue.pathOfUri(uri)?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(it) }.getOrNull() }
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name
@@ -495,9 +504,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
             runs = null
             failuresResult = null
             failures = emptyList()
+            testItems = null
             statusPushes++
             runsPushes++
             failuresPushes++
+            testItemsPushes++
         }
         changed()
     }
@@ -921,7 +932,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * The status `piwi/statusChanged` carries: the connection of each context, and the desktop app. The open files'
-     * coverage is asked again, from the service as it is now connected.
+     * coverage is asked again, from the service as it is now connected, and the test tree is read when the Tests tab
+     * asked for it and holds none: the service started, or started again, since.
      */
     fun statusChanged(result: StatusResult) {
         synchronized(lock) {
@@ -932,6 +944,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         refreshKnownAddresses()
         offerDesktop(result)
         project.getServiceIfCreated(PiwiCoverageMarks::class.java)?.askOpen()
+        if (testsWanted && testItems == null) readTestItems()
     }
 
     /** A file's coverage changed (`piwi/coverageChanged`): its Code Vision lines are asked again. On any thread. */
@@ -992,6 +1005,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
             if (testsReadAgain.get()) readTestItems()
         }
+    }
+
+    /** Read the test tree again once the Tests tab asked for it: **Read the instance and the configs again**. */
+    fun refreshTestItems() {
+        if (testsWanted) readTestItems()
     }
 
     /** The failures `piwi/failuresChanged` carries, such as a line an edit moved. */

@@ -2188,7 +2188,8 @@ describe('the test tree', () => {
       '});',
       '',
     ].join('\n');
-    write('tests/listed.spec.ts', LISTED);
+    // Written with the line endings of a Windows checkout.
+    write('tests/listed.spec.ts', LISTED.replace(/\n/g, '\r\n'));
     // The listing starts after the spec was last written.
     await new Promise((resolve) => setTimeout(resolve, 20));
     const test = (fields: Record<string, unknown>) => ({
@@ -2300,8 +2301,19 @@ describe('the test tree', () => {
       expect(await command([`${CONFIG_NODE}${dir}`])).toBe('npx playwright test');
       // The Not in this checkout group runs nothing.
       expect(await client.sendRequest('piwi/testRuns', { nodes: [group.id] })).toEqual([]);
+      // Open as the editor holds it, with `\n`: its tests are still the listing's.
+      open('tests/listed.spec.ts', LISTED);
+      const held = (await client.sendRequest('piwi/testItems', {
+        uris: [uri('tests/listed.spec.ts')],
+        catalog: false,
+      })) as TestItemsResult;
+      expect(specsOf(held.contexts[0]!.nodes)[0]!.tests.map((t) => [t.title, t.playwright.length])).toEqual([
+        ['adds mug 1', 1],
+        ['adds mug 2', 1],
+        ['pays', 2],
+      ]);
       // An edit the listing has not seen: the spec's tests are read from its text again, a loop's as one test.
-      open('tests/listed.spec.ts', LISTED.replace('pays', 'pays twice'));
+      change('tests/listed.spec.ts', LISTED.replace('pays', 'pays twice'), 2);
       const edited = (await client.sendRequest('piwi/testItems', {
         uris: [uri('tests/listed.spec.ts')],
         catalog: false,

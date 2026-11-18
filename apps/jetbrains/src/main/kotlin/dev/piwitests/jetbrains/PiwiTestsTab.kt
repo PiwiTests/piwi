@@ -20,7 +20,6 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.DumbAware
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.SimpleToolWindowPanel
-import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.ui.ColoredTreeCellRenderer
 import com.intellij.ui.DocumentAdapter
@@ -56,7 +55,8 @@ val TESTS_SELECTION: DataKey<TestsSelection> = DataKey.create("piwi.testsSelecti
  * The **Tests** tab of the Piwi tool window: every test the editor service lists for the project's Playwright configs
  * (`piwi/testItems`), under their folders, specs and describe blocks, a test of several Playwright projects with a
  * node per project, and the tests only the instance knows in the **Not in this checkout** group (`Glue.testsTree`).
- * The service lists the configs once the tab is first shown, and pushes the tree a listing changes. A node opens its
+ * The service lists the configs once the tab is first shown, and pushes the tree a listing changes; the toolbar's
+ * **Read the instance and the configs again** lists them again. A node opens its
  * line on a double click or Enter, a test of Not in this checkout its dashboard page; the toolbar and the right-click
  * run the selected nodes (`Piwi.Tests.*`, through `piwi/testRuns`). The filter field keeps the tests whose title, tag,
  * owner or result holds its words, and a run then takes what the tab shows.
@@ -108,8 +108,8 @@ class PiwiTestsTab(private val project: Project) : Disposable {
             "PiwiTestsTab",
             DefaultActionGroup(
                 registered("Piwi.Tests.Run", "Piwi.Tests.Debug", "Piwi.Tests.Verify") +
+                    listOf(Separator.getInstance()) + registered("Piwi.Refresh") +
                     listOf(
-                        Separator.getInstance(),
                         common.createExpandAllAction(expander, tree),
                         common.createCollapseAllAction(expander, tree),
                     ),
@@ -146,9 +146,14 @@ class PiwiTestsTab(private val project: Project) : Disposable {
 
     /** Draw the tree as the service last gave it and the filter shows it, keeping what was expanded and selected. */
     private fun render() {
-        val result = project.service<PiwiProjectService>().testItems
+        val service = project.service<PiwiProjectService>()
+        val result = service.testItems
         val nodes = Glue.testsFiltered(Glue.testsTree(result), filterField.text)
-        tree.emptyText.text = Glue.testsEmptyText(result, filtered())
+        if (result == null && service.status == null) {
+            showServiceDown(tree, service)
+        } else {
+            tree.emptyText.text = Glue.testsEmptyText(result, filtered())
+        }
         if (nodes == drawn) {
             tree.repaint()
             return
@@ -188,7 +193,7 @@ class PiwiTestsTab(private val project: Project) : Disposable {
         node ?: return false
         val uri = node.uri
         if (uri != null && node.line != null) {
-            val file = VirtualFileManager.getInstance().findFileByUrl(uri) ?: return false
+            val file = fileOfUri(uri) ?: return false
             OpenFileDescriptor(project, file, node.line, 0).navigate(true)
             return true
         }

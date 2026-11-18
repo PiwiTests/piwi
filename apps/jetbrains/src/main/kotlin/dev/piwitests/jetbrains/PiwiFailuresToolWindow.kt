@@ -23,7 +23,6 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.SimpleToolWindowPanel
-import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.ColoredTreeCellRenderer
@@ -52,6 +51,40 @@ import javax.swing.ToolTipManager
 import javax.swing.tree.DefaultMutableTreeNode
 import javax.swing.tree.DefaultTreeModel
 import javax.swing.tree.TreePath
+
+/**
+ * Write why no service answers as a tree's empty text (`Glue.serviceDownText`), with the links that start it or
+ * show its log: the Failures and Tests tabs. A service that cannot start puts the Node.js settings one click
+ * away, which start it again once closed.
+ */
+internal fun showServiceDown(tree: Tree, service: PiwiProjectService) {
+    val nodeSettings = service.trusted() && service.startProblem != null
+    showEmptyText(
+        tree,
+        Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped),
+        if (nodeSettings) ({ service.openNodeSettings() }) else null,
+    )
+}
+
+/** Write `empty` as a tree's empty text, each link running its action, after the Node.js settings link if given. */
+internal fun showEmptyText(tree: Tree, empty: Glue.EmptyText, nodeSettings: (() -> Unit)? = null) {
+    tree.emptyText.clear()
+    tree.emptyText.appendText(empty.text)
+    if (nodeSettings != null) {
+        tree.emptyText.appendSecondaryText(Glue.NODE_SETTINGS_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+            nodeSettings()
+        }
+    }
+    for ((i, link) in empty.links.withIndex()) {
+        if (i > 0 || nodeSettings != null) {
+            tree.emptyText.appendSecondaryText("   ", SimpleTextAttributes.REGULAR_ATTRIBUTES, null)
+        }
+        tree.emptyText.appendSecondaryText(link.label, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
+            val actions = ActionManager.getInstance()
+            actions.getAction(link.actionId)?.let { actions.tryToExecute(it, null, tree, ActionPlaces.UNKNOWN, true) }
+        }
+    }
+}
 
 /**
  * The failures of the latest run on the checked-out branch, as the tree the service groups (`Glue.failureNodes`): the
@@ -218,26 +251,10 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             header.revalidate()
             // A baseline chosen that found no run says so.
             val noRun = Glue.baselineLine(result?.baseline?.label)?.takeIf { result?.run == null && it.endsWith("(no run)") }
-            tree.emptyText.clear()
-            val empty = if (service.status == null) {
-                Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped)
+            if (service.status == null) {
+                showServiceDown(tree, service)
             } else {
-                Glue.failuresEmpty(result?.view, noRun, result?.run?.id)
-            }
-            tree.emptyText.appendText(empty.text)
-            // A service that cannot start: the Node.js settings one click away, which start it again once closed.
-            val nodeSettings = service.status == null && service.trusted() && service.startProblem != null
-            if (nodeSettings) {
-                tree.emptyText.appendSecondaryText(Glue.NODE_SETTINGS_LINK, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
-                    service.openNodeSettings()
-                }
-            }
-            for ((i, link) in empty.links.withIndex()) {
-                if (i > 0 || nodeSettings) tree.emptyText.appendSecondaryText("   ", SimpleTextAttributes.REGULAR_ATTRIBUTES, null)
-                tree.emptyText.appendSecondaryText(link.label, SimpleTextAttributes.LINK_PLAIN_ATTRIBUTES) {
-                    val actions = ActionManager.getInstance()
-                    actions.getAction(link.actionId)?.let { actions.tryToExecute(it, null, tree, ActionPlaces.UNKNOWN, true) }
-                }
+                showEmptyText(tree, Glue.failuresEmpty(result?.view, noRun, result?.run?.id))
             }
         }
         val actions = ActionManager.getInstance()
@@ -311,7 +328,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             tree.selectionPath = path
             tree.scrollPathToVisible(path)
             val failure = nodeOf(path.lastPathComponent)?.failure ?: return null
-            val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return null
+            val file = fileOfUri(failure.uri) ?: return null
             return OccurenceNavigator.OccurenceInfo(OpenFileDescriptor(project, file, failure.line, 0), index + 1, paths.size)
         }
 
@@ -418,12 +435,12 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     private fun open(project: Project, node: Glue.FailureNode?): Boolean {
         val failure = node?.failure
         if (failure != null) {
-            val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return false
+            val file = fileOfUri(failure.uri) ?: return false
             OpenFileDescriptor(project, file, failure.line, 0).navigate(true)
             return true
         }
         if (node?.uri != null && node.line != null) {
-            val file = VirtualFileManager.getInstance().findFileByUrl(node.uri) ?: return false
+            val file = fileOfUri(node.uri) ?: return false
             OpenFileDescriptor(project, file, node.line, 0).navigate(true)
             return true
         }
@@ -569,7 +586,7 @@ class GoToFailureTestAction : FailureNodeAction(AllIcons.Nodes.Test) {
 
     override fun perform(project: Project, failure: WorkspaceFailure) {
         val test = failure.test ?: return
-        val file = com.intellij.openapi.vfs.VfsUtil.findFileByURL(java.net.URI(test.uri).toURL()) ?: return
+        val file = fileOfUri(test.uri) ?: return
         OpenFileDescriptor(project, file, test.line, 0).navigate(true)
     }
 }

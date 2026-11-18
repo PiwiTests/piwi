@@ -883,7 +883,7 @@ object Glue {
      */
     fun contextRootOf(status: StatusResult?, uri: String?): String? {
         val contexts = status?.contexts.orEmpty()
-        val path = uri?.let { runCatching { java.nio.file.Path.of(java.net.URI(it)) }.getOrNull() }
+        val path = pathOfUri(uri)
         val holding = contexts.mapNotNull { c -> c.root?.takeIf { root -> path != null && path.startsWith(java.nio.file.Path.of(root)) } }
         return holding.maxByOrNull { it.length } ?: contexts.firstOrNull { it.connected }?.root
     }
@@ -938,7 +938,7 @@ object Glue {
     /** The specs the tests of the runs the IDE follows stand in (`runTests`), which a tests' redraw draws too. */
     fun runTestFiles(runs: RunStatusResult?): Set<java.nio.file.Path> =
         (runs?.contexts.orEmpty().flatMap { it.runTests.orEmpty() } + runs?.runTests.orEmpty().flatMap { it.tests })
-            .mapNotNull { runCatching { java.nio.file.Path.of(java.net.URI(it.uri)) }.getOrNull() }
+            .mapNotNull { pathOfUri(it.uri) }
             .toSet()
 
     private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
@@ -2051,8 +2051,20 @@ object Glue {
         else -> null
     }
 
+    /**
+     * The path a `file:` URI of the editor service names, its escapes read; null for another URI. The `[`, `]`, `|` and
+     * `^` that Node.js before 20.18.3 and 22.12 leaves unescaped in a path are read as themselves, which
+     * `java.net.URI` refuses as they are.
+     */
+    fun pathOfUri(uri: String?): Path? = uri?.let {
+        val escaped = it.replace(URI_UNESCAPED) { c -> "%%%02X".format(c.value[0].code) }
+        runCatching { Path.of(java.net.URI(escaped)) }.getOrNull()
+    }
+
+    private val URI_UNESCAPED = Regex("[\\[\\]|^]")
+
     /** What names a file in the edits: its normalized path, which two spellings of its URI share. */
-    fun fileKey(uri: String?): String? = uri?.let { runCatching { Path.of(java.net.URI(it)).normalize().toString() }.getOrNull() ?: it }
+    fun fileKey(uri: String?): String? = uri?.let { pathOfUri(it)?.normalize()?.toString() ?: it }
 
     /**
      * The edits that moved the documents' lines, in order, while a run is live: a run's code is the documents as they
@@ -3030,7 +3042,7 @@ object Glue {
 
     /** A stop's place, as the choice among several and the paused page name it: `checkout.page.ts:5`. */
     fun stopPlace(stop: RunStop): String {
-        val path = runCatching { Path.of(java.net.URI(stop.uri ?: "")) }.getOrNull()
+        val path = pathOfUri(stop.uri)
         return "${path?.fileName ?: stop.uri.orEmpty().substringAfterLast('/')}:${stop.line + 1}"
     }
 
@@ -3146,8 +3158,8 @@ object Glue {
     private fun sameFile(a: String?, b: String?): Boolean {
         if (a == null || b == null) return false
         if (a == b) return true
-        val paths = runCatching { Path.of(java.net.URI(a)).normalize() to Path.of(java.net.URI(b)).normalize() }.getOrNull()
-        return paths != null && paths.first == paths.second
+        val first = pathOfUri(a)?.normalize()
+        return first != null && first == pathOfUri(b)?.normalize()
     }
 
     /** Whether a stop is at a line of the file at `uri`. */
@@ -3494,7 +3506,7 @@ object Glue {
                 }
             }
             val test = event.test ?: return emptyList()
-            val path = runCatching { java.nio.file.Paths.get(java.net.URI(test.uri ?: "")) }.getOrNull() ?: return emptyList()
+            val path = pathOfUri(test.uri) ?: return emptyList()
             val file = path.toString().replace('\\', '/')
             val shown = event.root
                 ?.let { root -> runCatching { java.nio.file.Paths.get(root).relativize(path).toString().replace('\\', '/') }.getOrNull() }
@@ -4597,7 +4609,7 @@ object Glue {
         listOf(it.root, it.run?.id, it.live?.runId, it.failures, it.overlays, it.resolved).joinToString("|")
     }
 
-    /** What the Tests tab says while it shows no test. */
+    /** What the Tests tab says while it shows no test and the editor service answers. */
     fun testsEmptyText(result: TestItemsResult?, filtered: Boolean): String = when {
         result == null -> "Reading the tests…"
         filtered -> "No test matches the filter."

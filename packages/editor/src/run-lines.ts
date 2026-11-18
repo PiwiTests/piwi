@@ -5,14 +5,15 @@
  * notifications, a whole new text by its line diff), so a stopped line maps to the line its statement stands on now,
  * whoever wrote above it: the person, or Piwi's own code from an earlier action. A file no editor held since the run
  * started is taken as its disk text, unchanged while its modification time is older than the run. A file the map
- * cannot follow is refused, with why: one written on disk since, one opened since with a text other than its disk's,
+ * cannot follow is refused, with why: one written on disk since, one opened since with a text other than its disk's
+ * (line endings aside),
  * one an editor held with unsaved changes as the run started, one whose edits since were more than it keeps, and a
  * stopped line an edit removed or rewrote from its start.
  */
 import * as path from 'node:path';
 import { diffLines } from '@piwitests/core/line-diff';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
-import { placeLine } from './analysis.js';
+import { placeLine, sameText } from './analysis.js';
 
 /** The runs whose start the map keeps, the latest first out. */
 const MAX_RUNS = 50;
@@ -123,7 +124,7 @@ export class RunLines {
     this.documents.delete(file);
     this.documents.set(file, {
       openedAt: this.now(),
-      sameAsDisk: disk !== null && disk.text === text,
+      sameAsDisk: disk !== null && sameText(disk.text, text),
       mtime: disk?.mtime ?? null,
       edits: [],
       droppedUntil: 0,
@@ -203,7 +204,7 @@ export class RunLines {
     if (followed.droppedUntil > run.startedAt) {
       return { refusal: `${name} was edited too many times since the run started for Piwi to follow: ${again}` };
     }
-    if (followed.closed && (open || disk?.text !== followed.closed.text)) {
+    if (followed.closed && (open || !disk || !sameText(disk.text, followed.closed.text))) {
       return { refusal: `${name} changed since the editor closed it, which Piwi cannot follow: ${again}` };
     }
     let now: number | null = line;

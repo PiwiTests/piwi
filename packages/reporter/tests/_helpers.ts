@@ -255,6 +255,15 @@ export function stubPlatform(platform: NodeJS.Platform): () => void {
  * Deletes from `env` every variable that makes `detectCi` see a CI job (`CI`, `GITHUB_ACTIONS`, `JENKINS_URL`…), so
  * a run started with it counts as local whatever CI runs the suite. Returns `env`.
  */
+/** What `read` returns, or the error it throws: a setup's work that one test reads keeps its failure for that test. */
+export function orError<T>(read: () => T): T | Error {
+  try {
+    return read();
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
+}
+
 export function withoutCi(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   for (const name of Object.keys(env)) if (detectCi({ [name]: env[name] })) delete env[name];
   return env;

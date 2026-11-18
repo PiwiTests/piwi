@@ -1772,6 +1772,19 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(goTo.applies(project, failure))
     }
 
+    /** A `file:` URI of the service names its file however it escapes the path (`fileOfUri`). */
+    fun testAServiceUriFindsItsFileWithItsEscapesRead() {
+        val dir = File(FileUtil.createTempDirectory("piwi-uris", null), "Jean Dupont/tests").apply { mkdirs() }
+        val spec = File(dir, "a.spec.ts").apply { writeText("test('a', async () => {});\n") }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(spec)
+        // As the service writes it (`pathToFileURL`): the space escaped.
+        val uri = spec.toPath().toUri().toASCIIString()
+        assertTrue(uri, "Jean%20Dupont" in uri)
+        assertEquals(FileUtil.toSystemIndependentName(spec.path), fileOfUri(uri)?.path)
+        assertNull(fileOfUri("https://example.com/a.spec.ts"))
+        assertNull(fileOfUri(null))
+    }
+
     /**
      * A test's result icon offers what the service lists for it, in its groups: Run and Verify ×3 as the registered
      * actions, Record steps in this test as Record here, then its evidence and its context for an agent, a separator
