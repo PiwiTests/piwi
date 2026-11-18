@@ -12,7 +12,7 @@
 import * as path from 'node:path';
 import { diffLines } from '@piwitests/core/line-diff';
 import type { DiffHunk } from '@piwitests/core/diff-anchors';
-import { placeLine } from './analysis.js';
+import { placeLine, sameText } from './analysis.js';
 
 /** The runs whose start the map keeps, the latest first out. */
 const MAX_RUNS = 50;
@@ -123,7 +123,7 @@ export class RunLines {
     this.documents.delete(file);
     this.documents.set(file, {
       openedAt: this.now(),
-      sameAsDisk: disk !== null && disk.text === text,
+      sameAsDisk: disk !== null && sameText(disk.text, text),
       mtime: disk?.mtime ?? null,
       edits: [],
       droppedUntil: 0,
@@ -203,7 +203,7 @@ export class RunLines {
     if (followed.droppedUntil > run.startedAt) {
       return { refusal: `${name} was edited too many times since the run started for Piwi to follow: ${again}` };
     }
-    if (followed.closed && (open || disk?.text !== followed.closed.text)) {
+    if (followed.closed && (open || !disk || !sameText(disk.text, followed.closed.text))) {
       return { refusal: `${name} changed since the editor closed it, which Piwi cannot follow: ${again}` };
     }
     let now: number | null = line;

@@ -822,6 +822,30 @@ export interface TestCall {
   suiteUnread: boolean;
 }
 
+/**
+ * Whether two texts of one file hold the same lines, whatever their line endings: an editor may hold a file with `\n`
+ * that the disk holds with `\r\n`.
+ */
+export function sameText(a: string, b: string): boolean {
+  return a === b || a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n');
+}
+
+/** A `test(…)` or `test.describe(…)` call whose `(` ends its line, its first argument on a line below. */
+const TEST_CALL_OPEN_AT_END = /(?<![\w$.])test(?:\.\w+)*\s*\(\s*$/;
+
+/**
+ * A line of code, and when it ends on a test or describe call's `(`, the next line that holds code after it: the
+ * call's first argument (`test.describe(\n  'checkout',`) is read where it is written.
+ */
+function withNextArgument(code: string[], i: number): string {
+  const text = code[i]!;
+  if (!TEST_CALL_OPEN_AT_END.test(text)) return text;
+  for (let next = i + 1; next < code.length && next <= i + 3; next++) {
+    if (code[next]!.trim()) return `${text} ${code[next]!.trim()}`;
+  }
+  return text;
+}
+
 /** A title as a string literal spells it, with its escaped quotes, backticks and backslashes read as those characters. */
 function unescapedTitle(title: string): string {
   return title.replace(/\\(['"`\\])/g, '$1');
@@ -836,8 +860,9 @@ export function testCalls(lines: string[]): TestCall[] {
   const code = lines.map((text) => (/^\s*\/\//.test(text) ? '' : text));
   const blocks: Array<{ title: string; unread: boolean; endLine: number }> = [];
   const calls: TestCall[] = [];
-  code.forEach((text, i) => {
+  code.forEach((_, i) => {
     while (blocks.length && blocks[blocks.length - 1]!.endLine < i) blocks.pop();
+    const text = withNextArgument(code, i);
     const describe = DESCRIBE_CALL.exec(text);
     const unread = describe ? null : DESCRIBE_CALL_UNREAD.exec(text);
     let from = 0;

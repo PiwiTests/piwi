@@ -528,11 +528,11 @@ config's last listing:
   answered.
 
 **Each spec** takes its tests from the listing while the listing has seen it as it stands: saved (no open document
-whose text differs from the file's), listed since it last changed on disk, and loading. Its tests are then one per
+whose text differs from the file's, line endings aside: `sameText`), listed since it last changed on disk, and loading. Its tests are then one per
 title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
 spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
-`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, with the
-titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
+`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, a title
+written on the call's line or the next, with the titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
 are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
 (`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
 `specTests` in `src/server.ts`.
@@ -1425,7 +1425,8 @@ to editor, whose `piwi/applyPick` would write in the workspace's file of the sam
 It follows every `didChange` since (read before the documents apply it; a whole new text by its line diff,
 `diffLines`), the code of an earlier action included. A file no editor held since is taken from disk while its
 modification time is older than the run, its text without the byte order mark it may start with, as a document's
-(`diskFile`). A file it cannot follow is refused with why: written on disk since, opened since with a text other than
+(`diskFile`). A text compares with its disk's line endings aside (`sameText`), as an editor may hold `\n` where the
+file has `\r\n`. A file it cannot follow is refused with why: written on disk since, opened since with a text other than
 its disk's, held with changes not saved as the run started, more than 2,000 edits since, or a stopped line an edit
 removed or rewrote from its start.
 

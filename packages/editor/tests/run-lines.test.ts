@@ -111,6 +111,11 @@ describe('the line a run stopped at, where it stands now', () => {
     expect(map.lineNow('ed-1', FILE, 3, false, { text: 'other', mtime: 2600 })).toMatchObject({
       refusal: expect.stringMatching(/changed since the editor closed it/),
     });
+    // Held with `\n` while the disk holds `\r\n`, as an editor may: the same text.
+    map.opened('/work/crlf.ts', 'a;\nb;\n', { text: 'a;\r\nb;\r\n', mtime: 10 });
+    expect(map.lineNow('ed-1', '/work/crlf.ts', 1, true, null)).toEqual({ line: 1 });
+    map.closed('/work/crlf.ts', 'a;\nb;\n');
+    expect(map.lineNow('ed-1', '/work/crlf.ts', 1, false, { text: 'a;\r\nb;\r\n', mtime: 10 })).toEqual({ line: 1 });
     // Opened with a text other than the disk's.
     map.opened('/work/b.ts', 'edited', { text: 'disk', mtime: 10 });
     expect(map.lineNow('ed-1', '/work/b.ts', 3, true, null)).toMatchObject({

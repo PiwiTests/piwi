@@ -111,6 +111,7 @@ import {
   locatorLineTellsMore,
   piwiActionTitle,
   testActions,
+  sameText,
 } from './analysis.js';
 import {
   BlobTexts,
@@ -2327,7 +2328,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       const file = uriToPath(document.uri);
       if (!file || !contextFor(file)) return [];
       const disk = diskFile(file);
-      return disk && disk.text !== document.getText() ? [lineKey(file)] : [];
+      return disk && !sameText(disk.text, document.getText()) ? [lineKey(file)] : [];
     });
   /** The run line the client holds (`piwi/runLineChanged`), as last sent. */
   let lineSent = JSON.stringify(null);
@@ -3937,7 +3938,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const open = openDocument(file);
     if (!open) return false;
     try {
-      return open.getText() !== fs.readFileSync(file, 'utf-8');
+      return !sameText(open.getText(), fs.readFileSync(file, 'utf-8').replace(/^\uFEFF/, ''));
     } catch {
       return true;
     }
