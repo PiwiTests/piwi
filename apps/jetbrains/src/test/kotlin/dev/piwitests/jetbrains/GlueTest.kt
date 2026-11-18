@@ -4438,6 +4438,14 @@ class GlueTest {
     }
 
     @Test
+    fun testTheServicesUrisAreReadByFileOfUriNeverAsVfsUrls() {
+        val calls = java.io.File("src/main/kotlin").walkTopDown().filter { it.extension == "kt" }
+            .flatMap { file -> file.readLines().withIndex().filter { "findFileByUrl(" in it.value }.map { "${file.name}:${it.index + 1}" } }
+            .toList()
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
     fun testTheTestsTabsFilterKeepsTheTestsWhoseTitleTagOwnerOrResultHoldsItsWordsAndASpecWhole() {
         val nodes = Glue.testsTree(testsAnswer)
         fun labels(filter: String) = Glue.testsFiltered(nodes, filter).flatMap { n -> listOf(n.label) + n.children.map { "  ${it.label}" } }

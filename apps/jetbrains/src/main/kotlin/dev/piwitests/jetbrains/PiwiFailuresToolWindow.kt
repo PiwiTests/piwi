@@ -23,7 +23,6 @@ import com.intellij.openapi.project.DumbAwareAction
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.ui.popup.JBPopupFactory
 import com.intellij.openapi.ui.SimpleToolWindowPanel
-import com.intellij.openapi.vfs.VirtualFileManager
 import com.intellij.openapi.wm.ToolWindow
 import com.intellij.openapi.wm.ToolWindowFactory
 import com.intellij.ui.ColoredTreeCellRenderer
@@ -329,7 +328,7 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
             tree.selectionPath = path
             tree.scrollPathToVisible(path)
             val failure = nodeOf(path.lastPathComponent)?.failure ?: return null
-            val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return null
+            val file = fileOfUri(failure.uri) ?: return null
             return OccurenceNavigator.OccurenceInfo(OpenFileDescriptor(project, file, failure.line, 0), index + 1, paths.size)
         }
 
@@ -436,12 +435,12 @@ class PiwiFailuresToolWindowFactory : ToolWindowFactory, DumbAware {
     private fun open(project: Project, node: Glue.FailureNode?): Boolean {
         val failure = node?.failure
         if (failure != null) {
-            val file = failure.uri?.let { VirtualFileManager.getInstance().findFileByUrl(it) } ?: return false
+            val file = fileOfUri(failure.uri) ?: return false
             OpenFileDescriptor(project, file, failure.line, 0).navigate(true)
             return true
         }
         if (node?.uri != null && node.line != null) {
-            val file = VirtualFileManager.getInstance().findFileByUrl(node.uri) ?: return false
+            val file = fileOfUri(node.uri) ?: return false
             OpenFileDescriptor(project, file, node.line, 0).navigate(true)
             return true
         }

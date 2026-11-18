@@ -32,6 +32,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 ### Service and protocol
 
 - **No logic the VS Code extension would need too.** A new feature starts as a service request.
+- **A `file:` URI from the service finds its file through `fileOfUri`, never `VirtualFileManager.findFileByUrl`**,
+  which reads no escape (`%20` for a space). Checked by `GlueTest` (`testTheServicesUrisAreReadByFileOfUriNeverAsVfsUrls`)
+  and `PiwiPluginTest`.
 - **A change to `protocol.ts` updates `Protocol.kt` in the same change.** `Protocol.kt` mirrors
   `packages/editor/src/protocol.ts` for lsp4j; `testTheBundledServiceAnswersThroughTheDescriptor` (`PiwiPluginTest`)
   reads the bundled service's answers with it.

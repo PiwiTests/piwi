@@ -31,6 +31,7 @@ import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -50,6 +51,7 @@ import com.intellij.util.concurrency.AppExecutorUtil
 import com.intellij.xdebugger.XDebuggerManager
 import com.intellij.xdebugger.breakpoints.SuspendPolicy
 import com.intellij.xdebugger.breakpoints.XLineBreakpoint
+import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -59,6 +61,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
+
+/**
+ * The file a `file:` URI of the editor service names (`file:///C:/Users/Jean%20Dupont/a.spec.ts`), its escapes read;
+ * null for another URI or a file the IDE does not find. A service URI is not a VFS URL, which escapes nothing: never
+ * `VirtualFileManager.findFileByUrl` on one.
+ */
+internal fun fileOfUri(uri: String?): VirtualFile? =
+    uri?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(it))) }.getOrNull() }
 
 /**
  * The instance and project this project reports to, when the environment and `.env` name

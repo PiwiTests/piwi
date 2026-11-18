@@ -719,14 +719,14 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         val byKey = stops.associateBy(Glue::stopKey)
         for (key in unopened.toList()) {
             val stop = byKey[key] ?: continue
-            val file = fileOf(stop.stop.uri) ?: continue
+            val file = fileOfUri(stop.stop.uri) ?: continue
             unopened.remove(key)
             val focus = shownStops.focusFor(stop)
             shownStops.opened(stop, focus, reveal(stop, file, focus))
         }
         for (stop in stops) {
             val key = Glue.stopKey(stop)
-            val file = fileOf(stop.stop.uri)
+            val file = fileOfUri(stop.stop.uri)
             if (file == null) {
                 refresh(stop.stop.uri)
                 continue
@@ -813,7 +813,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             val text = Glue.runningLineText(lines)
             drawnRunning[key]?.takeIf { it.text != text }?.let { drawnRunning.remove(key)?.dispose() }
             // A file no editor shows has no document loaded: it is drawn once an editor opens it (`editorCreated`).
-            val file = fileOf(uri) ?: continue
+            val file = fileOfUri(uri) ?: continue
             val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: continue
             if (at < 0 || at >= document.lineCount) continue
             val drawnLine = drawnRunning.getOrPut(key) { DrawnRunning(uri, at, text) }
@@ -839,7 +839,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         for ((line, at) in shown) {
             val key = line.waiting.ref to line.waiting.worker
             drawnWaiting[key]?.takeIf { it.uri != line.uri || it.line != at || it.text != line.text }?.let { drawnWaiting.remove(key)?.dispose() }
-            val file = fileOf(line.uri) ?: continue
+            val file = fileOfUri(line.uri) ?: continue
             val document = FileDocumentManager.getInstance().getCachedDocument(file) ?: continue
             if (at < 0 || at >= document.lineCount) continue
             val drawnLine = drawnWaiting.getOrPut(key) { DrawnRunning(line.uri, at, line.text) }
@@ -930,7 +930,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      * On the event thread.
      */
     fun goTo(stop: Glue.ShownStop) {
-        val file = fileOf(stop.stop.uri) ?: return PiwiCommands.notify(project, "${Glue.stopPlace(stop.stop)} could not be opened.")
+        val file = fileOfUri(stop.stop.uri) ?: return PiwiCommands.notify(project, "${Glue.stopPlace(stop.stop)} could not be opened.")
         shownStops.opened(stop, true, reveal(stop, file, true))
         draw()
     }
@@ -946,9 +946,6 @@ class PiwiRunSessions(private val project: Project) : Disposable {
 
     /** The Paused page tab while the tool window holds it: closing it removes it. */
     private fun livePage(): Content? = page?.takeIf { toolWindow()?.contentManager?.getIndexOfContent(it)?.let { i -> i >= 0 } == true }
-
-    private fun fileOf(uri: String?): VirtualFile? =
-        runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(uri ?: ""))) }.getOrNull()
 
     /** Look a stop's file up on disk off the event thread, once, and draw again. On the event thread. */
     private fun refresh(uri: String?) {
@@ -2326,7 +2323,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
         // Code of a desktop app's throwaway checkout is offered to copy, its sentence saying why; no file is edited.
         if (code.copy) return offerCopy(code)
         val name = code.uri.orEmpty().substringAfterLast('/').let { runCatching { java.net.URLDecoder.decode(it, Charsets.UTF_8) }.getOrDefault(it) }
-        val file = fileOf(code.uri) ?: return notWritten(code, "$name could not be found, so the code was not written.")
+        val file = fileOfUri(code.uri) ?: return notWritten(code, "$name could not be found, so the code was not written.")
         val document = FileDocumentManager.getInstance().getDocument(file)
             ?: return notWritten(code, "$name cannot be edited as text, so the code was not written.")
         val editors = FileEditorManager.getInstance(project)
