@@ -8,7 +8,7 @@ import type {
 } from '@piwitests/core/wire';
 import type { ResourceCensus } from '../capture/resource-ledger.js';
 import type { RunProfile, RunSamples } from './process-sampler.js';
-import type { ResourceReport, ResourceSpan } from './resource-verdicts.js';
+import type { LeftOpenPage, ResourceReport, ResourceSpan } from './resource-verdicts.js';
 import { workerHealthOf, type ArtifactBytes } from './machine-panel.js';
 
 /**
@@ -149,20 +149,39 @@ export function pagesOverTime(
       for (const close of census.closed) if (pages.has(close.id)) changes.push([close.at, -1]);
     }
     if (changes.length === 0) continue;
-    // Opens before closes at the same millisecond, so the count never dips below zero.
-    changes.sort((a, b) => a[0] - b[0] || b[1] - a[1]);
-    const events: SeriesPoint[] = [];
-    let open = 0;
-    for (const [at, delta] of changes) {
-      open = Math.max(0, open + delta);
-      const last = events[events.length - 1];
-      if (last && last[0] === at) last[1] = open;
-      else events.push([at, open]);
-    }
+    const events = levels(changes);
+    const open = events[events.length - 1]![1];
     if (!live && open > 0 && lastAt >= events[events.length - 1]![0]) events.push([lastAt, 0]);
     out.push({ worker, events });
   }
   return out;
+}
+
+/** A count over time from its changes (`+1`, `-1`): a point at each millisecond it changed, never below zero. */
+function levels(changes: SeriesPoint[]): SeriesPoint[] {
+  // Opens before closes at the same millisecond, so the count never dips below zero.
+  const sorted = [...changes].sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const events: SeriesPoint[] = [];
+  let open = 0;
+  for (const [at, delta] of sorted) {
+    open = Math.max(0, open + delta);
+    const last = events[events.length - 1];
+    if (last && last[0] === at) last[1] = open;
+    else events.push([at, open]);
+  }
+  return events;
+}
+
+/** Pages left open in each worker over time, from each one's stretch past its scope: a point at each change. */
+function leftOpenOverTime(pages: readonly LeftOpenPage[]): Map<number, SeriesPoint[]> {
+  const byWorker = new Map<number, SeriesPoint[]>();
+  for (const { worker, from, to } of pages) {
+    if (to <= from) continue;
+    const changes = byWorker.get(worker) ?? [];
+    changes.push([from, 1], [to, -1]);
+    byWorker.set(worker, changes);
+  }
+  return new Map([...byWorker].map(([worker, changes]) => [worker, levels(changes)]));
 }
 
 /**
@@ -225,15 +244,18 @@ function wireSpan(span: ResourceSpan, startedAt: number): WireResourceSpan {
 /**
  * The run's resources over time, on one clock: from the sampler's start, or
  * the first page a worker opened when the sampler did not run, with the spans
- * of the objects left open or open after their last use. Null when nothing
+ * of the objects left open or open after their last use, and in each worker
+ * the pages left open past their scope (`leftOpenPages`). Null when nothing
  * was measured.
  */
 export function resourceTimeline(
   samples: RunSamples | null,
   censuses: ResourceCensus[],
   spans: readonly ResourceSpan[] = [],
+  leftOpenPages: readonly LeftOpenPage[] = [],
 ): WireResourceTimeline | null {
   const workers = pagesOverTime(censuses);
+  const leftOpen = leftOpenOverTime(leftOpenPages);
   const hasSamples = samples !== null && (samples.cpuPct.length > 0 || samples.memoryBytes.length > 0);
   const kept = keptSpans(spans);
   if (!hasSamples && workers.length === 0 && kept.length === 0) return null;
@@ -243,6 +265,12 @@ export function resourceTimeline(
   const shift = hasSamples ? samples.startedAt - startedAt : 0;
   const relative = (points: SeriesPoint[], by: number): SeriesPoint[] =>
     points.map(([at, value]) => [Math.round(at + by), value]);
+  // A level on the timeline's clock, within its cap; the last point is where it settles, so it stays exact.
+  const level = (events: SeriesPoint[]): SeriesPoint[] => {
+    const points = relative(events, -startedAt);
+    const last = points.pop()!;
+    return [...downsamplePoints(points, TIMELINE_WORKER_POINTS_CAP - 1, 'max'), last];
+  };
   const trees = hasSamples ? workerTreesByIndex(samples, censuses) : [];
   const perWorker = Math.max(
     60,
@@ -253,10 +281,8 @@ export function resourceTimeline(
     cpuPct: hasSamples ? downsamplePoints(relative(samples.cpuPct, shift), TIMELINE_SERIES_CAP, 'mean') : [],
     memoryBytes: hasSamples ? downsamplePoints(relative(samples.memoryBytes, shift), TIMELINE_SERIES_CAP, 'max') : [],
     pages: workers.map(({ worker, events }) => {
-      // The last point is where the worker's count settles; it stays exact.
-      const points = relative(events, -startedAt);
-      const last = points.pop()!;
-      return { worker, points: [...downsamplePoints(points, TIMELINE_WORKER_POINTS_CAP - 1, 'max'), last] };
+      const left = leftOpen.get(worker);
+      return { worker, points: level(events), ...(left?.length ? { leftOpen: level(left) } : {}) };
     }),
     workers: trees.map((tree) => ({
       worker: tree.worker,
@@ -288,6 +314,6 @@ export function resourceReportWire(input: {
     workers: openPagesByWorker(input.censuses),
     artifactBytes: nonZero(input.artifacts) ?? {},
     workerHealth: workerHealthOf(input.censuses),
-    timeline: resourceTimeline(input.samples ?? null, input.censuses, report?.spans ?? []),
+    timeline: resourceTimeline(input.samples ?? null, input.censuses, report?.spans ?? [], report?.leftOpenPages ?? []),
   };
 }

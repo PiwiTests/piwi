@@ -37,14 +37,7 @@ import {
   type WorkerStrip,
   type WorkerStripSet,
 } from '~/utils/resource-tracks';
-import {
-  buildSpanTails,
-  leftOpenAcross,
-  leftOpenPages,
-  minSteps,
-  type RowTails,
-  type SpanTail,
-} from '~/utils/resource-spans';
+import { buildSpanTails, leftOpenSeries, type RowTails, type SpanTail } from '~/utils/resource-spans';
 
 const props = defineProps<{
   testCases: TestCaseResult[];
@@ -283,32 +276,14 @@ const spanCounts = computed(() => {
   return counts;
 });
 const shownSpanRows = computed(() => (showLeaks.value ? spanRows.value : []));
-/** The pages left open in each row, by its first lane, never above the pages open in it. */
-const leftOpenByLane = computed(() => {
-  const openByLane = new Map<number, SeriesPoint[]>();
-  for (const band of resourceBands.value) {
-    for (const worker of band.workers) if (worker.lane !== null) openByLane.set(worker.lane, worker.points);
-  }
-  return new Map(
-    shownSpanRows.value.map(
-      (row) => [row.lane, minSteps(leftOpenPages(row.tails), openByLane.get(row.lane) ?? [])] as const,
-    ),
-  );
-});
-/** The pages left open in each band's workers, by the band's key. */
-const leftOpenByBand = computed(() => {
-  const out = new Map<string, SeriesPoint[]>();
-  for (const band of resourceBands.value) {
-    const shard = workerRows.value.find((row) => row.baseLane === band.firstLane)?.shardIndex;
-    const lanes = new Set(workerRows.value.filter((row) => row.shardIndex === shard).map((row) => row.baseLane));
-    const left = leftOpenAcross(shownSpanRows.value.filter((row) => lanes.has(row.lane)));
-    const series = minSteps(left, band.tracks.pages?.points ?? []);
-    if (series.length > 0) out.set(band.key, series);
-  }
-  return out;
-});
+/** The pages left open in each row and each band, shown with the leaks. */
+const leftOpen = computed(() =>
+  showLeaks.value
+    ? leftOpenSeries(resourceBands.value, spanRows.value, workerRows.value)
+    : { byLane: new Map<number, SeriesPoint[]>(), byBand: new Map<string, SeriesPoint[]>() },
+);
 function leftOpenFor(band: ResourceBand): SeriesPoint[] | null {
-  return leftOpenByBand.value.get(band.key) ?? null;
+  return leftOpen.value.byBand.get(band.key) ?? null;
 }
 
 /**
@@ -365,7 +340,7 @@ const workerStrips = computed<WorkerStripSet | null>(() => {
     tests: settledTests.value,
     costs: executionCosts.value,
     sharded: sharded.value,
-    leftOpen: leftOpenByLane.value,
+    leftOpen: leftOpen.value.byLane,
   });
 });
 

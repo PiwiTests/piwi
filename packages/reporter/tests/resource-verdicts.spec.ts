@@ -1016,12 +1016,12 @@ describe('formatResourceSummary', () => {
   };
 
   it('says nothing when nothing was found', () => {
-    expect(formatResourceSummary({ findings: [], counts: { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] }, 'report')).toEqual([]);
+    expect(formatResourceSummary({ findings: [], counts: { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] }, 'report')).toEqual([]);
   });
 
   it('heads with the counts, lists each finding, and hints at the strict modes', () => {
     const lines = formatResourceSummary(
-      { findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] },
+      { findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] },
       'report',
     );
     expect(lines[0]).toBe('Resources: 1 leak');
@@ -1029,12 +1029,12 @@ describe('formatResourceSummary', () => {
       `  leaked    context     ${SPEC}:4 · 2 contexts · with 1 page · 2 tests · open until the worker shut down (4.8 s past its test)`,
     );
     expect(lines[2]).toMatch(/PIWI_LEAK_CHECK=fail/);
-    expect(formatResourceSummary({ findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] }, 'fail')).toHaveLength(2);
+    expect(formatResourceSummary({ findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] }, 'fail')).toHaveLength(2);
   });
 
   it('lists at most the given number of findings and counts the rest', () => {
     const findings = Array.from({ length: 13 }, () => leak);
-    const lines = formatResourceSummary({ findings, counts: { leaked: 13, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [] }, 'fail', 10);
+    const lines = formatResourceSummary({ findings, counts: { leaked: 13, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] }, 'fail', 10);
     expect(lines).toHaveLength(12);
     expect(lines[11]).toBe('  … and 3 more findings');
   });
@@ -1185,6 +1185,40 @@ describe('fixture scope, implicit browsers and folded pages', () => {
         pages: 1,
         test: { title: 'title of t1', file: SPEC },
       },
+    ]);
+  });
+
+  it('lists each page left open over its own stretch, the ones a leaked browser holds included', () => {
+    const block = (id: string) => test(id, SPEC, ['block']);
+    const report = buildResourceReport({
+      censuses: [
+        census(1000, block('t1'), {
+          born: [
+            birth(1, 'browser', { phase: 'beforeAll', test: block('t1') }),
+            birth(2, 'context', { parent: 1, phase: 'beforeAll', test: block('t1') }),
+            birth(3, 'page', { parent: 2, test: block('t1') }),
+          ],
+          open: [{ id: 1 }, { id: 2, pages: 1 }, { id: 3, used: true }],
+        }),
+        census(2000, block('t2'), {
+          born: [birth(4, 'page', { parent: 2, test: block('t2') })],
+          open: [{ id: 1 }, { id: 2, pages: 2 }, { id: 3, used: true }, { id: 4, used: true }],
+        }),
+        // A test of another file closes the first page.
+        census(4000, test('t3', OTHER_SPEC), {
+          closed: [close(3, { at: 3500, test: test('t3', OTHER_SPEC) })],
+          open: [{ id: 1 }, { id: 2, pages: 1 }, { id: 4, used: true }],
+        }),
+        census(6000, null, {
+          closed: [4, 2, 1].map((id) => close(id, { at: 6000, phase: 'worker', test: null })),
+        }),
+      ],
+    });
+    // The browser's span holds both pages to the worker's end; each page was left open over its own stretch.
+    expect(report.spans).toEqual([expect.objectContaining({ kind: 'browser', from: 2000, to: 6000, pages: 2 })]);
+    expect(report.leftOpenPages).toEqual([
+      { worker: 0, from: 1000, to: 3500 },
+      { worker: 0, from: 2000, to: 6000 },
     ]);
   });
 });

@@ -3,15 +3,15 @@
  * a leak from the end of the test (or describe block) that opened it to its
  * close or its worker's end, and a lingering object from its last use to its
  * close. Each becomes a thin tail under the row of the worker that held it,
- * on the timeline's clock; tails that overlap stack on sub-lines. The leaks'
- * pages also give the share of the open pages that were left open, which the
- * open-pages track and strip draw. Pure, so the layout and the readings are
- * unit-tested.
+ * on the timeline's clock; tails that overlap stack on sub-lines. The share of
+ * the open pages that were left open, which the open-pages track and strip
+ * draw, comes from the reporter's own series, or from the leaks' pages where
+ * it sent none. Pure, so the layout and the readings are unit-tested.
  */
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
 import type { SeriesPoint, WireResourceSpan } from '#shared/types';
 import type { WorkerRow } from '~/composables/useTimelineModel';
-import { rowsForParts, sumSteps, valueAt } from '~/utils/resource-tracks';
+import { rowsForParts, sumSteps, valueAt, type ResourceBand } from '~/utils/resource-tracks';
 
 /** One object's tail under its worker's row. */
 export interface SpanTail {
@@ -133,6 +133,39 @@ export function leftOpenPages(tails: SpanTail[]): SeriesPoint[] {
 /** The pages left open over time across several workers' rows. */
 export function leftOpenAcross(rows: RowTails[]): SeriesPoint[] {
   return sumSteps(rows.map((row) => leftOpenPages(row.tails)));
+}
+
+/**
+ * The pages left open in each row, by its first lane, and across each band's
+ * workers, by the band's key, never above the pages open then. A band takes
+ * the series its reporter sent, each page over its own stretch; from a
+ * reporter before it, the leaks' spans under its shard's rows, each holding
+ * all its pages over its whole span. A row or band with none is left out.
+ */
+export function leftOpenSeries(
+  bands: ResourceBand[],
+  spanRows: RowTails[],
+  rows: WorkerRow[],
+): { byLane: Map<number, SeriesPoint[]>; byBand: Map<string, SeriesPoint[]> } {
+  const byLane = new Map<number, SeriesPoint[]>();
+  const byBand = new Map<string, SeriesPoint[]>();
+  for (const band of bands) {
+    const shard = rows.find((row) => row.baseLane === band.firstLane)?.shardIndex;
+    const lanes = new Set(rows.filter((row) => row.shardIndex === shard).map((row) => row.baseLane));
+    const fromTails =
+      band.leftOpen === null
+        ? new Map(spanRows.filter((row) => lanes.has(row.lane)).map((row) => [row.lane, leftOpenPages(row.tails)]))
+        : new Map<number, SeriesPoint[]>();
+    for (const worker of band.workers) {
+      if (worker.lane === null) continue;
+      const series = minSteps(worker.leftOpen ?? fromTails.get(worker.lane) ?? [], worker.points);
+      if (series.length > 0) byLane.set(worker.lane, series);
+    }
+    const left = band.leftOpen ?? sumSteps([...fromTails.values()]);
+    const series = minSteps(left, band.tracks.pages?.points ?? []);
+    if (series.length > 0) byBand.set(band.key, series);
+  }
+  return { byLane, byBand };
 }
 
 /**

@@ -103,6 +103,36 @@ describe('resourceTimeline', () => {
     });
   });
 
+  it('counts the pages left open in each worker, each over its own stretch', () => {
+    const timeline = resourceTimeline(
+      null,
+      [
+        census(1, 1500, 't1', { born: [birth(1, 'page', 1000), birth(2, 'page', 1000)] }),
+        census(1, 3000, null, { closed: [close(1, 2900), close(2, 2900)] }),
+        census(0, 1800, 't3', { born: [birth(1, 'page', 1200)] }),
+      ],
+      [],
+      [
+        { worker: 1, from: 1500, to: 2900 },
+        { worker: 1, from: 2500, to: 2900 },
+        // Closed by Piwi at its test's end: never left open.
+        { worker: 0, from: 1800, to: 1800 },
+      ],
+    )!;
+    expect(timeline.pages).toEqual([
+      { worker: 0, points: expect.any(Array) },
+      {
+        worker: 1,
+        points: expect.any(Array),
+        leftOpen: [
+          [500, 1],
+          [1500, 2],
+          [1900, 0],
+        ],
+      },
+    ]);
+  });
+
   it('puts the sampler’s series and the pages on the earliest clock, and is null with nothing measured', () => {
     const samples = {
       startedAt: 900,
@@ -276,6 +306,7 @@ describe('resourceReportWire', () => {
       })),
       counts: { leaked: 0, lingering: 0, idle: 105, piling: 0, handle: 0, probable: 0 },
       spans: [],
+      leftOpenPages: [{ worker: 1, from: 10, to: 30 }],
     };
     const profile = { cpu: { series: Array.from({ length: 1000 }, () => 50) } } as unknown as RunProfile;
     const wire = resourceReportWire({
@@ -312,6 +343,17 @@ describe('resourceReportWire', () => {
       { worker: 1, openPages: [1, 2] },
     ]);
     expect(wire.artifactBytes).toEqual({ trace: 10 });
+    // The pages left open go to their worker on the timeline's clock.
+    expect(wire.timeline!.pages.map((entry) => [entry.worker, entry.leftOpen])).toEqual([
+      [0, undefined],
+      [
+        1,
+        [
+          [10, 1],
+          [30, 0],
+        ],
+      ],
+    ]);
     expect(wire.timeline?.pages.map((w) => w.worker)).toEqual([0, 1]);
   });
 });

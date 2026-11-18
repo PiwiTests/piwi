@@ -33,6 +33,15 @@ export interface ResourceReport {
   counts: Record<ResourceFinding['verdict'], number>;
   /** The objects behind the leaked and lingering findings, each with the stretch it was open for nothing. */
   spans: ResourceSpan[];
+  /** Every page left open past its scope, the ones folded into a leaked context or browser included. */
+  leftOpenPages: LeftOpenPage[];
+}
+
+/** A page left open from `from`, its scope's end, to `to`, its close or its worker's last census (epoch ms). */
+export interface LeftOpenPage {
+  worker: number;
+  from: number;
+  to: number;
 }
 
 /** An object open for nothing from `from` to `to` (epoch ms), as the timeline draws it. */
@@ -358,9 +367,13 @@ export function buildResourceReport(input: ResourceReportInput): ResourceReport 
   findings.push(...groupLingering(lingering, all, spans));
   findings.push(...probableFindings(input.tallies ?? []));
 
+  const leftOpenPages = leaked
+    .filter((leak) => leak.tracked.birth.kind === 'page' && leak.to > leak.from)
+    .map((leak) => ({ worker: leak.tracked.worker, from: leak.from, to: leak.to }));
+
   const counts = { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 };
   for (const finding of findings) counts[finding.verdict] += finding.verdict === 'idle' ? finding.count : 1;
-  return { findings, counts, spans: spans.sort((a, b) => a.from - b.from) };
+  return { findings, counts, spans: spans.sort((a, b) => a.from - b.from), leftOpenPages };
 }
 
 /** Whether a ref belongs to the same spec file as the object's birth: the scope hand-overs stay within. */
