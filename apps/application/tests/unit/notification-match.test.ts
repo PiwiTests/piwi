@@ -106,6 +106,33 @@ describe('passesSubscriptionFilters', () => {
     expect(passesSubscriptionFilters({ environments: ['stag*'] }, 'run.failed', staging)).toBe(true);
   });
 
+  test('environment filter names the run’s environment by its key or an exact alias, ignoring case', () => {
+    // A run that reported `stg`, an alias of Staging.
+    const stg = { ...runPayload, environment: 'stg', environmentKey: 'staging', environmentAliases: ['stg', 'pr-*'] };
+    expect(passesSubscriptionFilters({ environments: ['Staging'] }, 'run.failed', stg)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['STG'] }, 'run.failed', stg)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['STAG*'] }, 'run.failed', stg)).toBe(true);
+    // A pattern alias takes labels; a filter names the environment by its key or an exact alias only.
+    expect(passesSubscriptionFilters({ environments: ['pr-12'] }, 'run.failed', stg)).toBe(false);
+    expect(passesSubscriptionFilters({ environments: ['production'] }, 'run.failed', stg)).toBe(false);
+  });
+
+  test('environment filter keeps matching the label of a run a pattern alias gave another environment', () => {
+    // A run that reported `pr-12`, which Preview takes through its alias `pr-*`.
+    const pr = { ...runPayload, environment: 'pr-12', environmentKey: 'preview', environmentAliases: ['pr-*'] };
+    expect(passesSubscriptionFilters({ environments: ['pr-*'] }, 'run.failed', pr)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['PR-12'] }, 'run.failed', pr)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['preview'] }, 'run.failed', pr)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['pr-13'] }, 'run.failed', pr)).toBe(false);
+  });
+
+  test('environment filter matches the label, ignoring case, of a run whose label has no environment', () => {
+    const loose = { ...runPayload, environment: 'Preview-42' };
+    expect(passesSubscriptionFilters({ environments: ['preview-42'] }, 'run.failed', loose)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['preview-*'] }, 'run.failed', loose)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['preview'] }, 'run.failed', loose)).toBe(false);
+  });
+
   test('branch and environment filters must both match', () => {
     const filters = { branches: ['main'], environments: ['staging'] };
     expect(

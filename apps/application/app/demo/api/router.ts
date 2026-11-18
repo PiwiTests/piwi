@@ -208,6 +208,8 @@ import {
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   InvalidRunVariablesError,
+  InvalidCiActionsError,
+  InvalidDefaultEnvironmentError,
   InvalidTagKeysError,
   updateProject,
   createProject,
@@ -217,10 +219,12 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { projectDefaultEnvironment } from '#shared/handlers/default-environment';
 import {
   copyEnvironments,
   createEnvironment,
   deleteEnvironment,
+  listInstanceEnvironments,
   environmentRunSettings,
   listProjectEnvironments,
   updateEnvironment,
@@ -288,6 +292,8 @@ import {
   type ProbeResultInput,
 } from '#shared/handlers/probes';
 import { computeChangeCoverage } from '#shared/handlers/change-coverage';
+import { runChangeCoverageNote } from '#shared/handlers/deployed-changes';
+import { getEnvironmentActivity } from '#shared/handlers/environment-activity';
 import {
   isBuiltinKey,
   parseRankBy,
@@ -583,6 +589,14 @@ interface RouteEntry {
  * user means authentication is off, and an unknown one acts as an
  * administrator too, so the demo never locks itself out.
  */
+/** A marker's commit as the server's route takes it: 7 to 40 hexadecimal characters, or none. */
+function assertDemoMarkerCommit(commit: unknown): void {
+  if (commit == null) return;
+  if (typeof commit !== 'string' || !/^[0-9a-f]{7,40}$/i.test(commit.trim())) {
+    throw demoHttpError(400, 'commit must be 7 to 40 hexadecimal characters');
+  }
+}
+
 async function resolveDemoAccess(actingUserId: number | null): Promise<AccessSummary> {
   if (!actingUserId) return ADMIN_ACCESS;
   const db = await getDemoDb();
@@ -1107,7 +1121,12 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
-        if (e instanceof InvalidTagKeysError || e instanceof InvalidRunVariablesError)
+        if (
+          e instanceof InvalidTagKeysError ||
+          e instanceof InvalidRunVariablesError ||
+          e instanceof InvalidCiActionsError ||
+          e instanceof InvalidDefaultEnvironmentError
+        )
           throw demoHttpError(400, e.message);
         throw e;
       }
@@ -1497,6 +1516,14 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       return apiGetDemoLiveSnapshot(+m[1]!, query ?? new URLSearchParams());
     },
+  },
+
+  {
+    method: 'GET',
+    pattern: /^\/api\/environments$/,
+    handler: async (_, __, ___, ctx) => ({
+      environments: await listInstanceEnvironments(await getDemoDb(), ctx?.scope ?? 'all'),
+    }),
   },
 
   // Test runs
@@ -2871,6 +2898,7 @@ const routes: RouteEntry[] = [
         occurredAt?: string;
         category?: string;
         environment?: string | null;
+        commit?: string | null;
         description?: string | null;
         runId?: number | string | null;
       };
@@ -2882,6 +2910,7 @@ const routes: RouteEntry[] = [
       if (b.category && !MARKER_CATEGORY_IDS.includes(b.category)) throw demoHttpError(400, 'Unknown marker category');
       if (b.environment != null && b.environment.length > 120)
         throw demoHttpError(400, 'environment must be at most 120 characters');
+      assertDemoMarkerCommit(b.commit);
       if (b.description != null && b.description.length > 2000) {
         throw demoHttpError(400, 'description must be at most 2000 characters');
       }
@@ -2898,6 +2927,7 @@ const routes: RouteEntry[] = [
         occurredAt,
         category: b.category,
         environment: b.environment ?? null,
+        commit: b.commit ?? null,
         description: b.description ?? null,
         runId,
       });
@@ -2916,6 +2946,10 @@ const routes: RouteEntry[] = [
       if (b.category !== undefined && !MARKER_CATEGORY_IDS.includes(b.category as string)) {
         throw demoHttpError(400, 'Unknown marker category');
       }
+      if (b.environment != null && (typeof b.environment !== 'string' || b.environment.length > 120)) {
+        throw demoHttpError(400, 'environment must be at most 120 characters');
+      }
+      assertDemoMarkerCommit(b.commit);
       const patch = { ...b, ...(b.occurredAt ? { occurredAt: new Date(b.occurredAt) } : {}) };
       return updateMarker(await getDemoDb(), +m[1]!, patch as Parameters<typeof updateMarker>[2]);
     },
@@ -3290,7 +3324,8 @@ const routes: RouteEntry[] = [
       const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
       // The demo has no SCM provider; show a small representative diff so the
       // uncovered-changes join renders against the seeded reach.
-      return computeChangeCoverage(await getDemoDb(), +m[1]!, {
+      const db = await getDemoDb();
+      const coverage = await computeChangeCoverage(db, +m[1]!, {
         changedFiles: [
           { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
           { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
@@ -3301,6 +3336,25 @@ const routes: RouteEntry[] = [
         tickets: ['PROJ-418'],
         scmAvailable: true,
       });
+      // A run of a deployed environment says what its reach of the application is of, as the server's answer does.
+      const [inspected] =
+        runId != null
+          ? await db
+              .select({
+                id: testRuns.id,
+                projectId: testRuns.projectId,
+                environmentId: testRuns.environmentId,
+                startTime: testRuns.startTime,
+                metadata: testRuns.metadata,
+              })
+              .from(testRuns)
+              .where(eq(testRuns.id, runId))
+          : [];
+      if (inspected && inspected.projectId === +m[1]!) {
+        const head = (inspected.metadata as { scm?: { commit?: string | null } } | null)?.scm?.commit ?? null;
+        coverage.deployedNote = await runChangeCoverageNote(db, inspected, head);
+      }
+      return coverage;
     },
   },
   {
@@ -4214,7 +4268,22 @@ const routes: RouteEntry[] = [
       const projectId = +m[1]!;
       await assertDemoEntityScope(ctx, 'project', projectId);
       const canManage = demoCan(ctx, 'project:manage', projectId);
-      return { environments: await listProjectEnvironments(await getDemoDb(), projectId, { canManage }) };
+      const db = await getDemoDb();
+      return {
+        environments: await listProjectEnvironments(db, projectId, { canManage }),
+        defaultEnvironmentId: (await projectDefaultEnvironment(db, projectId))?.id ?? null,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)\/activity$/,
+    handler: async (m, _b, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const activity = await getEnvironmentActivity(await getDemoDb(), projectId, +m[2]!);
+      if (!activity) throw demoHttpError(404, 'No such environment in this project');
+      return activity;
     },
   },
   {
@@ -4268,9 +4337,8 @@ const routes: RouteEntry[] = [
     permission: 'project:manage',
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      if (!(await deleteEnvironment(await getDemoDb(), +m[1]!, +m[2]!))) {
-        throw demoHttpError(404, 'No environment of this project has this id');
-      }
+      const result = await deleteEnvironment(await getDemoDb(), +m[1]!, +m[2]!);
+      if (!result.ok) throw demoHttpError(result.statusCode, result.problems.join(' '));
       return { deleted: true };
     },
   },

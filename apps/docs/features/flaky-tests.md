@@ -30,7 +30,7 @@ once it has 3 of them in the window, with a retry pass or two flips.
 
 The project's **Failures** tab has a **Flaky** view with a **lookback window** of 20, 50 or 100 runs. Each flaky test links to its history and, unless already quarantined, offers **Quarantine**.
 
-**Scoping**: only runs within the project's **Filters** count: environment (the [reporter](/guide/reporter)'s `environment` option), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
+**Scoping**: only runs within the project's **Filters** count: environment (the [default environment](./environments#default-environment) unless picked), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 
 <figure>
   <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">

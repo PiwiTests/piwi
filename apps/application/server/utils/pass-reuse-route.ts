@@ -6,7 +6,13 @@ import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { apiError } from './api-error';
 import { parseImpactChanges } from './selection-impact';
-import { MAX_SOURCE_COMMITS, type ReuseFingerprint, type SourceDiff, type StoredRunPlan } from './pass-reuse';
+import {
+  MAX_SOURCE_COMMITS,
+  planFingerprint,
+  type ReuseFingerprint,
+  type SourceDiff,
+  type StoredRunPlan,
+} from './pass-reuse';
 
 const COMMIT_ID = /^[0-9a-f]{7,64}$/i;
 /** Changed files one diff carries at most, as impact takes them. */
@@ -26,9 +32,15 @@ export function parseSelectionKey(raw: unknown): string {
   return key;
 }
 
-export function parseFingerprint(raw: unknown): ReuseFingerprint {
+/** The planned run a request describes: its `playwrightVersion`, and the label it reports as `environment`. */
+export function requestFingerprint(
+  db: DrizzleDB,
+  projectId: number,
+  body: { playwrightVersion?: unknown; environment?: unknown },
+): Promise<ReuseFingerprint> {
+  const raw = body.playwrightVersion;
   const version = typeof raw === 'string' && raw.trim() ? raw.trim().slice(0, 64) : null;
-  return { playwrightVersion: version };
+  return planFingerprint(db, projectId, { playwrightVersion: version, environment: body.environment });
 }
 
 /** A commit id, or null when absent or malformed. */

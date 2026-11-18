@@ -8,14 +8,19 @@
  * `runInProjectScope`.
  *
  * With no branch picked the scope reads the project's default branch and the
- * runs that report no branch; `allBranches` reads every branch. The query keys
- * are the analytics ones, so an analytics drill-down address is a scope too.
+ * runs that report no branch; `allBranches` reads every branch. With no
+ * environment picked it reads the project's default environment when it has
+ * one, never a run with no environment; `allEnvironments` reads every
+ * environment. The query keys are the analytics ones, so an analytics
+ * drill-down address is a scope too.
  */
 import { NO_ENVIRONMENT_FILTER } from './environments';
 
 export interface ProjectRunScope {
-  /** Runs from any of these environments; every environment when empty. */
+  /** Runs from any of these environments; the environment policy decides when empty. */
   environments: string[];
+  /** With no environment picked: every environment, instead of the project's default environment when it has one. */
+  allEnvironments: boolean;
   /** Runs on any of these branches; the branch policy decides when empty. */
   branches: string[];
   /** With no branch picked: every branch, instead of the default branch and runs with no branch. */
@@ -28,7 +33,7 @@ export interface ProjectRunScope {
  * The keys a scoped request carries. `fullRunsOnly` alone does not make a
  * request scoped: the performance endpoint took it before scopes existed.
  */
-const SCOPE_MARKER_KEYS = ['environments', 'branches', 'allBranches'] as const;
+const SCOPE_MARKER_KEYS = ['environments', 'allEnvironments', 'branches', 'allBranches'] as const;
 
 type QueryLike = URLSearchParams | Record<string, unknown> | null | undefined;
 
@@ -52,8 +57,10 @@ function parseList(raw: string | null): string[] {
 export function parseProjectRunScope(query: QueryLike): ProjectRunScope | null {
   if (!SCOPE_MARKER_KEYS.some((key) => pick(query, key) !== null)) return null;
   const allBranches = pick(query, 'allBranches');
+  const allEnvironments = pick(query, 'allEnvironments');
   return {
     environments: parseList(pick(query, 'environments')),
+    allEnvironments: allEnvironments === 'true' || allEnvironments === '1',
     branches: parseList(pick(query, 'branches')),
     allBranches: allBranches === 'true' || allBranches === '1',
     fullRunsOnly: pick(query, 'fullRunsOnly') !== 'false',
@@ -66,6 +73,7 @@ export function projectRunScopeQuery(scope: ProjectRunScope): Record<string, str
     allBranches: String(scope.allBranches),
     fullRunsOnly: String(scope.fullRunsOnly),
   };
+  if (scope.allEnvironments) query.allEnvironments = 'true';
   if (scope.environments.length > 0) query.environments = scope.environments.join(',');
   if (scope.branches.length > 0) query.branches = scope.branches.join(',');
   return query;
@@ -94,10 +102,28 @@ function inEnvironments(run: ScopedRunFields, names: readonly string[]): boolean
   return names.some((name) => own.includes(name.toLowerCase()));
 }
 
-/** Whether a run is in the scope, given the project's default branch (`resolveStoredDefaultBranch`). */
-export function runInProjectScope(run: ScopedRunFields, scope: ProjectRunScope, defaultBranch: string): boolean {
+/**
+ * The environments a scope reads: those picked, else the project's default environment (its key) unless the scope
+ * reads every environment. Empty for every environment.
+ */
+export function scopeEnvironments(scope: ProjectRunScope, defaultEnvironment: string | null | undefined): string[] {
+  if (scope.environments.length > 0) return scope.environments;
+  return !scope.allEnvironments && defaultEnvironment ? [defaultEnvironment] : [];
+}
+
+/**
+ * Whether a run is in the scope, given the project's default branch (`resolveStoredDefaultBranch`) and the key of its
+ * default environment, if any.
+ */
+export function runInProjectScope(
+  run: ScopedRunFields,
+  scope: ProjectRunScope,
+  defaultBranch: string,
+  defaultEnvironment: string | null = null,
+): boolean {
   if (scope.fullRunsOnly && run.isFullRun === false) return false;
-  if (scope.environments.length > 0 && !inEnvironments(run, scope.environments)) return false;
+  const environments = scopeEnvironments(scope, defaultEnvironment);
+  if (environments.length > 0 && !inEnvironments(run, environments)) return false;
   const branch = run.branch?.trim() || null;
   if (scope.branches.length > 0) return branch !== null && scope.branches.includes(branch);
   if (scope.allBranches) return true;
@@ -114,22 +140,25 @@ function stringList(value: unknown): string[] {
 }
 
 /**
- * A stored or submitted scope, normalized: trimmed, deduplicated lists and
- * booleans, `fullRunsOnly` on unless set to false. Null for anything that is
- * not an object, which stands for every run.
+ * A stored or submitted status filter (`projects.status_filter`), normalized:
+ * trimmed, deduplicated lists and booleans, `fullRunsOnly` on unless set to
+ * false. It names no environment for every environment, never the project's
+ * default one (`allEnvironments`). Null for anything that is not an object,
+ * which stands for every run.
  */
 export function resolveProjectRunScope(raw: unknown): ProjectRunScope | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
   const r = raw as Partial<Record<keyof ProjectRunScope, unknown>>;
   return {
     environments: stringList(r.environments),
+    allEnvironments: true,
     branches: stringList(r.branches),
     allBranches: r.allBranches === true,
     fullRunsOnly: r.fullRunsOnly !== false,
   };
 }
 
-/** A scope in words: "the default branch (main) in production, full runs only". */
+/** A scope in words: "the default branch (main) in production, full runs only". Every environment when it names none. */
 export function describeProjectRunScope(scope: ProjectRunScope, defaultBranch?: string | null): string {
   const branches =
     scope.branches.length > 0

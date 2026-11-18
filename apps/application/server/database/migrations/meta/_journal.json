@@ -1282,6 +1282,20 @@
       "when": 1795011691078,
       "tag": "0182_bent_chimera",
       "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "6",
+      "when": 1795029948611,
+      "tag": "0183_legal_sentinel",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "6",
+      "when": 1795032553851,
+      "tag": "0184_discovered_environments_from_checkout",
+      "breakpoints": true
     }
   ]
 }

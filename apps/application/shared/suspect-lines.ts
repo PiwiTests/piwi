@@ -21,6 +21,18 @@ export type { SuspectLine, SuspectLinesSummary } from '@piwitests/core/suspect-l
  */
 export type SuspectLinesReason = 'not-failing' | 'no-coverage' | 'no-baseline' | 'no-scm' | 'no-changes';
 
+/**
+ * The deployed environment a failing run tested. Its range runs between the deployed commits of the last green run
+ * and the run, the application's changes; with the run's deployed commit unknown (`commit` null), it is the tests'
+ * commits, which the deployed application may not run.
+ */
+export interface SuspectLinesDeployed {
+  /** The environment's name. */
+  environment: string;
+  /** The run's deployed commit; null when unknown. */
+  commit: string | null;
+}
+
 /** The suspect lines of one execution. */
 export interface SuspectLinesAnswer {
   /** Whether the changed lines were joined with the coverage; false with a `reason` otherwise. */
@@ -30,6 +42,8 @@ export interface SuspectLinesAnswer {
   range?: { from: string; to: string };
   /** The last green run the range starts at. */
   baselineRunId?: number;
+  /** Set for a run of a deployed environment. */
+  deployed?: SuspectLinesDeployed;
   summary: SuspectLinesSummary;
   /**
    * Changed files whose lines were not checked: the host gave no patch for
@@ -74,11 +88,11 @@ function emptySuspectSummary(): SuspectLinesSummary {
   };
 }
 
+/** What an answer knows before the changes are joined: its range, its baseline and its deployed environment. */
+export type SuspectLinesKnown = Pick<SuspectLinesAnswer, 'range' | 'baselineRunId' | 'deployed'>;
+
 /** The answer when suspect lines cannot be computed, with the range when it is known. */
-export function unavailableSuspectLines(
-  reason: SuspectLinesReason,
-  known: Pick<SuspectLinesAnswer, 'range' | 'baselineRunId'> = {},
-): SuspectLinesAnswer {
+export function unavailableSuspectLines(reason: SuspectLinesReason, known: SuspectLinesKnown = {}): SuspectLinesAnswer {
   return { available: false, reason, ...known, summary: emptySuspectSummary(), suspects: [] };
 }
 
@@ -96,6 +110,18 @@ export function suspectLinesReasonText(reason: SuspectLinesReason): string {
     case 'no-changes':
       return 'the range changes no line';
   }
+}
+
+/**
+ * What a deployed environment means for an answer, as a sentence; null for a run of an environment built from the
+ * checkout, or none.
+ */
+export function suspectLinesDeployedNote(answer: Pick<SuspectLinesAnswer, 'deployed'>): string | null {
+  const deployed = answer.deployed;
+  if (!deployed) return null;
+  return deployed.commit
+    ? `${deployed.environment} runs a deployed application: these are its lines changed between the deployed commits.`
+    : `${deployed.environment}'s deployed version is unknown: it may differ from the run's commit, whose changes these are.`;
 }
 
 /** A suspect's file and lines: "`src/Basket.cs` 57-59". */
@@ -167,6 +193,8 @@ function suspectLinesSection(answer: ClusterSuspectLinesAnswer, sameDiff: boolea
     suspectLinesLead(answer),
     `- Coverage${run}: ${failing}, ${passing} of the same run.`,
   ];
+  const deployed = suspectLinesDeployedNote(answer);
+  if (deployed) lines.push(`- ${deployed}`);
   if (answer.unreadFiles) {
     const files = `${answer.unreadFiles} changed file${answer.unreadFiles === 1 ? '' : 's'}`;
     lines.push(`- ${files} had no complete patch, so their lines were not checked.`);

@@ -75,8 +75,22 @@ export interface ReproInput {
   runVariables?: readonly RunVariable[];
 }
 
+/**
+ * The deployed environment a failing run tested, for its bisect: a bisect walks the tests' commits, so against a
+ * deployed environment it finds a change of the tests only; the deploy markers between the last passing run and the
+ * failing one say what changed in the application.
+ */
+export interface BisectDeployed {
+  /** The environment's name. */
+  environment: string;
+  /** The environment's deploy markers between the two runs, oldest first. */
+  deploys: Array<{ label: string; commit: string | null; deployedAt: string | Date }>;
+  /** More deploys happened between the two runs than are listed: the listed ones are the latest. */
+  more: boolean;
+}
+
 export type BisectResult =
-  | { available: false; reason: string }
+  | { available: false; reason: string; deployed?: BisectDeployed }
   | {
       available: true;
       /** Last green commit — the `good` end of the window. */
@@ -91,6 +105,7 @@ export type BisectResult =
       powershell: string;
       /** One line saying what the script does. */
       explanation: string;
+      deployed?: BisectDeployed;
     };
 
 export interface BisectInput {
@@ -102,6 +117,8 @@ export interface BisectInput {
   verifyCommand: string;
   /** The project's run variables, which each step's run gets. */
   runVariables?: readonly RunVariable[];
+  /** Set when the failing run tested a deployed environment. */
+  deployed?: BisectDeployed | null;
 }
 
 /**
@@ -241,11 +258,32 @@ export function reproScript(recipe: ReproRecipe, shell: 'bash' | 'powershell'): 
   return lines.join('\n').trimEnd();
 }
 
+/** What a deployed environment means for a bisect, as a sentence: "Staging is deployed: …". */
+export function bisectDeployedNote(deployed: BisectDeployed): string {
+  const deploys =
+    deployed.deploys.length === 0
+      ? `no deploy marker of ${deployed.environment} falls between the two runs`
+      : `${deployed.environment}'s deploys between the two runs say what changed in the application`;
+  return `${deployed.environment} is deployed: a bisect walks the tests' commits, so it can find a change of the tests, never one of the application, and ${deploys}.`;
+}
+
 /**
  * Build the `git bisect` that finds the breaking commit between the last green
- * commit and the failing one, or explain why the window is missing.
+ * commit and the failing one, or explain why the window is missing. Against a
+ * deployed environment, the result names it and the deploys between the two
+ * runs, and its sentences say what the bisect can find.
  */
 export function buildBisectScript(input: BisectInput): BisectResult {
+  const result = bisectScript(input);
+  const deployed = input.deployed;
+  if (!deployed) return result;
+  const note = bisectDeployedNote(deployed);
+  return result.available
+    ? { ...result, explanation: `${result.explanation} ${note}`, deployed }
+    : { ...result, reason: `${result.reason} ${note}`, deployed };
+}
+
+function bisectScript(input: BisectInput): BisectResult {
   const { good, bad, verifyCommand } = input;
   const variables = input.runVariables ?? [];
 
@@ -271,8 +309,9 @@ export function buildBisectScript(input: BisectInput): BisectResult {
   if (good === bad) {
     return {
       available: false,
-      reason:
-        'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the code.',
+      reason: input.deployed
+        ? 'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the tests.'
+        : 'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the code.',
     };
   }
 

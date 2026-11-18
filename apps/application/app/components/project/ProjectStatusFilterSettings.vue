@@ -49,8 +49,13 @@ const availableBranches = computed(() =>
 );
 
 const pageFilters = useProjectFilters(props.project.id);
+/** The page's filters as a status filter, which names the default environment the page reads with none picked. */
 function copyPageFilters() {
-  state.value.filter = { ...defaultProjectFilters(), ...pageFilters.value };
+  const page = { ...defaultProjectFilters(), ...pageFilters.value };
+  const defaultKey = props.project.effectiveDefaultEnvironment?.key;
+  const environments =
+    page.environments.length === 0 && !page.allEnvironments && defaultKey ? [defaultKey] : page.environments;
+  state.value.filter = { ...page, environments };
 }
 
 const summary = computed(() => {

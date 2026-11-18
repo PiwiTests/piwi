@@ -1,6 +1,12 @@
 import { describe, expect, test } from 'vitest';
 import type { CiAction } from '#shared/ci-actions';
-import { ciActionDraft, ciActionFromDraft, duplicateCiActionName, newInputDraft } from '~/utils/ci-action-form';
+import {
+  ciActionDraft,
+  ciActionFromDraft,
+  duplicateCiAction,
+  duplicateCiActionName,
+  newInputDraft,
+} from '~/utils/ci-action-form';
 
 const opts = { otherNames: [] as string[], instanceUrl: null as string | null };
 
@@ -169,5 +175,30 @@ describe('duplicateCiActionName', () => {
     expect(copy).toHaveLength(80);
     expect(copy.endsWith(' (copy)')).toBe(true);
     expect(duplicateCiActionName(name, [name, copy])).toHaveLength(80);
+  });
+});
+
+describe('duplicateCiAction', () => {
+  const action: CiAction = {
+    id: 'smoke',
+    name: 'Smoke',
+    target: { type: 'github', workflow: 'e2e.yml', ref: 'main', argsInput: 'args' },
+    inputs: [],
+    accepts: ['tests'],
+    environment: 'staging',
+    environmentId: 7,
+  };
+
+  test('copies the action under a new id and name, its environment with it', () => {
+    const copy = duplicateCiAction(action, ['Smoke'], () => false);
+    expect(copy).toMatchObject({ name: 'Smoke (copy)', environment: 'staging', environmentId: 7 });
+    expect(copy.id).not.toBe(action.id);
+    expect(copy.target).not.toBe(action.target);
+  });
+
+  test('leaves an archived environment for any environment', () => {
+    const copy = duplicateCiAction(action, ['Smoke'], (id) => id === 7);
+    expect(copy).not.toHaveProperty('environment');
+    expect(copy).not.toHaveProperty('environmentId');
   });
 });

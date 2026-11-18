@@ -55,6 +55,7 @@ describe('useProjectFilters', () => {
     jar['piwi-filters-project-7'] = JSON.stringify({ environments: [], branches: ['main'], fullRunsOnly: false });
     expect(useProjectFilters(7).value).toEqual({
       environments: [],
+      allEnvironments: false,
       branches: ['main'],
       fullRunsOnly: false,
       allBranches: false,
@@ -66,5 +67,14 @@ describe('useProjectFilters', () => {
 
     jar['piwi-filters-project-9'] = '{not json';
     expect(useProjectFilters(9).value).toEqual(defaultProjectFilters());
+  });
+
+  test('keeps a cookie for All environments, which differs from the default environment', () => {
+    vi.stubGlobal('useCookie', fakeUseCookie);
+    const filters = useProjectFilters(7);
+    filters.value = { ...defaultProjectFilters(), allEnvironments: true };
+    expect(refs['piwi-filters-project-7']!.value).toEqual({ ...defaultProjectFilters(), allEnvironments: true });
+    filters.value = { ...defaultProjectFilters(), allEnvironments: false };
+    expect(refs['piwi-filters-project-7']!.value).toBeUndefined();
   });
 });

@@ -13,6 +13,7 @@ import {
   primaryKey,
   customType,
   check,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 
@@ -79,6 +80,9 @@ export const projects = pgTable(
     askToWatch: boolean('ask_to_watch').notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: jsonb('status_filter'), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: jsonb('tag_keys'), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
+    defaultEnvironmentId: integer('default_environment_id').references((): AnyPgColumn => environments.id, {
+      onDelete: 'set null',
+    }), // The environment the project's views read by default, as they read the default branch; null = every environment
     runVariables: jsonb('run_variables'), // RunVariable[] (@piwitests/core/run-variables) — the environment variables every run Piwi starts for the project gets, and every command it gives to copy starts with; null = none
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -89,6 +93,7 @@ export const projects = pgTable(
   },
   (table) => ({
     updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt),
+    defaultEnvironmentIdx: index('idx_projects_default_environment').on(table.defaultEnvironmentId),
   }),
 );
 
@@ -1363,7 +1368,9 @@ export const markers = pgTable(
     label: text('label').notNull(),
     description: text('description'),
     category: text('category').notNull().default('event'), // 'deploy', 'config', 'infra', 'incident', 'release', 'event'
-    environment: text('environment'), // Optional scope; null = applies to all environments
+    environment: text('environment'), // The environment's label as written (a key, or a run's label); null = applies to all environments
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`)
+    commit: text('commit'), // A deploy marker's deployed commit: 7 to 40 hexadecimal characters
     source: text('source').notNull().default('manual'), // 'manual' | 'auto'
     runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }), // Optional link to the run that triggered/relates to the marker
     createdAt: timestamp('created_at', { mode: 'date' })
@@ -1376,6 +1383,7 @@ export const markers = pgTable(
   (table) => ({
     projectOccurredIdx: index('idx_markers_project_occurred').on(table.projectId, table.occurredAt),
     runIdIdx: index('idx_markers_run_id').on(table.runId),
+    environmentIdx: index('idx_markers_environment').on(table.environmentId),
   }),
 );
 
@@ -2116,7 +2124,8 @@ export const projectUrlPatterns = pgTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     pattern: text('pattern').notNull(),
-    environment: text('environment'), // free label: 'staging', 'production'
+    environment: text('environment'), // The environment's label as written (its key); null for every environment
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`)
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
     pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
     testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
@@ -2130,6 +2139,7 @@ export const projectUrlPatterns = pgTable(
   },
   (t) => ({
     projectPatternIdx: uniqueIndex('idx_project_url_patterns_pattern').on(t.projectId, t.pattern),
+    environmentIdx: index('idx_project_url_patterns_environment').on(t.environmentId),
   }),
 );
 

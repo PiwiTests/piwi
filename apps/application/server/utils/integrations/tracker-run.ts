@@ -2,7 +2,8 @@
  * The run facts the automatic tracker writes read: whether the run may drive
  * them at all (the `tracker` use: no lab or investigation run, no editor run,
  * no environment incident, a developer's own run only when it covered the
- * suite) and where it ran — its branch, environment, whether that branch is the
+ * suite) and where it ran — its branch, environment (its label, and the key and
+ * aliases of the environment it resolves to), whether that branch is the
  * project's default branch, and its commit — for the binding's run scope.
  */
 import { eq } from 'drizzle-orm';
@@ -10,6 +11,8 @@ import { projects, testRuns } from '../../database/schema';
 import type { DbClient } from '../../database';
 import { isEligibleRun, type RunUse } from '#shared/run-eligibility';
 import { runInScope, type ScopedRun, type TrackerRunScope } from '#shared/integrations/automation';
+import { environmentFilterFacts } from '#shared/handlers/environments';
+import type { DrizzleDB } from '#shared/handlers/db';
 import { resolveRunBranch } from '../run-branch';
 import { resolveDefaultBranch } from '../scm/default-branch';
 import type { RunMetadata } from '../run-json-types';
@@ -37,6 +40,7 @@ export async function loadTrackerRun(db: DbClient, runId: number, use: RunUse = 
       status: testRuns.status,
       branch: testRuns.branch,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       startTime: testRuns.startTime,
     })
     .from(testRuns)
@@ -48,12 +52,18 @@ export async function loadTrackerRun(db: DbClient, runId: number, use: RunUse = 
     .where(eq(projects.id, run.projectId));
   const branch = run.branch ?? resolveRunBranch(run.metadata);
   const defaultBranch = project ? await resolveDefaultBranch(db, project, run.metadata).catch(() => null) : null;
+  const environment =
+    run.environmentId != null
+      ? (await environmentFilterFacts(db as unknown as DrizzleDB, [run.environmentId])).get(run.environmentId)
+      : undefined;
   return {
     id: run.id,
     projectId: run.projectId,
     eligible: isEligibleRun(run, use),
     branch,
     environment: run.environment ?? null,
+    environmentKey: environment?.key ?? null,
+    environmentAliases: environment?.aliases ?? null,
     isDefaultBranch: branch != null && branch === defaultBranch,
     defaultBranch,
     commit: (run.metadata as RunMetadata | null)?.scm?.commit ?? null,

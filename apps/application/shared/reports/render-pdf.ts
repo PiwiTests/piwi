@@ -473,6 +473,9 @@ export async function renderReportPdf(bundle: ReportBundle): Promise<Uint8Array>
     [L.comparedWith, bundle.comparison?.label ?? L.noComparison],
     [L.projects, bundle.scopeText.projects],
     [L.branchPolicy, bundle.scopeText.branches],
+    ...(bundle.scopeText.environments
+      ? ([[L.environmentPolicy, bundle.scopeText.environments]] as Array<[string, string]>)
+      : []),
     [sentencesFor(bundle.language).metricLabel('runs', 'Runs'), bundle.scopeText.runs],
     ...(bundle.scopeText.tests ? ([[L.testFilter, bundle.scopeText.tests]] as Array<[string, string]>) : []),
   ];

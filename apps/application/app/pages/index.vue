@@ -131,6 +131,7 @@ function matchesEnv(env: string | null | undefined): boolean {
 /** The filters as a run scope: environments and full runs only, on every branch. */
 const activityScope = computed<ProjectRunScope>(() => ({
   environments: filters.value.environments,
+  allEnvironments: true,
   branches: [],
   allBranches: true,
   fullRunsOnly: filters.value.fullRunsOnly,

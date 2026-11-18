@@ -4,9 +4,11 @@ import {
   envFileProblem,
   environmentAliasProblem,
   environmentKeyProblem,
+  environmentMatchesPattern,
   environmentNameProblem,
   requiredTagProblem,
 } from '@piwitests/core/environments';
+import { globMatcher } from '@piwitests/core/glob';
 import { parseRunVariables, type RunVariable } from '@piwitests/core/run-variables';
 
 /**
@@ -129,10 +131,40 @@ export function checkEnvironmentFields(input: {
       description: input.description ? input.description : null,
       aliases,
       runVariables: runVariables.value,
-      appFromCheckout: input.appFromCheckout === true,
+      appFromCheckout: input.appFromCheckout !== false,
       protected: isProtected,
       requiredTags,
       envFile,
     },
   };
+}
+
+/**
+ * A run's environment as a filter-like setting reads it (a notification filter, an issue automation or test
+ * management scope): its label, and the key and aliases of the environment the label resolved to, when it has one.
+ */
+export interface RunEnvironmentSelectable {
+  environment?: string | null;
+  environmentKey?: string | null;
+  environmentAliases?: readonly string[] | null;
+}
+
+/**
+ * Whether a run is in a setting's environments (`selectors`: keys, labels and `*` patterns). A selector names the run
+ * when it equals, or `*`-matches, the key or an exact alias of the run's environment, or the label the run reported,
+ * ignoring case (`environmentMatchesPattern`), as the SQL filters read a run (`environmentScopeSql`): `prod-*` keeps
+ * the runs labelled `prod-eu` once an alias `prod-*` gives them an environment of another key. A run with no label is
+ * in none.
+ */
+export function runEnvironmentMatches(run: RunEnvironmentSelectable, selectors: readonly string[]): boolean {
+  const label = run.environment?.trim();
+  if (!label) return false;
+  const environment = run.environmentKey ? { key: run.environmentKey, aliases: run.environmentAliases ?? [] } : null;
+  return selectors.some(
+    (selector) =>
+      (environment !== null && environmentMatchesPattern(environment, selector)) ||
+      (selector.includes('*')
+        ? globMatcher(selector, { ignoreCase: true })(label)
+        : selector.toLowerCase() === label.toLowerCase()),
+  );
 }

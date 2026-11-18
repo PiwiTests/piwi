@@ -167,8 +167,10 @@ such a path out of an OpenAPI document.
 ## Server environment
 
 Both packages serve `/__piwi/environment` under the same rule as the route manifest: the server process's runtime, OS,
-time zone, locale, start time and clock, so a failure that depends on them can be told from one in the code. No other
-environment variable, path or connection string. Never enable it on a public production server.
+time zone, locale, start time and clock, and the application's
+[version and commit](/features/run-environment#the-application-s-commit), so a failure that depends on them can be told
+from one in the code. No other environment variable, path or connection string. Never enable it on a public
+production server.
 
 ## Server probes
 

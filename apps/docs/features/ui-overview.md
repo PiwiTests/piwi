@@ -49,8 +49,8 @@ first result, or with **New project**.
 `/projects/:id`: one project's history. The **header** names the project, its description and tags, and where it
 stands: the latest run that [ran to its end](/guide/concepts#test-run) and the [pass rate](/guide/concepts#pass-rate) of the last 20 such runs, then the open clusters, flaky tests
 and quarantined tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the
-header and every tab that reads run history; with no branch picked it reads the
-[default branch](./branches#the-default-branch), and a note counts the runs it hides,
+header and every tab that reads run history; with nothing picked it reads the
+[default branch](./branches#the-default-branch) and [environment](./environments#default-environment), and a note counts the runs it hides,
 [your own](/guide/getting-started#_3-run-your-tests) aside, which the runs table lists all the same. Beside the
 [**Quality report**](./quality-reports) and [**Import**](/guide/importing-runs) buttons, **More actions** holds Edit,
 [Test functions](./test-functions), [Selections](./test-selection), [Locators](#locators),

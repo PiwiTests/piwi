@@ -252,7 +252,7 @@ five-second "Starting in 5 s · Cancel" notice in the target, and turned off fro
   and for the issue (D17).
 - **Never** an absolute path, a command line, an environment variable, a URL or code (amended by
   [run-variables.md](../adr/run-variables.md) D6: the project's run variables reach the target apart from the request,
-  checked again there and shown before **Run**; and by [environments.md](environments.md) D6: the instance keeps the
+  checked again there and shown before **Run**; and by [environments.md](../adr/environments.md) D6: the instance keeps the
   environment a request names on its row, and the target reads its run variables and key the same way). The target checks that each
   test's spec is an existing regular file of its own folder, and builds the command itself: each test is one
   `specFileArgument` of core (the resolved path escaped and anchored as `/^…$/`, then `:line`, since Playwright reads a

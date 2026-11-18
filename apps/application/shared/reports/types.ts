@@ -127,8 +127,11 @@ export interface ReportBundle {
   locale: string;
   timeZone: string;
   scope: AnalyticsScope;
-  /** The scope in words: projects by name, branch policy, run kind, test filter. */
-  scopeText: { projects: string; branches: string; runs: string; tests: string | null };
+  /**
+   * The scope in words: projects by name, branch policy, environment policy, run kind, test filter. A bundle stored
+   * without `environments` names no environment policy.
+   */
+  scopeText: { projects: string; branches: string; environments?: string; runs: string; tests: string | null };
   period: ReportPeriod;
   comparison: ReportPeriod | null;
   dashboard: { ref: string; name: string };

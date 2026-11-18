@@ -3,6 +3,7 @@ import { notPrivateExecution, notPrivateRun } from '#shared/run-eligibility';
 import {
   listProjects,
   getProjectFlakyTests,
+  getProjectFlakyTestsWithVerified,
   getProjectSlowTests,
   getProjectPerformance,
   getProjectTestCases,
@@ -11,7 +12,7 @@ import {
 import { parseLockFilter, parseTagFilter } from '#shared/utils/tag-filter';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { workerNumber } from '#shared/worker-lane';
-import { describeProjectRunScope } from '#shared/project-run-scope';
+import { describeProjectRunScope, type ProjectRunScope } from '#shared/project-run-scope';
 import { buildFixPlan } from '../fix-plan';
 import { codeownersOwnerResolver, enrichFixPlanOwnership } from '../scm/ownership';
 import { withFixPlanSuspectLines } from '../suspect-lines';
@@ -26,7 +27,8 @@ import {
 } from '#shared/handlers/test-cases';
 import { getFlakeProfile } from '#shared/handlers/flake-profile';
 import { getRunResources } from '#shared/handlers/run-resources';
-import { listProjectEnvironments } from '#shared/handlers/environments';
+import { findLabelEnvironment, listProjectEnvironments } from '#shared/handlers/environments';
+import { environmentScopeSql } from '#shared/handlers/environment-scope';
 import { isPassiveCapabilityDeclined } from '#shared/handlers/capabilities';
 import { latestOccurrences, listResourceFindings, runFindingsNovelty } from '#shared/handlers/resource-findings';
 import { resourceFingerprint } from '#shared/resource-fingerprint.mjs';
@@ -536,6 +538,18 @@ function missingFieldsForAgent(missing: { id: string; name: string }[], screen: 
   return `Jira requires ${names} for this issue type. Pass ${missing.length === 1 ? 'it' : 'them'} in \`fields\`, keyed by field id: ${each.join('; ')}. Or set a default in the project's issue tracker settings.`;
 }
 
+/**
+ * The runs `list_flaky_tests` reads with `allEnvironments`: those of the default branch and with no branch, as with no
+ * argument, in every environment.
+ */
+const EVERY_ENVIRONMENT_FLAKY_SCOPE: ProjectRunScope = {
+  environments: [],
+  allEnvironments: true,
+  branches: [],
+  allBranches: false,
+  fullRunsOnly: false,
+};
+
 // ── Tool handlers ────────────────────────────────────────────────────────────
 //
 // Keyed by tool name. The catalog (name/description/inputSchema) lives in
@@ -666,12 +680,19 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const cursor = params.cursor as string | undefined;
     const statusFilter = params.status as string | undefined;
     const branchFilter = params.branch as string | undefined;
+    const environmentFilter = typeof params.environment === 'string' ? params.environment.trim() : '';
 
     const conditions = [eq(testRuns.projectId, projectId), notPrivateRun()];
     if (statusFilter) conditions.push(eq(testRuns.status, statusFilter));
     // Branch is a scalar column indexed on (project_id, branch, start_time), so
     // the filter is a plain equality served by the database — no over-fetch.
     if (branchFilter) conditions.push(eq(testRuns.branch, branchFilter));
+    // The environment named resolves as a run's label does: its runs, whatever label they reported; a label no
+    // environment takes names the runs that reported it.
+    if (environmentFilter) {
+      const environment = await findLabelEnvironment(db as never, projectId, environmentFilter);
+      conditions.push(environmentScopeSql([environment ? environment.key : environmentFilter])!);
+    }
     if (cursor) conditions.push(lt(testRuns.startTime, new Date(cursor)));
 
     const signRows = await db
@@ -687,6 +708,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         didNotRunTests: testRuns.didNotRunTests,
         flakyTests: testRuns.flakyTests,
         environment: testRuns.environment,
+        environmentId: testRuns.environmentId,
         label: testRuns.label,
         metadata: testRuns.metadata,
       })
@@ -708,6 +730,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
         skipped: r.skippedTests || null,
         didNotRun: r.didNotRunTests || null,
         env: r.environment || null,
+        environmentId: r.environmentId ?? null,
         label: r.label || null,
         ...scmFromMeta(r.metadata),
       }),
@@ -923,9 +946,23 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
     const pageSize = clampPageSize(params.pageSize);
     const cursor = numericCursor(params.cursor);
     const runsLimit = Math.min(200, Number(params.runs) || 50);
+    const environment = typeof params.environment === 'string' ? params.environment.trim() || null : null;
 
-    const result = await getProjectFlakyTests(db, projectId, runsLimit);
-    const items: any[] = (result as any)?.items ?? result ?? [];
+    // A named environment wins over `allEnvironments`.
+    const items: any[] =
+      params.allEnvironments === true && !environment
+        ? (
+            await getProjectFlakyTestsWithVerified(
+              db,
+              projectId,
+              runsLimit,
+              null,
+              undefined,
+              null,
+              EVERY_ENVIRONMENT_FLAKY_SCOPE,
+            )
+          ).items
+        : await getProjectFlakyTests(db, projectId, runsLimit, environment);
 
     // Cursor is the flakiness `score` (descending). getProjectFlakyTests already
     // returns the list sorted by impact; re-sort by score for stable cursoring.
@@ -1139,6 +1176,21 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       lastSeenRunId: cluster.lastSeenRunId,
       lastSeenAt: iso(cluster.lastSeenAt),
       lastSeenStatus: cluster.lastSeenRunStatus || null,
+      firstFailingDeploy: cluster.firstFailingDeploy
+        ? dropNulls({
+            environment: cluster.firstFailingDeploy.environment.name,
+            lastPassingRunId: cluster.firstFailingDeploy.lastPassingRunId,
+            firstFailingRunId: cluster.firstFailingDeploy.firstFailingRunId,
+            lastPassingCommit: cluster.firstFailingDeploy.baseline?.commit ?? null,
+            firstFailingCommit: cluster.firstFailingDeploy.current?.commit ?? null,
+            applicationRange: cluster.firstFailingDeploy.range
+              ? `${cluster.firstFailingDeploy.range.fromShort}..${cluster.firstFailingDeploy.range.toShort}`
+              : null,
+            deploys: cluster.firstFailingDeploy.deploys.map((deploy) =>
+              dropNulls({ label: deploy.label, commit: deploy.commit, deployedAt: iso(deploy.deployedAt) }),
+            ),
+          })
+        : null,
       project: cluster.project ? { id: cluster.project.id, name: cluster.project.name } : null,
       sampleError: trunc(cluster.sampleError, 400),
       mergeSuggestions: mergeSuggestions.map((s) => ({ suggestionId: s.id, otherClusterId: s.otherClusterId })),
@@ -3584,9 +3636,11 @@ function toolScopeQuery(params: Record<string, unknown>, ctx: McpContext): Recor
   if (params.by) query.by = String(params.by);
   const environments = list(params.environments);
   if (environments) query.environments = environments;
+  // An explicit false is kept: laid over a dashboard's scope, it reads the default environments or branches.
+  if (typeof params.allEnvironments === 'boolean') query.allEnvironments = String(params.allEnvironments);
   const branches = list(params.branches);
   if (branches) query.branches = branches;
-  if (params.allBranches === true) query.allBranches = 'true';
+  if (typeof params.allBranches === 'boolean') query.allBranches = String(params.allBranches);
   if (params.selection) query.sel = String(params.selection);
   const tags = list(params.tags);
   if (tags) query.tags = tags;

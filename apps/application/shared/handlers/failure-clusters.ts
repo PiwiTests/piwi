@@ -54,6 +54,7 @@ import {
 import { projectDefaultBranch, resolveStoredDefaultBranches } from '../../server/utils/scm/stored-default-branch';
 import { computeNextStep, type FlakeLabStepFacts, type NextStep } from '#shared/next-step';
 import { getFlakeLabStepFacts } from './flake-lab';
+import { clusterFirstFailingDeploy } from './deployed-changes';
 import { mayHaveFlakeSuspects } from './flake-profile';
 import { isCapabilityHidden, isPassiveCapabilityDeclined } from './capabilities';
 import { getLocatorHealing } from '../../server/utils/locator-healing';
@@ -411,7 +412,10 @@ export async function getFailureCluster(
         .from(testRuns)
         .where(eq(testRuns.id, cluster.lastSeenRunId)),
 
-      db.select({ startTime: testRuns.startTime }).from(testRuns).where(eq(testRuns.id, cluster.firstSeenRunId)),
+      db
+        .select({ startTime: testRuns.startTime, environmentId: testRuns.environmentId })
+        .from(testRuns)
+        .where(eq(testRuns.id, cluster.firstSeenRunId)),
 
       db
         .select()
@@ -489,6 +493,10 @@ export async function getFailureCluster(
     .reverse();
 
   const quarantinedCount = await countQuarantinedClusterTests(db, cluster.projectId, clusterId);
+
+  // A cluster that first failed in a deployed environment names the deploy it was first seen on.
+  const firstFailingDeploy =
+    firstSeenRun?.environmentId != null ? await clusterFirstFailingDeploy(db, cluster).catch(() => null) : null;
 
   // The runs since the last occurrence that could have shown the failure (the state line's frame); from them, whether
   // the failure goes on and the Done ticket to reconcile once it stopped: the rules the execution page follows too
@@ -613,6 +621,11 @@ export async function getFailureCluster(
     lastSeenRunStatus: lastRun?.status ?? null,
     lastSeenAt: lastRun?.startTime ?? null,
     firstSeenAt: firstSeenRun?.startTime ?? null,
+    /**
+     * For a cluster first seen in a deployed environment: the deploys between the last run of it where one of its
+     * tests passed and the run it first failed in, the last one being its first failing deploy. Null otherwise.
+     */
+    firstFailingDeploy,
     latestTestRunsCaseId: latestOccurrence?.id ?? null,
     latestTestCaseId: latestOccurrence?.testCaseId ?? null,
     diagnosis: diag

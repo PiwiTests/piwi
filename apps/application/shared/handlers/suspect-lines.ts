@@ -14,7 +14,12 @@ import { suspectLines, type SuspectChange } from '@piwitests/core/suspect-lines'
 import { testRuns, testRunsCases } from '../../server/database/schema';
 import { getExecutionsCoverage } from '../../server/utils/coverage';
 import { FAILED_STATUS_KEYS, isFailedStatus } from '../utils/test-counts';
-import { unavailableSuspectLines, type SuspectLinesAnswer, type SuspectLinesReason } from '../suspect-lines';
+import {
+  unavailableSuspectLines,
+  type SuspectLinesAnswer,
+  type SuspectLinesKnown,
+  type SuspectLinesReason,
+} from '../suspect-lines';
 import { PATCH_TRUNCATED_NOTE } from '../patch';
 import type { DrizzleDB } from './db';
 
@@ -31,6 +36,7 @@ export interface SuspectRun {
   status: string;
   startTime: Date;
   environment: string | null;
+  environmentId: number | null;
   branch: string | null;
   metadata: unknown;
 }
@@ -48,6 +54,7 @@ async function loadRun(db: DrizzleDB, runId: number): Promise<SuspectRun | null>
       status: testRuns.status,
       startTime: testRuns.startTime,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       branch: testRuns.branch,
       metadata: testRuns.metadata,
     })
@@ -217,7 +224,7 @@ export async function joinSuspectChanges(
   run: Pick<SuspectRun, 'id'>,
   failingIds: number[],
   changes: SuspectRangeChanges,
-  known: Pick<SuspectLinesAnswer, 'range' | 'baselineRunId'>,
+  known: SuspectLinesKnown,
 ): Promise<SuspectLinesAnswer> {
   if (changes.patchesOmitted) return unavailableSuspectLines('no-scm', known);
   const changed = suspectChangesOf(changes.files);

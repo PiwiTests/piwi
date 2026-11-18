@@ -526,6 +526,7 @@ async function addIncidentMarker(db: DrizzleDB, run: RunRow, incident: RunIncide
     occurredAt: run.startTime,
     category: 'incident',
     environment: run.environment ?? null,
+    environmentId: run.environmentId ?? null,
     source: 'auto',
     runId: run.id,
   });

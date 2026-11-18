@@ -24,6 +24,8 @@ vi.mock('../../server/storage', () => ({
 delete process.env.PIWI_DATABASE_URL;
 const { persistRunCases } = await import('../../server/utils/persist-run-cases');
 const reuse = await import('../../server/utils/pass-reuse');
+const { createMarker } = await import('../../shared/handlers/markers');
+const { saveEnvironmentSnapshots } = await import('../../shared/handlers/environment-snapshots');
 const { testCaseCache } = await import('../../server/utils/test-case-cache');
 const { testSuiteCache } = await import('../../server/utils/test-suite-cache');
 
@@ -32,7 +34,13 @@ const C1 = '1'.repeat(40);
 const C2 = '2'.repeat(40);
 const C3 = '3'.repeat(40);
 const PW = '1.64.1';
-const FINGERPRINT = { playwrightVersion: PW };
+const FINGERPRINT = {
+  playwrightVersion: PW,
+  environment: null,
+  environmentId: null,
+  deployed: false,
+  deployedVersion: null,
+};
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -66,6 +74,7 @@ async function addRun(
   worktree: 'clean' | 'dirty',
   cases: ReturnType<typeof execution>[],
   hoursAgo: number,
+  environment: { environment: string; environmentId: number } | null = null,
 ): Promise<void> {
   await db.insert(schema.testRuns).values({
     id,
@@ -82,6 +91,7 @@ async function addRun(
       piwiOrigin: { kind: 'ci' },
     },
     totalTests: cases.length,
+    ...environment,
   });
   await persistRunCases(db as never, 1, id, cases);
 }
@@ -147,8 +157,10 @@ describe('pass reuse plans', () => {
 
   test('another Playwright version, or an unknown one, finds no source', async () => {
     const id = await idOf('adds to cart');
-    expect((await reuse.findReuseSources(db as never, 1, [id], { playwrightVersion: '1.50.0' })).size).toBe(0);
-    expect((await reuse.findReuseSources(db as never, 1, [id], { playwrightVersion: null })).size).toBe(0);
+    const other = { ...FINGERPRINT, playwrightVersion: '1.50.0' };
+    expect((await reuse.findReuseSources(db as never, 1, [id], other)).size).toBe(0);
+    const unknown = { ...FINGERPRINT, playwrightVersion: null };
+    expect((await reuse.findReuseSources(db as never, 1, [id], unknown)).size).toBe(0);
   });
 
   test('a source names the Playwright projects it passed in', async () => {
@@ -348,5 +360,150 @@ describe('pass reuse plans', () => {
     await expect(reuse.decideRunPlan(db as never, 1, 'nope', FINGERPRINT, [])).rejects.toMatchObject({
       statusCode: 404,
     });
+  });
+});
+
+describe('pass reuse across environments', () => {
+  const COMMIT_A = 'a1'.repeat(20);
+  const COMMIT_B = 'b2'.repeat(20);
+  const ids: Record<string, number> = {};
+  const fingerprint = (environment: string | null, now = new Date()) =>
+    reuse.planFingerprint(db as never, 1, { playwrightVersion: PW, environment }, now);
+  const cart = () => execution('adds to cart', { files: ['src/cart.ts'] });
+
+  beforeAll(async () => {
+    for (const [key, appFromCheckout] of [
+      ['local', true],
+      ['staging', false],
+      ['qa', false],
+      ['prod', false],
+    ] as const) {
+      const [row] = await db
+        .insert(schema.environments)
+        .values({ projectId: 1, key, keyFold: key, name: key, appFromCheckout })
+        .returning();
+      ids[key] = row!.id;
+    }
+    const of = (key: string) => ({ environment: key, environmentId: ids[key]! });
+    // Staging was deployed at commit A before its run; local builds the app from the checkout; qa's server reports a
+    // version and no commit; prod has a run and nothing naming what it runs.
+    await createMarker(db as never, 1, {
+      label: 'Deploy A',
+      occurredAt: new Date(Date.now() - 9 * HOUR),
+      category: 'deploy',
+      environment: 'staging',
+      commit: COMMIT_A,
+    });
+    await addRun(30, C1, 'clean', [cart()], 8, of('staging'));
+    await addRun(31, C1, 'clean', [cart()], 7, of('local'));
+    await addRun(32, C1, 'clean', [cart()], 6, of('qa'));
+    await saveEnvironmentSnapshots(db as never, 32, [
+      { kind: 'server', v: 1, origin: 'https://qa.shop.test', appVersion: '1.4.0' },
+    ]);
+    await addRun(33, C1, 'clean', [cart()], 5, of('prod'));
+  });
+
+  test('a planned run naming its environment reuses only its passes; one naming none reuses any', async () => {
+    const id = await idOf('adds to cart');
+    const sourceRun = async (environment: string | null) =>
+      (await reuse.findReuseSources(db as never, 1, [id], await fingerprint(environment))).get(id)?.runId;
+    expect(await sourceRun(null)).toBe(33);
+    expect(await sourceRun('local')).toBe(31);
+    expect(await sourceRun('LOCAL')).toBe(31);
+    expect(await fingerprint('local')).toMatchObject({ environmentId: ids.local, deployed: false });
+  });
+
+  test('a label no environment takes finds no source and creates no environment', async () => {
+    const before = await db.select({ id: schema.environments.id }).from(schema.environments);
+    const planned = await fingerprint('preview-7');
+    expect(planned).toMatchObject({ environment: 'preview-7', environmentId: null, deployed: false });
+    expect((await reuse.findReuseSources(db as never, 1, [await idOf('adds to cart')], planned)).size).toBe(0);
+    expect(await db.select({ id: schema.environments.id }).from(schema.environments)).toHaveLength(before.length);
+  });
+
+  test('a deployed environment reuses the passes of the commit it is deployed at, by its latest deploy marker', async () => {
+    const id = await idOf('adds to cart');
+    const staging = await fingerprint('staging');
+    expect(staging).toMatchObject({ deployed: true, deployedVersion: `commit ${COMMIT_A}` });
+    expect((await reuse.findReuseSources(db as never, 1, [id], staging)).get(id)?.runId).toBe(30);
+
+    // Deployed again after its last run: that pass ran another version of the application.
+    const marker = await createMarker(db as never, 1, {
+      label: 'Deploy B',
+      occurredAt: new Date(Date.now() + HOUR),
+      category: 'deploy',
+      environment: 'staging',
+      commit: COMMIT_B,
+    });
+    try {
+      const later = await fingerprint('staging', new Date(Date.now() + 2 * HOUR));
+      expect(later.deployedVersion).toBe(`commit ${COMMIT_B}`);
+      expect((await reuse.findReuseSources(db as never, 1, [id], later, new Date(Date.now() + 2 * HOUR))).size).toBe(0);
+    } finally {
+      await db.delete(schema.markers).where(eq(schema.markers.id, marker.marker.id));
+    }
+  });
+
+  test('without a deployed commit, the application versions its servers reported; without either, nothing', async () => {
+    const id = await idOf('adds to cart');
+    const qa = await fingerprint('qa');
+    expect(qa.deployedVersion).toBe('versions https://qa.shop.test 1.4.0');
+    expect((await reuse.findReuseSources(db as never, 1, [id], qa)).get(id)?.runId).toBe(32);
+
+    const prod = await fingerprint('prod');
+    expect(prod).toMatchObject({ deployed: true, deployedVersion: null });
+    expect((await reuse.findReuseSources(db as never, 1, [id], prod)).size).toBe(0);
+    const { plan } = await reuse.decideRunPlan(db as never, 1, 'full', prod, [
+      { commit: C1, changedFiles: [], changes: [] },
+    ]);
+    expect(plan.reused).toEqual([]);
+    expect(plan.reasons['deployed-version-unknown']).toBeGreaterThan(0);
+  });
+
+  test("a run records a plan's reuse only in the plan's environment, against the version it was made for", async () => {
+    const staging = await fingerprint('staging');
+    const { plan } = await reuse.decideRunPlan(
+      db as never,
+      1,
+      'full',
+      staging,
+      [{ commit: C1, changedFiles: [], changes: [] }],
+      new Date(),
+      'clean',
+    );
+    expect(plan.reused).toEqual([expect.objectContaining({ testCaseId: await idOf('adds to cart'), sourceRunId: 30 })]);
+    const { id: planId } = await reuse.storeRunPlan(db as never, 1, plan, {
+      commit: C1,
+      branch: 'main',
+      createdBy: null,
+    });
+    const plannedRun = async (id: number, environment: string, startTime = new Date()) => {
+      const metadata = { scm: { commit: C1, worktree: 'clean' }, piwiPlan: { id: planId }, piwiOrigin: { kind: 'ci' } };
+      await db.insert(schema.testRuns).values({
+        id,
+        projectId: 1,
+        status: 'passed',
+        startTime,
+        origin: 'ci',
+        commit: C1,
+        playwrightVersion: PW,
+        metadata,
+        environment,
+        environmentId: ids[environment]!,
+      });
+      return reuse.attachRunPlan(db as never, id, { projectId: 1, metadata });
+    };
+
+    expect(await plannedRun(40, 'staging')).toBe(1);
+    expect(await plannedRun(41, 'local')).toBe(reuse.REUSE_UNRECORDED);
+    // Started after a deploy of another commit: the reused passes ran another version of the application.
+    await createMarker(db as never, 1, {
+      label: 'Deploy B',
+      occurredAt: new Date(Date.now() + HOUR),
+      category: 'deploy',
+      environment: 'staging',
+      commit: COMMIT_B,
+    });
+    expect(await plannedRun(42, 'staging', new Date(Date.now() + 2 * HOUR))).toBe(reuse.REUSE_UNRECORDED);
   });
 });

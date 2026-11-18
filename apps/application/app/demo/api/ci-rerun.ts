@@ -78,14 +78,22 @@ async function targetCredential(
 }
 
 /** The action a re-run uses: the demo reaches only CI servers, so a repository host's action is not served. */
-function pickRerunAction(settings: CiActionsSettings, environment: string | null, actionId?: string | null) {
-  return pickCiAction(settings, 'tests', { provider: null, environment, actionId });
+function pickRerunAction(settings: CiActionsSettings, environment: RunEnvironment, actionId?: string | null) {
+  return pickCiAction(settings, 'tests', { provider: null, ...environment, actionId });
 }
 
-/** The environment of a run, as the server reads it. */
-async function runEnvironment(db: DemoDB, runId: number): Promise<string | null> {
-  const [run] = await db.select({ environment: testRuns.environment }).from(testRuns).where(eq(testRuns.id, runId));
-  return run?.environment?.trim() || null;
+interface RunEnvironment {
+  environmentId: number | null;
+  environment: string | null;
+}
+
+/** The environment of a run, as the server reads it: the one its label resolved to, and the label. */
+async function runEnvironment(db: DemoDB, runId: number): Promise<RunEnvironment> {
+  const [run] = await db
+    .select({ environment: testRuns.environment, environmentId: testRuns.environmentId })
+    .from(testRuns)
+    .where(eq(testRuns.id, runId));
+  return { environmentId: run?.environmentId ?? null, environment: run?.environment?.trim() || null };
 }
 
 /**

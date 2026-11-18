@@ -146,8 +146,10 @@ numbered lines instead.
 ## Payload fields by event
 
 Every event that comes from a run carries that run's `branch` and `environment` when the run reported them: the
-`run.*` events, `flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. A subscription's
-[branch and environment filters](/features/notifications#branches-and-environments) match on these two fields.
+`run.*` events, `flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. When
+the run's environment label resolves to one of the project's [environments](/features/environments), the event also
+carries its `environmentName`, `environmentKey` and `environmentAliases`. A subscription's
+[branch and environment filters](/features/notifications#branches-and-environments) match on these fields.
 
 - **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
   of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.

@@ -41,7 +41,8 @@ A CI action is a named way to start CI. It has:
   parameters on Jenkins. A name is letters, digits and `_`, and on GitLab and Bitbucket cannot start with `CI_`,
   `GITLAB_` or `BITBUCKET_`. A Custom request sends none;
 - what it **accepts**: re-runs, Run on CI, Flake Lab;
-- an optional **environment**, such as `staging`, which a run in that environment picks first;
+- an optional **environment**, one of the project's [environments](./environments), which a run of that environment
+  picks first;
 - the kinds it is the **default** for.
 
 A button uses the action of the run's environment, else the project's default for what it starts; MCP and the API can

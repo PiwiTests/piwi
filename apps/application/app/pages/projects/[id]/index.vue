@@ -15,6 +15,7 @@ import { drillQueryKey, parseDrillQuery, type DrillScope } from '~/utils/analyti
 import { projectRunScopeQuery, runInProjectScope, type ProjectRunScope } from '#shared/project-run-scope';
 import { joinOwnRuns, listsRun, ownRunMark } from '~/utils/own-run-mark';
 import { ranToItsEnd } from '#shared/project-health';
+import { markerInEnvironmentFilter } from '#shared/marker-environments';
 import { passRatePercent } from '#shared/utils/pass-rate';
 import { compareOrder } from '~/utils/run-compare';
 import { refetchKeeping } from '~/utils/refetch-keeping';
@@ -44,6 +45,7 @@ const filters = useProjectFilters(projectId);
 // tab on the server.
 const runScope = computed<ProjectRunScope>(() => ({
   environments: filters.value.environments,
+  allEnvironments: !!filters.value.allEnvironments,
   branches: filters.value.branches,
   allBranches: !!filters.value.allBranches,
   fullRunsOnly: filters.value.fullRunsOnly,
@@ -133,6 +135,7 @@ function readDrill() {
   if (parsed) {
     filters.value = {
       environments: parsed.environments,
+      allEnvironments: parsed.allEnvironments,
       branches: parsed.branches,
       fullRunsOnly: parsed.fullRunsOnly,
       allBranches: parsed.branches.length === 0 && !parsed.defaultBranchOnly,
@@ -141,19 +144,24 @@ function readDrill() {
 }
 function clearDrill() {
   drill.value = null;
-  const { source: _s, period: _p, tz: _t, status: _st, allBranches: _a, ...rest } = route.query;
+  const { source: _s, period: _p, tz: _t, status: _st, allBranches: _a, allEnvironments: _ae, ...rest } = route.query;
   router.replace({ query: rest });
 }
 /** The branch the filters read with no branch picked: the project's setting, else its most common run branch. */
 const defaultBranch = computed(
   () => project.value?.effectiveDefaultBranch || project.value?.defaultBranch?.trim() || 'main',
 );
+/** The environment the filters read with no environment picked, when the project has one: else every environment. */
+const defaultEnvironment = computed(() => project.value?.effectiveDefaultEnvironment ?? null);
+const defaultEnvironmentKey = computed(() => defaultEnvironment.value?.key ?? null);
 const drillText = computed(() => drill.value?.period?.label ?? null);
 
 /** A run as the filters read it: a run of a list, or of `unscopedRuns`. */
 interface ScopedRun {
   startTime: string | Date;
   environment?: string | null;
+  /** The key of the environment the run's label resolves to, as the server read it; null for none. */
+  environmentKey?: string | null;
   branch?: string | null;
   isFullRun?: boolean;
   metadata?: { scm?: { branch?: string | null } } | null;
@@ -173,13 +181,6 @@ const recentRuns = computed<ScopedRun[]>(() => project.value?.unscopedRuns ?? pr
 // The project's environments: the filter offers them by key, shown by name, with the labels of recent runs none takes.
 const { environments: projectEnvironments, forLabel: environmentForLabel } = useProjectEnvironments(projectId);
 
-/** The labels the project's recent runs reported, which the notification and marker forms offer. */
-const availableEnvironments = computed(() => {
-  const envs = new Set<string>();
-  for (const run of recentRuns.value) if (run.environment) envs.add(run.environment);
-  return [...envs].sort();
-});
-
 const environmentFilterChoices = computed(() =>
   environmentFilterItems({
     environments: projectEnvironments.value,
@@ -188,8 +189,12 @@ const environmentFilterChoices = computed(() =>
   }),
 );
 
-/** The key of the environment a run's label resolves to, which the filter matches like the label. */
-function environmentKeyOf(run: { environment?: string | null }): string | null {
+/**
+ * The key of the environment a run's label resolves to, which the filter matches like the label: the one the run was
+ * read with, else the one the project's environments name.
+ */
+function environmentKeyOf(run: { environment?: string | null; environmentKey?: string | null }): string | null {
+  if (run.environmentKey !== undefined) return run.environmentKey;
   return environmentForLabel(run.environment)?.key ?? null;
 }
 
@@ -217,6 +222,7 @@ function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boole
     },
     scope,
     defaultBranch.value,
+    defaultEnvironmentKey.value,
   );
 }
 
@@ -233,12 +239,12 @@ function listedRun(run: ScopedRun) {
 
 /** Whether the runs list shows a run: in the scope, or the viewer's own in its environments. */
 function inRunsList(run: ScopedRun): boolean {
-  return listsRun(listedRun(run), runScope.value, defaultBranch.value);
+  return listsRun(listedRun(run), runScope.value, defaultBranch.value, defaultEnvironmentKey.value);
 }
 
 /** Why the runs list shows an own run the filters leave out ("Yours · partial run"), else null. */
 function ownMark(run: ScopedRun): string | null {
-  return ownRunMark(listedRun(run), runScope.value, defaultBranch.value);
+  return ownRunMark(listedRun(run), runScope.value, defaultBranch.value, defaultEnvironmentKey.value);
 }
 
 /** The drill-down period from Analytics, which narrows the runs table and chart only. */
@@ -264,6 +270,7 @@ function resetFilters(): void {
 const filtersActive = computed(
   () =>
     filters.value.environments.length > 0 ||
+    (!!defaultEnvironment.value && !!filters.value.allEnvironments) ||
     filters.value.branches.length > 0 ||
     !!filters.value.allBranches ||
     !filters.value.fullRunsOnly,
@@ -311,22 +318,28 @@ watch(tableRuns, (rows) => {
   if (runsPage.value > last) runsPage.value = last;
 });
 
-// Runs the other filters keep but "Full runs only" or the default-branch
-// reading hides — both are on by default, so without a note those runs look
-// missing. The viewer's own runs are listed all the same, and not counted.
+// Runs the other filters keep but "Full runs only", the default-branch or the
+// default-environment reading hides — all are on by default, so without a note
+// those runs look missing. The viewer's own runs are listed all the same, and
+// not counted.
 const hiddenRuns = computed(() => {
   const runs: ScopedRun[] = (keptOnly.value ? keptRunsData.value?.items : recentRuns.value) ?? [];
   const scope = runScope.value;
   const withPartialRuns = { ...scope, fullRunsOnly: false };
   const withAllBranches = { ...scope, allBranches: true };
+  const withAllEnvironments = { ...scope, allEnvironments: true };
+  const readsDefaultEnvironment =
+    !!defaultEnvironmentKey.value && scope.environments.length === 0 && !scope.allEnvironments;
   let partial = 0;
   let otherBranches = 0;
+  let otherEnvironments = 0;
   for (const run of runs) {
     if (!inDrillPeriod(run) || inRunsList(run)) continue;
     if (scope.fullRunsOnly && inScope(run, withPartialRuns)) partial++;
     else if (scope.branches.length === 0 && !scope.allBranches && inScope(run, withAllBranches)) otherBranches++;
+    else if (readsDefaultEnvironment && inScope(run, withAllEnvironments)) otherEnvironments++;
   }
-  return { partial, otherBranches };
+  return { partial, otherBranches, otherEnvironments };
 });
 
 function includePartialRuns(): void {
@@ -337,14 +350,22 @@ function showAllBranches(): void {
   filters.value = { ...filters.value, allBranches: true };
 }
 
+function showAllEnvironments(): void {
+  filters.value = { ...filters.value, allEnvironments: true };
+}
+
 const filtersSummary = computed(() => {
   const hidden: string[] = [];
+  if (hiddenRuns.value.otherEnvironments > 0)
+    hidden.push(hiddenRunsPhrase(hiddenRuns.value.otherEnvironments, 'other-environments'));
   if (hiddenRuns.value.otherBranches > 0)
     hidden.push(hiddenRunsPhrase(hiddenRuns.value.otherBranches, 'other-branches'));
   if (hiddenRuns.value.partial > 0) hidden.push(hiddenRunsPhrase(hiddenRuns.value.partial, 'partial'));
   return filterBarSummary(filters.value, {
     environments: environmentFilterChoices.value.length > 0,
     environmentLabel: (value) => environmentFilterLabel(value, projectEnvironments.value),
+    environmentPolicy: !!defaultEnvironment.value,
+    defaultEnvironment: defaultEnvironment.value?.name ?? null,
     branches: availableBranches.value.length > 0,
     // As the bar: the policy reads only once a run is off the default branch.
     branchPolicy: availableBranches.value.some((branch) => branch !== defaultBranch.value),
@@ -787,10 +808,22 @@ watch(
   },
 );
 
-const visibleMarkers = computed(() => {
-  if (filters.value.environments.length === 0) return markers.value;
-  return markers.value.filter((m) => m.environment == null || filters.value.environments.includes(m.environment!));
+// A marker shows under the environments the page reads (those picked, else the default environment) through its
+// environment's key or its label; one of every environment always shows.
+const markerEnvironments = computed(() => {
+  const scope = runScope.value;
+  if (scope.environments.length > 0 || scope.allEnvironments || !defaultEnvironmentKey.value) return scope.environments;
+  return [defaultEnvironmentKey.value];
 });
+const visibleMarkers = computed(() =>
+  markers.value.filter((m) =>
+    markerInEnvironmentFilter(
+      m,
+      markerEnvironments.value,
+      (id) => projectEnvironments.value.find((environment) => environment.id === id)?.key,
+    ),
+  ),
+);
 
 const markersOpen = ref(false);
 const focusMarkerId = ref<number | null>(null);
@@ -973,7 +1006,6 @@ const moreMenuItems = computed(() => {
               :project-id="parseInt(projectId)"
               :project-label="project?.label || project?.name"
               :known-branches="availableBranches"
-              :known-environments="availableEnvironments"
             />
             <UButton
               v-if="!projCapHidden('quality-reports')"
@@ -1041,14 +1073,21 @@ const moreMenuItems = computed(() => {
             :available-branches="availableBranches"
             branch-policy
             :default-branch="defaultBranch"
+            :environment-policy="!!defaultEnvironment"
+            :default-environment="defaultEnvironment?.name"
             :show-reset="false"
           />
-          <template v-if="hiddenRuns.partial > 0 || hiddenRuns.otherBranches > 0" #notes>
+          <template
+            v-if="hiddenRuns.partial > 0 || hiddenRuns.otherBranches > 0 || hiddenRuns.otherEnvironments > 0"
+            #notes
+          >
             <HiddenRunsNote
               :partial-runs="hiddenRuns.partial"
               :other-branch-runs="hiddenRuns.otherBranches"
+              :other-environment-runs="hiddenRuns.otherEnvironments"
               @include-partial="includePartialRuns"
               @all-branches="showAllBranches"
+              @all-environments="showAllEnvironments"
             />
           </template>
         </FiltersBlock>
@@ -1557,7 +1596,6 @@ const moreMenuItems = computed(() => {
         <ProjectTimeline
           :project-id="Number(projectId)"
           :markers="markers"
-          :environments="availableEnvironments"
           :focus-marker-id="focusMarkerId"
           @changed="refreshMarkers"
           @clear-focus="focusMarkerId = null"

@@ -51,7 +51,7 @@ export function environmentDraft(record: EnvironmentRecord | null): EnvironmentD
     description: record?.description ?? '',
     aliases: [...(record?.aliases ?? [])],
     runVariables: (record?.runVariables ?? []).map((variable) => ({ name: variable.name, value: variable.value })),
-    appFromCheckout: record?.appFromCheckout ?? false,
+    appFromCheckout: record?.appFromCheckout ?? true,
     protected: record?.protected ?? false,
     requiredTags: [...(record?.requiredTags ?? [])],
     envFile: record?.envFile ?? '',

@@ -9,7 +9,6 @@ import { getMarkerCategory } from '#shared/marker-categories';
 const props = defineProps<{
   projectId: number;
   markers: MarkerInfo[];
-  environments: string[];
   /** When set, open this marker (e.g. after clicking a chart line). */
   focusMarkerId?: number | null;
 }>();
@@ -114,7 +113,6 @@ async function handleDelete() {
         :key="editing?.id ?? 'new'"
         :project-id="projectId"
         :marker="editing"
-        :environments="environments"
         @saved="onSaved"
         @cancel="backToList"
         @delete="confirmDelete"
@@ -189,8 +187,9 @@ async function handleDelete() {
 
             <div class="mt-2 flex flex-wrap items-center gap-2 text-xs">
               <MarkerBadge :marker="m" category-only size="sm" />
-              <EnvironmentBadge v-if="m.environment" :name="m.environment" />
+              <EnvironmentBadge v-if="m.environment" :name="m.environmentName ?? m.environment" />
               <span v-else class="text-muted">All environments</span>
+              <span v-if="m.commit" class="font-mono text-muted" :title="m.commit">{{ m.commit.slice(0, 7) }}</span>
               <NuxtLink v-if="m.runId" :to="`/test-runs/${m.runId}`" class="text-primary hover:underline">
                 Run #{{ m.runId }}
               </NuxtLink>

@@ -767,6 +767,46 @@ describe('a CI server dispatch', () => {
     expect(received[0]!.url).toBe('/job/staging-job/buildWithParameters');
   });
 
+  test('picks the action of the run’s environment by id, whatever label the run reported', async () => {
+    await seed(GITHUB);
+    const [environment] = await db
+      .insert(schema.environments)
+      .values({ projectId: 1, key: 'prod-eu', keyFold: 'prod-eu', name: 'Production EU', aliases: ['eu'] })
+      .returning({ id: schema.environments.id });
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'main',
+              name: 'main',
+              target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'main-job' } },
+              inputs: [],
+              accepts: ['tests'],
+            },
+            {
+              id: 'eu',
+              name: 'eu',
+              target: { type: 'ci-server', preset: 'jenkins', fields: { job: 'eu-job' } },
+              inputs: [],
+              accepts: ['tests'],
+              environment: 'prod-eu',
+              environmentId: environment!.id,
+            },
+          ],
+          defaults: { rerun: 'main' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    await db
+      .update(schema.testRuns)
+      .set({ environment: 'EU', environmentId: environment!.id })
+      .where(eq(schema.testRuns.id, 1));
+    expect((await ciRerunAvailability(db as never, 1, 1)).action).toEqual({ id: 'eu', name: 'eu' });
+  });
+
   test('sends the action the caller names instead of the default', async () => {
     await seed(GITHUB);
     const action = (id: string, job: string) => ({

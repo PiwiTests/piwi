@@ -6,7 +6,8 @@ defineRouteMeta({
   openAPI: {
     tags: ['Markers'],
     summary: 'List project timeline markers',
-    description: 'Returns the dated timeline markers (deploys, config changes, incidents, ...) for a project.',
+    description:
+      'Returns the dated timeline markers (deploys, config changes, incidents, ...) for a project. Each keeps its environment label as written (`environment`), the environment it resolves to (`environmentId`) and that environment’s name (`environmentName`), all null for a marker of every environment, and a deploy marker its `commit`.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
   },

@@ -45,6 +45,8 @@ interface ProjectMapping {
 interface ServerMapping extends ProjectMapping {
   /** A label such as `staging`; absent when the pattern names none. */
   environment?: string;
+  /** The name of the environment the label resolves to (`Staging`); absent when it resolves to none. */
+  environmentName?: string;
 }
 
 /** A project the connected user can see, and whether their role may add URL patterns to it. */
@@ -100,10 +102,15 @@ function coerceMapping(value: unknown): ProjectMapping | null {
 function coerceServerMapping(value: unknown): ServerMapping | null {
   const mapping = coerceMapping(value);
   if (!mapping) return null;
-  const environment = (value as { environment?: unknown }).environment;
-  return typeof environment === 'string' && environment.trim()
-    ? { ...mapping, environment: environment.trim() }
-    : mapping;
+  const { environment, environmentName } = value as { environment?: unknown; environmentName?: unknown };
+  if (typeof environment !== 'string' || !environment.trim()) return mapping;
+  return {
+    ...mapping,
+    environment: environment.trim(),
+    ...(typeof environmentName === 'string' && environmentName.trim()
+      ? { environmentName: environmentName.trim() }
+      : {}),
+  };
 }
 
 function coerceServerProject(value: unknown): ServerProject | null {
@@ -145,6 +152,8 @@ export interface ServerPatternsAnswer {
     projectLabel: string;
     pattern: string;
     environment: string | null;
+    /** The name of the environment the label resolves to; absent from an instance older than environments. */
+    environmentName?: string | null;
     branch: string | null;
     /** Absent from an instance older than the path prefix. */
     pathPrefix?: string | null;
@@ -170,6 +179,7 @@ export function applyServerSync(
         pathPrefix: item.pathPrefix ?? undefined,
         testPathPrefix: item.testPathPrefix ?? undefined,
         environment: item.environment ?? undefined,
+        environmentName: item.environmentName ?? undefined,
       })),
       coerceServerMapping,
     ),

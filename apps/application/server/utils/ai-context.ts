@@ -23,6 +23,7 @@ import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
 import { eligibleRunSql, notPrivateRun } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
+import { environmentContextSection } from '#shared/handlers/environment-context';
 import { clusterSuspectLinesForChanges } from './suspect-lines';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
@@ -175,6 +176,7 @@ const SECTION_ORDER: SectionId[] = [
   'retryProgression',
   'baselineComparison',
   'environmentDiff',
+  'environmentUnderTest',
   'coverageDivergence',
   'recurrenceFlakiness',
   'browserDistribution',
@@ -482,6 +484,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
     db
       .select({
         environment: testRuns.environment,
+        environmentId: testRuns.environmentId,
         metadata: testRuns.metadata,
         isFullRun: testRuns.isFullRun,
         filterDetails: testRuns.filterDetails,
@@ -499,6 +502,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
     ...rep,
     nrItems: nrRows,
     runEnvironment: run?.environment ?? null,
+    runEnvironmentId: run?.environmentId ?? null,
     runMetadata: (run?.metadata as RunMetadata | null) ?? null,
     runIsFullRun: run?.isFullRun ?? null,
     runFilterDetails: (run?.filterDetails as { grep?: string; grepInvert?: string } | null) ?? null,
@@ -2563,6 +2567,7 @@ async function scmInvestigationSections(
       status: testRuns.status,
       startTime: testRuns.startTime,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -2945,6 +2950,13 @@ export async function buildDiagnosisContext(
     push(section('environmentDiff', 'Environment Diff vs Last Pass', envDiffResult.section));
     coverage = { ...coverage, environmentDiff: envDiffResult.coverage };
 
+    // The environment the run tested: built from the checkout, or deployed with its deployed commit and deploys
+    if (rep.runEnvironmentId != null) {
+      const environment = await environmentContextSection(db, { runId: rep.testRunId, cluster }).catch(() => null);
+      push(section('environmentUnderTest', 'Environment Under Test', environment?.markdown));
+      coverage = { ...coverage, environmentUnderTest: environment?.coverage ?? null };
+    }
+
     // The code paths this execution took that the last passing one did not (coverage)
     const divergenceResult = await coverageDivergenceContext(db, rep.id);
     push(section('coverageDivergence', 'Code Paths vs the Last Passing Run', divergenceResult.section));
@@ -3199,6 +3211,9 @@ export async function buildDiagnosisContext(
   }
   if (!sectionIds.has('environmentDiff')) {
     absentReasons.environmentDiff = 'no passing baseline execution recorded for this test to compare against';
+  }
+  if (!sectionIds.has('environmentUnderTest')) {
+    absentReasons.environmentUnderTest = 'the run reported no environment';
   }
   if (!sectionIds.has('visualDiff')) {
     absentReasons.visualDiff =

@@ -28,6 +28,8 @@ export const COVERAGE_SCENE_PROJECT = story.projectId;
 export const COVERAGE_SCENE_SUSPECT_LINES = {
   available: true,
   range: { from: commits[commits.length - 1].sha, to: commits[0].sha },
+  // The run tested Staging, a deployed environment no server or deploy marker of this project named the commit of.
+  deployed: { environment: 'Staging', commit: null },
   summary: {
     changedFiles: 2,
     changedLines: 13,

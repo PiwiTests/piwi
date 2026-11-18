@@ -5,10 +5,12 @@
  * its lines, its granularity in words, and how many failing and passing tests
  * ran it; the score is on hover. A meta line says whose coverage it read, the
  * range when the diff below is not of the same commits, and how many changed
- * files had no patch to check. Each file links its coverage page, which lists
+ * files had no patch to check, and, for a deployed environment, which commits
+ * the changed lines are of. Each file links its coverage page, which lists
  * the tests running each of its lines. The first five show; the rest unfold.
  */
 import type { ClusterSuspectLinesAnswer } from '~~/types/api';
+import { suspectLinesDeployedNote } from '#shared/suspect-lines';
 import { lineRangesText, suspectGranularityLabel, suspectLinesSentence, testCountText } from '~/utils/suspect-lines';
 import { coverageFileRoute } from '~/utils/coverage-view';
 
@@ -39,6 +41,9 @@ const meta = computed(() => {
   return `${tests}${run}${since}${unread}`;
 });
 
+/** For a deployed environment: whose commits the changed lines are. */
+const deployedNote = computed(() => suspectLinesDeployedNote(props.answer));
+
 /** With no hunk the failing tests ran, the sentence that says so. */
 const none = computed(() =>
   props.answer.suspects.length ? null : suspectLinesSentence(props.answer, 'cluster')?.lead,
@@ -56,6 +61,7 @@ const scoreTitle = (score: number) =>
       </span>
       <span class="text-xs text-muted">{{ meta }}</span>
     </div>
+    <p v-if="deployedNote" class="text-xs text-muted" data-testid="suspect-lines-deployed">{{ deployedNote }}</p>
 
     <p v-if="none" class="text-sm text-highlighted">{{ none }}</p>
     <ol v-else class="rounded-md border border-default divide-y divide-default">

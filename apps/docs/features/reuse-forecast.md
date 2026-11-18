@@ -21,12 +21,15 @@ changed. It lives on a project's **Selections** page and in the `get_reuse_forec
 ## What counts as reusable
 
 The forecast reads the 30 days before the project's latest run. A result is **reusable** when an earlier result of
-the same test, in the same Playwright project and another run, passed on its first attempt, is at most 14 days older,
-and either:
+the same test, in the same Playwright project, the same [environment](/features/environments) and another run, passed
+on its first attempt, is at most 14 days older, and either:
 
 - recorded file versions (runtime, path and git blob) that are all among the versions the result itself ran;
 - or ran at the same commit, both runs on CI, which also counts a failure that stopped before reaching code the pass
   ran.
+
+For a deployed environment, both runs also ran the same version of the application (below); a run of one whose version
+nothing names is never reusable.
 
 The code that pass ran had not changed, so a run could have skipped the result and kept the pass. The card gives the
 share of test time that was reusable, split between the [default branch](/features/branches) and the other branches
@@ -55,8 +58,16 @@ with the failing execution and the pass it matched, which is strong evidence whe
 
 **Experimental.** With the pass reuse capability on, `piwi plan` and `piwi run --reuse` skip the tests the forecast
 would count as reusable, with a stricter rule. A test's pass stands in for it only when that pass came from a clean
-checkout of a commit, with the same Playwright version, and every result of the test in that run passed on its first
-attempt with coverage naming its file versions. The working tree is diffed against that commit: the test runs when
+checkout of a commit, with the same Playwright version and environment, and every result of the test in that run passed
+on its first attempt with coverage naming its file versions. The environment is the label the run reports (`--environment`,
+else `PIWI_ENVIRONMENT`; `piwi run` passes the flag to Playwright as the variable, which the reporter's `environment`
+option overrides when the config sets one), resolved as a run's label is; a run
+that names none reuses the passes of any environment. For a [deployed environment](/features/deployed-environments), the
+pass ran against the application it runs now: the same commit, from its latest
+[deploy marker](/features/timeline-markers#recording-deploys-from-ci) or its servers'
+[`appCommit`](/guide/backend-logs#server-environment), else the same application versions its servers report. With
+neither, every test runs. Mark an environment whose application the config's `webServer` builds as built from the
+checkout: as a deployed one, its passes stand in only where a version is named. The working tree is diffed against that commit: the test runs when
 [impact from that diff](/features/change-impact) selects it, when a changed file maps to no test, or when a file the
 pass ran changed. A test that is quarantined, in an open failure cluster, failed or was retried in its last 20
 executions, tagged `@no-reuse`, or in a spec file holding a serial group always runs. A run skips only the tests the plan names, in the Playwright projects
@@ -68,7 +79,7 @@ reused results: the run page's header counts them and lists them with the pass e
 comment counts them, and the `get_run` MCP tool returns their count. The run's own status, pass rate, flaky scores,
 durations and fix verification read executions only. The [CI merge gate](/features/merge-gate#what-fails-it) can limit reuse, and counts a reused test as passed in a run
 that passed with no run error. A run that claimed a plan it was not made for (another commit, a dirty checkout,
-another Playwright version, an expired plan) records no reuse, and fails the gate's reuse rules. A run whose shards' blob
+another Playwright version or environment, another version of a deployed application, an expired plan) records no reuse, and fails the gate's reuse rules. A run whose shards' blob
 reports are merged by `merge-reports` claims no plan, so its reuse is not recorded.
 
 <figure>

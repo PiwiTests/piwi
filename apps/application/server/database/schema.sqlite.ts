@@ -1,4 +1,14 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  index,
+  uniqueIndex,
+  primaryKey,
+  check,
+  type AnySQLiteColumn,
+} from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // Projects table
@@ -38,6 +48,9 @@ export const projects = sqliteTable(
     askToWatch: integer('ask_to_watch', { mode: 'boolean' }).notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: text('tag_keys', { mode: 'json' }), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
+    defaultEnvironmentId: integer('default_environment_id').references((): AnySQLiteColumn => environments.id, {
+      onDelete: 'set null',
+    }), // The environment the project's views read by default, as they read the default branch; null = every environment
     runVariables: text('run_variables', { mode: 'json' }), // RunVariable[] (@piwitests/core/run-variables) — the environment variables every run Piwi starts for the project gets, and every command it gives to copy starts with; null = none
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
@@ -48,6 +61,7 @@ export const projects = sqliteTable(
   },
   (table) => ({
     updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt),
+    defaultEnvironmentIdx: index('idx_projects_default_environment').on(table.defaultEnvironmentId),
   }),
 );
 
@@ -1379,7 +1393,9 @@ export const markers = sqliteTable(
     label: text('label').notNull(),
     description: text('description'),
     category: text('category').notNull().default('event'), // 'deploy', 'config', 'infra', 'incident', 'release', 'event'
-    environment: text('environment'), // Optional scope; null = applies to all environments
+    environment: text('environment'), // The environment's label as written (a key, or a run's label); null = applies to all environments
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`)
+    commit: text('commit'), // A deploy marker's deployed commit: 7 to 40 hexadecimal characters
     source: text('source').notNull().default('manual'), // 'manual' | 'auto'
     runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }), // Optional link to the run that triggered/relates to the marker
     createdAt: integer('created_at', { mode: 'timestamp' })
@@ -1392,6 +1408,7 @@ export const markers = sqliteTable(
   (table) => ({
     projectOccurredIdx: index('idx_markers_project_occurred').on(table.projectId, table.occurredAt),
     runIdIdx: index('idx_markers_run_id').on(table.runId),
+    environmentIdx: index('idx_markers_environment').on(table.environmentId),
   }),
 );
 
@@ -2132,7 +2149,8 @@ export const projectUrlPatterns = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     pattern: text('pattern').notNull(),
-    environment: text('environment'), // free label: 'staging', 'production'
+    environment: text('environment'), // The environment's label as written (its key); null for every environment
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`)
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
     pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
     testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
@@ -2146,6 +2164,7 @@ export const projectUrlPatterns = sqliteTable(
   },
   (t) => ({
     projectPatternIdx: uniqueIndex('idx_project_url_patterns_pattern').on(t.projectId, t.pattern),
+    environmentIdx: index('idx_project_url_patterns_environment').on(t.environmentId),
   }),
 );
 

@@ -260,8 +260,9 @@ export async function buildRunPrSummary(
   const newRegressionIds = new Set<number>((insights?.newRegressions ?? []).map((entry) => entry.executionId));
 
   // Flake exoneration: on a feature branch, mark a failure that is already flaky
-  // on the default branch so the reviewer knows it is likely not this change's
-  // doing. Skipped for runs already on the default branch (nothing to compare).
+  // on the default branch, in the project's default environment when it has one,
+  // so the reviewer knows it is likely not this change's doing. Skipped for runs
+  // already on the default branch (nothing to compare).
   const runBranch = run.branch ?? resolveRunBranch(run.metadata);
   const defaultBranch = await resolveDefaultBranch(db, project, run.metadata);
   const defaultBranchFlaky = new Map<number, { branch: string; flakinessScore: number }>();

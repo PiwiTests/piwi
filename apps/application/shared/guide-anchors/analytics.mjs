@@ -130,6 +130,17 @@ export const ANALYTICS_ANCHORS = [
     sample: { route: '/analytics' },
   },
   {
+    id: 'analytics-environment-policy',
+    kind: 'block',
+    pages: DASHBOARD_PAGES,
+    describes:
+      'The environment policy of the Filters block: count each project’s default environment only, or every environment.',
+    shownWhen: 'While no environment is picked by hand and a project in reach has a default environment.',
+    help: 'analytics.environment-policy',
+    doc: 'features/analytics#environment-policy',
+    sample: { route: '/analytics' },
+  },
+  {
     id: 'analytics-tests-button',
     kind: 'action',
     pages: DASHBOARD_PAGES,

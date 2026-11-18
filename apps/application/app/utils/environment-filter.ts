@@ -63,6 +63,48 @@ export function environmentFilterItems(input: {
   return items;
 }
 
+/** An environment key as the projects a person reads use it (`GET /api/environments`). */
+interface InstanceEnvironmentChoice {
+  key: string;
+  names: string[];
+  /** How many of the projects read it by default. */
+  defaults?: number;
+}
+
+/**
+ * The choices of a filter that spans projects (Analytics, a dashboard, a report schedule), each stored as an
+ * environment key and shown by the names the projects give it: the keys of `GET /api/environments` in their order,
+ * then each value of `selected` none of them holds, and last **No environment** (`NO_ENVIRONMENT_FILTER`).
+ */
+export function instanceEnvironmentFilterItems(input: {
+  environments: readonly InstanceEnvironmentChoice[];
+  selected?: readonly string[];
+}): EnvironmentFilterItem[] {
+  const items: EnvironmentFilterItem[] = input.environments.map((environment) => ({
+    label: environment.names.length > 0 ? environment.names.join(' / ') : environment.key,
+    value: environment.key,
+  }));
+  for (const value of input.selected ?? []) {
+    if (value === NO_ENVIRONMENT_FILTER || items.some((item) => sameKey(item.value, value))) continue;
+    items.push({ label: value, value });
+  }
+  if (items.length > 0 || input.selected?.includes(NO_ENVIRONMENT_FILTER)) {
+    items.push({ label: NO_ENVIRONMENT_LABEL, value: NO_ENVIRONMENT_FILTER });
+  }
+  return items;
+}
+
+/**
+ * The one default environment the projects of `GET /api/environments` read, by name, when they read one key; null
+ * when none reads a default or they read several.
+ */
+export function sharedDefaultEnvironment(environments: readonly InstanceEnvironmentChoice[]): string | null {
+  const defaults = environments.filter((environment) => (environment.defaults ?? 0) > 0);
+  if (defaults.length !== 1) return null;
+  const only = defaults[0]!;
+  return only.names.length === 1 ? only.names[0]! : only.key;
+}
+
 /** The words a filter shows for one of its values: the name of the environment it is the key of, else the value. */
 export function environmentFilterLabel(value: string, environments: readonly EnvironmentRecord[]): string {
   if (value === NO_ENVIRONMENT_FILTER) return NO_ENVIRONMENT_LABEL;

@@ -31,7 +31,8 @@ A project admin keeps the list in **Project → Settings → Environments**:
 
 **Archive** takes an environment out of the pickers: its runs keep it, and no run Piwi starts can be for it.
 **Delete** removes it: its runs keep their label and lose their environment, and the next run that reports the label
-adds it back as a discovered one. Archive it to keep a label from coming back.
+adds it back as a discovered one. Archive it to keep a label from coming back. Deleting one a URL pattern or CI action
+names is refused.
 
 ## How a run's label resolves
 
@@ -52,9 +53,13 @@ admin saves it.
 Saving an environment resolves the project's runs again. Adding `stg` as an alias of Staging moves the runs that
 reported `stg` to Staging, and removes the discovered `stg` that held them.
 
-The project page's **Filters** and its status filter list the project's environments, the labels no environment
-takes, and **No environment** for the runs that report none. Picking Staging keeps the runs whose label resolves to
-it, `stg` included.
+## Default environment
+
+The project page's **Filters** and status filter offer its environments, the labels none takes, and **No environment**;
+Staging keeps the runs resolving to it, `stg` included. With a **default environment**, set below the list, the project
+page, its tabs, [Analytics](./analytics#environment-policy), [quarantine candidates](./flaky-tests#quarantine-with-a-way-out)
+and pull-request feedback read only its runs, never one with no environment, until you pick another or **All
+environments**, like the [default branch](./branches#filtering-by-branch). A copy carries it to a project with none.
 
 ## Choose the environment of a run
 
@@ -128,10 +133,8 @@ values Piwi sets win over the file's.
 ## Built from the checkout, or deployed
 
 An environment is **built from the checkout** when the application under test comes from the same commit as the tests:
-a `webServer` in the config, a preview deployment of the pull request. A **deployed** environment, such as Staging,
-runs whatever version was last deployed there, whatever the run's commit. The setting tells a reader, and an agent
-through the MCP tool `list_environments`, whether a failure's commit holds the code that ran: a change deployed to
-Staging shows in no commit of the tests' repository.
+a `webServer` in the config, a preview deployment of the pull request. Any other is
+[deployed](./deployed-environments): Piwi reads the application's commit its runs tested.
 
 ## Secrets and the env file
 
@@ -183,8 +186,8 @@ The run page names the run's environment, and says when the run may not have tes
 ## Limits
 
 - Each project has its own environments: a Staging in two projects is two records, kept apart.
-- Notification filters, issue automation, CI actions and timeline markers match a run's label as text, not its
-  environment: a notification filter on `staging` misses a run that reported `stg`.
+- A filter (notifications, issue automation, test management) keeps keys and `*` patterns, matched against a run's
+  environment key and aliases.
 
 ## Related
 

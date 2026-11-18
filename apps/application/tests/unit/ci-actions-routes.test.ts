@@ -224,6 +224,43 @@ describe.each(routes)('PATCH of CI actions through %s', (_name, patch) => {
   test('keeps an action without a credential, which the instance’s serves', async () => {
     await expect(patch({ ciRerun: settings([server('a'), server('b', { baseUrl: B })]) })).resolves.toBeDefined();
   });
+
+  test('names one of the project’s environments by id, an archived one only when the action named it already', async () => {
+    await db.delete(schema.environments);
+    const [staging, archived, foreign] = await db
+      .insert(schema.environments)
+      .values([
+        { projectId: 1, key: 'staging', keyFold: 'staging', name: 'Staging', aliases: ['stg'], position: 0 },
+        { projectId: 1, key: 'old', keyFold: 'old', name: 'Old', position: 1, archivedAt: new Date() },
+        { projectId: 2, key: 'prod', keyFold: 'prod', name: 'Production', position: 0 },
+      ])
+      .returning({ id: schema.environments.id });
+    const actions = async () =>
+      ((await stored()).ciRerun as { actions: Array<{ environment?: string; environmentId?: number }> }).actions;
+
+    await patch({ ciRerun: settings([github({ environmentId: staging!.id })]) });
+    expect((await actions())[0]).toMatchObject({ environment: 'staging', environmentId: staging!.id });
+    // A label resolves as a run's does, ignoring case, and is kept as written.
+    await patch({ ciRerun: settings([github({ environment: 'STG' })]) });
+    expect((await actions())[0]).toMatchObject({ environment: 'STG', environmentId: staging!.id });
+
+    await expect(patch({ ciRerun: settings([github({ environmentId: foreign!.id })]) })).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'The CI action “Smoke” names an environment this project does not have.',
+    });
+    await expect(patch({ ciRerun: settings([github({ environmentId: archived!.id })]) })).rejects.toMatchObject({
+      statusCode: 400,
+      message: 'The CI action “Smoke” names Old, which is archived.',
+    });
+    expect((await actions())[0]!.environmentId).toBe(staging!.id);
+
+    await db
+      .update(schema.projects)
+      .set({ ciRerun: settings([github({ environment: 'old', environmentId: archived!.id })]) as never })
+      .where(eq(schema.projects.id, 1));
+    await patch({ ciRerun: settings([github({ environmentId: archived!.id, name: 'Renamed' })]) });
+    expect((await actions())[0]).toMatchObject({ environment: 'old', environmentId: archived!.id });
+  });
 });
 
 describe('listProjects', () => {

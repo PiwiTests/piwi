@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { openTempDb, type TempDb } from './temp-db';
 
@@ -6,7 +7,10 @@ import { openTempDb, type TempDb } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
 
+vi.mock('../../server/utils/notifications/dispatch', () => ({ sweepOutbox: async () => 0 }));
+
 const { matchAndEnqueue } = await import('../../server/utils/notifications/match');
+const { emitNotification } = await import('../../server/utils/notifications/emit');
 
 let db: TempDb;
 let close: () => Promise<void>;
@@ -65,5 +69,30 @@ describe('matchAndEnqueue', () => {
 
     await expect(matchAndEnqueue(db as never, 'run.failed', payload as never)).rejects.toThrow('SQLITE_BUSY');
     expect(await queuedChannels()).toEqual([2]);
+  });
+});
+
+describe('emitNotification', () => {
+  test('gives a run’s event the environment its label resolves to, which the environment filters match', async () => {
+    await db
+      .insert(schema.environments)
+      .values({ projectId: 10, key: 'staging', keyFold: 'staging', name: 'Staging', aliases: ['stg'] });
+    const filter = (channelId: number, environments: string[]) =>
+      db
+        .update(schema.subscriptions)
+        .set({ filters: { environments } })
+        .where(eq(schema.subscriptions.channelId, channelId));
+    await filter(1, ['Staging']);
+    await filter(2, ['production']);
+
+    await emitNotification(db as never, 'run.failed', { ...payload, environment: 'stg' } as never);
+    const rows = await db.select().from(schema.notificationDeliveries);
+    expect(rows.map((row) => row.channelId)).toEqual([1]);
+    expect(rows[0]!.payload).toMatchObject({
+      environment: 'stg',
+      environmentName: 'Staging',
+      environmentKey: 'staging',
+      environmentAliases: ['stg'],
+    });
   });
 });

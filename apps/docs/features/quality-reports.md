@@ -36,8 +36,8 @@ exported and scheduled; four built-in ones are written for reports:
 The engineering report ends with the same gap counts. **Overview**, the analytics page itself, can be
 exported too.
 
-Every report ends with a footer stating the scope, the branch policy, the period and its comparison,
-each metric's definition, and its limits: lists of tests reach back only as far as
+Every report ends with a footer stating the scope, the branch and environment policies, the period and its
+comparison, each metric's definition, and its limits: lists of tests reach back only as far as
 [retention](/operate/storage#data-retention) keeps runs, and days are UTC.
 
 ### The verdict is built by rules

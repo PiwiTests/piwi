@@ -64,7 +64,10 @@ export interface CiActionDraft {
   ciServer: CiServerFormState;
   inputs: CiActionInputDraft[];
   accepts: CiActionKind[];
+  /** The environment's label as written: its key when picked from the project's environments. */
   environment: string;
+  /** The environment picked, one of the project's; null for any environment. */
+  environmentId: number | null;
   /** The kinds this action is the default for. */
   defaultFor: CiActionKind[];
 }
@@ -132,6 +135,7 @@ export function ciActionDraft(action: CiAction | null, settings?: CiActionsSetti
     inputs: (action?.inputs ?? []).map(inputDraft),
     accepts: action ? [...action.accepts] : ['tests'],
     environment: action?.environment ?? '',
+    environmentId: action?.environmentId ?? null,
     defaultFor,
   };
 }
@@ -280,6 +284,7 @@ export function ciActionFromDraft(
     inputs: inputs.inputs,
     accepts: CI_ACTION_KINDS.filter((kind) => draft.accepts.includes(kind)),
     ...(environment ? { environment } : {}),
+    ...(draft.environmentId != null ? { environmentId: draft.environmentId } : {}),
   };
   const reserved = reservedInputName(action);
   if (reserved) {
@@ -298,4 +303,24 @@ export function duplicateCiActionName(name: string, taken: string[]): string {
   let candidate = named(' (copy)');
   for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = named(` (copy ${n})`);
   return candidate;
+}
+
+/**
+ * A duplicate of an action: a new id, a name unlike any `taken` one (`duplicateCiActionName`), and every other field
+ * copied, except an environment `archived` says is archived, which the duplicate leaves for any environment.
+ */
+export function duplicateCiAction(
+  action: CiAction,
+  taken: string[],
+  archived: (environmentId: number) => boolean,
+): CiAction {
+  const { environment, environmentId, ...fields } = structuredClone(action);
+  const keepsEnvironment = environmentId === undefined || !archived(environmentId);
+  return {
+    ...fields,
+    ...(keepsEnvironment && environment !== undefined ? { environment } : {}),
+    ...(keepsEnvironment && environmentId !== undefined ? { environmentId } : {}),
+    id: newCiActionId(),
+    name: duplicateCiActionName(action.name, taken),
+  };
 }

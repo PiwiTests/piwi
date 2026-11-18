@@ -6,8 +6,10 @@
  *
  * The range is the regression context's (`computeRegressionContext`, the
  * baseline ladder the rest of the dashboard uses), from the last green run's
- * commit to the commit of the run the coverage comes from; its changes come
- * from the project's source control provider. Answers are kept five minutes
+ * commit to the commit of the run the coverage comes from; for a run of a
+ * deployed environment, from the last green run's deployed commit to the
+ * run's, the application's changes, read in the project's repository. Its
+ * changes come from the project's source control provider. Answers are kept five minutes
  * per execution or cluster and range (one minute when the provider failed),
  * and a provider failure answers `no-scm`, never an error.
  */
@@ -24,8 +26,10 @@ import {
   unavailableSuspectLines,
   type ClusterSuspectLinesAnswer,
   type SuspectLinesAnswer,
+  type SuspectLinesKnown,
   type SuspectLinesReason,
 } from '#shared/suspect-lines';
+import { deployedEnvironmentOf } from '#shared/handlers/deployed-changes';
 import type { DbClient } from '../database';
 import { computeRegressionContext } from './regression-context';
 import type { RunMetadata } from './run-json-types';
@@ -42,27 +46,63 @@ const scmFailures = new TtlCache<SuspectLinesAnswer>(FAILED_SCM_TTL_MS, MAX_CACH
 
 /** The range of a run's suspect lines, or why there is none. */
 type SuspectRange =
-  | { from: string; to: string; repositoryUrl: string | null; baselineRunId: number }
-  | { reason: SuspectLinesReason; known: Pick<SuspectLinesAnswer, 'range' | 'baselineRunId'> };
+  | {
+      from: string;
+      to: string;
+      repositoryUrl: string | null;
+      baselineRunId: number;
+      deployed?: SuspectLinesKnown['deployed'];
+    }
+  | { reason: SuspectLinesReason; known: SuspectLinesKnown };
 
-/** The range from the last green run's commit to the run's, as the regression context gives it. */
+/**
+ * The range from the last green run's commit to the run's, as the regression context gives it. A run of a deployed
+ * environment reads its application's range, between the deployed commits; with its own deployed commit unknown, it
+ * reads the tests' range and says so (`deployed.commit` null).
+ */
 async function rangeOf(db: DbClient, run: SuspectRun): Promise<SuspectRange> {
   const regression = await computeRegressionContext(db, run);
   if (!regression.hasGreen) return { reason: 'no-baseline', known: {} };
   const baselineRunId = regression.lastGreenRunId;
-  const { lastGreenCommit, currentCommit, commitRange } = regression;
+  const { lastGreenCommit, currentCommit, commitRange, deployed: changes } = regression;
+  const deployed = changes
+    ? { environment: changes.environment.name, commit: changes.current?.commit ?? null }
+    : undefined;
+  if (changes?.current) {
+    if (changes.range) {
+      return {
+        from: changes.range.fromSha,
+        to: changes.range.toSha,
+        repositoryUrl: changes.range.repositoryUrl,
+        baselineRunId,
+        deployed,
+      };
+    }
+    const known = { baselineRunId, deployed };
+    if (changes.baseline) {
+      return {
+        reason: 'no-changes',
+        known: { ...known, range: { from: changes.baseline.commit, to: changes.current.commit } },
+      };
+    }
+    return { reason: 'no-baseline', known };
+  }
   if (commitRange) {
     return {
       from: commitRange.fromSha,
       to: commitRange.toSha,
       repositoryUrl: commitRange.repositoryUrl,
       baselineRunId,
+      deployed,
     };
   }
   if (lastGreenCommit && lastGreenCommit === currentCommit) {
-    return { reason: 'no-changes', known: { range: { from: lastGreenCommit, to: currentCommit }, baselineRunId } };
+    return {
+      reason: 'no-changes',
+      known: { range: { from: lastGreenCommit, to: currentCommit }, baselineRunId, deployed },
+    };
   }
-  return { reason: 'no-baseline', known: { baselineRunId } };
+  return { reason: 'no-baseline', known: { baselineRunId, deployed } };
 }
 
 /** The changes of a range from the project's provider; null when there is none or it failed. */
@@ -91,7 +131,11 @@ async function suspectLinesOfRun(
 ): Promise<SuspectLinesAnswer> {
   const range = await rangeOf(db, run);
   if ('reason' in range) return unavailableSuspectLines(range.reason, range.known);
-  const known = { range: { from: range.from, to: range.to }, baselineRunId: range.baselineRunId };
+  const known: SuspectLinesKnown = {
+    range: { from: range.from, to: range.to },
+    baselineRunId: range.baselineRunId,
+    ...(range.deployed ? { deployed: range.deployed } : {}),
+  };
   const cacheKey = `${key}\x00${range.from}..${range.to}`;
   const cached = answers.get(cacheKey) ?? scmFailures.get(cacheKey);
   if (cached) return cached;
@@ -138,7 +182,8 @@ export async function suspectLinesForCluster(db: DbClient, clusterId: number): P
  * The suspect lines of a cluster for changes already fetched for `range`:
  * joined with them when the run the cluster's coverage comes from tested the
  * range's head commit (kept per cluster, run and range), the cluster's own
- * answer otherwise, whose range then differs from `range`.
+ * answer otherwise, whose range then differs from `range`. A run of a deployed
+ * environment always takes its own answer, read on the application's range.
  */
 export async function clusterSuspectLinesForChanges(
   db: DbClient,
@@ -149,7 +194,9 @@ export async function clusterSuspectLinesForChanges(
   const target = await clusterSuspectTarget(db, clusterId);
   if (target.reason) return { ...unavailableSuspectLines(target.reason), runId: target.runId };
   const commit = (target.run.metadata as RunMetadata | null)?.scm?.commit ?? null;
-  if (commit !== range.to) return suspectLinesForCluster(db, clusterId);
+  if (commit !== range.to || (await deployedEnvironmentOf(db, target.run.environmentId))) {
+    return suspectLinesForCluster(db, clusterId);
+  }
   const cacheKey = `changes:cluster:${clusterId}:${target.run.id}\x00${range.from}..${range.to}`;
   let answer = answers.get(cacheKey);
   if (!answer) {

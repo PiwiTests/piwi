@@ -69,6 +69,7 @@ async function addRun(
   cases: ReturnType<typeof execution>[],
   origin = 'ci',
   commit = String(id).repeat(40),
+  environmentId: number | null = null,
 ): Promise<void> {
   const start = Date.now() - (10 - id) * HOUR;
   await db.insert(schema.testRuns).values({
@@ -81,6 +82,7 @@ async function addRun(
     commit,
     metadata: { scm: { commit, branch }, piwiOrigin: { kind: origin } },
     totalTests: cases.length,
+    environmentId,
   });
   // Each test starts `startedAt` seconds into its run.
   await persistRunCases(
@@ -181,5 +183,30 @@ describe('getReuseForecast', () => {
   test('a window that ended before the runs counts nothing', async () => {
     const forecast = await getReuseForecast(db as never, 1, { now: new Date(Date.now() - 60 * 24 * HOUR) });
     expect(forecast.total.results).toBe(0);
+  });
+});
+
+describe('the forecast across environments', () => {
+  beforeAll(async () => {
+    const environment = async (key: string, appFromCheckout: boolean) =>
+      (
+        await db
+          .insert(schema.environments)
+          .values({ projectId: 1, key, keyFold: key, name: key, appFromCheckout })
+          .returning()
+      )[0]!.id;
+    const staging = await environment('staging', false);
+    const local = await environment('local', true);
+    const cart = (start: number) => execution('adds to cart', { start, files: [file(CART, 'b')] });
+    // The cart's latest code passed in runs 3 and 4 with no environment: none of them stands in for these runs.
+    // Staging is deployed and nothing names its version, so even its own earlier pass stands in for nothing.
+    await addRun(7, 'main', [cart(13)], 'ci', '7'.repeat(40), staging);
+    await addRun(8, 'main', [cart(14)], 'ci', '8'.repeat(40), staging);
+    await addRun(9, 'main', [cart(15)], 'ci', '9'.repeat(40), local);
+  });
+
+  test('a result is reusable only against a pass of its environment, and of a known deployed version', async () => {
+    const forecast = await getReuseForecast(db as never, 1);
+    expect(forecast.total).toMatchObject({ results: 13, reusable: 6 });
   });
 });

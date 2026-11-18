@@ -290,6 +290,8 @@ export interface PrChangeCoverage {
   prNumber?: number | null;
   /** The gaps the change-time detectors raised on the change: new error paths, new controls, an intent no test names. */
   changeTimeGaps?: number;
+  /** For a run of a deployed environment not at the head: what its reach of the application is of. */
+  deployedNote?: string | null;
 }
 
 /**
@@ -373,6 +375,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null
       ? `Changed files no test reached, in this run or the last ${cc.windowRuns} runs, and changed lines no suite ran, in the head commit's coverage.`
       : `Changed files no test reached, in this run or the last ${cc.windowRuns} runs. Observed reach, not instrumented coverage.`;
   const blocks: string[] = [`${header}\n${preface}`];
+  if (cc.deployedNote) blocks.push(cc.deployedNote);
   if (patch) blocks.push(renderPatchCoverage(patch));
 
   // The files no test reached, by ticket: the uncovered changes.

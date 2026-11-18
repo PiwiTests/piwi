@@ -2,7 +2,8 @@
  * The verdict on one failing execution: the one-line headline plus the facts
  * the dashboard already stores about it — why it failed (a new regression, a
  * retry pass, a flaky start, an infrastructure error), since when (the
- * cluster's first failing run, the commit the run was on), which cluster it
+ * cluster's first failing run, the commit the run was on, and for a deployed
+ * environment the deploy it was first seen on), which cluster it
  * shares with how many other tests in the run, and who owns the test. A test
  * that passed on retry gets the verdict of its failed attempt, which names
  * that attempt.
@@ -21,6 +22,24 @@ import {
 import { parsePlaywrightError, type ParsedErrorKind } from '#shared/error-parse';
 
 export type FailureWhy = 'new-regression' | 'passed-on-retry' | 'new-flaky' | 'infrastructure';
+
+/**
+ * The deployed environment a failing run tested, and the deploy its failure was first seen on: the since line names
+ * it rather than the tests' commit, which says nothing of the application's version.
+ */
+export interface VerdictDeploy {
+  /** The environment's name. */
+  environment: string;
+  /** The application's commit the failure was first seen on; null when unknown. */
+  commit: string | null;
+  /**
+   * The deploy marker the first failing run tested, the latest between the last run of the environment where the
+   * test passed and that run; null for none.
+   */
+  label: string | null;
+  /** The environment's markers name no deploy between that last pass and the first failure. */
+  noDeploySinceLastPass: boolean;
+}
 
 export interface FailureVerdictCommit {
   sha: string;
@@ -44,6 +63,8 @@ export interface FailureVerdict extends FailureDescription {
     isFirstFailure: boolean;
     /** The commit and author the run reported, when the reporter collected SCM metadata. */
     commit: FailureVerdictCommit | null;
+    /** For a run of a deployed environment: the environment and the deploy the failure was first seen on. */
+    deploy?: VerdictDeploy | null;
     /**
      * The earlier fix that did not hold — set when the execution's cluster
      * carries a fix verification that later regressed. Null otherwise.
@@ -127,6 +148,8 @@ export interface FailureVerdictInput {
     | null;
   /** The test's `piwi:owner` annotation, or an owner resolved elsewhere with its source. */
   owner?: string | VerdictOwner | null;
+  /** For a run of a deployed environment: the environment and the deploy the failure was first seen on. */
+  deploy?: VerdictDeploy | null;
   /**
    * The attempt `error` and `steps` were read from, when it is not the
    * execution `status` describes (the failed attempt of a pass after a failure).
@@ -193,6 +216,7 @@ export function buildFailureVerdict(input: FailureVerdictInput): FailureVerdict 
             branch: input.scm?.branch?.trim() || null,
           }
         : null,
+      ...(input.deploy ? { deploy: input.deploy } : {}),
       fixedBefore,
     },
     cluster: cluster

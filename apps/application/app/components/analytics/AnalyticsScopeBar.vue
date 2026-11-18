@@ -14,19 +14,31 @@ import {
 } from '#shared/analytics/scope-state';
 import type { AnalyticsScopeSummary } from '#shared/analytics/types';
 import type { FilterBarState } from '~/components/shared/FilterBar.vue';
+import type { EnvironmentFilterItem } from '~/utils/environment-filter';
 import type { ProjectMenuItem } from '~~/types/api';
 
 const props = withDefaults(
   defineProps<{
     modelValue: AnalyticsScopeState;
     availableProjects: ProjectMenuItem[];
-    availableEnvironments: string[];
+    /** The environments of the projects in reach, by key, shown by name. */
+    availableEnvironments: Array<string | EnvironmentFilterItem>;
+    /** Whether some project reads a default environment, which the environment policy then offers. */
+    defaultEnvironments?: boolean;
+    /** The name of the one default environment the projects share, when they share one. */
+    defaultEnvironment?: string | null;
     availableBranches?: string[];
     summary?: AnalyticsScopeSummary | null;
     /** The block's heading: *Default filters* while a dashboard is edited. */
     title?: string;
   }>(),
-  { availableBranches: () => [], summary: null, title: 'Filters' },
+  {
+    availableBranches: () => [],
+    defaultEnvironments: false,
+    defaultEnvironment: null,
+    summary: null,
+    title: 'Filters',
+  },
 );
 
 const emit = defineEmits<{
@@ -67,11 +79,32 @@ const allBranches = computed({
 const filterBar = computed<FilterBarState>({
   get: () => ({
     environments: props.modelValue.environments,
+    allEnvironments: props.modelValue.allEnvironments,
     branches: props.modelValue.branches,
     fullRunsOnly: props.modelValue.fullRunsOnly,
   }),
-  set: (val) => patch({ environments: val.environments, branches: val.branches, fullRunsOnly: val.fullRunsOnly }),
+  set: (val) =>
+    patch({
+      environments: val.environments,
+      allEnvironments: !!val.allEnvironments,
+      branches: val.branches,
+      fullRunsOnly: val.fullRunsOnly,
+    }),
 });
+
+/** What the environment policy's select carries: its guide anchor and test id. */
+const ENVIRONMENT_POLICY_ATTRS = {
+  'data-tour': 'analytics-environment-policy',
+  'data-testid': 'analytics-environment-policy',
+};
+
+/** The words an environment value shows: its choice's label, else the value. */
+function environmentLabel(value: string): string {
+  const item = props.availableEnvironments.find(
+    (choice) => (typeof choice === 'string' ? choice : choice.value) === value,
+  );
+  return item === undefined || typeof item === 'string' ? value : item.label;
+}
 
 const isDefault = computed(() => isDefaultScopeState(props.modelValue));
 
@@ -97,8 +130,9 @@ const activeSummary = computed(() => {
   if (props.summary?.comparison) parts.push(`vs ${props.summary.comparison.label.toLowerCase().replace(/^the /, '')}`);
   if (state.projectIds.length === 1) parts.push(projectLabel(state.projectIds[0]!));
   else if (state.projectIds.length > 1) parts.push(`${state.projectIds.length} projects`);
-  if (state.environments.length === 1) parts.push(state.environments[0]!);
+  if (state.environments.length === 1) parts.push(environmentLabel(state.environments[0]!));
   else if (state.environments.length > 1) parts.push(`${state.environments.length} environments`);
+  else if (props.defaultEnvironments) parts.push(state.allEnvironments ? 'all environments' : 'default environment');
   if (state.branches.length === 1) parts.push(state.branches[0]!);
   else if (state.branches.length > 1) parts.push(`${state.branches.length} branches`);
   else parts.push(state.allBranches ? 'all branches' : 'default branch');
@@ -148,6 +182,10 @@ const activeSummary = computed(() => {
           :available-environments="availableEnvironments"
           :available-branches="availableBranches"
           branch-placeholder="Pick branches"
+          :environment-policy="defaultEnvironments || modelValue.allEnvironments"
+          :default-environment="defaultEnvironment"
+          environment-policy-help="analytics.environment-policy"
+          :environment-policy-attrs="ENVIRONMENT_POLICY_ATTRS"
           :show-reset="false"
         >
           <template #leading>

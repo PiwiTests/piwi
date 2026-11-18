@@ -28,8 +28,9 @@ defineProps<{
         {{ prettyDateFormat(marker.occurredAt) }} · {{ formatRelativeTime(marker.occurredAt) }}
       </div>
       <div class="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted">
-        <EnvironmentBadge v-if="marker.environment" :name="marker.environment" />
+        <EnvironmentBadge v-if="marker.environment" :name="marker.environmentName ?? marker.environment" />
         <span v-else>All environments</span>
+        <span v-if="marker.commit" class="font-mono">· {{ marker.commit.slice(0, 7) }}</span>
         <span v-if="marker.runId">· Run #{{ marker.runId }}</span>
       </div>
       <p v-if="marker.description" class="text-xs text-default whitespace-pre-line break-words line-clamp-5">

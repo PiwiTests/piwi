@@ -1,22 +1,35 @@
 # Environments
 
+- Status: accepted
+- Date: 2026-11-18
+
 A plan to make the deployment environment a project's tests run against (Local, Integration, Staging, Production) a
 record of the project, where today it is a free-text label a run reports. It answers a team that runs its tests from
 the desktop app, Piwi Runner and the editors, and changes the application under test with environment variables read
 by the Playwright config (`TEST_ENV=staging`): no path that starts a run lets them choose the environment, and the
 label their runs report is free text that eleven features read and eight settings copy.
 
-**Status.** Proposed 2026-11-18. The first pull request builds steps 1 and 2 of the delivery and the copy of D14:
-the records and their routes, the resolution of each run's label (trimmed, by key or alias, discovering a new one) at
-every route that stores a run and for the runs stored before, the filters matching an environment by key, the
-settings section and the pickers, the choice of an environment on every path that starts a run with its run
-variables, `PIWI_ENVIRONMENT` and a protected environment's rules, the run page's warnings of D7, the env file of D8
-and the team environments of D13. The references of D4 and D12 (the settings that copy names), the default
-environment (D10) and D11 remain for the second. The maintainer settled the six open questions the same day: an
-environment sets variables only, never Playwright projects (D1); filters keep their `*` patterns (D4); a protected
-environment is confirmed, limited to its required tags and started by a project manager only (D9); the deployed commit
-comes from the server snapshot and from deploy markers (D11); the desktop app offers the environments of the team
-project a folder is linked to (D13); a project copies another's environments (D14).
+**Status.** Built in two pull requests: the four delivery steps, all but one piece of D12. The first built steps 1
+and 2 and the copy of D14: the records and their routes, the resolution of each run's label at every route that stores
+a run and for the runs stored before, the filters matching an environment by key, the settings section and the
+pickers, the choice of an environment on every path that starts a run with its run variables, `PIWI_ENVIRONMENT` and a
+protected environment's rules, the run page's warnings of D7, the env file of D8 and the team environments of D13. The
+second built the rest: the settings that name environments (D4, D12), the default environment (D10), the deployed
+environments of D11 with the deployed commit from both instrumentation packages and from deploy markers, the first
+failing deploy, each environment's last run, incidents and deploys, and pass reuse's environment.
+
+**Left out**: the test management mapping of D12 (each environment to the tool's environment name). The automation
+upload Piwi sends to Zephyr Scale has no documented environment field, and Piwi has no Xray integration; a run's name
+still carries the environment (`{environment}`).
+
+**Settled while building** (2026-11-18, with the maintainer): filters keep keys and patterns rather than ids (D4);
+deleting an environment a URL pattern or a CI action names is refused (D4); the application is assumed to live in the
+project's repository (D11); an environment counts as built from the checkout until a manager marks it deployed (D11).
+The six questions raised while writing the plan were settled the same day: an environment sets variables only, never
+Playwright projects (D1); filters keep their `*` patterns (D4); a protected environment is confirmed, limited to its
+required tags and started by a project manager only (D9); the deployed commit comes from the server snapshot and from
+deploy markers (D11); the desktop app offers the environments of the team project a folder is linked to (D13); a
+project copies another's environments (D14).
 
 ## Summary
 
@@ -43,12 +56,12 @@ project a folder is linked to (D13); a project copies another's environments (D1
 
 - **Environment**: a deployment of the application a project's tests run against, kept as a record of the project.
   One word for one concept: not to be confused with the **environment variables** of a process, the **environment
-  snapshots** of [1.0-stabilization.md](1.0-stabilization.md) D65 (where a run executed), or an **environment
+  snapshots** of [1.0-stabilization.md](../proposals/1.0-stabilization.md) D65 (where a run executed), or an **environment
   incident** (a run whose failures come from the application being down).
 - **Label**: the text a run reports with the reporter's `environment` option or `PIWI_ENVIRONMENT`, stored as it came.
 - **Key**: the label an environment's runs report, unique in the project, matched ignoring case.
 - **Alias**: another label, or a `*` pattern, that resolves to the same environment (`stg`, `pr-*`).
-- **Run variable**: one `NAME=value` pair applied to the runs Piwi starts, as in [run-variables.md](../adr/run-variables.md).
+- **Run variable**: one `NAME=value` pair applied to the runs Piwi starts, as in [run-variables.md](run-variables.md).
   A project has some; with this plan an environment has some too.
 - **Default environment**: the environment the project's views read by default, as they read the default branch.
 - **App built from the checkout**: an environment whose application under test is built from the same commit as the
@@ -81,7 +94,7 @@ add over the variable is the **name and the set of variables together**, picked 
 belongs to the deployment (its URL, its protection).
 
 Piwi keeps the variable as the contract with the config, since it never reads or changes the config's code
-([run-variables.md](../adr/run-variables.md) D8), and adds the record.
+([run-variables.md](run-variables.md) D8), and adds the record.
 
 ## What exists
 
@@ -123,7 +136,7 @@ No path lets the person choose an environment, a `baseURL` or an env file: the d
 Flake Lab and a bug report's reproduction (`apps/desktop/src-tauri/src/runner.rs`, `worktree.rs`, `repro.rs`), **Run
 on my machine** through the desktop app or Piwi Runner (`packages/core/src/run-request.ts`, `packages/editor/src/request-run.ts`),
 and the editors (`packages/editor/src/server.ts`). Each applies the project's run variables, which hold one value per
-project; [run-variables.md](../adr/run-variables.md) left "values per deployment environment" open. Every path refuses
+project; [run-variables.md](run-variables.md) left "values per deployment environment" open. Every path refuses
 `--config`. A Playwright project can be chosen only in a requested run, a bug report's reproduction and an editor's
 debug run. The CI actions are the one place an environment picks something: the action whose `environment` equals the
 run's label.
@@ -149,7 +162,7 @@ Each project keeps its own list of environments. Alternatives:
   `chromium-production`) would tie Piwi to one naming scheme.
 - **A config per environment** stays out: a path to code is refused everywhere.
 
-A multi-tenant app keeps one project per tenant ([run-variables.md](../adr/run-variables.md) D1): the tenant variable
+A multi-tenant app keeps one project per tenant ([run-variables.md](run-variables.md) D1): the tenant variable
 stays on the project, the environment's variables add to it.
 
 ### D2. What an environment holds
@@ -188,13 +201,21 @@ they counted, and their reads group the labels by environment, so the archived p
 
 - `GET /api/projects/:id/environments` lists them; every picker reads it, with **No environment** as an option of
   each filter.
-- The eight settings and the markers reference environments by id instead of copying names: URL patterns, markers, CI actions, notification
-  filters, issue automation and test management scopes, report schedules, saved dashboards and the project's status
-  filter. A migration resolves each stored name as a run's label would be, creating discovered environments when
-  needed.
+- **URL patterns, markers and CI actions name one environment**: each keeps the label as written and the environment
+  it resolves to (`environment_id`, `environmentId`), as a run does; a marker or a URL pattern written with a label
+  resolves it as a run's label is. A startup pass gives the ones stored before their environment, creating
+  discovered environments when needed.
+- **Filters keep keys and patterns, never ids** (settled while building): notification filters, issue automation and
+  test management scopes, report schedules, saved dashboards, Analytics and the project's status filter. A setting
+  that spans projects (a subscription to every project, a dashboard, a report) cannot hold one project's ids, and a
+  renamed key stays an alias. A key or pattern matches a run through its environment: the environment's key or one of
+  its exact aliases, ignoring case; a run whose label has no environment, by its label.
 - **A filter keeps its `*` patterns** (settled): a notification filter or an issue automation scope holds picked
   environments and patterns, a pattern matching an environment's key or one of its aliases ignoring case, so an
   environment created later (`prod-eu-2`) is included, as it is today. Only aliases and filters take patterns.
+- **Deleting an environment a URL pattern or a CI action names is refused** (settled while building): they would then
+  apply to every environment. Archiving keeps them. Runs, run requests and markers keep their label; a project whose
+  default it was reads every environment; a discovered environment a declared one takes over hands it what named it.
 - The API's filters keep taking a key (`?environment=staging`), resolved like a label, so scripts, the quality report
   CLI and the MCP tools keep working.
 
@@ -256,7 +277,7 @@ A target that applies environments says so with its claim (`features: ['environm
 claim without it, of a request naming an environment, answers 409 and leaves the request to an updated app.
 
 The desktop app, the editor service and the targets check the merged list again and pass it as the process's
-environment, never through a shell line, as [run-variables.md](../adr/run-variables.md) D5 to D7 do. The editors' **Allow**
+environment, never through a shell line, as [run-variables.md](run-variables.md) D5 to D7 do. The editors' **Allow**
 question covers each new set, an environment's included.
 
 ### D7. The run says where it went
@@ -314,10 +335,15 @@ the filter showing it; and so do the analyses that pool every environment today:
 default branch", quarantine candidates and their release streaks, and MCP's `list_flaky_tests`. A run with no
 environment counts only under **All environments**.
 
+Built with two exceptions. The release streaks of quarantined tests still read every environment: a quarantine
+silences a test in every environment, so a pass in the default one must not release it. The Environment comparison
+widget compares every environment unless some are picked. The project's status filter keeps its own scope.
+
 ### D11. Built from the checkout, or deployed
 
 Several features take the run's commit to be the code under test. It is true only for an environment built from the
-checkout:
+checkout, which an environment is until a manager marks it deployed (settled while building, so an upgrade changes
+nothing for a label the runs report):
 
 - **Bisect** walks the commits of the tests' repository. Against a deployed environment it can find a change of the
   tests, never one of the application: the dialog says so, and its picker starts on an environment built from the
@@ -331,7 +357,7 @@ checkout:
 - **The first failing deploy**: a failure cluster of a deployed environment names the deploy marker between its last
   passing run and its first failing one, as bisect names the first bad commit of an environment built from the
   checkout.
-- **Pass reuse** ([pass-reuse.md](pass-reuse.md)) fingerprints the environment by id and, for a deployed one, by its
+- **Pass reuse** ([pass-reuse.md](../proposals/pass-reuse.md)) fingerprints the environment by id and, for a deployed one, by its
   deployed commit, else its application version: a pass against yesterday's Staging says nothing about today's
   deploy. Without either, a deployed environment's passes are not reused.
 - **The environment's page** in the settings lists its recent deployed commits and application versions, its last
@@ -351,7 +377,10 @@ checkout:
    the commit of the environment's latest deploy marker before it starts. The docs show the step for GitHub Actions
    and GitLab CI.
 
-A commit is 7 to 40 hexadecimal characters; any other value is ignored.
+A commit is 7 to 40 hexadecimal characters: a server snapshot's other value is ignored, and the markers routes refuse
+one. The application is assumed to live in the project's repository, the one its token reads (settled while building):
+its commit range, suspect lines and diffs are read there, and an application kept elsewhere shows its deployed commit
+and no range. Change coverage says when the deployed commit is not the run's; it does not credit the deployed commit.
 
 ### D12. The integrations
 
@@ -359,9 +388,10 @@ A commit is 7 to 40 hexadecimal characters; any other value is ignored.
 - **Markers** reference an environment; a deploy pipeline posting a marker names it by key.
 - **Notification filters**, **issue automation** and **test management scopes** pick environments from the list.
 - **Test management**: each environment maps to the tool's environment name (Zephyr Scale's `environmentName`, an Xray
-  test environment), its own name by default.
+  test environment), its own name by default. Not built (see Status).
 - **CI actions** reference an environment by id.
-- **Environment incidents** are recorded on the environment, and their notification names it.
+- **Environment incidents** are read through the environment's runs and incident markers, and their notification
+  names it.
 - **MCP**: a `list_environments` tool; an environment filter on `list_runs` and `list_flaky_tests`.
 
 ### D13. The desktop app offers the team project's environments (settled)
@@ -409,7 +439,7 @@ tenant's `BASE_URL` is edited on each copy.
 ## Security
 
 - **Who sets them**: a project's managers. What they set reaches teammates' machines, so an environment's variables
-  follow every rule of [run-variables.md](../adr/run-variables.md) (plain values, refused names, shown before applying,
+  follow every rule of [run-variables.md](run-variables.md) (plain values, refused names, shown before applying,
   checked by every target).
 - **The key reaches a process** as `PIWI_ENVIRONMENT`, so it follows the value rules of a run variable.
 - **The env file** is a name, never a path; Piwi copies it only between two folders of the same machine.
@@ -421,14 +451,14 @@ tenant's `BASE_URL` is edited on each copy.
 
 ## What changes in other records
 
-- [run-variables.md](../adr/run-variables.md): its open questions "values per deployment environment" and "the
+- [run-variables.md](run-variables.md): its open questions "values per deployment environment" and "the
   desktop app's own projects" are answered by D5 and D13.
-- [run-on-my-machine.md](run-on-my-machine.md) D3: a request may name an environment of its project, kept on the
+- [run-on-my-machine.md](../proposals/run-on-my-machine.md) D3: a request may name an environment of its project, kept on the
   request row, never in the request a target parses.
-- [1.0-stabilization.md](1.0-stabilization.md): a new entry for the environment routes, `environmentId` on runs, the
+- [1.0-stabilization.md](../proposals/1.0-stabilization.md): a new entry for the environment routes, `environmentId` on runs, the
   `environments` claim feature and `PIWI_ENVIRONMENT` set by Piwi.
-- [pass-reuse.md](pass-reuse.md): the fingerprint's target environment is D11's.
-- [1.0-stabilization.md](1.0-stabilization.md) D65: the server snapshot gains `appCommit`, an addition to its frozen
+- [pass-reuse.md](../proposals/pass-reuse.md): the fingerprint's target environment is D11's.
+- [1.0-stabilization.md](../proposals/1.0-stabilization.md) D65: the server snapshot gains `appCommit`, an addition to its frozen
   field list; the markers routes gain `commit`.
 - The docs' **Environment** concept stops saying "not a configuration one".
 

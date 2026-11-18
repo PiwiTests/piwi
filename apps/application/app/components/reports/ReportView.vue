@@ -266,6 +266,10 @@ function chart(block: SeriesBlock) {
         <dd>{{ bundle.scopeText.projects }}</dd>
         <dt class="font-medium">{{ labels.branchPolicy }}</dt>
         <dd>{{ bundle.scopeText.branches }}</dd>
+        <template v-if="bundle.scopeText.environments">
+          <dt class="font-medium">{{ labels.environmentPolicy }}</dt>
+          <dd>{{ bundle.scopeText.environments }}</dd>
+        </template>
         <dt class="font-medium">{{ runsLabel }}</dt>
         <dd>{{ bundle.scopeText.runs }}</dd>
         <template v-if="bundle.scopeText.tests">

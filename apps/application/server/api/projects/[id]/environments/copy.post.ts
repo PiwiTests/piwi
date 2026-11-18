@@ -10,7 +10,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: "Copy another project's environments",
     description:
-      'Body: `{ fromProjectId }`. Copies the declared environments of that project into this one, every field but its URL patterns, each copy independent of its source. An environment whose key or an alias this project already names is left as it is and listed in `skipped`, and so is a protected environment unless the caller manages the other project too. Needs `project:manage` on this project and `project:read` on the other.',
+      'Body: `{ fromProjectId }`. Copies the declared environments of that project into this one, every field but its URL patterns, each copy independent of its source. An environment whose key or an alias this project already names is left as it is and listed in `skipped`, and so is a protected environment unless the caller manages the other project too. A project with no default environment takes the other’s: its own environment that the other’s default key or alias names, which `defaultEnvironment` answers as `{ id, key, name }` (null when it took none). Answers `{ copied, skipped, defaultEnvironment }`. Needs `project:manage` on this project and `project:read` on the other.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:manage',
   },

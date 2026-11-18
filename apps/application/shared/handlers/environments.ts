@@ -11,7 +11,14 @@ import {
   type EnvironmentMatchSource,
 } from '@piwitests/core/environments';
 import { RUN_VARIABLE_LIMITS, mergeRunVariables, parseRunVariables } from '@piwitests/core/run-variables';
-import { environments, projectUrlPatterns, projects, runRequests, testRuns } from '../../server/database/schema';
+import {
+  environments,
+  markers,
+  projectUrlPatterns,
+  projects,
+  runRequests,
+  testRuns,
+} from '../../server/database/schema';
 import { urlMatches } from '@piwitests/core/function-match';
 import { runBaseUrls } from '#shared/graph';
 import {
@@ -21,6 +28,8 @@ import {
   type EnvironmentRecord,
 } from '#shared/environments';
 import { storedRunVariables, type RunVariable } from '#shared/run-variables';
+import { runDeployedCommit, type DeployedCommit } from './deployed-commit';
+import { carryDefaultEnvironment, type DefaultEnvironment } from './default-environment';
 import type { DrizzleDB } from './db';
 
 /**
@@ -80,10 +89,67 @@ export async function listProjectEnvironments(
     .map((row) => environmentRecordOf(row, canManage));
 }
 
+/** An environment key as the projects a person can read use it, for the pickers that span projects. */
+export interface InstanceEnvironment {
+  key: string;
+  /** The names the projects give it, each once. */
+  names: string[];
+  /** How many of the projects have it. */
+  projects: number;
+  /** How many of the projects read it by default (`projects.default_environment_id`). */
+  defaults: number;
+}
+
+/**
+ * The environments of the projects `scope` allows, one entry per key ignoring case, in position order, archived ones
+ * left out: what a cross-project filter (Analytics, a dashboard, a report, a notification filter on every project)
+ * offers, since it names an environment by key.
+ */
+export async function listInstanceEnvironments(
+  db: DrizzleDB,
+  scope: 'all' | Set<number>,
+): Promise<InstanceEnvironment[]> {
+  if (scope !== 'all' && scope.size === 0) return [];
+  const rows = await db
+    .select({
+      projectId: environments.projectId,
+      key: environments.key,
+      keyFold: environments.keyFold,
+      name: environments.name,
+      defaultOf: projects.id,
+    })
+    .from(environments)
+    .leftJoin(projects, eq(projects.defaultEnvironmentId, environments.id))
+    .where(
+      and(isNull(environments.archivedAt), scope === 'all' ? undefined : inArray(environments.projectId, [...scope])),
+    )
+    .orderBy(asc(environments.position), asc(environments.id));
+  const byKey = new Map<string, { key: string; names: Set<string>; projects: Set<number>; defaults: number }>();
+  for (const row of rows) {
+    const entry = byKey.get(row.keyFold) ?? {
+      key: row.key,
+      names: new Set<string>(),
+      projects: new Set<number>(),
+      defaults: 0,
+    };
+    entry.names.add(row.name);
+    entry.projects.add(row.projectId);
+    if (row.defaultOf === row.projectId) entry.defaults += 1;
+    byKey.set(row.keyFold, entry);
+  }
+  return [...byKey.values()].map((entry) => ({
+    key: entry.key,
+    names: [...entry.names],
+    projects: entry.projects.size,
+    defaults: entry.defaults,
+  }));
+}
+
 /**
  * A run's label and environment as a run is stored: the label trimmed and cut (`normalizeEnvironmentLabel`), and the
  * environment of the project it resolves to. A label no environment takes creates a `discovered` one with it as key,
- * while the project has room for one ({@link ENVIRONMENT_LIMITS}): past it, the run keeps its label and no environment.
+ * built from the checkout until a manager says otherwise, while the project has room for one ({@link ENVIRONMENT_LIMITS}):
+ * past it, the run keeps its label and no environment.
  */
 export async function resolveRunEnvironment(
   db: DrizzleDB,
@@ -96,6 +162,43 @@ export async function resolveRunEnvironment(
   const found = resolveEnvironment(label, rows.map(matchSourceOf));
   if (found !== null) return { environment: label, environmentId: found };
   return { environment: label, environmentId: await discoverEnvironment(db, projectId, label, rows) };
+}
+
+/**
+ * The environment of the project a label resolves to, as a run's label would (`resolveRunEnvironment`), without
+ * discovering one: null for no label, or a label no environment takes.
+ */
+export async function findLabelEnvironment(
+  db: DrizzleDB,
+  projectId: number,
+  raw: unknown,
+): Promise<EnvironmentRow | null> {
+  const label = normalizeEnvironmentLabel(raw);
+  if (label === null) return null;
+  const rows = await projectEnvironmentRows(db, projectId);
+  const found = resolveEnvironment(label, rows.map(matchSourceOf));
+  return rows.find((row) => row.id === found) ?? null;
+}
+
+/** What an environment filter reads of a run's environment (`runEnvironmentMatches`), and its name for messages. */
+export interface EnvironmentFilterFacts {
+  key: string;
+  name: string;
+  aliases: string[];
+}
+
+/** The filter facts of the environments `ids` name, by id, in one read. */
+export async function environmentFilterFacts(
+  db: DrizzleDB,
+  ids: readonly (number | null | undefined)[],
+): Promise<Map<number, EnvironmentFilterFacts>> {
+  const wanted = [...new Set(ids.filter((id): id is number => typeof id === 'number'))];
+  if (wanted.length === 0) return new Map();
+  const rows = await db
+    .select({ id: environments.id, key: environments.key, name: environments.name, aliases: environments.aliases })
+    .from(environments)
+    .where(inArray(environments.id, wanted));
+  return new Map(rows.map((row) => [row.id, { key: row.key, name: row.name, aliases: stringList(row.aliases) }]));
 }
 
 async function discoverEnvironment(
@@ -111,7 +214,7 @@ async function discoverEnvironment(
   const position = rows.reduce((max, row) => Math.max(max, row.position + 1), 0);
   await db
     .insert(environments)
-    .values({ projectId, key: label, keyFold, name: label, position, discovered: true })
+    .values({ projectId, key: label, keyFold, name: label, position, discovered: true, appFromCheckout: true })
     .onConflictDoNothing({ target: [environments.projectId, environments.keyFold] });
   const [row] = await db
     .select({ id: environments.id })
@@ -186,6 +289,72 @@ export async function backfillRunEnvironments(db: DrizzleDB): Promise<number> {
   return given;
 }
 
+/** The app setting that records the instance gave its markers, URL patterns and CI actions their environment. */
+export const ENVIRONMENT_REFERENCES_BACKFILLED_SETTING = 'environment_references_backfilled_at';
+
+/**
+ * Give the markers and URL patterns stored before they named environments by id theirs (`environment_id`), each label
+ * resolving as a run's does, discovering an environment nothing takes. Returns how many rows it gave one.
+ */
+async function backfillLabelledRows(db: DrizzleDB, table: typeof markers | typeof projectUrlPatterns): Promise<number> {
+  const t = table as typeof markers;
+  const pending = await db
+    .selectDistinct({ projectId: t.projectId, label: t.environment })
+    .from(t)
+    .where(and(isNotNull(t.environment), isNull(t.environmentId)));
+  let given = 0;
+  for (const { projectId, label } of pending) {
+    if (label === null) continue;
+    const { environmentId } = await resolveRunEnvironment(db, projectId, label);
+    if (environmentId === null) continue;
+    const moved = await db
+      .update(t)
+      .set({ environmentId })
+      .where(and(eq(t.projectId, projectId), eq(t.environment, label), isNull(t.environmentId)))
+      .returning({ id: t.id });
+    given += moved.length;
+  }
+  return given;
+}
+
+/**
+ * Give what named an environment by its label before environments were records theirs: markers, URL patterns, and
+ * the CI actions of each project (`environmentId` beside the `environment` label), discovering an environment for a
+ * label nothing takes. Returns how many it gave one.
+ */
+export async function backfillEnvironmentReferences(db: DrizzleDB): Promise<number> {
+  let given = (await backfillLabelledRows(db, markers)) + (await backfillLabelledRows(db, projectUrlPatterns));
+  const rows = await db
+    .select({ id: projects.id, ciRerun: projects.ciRerun })
+    .from(projects)
+    .where(isNotNull(projects.ciRerun));
+  for (const project of rows) {
+    const actions = storedCiActions(project.ciRerun);
+    const pending = (action: StoredCiActionEnvironment) =>
+      typeof action.environment === 'string' && action.environment.trim() !== '' && action.environmentId === undefined;
+    if (!actions.some(pending)) continue;
+    const next: StoredCiActionEnvironment[] = [];
+    for (const action of actions) {
+      if (!pending(action)) {
+        next.push(action);
+        continue;
+      }
+      const { environmentId } = await resolveRunEnvironment(db, project.id, action.environment);
+      if (environmentId === null) {
+        next.push(action);
+        continue;
+      }
+      given += 1;
+      next.push({ ...action, environmentId });
+    }
+    await db
+      .update(projects)
+      .set({ ciRerun: { ...(project.ciRerun as object), actions: next } as never })
+      .where(eq(projects.id, project.id));
+  }
+  return given;
+}
+
 export type EnvironmentWrite =
   | { ok: true; environment: EnvironmentRecord }
   | { ok: false; statusCode: 400 | 404 | 409; problems: string[] };
@@ -200,17 +369,160 @@ function absorbedBy(saved: EnvironmentMatchSource, rows: EnvironmentRow[]): Envi
   );
 }
 
+/** A CI action's environment as `projects.ci_rerun` stores it: the label as written and the environment's id. */
+interface StoredCiActionEnvironment {
+  id?: unknown;
+  name?: unknown;
+  environment?: unknown;
+  environmentId?: unknown;
+}
+
+function storedCiActions(raw: unknown): StoredCiActionEnvironment[] {
+  const actions = raw && typeof raw === 'object' ? (raw as { actions?: unknown }).actions : null;
+  return Array.isArray(actions)
+    ? actions.filter((a): a is StoredCiActionEnvironment => !!a && typeof a === 'object' && !Array.isArray(a))
+    : [];
+}
+
 /**
- * Delete environments, their runs and requests keeping their label and losing their environment, in one transaction,
- * so a run stored meanwhile never points at a deleted environment.
+ * Move what names environments `ids` by id to environment `into`, or to none: the project's default environment, its
+ * markers, URL patterns and CI actions, and the run requests. Each keeps its label as written.
  */
-async function deleteEnvironmentRows(db: DrizzleDB, ids: number[]): Promise<void> {
+async function moveReferences(db: DrizzleDB, projectId: number, ids: number[], into: number | null): Promise<void> {
+  await db.update(runRequests).set({ environmentId: into }).where(inArray(runRequests.environmentId, ids));
+  await db.update(markers).set({ environmentId: into }).where(inArray(markers.environmentId, ids));
+  await db
+    .update(projectUrlPatterns)
+    .set({ environmentId: into })
+    .where(inArray(projectUrlPatterns.environmentId, ids));
+  await db
+    .update(projects)
+    .set({ defaultEnvironmentId: into })
+    .where(and(eq(projects.id, projectId), inArray(projects.defaultEnvironmentId, ids)));
+  const [project] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
+  const actions = storedCiActions(project?.ciRerun);
+  if (!actions.some((action) => typeof action.environmentId === 'number' && ids.includes(action.environmentId))) return;
+  const moved = actions.map((action) => {
+    if (typeof action.environmentId !== 'number' || !ids.includes(action.environmentId)) return action;
+    const rest = Object.fromEntries(Object.entries(action).filter(([field]) => field !== 'environmentId'));
+    return into === null ? rest : { ...rest, environmentId: into };
+  });
+  await db
+    .update(projects)
+    .set({ ciRerun: { ...(project!.ciRerun as object), actions: moved } as never })
+    .where(eq(projects.id, projectId));
+}
+
+/**
+ * Delete environments, in one transaction so a run stored meanwhile never points at a deleted one. Their runs keep
+ * their label and lose their environment, to be resolved again; what else names them by id moves to `into`, the
+ * environment that takes them over, else to none.
+ */
+async function deleteEnvironmentRows(
+  db: DrizzleDB,
+  projectId: number,
+  ids: number[],
+  into: number | null = null,
+): Promise<void> {
   if (ids.length === 0) return;
   await db.transaction(async (tx) => {
     await tx.update(testRuns).set({ environmentId: null }).where(inArray(testRuns.environmentId, ids));
-    await tx.update(runRequests).set({ environmentId: null }).where(inArray(runRequests.environmentId, ids));
+    await moveReferences(tx as unknown as DrizzleDB, projectId, ids, into);
     await tx.delete(environments).where(inArray(environments.id, ids));
   });
+}
+
+/**
+ * The settings that name an environment by id, which deleting it would leave without one: its URL patterns, and its
+ * CI actions by name. Its runs, requests and markers keep their label, and the default environment falls back to
+ * every environment, so none of them holds a delete back.
+ */
+export interface EnvironmentReferences {
+  urlPatterns: number;
+  ciActions: string[];
+}
+
+export async function environmentReferences(
+  db: DrizzleDB,
+  projectId: number,
+  environmentId: number,
+): Promise<EnvironmentReferences> {
+  const patterns = await db
+    .select({ id: projectUrlPatterns.id })
+    .from(projectUrlPatterns)
+    .where(and(eq(projectUrlPatterns.projectId, projectId), eq(projectUrlPatterns.environmentId, environmentId)));
+  const [project] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
+  const ciActions = storedCiActions(project?.ciRerun)
+    .filter((action) => action.environmentId === environmentId)
+    .map((action) => (typeof action.name === 'string' ? action.name : ''));
+  return { urlPatterns: patterns.length, ciActions };
+}
+
+/** Why an environment cannot be deleted, in words, or null when nothing holds it back. */
+export function environmentReferencesProblem(name: string, refs: EnvironmentReferences): string | null {
+  const parts: string[] = [];
+  if (refs.urlPatterns > 0) parts.push(refs.urlPatterns === 1 ? '1 URL pattern' : `${refs.urlPatterns} URL patterns`);
+  if (refs.ciActions.length > 0) {
+    const names = refs.ciActions.map((action) => `“${action}”`).join(', ');
+    parts.push(refs.ciActions.length === 1 ? `the CI action ${names}` : `the CI actions ${names}`);
+  }
+  if (parts.length === 0) return null;
+  const list = parts.length === 1 ? parts[0] : `${parts.slice(0, -1).join(', ')} and ${parts.at(-1)}`;
+  return `${name} is used by ${list}. Archive it instead, or move them to another environment first.`;
+}
+
+/** What a CI action names of an environment, as a save of the project's actions takes it. */
+interface CiActionEnvironmentFields {
+  id: string;
+  name: string;
+  environment?: string;
+  environmentId?: number;
+}
+
+export type CiActionEnvironmentsSettle<T> = { ok: true; actions: T[] } | { ok: false; problem: string };
+
+/**
+ * A project's CI actions as a save stores them. An action's `environmentId` must be one of the project's environments,
+ * an archived one only when the action named it before the save (`stored`, the project's `ci_rerun`); its label is the
+ * environment's key, unless the label as written resolves to that environment. An action with a label and no
+ * `environmentId` takes the environment the label resolves to, as a run's does (`resolveRunEnvironment`).
+ */
+export async function settleCiActionEnvironments<T extends CiActionEnvironmentFields>(
+  db: DrizzleDB,
+  projectId: number,
+  actions: readonly T[],
+  stored: unknown,
+): Promise<CiActionEnvironmentsSettle<T>> {
+  if (!actions.some((action) => action.environmentId !== undefined || action.environment)) {
+    return { ok: true, actions: [...actions] };
+  }
+  const rows = await projectEnvironmentRows(db, projectId);
+  const sources = rows.map(matchSourceOf);
+  const before = new Map(storedCiActions(stored).map((action) => [action.id, action.environmentId]));
+  const settled: T[] = [];
+  for (const action of actions) {
+    const label = normalizeEnvironmentLabel(action.environment);
+    if (action.environmentId !== undefined) {
+      const row = rows.find((candidate) => candidate.id === action.environmentId);
+      if (!row) {
+        return {
+          ok: false,
+          problem: `The CI action “${action.name}” names an environment this project does not have.`,
+        };
+      }
+      if (row.archivedAt != null && before.get(action.id) !== row.id) {
+        return { ok: false, problem: `The CI action “${action.name}” names ${row.name}, which is archived.` };
+      }
+      const written = label !== null && resolveEnvironment(label, sources) === row.id ? label : row.key;
+      settled.push({ ...action, environment: written, environmentId: row.id });
+    } else if (label !== null) {
+      const { environmentId } = await resolveRunEnvironment(db, projectId, label);
+      settled.push({ ...action, environment: label, ...(environmentId === null ? {} : { environmentId }) });
+    } else {
+      settled.push(action);
+    }
+  }
+  return { ok: true, actions: settled };
 }
 
 /** Check a project's list as it would be once `fields` are saved as environment `id` (0 for a new one). */
@@ -244,7 +556,8 @@ function absorbedRows(rows: EnvironmentRow[], id: number, fields: EnvironmentFie
 /**
  * Create an environment, declared (never `discovered`), at the end of the list unless a position is given. A
  * discovered environment with the same key becomes it, keeping its runs; the other discovered ones it names are
- * deleted first and their runs resolved again. `settle: false` leaves the runs to a caller that saves several.
+ * deleted once it is saved, handing it what named them, and their runs resolved again. `settle: false` leaves the
+ * runs to a caller that saves several.
  */
 export async function createEnvironment(
   db: DrizzleDB,
@@ -267,10 +580,6 @@ export async function createEnvironment(
   const fold = checked.value.key.toLowerCase();
   const absorbed = absorbedRows(rows, 0, checked.value);
   const sameKey = absorbed.find((row) => row.keyFold === fold);
-  await deleteEnvironmentRows(
-    db,
-    absorbed.filter((row) => row !== sameKey).map((row) => row.id),
-  );
   const position = input.position ?? sameKey?.position ?? rows.reduce((max, row) => Math.max(max, row.position + 1), 0);
   const values = { ...storedFields(checked.value), position, discovered: false, updatedAt: new Date() };
   const [row] = sameKey
@@ -279,6 +588,12 @@ export async function createEnvironment(
         .insert(environments)
         .values({ projectId, ...values })
         .returning();
+  await deleteEnvironmentRows(
+    db,
+    projectId,
+    absorbed.filter((other) => other !== sameKey).map((other) => other.id),
+    row!.id,
+  );
   if (settle) await reresolveProjectRuns(db, projectId);
   return { ok: true, environment: environmentRecordOf(row!) };
 }
@@ -286,7 +601,8 @@ export async function createEnvironment(
 /**
  * Change an environment: the fields given replace its own, it stops being `discovered` unless only its position or
  * archive changed, and a changed key keeps the old one as an alias, so the runs that reported it stay with it. The
- * discovered environments it now names are deleted first, and the project's runs resolved again.
+ * discovered environments it now names are deleted first, handing it what named them, and the project's runs resolved
+ * again.
  */
 export async function updateEnvironment(
   db: DrizzleDB,
@@ -324,7 +640,9 @@ export async function updateEnvironment(
   const saves = Object.keys(patch).some((field) => field !== 'position' && field !== 'archived');
   await deleteEnvironmentRows(
     db,
-    absorbedRows(rows, environmentId, checked.value).map((row) => row.id),
+    projectId,
+    absorbedRows(rows, environmentId, checked.value).map((other) => other.id),
+    environmentId,
   );
   const [row] = await db
     .update(environments)
@@ -341,29 +659,42 @@ export async function updateEnvironment(
   return { ok: true, environment: environmentRecordOf(row!) };
 }
 
-/** Delete an environment: its runs keep their label and lose their environment, until a label creates one again. */
-export async function deleteEnvironment(db: DrizzleDB, projectId: number, environmentId: number): Promise<boolean> {
+export type EnvironmentDelete = { ok: true } | { ok: false; statusCode: 404 | 409; problems: string[] };
+
+/**
+ * Delete an environment: its runs, requests and markers keep their label and lose their environment, until a label
+ * creates one again, and a project whose default it was reads every environment. Refused while a URL pattern or a CI
+ * action names it (`environmentReferences`), which would otherwise apply to every environment: archiving keeps them.
+ */
+export async function deleteEnvironment(
+  db: DrizzleDB,
+  projectId: number,
+  environmentId: number,
+): Promise<EnvironmentDelete> {
   const [row] = await db
-    .select({ id: environments.id })
+    .select({ id: environments.id, name: environments.name })
     .from(environments)
     .where(and(eq(environments.id, environmentId), eq(environments.projectId, projectId)));
-  if (!row) return false;
-  await deleteEnvironmentRows(db, [row.id]);
-  return true;
+  if (!row) return { ok: false, statusCode: 404, problems: ['No environment of this project has this id.'] };
+  const problem = environmentReferencesProblem(row.name, await environmentReferences(db, projectId, row.id));
+  if (problem) return { ok: false, statusCode: 409, problems: [problem] };
+  await deleteEnvironmentRows(db, projectId, [row.id]);
+  return { ok: true };
 }
 
 /**
  * Copy the environments of one project into another: every field but the URL patterns, each copy declared and
  * independent of its source. A protected environment is copied only for someone who manages the source project, since
  * its run variables are theirs to read; the others it holds are listed in `skipped`, as is an environment whose key or
- * one of its exact aliases the target already names.
+ * one of its exact aliases the target already names. A target with no default environment takes the source's
+ * (`carryDefaultEnvironment`), which `defaultEnvironment` names; null when it took none.
  */
 export async function copyEnvironments(
   db: DrizzleDB,
   fromProjectId: number,
   toProjectId: number,
   { canManageSource }: { canManageSource: boolean },
-): Promise<{ copied: EnvironmentRecord[]; skipped: string[] }> {
+): Promise<{ copied: EnvironmentRecord[]; skipped: string[]; defaultEnvironment: DefaultEnvironment | null }> {
   const source = (await projectEnvironmentRows(db, fromProjectId)).filter((row) => !row.discovered);
   const copied: EnvironmentRecord[] = [];
   const skipped: string[] = [];
@@ -393,7 +724,8 @@ export async function copyEnvironments(
     else skipped.push(record.key);
   }
   if (copied.length > 0) await reresolveProjectRuns(db, toProjectId);
-  return { copied, skipped };
+  const defaultEnvironment = await carryDefaultEnvironment(db, fromProjectId, toProjectId);
+  return { copied, skipped, defaultEnvironment };
 }
 
 export type EnvironmentRunSettings =
@@ -460,6 +792,10 @@ export interface RunEnvironmentFacts {
   environmentProtected: boolean;
   environmentArchived: boolean;
   environmentWarnings: string[];
+  /** Whether the environment's application is built from the run's checkout; null for a run with no environment. */
+  environmentAppFromCheckout: boolean | null;
+  /** The application's commit a run of a deployed environment ran against, and where it comes from; null otherwise. */
+  deployedCommit: DeployedCommit | null;
 }
 
 function urlOrigin(url: string): string | null {
@@ -475,7 +811,8 @@ function urlOrigin(url: string): string | null {
  * it is protected or archived, and two warnings. A requested run
  * started for an environment whose label resolved to another one says so ("Started for Staging; the config reported
  * production"). A run whose environment has URL patterns, none of which a Playwright project's `baseURL` matches, says
- * which addresses its tests opened instead, which catches a config that ignores the variable.
+ * which addresses its tests opened instead, which catches a config that ignores the variable. A run of a deployed
+ * environment names the application's commit it ran against (`runDeployedCommit`).
  */
 export async function runEnvironmentFacts(
   db: DrizzleDB,
@@ -486,6 +823,7 @@ export async function runEnvironmentFacts(
     environmentId: number | null;
     origin: string;
     metadata: unknown;
+    startTime: Date;
   },
   own: EnvironmentRow | null,
 ): Promise<RunEnvironmentFacts> {
@@ -504,12 +842,21 @@ export async function runEnvironmentFacts(
   }
   const baseUrls = runBaseUrls(run.metadata);
   if (own && baseUrls.length > 0) {
+    // A pattern of the run's environment: by id, else, for one whose label resolved to none, by its key or an alias.
     const patterns = (
       await db
-        .select({ pattern: projectUrlPatterns.pattern, environment: projectUrlPatterns.environment })
+        .select({
+          pattern: projectUrlPatterns.pattern,
+          environment: projectUrlPatterns.environment,
+          environmentId: projectUrlPatterns.environmentId,
+        })
         .from(projectUrlPatterns)
         .where(eq(projectUrlPatterns.projectId, run.projectId))
-    ).filter((row) => row.environment && environmentMatchesPattern(matchSourceOf(own), row.environment));
+    ).filter((row) =>
+      row.environmentId !== null
+        ? row.environmentId === own.id
+        : !!row.environment && environmentMatchesPattern(matchSourceOf(own), row.environment),
+    );
     if (patterns.length > 0) {
       const outside = baseUrls.filter((url) => {
         const candidates = [url, url.endsWith('/') ? url : `${url}/`];
@@ -526,5 +873,10 @@ export async function runEnvironmentFacts(
     environmentProtected: own?.protected ?? false,
     environmentArchived: own?.archivedAt != null,
     environmentWarnings: warnings,
+    environmentAppFromCheckout: own?.appFromCheckout ?? null,
+    deployedCommit:
+      own && !own.appFromCheckout
+        ? await runDeployedCommit(db, { id: run.id, environmentId: own.id, startTime: run.startTime })
+        : null,
   };
 }

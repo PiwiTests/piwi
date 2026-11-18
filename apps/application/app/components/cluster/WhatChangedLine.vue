@@ -19,8 +19,13 @@
  * the card's list. When the project records coverage and the failing tests
  * recorded none, a help hint says why that can be; a project that records no
  * coverage hears nothing of it, and any other reason adds nothing.
+ *
+ * A cluster first seen in a deployed environment leads with its first failing
+ * deploy, the deploy marker between its last pass and its first failure, or
+ * says that none falls there.
  */
 import { suspectLinesSentence } from '~/utils/suspect-lines';
+import { firstFailingDeploySentence, type FirstFailingDeployFacts } from '#shared/deployed-words';
 
 const {
   clusterId,
@@ -40,7 +45,12 @@ const suspectSentence = computed(() => suspectLinesSentence(suspectLines.value, 
 const props = defineProps<{
   /** Whether the project records coverage (its `coverage` capability is active). */
   coverageActive?: boolean;
+  /** The cluster's first failing deploy, for one first seen in a deployed environment. */
+  firstFailingDeploy?: FirstFailingDeployFacts | null;
 }>();
+const deploySentence = computed(() =>
+  props.firstFailingDeploy ? firstFailingDeploySentence(props.firstFailingDeploy) : null,
+);
 const noCoverage = computed(() => props.coverageActive === true && suspectLines.value?.reason === 'no-coverage');
 
 const emit = defineEmits<{
@@ -83,6 +93,7 @@ const summary = computed(() => {
 
 <template>
   <p data-shot="what-changed" data-tour="what-changed-line" class="flex flex-wrap items-center gap-x-2 gap-y-1">
+    <span v-if="deploySentence" data-testid="first-failing-deploy">{{ deploySentence }}.</span>
     <!-- Resolving: the context has not arrived yet, or is being fetched with no diff yet -->
     <template v-if="!contextLoaded || (contextLoading && !scmChanges)">
       <UIcon name="i-lucide-loader-circle" class="size-3.5 animate-spin shrink-0" />

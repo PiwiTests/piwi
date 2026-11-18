@@ -7,6 +7,7 @@ import {
   type ServerEnvironmentResponse,
   type WireServerEnvironment,
 } from '@piwitests/core/wire';
+import { deployedCommitOf } from '@piwitests/core/deployed-commit';
 import { backendRequest } from '../transport/backend-request.js';
 
 /**
@@ -240,6 +241,7 @@ export function parseServerEnvironment(text: string): ServerEnvironmentResponse 
     globalization: cutField(o.globalization),
     environmentName: cutField(o.environmentName),
     appVersion: cutField(o.appVersion),
+    appCommit: deployedCommitOf(o.appCommit),
     hostname: cutField(o.hostname),
     instance: cutField(o.instance),
     startedAt: cutField(o.startedAt),

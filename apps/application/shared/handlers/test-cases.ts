@@ -66,6 +66,7 @@ import type { RunMetadata } from '../../server/utils/run-json-types';
 
 import type { DrizzleDB } from './db';
 import { clusterIssueFilings, clusterKnownIssues } from './known-issues';
+import { verdictDeployOf } from './deployed-changes';
 
 /**
  * A test case with its header stats, recent executions and clusters. The stats
@@ -621,6 +622,17 @@ export async function getTestRunCase(
     verdictError?.trim() && !testCase?.owner && testCase?.filePath && opts.resolveOwner
       ? await opts.resolveOwner(testCase.filePath)
       : null;
+  // A run of a deployed environment: the since line names the deploy the failure was first seen on.
+  const verdictDeploy =
+    verdictError?.trim() && testRun?.environmentId != null
+      ? await verdictDeployOf(
+          db,
+          { id: testRun.id, environmentId: testRun.environmentId, startTime: testRun.startTime },
+          failureCluster && !failedAttempt
+            ? { id: failureCluster.id, projectId: testRun.projectId, firstSeenRunId: failureCluster.firstSeenRunId }
+            : null,
+        ).catch(() => null)
+      : null;
   const verdict = buildFailureVerdict({
     error: verdictError,
     steps: failedAttempt ? failedAttempt.steps : trc.steps,
@@ -636,6 +648,7 @@ export async function getTestRunCase(
         : null,
     owner: testCase?.owner || (codeOwner ? { name: codeOwner, source: 'codeowners' } : null),
     fromAttempt: failedAttempt ? { retry: failedAttempt.retries ?? 0, executionId: failedAttempt.id } : null,
+    deploy: verdictDeploy,
   });
   // A pass after a failure is one with or without its failed attempt stored:
   // without a failure verdict, the policy reads it from `passedAfterFailure`.

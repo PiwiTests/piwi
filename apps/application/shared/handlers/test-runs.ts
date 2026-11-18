@@ -1,4 +1,5 @@
 import { runPlanId } from '../run-plan';
+import { markerAppliesToRun } from '../marker-environments';
 import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, gte, getTableColumns } from 'drizzle-orm';
 import {
   environments,
@@ -360,8 +361,7 @@ export async function getTestRun(
     .where(and(eq(markers.projectId, testRun.projectId), lt(markers.occurredAt, testRun.startTime)))
     .orderBy(desc(markers.occurredAt))
     .limit(10);
-  const precedingMarker =
-    precedingMarkerCandidates.find((m) => m.environment == null || m.environment === testRun.environment) ?? null;
+  const precedingMarker = precedingMarkerCandidates.find((m) => markerAppliesToRun(m, testRun)) ?? null;
 
   // Distinct endpoints seen by the run — feeds the "Slow endpoints (n)" tab
   // count from the run payload, so the strip never shows a bare label. Uses

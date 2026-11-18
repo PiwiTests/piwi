@@ -271,6 +271,9 @@ export function renderReportHtml(bundle: ReportBundle, opts: RenderReportHtmlOpt
     [L.comparedWith, bundle.comparison?.label ?? L.noComparison],
     [L.projects, bundle.scopeText.projects],
     [L.branchPolicy, bundle.scopeText.branches],
+    ...(bundle.scopeText.environments
+      ? ([[L.environmentPolicy, bundle.scopeText.environments]] as Array<[string, string]>)
+      : []),
     [s.metricLabel('runs', 'Runs'), bundle.scopeText.runs],
     ...(bundle.scopeText.tests ? ([[L.testFilter, bundle.scopeText.tests]] as Array<[string, string]>) : []),
     [

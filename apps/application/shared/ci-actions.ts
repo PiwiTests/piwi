@@ -93,8 +93,10 @@ export interface CiAction {
   target: CiActionTarget;
   inputs: CiActionInput[];
   accepts: CiActionKind[];
-  /** The environment this action runs in; a run in that environment picks it first. */
+  /** The environment this action runs in, as written (its key when picked); a run of that environment picks it first. */
   environment?: string;
+  /** The environment `environment` names, one of the project's (`environments.id`). */
+  environmentId?: number;
 }
 
 export interface CiActionsSettings {
@@ -248,6 +250,7 @@ function resolveAction(input: unknown): CiAction | null {
   const rawId = str(input.id);
   const accepts = CI_ACTION_KINDS.filter((kind) => Array.isArray(input.accepts) && input.accepts.includes(kind));
   const environment = str(input.environment).slice(0, MAX_CI_ENVIRONMENT_LENGTH);
+  const environmentId = input.environmentId;
   return {
     id: ACTION_ID.test(rawId) ? rawId : newCiActionId(),
     name,
@@ -255,6 +258,9 @@ function resolveAction(input: unknown): CiAction | null {
     inputs: resolveInputs(input.inputs, target),
     accepts: accepts.length ? accepts : ['tests'],
     ...(environment ? { environment } : {}),
+    ...(typeof environmentId === 'number' && Number.isSafeInteger(environmentId) && environmentId > 0
+      ? { environmentId }
+      : {}),
   };
 }
 
@@ -587,14 +593,22 @@ const KIND_PHRASE: Record<CiActionKind, string> = {
  * The action a dispatch of `kind` uses. Among the actions that accept the kind
  * and can serve the run (a GitHub, GitLab or Bitbucket action only a run whose
  * repository is on that host; a CI server action always), the one whose
- * environment is the run's, else the default for the kind, else the first.
+ * environment is the run's (`environmentId`), else whose label equals the
+ * run's ignoring case, else the default for the kind, else the first.
  * `actionId` (an id or an exact name) names one instead, which must accept the
  * kind and serve the run too.
  */
 export function pickCiAction(
   settings: CiActionsSettings,
   kind: CiActionKind,
-  run: { provider: ScmProviderName | null; environment?: string | null; actionId?: string | null },
+  run: {
+    provider: ScmProviderName | null;
+    /** The run's label. */
+    environment?: string | null;
+    /** The environment the run's label resolved to. */
+    environmentId?: number | null;
+    actionId?: string | null;
+  },
 ): CiActionPick {
   const requested = run.actionId?.trim();
   if (requested) {
@@ -622,8 +636,10 @@ export function pickCiAction(
         : 'Its run has no supported repository to dispatch to.',
     };
   }
-  const environment = run.environment?.trim();
-  const byEnvironment = environment ? serving.find((a) => a.environment === environment) : undefined;
+  const environment = run.environment?.trim().toLowerCase();
+  const byEnvironment =
+    (run.environmentId != null ? serving.find((a) => a.environmentId === run.environmentId) : undefined) ??
+    (environment ? serving.find((a) => a.environment?.toLowerCase() === environment) : undefined);
   const defaultId = settings.defaults[CI_ACTION_DEFAULT_KEYS[kind]];
   const action = byEnvironment ?? serving.find((a) => a.id === defaultId) ?? serving[0]!;
   return { action, reason: null };

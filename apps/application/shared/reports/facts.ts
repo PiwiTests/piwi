@@ -31,6 +31,7 @@ export function reportFacts(bundle: ReportBundle): string[] {
     }
   }
   facts.push(bundle.scopeText.projects, bundle.scopeText.branches);
+  if (bundle.scopeText.environments) facts.push(bundle.scopeText.environments);
   for (const t of bundle.targets) facts.push(t.text);
   for (const d of bundle.definitions) facts.push(d.label, d.definition);
   facts.push(...bundle.limits);

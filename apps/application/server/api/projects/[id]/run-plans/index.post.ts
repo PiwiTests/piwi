@@ -4,10 +4,10 @@ import { apiError } from '../../../../utils/api-error';
 import { decideRunPlan, PassReuseError, storeRunPlan } from '../../../../utils/pass-reuse';
 import {
   parseCommit,
-  parseFingerprint,
   parseSelectionKey,
   parseSourceDiffs,
   planSummary,
+  requestFingerprint,
   requirePassReuseOn,
 } from '../../../../utils/pass-reuse-route';
 
@@ -16,7 +16,7 @@ defineRouteMeta({
     tags: ['Selections'],
     summary: 'Plan a run that reuses the passes whose code has not changed',
     description:
-      'The second step of `piwi plan`. For each test of the selection, decides whether the run executes it or reuses its newest pass (see `POST /api/projects/{id}/run-plans/sources`): reused when the impact of the change from that pass’s commit to the working tree, sent in `diffs` as `piwi run impact` sends one, does not select the test and does not widen to the whole suite, and no file the pass’s coverage names changed. A test runs when it is quarantined, in an open failure cluster, failed or was retried in its last 20 executions of the last 90 days, is tagged `@no-reuse`, belongs to a spec file holding a serial group, has no pass to reuse, has a name a Playwright test list cannot state exactly, or its pass’s commit has no diff. Stores the plan for 24 hours, so every shard of a CI matrix reads the same answer, and returns its id, the counts and how many tests each reason accounts for. Needs the experimental pass reuse capability.',
+      'The second step of `piwi plan`. For each test of the selection, decides whether the run executes it or reuses its newest pass (see `POST /api/projects/{id}/run-plans/sources`): reused when the impact of the change from that pass’s commit to the working tree, sent in `diffs` as `piwi run impact` sends one, does not select the test and does not widen to the whole suite, and no file the pass’s coverage names changed. The pass is of the run’s `environment`, and for a deployed one against the version of the application it runs now, as that step says. A test runs when it is quarantined, in an open failure cluster, failed or was retried in its last 20 executions of the last 90 days, is tagged `@no-reuse`, belongs to a spec file holding a serial group, has no pass to reuse, has a name a Playwright test list cannot state exactly, its pass’s commit has no diff, or the run targets a deployed environment whose version nothing names. Stores the plan for 24 hours, so every shard of a CI matrix reads the same answer, and returns its id, the counts and how many tests each reason accounts for. Needs the experimental pass reuse capability.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': 'project:read',
     requestBody: {
@@ -27,6 +27,10 @@ defineRouteMeta({
             properties: {
               selection: { type: 'string', description: 'A saved or built-in selection key, or "full"' },
               playwrightVersion: { type: 'string' },
+              environment: {
+                type: 'string',
+                description: 'The environment label the planned run reports (`environment` option or PIWI_ENVIRONMENT)',
+              },
               commit: { type: 'string', description: 'The commit the working tree is at' },
               worktree: {
                 type: 'string',
@@ -74,7 +78,7 @@ export default eventHandler(async (event) => {
       db,
       projectId,
       key,
-      parseFingerprint(body.playwrightVersion),
+      await requestFingerprint(db, projectId, body),
       diffs,
       new Date(),
       worktree,

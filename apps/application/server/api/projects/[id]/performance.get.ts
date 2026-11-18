@@ -18,7 +18,14 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string' },
         description:
-          'Run scope: comma-separated environments; only their runs count. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+          'Run scope: comma-separated environments; only their runs count. Without it, the project’s default environment when it has one, unless `allEnvironments`. Any of `environments`, `allEnvironments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'allEnvironments',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `environments`, count every environment instead of the default environment.',
       },
       {
         name: 'branches',

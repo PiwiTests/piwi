@@ -5,7 +5,7 @@
  * construction, and carried by the page URL so a copied link shows what its
  * sender saw.
  *
- * Run filters (projects, project tags, environments, branch policy, full runs)
+ * Run filters (projects, project tags, environments, environment and branch policies, full runs)
  * are answered from the daily rollups; test filters (a selection, inline
  * predicates, browsers) from the stored executions.
  */
@@ -34,8 +34,14 @@ export interface AnalyticsScope {
   projectIds?: number[];
   /** Only projects carrying any of these project tags (by tag text). */
   projectTags?: string[];
-  /** Restrict to runs reported for any of these deployment environments. */
+  /** Restrict to runs reported for any of these deployment environments. Setting it turns the environment policy off. */
   environments?: string[];
+  /**
+   * The environment policy with no environment picked: every environment when true; else each project's default
+   * environment, a project without one reading every environment, and a run with no environment counting only in
+   * those. Ignored when `environments` is set.
+   */
+  allEnvironments?: boolean;
   /** Restrict to runs reported on any of these SCM branches. Setting it turns the branch policy off. */
   branches?: string[];
   /**
@@ -80,8 +86,9 @@ const PRIORITIES = new Set<string>(['critical', 'high', 'medium', 'low']);
 
 /**
  * The query keys the scope reads: `period`, `days`, `projects`,
- * `environments`, `branches`, `fullRunsOnly`, and the singular `environment`
- * and `branch`. `period` wins over `days` when both are set.
+ * `environments`, `allEnvironments`, `branches`, `allBranches`,
+ * `fullRunsOnly`, and the singular `environment` and `branch`. `period` wins
+ * over `days` when both are set.
  */
 export function parseAnalyticsScope(query: QueryLike): AnalyticsScope {
   const rawDays = Number(pick(query, 'days'));
@@ -98,6 +105,8 @@ export function parseAnalyticsScope(query: QueryLike): AnalyticsScope {
 
   const branches = parseList(pick(query, 'branches') ?? pick(query, 'branch'));
   const allBranches = pick(query, 'allBranches');
+  const environments = parseList(pick(query, 'environments') ?? pick(query, 'environment'));
+  const allEnvironments = pick(query, 'allEnvironments');
 
   const selection = pick(query, 'sel')?.trim();
   const tests = parseTestPredicates(query);
@@ -108,7 +117,8 @@ export function parseAnalyticsScope(query: QueryLike): AnalyticsScope {
     granularity: parseGranularity(pick(query, 'by')) ?? 'auto',
     projectIds: projectIds && projectIds.length > 0 ? projectIds : undefined,
     projectTags: parseList(pick(query, 'projectTags')),
-    environments: parseList(pick(query, 'environments') ?? pick(query, 'environment')),
+    environments,
+    allEnvironments: !environments && (allEnvironments === 'true' || allEnvironments === '1') ? true : undefined,
     branches,
     defaultBranchOnly: !branches && allBranches !== 'true' && allBranches !== '1',
     fullRunsOnly: pick(query, 'fullRunsOnly') !== 'false',
@@ -203,6 +213,7 @@ export function analyticsScopeToQuery(scope: AnalyticsScope): Record<string, str
   if (scope.projectIds && scope.projectIds.length > 0) query.projects = scope.projectIds.join(',');
   if (scope.projectTags && scope.projectTags.length > 0) query.projectTags = scope.projectTags.join(',');
   if (scope.environments && scope.environments.length > 0) query.environments = scope.environments.join(',');
+  else if (scope.allEnvironments) query.allEnvironments = 'true';
   if (scope.branches && scope.branches.length > 0) query.branches = scope.branches.join(',');
   else if (!scope.defaultBranchOnly) query.allBranches = 'true';
   if (!scope.fullRunsOnly) query.fullRunsOnly = 'false';
@@ -232,6 +243,7 @@ export const ANALYTICS_SCOPE_QUERY_KEYS = [
   'projectTags',
   'environments',
   'environment',
+  'allEnvironments',
   'branches',
   'branch',
   'allBranches',

@@ -17,6 +17,7 @@ import { liveWorkerName } from '#shared/live-view';
 import { workerKey, workerNumber } from '#shared/worker-lane';
 import { loadRunsSnapshots } from './environment-snapshots';
 import { comparableSnapshots, disagreeingFields } from '#shared/environment-snapshots';
+import { deployedChanges, type DeployedChanges } from './deployed-changes';
 
 interface TestCaseEntry {
   executionId: number;
@@ -95,6 +96,11 @@ export interface RunInsightsResult {
   /** Tests that passed in the baseline and fail here — the one "new failures" set. */
   newFailures: number;
   commitRange: CommitRange | null;
+  /**
+   * For a run of a deployed environment: the deployed commit of each run, the application's commits between them and
+   * the environment's deploy markers between the two runs. Null for an environment built from the checkout, or none.
+   */
+  deployed: DeployedChanges | null;
   metadataDiff: MetaDiffEntry[];
   /** The runner fields this run's shards disagree on (another time zone, another image), by label. */
   shardDisagreement: string[];
@@ -147,6 +153,7 @@ export async function computeRunInsights(
       startTime: testRuns.startTime,
       branch: testRuns.branch,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -268,6 +275,7 @@ export async function computeRunInsights(
     ...scope,
     newFailures: 0,
     commitRange: null,
+    deployed: null,
     metadataDiff: [],
     shardDisagreement: [],
     totalTests: 0,
@@ -470,6 +478,21 @@ export async function computeRunInsights(
     before: { playwrightVersion: baselineRun.playwrightVersion, snapshots: snapshots.get(baselineRun.id) ?? [] },
     after: { playwrightVersion: run.playwrightVersion, snapshots: currentSnapshots },
   });
+  // A deployed environment's application is not the tests' checkout: its own commits and deploys between the runs.
+  const deployed =
+    run.environmentId != null
+      ? await deployedChanges(
+          db,
+          {
+            id: run.id,
+            projectId: run.projectId,
+            environmentId: run.environmentId,
+            startTime: run.startTime,
+            metadata: run.metadata,
+          },
+          baselineRun,
+        )
+      : null;
 
   // New clusters (firstSeenRunId === runId)
   const clusterRows: any[] = await db
@@ -513,6 +536,7 @@ export async function computeRunInsights(
     ...scope,
     newFailures: newRegressions.length,
     commitRange,
+    deployed,
     metadataDiff,
     shardDisagreement,
     totalTests,

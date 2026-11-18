@@ -186,7 +186,13 @@ describe('a run’s reporter', () => {
 });
 
 describe('the runs lists', () => {
-  const scope: ProjectRunScope = { environments: [], branches: [], allBranches: false, fullRunsOnly: true };
+  const scope: ProjectRunScope = {
+    environments: [],
+    allEnvironments: false,
+    branches: [],
+    allBranches: false,
+    fullRunsOnly: true,
+  };
 
   test('list the viewer’s own runs the partial-run and branch filters leave out, in the scope’s environments', async () => {
     const full = await storeRun({ id: 1, reporterId: AVERY });
@@ -220,7 +226,13 @@ describe('the runs lists', () => {
       ),
     ).toEqual([6]);
     // A scope that reads every run leaves none out.
-    const everything = { environments: [], branches: [], allBranches: true, fullRunsOnly: false };
+    const everything = {
+      environments: [],
+      allEnvironments: true,
+      branches: [],
+      allBranches: true,
+      fullRunsOnly: false,
+    };
     expect((await getProject(db as never, projectId, { scope: everything, viewer: avery })).ownRuns).toBeUndefined();
     // Another person's own runs are theirs alone.
     const jordans = await getProject(db as never, projectId, { scope, viewer: { authEnabled: true, userId: JORDAN } });
@@ -337,7 +349,13 @@ describe('the runs lists', () => {
 });
 
 describe('the runs list’s mark', () => {
-  const scope: ProjectRunScope = { environments: ['ci'], branches: [], allBranches: false, fullRunsOnly: true };
+  const scope: ProjectRunScope = {
+    environments: ['ci'],
+    allEnvironments: false,
+    branches: [],
+    allBranches: false,
+    fullRunsOnly: true,
+  };
   const own = { environment: 'ci', branch: 'main', isFullRun: true, mine: true as const };
 
   test('says why an own run the filters leave out is listed', () => {

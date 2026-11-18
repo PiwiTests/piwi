@@ -76,6 +76,18 @@ describe('runInScope', () => {
     expect(runInScope({ ...scope, defaultBranch: false }, onMain)).toBe(false);
   });
 
+  test('environments name the run’s environment by its key or an alias, ignoring case, else its label', () => {
+    const scope = { ...ANY_RUN_SCOPE, environments: ['Staging'] };
+    const stg = { ...onMain, environment: 'stg', environmentKey: 'staging', environmentAliases: ['stg'] };
+    expect(runInScope(scope, stg)).toBe(true);
+    expect(runInScope({ ...ANY_RUN_SCOPE, environments: ['STG'] }, stg)).toBe(true);
+    expect(runInScope({ ...ANY_RUN_SCOPE, environments: ['production'] }, stg)).toBe(false);
+    // A label no environment takes is matched as written, ignoring case.
+    expect(runInScope({ ...ANY_RUN_SCOPE, environments: ['preview-*'] }, { ...onMain, environment: 'Preview-7' })).toBe(
+      true,
+    );
+  });
+
   test('environments narrow the runs, and a run with no environment matches none', () => {
     const scope = { ...ANY_RUN_SCOPE, environments: ['prod*'] };
     expect(runInScope(scope, { ...onMain, environment: 'production' })).toBe(true);

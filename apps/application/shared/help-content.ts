@@ -62,7 +62,7 @@ export const HELP_TOPICS = {
   },
   'integrations.run-scope': {
     title: 'Runs that write to the ticket',
-    text: 'The runs whose results comment on, move or update a tracked issue: the fix, regression and still-failing notes, the transitions and the description updates.\n\n- **Branches** — names or `*` patterns (`release/*`)\n- **Default branch** — the project default branch, whatever it is named\n- **Environments** — names or `*` patterns\n\nNothing named means every run. A run from an editor, a lab run, a bisect step or a reproduction never writes, nor does a developer run of part of the suite.',
+    text: 'The runs whose results comment on, move or update a tracked issue: the fix, regression and still-failing notes, the transitions and the description updates.\n\n- **Branches** — names or `*` patterns (`release/*`)\n- **Default branch** — the project default branch, whatever it is named\n- **Environments** — the project’s environments, or typed keys and `*` patterns, each matching an environment’s key or an alias, ignoring case\n\nNothing named means every run. A run from an editor, a lab run, a bisect step or a reproduction never writes, nor does a developer run of part of the suite.',
     doc: 'features/issue-automation#the-runs-that-write',
   },
   'integrations.auto-create': {
@@ -374,6 +374,11 @@ export const HELP_TOPICS = {
     text: 'Default branch counts runs on each project’s default branch, so a broken feature branch does not move the trends; a run whose branch is unknown counts only in a project that never reported a branch. All branches counts everything; picking branches by hand overrides both.',
     doc: 'features/analytics#branch-policy',
   },
+  'analytics.environment-policy': {
+    title: 'Environment policy',
+    text: 'Default environment counts runs of each project’s default environment, and every environment of a project that has none; a run with no environment counts only in those. All environments counts everything; picking environments by hand overrides both.',
+    doc: 'features/analytics#environment-policy',
+  },
   'analytics.test-filter': {
     title: 'Test filter',
     text: 'Narrow every number to some tests: a selection (resolved by key in each project), test tags, or browsers. It means the tests that match today, with their whole history, and it counts from stored executions, so it reaches back only as far as retention keeps runs.',
@@ -441,7 +446,7 @@ export const HELP_TOPICS = {
   },
   'project.timeline': {
     title: 'Timeline markers',
-    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are added automatically when the Playwright or reporter version, the runner, a browser or a server under test changes between runs, and when a run is flagged as an environment incident.',
+    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to one of the project’s environments, and a deploy marker can name the commit it deployed; some are added automatically when the Playwright or reporter version, the runner, a browser or a server under test changes between runs, and when a run is flagged as an environment incident.',
     doc: 'features/timeline-markers',
     envVars: ['PIWI_AUTO_MARKERS'],
   },
@@ -474,6 +479,7 @@ export const HELP_TOPICS = {
       '- **Not scoped** — the quarantine list, and the gaps and map of the Coverage tab, which belong to the project whatever the filters.',
       '- **Branch only** — the Code view of the Coverage tab reads the one branch picked; coverage is read per commit, so environments and **Full runs only** do not apply.',
       '- **Branch** — with none picked, the default branch and the runs that report no branch; **All branches** reads every branch.',
+      '- **Environment** — with none picked, the project’s default environment when it has one, never a run with no environment; **All environments** reads every environment.',
     ].join('\n'),
     doc: 'features/ui-overview#project-detail',
   },
@@ -528,7 +534,7 @@ export const HELP_TOPICS = {
     text: [
       'The addresses this project’s application is served at, as patterns over the whole URL: `*` matches within one path segment, `**` across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there.',
       '',
-      '- **Environment** is a label.',
+      '- **Environment** is one of the project’s environments, or none for every one. The run page warns when a run’s `baseURL` is outside every pattern of its environment.',
       '- **Branch** is the one deployed at those addresses, whose tests Tested elements shows.',
       '- **Path prefix** is the part of the path the site serves its pages under and the tests did not (`/app`). Piwi Picker removes it before comparing the page with the pages the tests ran on.',
       '- **Tests’ path prefix** is the reverse: the part of the path the tests ran under and the site does not. Piwi Picker puts it in front.',
@@ -576,6 +582,18 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/environments',
   },
+  'project.default-environment': {
+    title: 'Default environment',
+    text: [
+      'The environment this project’s views read when none is picked, as they read the default branch. Unset, they read every environment.',
+      '',
+      '- **Reads it** — the project page and its tabs, the flaky list, Analytics, quarantine candidates, pull request feedback’s “already flaky on the default branch”, and MCP’s `list_flaky_tests`.',
+      '- **No environment** — a run that reports none counts only under **All environments**.',
+      '- **Every environment** — a quarantined test’s release streak, as its quarantine holds in all of them, and the **Status** filter when it names none.',
+      '- **Archived** — an archived default reads as none until it is unarchived.',
+    ].join('\n'),
+    doc: 'features/environments#default-environment',
+  },
   'project.ci-rerun': {
     title: 'CI actions',
     text: [
@@ -586,7 +604,7 @@ export const HELP_TOPICS = {
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
       '- **Jenkins or a Custom request** — one request to the CI server, recognized by the dispatch id the job passes on as `PIWI_ORIGIN_REF`.',
       '',
-      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The buttons use the default action for what they start, unless a run’s environment names another. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
+      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The buttons use the default action for what they start, unless an action names the run’s environment, one of the project’s. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
@@ -778,6 +796,18 @@ export const HELP_TOPICS = {
     ].join('\n'),
     doc: 'features/run-changes',
     recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
+  },
+  'run.deployedCommit': {
+    title: 'Deployed commit',
+    text: [
+      'The commit of the application a run of a **deployed environment** ran against, which can differ from the commit of the tests. The first source that names one wins:',
+      '',
+      '- **The server** — an instrumented server under test reports its `appCommit`.',
+      '- **A deploy marker** — the latest deploy marker of the environment before the run started that carries a commit, which the deploy pipeline posts.',
+      '',
+      'Suspect lines, the Changes tab and the AI diagnosis read the application’s changes between deployed commits. With neither source, the deployed version is unknown and may differ from the run’s commit.',
+    ].join('\n'),
+    doc: 'features/deployed-environments#the-deployed-commit',
   },
   'run.timeline': {
     title: 'Workers timeline',
@@ -1161,7 +1191,7 @@ export const HELP_TOPICS = {
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
     title: 'Project notifications',
-    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert, and optionally the branches and environments to hear about — `*` matches any characters, as in `release/*`.',
+    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert, and optionally the branches and environments to hear about — `*` matches any characters, as in `release/*`. An environment matches its key or an alias, ignoring case, so `prod*` also covers an environment added later.',
     doc: 'features/notifications#branches-and-environments',
   },
 

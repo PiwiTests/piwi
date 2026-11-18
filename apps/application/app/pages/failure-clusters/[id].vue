@@ -839,6 +839,7 @@ const breadcrumbItems = computed(() => [
             <WhatChangedLine
               ref="whatChangedLine"
               :coverage-active="clusterCapState('coverage') === 'active'"
+              :first-failing-deploy="cluster.firstFailingDeploy"
               @see="scrollToEl(scmEl)"
             />
           </template>

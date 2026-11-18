@@ -38,6 +38,9 @@ const suspect = (failing) => ({
   score: 1,
 });
 
+/** The failing run tested Production, a deployed environment no server or deploy marker named the commit of. */
+const deployed = { environment: 'Production', commit: null };
+
 const summary = (failingWithCoverage) => ({
   changedFiles: 2,
   changedLines: 4,
@@ -54,6 +57,7 @@ export const SUSPECT_SCENE_CLUSTER = {
   answer: {
     available: true,
     range: SUSPECT_SCENE_RANGE,
+    deployed,
     summary: summary(2),
     suspects: [suspect(2)],
     changedPaths,
@@ -64,7 +68,14 @@ export const SUSPECT_SCENE_CLUSTER = {
 /** `GET /api/test-run-cases/496/suspect-lines` in the demo. */
 export const SUSPECT_SCENE_EXECUTION = {
   id: 496,
-  answer: { available: true, range: SUSPECT_SCENE_RANGE, summary: summary(1), suspects: [suspect(1)], changedPaths },
+  answer: {
+    available: true,
+    range: SUSPECT_SCENE_RANGE,
+    deployed,
+    summary: summary(1),
+    suspects: [suspect(1)],
+    changedPaths,
+  },
 };
 
 /**

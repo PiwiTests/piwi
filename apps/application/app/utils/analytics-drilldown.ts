@@ -1,8 +1,9 @@
 /**
  * Drill-down from an analytics number to the list behind it: a project's
  * runs, flaky tests, failure clusters or quarantine, opened with the same
- * scope (the analytics URL keys: period, environments, branches, the branch
- * policy and the run kind), so a number can be checked against its rows.
+ * scope (the analytics URL keys: period, environments, branches, the
+ * environment and branch policies and the run kind), so a number can be
+ * checked against its rows.
  */
 import type { MetricId } from '#shared/analytics/metrics';
 import { encodePeriod, parsePeriod, resolvePeriod, type PeriodMarker } from '#shared/analytics/period';
@@ -18,7 +19,15 @@ const LIST_TABS: Record<DrillList, string> = {
 };
 
 /** The scope keys a drill-down carries; the project lists read these. */
-const CARRIED_KEYS = ['period', 'environments', 'branches', 'allBranches', 'fullRunsOnly', 'tz'] as const;
+const CARRIED_KEYS = [
+  'period',
+  'environments',
+  'allEnvironments',
+  'branches',
+  'allBranches',
+  'fullRunsOnly',
+  'tz',
+] as const;
 
 /** The list behind each metric of the catalog. */
 const METRIC_LISTS: Partial<Record<MetricId, DrillList>> = {
@@ -93,6 +102,8 @@ export function drillDownHref(
 /** What a project list takes from a drill-down address; null when the address came from elsewhere. */
 export interface DrillScope {
   environments: string[];
+  /** With no environment picked: every environment, instead of the project's default environment. */
+  allEnvironments: boolean;
   branches: string[];
   /** The analytics default: each project's default branch, plus runs with no known branch. */
   defaultBranchOnly: boolean;
@@ -113,6 +124,7 @@ const DRILL_QUERY_KEYS = [
   'period',
   'tz',
   'environments',
+  'allEnvironments',
   'branches',
   'allBranches',
   'fullRunsOnly',
@@ -143,8 +155,10 @@ export function parseDrillQuery(
         markers: ctx.markers,
       })
     : null;
+  const environments = list(query.environments);
   return {
-    environments: list(query.environments),
+    environments,
+    allEnvironments: environments.length === 0 && query.allEnvironments === 'true',
     branches,
     defaultBranchOnly: branches.length === 0 && query.allBranches !== 'true',
     fullRunsOnly: query.fullRunsOnly !== 'false',

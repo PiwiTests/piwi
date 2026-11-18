@@ -293,7 +293,13 @@ export interface AnalyticsMarker {
   ownLabel?: string;
   description: string | null;
   category: string;
+  /** The environment's label as written; null for every environment. */
   environment: string | null;
+  /** The environment the label resolves to, and its name. */
+  environmentId: number | null;
+  environmentName: string | null;
+  /** A deploy marker's deployed commit. */
+  commit: string | null;
   source: string;
   runId: number | null;
   createdAt: string | Date;

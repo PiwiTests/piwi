@@ -72,7 +72,7 @@ level under `/admin`. A pattern starts with `http://`, `https://` or a wildcard.
 
 Each project keeps its own list in the **Browser extension** section of its **Settings** tab. A pattern can name:
 
-- an **environment**, a label shown beside the project in Piwi Picker (`staging`, `production`);
+- an [environment](./environments) of the project, shown by name in Piwi Picker;
 - a **branch**, the one deployed at those addresses, whose tests [Tested elements](./tested-elements) shows;
 - a **path prefix**, the part of the path your site serves its pages under and the tests did not: `/app` when the site
   serves `/app/checkout` and the tests ran at `/checkout`. Piwi Picker removes it before comparing the page with the
@@ -84,8 +84,8 @@ Each project keeps its own list in the **Browser extension** section of its **Se
   path; the site's root becomes `/app`. With both set, the one replaces the other (`/app` on the site, `/v2` in the
   tests), and a page outside the path prefix is left as it is.
 
-The editor suggests one pattern per site your suite already visited, grouped by the environment each run was
-reported with (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), from the newest few runs
+The editor suggests one pattern per site your suite already visited, grouped by the environment each run's label
+resolves to (the [reporter](/guide/reporter)'s `environment` option or `PIWI_ENVIRONMENT`), from the newest few runs
 of every environment, so a nightly production suite shows beside a staging one. A run's site
 is its `baseURL`; for a run with none, the full addresses its tests opened with `page.goto` and the pages it loaded
 (its `document` requests), then the [Test Map](./scenario-gaps)'s pages and the absolute pages its locators ran on. A

@@ -1,6 +1,7 @@
 /** The guide anchors of the Projects list (`/projects`) and of a project's pages (`/projects/[id]` and its sub-pages). */
 
 const PROJECT_1 = { project: { id: 1, name: 'e2e-checkout' } };
+const PROJECT_2 = { project: { id: 2, name: 'api-integration' } };
 const PROJECT_3 = { project: { id: 3, name: 'ui-components' } };
 const PROJECT_5 = { project: { id: 5, name: 'web-dashboard' } };
 const USERS_ENDPOINTS = {
@@ -587,6 +588,17 @@ export const PROJECTS_ANCHORS = [
     help: 'project.environments',
     doc: 'features/environments',
     sample: { route: '/projects/1?tab=settings&section=environments', expect: PROJECT_1 },
+  },
+  {
+    id: 'project-default-environment',
+    kind: 'block',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'environments' } }],
+    describes:
+      'The default environment: the one the project page, its tabs, Analytics and quarantine candidates read when no environment is picked.',
+    help: 'project.default-environment',
+    doc: 'features/environments#default-environment',
+    sample: { route: '/projects/2?tab=settings&section=environments', expect: PROJECT_2 },
   },
   {
     id: 'project-settings-capabilities',

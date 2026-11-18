@@ -47,7 +47,8 @@ kept apart from the issue tracker binding, so saving one never changes the other
   turn it off to send. See [Results in Zephyr Scale](/features/test-management).
 - **Where a test’s case key comes from** is its tags, its external ID, or both. A key is a tag or an ID that
   matches the project's test case key pattern, such as `SHOP-T123`, with no `@`.
-- **Runs in scope** picks the branches and environments the binding covers, as the issue tracker binding does.
+- **Runs in scope** picks the branches and [environments](/features/environments) the binding covers, as the issue
+  tracker binding does: an environment by its key, an alias or a `*` pattern, ignoring case.
 - **Result statuses** name the statuses Piwi uses for a pass, a fail, a flaky test and a test not executed, and
   how a flaky or skipped test is reported. The pickers list the statuses and folders of the chosen project; typing a
   name the tool does not list is allowed. A flaky status is needed to report flaky tests as `flaky`.

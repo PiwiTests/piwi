@@ -20,6 +20,7 @@
  * decide here, so every tracker follows the same rules.
  */
 import { matchesNamePattern } from '#shared/notification-events';
+import { runEnvironmentMatches, type RunEnvironmentSelectable } from '#shared/environments';
 import { sha256Hex } from '#shared/utils/hash';
 import { pickOwnerRoute, type OwnerRoute } from './owner-routes';
 
@@ -38,15 +39,18 @@ export interface TrackerRunScope {
   branches: string[];
   /** The project's default branch, whatever it is named. */
   defaultBranch: boolean;
-  /** Environment names or `*` patterns; every environment when empty. */
+  /**
+   * Environment keys, labels or `*` patterns, matched against the run's environment ignoring case
+   * (`runEnvironmentMatches`); every environment when empty.
+   */
   environments: string[];
 }
 
 /** Every run: no branch and no environment named. */
 export const ANY_RUN_SCOPE: TrackerRunScope = { branches: [], defaultBranch: false, environments: [] };
 
-/** The run fields a scope reads. */
-export interface ScopedRun {
+/** The run fields a scope reads: its branch, and its label and the key and aliases of its environment. */
+export interface ScopedRun extends RunEnvironmentSelectable {
   branch: string | null;
   environment: string | null;
   isDefaultBranch: boolean;
@@ -55,8 +59,9 @@ export interface ScopedRun {
 /**
  * Whether a run is in a scope. With no branch named and the default branch
  * off, every branch is in it; otherwise the run's branch is the default
- * branch (when that is on) or matches a pattern. A run that reported no branch
- * (or environment) matches no named one.
+ * branch (when that is on) or matches a pattern. With environments named, the
+ * run's environment is one of them (`runEnvironmentMatches`). A run that
+ * reported no branch (or environment) matches no named one.
  */
 export function runInScope(scope: TrackerRunScope, run: ScopedRun): boolean {
   const anyBranch = scope.branches.length === 0 && !scope.defaultBranch;
@@ -66,7 +71,7 @@ export function runInScope(scope: TrackerRunScope, run: ScopedRun): boolean {
     (run.branch != null && scope.branches.length > 0 && matchesNamePattern(run.branch, scope.branches));
   if (!branchMatches) return false;
   if (scope.environments.length === 0) return true;
-  return run.environment != null && matchesNamePattern(run.environment, scope.environments);
+  return runEnvironmentMatches(run, scope.environments);
 }
 
 /** Trim, drop empties, cap length and count, and dedupe a list of strings. */
