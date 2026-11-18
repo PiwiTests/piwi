@@ -3907,6 +3907,34 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'environment-activity', width: 1280 },
+    { name: 'environment-activity-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Project → Settings → Environments, Staging's last run, incidents and deploys: the deploy markers and the commits its recent runs ran against, at ${width} px`,
+    route: '/projects/1?tab=settings&section=environments',
+    viewport: { width, height: 1000 },
+    of: '[data-shot="environment-activity"]',
+    async run({ page, shoot, settle }) {
+      const row = page.locator('[data-testid="environments-list"] > *').filter({ hasText: 'Staging' }).first();
+      await row.getByTestId('environment-activity-open').click();
+      await page.locator('[data-shot="environment-activity"]').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'run-changes-deployed', width: 1280 },
+    { name: 'run-changes-deployed-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Run Changes tab of a Staging run: the deployed commits of the run and its baseline, the application's commits between them and the deploys in between, at ${width} px`,
+    route: '/test-runs/2?tab=changes',
+    viewport: { width, height: 1200 },
+    of: '[data-shot="run-changes-deployed"]',
+    pad: 12,
+  })),
+  ...[
     { name: 'project-default-environment', width: 1280 },
     { name: 'project-default-environment-mobile', width: 375 },
   ].map(({ name, width }) => ({
@@ -5838,11 +5866,12 @@ const SCENES = [
   },
   {
     name: 'run-changes',
-    description: 'Run Changes tab: one baseline, new failures, fixed, slower/faster and commits since',
+    description:
+      'Run Changes tab: one baseline, new failures, fixed, slower/faster, commits since and the deployed application',
     tags: ['docs'],
     out: 'docs',
     route: '/test-runs/2?tab=changes',
-    viewport: { width: 1280, height: 1560 },
+    viewport: { width: 1280, height: 2060 },
     of: '[data-shot="run-changes"]',
     pad: 12,
   },

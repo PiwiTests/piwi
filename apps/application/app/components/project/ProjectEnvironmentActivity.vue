@@ -50,7 +50,12 @@ const plural = (n: number, noun: string) => `${n} ${noun}${n === 1 ? '' : 's'}`;
     <template #body>
       <LoadingState v-if="loading" text="Reading the environment’s activity…" />
       <ErrorState v-else-if="error" :text="error" />
-      <div v-else-if="activity && environment" class="space-y-5" data-testid="environment-activity">
+      <div
+        v-else-if="activity && environment"
+        class="space-y-5"
+        data-testid="environment-activity"
+        data-shot="environment-activity"
+      >
         <p class="text-sm text-highlighted leading-relaxed">
           <template v-if="activity.appFromCheckout">
             Built from the checkout: each run's application is the run's own commit.

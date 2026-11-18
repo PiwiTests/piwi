@@ -7887,7 +7887,7 @@ const lines = [
   '-- Project environments (referenced by test_runs)',
   insert('environments', PROJECT_ENVIRONMENTS),
   '',
-  '-- Default environments (the environment a project reads when none is picked)',
+  '-- Default environments (the environment a project reads when none is picked), once the environments exist',
   ...DEFAULT_ENVIRONMENTS.map(
     ({ projectId, environmentId }) =>
       `UPDATE projects SET default_environment_id = ${environmentId} WHERE id = ${projectId};`,
