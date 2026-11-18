@@ -221,6 +221,9 @@ describe('PIWI_ENV_VARS registry', () => {
       // which stamps them on the run as `piwiOrigin`; the app reads the stamp.
       'PIWI_ORIGIN',
       'PIWI_ORIGIN_REF',
+      // Set to an environment's key on the runs Piwi starts for it and read by the reporter as the run's label; the app
+      // names it in the environment settings, the copied commands and the run variables routes.
+      'PIWI_ENVIRONMENT',
       // Set by the desktop shell on the Playwright runs it starts and read by the reporter's workers: the desktop
       // server answers the channel's address and where the runs' picks go (`server/utils/desktop-runs.ts`) but reads
       // none of them.
