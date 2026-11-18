@@ -72,6 +72,14 @@ const canFileRunIssue = computed(
 );
 const runIssueOpen = ref(false);
 
+// The environment the page's copied commands and run requests are for: the run's, unless protected or archived.
+const { environmentId: commandEnvironmentId } = useCommandEnvironment(
+  () => props.testRun?.projectId,
+  () => props.testRun?.environmentId,
+);
+/** Why the run may not have tested its environment, one sentence each. */
+const environmentWarnings = computed(() => props.testRun?.environmentWarnings ?? []);
+
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
 
@@ -191,6 +199,7 @@ const {
 } = useRunRetryCommand(
   () => (runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases)),
   () => props.testRun?.projectId,
+  () => commandEnvironmentId.value,
 );
 
 /**
@@ -429,7 +438,11 @@ function onLabelKeydown(e: KeyboardEvent) {
           <span class="hidden sm:inline">Copy retry command</span>
         </UButton>
         <template #content>
-          <RetryCommandOptions :projects="retryProjects" />
+          <RetryCommandOptions
+            v-model:environment-id="commandEnvironmentId"
+            :projects="retryProjects"
+            :project-id="testRun?.projectId"
+          />
         </template>
       </UPopover>
 
@@ -443,6 +456,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :run-title="rerunMain.runTitle"
         :preset-options="rerunMain.options"
         :source-run-id="testRun?.id"
+        :environment-id="testRun?.environmentId ?? null"
         :other-sets="rerunSets.slice(1)"
       />
 
@@ -451,6 +465,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :project-id="testRun.projectId"
         :machine-runs="testRun.machineRuns ?? false"
         :choices="machineChoices"
+        :shown-environment-id="testRun.environmentId ?? null"
       />
 
       <UButton
@@ -522,7 +537,7 @@ function onLabelKeydown(e: KeyboardEvent) {
       </ClientOnly>
       <template v-if="testRun?.environment">
         <span class="text-dimmed">·</span>
-        <EnvironmentBadge :name="testRun.environment" />
+        <EnvironmentBadge :name="testRun.environmentName ?? testRun.environment" :label="testRun.environment" />
       </template>
       <template v-if="(testRun?.reusedCount ?? 0) > 0">
         <span class="text-dimmed">·</span>
@@ -767,6 +782,17 @@ function onLabelKeydown(e: KeyboardEvent) {
 
     <template #below>
       <div class="space-y-3 empty:hidden">
+        <div
+          v-if="environmentWarnings.length"
+          class="flex items-start gap-2 text-sm"
+          data-testid="run-environment-warnings"
+          data-shot="run-environment-warnings"
+        >
+          <UIcon name="i-lucide-triangle-alert" class="size-4 shrink-0 mt-0.5 text-warning" aria-hidden="true" />
+          <ul class="space-y-0.5 text-highlighted leading-relaxed">
+            <li v-for="warning in environmentWarnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
         <RunErrors
           v-if="runErrors.length"
           :errors="runErrors"

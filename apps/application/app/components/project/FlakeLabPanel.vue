@@ -34,7 +34,11 @@ const loading = computed(() => status.value === 'idle' || status.value === 'pend
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
-const flakeRunVariables = useProjectRunVariables(() => props.projectId);
+const { environmentId: flakeEnvironmentId } = useCommandEnvironment(() => props.projectId);
+const flakeRunVariables = useProjectRunVariables(
+  () => props.projectId,
+  () => flakeEnvironmentId.value,
+);
 /** Copies a test's next command once the project's run variables are read, so it starts with them. */
 async function copyCommand(command: string) {
   await flakeRunVariables.ready();
@@ -68,6 +72,9 @@ function stateLine(t: FlakeLabTest): string {
       help="project.flake-lab"
       :count="lab ? lab.tests.length : null"
     >
+      <template #actions>
+        <CommandEnvironmentPicker v-model="flakeEnvironmentId" :project-id="projectId" class="w-48" />
+      </template>
       <LoadingState v-if="loading && !lab" text="Reading the project’s flaky tests…" />
       <EmptyState
         v-else-if="lab && lab.tests.length === 0"

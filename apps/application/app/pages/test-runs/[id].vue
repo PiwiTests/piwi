@@ -1652,6 +1652,7 @@ const moreMenuItems = computed(() => {
               :project-key="testRun?.projectId"
               :project-name="testRun?.project?.name"
               :run-id="Number(runId)"
+              :environment-id="testRun?.environmentId ?? null"
               class="flex-1 min-h-0"
               @quarantine-changed="reloadQuarantine"
               @watch="chooseWorker"

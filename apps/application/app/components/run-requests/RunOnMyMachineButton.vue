@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * **Run on my machine**: asks one of the person's own apps (the desktop app) to run tests of this page. The menu picks
- * what runs, which app, and the run options of Copy retry command; the app shows the request with its checks and the
- * command, and runs nothing before the person clicks **Run** there. Once sent, the same window follows the request
+ * what runs, which app, the environment (the page's choice, `useCommandEnvironment`: the run the page shows starts on
+ * its own) and the run options of Copy retry command; the app shows the request with its checks and the command, and
+ * runs nothing before the person clicks **Run** there. Once sent, the same window follows the request
  * until it ends, with **Stop** while it goes on and **Run again** after; it shows the last request, ended or not, until
  * **New request** or another send.
  */
@@ -21,13 +22,25 @@ const props = withDefaults(
     choices: RunOnMyMachineChoice[];
     /** The Playwright projects the tests ran in. */
     projects?: readonly string[];
+    /** The environment of the run the page shows, which the request starts on unless it is protected or archived. */
+    shownEnvironmentId?: number | null;
   }>(),
-  { machineRuns: undefined, projects: undefined },
+  { machineRuns: undefined, projects: undefined, shownEnvironmentId: null },
 );
 
 const { shown, apps, appsLoaded, loadApps, send } = await useRunOnMyMachine(props.projectId, props.machineRuns);
 const { prefs, project } = useRetryOptions();
 const { request, error: progressError, follow, stop, reset } = useRunRequestProgress();
+const { environmentId, offered: environmentOffered } = useCommandEnvironment(
+  () => props.projectId,
+  () => props.shownEnvironmentId,
+);
+const { byId: environmentById } = useProjectEnvironments(() => props.projectId);
+/** The protected environment picked, whose run keeps to the tests carrying its required tags; null for another pick. */
+const protectedPick = computed(() => {
+  const picked = environmentById(environmentId.value);
+  return picked?.protected ? picked : null;
+});
 const config = useRuntimeConfig();
 
 const open = ref(false);
@@ -37,9 +50,12 @@ const sendError = ref<string | null>(null);
 const skipped = ref(0);
 const choiceIndex = ref(0);
 const targetId = ref<number | undefined>(undefined);
-const lastSent = ref<{ source: RunRequestSourceChoice; options: RunRequestOptions; targetId: number | null } | null>(
-  null,
-);
+const lastSent = ref<{
+  source: RunRequestSourceChoice;
+  options: RunRequestOptions;
+  targetId: number | null;
+  environmentId: number | null;
+} | null>(null);
 
 const choice = computed(() => props.choices[choiceIndex.value] ?? props.choices[0]);
 const choiceProjects = computed(() => choice.value?.projects ?? props.projects ?? []);
@@ -107,12 +123,13 @@ async function sendRequest(again = false) {
   if (!source || sending.value) return;
   const options = body?.options ?? requestOptions();
   const target = body ? body.targetId : (targetId.value ?? null);
+  const environment = body ? body.environmentId : environmentId.value;
   sending.value = true;
   sendError.value = null;
   try {
-    const made = await send(source, options, target);
+    const made = await send(source, options, target, environment);
     skipped.value = made.skipped;
-    lastSent.value = { source, options, targetId: target };
+    lastSent.value = { source, options, targetId: target, environmentId: environment };
     follow(made);
   } catch (error) {
     sendError.value = errorMessage(error);
@@ -195,6 +212,22 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
               No app of yours takes run requests yet. In Piwi Desktop, open <strong>Settings → Desktop app</strong> and
               connect it to <code class="text-xs">{{ instanceAddress }}</code> under <strong>Run on my machine</strong>.
               <DocLink to="features/run-on-my-machine" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
+            </p>
+          </div>
+
+          <div v-if="environmentOffered" class="space-y-1" data-testid="run-on-my-machine-environment">
+            <div class="text-sm font-semibold text-highlighted">Environment</div>
+            <EnvironmentPicker v-model="environmentId" :project-id="projectId" class="w-full sm:w-64" />
+            <p
+              v-if="protectedPick"
+              class="flex items-start gap-1.5 text-xs text-highlighted"
+              data-testid="run-on-my-machine-protected"
+            >
+              <UIcon name="i-lucide-triangle-alert" class="size-3.5 shrink-0 mt-px text-warning" aria-hidden="true" />
+              <span
+                >{{ protectedPick.name }} is protected: the run keeps to the tests tagged
+                {{ protectedPick.requiredTags.join(', ') }}, and your app asks you to confirm it.</span
+              >
             </p>
           </div>
 

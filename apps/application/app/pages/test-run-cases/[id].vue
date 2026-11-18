@@ -467,7 +467,18 @@ const retryCases = computed(() => [
 ]);
 // This one test by its file and line, with the run options the browser remembers from the run page.
 const { optionsFor: retryOptionsFor } = useRetryOptions();
-const retryRunVariables = useProjectRunVariables(() => testCase.value?.testRun?.project?.id);
+// The environment the commands and run requests are for: the run's, unless protected or archived.
+const { environmentId: commandEnvironmentId, offered: commandEnvironmentOffered } = useCommandEnvironment(
+  () => testCase.value?.testRun?.project?.id,
+  () => testCase.value?.testRun?.environmentId,
+);
+const { active: commandEnvironments, byId: commandEnvironmentById } = useProjectEnvironments(
+  () => testCase.value?.testRun?.project?.id,
+);
+const retryRunVariables = useProjectRunVariables(
+  () => testCase.value?.testRun?.project?.id,
+  () => commandEnvironmentId.value,
+);
 const retryCommand = computed(() =>
   retryRunVariables.command(buildRetryCommand(retryCases.value, { mode: 'file-line', options: retryOptionsFor() })),
 );
@@ -587,6 +598,31 @@ function onIssueCreated() {
 // ── Navbar More menu ────────────────────────────────────────────────────────
 // Grouped as on the cluster page: the ticket, the test actions, the copies, then
 // Refresh.
+/** The environment the retry command is for, as a submenu of the environments a person may pick, None first. */
+function commandEnvironmentItem(): DropdownMenuItem {
+  const picked = commandEnvironmentById(commandEnvironmentId.value);
+  const mayRunProtected = can('project:manage', executionProjectId.value);
+  return {
+    label: `Environment: ${picked?.name ?? 'none'}`,
+    icon: 'i-lucide-server',
+    children: [
+      {
+        label: 'None (the config decides)',
+        type: 'checkbox',
+        checked: commandEnvironmentId.value == null,
+        onUpdateChecked: () => (commandEnvironmentId.value = null),
+      },
+      ...commandEnvironments.value.map((environment): DropdownMenuItem => ({
+        label: environment.name,
+        type: 'checkbox',
+        checked: commandEnvironmentId.value === environment.id,
+        disabled: environment.protected && !mayRunProtected,
+        onUpdateChecked: () => (commandEnvironmentId.value = environment.id),
+      })),
+    ],
+  };
+}
+
 const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
   // The cluster's ticket: open it, or file or link one. The links of the
   // execution, its test and its run are edited in the facts line's Details.
@@ -656,6 +692,7 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
         copyRetry(retryCommand.value, { toast: 'Retry command copied' });
       },
     });
+    if (commandEnvironmentOffered.value) copies.push(commandEnvironmentItem());
   }
 
   const refreshItem: DropdownMenuItem = { label: 'Refresh', icon: 'i-lucide-refresh-cw', onSelect: () => refresh() };
@@ -823,12 +860,14 @@ const { handle: handleNextStepAction } = useNextStepActions({
               label="Re-run this test"
               :run-title="testLabel(testCase)"
               :source-run-id="testCase?.testRun?.id"
+              :environment-id="testCase?.testRun?.environmentId ?? null"
             />
             <RunOnMyMachineButton
               v-if="testCase?.testRun?.project?.id"
               class="mr-2"
               :project-id="testCase.testRun.project.id"
               :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.id } }]"
+              :shown-environment-id="testCase.testRun.environmentId ?? null"
             />
             <NuxtLink
               v-if="testCase?.testCaseId"

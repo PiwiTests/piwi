@@ -612,7 +612,14 @@ export interface TestRunDetails {
   runErrors?: WireRunError[] | null;
   /** Where the run executed: each shard's runner, each project's browser, each server under test. */
   environments?: RunEnvironments;
+  /** The label the run reported (the reporter's `environment` option or `PIWI_ENVIRONMENT`), as it came. */
   environment?: string | null;
+  /** The project's environment the label resolves to, by key or alias; null for none. */
+  environmentId?: number | null;
+  /** That environment's name; null for none. */
+  environmentName?: string | null;
+  /** Why the run may not have tested its environment: another label than the one it was started for, a `baseURL` outside its URL patterns. */
+  environmentWarnings?: string[];
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
@@ -1595,6 +1602,8 @@ export interface TestCaseHistoryPoint {
   repeatEachIndex?: number | null;
   startTime: string | Date;
   runStatus: string;
+  /** The project's environment the run's label resolves to; null for none. */
+  environmentId?: number | null;
 }
 
 /**

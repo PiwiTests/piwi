@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { EnvironmentFilterItem } from '~/utils/environment-filter';
+
 /**
  * The scope controls shared by every list on a screen: an environment select, a
  * branch select and a *Full runs only* toggle. One instance drives the runs
@@ -7,8 +9,10 @@
  * value and persists it (the project page keeps one cookie per project).
  *
  * Environments and branches are multi-select so a run matches when it is in any
- * of the chosen values. With `branchPolicy`, a branch select with nothing picked
- * sits beside the policy for that case: the default branch, or every branch.
+ * of the chosen values. An environment choice is a value or a `{ label, value }`
+ * (a project's environment, stored by its key and shown by its name). With
+ * `branchPolicy`, a branch select with nothing picked sits beside the policy for
+ * that case: the default branch, or every branch.
  * A control renders only when the data offers more than nothing to pick from.
  *
  * Slots: `leading` before the environment select, `after-branches` right after
@@ -25,7 +29,7 @@ export interface FilterBarState {
 const props = withDefaults(
   defineProps<{
     modelValue: FilterBarState;
-    availableEnvironments: string[];
+    availableEnvironments: Array<string | EnvironmentFilterItem>;
     availableBranches: string[];
     /** Hide the built-in reset button when the caller supplies its own via #trailing. */
     showReset?: boolean;
@@ -42,6 +46,15 @@ const props = withDefaults(
 const emit = defineEmits<{
   'update:modelValue': [value: FilterBarState];
 }>();
+
+const environmentItems = computed<EnvironmentFilterItem[]>(() =>
+  props.availableEnvironments.map((item) => (typeof item === 'string' ? { label: item, value: item } : item)),
+);
+
+/** The words an environment value shows: its item's label, else the value. */
+function environmentLabel(value: string): string {
+  return environmentItems.value.find((item) => item.value === value)?.label ?? value;
+}
 
 const environments = computed({
   get: () => props.modelValue.environments,
@@ -91,9 +104,11 @@ function reset() {
     <slot name="leading" />
 
     <USelectMenu
-      v-if="availableEnvironments.length > 0"
+      v-if="environmentItems.length > 0"
       v-model="environments"
-      :items="availableEnvironments"
+      :items="environmentItems"
+      value-key="value"
+      label-key="label"
       multiple
       placeholder="All environments"
       size="sm"
@@ -107,7 +122,9 @@ function reset() {
             :class="(selected as string[]).length ? 'text-primary' : 'text-gray-400'"
           />
           <span v-if="!(selected as string[]).length" class="text-gray-500">All environments</span>
-          <span v-else-if="(selected as string[]).length === 1">{{ (selected as string[])[0] }}</span>
+          <span v-else-if="(selected as string[]).length === 1">{{
+            environmentLabel((selected as string[])[0]!)
+          }}</span>
           <span v-else>{{ (selected as string[]).length }} environments</span>
         </div>
       </template>

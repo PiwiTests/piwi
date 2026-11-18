@@ -2,9 +2,11 @@
 import { RETRY_OPTION_LIMITS, type RetryMode, type RetryTraceMode } from '~/utils/retry-command';
 
 /**
- * The choices of a Copy retry command: how the tests are named, and the run
- * options. Every Copy retry command of the page reads them, and the browser
- * remembers all but the Playwright project.
+ * The choices of a Copy retry command: how the tests are named, the run
+ * options, and, given the Piwi project, the environment the command is for.
+ * Every Copy retry command of the page reads them, and the browser remembers
+ * all but the Playwright project and the environment, which the page keeps
+ * (`useCommandEnvironment`).
  */
 const props = withDefaults(
   defineProps<{
@@ -12,11 +14,17 @@ const props = withDefaults(
     projects?: readonly string[];
     /** Whether the menu offers how the tests are named: a run request names them itself. */
     naming?: boolean;
+    /** The Piwi project whose environments the menu offers, bound to `environmentId`; none offers no environment. */
+    projectId?: number | string | null;
   }>(),
-  { projects: () => [], naming: true },
+  { projects: () => [], naming: true, projectId: null },
 );
 
+const environmentId = defineModel<number | null>('environmentId', { default: null });
+
 const { prefs, project, mode, update } = useRetryOptions();
+const { active: environments } = useProjectEnvironments(() => props.projectId);
+const environmentOffered = computed(() => environments.value.length > 0);
 
 const MODE_ITEMS: { value: RetryMode; label: string }[] = [
   { value: 'file-line', label: 'File:line' },
@@ -102,6 +110,10 @@ const projectChoice = computed({
         />
         <span>Workers</span>
         <USelect v-model="workers" :items="WORKER_ITEMS" size="xs" class="w-full max-w-36" aria-label="Workers" />
+        <template v-if="projectId != null && environmentOffered">
+          <span>Environment</span>
+          <CommandEnvironmentPicker v-model="environmentId" :project-id="projectId" class="w-full max-w-36 min-w-0" />
+        </template>
         <template v-if="(projects?.length ?? 0) > 1">
           <span>Project</span>
           <USelect

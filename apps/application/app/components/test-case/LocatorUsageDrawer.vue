@@ -135,7 +135,11 @@ const testIds = computed(() => {
 // ── Run these tests ─────────────────────────────────────────────────────
 const command = ref<string | null>(null);
 const commandPending = ref(false);
-const { command: withVariables, shell: commandShell } = useProjectRunVariables(() => props.projectId);
+const { environmentId: commandEnvironmentId } = useCommandEnvironment(() => props.projectId);
+const { command: withVariables, shell: commandShell } = useProjectRunVariables(
+  () => props.projectId,
+  () => commandEnvironmentId.value,
+);
 const toast = useToast();
 
 async function buildCommand() {
@@ -254,7 +258,10 @@ async function buildCommand() {
               Run these {{ result.testCount }} {{ result.testCount === 1 ? 'test' : 'tests' }}
             </UButton>
             <template v-else>
-              <p class="text-xs font-medium text-muted">Run them</p>
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="text-xs font-medium text-muted">Run them</p>
+                <CommandEnvironmentPicker v-model="commandEnvironmentId" :project-id="projectId" class="w-48" />
+              </div>
               <CodeBlock :code="withVariables(command)" :lang="commandShell" />
             </template>
           </div>

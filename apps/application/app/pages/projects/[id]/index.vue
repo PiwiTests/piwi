@@ -170,11 +170,33 @@ function runBranch(run: { branch?: string | null; metadata?: { scm?: { branch?: 
 /** The newest runs of any scope: what the filters offer, and the runs they hide. */
 const recentRuns = computed<ScopedRun[]>(() => project.value?.unscopedRuns ?? project.value?.testRuns ?? []);
 
+// The project's environments: the filter offers them by key, shown by name, with the labels of recent runs none takes.
+const { environments: projectEnvironments, forLabel: environmentForLabel } = useProjectEnvironments(projectId);
+
+/** The labels the project's recent runs reported, which the notification and marker forms offer. */
 const availableEnvironments = computed(() => {
   const envs = new Set<string>();
   for (const run of recentRuns.value) if (run.environment) envs.add(run.environment);
   return [...envs].sort();
 });
+
+const environmentFilterChoices = computed(() =>
+  environmentFilterItems({
+    environments: projectEnvironments.value,
+    labels: recentRuns.value.map((run) => run.environment),
+    selected: filters.value.environments,
+  }),
+);
+
+/** The key of the environment a run's label resolves to, which the filter matches like the label. */
+function environmentKeyOf(run: { environment?: string | null }): string | null {
+  return environmentForLabel(run.environment)?.key ?? null;
+}
+
+/** A run's environment as the runs list shows it: its environment's name, else its label. */
+function environmentNameOf(run: { environment?: string | null }): string | null {
+  return environmentForLabel(run.environment)?.name ?? run.environment ?? null;
+}
 
 const availableBranches = computed(() => {
   const branches = new Set<string>();
@@ -187,7 +209,12 @@ const availableBranches = computed(() => {
 
 function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boolean {
   return runInProjectScope(
-    { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun },
+    {
+      environment: run.environment,
+      environmentKey: environmentKeyOf(run),
+      branch: runBranch(run),
+      isFullRun: run.isFullRun,
+    },
     scope,
     defaultBranch.value,
   );
@@ -195,7 +222,13 @@ function inScope(run: ScopedRun, scope: ProjectRunScope = runScope.value): boole
 
 /** A run as the own-run rule reads it, its branch read as the filters read it. */
 function listedRun(run: ScopedRun) {
-  return { environment: run.environment, branch: runBranch(run), isFullRun: run.isFullRun, mine: run.mine };
+  return {
+    environment: run.environment,
+    environmentKey: environmentKeyOf(run),
+    branch: runBranch(run),
+    isFullRun: run.isFullRun,
+    mine: run.mine,
+  };
 }
 
 /** Whether the runs list shows a run: in the scope, or the viewer's own in its environments. */
@@ -310,7 +343,8 @@ const filtersSummary = computed(() => {
     hidden.push(hiddenRunsPhrase(hiddenRuns.value.otherBranches, 'other-branches'));
   if (hiddenRuns.value.partial > 0) hidden.push(hiddenRunsPhrase(hiddenRuns.value.partial, 'partial'));
   return filterBarSummary(filters.value, {
-    environments: availableEnvironments.value.length > 0,
+    environments: environmentFilterChoices.value.length > 0,
+    environmentLabel: (value) => environmentFilterLabel(value, projectEnvironments.value),
     branches: availableBranches.value.length > 0,
     // As the bar: the policy reads only once a run is off the default branch.
     branchPolicy: availableBranches.value.some((branch) => branch !== defaultBranch.value),
@@ -1003,7 +1037,7 @@ const moreMenuItems = computed(() => {
         >
           <FilterBar
             v-model="filters"
-            :available-environments="availableEnvironments"
+            :available-environments="environmentFilterChoices"
             :available-branches="availableBranches"
             branch-policy
             :default-branch="defaultBranch"
@@ -1229,7 +1263,12 @@ const moreMenuItems = computed(() => {
                   />
                 </template>
                 <template #environment-cell="{ row }">
-                  <EnvironmentBadge v-if="row.original.environment" :name="row.original.environment" class="text-xs" />
+                  <EnvironmentBadge
+                    v-if="row.original.environment"
+                    :name="environmentNameOf(row.original)"
+                    :label="row.original.environment"
+                    class="text-xs"
+                  />
                 </template>
                 <template #metadata-cell="{ row }">
                   <div
@@ -1291,6 +1330,7 @@ const moreMenuItems = computed(() => {
               :selected-run-ids="selectedRunIds"
               :menu-items="runMenuItems"
               :own-mark="ownMark"
+              :environment-name="environmentNameOf"
               @toggle="toggleRunSelection"
             />
 

@@ -134,6 +134,8 @@ export interface ReproduceDesktopContext {
   browserName: string | null;
   /** The failing commit to check out for a reproduction. */
   commit: string | null;
+  /** The environment of the failing run, which a reproduction starts on unless it is protected; null for none. */
+  environmentId?: number | null;
   /** The bisect window's `good` end (last green commit), when known. */
   good: string | null;
   /** The bisect window's `bad` end (failing commit), when known. */

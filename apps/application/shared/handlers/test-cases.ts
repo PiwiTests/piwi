@@ -219,6 +219,7 @@ export async function getTestCaseHistory(db: DrizzleDB, testCaseId: number) {
       repeatEachIndex: testRunsCases.repeatEachIndex,
       startTime: testRuns.startTime,
       runStatus: testRuns.status,
+      environmentId: testRuns.environmentId,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))

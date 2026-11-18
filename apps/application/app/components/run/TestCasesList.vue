@@ -66,6 +66,8 @@ const props = defineProps<{
   projectName?: string | null;
   /** The run the rows belong to: a desktop re-run of a selection is compared with it. */
   runId?: number | null;
+  /** The environment of that run, which a copied command of the selection starts on unless protected or archived. */
+  environmentId?: number | null;
 }>();
 
 const emit = defineEmits<{ 'quarantine-changed': []; watch: [worker: LiveWorkerState, testCase: TestCaseResult] }>();
@@ -675,7 +677,14 @@ const selectedTestsLabel = computed(
 const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 /** The Playwright projects the selected tests ran in, the ones the command can name. */
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
-const selectionRunVariables = useProjectRunVariables(() => props.projectKey);
+const { environmentId: selectionEnvironmentId } = useCommandEnvironment(
+  () => props.projectKey,
+  () => props.environmentId,
+);
+const selectionRunVariables = useProjectRunVariables(
+  () => props.projectKey,
+  () => selectionEnvironmentId.value,
+);
 const selectionCommand = computed(() =>
   selectionRunVariables.command(
     buildRetryCommand(selectedRetryCases.value, {
@@ -904,6 +913,7 @@ defineExpose({ scrollToCase });
           :label="`Re-run ${selectedTestsLabel}`"
           :run-title="`${selectedTestsLabel} of run #${runId}`"
           :source-run-id="runId"
+          :environment-id="environmentId"
         />
         <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">
           <UButton
@@ -917,7 +927,11 @@ defineExpose({ scrollToCase });
             Copy retry command
           </UButton>
           <template #content>
-            <RetryCommandOptions :projects="selectedProjects" />
+            <RetryCommandOptions
+              v-model:environment-id="selectionEnvironmentId"
+              :projects="selectedProjects"
+              :project-id="projectKey"
+            />
           </template>
         </UPopover>
         <CoverageLossPopover

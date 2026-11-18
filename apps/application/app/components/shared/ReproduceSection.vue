@@ -11,9 +11,12 @@
  * the bisect for real against the linked folder, in a throwaway worktree that
  * never touches the user's checkout. The webview asks the shell to act; it never
  * passes a command to run, so the shell's stored settings stay the only source
- * of truth.
+ * of truth. Each of the two names the environment it runs for (`DesktopEnvironmentField`): the failing run's for a
+ * reproduction, unless protected, and one built from the checkout for a bisect; a protected one waits for the person
+ * to confirm it.
  */
 import { reproScript, type ReproRecipe, type BisectResult, type ReproduceDesktopContext } from '#shared/reproduce';
+import { environmentReady, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
 import { buildReproduceArgs, canBisect } from '~/utils/local-run-args';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
@@ -87,9 +90,15 @@ async function linkFolder() {
   if (await chooseProjectFolder({ projectId: id, projectLabel: props.projectLabel, specs })) await refreshLink();
 }
 
+// The environment each runs for, and whether the person confirmed a protected one for the next run.
+const reproduceEnvironment = ref<DesktopEnvironmentChoice | null>(null);
+const reproduceConfirmed = ref(false);
+const bisectEnvironment = ref<DesktopEnvironmentChoice | null>(null);
+const bisectConfirmed = ref(false);
+
 function reproduceHere() {
   const ctx = props.context;
-  if (!ctx || !commit.value) return;
+  if (!ctx || !commit.value || !environmentReady(reproduceEnvironment.value, reproduceConfirmed.value)) return;
   store.startReproduce({
     projectId: ctx.projectId,
     projectLabel: props.projectLabel,
@@ -97,12 +106,14 @@ function reproduceHere() {
     commit: commit.value,
     browserName: ctx.browserName,
     clusterId: ctx.clusterId,
+    environment: reproduceEnvironment.value,
   });
+  reproduceConfirmed.value = false;
 }
 
 function bisectHere() {
   const ctx = props.context;
-  if (!ctx || !ctx.good || !ctx.bad) return;
+  if (!ctx || !ctx.good || !ctx.bad || !environmentReady(bisectEnvironment.value, bisectConfirmed.value)) return;
   store.startBisect({
     projectId: ctx.projectId,
     projectLabel: props.projectLabel,
@@ -112,7 +123,9 @@ function bisectHere() {
     browserName: ctx.browserName,
     target: { clusterId: ctx.clusterId, repositoryUrl: ctx.repositoryUrl },
     flakeTestCaseId: ctx.flakeArm?.testCaseId ?? null,
+    environment: bisectEnvironment.value,
   });
+  bisectConfirmed.value = false;
 }
 
 // ── The bisected commit: the live result of a bisect of this cluster just run,
@@ -180,6 +193,15 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
 
       <!-- Desktop: run the recipe for real, in a throwaway worktree. -->
       <ClientOnly>
+        <DesktopEnvironmentField
+          v-if="desktop && canReproduceHere"
+          v-model="reproduceEnvironment"
+          v-model:confirmed="reproduceConfirmed"
+          :project-id="context?.projectId"
+          purpose="reproduce"
+          :run-environment-id="context?.environmentId ?? null"
+          class="pt-0.5"
+        />
         <div v-if="desktop" class="flex flex-wrap items-center gap-2 pt-0.5">
           <UButton
             v-if="canReproduceHere"
@@ -187,6 +209,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             color="primary"
             variant="solid"
             icon="i-lucide-monitor"
+            :disabled="!environmentReady(reproduceEnvironment, reproduceConfirmed)"
             @click="reproduceHere"
           >
             Reproduce here
@@ -218,12 +241,19 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         <p class="text-xs text-muted">{{ bisect.explanation }}</p>
         <ClientOnly>
           <div v-if="desktop && canBisectHere" class="pt-0.5 space-y-1">
+            <DesktopEnvironmentField
+              v-model="bisectEnvironment"
+              v-model:confirmed="bisectConfirmed"
+              :project-id="context?.projectId"
+              purpose="bisect"
+            />
             <UButton
               size="xs"
               color="primary"
               variant="soft"
               icon="i-lucide-git-branch"
               data-testid="bisect-here"
+              :disabled="!environmentReady(bisectEnvironment, bisectConfirmed)"
               @click="bisectHere"
             >
               Find the breaking commit here
