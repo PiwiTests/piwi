@@ -151,20 +151,20 @@ export interface RunEnvironmentSelectable {
 
 /**
  * Whether a run is in a setting's environments (`selectors`: keys, labels and `*` patterns). A selector names the run
- * when it equals, or `*`-matches, the key or an exact alias of the run's environment, ignoring case
- * (`environmentMatchesPattern`); for a run whose label resolved to no environment, when it equals or matches the label,
- * ignoring case. A run with no label is in none.
+ * when it equals, or `*`-matches, the key or an exact alias of the run's environment, or the label the run reported,
+ * ignoring case (`environmentMatchesPattern`), as the SQL filters read a run (`environmentScopeSql`): `prod-*` keeps
+ * the runs labelled `prod-eu` once an alias `prod-*` gives them an environment of another key. A run with no label is
+ * in none.
  */
 export function runEnvironmentMatches(run: RunEnvironmentSelectable, selectors: readonly string[]): boolean {
-  if (run.environmentKey) {
-    const environment = { key: run.environmentKey, aliases: run.environmentAliases ?? [] };
-    return selectors.some((selector) => environmentMatchesPattern(environment, selector));
-  }
   const label = run.environment?.trim();
   if (!label) return false;
-  return selectors.some((selector) =>
-    selector.includes('*')
-      ? globMatcher(selector, { ignoreCase: true })(label)
-      : selector.toLowerCase() === label.toLowerCase(),
+  const environment = run.environmentKey ? { key: run.environmentKey, aliases: run.environmentAliases ?? [] } : null;
+  return selectors.some(
+    (selector) =>
+      (environment !== null && environmentMatchesPattern(environment, selector)) ||
+      (selector.includes('*')
+        ? globMatcher(selector, { ignoreCase: true })(label)
+        : selector.toLowerCase() === label.toLowerCase()),
   );
 }

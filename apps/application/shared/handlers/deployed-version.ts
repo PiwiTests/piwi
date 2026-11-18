@@ -1,13 +1,19 @@
-import { and, desc, eq, inArray, lte } from 'drizzle-orm';
+import { and, desc, eq, lte } from 'drizzle-orm';
 import { environments, markers, testRuns } from '../../server/database/schema';
+import { eligibleRunSql } from '../run-eligibility';
 import { loadRunsSnapshots } from './environment-snapshots';
-import { runsDeployedCommits, type DeployedCommitRun } from './deployed-commit';
+import {
+  deployedEnvironmentIds,
+  runsDeployedCommits,
+  runsLatestDeploys,
+  type DeployedCommitRun,
+} from './deployed-commit';
 import type { DrizzleDB } from './db';
 
 /**
  * The version of the application a run of a deployed environment ran against, as pass reuse compares it: a key naming
- * its deployed commit (`runsDeployedCommits`: the commit its servers reported, else the commit of the environment's
- * latest deploy marker before it started), else the application versions its servers reported, server by server. Two
+ * its deployed commit (`runsDeployedCommits`), else the application versions its servers reported, server by server,
+ * with the latest deploy marker before the run, so a deploy that names no commit still tells two versions apart. Two
  * runs ran the same application when their keys are equal. A run whose servers and deploy markers name neither has
  * none, and so has a run of an environment built from the checkout, whose application is the run's own commit.
  */
@@ -41,18 +47,9 @@ export async function runsDeployedVersions(
     else if (run.environmentId !== null) left.push(run);
   }
   if (left.length === 0) return out;
-  const deployedEnvironments = new Set(
-    (
-      await db
-        .select({ id: environments.id })
-        .from(environments)
-        .where(
-          and(
-            inArray(environments.id, [...new Set(left.map((run) => run.environmentId!))]),
-            eq(environments.appFromCheckout, false),
-          ),
-        )
-    ).map((row) => row.id),
+  const deployedEnvironments = await deployedEnvironmentIds(
+    db,
+    left.map((run) => run.environmentId!),
   );
   const versioned = left.filter((run) => deployedEnvironments.has(run.environmentId!));
   if (versioned.length === 0) return out;
@@ -61,14 +58,19 @@ export async function runsDeployedVersions(
     versioned.map((run) => run.id),
     ['server'],
   );
-  for (const run of versioned) out.set(run.id, appVersionsKey(snapshots.get(run.id) ?? []));
+  const deploys = await runsLatestDeploys(db, versioned);
+  for (const run of versioned) {
+    const versions = appVersionsKey(snapshots.get(run.id) ?? []);
+    const deploy = deploys.get(run.id);
+    out.set(run.id, versions && deploy ? `${versions} after deploy ${deploy.id}` : versions);
+  }
   return out;
 }
 
 /**
  * The version of the application a deployed environment runs at `now`, by the latest evidence: a deploy marker recorded
- * after the environment's latest run names it by its commit (none, when it carries no commit), else that run's
- * deployed version. Null when nothing says, and for an environment built from the checkout.
+ * after the environment's latest run a pass may come from names it by its commit (none, when it carries no commit),
+ * else that run's deployed version. Null when nothing says, and for an environment built from the checkout.
  */
 export async function environmentDeployedVersion(
   db: DrizzleDB,
@@ -76,14 +78,21 @@ export async function environmentDeployedVersion(
   now: Date,
 ): Promise<DeployedVersion | null> {
   const [environment] = await db
-    .select({ appFromCheckout: environments.appFromCheckout })
+    .select({ projectId: environments.projectId, appFromCheckout: environments.appFromCheckout })
     .from(environments)
     .where(eq(environments.id, environmentId));
   if (!environment || environment.appFromCheckout) return null;
   const [latestRun] = await db
     .select({ id: testRuns.id, startTime: testRuns.startTime })
     .from(testRuns)
-    .where(and(eq(testRuns.environmentId, environmentId), lte(testRuns.startTime, now)))
+    .where(
+      and(
+        eq(testRuns.projectId, environment.projectId),
+        eq(testRuns.environmentId, environmentId),
+        lte(testRuns.startTime, now),
+        eligibleRunSql('pass-reuse'),
+      ),
+    )
     .orderBy(desc(testRuns.startTime), desc(testRuns.id))
     .limit(1);
   const [latestDeploy] = await db

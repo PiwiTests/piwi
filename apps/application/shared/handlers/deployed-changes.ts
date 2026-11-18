@@ -154,7 +154,8 @@ export interface DeployedChangesRun extends DeployedCommitRun {
 }
 
 /**
- * What changed in the deployed environment `run` tested since `baseline` (an earlier run, of any environment): the
+ * What changed in the deployed environment `run` tested since `baseline` (an earlier run, of any environment; only one
+ * of the same environment gives a deployed commit to start a range from): the
  * deployed commit of each, the application's range between them, and the environment's deploy markers after the
  * baseline started, up to the run's start. Null when the run's environment is built from the checkout, or it has
  * none. Without a baseline, the deploys are the latest before the run.
@@ -168,9 +169,11 @@ export async function deployedChanges(
 ): Promise<DeployedChanges | null> {
   const environment = known ?? (await deployedEnvironmentOf(db, run.environmentId));
   if (!environment) return null;
-  const commits = await runsDeployedCommits(db, baseline ? [run, baseline] : [run]);
+  // A baseline of another environment ran another deployment: no range runs from its commit to the run's.
+  const sameEnvironment = baseline !== null && baseline.environmentId === run.environmentId;
+  const commits = await runsDeployedCommits(db, sameEnvironment ? [run, baseline] : [run]);
   const current = commits.get(run.id) ?? null;
-  const before = baseline ? (commits.get(baseline.id) ?? null) : null;
+  const before = sameEnvironment ? (commits.get(baseline.id) ?? null) : null;
   const repositoryUrl =
     current && before ? await applicationRepositoryUrl(db, run.projectId, [run.metadata, baseline?.metadata]) : null;
   const window = await deploysBetween(db, environment.id, baseline?.startTime ?? null, run.startTime);

@@ -117,6 +117,15 @@ describe('passesSubscriptionFilters', () => {
     expect(passesSubscriptionFilters({ environments: ['production'] }, 'run.failed', stg)).toBe(false);
   });
 
+  test('environment filter keeps matching the label of a run a pattern alias gave another environment', () => {
+    // A run that reported `pr-12`, which Preview takes through its alias `pr-*`.
+    const pr = { ...runPayload, environment: 'pr-12', environmentKey: 'preview', environmentAliases: ['pr-*'] };
+    expect(passesSubscriptionFilters({ environments: ['pr-*'] }, 'run.failed', pr)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['PR-12'] }, 'run.failed', pr)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['preview'] }, 'run.failed', pr)).toBe(true);
+    expect(passesSubscriptionFilters({ environments: ['pr-13'] }, 'run.failed', pr)).toBe(false);
+  });
+
   test('environment filter matches the label, ignoring case, of a run whose label has no environment', () => {
     const loose = { ...runPayload, environment: 'Preview-42' };
     expect(passesSubscriptionFilters({ environments: ['preview-42'] }, 'run.failed', loose)).toBe(true);

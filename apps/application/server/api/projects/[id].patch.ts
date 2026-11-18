@@ -116,7 +116,7 @@ const updateProjectSchema = z.object({
   /** The run variables, `[{ name, value }]`, checked by `parseRunVariables`; null or [] removes them. */
   runVariables: z.unknown().optional(),
   /** The environment the project's views read by default, one of its environments not archived; null for every environment. */
-  defaultEnvironmentId: z.number().int().positive().nullable().optional(),
+  defaultEnvironmentId: z.number().int().positive().max(2_147_483_647).nullable().optional(),
   /** The runs that set the project's status, a run scope; null for every run. */
   statusFilter: z
     .object({
