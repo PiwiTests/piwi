@@ -234,3 +234,23 @@ describe('the run page facts', () => {
     ).toEqual(['Started for Staging; the config reported production.']);
   });
 });
+
+describe('an environment filter', () => {
+  test('names the runs of an environment by its key, an alias label included, and no label by its own word', async () => {
+    const { environmentScopeSql } = await import('../../shared/handlers/environment-scope');
+    const { NO_ENVIRONMENT_FILTER } = await import('../../shared/environments');
+    const created = await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging', aliases: ['stg'] });
+    if (!created.ok) throw new Error('not created');
+    const stg = await run('stg', { environmentId: created.environment.id });
+    const prod = await run('production');
+    const none = await run(null);
+    const ids = async (names: string[]) =>
+      (await db.select({ id: schema.testRuns.id }).from(schema.testRuns).where(environmentScopeSql(names)!)).map(
+        (r) => r.id,
+      );
+    expect(await ids(['Staging'])).toEqual([stg.id]);
+    expect(await ids(['production'])).toEqual([prod.id]);
+    expect(await ids([NO_ENVIRONMENT_FILTER])).toEqual([none.id]);
+    expect(environmentScopeSql([])).toBeNull();
+  });
+});

@@ -11,6 +11,7 @@
  * runs that report no branch; `allBranches` reads every branch. The query keys
  * are the analytics ones, so an analytics drill-down address is a scope too.
  */
+import { NO_ENVIRONMENT_FILTER } from './environments';
 
 export interface ProjectRunScope {
   /** Runs from any of these environments; every environment when empty. */
@@ -70,17 +71,33 @@ export function projectRunScopeQuery(scope: ProjectRunScope): Record<string, str
   return query;
 }
 
-/** The run fields the scope reads; `branch` is the run's logical branch. */
+/**
+ * The run fields the scope reads; `branch` is the run's logical branch. `environmentKey` is the key of the environment
+ * its label resolves to, when the caller knows it, so a run whose label is an alias counts under the key.
+ */
 export interface ScopedRunFields {
   environment?: string | null;
+  environmentKey?: string | null;
   branch?: string | null;
   isFullRun?: boolean | null;
+}
+
+/**
+ * Whether a run is under one of a filter's environments: its label, or the key of its environment, equals a name
+ * ignoring case, or it has no label and the filter names `NO_ENVIRONMENT_FILTER`.
+ */
+function inEnvironments(run: ScopedRunFields, names: readonly string[]): boolean {
+  if (!run.environment) return names.includes(NO_ENVIRONMENT_FILTER);
+  const own = [run.environment, run.environmentKey]
+    .filter((name): name is string => !!name)
+    .map((n) => n.toLowerCase());
+  return names.some((name) => own.includes(name.toLowerCase()));
 }
 
 /** Whether a run is in the scope, given the project's default branch (`resolveStoredDefaultBranch`). */
 export function runInProjectScope(run: ScopedRunFields, scope: ProjectRunScope, defaultBranch: string): boolean {
   if (scope.fullRunsOnly && run.isFullRun === false) return false;
-  if (scope.environments.length > 0 && !(run.environment && scope.environments.includes(run.environment))) return false;
+  if (scope.environments.length > 0 && !inEnvironments(run, scope.environments)) return false;
   const branch = run.branch?.trim() || null;
   if (scope.branches.length > 0) return branch !== null && scope.branches.includes(branch);
   if (scope.allBranches) return true;
