@@ -8,9 +8,11 @@ import { outsideCalls } from './quiet-capture.js';
  * The worker's lane, as every viewer outside the page sees it: the test it runs (Playwright's id), the page that test
  * shows, and the stop it stands at with that stop's page. The page shown is the stop's while the worker stands at one
  * (its own page when the stop names none), else the running test's; none between two tests. A test shows its `page`
- * fixture's page; a test without one shows the page its latest call landed on (`laneCalled`), whichever context it
- * belongs to, and before its first call, or once that page closed, the page the browser opened last that is still
- * open, in a `beforeAll` or an earlier test included. Only a page the browser opened (`laneSawPage`) shows.
+ * fixture's page once it opens; a test without one shows the page its latest call or wait landed on (`laneCalled`),
+ * whichever context it belongs to, and before its first call, or once that page closed, the page the browser opened
+ * last that is still open, in a `beforeAll` or an earlier test included. Only a page the browser opened
+ * (`laneSawPage`) shows. Views open and listeners hear a change outside the Playwright call that caused it
+ * (`outsideCalls`), so a read of theirs is never a part of the test's call.
  *
  * One live view of the page shown (`openPageView`) feeds every sink that subscribes: the editor's views of a stop and
  * of the lane through the run connection (`run-channel.ts`), and the team instance's (`live-view.ts`). Its frames are
@@ -143,8 +145,8 @@ export function lanePage(page: Page): void {
 }
 
 /**
- * A page the browser opened, during a test or outside one: a test with no `page` fixture shows it until its next call
- * lands on another page. Told inside the call that opened it (`browser.newPage()`), its view opens outside it.
+ * A page the browser opened, during a test or outside one: a test with no `page` fixture shows it while no call of the
+ * test has landed on a page still open, or once a call lands on it.
  */
 export function laneSawPage(page: Page): void {
   if (opened.includes(page)) return;
@@ -157,13 +159,14 @@ export function laneSawPage(page: Page): void {
     });
   }
   if (!test) return;
-  outsideCalls(() => {
-    void sync();
-    tellPage();
-  });
+  void sync();
+  tellPage();
 }
 
-/** A call of the running test landed on `page`: a test with no `page` fixture shows it, when the browser opened it. */
+/**
+ * A call or a wait of the running test landed on `page`: a test with no `page` fixture shows it, when the browser
+ * opened it.
+ */
 export function laneCalled(page: Page): void {
   if (!test || test.called === page || !opened.includes(page)) return;
   test.called = page;
@@ -209,7 +212,10 @@ export function onLanePage(listener: () => void): () => void {
   return () => pageListeners.delete(listener);
 }
 
-/** Tell the listeners the page shown changed, when it did since they last heard; nothing is read while none listens. */
+/**
+ * Tell the listeners the page shown changed, when it did since they last heard, outside the call that changed it;
+ * nothing is read while none listens.
+ */
 function tellPage(): void {
   if (!pageListeners.size) return;
   let page: Page | null;
@@ -220,7 +226,9 @@ function tellPage(): void {
   }
   if (page === pageTold) return;
   pageTold = page;
-  for (const listener of pageListeners) listener();
+  outsideCalls(() => {
+    for (const listener of pageListeners) listener();
+  });
 }
 
 /**
@@ -317,11 +325,7 @@ export function subscribeLane(sink: LaneSink): LaneSubscription {
     },
     refresh: () => {
       // No frame masked before goes: the ones waiting are dropped with the latest kept.
-      for (const subscriber of subscribers) {
-        subscriber.last = null;
-        subscriber.pacer.close();
-        subscriber.pacer = pacerOf(subscriber);
-      }
+      for (const subscriber of subscribers) forgetFrames(subscriber);
       if (source) source.latest = null;
       void source?.view.then((view) => view?.refresh());
     },
@@ -358,18 +362,28 @@ function asked(): Asked {
   };
 }
 
+/** Drop the frames a subscriber kept and the ones waiting to go to it. */
+function forgetFrames(subscriber: Subscriber): void {
+  subscriber.last = null;
+  subscriber.pacer.close();
+  subscriber.pacer = pacerOf(subscriber);
+}
+
 /**
- * Open the view of the page shown for the sinks, close it with none, open it again on another page or ask; settles
- * once the view it closed did.
+ * Open the view of the page shown for the sinks, close it with none, open it again on another page or ask, outside the
+ * call that changed it; settles once the view it closed did. A frame of another page goes to no sink, now or again.
  */
 function sync(): Promise<void> {
   const page = subscribers.size ? lanePageShown() : null;
   const options = page ? asked() : null;
   const key = options ? JSON.stringify(options) : '';
   if (source && source.page === page && source.asked === key) return Promise.resolve();
-  const closed = source ? close(source) : Promise.resolve();
-  source = page && options ? open(page, options, key) : null;
-  return closed;
+  if (source && source.page !== page) for (const subscriber of subscribers) forgetFrames(subscriber);
+  return outsideCalls(() => {
+    const closed = source ? close(source) : Promise.resolve();
+    source = page && options ? open(page, options, key) : null;
+    return closed;
+  });
 }
 
 function close(shown: Source): Promise<void> {

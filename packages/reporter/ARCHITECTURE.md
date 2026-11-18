@@ -95,9 +95,9 @@ What the package does to a user's run, process by process.
   browser and API request context, a wait on the client until it ends; a page of a
   connection it does not follow has the page methods that count as using it wrapped
   instead (`internal/capture/resource-ledger.ts`). In a worker that can show a view, it
-  also tells the lane the page each call lands on (`onTestCallPage`), outside that call's
-  async context (`outsideCalls`), so a read the view makes then is an internal call of
-  its own, never a part of the test's.
+  also tells the lane the page each call or wait on the client lands on (`onTestCallPage`),
+  outside that call's async context (`outsideCalls`), so a read the view makes then is an
+  internal call of its own, never a part of the test's.
 - On Linux, `5` written to `/proc/<pid>/clear_refs` of the processes the worker started,
   at each test's start, which resets their peak RSS for the test
   (`internal/capture/worker-metrics.ts`). In Chromium, a DevTools session on each page
@@ -267,11 +267,13 @@ What the package does to a user's run, process by process.
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
   runs its own), an image of the page goes twice a second.
 - **The lane** (`lane-feed.ts`): the test the worker runs, the page it shows (its `page`
-  fixture's, else the page its latest call landed on, which the resource ledger tells as
-  it follows each call (`onTestCallPage`, `laneCalled`), else the page the browser opened
-  last that is still open, a `beforeAll`'s included; only a page the capture fixtures
-  instrumented shows), and the stop it stands at, whose page shows while it stands
-  there. Every view outside the page is a sink of one live view of the page shown: the
+  fixture's once it opens, else the page its latest call or wait landed on, which the
+  resource ledger tells as it follows each call (`onTestCallPage`, `laneCalled`), else the
+  page the browser opened last that is still open, a `beforeAll`'s included; only a page
+  the capture fixtures instrumented shows), and the stop it stands at, whose page shows
+  while it stands there. Its views open, and its listeners hear the page change, outside
+  the Playwright call that changed it (`outsideCalls`); a frame of a page it left goes to
+  no sink again. Every view outside the page is a sink of one live view of the page shown: the
   editor's view of a stop (`view`), its view of the lane (`view-lane`) and the instance's
   live view, each at its own pace (`LatestPacer`), each frame masked once with the masks
   every sink names. That view asks the page for the largest size and quality and the

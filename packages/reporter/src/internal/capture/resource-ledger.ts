@@ -266,10 +266,10 @@ function pageOfCall(object: ChannelOwnerLike): object | null {
 }
 
 /**
- * Hear the page each call a test makes lands on, as the call begins: a call on a page, one of its frames, or an
- * element of it, through a connection the ledger follows. Neither a close, an internal call nor a `route()` handler's
- * answer is heard. Each listener is told outside the call (`outsideCalls`), so a Playwright call it makes is its own.
- * Returns what stops hearing them.
+ * Hear the page each call a test makes lands on, as the call begins: a call or a wait on the client (`waitForURL`,
+ * `waitForEvent` and their kin) on a page, one of its frames, or an element of it, through a connection the ledger
+ * follows. Neither a close, an internal call nor a `route()` handler's answer is heard. Each listener is told outside
+ * the call (`outsideCalls`), so a Playwright call it makes is its own. Returns what stops hearing them.
  */
 export function onTestCallPage(listener: (page: object) => void): () => void {
   callPageListeners.add(listener);
@@ -707,10 +707,7 @@ export class ResourceLedger {
     }
     if (options?.internal || !options?.frames?.length || TRAFFIC_TYPES.has(String(object._type))) return;
     if (CLOSE_METHODS.has(String(method))) return this.noteClosing(object);
-    if (callPageListeners.size) {
-      const page = pageOfCall(object);
-      if (page) for (const listener of callPageListeners) this.guard(() => outsideCalls(() => listener(page)));
-    }
+    this.tellCallPage(object);
     const site = zoneSite(options);
     this.touch(object, site);
     if (result && typeof (result as Promise<unknown>).then === 'function') {
@@ -728,6 +725,7 @@ export class ResourceLedger {
     const id = info?.waitId;
     if (id === undefined) return;
     if (info?.phase === 'before' && !options?.internal && options?.frames?.length) {
+      this.tellCallPage(object);
       if (this.waits.size >= WAITS_CAP) this.waits.clear();
       const site = zoneSite(options);
       this.waits.set(id, { object, site });
@@ -737,6 +735,13 @@ export class ResourceLedger {
       this.waits.delete(id);
       if (waited) this.touch(waited.object, waited.site);
     }
+  }
+
+  /** Tell the listeners of `onTestCallPage` the page a call of the test lands on, when it lands on one. */
+  private tellCallPage(object: ChannelOwnerLike): void {
+    if (!callPageListeners.size) return;
+    const page = pageOfCall(object);
+    if (page) for (const listener of callPageListeners) this.guard(() => outsideCalls(() => listener(page)));
   }
 
   /**

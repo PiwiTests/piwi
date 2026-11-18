@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import { chromium, type Browser, type Page } from '@playwright/test';
 import { afterEach, describe, expect, it } from 'vitest';
 import {
   laneCalled,
@@ -85,7 +85,7 @@ describe('the page the lane shows', () => {
     expect(lanePageNow()).toBe(admin);
   });
 
-  it('shows a page opened during the test until its next call lands elsewhere, and moves on as a page closes', async () => {
+  it('shows a page opened after the test’s first call once a call lands on it, and the page opened last as that one closes', async () => {
     const first = opened('first');
     laneTestBegan('t1');
     laneCalled(first);
@@ -132,6 +132,29 @@ describe('the page the lane shows', () => {
     laneWentOn(1);
     expect(lanePageNow()).toBe(admin);
   });
+
+  it('tells its listeners outside the Playwright call that changed the page it shows', async () => {
+    let browser: Browser | undefined;
+    try {
+      browser = await chromium.launch();
+      const page = await browser.newPage();
+      type Wrap = (run: (zone: { internal?: unknown }) => Promise<void>, options: object) => Promise<void>;
+      const wrap = (page as unknown as { _wrapApiCall: Wrap })._wrapApiCall.bind(page);
+      laneTestBegan('t1');
+      // The zone of a call each listener makes: an internal one of its own, never the call that told the lane.
+      const zones: Array<{ internal?: unknown }> = [];
+      const unhear = onLanePage(() => void wrap(async (zone) => void zones.push(zone), { internal: true }));
+      try {
+        // As `browser.newPage()` tells the lane of its page, inside its own call.
+        await wrap(async () => laneSawPage(page), { title: 'Create page' });
+      } finally {
+        unhear();
+      }
+      expect(zones).toEqual([expect.objectContaining({ internal: true })]);
+    } finally {
+      await browser?.close();
+    }
+  }, 30_000);
 
   it('tells its listeners each time the page it shows changes, a close included', async () => {
     const admin = opened('admin');

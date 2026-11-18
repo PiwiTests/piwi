@@ -6,7 +6,7 @@ import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { chromium, type TestInfo } from '@playwright/test';
+import { chromium, type Browser, type TestInfo } from '@playwright/test';
 import {
   ResourceLedger,
   activeResourceLedger,
@@ -582,9 +582,9 @@ describe('following the calls a test makes', () => {
     expect(Object.prototype.hasOwnProperty.call(page, 'evaluate')).toBe(false);
   });
 
-  it('tells the page each call of the test lands on, through its frame or its element, never a close, an internal read or the page’s traffic', async () => {
+  it('tells the page each call or wait of the test lands on, through its frame or its element, never a close, an internal read or the page’s traffic', async () => {
     const fake = fakePlaywright();
-    const { call } = withConnection(fake);
+    const { connection, call } = withConnection(fake);
     const { ledger, running } = ledgerFor(fake);
     ledger.install();
     running(info('t1'));
@@ -609,12 +609,16 @@ describe('following the calls a test makes', () => {
       await call(frame, 'evaluateExpression', 17, true);
       await call({ _type: 'Route', _parent: context }, 'fulfill', 18);
       await call(customer, 'close', 19);
-      expect(heard).toEqual([customer, admin, admin, customer]);
+      // A wait on the client tells its page as it begins, not as its internal end comes.
+      const frames = [{ file: path.resolve('tests/cart.spec.ts'), line: 20 }];
+      await connection.sendMessageToServer(admin, '__waitInfo__', { waitId: 'w1', phase: 'before' }, { apiName: 'page.waitForURL', frames });
+      await connection.sendMessageToServer(admin, '__waitInfo__', { waitId: 'w1', phase: 'after' }, { internal: true });
+      expect(heard).toEqual([customer, admin, admin, customer, admin]);
     } finally {
       unhear();
     }
-    await call(admin, 'keyboardPress', 20);
-    expect(heard).toHaveLength(4);
+    await call(admin, 'keyboardPress', 21);
+    expect(heard).toHaveLength(5);
   });
 
   it('tells the page of a real call outside that call, so a call its listener makes is a call of its own', async () => {
@@ -622,8 +626,9 @@ describe('following the calls a test makes', () => {
       ._playwright;
     const ledger = new ResourceLedger(playwright, 3, 'report', null, () => info('t1'));
     expect(ledger.install()).toBe(true);
-    const browser = await chromium.launch();
+    let browser: Browser | undefined;
     try {
+      browser = await chromium.launch();
       const page = await browser.newPage();
       // The zone each call the listener makes runs in: Playwright's own for an internal call made outside any other.
       const zones: Array<{ internal?: unknown; apiName?: unknown }> = [];
@@ -642,9 +647,9 @@ describe('following the calls a test makes', () => {
       expect(zones.every((zone) => zone.internal === true)).toBe(true);
     } finally {
       ledger.uninstall();
-      await browser.close();
+      await browser?.close();
     }
-  });
+  }, 30_000);
 
   it('keeps an object in use until a wait on the client ends, and marks when a close began', async () => {
     let now = 1000;

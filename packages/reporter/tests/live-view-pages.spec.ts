@@ -1,5 +1,6 @@
 import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
+import type * as http from 'node:http';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
@@ -9,7 +10,7 @@ import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The run page's live view of tests that take no page from the `page` fixture, in a real CI run through the built
- * package against a fake instance that watches the worker from its start. A serial group's `beforeAll` opens one
+ * package against a fake instance whose viewer comes once the first test runs. A serial group's `beforeAll` opens one
  * authenticated context and page per portal from `browser`, as suites with several users do: a test of the group
  * shows the page opened last until its first call, then the page each of its calls lands on, from one context to the
  * other. A test of the group that takes the `page` fixture shows that page, whatever page its calls land on.
@@ -36,19 +37,22 @@ interface ZipFile {
   on(event: 'end' | 'error', listener: (error?: Error) => void): void;
   openReadStream(entry: ZipEntry, callback: (error: Error | null, stream: NodeJS.ReadableStream) => void): void;
 }
-const { jpegjs: jpeg, yauzl } = createRequire(requireHere.resolve('playwright-core/package.json'))(
-  'playwright-core/lib/utilsBundle',
-) as {
+interface Yauzl {
+  open(file: string, options: { lazyEntries: true }, callback: (error: Error | null, zip: ZipFile) => void): void;
+}
+const requireCore = createRequire(requireHere.resolve('playwright-core/package.json'));
+const utils = requireCore('playwright-core/lib/utilsBundle') as {
   jpegjs: {
     decode(
       data: Buffer,
       options: { useTArray: true; formatAsRGBA: true },
     ): { width: number; height: number; data: Uint8Array };
   };
-  yauzl: {
-    open(file: string, options: { lazyEntries: true }, callback: (error: Error | null, zip: ZipFile) => void): void;
-  };
+  yauzl?: Yauzl;
 };
+const jpeg = utils.jpegjs;
+/** Playwright's zip reader: in its utilities bundle, or in a zip bundle of its own on an older Playwright. */
+const yauzl: Yauzl = utils.yauzl ?? (requireCore('playwright-core/lib/zipBundle') as { yauzl: Yauzl }).yauzl;
 
 /** The text of each `.trace` file of a trace's zip. */
 function traceFiles(file: string): Promise<string[]> {
@@ -107,6 +111,9 @@ test('moves between two portals', async () => {
   await mark('to-red');
   await red.locator('h1').click();
   await look();
+  await mark('to-wait');
+  // A wait on the client, which no navigation ends: the page it waits on shows meanwhile.
+  await blue.waitForEvent('framenavigated', { timeout: ${LOOK_MS} }).catch(() => undefined);
   await mark('end');
 });
 test('takes the page fixture', async ({ page }) => {
@@ -124,6 +131,8 @@ interface Posted {
 }
 
 let server: FakeServer;
+/** The worker's event streams, on which the fake instance says how many people watch. */
+const streams: http.ServerResponse[] = [];
 const posts: Posted[] = [];
 const marks: Record<string, number> = {};
 let exitCode: number | null = null;
@@ -172,7 +181,12 @@ beforeAll(async () => {
     const url = new URL(req.url, 'http://x');
     const route = url.pathname;
     if (route === '/mark') {
-      marks[url.searchParams.get('name') ?? ''] = Date.now();
+      const name = url.searchParams.get('name') ?? '';
+      marks[name] = Date.now();
+      // Someone opens Watch while the first test runs, before its first call.
+      if (name === 'opened-last') {
+        for (const stream of streams) stream.write(`data: ${JSON.stringify({ type: 'viewers', count: 1 })}\n\n`);
+      }
       return res.end();
     }
     const portal = { '/blue': ['Blue', '#0000ff'], '/red': ['Red', '#ff0000'], '/green': ['Green', '#00a000'] }[route];
@@ -196,9 +210,9 @@ beforeAll(async () => {
     if (route === `/api/test-runs/${RUN}/live-view`) {
       if (req.headers.authorization !== `Bearer ${KEY}`) return jsonRes(res, 401, { message: 'no key' });
       if (req.method === 'GET') {
-        // Someone watches the worker from its start.
         res.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-cache' });
-        res.write(`data: ${JSON.stringify({ type: 'viewers', count: 1 })}\n\n`);
+        res.write(`data: ${JSON.stringify({ type: 'viewers', count: 0 })}\n\n`);
+        streams.push(res);
         return;
       }
       const message = readWorkerToInstance(JSON.parse(req.body));
@@ -255,6 +269,7 @@ module.exports = wrapConfig(defineConfig({
 }, 150_000);
 
 afterAll(async () => {
+  for (const stream of streams) stream.end();
   await server?.close();
   fs.rmSync(project, { recursive: true, force: true });
 });
@@ -264,17 +279,22 @@ describe('the live view of tests without the `page` fixture', () => {
     expect(exitCode, output).toBe(0);
   });
 
-  it('shows the page opened last until the first call, then the page of each call, from one context to the other', () => {
+  it('shows the page opened last until the first call, then the page of each call or wait, from one context to the other', () => {
     const test = 'moves between two portals';
     const openedLast = colorsBetween(test, 'opened-last', 'to-blue');
     const onBlue = colorsBetween(test, 'to-blue', 'to-red');
-    const onRed = colorsBetween(test, 'to-red', 'end');
+    const onRed = colorsBetween(test, 'to-red', 'to-wait');
+    const waitingOnBlue = colorsBetween(test, 'to-wait', 'end');
     shows(openedLast, 'red');
     shows(onBlue, 'blue');
     shows(onRed, 'red');
-    // The test never said it had no page.
-    const refused = posts.map((p) => p.message).filter((m) => m.type === 'frame' && 'refused' in m);
-    expect(refused.map((m) => ('refused' in m ? m.refused : ''))).not.toContain('This test has no page to show yet.');
+    shows(waitingOnBlue, 'blue');
+  });
+
+  it('never tells the viewer who came mid-test that the test has no page', () => {
+    const frames = posts.map((p) => p.message).filter((m) => m.type === 'frame');
+    expect(frames.some((m) => 'data' in m && m.test === 'moves between two portals')).toBe(true);
+    expect(frames.map((m) => ('refused' in m ? m.refused : null))).not.toContain('This test has no page to show yet.');
   });
 
   it('shows none of the view’s calls among the actions of the test’s trace', async () => {
@@ -290,11 +310,14 @@ describe('the live view of tests without the `page` fixture', () => {
         if (event.type === 'before' && event.class !== 'Test') actions.push(`${event.class}.${event.method}`);
       }
     }
-    // The test's assertion and click, and what its `beforeAll` did.
+    // The test's assertion, click and wait (its begin and end, named as each Playwright names them), and what its
+    // `beforeAll` did.
+    const own = ['BrowserContext.newPage', 'Frame.click', 'Frame.expect', 'Frame.goto'];
+    const waits = ['Page.__waitInfo__', 'Page.waitForEventInfo'];
     expect(actions).toContain('Frame.expect');
     expect(actions).toContain('Frame.click');
-    expect([...new Set(actions)].sort()).toEqual(
-      ['BrowserContext.newPage', 'Frame.click', 'Frame.expect', 'Frame.goto'].filter((action) => actions.includes(action)),
+    expect([...new Set(actions)].sort(), actions.join(', ')).toEqual(
+      [...own, ...waits].filter((action) => actions.includes(action)).sort(),
     );
   });
 

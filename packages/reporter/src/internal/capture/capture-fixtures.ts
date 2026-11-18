@@ -3009,7 +3009,7 @@ function instrumentPage(page: Page): void {
   void maybeStartCodeReach(page);
   observeOwnApiRequests(page);
   watchPageEvents(page);
-  // A page the running test opens shows on its lane while it shows no other.
+  // A page the browser opens: the lane of a test without the `page` fixture may show it (`lane-feed.ts`).
   laneSawPage(page);
 
   // Probe mode: install the fault interception for this test's plan item on the

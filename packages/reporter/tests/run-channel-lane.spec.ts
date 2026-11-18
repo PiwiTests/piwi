@@ -79,6 +79,24 @@ test('second', async ({ page }) => {
   await page.goto('${base}/secret');
   await page.waitForTimeout(${LOOK_MS});
 });
+test.describe('own pages', () => {
+  let animated;
+  let still;
+  test.beforeAll(async ({ browser }) => {
+    animated = await browser.newPage({ viewport: ${JSON.stringify(VIEWPORT)} });
+    await animated.goto('${base}/animated');
+    still = await browser.newPage({ viewport: ${JSON.stringify(VIEWPORT)} });
+    await still.goto('${base}/still');
+  });
+  test.afterAll(async () => {
+    await animated.close();
+    await still.close();
+  });
+  test('own pages', async () => {
+    await expect(animated.locator('h1')).toHaveText('Shop');
+    await animated.waitForTimeout(${LOOK_MS});
+  });
+});
 test('third', async ({ page }) => {
   await page.goto('${base}/animated');
   await page.waitForTimeout(${LOOK_MS});
@@ -408,6 +426,7 @@ describe('the lane view of a worker', () => {
       ['stopped', 'passed'],
       ['still', 'passed'],
       ['second', 'passed'],
+      ['own pages', 'passed'],
       ['third', 'passed'],
       ['headed', 'passed'],
     ]);
@@ -466,6 +485,18 @@ describe('the lane view of a worker', () => {
       }
       expect(green).toBe(0);
     }
+  });
+
+  it('follows a test without the `page` fixture to the page its calls land on', () => {
+    const frames = laneFrames(ids['own pages']);
+    expect(frames.length).toBeGreaterThan(0);
+    const { message } = frames[frames.length - 1]!;
+    const image = jpeg.decode(Buffer.from(message.data, 'base64'), { useTArray: true, formatAsRGBA: true });
+    const scale = image.width / VIEWPORT.width;
+    // The middle of the animated page's spinner, where the still page its `beforeAll` opened last is white.
+    const i = (Math.round(240 * scale) * image.width + Math.round(340 * scale)) * 4;
+    const [r, g, b] = [image.data[i]!, image.data[i + 1]!, image.data[i + 2]!];
+    expect(Math.min(r, g, b), `${r}, ${g}, ${b}`).toBeLessThan(150);
   });
 
   it('sends no frame once the view is off', () => {

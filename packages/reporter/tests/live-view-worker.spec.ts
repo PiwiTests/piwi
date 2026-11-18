@@ -25,8 +25,16 @@ import {
   openLiveView,
   shareLiveView,
 } from '../src/internal/capture/live-view.js';
-import { laneCalled, lanePage, laneSawPage, laneTestBegan, laneTestEnded } from '../src/internal/capture/lane-feed.js';
+import {
+  laneCalled,
+  lanePage,
+  laneSawPage,
+  laneTestBegan,
+  laneTestEnded,
+  subscribeLane,
+} from '../src/internal/capture/lane-feed.js';
 import { jpegCodec } from '../src/internal/capture/live-mask.js';
+import type { PageFrame } from '../src/internal/capture/page-view.js';
 import { jsonRes, startServer, type FakeServer } from './_helpers.js';
 
 /**
@@ -297,6 +305,51 @@ describe("the worker's live view connection", () => {
       expect(posts.filter((p) => p.type === 'frame' && 'data' in p).every((p) => 'test' in p && p.test === 'two portals')).toBe(true);
     } finally {
       await liveViewTestEnded();
+      await laneTestEnded();
+      first.close();
+      second.close();
+    }
+  });
+
+  it('gives no frame of the page the lane left, again or to a viewer that comes later', async () => {
+    const firstShot = shotOf(40);
+    const secondShot = shotOf(200);
+    const first = fakePage(firstShot);
+    const second = fakePage(secondShot);
+    laneSawPage(first.page);
+    laneSawPage(second.page);
+    laneTestBegan('lane-moves-1');
+    const sent: PageFrame[] = [];
+    const lane = subscribeLane({
+      maxWidth: 1280,
+      maxHeight: 800,
+      quality: 50,
+      fps: 10,
+      maxFrameBytes: 512 * 1024,
+      lightQuality: 30,
+      shotMs: 500,
+      busy: () => false,
+      send: (frame) => void sent.push(frame),
+      refuse: () => undefined,
+    });
+    try {
+      await waitFor(() => {
+        second.paint('a frame of the second portal');
+        return sent.some((frame) => frame.data.equals(secondShot));
+      });
+      // A call lands on the first page: until it paints, the second page's latest frame goes nowhere.
+      laneCalled(first.page);
+      expect(lane.latest()).toBeNull();
+      const before = sent.length;
+      lane.resend();
+      expect(sent).toHaveLength(before);
+      await waitFor(() => {
+        first.paint('a frame of the first portal');
+        return sent.some((frame) => frame.data.equals(firstShot));
+      });
+      expect(lane.latest()?.data.equals(firstShot)).toBe(true);
+    } finally {
+      await lane.close();
       await laneTestEnded();
       first.close();
       second.close();

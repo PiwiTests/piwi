@@ -63,10 +63,11 @@ import type { PageFrame } from './page-view.js';
  * closes the stream as they stop sharing it, the viewers hearing why (`unshared`); `liveViewState` says how it stands,
  * and why a run without a key cannot be shared (`none:<why>` in place of the address), for the run channel to tell.
  * Nothing goes to the instance while the run is not shared. While someone watches, the page the lane shows for the
- * running test (`lane-feed.ts`: its `page` fixture's, else the page of its latest call) goes out as its screencast,
- * following that page as it changes (`page-view.ts`, through internal calls: nothing shows among the test's steps), at
- * the size and pace the instance says its viewers ask (`view`: the largest image one of them shows, within 1280 by 800
- * device pixels, and `LIVE_FRAME_FPS` frames a second for a full view, one for tiles alone), else at most
+ * running test (`lane-feed.ts`: its `page` fixture's, else the page of its latest call, else the page opened last)
+ * goes out as its screencast, following that page as it changes (`page-view.ts`, through internal calls: nothing shows
+ * among the test's steps), at the size and pace the instance says its viewers ask (`view`: the largest image one of
+ * them shows, within 1280 by 800 device pixels, and `LIVE_FRAME_FPS` frames a second for a full view, one for tiles
+ * alone), else at most
  * `LIVE_FRAME_WIDTH` by `LIVE_FRAME_HEIGHT` and `LIVE_FRAME_FPS` frames a second, at `LIVE_FRAME_QUALITY` and
  * `LIVE_FRAME_BYTE_RATE` bytes a second at most; a page whose video records keeps the video's size, its screencast's
  * first client. Each frame is
@@ -1018,7 +1019,8 @@ function followCalls(own: Link): void {
       page,
       running!.began,
       (log) => {
-        if (view === shown && link === own && active(own) && own.viewers > 0) postLog(own, log);
+        // A follower of the page the view left posts nothing, though it started before the view moved.
+        if (view === shown && shown.page === page && link === own && active(own) && own.viewers > 0) postLog(own, log);
       },
       { source, titleOf: layersTitleOf, secrets: knownSecrets },
     ).catch(() => null);
