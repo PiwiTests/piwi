@@ -89,6 +89,132 @@
   "runner_languageFailed": {
     "message": "Impossible de changer la langue"
   },
+  "runner_settingsHeading": {
+    "message": "Réglages"
+  },
+  "runner_connectionSettings": {
+    "message": "Réglages de la connexion"
+  },
+  "runner_connectedTo": {
+    "message": "Connecté à $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_connectingTo": {
+    "message": "Connexion à $host$ en cours",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_reconnectingTo": {
+    "message": "Reconnexion à $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_signingInAt": {
+    "message": "En attente de votre autorisation sur $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_welcomeHeading": {
+    "message": "Connectez-vous à votre instance d’équipe"
+  },
+  "runner_stepsHeading": {
+    "message": "Comment ça marche"
+  },
+  "runner_stepConnect": {
+    "message": "Saisissez l’adresse de votre instance d’équipe et autorisez Piwi Runner sur la page qui s’ouvre."
+  },
+  "runner_stepRequest": {
+    "message": "Sur l’instance, ouvrez un test et demandez à l’exécuter sur votre machine."
+  },
+  "runner_stepConfirm": {
+    "message": "Vérifiez la demande ici, puis cliquez sur $run$ : les tests s’exécutent dans votre dossier, dans un navigateur sur votre écran.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runner_clearFinished": {
+    "message": "Retirer les terminées"
+  },
+  "runner_openInstance": {
+    "message": "Ouvrir $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_startedAt": {
+    "message": "Lancée à $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "14:02"
+      }
+    }
+  },
+  "runner_outputLines_one": {
+    "message": "$count$ ligne",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runner_outputLines_other": {
+    "message": "$count$ lignes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "24"
+      }
+    }
+  },
+  "runner_copyOutput": {
+    "message": "Copier la sortie"
+  },
+  "runner_aboutHeading": {
+    "message": "À propos"
+  },
+  "runner_version": {
+    "message": "Version $version$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.73.0"
+      }
+    }
+  },
+  "runner_documentation": {
+    "message": "Documentation"
+  },
+  "runner_releaseNotes": {
+    "message": "Notes de version"
+  },
+  "runner_reportProblem": {
+    "message": "Signaler un problème"
+  },
   "shell_trayTooltip": {
     "message": "$app$ (cliquez pour ouvrir)",
     "placeholders": {

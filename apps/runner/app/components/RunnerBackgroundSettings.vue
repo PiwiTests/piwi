@@ -52,19 +52,21 @@ async function save(command: string, field: keyof BackgroundSettings, enabled: b
 </script>
 
 <template>
-  <UCard v-if="settings" data-testid="runner-background">
-    <template #header>
-      <h2 class="text-sm font-semibold">{{ t('runner_backgroundHeading') }}</h2>
-    </template>
-    <div class="space-y-3">
-      <UCheckbox
+  <RunnerSection
+    v-if="settings"
+    icon="i-lucide-app-window"
+    :title="t('runner_backgroundHeading')"
+    data-testid="runner-background"
+  >
+    <div class="space-y-4">
+      <USwitch
         :model-value="settings.run_in_background"
         :disabled="saving"
         :label="t('runner_runInBackground')"
         :description="t('runner_runInBackgroundHint')"
         @update:model-value="save('desktop_set_run_in_background', 'run_in_background', $event === true)"
       />
-      <UCheckbox
+      <USwitch
         :model-value="settings.start_on_login"
         :disabled="saving"
         :label="t('runner_startOnLogin')"
@@ -72,5 +74,5 @@ async function save(command: string, field: keyof BackgroundSettings, enabled: b
         @update:model-value="save('desktop_set_start_on_login', 'start_on_login', $event === true)"
       />
     </div>
-  </UCard>
+  </RunnerSection>
 </template>

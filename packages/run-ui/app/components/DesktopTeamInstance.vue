@@ -113,10 +113,19 @@ async function unlink(projectId: string) {
 
     <div class="space-y-1">
       <div class="text-muted">{{ t('runui_connectionStatus') }}</div>
-      <div class="text-highlighted">{{ connectionStateWords(connection.state, words) }}</div>
-      <code v-if="connection.instance && connection.state !== 'none'" class="text-xs break-all">{{
-        connection.instance
-      }}</code>
+      <div class="flex items-start gap-2">
+        <span
+          aria-hidden="true"
+          :class="['mt-1.5 size-2 shrink-0 rounded-full', CONNECTION_STATE_DOTS[connection.state]]"
+          data-testid="team-instance-dot"
+        />
+        <div class="min-w-0 space-y-0.5">
+          <div class="text-highlighted">{{ connectionStateWords(connection.state, words) }}</div>
+          <code v-if="connection.instance && connection.state !== 'none'" class="block text-xs break-all">{{
+            connection.instance
+          }}</code>
+        </div>
+      </div>
       <p v-if="connection.error" class="text-xs text-error">{{ connectionErrorWords(connection, words) }}</p>
     </div>
 
@@ -164,12 +173,15 @@ async function unlink(projectId: string) {
         <p v-if="Object.keys(folders).length === 0" class="text-xs text-muted">
           {{ t('runui_connectionNoLinkedFolder') }}
         </p>
-        <ul v-else class="space-y-1">
-          <li v-for="(folder, projectId) in folders" :key="projectId" class="flex items-start gap-2 min-w-0">
-            <span class="text-xs text-muted shrink-0">{{
-              connection.projectNames[Number(projectId)] || t('runui_connectionProject', { id: projectId })
-            }}</span>
-            <code class="text-xs break-all flex-1">{{ folder }}</code>
+        <ul v-else class="divide-y divide-default rounded-md border border-default">
+          <li v-for="(folder, projectId) in folders" :key="projectId" class="flex items-center gap-3 min-w-0 px-3 py-2">
+            <UIcon name="i-lucide-folder" class="size-4 shrink-0 text-muted" />
+            <div class="min-w-0 flex-1">
+              <div class="text-xs font-medium text-highlighted">
+                {{ connection.projectNames[Number(projectId)] || t('runui_connectionProject', { id: projectId }) }}
+              </div>
+              <code class="block text-xs text-muted break-all">{{ folder }}</code>
+            </div>
             <UButton color="neutral" variant="ghost" size="xs" @click="unlink(String(projectId))">{{
               t('runui_connectionUnlink')
             }}</UButton>

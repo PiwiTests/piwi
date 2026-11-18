@@ -1,3 +1,4 @@
+import type { RunRequestTest } from '@piwitests/core/run-request';
 import { createRunnerRuns, type RunnerRun, type RunnerRunEvent } from '~/utils/runner-runs';
 
 let book: ReturnType<typeof createRunnerRuns> | null = null;
@@ -27,8 +28,17 @@ export function useRunnerRuns() {
     unlisten = await events.listen<RunnerRunEvent>('piwi:local-run', ({ payload }) => book?.handle(payload));
   }
 
-  function startRequest(input: { requestId: string; instance: string; projectId: number; title: string }) {
-    return runBook().start(input);
+  /** Starts the run of a request the person confirmed, as the confirmation's `start` names it. */
+  function startRequest(input: {
+    requestId: string;
+    instance: string;
+    projectId: number;
+    projectName: string | null;
+    cases: RunRequestTest[];
+    title: string;
+  }) {
+    const { cases, ...run } = input;
+    return runBook().start({ ...run, tests: cases });
   }
 
   function stopRun(run: RunnerRun) {
@@ -50,5 +60,10 @@ export function useRunnerRuns() {
     return core ? core.invoke('desktop_stop_local_tests', { runId: shellId }).catch(() => {}) : Promise.resolve();
   }
 
-  return { runs, listen, startRequest, stopRun, setHold, stopShellRun };
+  /** Removes the runs that ended from the list. */
+  function clearFinished() {
+    runBook().clearFinished();
+  }
+
+  return { runs, listen, startRequest, stopRun, setHold, stopShellRun, clearFinished };
 }

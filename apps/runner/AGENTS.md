@@ -18,6 +18,8 @@ built with the `runner` feature.
   `runner_startOnLogin` for its tray), the layer's in its own (`useRunUiWords()`).
   `tests/catalogs.test.ts` holds them to Piwi Picker's rules and fails on text written in a template. How to add a
   message or a language, and who reviewed each: [`locales/README.md`](locales/README.md).
+- **Every icon is bundled; the window fetches none.** `nuxt.config.ts` sets `icon.provider: 'none'` and scans the
+  window's and the layer's `.vue` and `.ts` files, so an icon's full name (`i-lucide-…`) must appear in one of them.
 - **The language comes from the shell.** `useRunnerLanguage` asks `desktop_get_language` before the window shows and
   follows `piwi:language`; inside the shell the window never reads the browser's language. `tests/e2e/window.spec.ts`
   shows the built window in French and German at its smallest size and fails on a text cut.

@@ -89,6 +89,132 @@
   "runner_languageFailed": {
     "message": "No se pudo cambiar el idioma"
   },
+  "runner_settingsHeading": {
+    "message": "Ajustes"
+  },
+  "runner_connectionSettings": {
+    "message": "Ajustes de la conexión"
+  },
+  "runner_connectedTo": {
+    "message": "Conectado a $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_connectingTo": {
+    "message": "Conectando con $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_reconnectingTo": {
+    "message": "Reconectando con $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_signingInAt": {
+    "message": "Esperando tu autorización en $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_welcomeHeading": {
+    "message": "Conéctate a la instancia de tu equipo"
+  },
+  "runner_stepsHeading": {
+    "message": "Cómo funciona"
+  },
+  "runner_stepConnect": {
+    "message": "Escribe la dirección de la instancia de tu equipo y autoriza Piwi Runner en la página que se abre."
+  },
+  "runner_stepRequest": {
+    "message": "En la instancia, abre una prueba y pide ejecutarla en tu máquina."
+  },
+  "runner_stepConfirm": {
+    "message": "Revisa la solicitud aquí y haz clic en $run$: las pruebas se ejecutan en tu carpeta, en un navegador en tu pantalla.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runner_clearFinished": {
+    "message": "Quitar las terminadas"
+  },
+  "runner_openInstance": {
+    "message": "Abrir $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_startedAt": {
+    "message": "Iniciada a las $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "14:02"
+      }
+    }
+  },
+  "runner_outputLines_one": {
+    "message": "$count$ línea",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runner_outputLines_other": {
+    "message": "$count$ líneas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "24"
+      }
+    }
+  },
+  "runner_copyOutput": {
+    "message": "Copiar la salida"
+  },
+  "runner_aboutHeading": {
+    "message": "Acerca de"
+  },
+  "runner_version": {
+    "message": "Versión $version$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.73.0"
+      }
+    }
+  },
+  "runner_documentation": {
+    "message": "Documentación"
+  },
+  "runner_releaseNotes": {
+    "message": "Notas de la versión"
+  },
+  "runner_reportProblem": {
+    "message": "Informar de un problema"
+  },
   "shell_trayTooltip": {
     "message": "$app$ (haz clic para abrir)",
     "placeholders": {

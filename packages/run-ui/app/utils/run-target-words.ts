@@ -14,6 +14,19 @@ const CONNECTION_STATE_KEYS: Record<RunTargetConnectionView['state'], RunUiPlain
   revoked: 'runui_connectionStateRevoked',
 };
 
+/**
+ * The dot of each state of the connection to a team instance: green while requests come, amber while it waits on the
+ * instance or the person, grey without a connection, red once the instance disconnected the app.
+ */
+export const CONNECTION_STATE_DOTS: Record<RunTargetConnectionView['state'], string> = {
+  none: 'bg-neutral-400 dark:bg-neutral-500',
+  'signing-in': 'bg-warning animate-pulse',
+  connecting: 'bg-warning animate-pulse',
+  online: 'bg-success',
+  offline: 'bg-warning animate-pulse',
+  revoked: 'bg-error',
+};
+
 /** What the connection card says of a state of the connection to a team instance. */
 export function connectionStateWords(
   state: RunTargetConnectionView['state'],

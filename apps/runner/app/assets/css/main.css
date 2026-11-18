@@ -5,3 +5,16 @@
 @theme static {
   --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', sans-serif;
 }
+
+/* The window's canvas: the cards stand on a tone a step away from their own. */
+:root {
+  --ui-bg-canvas: var(--ui-color-neutral-100);
+}
+
+.dark {
+  --ui-bg-canvas: var(--ui-color-neutral-950);
+}
+
+body {
+  background-color: var(--ui-bg-canvas);
+}

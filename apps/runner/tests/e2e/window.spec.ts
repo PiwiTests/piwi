@@ -4,9 +4,10 @@ import { expect, test, type Locator, type Page } from '@playwright/test';
 
 /**
  * Piwi Runner's window in another language than English, at its smallest size: the language the shell answers reaches
- * the page (`lang`), Runner's own words, the layer's (a run request's confirmation and its checks, by their codes), the
- * run model's (a stopped worker) and Nuxt UI's (a close button), and no text is cut. The shell's bridge
- * (`window.__TAURI__`) and the host's streams are played by the spec; what each says comes from the catalogs.
+ * the page (`lang`), Runner's own words (the header, both views, the welcome, a run's card), the layer's (a run
+ * request's confirmation and its checks, by their codes), the run model's (a stopped worker) and Nuxt UI's (a close
+ * button), and no text is cut. The shell's bridge (`window.__TAURI__`) and the host's streams are played by the spec;
+ * what each says comes from the catalogs.
  */
 
 type Catalog = Record<string, { message: string }>;
@@ -133,16 +134,35 @@ function stoppedRun() {
 
 declare global {
   interface Window {
-    __events: { send(stream: 'host' | 'hub', message: unknown): void };
+    __events: { send(stream: 'host' | 'hub', message: unknown): void; emit(event: string, payload: unknown): void };
   }
+}
+
+/** The connection the host answers: online with the project's folder linked, or none yet. */
+function connectionView(state: 'online' | 'none') {
+  const online = state === 'online';
+  return {
+    state,
+    instance: online ? 'https://piwi.example.com' : null,
+    userCode: null,
+    verificationUrl: null,
+    error: null,
+    errorCode: null,
+    errorArgs: {},
+    keyToKeep: false,
+    linkedProjectIds: online ? [12] : [],
+    projectNames: online ? { 12: 'Acme Checkout' } : {},
+  };
 }
 
 /**
  * The shell's bridge, answering in `language`, and the window's two streams (the host's events and the runs' hub),
- * which `window.__events.send` speaks on.
+ * which `window.__events.send` speaks on; `window.__events.emit` says a shell event (`piwi:local-run`). A run the
+ * person confirms starts as the shell's run 1.
  */
-async function playShell(page: Page, language: string) {
+async function playShell(page: Page, language: string, state: 'online' | 'none' = 'online') {
   await page.addInitScript((code) => {
+    const listeners: Record<string, Array<(event: { payload: unknown }) => void>> = {};
     const streams: Array<{ kind: 'host' | 'hub'; closed: boolean; onmessage: ((e: { data: string }) => void) | null }> =
       [];
     function Stream(url: string | URL) {
@@ -171,6 +191,9 @@ async function playShell(page: Page, language: string) {
             if (stream.kind === kind && !stream.closed) stream.onmessage?.({ data: JSON.stringify(message) });
           }
         },
+        emit: (event: string, payload: unknown) => {
+          for (const listener of listeners[event] ?? []) listener({ payload });
+        },
       },
       __TAURI__: {
         core: {
@@ -182,36 +205,28 @@ async function playShell(page: Page, language: string) {
                 return { run_in_background: true, start_on_login: false };
               case 'desktop_request_folders':
                 return { '12': '/home/dana/shop' };
+              case 'desktop_run_requested_tests':
+                return 1;
               default:
                 return null;
             }
           },
         },
-        event: { listen: async () => () => {} },
+        event: {
+          listen: async (event: string, listener: (event: { payload: unknown }) => void) => {
+            (listeners[event] ??= []).push(listener);
+            return () => {};
+          },
+        },
         window: { getCurrentWindow: () => ({ label: 'main' }) },
       },
     });
   }, language);
   await page.route('**/api/desktop/run-target', (route) =>
-    route.fulfill({
-      json: {
-        connection: {
-          state: 'online',
-          instance: 'https://piwi.example.com',
-          userCode: null,
-          verificationUrl: null,
-          error: null,
-          errorCode: null,
-          errorArgs: {},
-          keyToKeep: false,
-          linkedProjectIds: [12],
-          projectNames: { 12: 'Acme Checkout' },
-        },
-      },
-    }),
+    route.fulfill({ json: { connection: connectionView(state) } }),
   );
   await page.route('**/api/desktop/run-target/requests/*/answer', (route) =>
-    route.fulfill({ json: { launch: false } }),
+    route.fulfill({ json: { launch: (route.request().postDataJSON() as { decision: string }).decision === 'run' } }),
   );
   await page.route('**/api/desktop/runs/commands', (route) =>
     route.fulfill({ json: { type: 'answer', id: 1, ok: true, message: '' } }),
@@ -242,6 +257,16 @@ const LANGUAGES = [
   { code: 'de', tag: 'de', close: 'Schließen' },
 ];
 
+const ESC = '\u001b';
+/** What the run prints: Playwright's colors on, as the shell starts it. */
+const OUTPUT = [
+  'Running 1 test using 1 worker',
+  `  ${ESC}[31m✘${ESC}[39m  1 ${ESC}[2m[chromium] › tests/checkout.spec.ts:3:1 › checkout › pays with a saved card${ESC}[22m`,
+  `    Expected: ${ESC}[32m"Total: $45.00"${ESC}[39m`,
+  `    Received: ${ESC}[31m"Total: $50.00"${ESC}[39m`,
+  `  ${ESC}[31m1 failed${ESC}[39m`,
+];
+
 for (const { code, tag, close } of LANGUAGES) {
   test(`the window speaks ${code}, a run request and a stopped run included, with no text cut`, async ({ page }) => {
     const runner = read(`apps/runner/locales/${code}.json`);
@@ -253,9 +278,17 @@ for (const { code, tag, close } of LANGUAGES) {
     await page.goto('/');
 
     await expect(page.locator('html')).toHaveAttribute('lang', tag);
-    await expect(page.getByText(said(runner, 'runner_tagline'))).toBeVisible();
+    const header = page.getByTestId('runner-header');
+    await expect(header.getByText(said(runner, 'runner_connectedTo', { host: 'piwi.example.com' }))).toBeVisible();
+    await expect(page.getByText(said(runner, 'runner_noRuns'))).toBeVisible();
+    expect(await clipped(header)).toEqual([]);
+    expect(await clipped(page.locator('main'))).toEqual([]);
+
+    // The settings: the connection, the language and About.
+    await header.getByRole('tab', { name: said(runner, 'runner_settingsHeading') }).click();
     await expect(page.getByRole('heading', { name: said(runner, 'runner_languageHeading') })).toBeVisible();
     await expect(page.getByText(said(layer, 'runui_connectionStateOnline'))).toBeVisible();
+    await expect(page.getByTestId('runner-about').getByText(said(runner, 'runner_tagline'))).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
 
     // A request: its confirmation, its checks said from their codes, and Nuxt UI's own close button.
@@ -284,16 +317,56 @@ for (const { code, tag, close } of LANGUAGES) {
     await expect(dialog.getByRole('button', { name: said(layer, 'runui_requestRun') })).toBeEnabled();
     await expect(dialog.getByRole('button', { name: close })).toBeVisible();
     expect(await clipped(dialog)).toEqual([]);
-    await expect(dialog.getByRole('button', { name: said(layer, 'runui_requestNotNow') })).toBeEnabled();
-    await dialog.getByRole('button', { name: said(layer, 'runui_requestNotNow') }).click();
+
+    // Run: the window shows the runs again, the run's card names its project and tests, and its output, once it
+    // failed, opens with Playwright's colors and none of their codes.
+    await dialog.getByRole('button', { name: said(layer, 'runui_requestRun') }).click();
     await expect(dialog).toBeHidden();
+    const run = page.getByTestId('runner-run');
+    await expect(run.getByText(said(runner, 'runner_statusRunning'))).toBeVisible();
+    await expect(run).toContainText('Acme Checkout');
+    await expect(run.getByText(said(layer, 'runui_tests_one', { count: '1' }))).toBeVisible();
+    for (const line of OUTPUT) {
+      await page.evaluate((l) => window.__events.emit('piwi:local-run', { id: 1, kind: 'stdout', line: l }), line);
+    }
+    await page.evaluate(() => window.__events.emit('piwi:local-run', { id: 1, kind: 'exit', code: 1 }));
+    await expect(run.getByText(said(runner, 'runner_statusFailed'))).toBeVisible();
+    const output = run.getByTestId('runner-run-output');
+    await expect(output.locator('pre')).toBeVisible();
+    await expect(output.locator('pre')).toContainText('Received: "Total: $50.00"');
+    expect(await output.locator('pre').innerText()).not.toContain(ESC);
+    await expect(output.getByRole('button', { name: said(runner, 'runner_copyOutput') })).toBeVisible();
+    expect(await clipped(page.locator('main'))).toEqual([]);
+
+    // Clear finished takes the ended run away.
+    await page.getByTestId('runner-clear-finished').click();
+    await expect(run).toBeHidden();
+    await expect(page.getByText(said(runner, 'runner_noRuns'))).toBeVisible();
 
     // A run the hub has and this window holds no entry for: its worker stopped at a Pause, in the run model's words.
     await page.evaluate((viewer) => window.__events.send('hub', { type: 'hello', viewer }), VIEWER);
     await page.evaluate((event) => window.__events.send('hub', event), stoppedRun());
-    const run = page.getByTestId('runner-unlisted-run');
-    await expect(run.getByText(said(runner, 'runner_stillRunning'))).toBeVisible();
-    await expect(run.getByText(runWords.runs_stoppedPause!, { exact: true }).first()).toBeVisible();
+    const unlisted = page.getByTestId('runner-unlisted-run');
+    await expect(unlisted.getByText(said(runner, 'runner_stillRunning'))).toBeVisible();
+    await expect(unlisted.getByText(runWords.runs_stoppedPause!, { exact: true }).first()).toBeVisible();
+    expect(await clipped(page.locator('main'))).toEqual([]);
+  });
+
+  test(`the window speaks ${code} before it is connected, with no text cut`, async ({ page }) => {
+    const runner = read(`apps/runner/locales/${code}.json`);
+    const layer = read(`packages/run-ui/locales/${code}.json`);
+    await playShell(page, code, 'none');
+    await page.goto('/');
+
+    const welcome = page.getByTestId('runner-welcome');
+    await expect(welcome.getByRole('heading', { name: said(runner, 'runner_welcomeHeading') })).toBeVisible();
+    await expect(welcome.getByText(said(runner, 'runner_tagline'))).toBeVisible();
+    await expect(
+      welcome.getByText(said(runner, 'runner_stepConfirm', { run: said(layer, 'runui_requestRun') })),
+    ).toBeVisible();
+    await expect(welcome.getByRole('button', { name: said(layer, 'runui_connectionConnect') })).toBeVisible();
+    await expect(page.getByTestId('runner-status')).toHaveText(said(layer, 'runui_connectionStateNone'));
+    expect(await clipped(page.getByTestId('runner-header'))).toEqual([]);
     expect(await clipped(page.locator('main'))).toEqual([]);
   });
 }

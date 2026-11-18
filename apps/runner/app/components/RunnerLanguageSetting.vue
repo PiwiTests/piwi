@@ -50,10 +50,12 @@ function suggestCorrection() {
 </script>
 
 <template>
-  <UCard v-if="tauriCore()" data-testid="runner-language">
-    <template #header>
-      <h2 class="text-sm font-semibold">{{ t('runner_languageHeading') }}</h2>
-    </template>
+  <RunnerSection
+    v-if="tauriCore()"
+    icon="i-lucide-languages"
+    :title="t('runner_languageHeading')"
+    data-testid="runner-language"
+  >
     <div class="space-y-2">
       <USelect
         :model-value="selected"
@@ -71,5 +73,5 @@ function suggestCorrection() {
         }}</ULink>
       </p>
     </div>
-  </UCard>
+  </RunnerSection>
 </template>

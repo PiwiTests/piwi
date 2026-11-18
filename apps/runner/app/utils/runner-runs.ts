@@ -4,6 +4,7 @@
  * resolves with, so events that arrive before the id is known wait here and are applied once it is.
  */
 import type { RunPage } from '@piwitests/core/run-channel';
+import type { RunRequestTest } from '@piwitests/core/run-request';
 
 export type RunnerRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -12,7 +13,14 @@ export interface RunnerRun {
   requestId: string;
   instance: string;
   projectId: number;
+  /** The name the instance gives the project; null when it gives none. */
+  projectName: string | null;
   title: string;
+  /** The tests the request asked for. */
+  tests: RunRequestTest[];
+  /** When the person confirmed it, and when its process ended (null while it runs), in ms since the epoch. */
+  startedAt: number;
+  endedAt: number | null;
   /** The shell's id for the run; null until the start resolves. */
   shellId: number | null;
   status: RunnerRunStatus;
@@ -44,6 +52,8 @@ export interface RunnerRunStart {
   requestId: string;
   instance: string;
   projectId: number;
+  projectName: string | null;
+  tests: RunRequestTest[];
   title: string;
 }
 
@@ -99,12 +109,13 @@ export function finishedStatus(run: Pick<RunnerRun, 'stopRequested'>, code: numb
   return code === null ? 'error' : 'failed';
 }
 
-/** Applies one event to the run it belongs to. */
-export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent): void {
+/** Applies one event, heard at `at`, to the run it belongs to. */
+export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent, at: number = Date.now()): void {
   if (run.status !== 'running') return;
   if (event.kind === 'exit') {
     run.exitCode = event.code ?? null;
     run.status = finishedStatus(run, run.exitCode);
+    run.endedAt = at;
     return;
   }
   if (
@@ -116,11 +127,16 @@ export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent): void {
   }
 }
 
+/** How long a run took, or has taken so far at `now`, in ms. */
+export function runnerRunDuration(run: Pick<RunnerRun, 'startedAt' | 'endedAt'>, now: number): number {
+  return Math.max(0, (run.endedAt ?? now) - run.startedAt);
+}
+
 /**
  * The list of runs, newest first. `runs` is the array the window renders (a reactive one in the app), and every change
- * goes through it, so a run object is read back from the array before it is changed.
+ * goes through it, so a run object is read back from the array before it is changed. `now` is the clock.
  */
-export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
+export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, now: () => number = Date.now) {
   let nextKey = 1;
   let waiting: RunnerRunEvent[] = [];
 
@@ -140,7 +156,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
   function handle(event: RunnerRunEvent): void {
     const run = runs.find((r) => r.shellId === event.id);
     if (run) {
-      applyRunEvent(run, event);
+      applyRunEvent(run, event, now());
       trim();
       return;
     }
@@ -155,7 +171,11 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
       requestId: input.requestId,
       instance: input.instance,
       projectId: input.projectId,
+      projectName: input.projectName,
       title: input.title,
+      tests: input.tests,
+      startedAt: now(),
+      endedAt: null,
       shellId: null,
       status: 'running',
       stopRequested: false,
@@ -170,10 +190,11 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
       run.shellId = id;
       const mine = waiting.filter((event) => event.id === id);
       waiting = waiting.filter((event) => event.id !== id);
-      for (const event of mine) applyRunEvent(run, event);
+      for (const event of mine) applyRunEvent(run, event, now());
     } catch (error) {
       run.lines.push(error instanceof Error ? error.message : String(error));
       run.status = 'error';
+      run.endedAt = now();
     }
     trim();
     return run;
@@ -193,5 +214,12 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend) {
     }
   }
 
-  return { runs, handle, start, stop };
+  /** Removes the runs that ended from the list; the running ones stay. */
+  function clearFinished(): void {
+    for (let i = runs.length - 1; i >= 0; i--) {
+      if (runs[i]!.status !== 'running') runs.splice(i, 1);
+    }
+  }
+
+  return { runs, handle, start, stop, clearFinished };
 }
