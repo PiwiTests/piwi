@@ -4454,6 +4454,17 @@ class GlueTest {
         assertEquals(Path.of("/w/app/[locale]/a|b^c.spec.ts"), Glue.pathOfUri("file:///w/app/[locale]/a|b^c.spec.ts"))
         assertNull(Glue.pathOfUri("https://example.com/a.spec.ts"))
         assertNull(Glue.pathOfUri(null))
+        // Both spellings name one file.
+        assertEquals(Glue.fileKey("file:///w/app/%5Blocale%5D/a.spec.ts"), Glue.fileKey("file:///w/app/[locale]/a.spec.ts"))
+    }
+
+    @Test
+    fun testOnlyPathOfUriReadsAUriAsAPath() {
+        val parse = Regex("(Path\\.of|Paths\\.get)\\((java\\.net\\.)?URI\\(")
+        val reads = java.io.File("src/main/kotlin").walkTopDown().filter { it.extension == "kt" }
+            .flatMap { file -> file.readLines().filter { parse.containsMatchIn(it) }.map { file.name } }
+            .toList()
+        assertEquals(listOf("Glue.kt"), reads)
     }
 
     @Test

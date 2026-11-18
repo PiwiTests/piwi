@@ -37,7 +37,6 @@ import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import java.io.IOException
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -227,7 +226,7 @@ object PiwiRecordFlow {
         val uri = atHand?.let { runCatching { it.toNioPath().toUri().toString() }.getOrNull() }
         background(project, "Piwi: finding where the test file goes") {
             val offered = project.service<PiwiProjectService>().server()?.newTestFile(NewTestFileParams(uri))?.orNull()
-            val path = offered?.uri?.let { runCatching { Path.of(URI(it)) }.getOrNull() }
+            val path = Glue.pathOfUri(offered?.uri)
             val folder = path?.parent ?: fallback
             val offeredName = path?.fileName?.toString()
             val name = offeredName?.takeIf { !Files.exists(folder.resolve(it)) }
@@ -290,7 +289,7 @@ object PiwiRecordFlow {
             }
         }
         ApplicationManager.getApplication().invokeLater({
-            val path = runCatching { Path.of(java.net.URI(uri)) }.getOrNull()
+            val path = Glue.pathOfUri(uri)
             val file = path?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
             if (file == null) {
                 PiwiCommands.notify(project, "Piwi could not open the file to record into: $uri.", NotificationType.WARNING)

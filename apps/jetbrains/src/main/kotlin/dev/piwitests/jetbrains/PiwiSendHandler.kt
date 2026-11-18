@@ -40,7 +40,6 @@ import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.URI
-import java.nio.file.Path
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
@@ -292,7 +291,7 @@ class PiwiSendHandler : HttpRequestHandler() {
         val start = edit.range?.start ?: refuse("the editor service named no range")
         val end = edit.range?.end ?: refuse("the editor service named no range")
         if (start.line != end.line) refuse("the range spans several lines")
-        val path = runCatching { Path.of(URI(uri)) }.getOrNull() ?: refuse("$uri is not a file")
+        val path = Glue.pathOfUri(uri) ?: refuse("$uri is not a file")
         val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: refuse("$name is not on disk")
         val document = ApplicationManager.getApplication().runReadAction(Computable { FileDocumentManager.getInstance().getDocument(file) })
             ?: refuse("$name cannot be edited as text")

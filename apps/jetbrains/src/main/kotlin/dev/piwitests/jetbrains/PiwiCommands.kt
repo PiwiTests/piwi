@@ -30,7 +30,6 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import java.awt.datatransfer.StringSelection
-import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -295,7 +294,7 @@ object PiwiCommands {
 
     /** Save the spec at `uri` when its document has unsaved changes, on the event thread, waiting for it. */
     private fun saveSpec(project: Project, uri: String) {
-        val path = runCatching { Path.of(URI(uri)) }.getOrNull() ?: return
+        val path = Glue.pathOfUri(uri) ?: return
         ApplicationManager.getApplication().invokeAndWait({
             if (project.isDisposed) return@invokeAndWait
             val file = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@invokeAndWait
