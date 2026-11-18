@@ -133,8 +133,14 @@ interface SentImage {
   image: Image;
 }
 
+/** The images the worker posted for each test, decoded once the run ended (`decodeImages`). */
+const decoded = new Map<string, SentImage[]>();
+
 /** The images the worker posted for `test`, decoded, with when each came. */
-const images = (test = TEST_TITLE): SentImage[] =>
+const images = (test = TEST_TITLE): SentImage[] => decoded.get(test) ?? [];
+
+/** Decode the images the worker posted for `test`. */
+const decodeImages = (test: string): SentImage[] =>
   posts.flatMap((p) =>
     p.message.type === 'frame' && 'data' in p.message && p.message.test === test
       ? [
@@ -327,6 +333,7 @@ module.exports = wrapConfig(defineConfig({
   const results = path.join(project, 'results.json');
   run = { ...run, tests: fs.existsSync(results) ? JSON.parse(fs.readFileSync(results, 'utf8')) : [] };
   for (const res of streams) res.end();
+  for (const test of [TEST_TITLE, UNREADABLE_TITLE]) decoded.set(test, decodeImages(test));
 }, 180_000);
 
 afterAll(async () => {

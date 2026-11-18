@@ -130,10 +130,19 @@ interface Posted {
   message: WorkerToInstance;
 }
 
+/** A frame of a test the worker posted, and the color it shows (`colorOf`). */
+interface Frame {
+  at: number;
+  test: string | null;
+  color: ReturnType<typeof colorOf>;
+}
+
 let server: FakeServer;
 /** The worker's event streams, on which the fake instance says how many people watch. */
 const streams: http.ServerResponse[] = [];
 const posts: Posted[] = [];
+/** The frames of `posts`, each decoded once the run ended. */
+const frames: Frame[] = [];
 const marks: Record<string, number> = {};
 let exitCode: number | null = null;
 let output = '';
@@ -160,12 +169,7 @@ function colorOf(data: Buffer): 'blue' | 'red' | 'green' | 'other' {
 function colorsBetween(test: string, from: string, to: string): string[] {
   const start = marks[from]! + SETTLE_MS;
   const end = marks[to]!;
-  return posts
-    .filter((p) => p.at >= start && p.at < end)
-    .map((p) => p.message)
-    .filter((m): m is Extract<WorkerToInstance, { type: 'frame'; data: string }> => m.type === 'frame' && 'data' in m)
-    .filter((m) => m.test === test)
-    .map((m) => colorOf(Buffer.from(m.data, 'base64')));
+  return frames.filter((f) => f.test === test && f.at >= start && f.at < end).map((f) => f.color);
 }
 
 /** The view showed `color` in these frames: from the first of that color on, every one is. */
@@ -266,6 +270,11 @@ module.exports = wrapConfig(defineConfig({
       },
     );
   });
+  for (const { at, message } of posts) {
+    if (message.type === 'frame' && 'data' in message) {
+      frames.push({ at, test: message.test, color: colorOf(Buffer.from(message.data, 'base64')) });
+    }
+  }
 }, 150_000);
 
 afterAll(async () => {
