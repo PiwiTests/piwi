@@ -1221,7 +1221,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     speed: 2.5,
     workers: 3,
     shardCount: 2,
-    environment: 'ci',
+    environment: 'integration',
     resources: 'clean',
     metadata: () =>
       buildMetadata({

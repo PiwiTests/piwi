@@ -9,7 +9,7 @@
 import { mergeTestCases } from '#shared/handlers/test-case-merge';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
 import { and, eq, inArray } from 'drizzle-orm';
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
 import {
   users,
   files,
@@ -217,7 +217,15 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
-import { readProjectRunVariables } from '#shared/handlers/run-variables';
+import {
+  copyEnvironments,
+  createEnvironment,
+  deleteEnvironment,
+  environmentRunSettings,
+  listProjectEnvironments,
+  updateEnvironment,
+} from '#shared/handlers/environments';
+import { environmentInputSchema, environmentPatchSchema } from '#shared/environments';
 import { SOLE_USER } from '#shared/own-runs';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
@@ -740,6 +748,9 @@ function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
 function demoViewer(ctx: DemoCtx | undefined) {
   return { access: demoAccess(ctx), userId: ctx?.actingUserId ?? null };
 }
+
+/** The body of `POST /api/projects/:id/environments/copy`, as its server route reads it. */
+const environmentCopyBodySchema = z.object({ fromProjectId: z.number().int().positive() }).strict();
 
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
 const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'test_run', 'bug_report'];
@@ -3662,7 +3673,7 @@ const routes: RouteEntry[] = [
       const requesterId = demoRequester(ctx);
       const input = await demoReadRunRequestBody(body, requesterId);
       assertDemoScope(ctx, input.projectId);
-      return apiCreateRunRequest(requesterId, input);
+      return apiCreateRunRequest(requesterId, input, demoCan(ctx, 'project:manage', input.projectId));
     },
   },
   {
@@ -4180,11 +4191,85 @@ const routes: RouteEntry[] = [
   {
     method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/run-variables$/,
-    handler: async (m, _, __, ctx) => {
+    handler: async (m, _, q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const raw = q?.get('environment');
+      let environmentId: number | null = null;
+      if (raw != null && raw !== '') {
+        environmentId = parseRouteId(raw);
+        if (environmentId === null) throw demoHttpError(400, 'Invalid environment ID');
+      }
+      const settings = await environmentRunSettings(await getDemoDb(), projectId, environmentId, {
+        canManage: demoCan(ctx, 'project:manage', projectId),
+      });
+      if (!settings.ok) throw demoHttpError(settings.statusCode, settings.message);
+      return { runVariables: settings.runVariables, environment: settings.environment };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/environments$/,
+    handler: async (m, _b, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const canManage = demoCan(ctx, 'project:manage', projectId);
+      return { environments: await listProjectEnvironments(await getDemoDb(), projectId, { canManage }) };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/environments$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const runVariables = await readProjectRunVariables(await getDemoDb(), +m[1]!);
-      if (!runVariables) throw demoHttpError(404, 'Project not found');
-      return { runVariables };
+      const parsed = environmentInputSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const result = await createEnvironment(await getDemoDb(), +m[1]!, parsed.data);
+      if (!result.ok) throw demoHttpError(result.statusCode, result.problems.join(' '));
+      return { environment: result.environment };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/copy$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const parsed = environmentCopyBodySchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const { fromProjectId } = parsed.data;
+      if (fromProjectId === projectId) throw demoHttpError(400, 'Pick another project to copy from');
+      if (!demoCan(ctx, 'project:read', fromProjectId)) {
+        throw demoHttpError(403, 'No access to the project to copy from');
+      }
+      return copyEnvironments(await getDemoDb(), fromProjectId, projectId);
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = environmentPatchSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const result = await updateEnvironment(await getDemoDb(), +m[1]!, +m[2]!, parsed.data);
+      if (!result.ok) throw demoHttpError(result.statusCode, result.problems.join(' '));
+      return { environment: result.environment };
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      if (!(await deleteEnvironment(await getDemoDb(), +m[1]!, +m[2]!))) {
+        throw demoHttpError(404, 'No environment of this project has this id');
+      }
+      return { deleted: true };
     },
   },
   {

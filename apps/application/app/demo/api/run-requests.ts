@@ -3,7 +3,8 @@
  * through the server's shared handler. The demo has no app to claim a request, so the requester's own seeded desktop
  * app answers it as it is read: claimed after 2 seconds, **Run** clicked after 5, running from 7 and passed at 15; a
  * stop ends it 2 seconds later. From 7 seconds the request has its run, private to its requester, whose tests pass at
- * 15. A persona with no app of their own sees their request expire, as on a server.
+ * 15, reporting the key of the environment the request names as its label. A persona with no app of their own sees
+ * their request expire, as on a server.
  */
 import { and, eq, inArray } from 'drizzle-orm';
 import {
@@ -13,7 +14,15 @@ import {
   type RunRequestState,
   type RunRequestTest,
 } from '@piwitests/core/run-request';
-import { runRequests, runTargets, testCases, testRuns, testRunsCases } from '../../../server/database/schema';
+import {
+  environments,
+  runRequests,
+  runTargets,
+  testCases,
+  testRuns,
+  testRunsCases,
+} from '../../../server/database/schema';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 import {
   createRunRequest,
   findOwnRequest,
@@ -56,11 +65,22 @@ function simulatedState(age: number): RunRequestState {
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 type HeldRequest = typeof runRequests.$inferSelect;
 
+/**
+ * The label a request's run reports: the key of the environment it is for, which the app sets as `PIWI_ENVIRONMENT`
+ * and the config reports; none when the request names none or its environment is gone.
+ */
+async function requestedLabel(db: DemoDb, environmentId: number | null): Promise<string | null> {
+  if (environmentId == null) return null;
+  const [row] = await db.select({ key: environments.key }).from(environments).where(eq(environments.id, environmentId));
+  return row?.key ?? null;
+}
+
 /** The run a request's tests started: private to its requester, as a requested run is, and running. */
 async function startRequestedRun(db: DemoDb, row: HeldRequest, startTime: Date): Promise<number> {
   const source = row.source as RunRequestSource;
   const scm = { ...(source.branch && { branch: source.branch }), ...(source.commit && { commit: source.commit }) };
   const metadata = withRequestOrigin(Object.keys(scm).length > 0 ? { scm } : null, row.id);
+  const label = await requestedLabel(db, row.environmentId ?? null);
   const [run] = await db
     .insert(testRuns)
     .values({
@@ -68,6 +88,7 @@ async function startRequestedRun(db: DemoDb, row: HeldRequest, startTime: Date):
       status: 'running',
       startTime,
       totalTests: (row.tests as RunRequestTest[]).length,
+      ...(await resolveRunEnvironment(db, row.projectId, label)),
       branch: source.branch ?? null,
       metadata,
       origin: runOrigin(metadata),
@@ -231,17 +252,20 @@ export async function demoReadRunRequestBody(body: unknown, viewerId: number | n
   };
 }
 
-/** POST /api/run-requests, once the caller was checked on the project. */
+/**
+ * POST /api/run-requests, once the caller was checked on the project. `managesProject` is whether the acting persona
+ * holds `project:manage` there, which a protected environment needs; the persona the demo opens as is an administrator.
+ */
 export async function apiCreateRunRequest(
   requesterId: number,
   input: Awaited<ReturnType<typeof demoReadRunRequestBody>>,
+  managesProject = true,
 ) {
   const db = await getDemoDb();
   if (!(await isOptInCapabilityOn(db, input.projectId, 'machine-runs'))) {
     throw demoHttpError(403, 'Run on my machine is off for this project');
   }
-  // The demo's visitor manages every project, as an administrator.
-  const created = await createRunRequest(db, { id: newDemoRequestId(), requesterId, ...input, managesProject: true });
+  const created = await createRunRequest(db, { id: newDemoRequestId(), requesterId, ...input, managesProject });
   if (!created.ok) throw demoHttpError(created.statusCode, created.message);
   return { ...(await runRequestView(db, created.row)), skipped: created.skipped };
 }

@@ -66,7 +66,9 @@ the linked folder, and the exact command. Nothing runs until you click **Run**:
   tests are picked by their titles (`--grep`) rather than by their lines, which may have moved.
 - **One run per folder**: while another run goes on in the folder, the request waits, and is checked again once it
   ends. A command takes at most 24,000 characters.
-- **The project's [run variables](./run-variables)**: listed among the checks, and the command starts with them.
+- **The [environment](./environments)** the request names, which an older app cannot apply, and the
+  [run variables](./run-variables) of the project and the environment: listed among the checks; the command starts
+  with them.
 
 **Not now** declines it, or refuses it with the checks that failed, and the page says which. A request nobody answers
 in the app within 10 minutes ends.
