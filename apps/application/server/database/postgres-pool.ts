@@ -56,17 +56,22 @@ type PostgresOptions = NonNullable<Parameters<Postgres>[1]>;
  */
 export const POSTGRES_STARTUP_PARAMETERS = { jit: 'off' } as const;
 
-/** Whether `error`, the failure of a pool's first query, refuses a startup parameter of `POSTGRES_STARTUP_PARAMETERS`. */
-function refusesStartupParameter(error: unknown): boolean {
-  const message = error instanceof Error ? error.message : String(error);
-  return /startup parameter|\bjit\b/i.test(message);
+/** Whether `error` is an answer of the server or of a pooler (postgres.js's `PostgresError`), not a network failure. */
+function answeredByServer(error: unknown): boolean {
+  return error instanceof Error && 'severity' in error;
+}
+
+/** The message of `error`, for the server's log. */
+function messageOf(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 /**
  * Open the PostgreSQL pool of `url` with `options` and `POSTGRES_STARTUP_PARAMETERS`, and run a first query on it.
- * When that query fails because the parameter is refused (PgBouncer answers `unsupported startup parameter: jit`
- * unless its `ignore_startup_parameters` lists it), the pool is opened again without it, with a warning, and the
- * server's own `jit` setting applies. Any other failure of that query is left to the pool's next query to report.
+ * When the server or a pooler refuses that query (PgBouncer answers `unsupported startup parameter: jit` unless its
+ * `ignore_startup_parameters` lists it) and accepts one from a pool opened without the parameters, that pool is used,
+ * with a warning, and the server's own `jit` setting applies. Any other failure of the first query (the network, or a
+ * refusal the second pool gets too) is logged and thrown, and no pool is left open.
  */
 export async function openPostgresPool(postgres: Postgres, url: string, options: PostgresOptions) {
   const client = postgres(url, { ...options, connection: { ...options.connection, ...POSTGRES_STARTUP_PARAMETERS } });
@@ -74,12 +79,20 @@ export async function openPostgresPool(postgres: Postgres, url: string, options:
     await client`SELECT 1`;
     return client;
   } catch (error) {
-    if (!refusesStartupParameter(error)) return client;
     await client.end({ timeout: 0 });
-    const reason = error instanceof Error ? error.message : String(error);
-    console.warn(
-      `[Database] PostgreSQL refused the startup parameter jit=off, so JIT compilation follows the server's setting: ${reason}`,
-    );
-    return postgres(url, options);
+    if (answeredByServer(error)) {
+      const plain = postgres(url, options);
+      try {
+        await plain`SELECT 1`;
+        console.warn(
+          `[Database] PostgreSQL refused a connection with jit=off and accepted one without it, so JIT compilation follows the server's setting: ${messageOf(error)}`,
+        );
+        return plain;
+      } catch {
+        await plain.end({ timeout: 0 });
+      }
+    }
+    console.error('[Database] Could not connect to PostgreSQL:', error);
+    throw error;
   }
 }

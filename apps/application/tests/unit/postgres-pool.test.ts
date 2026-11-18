@@ -84,6 +84,11 @@ test('the server opens PostgreSQL with that pool size and JIT compilation off', 
   expect(opened).toEqual([[`${URL_WITHOUT_MAX}?max=3`, { max: 3, connection: { jit: 'off' } }]]);
 });
 
+/** An error the server or a pooler answers, as postgres.js throws it (`PostgresError`). */
+function serverError(message: string, code: string): Error {
+  return Object.assign(new Error(message), { severity: 'FATAL', code });
+}
+
 /** A postgres.js factory whose pools answer their first query with `answer(options)`: an error, or rows. */
 function fakePostgres(answer: (options: { connection?: Record<string, string> }) => Error | null) {
   const pools: Array<{ options: { max?: number; connection?: Record<string, string> }; ended: boolean }> = [];
@@ -101,31 +106,47 @@ function fakePostgres(answer: (options: { connection?: Record<string, string> })
 }
 
 describe('openPostgresPool', () => {
+  const JIT_OFF = { max: 4, connection: { jit: 'off' } };
+
   test('opens the pool with JIT compilation off', async () => {
     const { postgres, pools } = fakePostgres(() => null);
     await openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 });
-    expect(pools).toEqual([{ options: { max: 4, connection: { jit: 'off' } }, ended: false }]);
+    expect(pools).toEqual([{ options: JIT_OFF, ended: false }]);
   });
 
   test('opens it again without the parameter when a pooler refuses it, with a warning', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
     const { postgres, pools } = fakePostgres((options) =>
-      options.connection?.jit ? new Error('unsupported startup parameter: jit') : null,
+      options.connection?.jit ? serverError('unsupported startup parameter: jit', '08P01') : null,
     );
     await openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 });
     expect(pools).toEqual([
-      { options: { max: 4, connection: { jit: 'off' } }, ended: true },
+      { options: JIT_OFF, ended: true },
       { options: { max: 4 }, ended: false },
     ]);
     expect(warn).toHaveBeenCalledTimes(1);
     expect(warn.mock.calls[0]!.join(' ')).toContain('unsupported startup parameter: jit');
   });
 
-  test('keeps the pool when its first query fails for another reason', async () => {
+  test('throws a refusal the pool without the parameter gets too, and leaves no pool open', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { postgres, pools } = fakePostgres(() => new Error('connect ECONNREFUSED 127.0.0.1:5432'));
-    await openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 });
-    expect(pools).toEqual([{ options: { max: 4, connection: { jit: 'off' } }, ended: false }]);
+    const refused = serverError('password authentication failed for user "piwi"', '28P01');
+    const { postgres, pools } = fakePostgres(() => refused);
+    await expect(openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 })).rejects.toBe(refused);
+    expect(pools).toEqual([
+      { options: JIT_OFF, ended: true },
+      { options: { max: 4 }, ended: true },
+    ]);
     expect(warn).not.toHaveBeenCalled();
+  });
+
+  test('throws a network failure at once, a host named jit included, without a second pool', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const unreachable = new Error('getaddrinfo ENOTFOUND jit.internal');
+    const { postgres, pools } = fakePostgres(() => unreachable);
+    await expect(openPostgresPool(postgres, URL_WITHOUT_MAX, { max: 4 })).rejects.toBe(unreachable);
+    expect(pools).toEqual([{ options: JIT_OFF, ended: true }]);
+    expect(logged).toHaveBeenCalledTimes(1);
   });
 });
