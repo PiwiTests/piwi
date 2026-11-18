@@ -13,6 +13,7 @@ const {
   createEnvironment,
   deleteEnvironment,
   environmentRunSettings,
+  listInstanceEnvironments,
   listProjectEnvironments,
   resolveRunEnvironment,
   runEnvironmentFacts,
@@ -441,5 +442,23 @@ describe('the settings that name an environment', () => {
       { name: 'All' },
     ]);
     expect(await backfillEnvironmentReferences(db as never)).toBe(0);
+  });
+});
+
+describe('the environments across projects', () => {
+  test('one entry per key ignoring case, over the projects the scope allows, archived ones left out', async () => {
+    await createEnvironment(db as never, SHOP, { key: 'staging', name: 'Staging' });
+    await createEnvironment(db as never, OTHER, { key: 'Staging', name: 'Staging (Globex)' });
+    const qa = await createEnvironment(db as never, OTHER, { key: 'qa', name: 'QA' });
+    if (!qa.ok) throw new Error('not created');
+    await updateEnvironment(db as never, OTHER, qa.environment.id, { archived: true });
+
+    expect(await listInstanceEnvironments(db as never, 'all')).toEqual([
+      { key: 'staging', names: ['Staging', 'Staging (Globex)'], projects: 2 },
+    ]);
+    expect(await listInstanceEnvironments(db as never, new Set([OTHER]))).toEqual([
+      { key: 'Staging', names: ['Staging (Globex)'], projects: 1 },
+    ]);
+    expect(await listInstanceEnvironments(db as never, new Set())).toEqual([]);
   });
 });

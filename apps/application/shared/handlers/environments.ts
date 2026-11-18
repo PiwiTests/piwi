@@ -87,6 +87,51 @@ export async function listProjectEnvironments(
     .map((row) => environmentRecordOf(row, canManage));
 }
 
+/** An environment key as the projects a person can read use it, for the pickers that span projects. */
+export interface InstanceEnvironment {
+  key: string;
+  /** The names the projects give it, each once. */
+  names: string[];
+  /** How many of the projects have it. */
+  projects: number;
+}
+
+/**
+ * The environments of the projects `scope` allows, one entry per key ignoring case, in position order, archived ones
+ * left out: what a cross-project filter (Analytics, a dashboard, a report, a notification filter on every project)
+ * offers, since it names an environment by key.
+ */
+export async function listInstanceEnvironments(
+  db: DrizzleDB,
+  scope: 'all' | Set<number>,
+): Promise<InstanceEnvironment[]> {
+  if (scope !== 'all' && scope.size === 0) return [];
+  const rows = await db
+    .select({
+      projectId: environments.projectId,
+      key: environments.key,
+      keyFold: environments.keyFold,
+      name: environments.name,
+    })
+    .from(environments)
+    .where(
+      and(isNull(environments.archivedAt), scope === 'all' ? undefined : inArray(environments.projectId, [...scope])),
+    )
+    .orderBy(asc(environments.position), asc(environments.id));
+  const byKey = new Map<string, { key: string; names: Set<string>; projects: Set<number> }>();
+  for (const row of rows) {
+    const entry = byKey.get(row.keyFold) ?? { key: row.key, names: new Set<string>(), projects: new Set<number>() };
+    entry.names.add(row.name);
+    entry.projects.add(row.projectId);
+    byKey.set(row.keyFold, entry);
+  }
+  return [...byKey.values()].map((entry) => ({
+    key: entry.key,
+    names: [...entry.names],
+    projects: entry.projects.size,
+  }));
+}
+
 /**
  * A run's label and environment as a run is stored: the label trimmed and cut (`normalizeEnvironmentLabel`), and the
  * environment of the project it resolves to. A label no environment takes creates a `discovered` one with it as key,

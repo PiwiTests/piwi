@@ -782,6 +782,8 @@ export interface ServerEnvironmentResponse {
   globalization?: string | null;
   environmentName?: string | null;
   appVersion?: string | null;
+  /** The commit the application was built from: 7 to 40 hexadecimal characters (`deployedCommitOf`). */
+  appCommit?: string | null;
   hostname?: string | null;
   /** An id of the server process: another one after a restart. */
   instance?: string | null;

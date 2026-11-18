@@ -221,6 +221,7 @@ import {
   copyEnvironments,
   createEnvironment,
   deleteEnvironment,
+  listInstanceEnvironments,
   environmentRunSettings,
   listProjectEnvironments,
   updateEnvironment,
@@ -1505,6 +1506,14 @@ const routes: RouteEntry[] = [
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       return apiGetDemoLiveSnapshot(+m[1]!, query ?? new URLSearchParams());
     },
+  },
+
+  {
+    method: 'GET',
+    pattern: /^\/api\/environments$/,
+    handler: async (_, __, ___, ctx) => ({
+      environments: await listInstanceEnvironments(await getDemoDb(), ctx?.scope ?? 'all'),
+    }),
   },
 
   // Test runs
