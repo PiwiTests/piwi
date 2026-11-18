@@ -6,7 +6,7 @@ import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { readWorkerToInstance, type WorkerToInstance } from '@piwitests/core/live-view';
 import { detectCi } from '../src/internal/support/ci.js';
-import { jsonRes, startServer, type FakeServer } from './_helpers.js';
+import { jsonRes, orError, startServer, type FakeServer } from './_helpers.js';
 
 /**
  * The live view's masking, in a real CI run through the built package against a fake instance that lists one element
@@ -133,8 +133,19 @@ interface SentImage {
   image: Image;
 }
 
+/** The images the worker posted for each test, decoded once the run ended (`decodeImages`), or why they could not be. */
+const decoded = new Map<string, SentImage[] | Error>();
+
 /** The images the worker posted for `test`, decoded, with when each came. */
-const images = (test = TEST_TITLE): SentImage[] =>
+const images = (test = TEST_TITLE): SentImage[] => {
+  const sent = decoded.get(test);
+  if (sent === undefined) throw new Error(`The images of "${test}" are not decoded: decode them in \`beforeAll\`.`);
+  if (sent instanceof Error) throw sent;
+  return sent;
+};
+
+/** Decode the images the worker posted for `test`. */
+const decodeImages = (test: string): SentImage[] =>
   posts.flatMap((p) =>
     p.message.type === 'frame' && 'data' in p.message && p.message.test === test
       ? [
@@ -327,6 +338,11 @@ module.exports = wrapConfig(defineConfig({
   const results = path.join(project, 'results.json');
   run = { ...run, tests: fs.existsSync(results) ? JSON.parse(fs.readFileSync(results, 'utf8')) : [] };
   for (const res of streams) res.end();
+  for (const test of [TEST_TITLE, UNREADABLE_TITLE])
+    decoded.set(
+      test,
+      orError(() => decodeImages(test)),
+    );
 }, 180_000);
 
 afterAll(async () => {
