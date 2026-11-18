@@ -15,7 +15,7 @@ run's label files it under one, and a run Piwi starts, or a command it gives to 
 A project admin keeps the list in **Project → Settings → Environments**:
 
 - **Key**: the label its runs report (`staging`), unique in the project ignoring case: 1 to 80 letters, digits,
-  spaces and `_ - . , : / @ + =`, since it reaches a run as a variable. A changed key stays as an alias.
+  spaces and `_ - . , : / @ + =`. A changed key stays as an alias.
 - **Name**, shown in the pickers and the project's filters (`Staging`), and a **description** for the team ("data
   reset every night at 02:00").
 - **Aliases**: up to 20 other labels that name it (`stg`), or patterns where `*` matches any run of characters
@@ -23,6 +23,11 @@ A project admin keeps the list in **Project → Settings → Environments**:
 - **Run variables**: up to 10, set over the project's on the runs Piwi starts for it.
 - **Built from the checkout**, the **env file**, **protected** and its **required tags**: the sections below.
 - **The order** every picker shows.
+
+<figure>
+  <img src="/screenshots/project-environments-settings.png" alt="Project Settings, Environments: Local, Integration, Staging and a protected Production, each with its key, aliases, run variables and env file, then a discovered preview environment">
+  <figcaption>Four declared environments and a discovered one.</figcaption>
+</figure>
 
 **Archive** takes an environment out of the pickers: its runs keep it, and no run Piwi starts can be for it.
 **Delete** removes it: its runs keep their label and lose their environment, and the next run that reports the label

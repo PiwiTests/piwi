@@ -3888,10 +3888,11 @@ const SCENES = [
     of: '[data-shot="project-run-variables-settings"]',
   })),
   ...[
-    { name: 'project-environments-settings', width: 1280, height: 1000 },
-    { name: 'project-environments-settings-mobile', width: 375, height: 1600 },
-  ].map(({ name, width, height }) => ({
+    { name: 'project-environments-settings', width: 1280, height: 1000, docs: true },
+    { name: 'project-environments-settings-mobile', width: 375, height: 1600, docs: false },
+  ].map(({ name, width, height, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `Project → Settings → Environments: the project's environments in picker order, each with its key, aliases, run variables and protection, the archived ones apart, at ${width} px`,
     route: '/projects/1?tab=settings&section=environments',
     viewport: { width, height },
