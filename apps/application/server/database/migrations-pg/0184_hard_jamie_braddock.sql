@@ -1,0 +1,2 @@
+CREATE INDEX "idx_run_requests_environment" ON "run_requests" USING btree ("environment_id");--> statement-breakpoint
+CREATE INDEX "idx_test_runs_environment" ON "test_runs" USING btree ("environment_id");

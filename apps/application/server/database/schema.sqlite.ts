@@ -160,6 +160,7 @@ export const testRuns = sqliteTable(
       table.environmentId,
       table.startTime,
     ),
+    environmentIdx: index('idx_test_runs_environment').on(table.environmentId),
   }),
 );
 
@@ -3226,6 +3227,7 @@ export const runRequests = sqliteTable(
     projectIdx: index('idx_run_requests_project').on(t.projectId),
     stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
     runIdx: index('idx_run_requests_run').on(t.runId),
+    environmentIdx: index('idx_run_requests_environment').on(t.environmentId),
     requestTokenIdx: index('idx_run_requests_run_token').on(t.requestTokenDigest),
   }),
 );
