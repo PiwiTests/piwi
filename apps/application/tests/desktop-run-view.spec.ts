@@ -2140,7 +2140,7 @@ test.describe('Desktop run live view', () => {
     });
     await page.evaluate((event) => window.__hub.send(event), ended);
     await page.evaluate(() => window.__exitRun(1));
-    await expect(tray(page).getByText('Failed (exit 1)')).toBeVisible();
+    await expect(tray(page).getByText('Failed', { exact: true })).toBeVisible();
     await expect(tray(page).getByRole('button', { name: 'Open the failure' })).toBeVisible();
     const toast = page.locator('li', { hasText: 'Local run failed' });
     await toast.getByRole('button', { name: 'Open the failure' }).click();

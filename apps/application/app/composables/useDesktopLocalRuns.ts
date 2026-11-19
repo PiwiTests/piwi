@@ -29,6 +29,10 @@
  * and separate output, and the next page takes them back
  * (`takeBackAfterReload`), asking the shell which of their processes still run
  * and how those that ended meanwhile exited (`desktop_local_runs`).
+ *
+ * The finished runs also outlive a restart of the app: each end, Remove and Clear finished write them to the window's
+ * local storage (`keepFinished`), and a start that is no reload takes them back (`takeBackFinished`). A run that ends
+ * while the tray is closed stays `unseen` until the tray opens, which the sidebar's Local runs entry marks.
  */
 import {
   buildBisectArgs,
@@ -62,7 +66,7 @@ import type { HubProgress } from '@piwitests/core/run-hub';
 import type { TestRunDetails } from '~~/types/api';
 import { progressWords } from '@piwitests/run-model/outcome';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import { stripAnsi } from '@piwitests/run-ui/ansi';
+import { runOutputLine, type RunOutputLine } from '@piwitests/run-ui/run-output';
 import type { ReproRequestView } from '#shared/desktop-repro';
 import { UNATTENDED_RUN_SUFFIX } from '#shared/desktop-runs';
 import type { FlakeLabJobReport } from '@piwitests/core/desktop-job';
@@ -201,16 +205,6 @@ export interface LocalRunSet {
 /** Options as stored per project — every field resolved to a concrete value. */
 export type SavedLocalRunOptions = Required<LocalRunOptions>;
 
-export interface LocalRunLine {
-  /** The line's number in its run, from 1: its key while the run keeps its last `LOCAL_RUN_MAX_LINES`. */
-  id: number;
-  /** The line without its ANSI color codes. */
-  text: string;
-  error: boolean;
-  /** The line as printed, ANSI color codes included; only on a line that has them and has text. */
-  ansi?: string;
-}
-
 export interface LocalRun {
   /** Store-unique key — not the shell's per-step run id. */
   key: number;
@@ -252,7 +246,7 @@ export interface LocalRun {
   /** A bisect that runs this test's reproducing Flake Lab arm at each step (kind === 'bisect'). */
   flakeTestCaseId: number | null;
   status: LocalRunStatus;
-  lines: LocalRunLine[];
+  lines: RunOutputLine[];
   /** The lines the run printed so far, its first ones dropped from `lines` included. */
   linesTotal: number;
   exitCode: number | null;
@@ -285,6 +279,8 @@ export interface LocalRun {
    */
   hubRefs: string[];
   stopRequested: boolean;
+  /** When the person asked the run to stop, in ms since the epoch: Force stop waits a moment after it. */
+  stopRequestedAt?: number | null;
   /** Tests announced by Playwright's "Running N tests" lines, across steps. */
   progressTotal: number | null;
   /** Per-test result lines seen so far. */
@@ -371,10 +367,19 @@ export function localRunDetail(
 ): string {
   const project = run.projectLabel || `Project ${run.projectId}`;
   const head = run.environment ? `${project} · ${run.environment.name}` : project;
+  const command = localRunCommand(run);
+  return command ? `${head} · ${command}` : head;
+}
+
+/**
+ * The command a run's current step runs, with the run variables and the environment the shell sets, as the tray's
+ * **Copy the command** copies it; null for a run with no command to show.
+ */
+export function localRunCommand(
+  run: Pick<LocalRun, 'steps' | 'stepIndex' | 'runVariables' | 'environment'>,
+): string | null {
   const command = run.steps[run.stepIndex]?.display;
-  return command
-    ? `${head} · ${commandWithEnvironment(command, run.runVariables ?? [], run.environment ?? null, 'bash')}`
-    : head;
+  return command ? commandWithEnvironment(command, run.runVariables ?? [], run.environment ?? null, 'bash') : null;
 }
 
 /** What the window names to the shell for a run's environment: its pick, with the key the person confirmed it by. */
@@ -488,6 +493,8 @@ const OPTIONS_STORAGE_KEY = 'piwi:desktop-local-run-options';
 const RELOAD_STORAGE_KEY = 'piwi:desktop-local-runs';
 /** The output lines of each run a reload keeps: its last ones. */
 const RELOAD_LINES = 300;
+/** Where the window keeps its finished runs across a restart of the app: its local storage. */
+const FINISHED_STORAGE_KEY = 'piwi:desktop-local-runs-finished';
 
 /** How far a run's step that ended came, as the hub last counted it (`endedProgress`, `endedAtStop`). */
 interface KeptEnded {
@@ -503,6 +510,8 @@ interface KeptForReload {
   trayOpen: boolean;
   /** How far each step of the runs that ended came, by its name on the hub. */
   ended?: Record<string, KeptEnded>;
+  /** The runs that ended while the tray was closed (`unseen`). */
+  unseen?: number[];
 }
 
 /**
@@ -560,6 +569,8 @@ export function useDesktopLocalRuns() {
   const keptWindows = useState<number[]>('desktop-local-runs-kept-windows', () => []);
   /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
   const trayMounts = useState<number>('desktop-local-runs-tray-mounts', () => 0);
+  /** The runs that ended while the tray was closed, by key, until the tray opens: the sidebar's entry marks them. */
+  const unseen = useState<number[]>('desktop-local-runs-unseen', () => []);
   /** The protected environment Run again asks the person to confirm, until they answer (`askToConfirm`). */
   const environmentQuestion = useState<{ name: string; requiredTags: string[] } | null>(
     'desktop-local-runs-environment-question',
@@ -600,9 +611,9 @@ export function useDesktopLocalRuns() {
   }
 
   function pushLine(run: LocalRun, printed: string, error: boolean) {
-    const text = stripAnsi(printed);
-    const id = ++run.linesTotal;
-    run.lines.push(text === printed || !text ? { id, text, error } : { id, text, error, ansi: printed });
+    const line = runOutputLine(++run.linesTotal, printed, error);
+    const text = line.text;
+    run.lines.push(line);
     if (run.lines.length > LOCAL_RUN_MAX_LINES) run.lines.splice(0, run.lines.length - LOCAL_RUN_MAX_LINES);
     if (error) return;
     const total = PROGRESS_TOTAL_RE.exec(text);
@@ -771,7 +782,9 @@ export function useDesktopLocalRuns() {
         }
       }
       notifyFinished(run);
+      if (!trayOpen.value) unseen.value = [...unseen.value.filter((key) => key !== run.key), run.key];
       trimFinished();
+      keepFinished();
     }
   }
 
@@ -1759,6 +1772,7 @@ export function useDesktopLocalRuns() {
    */
   async function stopRun(run: LocalRun) {
     if (run.status !== 'running') return;
+    if (!run.stopRequested) run.stopRequestedAt = Date.now();
     run.stopRequested = true;
     const core = tauriCore();
     const shellId = run.shellId;
@@ -1789,6 +1803,7 @@ export function useDesktopLocalRuns() {
       separate: separate.value,
       trayOpen: trayOpen.value,
       ended,
+      unseen: unseen.value,
     });
     for (const lines of [RELOAD_LINES, 0]) {
       try {
@@ -1863,6 +1878,47 @@ export function useDesktopLocalRuns() {
     keptForNextPage = null;
     if (kept && kept.runs.length > 0) await takeBack(kept);
     if (reloaded) await closeUnownedOutputWindows();
+    else takeBackFinished();
+  }
+
+  /**
+   * Write the window's finished runs to its local storage, for its next start (`takeBackFinished`): each with its last
+   * `RELOAD_LINES` output lines, else without its lines when the storage is full.
+   */
+  function keepFinished() {
+    const finished = runs.value.filter((run) => run.status !== 'running');
+    const kept = (lines: number): LocalRun[] =>
+      finished.map((run) => ({ ...run, lines: lines > 0 ? run.lines.slice(-lines) : [] }));
+    for (const lines of [RELOAD_LINES, 0]) {
+      try {
+        localStorage.setItem(FINISHED_STORAGE_KEY, JSON.stringify(kept(lines)));
+        return;
+      } catch {
+        // Full or unavailable storage: tried again without the output, else the next start shows none.
+      }
+    }
+  }
+
+  /**
+   * Take back, as the app starts, the finished runs its last start kept (`keepFinished`), after the window's own: their
+   * output, Run again and their links as they were, the tray closed. The shell numbers its processes anew at each start,
+   * so a run taken back keeps no name on the hub (`hubRefs`), which a run of this start may take.
+   */
+  function takeBackFinished() {
+    let kept: unknown = null;
+    try {
+      const raw = localStorage.getItem(FINISHED_STORAGE_KEY);
+      kept = raw ? JSON.parse(raw) : null;
+    } catch {
+      // Unavailable or unreadable storage: the window starts with its own runs alone.
+    }
+    if (!Array.isArray(kept)) return;
+    const back = (kept as LocalRun[])
+      .filter((run) => run && typeof run.key === 'number' && Array.isArray(run.lines) && run.status !== 'running')
+      .map((run) => ({ ...run, key: nextKey++, shellId: null, stepStarting: false, hubRefs: [], piwiRunIds: {} }));
+    if (back.length === 0) return;
+    runs.value = [...runs.value, ...back];
+    trimFinished();
   }
 
   async function takeBack(kept: KeptForReload) {
@@ -1875,6 +1931,7 @@ export function useDesktopLocalRuns() {
       .filter(([, on]) => on)
       .map(([key]) => Number(key));
     if (kept.trayOpen) trayOpen.value = true;
+    if (kept.unseen) unseen.value = [...new Set([...unseen.value, ...kept.unseen])];
     if (kept.ended) {
       try {
         useDesktopRunHub().takeBackEnded(kept.ended);
@@ -1977,6 +2034,20 @@ export function useDesktopLocalRuns() {
 
   function clearFinished() {
     runs.value = runs.value.filter((r) => r.status === 'running');
+    keepFinished();
+  }
+
+  /** Removes one run that ended from the tray, its separate output window with it. */
+  function removeRun(run: LocalRun) {
+    if (run.status === 'running') return;
+    runs.value = runs.value.filter((r) => r.key !== run.key);
+    unseen.value = unseen.value.filter((key) => key !== run.key);
+    keepFinished();
+  }
+
+  /** The tray shows: every run that ended is seen. */
+  function markSeen() {
+    if (unseen.value.length > 0) unseen.value = [];
   }
 
   /**
@@ -2001,6 +2072,7 @@ export function useDesktopLocalRuns() {
     separate,
     keptWindows,
     trayMounts,
+    unseen,
     environmentQuestion,
     answerEnvironmentQuestion,
     /** Hears each run's end, its status, exit code and verdict set, before the tray can drop it; returns the unsubscribe. */
@@ -2021,6 +2093,8 @@ export function useDesktopLocalRuns() {
     rerun,
     stopRun,
     clearFinished,
+    removeRun,
+    markSeen,
     latestForCases,
     getProjectOptions,
     saveProjectOptions,

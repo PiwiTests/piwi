@@ -309,12 +309,14 @@ Each entry names folders under `server/api/`.
   (`runs/inspect/page`). The layer's lane view opens and closes it, and shows the view the app gives it
   (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
   `DesktopRunShare` shows a run's Share live,
-  and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
-  tray or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
+  and `DesktopRunCopyList` the code to copy, and the layer's `DesktopRunOutputPane` a run's output in its ANSI colors,
+  with its filter, first error and Copy, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
+  page or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
   `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). A run's state and count
   come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs
   (`plugins/desktop-local-runs.client.ts`: `keepForReload`, `takeBackAfterReload` and the shell's
-  `desktop_local_runs`). The live view (`useDesktopRunHub`, the `DesktopRun*`
+  `desktop_local_runs`), and a restart its finished runs (`keepFinished`, `takeBackFinished`, in local storage). The
+  sidebar's `DesktopLocalRunsIndicator` opens and closes the tray, marking the runs that ended `unseen`. The live view (`useDesktopRunHub`, the `DesktopRun*`
   components, their pure half `@piwitests/run-ui/run-view`) is the `@piwitests/run-ui` layer's, which Piwi Runner's
   window shows too; the app's own half is `app/utils/desktop-run-view.ts`, and its plugin `run-view-host.ts` gives the
   layer a worker's own window, the Open in editor link and a lane's Inspect (`RUN_VIEW_HOST`). On the run

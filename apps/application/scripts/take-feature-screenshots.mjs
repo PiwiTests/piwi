@@ -10006,6 +10006,20 @@ const SCENES = [
       await page.setViewportSize({ width: 390, height: 844 });
       await settle();
       await shoot('compact-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+
+      // Report shots: a run winding down after Stop, and the sidebar's entry once it ended with the tray closed.
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await tray.getByRole('button', { name: 'Compact list' }).click();
+      await tray.getByRole('button', { name: 'Stop', exact: true }).click();
+      await tray.getByRole('button', { name: 'Force stop' }).waitFor();
+      await tray.getByText(/^Ends within \d+ s$/).waitFor();
+      await settle();
+      await shoot('stopping', { of: '[aria-label="Local runs"]', pad: 0 });
+      await tray.getByRole('button', { name: 'Close local runs' }).click();
+      await exit(53, 130);
+      await page.getByTestId('local-runs-unseen').waitFor();
+      await settle();
+      await shoot('sidebar-entry', { of: '[data-testid="local-runs-entry"]', pad: 12 });
     },
   },
   {

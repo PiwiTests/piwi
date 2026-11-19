@@ -6,7 +6,7 @@
  * have yet. A dashboard window that reloaded asks a window the page before had open whether it is still there (`ask`),
  * and the window answers `ready` again.
  */
-import type { LocalRunLine } from '~/composables/useDesktopLocalRuns';
+import type { RunOutputLine } from '@piwitests/run-ui/run-output';
 import type { BadgeColor } from '~/utils';
 
 export const RUN_OUTPUT_CHANNEL = 'piwi:run-output';
@@ -22,8 +22,10 @@ export interface RunOutputState {
   finishedAt: number | null;
   running: boolean;
   stopRequested: boolean;
+  /** When the person asked the run to stop, in ms since the epoch; null while nobody did. */
+  stopRequestedAt: number | null;
   /** Its lines the window does not have yet: all those it keeps after `ready`, the new ones since after that. */
-  lines: LocalRunLine[];
+  lines: RunOutputLine[];
 }
 
 export type RunOutputMessage =
@@ -49,7 +51,7 @@ export function outputWindowNameOf(label: string): string | null {
  * The lines the output window shows once `state` arrives, from the `held` ones it has: `state.lines` added after them
  * when they follow on, in their place otherwise; the last `max` of them.
  */
-export function mergeRunOutputLines(held: LocalRunLine[], state: RunOutputState, max: number): LocalRunLine[] {
+export function mergeRunOutputLines(held: RunOutputLine[], state: RunOutputState, max: number): RunOutputLine[] {
   const follows = held.length > 0 && state.lines.length > 0 && state.lines[0]!.id === held.at(-1)!.id + 1;
   const lines = follows ? [...held, ...state.lines] : state.lines.length > 0 ? state.lines : held;
   return lines.length > max ? lines.slice(lines.length - max) : lines;

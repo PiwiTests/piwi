@@ -82,7 +82,9 @@ test('the runs and the settings, for the docs', async ({ page }) => {
   // The run that passed folded, the one that failed open with its output.
   const passed = page.getByTestId('runner-finished').locator('[data-status="passed"]');
   await passed.getByRole('button', { name: 'search › finds a product by name' }).click();
-  await expect(page.getByTestId('runner-finished').locator('[data-status="failed"] pre')).toBeVisible();
+  await expect(
+    page.getByTestId('runner-finished').locator('[data-status="failed"] [data-testid="run-output"]'),
+  ).toBeVisible();
   await page.mouse.move(0, 0);
   await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(SETTLE_MS);

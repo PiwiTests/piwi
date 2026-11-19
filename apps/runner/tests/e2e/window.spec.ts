@@ -141,11 +141,13 @@ for (const { code, tag, close } of LANGUAGES) {
     );
     await expect(ended.getByText(said(runner, 'runner_statusFailed'))).toBeVisible();
     const output = ended.getByTestId('runner-run-output');
-    await expect(output.locator('pre')).toBeVisible();
-    await expect(output.locator('pre')).toContainText('Received: "Total: $50.00"');
-    expect(await output.locator('pre').innerText()).not.toContain(ESC);
-    await expect(output.locator('pre span[style*="color"]').first()).toBeVisible();
-    await expect(output.getByRole('button', { name: said(runner, 'runner_copyOutput') })).toBeVisible();
+    const pane = output.getByLabel(said(layer, 'runui_outputLabel'), { exact: true });
+    await expect(pane).toBeVisible();
+    await expect(pane).toContainText('Received: "Total: $50.00"');
+    expect(await pane.innerText()).not.toContain(ESC);
+    await expect(pane.locator('span[style*="color"]').first()).toBeVisible();
+    await expect(output.getByRole('button', { name: said(layer, 'runui_outputCopy') })).toBeVisible();
+    await expect(output.getByRole('button', { name: said(layer, 'runui_outputFirstError') })).toBeVisible();
     await expect(ended.getByText(runWords.runs_runNumber!.replace('$id$', '78'))).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
     // Its row folds, and opens again with its output as it was.
@@ -154,7 +156,7 @@ for (const { code, tag, close } of LANGUAGES) {
     await expect(toggle).toHaveAttribute('aria-expanded', 'false');
     await expect(output).toBeHidden();
     await toggle.click();
-    await expect(output.locator('pre')).toBeVisible();
+    await expect(pane).toBeVisible();
 
     // Clear finished takes the ended run away.
     await page.getByTestId('runner-clear-finished').click();

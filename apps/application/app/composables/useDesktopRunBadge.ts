@@ -46,8 +46,12 @@ export function useDesktopRunBadge() {
         const ended = endedAtStopWords(endedAtStop(run), englishRunSpeaker);
         return { label: ended ? `Passed · ${ended}` : 'Passed', color: 'success' };
       }
+      // Playwright exits 1 when tests fail: another code says the run itself went wrong.
       case 'failed':
-        return { label: run.exitCode != null ? `Failed (exit ${run.exitCode})` : 'Failed', color: 'error' };
+        return {
+          label: run.exitCode != null && run.exitCode !== 1 ? `Failed (exit ${run.exitCode})` : 'Failed',
+          color: 'error',
+        };
       case 'stopped':
         return { label: 'Stopped', color: 'neutral' };
       default:

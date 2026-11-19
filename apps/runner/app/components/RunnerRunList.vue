@@ -2,7 +2,8 @@
 /**
  * The runs of this window, in two lists: **Running now**, a card each with its live view (`RunnerRunCard`), and
  * **Finished**, a row each (`RunnerRunRow`), the last to end first, with **Clear finished**. A run the hub still has that this
- * window holds no entry for (the window was reloaded while it went on) shows live under its name, with Stop. While
+ * window holds no entry for (the window was reloaded while it went on) shows live under its name, with Stop and Force
+ * stop. While
  * there is none, the window says how one comes and opens the instance in the browser; while the instance does not
  * answer, a line above says so. The code made at a stop and the locators picked wait on top, to copy
  * (`DesktopRunCopyList`).
@@ -22,12 +23,12 @@ const finished = computed(() => runnerFinishedRuns(runs.value));
 
 /** The hub's live runs no run of this window is: the window was reloaded while they went on. */
 const unlisted = computed(() => runnerUnlistedSessions(sessions.value, runs.value));
-/** The runs of `unlisted` whose Stop was asked. */
-const stopping = ref(new Set<string>());
+/** The runs of `unlisted` whose Stop was asked, and when; a second ask (Force stop) kills the process. */
+const stopping = ref(new Map<string, number>());
 function stopUnlisted(session: HubSession) {
   const shellId = runnerShellIdOf(session.ref);
   if (shellId === null) return;
-  stopping.value = new Set([...stopping.value, session.ref]);
+  if (!stopping.value.has(session.ref)) stopping.value = new Map([...stopping.value, [session.ref, Date.now()]]);
   void stopShellRun(shellId);
 }
 
@@ -99,16 +100,12 @@ function announce(text: string) {
             <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin" />
           </span>
           <p class="min-w-0 flex-1 text-xs text-muted">{{ t('runner_stillRunning') }}</p>
-          <UButton
-            size="xs"
-            color="neutral"
-            variant="outline"
-            icon="i-lucide-square"
-            :disabled="stopping.has(session.ref)"
-            @click="stopUnlisted(session)"
-          >
-            {{ stopping.has(session.ref) ? t('runner_stopping') : t('runner_stop') }}
-          </UButton>
+          <DesktopRunStopButton
+            :stopping="stopping.has(session.ref)"
+            :since="stopping.get(session.ref)"
+            @stop="stopUnlisted(session)"
+            @force="stopUnlisted(session)"
+          />
         </div>
         <DesktopRunSession :session="session" named @announce="announce" />
       </UCard>

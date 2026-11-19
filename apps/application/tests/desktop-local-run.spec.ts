@@ -420,6 +420,57 @@ test.describe('Desktop local run', () => {
     expect(stops).toBe(1);
   });
 
+  test('a double-click on Stop only stops: Force stop waits a moment, beside how long the wind-down can take', async ({
+    page,
+  }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    await tray(page).getByRole('button', { name: 'Stop', exact: true }).dblclick();
+    await expect(tray(page).getByText(/^Ends within (10|9) s$/)).toBeVisible();
+    const stops = () =>
+      page.evaluate(
+        () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').length,
+      );
+    expect(await stops()).toBe(1);
+    await expect(tray(page).getByRole('button', { name: 'Force stop' })).toBeEnabled();
+    expect(await stops()).toBe(1);
+  });
+
+  test('the sidebar’s Local runs opens and closes the tray, and marks a run that failed while it was closed', async ({
+    page,
+  }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    const entry = page.getByTestId('local-runs-entry');
+    await expect(entry).toHaveAccessibleName('Local runs');
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+    await page.evaluate(() => window.__piwiFakeTauri.finish(1));
+    await expect(entry).toHaveAccessibleName('Local runs: a run failed since you looked');
+    await expect(page.getByTestId('local-runs-unseen')).toHaveClass(/bg-error/);
+
+    await entry.click();
+    await expect(tray(page).getByText('Failed', { exact: true })).toBeVisible();
+    await expect(entry).toHaveAccessibleName('Local runs');
+    await expect(page.getByTestId('local-runs-unseen')).toHaveCount(0);
+    await entry.click();
+    await expect(tray(page)).toBeHidden();
+
+    // Remove takes one run that ended away.
+    await page.keyboard.press('g');
+    await page.keyboard.press('l');
+    await tray(page).getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Remove from the list' }).click();
+    await expect(tray(page).getByText('No local runs yet')).toBeVisible();
+  });
+
   test('a second stop forces the run to end', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);

@@ -29,12 +29,6 @@
   "runner_stopping": {
     "message": "Wird gestoppt…"
   },
-  "runner_stop": {
-    "message": "Stoppen"
-  },
-  "runner_stopNow": {
-    "message": "Sofort stoppen"
-  },
   "runner_holdFailures": {
     "message": "Fehlschläge anhalten"
   },
@@ -190,9 +184,6 @@
         "example": "24"
       }
     }
-  },
-  "runner_copyOutput": {
-    "message": "Ausgabe kopieren"
   },
   "runner_aboutHeading": {
     "message": "Über Piwi Runner"

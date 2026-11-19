@@ -345,6 +345,73 @@ describe('the Local runs a reload of the window keeps', () => {
   });
 });
 
+describe('the Local runs a restart of the app keeps', () => {
+  /** The window's local storage, which a restart of the app keeps. */
+  function localStorageOn(local: Map<string, string>) {
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => local.get(key) ?? null,
+      setItem: (key: string, value: string) => local.set(key, value),
+      removeItem: (key: string) => local.delete(key),
+    });
+  }
+
+  test('takes back the runs that ended, with their output, and no name on the hub a new run may take', async () => {
+    const local = new Map<string, string>();
+    localStorageOn(local);
+    const before = await pageWith(new Map());
+    const run = before.store.startRun({
+      projectId: 3,
+      projectLabel: 'Shop',
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
+    })!;
+    await until(() => run.shellId === 41);
+    // The run opened the tray; the person closes it, and the run ends unseen until the tray shows again.
+    expect(before.store.trayOpen.value).toBe(true);
+    before.store.trayOpen.value = false;
+    before.shell(line(41, '  ✘  1 cart.spec.ts:3:1 › pays (1.2s)'));
+    before.shell(exit(41, 1));
+    await until(() => run.status === 'failed');
+    expect(before.store.unseen.value).toEqual([run.key]);
+    before.store.markSeen();
+    expect(before.store.unseen.value).toEqual([]);
+
+    // The app starts again: a new window, its session storage empty, the shell numbering its processes anew.
+    localStorageOn(local);
+    const after = await pageWith(new Map(), { running: [], ended: [] }, 40);
+    await after.store.takeBackAfterReload();
+    const back = after.store.runs.value[0]!;
+    expect(back).toMatchObject({ status: 'failed', exitCode: 1, projectLabel: 'Shop', shellId: null, hubRefs: [] });
+    expect(back.lines.map((l) => l.text)).toEqual(['  ✘  1 cart.spec.ts:3:1 › pays (1.2s)']);
+    expect(after.invoked).toEqual([]);
+
+    // A run of this start takes a key of its own, and its name on the hub is its alone.
+    const next = after.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => next.shellId === 41);
+    expect(next.key).not.toBe(back.key);
+    expect(after.store.runs.value.filter((r) => r.hubRefs.includes('desktop-41'))).toEqual([next]);
+
+    // Remove takes a run that ended away, for the next start too.
+    after.store.removeRun(back);
+    expect(after.store.runs.value).toEqual([next]);
+    expect(JSON.parse(local.get('piwi:desktop-local-runs-finished')!)).toEqual([]);
+  });
+
+  test('takes back nothing on a reload, which keeps its own runs', async () => {
+    const local = new Map<string, string>();
+    localStorageOn(local);
+    local.set(
+      'piwi:desktop-local-runs-finished',
+      JSON.stringify([{ key: 9, status: 'passed', lines: [], hubRefs: [], cases: [] }]),
+    );
+    const storage = new Map<string, string>();
+    const before = await pageWith(storage);
+    before.store.keepForReload();
+    const after = await pageWith(storage);
+    await after.store.takeBackAfterReload();
+    expect(after.store.runs.value).toEqual([]);
+  });
+});
+
 describe('where a failed local run’s end leads', () => {
   test('to the failure its process named first, else the run’s first failed test, else the run’s page', async () => {
     const { store, shell } = await pageWith(new Map());

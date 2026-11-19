@@ -201,7 +201,7 @@ const face = computed(() => {
     return {
       label: passed
         ? 'Passed'
-        : flashRun.value.exitCode != null
+        : flashRun.value.exitCode != null && flashRun.value.exitCode !== 1
           ? `Failed (exit ${flashRun.value.exitCode})`
           : 'Failed',
       color: passed ? ('success' as const) : ('error' as const),

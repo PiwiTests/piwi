@@ -48,9 +48,17 @@
  * A run's output can move to a separate window of the app (`separate`,
  * `DesktopRunOutputWindows`), which stays open when the tray closes or
  * reloads, and closes with the run's entry or when the person closes it.
+ *
+ * A running run's **Stop** gives way to **Force stop** while it winds down
+ * (`DesktopRunStopButton`), and its output shows in the layer's pane
+ * (`DesktopRunOutputPane`: filter, first error, Copy output). A run that ended
+ * has a **More actions** menu: Run again, its run, **Copy the command** and
+ * **Remove from the list**. Opening the tray marks every run that ended as seen
+ * (`markSeen`), and `g` then `l` opens or closes it.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import {
+  localRunCommand,
   localRunCompareTo,
   localRunDetail,
   localRunDuration,
@@ -137,6 +145,17 @@ watch(
   },
   { flush: 'post' },
 );
+
+// The tray shows: the runs that ended while it was closed are seen.
+watch(trayOpen, (open) => open && store.markSeen(), { immediate: true });
+
+defineShortcuts({
+  'g-l': () => {
+    if (available.value) trayOpen.value = !trayOpen.value;
+  },
+});
+
+const { copy } = useCopy();
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
@@ -257,12 +276,10 @@ function lineProgress(run: LocalRun): string {
   return label === 'Running…' || label === 'Stopping…' ? '' : label;
 }
 
-/** The one action a run needs now, on its line. */
+/** The one action a run needs now, on its line; a running run that waits at no stop shows its Stop instead. */
 interface LineAction {
   label: string;
   icon: string;
-  /** Stop is the error tone the card's Stop has; every other action is neutral, outlined. */
-  color: 'error' | 'neutral';
   run: () => void;
 }
 
@@ -273,7 +290,6 @@ function lineAction(run: LocalRun): LineAction | null {
       return {
         label: 'Show the stop',
         icon: 'i-lucide-circle-pause',
-        color: 'neutral',
         run: () => {
           setExpanded(run, true);
           hub.chooseTab(stopped.session.ref, stopped.worker.parallelIndex);
@@ -281,15 +297,12 @@ function lineAction(run: LocalRun): LineAction | null {
         },
       };
     }
-    return run.stopRequested
-      ? { label: 'Force stop', icon: 'i-lucide-square', color: 'error', run: () => void store.stopRun(run) }
-      : { label: 'Stop', icon: 'i-lucide-square', color: 'error', run: () => void store.stopRun(run) };
+    return null;
   }
   if (run.status === 'failed' && run.piwiRunId != null) {
     return {
       label: 'Open the failure',
       icon: 'i-lucide-external-link',
-      color: 'neutral',
       run: () => void openFailure(run),
     };
   }
@@ -298,7 +311,6 @@ function lineAction(run: LocalRun): LineAction | null {
     return {
       label: `Open run #${run.piwiRunId}`,
       icon: 'i-lucide-external-link',
-      color: 'neutral',
       run: () => {
         trayOpen.value = false;
         void navigateTo(to);
@@ -306,9 +318,38 @@ function lineAction(run: LocalRun): LineAction | null {
     };
   }
   if (rerunnable(run)) {
-    return { label: 'Run again', icon: 'i-lucide-rotate-ccw', color: 'neutral', run: () => void store.rerun(run) };
+    return { label: 'Run again', icon: 'i-lucide-rotate-ccw', run: () => void store.rerun(run) };
   }
   return null;
+}
+
+/**
+ * The **More actions** menu of a run that ended: on its line, every action but the one the line shows; on its card,
+ * those the card shows no button for.
+ */
+function moreActions(run: LocalRun, onLine: boolean) {
+  const shown = onLine ? lineAction(run)?.label : null;
+  const items: { label: string; icon: string; onSelect: () => void }[] = [];
+  const add = (label: string, icon: string, onSelect: () => void) => {
+    if (label !== shown) items.push({ label, icon, onSelect });
+  };
+  if (onLine) {
+    if (rerunnable(run)) add('Run again', 'i-lucide-rotate-ccw', () => void store.rerun(run));
+    if (run.status === 'failed' && run.piwiRunId != null) {
+      add('Open the failure', 'i-lucide-external-link', () => void openFailure(run));
+    }
+    if (run.piwiRunId != null) {
+      const to = `/test-runs/${run.piwiRunId}`;
+      add(`Open run #${run.piwiRunId}`, 'i-lucide-external-link', () => {
+        trayOpen.value = false;
+        void navigateTo(to);
+      });
+    }
+  }
+  const command = localRunCommand(run);
+  if (command) add('Copy the command', 'i-lucide-copy', () => void copy(command, { toast: 'Command copied' }));
+  add('Remove from the list', 'i-lucide-x', () => store.removeRun(run));
+  return [items];
 }
 </script>
 
@@ -405,14 +446,31 @@ function lineAction(run: LocalRun): LineAction | null {
             <UButton
               v-if="lineAction(run)"
               size="xs"
-              :color="lineAction(run)!.color"
-              :variant="lineAction(run)!.color === 'error' ? 'soft' : 'outline'"
+              color="neutral"
+              variant="outline"
               :icon="lineAction(run)!.icon"
               class="shrink-0"
               @click="lineAction(run)!.run()"
             >
               {{ lineAction(run)!.label }}
             </UButton>
+            <DesktopRunStopButton
+              v-else-if="run.status === 'running'"
+              :stopping="run.stopRequested"
+              :since="run.stopRequestedAt"
+              @stop="store.stopRun(run)"
+              @force="store.stopRun(run)"
+            />
+            <UDropdownMenu v-if="run.status !== 'running'" :items="moreActions(run, true)">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-ellipsis"
+                aria-label="More actions"
+                class="shrink-0"
+              />
+            </UDropdownMenu>
           </div>
           <article v-else class="px-3 py-2" :data-run="run.key">
             <div class="flex items-center gap-2 min-w-0">
@@ -423,21 +481,13 @@ function lineAction(run: LocalRun): LineAction | null {
                 {{ localRunTitle(run) }}
               </span>
               <span class="text-xs text-muted tabular-nums shrink-0">{{ duration(run) }}</span>
-              <UTooltip v-if="run.status === 'running' && run.stopRequested" text="Kill the process without waiting">
-                <UButton size="xs" color="error" variant="solid" icon="i-lucide-square" @click="store.stopRun(run)">
-                  Force stop
-                </UButton>
-              </UTooltip>
-              <UButton
-                v-else-if="run.status === 'running'"
-                size="xs"
-                color="error"
-                variant="soft"
-                icon="i-lucide-square"
-                @click="store.stopRun(run)"
-              >
-                Stop
-              </UButton>
+              <DesktopRunStopButton
+                v-if="run.status === 'running'"
+                :stopping="run.stopRequested"
+                :since="run.stopRequestedAt"
+                @stop="store.stopRun(run)"
+                @force="store.stopRun(run)"
+              />
               <UTooltip v-else-if="rerunnable(run)" :text="`Run again: ${localRunTitle(run)}, with the same options`">
                 <UButton
                   size="xs"
@@ -458,6 +508,9 @@ function lineAction(run: LocalRun): LineAction | null {
                   @click="toggleSeparate(run)"
                 />
               </UTooltip>
+              <UDropdownMenu v-if="run.status !== 'running'" :items="moreActions(run, false)">
+                <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-ellipsis" aria-label="More actions" />
+              </UDropdownMenu>
               <UButton
                 size="xs"
                 color="neutral"
@@ -528,7 +581,7 @@ function lineAction(run: LocalRun): LineAction | null {
                 @announce="announce"
               />
               <p v-if="separate[run.key]" class="mt-2 text-xs text-muted">The output is in a separate window.</p>
-              <DesktopLocalRunConsole v-else :lines="run.lines" class="mt-2" />
+              <DesktopRunOutputPane v-else :lines="run.lines" class="mt-2" />
             </template>
           </article>
         </template>

@@ -1,6 +1,7 @@
 <script setup lang="ts">
 /**
- * A run going on: where it stands, its name, its project, when it started and how long it has run, and Stop. Then,
+ * A run going on: where it stands, its name, its project, when it started and how long it has run, and Stop, which
+ * gives way to Force stop while the run winds down (`DesktopRunStopButton`, the layer's). Then,
  * live, its workers as the hub tells them (`DesktopRunSession`, the layer's): each worker's test, Pause, Step, Resume
  * and the stopped test's page, with **Hold failures**, which keeps a failure no pause bar shows waiting here; while the
  * window does not hear the hub, its number and page on the instance once named. Last, the tests the request asked for
@@ -37,16 +38,13 @@ const session = computed<HubSession | null>(() => {
       </div>
       <div class="flex shrink-0 items-center gap-2">
         <UBadge :color="status.tone" variant="subtle">{{ status.words }}</UBadge>
-        <UButton
-          size="xs"
-          color="neutral"
-          variant="outline"
-          icon="i-lucide-square"
+        <DesktopRunStopButton
+          :stopping="run.stopRequested"
+          :since="run.stopRequestedAt"
           :disabled="run.shellId === null"
-          @click="stopRun(run)"
-        >
-          {{ run.stopRequested ? t('runner_stopNow') : t('runner_stop') }}
-        </UButton>
+          @stop="stopRun(run)"
+          @force="stopRun(run)"
+        />
       </div>
     </div>
     <div v-if="session || run.page" class="space-y-3 border-t border-default px-4 py-3">

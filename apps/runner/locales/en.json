@@ -39,14 +39,6 @@
     "message": "Stopping…",
     "description": "Badge of a run, and label of its Stop button, once Stop was clicked and the run has not ended yet."
   },
-  "runner_stop": {
-    "message": "Stop",
-    "description": "Button: stops a run."
-  },
-  "runner_stopNow": {
-    "message": "Stop now",
-    "description": "Button, once Stop was clicked and the run has not ended yet: ends it at once."
-  },
   "runner_holdFailures": {
     "message": "Hold failures",
     "description": "Switch of a running run: a failed test waits at its failure for the person to look before the run goes on."
@@ -234,10 +226,6 @@
         "example": "24"
       }
     }
-  },
-  "runner_copyOutput": {
-    "message": "Copy output",
-    "description": "Button of a run's output: copies all of it, without its colors, to the clipboard."
   },
   "runner_aboutHeading": {
     "message": "About",
