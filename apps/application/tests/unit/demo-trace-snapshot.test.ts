@@ -10,6 +10,7 @@ import {
 } from '../../server/utils/dom-snapshot-render';
 import { parseTraceEvents } from '../../server/utils/trace-parser';
 import { buildZip } from '../../server/utils/trace-zip';
+import { buildTraceFrames } from '../../server/utils/trace-insights';
 
 // The real committed demo traces the browser demo parses at runtime. These
 // tests are the guard that a re-recorded trace (scripts/record-demo-media.mjs)
@@ -54,6 +55,20 @@ describe('demo browser trace path (readZipEntries + parseTraceTexts)', () => {
         expect(parsed).not.toBeNull();
         const server = extractDomSnapshot(parsed!, DOM_SNAPSHOT_CAP_CHARS);
         expect(browser).toEqual(server);
+      });
+
+      test('lists the screencast frames the server path lists, each one an entry of the ZIP', async () => {
+        const entries = await readZipEntries(zipBytes, () => true);
+        const decoder = new TextDecoder();
+        const texts = entries
+          .filter((e) => e.name.endsWith('.trace'))
+          .sort((a, b) => traceFileRank(a.name) - traceFileRank(b.name))
+          .map((e) => decoder.decode(e.data));
+        const browser = buildTraceFrames(parseTraceTexts(texts));
+        expect(browser.status).toBe('ok');
+        expect(browser).toEqual(buildTraceFrames(await parseTraceEvents(readFileSync(zipPath))));
+        const names = new Set(entries.map((e) => e.name));
+        for (const frame of browser.pages.flatMap((p) => p.frames)) expect(names.has(frame.name)).toBe(true);
       });
     });
   }

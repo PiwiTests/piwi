@@ -117,6 +117,23 @@ export interface TraceContextOptions {
   options?: Record<string, unknown>;
 }
 
+/**
+ * One `screencast-frame` event: an image of a page the trace recorded when the page
+ * painted something new (any trace recorded with `screenshots`, Playwright's default).
+ */
+export interface TraceScreencastFrame {
+  pageId: string;
+  /**
+   * The archive entry holding the image: `screencast/<name>.jpeg` from Playwright 1.63
+   * (the event's `file`), `resources/<name>.jpeg` before it (the event's `sha1`).
+   */
+  file: string;
+  width: number;
+  height: number;
+  /** When the trace recorded it, in the trace's own timebase (as action `startTime`). */
+  timestamp: number;
+}
+
 /** A top-level `error` event: one of the errors the test ended with. */
 export interface TraceErrorEvent {
   message?: string;
@@ -129,6 +146,8 @@ export interface ParsedTraceData {
   networkRequests: TraceNetworkRequest[];
   /** DOM snapshots in trace order (back-references resolve against earlier ones). */
   frameSnapshots: TraceFrameSnapshot[];
+  /** Screencast frames in trace order, every page's together. */
+  screencastFrames: TraceScreencastFrame[];
   /**
    * The action that raised the test's own error (see `fatalActionIndex`), else
    * the action a test timeout interrupted.
@@ -247,6 +266,7 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
   const consoleEntries: TraceConsoleEntry[] = [];
   const networkRequests: TraceNetworkRequest[] = [];
   const frameSnapshots: TraceFrameSnapshot[] = [];
+  const screencastFrames: TraceScreencastFrame[] = [];
   const contexts: TraceContextOptions[] = [];
   const errors: TraceErrorEvent[] = [];
 
@@ -384,6 +404,11 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
       }
     }
 
+    if (type === 'screencast-frame') {
+      const frame = screencastFrameOf(evt);
+      if (frame) screencastFrames.push(frame);
+    }
+
     // Modern traces emit console messages as their own top-level event; older
     // ones wrap them in a generic `event` with `method: 'console'` (below).
     if (type === 'console') {
@@ -512,6 +537,7 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
     consoleEntries,
     networkRequests,
     frameSnapshots,
+    screencastFrames,
     contexts,
     errors,
     failingAction,
@@ -519,6 +545,25 @@ function extractFromEvents(events: Record<string, unknown>[]): ParsedTraceData {
     eventCount: events.length,
     timeoutFallback,
     traceEndTime,
+  };
+}
+
+/** A `screencast-frame` event as a frame, or null when it names no image, no page or no time. */
+function screencastFrameOf(evt: Record<string, unknown>): TraceScreencastFrame | null {
+  const file =
+    typeof evt.file === 'string' && evt.file
+      ? evt.file
+      : typeof evt.sha1 === 'string' && evt.sha1
+        ? `resources/${evt.sha1}`
+        : null;
+  const { pageId, timestamp, width, height } = evt;
+  if (!file || typeof pageId !== 'string' || typeof timestamp !== 'number' || !Number.isFinite(timestamp)) return null;
+  return {
+    pageId,
+    file,
+    width: typeof width === 'number' && width > 0 ? width : 0,
+    height: typeof height === 'number' && height > 0 ? height : 0,
+    timestamp,
   };
 }
 

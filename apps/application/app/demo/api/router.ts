@@ -190,6 +190,8 @@ import {
   apiGetDemoTraceNetworkBody,
   apiGetDemoTraceSnapshots,
   apiGetDemoTraceSnapshot,
+  apiGetDemoTraceFrames,
+  apiGetDemoTraceFrame,
 } from './trace-insights';
 import {
   listProjects,
@@ -2808,6 +2810,22 @@ const routes: RouteEntry[] = [
     handler: async (m, _body, query, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return apiGetDemoTraceSnapshot(+m[1]!, query);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-frames$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceFrames(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-frame$/,
+    handler: async (m, _body, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceFrame(+m[1]!, query);
     },
   },
   // The demo cannot pixel-diff in the browser — it serves the overlay the

@@ -174,7 +174,7 @@ async function ingestTraceSnapshotCase(request, base) {
             { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
             { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
             { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
-            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 120, failed: true },
+            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 300, failed: true },
           ],
         },
       ],
@@ -5490,7 +5490,7 @@ const SCENES = [
     // Execution 37 carries an attachment, a trace and a visual diff, so the
     // evidence tabs are populated rather than empty.
     route: '/test-run-cases/37',
-    viewport: { width: 1280, height: 1500 },
+    viewport: { width: 1280, height: 1760 },
     of: '[data-shot="evidence-card"]',
     pad: 12,
     deviceScaleFactor: 2,
@@ -8455,6 +8455,88 @@ const SCENES = [
       if (view === 'DOM') await page.locator('table iframe[title="DOM at the failure"]').waitFor({ timeout: 15000 });
       await settle();
       await shoot();
+    },
+  })),
+  ...[
+    { width: 1280, suffix: '' },
+    { width: 390, suffix: '-mobile' },
+  ].map(({ width, suffix }) => ({
+    name: `timeline-screen-lane${suffix}`,
+    description: `Timeline tab of a failing execution with a 1.63 trace: the Screen lane over the axis, the page hovered, a dragged range, a row's page, then the hover card and thumbnails, at ${width} px`,
+    viewport: { width, height: width < 640 ? 2000 : 1300 },
+    outputs: [
+      `timeline-screen-lane${suffix}.png`,
+      `timeline-screen-lane${suffix}-hover.png`,
+      `timeline-screen-lane${suffix}-zoomed.png`,
+      `timeline-screen-lane${suffix}-row.png`,
+      ...(width >= 1280 ? [`timeline-screen-lane${suffix}-hover-card.png`] : []),
+      `timeline-screen-lane${suffix}-thumbs.png`,
+    ],
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      const lane = page.getByTestId('timeline-screen-lane').first();
+      await lane.waitFor({ state: 'visible', timeout: 30_000 });
+      await lane.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      const box = await lane.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.62, box.y + box.height / 2);
+      await page.getByTestId('timeline-screen-preview').waitFor({ timeout: 10_000 });
+      await settle();
+      await shoot('hover', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // A drag across the steps lane, on the first part of the test.
+      const axis = await page.locator('svg:has([data-timeline-screen])').boundingBox();
+      const y = axis.y + axis.height - 40;
+      await page.mouse.move(box.x + box.width * 0.02, y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.2, y, { steps: 4 });
+      await page.mouse.move(box.x + box.width * 0.35, y, { steps: 4 });
+      await page.mouse.up();
+      await page.getByTestId('timeline-zoom-reset').waitFor({ timeout: 10_000 });
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot('zoomed', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // The failing step's page at the failure: beside the table from 1280 px, under its tapped row below.
+      await page.getByTestId('timeline-zoom-reset').click();
+      if (width < 1280)
+        await page
+          .getByRole('button', { name: /^Show the page at / })
+          .last()
+          .click();
+      const panel = page.getByTestId('timeline-page-panel');
+      await panel.getByRole('button', { name: 'At the failure', exact: true }).click();
+      await panel.locator('img').waitFor();
+      await settle();
+      await shoot('row', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // The two other ways the list shows the page: a card on hover, and thumbnails.
+      const views = page.getByRole('group', { name: 'How the list shows the page' });
+      if (width >= 1280) {
+        await views.getByRole('button', { name: 'Hover card' }).click();
+        // In view first: the capture must not scroll the row away from the pointer.
+        await page.locator('[data-shot="evidence-card"]').scrollIntoViewIfNeeded();
+        await page
+          .locator('table tbody tr', { hasText: 'Cancel' })
+          .first()
+          .hover({ position: { x: 240, y: 12 } });
+        await page.getByTestId('timeline-page-hover-card').locator('img').first().waitFor();
+        await settle();
+        await shoot('hover-card', { of: '[data-shot="evidence-card"]', pad: 12 });
+        await page.mouse.move(0, 0);
+      }
+      await views.getByRole('button', { name: 'Thumbnails' }).click();
+      await settle();
+      await shoot('thumbs', { of: '[data-shot="evidence-card"]', pad: 12 });
     },
   })),
   {

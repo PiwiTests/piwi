@@ -13,12 +13,15 @@ import { parseTraceTexts, traceFileRank, type ParsedTraceData } from '~~/server/
 import {
   buildTraceBodyPreview,
   buildTraceCallStack,
+  buildTraceFrames,
   buildTraceNetwork,
   buildTraceSnapshots,
   matchNetworkBodySha1,
   parseNetworkTexts,
   parseStacksTexts,
   resolveSnapshotFile,
+  traceFrameSource,
+  traceImageContentType,
   type TraceResourceReader,
   type TraceResourceSnapshot,
   type TraceStacksIndex,
@@ -38,7 +41,7 @@ interface DemoTraceBundle {
   stacks: TraceStacksIndex | null;
   network: TraceResourceSnapshot[];
   readResource: TraceResourceReader;
-  /** Bytes of an `aria/*` or `screenshots/*` snapshot entry, or null when absent. */
+  /** Bytes of an `aria/*`, `screenshots/*` or `screencast/*` entry, or null when absent. */
   readSnapshot: (file: string) => Uint8Array | null;
 }
 
@@ -81,7 +84,11 @@ async function loadTraceBundle(path: string): Promise<DemoTraceBundle | null> {
     entries.filter((e) => e.name.startsWith('resources/')).map((e) => [e.name.slice('resources/'.length), e.data]),
   );
   const snapshotEntries = new Map(
-    entries.filter((e) => e.name.startsWith('aria/') || e.name.startsWith('screenshots/')).map((e) => [e.name, e.data]),
+    entries
+      .filter(
+        (e) => e.name.startsWith('aria/') || e.name.startsWith('screenshots/') || e.name.startsWith('screencast/'),
+      )
+      .map((e) => [e.name, e.data]),
   );
 
   return {
@@ -190,4 +197,26 @@ export async function apiGetDemoTraceSnapshot(testRunsCaseId: number, query?: UR
   const bytes = bundle.readSnapshot(file);
   if (!bytes) return undefined;
   return binaryResponse(bytes, file, kind === 'aria' ? 'application/json' : 'image/png');
+}
+
+/** GET /api/test-run-cases/:id/trace-frames — mirrors trace-frames.get.ts. */
+export async function apiGetDemoTraceFrames(testRunsCaseId: number): Promise<unknown> {
+  const { path } = await resolveCaseTrace(testRunsCaseId);
+  const bundle = path ? await getTraceBundle(path) : null;
+  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false, startEpochMs: null };
+  return buildTraceFrames(bundle.parsed);
+}
+
+/** GET /api/test-run-cases/:id/trace-frame?name= — mirrors trace-frame.get.ts. */
+export async function apiGetDemoTraceFrame(testRunsCaseId: number, query?: URLSearchParams): Promise<unknown> {
+  const name = query?.get('name') ?? '';
+  if (!name) return undefined;
+  const { path } = await resolveCaseTrace(testRunsCaseId);
+  const bundle = path ? await getTraceBundle(path) : null;
+  const source = traceFrameSource(bundle?.parsed ?? null, name);
+  if (!bundle || !source) return undefined;
+  const bytes = source.kind === 'resource' ? await bundle.readResource(source.name) : bundle.readSnapshot(source.name);
+  const contentType = bytes ? traceImageContentType(bytes) : null;
+  if (!bytes || !contentType) return undefined;
+  return binaryResponse(bytes, name, contentType);
 }

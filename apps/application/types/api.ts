@@ -957,6 +957,40 @@ export interface TraceSnapshotsResponse {
   failingAriaText?: string | null;
 }
 
+/** One image of a page from the trace's screencast. */
+export interface TraceFrame {
+  /** When the trace recorded it, in epoch ms (a few ms after the page painted it): the clock of the timeline's `origin`. */
+  epochMs: number;
+  /** The frame's name in the trace, which `GET /api/test-run-cases/:id/trace-frame?name=` serves. */
+  name: string;
+  /** The image's size in pixels; 0 when the trace did not record it. */
+  width: number;
+  height: number;
+}
+
+/** One page's screencast, its frames in the order the page painted them. */
+export interface TraceFramePage {
+  pageId: string;
+  frames: TraceFrame[];
+}
+
+/** `GET /api/test-run-cases/:id/trace-frames` */
+export interface TraceFramesResponse {
+  /** `no-frames` when the trace recorded no screencast, or none it can place on the clock. */
+  status: 'ok' | 'no-trace' | 'no-frames';
+  /** The pages in the order their first frame was recorded, the first `MAX_TRACE_FRAME_PAGES` of them. */
+  pages: TraceFramePage[];
+  /** How many frames the trace recorded, every page together. */
+  total: number;
+  /** True when the listed pages are an even sample of their frames, past `MAX_TRACE_FRAMES`; `total` also counts unlisted pages. */
+  capped: boolean;
+  /**
+   * When the test started on the trace's clock, in epoch ms: its test runner's header, else its first browser
+   * context's. Null without a trace or a header.
+   */
+  startEpochMs: number | null;
+}
+
 /**
  * Browser performance / web vitals recorded via dashboard fixture
  */
