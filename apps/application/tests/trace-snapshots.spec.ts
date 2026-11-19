@@ -88,6 +88,38 @@ test.describe('Trace aria/screen snapshots', () => {
     expect(png.headers()['content-type']).toContain('image/png');
   });
 
+  test('the trace-frames endpoint lists the screencast on the wall clock and serves a pooled frame', async ({
+    request,
+  }) => {
+    const res = await request.get(`/api/test-run-cases/${executionId}/trace-frames`);
+    expect(res.ok()).toBeTruthy();
+    const data = await res.json();
+
+    expect(data).toMatchObject({ status: 'ok', total: 15, capped: false });
+    const frames: Array<{ epochMs: number; name: string; width: number }> = data.pages.flatMap(
+      (p: { frames: unknown[] }) => p.frames,
+    );
+    expect(frames).toHaveLength(15);
+    for (const frame of frames) {
+      // Playwright names a frame by the wall clock it was painted at; the list places it on the same clock.
+      const named = Number(/-(\d+)\.jpeg$/.exec(frame.name)![1]);
+      expect(Math.abs(frame.epochMs - named)).toBeLessThan(25);
+      expect(frame.width).toBe(1280);
+    }
+
+    const jpeg = await request.get(
+      `/api/test-run-cases/${executionId}/trace-frame?name=${encodeURIComponent(frames[0]!.name)}`,
+    );
+    expect(jpeg.ok()).toBeTruthy();
+    expect(jpeg.headers()['content-type']).toBe('image/jpeg');
+
+    // Only a frame the trace lists is served, never another entry of the archive.
+    const other = await request.get(
+      `/api/test-run-cases/${executionId}/trace-frame?name=${encodeURIComponent('aria/x.json')}`,
+    );
+    expect(other.status()).toBe(404);
+  });
+
   test('the Screen tab shows the before-action pair and toggles to the in-execution page diff', async ({ page }) => {
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);

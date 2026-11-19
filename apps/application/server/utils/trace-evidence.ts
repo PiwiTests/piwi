@@ -29,12 +29,15 @@ import {
   buildActionCallsites,
   buildTraceBodyPreview,
   buildTraceCallStack,
+  buildTraceFrames,
   buildTraceNetwork,
   buildTraceSnapshots,
   matchNetworkBodySha1,
   parseNetworkTexts,
   parseStacksTexts,
   resolveSnapshotFile,
+  traceFrameSource,
+  traceImageContentType,
   type ActionCallsite,
   type TraceResourceReader,
   type TraceResourceSnapshot,
@@ -44,6 +47,7 @@ import type { DbClient } from '../database';
 import type {
   TraceBodyResponse,
   TraceCallStackResponse,
+  TraceFramesResponse,
   TraceNetworkResponse,
   TraceSnapshotsResponse,
 } from '../../types/api';
@@ -66,10 +70,10 @@ interface TraceBundle {
   network: TraceResourceSnapshot[];
   /** Every resource URL the `.network` stream captured → its stored body, for the DOM snapshot's assets. */
   resourcesByUrl: Map<string, TraceResource>;
-  /** The `aria/*` and `screenshots/*` entries the archive holds, still compressed. */
+  /** The `aria/*`, `screenshots/*` and `screencast/*` entries the archive holds, still compressed. */
   snapshotEntries: Map<string, PackedEntry>;
   readResource: TraceResourceReader;
-  /** A screenshot the slim blob left in the project pool, by its entry name; null when there is none. */
+  /** A screenshot or frame the slim blob left in the project pool, by its entry name; null when there is none. */
   readPooledEntry: (entryName: string) => Promise<Buffer | null>;
   /** About how much memory the bundle holds: its parsed streams and the entries it keeps compressed. */
   retainedBytes: number;
@@ -197,9 +201,8 @@ function pooledEntryReader(
  * full ZIP stored as is (everything inline).
  *
  * Only the event streams (`.trace`, `.stacks`, `.network`) are inflated. The
- * aria snapshots, and any screenshots the archive holds, stay compressed until
- * a view reads one; a screencast in the archive, which no view reads, is
- * dropped with it.
+ * aria snapshots, and any screenshots and screencast frames the archive holds,
+ * stay compressed until a view reads one.
  */
 async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
   const archive = await readTraceArchive(blobPath);
@@ -216,10 +219,11 @@ async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
     metas.filter((m) => m.name.endsWith('.network')),
   );
   // 1.63 aria snapshots sit at their own top-level prefix in the slim ZIP, read
-  // by their trace-relative path; so do the screenshots of an archive whose
-  // manifest lists no pooled entries (`readPooledEntry` serves the others).
+  // by their trace-relative path; so do the screenshots and screencast frames of
+  // an archive whose manifest lists no pooled entries (`readPooledEntry` serves
+  // the others).
   const snapshotEntries = packEntries(zip, metas, (name) =>
-    name.startsWith('aria/') || name.startsWith('screenshots/') ? name : null,
+    name.startsWith('aria/') || name.startsWith('screenshots/') || name.startsWith('screencast/') ? name : null,
   );
   const inlineResources = packEntries(zip, metas, (name) =>
     name.startsWith('resources/') ? name.slice('resources/'.length) : null,
@@ -442,9 +446,9 @@ export async function getTraceNetworkBodyFromBlob(blobPath: string, requestedSha
 }
 
 /**
- * One of the trace's `aria/*` or `screenshots/*` entries: inflated from the
- * archive, or read from the project pool when ingestion moved it there; null
- * when the trace lacks it.
+ * One of the trace's `aria/*`, `screenshots/*` or `screencast/*` entries:
+ * inflated from the archive, or read from the project pool when ingestion
+ * moved it there; null when the trace lacks it.
  */
 async function readSnapshot(bundle: TraceBundle, file: string): Promise<Buffer | null> {
   const entry = bundle.snapshotEntries.get(file);
@@ -514,6 +518,30 @@ export async function getTraceSnapshotResourceFromBlob(
   const bytes = await readSnapshot(bundle, file);
   if (!bytes) return null;
   return { bytes, contentType: kind === 'aria' ? 'application/json' : 'image/png' };
+}
+
+/** The trace's screencast, page by page, on the timeline's clock. Feeds the timeline's Screen lane. */
+export async function getTraceFramesFromBlob(blobPath: string): Promise<TraceFramesResponse> {
+  const bundle = await loadTraceBundle(blobPath);
+  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false };
+  return buildTraceFrames(bundle.parsed);
+}
+
+/**
+ * One screencast frame, by the name the frame list gives it: a name the trace's
+ * events list, read from its `resources/` body or its `screencast/` entry, and
+ * served only when it is an image.
+ */
+export async function getTraceFrameFromBlob(blobPath: string, name: string): Promise<TraceSnapshotResource | null> {
+  const bundle = await loadTraceBundle(blobPath);
+  const source = traceFrameSource(bundle?.parsed ?? null, name);
+  if (!bundle || !source) return null;
+  const bytes =
+    source.kind === 'resource' ? await bundle.readResource(source.name) : await readSnapshot(bundle, source.name);
+  const contentType = bytes ? traceImageContentType(bytes) : null;
+  return bytes && contentType
+    ? { bytes: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), contentType }
+    : null;
 }
 
 /**

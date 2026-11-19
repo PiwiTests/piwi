@@ -392,8 +392,11 @@ export function renderInternalSelector(selector: unknown): string | null {
   return selectorParts(selector).map(renderSelectorPart).join('.');
 }
 
-/** The test's wall clock at a trace time: through the anchor of the browser context's header, else null. */
-function wallClockOf(contexts: readonly TraceContextLike[]): ((traceMs: number) => number) | null {
+/**
+ * The test's wall clock (epoch ms) at a trace time: through the anchor of the browser context's header, else null.
+ * The video marks and the screencast frames read it.
+ */
+export function wallClockOf(contexts: readonly TraceContextLike[]): ((traceMs: number) => number) | null {
   const anchored = (c: TraceContextLike) => typeof c.wallTime === 'number' && typeof c.monotonicTime === 'number';
   const anchor = contexts.find((c) => c.origin === 'library' && anchored(c)) ?? contexts.find(anchored);
   if (!anchor) return null;

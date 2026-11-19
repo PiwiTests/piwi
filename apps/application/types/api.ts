@@ -957,6 +957,35 @@ export interface TraceSnapshotsResponse {
   failingAriaText?: string | null;
 }
 
+/** One image of a page from the trace's screencast. */
+export interface TraceFrame {
+  /** When the page painted it, in epoch ms: the clock of the timeline's `origin`. */
+  epochMs: number;
+  /** The frame's name in the trace, which `GET /api/test-run-cases/:id/trace-frame?name=` serves. */
+  name: string;
+  /** The image's size in pixels; 0 when the trace did not record it. */
+  width: number;
+  height: number;
+}
+
+/** One page's screencast, its frames in the order the page painted them. */
+export interface TraceFramePage {
+  pageId: string;
+  frames: TraceFrame[];
+}
+
+/** `GET /api/test-run-cases/:id/trace-frames` */
+export interface TraceFramesResponse {
+  /** `no-frames` when the trace recorded no screencast, or none it can place on the clock. */
+  status: 'ok' | 'no-trace' | 'no-frames';
+  /** The pages in the order their first frame was painted. */
+  pages: TraceFramePage[];
+  /** How many frames the trace recorded, every page together. */
+  total: number;
+  /** True when the trace recorded more than `MAX_TRACE_FRAMES`, so `pages` lists an even sample of them. */
+  capped: boolean;
+}
+
 /**
  * Browser performance / web vitals recorded via dashboard fixture
  */

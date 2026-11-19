@@ -8,12 +8,15 @@
  * same code over the committed demo trace — only ZIP inflation and resource
  * reads differ per runtime (see `TraceResourceReader`).
  */
-import { pageActionOf, type ParsedTraceData, type TraceAction } from './trace-events';
+import { pageActionOf, type ParsedTraceData, type TraceAction, type TraceScreencastFrame } from './trace-events';
 import { maskSensitiveText } from './dom-snapshot-render';
 import { diffAriaSnapshots } from '#shared/page-diff';
+import { wallClockOf } from '#shared/video-actions';
 import type {
   TraceBodyResponse,
   TraceCallStackResponse,
+  TraceFramePage,
+  TraceFramesResponse,
   TraceNetworkEntry,
   TraceNetworkResponse,
   TraceSnapshotsResponse,
@@ -560,6 +563,64 @@ export function matchNetworkBodySha1(
       }
     }
   }
+  return null;
+}
+
+/** The most frames {@link buildTraceFrames} lists for one trace; past it, an even sample of them. */
+export const MAX_TRACE_FRAMES = 1000;
+
+/**
+ * The trace's screencast, page by page, each frame on the wall clock the
+ * timeline reads (epoch ms). A trace with more than {@link MAX_TRACE_FRAMES}
+ * frames lists every n-th one of each page and its last. Node-free, so the
+ * server and the demo produce the same answer.
+ */
+export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesResponse {
+  if (!parsed) return { status: 'no-trace', pages: [], total: 0, capped: false };
+  const total = parsed.screencastFrames.length;
+  const toWall = wallClockOf(parsed.contexts);
+  if (!toWall || total === 0) return { status: 'no-frames', pages: [], total, capped: false };
+
+  const byPage = new Map<string, TraceScreencastFrame[]>();
+  for (const frame of parsed.screencastFrames) {
+    const frames = byPage.get(frame.pageId);
+    if (frames) frames.push(frame);
+    else byPage.set(frame.pageId, [frame]);
+  }
+  const step = Math.ceil(total / MAX_TRACE_FRAMES);
+  const pages: TraceFramePage[] = [...byPage].map(([pageId, frames]) => {
+    const ordered = [...frames].sort((a, b) => a.timestamp - b.timestamp);
+    const kept = step > 1 ? ordered.filter((_, i) => i % step === 0 || i === ordered.length - 1) : ordered;
+    return {
+      pageId,
+      frames: kept.map((f) => ({ epochMs: toWall(f.timestamp), name: f.file, width: f.width, height: f.height })),
+    };
+  });
+  pages.sort((a, b) => a.frames[0]!.epochMs - b.frames[0]!.epochMs);
+  return { status: 'ok', pages, total, capped: step > 1 };
+}
+
+/**
+ * Where a screencast frame the trace recorded is stored: a `resources/` body
+ * (before Playwright 1.63), or its own `screencast/` entry. Null for a name the
+ * trace's events do not list, so no other entry of the archive is reachable.
+ */
+export function traceFrameSource(
+  parsed: ParsedTraceData | null,
+  name: string,
+): { kind: 'resource'; name: string } | { kind: 'entry'; name: string } | null {
+  if (!parsed?.screencastFrames.some((f) => f.file === name)) return null;
+  if (name.startsWith('resources/')) return { kind: 'resource', name: name.slice('resources/'.length) };
+  if (name.startsWith('screencast/')) return { kind: 'entry', name };
+  return null;
+}
+
+/** The content type of a JPEG, PNG or WebP image by its first bytes; null for anything else. */
+export function traceImageContentType(bytes: Uint8Array): string | null {
+  const starts = (sig: number[], at = 0) => sig.every((b, i) => bytes[at + i] === b);
+  if (starts([0xff, 0xd8, 0xff])) return 'image/jpeg';
+  if (starts([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a])) return 'image/png';
+  if (starts([0x52, 0x49, 0x46, 0x46]) && starts([0x57, 0x45, 0x42, 0x50], 8)) return 'image/webp';
   return null;
 }
 

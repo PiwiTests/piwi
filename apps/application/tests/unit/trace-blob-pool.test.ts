@@ -50,7 +50,8 @@ delete process.env.PIWI_DATABASE_URL;
 const { upsertTraceBlob, backfillTraceBlobStoredSizes, backfillTraceBlobResources } =
   await import('../../server/utils/trace-blobs');
 const { reconstructTraceZip } = await import('../../server/utils/trace-reconstruct');
-const { getTraceSnapshotResourceFromBlob } = await import('../../server/utils/trace-evidence');
+const { getTraceFrameFromBlob, getTraceFramesFromBlob, getTraceSnapshotResourceFromBlob } =
+  await import('../../server/utils/trace-evidence');
 const { gcTraceBlobs, reclaimOrphanTraceBlobs, reclaimOrphanTraceResources, ORPHAN_TRACE_BLOB_GRACE_MS } =
   await import('../../server/utils/delete-run-files');
 const { withTracePoolIngest, reclaimTracePoolUnlessIngesting } = await import('../../server/utils/trace-pool-guard');
@@ -81,6 +82,23 @@ function buildTrace(screens: { c1Before: Buffer; c1After: Buffer; c2Before: Buff
     { type: 'before', callId: 'c2', startTime: 300, class: 'Frame', method: 'click', pageId: 'p1' },
     { type: 'screenshot', callId: 'c2', phase: 'before', file: 'screenshots/c2-before.png' },
     { type: 'after', callId: 'c2', endTime: 400 },
+    { type: 'context-options', origin: 'library', wallTime: 1_700_000_000_000, monotonicTime: 0 },
+    {
+      type: 'screencast-frame',
+      pageId: 'page@p1',
+      file: 'screencast/page@p1-1000.jpeg',
+      width: 4,
+      height: 3,
+      timestamp: 1000,
+    },
+    {
+      type: 'screencast-frame',
+      pageId: 'page@p1',
+      file: 'screencast/page@p1-1150.jpeg',
+      width: 4,
+      height: 3,
+      timestamp: 1150,
+    },
   ];
   return buildZip(
     [
@@ -207,6 +225,41 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
     expect(shot?.contentType).toBe('image/png');
     expect(shot!.bytes.equals(png(2))).toBe(true);
     expect(await getTraceSnapshotResourceFromBlob(blob.path, 'c2', 'screen', 'after')).toBeNull();
+  });
+
+  test('the frame view lists the screencast and serves a pooled frame', async () => {
+    const blob = await ingestTrace(buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) }));
+
+    const list = await getTraceFramesFromBlob(blob.path);
+    expect(list.pages[0]!.frames.map((f) => [f.name, f.epochMs])).toEqual([
+      ['screencast/page@p1-1000.jpeg', 1_700_000_001_000],
+      ['screencast/page@p1-1150.jpeg', 1_700_000_001_150],
+    ]);
+    const frame = await getTraceFrameFromBlob(blob.path, 'screencast/page@p1-1150.jpeg');
+    expect(frame?.contentType).toBe('image/jpeg');
+    expect(frame!.bytes.equals(jpeg(7))).toBe(true);
+    expect(await getTraceFrameFromBlob(blob.path, 'screenshots/c2-before.png')).toBeNull();
+  });
+
+  test('the frame view serves a frame an earlier Playwright kept under resources/, from the slim ZIP', async () => {
+    // Its name is not the SHA-1 of its bytes, so ingestion keeps it in the slim ZIP.
+    const events = [
+      { type: 'context-options', origin: 'library', wallTime: 1_700_000_000_000, monotonicTime: 0 },
+      { type: 'screencast-frame', pageId: 'page@p1', sha1: 'page@p1-1700000000042.jpeg', timestamp: 42 },
+    ];
+    const blob = await ingestTrace(
+      buildZip([
+        { name: 'trace.trace', data: Buffer.from(events.map((e) => JSON.stringify(e)).join('\n'), 'utf8') },
+        { name: 'resources/page@p1-1700000000042.jpeg', data: jpeg(3) },
+      ]),
+    );
+
+    const list = await getTraceFramesFromBlob(blob.path);
+    expect(list.pages[0]!.frames).toEqual([
+      { epochMs: 1_700_000_000_042, name: 'resources/page@p1-1700000000042.jpeg', width: 0, height: 0 },
+    ]);
+    const frame = await getTraceFrameFromBlob(blob.path, 'resources/page@p1-1700000000042.jpeg');
+    expect(frame!.bytes.equals(jpeg(3))).toBe(true);
   });
 });
 
