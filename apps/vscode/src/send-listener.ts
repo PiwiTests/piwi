@@ -23,6 +23,7 @@ import {
   MAX_SEND_BYTES,
   editorTokenProof,
   isEditorChallenge,
+  newEditorChallenge,
   parseSendPayload,
   sendAuthorized,
   type EditorPairing,
@@ -260,16 +261,25 @@ export function pairingPorts(
   return saved ? [saved] : ports;
 }
 
-/** The first of `ports` a listener starts on, else any free port. */
-async function listenOnFirst(listen: (port: number) => Promise<SendListener>, ports: readonly number[]) {
+/**
+ * The first of `ports` a listener starts on, else any free port; the listener another start made meanwhile, when one
+ * did, so a window never holds two.
+ */
+async function listenOnFirst(
+  running: () => SendListener | null,
+  listen: (port: number) => Promise<SendListener>,
+  ports: readonly number[],
+): Promise<SendListener> {
   for (const port of ports) {
+    const started = running();
+    if (started) return started;
     try {
       return await listen(port);
     } catch {
       // Taken: the next one.
     }
   }
-  return listen(0);
+  return running() ?? listen(0);
 }
 
 /**
@@ -295,7 +305,7 @@ export function sendPairing(options: {
       await store.saveToken(store.token);
     }
     const ports = saved ? pairingPorts(store.port, options.ports) : store.port ? [store.port] : [];
-    const listener = options.listener() ?? (await listenOnFirst(options.listen, ports));
+    const listener = options.listener() ?? (await listenOnFirst(options.listener, options.listen, ports));
     if (saved && listener.port !== store.port) {
       store.port = listener.port;
       await store.savePort(listener.port);
@@ -327,8 +337,8 @@ export const SAVED_PORT_RETRY_MS = 10_000;
  * Takes the pairing's port once the window holding it lets it go: while this window has no listener, it tries now and
  * every `everyMs` the saved port (`saved`, read again at each try, since another window may pair meanwhile), else the
  * pairing ports in order, so Piwi Picker finds a window of this machine, and every window's hub through it, as long as
- * one is open. A pairing port another window of this editor holds (`held`: its hello names this editor) ends the try,
- * as the saved port does; one another program holds is passed for the next. A window listening on another port for a
+ * one is open. A pairing port another window of this editor holds (`held`: it proves it holds the same token) ends the
+ * try, as the saved port does; one another program or another user holds is passed for the next. A window listening on another port for a
  * run's pairing keeps that listener. `started` hears each listener it starts.
  */
 export function takeSavedPort(options: {
@@ -336,7 +346,7 @@ export function takeSavedPort(options: {
   saved(): Promise<Pick<PairingStore, 'port' | 'token'>> | Pick<PairingStore, 'port' | 'token'>;
   listener(): SendListener | null;
   listen(port: number): Promise<SendListener>;
-  /** Whether another window of this editor listens on `port`; none is, without it. */
+  /** Whether another window of this editor, which holds the same token, listens on `port`; none is, without it. */
   held?(port: number): Promise<boolean>;
   started?(listener: SendListener): void;
   everyMs?: number;
@@ -370,19 +380,39 @@ export function takeSavedPort(options: {
   return { ready: attempt(), tryNow: attempt, dispose: () => clearInterval(timer) };
 }
 
-/** How long a listener of this machine may take to say what it is. */
-const HELLO_TIMEOUT_MS = 1500;
+/** How long a listener of this machine may take to answer: a loopback answer takes milliseconds. */
+const LOCAL_TIMEOUT_MS = 500;
 
 /** What the listener on `port` of this machine says it is (`GET /piwi/hello`); null when none answers so. */
 export async function helloAt(port: number, fetcher: typeof fetch = fetch): Promise<EditorHello | null> {
   try {
     const res = await fetcher(`http://127.0.0.1:${port}${HELLO_PATH}`, {
       redirect: 'error',
-      signal: AbortSignal.timeout(HELLO_TIMEOUT_MS),
+      signal: AbortSignal.timeout(LOCAL_TIMEOUT_MS),
     });
     return res.ok ? parseEditorHello(await res.json()) : null;
   } catch {
     return null;
+  }
+}
+
+/**
+ * Whether the listener on `port` of this machine holds `token`: its answer to a challenge on `GET /piwi/live` carries
+ * the proof (`editorTokenProof`) for that port, as Piwi Picker asks it. Another user's editor, or a program that took
+ * the port, proves nothing.
+ */
+export async function holdsToken(port: number, token: string, fetcher: typeof fetch = fetch): Promise<boolean> {
+  if (!token) return false;
+  const challenge = newEditorChallenge();
+  try {
+    const res = await fetcher(`http://127.0.0.1:${port}${LIVE_PATH}`, {
+      headers: { [EDITOR_CHALLENGE_HEADER]: challenge },
+      redirect: 'error',
+      signal: AbortSignal.timeout(LOCAL_TIMEOUT_MS),
+    });
+    return res.headers.get(EDITOR_PROOF_HEADER) === (await editorTokenProof(token, port, challenge));
+  } catch {
+    return false;
   }
 }
 

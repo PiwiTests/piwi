@@ -1067,15 +1067,18 @@ product, `ApplicationNamesInfo`, and the open projects' names), and `POST /api/p
 `GET /api/piwi/pairings/<id>` are `Glue.EditorPairingRequests`, mirroring `@piwitests/core/editor-pairing`, held by
 `PiwiPickerPairing` for the whole IDE. A new request shows a `Piwi requests` notification with **Allow** and **Deny**
 in the project focused last, opens the **Piwi Picker** tab beside and asks for the IDE's attention; Allow there or in
-the tab mints the token if none is kept and hands it to the request, which Piwi Picker's next poll takes once. The
+the tab mints the token if none is kept and hands it to the request, which Piwi Picker's next poll takes once. A
+request's notification expires once it waits no more; with no project open, the request is asked about as a project
+opens its tab. The
 pairing (when, and Piwi Picker's browser) and when Piwi Picker was last heard from (a request the token let through
 from an extension's `Origin`, written once a minute at most) are application-level properties.
 
 **The Piwi Picker tab** (`PiwiPickerTab`, opened by **Pair with Piwi Picker**, also in the status bar item's popup):
 the requests waiting, with Allow and Deny; the pairing, when Piwi Picker was last heard from and the built-in server's
 port (`Glue.pickerRows`, the words of the VS Code extension's Piwi Picker view); how to pair before any; **Copy the
-pairing address** and **Unpair** (`Piwi.UnpairPicker`: after asking, `PiwiSendToken.renew`). An `Alarm` draws it again
-every half minute while it is open.
+pairing address** and **Unpair** (`Piwi.UnpairPicker`: after asking, `PiwiSendToken.renew`, and the requests allowed
+and not polled yet hand over nothing). Every half minute while it is open, an `Alarm` expires the requests past their
+time and draws it again only when what it shows changed, so its focus and scroll stay.
 
 **Threads.** A preflight without a challenge is answered on the I/O thread. Every other request is served on a pooled
 thread, where the token, the file and its document are read: the built-in server's I/O thread touches neither the

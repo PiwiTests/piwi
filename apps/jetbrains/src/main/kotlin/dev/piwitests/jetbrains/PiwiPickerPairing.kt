@@ -35,8 +35,8 @@ object PiwiPickerPairing {
     /** The requests waiting: a change draws the tabs again and asks the person about a new one. */
     val requests = Glue.EditorPairingRequests(changed = ::changed)
 
-    /** The requests the person was asked about already. */
-    private val prompted = ConcurrentHashMap.newKeySet<String>()
+    /** The notification of each request the person was asked about, expired once the request waits no more. */
+    private val asked = ConcurrentHashMap<String, com.intellij.notification.Notification>()
 
     private const val PAIRED_AT = "piwi.pickerPaired.at"
     private const val PAIRED_CLIENT = "piwi.pickerPaired.client"
@@ -73,29 +73,43 @@ object PiwiPickerPairing {
         changed()
     }
 
-    /** The tabs drawn again, and the person asked about each request that came since. */
-    private fun changed() {
-        val waiting = requests.waiting()
+    /**
+     * The tabs drawn again, the notifications of the requests that wait no more expired, and the person asked about each
+     * request that came since. A project opened later asks about the requests still waiting as its tab opens.
+     */
+    fun changed() {
         ApplicationManager.getApplication().invokeLater {
+            val waiting = requests.waiting()
             for (project in ProjectManager.getInstance().openProjects) {
                 if (!project.isDisposed) project.getServiceIfCreated(PiwiPickerTab::class.java)?.drawAgain()
             }
-            for (request in waiting) if (prompted.add(request.id)) ask(request)
+            val ids = waiting.map { it.id }.toSet()
+            for ((id, notification) in asked.entries.toList()) {
+                if (id !in ids) {
+                    notification.expire()
+                    asked.remove(id)
+                }
+            }
+            for (request in waiting) if (!asked.containsKey(request.id)) ask(request)
         }
     }
 
     /**
      * Asks about a request in the project in use: a notification with Allow and Deny, the Piwi Picker tab shown beside,
-     * and the IDE's icon asking for attention, the person having just clicked Pair in the browser. On the event thread.
+     * and the IDE's icon asking for attention, the person having just clicked Pair in the browser. With no project
+     * open, or the plugin's services gone, nobody is asked yet. On the event thread.
      */
     private fun ask(request: Glue.PairingRequestView) {
-        val project = IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project?.takeIf { !it.isDisposed }
-            ?: ProjectManager.getInstance().openProjects.firstOrNull { !it.isDisposed }
+        val project = (
+            IdeFocusManager.getGlobalInstance().lastFocusedFrame?.project
+                ?: ProjectManager.getInstance().openProjects.firstOrNull()
+            )?.takeIf { !it.isDisposed && it.getServiceIfCreated(PiwiProjectService::class.java) != null }
             ?: return
-        PiwiNotifier.create(PiwiNotice.REQUEST, Glue.escapeHtml(Glue.pairingPrompt(request.client, request.code)))
+        val notification = PiwiNotifier.create(PiwiNotice.REQUEST, Glue.escapeHtml(Glue.pairingPrompt(request.client, request.code)))
             .addAction(NotificationAction.createSimpleExpiring("Allow") { allow(project, request.id) })
             .addAction(NotificationAction.createSimpleExpiring("Deny") { requests.answer(request.id, null) })
-            .notify(project)
+        asked[request.id] = notification
+        notification.notify(project)
         project.service<PiwiPickerTab>().open(focus = false)
         com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
     }
@@ -131,6 +145,7 @@ object PiwiPickerPairing {
     /** Unpair: a new token, and the pairing forgotten. Off the event thread: the token goes to the password safe. */
     fun unpair() {
         PiwiSendToken.renew()
+        requests.forgetTokens()
         val properties = PropertiesComponent.getInstance()
         properties.unsetValue(PAIRED_AT)
         properties.unsetValue(PAIRED_CLIENT)
@@ -157,9 +172,9 @@ class PiwiPickerTab(private val project: Project) : Disposable {
         val shown = tab?.takeIf { window.contentManager.getIndexOfContent(it) >= 0 }
             ?: ContentFactory.getInstance().createContent(JBScrollPane(content()), TAB, false).apply {
                 isCloseable = true
-                val drawn = Disposer.newDisposable(this@PiwiPickerTab, "Piwi Picker tab")
+                val shownTab = Disposer.newDisposable(this@PiwiPickerTab, "Piwi Picker tab")
                 setDisposer {
-                    Disposer.dispose(drawn)
+                    Disposer.dispose(shownTab)
                     if (tab === this) tab = null
                 }
                 window.contentManager.addContent(this)
@@ -168,32 +183,41 @@ class PiwiPickerTab(private val project: Project) : Disposable {
         window.contentManager.setSelectedContent(shown, focus)
         window.show()
         scheduleRedraw()
+        PiwiPickerPairing.changed()
     }
 
+    /** Every half minute while the tab is open: the requests past their time expire, and the tab says how long ago. */
     private fun scheduleRedraw() {
         redraw.cancelAllRequests()
         redraw.addRequest({
             if (tab != null) {
-                drawAgain()
+                if (!PiwiPickerPairing.requests.expire()) drawAgain()
                 scheduleRedraw()
             }
         }, REDRAW_MILLIS)
     }
 
-    /** The tab drawn again as the pairing stands. On the event thread. */
+    /** What the tab shows, drawn last: it is drawn again only when that changed, so its focus and scroll stay. */
+    private var drawn: Pair<Glue.PickerState, List<Glue.PickerLine>>? = null
+
+    private fun state() = Glue.PickerState(
+        waiting = PiwiPickerPairing.requests.waiting(),
+        paired = PiwiPickerPairing.paired(),
+        heard = PiwiPickerPairing.heardAt(),
+        port = BuiltInServerManager.getInstance().port,
+    )
+
+    /** The tab drawn again as the pairing stands, when what it shows changed. On the event thread. */
     fun drawAgain() {
         val shown = tab ?: return
-        (shown.component as? JBScrollPane)?.setViewportView(content())
+        val state = state()
+        val rows = Glue.pickerRows(state, System.currentTimeMillis())
+        if (drawn == state to rows) return
+        (shown.component as? JBScrollPane)?.setViewportView(content(state, rows))
     }
 
-    private fun content(): JComponent {
-        val state = Glue.PickerState(
-            waiting = PiwiPickerPairing.requests.waiting(),
-            paired = PiwiPickerPairing.paired(),
-            heard = PiwiPickerPairing.heardAt(),
-            port = BuiltInServerManager.getInstance().port,
-        )
-        val rows = Glue.pickerRows(state, System.currentTimeMillis())
+    private fun content(state: Glue.PickerState = state(), rows: List<Glue.PickerLine> = Glue.pickerRows(state, System.currentTimeMillis())): JComponent {
+        drawn = state to rows
         return panel {
             row { label(TAB).applyToComponent { font = JBUI.Fonts.label(16f).asBold() } }
             row { comment(Glue.PICKER_INTRO) }

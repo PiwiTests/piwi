@@ -837,20 +837,23 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
 
 - **Where it listens.** A window with no listener takes the saved port, else the first free pairing port of
   `VSCODE_PAIRING_PORTS` (7247 to 7251, where Piwi Picker's **Pair** looks), as it starts and every 10 s after
-  (`takeSavedPort`). A pairing port that answers `GET /piwi/hello` as this editor (`held`: same product) is another
-  window's, and ends the try as the saved port does; one another program holds is passed. No token is needed to listen.
+  (`takeSavedPort`). A pairing port whose listener proves it holds this editor's token (`held`, `holdsToken`, the
+  token minted first when none is kept) is another window's, and ends the try as the saved port does; one another
+  program or another user holds is passed. The window that holds it shows in the view (`heldPort`).
 - **Pairing by code.** `GET /piwi/hello` answers without a token which editor listens (`editorHello`: VS Code's
   `appName` and the window's folders); `POST /piwi/pairings` and `GET /piwi/pairings/<id>` are
   `EditorPairingRequests` of `@piwitests/core/editor-pairing`. A new request shows a notification with **Allow** and
-  **Deny** and reveals the **Piwi Picker** view; Allow (`allowPickerPairing`) starts the listener on its port if it
-  must (`pairing(true)`, which saves the port) and hands the token to the request, which Piwi Picker's next poll
-  takes once.
+  **Deny** and reveals the **Piwi Picker** view; Allow (`allowPickerPairing`) reads the saved port again, saves the
+  one Piwi Picker reached (`pairing(true)`) and hands the token to the request, which Piwi Picker's next poll takes
+  once.
 - **The Piwi Picker view** (`piwi.picker`, `src/picker-view.ts`, its rows from `pickerRows` in
   `src/picker-pairing.ts`): the requests waiting with inline Allow and Deny, the pairing kept, when Piwi Picker was
   last heard from (an authorized request from an extension's `Origin`, written once a minute at most), and the port.
-  Not paired, its welcome (`piwi.pickerView == unpaired`) says how to pair. **Unpair** (`piwi.unpairPicker`) asks,
-  then mints a new token, and lets go of a saved port outside the pairing ports for the first one free.
-- **Piwi: Pair with Piwi Picker** starts the listener where Piwi Picker looks, reveals the view and says how to pair.
+  Not paired, its welcome (`piwi.pickerView == unpaired`) says how to pair; **Unpair** shows once paired
+  (`piwi.pickerPaired`). **Unpair** (`piwi.unpairPicker`) asks, then mints a new token, makes the requests allowed and
+  not polled yet hand over nothing (`forgetTokens`), and lets go of a saved port outside the pairing ports for the
+  first one free.
+- **Piwi: Pair with Piwi Picker** reveals the view and says how to pair; it starts no listener and saves no port.
   **Piwi: Copy the pairing address for Piwi Picker** copies the pairing address as the browser's machine reaches it
   (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards), on `127.0.0.1` whatever name VS
   Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.

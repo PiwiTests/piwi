@@ -143,19 +143,47 @@ describe('EditorPairingRequests', () => {
     expect(requests.poll(start.id, start.secret).status).toBe(404);
   });
 
-  test('starts a request only for an extension’s JSON, and only a few at once', () => {
+  test('starts a request only for an extension’s JSON object, and only a few at once', () => {
     const requests = new EditorPairingRequests();
     expect(requests.start('https://example.com', JSON_TYPE, {}).status).toBe(403);
     expect(requests.start(null, JSON_TYPE, {}).status).toBe(403);
     expect(requests.start(CHROME, 'text/plain', {}).status).toBe(415);
-    expect(requests.start(CHROME, JSON_TYPE, undefined).status).toBe(400);
-    const firefox = 'moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0';
-    for (let i = 0; i < MAX_WAITING_EDITOR_PAIRINGS; i++) {
-      expect(requests.start(i ? firefox : CHROME, JSON_TYPE, {}).status).toBe(201);
-    }
+    for (const body of [undefined, null, 'text', 3, []])
+      expect(requests.start(CHROME, JSON_TYPE, body).status).toBe(400);
+    const extension = (i: number) => `chrome-extension://${'abcdefghijklmnop'[i]!.repeat(32)}`;
+    for (let i = 0; i < MAX_WAITING_EDITOR_PAIRINGS; i++)
+      expect(requests.start(extension(i), JSON_TYPE, {}).status).toBe(201);
+    expect(requests.start(extension(9), JSON_TYPE, {}).status).toBe(429);
+    requests.answer(requests.waiting()[0]!.id, 'the-token-1234567890');
+    expect(requests.start(extension(9), JSON_TYPE, {}).status).toBe(201);
+  });
+
+  test('takes the place of the request the same extension made before', () => {
+    const requests = new EditorPairingRequests();
+    const first = started(requests);
+    const second = started(requests);
+    expect(requests.waiting().map((r) => r.id)).toEqual([second.id]);
+    expect(requests.poll(first.id, first.secret).body).toEqual({ status: 'expired' });
+    expect(requests.answer(first.id, 'the-token-1234567890')).toBe(false);
+  });
+
+  test('lets an extension the person denied ask again only a minute later', () => {
+    const time = clock();
+    const requests = new EditorPairingRequests({ now: time.now });
+    requests.answer(started(requests).id, null);
     expect(requests.start(CHROME, JSON_TYPE, {}).status).toBe(429);
-    requests.answer(requests.waiting()[0]!.id, null);
+    // Another extension asks meanwhile.
+    expect(requests.start('moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0', JSON_TYPE, {}).status).toBe(201);
+    time.advance(61_000);
     expect(requests.start(CHROME, JSON_TYPE, {}).status).toBe(201);
+  });
+
+  test('hands over nothing a request was allowed before Unpair', () => {
+    const requests = new EditorPairingRequests();
+    const start = started(requests);
+    requests.answer(start.id, 'the-old-token-123456');
+    requests.forgetTokens();
+    expect(requests.poll(start.id, start.secret).body).toEqual({ status: 'expired' });
   });
 });
 

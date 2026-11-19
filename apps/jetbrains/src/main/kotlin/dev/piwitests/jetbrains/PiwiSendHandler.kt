@@ -135,11 +135,14 @@ class PiwiSendHandler : HttpRequestHandler() {
             ApplicationManager.getApplication().executeOnPooledThread {
                 val answer = when {
                     path == HELLO_PATH -> Glue.PairingAnswer(200, PiwiPickerPairing.hello())
-                    tooLarge -> Glue.PairingAnswer(413, mapOf("error" to "too large"))
+                    tooLarge && Glue.isExtensionOrigin(origin) -> Glue.PairingAnswer(413, mapOf("error" to "too large"))
                     path == PAIRINGS_PATH -> PiwiPickerPairing.requests.start(origin, contentType, body)
                     else -> PiwiPickerPairing.requests.poll(Glue.editorPairingIdOf(path, PAIRINGS_PATH)!!, secret)
                 }
-                respond(context, origin, HttpResponseStatus.valueOf(answer.status), answer.body, null)
+                // A challenge is answered with the proof here too, whatever the path.
+                val token = if (challenge == null || port == null) null else runCatching { PiwiSendToken.current() }.getOrNull()
+                val proof = if (token.isNullOrEmpty()) null else Glue.editorTokenProof(token, port!!, challenge!!)
+                respond(context, origin, HttpResponseStatus.valueOf(answer.status), answer.body, proof)
             }
             return true
         }
@@ -504,6 +507,7 @@ class CopyPickerAddressAction : AnAction(), DumbAware {
             }.getOrDefault(emptyList())
             ApplicationManager.getApplication().invokeLater {
                 CopyPasteManager.getInstance().setContents(StringSelection(address))
+                PiwiGetStarted.done("pair")
                 if (project != null) {
                     PiwiCommands.notify(
                         project,
@@ -523,7 +527,8 @@ class UnpairPickerAction : AnAction(), DumbAware {
     override fun actionPerformed(e: AnActionEvent) {
         val unpair = com.intellij.openapi.ui.Messages.showOkCancelDialog(
             e.project,
-            "This IDE takes a new token: Piwi Picker reaches it again only once you pair again, and so do the runs started before.",
+            "This IDE takes a new token: Piwi Picker reaches it again only once you pair again, and so do the runs started " +
+                "before. The connections to the runs Piwi Picker holds already last until the editor service restarts.",
             "Unpair Piwi Picker?",
             "Unpair",
             "Cancel",

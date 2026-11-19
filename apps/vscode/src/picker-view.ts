@@ -6,7 +6,7 @@
  */
 import * as vscode from 'vscode';
 import { setContextKey } from './context-keys';
-import { pickerRows, pickerViewKind, type PickerRow, type PickerViewState } from './picker-pairing';
+import { pickerPaired, pickerRows, pickerViewKind, type PickerRow, type PickerViewState } from './picker-pairing';
 
 /** How often the view is drawn again while it shows, for "Last heard 2 min ago". */
 const REDRAW_MS = 30_000;
@@ -39,6 +39,7 @@ export function registerPickerView(state: () => PickerViewState): PickerView {
     const now = state();
     rows = pickerRows(now, Date.now());
     setContextKey('piwi.pickerView', pickerViewKind(now));
+    setContextKey('piwi.pickerPaired', pickerPaired(now));
     view.badge = now.waiting.length
       ? { value: now.waiting.length, tooltip: 'Piwi Picker asks to pair with this editor' }
       : undefined;

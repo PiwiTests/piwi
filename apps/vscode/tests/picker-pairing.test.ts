@@ -11,7 +11,7 @@ import {
 } from '../src/picker-pairing';
 
 const NOW = Date.parse('2026-11-19T15:00:00Z');
-const none: PickerViewState = { waiting: [], paired: null, heard: null, port: 7247, savedPort: null };
+const none: PickerViewState = { waiting: [], paired: null, heard: null, port: 7247, heldPort: null };
 const request = {
   id: '0123456789abcdef',
   code: 'BCDF-GHJK',
@@ -70,7 +70,7 @@ describe('the Piwi Picker view', () => {
     expect(lastRow(pickerRows({ ...none, paired, port: 53124 }, NOW))).toEqual(
       expect.objectContaining({ label: 'Listening on 127.0.0.1:53124', description: 'not where Piwi Picker looks' }),
     );
-    expect(lastRow(pickerRows({ ...none, paired, port: null, savedPort: 7247 }, NOW))?.label).toBe(
+    expect(lastRow(pickerRows({ ...none, paired, port: null, heldPort: 7247 }, NOW))?.label).toBe(
       'Another window listens on 127.0.0.1:7247',
     );
     expect(lastRow(pickerRows({ ...none, paired, port: null }, NOW))?.label).toBe('Not listening');
@@ -99,6 +99,6 @@ describe('what is kept', () => {
 
 test('the notification names the browser and the code to compare', () => {
   expect(pairingPrompt(request)).toBe(
-    'Piwi Picker in Chrome on macOS asks to pair with this editor, to send it the locators you pick and follow its runs. Allow it only if Piwi Picker shows the code BCDF-GHJK.',
+    'Piwi Picker in Chrome on macOS asks to pair with this editor, to send it the locators you pick and follow its runs. Allow it only if you just clicked Pair in Piwi Picker and it shows the code BCDF-GHJK.',
   );
 });

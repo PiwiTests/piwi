@@ -18,6 +18,7 @@ import { liveUrlOf } from '@piwitests/core/run-hub';
 import { readLiveHubs } from '@piwitests/editor/discovery';
 import {
   helloAt,
+  holdsToken,
   liveHubsHere,
   loopbackPort,
   onLoopback,
@@ -338,6 +339,18 @@ describe('pairing by code', () => {
     await fetch(`${base()}/live`, { headers: { Authorization: `Bearer ${TOKEN}` } });
     await fetch(`${base()}/live`, { headers: { Authorization: 'Bearer wrong', Origin: CHROME } });
     expect(heard).toBe(before + 1);
+  });
+
+  test('tells another window of this editor, which proves it holds the same token, from any other listener', async () => {
+    expect(await holdsToken(pairingListener.port, TOKEN)).toBe(true);
+    // Another user's editor, or a program that answers as an editor: it proves no token of this one.
+    expect(await holdsToken(pairingListener.port, 'another-users-token-0123')).toBe(false);
+    expect(await holdsToken(pairingListener.port, '')).toBe(false);
+    const free = http.createServer();
+    await new Promise<void>((resolve) => free.listen(0, '127.0.0.1', resolve));
+    const port = (free.address() as AddressInfo).port;
+    await new Promise((resolve) => free.close(resolve));
+    expect(await holdsToken(port, TOKEN)).toBe(false);
   });
 
   test('leaves the routes unanswered without the pairing by code', async () => {

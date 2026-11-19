@@ -169,6 +169,8 @@ export interface EditorPairingAnswer<T> {
 }
 
 interface StoredRequest extends EditorPairingRequestView {
+  /** The extension that asked: one request of it waits at a time. */
+  origin: string;
   secret: string;
   status: EditorPairingStatus;
   token: string | null;
@@ -214,26 +216,41 @@ export class EditorPairingRequests {
   }
 
   /**
-   * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON body alone (403 and 415
-   * otherwise), refused while {@link MAX_WAITING_EDITOR_PAIRINGS} wait (429). `body` is the parsed JSON, or
-   * `undefined` when it did not parse (400).
+   * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON object alone (403, 415 and 400
+   * otherwise). It takes the place of a request the same extension made before and nobody answered yet; an extension
+   * the person denied waits {@link ANSWERED_KEPT_MS} before it asks again, and none asks while
+   * {@link MAX_WAITING_EDITOR_PAIRINGS} wait (429 both). `body` is the parsed JSON, or `undefined` when it did not parse.
    */
   start(
     origin: string | null | undefined,
     contentType: string | null | undefined,
     body: unknown,
   ): EditorPairingAnswer<EditorPairingStart> {
-    if (!isExtensionOrigin(origin)) return { status: 403, body: { error: 'only a browser extension can ask to pair' } };
+    if (!origin || !isExtensionOrigin(origin)) {
+      return { status: 403, body: { error: 'only a browser extension can ask to pair' } };
+    }
     if (!contentType?.toLowerCase().startsWith('application/json')) {
       return { status: 415, body: { error: 'the body must be application/json' } };
     }
-    if (body === undefined) return { status: 400, body: { error: 'the body must be JSON' } };
+    if (!body || typeof body !== 'object' || Array.isArray(body)) {
+      return { status: 400, body: { error: 'the body must be a JSON object' } };
+    }
     this.sweep();
+    const now = this.now();
+    const own = [...this.requests.values()].filter((r) => r.origin === origin);
+    if (own.some((r) => r.status === 'denied')) {
+      return { status: 429, body: { error: 'the person said no a moment ago' } };
+    }
+    for (const request of own) {
+      if (request.status !== 'waiting') continue;
+      request.status = 'expired';
+      request.endedAt = now;
+    }
     if (this.waiting().length >= MAX_WAITING_EDITOR_PAIRINGS) {
       return { status: 429, body: { error: 'too many pairing requests wait already' } };
     }
-    const now = this.now();
     const request: StoredRequest = {
+      origin,
       id: randomHex(8),
       secret: randomHex(32),
       code: newEditorPairingCode(),
@@ -287,6 +304,17 @@ export class EditorPairingRequests {
     request.endedAt = this.now();
     this.options.changed?.();
     return true;
+  }
+
+  /** Unpair: the requests allowed and not polled yet hand over nothing, as if they had expired. */
+  forgetTokens(): void {
+    const now = this.now();
+    for (const request of this.requests.values()) {
+      if (request.status !== 'allowed') continue;
+      request.status = 'expired';
+      request.token = null;
+      request.endedAt = now;
+    }
   }
 
   /** The requests waiting for the person's answer, oldest first. */

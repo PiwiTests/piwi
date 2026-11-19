@@ -3742,6 +3742,8 @@ object Glue {
     ) {
         private class Stored(
             val view: PairingRequestView,
+            /** The extension that asked: one request of it waits at a time. */
+            val origin: String,
             val secret: String,
             var status: String = "waiting",
             var token: String? = null,
@@ -3773,25 +3775,39 @@ object Glue {
         }
 
         /**
-         * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON body alone (403 and 415
-         * otherwise), refused while [MAX_WAITING_EDITOR_PAIRINGS] wait (429). `body` is the text as it came.
+         * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON object alone (403, 415 and
+         * 400 otherwise). It takes the place of a request the same extension made before and nobody answered yet; an
+         * extension the person denied waits a minute before it asks again, and none asks while
+         * [MAX_WAITING_EDITOR_PAIRINGS] wait (429 both). `body` is the text as it came.
          */
         fun start(origin: String?, contentType: String?, body: String?): PairingAnswer {
-            if (!isExtensionOrigin(origin)) return PairingAnswer(403, mapOf("error" to "only a browser extension can ask to pair"))
+            if (origin == null || !isExtensionOrigin(origin)) {
+                return PairingAnswer(403, mapOf("error" to "only a browser extension can ask to pair"))
+            }
             if (contentType?.lowercase()?.startsWith("application/json") != true) {
                 return PairingAnswer(415, mapOf("error" to "the body must be application/json"))
             }
-            val json = runCatching { JsonParser.parseString(body ?: "") }.getOrNull()
-                ?: return PairingAnswer(400, mapOf("error" to "the body must be JSON"))
+            val json = runCatching { JsonParser.parseString(body ?: "") }.getOrNull() as? JsonObject
+                ?: return PairingAnswer(400, mapOf("error" to "the body must be a JSON object"))
             val request = synchronized(this) {
                 val expired = sweep()
-                if (waitingNow().size >= MAX_WAITING_EDITOR_PAIRINGS) {
+                val at = now()
+                val own = requests.values.filter { it.origin == origin }
+                if (own.any { it.status == "denied" }) {
                     if (expired) changed()
+                    return PairingAnswer(429, mapOf("error" to "the person said no a moment ago"))
+                }
+                for (earlier in own.filter { it.status == "waiting" }) {
+                    earlier.status = "expired"
+                    earlier.endedAt = at
+                }
+                if (waitingNow().size >= MAX_WAITING_EDITOR_PAIRINGS) {
+                    changed()
                     return PairingAnswer(429, mapOf("error" to "too many pairing requests wait already"))
                 }
-                val at = now()
                 Stored(
-                    PairingRequestView(hex(8), newEditorPairingCode(random), editorPairingClient(json as? JsonObject), at, at + EDITOR_PAIRING_TTL_MILLIS),
+                    PairingRequestView(hex(8), newEditorPairingCode(random), editorPairingClient(json), at, at + EDITOR_PAIRING_TTL_MILLIS),
+                    origin,
                     hex(32),
                 ).also { requests[it.view.id] = it }
             }
@@ -3836,16 +3852,28 @@ object Glue {
 
         /** The person's answer to a waiting request: the token to hand over, or null for no. False when none waits. */
         fun answer(id: String, token: String?): Boolean {
-            val answered = synchronized(this) {
-                sweep()
-                val request = requests[id]?.takeIf { it.status == "waiting" } ?: return@synchronized false
+            val (answered, expired) = synchronized(this) {
+                val expired = sweep()
+                val request = requests[id]?.takeIf { it.status == "waiting" } ?: return@synchronized false to expired
                 request.status = if (token.isNullOrEmpty()) "denied" else "allowed"
                 request.token = token?.takeIf { it.isNotEmpty() }
                 request.endedAt = now()
-                true
+                true to expired
             }
-            if (answered) changed()
+            if (answered || expired) changed()
             return answered
+        }
+
+        /** Unpair: the requests allowed and not polled yet hand over nothing, as if they had expired. */
+        fun forgetTokens() {
+            synchronized(this) {
+                val at = now()
+                for (request in requests.values.filter { it.status == "allowed" }) {
+                    request.status = "expired"
+                    request.token = null
+                    request.endedAt = at
+                }
+            }
         }
 
         private fun waitingNow(): List<PairingRequestView> {
@@ -3926,7 +3954,7 @@ object Glue {
     /** The notification of a pairing request: who asks, and the code to compare with Piwi Picker's. */
     fun pairingPrompt(client: String, code: String): String =
         "Piwi Picker in $client asks to pair with this IDE, to send it the locators you pick and follow its runs. " +
-            "Allow it only if Piwi Picker shows the code $code."
+            "Allow it only if you just clicked Pair in Piwi Picker and it shows the code $code."
 
     /**
      * What the dashboard's Open in IDE asks (`/api/piwi/open`): a file of a run, as a path relative to the

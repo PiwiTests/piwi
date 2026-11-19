@@ -6,7 +6,7 @@
 import { VSCODE_PAIRING_PORTS, type EditorPairingRequestView } from '@piwitests/core/editor-pairing';
 import { relativeTime } from './glue';
 
-/** Global state: the pairing Piwi Picker was given, by code (`client` names its browser) or by address (`client` null). */
+/** Global state: the pairing Piwi Picker was given by code, with its browser (`client`). */
 export const PICKER_PAIRED_KEY = 'piwi.pickerPaired';
 /** Global state: when a request the token let through last came from a browser extension. */
 export const PICKER_HEARD_KEY = 'piwi.pickerHeard';
@@ -16,7 +16,7 @@ export const PICKER_HEARD_EVERY_MS = 60_000;
 export interface PickerPaired {
   /** When it was paired, in milliseconds. */
   at: number;
-  /** "Chrome on macOS" for a pairing by code; null for one by address. */
+  /** "Chrome on macOS"; null when it is not known. */
   client: string | null;
 }
 
@@ -41,8 +41,8 @@ export interface PickerViewState {
   heard: number | null;
   /** The port this window listens on for Piwi Picker; null while it listens on none. */
   port: number | null;
-  /** The port the pairing is saved on, which another window may hold. */
-  savedPort: number | null;
+  /** The port another window of this editor answers Piwi Picker on, or the saved one, while this one listens on none. */
+  heldPort: number | null;
 }
 
 /** What the view shows: the welcome of a window not paired, or its rows. */
@@ -77,11 +77,11 @@ function listeningRow(state: PickerViewState): PickerRow {
   if (state.port === null) {
     return {
       key: 'listening',
-      label: state.savedPort ? `Another window listens on 127.0.0.1:${state.savedPort}` : 'Not listening',
+      label: state.heldPort ? `Another window listens on 127.0.0.1:${state.heldPort}` : 'Not listening',
       description: '',
-      tooltip: state.savedPort
+      tooltip: state.heldPort
         ? 'Another window of this editor holds the pairing’s port; it takes Piwi Picker’s requests while it is open.'
-        : 'No port of this editor is free for Piwi Picker. Copy the pairing address to pair by hand.',
+        : 'This window listens on no port Piwi Picker looks at: another program holds them. Copy the pairing address to pair by hand.',
       icon: 'circle-slash',
     };
   }
@@ -138,5 +138,10 @@ export function pickerRows(state: PickerViewState, now: number): PickerRow[] {
 
 /** The notification of a request: who asks, and the code to compare with Piwi Picker's. */
 export function pairingPrompt(request: Pick<EditorPairingRequestView, 'client' | 'code'>): string {
-  return `Piwi Picker in ${request.client} asks to pair with this editor, to send it the locators you pick and follow its runs. Allow it only if Piwi Picker shows the code ${request.code}.`;
+  return `Piwi Picker in ${request.client} asks to pair with this editor, to send it the locators you pick and follow its runs. Allow it only if you just clicked Pair in Piwi Picker and it shows the code ${request.code}.`;
+}
+
+/** Whether Piwi Picker is paired, by code or heard from: Unpair applies. */
+export function pickerPaired(state: Pick<PickerViewState, 'paired' | 'heard'>): boolean {
+  return state.paired !== null || state.heard !== null;
 }

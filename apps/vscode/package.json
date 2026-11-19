@@ -1308,7 +1308,7 @@
         },
         {
           "command": "piwi.unpairPicker",
-          "when": "view == piwi.picker && piwi.pickerView == paired",
+          "when": "view == piwi.picker && piwi.pickerPaired",
           "group": "navigation@2"
         }
       ],

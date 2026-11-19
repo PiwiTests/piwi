@@ -2859,7 +2859,8 @@ class GlueTest {
         val denied = requests.start(chrome, "application/json", "{}").body
         assertTrue(requests.answer(denied["id"] as String, null))
         assertEquals(mapOf("status" to "denied"), requests.poll(denied["id"] as String, denied["secret"] as String).body)
-        val late = requests.start(chrome, "application/json", "{}").body
+        // Another extension: the one denied waits a minute before it asks again.
+        val late = requests.start("moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "application/json", "{}").body
         now += Glue.EDITOR_PAIRING_TTL_MILLIS
         assertTrue(requests.expire())
         assertFalse(requests.answer(late["id"] as String, "late"))
@@ -2869,18 +2870,35 @@ class GlueTest {
     }
 
     @Test
-    fun `starts a pairing request only for an extension's JSON, and only a few at once`() {
+    fun `starts a pairing request only for an extension's JSON object, and only a few at once`() {
         val requests = Glue.EditorPairingRequests()
         assertEquals(403, requests.start("https://example.com", "application/json", "{}").status)
         assertEquals(403, requests.start(null, "application/json", "{}").status)
         assertEquals(403, requests.start("chrome-extension://short", "application/json", "{}").status)
         assertEquals(415, requests.start(chrome, "text/plain", "{}").status)
-        assertEquals(400, requests.start(chrome, "application/json", "not json").status)
-        val firefox = "moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
-        repeat(Glue.MAX_WAITING_EDITOR_PAIRINGS) { assertEquals(201, requests.start(if (it == 0) chrome else firefox, "application/json", "{}").status) }
+        for (body in listOf(null, "", "  ", "not json", "null", "3", "[]")) assertEquals(body.toString(), 400, requests.start(chrome, "application/json", body).status)
+        val extension = { i: Int -> "chrome-extension://" + "abcdefghijklmnop"[i].toString().repeat(32) }
+        repeat(Glue.MAX_WAITING_EDITOR_PAIRINGS) { assertEquals(201, requests.start(extension(it), "application/json", "{}").status) }
+        assertEquals(429, requests.start(extension(9), "application/json", "{}").status)
+        requests.answer(requests.waiting().first().id, "the-token-1234567890")
+        assertEquals(201, requests.start(extension(9), "application/json", "{}").status)
+    }
+
+    @Test
+    fun `takes the place of an extension's earlier request, waits a minute after a Deny, and forgets tokens on Unpair`() {
+        var now = 1_000_000L
+        val requests = Glue.EditorPairingRequests(now = { now })
+        val first = requests.start(chrome, "application/json", "{}").body
+        val second = requests.start(chrome, "application/json", "{}").body
+        assertEquals(listOf(second["id"]), requests.waiting().map { it.id })
+        assertEquals(mapOf("status" to "expired"), requests.poll(first["id"] as String, first["secret"] as String).body)
+        assertTrue(requests.answer(second["id"] as String, null))
         assertEquals(429, requests.start(chrome, "application/json", "{}").status)
-        requests.answer(requests.waiting().first().id, null)
-        assertEquals(201, requests.start(chrome, "application/json", "{}").status)
+        now += 61_000
+        val third = requests.start(chrome, "application/json", "{}").body
+        assertTrue(requests.answer(third["id"] as String, "the-old-token-123456"))
+        requests.forgetTokens()
+        assertEquals(mapOf("status" to "expired"), requests.poll(third["id"] as String, third["secret"] as String).body)
     }
 
     @Test
@@ -2919,7 +2937,7 @@ class GlueTest {
         )
         assertEquals("not where Piwi Picker looks", Glue.pickerRows(paired.copy(port = 8080), now).last().description)
         assertEquals(
-            "Piwi Picker in Chrome on macOS asks to pair with this IDE, to send it the locators you pick and follow its runs. Allow it only if Piwi Picker shows the code BCDF-GHJK.",
+            "Piwi Picker in Chrome on macOS asks to pair with this IDE, to send it the locators you pick and follow its runs. Allow it only if you just clicked Pair in Piwi Picker and it shows the code BCDF-GHJK.",
             Glue.pairingPrompt("Chrome on macOS", "BCDF-GHJK"),
         )
     }
