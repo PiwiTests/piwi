@@ -14,8 +14,9 @@ import { openPageView, type PageFrame, type PageViewOptions } from '../src/inter
  * the page painted goes, a test's video recording included, and none for a page whose frame goes; a still page is tried
  * again after the viewers heard why no frame went. A view of images on a timer tries the next one again though it is
  * the same as the one that did not go, three times at most. Every image a view takes goes at the size it asks: the
- * browser's own, a timed one and a lighter one, which then goes where the whole page's would be too long; and for a
- * page without a viewport of its own, scaled down with `jpeg-js`.
+ * browser's own, a timed one and a lighter one, which then goes where the whole page's would be too long, the view
+ * saying once why none goes where it is too long as well; and for a page without a viewport of its own, scaled down
+ * with `jpeg-js`.
  */
 
 const STILL = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; padding: 20px; font: 16px sans-serif }</style>
@@ -428,6 +429,25 @@ describe('a live view of a still page', () => {
         {},
         NOISY,
       ),
+    TIMEOUT,
+  );
+
+  it(
+    'says once why no image goes when the lighter one is too long as well',
+    () =>
+      onStillPage(async (page) => {
+        noScreencast(page);
+        const { options, seen } = viewOptions(() => 'send', 300, { maxFrameBytes: 1024 });
+        const view = await openPageView(page, options);
+        try {
+          await waitFor(() => seen.refused.length > 0, 5000);
+          await sleep(1500);
+          expect(seen.refused).toEqual([undefined]);
+          expect(seen.sent).toEqual([]);
+        } finally {
+          await view?.close();
+        }
+      }),
     TIMEOUT,
   );
 
