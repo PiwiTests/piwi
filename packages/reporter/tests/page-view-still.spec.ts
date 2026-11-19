@@ -2,7 +2,7 @@ import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { chromium, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
+import { chromium, devices, type Browser, type BrowserContextOptions, type Page } from '@playwright/test';
 import { jpegSize } from '../src/internal/capture/live-mask.js';
 import { openPageView, type PageFrame, type PageViewOptions } from '../src/internal/capture/page-view.js';
 
@@ -13,17 +13,17 @@ import { openPageView, type PageFrame, type PageViewOptions } from '../src/inter
  * place, and goes no later than a frame the page painted anew meanwhile. Three images at most are tried until a frame
  * the page painted goes, a test's video recording included, and none for a page whose frame goes; a still page is tried
  * again after the viewers heard why no frame went. A view of images on a timer tries the next one again though it is
- * the same as the one that did not go, three times at most. Every image a view takes goes at the size it asks: the
- * browser's own, a timed one and a lighter one, which then goes where the whole page's would be too long, the view
- * saying once why none goes where it is too long as well; and for a page without a viewport of its own, scaled down
- * with `jpeg-js`.
+ * the same as the one that did not go, three times at most. Every image a view takes goes at the size it asks: a still
+ * page's and a timed one name it for `screen` to scale them down to, and a lighter one is scaled down with `jpeg-js`,
+ * which then goes where the whole page's would be too long, the view saying once why none goes where it is too long
+ * as well; and taking them leaves the page as the test set it (its device scale factor, viewport and screen).
  */
 
 const STILL = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; padding: 20px; font: 16px sans-serif }</style>
 <h1>Checkout</h1><button disabled>Pay</button>`;
 const PAID = STILL.replace('Checkout', 'Paid');
 /**
- * A page of noise, which no JPEG makes small: 71 KB at the asked size and quality 50, 45 KB at 30, and 160 KB whole at
+ * A page of noise, which no JPEG makes small: 112 KB at the asked size and quality 50, 69 KB at 30, and 160 KB whole at
  * 30.
  */
 const NOISY = `<!doctype html><style>body { margin: 0 }</style><canvas id="c" width="1000" height="625"></canvas>
@@ -50,6 +50,11 @@ async function waitFor<T>(read: () => T | undefined | false, ms = 10_000): Promi
   }
 }
 
+/** The size a frame goes at once `screen` took it: the size it names (`fit`), else its own. */
+function goesAt(frame: PageFrame): { width: number; height: number } | null {
+  return frame.fit ?? jpegSize(frame.data);
+}
+
 /** Wait until the page painted what it holds: its screencast's first frame then shows it whole. */
 async function presented(page: Page): Promise<void> {
   type Window = { requestAnimationFrame(callback: () => void): void };
@@ -69,35 +74,20 @@ interface Images {
   letGo(): void;
 }
 
-/**
- * Follow the images taken of `page`, through `page.screenshot` and through `Page.captureScreenshot` on the DevTools
- * sessions of its context; with `hold`, each comes back to the view once the test lets it (`letGo`).
- */
+/** Follow the images taken of `page`; with `hold`, each comes back to the view once the test lets it (`letGo`). */
 function followImages(page: Page, hold = false): Images {
   let asked = 0;
   let taken = 0;
   let letGo = (): void => undefined;
   const held = hold ? new Promise<void>((resolve) => (letGo = resolve)) : Promise.resolve();
-  const take = async <T>(run: () => Promise<T>): Promise<T> => {
+  const screenshot = page.screenshot.bind(page);
+  page.screenshot = (async (options) => {
     asked++;
-    const image = await run();
+    const image = await screenshot(options);
     taken++;
     await held;
     return image;
-  };
-  const screenshot = page.screenshot.bind(page);
-  page.screenshot = ((options) => take(() => screenshot(options))) as Page['screenshot'];
-  const context = page.context();
-  const open = context.newCDPSession.bind(context);
-  context.newCDPSession = (async (target) => {
-    const session = await open(target);
-    const send = session.send.bind(session) as (method: string, params?: object) => Promise<unknown>;
-    session.send = ((method: string, params?: object) =>
-      method === 'Page.captureScreenshot'
-        ? take(() => send(method, params))
-        : send(method, params)) as typeof session.send;
-    return session;
-  }) as typeof context.newCDPSession;
+  }) as Page['screenshot'];
   return { asked: () => asked, taken: () => taken, letGo: () => letGo() };
 }
 
@@ -199,7 +189,7 @@ describe('a live view of a still page', () => {
           expect(images()).toBe(1);
           expect(seen.sent).toHaveLength(1);
           const [image] = seen.sent;
-          expect(jpegSize(image!.data)).toEqual(ASKED);
+          expect(goesAt(image!)).toEqual(ASKED);
           expect({ width: image!.width, height: image!.height }).toEqual(VIEWPORT);
         } finally {
           await view?.close();
@@ -222,13 +212,9 @@ describe('a live view of a still page', () => {
           expect(Date.now() - opened).toBeGreaterThanOrEqual(900);
           await sleep(1500);
           expect(images()).toBe(1);
-          // The screencast paints the same picture as the browser takes the image, twice where it scales it: the
-          // image, or those frames, go, each of the whole viewport at the size asked.
-          expect(seen.sent.length).toBeLessThanOrEqual(2);
-          for (const frame of seen.sent) {
-            expect(jpegSize(frame.data)).toEqual(ASKED);
-            expect({ width: frame.width, height: frame.height }).toEqual(VIEWPORT);
-          }
+          // The frame the screencast paints again as the image is taken does not go too.
+          expect(seen.sent).toHaveLength(1);
+          expect(goesAt(seen.sent[0]!)).toEqual(ASKED);
         } finally {
           await view?.close();
         }
@@ -399,7 +385,7 @@ describe('a live view of a still page', () => {
         try {
           await waitFor(() => seen.sent.length > 0, 3000);
           const [image] = seen.sent;
-          expect(jpegSize(image!.data)).toEqual(ASKED);
+          expect(goesAt(image!)).toEqual(ASKED);
           expect({ width: image!.width, height: image!.height }).toEqual(VIEWPORT);
         } finally {
           await view?.close();
@@ -414,14 +400,14 @@ describe('a live view of a still page', () => {
       onStillPage(
         async (page) => {
           noScreencast(page);
-          const { options, seen } = viewOptions(() => 'send', 300, { maxFrameBytes: 58 * 1024 });
+          const { options, seen } = viewOptions(() => 'send', 300, { maxFrameBytes: 90 * 1024 });
           const view = await openPageView(page, options);
           try {
             await waitFor(() => seen.sent.length > 0 || seen.refused.length > 0, 5000);
             expect(seen.refused).toEqual([]);
             const [image] = seen.sent;
             expect(jpegSize(image!.data)).toEqual(ASKED);
-            expect(image!.data.length).toBeLessThanOrEqual(58 * 1024);
+            expect(image!.data.length).toBeLessThanOrEqual(90 * 1024);
           } finally {
             await view?.close();
           }
@@ -451,27 +437,50 @@ describe('a live view of a still page', () => {
     TIMEOUT,
   );
 
-  it(
-    'scales the images of a page without a viewport of its own down to the size it asks',
-    () =>
-      onStillPage(
-        async (page) => {
+  for (const [name, context] of [
+    ['a device scale factor of 2', { deviceScaleFactor: 2 }],
+    ['a phone', { ...devices['Pixel 5'], viewport: devices['Pixel 5']!.viewport }],
+  ] as const) {
+    it(
+      `takes its images of a page on ${name} without changing what the page sees`,
+      () =>
+        onStillPage(async (page) => {
+          type Window = {
+            devicePixelRatio: number;
+            innerWidth: number;
+            screen: { width: number; height: number };
+            resizes?: number;
+            addEventListener(type: string, listener: () => void): void;
+          };
+          const read = () =>
+            page.evaluate(() => {
+              const view = globalThis as unknown as Window;
+              return {
+                ratio: view.devicePixelRatio,
+                width: view.innerWidth,
+                screen: { width: view.screen.width, height: view.screen.height },
+                resizes: view.resizes ?? 0,
+              };
+            });
+          await page.evaluate(() => {
+            const view = globalThis as unknown as Window;
+            view.resizes = 0;
+            view.addEventListener('resize', () => (view.resizes = (view.resizes ?? 0) + 1));
+          });
+          const before = await read();
           noScreencast(page);
           const { options, seen } = viewOptions(() => 'send', 300);
           const view = await openPageView(page, options);
           try {
-            await waitFor(() => seen.sent.length > 0, 3000);
-            const [image] = seen.sent;
-            const size = jpegSize(image!.data)!;
-            expect(size.width).toBeLessThanOrEqual(ASKED.width);
-            expect(size.height).toBeLessThanOrEqual(ASKED.height);
-            expect(Math.max(size.width / ASKED.width, size.height / ASKED.height)).toBeGreaterThan(0.95);
+            // An image goes, and more are taken, one every 300 ms.
+            await waitFor(() => seen.sent.length > 0, 5000);
+            await sleep(1500);
+            expect(await read()).toEqual(before);
           } finally {
             await view?.close();
           }
-        },
-        { viewport: null },
-      ),
-    TIMEOUT,
-  );
+        }, context),
+      TIMEOUT,
+    );
+  }
 });

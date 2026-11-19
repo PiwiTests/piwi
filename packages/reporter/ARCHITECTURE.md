@@ -273,12 +273,10 @@ What the package does to a user's run, process by process.
   while it was taken, and the frame the screencast paints again, the same, as a screenshot is taken goes nowhere. A
   timed image the same as one the mask did not send goes to it again, three times at most too
   (`tests/page-view-still.spec.ts`). Every image a view takes itself (on a timer, the lighter one, a still page's) is
-  at the size the view asks: in Chromium, for a page with a viewport of its own, the browser takes it at that size
-  (`Page.captureScreenshot` with the visual viewport as its clip, scaled, through a DevTools session of the view's own,
-  detached as the view closes), which costs the worker a few milliseconds where scaling it in the worker costs 40 to
-  260; elsewhere a screenshot is scaled down with Playwright's `jpeg-js`, an image the same as the one before scaled
-  once. As the browser takes a scaled image, the page's screencast paints the same picture twice, the test's own
-  recording included.
+  a screenshot through an internal call, which leaves the page's emulation as the test set it, and goes at the size
+  the view asks: one larger names that size (`PageFrame.fit`), and the mask scales it down in the pass that paints it,
+  one decode and one encode with Playwright's `jpeg-js` (40 to 260 ms of the worker's time an image); the lighter one
+  is scaled before it, as its length is told before the mask. An image the same as the one before goes no further.
 - **The lane** (`lane-feed.ts`): the test the worker runs, the page it shows (its `page`
   fixture's once it opens, else the page its latest call or wait landed on, which the
   resource ledger tells as it follows each call (`onTestCallPage`, `laneCalled`), else the

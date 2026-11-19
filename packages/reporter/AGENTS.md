@@ -79,9 +79,7 @@ responsibilities.
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and
      the test gets `context.tracing` and `page.screencast` behind guards that first end Piwi's own trace or a view's
-     screencast client (`guardTracing`, `guardScreencast`). In Chromium, a view (the run connection's too) that takes
-     an image of its page itself does it through a DevTools session of its own, detached as the view closes
-     (`page-view.ts`)
+     screencast client (`guardTracing`, `guardScreencast`)
      ([what it posts, when, and its tests](ARCHITECTURE.md#side-effects), under **The instance's live view**);
    - while a full view has Inspect open, the page's DOM snapshots and the stylesheets, fonts and images they name
      (`internal/capture/live-inspect.ts`), read from the runner's trace or from a live trace of Piwi's own, stopped
@@ -157,6 +155,10 @@ responsibilities.
   (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
   `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
   `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
+  Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
+  screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.
+  `tests/page-view-still.spec.ts` checks the page sees nothing change.
 - **A private temp file goes through `internal/support/private-file.ts`**: in `privateTempDir()`, never `os.tmpdir()`
   itself (on Windows, `%LOCALAPPDATA%\piwi\tmp`: a service account's `os.tmpdir()` is shared), written and read with
   `writePrivateFile`, `appendPrivateFile` and `readPrivateFile`; or it lives in a `fs.mkdtempSync` folder. Owner-only,

@@ -1,4 +1,4 @@
-import type { CDPSession, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import { FrameAcks, LatestPacer, isViewSize } from '@piwitests/core/run-view';
 import { barHiddenShots, jpegCodec, jpegSize, thumbnailOf, within } from './live-mask.js';
 import { callMethod, internalCall } from './quiet-capture.js';
@@ -12,13 +12,12 @@ import { callMethod, internalCall } from './quiet-capture.js';
  * frames are acknowledged at the view's pace (`FrameAcks`), one held at a time. Playwright gives a page one screencast
  * client of its own: where the view cannot hold it (the test runs one itself, another view of the page holds it), an
  * image of the page every `shotMs`, its caret as the page shows it. Every image the view takes itself is at the size it
- * asks of the screencast: Chromium takes it at that size through a DevTools session of the view's own, detached as the
- * view closes; elsewhere it is scaled down with Playwright's `jpeg-js`. A test that starts or stops a screencast while
- * a view holds the page's client (`guardScreencast`) ends that client first, and the view goes on with images, as every
- * later view of that page does. A frame the same as the one before is dropped, unless none went for that one; one
- * longer than `maxFrameBytes` is too, an image of the page at `lightQuality` taken in its place, one at a time and
- * `shotMs` apart, and when that one is too long as well, the view says once why no frame goes (`refuse`), until a
- * frame goes again. Frames go at most `fps` a
+ * asks of the screencast: a screenshot that `screen` scales down as it paints it, the lighter one scaled here. A test
+ * that starts or stops a screencast while a view holds the page's client (`guardScreencast`) ends that client first,
+ * and the view goes on with images, as every later view of that page does. A frame the same as the one before is
+ * dropped, unless none went for that one; one longer than `maxFrameBytes` is too, an image of the page at
+ * `lightQuality` taken in its place, one at a time and `shotMs` apart, and when that one is too long as well, the view
+ * says once why no frame goes (`refuse`), until a frame goes again. Frames go at most `fps` a
  * second (fewer when `spacing` holds a heavy one back), the latest one alone while the way out is `busy`. Each frame
  * passes through the view's `screen` before it goes: the frame goes as it returns it, or none goes, or the viewers
  * hear why none goes, the latest frame alone waiting meanwhile. Piwi's pause bar, which a headed stop shows in the
@@ -126,9 +125,10 @@ interface Size {
   height: number;
 }
 
-/** An image a view took of its page: its JPEG, and the viewport it shows, in CSS pixels. */
+/** An image a view took: its JPEG, the viewport it shows in CSS pixels, and the size it goes at, at most. */
 interface PageImage extends Size {
   data: Buffer;
+  fit?: Size;
 }
 
 /**
@@ -281,6 +281,11 @@ export interface PageFrame {
    * before any read.
    */
   at: number;
+  /**
+   * The size the image goes at, at most, for one the view took itself that is larger: `screen` scales it down as it
+   * paints it, in the one pass that decodes and encodes it.
+   */
+  fit?: { width: number; height: number };
 }
 
 export interface PageViewOptions {
@@ -438,60 +443,22 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
    */
   const shownSize = (shot: Buffer): Size => page.viewportSize() ?? jpegSize(shot) ?? viewport;
   /**
-   * The view's own DevTools session of its page, opened as it first takes an image of a page with a viewport of its own
-   * and detached as it closes: null where the browser has none (Firefox, WebKit).
-   */
-  let devtools: Promise<CDPSession | null> | null = null;
-  /** The latest image scaled down with `jpeg-js`, and what it came to: the same image is not scaled again. */
-  let scaled: { shot: Buffer; data: Buffer } | null = null;
-  /** `shot`, a JPEG of the viewport `size`, within the size the view asks: scaled down with `jpeg-js` where larger. */
-  const fit = (shot: Buffer, size: Size, quality: number): Buffer => {
-    if (scaled?.shot.equals(shot)) return scaled.data;
-    const data =
-      thumbnailOf(shot, { ...options.size(size), quality, maxBytes: Number.POSITIVE_INFINITY })?.data ?? shot;
-    if (data !== shot) scaled = { shot, data };
-    return data;
-  };
-  /**
-   * An image of the viewport `size` that the browser takes at the size the view asks, through the view's DevTools
-   * session (`Page.captureScreenshot`, its clip the visual viewport, scaled): the browser scales it as it encodes it,
-   * which costs the worker nothing. Null when it could not be taken within five seconds.
-   */
-  const browserImage = async (session: CDPSession, size: Size, quality: number): Promise<Buffer | null> => {
-    const asked = options.size(size);
-    const scale = Math.min(1, asked.width / size.width, asked.height / size.height);
-    const taken = await within(
-      internalCall(page, async () => {
-        const { cssVisualViewport: shown } = await session.send('Page.getLayoutMetrics');
-        const clip = { x: shown.pageX, y: shown.pageY, width: size.width, height: size.height, scale };
-        return (await session.send('Page.captureScreenshot', { format: 'jpeg', quality, clip })).data;
-      }),
-      5000,
-    ).catch(() => undefined);
-    return taken ? Buffer.from(taken, 'base64') : null;
-  };
-  /**
-   * An image of the page now, at `quality`, within the size the view asks of the screencast, and the viewport it shows
-   * in CSS pixels: taken at that size by the browser where it can (Chromium, a page with a viewport of its own), else a
-   * screenshot through an internal call, scaled down with the `jpeg-js` of Playwright. Null when none could be taken.
+   * An image of the page now, at `quality`, through an internal call (Playwright's screenshot, which leaves the page's
+   * emulation as the test set it and takes one image of the page at a time), and the viewport it shows, in CSS pixels;
+   * larger than the size the view asks of the screencast, it names that size (`fit`), which `screen` scales it down to.
+   * Null when none could be taken.
    */
   const takeImage = async (quality: number): Promise<PageImage | null> => {
-    if (closed) return null;
-    const own = page.viewportSize();
-    if (own) {
-      devtools ??= internalCall(page, () => page.context().newCDPSession(page)).catch(() => null);
-      const session = await devtools;
-      const taken = session && !closed ? await browserImage(session, own, quality) : null;
-      // An image the browser took larger than asked is scaled down here.
-      if (taken) return { data: fit(taken, own, quality), ...own };
-    }
     if (closed) return null;
     const shot = await internalCall(page, () =>
       page.screenshot({ type: 'jpeg', quality, scale: 'css', caret: 'initial', timeout: 5000 }),
     ).catch(() => null);
     if (!shot) return null;
     const size = shownSize(shot);
-    return { data: fit(shot, size, quality), ...size };
+    const asked = options.size(size);
+    const own = jpegSize(shot);
+    const larger = !!own && (own.width > asked.width || own.height > asked.height);
+    return { data: shot, ...size, ...(larger ? { fit: asked } : {}) };
   };
   /** The lighter image on its way, and when the last one was asked. */
   let lighter: Promise<void> | null = null;
@@ -504,10 +471,15 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     lighter = takeImage(options.lightQuality)
       .then((shot) => {
         if (!shot || closed) return;
-        if (shot.data.length > options.maxFrameBytes) return refuse();
+        // Its length is told before `screen`: it is scaled down here, at the lighter quality.
+        const quality = options.lightQuality;
+        const data = shot.fit
+          ? (thumbnailOf(shot.data, { ...shot.fit, quality, maxBytes: Number.POSITIVE_INFINITY })?.data ?? shot.data)
+          : shot.data;
+        if (data.length > options.maxFrameBytes) return refuse();
         // It stands for the frame too long: when none goes for it, a still page's image is tried in its place.
-        last = shot.data;
-        pacer.offer({ ...shot, at: now });
+        last = data;
+        pacer.offer({ data, width: shot.width, height: shot.height, at: now });
       })
       .finally(() => {
         lighter = null;
@@ -517,7 +489,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
    * A frame of the page: one it `painted` (its screencast's, or the view's timed image of it), else an image taken of
    * it. One the same as the frame before goes no further, unless none went for that one (`again`).
    */
-  const onFrame = (data: Buffer, width: number, height: number, at: number, painted = false): void => {
+  const onFrame = (data: Buffer, width: number, height: number, at: number, painted = false, fit?: Size): void => {
     if (closed || (last?.equals(data) && !again)) return;
     if (painted) {
       // The frame the screencast paints again as an image of the still page is taken: that image stands for it.
@@ -530,7 +502,8 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     given++;
     if (data.length > options.maxFrameBytes) return lighten();
     const named = isViewSize(width, height);
-    pacer.offer({ data, width: named ? width : viewport.width, height: named ? height : viewport.height, at });
+    const shown = { width: named ? width : viewport.width, height: named ? height : viewport.height };
+    pacer.offer({ data, ...shown, at, ...(fit ? { fit } : {}) });
   };
   /**
    * Take an image of the page now and give it to the view as a frame the page did not paint, at the size the view asks
@@ -544,7 +517,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     if (given !== before) return true;
     if (!shot) return false;
     imaged = true;
-    onFrame(shot.data, shot.width, shot.height, at);
+    onFrame(shot.data, shot.width, shot.height, at, false, shot.fit);
     return true;
   };
   /**
@@ -592,7 +565,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     timed = takeImage(options.quality);
     const shot = await timed;
     timed = null;
-    if (shot) onFrame(shot.data, shot.width, shot.height, at, true);
+    if (shot) onFrame(shot.data, shot.width, shot.height, at, true, shot.fit);
     if (!closed) {
       shots = setTimeout(() => void shoot(), options.shotMs);
       shots.unref?.();
@@ -688,11 +661,8 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if (stillTimer) clearTimeout(stillTimer);
       holders.delete(holder);
       // A lighter image, a timed one, an image of a still page, and a frame in `screen`, on their way are the view's
-      // last calls to the page, before its DevTools session goes.
+      // last calls to the page.
       await Promise.all([lighter, timed, stillShot, screened]);
-      const session = await devtools;
-      devtools = null;
-      if (session) await internalCall(page, () => session.detach()).catch(() => undefined);
       const stop = end;
       end = null;
       if (stop && !page.isClosed()) await stop().catch(() => undefined);
