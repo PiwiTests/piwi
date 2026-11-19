@@ -1,6 +1,7 @@
 import { requireRouteId } from '../../../../utils/project-access';
 import { assistantTurnOfRequest } from '../../../../utils/assistant/turn-token';
 import { answerTurnMcp } from '../../../../utils/assistant/turn-mcp';
+import { streamHeaders } from '#shared/stream-headers';
 
 defineRouteMeta({
   openAPI: {
@@ -26,8 +27,7 @@ export default eventHandler(async (event) => {
   // Notifications have no answer: 204, as on /mcp, so the client opens no stream of its own.
   if (reply.kind === 'none') return null;
   if (reply.kind === 'stream') {
-    setResponseHeader(event, 'Content-Type', 'text/event-stream');
-    setResponseHeader(event, 'Cache-Control', 'no-cache');
+    setResponseHeaders(event, streamHeaders('text/event-stream'));
     return reply.body;
   }
   setResponseHeader(event, 'Content-Type', 'application/json');

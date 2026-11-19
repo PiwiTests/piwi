@@ -1,4 +1,5 @@
 import type { H3Event } from 'h3';
+import { streamHeaders } from '#shared/stream-headers';
 
 const HEARTBEAT_INTERVAL_MS = 15000;
 
@@ -39,11 +40,6 @@ export function createSSEEndpoint(
   });
 
   return new Response(stream, {
-    headers: {
-      'Content-Type': 'text/event-stream',
-      'Cache-Control': 'no-cache',
-      Connection: 'keep-alive',
-      'X-Accel-Buffering': 'no',
-    },
+    headers: streamHeaders('text/event-stream'),
   });
 }

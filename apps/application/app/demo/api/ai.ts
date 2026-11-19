@@ -21,6 +21,7 @@ import {
 } from '../../../server/database/schema';
 import type { FailureDiagnosis } from '../../../server/database/schema';
 import { getDemoDb } from '../db.client';
+import { streamHeaders } from '#shared/stream-headers';
 import {
   CONTEXT_LIMIT_FIELDS,
   DEFAULT_CONTEXT_LIMITS,
@@ -944,15 +945,7 @@ export async function apiStreamDiagnoseCluster(
   const db = await getDemoDb();
   const encoder = new TextEncoder();
 
-  const sse = (stream: ReadableStream) =>
-    new Response(stream, {
-      headers: {
-        'Content-Type': 'text/event-stream',
-        'Cache-Control': 'no-cache',
-        Connection: 'keep-alive',
-        'X-Accel-Buffering': 'no',
-      },
-    });
+  const sse = (stream: ReadableStream) => new Response(stream, { headers: streamHeaders('text/event-stream') });
 
   if (force) {
     await snapshotAndClear(db, clusterId);

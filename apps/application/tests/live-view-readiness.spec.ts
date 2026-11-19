@@ -1,4 +1,5 @@
 import { test, expect } from './fixtures';
+import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
 import { PROJECT } from '#shared/test-project-names';
 import { holdWorkerStream } from './utils/live-view';
 import { resolveE2ETarget } from './desktop-target';
@@ -89,6 +90,17 @@ test('explains each readiness gate and updates when the project changes', async 
     const worker = holdWorkerStream(resolveE2ETarget().baseUrl, setup.runId, setup.liveView.key);
     closeWorker = () => worker.close();
     await expect(readiness).toHaveAttribute('data-state', 'available');
+    // Both ends of the view tell a proxy in front to pass them on as they come.
+    expect(worker.headers()).toMatchObject({ 'x-accel-buffering': 'no', 'cache-control': 'no-cache, no-transform' });
+    const watching = new AbortController();
+    const watch = await fetch(`${resolveE2ETarget().baseUrl}/api/test-runs/${setup.runId}/live-view/watch?worker=0`, {
+      signal: watching.signal,
+    });
+    expect(watch.status).toBe(200);
+    expect(watch.headers.get('content-type')).toBe(LIVE_STREAM_TYPE);
+    expect(watch.headers.get('x-accel-buffering')).toBe('no');
+    expect(watch.headers.get('cache-control')).toBe('no-cache, no-transform');
+    watching.abort();
     await page.reload();
     await expect(readiness).toHaveAttribute('data-state', 'available');
     worker.close();
