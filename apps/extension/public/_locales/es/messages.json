@@ -1186,7 +1186,7 @@
     "message": "Desemparejar"
   },
   "options_editorPairHint": {
-    "message": "Emparejar busca los editores abiertos en este equipo y pregunta al que elijas: autoriza allí la solicitud cuando muestre el mismo código que Piwi Picker."
+    "message": "Emparejar busca los editores abiertos en este equipo y pregunta al que elijas: escribe allí el código que muestra Piwi Picker."
   },
   "options_editorChoose": {
     "message": "¿Con qué editor emparejar?"
@@ -1220,7 +1220,7 @@
     }
   },
   "options_editorPairCode": {
-    "message": "Autoriza la solicitud en $editor$ cuando muestre $code$.",
+    "message": "Escribe este código en $editor$ cuando lo pida: $code$.",
     "placeholders": {
       "code": {
         "content": "$1",
@@ -1234,6 +1234,9 @@
   },
   "options_editorPairDenied": {
     "message": "El editor dijo que no: no se emparejó nada."
+  },
+  "options_editorPairWrongCode": {
+    "message": "El código escrito en el editor no es el que se muestra aquí: no se emparejó nada. Haz clic en Emparejar para intentarlo de nuevo."
   },
   "options_editorPairExpired": {
     "message": "La solicitud caducó antes de ser autorizada en el editor. Haz clic en Emparejar para pedirla de nuevo."
@@ -1338,6 +1341,9 @@
     "message": "Esta no es una dirección de emparejamiento. Tiene la forma http://127.0.0.1:7247/piwi/send#… y la da el comando «Copy the pairing address for Piwi Picker» del editor."
   },
   "options_editorPermission": {
+    "message": "Piwi Picker necesita permiso para acceder al editor en este equipo."
+  },
+  "options_editorPairPermission": {
     "message": "Piwi Picker necesita permiso para acceder a los editores de este equipo."
   },
   "options_editorNotProven": {

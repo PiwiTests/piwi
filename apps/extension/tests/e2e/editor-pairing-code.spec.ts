@@ -1,5 +1,6 @@
 import { createServer, type Server } from 'node:http';
 import type { Page } from '@playwright/test';
+import { editorPairingProof } from '@piwitests/core/editor-pairing';
 import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '@piwitests/core/editor-send';
 import { test, expect, openOptions } from './fixtures.js';
 import { localStorageText, storedSecret } from './secrets.js';
@@ -13,13 +14,16 @@ import { localStorageText, storedSecret } from './secrets.js';
 const PORT = 7251;
 const BASE = `http://127.0.0.1:${PORT}/piwi`;
 const TOKEN = 'editor-token-0123456789';
-const CODE = 'BCDF-GHJK';
+/** A code as the page shows it: Piwi Picker's own, never sent to the editor. */
+const CODE = /^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/;
 const PAIRING = '0123456789abcdef';
 const SECRET = 'the-secret';
 
 let server: Server;
 /** What the person answers in the editor: `null` while the request waits. */
 let answer: 'allow' | 'deny' | null = null;
+/** The code the person types in the editor, which its proof is keyed by. */
+let typed = '';
 let starts: Array<{ origin: string | undefined; contentType: string; body: string }> = [];
 let tokenHandedOut = 0;
 
@@ -47,14 +51,15 @@ test.beforeAll(async () => {
           contentType: req.headers['content-type'] ?? '',
           body: Buffer.concat(chunks).toString('utf8'),
         });
-        return json(201, { id: PAIRING, secret: SECRET, code: CODE, interval: 1, expiresIn: 60 });
+        return json(201, { id: PAIRING, secret: SECRET, interval: 1, expiresIn: 60 });
       }
       if (req.method === 'GET' && req.url === `/piwi/pairings/${PAIRING}`) {
         if (req.headers['x-pairing-secret'] !== SECRET) return json(404, {});
         if (answer === 'deny') return json(200, { status: 'denied' });
         if (answer === 'allow') {
           tokenHandedOut++;
-          return json(200, tokenHandedOut === 1 ? { status: 'allowed', token: TOKEN } : { status: 'claimed' });
+          const proof = await editorPairingProof(typed, PAIRING, TOKEN);
+          return json(200, tokenHandedOut === 1 ? { status: 'allowed', token: TOKEN, proof } : { status: 'claimed' });
         }
         return json(200, { status: 'waiting' });
       }
@@ -79,6 +84,7 @@ test.afterAll(async () => {
 
 test.beforeEach(() => {
   answer = null;
+  typed = '';
   starts = [];
   tokenHandedOut = 0;
 });
@@ -91,6 +97,15 @@ async function openSettings(page: Page, extensionId: string): Promise<void> {
     chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
     chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
   });
+}
+
+/** The person types in the editor the code the page shows, then allows. */
+async function typeTheCode(page: Page): Promise<string> {
+  const shown = page.locator('#editor-code-line code');
+  await expect(shown).toHaveText(CODE);
+  typed = (await shown.textContent()) ?? '';
+  answer = 'allow';
+  return typed;
 }
 
 /** Clicks Pair, then this test's editor when Pair found more than one. */
@@ -115,7 +130,7 @@ test.describe('Pair with an editor by code', () => {
 
     await pair(page);
     await expect(card.locator('#editor-code-line')).toHaveText(
-      `Allow the request in Piwi test editor: shop once it shows ${CODE}.`,
+      /^Type this code in Piwi test editor: shop when it asks: [A-Z]{4}-[A-Z]{4}\.$/,
     );
     // Asked as an extension, with JSON naming the browser alone.
     expect(starts).toHaveLength(1);
@@ -124,7 +139,7 @@ test.describe('Pair with an editor by code', () => {
     expect(Object.keys(JSON.parse(starts[0]!.body)).sort()).toEqual(['browser', 'os']);
     await expect(card.getByRole('button', { name: 'Pair', exact: true })).toBeDisabled();
 
-    answer = 'allow';
+    await typeTheCode(page);
     await expect(card.locator('#editor-status')).toHaveText(`Paired with the editor at ${BASE}/send.`);
     await expect(card.locator('#editor-pair-panel')).toBeHidden();
     await expect(card.locator('#editor-pill')).toHaveText('Paired');
@@ -146,6 +161,26 @@ test.describe('Pair with an editor by code', () => {
     await expect(card.locator('#editor-code-line code')).toHaveText(CODE);
     answer = 'deny';
     await expect(card.locator('#editor-status')).toHaveText('The editor said no: nothing was paired.');
+    await expect(card.locator('#editor-pill')).toHaveText('Not paired');
+    expect(await storedSecret(page, 'editor')).toBeNull();
+  });
+
+  test('keeps nothing when the code typed in the editor is not the one shown, as another program would answer', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const card = page.locator('#editor-card');
+    await pair(page);
+    const code = page.locator('#editor-code-line code');
+    await expect(code).toHaveText(CODE);
+    // Another code: a typo, or a program on the editor's port that never saw this one.
+    typed = (await code.textContent())?.startsWith('B') ? 'CCCC-CCCC' : 'BBBB-BBBB';
+    answer = 'allow';
+    await expect(card.locator('#editor-status')).toHaveText(
+      'The code typed in the editor is not the one shown here: nothing was paired. Click Pair to try again.',
+    );
     await expect(card.locator('#editor-pill')).toHaveText('Not paired');
     expect(await storedSecret(page, 'editor')).toBeNull();
   });
@@ -186,7 +221,7 @@ test.describe('Pair with an editor by code', () => {
     await expect(card.locator('#editor-code-line code')).toHaveText(CODE);
     // While the request waits, nothing is given back.
     expect(await page.evaluate(() => (window as unknown as { removed: string[] }).removed)).toEqual([]);
-    answer = 'allow';
+    await typeTheCode(page);
     await expect(card.locator('#editor-status')).toHaveText(`Paired with the editor at ${BASE}/send.`);
     await expect.poll(() => page.evaluate(() => (window as unknown as { removed: string[] }).removed.length)).toBe(23);
     const removed = await page.evaluate(() => (window as unknown as { removed: string[] }).removed);

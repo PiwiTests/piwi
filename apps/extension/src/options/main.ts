@@ -1,4 +1,9 @@
-import { EDITOR_SEND_PATH, editorPairingBases, type FoundEditor } from '@piwitests/core/editor-pairing';
+import {
+  EDITOR_SEND_PATH,
+  editorPairingBases,
+  newEditorPairingCode,
+  type FoundEditor,
+} from '@piwitests/core/editor-pairing';
 import type { EditorPairing } from '@piwitests/core/editor-send';
 import {
   editorOriginPattern,
@@ -1328,19 +1333,31 @@ async function releaseEditorGrants(patterns: readonly string[], before: Readonly
 }
 
 /**
- * Asks `editor` to pair, shows the code its request shows, and keeps the pairing once the person allows it there:
- * `…/send` beside the routes it answered, with the token it handed over. Says on the status line how it ended.
+ * Asks `editor` to pair and shows a code of this page's own, which never leaves it: the person types it in the editor,
+ * which hands the token over with the proof of the code typed. The pairing is kept, `…/send` beside the routes it
+ * answered, only when that proof is this code's. Says on the status line how it ended.
  */
 async function pairWithEditor(editor: FoundEditor, signal: AbortSignal): Promise<boolean> {
   const name = editorName(editor);
   writeStatus(editorStatusEl, t('options_editorPairStarting', { editor: name }), '');
   const start = await startEditorPairing(editor.base, describeClient(navigator.userAgent));
+  const pairingCode = newEditorPairingCode();
   const code = document.createElement('code');
-  code.textContent = start.code;
+  code.textContent = pairingCode;
   editorCodeLine.replaceChildren(...tNodes('options_editorPairCode', { code, editor: name }));
   editorPairPanel.hidden = false;
   writeStatus(editorStatusEl, '', '');
-  const outcome = await waitForAnswer(() => pollEditorPairing(editor.base, start), start, signal);
+  let wrongCode = false;
+  const outcome = await waitForAnswer(
+    async () => {
+      const answer = await pollEditorPairing(editor.base, start, pairingCode);
+      if (answer.status !== 'wrong-code') return answer;
+      wrongCode = true;
+      return { status: 'denied' };
+    },
+    start,
+    signal,
+  );
   editorPairPanel.hidden = true;
   editorCodeLine.replaceChildren();
   if (outcome.status === 'approved') {
@@ -1355,7 +1372,7 @@ async function pairWithEditor(editor: FoundEditor, signal: AbortSignal): Promise
     return true;
   }
   const messages = {
-    denied: t('options_editorPairDenied'),
+    denied: wrongCode ? t('options_editorPairWrongCode') : t('options_editorPairDenied'),
     expired: t('options_editorPairExpired'),
     cancelled: t('options_editorPairCancelled'),
   } as const;
@@ -1384,7 +1401,7 @@ editorPairBtn.addEventListener('click', () => {
     const grantedBefore = new Set((await before).origins ?? []);
     try {
       if (!(await granted)) {
-        writeStatus(editorStatusEl, t('options_editorPermission'), 'error');
+        writeStatus(editorStatusEl, t('options_editorPairPermission'), 'error');
         return;
       }
       writeStatus(editorStatusEl, t('options_editorFinding'), '');

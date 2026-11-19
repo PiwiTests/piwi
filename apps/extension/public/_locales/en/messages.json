@@ -1450,7 +1450,7 @@
     "description": "Button that forgets the paired editor."
   },
   "options_editorPairHint": {
-    "message": "Pair finds the editors open on this computer and asks the one you choose: allow the request there once it shows the code Piwi Picker shows.",
+    "message": "Pair finds the editors open on this computer and asks the one you choose: type there the code Piwi Picker shows.",
     "description": "Settings page, Editor card, under the Pair button: what Pair does."
   },
   "options_editorChoose": {
@@ -1490,8 +1490,8 @@
     }
   },
   "options_editorPairCode": {
-    "message": "Allow the request in $editor$ once it shows $code$.",
-    "description": "Settings page, Editor card: while the editor shows the request. $code$ is the code both show (BCDF-GHJK), $editor$ options_editorChoice or the editor's name.",
+    "message": "Type this code in $editor$ when it asks: $code$.",
+    "description": "Settings page, Editor card: while the editor asks for the code. $code$ is the code Piwi Picker made and shows (BCDF-GHJK), which the person types in the editor; $editor$ is options_editorChoice or the editor's name.",
     "placeholders": {
       "code": {
         "content": "$1",
@@ -1506,6 +1506,10 @@
   "options_editorPairDenied": {
     "message": "The editor said no: nothing was paired.",
     "description": "Settings page, Editor card: the person said no in the editor."
+  },
+  "options_editorPairWrongCode": {
+    "message": "The code typed in the editor is not the one shown here: nothing was paired. Click Pair to try again.",
+    "description": "Settings page, Editor card: the editor handed over a pairing whose proof is not of the code shown here (another code was typed, or another program answered on the editor's port), so nothing was kept. Pair is options_editorPair."
   },
   "options_editorPairExpired": {
     "message": "The request expired before it was allowed in the editor. Click Pair to ask again.",
@@ -1632,8 +1636,12 @@
     "description": "Error when the pasted text is not a pairing address. “Copy the pairing address for Piwi Picker” is the editor command’s name, in English."
   },
   "options_editorPermission": {
+    "message": "Piwi Picker needs permission to reach the editor on this computer.",
+    "description": "Error when the user declines the permission to reach the editor’s local address."
+  },
+  "options_editorPairPermission": {
     "message": "Piwi Picker needs permission to reach the editors on this computer.",
-    "description": "Error when the user declines the permission to reach the editors' local addresses."
+    "description": "Settings page, Editor card: the user declined the permission Pair asks for, to reach the ports the editors of this computer listen on."
   },
   "options_editorNotProven": {
     "message": "Paired with $url$, but the program on that port does not prove it is your editor, so nothing goes to it: click Pair to pair again, or update Piwi in your editor.",

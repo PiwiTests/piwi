@@ -1186,7 +1186,7 @@
     "message": "Entkoppeln"
   },
   "options_editorPairHint": {
-    "message": "Koppeln sucht die auf diesem Computer geöffneten Editoren und fragt den gewählten: Lassen Sie die Anfrage dort zu, sobald sie denselben Code zeigt wie Piwi Picker."
+    "message": "Koppeln sucht die auf diesem Computer geöffneten Editoren und fragt den gewählten: Geben Sie dort den Code ein, den Piwi Picker zeigt."
   },
   "options_editorChoose": {
     "message": "Mit welchem Editor koppeln?"
@@ -1220,7 +1220,7 @@
     }
   },
   "options_editorPairCode": {
-    "message": "Lassen Sie die Anfrage in $editor$ zu, sobald sie $code$ zeigt.",
+    "message": "Geben Sie diesen Code in $editor$ ein, sobald danach gefragt wird: $code$.",
     "placeholders": {
       "code": {
         "content": "$1",
@@ -1234,6 +1234,9 @@
   },
   "options_editorPairDenied": {
     "message": "Der Editor hat abgelehnt: Nichts wurde gekoppelt."
+  },
+  "options_editorPairWrongCode": {
+    "message": "Der im Editor eingegebene Code ist nicht der hier gezeigte: Nichts wurde gekoppelt. Klicken Sie auf Koppeln, um es erneut zu versuchen."
   },
   "options_editorPairExpired": {
     "message": "Die Anfrage ist abgelaufen, bevor sie im Editor zugelassen wurde. Klicken Sie auf Koppeln, um neu zu fragen."
@@ -1338,6 +1341,9 @@
     "message": "Das ist keine Kopplungsadresse. Sie sieht aus wie http://127.0.0.1:7247/piwi/send#… und kommt vom Befehl „Copy the pairing address for Piwi Picker“ des Editors."
   },
   "options_editorPermission": {
+    "message": "Piwi Picker braucht die Berechtigung, den Editor auf diesem Computer zu erreichen."
+  },
+  "options_editorPairPermission": {
     "message": "Piwi Picker braucht die Berechtigung, die Editoren auf diesem Computer zu erreichen."
   },
   "options_editorNotProven": {

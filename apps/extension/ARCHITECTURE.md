@@ -811,9 +811,11 @@ The Editor card's **Pair** pairs by code, as the desktop app does (`@piwitests/c
 2. `findEditors` (`piwi-client.ts`) asks `GET …/hello` at each, at once, with a short timeout; an answer
    `parseEditorHello` refuses is no editor. With more than one found, the card lists them, one button each.
 3. `startEditorPairing` posts `{ browser, os }` (`describeClient`, nothing else) to `…/pairings`, and the card shows
-   the code; `pollEditorPairing` waits through `waitForApproval`, Cancel aborting it. The token the editor hands over
-   once allowed is kept with `…/send` beside the routes it asked (`EDITOR_SEND_PATH`), never with an address the
-   editor names.
+   a code of its own (`newEditorPairingCode`), which never leaves the page: the person types it in the editor.
+   `pollEditorPairing` waits through `waitForApproval`, Cancel aborting it. The token the editor hands over comes
+   with `editorPairingProof` of the code typed; the card keeps it only when the proof is its own code's (`wrong-code`
+   otherwise, a typo or another program on the port), with `…/send` beside the routes it asked
+   (`EDITOR_SEND_PATH`), never with an address the editor names.
 4. While it waits, its grants are held (`holdGrants`), as Connect's and the desktop app's Pair hold theirs: no
    `releaseGrant` gives one back meanwhile, which Firefox's one loopback pattern for every port needs, and the sites
    card leaves them out. At the end, whatever came of it, the grants it asked for and nothing holds are given back,

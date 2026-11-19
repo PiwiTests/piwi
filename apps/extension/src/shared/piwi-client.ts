@@ -3,6 +3,7 @@ import {
   EDITOR_HELLO_PATH,
   EDITOR_PAIRING_SECRET_HEADER,
   EDITOR_PAIRINGS_PATH,
+  editorPairingProof,
   parseEditorHello,
   type EditorPairingStart,
   type FoundEditor,
@@ -891,21 +892,13 @@ export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionC
   }
 }
 
-/** A pairing's start as the desktop app or an editor answers it; null for anything else. */
-function pairingStartOf(body: unknown): Omit<DesktopPairingStart, 'windowOpen'> | null {
-  const b = (body ?? {}) as Partial<DesktopPairingStart>;
-  if (
-    typeof b.id !== 'string' ||
-    !/^[0-9a-f]{16}$/.test(b.id) ||
-    typeof b.secret !== 'string' ||
-    typeof b.code !== 'string'
-  ) {
-    return null;
-  }
+/** A pairing's start as the desktop app or an editor answers it: the request and its secret; null for anything else. */
+function pairingStartOf(body: unknown): EditorPairingStart | null {
+  const b = (body ?? {}) as Partial<EditorPairingStart>;
+  if (typeof b.id !== 'string' || !/^[0-9a-f]{16}$/.test(b.id) || typeof b.secret !== 'string') return null;
   return {
     id: b.id,
     secret: b.secret,
-    code: b.code,
     interval: typeof b.interval === 'number' && b.interval > 0 ? b.interval : 2,
     expiresIn: typeof b.expiresIn === 'number' && b.expiresIn > 0 ? b.expiresIn : 300,
   };
@@ -956,10 +949,10 @@ export async function startDesktopPairing(url: string, client: ClientInfo): Prom
   }
   if (res.status === 429) throw new Error(t('options_desktopPairTooMany'));
   if (!res.ok) throw new Error(t('options_desktopPairUnsupported', { url }));
-  const body = (await res.json().catch(() => ({}))) as { windowOpen?: unknown };
+  const body = (await res.json().catch(() => ({}))) as { windowOpen?: unknown; code?: unknown };
   const start = pairingStartOf(body);
-  if (!start) throw new Error(t('options_desktopPairUnsupported', { url }));
-  return { ...start, windowOpen: body.windowOpen !== false };
+  if (!start || typeof body.code !== 'string') throw new Error(t('options_desktopPairUnsupported', { url }));
+  return { ...start, code: body.code, windowOpen: body.windowOpen !== false };
 }
 
 /**
@@ -1023,11 +1016,19 @@ export async function startEditorPairing(base: string, client: ClientInfo): Prom
   return start;
 }
 
+/** One poll of an editor's pairing request: the connect flow's answers, or a token whose proof is not of the code. */
+export type EditorPairingPollAnswer = ConnectPoll | { status: 'wrong-code' };
+
 /**
- * One poll of an editor's pairing request, in the shape the connect flow waits on: `approved` carries the Send to
- * editor token as `apiKey`. Throws on a network error or an unexpected answer, which the caller retries.
+ * One poll of an editor's pairing request. `approved` carries the Send to editor token as `apiKey`, once its proof is
+ * the one `code`, shown here and typed in the editor, makes (`editorPairingProof`); `wrong-code` when it is not, the
+ * token then dropped. Throws on a network error or an unexpected answer, which the caller retries.
  */
-export async function pollEditorPairing(base: string, pairing: EditorPairingStart): Promise<ConnectPoll> {
+export async function pollEditorPairing(
+  base: string,
+  pairing: EditorPairingStart,
+  code: string,
+): Promise<EditorPairingPollAnswer> {
   const res = await request(`${base}${EDITOR_PAIRINGS_PATH}/${pairing.id}`, {
     headers: { [EDITOR_PAIRING_SECRET_HEADER]: pairing.secret },
     signal: timeout(),
@@ -1035,9 +1036,22 @@ export async function pollEditorPairing(base: string, pairing: EditorPairingStar
   // Gone: the editor restarted and lost it, as good as expired.
   if (res.status === 404) return { status: 'expired' };
   if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
-  const poll = pairingPollOf(await res.json().catch(() => null));
+  const body = (await res.json().catch(() => null)) as { proof?: unknown } | null;
+  const poll = pairingPollOf(body);
   if (!poll) throw new Error(t('options_editorPairUnsupported', { url: base }));
-  return poll;
+  if (poll.status !== 'approved') return poll;
+  const expected = await editorPairingProof(code, pairing.id, poll.apiKey);
+  return typeof body?.proof === 'string' && expected !== null && sameText(body.proof, expected)
+    ? poll
+    : { status: 'wrong-code' };
+}
+
+/** Whether two texts are the same, taking as long whatever character differs. */
+function sameText(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let differ = 0;
+  for (let i = 0; i < a.length; i++) differ |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return differ === 0;
 }
 
 export interface ReproRequestSend {

@@ -119,8 +119,8 @@ each rule below ends with the section to read there.
 
 ### The editor's runs
 
-- **Pair keeps the editor's token with `…/send` beside the routes it asked, never one the editor names, and sends
-  only `{ browser, os }`** (`piwi-client.test.ts`, `editor-pairing-code.spec.ts`). (see "Pairing with an editor")
+- **Pair keeps a token only if its proof is of the code shown (never sent), at `…/send` beside the routes asked, and
+  sends `{ browser, os }` only** (`piwi-client.test.ts`, `editor-pairing-code.spec.ts`). (see "Pairing with an editor")
 - **The pairing's token goes to the editor only once the program on the paired port proves it holds it**
   (`proveEditor`, `src/shared/editor-proof.ts`): before Send to editor's post (`postToEditor`) and before the run
   hubs' `GET …/live`. Without the proof no hub kept is connected (`editor-pairing.test.ts`, `run-hubs.test.ts`). (see

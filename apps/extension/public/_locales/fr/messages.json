@@ -1186,7 +1186,7 @@
     "message": "Dissocier"
   },
   "options_editorPairHint": {
-    "message": "Associer cherche les éditeurs ouverts sur cet ordinateur et interroge celui que vous choisissez : autorisez-y la demande une fois qu’elle affiche le même code que Piwi Picker."
+    "message": "Associer cherche les éditeurs ouverts sur cet ordinateur et interroge celui que vous choisissez : saisissez-y le code que Piwi Picker affiche."
   },
   "options_editorChoose": {
     "message": "Associer quel éditeur ?"
@@ -1220,7 +1220,7 @@
     }
   },
   "options_editorPairCode": {
-    "message": "Autorisez la demande dans $editor$ une fois qu’elle affiche $code$.",
+    "message": "Saisissez ce code dans $editor$ quand il le demande : $code$.",
     "placeholders": {
       "code": {
         "content": "$1",
@@ -1234,6 +1234,9 @@
   },
   "options_editorPairDenied": {
     "message": "L’éditeur a refusé : rien n’a été associé."
+  },
+  "options_editorPairWrongCode": {
+    "message": "Le code saisi dans l’éditeur n’est pas celui affiché ici : rien n’a été associé. Cliquez sur Associer pour réessayer."
   },
   "options_editorPairExpired": {
     "message": "La demande a expiré avant d’être autorisée dans l’éditeur. Cliquez sur Associer pour la refaire."
@@ -1338,6 +1341,9 @@
     "message": "Ce n’est pas une adresse d’association. Elle ressemble à http://127.0.0.1:7247/piwi/send#… et vient de la commande « Copy the pairing address for Piwi Picker » de l’éditeur."
   },
   "options_editorPermission": {
+    "message": "Piwi Picker a besoin de l’autorisation de joindre l’éditeur sur cet ordinateur."
+  },
+  "options_editorPairPermission": {
     "message": "Piwi Picker a besoin de l’autorisation de joindre les éditeurs de cet ordinateur."
   },
   "options_editorNotProven": {
