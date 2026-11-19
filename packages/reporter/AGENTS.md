@@ -79,7 +79,9 @@ responsibilities.
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and
      the test gets `context.tracing` and `page.screencast` behind guards that first end Piwi's own trace or a view's
-     screencast client (`guardTracing`, `guardScreencast`)
+     screencast client (`guardTracing`, `guardScreencast`). In Chromium, a view (the run connection's too) that takes
+     an image of its page itself does it through a DevTools session of its own, detached as the view closes
+     (`page-view.ts`)
      ([what it posts, when, and its tests](ARCHITECTURE.md#side-effects), under **The instance's live view**);
    - while a full view has Inspect open, the page's DOM snapshots and the stylesheets, fonts and images they name
      (`internal/capture/live-inspect.ts`), read from the runner's trace or from a live trace of Piwi's own, stopped
