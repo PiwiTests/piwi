@@ -5,6 +5,7 @@
  */
 import type { RunPage } from '@piwitests/core/run-channel';
 import type { RunRequestTest } from '@piwitests/core/run-request';
+import { runOutputLine, type RunOutputLine } from '@piwitests/run-ui/run-output';
 
 export type RunnerRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -25,6 +26,8 @@ export interface RunnerRun {
   shellId: number | null;
   status: RunnerRunStatus;
   stopRequested: boolean;
+  /** When the person asked the run to stop, in ms since the epoch: Force stop waits a moment after it. */
+  stopRequestedAt?: number | null;
   /**
    * **Hold failures**: a failure no pause bar shows waits in the window for an answer while the run shows there, as a
    * `page.pause()` does. Off until the person turns it on.
@@ -36,8 +39,10 @@ export interface RunnerRun {
    * kept after the run ended; null until then.
    */
   page: RunPage | null;
-  /** The last `RUNNER_MAX_LINES` lines of output. */
-  lines: string[];
+  /** The last `RUNNER_MAX_LINES` lines of output, numbered from 1 in the run. */
+  lines: RunOutputLine[];
+  /** The lines the run printed so far, its first ones dropped from `lines` included. */
+  linesTotal: number;
 }
 
 /** One `piwi:local-run` event: a line of output, an error line, or the exit of the run. */
@@ -122,9 +127,15 @@ export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent, at: number 
     (event.kind === 'stdout' || event.kind === 'stderr' || event.kind === 'error') &&
     typeof event.line === 'string'
   ) {
-    run.lines.push(event.line);
-    if (run.lines.length > RUNNER_MAX_LINES) run.lines.splice(0, run.lines.length - RUNNER_MAX_LINES);
+    pushRunnerLine(run, event.line, event.kind !== 'stdout');
   }
+}
+
+/** Adds a line to a run's output, keeping its last `RUNNER_MAX_LINES`. */
+function pushRunnerLine(run: RunnerRun, printed: string, error: boolean): void {
+  run.linesTotal = (run.linesTotal ?? 0) + 1;
+  run.lines.push(runOutputLine(run.linesTotal, printed, error));
+  if (run.lines.length > RUNNER_MAX_LINES) run.lines.splice(0, run.lines.length - RUNNER_MAX_LINES);
 }
 
 /** The runs that ended, the last to end first. */
@@ -194,6 +205,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
       exitCode: null,
       page: null,
       lines: [],
+      linesTotal: 0,
     });
     const run = runs[0]!;
     try {
@@ -203,7 +215,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
       waiting = waiting.filter((event) => event.id !== id);
       for (const event of mine) applyRunEvent(run, event, now());
     } catch (error) {
-      run.lines.push(error instanceof Error ? error.message : String(error));
+      pushRunnerLine(run, error instanceof Error ? error.message : String(error), true);
       run.status = 'error';
       run.endedAt = now();
     }
@@ -217,6 +229,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
    */
   async function stop(run: RunnerRun): Promise<void> {
     if (run.status !== 'running' || run.shellId === null) return;
+    if (!run.stopRequested) run.stopRequestedAt = now();
     run.stopRequested = true;
     try {
       await backend.invoke('desktop_stop_local_tests', { runId: run.shellId });

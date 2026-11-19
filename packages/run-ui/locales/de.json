@@ -980,5 +980,76 @@
   },
   "runui_connectionKeepKeyFailed": {
     "message": "Schlüssel nicht gespeichert: Verbindung getrennt"
+  },
+  "runui_runStop": {
+    "message": "Stoppen"
+  },
+  "runui_runForceStop": {
+    "message": "Stopp erzwingen"
+  },
+  "runui_runForceStopHint": {
+    "message": "Den Prozess jetzt beenden: Playwright schreibt seinen Bericht womöglich nicht"
+  },
+  "runui_runStopsWithin": {
+    "message": "Endet in spätestens $seconds$ s",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_runStopsWithinHint": {
+    "message": "Playwright fährt herunter und schreibt seinen Bericht. Ein Prozess, der dann noch läuft, wird beendet."
+  },
+  "runui_outputWaiting": {
+    "message": "Warte auf Ausgabe…"
+  },
+  "runui_outputFilter": {
+    "message": "Ausgabe filtern"
+  },
+  "runui_outputMatches_one": {
+    "message": "$shown$ von $count$ Zeile",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputMatches_other": {
+    "message": "$shown$ von $count$ Zeilen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputNoMatch": {
+    "message": "Keine Zeile enthält diesen Text"
+  },
+  "runui_outputWrap": {
+    "message": "Lange Zeilen umbrechen"
+  },
+  "runui_outputFirstError": {
+    "message": "Zum ersten Fehler"
+  },
+  "runui_outputLatest": {
+    "message": "Zur neuesten Zeile"
+  },
+  "runui_outputCopy": {
+    "message": "Ausgabe kopieren"
+  },
+  "runui_outputLabel": {
+    "message": "Ausgabe"
   }
 }

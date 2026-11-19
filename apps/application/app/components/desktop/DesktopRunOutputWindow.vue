@@ -9,7 +9,8 @@
  * when the window's Stop is pressed, and `closed` once the window is gone, with `opened` false when it could not
  * open; unmounting it closes the window.
  */
-import type { LocalRun, LocalRunLine } from '~/composables/useDesktopLocalRuns';
+import type { LocalRun } from '~/composables/useDesktopLocalRuns';
+import type { RunOutputLine } from '@piwitests/run-ui/run-output';
 import type { BadgeColor } from '~/utils';
 import {
   outputWindowNameOf,
@@ -50,7 +51,7 @@ function send() {
   pending = null;
   if (!channel || sentThrough === null) return;
   const since = sentThrough;
-  const lines: LocalRunLine[] = props.run.lines
+  const lines: RunOutputLine[] = props.run.lines
     .filter((line) => line.id > since)
     .map(({ id, text, error, ansi }) => (ansi === undefined ? { id, text, error } : { id, text, error, ansi }));
   const state: RunOutputState = {
@@ -63,6 +64,7 @@ function send() {
     finishedAt: props.run.finishedAt,
     running: props.run.status === 'running',
     stopRequested: props.run.stopRequested,
+    stopRequestedAt: props.run.stopRequestedAt ?? null,
     lines,
   };
   channel.postMessage(state);

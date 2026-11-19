@@ -3,11 +3,13 @@ import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 /**
  * Desktop shell only: a local run's output in a window of its own, which the Local runs tray has the shell open on
  * this page (`DesktopRunOutputWindow`), named by `?name=`. The tray feeds it over `RUN_OUTPUT_CHANNEL`: the run's
- * header, then its new lines; Stop asks the tray to stop the run. It outlives a reload of the dashboard window, whose
+ * header, then its new lines (`DesktopRunOutputPane`); Stop, then Force stop, asks the tray to stop the run
+ * (`DesktopRunStopButton`). It outlives a reload of the dashboard window, whose
  * next page asks whether it is still there and feeds it again from the last line it has. A window of its own: no
  * layout.
  */
-import { LOCAL_RUN_MAX_LINES, localRunDuration, type LocalRunLine } from '~/composables/useDesktopLocalRuns';
+import { LOCAL_RUN_MAX_LINES, localRunDuration } from '~/composables/useDesktopLocalRuns';
+import type { RunOutputLine } from '@piwitests/run-ui/run-output';
 import {
   mergeRunOutputLines,
   RUN_OUTPUT_CHANNEL,
@@ -19,7 +21,7 @@ definePageMeta({ layout: false });
 
 const name = String(useRoute().query.name ?? '');
 const header = shallowRef<Omit<RunOutputState, 'lines'> | null>(null);
-const lines = shallowRef<LocalRunLine[]>([]);
+const lines = shallowRef<RunOutputLine[]>([]);
 let channel: BroadcastChannel | null = null;
 
 /** Says the window is ready for the run's state, from the line after the last one it has. */
@@ -64,20 +66,17 @@ useHead(() => ({ title: `${header.value?.title ?? 'Run output'} · ${DESKTOP_APP
         <span class="shrink-0 text-xs text-muted tabular-nums">
           {{ localRunDuration(header.startedAt, header.finishedAt, now) }}
         </span>
-        <UButton
+        <DesktopRunStopButton
           v-if="header.running"
-          size="xs"
-          color="error"
-          :variant="header.stopRequested ? 'solid' : 'soft'"
-          icon="i-lucide-square"
-          @click="stop"
-        >
-          {{ header.stopRequested ? 'Force stop' : 'Stop' }}
-        </UButton>
+          :stopping="header.stopRequested"
+          :since="header.stopRequestedAt"
+          @stop="stop"
+          @force="stop"
+        />
       </template>
       <h1 v-else class="text-sm font-semibold text-highlighted">Run output</h1>
     </header>
     <p v-if="header" class="truncate font-mono text-xs text-muted" :title="header.detail">{{ header.detail }}</p>
-    <DesktopLocalRunConsole :lines="lines" fill class="min-h-0 flex-1" />
+    <DesktopRunOutputPane :lines="lines" fill class="min-h-0 flex-1" />
   </section>
 </template>

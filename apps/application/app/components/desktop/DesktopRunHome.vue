@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: a run of this window's Local runs on its own run page, the run's home while it goes on: its
- * **Stop**, its **Hold failures**, each worker with its controls and its page live (`DesktopRunSession`, as the tray
+ * **Stop** (`DesktopRunStopButton`), its **Hold failures**, each worker with its controls and its page live (`DesktopRunSession`, as the tray
  * shows them), and its output. Shown for the tray's running run whose Piwi run is the page's (`piwiRunId`), with the
  * hub's runs that report to it (`sessions`, the page's `useDesktopRunSessions`); the tray keeps showing the run too.
  */
@@ -45,17 +45,12 @@ function announce(text: string) {
     data-shot="desktop-run-home"
   >
     <template #actions>
-      <UButton
-        v-if="run.stopRequested"
-        size="xs"
-        color="neutral"
-        variant="outline"
-        title="Kill the process without waiting"
-        @click="store.stopRun(run)"
-      >
-        Force stop
-      </UButton>
-      <UButton v-else size="xs" color="neutral" variant="outline" @click="store.stopRun(run)">Stop</UButton>
+      <DesktopRunStopButton
+        :stopping="run.stopRequested"
+        :since="run.stopRequestedAt"
+        @stop="store.stopRun(run)"
+        @force="store.stopRun(run)"
+      />
     </template>
     <!-- From lg the page's summary does not scroll: the card scrolls inside, so the tabs below keep their room. -->
     <div class="flex flex-col gap-3 lg:max-h-[40dvh] lg:overflow-y-auto">
@@ -78,7 +73,7 @@ function announce(text: string) {
         >
           Output
         </UButton>
-        <DesktopLocalRunConsole v-if="outputShown" :lines="run.lines" class="mt-1" />
+        <DesktopRunOutputPane v-if="outputShown" :lines="run.lines" class="mt-1" />
       </div>
     </div>
     <p role="status" aria-live="polite" class="sr-only">{{ announcement }}</p>

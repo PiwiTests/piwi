@@ -980,5 +980,76 @@
   },
   "runui_connectionKeepKeyFailed": {
     "message": "Não foi possível guardar a chave: desconectado"
+  },
+  "runui_runStop": {
+    "message": "Parar"
+  },
+  "runui_runForceStop": {
+    "message": "Parar à força"
+  },
+  "runui_runForceStopHint": {
+    "message": "Encerrar o processo agora: o Playwright pode não escrever o relatório"
+  },
+  "runui_runStopsWithin": {
+    "message": "Termina em até $seconds$ s",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_runStopsWithinHint": {
+    "message": "O Playwright está parando e escrevendo o relatório. Um processo ainda em execução nesse momento é encerrado."
+  },
+  "runui_outputWaiting": {
+    "message": "Aguardando a saída…"
+  },
+  "runui_outputFilter": {
+    "message": "Filtrar a saída"
+  },
+  "runui_outputMatches_one": {
+    "message": "$shown$ de $count$ linha",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputMatches_other": {
+    "message": "$shown$ de $count$ linhas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputNoMatch": {
+    "message": "Nenhuma linha contém este texto"
+  },
+  "runui_outputWrap": {
+    "message": "Quebrar as linhas longas"
+  },
+  "runui_outputFirstError": {
+    "message": "Ir para o primeiro erro"
+  },
+  "runui_outputLatest": {
+    "message": "Ir para a última linha"
+  },
+  "runui_outputCopy": {
+    "message": "Copiar a saída"
+  },
+  "runui_outputLabel": {
+    "message": "Saída"
   }
 }

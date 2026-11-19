@@ -77,12 +77,13 @@ writes no file. A requested run cannot be [shared live](./share-live): the insta
 [shows to you alone](./run-on-my-machine#a-requested-run-is-yours-alone). **Inspect** of a watched worker, which reads the test's pages from its trace, is the desktop app's alone.
 
 The runs show in two lists. **Running now** has a card for each run going on: its project, when it started and how
-long it has run, **Stop**, its workers live, the tests the request asked for and its output. **Finished** has a row for
+long it has run, **Stop**, its workers live, the tests the request asked for and its output. **Stop** gives way to
+**Force stop** while the run winds down, as in the [desktop app](./local-runs-tray#each-run). **Finished** has a row for
 each run that ended, the last to end first: how it ended, its project, when it started and how long it took, and
 **Run #78 · Open** once it reported to the instance. A click on a row shows its tests and its output; a run that ended
-a moment ago comes in open, with what you had open on its card. The output keeps Playwright's colors, with its last
-300 lines on screen: it opens on its own once the run failed or could not run, and **Copy output** copies all of it,
-up to its last 2,000 lines, without the colors. **Clear finished** empties the Finished list; the window keeps the
+a moment ago comes in open, with what you had open on its card. The output keeps Playwright's colors and its last
+2,000 lines: it opens on its own once the run failed or could not run, with a filter, **Go to the first error** and
+**Copy output**, as the [desktop app's](./local-runs-tray#its-output) does. **Clear finished** empties the Finished list; the window keeps the
 last 15 runs that ended in any case, never dropping one the moment it ends.
 
 <figure>
