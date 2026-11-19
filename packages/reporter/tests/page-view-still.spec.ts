@@ -23,8 +23,8 @@ const STILL = `<!doctype html><meta charset="utf-8"><style>body { margin: 0; pad
 <h1>Checkout</h1><button disabled>Pay</button>`;
 const PAID = STILL.replace('Checkout', 'Paid');
 /**
- * A page of noise, which no JPEG makes small: 112 KB at the asked size and quality 50, 69 KB at 30, and 160 KB whole at
- * 30.
+ * A page of noise, which no JPEG makes small: 236 KB whole at quality 50, 112 KB at the asked size, 69 KB at 30, and
+ * 160 KB whole at 30.
  */
 const NOISY = `<!doctype html><style>body { margin: 0 }</style><canvas id="c" width="1000" height="625"></canvas>
 <script>
@@ -408,6 +408,31 @@ describe('a live view of a still page', () => {
             const [image] = seen.sent;
             expect(jpegSize(image!.data)).toEqual(ASKED);
             expect(image!.data.length).toBeLessThanOrEqual(90 * 1024);
+          } finally {
+            await view?.close();
+          }
+        },
+        {},
+        NOISY,
+      ),
+    TIMEOUT,
+  );
+
+  it(
+    "sends an image that fits at the size it asks as it is, once, though the whole page's would be too long",
+    () =>
+      onStillPage(
+        async (page) => {
+          noScreencast(page);
+          const { options, seen } = viewOptions(() => 'send', 300, { maxFrameBytes: 180 * 1024 });
+          const view = await openPageView(page, options);
+          try {
+            await waitFor(() => seen.sent.length > 0, 3000);
+            await sleep(1500);
+            // Not a lighter image in its place, and not again while the page paints no other.
+            expect(seen.sent).toHaveLength(1);
+            expect(seen.sent[0]!.fit).toEqual(ASKED);
+            expect(seen.refused).toEqual([]);
           } finally {
             await view?.close();
           }

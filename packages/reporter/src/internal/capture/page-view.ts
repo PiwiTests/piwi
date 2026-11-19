@@ -377,6 +377,8 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
   let stills = 0;
   let stillTimer: ReturnType<typeof setTimeout> | null = null;
   let stillShot: Promise<void> | null = null;
+  /** The image taken afresh as the masks changed, on its way. */
+  let refreshing: Promise<void> | null = null;
   /** The latest frame sent, or why no frame goes: kept for a viewer that comes later, in memory, until the end. */
   let sent: PageFrame | { refused: string | undefined } | null = null;
   /** Whether the viewers heard that no frame goes, since the last frame that went. */
@@ -462,12 +464,15 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
   };
   /** The lighter image on its way, and when the last one was asked. */
   let lighter: Promise<void> | null = null;
+  /** The frame too long each lighter image stands for. */
+  const standsFor = new WeakMap<Buffer, Buffer>();
   let lighterAt = -Infinity;
   /** A frame too long to send: a lower quality image of the page goes in its place, or the viewers hear why not. */
   const lighten = (): void => {
     const now = Date.now();
     if (lighter || now - lighterAt < options.shotMs) return;
     lighterAt = now;
+    const heavy = last;
     lighter = takeImage(options.lightQuality)
       .then((shot) => {
         if (!shot || closed) return;
@@ -477,13 +482,23 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
           ? (thumbnailOf(shot.data, { ...shot.fit, quality, maxBytes: Number.POSITIVE_INFINITY })?.data ?? shot.data)
           : shot.data;
         if (data.length > options.maxFrameBytes) return refuse();
-        // It stands for the frame too long: when none goes for it, a still page's image is tried in its place.
-        last = data;
+        // It stands for the frame too long, which stays the latest: when none goes for it, it is tried again.
+        if (heavy) standsFor.set(data, heavy);
         pacer.offer({ data, width: shot.width, height: shot.height, at: now });
       })
       .finally(() => {
         lighter = null;
       });
+  };
+  /**
+   * About how long a frame is at the size it goes at: its own length, else, for one that names a smaller size (`fit`),
+   * its share of it by the pixels it keeps. `screen` takes it at the lighter quality where it is too long at the
+   * view's.
+   */
+  const goingLength = (data: Buffer, width: number, height: number, fit?: Size): number => {
+    if (!fit) return data.length;
+    const own = jpegSize(data) ?? { width, height };
+    return Math.round(data.length * Math.min(1, (fit.width * fit.height) / (own.width * own.height)));
   };
   /**
    * A frame of the page: one it `painted` (its screencast's, or the view's timed image of it), else an image taken of
@@ -500,7 +515,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     again = false;
     last = data;
     given++;
-    if (data.length > options.maxFrameBytes) return lighten();
+    if (goingLength(data, width, height, fit) > options.maxFrameBytes) return lighten();
     const named = isViewSize(width, height);
     const shown = { width: named ? width : viewport.width, height: named ? height : viewport.height };
     pacer.offer({ data, ...shown, at, ...(fit ? { fit } : {}) });
@@ -542,12 +557,13 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
     stillTimer.unref?.();
   };
   /**
-   * No frame went for `frame` (`screen` sent none, or why none goes): when it is the latest the page gave, the next
+   * No frame went for `frame` (`screen` sent none, or why none goes): when it is, or a lighter image stands for, the
+   * latest the page gave, the next
    * image the same as it goes to `screen` again, and while the view holds the screencast one is taken `shotMs` from
    * now, `STILL_SHOTS` times at most until a frame the page painted goes. A newer frame goes in its place otherwise.
    */
   const dropped = (frame: PageFrame): void => {
-    if (closed || frame.data !== last || stills >= STILL_SHOTS) return;
+    if (closed || (standsFor.get(frame.data) ?? frame.data) !== last || stills >= STILL_SHOTS) return;
     again = true;
     if (shooting) stills++;
     else stillLater(options.shotMs);
@@ -648,9 +664,11 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       sent = null;
       last = null;
       stills = 0;
-      void imageNow().then((taken) => {
+      const taking: Promise<void> = imageNow().then((taken) => {
+        if (refreshing === taking) refreshing = null;
         if (!taken) stillLater(options.shotMs);
       });
+      refreshing = taking;
     },
     close: async () => {
       closed = true;
@@ -660,9 +678,9 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if (shots) clearTimeout(shots);
       if (stillTimer) clearTimeout(stillTimer);
       holders.delete(holder);
-      // A lighter image, a timed one, an image of a still page, and a frame in `screen`, on their way are the view's
-      // last calls to the page.
-      await Promise.all([lighter, timed, stillShot, screened]);
+      // A lighter image, a timed one, an image of a still page or one taken afresh, and a frame in `screen`, on their
+      // way are the view's last calls to the page.
+      await Promise.all([lighter, timed, stillShot, refreshing, screened]);
       const stop = end;
       end = null;
       if (stop && !page.isClosed()) await stop().catch(() => undefined);
