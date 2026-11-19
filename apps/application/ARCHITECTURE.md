@@ -312,7 +312,9 @@ Each entry names folders under `server/api/`.
   and `DesktopRunCopyList` the code to copy, and the layer's `DesktopRunOutputPane` a run's output in its ANSI colors,
   with its filter, first error and Copy, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
   page or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
-  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). A run's state and count
+  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). An ended run lists what
+  it failed on (`DesktopLocalRunResults`: its Piwi runs, else its output's summary), each test to open or run again
+  (`rerunTests`). A run's state and count
   come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs
   (`plugins/desktop-local-runs.client.ts`: `keepForReload`, `takeBackAfterReload` and the shell's
   `desktop_local_runs`), and a restart its finished runs (`keepFinished`, `takeBackFinished`, in local storage). The

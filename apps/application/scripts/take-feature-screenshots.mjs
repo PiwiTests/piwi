@@ -10007,9 +10007,14 @@ const SCENES = [
       await settle();
       await shoot('compact-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
 
-      // Report shots: a run winding down after Stop, and the sidebar's entry once it ended with the tray closed.
+      // Report shots: an ended run's results, a run winding down after Stop, and the sidebar's entry once it ended with
+      // the tray closed.
       await page.setViewportSize({ width: 1280, height: 1100 });
       await tray.getByRole('button', { name: 'Compact list' }).click();
+      await tray.locator('[data-run]').nth(2).getByRole('button', { name: 'Expand output' }).click();
+      await tray.locator('[data-shot="desktop-run-results"]').waitFor();
+      await settle();
+      await shoot('results', { of: '[data-shot="desktop-run-results"]', pad: 12 });
       await tray.getByRole('button', { name: 'Stop', exact: true }).click();
       await tray.getByRole('button', { name: 'Force stop' }).waitFor();
       await tray.getByText(/^Ends within \d+ s$/).waitFor();

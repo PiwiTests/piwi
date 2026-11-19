@@ -1051,5 +1051,47 @@
   },
   "runui_outputLabel": {
     "message": "Salida"
+  },
+  "runui_resultsLabel": {
+    "message": "Resultados"
+  },
+  "runui_resultPassed": {
+    "message": "Superada"
+  },
+  "runui_resultFailed": {
+    "message": "Fallida"
+  },
+  "runui_resultFlaky": {
+    "message": "Inestable"
+  },
+  "runui_resultSkipped": {
+    "message": "Omitida"
+  },
+  "runui_resultInterrupted": {
+    "message": "Interrumpida"
+  },
+  "runui_resultDidNotRun": {
+    "message": "No se ejecutó"
+  },
+  "runui_resultUnknown": {
+    "message": "Sin resultado en la salida"
+  },
+  "runui_resultsMore_one": {
+    "message": "Mostrar $count$ más",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_resultsMore_other": {
+    "message": "Mostrar $count$ más",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
   }
 }

@@ -471,6 +471,43 @@ test.describe('Desktop local run', () => {
     await expect(tray(page).getByText('No local runs yet')).toBeVisible();
   });
 
+  test('an ended run lists the tests it failed on, from its output, each to run again', async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    for (const line of [
+      '  ✘  1 [chromium] › tests/checkout.spec.ts:42:18 › checkout completes (1.2s)',
+      '',
+      '  1) [chromium] › tests/checkout.spec.ts:42:18 › checkout completes ───────────',
+      '',
+      '    Error: locator.click: Timeout 30000ms exceeded.',
+      '',
+      '      41 | test(…)',
+      '  1 failed',
+      '    [chromium] › tests/checkout.spec.ts:42:18 › checkout completes ────────────',
+    ]) {
+      await page.evaluate((text) => window.__piwiFakeTauri.emitLine(text), line);
+    }
+    await page.evaluate(() => window.__piwiFakeTauri.finish(1));
+
+    const result = tray(page).getByTestId('run-result');
+    await expect(result).toHaveCount(1);
+    await expect(result).toHaveAttribute('data-status', 'failed');
+    await expect(result.getByText('checkout completes', { exact: true })).toBeVisible();
+    await expect(result.getByText('Error: locator.click: Timeout 30000ms exceeded.')).toBeVisible();
+    await expect(result.getByRole('img', { name: 'Failed' })).toBeVisible();
+
+    await expect(result.getByText('chromium', { exact: true })).toBeVisible();
+    await result.getByRole('button', { name: 'Run checkout completes in chromium again', exact: true }).click();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
+    expect((await runInvocations(page))[1]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+    // The run it came from stays open on its list, so another test runs again from there.
+    await expect(tray(page).getByTestId('run-result').first()).toBeVisible();
+  });
+
   test('a second stop forces the run to end', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);

@@ -1228,5 +1228,57 @@
   "runui_outputLabel": {
     "message": "Output",
     "description": "Accessible name of a run’s output pane, the scrolling text the run printed. One short word."
+  },
+  "runui_resultsLabel": {
+    "message": "Results",
+    "description": "Accessible name of the list of a finished run’s tests and how each came out."
+  },
+  "runui_resultPassed": {
+    "message": "Passed",
+    "description": "How a test of a finished run came out: it passed. One word."
+  },
+  "runui_resultFailed": {
+    "message": "Failed",
+    "description": "How a test of a finished run came out: it failed. One word."
+  },
+  "runui_resultFlaky": {
+    "message": "Flaky",
+    "description": "How a test of a finished run came out: it failed, then passed on a retry. One word."
+  },
+  "runui_resultSkipped": {
+    "message": "Skipped",
+    "description": "How a test of a finished run came out: it was skipped. One word."
+  },
+  "runui_resultInterrupted": {
+    "message": "Interrupted",
+    "description": "How a test of a finished run came out: the run was stopped while it ran. One word."
+  },
+  "runui_resultDidNotRun": {
+    "message": "Did not run",
+    "description": "How a test of a finished run came out: the run ended before it started. A few words."
+  },
+  "runui_resultUnknown": {
+    "message": "No result in the output",
+    "description": "How a test of a finished run came out when its output does not say: the reporter printed no line for it. A few words."
+  },
+  "runui_resultsMore_one": {
+    "message": "Show $count$ more",
+    "description": "Button under the list of a finished run’s tests: shows the one it leaves out. Singular form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_resultsMore_other": {
+    "message": "Show $count$ more",
+    "description": "Button under the list of a finished run’s tests: shows those it leaves out. Plural form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
   }
 }

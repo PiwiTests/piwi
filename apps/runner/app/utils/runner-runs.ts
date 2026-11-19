@@ -5,7 +5,13 @@
  */
 import type { RunPage } from '@piwitests/core/run-channel';
 import type { RunRequestTest } from '@piwitests/core/run-request';
-import { runOutputLine, type RunOutputLine } from '@piwitests/run-ui/run-output';
+import {
+  runOutputLine,
+  runOutputSummary,
+  type RunOutputLine,
+  type RunOutputResult,
+  type RunResultRow,
+} from '@piwitests/run-ui/run-output';
 
 export type RunnerRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -151,6 +157,61 @@ export function runnerUnlistedSessions<S extends { ref: string; ended: boolean }
   runs: readonly RunnerRun[],
 ): S[] {
   return sessions.filter((session) => !session.ended && !runs.some((run) => isRunnerRunRef(session.ref, run.shellId)));
+}
+
+/** A spec path with POSIX separators and no leading `./`. */
+const posixPath = (file: string) => file.replaceAll('\\', '/').replace(/^\.\//, '');
+
+/**
+ * How closely the output's result is the requested test, 0 when it is not: same file (its very path counts more than a
+ * path ending in it), then same line or same title (a run that selects by title, as lines moved, prints another
+ * line), then same project (a request may run its tests in another one).
+ */
+function requestedTestScore(result: RunOutputResult, test: RunRequestTest): number {
+  const [printed, asked] = [posixPath(result.file), posixPath(test.filePath)];
+  const samePath = printed === asked;
+  if (!samePath && !printed.endsWith(`/${asked}`) && !asked.endsWith(`/${printed}`)) return 0;
+  const sameLine = test.line != null && result.line === test.line;
+  const sameTitle = result.title === test.title || result.title.endsWith(` › ${test.title}`);
+  if (!sameLine && !sameTitle) return 0;
+  const sameProject = !test.projectName || !result.project || test.projectName === result.project;
+  return (samePath ? 8 : 0) + (sameLine ? 4 : 0) + (sameTitle ? 2 : 0) + (sameProject ? 1 : 0);
+}
+
+/** The output's result that is most closely the requested test; none when none is. */
+function resultOfTest(results: readonly RunOutputResult[], test: RunRequestTest): RunOutputResult | null {
+  let best: RunOutputResult | null = null;
+  let bestScore = 0;
+  for (const result of results) {
+    const score = requestedTestScore(result, test);
+    if (score > bestScore) [best, bestScore] = [result, score];
+  }
+  return best;
+}
+
+/**
+ * How each test the request asked for came out, as the run's output tells it (`runOutputSummary`, the closest result
+ * by `resultOfTest`): failed, flaky or interrupted with the first lines of its error, passed or skipped by the list
+ * reporter's result lines. A test the
+ * output names no result for passed when the run passed and skipped none, else its result is unknown. Null while the run
+ * goes on, and when its output holds no summary.
+ */
+export function runnerTestResults(run: Pick<RunnerRun, 'status' | 'tests' | 'lines'>): RunResultRow[] | null {
+  if (run.status === 'running') return null;
+  const summary = runOutputSummary(run.lines);
+  if (!summary) return null;
+  return run.tests.map((test, index): RunResultRow => {
+    const result = resultOfTest(summary.results, test);
+    const passed = run.status === 'passed' && summary.counts.skipped === 0;
+    return {
+      key: String(index),
+      status: result?.status ?? (passed ? 'passed' : 'unknown'),
+      title: test.title,
+      place: test.line != null ? `${test.filePath}:${test.line}` : test.filePath,
+      project: test.projectName,
+      error: result?.error ?? [],
+    };
+  });
 }
 
 /** How long a run took, or has taken so far at `now`, in ms. */

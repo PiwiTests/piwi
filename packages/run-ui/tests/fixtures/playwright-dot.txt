@@ -1,0 +1,93 @@
+
+Running 5 tests using 1 worker
+·×F×±°×F
+
+  1) [chromium] › tests/cart.spec.js:4:3 › cart › applies a coupon ─────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Total: $45.00"
+    Received: "Total: $50.00"
+
+      2 | test.describe('cart', () => {
+      3 |   test('removes an item', async () => { expect(1).toBe(1); });
+    > 4 |   test('applies a coupon', async () => { expect('Total: $50.00').toBe('Total: $45.00'); });
+        |                                                                  ^
+      5 |   test('is flaky', async ({}, info) => { expect(info.retry).toBe(1); });
+      6 |   test.skip('is skipped', async () => {});
+      7 |   test('throws', async () => { throw new TypeError('x is not a function'); });
+        at /home/dev/shop/tests/cart.spec.js:4:66
+
+    Error Context: test-results/cart-cart-applies-a-coupon-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: "Total: $45.00"
+    Received: "Total: $50.00"
+
+      2 | test.describe('cart', () => {
+      3 |   test('removes an item', async () => { expect(1).toBe(1); });
+    > 4 |   test('applies a coupon', async () => { expect('Total: $50.00').toBe('Total: $45.00'); });
+        |                                                                  ^
+      5 |   test('is flaky', async ({}, info) => { expect(info.retry).toBe(1); });
+      6 |   test.skip('is skipped', async () => {});
+      7 |   test('throws', async () => { throw new TypeError('x is not a function'); });
+        at /home/dev/shop/tests/cart.spec.js:4:66
+
+    Error Context: test-results/cart-cart-applies-a-coupon-chromium-retry1/error-context.md
+
+  2) [chromium] › tests/cart.spec.js:7:3 › cart › throws ───────────────────────────────────────────
+
+    TypeError: x is not a function
+
+      5 |   test('is flaky', async ({}, info) => { expect(info.retry).toBe(1); });
+      6 |   test.skip('is skipped', async () => {});
+    > 7 |   test('throws', async () => { throw new TypeError('x is not a function'); });
+        |                                      ^
+      8 | });
+      9 |
+        at /home/dev/shop/tests/cart.spec.js:7:38
+
+    Error Context: test-results/cart-cart-throws-chromium/error-context.md
+
+    Retry #1 ───────────────────────────────────────────────────────────────────────────────────────
+
+    TypeError: x is not a function
+
+      5 |   test('is flaky', async ({}, info) => { expect(info.retry).toBe(1); });
+      6 |   test.skip('is skipped', async () => {});
+    > 7 |   test('throws', async () => { throw new TypeError('x is not a function'); });
+        |                                      ^
+      8 | });
+      9 |
+        at /home/dev/shop/tests/cart.spec.js:7:38
+
+    Error Context: test-results/cart-cart-throws-chromium-retry1/error-context.md
+
+  3) [chromium] › tests/cart.spec.js:5:3 › cart › is flaky ─────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 0
+
+      3 |   test('removes an item', async () => { expect(1).toBe(1); });
+      4 |   test('applies a coupon', async () => { expect('Total: $50.00').toBe('Total: $45.00'); });
+    > 5 |   test('is flaky', async ({}, info) => { expect(info.retry).toBe(1); });
+        |                                                             ^
+      6 |   test.skip('is skipped', async () => {});
+      7 |   test('throws', async () => { throw new TypeError('x is not a function'); });
+      8 | });
+        at /home/dev/shop/tests/cart.spec.js:5:61
+
+    Error Context: test-results/cart-cart-is-flaky-chromium/error-context.md
+
+  2 failed
+    [chromium] › tests/cart.spec.js:4:3 › cart › applies a coupon ──────────────────────────────────
+    [chromium] › tests/cart.spec.js:7:3 › cart › throws ────────────────────────────────────────────
+  1 flaky
+    [chromium] › tests/cart.spec.js:5:3 › cart › is flaky ──────────────────────────────────────────
+  1 skipped
+  1 passed (2.4s)
