@@ -1676,27 +1676,34 @@ export function useDesktopLocalRuns() {
   }
 
   /**
-   * Run some tests of an ended run of tests again, as the run ran them (its project, its options, its environment read
-   * again, a protected one confirmed again), with `options` on top: the tray's results run a test again, or with Hold
-   * failures on. Null when the run is of another kind, or the person does not confirm.
+   * Run some tests of an ended run of tests again, as the run ran them (its project, its options, its Hold failures as
+   * the person left it, its environment read again, a protected one confirmed again), with `options` on top: the tray's
+   * results run a test again, or with Hold failures on. Each test by its own line, never its whole file, unless the run
+   * named them by title. `sourceRunId` is the Piwi run they come from, which the new run is compared with. Null when
+   * the run is of another kind, or the person does not confirm.
    */
   async function rerunTests(
     run: LocalRun,
     cases: RetryCase[],
     options: LocalRunOptions = {},
+    sourceRunId: number | null = null,
   ): Promise<LocalRun | null> {
     if (run.kind !== 'tests' || cases.length === 0) return null;
     const again = await environmentAgain(run);
     if (!again) return null;
-    return startRun({
+    const mode = run.options.mode === 'file' ? 'file-line' : run.options.mode;
+    const next = startRun({
       projectId: run.projectId,
       projectLabel: run.projectLabel,
       cases,
-      sourceRunId: run.piwiRunId ?? run.sourceRunId,
-      options: { ...run.options, ...options },
+      sourceRunId: sourceRunId ?? run.piwiRunId ?? run.sourceRunId,
+      options: { ...run.options, mode, ...options },
       environment: again.environment,
       confirmed: again.confirmed,
     });
+    const chosen = options.holdFailures ?? holds.value[run.key];
+    if (next && chosen !== undefined) holds.value = { ...holds.value, [next.key]: chosen };
+    return next;
   }
 
   /**
@@ -1943,8 +1950,9 @@ export function useDesktopLocalRuns() {
 
   /**
    * Take back, as the app starts, the finished runs its last start kept (`keepFinished`), after the window's own: their
-   * output, Run again and their links as they were, the tray closed. The shell numbers its processes anew at each start,
-   * so a run taken back keeps no name on the hub (`hubRefs`), which a run of this start may take.
+   * output, Run again and their links (each step's Piwi run included) as they were, the tray closed. The shell numbers
+   * its processes anew at each start, so a run taken back keeps no name on the hub (`hubRefs`), which a run of this
+   * start may take.
    */
   function takeBackFinished() {
     let kept: unknown = null;
@@ -1957,7 +1965,14 @@ export function useDesktopLocalRuns() {
     if (!Array.isArray(kept)) return;
     const back = (kept as LocalRun[])
       .filter((run) => run && typeof run.key === 'number' && Array.isArray(run.lines) && run.status !== 'running')
-      .map((run) => ({ ...run, key: nextKey++, shellId: null, stepStarting: false, hubRefs: [], piwiRunIds: {} }));
+      .map((run) => ({
+        ...run,
+        key: nextKey++,
+        shellId: null,
+        stepStarting: false,
+        hubRefs: [],
+        piwiRunIds: run.piwiRunIds ?? {},
+      }));
     if (back.length === 0) return;
     runs.value = [...runs.value, ...back];
     trimFinished();

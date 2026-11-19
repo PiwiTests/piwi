@@ -418,6 +418,28 @@ describe('the Local runs a restart of the app keeps', () => {
     expect(localRunCopyCommand({ ...run, kind: 'repro' }, 'bash')).toBeNull();
   });
 
+  test('runs one test of an ended run again by its line, with the run’s Hold failures, compared with its own run', async () => {
+    const page = await pageWith(new Map());
+    const run = page.store.startRun({
+      projectId: 3,
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out', line: 5 }],
+      options: { mode: 'file' },
+    })!;
+    await until(() => run.shellId === 41);
+    page.store.holds.value = { [run.key]: true };
+    page.shell(exit(41, 1));
+    await until(() => run.status === 'failed');
+
+    const next = (await page.store.rerunTests(run, [{ filePath: 'cart.spec.ts', title: 'pays', line: 9 }], {}, 77))!;
+    expect(next.options.mode).toBe('file-line');
+    expect(next.steps[0]!.args).toEqual(['cart.spec.ts:9']);
+    expect(next.sourceRunId).toBe(77);
+    expect(page.store.holds.value[next.key]).toBe(true);
+    expect(
+      await page.store.rerunTests({ ...run, kind: 'repro' }, [{ filePath: 'cart.spec.ts', title: 'pays' }]),
+    ).toBeNull();
+  });
+
   test('takes back nothing on a reload, which keeps its own runs', async () => {
     const local = new Map<string, string>();
     localStorageOn(local);

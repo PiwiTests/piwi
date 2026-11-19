@@ -41,10 +41,10 @@ long the wind-down can take: **Ends within 10 s**, after which the app kills a p
 takes no click for a moment after Stop, so a double-click only stops. Every view of a run stops it so, [Piwi
 Runner](./piwi-runner) included.
 
-An ended run lists the tests it failed on above its output, failed then flaky, each with the first lines of its
-error and its file, to open in your editor. They come from its run on the dashboard, else from what Playwright
-printed. Each has **Open**, its execution, then **Run again** and **Run again with Hold failures**, for that test
-alone.
+An ended run lists the tests it failed on above its output, failed then flaky, each with its project, the first lines
+of its error and its file, to open in your editor. They come from its runs on the dashboard, else from its output.
+Each has **Open**; a test of a run of tests also has **Run again**, for that test alone, and **Run again with Hold
+failures** when the run can hold.
 
 An ended run's **More actions** menu holds **Copy the command**, for a run of tests: the command that runs them in
 your terminal, as the run button's **Copy as command** writes it. It also holds **Remove from the list**; **Clear

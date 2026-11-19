@@ -1,0 +1,116 @@
+
+Running 6 tests using 2 workers
+
+  ✘  1 [chromium] › tests/step.spec.js:2:1 › checkout completes (10ms)
+  ✘  2 [chromium] › tests/step.spec.js:2:1 › checkout completes (8ms)
+  ✘  3 [chromium] › tests/step.spec.js:3:25 › case 1 (7ms)
+  ✘  4 [chromium] › tests/step.spec.js:3:25 › case 1 (8ms)
+  ✘  5 [chromium] › tests/step.spec.js:3:25 › case 2 (8ms)
+  ✘  6 [chromium] › tests/step.spec.js:3:25 › case 2 (9ms)
+
+
+  1) [chromium] › tests/step.spec.js:2:1 › checkout completes › Pay ────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 1
+
+      1 | const { test, expect } = require('@playwright/test');
+    > 2 | test('checkout completes', async () => { await test.step('Pay', async () => { expect(1).toBe(2); }); });
+        |                                                                                         ^
+      3 | for (const n of [1, 2]) test(`case ${n}`, async () => { expect(n).toBe(0); });
+      4 |
+        at /home/dev/shop/tests/step.spec.js:2:89
+        at /home/dev/shop/tests/step.spec.js:2:42
+
+    Error Context: test-results/step-checkout-completes-chromium/error-context.md
+
+  2) [chromium] › tests/step.spec.js:3:25 › case 1 ─────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+      1 | const { test, expect } = require('@playwright/test');
+      2 | test('checkout completes', async () => { await test.step('Pay', async () => { expect(1).toBe(2); }); });
+    > 3 | for (const n of [1, 2]) test(`case ${n}`, async () => { expect(n).toBe(0); });
+        |                                                                   ^
+      4 |
+        at /home/dev/shop/tests/step.spec.js:3:67
+
+    Error Context: test-results/step-case-1-chromium/error-context.md
+
+  3) [chromium] › tests/step.spec.js:3:25 › case 2 ─────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 2
+
+      1 | const { test, expect } = require('@playwright/test');
+      2 | test('checkout completes', async () => { await test.step('Pay', async () => { expect(1).toBe(2); }); });
+    > 3 | for (const n of [1, 2]) test(`case ${n}`, async () => { expect(n).toBe(0); });
+        |                                                                   ^
+      4 |
+        at /home/dev/shop/tests/step.spec.js:3:67
+
+    Error Context: test-results/step-case-2-chromium/error-context.md
+
+  4) [chromium] › tests/step.spec.js:2:1 › checkout completes › Pay ────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 2
+    Received: 1
+
+      1 | const { test, expect } = require('@playwright/test');
+    > 2 | test('checkout completes', async () => { await test.step('Pay', async () => { expect(1).toBe(2); }); });
+        |                                                                                         ^
+      3 | for (const n of [1, 2]) test(`case ${n}`, async () => { expect(n).toBe(0); });
+      4 |
+        at /home/dev/shop/tests/step.spec.js:2:89
+        at /home/dev/shop/tests/step.spec.js:2:42
+
+    Error Context: test-results/step-checkout-completes-chromium-repeat1/error-context.md
+
+  5) [chromium] › tests/step.spec.js:3:25 › case 1 ─────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 1
+
+      1 | const { test, expect } = require('@playwright/test');
+      2 | test('checkout completes', async () => { await test.step('Pay', async () => { expect(1).toBe(2); }); });
+    > 3 | for (const n of [1, 2]) test(`case ${n}`, async () => { expect(n).toBe(0); });
+        |                                                                   ^
+      4 |
+        at /home/dev/shop/tests/step.spec.js:3:67
+
+    Error Context: test-results/step-case-1-chromium-repeat1/error-context.md
+
+  6) [chromium] › tests/step.spec.js:3:25 › case 2 ─────────────────────────────────────────────────
+
+    Error: expect(received).toBe(expected) // Object.is equality
+
+    Expected: 0
+    Received: 2
+
+      1 | const { test, expect } = require('@playwright/test');
+      2 | test('checkout completes', async () => { await test.step('Pay', async () => { expect(1).toBe(2); }); });
+    > 3 | for (const n of [1, 2]) test(`case ${n}`, async () => { expect(n).toBe(0); });
+        |                                                                   ^
+      4 |
+        at /home/dev/shop/tests/step.spec.js:3:67
+
+    Error Context: test-results/step-case-2-chromium-repeat1/error-context.md
+
+  6 failed
+    [chromium] › tests/step.spec.js:2:1 › checkout completes ───────────────────────────────────────
+    [chromium] › tests/step.spec.js:3:25 › case 1 ──────────────────────────────────────────────────
+    [chromium] › tests/step.spec.js:3:25 › case 2 ──────────────────────────────────────────────────
+    [chromium] › tests/step.spec.js:2:1 › checkout completes ───────────────────────────────────────
+    [chromium] › tests/step.spec.js:3:25 › case 1 ──────────────────────────────────────────────────
+    [chromium] › tests/step.spec.js:3:25 › case 2 ──────────────────────────────────────────────────

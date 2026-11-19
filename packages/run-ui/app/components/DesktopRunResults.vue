@@ -2,8 +2,8 @@
 /**
  * The tests of a finished run and how each came out, the same in both hosts (the dashboard's Local runs tray, Piwi
  * Runner's runs): each row has its outcome's mark in its one color (`STATUS_PALETTE`), named for a screen reader, its
- * title, the first lines of its first error (`runErrorLines`) and its place. The first `limit` rows show, and **Show N
- * more** the rest. A host makes a row's place a link (`#place`) and adds its actions (`#actions`): the dashboard's
+ * title, the first lines of its first error (`runErrorLines`), its place and its project. The first `limit` rows show,
+ * and **Show N more** the rest, the keyboard going to the first of them. A host makes a row's place a link (`#place`) and adds its actions (`#actions`): the dashboard's
  * Open, Run again and Hold failures; Piwi Runner adds none.
  */
 import { STATUS_PALETTE, type StatusPaletteKey } from '@piwitests/run-ui/status-palette';
@@ -14,6 +14,7 @@ const props = withDefaults(defineProps<{ rows: readonly RunResultRow[]; limit?: 
 
 const { t, tn } = useRunUiWords();
 const all = ref(false);
+const list = useTemplateRef<HTMLElement>('list');
 const shown = computed(() => (all.value ? props.rows : props.rows.slice(0, props.limit)));
 const hidden = computed(() => props.rows.length - shown.value.length);
 
@@ -29,6 +30,13 @@ const MARKS: Record<RunResultRow['status'], { icon: string; palette: StatusPalet
     unknown: { icon: 'i-lucide-circle-help', palette: null, label: 'runui_resultUnknown' },
   };
 
+async function showAll() {
+  const first = shown.value.length;
+  all.value = true;
+  await nextTick();
+  list.value?.querySelectorAll<HTMLElement>('li')[first]?.focus();
+}
+
 function markOf(row: RunResultRow) {
   const mark = MARKS[row.status];
   return { ...mark, text: mark.palette ? STATUS_PALETTE[mark.palette].text : 'text-muted' };
@@ -37,11 +45,16 @@ function markOf(row: RunResultRow) {
 
 <template>
   <div class="space-y-1" data-testid="run-results">
-    <ul :aria-label="t('runui_resultsLabel')" class="divide-y divide-default rounded-md border border-default">
+    <ul
+      ref="list"
+      :aria-label="t('runui_resultsLabel')"
+      class="divide-y divide-default rounded-md border border-default"
+    >
       <li
         v-for="row in shown"
         :key="row.key"
-        class="flex flex-wrap items-start gap-x-2 gap-y-1 px-3 py-2"
+        tabindex="-1"
+        class="flex flex-wrap items-start gap-x-2 gap-y-1 px-3 py-2 focus-visible:outline-2 focus-visible:outline-primary"
         :data-status="row.status"
         data-testid="run-result"
       >
@@ -58,16 +71,19 @@ function markOf(row: RunResultRow) {
           >
             {{ line }}
           </p>
-          <slot name="place" :row="row">
-            <code v-if="row.place" class="block font-mono text-xs break-all text-muted">{{ row.place }}</code>
-          </slot>
+          <div class="flex min-w-0 flex-wrap items-baseline gap-x-2 text-xs text-muted">
+            <slot name="place" :row="row">
+              <code v-if="row.place" class="font-mono break-all">{{ row.place }}</code>
+            </slot>
+            <span v-if="row.project">{{ row.project }}</span>
+          </div>
         </div>
         <div class="ml-auto flex shrink-0 items-center gap-1">
           <slot name="actions" :row="row" />
         </div>
       </li>
     </ul>
-    <UButton v-if="hidden > 0" size="xs" color="neutral" variant="ghost" @click="all = true">
+    <UButton v-if="hidden > 0" size="xs" color="neutral" variant="ghost" @click="showAll">
       {{ tn('runui_resultsMore', hidden) }}
     </UButton>
   </div>

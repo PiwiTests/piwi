@@ -312,6 +312,7 @@ describe('runnerTestResults', () => {
         status: 'failed',
         title: 'checkout › pays',
         place: 'tests/checkout.spec.ts:3',
+        project: 'chromium',
         error: ['Error: expect(locator).toHaveText(expected) failed'],
       },
     ]);
@@ -324,6 +325,29 @@ describe('runnerTestResults', () => {
       'failed',
       'unknown',
     ]);
+  });
+
+  test('finds a test run by its title on another line, the closest path first, and in another project', () => {
+    const moved = FAILED.map((line) => line.replaceAll('checkout.spec.ts:3:1', 'checkout.spec.ts:5:1'));
+    expect(runnerTestResults(ended('failed', moved))?.[0]?.status).toBe('failed');
+
+    const login = (dir: string) => ({ ...TEST, filePath: `${dir}login.spec.ts`, line: 4, title: 'logs in' });
+    const output = [
+      '  ✓  1 [chromium] › admin/login.spec.ts:4:1 › logs in (1.0s)',
+      '  1) [chromium] › login.spec.ts:4:1 › logs in ───',
+      '',
+      '    Error: boom',
+      '  1 failed',
+      '    [chromium] › login.spec.ts:4:1 › logs in ───',
+      '  1 passed (2.0s)',
+    ];
+    expect(runnerTestResults(ended('failed', output, [login(''), login('admin/')]))?.map((row) => row.status)).toEqual([
+      'failed',
+      'passed',
+    ]);
+
+    const firefox = FAILED.map((line) => line.replaceAll('[chromium]', '[firefox]'));
+    expect(runnerTestResults(ended('failed', firefox))?.[0]?.status).toBe('failed');
   });
 
   test('says nothing while the run goes on, or when its output holds no summary', () => {

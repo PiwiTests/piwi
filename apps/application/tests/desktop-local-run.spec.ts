@@ -500,9 +500,12 @@ test.describe('Desktop local run', () => {
     await expect(result.getByText('Error: locator.click: Timeout 30000ms exceeded.')).toBeVisible();
     await expect(result.getByRole('img', { name: 'Failed' })).toBeVisible();
 
-    await result.getByRole('button', { name: 'Run checkout completes again', exact: true }).click();
+    await expect(result.getByText('chromium', { exact: true })).toBeVisible();
+    await result.getByRole('button', { name: 'Run checkout completes in chromium again', exact: true }).click();
     await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
     expect((await runInvocations(page))[1]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+    // The run it came from stays open on its list, so another test runs again from there.
+    await expect(tray(page).getByTestId('run-result').first()).toBeVisible();
   });
 
   test('a second stop forces the run to end', async ({ page }) => {

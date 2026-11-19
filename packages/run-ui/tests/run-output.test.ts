@@ -97,7 +97,7 @@ describe('a run’s stop', () => {
 });
 
 /** What Playwright printed for a sample suite with `--reporter=<name>`, without a terminal, as the shell captures it. */
-const printed = (reporter: 'list' | 'dot') =>
+const printed = (reporter: 'list' | 'dot' | 'steps') =>
   lines(...readFileSync(path.resolve(import.meta.dirname, `fixtures/playwright-${reporter}.txt`), 'utf8').split('\n'));
 
 describe('runOutputSummary', () => {
@@ -197,6 +197,55 @@ describe('runOutputSummary', () => {
       },
       { status: 'interrupted', project: null, file: 'tests/a.spec.ts', line: 9, column: 5, title: 'closes', error: [] },
     ]);
+  });
+
+  test('lists a repeated test once, a failure in a step under its test, and tests a loop declares apart', () => {
+    // `--repeat-each=2` over a test failing in `test.step('Pay')` and two tests a loop declares on one line.
+    const summary = runOutputSummary(printed('steps'))!;
+    expect(summary.counts.failed).toBe(6);
+    expect(summary.results.map((result) => [result.title, result.line, result.column, result.error[0]])).toEqual([
+      ['checkout completes', 2, 1, 'Error: expect(received).toBe(expected) // Object.is equality'],
+      ['case 1', 3, 25, 'Error: expect(received).toBe(expected) // Object.is equality'],
+      ['case 2', 3, 25, 'Error: expect(received).toBe(expected) // Object.is equality'],
+    ]);
+    expect(summary.results.find((result) => result.title === 'case 2')!.error).toContain('Expected: 0');
+    expect(summary.results.find((result) => result.title === 'case 2')!.error).toContain('Received: 2');
+  });
+
+  test('reads the marks of a Windows console, and a serial group’s tests that did not run', () => {
+    const summary = runOutputSummary(
+      lines(
+        '  ok 1 [chromium] › tests\\a.spec.ts:2:1 › opens (5ms)',
+        '  x  2 [chromium] › tests\\a.spec.ts:4:1 › pays (5ms)',
+        '  -  3 [chromium] › tests\\a.spec.ts:6:1 › refunds',
+        '  1) [chromium] › tests\\a.spec.ts:4:1 › pays ───',
+        '',
+        '    Error: boom',
+        '  1 failed',
+        '    [chromium] › tests\\a.spec.ts:4:1 › pays ───',
+        '  1 did not run',
+        '  1 passed (1.0s)',
+      ),
+    )!;
+    expect(summary.results.map((result) => [result.status, result.title])).toEqual([
+      ['failed', 'pays'],
+      ['passed', 'opens'],
+      ['did-not-run', 'refunds'],
+    ]);
+  });
+
+  test('ends an error at the line reporter’s next test', () => {
+    const summary = runOutputSummary(
+      lines(
+        '  1) tests/a.spec.ts:2:5 › opens ───',
+        '',
+        '    Expected to fail, but passed.',
+        '[2/3] tests/a.spec.ts:4:5 › pays',
+        '  1 failed',
+        '    tests/a.spec.ts:2:5 › opens ───',
+      ),
+    )!;
+    expect(summary.results[0]!.error).toEqual(['Expected to fail, but passed.']);
   });
 
   test('takes a numbered failure no summary lists for a failed test', () => {

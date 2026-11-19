@@ -582,7 +582,7 @@ function moreActions(run: LocalRun, onLine: boolean) {
                 class="mt-2"
                 @announce="announce"
               />
-              <DesktopLocalRunResults :run="run" />
+              <DesktopLocalRunResults :run="run" @keep-open="setExpanded(run, true)" />
               <p v-if="separate[run.key]" class="mt-2 text-xs text-muted">The output is in a separate window.</p>
               <DesktopRunOutputPane v-else :lines="run.lines" class="mt-2" />
             </template>

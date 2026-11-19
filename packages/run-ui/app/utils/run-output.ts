@@ -62,7 +62,7 @@ export interface RunOutputResult {
   status: RunOutputStatus;
   /** Its Playwright project; null for a config with no named project. */
   project: string | null;
-  /** Its file, as Playwright prints it: relative to the config's folder. */
+  /** Its file, as Playwright prints it: relative to the folder it runs in, the config's for a run the shell starts. */
   file: string;
   line: number;
   column: number;
@@ -88,22 +88,46 @@ const TEST_PLACE = /^(?:\[([^\]]+)\] › )?(.+?):(\d+):(\d+) › (.+?)(?: ─+)?
 const FAILURE_HEAD = /^\s*\d+\) (.+)$/;
 /** A summary's section: `  2 failed`, `  1 passed (2.5s)`. */
 const SUMMARY_HEAD = /^\s{2}(\d+) (passed|failed|flaky|skipped|interrupted|did not run)(?: \(.+\))?$/;
-/** A list reporter's result line: `  ✓  1 [chromium] › <place> (5ms)`, a retry's marked `(retry #1)`. */
-const RESULT_LINE = /^\s{2}([✓✘-])\s+\d+ (.+?)(?: \(retry #\d+\))?(?: \([\d.]+(?:ms|s|m|h)\))?$/;
-/** A code frame's line (`    > 4 |   test(…)`) or a stack line: where an error's message ends. */
-const ERROR_END = /^\s*(?:>?\s*\d+ \||\|\s|at |Error Context: |Retry #\d+)/;
+/**
+ * A list reporter's result line: `  ✓  1 [chromium] › <place> (5ms)`, a retry's marked `(retry #1)`; `ok` and `x` on a
+ * Windows console that shows no UTF-8 marks.
+ */
+const RESULT_LINE = /^\s{2}(✓|✘|ok|x|-)\s+\d+ (.+?)(?: \(retry #\d+\))?(?: \([\d.]+(?:ms|s|m|h)\))?$/;
+/**
+ * A code frame's line (`    > 4 |   test(…)`), a stack line, a retry's rule or the line reporter's next test
+ * (`[16/20] …`): where an error's message ends.
+ */
+const ERROR_END = /^\s*(?:>?\s*\d+ \||\|\s|at |Error Context: |Retry #\d+|\[\d+\/\d+\] )/;
 /** At most this many lines of an error. */
 const ERROR_LINES_MAX = 4;
 
-function placeOf(text: string): Omit<RunOutputResult, 'status' | 'error'> | null {
+/** Where a test is and what it is called, as the output prints it. */
+type TestPlace = Omit<RunOutputResult, 'status' | 'error'>;
+
+function placeOf(text: string): TestPlace | null {
   const match = TEST_PLACE.exec(text.trim());
   if (!match) return null;
   const [, project, file, line, column, title] = match;
   return { project: project ?? null, file: file!, line: Number(line), column: Number(column), title: title! };
 }
 
-const placeKey = (place: Omit<RunOutputResult, 'status' | 'error'>) =>
+const placeKey = (place: TestPlace) =>
   `${place.project ?? ''}|${place.file}:${place.line}:${place.column}|${place.title}`;
+
+/**
+ * Whether a numbered failure is of the test `test`: same project and place, and its title, or its title followed by the
+ * step the test failed in (`checkout completes › Pay`), which a failure's header adds. Tests a loop declares share
+ * their place and differ by their titles.
+ */
+function isFailureOf(failure: TestPlace, test: TestPlace): boolean {
+  return (
+    failure.project === test.project &&
+    failure.file === test.file &&
+    failure.line === test.line &&
+    failure.column === test.column &&
+    (failure.title === test.title || failure.title.startsWith(`${test.title} › `))
+  );
+}
 
 /** The message lines of the error that starts after line `from`: its first lines, up to its code frame or stack. */
 function errorAfter(lines: readonly RunOutputLine[], from: number): string[] {
@@ -143,6 +167,8 @@ export interface RunResultRow {
   title: string;
   /** Where it is, `file:line`; null when unknown. */
   place: string | null;
+  /** Its Playwright project, which tells apart a test run in several browsers; null when none is named. */
+  project: string | null;
   /** The first lines of its first error (`runErrorLines`). */
   error: readonly string[];
 }
@@ -155,13 +181,9 @@ export interface RunResultRow {
  */
 export function runOutputSummary(lines: readonly RunOutputLine[]): RunOutputSummary | null {
   const counts: RunOutputCounts = { passed: 0, failed: 0, flaky: 0, skipped: 0, interrupted: 0, 'did-not-run': 0 };
-  const errors = new Map<string, string[]>();
-  const failures = new Map<string, Omit<RunOutputResult, 'status' | 'error'>>();
-  const listed: RunOutputResult[] = [];
-  const outcomes = new Map<
-    string,
-    { status: 'passed' | 'skipped'; place: Omit<RunOutputResult, 'status' | 'error'> }
-  >();
+  const failures: Array<{ place: TestPlace; error: string[] }> = [];
+  const listed = new Map<string, RunOutputResult>();
+  const outcomes = new Map<string, { status: 'passed' | 'skipped'; place: TestPlace }>();
   let summarized = false;
   let section: RunOutputStatus | null = null;
   for (let i = 0; i < lines.length; i++) {
@@ -175,8 +197,10 @@ export function runOutputSummary(lines: readonly RunOutputLine[]): RunOutputSumm
     }
     if (section && /^\s{4}\S/.test(text)) {
       const place = placeOf(text);
-      if (place && section !== 'passed' && section !== 'skipped') {
-        listed.push({ status: section, ...place, error: errors.get(placeKey(place)) ?? [] });
+      // A test repeated (`--repeat-each`), or failing in several steps, is listed once.
+      if (place && section !== 'passed' && section !== 'skipped' && !listed.has(placeKey(place))) {
+        const error = failures.find((failure) => isFailureOf(failure.place, place))?.error ?? [];
+        listed.set(placeKey(place), { status: section, ...place, error });
       }
       continue;
     }
@@ -184,31 +208,34 @@ export function runOutputSummary(lines: readonly RunOutputLine[]): RunOutputSumm
     const failure = FAILURE_HEAD.exec(text);
     const failed = failure && placeOf(failure[1]!);
     if (failed) {
-      if (!errors.has(placeKey(failed))) {
-        errors.set(placeKey(failed), errorAfter(lines, i));
-        failures.set(placeKey(failed), failed);
-      }
+      failures.push({ place: failed, error: errorAfter(lines, i) });
       continue;
     }
     const result = RESULT_LINE.exec(text);
     const place = result && placeOf(result[2]!);
     if (result && place) {
       const key = placeKey(place);
-      if (result[1] === '✓') outcomes.set(key, { status: 'passed', place });
+      if (result[1] === '✓' || result[1] === 'ok') outcomes.set(key, { status: 'passed', place });
       else if (result[1] === '-') outcomes.set(key, { status: 'skipped', place });
       else outcomes.delete(key);
     }
   }
   if (!summarized) return null;
   // A numbered failure no summary lists (a summary that names no test) failed all the same.
-  const listedKeys = new Set(listed.map(placeKey));
-  for (const [key, place] of failures) {
-    if (listedKeys.has(key) || outcomes.has(key)) continue;
-    listed.push({ status: 'failed', ...place, error: errors.get(key) ?? [] });
-    listedKeys.add(key);
+  for (const { place, error } of failures) {
+    const key = placeKey(place);
+    if (listed.has(key) || outcomes.has(key)) continue;
+    if ([...listed.values()].some((test) => isFailureOf(place, test))) continue;
+    listed.set(key, { status: 'failed', ...place, error });
   }
+  // The list reporter marks a skipped test and one a serial group did not run alike: the counts tell which it was.
+  const unmarked: RunOutputStatus = counts.skipped === 0 && counts['did-not-run'] > 0 ? 'did-not-run' : 'skipped';
   const others = [...outcomes.entries()]
-    .filter(([key]) => !listedKeys.has(key))
-    .map(([, { status, place }]): RunOutputResult => ({ status, ...place, error: [] }));
-  return { counts, results: [...listed, ...others] };
+    .filter(([key]) => !listed.has(key))
+    .map(([, { status, place }]): RunOutputResult => ({
+      status: status === 'skipped' ? unmarked : status,
+      ...place,
+      error: [],
+    }));
+  return { counts, results: [...listed.values(), ...others] };
 }
