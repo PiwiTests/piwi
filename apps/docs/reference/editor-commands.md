@@ -95,7 +95,10 @@ an issue** and, on a flaky test in VS Code, **Look into this flake…**:
 | **Piwi: Record a new test file…** | Create a spec and record into it; in a JetBrains IDE, the **New** menu's **Playwright test (recorded)…** too |
 | **Piwi: Stop recording**, **Piwi: Pause recording**, **Piwi: Resume recording** | Control the recording in progress |
 | **Piwi: Go to the recorded lines** | JetBrains: open the lines the recording in progress writes |
-| **Piwi: Pair with Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker) |
+| **Piwi: Pair with Piwi Picker** | Open the [pairing panel](/features/editor-pairing#the-pairing-panel), where you allow Piwi Picker's request |
+| **Piwi: Copy the pairing address for Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker), to pair a remote window |
+| **Piwi: Allow Piwi Picker to pair**, **Piwi: Deny Piwi Picker's pairing request** | VS Code: answer a request of the pairing panel, also in its notification |
+| **Piwi: Unpair Piwi Picker** | Give the editor a new pairing token: Piwi Picker reaches it again once paired again |
 
 ## Run control
 

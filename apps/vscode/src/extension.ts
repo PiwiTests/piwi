@@ -250,6 +250,7 @@ import { escapedMarkdown, progressItem, STOP_ACTIONS, stopRunAnswer } from './ru
 import { registerRunControl } from './run-view';
 import { registerCiRuns } from './ci-view';
 import {
+  helloAt,
   liveHubsHere,
   loopbackPort,
   onLoopback,
@@ -261,6 +262,16 @@ import {
   type SendListener,
   type SendResult,
 } from './send-listener';
+import { EditorPairingRequests, VSCODE_PAIRING_PORTS, editorHello } from '@piwitests/core/editor-pairing';
+import {
+  PICKER_HEARD_KEY,
+  PICKER_PAIRED_KEY,
+  heardAgain,
+  pairingPrompt,
+  readPickerPaired,
+  type PickerPaired,
+} from './picker-pairing';
+import { registerPickerView, type PickerView } from './picker-view';
 import { TestExplorer, type ShownTest } from './test-explorer';
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
@@ -1234,10 +1245,45 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         .catch(() => undefined);
     }
   };
+  // Piwi Picker's pairing by code: the requests this window's listener takes, answered in a notification or the view.
+  let pickerView: PickerView | null = null;
+  const prompted = new Set<string>();
+  const pickerRequests = new EditorPairingRequests({
+    changed: () => {
+      pickerView?.changed();
+      for (const request of pickerRequests.waiting()) {
+        if (prompted.has(request.id)) continue;
+        prompted.add(request.id);
+        void pickerView?.reveal();
+        void vscode.window.showInformationMessage(pairingPrompt(request), 'Allow', 'Deny').then((choice) => {
+          if (choice === 'Allow') void allowPickerPairing(request.id);
+          else if (choice === 'Deny') denyPickerPairing(request.id);
+        });
+      }
+    },
+  });
+  const expireRequests = setInterval(() => pickerRequests.expire(), 5_000);
+  context.subscriptions.push({ dispose: () => clearInterval(expireRequests) });
+  /** Piwi Picker reached the pairing: the time is kept, once a minute at most, for the view. */
+  const pickerHeard = () => {
+    const now = Date.now();
+    if (!heardAgain(context.globalState.get<number>(PICKER_HEARD_KEY), now)) return;
+    void Promise.resolve(context.globalState.update(PICKER_HEARD_KEY, now)).then(() => pickerView?.changed());
+  };
   const startListener = async (port: number) => {
     const started = await startSendListener({
       port,
       token: () => sendStore.token,
+      pairing: {
+        hello: () =>
+          editorHello(
+            'vscode',
+            vscode.env.appName,
+            (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.name),
+          ),
+        requests: pickerRequests,
+      },
+      heard: pickerHeard,
       onPayload: (payload) => insertFromPicker(lc, payload, hideMessage),
       // A remote window's services listen on the remote machine's loopback interface: its own hub is forwarded.
       live: () =>
@@ -1265,8 +1311,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     },
     listener: () => sendListener,
     listen,
+    // A window of this editor holds the pairing port: it answers Piwi Picker.
+    held: async (port) => {
+      const hello = await helloAt(port);
+      return hello?.editor === 'vscode' && hello.product === editorHello('vscode', vscode.env.appName, []).product;
+    },
     started: (started) => {
       if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+      pickerView?.changed();
     },
   });
   context.subscriptions.push(savedPort);
@@ -1301,6 +1353,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * port of the run's time when another window holds the saved one, which stays saved.
    */
   const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
+
+  /** Keeps the pairing Piwi Picker was given by code, its browser named. */
+  const keepPickerPaired = async (client: string) => {
+    await context.globalState.update(PICKER_PAIRED_KEY, { at: Date.now(), client } satisfies PickerPaired);
+    pickerView?.changed();
+  };
+  /** Allow: the token goes to the Piwi Picker that asked, on its next poll, and the port it reached is saved. */
+  const allowPickerPairing = async (id: string) => {
+    const request = pickerRequests.waiting().find((r) => r.id === id);
+    if (!request) {
+      void vscode.window.showWarningMessage(
+        "Piwi: this pairing request no longer waits. Click Pair in Piwi Picker's settings again.",
+      );
+      return;
+    }
+    const { token } = await pairing(true);
+    if (!pickerRequests.answer(id, token)) return;
+    await keepPickerPaired(request.client);
+    announceRunPairing();
+    void vscode.window.showInformationMessage(`Piwi: paired with Piwi Picker in ${request.client}.`);
+  };
+  const denyPickerPairing = (id: string) => {
+    pickerRequests.answer(id, null);
+  };
+  /** The id of the request a command names: a row of the view, or the id itself. */
+  const requestIdOf = (arg: unknown): string | null =>
+    typeof arg === 'string' ? arg : (((arg as { requestId?: unknown } | undefined)?.requestId as string) ?? null);
+  pickerView = registerPickerView(() => ({
+    waiting: pickerRequests.waiting(),
+    paired: readPickerPaired(context.globalState.get(PICKER_PAIRED_KEY)),
+    heard: context.globalState.get<number>(PICKER_HEARD_KEY) ?? null,
+    port: sendListener?.port ?? null,
+    savedPort: context.globalState.get<number>(SEND_PORT) ?? null,
+  }));
+  context.subscriptions.push(pickerView);
 
   /** Which runs pause at the editor's breakpoints (`piwi.breakpoints`). */
   const breakpointsModeNow = () => breakpointsMode(vscode.workspace.getConfiguration('piwi').get('breakpoints'));
@@ -2227,10 +2314,65 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   context.subscriptions.push(
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
+      // Listening where Piwi Picker looks, the port kept for the next start.
+      const { url } = await pairing(true);
+      await pickerView?.reveal();
+      const port = loopbackPort(url);
+      const found = !vscode.env.remoteName && port !== null && VSCODE_PAIRING_PORTS.includes(port);
+      const copy = 'Copy the pairing address';
+      void vscode.window
+        .showInformationMessage(
+          found
+            ? "Piwi: in Piwi Picker's settings, under Editor, click Pair, then allow the request here."
+            : "Piwi: Piwi Picker does not find this window on its own. Copy the pairing address, and paste it in Piwi Picker's settings under Editor, Pair with an address.",
+          copy,
+        )
+        .then((choice) => {
+          if (choice === copy) void vscode.commands.executeCommand('piwi.copyPickerAddress');
+        });
+    }),
+    vscode.commands.registerCommand('piwi.copyPickerAddress', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor, Pair with an address.",
       );
+    }),
+    vscode.commands.registerCommand('piwi.allowPickerPairing', async (arg?: unknown) => {
+      const id = requestIdOf(arg) ?? pickerRequests.waiting()[0]?.id;
+      if (id) await allowPickerPairing(id);
+    }),
+    vscode.commands.registerCommand('piwi.denyPickerPairing', (arg?: unknown) => {
+      const id = requestIdOf(arg) ?? pickerRequests.waiting()[0]?.id;
+      if (id) denyPickerPairing(id);
+    }),
+    vscode.commands.registerCommand('piwi.unpairPicker', async () => {
+      const unpair = 'Unpair';
+      const choice = await vscode.window.showWarningMessage(
+        'Unpair Piwi Picker?',
+        {
+          modal: true,
+          detail:
+            'This editor takes a new token: Piwi Picker reaches it again only once you pair again, and so do the runs started before.',
+        },
+        unpair,
+      );
+      if (choice !== unpair) return;
+      sendStore.token = randomBytes(24).toString('base64url');
+      await sendStore.saveToken(sendStore.token);
+      await context.globalState.update(PICKER_PAIRED_KEY, undefined);
+      await context.globalState.update(PICKER_HEARD_KEY, undefined);
+      // A port of an earlier pairing that Piwi Picker does not look at is let go, for the first pairing port free.
+      if (sendStore.port && !VSCODE_PAIRING_PORTS.includes(sendStore.port)) {
+        sendStore.port = undefined;
+        await context.globalState.update(SEND_PORT, undefined);
+        const listening = sendListener;
+        sendListener = null;
+        await listening?.close();
+        await savedPort.tryNow();
+      }
+      announceRunPairing();
+      pickerView?.changed();
+      void vscode.window.showInformationMessage('Piwi: Piwi Picker is unpaired from this editor.');
     }),
     { dispose: () => void sendListener?.close() },
   );

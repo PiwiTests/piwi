@@ -3657,6 +3657,277 @@ object Glue {
         return token.isNotEmpty() && java.security.MessageDigest.isEqual(given.toByteArray(), token.toByteArray())
     }
 
+    /** The header Piwi Picker polls a pairing request with (`@piwitests/core/editor-pairing`). */
+    const val EDITOR_PAIRING_SECRET_HEADER = "x-pairing-secret"
+
+    /** How long a pairing request waits for the person's answer. */
+    const val EDITOR_PAIRING_TTL_MILLIS = 5 * 60_000L
+
+    /** Seconds Piwi Picker waits between polls. */
+    const val EDITOR_PAIRING_POLL_SECONDS = 2
+
+    /** Requests waiting at once; one more is refused (429) until one is answered or expires. */
+    const val MAX_WAITING_EDITOR_PAIRINGS = 3
+
+    /** How long a request answered or expired is still told as such to a poll, before it is forgotten (404). */
+    private const val ANSWERED_KEPT_MILLIS = 60_000L
+
+    /** The most windows a hello names, and the longest name of one, or of the product. */
+    private const val MAX_HELLO_WINDOWS = 8
+    private const val MAX_HELLO_TEXT = 80
+
+    /** A name as the hello gives it: no control character, one space between words, cut to its limit. */
+    private fun shownName(value: String): String =
+        value.replace(Regex("\\p{Cntrl}"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_HELLO_TEXT)
+
+    /**
+     * What `GET /api/piwi/hello` answers, with no token: this is a JetBrains IDE, which product, and the projects it has
+     * open, as `editorHello` in `@piwitests/core/editor-pairing` writes it.
+     */
+    fun editorHello(product: String, projects: List<String>): Map<String, Any> = mapOf(
+        "editor" to "jetbrains",
+        "product" to shownName(product).ifEmpty { "jetbrains" },
+        "windows" to projects.map(::shownName).filter { it.isNotEmpty() }.take(MAX_HELLO_WINDOWS),
+    )
+
+    private val CHROME_EXTENSION = Regex("^chrome-extension://[a-p]{32}$")
+    private val FIREFOX_EXTENSION = Regex("^moz-extension://[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
+
+    /** Whether an `Origin` is a browser extension's (`isExtensionOrigin` in `@piwitests/core/run-hub`); never a page's. */
+    fun isExtensionOrigin(origin: String?): Boolean =
+        origin != null && (CHROME_EXTENSION.matches(origin) || FIREFOX_EXTENSION.matches(origin))
+
+    /** The letters of a pairing code: consonants alone, none read as another. */
+    private const val CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ"
+
+    /** A new pairing code, `BCDF-GHJK`: eight letters drawn from [CODE_LETTERS]. */
+    fun newEditorPairingCode(random: java.security.SecureRandom = java.security.SecureRandom()): String {
+        val letters = (1..8).map { CODE_LETTERS[random.nextInt(CODE_LETTERS.length)] }.joinToString("")
+        return "${letters.take(4)}-${letters.drop(4)}"
+    }
+
+    /** One word of what Piwi Picker says it runs in: letters, digits, spaces, dots and dashes, 40 characters at most. */
+    private fun clientWord(value: com.google.gson.JsonElement?): String {
+        val text = value?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return ""
+        return text.replace(Regex("[^\\p{L}\\p{N} .-]"), "").replace(Regex("\\s+"), " ").trim().take(40)
+    }
+
+    /** "Chrome on macOS", from the start's `{ browser, os }`; "a browser" when it names none. */
+    fun editorPairingClient(body: com.google.gson.JsonObject?): String {
+        val browser = clientWord(body?.get("browser")).ifEmpty { "a browser" }
+        val os = clientWord(body?.get("os"))
+        return if (os.isEmpty()) browser else "$browser on $os"
+    }
+
+    /** The id a poll's path names (`/api/piwi/pairings/<id>`): 16 lowercase hex characters; null for any other path. */
+    fun editorPairingIdOf(path: String, prefix: String): String? {
+        if (!path.startsWith("$prefix/")) return null
+        return path.removePrefix("$prefix/").takeIf { Regex("^[0-9a-f]{16}$").matches(it) }
+    }
+
+    /** What a route answers: the status code and the JSON body. */
+    data class PairingAnswer(val status: Int, val body: Map<String, Any?>)
+
+    /** What the IDE shows of a request waiting for the person's answer. */
+    data class PairingRequestView(val id: String, val code: String, val client: String, val createdAt: Long, val expiresAt: Long)
+
+    /**
+     * The pairing requests of this IDE, as `EditorPairingRequests` of `@piwitests/core/editor-pairing` keeps them:
+     * started by Piwi Picker, answered by the person, polled until Piwi Picker has the token or hears no. `changed`
+     * hears every change of the requests waiting. Safe from any thread.
+     */
+    class EditorPairingRequests(
+        private val now: () -> Long = System::currentTimeMillis,
+        private val changed: () -> Unit = {},
+    ) {
+        private class Stored(
+            val view: PairingRequestView,
+            val secret: String,
+            var status: String = "waiting",
+            var token: String? = null,
+            var endedAt: Long? = null,
+        )
+
+        private val requests = LinkedHashMap<String, Stored>()
+        private val random = java.security.SecureRandom()
+
+        private fun hex(bytes: Int): String =
+            ByteArray(bytes).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        /** Expires the requests past their time and forgets those answered long enough ago; true when one expired. */
+        private fun sweep(): Boolean {
+            val at = now()
+            var expired = false
+            val each = requests.values.iterator()
+            while (each.hasNext()) {
+                val request = each.next()
+                if (request.status == "waiting" && request.view.expiresAt <= at) {
+                    request.status = "expired"
+                    request.endedAt = at
+                    expired = true
+                }
+                val ended = request.endedAt
+                if (ended != null && at - ended > ANSWERED_KEPT_MILLIS) each.remove()
+            }
+            return expired
+        }
+
+        /**
+         * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON body alone (403 and 415
+         * otherwise), refused while [MAX_WAITING_EDITOR_PAIRINGS] wait (429). `body` is the text as it came.
+         */
+        fun start(origin: String?, contentType: String?, body: String?): PairingAnswer {
+            if (!isExtensionOrigin(origin)) return PairingAnswer(403, mapOf("error" to "only a browser extension can ask to pair"))
+            if (contentType?.lowercase()?.startsWith("application/json") != true) {
+                return PairingAnswer(415, mapOf("error" to "the body must be application/json"))
+            }
+            val json = runCatching { JsonParser.parseString(body ?: "") }.getOrNull()
+                ?: return PairingAnswer(400, mapOf("error" to "the body must be JSON"))
+            val request = synchronized(this) {
+                val expired = sweep()
+                if (waitingNow().size >= MAX_WAITING_EDITOR_PAIRINGS) {
+                    if (expired) changed()
+                    return PairingAnswer(429, mapOf("error" to "too many pairing requests wait already"))
+                }
+                val at = now()
+                Stored(
+                    PairingRequestView(hex(8), newEditorPairingCode(random), editorPairingClient(json as? JsonObject), at, at + EDITOR_PAIRING_TTL_MILLIS),
+                    hex(32),
+                ).also { requests[it.view.id] = it }
+            }
+            changed()
+            return PairingAnswer(
+                201,
+                mapOf(
+                    "id" to request.view.id,
+                    "secret" to request.secret,
+                    "code" to request.view.code,
+                    "interval" to EDITOR_PAIRING_POLL_SECONDS,
+                    "expiresIn" to EDITOR_PAIRING_TTL_MILLIS / 1000,
+                ),
+            )
+        }
+
+        /**
+         * `GET …/pairings/<id>` with the start's secret: the request's status, and the token the first time it is
+         * polled allowed, after which it is `claimed`. An unknown id or a wrong secret is a 404 alike.
+         */
+        fun poll(id: String, secret: String?): PairingAnswer {
+            val (answer, expired) = synchronized(this) {
+                val expired = sweep()
+                val request = requests[id]
+                if (request == null || secret == null ||
+                    !java.security.MessageDigest.isEqual(secret.toByteArray(), request.secret.toByteArray())
+                ) {
+                    return@synchronized PairingAnswer(404, mapOf("error" to "no such pairing request")) to expired
+                }
+                val token = request.token
+                if (request.status == "allowed" && token != null) {
+                    request.status = "claimed"
+                    request.token = null
+                    PairingAnswer(200, mapOf("status" to "allowed", "token" to token)) to expired
+                } else {
+                    PairingAnswer(200, mapOf("status" to request.status)) to expired
+                }
+            }
+            if (expired) changed()
+            return answer
+        }
+
+        /** The person's answer to a waiting request: the token to hand over, or null for no. False when none waits. */
+        fun answer(id: String, token: String?): Boolean {
+            val answered = synchronized(this) {
+                sweep()
+                val request = requests[id]?.takeIf { it.status == "waiting" } ?: return@synchronized false
+                request.status = if (token.isNullOrEmpty()) "denied" else "allowed"
+                request.token = token?.takeIf { it.isNotEmpty() }
+                request.endedAt = now()
+                true
+            }
+            if (answered) changed()
+            return answered
+        }
+
+        private fun waitingNow(): List<PairingRequestView> {
+            val at = now()
+            return requests.values.filter { it.status == "waiting" && it.view.expiresAt > at }.map { it.view }
+        }
+
+        /** The requests waiting for the person's answer, oldest first. */
+        fun waiting(): List<PairingRequestView> = synchronized(this) { waitingNow() }
+
+        /** Ends the waits past their time; true when one ended, for the IDE to draw them again. */
+        fun expire(): Boolean {
+            val expired = synchronized(this) { sweep() }
+            if (expired) changed()
+            return expired
+        }
+    }
+
+    /** The pairing kept: when, and the browser of a pairing by code (null for one by address). */
+    data class PickerPaired(val at: Long, val client: String?)
+
+    /** What the Piwi Picker tab shows the pairing from. `port` is the built-in server's. */
+    data class PickerState(
+        val waiting: List<PairingRequestView>,
+        val paired: PickerPaired?,
+        val heard: Long?,
+        val port: Int,
+    )
+
+    /** A line of the Piwi Picker tab: what it says, a comment beside it, and whether it says all is well. */
+    data class PickerLine(val label: String, val description: String, val ok: Boolean)
+
+    /** The ports Piwi Picker looks for a JetBrains IDE on: the built-in server's, 63342 and the 19 after it. */
+    val PICKER_BUILT_IN_PORTS = 63342..63361
+
+    const val PICKER_INTRO =
+        "Piwi Picker, the browser extension, sends the locators you pick to the caret and follows the runs this IDE starts."
+    const val PICKER_HOW_TO_PAIR =
+        "To pair, click Pair under Editor in Piwi Picker's settings, then allow the request here."
+    const val PICKER_ADDRESS_HINT =
+        "With JetBrains Gateway, or when Piwi Picker does not find this IDE, copy the pairing address instead, and " +
+            "paste it in Piwi Picker's settings under Editor, Pair with an address."
+
+    /** The date a pairing was made: `Nov 19` this year, `Nov 19, 2025` another. */
+    private fun pairedDay(at: Long, now: Long): String {
+        val zone = java.time.ZoneId.systemDefault()
+        val date = java.time.Instant.ofEpochMilli(at).atZone(zone)
+        val sameYear = date.year == java.time.Instant.ofEpochMilli(now).atZone(zone).year
+        val pattern = if (sameYear) "MMM d" else "MMM d, yyyy"
+        return date.format(java.time.format.DateTimeFormatter.ofPattern(pattern, java.util.Locale.US))
+    }
+
+    /**
+     * The Piwi Picker tab's lines once paired, or Piwi Picker heard from: who it is paired with and since when, when it
+     * was last heard from, and where it reaches this IDE; none before, the tab saying how to pair instead. The words of
+     * the VS Code extension's Piwi Picker view (`pickerRows` in `apps/vscode/src/picker-pairing.ts`).
+     */
+    fun pickerRows(state: PickerState, now: Long): List<PickerLine> {
+        if (state.paired == null && state.heard == null) return emptyList()
+        val paired = state.paired
+        val heard = state.heard
+        val found = state.port in PICKER_BUILT_IN_PORTS
+        return listOf(
+            PickerLine(
+                if (paired?.client != null) "Paired with Piwi Picker in ${paired.client}" else "Paired with Piwi Picker",
+                if (paired != null) "since ${pairedDay(paired.at, now)}" else "",
+                true,
+            ),
+            PickerLine(
+                if (heard == null) "Not heard from yet" else "Last heard ${relativeTime(java.time.Instant.ofEpochMilli(heard).toString(), now)}",
+                "",
+                heard != null,
+            ),
+            PickerLine("Listening on 127.0.0.1:${state.port}", if (found) "" else "not where Piwi Picker looks", found),
+        )
+    }
+
+    /** The notification of a pairing request: who asks, and the code to compare with Piwi Picker's. */
+    fun pairingPrompt(client: String, code: String): String =
+        "Piwi Picker in $client asks to pair with this IDE, to send it the locators you pick and follow its runs. " +
+            "Allow it only if Piwi Picker shows the code $code."
+
     /**
      * What the dashboard's Open in IDE asks (`/api/piwi/open`): a file of a run, as a path relative to the
      * run's working directory or an absolute one, at an optional 1-based line and column. `root` is the

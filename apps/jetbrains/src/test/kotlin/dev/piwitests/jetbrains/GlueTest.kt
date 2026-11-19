@@ -2829,6 +2829,101 @@ class GlueTest {
         assertEquals("x-piwi-editor-proof", Glue.EDITOR_PROOF_HEADER)
     }
 
+    private val chrome = "chrome-extension://" + "a".repeat(32)
+
+    @Test
+    fun `hands Piwi Picker the token once, on the first poll after Allow, as the core's pairing requests do`() {
+        var now = 1_000_000L
+        var changes = 0
+        val requests = Glue.EditorPairingRequests(now = { now }, changed = { changes++ })
+        val started = requests.start(chrome, "application/json; charset=utf-8", """{"browser":"Chrome","os":"macOS"}""")
+        assertEquals(201, started.status)
+        val id = started.body["id"] as String
+        val secret = started.body["secret"] as String
+        assertTrue(Regex("^[0-9a-f]{16}$").matches(id))
+        assertTrue(Regex("^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$").matches(started.body["code"] as String))
+        assertEquals(2, started.body["interval"])
+        assertEquals(300L, started.body["expiresIn"])
+        assertEquals(listOf("Chrome on macOS"), requests.waiting().map { it.client })
+        assertEquals(mapOf("status" to "waiting"), requests.poll(id, secret).body)
+        assertTrue(requests.answer(id, "the-token-1234567890"))
+        assertEquals(emptyList<Glue.PairingRequestView>(), requests.waiting())
+        assertEquals(mapOf("status" to "allowed", "token" to "the-token-1234567890"), requests.poll(id, secret).body)
+        assertEquals(mapOf("status" to "claimed"), requests.poll(id, secret).body)
+        assertFalse(requests.answer(id, "another"))
+        assertEquals(404, requests.poll(id, "f".repeat(64)).status)
+        assertEquals(404, requests.poll("0123456789abcdef", secret).status)
+        assertEquals(2, changes)
+
+        // Denied, and expired then forgotten.
+        val denied = requests.start(chrome, "application/json", "{}").body
+        assertTrue(requests.answer(denied["id"] as String, null))
+        assertEquals(mapOf("status" to "denied"), requests.poll(denied["id"] as String, denied["secret"] as String).body)
+        val late = requests.start(chrome, "application/json", "{}").body
+        now += Glue.EDITOR_PAIRING_TTL_MILLIS
+        assertTrue(requests.expire())
+        assertFalse(requests.answer(late["id"] as String, "late"))
+        assertEquals(mapOf("status" to "expired"), requests.poll(late["id"] as String, late["secret"] as String).body)
+        now += 61_000
+        assertEquals(404, requests.poll(late["id"] as String, late["secret"] as String).status)
+    }
+
+    @Test
+    fun `starts a pairing request only for an extension's JSON, and only a few at once`() {
+        val requests = Glue.EditorPairingRequests()
+        assertEquals(403, requests.start("https://example.com", "application/json", "{}").status)
+        assertEquals(403, requests.start(null, "application/json", "{}").status)
+        assertEquals(403, requests.start("chrome-extension://short", "application/json", "{}").status)
+        assertEquals(415, requests.start(chrome, "text/plain", "{}").status)
+        assertEquals(400, requests.start(chrome, "application/json", "not json").status)
+        val firefox = "moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+        repeat(Glue.MAX_WAITING_EDITOR_PAIRINGS) { assertEquals(201, requests.start(if (it == 0) chrome else firefox, "application/json", "{}").status) }
+        assertEquals(429, requests.start(chrome, "application/json", "{}").status)
+        requests.answer(requests.waiting().first().id, null)
+        assertEquals(201, requests.start(chrome, "application/json", "{}").status)
+    }
+
+    @Test
+    fun `says which IDE listens, and names Piwi Picker's browser alone, as the core does`() {
+        assertEquals(
+            mapOf("editor" to "jetbrains", "product" to "WebStorm", "windows" to listOf("shop", "api")),
+            Glue.editorHello("WebStorm", listOf("shop", "", "api")),
+        )
+        val hello = Glue.editorHello("Web\u0007Storm", (1..12).map { "p$it" } + "x".repeat(200))
+        assertEquals("Web Storm", hello["product"])
+        assertEquals(8, (hello["windows"] as List<*>).size)
+        val body = { text: String -> JsonParser.parseString(text).asJsonObject }
+        assertEquals("Chrome on macOS", Glue.editorPairingClient(body("""{"browser":"Chrome","os":"macOS"}""")))
+        assertEquals("Firefox", Glue.editorPairingClient(body("""{"browser":"Firefox"}""")))
+        assertEquals("bEdgeb on Windows11", Glue.editorPairingClient(body("""{"browser":"<b>Edge</b>","os":"Windows\n11"}""")))
+        assertEquals("a browser", Glue.editorPairingClient(null))
+        assertEquals("0123456789abcdef", Glue.editorPairingIdOf("/api/piwi/pairings/0123456789abcdef", "/api/piwi/pairings"))
+        assertNull(Glue.editorPairingIdOf("/api/piwi/pairings/../send", "/api/piwi/pairings"))
+        assertNull(Glue.editorPairingIdOf("/api/piwi/pairings", "/api/piwi/pairings"))
+        assertEquals("x-pairing-secret", Glue.EDITOR_PAIRING_SECRET_HEADER)
+    }
+
+    @Test
+    fun `says in the Piwi Picker tab who is paired, when it was last heard from and where it listens, as VS Code does`() {
+        val now = java.time.Instant.parse("2026-11-19T15:00:00Z").toEpochMilli()
+        val none = Glue.PickerState(emptyList(), null, null, 63342)
+        assertEquals(emptyList<Glue.PickerLine>(), Glue.pickerRows(none, now))
+        val paired = none.copy(paired = Glue.PickerPaired(java.time.Instant.parse("2026-11-03T10:00:00Z").toEpochMilli(), "Firefox on Linux"), heard = now - 120_000)
+        assertEquals(
+            listOf("Paired with Piwi Picker in Firefox on Linux" to "since Nov 3", "Last heard 2 min ago" to "", "Listening on 127.0.0.1:63342" to ""),
+            Glue.pickerRows(paired, now).map { it.label to it.description },
+        )
+        assertEquals(
+            listOf("Paired with Piwi Picker", "Last heard 5 s ago", "Listening on 127.0.0.1:63342"),
+            Glue.pickerRows(none.copy(heard = now - 5_000), now).map { it.label },
+        )
+        assertEquals("not where Piwi Picker looks", Glue.pickerRows(paired.copy(port = 8080), now).last().description)
+        assertEquals(
+            "Piwi Picker in Chrome on macOS asks to pair with this IDE, to send it the locators you pick and follow its runs. Allow it only if Piwi Picker shows the code BCDF-GHJK.",
+            Glue.pairingPrompt("Chrome on macOS", "BCDF-GHJK"),
+        )
+    }
+
     private fun tree(vararg files: String): Path {
         val dir = Files.createTempDirectory("piwi-glue").toRealPath()
         for (file in files) {

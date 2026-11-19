@@ -200,7 +200,13 @@
                         description="Write what is done in the browser again, over the recorded lines">
                 </action>
                 <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
-                        description="Copy the address Piwi Picker sends locators and recorded steps to"/>
+                        description="Show the Piwi Picker tab: Pair in Piwi Picker's settings asks this IDE, which you allow here"/>
+                <action id="Piwi.CopyPickerAddress" icon="AllIcons.Actions.MenuPaste" class="dev.piwitests.jetbrains.CopyPickerAddressAction"
+                        text="Copy the pairing address for Piwi Picker"
+                        description="Copy the address Piwi Picker's settings take under Pair with an address, for an IDE Pair does not find"/>
+                <action id="Piwi.UnpairPicker" icon="AllIcons.Actions.GC" class="dev.piwitests.jetbrains.UnpairPickerAction"
+                        text="Unpair Piwi Picker"
+                        description="A new pairing token: Piwi Picker reaches this IDE again only once paired again"/>
             </group>
             <separator/>
             <!--

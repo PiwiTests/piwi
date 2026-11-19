@@ -47,8 +47,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`piwi/statusChanged` still makes the extension read the status, the failures, the coverage and the MCP servers
   again.)
   ([Failures view](ARCHITECTURE.md#failures-view))
-- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts`, `src/run-control.ts` and
-  `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
+- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts`, `src/run-control.ts`,
+  `src/picker-pairing.ts` and `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
 - **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
   to the cursor, Finish and End the test at a stop pass the stop's `since` (End the test while a Pause waits, `give-up`,
@@ -144,6 +144,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
+- **The token goes to Piwi Picker by code only from the person's Allow** (the notification or the **Piwi Picker**
+  view, `allowPickerPairing`), to the request `EditorPairingRequests` started for an extension's `Origin`;
+  `…/hello` names the product and the window's folders alone. Without a saved port, a window listens on the first
+  free `VSCODE_PAIRING_PORTS`, and stops at one another window of this editor holds (`takeSavedPort`, `held`).
+  Checked by `tests/send-listener.test.ts` ("pairing by code", "without a pairing saved …") and the integration
+  suite. ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **The runs' MCP server's token lives in `SecretStorage`, one per workspace (`agentsTokenKey`), and reaches an agent
   only through the provider `piwi.runs` or the configuration the person copies, which says it holds it**
   (`keptAgentsToken`, `runsMcpConfiguration`). A token the service answers or tells (`piwi/agentsChanged`) replaces the
@@ -203,7 +209,8 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/failures-view.ts`: the **Failures** view of the **Piwi** panel.
 - `src/test-explorer.ts`: Piwi's tests in VS Code's Testing view.
 - `src/recording.ts`: recording a test from the editor.
-- `src/send-listener.ts`: the Send to editor endpoint.
+- `src/send-listener.ts`: the Send to editor endpoint, and Piwi Picker's pairing by code on it.
+- `src/picker-view.ts`: the **Piwi Picker** view of the pairing; `src/picker-pairing.ts`: its pure half.
 - `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
 - `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker

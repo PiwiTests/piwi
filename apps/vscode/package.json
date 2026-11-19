@@ -149,6 +149,12 @@
           "name": "CI Runs",
           "icon": "media/piwi.svg",
           "when": "piwi.ciRuns"
+        },
+        {
+          "id": "piwi.picker",
+          "name": "Piwi Picker",
+          "icon": "media/piwi.svg",
+          "visibility": "collapsed"
         }
       ]
     },
@@ -182,6 +188,11 @@
         "view": "piwi.failures",
         "contents": "[Compare with…](command:piwi.compareWith)\n[Get started](command:piwi.getStarted)",
         "when": "piwi.failuresView == norun"
+      },
+      {
+        "view": "piwi.picker",
+        "contents": "Piwi Picker, the browser extension, sends the locators you pick to the cursor and follows the runs this window starts. To pair, click Pair under Editor in Piwi Picker's settings, then allow the request here.\n[Get Piwi Picker](https://piwitests.dev/features/extension)\nIn a remote window, or when Piwi Picker does not find this editor, pair with the address instead.\n[Copy the pairing address](command:piwi.copyPickerAddress)",
+        "when": "piwi.pickerView == unpaired"
       }
     ],
     "walkthroughs": [
@@ -257,7 +268,7 @@
           {
             "id": "pair",
             "title": "Pair Piwi Picker",
-            "description": "Piwi Picker, the browser extension, sends a locator you pick on any page to the cursor, and follows the runs this window starts. Pairing gives it this editor's address.\n[Pair with Piwi Picker](command:piwi.pairPicker)",
+            "description": "Piwi Picker, the browser extension, sends a locator you pick on any page to the cursor, and follows the runs this window starts. Click Pair under Editor in its settings, then allow the request here.\n[Pair with Piwi Picker](command:piwi.pairPicker)",
             "media": {
               "markdown": "walkthrough/pair.md"
             },
@@ -482,6 +493,30 @@
         "command": "piwi.pairPicker",
         "title": "Pair with Piwi Picker",
         "icon": "$(link)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.copyPickerAddress",
+        "title": "Copy the pairing address for Piwi Picker",
+        "icon": "$(clippy)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.allowPickerPairing",
+        "title": "Allow Piwi Picker to pair",
+        "icon": "$(check)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.denyPickerPairing",
+        "title": "Deny Piwi Picker's pairing request",
+        "icon": "$(close)",
+        "category": "Piwi"
+      },
+      {
+        "command": "piwi.unpairPicker",
+        "title": "Unpair Piwi Picker",
+        "icon": "$(trash)",
         "category": "Piwi"
       },
       {
@@ -1084,6 +1119,14 @@
         {
           "command": "piwi.goToFailureTest",
           "when": "false"
+        },
+        {
+          "command": "piwi.allowPickerPairing",
+          "when": "false"
+        },
+        {
+          "command": "piwi.denyPickerPairing",
+          "when": "false"
         }
       ],
       "editor/title": [
@@ -1257,6 +1300,16 @@
           "command": "piwi.openLog",
           "when": "view == piwi.failures",
           "group": "2_piwi@3"
+        },
+        {
+          "command": "piwi.copyPickerAddress",
+          "when": "view == piwi.picker",
+          "group": "navigation@1"
+        },
+        {
+          "command": "piwi.unpairPicker",
+          "when": "view == piwi.picker && piwi.pickerView == paired",
+          "group": "navigation@2"
         }
       ],
       "view/item/context": [
@@ -1403,6 +1456,16 @@
         {
           "command": "piwi.holdFailures",
           "when": "view == piwi.liveRuns && viewItem =~ /^run(-elsewhere)? hold$/",
+          "group": "inline@2"
+        },
+        {
+          "command": "piwi.allowPickerPairing",
+          "when": "view == piwi.picker && viewItem == piwi.pairingRequest",
+          "group": "inline@1"
+        },
+        {
+          "command": "piwi.denyPickerPairing",
+          "when": "view == piwi.picker && viewItem == piwi.pairingRequest",
           "group": "inline@2"
         }
       ],

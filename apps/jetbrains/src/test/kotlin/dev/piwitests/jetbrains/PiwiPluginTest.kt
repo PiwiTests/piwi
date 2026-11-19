@@ -1274,7 +1274,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
                     "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.ShowFlakyTests", "Piwi.OpenLatestRun", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
-                    "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
+                    "Piwi.Refresh", "Piwi.Connect", "Piwi.PairPicker", "Piwi.OpenSettings",
                 ),
                 entries,
             )
@@ -1585,6 +1585,74 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             System.setProperty("user.home", saved)
         }
+    }
+
+    /** A request of Piwi Picker's pairing by code to the built-in server, the event queue run while it waits. */
+    private fun pickerRequest(
+        method: String,
+        path: String,
+        origin: String,
+        body: String? = null,
+        secret: String? = null,
+    ): java.net.http.HttpResponse<String> {
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port$path"))
+            .header("Origin", origin)
+            .method(
+                method,
+                if (body == null) java.net.http.HttpRequest.BodyPublishers.noBody() else java.net.http.HttpRequest.BodyPublishers.ofString(body),
+            )
+        if (body != null) request.header("Content-Type", "application/json")
+        if (secret != null) request.header(Glue.EDITOR_PAIRING_SECRET_HEADER, secret)
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(request.build(), java.net.http.HttpResponse.BodyHandlers.ofString())
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
+        }
+        return future.get(1, TimeUnit.SECONDS)
+    }
+
+    /** Piwi Picker's Pair: the hello, a request the person allows, and the token handed to the next poll alone, once. */
+    fun testPiwiPickerPairsByCodeOnceThePersonAllowsIt() {
+        val origin = "chrome-extension://" + "a".repeat(32)
+        val hello = pickerRequest("GET", PiwiSendHandler.HELLO_PATH, origin)
+        assertEquals(hello.body(), 200, hello.statusCode())
+        assertEquals(origin, hello.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+        val said = com.google.gson.JsonParser.parseString(hello.body()).asJsonObject
+        assertEquals("jetbrains", said.get("editor").asString)
+        assertTrue(said.getAsJsonArray("windows").map { it.asString }.contains(project.name))
+        try {
+            // Another origin is asked nothing: no request waits for it.
+            assertFalse(pickerRequest("POST", PiwiSendHandler.PAIRINGS_PATH, "https://evil.test", "{}").statusCode() == 201)
+            assertEquals(emptyList<Glue.PairingRequestView>(), PiwiPickerPairing.requests.waiting())
+            val started = pickerRequest("POST", PiwiSendHandler.PAIRINGS_PATH, origin, """{"browser":"Chrome","os":"Linux"}""")
+            assertEquals(started.body(), 201, started.statusCode())
+            val answer = com.google.gson.JsonParser.parseString(started.body()).asJsonObject
+            val id = answer.get("id").asString
+            val secret = answer.get("secret").asString
+            assertEquals(listOf("Chrome on Linux"), PiwiPickerPairing.requests.waiting().map { it.client })
+            val poll = { pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = secret).body() }
+            assertEquals("""{"status":"waiting"}""", poll())
+            assertEquals(404, pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = "nope").statusCode())
+
+            PiwiPickerPairing.allow(project, id)
+            val deadline = System.currentTimeMillis() + 10_000
+            var allowed = poll()
+            while (allowed.contains("waiting") && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+                allowed = poll()
+            }
+            val token = com.google.gson.JsonParser.parseString(allowed).asJsonObject
+            assertEquals(allowed, "allowed", token.get("status").asString)
+            assertEquals(PiwiSendToken.current(), token.get("token").asString)
+            assertEquals("""{"status":"claimed"}""", poll())
+            assertEquals("Chrome on Linux", PiwiPickerPairing.paired()?.client)
+        } finally {
+            PiwiPickerPairing.unpair()
+        }
+        assertNull(PiwiPickerPairing.paired())
     }
 
     /** Every answer to Piwi Picker's challenge proves this IDE holds the pairing's token, paired or not, for its port. */

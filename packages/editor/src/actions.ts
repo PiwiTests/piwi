@@ -82,6 +82,14 @@ export const EDITOR_ACTIONS: readonly EditorAction[] = [
     jetbrains: ['Piwi.ResetRunsMcpToken'],
   },
   { title: 'Pair with Piwi Picker', vscode: 'piwi.pairPicker', jetbrains: ['Piwi.PairPicker'] },
+  {
+    title: 'Copy the pairing address for Piwi Picker',
+    vscode: 'piwi.copyPickerAddress',
+    jetbrains: ['Piwi.CopyPickerAddress'],
+  },
+  { title: 'Allow Piwi Picker to pair', vscode: 'piwi.allowPickerPairing' },
+  { title: "Deny Piwi Picker's pairing request", vscode: 'piwi.denyPickerPairing' },
+  { title: 'Unpair Piwi Picker', vscode: 'piwi.unpairPicker', jetbrains: ['Piwi.UnpairPicker'] },
   { title: 'Run with Piwi', vscode: 'piwi.runTest', jetbrains: ['Piwi.Failure.RunTest', 'Piwi.Tests.Run'] },
   { title: 'Debug with Piwi', vscode: 'piwi.debugFailure', jetbrains: ['Piwi.Failure.Debug', 'Piwi.Tests.Debug'] },
   {
