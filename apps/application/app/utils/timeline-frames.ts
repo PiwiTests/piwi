@@ -88,3 +88,30 @@ export function frameAspect(pages: readonly PlacedFramePage[]): number {
   const ratio = sized ? sized.width / sized.height : 4 / 3;
   return Math.min(3, Math.max(0.5, ratio));
 }
+
+/** What the page panel shows the page for: a step (before or after it), an event of the list, or a moment. */
+export type PageSubject =
+  | { kind: 'step'; key: string; label: string; at: number; end: number; failed: boolean; phase: 'before' | 'after' }
+  | { kind: 'event'; key: string; label: string; at: number; event: 'network' | 'console' | 'dialogs' | 'backend' }
+  | { kind: 'moment'; at: number; label: string | null };
+
+/** The moment a subject shows: a step's start before it, its end after it (the failing step's ends at the failure). */
+export function subjectMoment(subject: PageSubject, failureAt: number): number {
+  if (subject.kind !== 'step') return subject.at;
+  if (subject.phase === 'before') return subject.at;
+  return subject.failed ? Math.max(subject.at, Math.min(subject.end, failureAt)) : subject.end;
+}
+
+/**
+ * The page in front at a moment: of the pages with a frame by then, the one
+ * that painted last. Null before any page painted.
+ */
+export function pageInFront(pages: readonly PlacedFramePage[], at: number): { page: number; frame: number } | null {
+  let best: { page: number; frame: number } | null = null;
+  pages.forEach((p, page) => {
+    const frame = frameIndexAt(p.frames, at);
+    if (frame < 0) return;
+    if (!best || p.frames[frame]!.at > pages[best.page]!.frames[best.frame]!.at) best = { page, frame };
+  });
+  return best;
+}

@@ -5,12 +5,19 @@ at any moment of the test. Piwi keeps those frames with every trace it stores, a
 puts them on the execution page's Timeline tab: as a lane on the time axis, and beside the list of steps and events
 ([PiwiTests/piwi#1561](https://github.com/PiwiTests/piwi/issues/1561)).
 
-**Status.** Proposed 2026-11-19. Phase 1 is built.
+**Status.** Proposed 2026-11-19. Phases 1, 2 and 3 are built.
 
 - **Built:** the server reads the trace's `screencast-frame` events, in both shapes, and places them on the wall clock
-  the timeline reads. `GET /api/test-run-cases/:id/trace-frames` lists them page by page, and
-  `GET /api/test-run-cases/:id/trace-frame?name=` serves one. The demo answers both from its committed traces.
-- **Left:** the Screen lane (phase 2) and the side panel beside the event list (phase 3).
+  the timeline reads. `GET /api/test-run-cases/:id/trace-frames` lists them page by page, with the trace's test start,
+  and `GET /api/test-run-cases/:id/trace-frame?name=` serves one; the demo answers both from its committed traces. The
+  timeline has the Screen lane (hover, click, Screen toggle), drag to zoom, and the page panel beside the step list
+  from `xl` (under the tapped row below it), with rows and bars marking each other on hover.
+- **Changed while building:** the failing step keeps its "Page at the failing step" block (DOM, accessibility tree,
+  picker) in its row, and the panel opens on the failing step before it ran rather than at the failure, so the two
+  never show the same image. The panel shows from `xl`, not `lg`: below 1280 px the table has no room beside it.
+  Frames of a trace recorded at another time than its execution (a fixture, a demo trace) are placed by the trace's
+  test start.
+- **Left:** a tolerant "no visual change" comparison (below), and the lane on passing executions.
 - **Decided:** the event list shows the page in a side panel, not in a hover card or a thumbnail column.
 
 ## What a trace holds
@@ -39,10 +46,10 @@ wall clock, as the video marks do (`wallClockOf`).
   the previous or next change. A click on a frame opens `ScreenshotLightbox` there. A 1.63 trace's per-action shots
   take their exact place in the lane, and the "Before each step" filmstrip goes. The lane loads in the browser after
   the axis, only the tiles in view.
-- **Phase 3, the side panel.** From `lg`, a sticky panel beside the list shows the page for the hovered row, else the
-  clicked one: before and after for a step, with a sentence when the page did not change during it; the page at its
-  time for a request, a console line or a dialog. It opens on the failing step, at the failure, and takes over the
-  failing step's "Page at the failing step" block. Below `lg` it opens under the tapped row. Rows and bars highlight
+- **Phase 3, the side panel.** From `xl`, a sticky panel beside the list shows the page for the hovered row, else the
+  picked one (a row's time, the row itself, or a frame the panel's arrows moved to): before and after for a step, with
+  a line when no new frame was painted while it ran; the page at its time for a request, a console line or a dialog.
+  It opens on the failing step before it ran. Below `xl` a row's time opens it under the row. Rows and bars highlight
   each other on hover.
 
 ## Open questions
@@ -50,8 +57,5 @@ wall clock, as the video marks do (`wallClockOf`).
 - **Visual change.** A focused field's caret repaints the page every 500 ms, so byte-identical frames are rare and
   "No change for 28 s" needs a tolerant comparison (a small grayscale signature per frame). Where it runs, server or
   browser, is decided with phase 2.
-- **The sample data's clock.** The seed moves its executions to the present, while the committed traces keep the time
-  they were recorded at, so their frames fall outside the seeded timelines. Phase 2 places them for the demo and the
-  dev seed, or records traces that match the stories.
 - **Several pages.** One lane per page, or one lane that follows the page the current step acts on.
 - **Passing executions.** They have no axis today; whether they get the lane and the panel.

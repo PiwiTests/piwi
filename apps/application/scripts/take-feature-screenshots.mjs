@@ -5490,7 +5490,7 @@ const SCENES = [
     // Execution 37 carries an attachment, a trace and a visual diff, so the
     // evidence tabs are populated rather than empty.
     route: '/test-run-cases/37',
-    viewport: { width: 1280, height: 1600 },
+    viewport: { width: 1280, height: 1760 },
     of: '[data-shot="evidence-card"]',
     pad: 12,
     deviceScaleFactor: 2,
@@ -8462,12 +8462,13 @@ const SCENES = [
     { width: 390, suffix: '-mobile' },
   ].map(({ width, suffix }) => ({
     name: `timeline-screen-lane${suffix}`,
-    description: `Timeline tab of a failing execution with a 1.63 trace: the Screen lane over the axis, the page hovered, then a dragged range, at ${width} px`,
+    description: `Timeline tab of a failing execution with a 1.63 trace: the Screen lane over the axis, the page hovered, a dragged range, then a row's page, at ${width} px`,
     viewport: { width, height: width < 640 ? 2000 : 1300 },
     outputs: [
       `timeline-screen-lane${suffix}.png`,
       `timeline-screen-lane${suffix}-hover.png`,
       `timeline-screen-lane${suffix}-zoomed.png`,
+      `timeline-screen-lane${suffix}-row.png`,
     ],
     async prepare({ request, base }) {
       this.executionId = await ingestTraceSnapshotCase(request, base);
@@ -8502,6 +8503,19 @@ const SCENES = [
       await page.mouse.move(0, 0);
       await settle();
       await shoot('zoomed', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // The failing step's page at the failure: beside the table from 1280 px, under its tapped row below.
+      await page.getByTestId('timeline-zoom-reset').click();
+      if (width < 1280)
+        await page
+          .getByRole('button', { name: /^Show the page at / })
+          .last()
+          .click();
+      const panel = page.getByTestId('timeline-page-panel');
+      await panel.getByRole('button', { name: 'At the failure', exact: true }).click();
+      await panel.locator('img').waitFor();
+      await settle();
+      await shoot('row', { of: '[data-shot="evidence-card"]', pad: 12 });
     },
   })),
   {

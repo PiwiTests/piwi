@@ -221,6 +221,44 @@ test.describe('Trace aria/screen snapshots', () => {
     await expect(lane).toBeHidden();
   });
 
+  test('beside the steps, a panel shows the page before or after a step, under the tapped row when narrower', async ({
+    page,
+  }) => {
+    await page.goto(`/test-run-cases/${executionId}`);
+    await waitForHydration(page);
+    await page
+      .getByRole('tablist', { name: 'Evidence sections' })
+      .getByRole('tab', { name: 'Timeline', exact: true })
+      .click();
+
+    // It opens on the failing step, before it ran, and shows it at the failure on request.
+    const panel = page.getByTestId('timeline-page-panel');
+    await expect(panel).toHaveAttribute('aria-label', /^Before the step, t-/);
+    await panel.getByRole('button', { name: 'At the failure', exact: true }).click();
+    await expect(panel).toHaveAttribute('aria-label', /^At the failure, t/);
+
+    // Hovering another step shows the page after it; leaving the table goes back to the picked one.
+    await page.locator('table tbody tr', { hasText: 'Fill' }).first().hover();
+    await expect(panel).toHaveAttribute('aria-label', /^After the step, t-/);
+    await expect(panel).toContainText('Fill');
+    await page.mouse.move(0, 0);
+    await expect(panel).toHaveAttribute('aria-label', /^At the failure, t/);
+
+    // Its frame opens full screen.
+    await panel.getByRole('button', { name: /^Open the page full screen/ }).click();
+    await expect(page.getByRole('dialog', { name: /^Page at / })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // Narrower, a row's time opens the page under that row instead.
+    await page.setViewportSize({ width: 1000, height: 900 });
+    await expect(panel).toHaveCount(0);
+    await page
+      .getByRole('button', { name: /^Show the page at / })
+      .first()
+      .click();
+    await expect(page.getByTestId('timeline-page-panel')).toHaveCount(1);
+  });
+
   test("the Timeline tab shows the failing step's page as views and picks from the DOM of that moment", async ({
     page,
   }) => {

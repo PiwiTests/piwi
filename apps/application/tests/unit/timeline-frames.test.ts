@@ -4,7 +4,9 @@ import {
   frameAspect,
   frameIndexAt,
   frameTiles,
+  pageInFront,
   placeTraceFrames,
+  subjectMoment,
   type PlacedFrame,
 } from '../../app/utils/timeline-frames';
 import type { TraceFramesResponse } from '../../types/api';
@@ -89,5 +91,31 @@ describe('frameAspect', () => {
     );
     expect(frameAspect([{ pageId: 'p', frames: frames(0) }])).toBeCloseTo(4 / 3);
     expect(frameAspect([{ pageId: 'p', frames: [{ at: 0, name: 'a', width: 4000, height: 10 }] }])).toBe(3);
+  });
+});
+
+describe('subjectMoment', () => {
+  const step = { kind: 'step', key: 's', label: 'Click', at: 100, end: 900, failed: true } as const;
+
+  test("reads a step's start before it and its end after it, the failing step's at the failure", () => {
+    expect(subjectMoment({ ...step, phase: 'before' }, 500)).toBe(100);
+    expect(subjectMoment({ ...step, phase: 'after' }, 500)).toBe(500);
+    expect(subjectMoment({ ...step, phase: 'after' }, 2_000)).toBe(900);
+    // A teardown step after the failure ends where it ends.
+    expect(subjectMoment({ ...step, failed: false, at: 3_000, end: 3_400, phase: 'after' }, 2_000)).toBe(3_400);
+    expect(subjectMoment({ kind: 'moment', at: 42, label: null }, 0)).toBe(42);
+  });
+});
+
+describe('pageInFront', () => {
+  test('picks the page that painted last by then, none before any painted', () => {
+    const pages = [
+      { pageId: 'main', frames: frames(100, 400) },
+      { pageId: 'popup', frames: frames(300) },
+    ];
+    expect(pageInFront(pages, 50)).toBeNull();
+    expect(pageInFront(pages, 200)).toEqual({ page: 0, frame: 0 });
+    expect(pageInFront(pages, 350)).toEqual({ page: 1, frame: 0 });
+    expect(pageInFront(pages, 500)).toEqual({ page: 0, frame: 1 });
   });
 });
