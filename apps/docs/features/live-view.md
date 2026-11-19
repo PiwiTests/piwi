@@ -57,8 +57,9 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 
 On the run page's **Tests** tab, **Watch** at the end of a running test's row opens its worker's view, docked beside
 the page (a sheet on a smaller screen): the test's page as the browser paints it, under it the call the image was
-taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the
-caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
+taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page shows as the view opens,
+then sends no new image, so the caption names the step the test began since. Widen the panel or open it full
+screen; a click on the image zooms.
 Under it, the page's [events, text and filmstrip](./live-view-layers) and [Inspect](./live-inspect); [Watch all](./watch-all)
 shows every worker at once.
 

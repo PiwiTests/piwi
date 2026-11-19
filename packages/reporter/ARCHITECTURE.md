@@ -265,7 +265,11 @@ What the package does to a user's run, process by process.
   The latest alone waits while the connection is backed up; the latest sent is kept in
   memory until the view ends, and sent again as the view is asked again (a viewer that
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
-  runs its own), an image of the page goes twice a second.
+  runs its own), an image of the page goes twice a second. A still page, its test waiting on a locator, paints no frame
+  to try again with: when the screencast gives a view none within half a second (one that paints only as the page
+  changes), or the mask sent none for the latest frame and the page paints no other within the view's image interval,
+  an image of the page goes in its place, three at most until a frame goes or the page paints anew; a timed image the
+  same as one the mask did not send goes to it again, three times at most too (`tests/page-view-still.spec.ts`).
 - **The lane** (`lane-feed.ts`): the test the worker runs, the page it shows (its `page`
   fixture's once it opens, else the page its latest call or wait landed on, which the
   resource ledger tells as it follows each call (`onTestCallPage`, `laneCalled`), else the
