@@ -24,14 +24,18 @@ parts a bare X server lacks, the `vscode://` handler (VS Code's command line wit
 grant **Pair** asks for. Beat 6 writes the recorder's `getByRole('checkbox', { name: 'I accept the terms' }).check()`,
 and its recording is stopped from the editor's lens, the page's bar being out of a script's reach. Beat 7 cannot run
 on in the stopped test, which goes on with the code it started with: it ends the test (**End the test**) and runs it
-again to the spec's summary check (a breakpoint at the caret, **Run the test at the cursor**), where **Assert a region**
-reads the order's card. Beat 8's Runs window says the run ended (run-control PR 3 gives it no verdict) and the Testing
-view shows the test passed. In beat 10 the developer pastes a new test and runs it to its last line, and the agent, a
-client of the runs' MCP server configured from **Copy the runs' MCP server configuration**, clicks **Orders** by its
-ref, writes the steps and a check and resumes. The watch beats show the live view where each person meets it: `watch-running` runs the fixed test headless from VS Code, which marks the line it runs, and watches it in the editor's own worker panel through its stop at a breakpoint; `back-on-the-team` runs the fix's CI on three workers, **Watch all** shows each worker's page, and one tile in full names the call its test is in until the run is green. One product bug found on the way is skipped where the check meets
-it, and only there ([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has
-no candidate for the story's failure (the reporter keeps no element of a click that navigates at once), so **Most
-likely** does not name **Pay now** either. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+again to the spec's summary check (a breakpoint at the caret, **Debug the test at the cursor**, since a plain run passes
+the editor's breakpoints), where **Assert a region** reads the order's card. Beat 8's Runs window says the run ended
+(run-control PR 3 gives it no verdict) and the Testing view shows the test passed. In beat 10 the developer pastes a new
+test and runs it to its last line, and the agent, a client of the runs' MCP server configured from **Copy the runs' MCP
+server configuration**, clicks **Orders** by its ref, writes the steps and a check and resumes. The watch beats show the
+live view where each person meets it: `watch-running` runs the fixed test headless from VS Code, which marks the line it
+runs, and watches it in the editor's own worker panel to its end; `back-on-the-team` runs the fix's CI on three workers,
+**Watch all** shows each worker's page, and one tile in full names the call its test is in until the run is green. One
+product bug found on the way is skipped where the check meets it, and only there
+([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has no candidate for the
+story's failure (the reporter keeps no element of a click that navigates at once), so **Most likely** does not name
+**Pay now** either. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
 
 **V2, as built.** `--take virtual` (`npm run showcase:film`) films the story on the same set, and `--cut` (`npm run
 showcase:cut`) renders the cut and Part 6's outputs but the voice: the full cut in MP4 and WebM with and without burned

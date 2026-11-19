@@ -45,6 +45,9 @@ const NEW_TEST = [
   '',
 ].join('\n');
 
+/** The command that runs the test at the cursor headed, stopping at the editor's breakpoints. */
+const DEBUG_AT_CURSOR = 'Piwi: Debug the test at the cursor';
+
 /** The command that gives an agent the runs' MCP server. */
 const COPY_RUNS_MCP = "Piwi: Copy the runs' MCP server configuration for agents";
 
@@ -289,8 +292,16 @@ export const STORY = [
       });
       expect(fits.box !== null && fits.right <= fits.box, `the stop row fits its editor: ${JSON.stringify(fits)}`);
       await waitFor(
-        () => vscode.locator('.statusbar-item .codicon-debug-continue').first().isVisible(),
-        "the run's controls in the status bar",
+        () => vscode.locator('.editor-actions .codicon-debug-continue').first().isVisible(),
+        "the run's controls in the editor's title",
+      );
+      await waitFor(
+        () =>
+          vscode
+            .locator('.statusbar-item', { hasText: `stopped at a breakpoint · checkout-page.ts:${FAILING_LINE}` })
+            .first()
+            .isVisible(),
+        'where the test stands in the status bar',
       );
       const page = await testPage();
       await waitFor(
@@ -390,7 +401,7 @@ export const STORY = [
     lines: {
       en: [
         'The stopped test still runs its old code: end it,',
-        'and run the fixed test to the summary check.',
+        'and debug the fixed test to the summary check.',
         'Assert a region writes what the order page shows.',
       ],
     },
@@ -400,14 +411,14 @@ export const STORY = [
       await runEnded(runs);
       await goTo(vscode, gesture, SPEC, SUMMARY_LINE);
       await gesture.press('vscode', 'F9');
-      await gesture.press('vscode', 'Control+Shift+Alt+K');
+      // Debug with Piwi runs the test headed and stops at the editor's breakpoints, which a plain run passes.
+      await palette(DEBUG_AT_CURSOR);
       await runCard(runs).getByText(`${SPEC}:${SUMMARY_LINE}`).waitFor({ timeout: 120_000 });
       await vscode
         .locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint · Expect' })
         .first()
         .waitFor({ timeout: 30_000 });
-      // The headless stop's code tools wait for a viewer: Watch, then Assert a region, folded under More.
-      await gesture.click('runs', runCard(runs).getByRole('button', { name: 'Watch', exact: true }));
+      // Assert a region is folded under More, beside the stop's other code tools.
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'More', exact: true }));
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'Assert a region' }));
       const page = await testPage();
@@ -442,8 +453,9 @@ export const STORY = [
       await runEnded(runs);
       await palette('Testing: Focus on Test Explorer View');
       const tree = vscode.getByRole('tree', { name: 'Test Explorer' });
+      // Down to the spec's describe block, the last of the tree's items named shop (its root is the checkout's).
       for (const name of [/^tests \(/, /^shop\.spec\.ts \(/, /^shop \(/]) {
-        const item = tree.getByRole('treeitem', { name }).first();
+        const item = tree.getByRole('treeitem', { name }).last();
         await item.waitFor({ timeout: 30_000 });
         if ((await item.getAttribute('aria-expanded')) !== 'true') {
           await gesture.click('vscode', item);
@@ -515,24 +527,11 @@ export const STORY = [
           WATCH_MS + 10_000,
         );
         state.watchedRunning = looks;
-        // The test then stops at the summary check's breakpoint, shown in the panel, and F5 resumes it.
-        const lens = vscode.locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint' }).first();
-        const next = await waitFor(
-          async () => {
-            if (await stopped.count()) return 'panel';
-            if (await lens.isVisible()) return 'editor';
-            return (await runCard(runs).count()) === 0 ? 'ended' : null;
-          },
-          'the watched test to stop at the breakpoint, or its run to end',
-          90_000,
-        );
-        state.stoppedIn = next;
-        if (next !== 'ended') await gesture.press('vscode', 'F5');
         await runEnded(runs);
       });
       // The panel closes, and the code has the window again.
-      const tab = vscode.locator('.tabs-container .tab', { hasText: 'Piwi: worker' });
-      await gesture.click('vscode', tab.locator('.action-label.codicon-close'));
+      const tab = vscode.getByRole('tab', { name: /^Piwi: worker/ });
+      await gesture.click('vscode', tab.getByRole('button', { name: /^Close/ }));
       await tab.waitFor({ state: 'detached' });
     },
     async check({ instance, state }) {
@@ -542,7 +541,6 @@ export const STORY = [
       );
       const problems = watchedProblems(state.watchedRunning);
       expect(!problems.length, `the worker's panel showed the running test: ${problems.join('; ')}`);
-      expect(state.stoppedIn === 'panel', `the breakpoint's stop showed in the worker's panel (${state.stoppedIn})`);
       const test = await waitFor(async () => {
         const latest = (await instance.runs()).find((r) => !state.beforeWatched.includes(r.id));
         const found = latest && (await instance.run(latest.id)).testCases.find((c) => c.title === 'places an order');
@@ -590,7 +588,7 @@ export const STORY = [
         60_000,
       );
       // The checkout's worker, in full.
-      const tile = dashboard.getByRole('button', { name: /^Show Worker \d+ in full: places an order/ });
+      const tile = dashboard.getByRole('button', { name: /^Show worker \d+ in full: places an order/ });
       await gesture.click('dashboard', tile);
       await dashboard.getByTestId('lane-panel').getByTestId('live-frame').waitFor({ timeout: 60_000 });
       state.ciExit = await state.ci;
@@ -647,7 +645,7 @@ export const STORY = [
           .findIndex((line) => line.includes(NEW_TEST_LAST)) + 1;
       await goTo(vscode, gesture, SPEC, last);
       await gesture.press('vscode', 'F9');
-      await gesture.press('vscode', 'Control+Shift+Alt+K');
+      await palette(DEBUG_AT_CURSOR);
       await runCard(runs).getByText(`${SPEC}:${last}`).waitFor({ timeout: 120_000 });
       // The editor reveals the stopped line, taking the focus, before anything else is typed there.
       await vscode
