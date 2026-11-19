@@ -49,7 +49,8 @@ each rule below ends with the section to read there.
   `<all_urls>`, no remote code; anything more (`contextMenus`, `sidePanel`, a broader host grant) is a deliberate,
   reviewed decision. (see "The manifest and its permissions")
 - **Request a host permission for one origin, inside the user's click, before any `await`.** Firefox shows no prompt
-  after an `await`, and a service worker can never ask. (see "Host permissions for the instance")
+  after an `await`, and a service worker can never ask. Editor's **Pair** alone asks for the editors' ports, giving
+  back the unused. (see "Host permissions for the instance", "Pairing with an editor")
 - **The recorder's grant comes from the popup's Record click, per origin and per recording, never pre-granted.** It
   cannot move to the worker (`requestRecording` in `src/popup/main.ts`); on a site not granted yet the popup closes
   once the prompt shows, and `decideRecordIntent` starts the recording when the grant lands (`record-intent.spec.ts`).
@@ -67,16 +68,13 @@ each rule below ends with the section to read there.
   `scripts/build.mjs`, `build-manifests.test.ts`). `background.js` stays both `service_worker` and `scripts`; `dist/`
   drops `scripts`. (see "The manifest and its permissions")
 - **The Firefox manifest's `extension_pages` policy never carries `upgrade-insecure-requests`** (`firefoxManifest`,
-  `build-manifests.test.ts`): it upgrades the run services' `ws://127.0.0.1` and an `http://` instance, which answer
-  neither. No CI run exercises Firefox, so that test is the only guard. (see "The manifest and its permissions")
+  `build-manifests.test.ts`), the only guard: no CI run exercises Firefox. (see "The manifest and its permissions")
 - **`gecko.data_collection_permissions` is `{ "required": ["none"] }`: nothing may go anywhere but the user's instance,
   the paired editor (Send to editor and its run hubs) and the desktop app paired on loopback.** A feature that sends
   data elsewhere changes this key and the store disclosures (`PUBLISHING.md` §4). (see "The manifest and its
   permissions")
 - **The run shortcut (`run-pause-resume`) stays `"global": true` with no `suggested_key`, and `firefoxManifest` leaves
-  `global` out** (`build-manifests.test.ts`). A global key is taken from every application on the computer, and the
-  only keys Chrome binds a global command to at install (`Ctrl+Shift+[0-9]`) are JetBrains' numbered bookmarks and
-  macOS screenshots. (see "The manifest and its permissions")
+  `global` out** (`build-manifests.test.ts`). (see "The manifest and its permissions")
 - **The manifest's `description` and shortcut labels are `__MSG_*__` strings.** The description stays within 132
   characters in every language, and a new language needs `public/_locales/` and `store/` (`store-listing.test.ts`).
   (see "The manifest and its permissions")
@@ -121,6 +119,8 @@ each rule below ends with the section to read there.
 
 ### The editor's runs
 
+- **Pair keeps the editor's token with `…/send` beside the routes it asked, never one the editor names, and sends
+  only `{ browser, os }`** (`piwi-client.test.ts`, `editor-pairing-code.spec.ts`). (see "Pairing with an editor")
 - **The pairing's token goes to the editor only once the program on the paired port proves it holds it**
   (`proveEditor`, `src/shared/editor-proof.ts`): before Send to editor's post (`postToEditor`) and before the run
   hubs' `GET …/live`. Without the proof no hub kept is connected (`editor-pairing.test.ts`, `run-hubs.test.ts`). (see

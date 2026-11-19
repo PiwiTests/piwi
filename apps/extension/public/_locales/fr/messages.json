@@ -1174,7 +1174,7 @@
     "message": "Éditeur"
   },
   "options_editorHint": {
-    "message": "Dans VS Code ou un IDE JetBrains avec l’extension Piwi, lancez la commande Piwi « Pair with Piwi Picker » et collez ici l’adresse copiée. Les locators choisis et les étapes enregistrées peuvent alors être envoyés à cet éditeur, sur cet ordinateur uniquement, et sont insérés à son curseur. Les exécutions qu’il lance s’affichent alors dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez."
+    "message": "Associé à VS Code ou à un IDE JetBrains de cet ordinateur doté de l’extension Piwi, Piwi Picker envoie à son curseur les locators choisis et les étapes enregistrées, et affiche les exécutions qu’il lance dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez. Rien ne quitte cet ordinateur."
   },
   "options_editorAddress": {
     "message": "Adresse d’association"
@@ -1184,6 +1184,92 @@
   },
   "options_editorUnpair": {
     "message": "Dissocier"
+  },
+  "options_editorPairHint": {
+    "message": "Associer cherche les éditeurs ouverts sur cet ordinateur et interroge celui que vous choisissez : autorisez-y la demande une fois qu’elle affiche le même code que Piwi Picker."
+  },
+  "options_editorChoose": {
+    "message": "Associer quel éditeur ?"
+  },
+  "options_editorChoice": {
+    "message": "$product$ : $windows$",
+    "placeholders": {
+      "product": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      },
+      "windows": {
+        "content": "$2",
+        "example": "shop, api"
+      }
+    }
+  },
+  "options_editorFinding": {
+    "message": "Recherche des éditeurs de cet ordinateur…"
+  },
+  "options_editorNoneFound": {
+    "message": "Aucun éditeur doté de l’extension Piwi n’a répondu sur cet ordinateur. Ouvrez VS Code ou un IDE JetBrains avec elle et cliquez de nouveau sur Associer, ou, pour une fenêtre distante, associez une adresse."
+  },
+  "options_editorPairStarting": {
+    "message": "Demande à $editor$…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairCode": {
+    "message": "Autorisez la demande dans $editor$ une fois qu’elle affiche $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      },
+      "editor": {
+        "content": "$2",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairDenied": {
+    "message": "L’éditeur a refusé : rien n’a été associé."
+  },
+  "options_editorPairExpired": {
+    "message": "La demande a expiré avant d’être autorisée dans l’éditeur. Cliquez sur Associer pour la refaire."
+  },
+  "options_editorPairCancelled": {
+    "message": "Association annulée."
+  },
+  "options_editorPairTooMany": {
+    "message": "Trois demandes d’association attendent déjà dans l’éditeur : répondez-y d’abord."
+  },
+  "options_editorPairUnsupported": {
+    "message": "L’éditeur à $url$ ne peut pas s’associer par code : mettez à jour Piwi dans l’éditeur, ou associez une adresse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorPairUnreachable": {
+    "message": "L’éditeur à $url$ ne répond plus.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorManual": {
+    "message": "Associer une adresse"
+  },
+  "options_editorManualHint": {
+    "message": "Pour une fenêtre distante (SSH, WSL, un conteneur de développement), ou un éditeur qu’Associer ne trouve pas : lancez-y la commande Piwi « Copy the pairing address for Piwi Picker » et collez l’adresse ici."
+  },
+  "options_editorAddressPair": {
+    "message": "Utiliser cette adresse"
   },
   "options_siteAccessHeading": {
     "message": "Sites où Piwi Picker peut s’exécuter"
@@ -1249,13 +1335,13 @@
     }
   },
   "options_editorInvalid": {
-    "message": "Ce n’est pas une adresse d’association. Elle ressemble à http://127.0.0.1:47211/piwi/send#… et vient de la commande « Pair with Piwi Picker » de l’éditeur."
+    "message": "Ce n’est pas une adresse d’association. Elle ressemble à http://127.0.0.1:7247/piwi/send#… et vient de la commande « Copy the pairing address for Piwi Picker » de l’éditeur."
   },
   "options_editorPermission": {
-    "message": "Piwi Picker a besoin de l’autorisation de joindre l’éditeur sur cet ordinateur."
+    "message": "Piwi Picker a besoin de l’autorisation de joindre les éditeurs de cet ordinateur."
   },
   "options_editorNotProven": {
-    "message": "Associé à $url$, mais le programme sur ce port ne prouve pas qu’il est votre éditeur, donc rien ne lui est envoyé : relancez la commande Piwi « Pair with Piwi Picker » dans votre éditeur et associez l’adresse copiée, ou mettez à jour Piwi dans l’éditeur.",
+    "message": "Associé à $url$, mais le programme sur ce port ne prouve pas qu’il est votre éditeur, donc rien ne lui est envoyé : cliquez sur Associer pour l’associer de nouveau, ou mettez à jour Piwi dans votre éditeur.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1264,7 +1350,7 @@
     }
   },
   "options_editorUnreachable": {
-    "message": "Associé à $url$, mais rien n’y répond pour l’instant : ouvrez votre éditeur avec l’extension Piwi. Si sa commande Piwi « Pair with Piwi Picker » copie une autre adresse, associez celle-là.",
+    "message": "Associé à $url$, mais rien n’y répond pour l’instant : ouvrez votre éditeur avec l’extension Piwi. S’il écoute maintenant sur un autre port, cliquez sur Associer pour l’associer de nouveau.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1273,7 +1359,7 @@
     }
   },
   "options_editorNoAccess": {
-    "message": "Associé à $url$, mais le navigateur a retiré à Piwi Picker l’accès à cette adresse : relancez la commande Piwi « Pair with Piwi Picker » dans votre éditeur et associez l’adresse copiée.",
+    "message": "Associé à $url$, mais le navigateur a retiré à Piwi Picker l’accès à cette adresse : cliquez sur Associer pour l’associer de nouveau.",
     "placeholders": {
       "url": {
         "content": "$1",

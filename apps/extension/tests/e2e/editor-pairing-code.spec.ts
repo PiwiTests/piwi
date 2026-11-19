@@ -1,0 +1,181 @@
+import { createServer, type Server } from 'node:http';
+import type { Page } from '@playwright/test';
+import { EDITOR_CHALLENGE_HEADER, EDITOR_PROOF_HEADER, editorTokenProof } from '@piwitests/core/editor-send';
+import { test, expect, openOptions } from './fixtures.js';
+import { localStorageText, storedSecret } from './secrets.js';
+
+/**
+ * Pairing with an editor from the settings: Pair asks the ports the editors of this computer listen on which editor
+ * answers, asks it to pair, and shows the code its request shows; the next poll after Allow there carries the token,
+ * kept with the address Pair asked. A local server on the last VS Code pairing port stands in for the editor, its
+ * notification answering through `answer`.
+ */
+const PORT = 7251;
+const BASE = `http://127.0.0.1:${PORT}/piwi`;
+const TOKEN = 'editor-token-0123456789';
+const CODE = 'BCDF-GHJK';
+const PAIRING = '0123456789abcdef';
+const SECRET = 'the-secret';
+
+let server: Server;
+/** What the person answers in the editor: `null` while the request waits. */
+let answer: 'allow' | 'deny' | null = null;
+let starts: Array<{ origin: string | undefined; contentType: string; body: string }> = [];
+let tokenHandedOut = 0;
+
+test.beforeAll(async () => {
+  server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (c: Buffer) => chunks.push(c));
+    req.on('end', async () => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Access-Control-Allow-Headers', '*');
+      res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+      res.setHeader('Access-Control-Expose-Headers', EDITOR_PROOF_HEADER);
+      res.setHeader('Content-Type', 'application/json');
+      if (req.method === 'OPTIONS') return res.end();
+      const json = (status: number, body: unknown) => {
+        res.statusCode = status;
+        res.end(JSON.stringify(body));
+      };
+      if (req.method === 'GET' && req.url === '/piwi/hello') {
+        return json(200, { editor: 'vscode', product: 'Piwi test editor', windows: ['shop'] });
+      }
+      if (req.method === 'POST' && req.url === '/piwi/pairings') {
+        starts.push({
+          origin: req.headers.origin,
+          contentType: req.headers['content-type'] ?? '',
+          body: Buffer.concat(chunks).toString('utf8'),
+        });
+        return json(201, { id: PAIRING, secret: SECRET, code: CODE, interval: 1, expiresIn: 60 });
+      }
+      if (req.method === 'GET' && req.url === `/piwi/pairings/${PAIRING}`) {
+        if (req.headers['x-pairing-secret'] !== SECRET) return json(404, {});
+        if (answer === 'deny') return json(200, { status: 'denied' });
+        if (answer === 'allow') {
+          tokenHandedOut++;
+          return json(200, tokenHandedOut === 1 ? { status: 'allowed', token: TOKEN } : { status: 'claimed' });
+        }
+        return json(200, { status: 'waiting' });
+      }
+      // The settings ask the editor to prove it holds the token once paired.
+      if (req.method === 'GET' && req.url === '/piwi/live') {
+        const challenge = String(req.headers[EDITOR_CHALLENGE_HEADER] ?? '');
+        res.setHeader(EDITOR_PROOF_HEADER, await editorTokenProof(TOKEN, PORT, challenge));
+        return json(req.headers.authorization === `Bearer ${TOKEN}` ? 200 : 401, { hubs: [] });
+      }
+      return json(404, {});
+    });
+  });
+  await new Promise<void>((resolve, reject) => {
+    server.once('error', reject);
+    server.listen(PORT, '127.0.0.1', resolve);
+  });
+});
+
+test.afterAll(async () => {
+  await new Promise<void>((resolve) => server.close(() => resolve()));
+});
+
+test.beforeEach(() => {
+  answer = null;
+  starts = [];
+  tokenHandedOut = 0;
+});
+
+/** Answers the settings page's host-permission requests as granted: the prompt cannot be clicked from a test. */
+async function openSettings(page: Page, extensionId: string): Promise<void> {
+  await openOptions(page, extensionId);
+  await page.evaluate(() => {
+    chrome.permissions.request = (async () => true) as typeof chrome.permissions.request;
+    chrome.permissions.remove = (async () => true) as typeof chrome.permissions.remove;
+    chrome.permissions.contains = (async () => true) as typeof chrome.permissions.contains;
+  });
+}
+
+/** Clicks Pair, then this test's editor when Pair found more than one. */
+async function pair(page: Page): Promise<void> {
+  const card = page.locator('#editor-card');
+  await card.getByRole('button', { name: 'Pair', exact: true }).click();
+  const choice = card.getByRole('button', { name: 'Piwi test editor: shop' });
+  await expect(choice.or(card.locator('#editor-pair-panel code'))).toBeVisible();
+  if (await choice.isVisible()) await choice.click();
+}
+
+test.describe('Pair with an editor by code', () => {
+  test('Pair finds the editor, shows the code its request shows, and Allow there pairs it', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const card = page.locator('#editor-card');
+    await expect(card.locator('#editor-pill')).toHaveText('Not paired');
+    await expect(card.locator('#editor-manual')).not.toHaveAttribute('open');
+
+    await pair(page);
+    await expect(card.locator('#editor-code-line')).toHaveText(
+      `Allow the request in Piwi test editor: shop once it shows ${CODE}.`,
+    );
+    // Asked as an extension, with JSON naming the browser alone.
+    expect(starts).toHaveLength(1);
+    expect(starts[0]!.origin).toBe(`chrome-extension://${extensionId}`);
+    expect(starts[0]!.contentType).toBe('application/json');
+    expect(Object.keys(JSON.parse(starts[0]!.body)).sort()).toEqual(['browser', 'os']);
+    await expect(card.getByRole('button', { name: 'Pair', exact: true })).toBeDisabled();
+
+    answer = 'allow';
+    await expect(card.locator('#editor-status')).toHaveText(`Paired with the editor at ${BASE}/send.`);
+    await expect(card.locator('#editor-pair-panel')).toBeHidden();
+    await expect(card.locator('#editor-pill')).toHaveText('Paired');
+    await expect(card.getByRole('button', { name: 'Pair', exact: true })).toBeEnabled();
+    // Kept where content scripts never read the token.
+    expect(await localStorageText(page)).not.toContain(TOKEN);
+    expect(await storedSecret(page, 'editor')).toEqual({ url: `${BASE}/send`, token: TOKEN });
+    expect(tokenHandedOut).toBe(1);
+    // The editor proves it holds the token: the status stays as it is.
+    await page.waitForTimeout(500);
+    await expect(card.locator('#editor-status')).toHaveClass('ok');
+  });
+
+  test('Deny in the editor pairs nothing, and says so', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const card = page.locator('#editor-card');
+    await pair(page);
+    await expect(card.locator('#editor-code-line code')).toHaveText(CODE);
+    answer = 'deny';
+    await expect(card.locator('#editor-status')).toHaveText('The editor said no: nothing was paired.');
+    await expect(card.locator('#editor-pill')).toHaveText('Not paired');
+    expect(await storedSecret(page, 'editor')).toBeNull();
+  });
+
+  test('Cancel ends the wait, and pairs nothing', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const card = page.locator('#editor-card');
+    await pair(page);
+    await expect(card.locator('#editor-code-line code')).toHaveText(CODE);
+    await card.locator('#editor-pair-panel').getByRole('button', { name: 'Cancel' }).click();
+    await expect(card.locator('#editor-status')).toHaveText('Pairing cancelled.');
+    await expect(card.locator('#editor-pair-panel')).toBeHidden();
+    answer = 'allow';
+    await page.waitForTimeout(1500);
+    expect(tokenHandedOut).toBe(0);
+    expect(await storedSecret(page, 'editor')).toBeNull();
+  });
+
+  test('pairs with an address pasted, from the folded section', async ({ context, extensionId }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const card = page.locator('#editor-card');
+    await card.getByText('Pair with an address').click();
+    await card.getByLabel('Pairing address').fill(`http://localhost:${PORT}/piwi/send#${TOKEN}`);
+    await card.getByRole('button', { name: 'Use this address' }).click();
+    // Kept on 127.0.0.1, whatever loopback name it was pasted with.
+    await expect(card.locator('#editor-status')).toHaveText(`Paired with the editor at ${BASE}/send.`);
+    await expect(card.locator('#editor-manual')).not.toHaveAttribute('open');
+    expect(await storedSecret(page, 'editor')).toEqual({ url: `${BASE}/send`, token: TOKEN });
+    expect(starts).toEqual([]);
+  });
+});

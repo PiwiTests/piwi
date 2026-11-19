@@ -1174,7 +1174,7 @@
     "message": "Editor"
   },
   "options_editorHint": {
-    "message": "En VS Code o un IDE de JetBrains con la extensión Piwi, ejecuta «Piwi: Pair with Piwi Picker» y pega aquí la dirección que copia. Los locators elegidos y los pasos grabados se pueden enviar entonces a ese editor, solo en este equipo, y se insertan en su cursor. Las ejecuciones que inicia aparecen entonces en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas."
+    "message": "Emparejado con VS Code o un IDE de JetBrains de este equipo que tenga la extensión de Piwi, Piwi Picker envía a su cursor los locators que eliges y los pasos que grabas, y muestra las ejecuciones que inicia en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas. Nada sale de este equipo."
   },
   "options_editorAddress": {
     "message": "Dirección de emparejamiento"
@@ -1184,6 +1184,92 @@
   },
   "options_editorUnpair": {
     "message": "Desemparejar"
+  },
+  "options_editorPairHint": {
+    "message": "Emparejar busca los editores abiertos en este equipo y pregunta al que elijas: autoriza allí la solicitud cuando muestre el mismo código que Piwi Picker."
+  },
+  "options_editorChoose": {
+    "message": "¿Con qué editor emparejar?"
+  },
+  "options_editorChoice": {
+    "message": "$product$: $windows$",
+    "placeholders": {
+      "product": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      },
+      "windows": {
+        "content": "$2",
+        "example": "shop, api"
+      }
+    }
+  },
+  "options_editorFinding": {
+    "message": "Buscando los editores de este equipo…"
+  },
+  "options_editorNoneFound": {
+    "message": "Ningún editor con la extensión de Piwi respondió en este equipo. Abre VS Code o un IDE de JetBrains con ella y vuelve a hacer clic en Emparejar, o, para una ventana remota, empareja con una dirección."
+  },
+  "options_editorPairStarting": {
+    "message": "Preguntando a $editor$…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairCode": {
+    "message": "Autoriza la solicitud en $editor$ cuando muestre $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      },
+      "editor": {
+        "content": "$2",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairDenied": {
+    "message": "El editor dijo que no: no se emparejó nada."
+  },
+  "options_editorPairExpired": {
+    "message": "La solicitud caducó antes de ser autorizada en el editor. Haz clic en Emparejar para pedirla de nuevo."
+  },
+  "options_editorPairCancelled": {
+    "message": "Se canceló el emparejamiento."
+  },
+  "options_editorPairTooMany": {
+    "message": "Ya esperan tres solicitudes de emparejamiento en el editor: respóndelas allí primero."
+  },
+  "options_editorPairUnsupported": {
+    "message": "El editor en $url$ no puede emparejarse con un código: actualiza Piwi allí, o empareja con una dirección.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorPairUnreachable": {
+    "message": "El editor en $url$ dejó de responder.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorManual": {
+    "message": "Emparejar con una dirección"
+  },
+  "options_editorManualHint": {
+    "message": "Para una ventana remota (SSH, WSL, un contenedor de desarrollo), o un editor que Emparejar no encuentra: ejecuta en él «Piwi: Copy the pairing address for Piwi Picker» y pega aquí la dirección."
+  },
+  "options_editorAddressPair": {
+    "message": "Usar esta dirección"
   },
   "options_siteAccessHeading": {
     "message": "Sitios donde Piwi Picker puede ejecutarse"
@@ -1249,13 +1335,13 @@
     }
   },
   "options_editorInvalid": {
-    "message": "Esta no es una dirección de emparejamiento. Tiene la forma http://127.0.0.1:47211/piwi/send#… y la da el comando «Pair with Piwi Picker» del editor."
+    "message": "Esta no es una dirección de emparejamiento. Tiene la forma http://127.0.0.1:7247/piwi/send#… y la da el comando «Copy the pairing address for Piwi Picker» del editor."
   },
   "options_editorPermission": {
-    "message": "Piwi Picker necesita permiso para acceder al editor en este equipo."
+    "message": "Piwi Picker necesita permiso para acceder a los editores de este equipo."
   },
   "options_editorNotProven": {
-    "message": "Emparejado con $url$, pero el programa de ese puerto no demuestra ser tu editor, así que no se le envía nada: vuelve a ejecutar «Piwi: Pair with Piwi Picker» en tu editor y empareja con la dirección que copia, o actualiza Piwi allí.",
+    "message": "Emparejado con $url$, pero el programa de ese puerto no demuestra ser tu editor, así que no se le envía nada: haz clic en Emparejar para emparejar de nuevo, o actualiza Piwi en tu editor.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1264,7 +1350,7 @@
     }
   },
   "options_editorUnreachable": {
-    "message": "Emparejado con $url$, pero ahora no responde nada allí: abre tu editor con la extensión de Piwi. Si su «Piwi: Pair with Piwi Picker» copia otra dirección, empareja con esa.",
+    "message": "Emparejado con $url$, pero ahora no responde nada allí: abre tu editor con la extensión de Piwi. Si ahora escucha en otro puerto, haz clic en Emparejar para emparejar de nuevo.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1273,7 +1359,7 @@
     }
   },
   "options_editorNoAccess": {
-    "message": "Emparejado con $url$, pero el navegador le retiró a Piwi Picker el acceso: vuelve a ejecutar «Piwi: Pair with Piwi Picker» en tu editor y empareja con la dirección que copia.",
+    "message": "Emparejado con $url$, pero el navegador le retiró a Piwi Picker el acceso: haz clic en Emparejar para emparejar de nuevo.",
     "placeholders": {
       "url": {
         "content": "$1",

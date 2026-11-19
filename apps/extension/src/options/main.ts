@@ -1,3 +1,9 @@
+import {
+  EDITOR_SEND_PATH,
+  editorPairingBaseOf,
+  editorPairingBases,
+  type FoundEditor,
+} from '@piwitests/core/editor-pairing';
 import type { EditorPairing } from '@piwitests/core/editor-send';
 import {
   editorOriginPattern,
@@ -30,6 +36,9 @@ import {
   startDesktopPairing,
   pollDesktopPairing,
   provePairedEditor,
+  findEditors,
+  startEditorPairing,
+  pollEditorPairing,
   type ProjectOption,
 } from '../shared/piwi-client.js';
 import {
@@ -76,6 +85,7 @@ import {
 } from '../shared/i18n.js';
 import { isDraftLanguage, TRANSLATION_ISSUE_URL } from '../shared/languages.js';
 import { decorateIcons, icon, iconText, withIcon } from '../shared/icons.js';
+import { makeButton } from '../shared/buttons.js';
 import { STEP_CSS } from '../shared/step-view.js';
 import { PATTERN_CSS, patternView } from '../shared/pattern-view.js';
 
@@ -1194,13 +1204,25 @@ languageSelect.addEventListener('change', () => {
   })();
 });
 
-// Send to editor: the pairing lives in extension storage; the editor's origin is granted inside the Pair click.
+// Send to editor: the pairing lives in extension storage. Pair finds the editors of this computer on the ports they
+// listen on and asks the one chosen, which hands the token over once the person allows it there; an address pasted
+// pairs by hand. The origins are granted inside the click.
 const editorAddressEl = document.getElementById('editor-address') as HTMLInputElement;
 const editorPairBtn = document.getElementById('editor-pair') as HTMLButtonElement;
+const editorAddressPairBtn = document.getElementById('editor-address-pair') as HTMLButtonElement;
 const editorUnpairBtn = document.getElementById('editor-unpair') as HTMLButtonElement;
 const editorStatusEl = document.getElementById('editor-status') as HTMLElement;
 const editorPill = document.getElementById('editor-pill') as HTMLElement;
+const editorChoices = document.getElementById('editor-choices') as HTMLElement;
+const editorChoiceList = document.getElementById('editor-choice-list') as HTMLElement;
+const editorPairPanel = document.getElementById('editor-pair-panel') as HTMLElement;
+const editorCodeLine = document.getElementById('editor-code-line')!;
+const editorManual = document.getElementById('editor-manual') as HTMLDetailsElement;
 let editorPaired = false;
+/** The pairing as the card last read it, whose origin Pair looks at too. */
+let pairedEditor: EditorPairing | null = null;
+/** Set while Pair waits for a choice or for the Allow in the editor; aborting it ends the wait. */
+let pendingEditorPairing: AbortController | null = null;
 
 function renderEditorPill(): void {
   setPill(editorPill, editorPaired, 'options_statePaired', 'options_stateNotPaired');
@@ -1208,6 +1230,7 @@ function renderEditorPill(): void {
 
 async function renderEditorPairing(): Promise<void> {
   const pairing = await getEditorPairing();
+  pairedEditor = pairing;
   editorPaired = !!pairing;
   writeStatus(
     editorStatusEl,
@@ -1246,7 +1269,137 @@ async function checkEditorPairing(pairing: EditorPairing): Promise<void> {
   writeStatus(editorStatusEl, words, 'error');
 }
 
+/** How an editor Pair found is named: its product, and the windows or projects it has open. */
+function editorName(editor: FoundEditor): string {
+  return editor.windows.length
+    ? t('options_editorChoice', { product: editor.product, windows: editor.windows.join(', ') })
+    : editor.product;
+}
+
+/** The editor the person chooses among those found, from one button each; null once Cancel or another Pair ends it. */
+function chooseEditor(found: FoundEditor[], signal: AbortSignal): Promise<FoundEditor | null> {
+  return new Promise((resolve) => {
+    const done = (editor: FoundEditor | null) => {
+      editorChoices.hidden = true;
+      editorChoiceList.replaceChildren();
+      resolve(editor);
+    };
+    editorChoiceList.replaceChildren(
+      ...found.map((editor) => makeButton(editorName(editor), () => done(editor), { icon: 'code' })),
+    );
+    editorChoices.hidden = false;
+    signal.addEventListener('abort', () => done(null), { once: true });
+  });
+}
+
+/** Gives back the grants Pair asked for and no pairing kept: those granted before the click stay. */
+async function releaseEditorGrants(patterns: readonly string[], before: ReadonlySet<string>): Promise<void> {
+  for (const pattern of patterns) if (!before.has(pattern)) await releaseGrant(pattern);
+}
+
+/**
+ * Asks `editor` to pair, shows the code its request shows, and keeps the pairing once the person allows it there:
+ * `…/send` beside the routes it answered, with the token it handed over. Says on the status line how it ended.
+ */
+async function pairWithEditor(editor: FoundEditor, signal: AbortSignal): Promise<boolean> {
+  const name = editorName(editor);
+  writeStatus(editorStatusEl, t('options_editorPairStarting', { editor: name }), '');
+  const start = await startEditorPairing(editor.base, describeClient(navigator.userAgent));
+  const code = document.createElement('code');
+  code.textContent = start.code;
+  editorCodeLine.replaceChildren(...tNodes('options_editorPairCode', { code, editor: name }));
+  editorPairPanel.hidden = false;
+  writeStatus(editorStatusEl, '', '');
+  const outcome = await waitForApproval({
+    poll: () => pollEditorPairing(editor.base, start),
+    interval: start.interval,
+    expiresIn: start.expiresIn,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => Date.now(),
+    signal,
+  });
+  editorPairPanel.hidden = true;
+  editorCodeLine.replaceChildren();
+  if (outcome.status === 'approved') {
+    const previous = await getEditorPairing().catch(() => null);
+    const pairing: EditorPairing = { url: `${editor.base}${EDITOR_SEND_PATH}`, token: outcome.apiKey };
+    await setEditorPairing(pairing);
+    if (previous && editorOriginPattern(previous) !== editorOriginPattern(pairing)) {
+      await releaseGrant(editorOriginPattern(previous));
+    }
+    editorManual.open = false;
+    await renderEditorPairing();
+    return true;
+  }
+  const messages = {
+    denied: t('options_editorPairDenied'),
+    expired: t('options_editorPairExpired'),
+    cancelled: t('options_editorPairCancelled'),
+  } as const;
+  writeStatus(editorStatusEl, messages[outcome.status], 'error');
+  return false;
+}
+
+/**
+ * Pair: asks every port an editor of this computer listens on (and the paired editor's) which editor answers there,
+ * lets the person choose when more than one does, and asks that one. The origins are asked for first, inside the
+ * click; those no pairing keeps are given back after.
+ */
 editorPairBtn.addEventListener('click', () => {
+  editorCheck++;
+  const pairedBase = pairedEditor ? editorPairingBaseOf(pairedEditor.url) : null;
+  const bases = [...editorPairingBases(), ...(pairedBase ? [pairedBase] : [])];
+  const patterns = [...new Set(bases.map((base) => hostPattern(new URL(base).origin)))];
+  // Read, then asked, before anything is awaited: the permission prompt needs the live click.
+  const before = chrome.permissions.getAll().catch((): chrome.permissions.Permissions => ({ origins: [] }));
+  const granted = requestOrigins(patterns);
+  pendingEditorPairing?.abort();
+  const controller = new AbortController();
+  pendingEditorPairing = controller;
+  editorPairBtn.disabled = true;
+  void (async () => {
+    const grantedBefore = new Set((await before).origins ?? []);
+    try {
+      if (!(await granted)) {
+        writeStatus(editorStatusEl, t('options_editorPermission'), 'error');
+        return;
+      }
+      writeStatus(editorStatusEl, t('options_editorFinding'), '');
+      const found = await findEditors(bases);
+      if (controller.signal.aborted) return;
+      if (!found.length) {
+        writeStatus(editorStatusEl, t('options_editorNoneFound'), 'error');
+        editorManual.open = true;
+        return;
+      }
+      writeStatus(
+        editorStatusEl,
+        found.length > 1 ? '' : t('options_editorPairStarting', { editor: editorName(found[0]!) }),
+        '',
+      );
+      const editor = found.length === 1 ? found[0]! : await chooseEditor(found, controller.signal);
+      if (!editor) return;
+      await pairWithEditor(editor, controller.signal);
+    } catch (err) {
+      writeStatus(editorStatusEl, err instanceof Error ? err.message : String(err), 'error');
+    } finally {
+      await releaseEditorGrants(patterns, grantedBefore);
+      if (pendingEditorPairing === controller) {
+        pendingEditorPairing = null;
+        editorPairBtn.disabled = false;
+      }
+      editorPairPanel.hidden = true;
+      void renderSiteAccess();
+    }
+  })();
+});
+
+for (const id of ['editor-pair-cancel', 'editor-choose-cancel']) {
+  document.getElementById(id)!.addEventListener('click', () => pendingEditorPairing?.abort());
+}
+
+/** Pair with an address: the one an editor's Copy the pairing address for Piwi Picker copies, pasted. */
+editorAddressPairBtn.addEventListener('click', () => {
   editorCheck++;
   // On 127.0.0.1 whatever loopback name it was typed with: the origin granted is the one kept.
   const pairing = parseEditorPairing(editorAddressEl.value);
@@ -1256,19 +1409,21 @@ editorPairBtn.addEventListener('click', () => {
   }
   // Requested before anything is awaited: the permission prompt needs the live click.
   const granted = requestOrigins([editorOriginPattern(pairing)]);
-  whileRunning(editorPairBtn, async () => {
+  whileRunning(editorAddressPairBtn, async () => {
     if (!(await granted)) {
       writeStatus(editorStatusEl, t('options_editorPermission'), 'error');
       return;
     }
     await setEditorPairing(pairing);
     editorAddressEl.value = '';
+    editorManual.open = false;
     await renderEditorPairing();
   });
 });
 
 editorUnpairBtn.addEventListener('click', () => {
   editorCheck++;
+  pendingEditorPairing?.abort();
   void (async () => {
     const pairing = await getEditorPairing();
     await setEditorPairing(null);

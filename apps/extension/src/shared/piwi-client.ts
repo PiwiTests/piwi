@@ -1,4 +1,12 @@
 import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-proof';
+import {
+  EDITOR_HELLO_PATH,
+  EDITOR_PAIRING_SECRET_HEADER,
+  EDITOR_PAIRINGS_PATH,
+  parseEditorHello,
+  type EditorPairingStart,
+  type FoundEditor,
+} from '@piwitests/core/editor-pairing';
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -953,6 +961,92 @@ export async function pollDesktopPairing(url: string, pairing: DesktopPairingSta
       return { status: 'approved', apiKey: body.token, user: null };
     default:
       throw new Error(t('options_desktopPairUnsupported', { url }));
+  }
+}
+
+/** How long an editor may take to say what it is, on one of the ports Piwi Picker looks at. */
+const EDITOR_HELLO_TIMEOUT_MS = 1500;
+
+/**
+ * The editors of this computer that answer `…/hello` at `bases` (`editorPairingBases()`, with the paired editor's),
+ * each base once, in their order. Nothing answering, or something that is not an editor, is left out. Needs the host
+ * permission for their origins, asked inside Pair's click.
+ */
+export async function findEditors(bases: readonly string[]): Promise<FoundEditor[]> {
+  const found = await Promise.all(
+    [...new Set(bases)].map(async (base): Promise<FoundEditor | null> => {
+      try {
+        const res = await request(`${base}${EDITOR_HELLO_PATH}`, {
+          signal: AbortSignal.timeout(EDITOR_HELLO_TIMEOUT_MS),
+        });
+        const hello = res.ok ? parseEditorHello(await res.json()) : null;
+        return hello ? { ...hello, base } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return found.filter((editor): editor is FoundEditor => editor !== null);
+}
+
+/**
+ * Asks the editor at `base` to pair: it shows the request with the code this answers, which the person allows there.
+ * Throws a message to show when it cannot.
+ */
+export async function startEditorPairing(base: string, client: ClientInfo): Promise<EditorPairingStart> {
+  let res: Response;
+  try {
+    res = await postJson(`${base}${EDITOR_PAIRINGS_PATH}`, client);
+  } catch {
+    throw new Error(t('options_editorPairUnreachable', { url: base }));
+  }
+  if (res.status === 429) throw new Error(t('options_editorPairTooMany'));
+  if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  const body = (await res.json().catch(() => ({}))) as Partial<EditorPairingStart>;
+  if (
+    typeof body.id !== 'string' ||
+    !/^[0-9a-f]{16}$/.test(body.id) ||
+    typeof body.secret !== 'string' ||
+    typeof body.code !== 'string'
+  ) {
+    throw new Error(t('options_editorPairUnsupported', { url: base }));
+  }
+  return {
+    id: body.id,
+    secret: body.secret,
+    code: body.code,
+    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 2,
+    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 300,
+  };
+}
+
+/**
+ * One poll of an editor's pairing request, in the shape the connect flow waits on: `approved` carries the Send to
+ * editor token as `apiKey`. Throws on a network error or an unexpected answer, which the caller retries.
+ */
+export async function pollEditorPairing(base: string, pairing: EditorPairingStart): Promise<ConnectPoll> {
+  const res = await request(`${base}${EDITOR_PAIRINGS_PATH}/${pairing.id}`, {
+    headers: { [EDITOR_PAIRING_SECRET_HEADER]: pairing.secret },
+    signal: timeout(),
+  });
+  // Gone: the editor restarted and lost it, as good as expired.
+  if (res.status === 404) return { status: 'expired' };
+  if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  const body = ((await res.json().catch(() => null)) ?? {}) as { status?: unknown; token?: unknown };
+  switch (body.status) {
+    case 'waiting':
+      return { status: 'pending' };
+    case 'denied':
+      return { status: 'denied' };
+    case 'expired':
+    case 'claimed':
+      return { status: 'expired' };
+    case 'allowed':
+      if (typeof body.token !== 'string' || !body.token)
+        throw new Error(t('options_editorPairUnsupported', { url: base }));
+      return { status: 'approved', apiKey: body.token, user: null };
+    default:
+      throw new Error(t('options_editorPairUnsupported', { url: base }));
   }
 }
 
