@@ -56,7 +56,10 @@ export interface LaneSink {
   spacing?(frame: PageFrame): number;
   /** The longest frame it takes, in bytes. */
   maxFrameBytes: number;
-  /** The quality of the lighter image taken in place of a frame too long, and how often at most. */
+  /**
+   * The quality of the lighter image taken in place of a frame too long, and how often at most; `shotMs` is also how
+   * long a view waits, after a frame that did not go, before it takes an image of a still page.
+   */
   lightQuality: number;
   shotMs: number;
   /**
