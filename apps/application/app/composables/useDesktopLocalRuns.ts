@@ -1676,6 +1676,30 @@ export function useDesktopLocalRuns() {
   }
 
   /**
+   * Run some tests of an ended run of tests again, as the run ran them (its project, its options, its environment read
+   * again, a protected one confirmed again), with `options` on top: the tray's results run a test again, or with Hold
+   * failures on. Null when the run is of another kind, or the person does not confirm.
+   */
+  async function rerunTests(
+    run: LocalRun,
+    cases: RetryCase[],
+    options: LocalRunOptions = {},
+  ): Promise<LocalRun | null> {
+    if (run.kind !== 'tests' || cases.length === 0) return null;
+    const again = await environmentAgain(run);
+    if (!again) return null;
+    return startRun({
+      projectId: run.projectId,
+      projectLabel: run.projectLabel,
+      cases,
+      sourceRunId: run.piwiRunId ?? run.sourceRunId,
+      options: { ...run.options, ...options },
+      environment: again.environment,
+      confirmed: again.confirmed,
+    });
+  }
+
+  /**
    * The environment a run's Run again is for: its own, read again through the shell, which answers its key, its
    * protection and its required tags as they are now. A protected one asks the person to confirm again, for a run of
    * tests or a reproduction; the other kinds never run against one. Null, with a toast saying why, when it cannot be
@@ -2118,6 +2142,7 @@ export function useDesktopLocalRuns() {
     startTeamRequest,
     startJob,
     rerun,
+    rerunTests,
     stopRun,
     clearFinished,
     removeRun,

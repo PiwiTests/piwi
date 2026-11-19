@@ -81,14 +81,15 @@ long it has run, **Stop**, its workers live, the tests the request asked for and
 **Force stop** while the run winds down, as in the [desktop app](./local-runs-tray#each-run). **Finished** has a row for
 each run that ended, the last to end first: how it ended, its project, when it started and how long it took, and
 **Run #78 · Open** once it reported to the instance. A click on a row shows its tests and its output; a run that ended
-a moment ago comes in open, with what you had open on its card. The output keeps Playwright's colors and its last
+a moment ago comes in open, with what you had open on its card. Its tests say how each came out, as its output tells
+it, a failed one with the first lines of its error. The output keeps Playwright's colors and its last
 2,000 lines: it opens on its own once the run failed or could not run, with a filter, **Go to the first error** and
 **Copy output**, as the [desktop app's](./local-runs-tray#its-output) does. **Clear finished** empties the Finished list; the window keeps the
 last 15 runs that ended in any case, never dropping one the moment it ends.
 
 <figure>
-  <img src="/screenshots/runner-runs.png" alt="Piwi Runner's runs: under Running now, a run's card with its worker running, Pause, Watch, Hold failures and Stop; under Finished, a run that failed, open on its output in Playwright's colors">
-  <figcaption>A run going on, and one that just failed, open on its output.</figcaption>
+  <img src="/screenshots/runner-runs.png" alt="Piwi Runner's runs: under Running now, a run's card with its worker running, Pause, Watch, Hold failures and Stop; under Finished, a run that failed, open on its two tests, one passed and one failed with its error, and on its output in Playwright's colors">
+  <figcaption>A run going on, and one that just failed, open on how each test came out and on its output.</figcaption>
 </figure>
 
 Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an

@@ -27,6 +27,7 @@ const FAILED_OUTPUT = [
   `    Received: ${ESC}[31m"Total: $50.00"${ESC}[39m`,
   '',
   `  ${ESC}[31m1 failed${ESC}[39m`,
+  '    [chromium] › tests/cart.spec.ts:30:3 › cart › applies a coupon ──────────',
   `  ${ESC}[32m1 passed${ESC}[39m ${ESC}[2m(7.9s)${ESC}[22m`,
 ];
 const PASSED_OUTPUT = ['Running 1 test using 1 worker', '', `  ${ESC}[32m1 passed${ESC}[39m ${ESC}[2m(2.2s)${ESC}[22m`];

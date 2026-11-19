@@ -21,7 +21,8 @@ material: open it when you need to understand the code.
 | `app/composables/useDesktopRunHub.ts`                        | The window's side of the runs' hub: the stream of `/api/desktop/runs/events` and the commands                               |
 | `app/components/DesktopRun*.vue`                             | The live view of a run: its workers (`DesktopRunSession`, `DesktopRunWorker`), a stop's and a lane's page, the code to copy |
 | `app/components/DesktopRunStopButton.vue`, `app/utils/run-stop.ts` | A run's Stop, then Force stop while it winds down, guarded a moment after Stop, beside the seconds the shell's grace leaves |
-| `app/components/DesktopRunOutputPane.vue`, `app/utils/run-output.ts` (`@piwitests/run-ui/run-output`) | A run's output: the line model both hosts keep (`runOutputLine`), its colors, filter, first error, wrap and Copy output |
+| `app/components/DesktopRunOutputPane.vue`, `app/utils/run-output.ts` (`@piwitests/run-ui/run-output`) | A run's output: the line model both hosts keep (`runOutputLine`), its colors, filter, first error, wrap and Copy output; what Playwright's end-of-run summary says of each test (`runOutputSummary`) |
+| `app/components/DesktopRunResults.vue`                       | A finished run's tests and how each came out (`RunResultRow`), its first error lines and place, each host adding its links and actions |
 | `app/utils/run-view.ts` (`@piwitests/run-ui/run-view`)       | The live view's pure half: keys, the run model's English words and icons, Share live, the items to copy                     |
 | `app/utils/run-view-host.ts`                                 | What a host adds to the live view (`RUN_VIEW_HOST`): a worker's own window, the link to a stop's file, a lane's Inspect     |
 | `app/components/ErrorText.vue`, `LocatorCode.vue`            | An error with its ANSI colors (`@piwitests/run-ui/ansi`), a locator highlighted                                             |

@@ -12,6 +12,7 @@ import {
   runnerUnlistedSessions,
   runnerShellIdOf,
   runnerShownRefs,
+  runnerTestResults,
   type RunnerRun,
   type RunnerRunBackend,
 } from '../app/utils/runner-runs';
@@ -283,5 +284,50 @@ describe('the run’s page', () => {
     book.handle({ id: 7, kind: 'exit', code: 1 });
     noteRunPages(runs, []);
     expect(run).toMatchObject({ status: 'failed', page });
+  });
+});
+
+describe('runnerTestResults', () => {
+  const ended = (status: RunnerRun['status'], printed: string[], tests = [TEST]) =>
+    ({ status, tests, lines: printed.map((text, i) => ({ id: i + 1, text, error: false })) }) as Pick<
+      RunnerRun,
+      'status' | 'tests' | 'lines'
+    >;
+  const FAILED = [
+    '  ✘  1 [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays (1.2s)',
+    '',
+    '  1) [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays ──────────',
+    '',
+    '    Error: expect(locator).toHaveText(expected) failed',
+    '',
+    '      2 | test(…)',
+    '  1 failed',
+    '    [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays ───────────',
+  ];
+
+  test('says how each requested test came out, a failed one with its error', () => {
+    expect(runnerTestResults(ended('failed', FAILED))).toEqual([
+      {
+        key: '0',
+        status: 'failed',
+        title: 'checkout › pays',
+        place: 'tests/checkout.spec.ts:3',
+        error: ['Error: expect(locator).toHaveText(expected) failed'],
+      },
+    ]);
+  });
+
+  test('reads a test the output names no result for as passed when the run passed, else as unknown', () => {
+    expect(runnerTestResults(ended('passed', ['  1 passed (1.0s)']))?.[0]?.status).toBe('passed');
+    const other = { ...TEST, line: 9, title: 'checkout › refunds' };
+    expect(runnerTestResults(ended('failed', FAILED, [TEST, other]))?.map((row) => row.status)).toEqual([
+      'failed',
+      'unknown',
+    ]);
+  });
+
+  test('says nothing while the run goes on, or when its output holds no summary', () => {
+    expect(runnerTestResults(ended('running', FAILED))).toBeNull();
+    expect(runnerTestResults(ended('error', ['No folder is linked to this project']))).toBeNull();
   });
 });

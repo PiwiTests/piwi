@@ -38,8 +38,13 @@ starts an ended run as it ran, with its options and its [**Hold failures**](./wa
 **Stop** ends a run as `Ctrl+C` would in a terminal: Playwright stops its workers and the reporter still sends the
 run's end. While it winds down, the button gives way to **Force stop**, which kills the process at once, beside how
 long the wind-down can take: **Ends within 10 s**, after which the app kills a process that still runs. Force stop
-takes no click for a moment after Stop, so a double-click only stops. The run page's **On your machine** card, the
-output window and [Piwi Runner](./piwi-runner) stop a run the same way.
+takes no click for a moment after Stop, so a double-click only stops. Every view of a run stops it so, [Piwi
+Runner](./piwi-runner) included.
+
+An ended run lists the tests it failed on above its output, failed then flaky, each with the first lines of its
+error and its file, to open in your editor. They come from its run on the dashboard, else from what Playwright
+printed. Each has **Open**, its execution, then **Run again** and **Run again with Hold failures**, for that test
+alone.
 
 An ended run's **More actions** menu holds **Copy the command**, for a run of tests: the command that runs them in
 your terminal, as the run button's **Copy as command** writes it. It also holds **Remove from the list**; **Clear
@@ -98,8 +103,8 @@ on disk in the folder linked to the project.
 Each run shows its output under its workers, in Playwright's terminal colors, following its newest line until you
 scroll up; **Go to the latest line** follows it again. Above it, a field keeps only the lines holding what you type,
 case and accents ignored; **Go to the first error** scrolls to the first failure Playwright printed; a toggle wraps
-long lines; and **Copy output** copies every line the tray keeps, without the colors. Drag the pane's corner to make
-it taller. The run page's card, the output window and Piwi Runner show the same pane. **Open the output in a
+long lines; and **Copy output** copies every line the tray keeps, without the colors. Its corner drags it taller.
+**Open the output in a
 separate window**, the window button on the run, moves it to a window of its own, beside your editor or on another
 screen, still updating, with the run's **Stop**. Closing that window, or the same button, now **Show the output
 here**, brings it back. The window stays open whatever page the app shows, an analytics dashboard in TV mode
@@ -116,9 +121,8 @@ was starting, its first Playwright project or its next, goes on with the one the
 starting as the window reloaded ends, saying so: run it again. What the run printed while the window reloaded is lost, and the tray
 keeps the last 300 lines of each run's output through a reload.
 
-The runs that ended outlive a restart of the app too: the tray shows them again, closed, with the last 300 lines of
-their output, **Run again** and their links, up to the last 15. A run taken back shows how long it took instead of its
-counts, and **Open the failure** opens the first failed test of its run.
+The last 15 runs that ended outlive a restart of the app, with their last 300 lines of output, **Run again** and their
+links. Each shows how long it took instead of its counts.
 
 ## Limits
 
