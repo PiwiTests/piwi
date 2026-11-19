@@ -83,6 +83,12 @@ const runningLineShown = (vscode) =>
     120_000,
   );
 
+/** What VS Code's Piwi status item says now: `Piwi: paused · checkout-page.ts:19 · shared live · 1 view · …`. */
+const statusItem = (vscode) => {
+  const item = vscode.locator('.statusbar-item', { hasText: 'Piwi:' }).first();
+  return async () => (await item.innerText()).trim();
+};
+
 /** Closes VS Code's worker panel by its tab's Close button, and the code has the window again. */
 async function closeWorkerPanel(vscode, gesture) {
   const tab = vscode.getByRole('tab', { name: /^Piwi: worker/ });
@@ -576,18 +582,19 @@ export const STORY = [
   beat({
     id: 'shared-pause',
     title: 'Paused for the team',
-    seconds: 16,
-    focus: ['vscode', 'dashboard', 'vscode'],
+    seconds: 14,
+    focus: ['vscode', 'dashboard'],
     budget: 240_000,
     lines: {
       en: [
         'Share the run live with the team, and pause it:',
         'its page on the instance shows the test waiting,',
-        'and the editor counts the view. F5, and it goes on.',
+        'and the editor counts the view.',
       ],
     },
-    async run({ vscode, dashboard, runs, gesture, palette, repo, instance, set, state }) {
+    async run({ vscode, dashboard, gesture, palette, repo, instance, set, state }) {
       const before = (await instance.runs()).map((r) => r.id);
+      // The run reads SLOW_MO as it starts: it stays slowed once the `.env` is put back.
       await slowedDown(repo.shop, async () => {
         await goTo(vscode, gesture, SPEC, testLine(repo, 'places an order'));
         await gesture.press('vscode', 'Control+Shift+Alt+K');
@@ -599,39 +606,59 @@ export const STORY = [
         );
         state.sharedRun = run.id;
         await runningLineShown(vscode);
-        // The first share of the window asks what goes out, and whether this run or the window's runs.
-        await palette('Piwi: Share the run live on the team instance');
-        const question = vscode.getByRole('dialog');
-        await gesture.click('vscode', question.getByRole('button', { name: 'Share this run' }));
-        const item = vscode.locator('.statusbar-item', { hasText: 'Piwi:' }).first();
-        const status = { innerText: async () => (await item.innerText()).trim() };
-        await waitFor(async () => (await status.innerText()).includes('shared live'), 'the run shared live');
-        await palette("Piwi: Pause and watch a worker's test");
-        await waitFor(async () => (await status.innerText()).startsWith('Piwi: paused'), 'the test paused');
-
-        // The team's side: the run's page shows where the test waits, and its page, live.
-        await dashboard.goto(`${instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
-        await gesture.click('dashboard', dashboard.getByRole('link', { name: `Run #${run.id}`, exact: true }));
-        await dashboard.waitForURL(`**/test-runs/${run.id}`);
-        const paused = dashboard.getByTestId('live-paused').first();
-        await paused.waitFor({ timeout: 60_000 });
-        state.pausedRow = { reason: await paused.getAttribute('data-reason'), text: await paused.innerText() };
-        await recordWatch(dashboard);
-        await gesture.click('dashboard', dashboard.getByRole('button', { name: /^Watch .* live$/ }).first());
-        const frame = dashboard.getByTestId('lane-panel').getByTestId('live-frame');
-        state.pausedFrame = await waitFor(
-          () => frame.evaluate((img) => (img.complete && img.naturalWidth ? img.naturalWidth : null)),
-          'the paused page in the run page’s live view',
-          60_000,
-        );
-        // The editor counts the team's view of its run.
-        state.viewsSaid = await waitFor(async () => {
-          const said = await status.innerText();
-          return said.includes('shared live · 1 view') ? said : null;
-        }, "the team's view counted in VS Code's status item");
-        await gesture.press('vscode', 'F5');
-        await runEnded(runs);
       });
+      // The first share of the window asks what goes out, and whether this run or the window's runs.
+      await palette('Piwi: Share the run live on the team instance');
+      await gesture.click('vscode', vscode.getByRole('dialog').getByRole('button', { name: 'Share this run' }));
+      const status = statusItem(vscode);
+      await waitFor(async () => (await status()).includes('shared live'), 'the run shared live');
+      await palette("Piwi: Pause and watch a worker's test");
+      await waitFor(async () => (await status()).startsWith('Piwi: paused'), 'the test paused');
+
+      // The team's side: the run's page says where the test waits, and shows its page, live.
+      await dashboard.goto(`${instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
+      await gesture.click('dashboard', dashboard.getByRole('link', { name: `Run #${state.sharedRun}`, exact: true }));
+      await dashboard.waitForURL(`**/test-runs/${state.sharedRun}`);
+      const paused = dashboard.getByTestId('live-paused').first();
+      await paused.waitFor({ timeout: 60_000 });
+      state.pausedRow = { reason: await paused.getAttribute('data-reason'), text: await paused.innerText() };
+      await recordWatch(dashboard);
+      await gesture.click('dashboard', dashboard.getByRole('button', { name: /^Watch .* live$/ }).first());
+      const frame = dashboard.getByTestId('lane-panel').getByTestId('live-frame');
+      state.pausedFrame = await waitFor(
+        () => frame.evaluate((img) => (img.complete && img.naturalWidth ? img.naturalWidth : null)),
+        'the paused page in the run page’s live view',
+        60_000,
+      );
+      // The editor counts the team's view of its run.
+      state.viewsSaid = await waitFor(async () => {
+        const said = await status();
+        return said.includes('shared live · 1 view') ? said : null;
+      }, "the team's view counted in VS Code's status item");
+    },
+    async check({ instance, state }) {
+      const run = await instance.run(state.sharedRun);
+      expect(run.origin !== 'ci', `the shared run is the developer's (${run.origin})`);
+      expect(
+        state.pausedRow.reason === 'pause' && state.pausedRow.text.startsWith('Paused'),
+        `the run page's row says the test is paused: ${JSON.stringify(state.pausedRow)}`,
+      );
+      expect(state.pausedFrame > 100, `the run page showed the paused page (${state.pausedFrame} pixels wide)`);
+      expect(/^Piwi: paused · .* · shared live · 1 view/.test(state.viewsSaid), `VS Code says: ${state.viewsSaid}`);
+    },
+  }),
+
+  beat({
+    id: 'resumed',
+    title: 'Resumed',
+    seconds: 8,
+    focus: ['vscode', 'dashboard'],
+    budget: 180_000,
+    lines: { en: ['F5 in the editor: the test goes on, for both.'] },
+    async run({ vscode, dashboard, runs, gesture, state }) {
+      await gesture.press('vscode', 'F5');
+      await runEnded(runs);
+      await closeWorkerPanel(vscode, gesture);
       // The run page's view goes on with the test, until the run passed.
       await waitFor(
         async () => (await readWatchLog(dashboard)).statuses.some((said) => RUN_VERDICT.test(said.text)),
@@ -640,25 +667,21 @@ export const STORY = [
       ).catch(() => null);
       state.sharedLog = await readWatchLog(dashboard);
       await gesture.press('dashboard', 'Escape');
-      await closeWorkerPanel(vscode, gesture);
     },
     async check({ instance, state }) {
-      const run = await waitFor(async () => {
-        const r = await instance.run(state.sharedRun);
-        return r.status === 'running' ? null : r;
-      }, 'the shared run to finish on the instance');
-      expect(run.origin !== 'ci', `the shared run is the developer's (${run.origin})`);
-      expect(
-        state.pausedRow.reason === 'pause' && state.pausedRow.text.startsWith('Paused'),
-        `the run page's row says the test is paused: ${JSON.stringify(state.pausedRow)}`,
-      );
-      expect(state.pausedFrame > 100, `the run page showed the paused page (${state.pausedFrame} pixels wide)`);
-      expect(/^Piwi: paused · .* · shared live · 1 view/.test(state.viewsSaid), `VS Code says: ${state.viewsSaid}`);
       const said = state.sharedLog.statuses.map((status) => status.text);
       expect(
         said.some((text) => text.startsWith('The run passed:')),
         `the run page's view went on until the run passed: ${JSON.stringify(said)}`,
       );
+      expect(
+        state.sharedLog.frames.length >= 2,
+        `the view showed the test going on (${state.sharedLog.frames.length})`,
+      );
+      const run = await waitFor(async () => {
+        const r = await instance.run(state.sharedRun);
+        return r.status === 'running' ? null : r;
+      }, 'the shared run to finish on the instance');
       const test = run.testCases.find((c) => c.title === 'places an order');
       expect(test?.status === 'passed', `the shared test passed (${test?.status})`);
     },
