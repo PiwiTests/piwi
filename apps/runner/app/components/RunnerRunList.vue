@@ -23,12 +23,15 @@ const finished = computed(() => runnerFinishedRuns(runs.value));
 
 /** The hub's live runs no run of this window is: the window was reloaded while they went on. */
 const unlisted = computed(() => runnerUnlistedSessions(sessions.value, runs.value));
-/** The runs of `unlisted` whose Stop was asked, and when; a second ask (Force stop) kills the process. */
-const stopping = ref(new Map<string, number>());
+/**
+ * The runs of `unlisted` whose Stop was asked, and when, kept while the window shows another view: a second ask (Force
+ * stop) kills the process.
+ */
+const stopping = useState<Record<string, number>>('runner-unlisted-stops', () => ({}));
 function stopUnlisted(session: HubSession) {
   const shellId = runnerShellIdOf(session.ref);
   if (shellId === null) return;
-  if (!stopping.value.has(session.ref)) stopping.value = new Map([...stopping.value, [session.ref, Date.now()]]);
+  if (stopping.value[session.ref] === undefined) stopping.value = { ...stopping.value, [session.ref]: Date.now() };
   void stopShellRun(shellId);
 }
 
@@ -101,8 +104,8 @@ function announce(text: string) {
           </span>
           <p class="min-w-0 flex-1 text-xs text-muted">{{ t('runner_stillRunning') }}</p>
           <DesktopRunStopButton
-            :stopping="stopping.has(session.ref)"
-            :since="stopping.get(session.ref)"
+            :stopping="stopping[session.ref] !== undefined"
+            :since="stopping[session.ref]"
             @stop="stopUnlisted(session)"
             @force="stopUnlisted(session)"
           />

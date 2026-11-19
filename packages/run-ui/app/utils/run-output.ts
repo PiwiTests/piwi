@@ -31,14 +31,15 @@ const ERROR_LINES = [/^\s*\d+\) /, /^\s*\w*Error: /, /^\s*[✘✗]\s/];
 
 /**
  * The line the pane's **Go to the first error** scrolls to: the first line of the most telling kind the output holds
- * (`ERROR_LINES`), else the first line printed on stderr; null when there is none.
+ * (`ERROR_LINES`); null when there is none. A line on stderr alone is no error: a web server, `npx` and a reporter warn
+ * there.
  */
 export function runOutputFirstError(lines: readonly RunOutputLine[]): RunOutputLine | null {
   for (const kind of ERROR_LINES) {
     const line = lines.find((each) => kind.test(each.text));
     if (line) return line;
   }
-  return lines.find((line) => line.error) ?? null;
+  return null;
 }
 
 /** The lines holding `query`, case and accents ignored; every line for a blank query. */

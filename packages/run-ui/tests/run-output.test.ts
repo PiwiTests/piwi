@@ -52,9 +52,9 @@ describe('runOutputFirstError', () => {
     expect(runOutputFirstError(output)?.id).toBe(2);
   });
 
-  test('falls back to the first line on stderr, else finds none', () => {
-    const output = [runOutputLine(1, 'Running', false), runOutputLine(2, 'npm warn', true)];
-    expect(runOutputFirstError(output)?.id).toBe(2);
+  test('finds none in a run that passed, its warnings on stderr included', () => {
+    const output = [runOutputLine(1, 'Running', false), runOutputLine(2, 'npm warn exec', true)];
+    expect(runOutputFirstError(output)).toBeNull();
     expect(runOutputFirstError(lines('Running 1 test', '  1 passed'))).toBeNull();
   });
 });

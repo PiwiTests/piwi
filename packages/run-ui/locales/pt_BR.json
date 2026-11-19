@@ -985,7 +985,7 @@
     "message": "Parar"
   },
   "runui_runForceStop": {
-    "message": "Forçar a parada"
+    "message": "Parar à força"
   },
   "runui_runForceStopHint": {
     "message": "Encerrar o processo agora: o Playwright pode não escrever o relatório"

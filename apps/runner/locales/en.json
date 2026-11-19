@@ -37,7 +37,7 @@
   },
   "runner_stopping": {
     "message": "Stopping…",
-    "description": "Badge of a run, and label of its Stop button, once Stop was clicked and the run has not ended yet."
+    "description": "Badge of a run once Stop was clicked and the run has not ended yet."
   },
   "runner_holdFailures": {
     "message": "Hold failures",
@@ -209,7 +209,7 @@
   },
   "runner_outputLines_one": {
     "message": "$count$ line",
-    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), singular.",
+    "description": "Beside runner_output: how many lines the run printed, singular.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -219,7 +219,7 @@
   },
   "runner_outputLines_other": {
     "message": "$count$ lines",
-    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), plural.",
+    "description": "Beside runner_output: how many lines the run printed, plural.",
     "placeholders": {
       "count": {
         "content": "$1",

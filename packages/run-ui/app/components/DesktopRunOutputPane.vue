@@ -63,7 +63,10 @@ async function toFirstError() {
   pinned.value = false;
   marked.value = line.id;
   await nextTick();
-  pane.value?.querySelector<HTMLElement>(`[data-line="${line.id}"]`)?.scrollIntoView({ block: 'center' });
+  // The pane scrolls alone, never the window or the tray around it: it is the line's offset parent.
+  const el = pane.value;
+  const target = el?.querySelector<HTMLElement>(`[data-line="${line.id}"]`);
+  if (el && target) el.scrollTo({ top: Math.max(0, target.offsetTop - el.clientHeight / 3) });
   setTimeout(() => {
     if (marked.value === line.id) marked.value = null;
   }, MARKED_MS);
@@ -93,9 +96,10 @@ onMounted(() => pane.value?.scrollTo({ top: pane.value.scrollHeight }));
         :aria-label="t('runui_outputFilter')"
         class="w-44 min-w-0 sm:w-56"
       />
-      <span v-if="filtering" class="text-xs text-muted tabular-nums" aria-live="polite">
-        {{ tn('runui_outputMatches', lines.length, { shown: words.number(shown.length) }) }}
-      </span>
+      <!-- Drawn while empty too, so the first count is read out. -->
+      <span class="text-xs text-muted tabular-nums" aria-live="polite">{{
+        filtering ? tn('runui_outputMatches', lines.length, { shown: words.number(shown.length) }) : ''
+      }}</span>
       <span class="flex-1" />
       <UTooltip v-if="firstError" :text="t('runui_outputFirstError')">
         <UButton
@@ -134,9 +138,10 @@ onMounted(() => pane.value?.scrollTo({ top: pane.value.scrollHeight }));
       <!-- The pane scrolls with the keyboard too: it takes the focus. -->
       <div
         ref="pane"
+        role="region"
         tabindex="0"
         :aria-label="t('runui_outputLabel')"
-        class="overflow-auto rounded-md bg-neutral-950 p-3 font-mono text-xs leading-5 text-neutral-300 ring ring-neutral-800 focus-visible:outline-2 focus-visible:outline-primary"
+        class="relative overflow-auto rounded-md bg-neutral-950 p-3 font-mono text-xs leading-5 text-neutral-300 ring ring-neutral-800 focus-visible:outline-2 focus-visible:outline-primary"
         :class="fill ? 'h-full' : 'h-48 min-h-24 resize-y'"
         @scroll.passive="onScroll"
       >
