@@ -390,10 +390,32 @@ describe('the Local runs a restart of the app keeps', () => {
     expect(next.key).not.toBe(back.key);
     expect(after.store.runs.value.filter((r) => r.hubRefs.includes('desktop-41'))).toEqual([next]);
 
-    // Remove takes a run that ended away, for the next start too.
+    // Remove takes a run that ended away, for the next start too, with what the window kept for it.
+    after.store.holds.value = { [back.key]: true, [next.key]: true };
+    after.store.separate.value = { [back.key]: true };
     after.store.removeRun(back);
     expect(after.store.runs.value).toEqual([next]);
+    expect(after.store.holds.value).toEqual({ [next.key]: true });
+    expect(after.store.separate.value).toEqual({});
     expect(JSON.parse(local.get('piwi:desktop-local-runs-finished')!)).toEqual([]);
+  });
+
+  test('copies, for a run of tests alone, the command a terminal runs them with, in the person’s shell', async () => {
+    await pageWith(new Map());
+    const { localRunCopyCommand, DEFAULT_LOCAL_RUN_OPTIONS } =
+      await import('../../app/composables/useDesktopLocalRuns');
+    const run = {
+      kind: 'tests' as const,
+      cases: [{ filePath: 'tests/cart.spec.ts', title: 'charges $5', line: 12, projectName: 'chromium' }],
+      options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+      runVariables: [{ name: 'BASE_URL', value: 'http://localhost:3000' }],
+      environment: null,
+    };
+    expect(localRunCopyCommand(run, 'bash')).toBe(
+      'BASE_URL=http://localhost:3000 npx playwright test "/tests/cart.spec.ts:12" --project="chromium"',
+    );
+    expect(localRunCopyCommand(run, 'powershell')).toContain('$env:BASE_URL');
+    expect(localRunCopyCommand({ ...run, kind: 'repro' }, 'bash')).toBeNull();
   });
 
   test('takes back nothing on a reload, which keeps its own runs', async () => {

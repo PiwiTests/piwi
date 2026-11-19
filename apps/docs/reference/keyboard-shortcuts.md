@@ -34,7 +34,7 @@ report…** in **File**; **Back** and **Forward** in **View**; and **Piwi docume
 | `Ctrl` + `[` | Go back |
 | `Ctrl` + `]` | Go forward |
 | `Ctrl` + `+` / `-` / `0` | Zoom in, out, back to 100% |
-| `g` then `l` | Open or close the [Local runs tray](/features/local-runs-tray), on every platform |
+| `g` then `t` | Open or close the [Local runs tray](/features/local-runs-tray), on every platform |
 
 ## Piwi Picker's Runs window
 

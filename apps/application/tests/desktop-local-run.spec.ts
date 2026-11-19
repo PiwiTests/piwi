@@ -465,7 +465,7 @@ test.describe('Desktop local run', () => {
 
     // Remove takes one run that ended away.
     await page.keyboard.press('g');
-    await page.keyboard.press('l');
+    await page.keyboard.press('t');
     await tray(page).getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Remove from the list' }).click();
     await expect(tray(page).getByText('No local runs yet')).toBeVisible();

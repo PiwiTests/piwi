@@ -11,7 +11,7 @@ lang: en-US
 The **Local runs** tray of the [desktop app](./desktop) lists every run the app starts: a **Re-run**, a reproduction, a
 bisect, a [Flake Lab](./flake-lab) run, a bug report's run, a run an agent started. It sits at the bottom right of
 the window and opens as a run starts and at each stop. **Local runs**, at the foot of the sidebar on every page, opens
-and closes it, and so do `g` then `l`. Closing it stops nothing.
+and closes it, and so do `g` then `t`. Closing it stops nothing.
 This page is about the runs the tray lists: how far each is, **Stop**, **Run again**, the code their stops make, their
 output, a reload and a restart. Each
 run's workers, their stops and their page: [Desktop app runs](./desktop-runs).
@@ -41,8 +41,9 @@ long the wind-down can take: **Ends within 10 s**, after which the app kills a p
 takes no click for a moment after Stop, so a double-click only stops. The run page's **On your machine** card, the
 output window and [Piwi Runner](./piwi-runner) stop a run the same way.
 
-An ended run's **More actions** menu holds **Copy the command**, the command its last step ran with its run variables,
-and **Remove from the list**; **Clear finished runs**, in the tray's head, removes all of them. While the tray is
+An ended run's **More actions** menu holds **Copy the command**, for a run of tests: the command that runs them in
+your terminal, as the run button's **Copy as command** writes it. It also holds **Remove from the list**; **Clear
+finished runs**, in the tray's head, removes all of them. While the tray is
 closed, a run that ends marks the sidebar's **Local runs** with a dot, red when it failed, until you open the tray.
 
 A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder

@@ -54,12 +54,12 @@
  * (`DesktopRunOutputPane`: filter, first error, Copy output). A run that ended
  * has a **More actions** menu: Run again, its run, **Copy the command** and
  * **Remove from the list**. Opening the tray marks every run that ended as seen
- * (`markSeen`), and `g` then `l` opens or closes it.
+ * (`markSeen`), and `g` then `t` opens or closes it.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import {
-  localRunCommand,
   localRunCompareTo,
+  localRunCopyCommand,
   localRunDetail,
   localRunDuration,
   localRunEnvironmentNote,
@@ -150,12 +150,13 @@ watch(
 watch(trayOpen, (open) => open && store.markSeen(), { immediate: true });
 
 defineShortcuts({
-  'g-l': () => {
+  'g-t': () => {
     if (available.value) trayOpen.value = !trayOpen.value;
   },
 });
 
 const { copy } = useCopy();
+const { shell } = useCommandShell();
 
 let stopListening: (() => void) | null = null;
 onMounted(() => {
@@ -346,7 +347,7 @@ function moreActions(run: LocalRun, onLine: boolean) {
       });
     }
   }
-  const command = localRunCommand(run);
+  const command = localRunCopyCommand(run, shell.value);
   if (command) add('Copy the command', 'i-lucide-copy', () => void copy(command, { toast: 'Command copied' }));
   add('Remove from the list', 'i-lucide-x', () => store.removeRun(run));
   return [items];

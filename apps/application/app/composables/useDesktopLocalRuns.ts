@@ -42,15 +42,16 @@ import {
   type LocalRunMode,
   type LocalRunOptions,
   type LocalRunStep,
+  localRunCopyOptions,
   localRunHoldsFailures,
   stopsAtFirstFailure,
 } from '~/utils/local-run-args';
-import type { RetryCase, RetryMode } from '~/utils/retry-command';
+import { buildRetryCommand, type RetryCase, type RetryMode } from '~/utils/retry-command';
 import { commitUrl } from '#shared/scm-urls';
 import { specRunVerdict, type SpecRunResult, type SpecRunVerdict } from '@piwitests/core/bug-report';
 import type { PiwiSteps } from '@piwitests/core/steps';
 import type { RunVariable } from '@piwitests/core/run-variables';
-import { commandWithEnvironment } from '#shared/run-variables';
+import { commandWithEnvironment, type RunVariableShell } from '#shared/run-variables';
 import { environmentMismatch, pickOf, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 import { desktopJobVerdict, flakeLabJobReport, localRunOriginKind, newLocalRunRef } from '~/utils/desktop-job';
 import {
@@ -367,19 +368,24 @@ export function localRunDetail(
 ): string {
   const project = run.projectLabel || `Project ${run.projectId}`;
   const head = run.environment ? `${project} · ${run.environment.name}` : project;
-  const command = localRunCommand(run);
-  return command ? `${head} · ${command}` : head;
+  const command = run.steps[run.stepIndex]?.display;
+  return command
+    ? `${head} · ${commandWithEnvironment(command, run.runVariables ?? [], run.environment ?? null, 'bash')}`
+    : head;
 }
 
 /**
- * The command a run's current step runs, with the run variables and the environment the shell sets, as the tray's
- * **Copy the command** copies it; null for a run with no command to show.
+ * What an ended run's **Copy the command** copies: the command a terminal runs its tests with, its options, run
+ * variables and environment included, in `shell`, as the run button's Copy as command builds it; null for a run of
+ * another kind, or whose tests no command can name.
  */
-export function localRunCommand(
-  run: Pick<LocalRun, 'steps' | 'stepIndex' | 'runVariables' | 'environment'>,
+export function localRunCopyCommand(
+  run: Pick<LocalRun, 'kind' | 'cases' | 'options' | 'runVariables' | 'environment'>,
+  shell: RunVariableShell,
 ): string | null {
-  const command = run.steps[run.stepIndex]?.display;
-  return command ? commandWithEnvironment(command, run.runVariables ?? [], run.environment ?? null, 'bash') : null;
+  if (run.kind !== 'tests') return null;
+  const command = buildRetryCommand(run.cases, { mode: run.options.mode, options: localRunCopyOptions(run.options) });
+  return command ? commandWithEnvironment(command, run.runVariables ?? [], run.environment ?? null, shell) : null;
 }
 
 /** What the window names to the shell for a run's environment: its pick, with the key the person confirmed it by. */
@@ -710,6 +716,11 @@ export function useDesktopLocalRuns() {
     nameStep(run, shellId);
     const exit = adopt(run, shellId);
     releaseBuffer();
+    // A Stop asked while the step started reaches its process now, its wind-down counted from here.
+    if (run.stopRequested) {
+      run.stopRequestedAt = Date.now();
+      void askToStop(shellId);
+    }
     if (pageGone) keepForReload();
     return exit;
   }
@@ -1450,6 +1461,7 @@ export function useDesktopLocalRuns() {
       a.startedAt <= until(b) &&
       b.startedAt <= until(a);
     const cutoff = Date.now() - 2 * 60_000;
+    let finishedLinked = false;
     for (const run of runs.value) {
       const baseline = run.piwiRunBaseline;
       if (baseline == null) continue;
@@ -1457,6 +1469,7 @@ export function useDesktopLocalRuns() {
       const origin = localRunOriginKind(run.kind);
       if (!origin || !run.originRef) continue;
       run.piwiRunIds ??= {};
+      const linkedBefore = run.piwiRunId;
       const linkedSteps = Object.keys(run.piwiRunIds).length;
       // A run linked as a whole (its reporter named none) is done; else each step not linked yet is looked up.
       if (run.piwiRunId != null && linkedSteps === 0) continue;
@@ -1486,7 +1499,10 @@ export function useDesktopLocalRuns() {
           // Server briefly unavailable — the next stream event retries.
         }
       }
+      if (run.status !== 'running' && run.piwiRunId !== linkedBefore) finishedLinked = true;
     }
+    // A run that ended before its Piwi run was known keeps its links through a restart.
+    if (finishedLinked) keepFinished();
   }
 
   /**
@@ -1774,17 +1790,17 @@ export function useDesktopLocalRuns() {
     if (run.status !== 'running') return;
     if (!run.stopRequested) run.stopRequestedAt = Date.now();
     run.stopRequested = true;
-    const core = tauriCore();
-    const shellId = run.shellId;
-    if (core && shellId != null) {
-      try {
-        await core.invoke('desktop_stop_local_tests', { runId: shellId });
-      } catch {
-        // The process already exited between the check and the stop.
-      }
-      // Unblock the awaited step even if no exit event ever arrives.
-      setTimeout(() => exitResolvers.get(shellId)?.(null), STOP_EXIT_FALLBACK_MS);
+    if (run.shellId != null) await askToStop(run.shellId);
+  }
+
+  /** Asks the shell to stop process `shellId`, which kills it if asked before; its step ends even with no exit event. */
+  async function askToStop(shellId: number) {
+    try {
+      await tauriCore()?.invoke('desktop_stop_local_tests', { runId: shellId });
+    } catch {
+      // The process already exited between the check and the stop.
     }
+    setTimeout(() => exitResolvers.get(shellId)?.(null), STOP_EXIT_FALLBACK_MS);
   }
 
   /**
@@ -1796,6 +1812,8 @@ export function useDesktopLocalRuns() {
    */
   function keepForReload() {
     pageGone = true;
+    // What a finished run learned since its end (its Piwi run, its environment's label) outlives a restart too.
+    keepFinished();
     const ended = endedOfRuns();
     const kept = (lines: number): KeptForReload => ({
       runs: runs.value.map((run) => ({ ...run, lines: lines > 0 ? run.lines.slice(-lines) : [] })),
@@ -2033,15 +2051,24 @@ export function useDesktopLocalRuns() {
   }
 
   function clearFinished() {
-    runs.value = runs.value.filter((r) => r.status === 'running');
-    keepFinished();
+    forget(runs.value.filter((r) => r.status !== 'running').map((r) => r.key));
   }
 
   /** Removes one run that ended from the tray, its separate output window with it. */
   function removeRun(run: LocalRun) {
-    if (run.status === 'running') return;
-    runs.value = runs.value.filter((r) => r.key !== run.key);
-    unseen.value = unseen.value.filter((key) => key !== run.key);
+    if (run.status !== 'running') forget([run.key]);
+  }
+
+  /** Drops runs from the tray with what the window keeps for them (Hold failures, a separate output window, unseen). */
+  function forget(keys: number[]) {
+    const gone = new Set(keys);
+    const without = <T>(record: Record<number, T>) =>
+      Object.fromEntries(Object.entries(record).filter(([key]) => !gone.has(Number(key)))) as Record<number, T>;
+    runs.value = runs.value.filter((r) => !gone.has(r.key));
+    holds.value = without(holds.value);
+    separate.value = without(separate.value);
+    keptWindows.value = keptWindows.value.filter((key) => !gone.has(key));
+    unseen.value = unseen.value.filter((key) => !gone.has(key));
     keepFinished();
   }
 

@@ -88,7 +88,12 @@ function force() {
 </script>
 
 <template>
-  <span v-if="shownStopping" class="inline-flex shrink-0 items-center gap-2" data-testid="run-stopping">
+  <!-- Below sm the seconds go under Force stop, so a narrow row keeps its title. -->
+  <span
+    v-if="shownStopping"
+    class="inline-flex shrink-0 flex-col-reverse items-end gap-0.5 sm:flex-row sm:items-center sm:gap-2"
+    data-testid="run-stopping"
+  >
     <span
       v-if="secondsLeft > 0"
       :id="countdownId"
@@ -101,7 +106,7 @@ function force() {
       <UButton
         ref="force"
         size="xs"
-        color="error"
+        color="neutral"
         variant="outline"
         icon="i-lucide-square"
         :aria-disabled="guarded || undefined"
