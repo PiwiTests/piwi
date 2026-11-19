@@ -2,7 +2,7 @@
 # tag's version (apps/desktop/scripts/node-version.mjs reads the first FROM). Dependabot moves the tag and the digest
 # together.
 # Stage 1: Build stage
-FROM node:24.22.2-alpine3.24@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS builder
+FROM node:24.22.3-alpine3.24@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS builder
 
 WORKDIR /app
 
@@ -84,7 +84,7 @@ RUN set -eux; \
     rm -rf apps/application/.output/public/demo
 
 # Stage 2: Production stage
-FROM node:24.22.2-alpine3.24@sha256:a34ab6d7f6f4813f4d0c5469d74685604b962fbdbf5793a7bc7b4998ecb867c8 AS production
+FROM node:24.22.3-alpine3.24@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS production
 
 WORKDIR /app
 
