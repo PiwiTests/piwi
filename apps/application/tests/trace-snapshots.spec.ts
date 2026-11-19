@@ -49,7 +49,7 @@ test.describe('Trace aria/screen snapshots', () => {
               { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
               { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
               { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
-              { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 120, failed: true },
+              { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 300, failed: true },
             ],
           },
         ],
@@ -188,7 +188,7 @@ test.describe('Trace aria/screen snapshots', () => {
     await lane.scrollIntoViewIfNeeded();
     const box = (await lane.boundingBox())!;
     await page.mouse.move(box.x + box.width * 0.95, box.y + box.height / 2);
-    await expect(page.getByTestId('timeline-screen-preview')).toContainText('Painted at');
+    await expect(page.getByTestId('timeline-screen-preview')).toContainText('Recorded at');
     await page.mouse.move(0, 0);
 
     // From the keyboard, the lane opens its frames on the page at the failure, with the error raised on it.
@@ -246,6 +246,30 @@ test.describe('Trace aria/screen snapshots', () => {
     await page.mouse.move(0, 0);
     await expect(panel).toHaveAttribute('aria-label', /^At the failure, t/);
 
+    // Reached from a row, the panel keeps that row, and its controls act on it: the failing step's arrows move to
+    // another frame, another step's Before shows that step.
+    const enterPanelFrom = async (text: string) => {
+      const row = (await page.locator('table tbody tr', { hasText: text }).first().boundingBox())!;
+      await page.mouse.move(row.x + 120, row.y + 12);
+      const box = (await panel.boundingBox())!;
+      await page.mouse.move(box.x + 24, Math.min(Math.max(row.y + 12, box.y + 24), box.y + box.height - 24));
+    };
+    await enterPanelFrom('Cancel');
+    await expect(panel).toHaveAttribute('aria-label', /^At the failure, t/);
+    await panel.getByRole('button', { name: 'The page at its previous frame' }).click();
+    await expect(panel).toHaveAttribute('aria-label', /^The page then, t/);
+    await enterPanelFrom('Fill');
+    await expect(panel).toHaveAttribute('aria-label', /^After the step, t-/);
+    await panel.getByRole('button', { name: 'Before', exact: true }).click();
+    await expect(panel).toHaveAttribute('aria-label', /^Before the step, t-/);
+    await expect(panel).toContainText('Fill');
+    await page.mouse.move(0, 0);
+    await page
+      .getByRole('button', { name: /^Show the page at / })
+      .last()
+      .click();
+    await panel.getByRole('button', { name: 'At the failure', exact: true }).click();
+
     // Its frame opens full screen.
     await panel.getByRole('button', { name: /^Open the page full screen/ }).click();
     await expect(page.getByRole('dialog', { name: /^Page at / })).toBeVisible();
@@ -276,8 +300,12 @@ test.describe('Trace aria/screen snapshots', () => {
     // A hover card: the page before and after the row under the pointer, and no side panel.
     await views.getByRole('button', { name: 'Hover card' }).click();
     await expect(page.getByTestId('timeline-page-panel')).toHaveCount(0);
-    await page.locator('table tbody tr', { hasText: 'Cancel' }).first().hover();
+    const failingRow = page.locator('table tbody tr', { hasText: 'Cancel' }).first();
+    await failingRow.hover({ position: { x: 240, y: 12 } });
     await expect(page.getByTestId('timeline-page-hover-card')).toContainText('At the failure');
+    // Over the failing step's own views, the card makes way.
+    await failingRow.getByRole('tablist', { name: 'Page at the failing step' }).hover();
+    await expect(page.getByTestId('timeline-page-hover-card')).toHaveCount(0);
     await page.mouse.move(0, 0);
     await expect(page.getByTestId('timeline-page-hover-card')).toHaveCount(0);
 

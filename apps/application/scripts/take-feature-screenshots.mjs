@@ -174,7 +174,7 @@ async function ingestTraceSnapshotCase(request, base) {
             { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
             { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
             { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
-            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 120, failed: true },
+            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 300, failed: true },
           ],
         },
       ],
@@ -8523,6 +8523,8 @@ const SCENES = [
       const views = page.getByRole('group', { name: 'How the list shows the page' });
       if (width >= 1280) {
         await views.getByRole('button', { name: 'Hover card' }).click();
+        // In view first: the capture must not scroll the row away from the pointer.
+        await page.locator('[data-shot="evidence-card"]').scrollIntoViewIfNeeded();
         await page
           .locator('table tbody tr', { hasText: 'Cancel' })
           .first()

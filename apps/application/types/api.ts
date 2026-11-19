@@ -982,7 +982,7 @@ export interface TraceFramesResponse {
   pages: TraceFramePage[];
   /** How many frames the trace recorded, every page together. */
   total: number;
-  /** True when `pages` leaves frames out: past `MAX_TRACE_FRAMES` frames, or `MAX_TRACE_FRAME_PAGES` pages. */
+  /** True when the listed pages are an even sample of their frames, past `MAX_TRACE_FRAMES`; `total` also counts unlisted pages. */
   capped: boolean;
   /**
    * When the test started on the trace's clock, in epoch ms: its test runner's header, else its first browser

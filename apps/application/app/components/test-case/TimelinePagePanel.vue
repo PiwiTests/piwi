@@ -168,7 +168,7 @@ const aspect = computed(() =>
       A native dialog does not show in the screencast: this is the page behind it.
     </p>
     <p v-if="frame" class="text-xs text-muted tabular-nums">
-      Painted at {{ formatTime(frame.at) }}<template v-if="pages.length > 1"> · page {{ shown!.page + 1 }}</template>
+      Recorded at {{ formatTime(frame.at) }}<template v-if="pages.length > 1"> · page {{ shown!.page + 1 }}</template>
     </p>
   </section>
 </template>

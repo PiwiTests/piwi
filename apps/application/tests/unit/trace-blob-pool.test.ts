@@ -243,7 +243,7 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
 
   test('the frame view serves a 1.63 frame a blob holds itself, stored before frames were pooled', async () => {
     // A full ZIP stored as is, with no manifest: its frames never went to the pool.
-    const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
+    const trace = buildTrace({ c1Before: png(11), c1After: png(12), c2Before: png(13) });
     const path = `project-1/blobs/${createHash('sha256').update(trace).digest('hex')}.zip`;
     storageFiles.set(path, trace);
 

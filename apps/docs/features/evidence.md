@@ -32,8 +32,8 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   duration, colored only when it lasts at least 1 s and a third of the test, or twice its time in recent passing
   runs and 1 s more. **Around the failure** / **Whole test**, a drag across the axis and one chip per item type
   filter both. A trace adds a **Screen** lane per page: hover for the page then, click for its frames. **Show the
-  page** puts it beside the steps for the hovered or picked row, in a card on hover, or as thumbnails; a row's time
-  opens it below. Hooks and fixtures fold into
+  page** puts it beside the steps for the hovered or picked row, in a card on hover, or as thumbnails; without a
+  panel, a row's time opens it below. Hooks and fixtures fold into
   **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
   shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out; a
   [breakpoint](./editor-breakpoints)'s stop is a **Paused** band.

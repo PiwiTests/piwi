@@ -8,7 +8,7 @@ import type { TraceFramesResponse } from '~~/types/api';
 
 /** One frame on the timeline's clock. */
 export interface PlacedFrame {
-  /** When the page painted it, in ms after the timeline's `origin`. */
+  /** When the trace recorded it, in ms after the timeline's `origin`. */
   at: number;
   /** Its name in the trace, which the frame route serves. */
   name: string;

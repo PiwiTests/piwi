@@ -5,8 +5,8 @@ const ONE_YEAR_S = 60 * 60 * 24 * 365;
 
 /**
  * How the failure timeline's list shows the page (`PAGE_VIEWS`): a per-browser
- * preference kept in a cookie, so the server renders the view the reader left.
- * The side panel, the default, stores nothing.
+ * preference kept in a cookie for a year. The side panel, the default, stores
+ * nothing.
  */
 export function useTimelinePageView() {
   const cookie = useCookie<string | null>(COOKIE, { default: () => null, maxAge: ONE_YEAR_S, sameSite: 'lax' });

@@ -72,6 +72,8 @@ interface TraceBundle {
   resourcesByUrl: Map<string, TraceResource>;
   /** The `aria/*` and `screenshots/*` entries the archive holds, still compressed. */
   snapshotEntries: Map<string, PackedEntry>;
+  /** The names of the `screencast/` entries the archive holds itself (read by `inlineScreencastEntries`). */
+  inlineScreencastNames: Set<string>;
   readResource: TraceResourceReader;
   /** A screenshot or frame the slim blob left in the project pool, by its entry name; null when there is none. */
   readPooledEntry: (entryName: string) => Promise<Buffer | null>;
@@ -225,6 +227,7 @@ async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
   const snapshotEntries = packEntries(zip, metas, (name) =>
     name.startsWith('aria/') || name.startsWith('screenshots/') ? name : null,
   );
+  const inlineScreencastNames = new Set(metas.filter((m) => m.name.startsWith('screencast/')).map((m) => m.name));
   const inlineResources = packEntries(zip, metas, (name) =>
     name.startsWith('resources/') ? name.slice('resources/'.length) : null,
   );
@@ -241,6 +244,7 @@ async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
     network: networkTexts.length > 0 ? parseNetworkTexts(networkTexts) : [],
     resourcesByUrl: parseResourceSnapshots(networkTexts),
     snapshotEntries,
+    inlineScreencastNames,
     readResource: traceResourceReader(blobPath, inlineResources, manifest),
     readPooledEntry: pooledEntryReader(blobPath, manifest),
     // The parsed events take a few times their text in memory.
@@ -529,13 +533,24 @@ export async function getTraceFramesFromBlob(blobPath: string): Promise<TraceFra
 
 /** How many blobs' inline screencast frames stay read at once, the last asked for. */
 const INLINE_SCREENCAST_BLOBS = 2;
-const inlineScreencasts = new Map<string, Promise<Map<string, PackedEntry> | null>>();
+interface CachedScreencast {
+  entries: Promise<Map<string, PackedEntry> | null>;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const inlineScreencasts = new Map<string, CachedScreencast>();
+
+function forgetScreencast(blobPath: string, cached: CachedScreencast): void {
+  if (inlineScreencasts.get(blobPath) !== cached) return;
+  if (cached.timer) clearTimeout(cached.timer);
+  inlineScreencasts.delete(blobPath);
+}
 
 /**
  * The `screencast/` entries a blob holds itself (a blob stored before frames
  * were pooled, or as uploaded), still compressed: read when the frame route
  * first asks for one, never with the trace's other views, and kept for the
- * last {@link INLINE_SCREENCAST_BLOBS} content-addressed blobs only.
+ * last {@link INLINE_SCREENCAST_BLOBS} content-addressed blobs only, each until
+ * it goes unread as long as a loaded trace does.
  */
 function inlineScreencastEntries(blobPath: string): Promise<Map<string, PackedEntry> | null> {
   const read = () =>
@@ -545,28 +560,36 @@ function inlineScreencastEntries(blobPath: string): Promise<Map<string, PackedEn
         : null,
     );
   if (!CONTENT_ADDRESSED_BLOB.test(blobPath)) return read();
-  const hit = inlineScreencasts.get(blobPath);
-  if (hit) {
+  let cached = inlineScreencasts.get(blobPath);
+  if (cached) {
     inlineScreencasts.delete(blobPath);
-    inlineScreencasts.set(blobPath, hit);
-    return hit;
+    inlineScreencasts.set(blobPath, cached);
+  } else {
+    const entry: CachedScreencast = { entries: Promise.resolve(null), timer: null };
+    entry.entries = read().then((entries) => {
+      if (!entries) forgetScreencast(blobPath, entry);
+      return entries;
+    });
+    cached = entry;
+    inlineScreencasts.set(blobPath, cached);
+    for (const [path, other] of inlineScreencasts) {
+      if (inlineScreencasts.size <= INLINE_SCREENCAST_BLOBS) break;
+      forgetScreencast(path, other);
+    }
   }
-  const loading = read().then((entries) => {
-    if (!entries) inlineScreencasts.delete(blobPath);
-    return entries;
-  });
-  inlineScreencasts.set(blobPath, loading);
-  for (const path of inlineScreencasts.keys()) {
-    if (inlineScreencasts.size <= INLINE_SCREENCAST_BLOBS) break;
-    inlineScreencasts.delete(path);
-  }
-  return loading;
+  const kept = cached;
+  if (kept.timer) clearTimeout(kept.timer);
+  kept.timer = setTimeout(() => forgetScreencast(blobPath, kept), BUNDLE_IDLE_MS);
+  kept.timer.unref?.();
+  return kept.entries;
 }
 
-/** A `screencast/` frame: from the project pool when ingestion moved it there, else from the blob itself. */
+/**
+ * A `screencast/` frame: from the blob itself when its archive holds the entry,
+ * else from the project pool, where ingestion moved it.
+ */
 async function readScreencastFrame(bundle: TraceBundle, blobPath: string, name: string): Promise<Buffer | null> {
-  const pooled = await bundle.readPooledEntry(name);
-  if (pooled) return pooled;
+  if (!bundle.inlineScreencastNames.has(name)) return bundle.readPooledEntry(name);
   const entry = (await inlineScreencastEntries(blobPath))?.get(name);
   if (!entry) return null;
   try {

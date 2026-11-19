@@ -598,7 +598,7 @@ export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesRes
     .slice(0, MAX_TRACE_FRAME_PAGES);
   const listed = ordered.reduce((sum, frames) => sum + frames.length, 0);
   const pages: TraceFramePage[] = ordered.map((frames) => {
-    const quota = Math.max(1, Math.floor((MAX_TRACE_FRAMES * frames.length) / listed));
+    const quota = Math.max(2, Math.floor((MAX_TRACE_FRAMES * frames.length) / listed));
     return {
       pageId: frames[0]!.pageId,
       frames: evenSample(frames, quota).map((f) => ({
@@ -610,13 +610,12 @@ export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesRes
     };
   });
   const kept = pages.reduce((sum, page) => sum + page.frames.length, 0);
-  return { status: 'ok', pages, total, capped: kept < total, startEpochMs };
+  return { status: 'ok', pages, total, capped: kept < listed, startEpochMs };
 }
 
-/** `count` items spread evenly over `items`, its first and last included (its last alone for one). */
+/** `count` items (two or more) spread evenly over `items`, its first and last included. */
 function evenSample<T>(items: readonly T[], count: number): T[] {
   if (items.length <= count) return [...items];
-  if (count === 1) return [items[items.length - 1]!];
   return Array.from({ length: count }, (_, i) => items[Math.round((i * (items.length - 1)) / (count - 1))]!);
 }
 

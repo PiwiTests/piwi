@@ -145,7 +145,8 @@ describe('buildTraceFrames', () => {
       Array.from({ length: MAX_TRACE_FRAME_PAGES }, (_, i) => `page@${i}`),
     );
     expect(result.pages.every((p) => p.frames.length === 2)).toBe(true);
-    expect(result).toMatchObject({ total: pages * 2, capped: true });
+    // The listed pages are whole: nothing of theirs is sampled.
+    expect(result).toMatchObject({ total: pages * 2, capped: false });
   });
 });
 
