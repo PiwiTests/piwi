@@ -107,6 +107,9 @@ The assertions a check skips, each only once it saw the bug's state. A new skip 
   does not watch names its call as Playwright's API does (`Worker 1 · locator.click internal:role=link[…]`), where
   the call log's title is promised (`Worker 1 · Click getByRole('link', { name: 'Cart' })`). The check takes the line
   only as naming its worker while it sees that form.
+- [#1567](https://github.com/PiwiTests/piwi/issues/1567), in `shared-pause`: the run page's view of the paused test
+  says its call is `Running for …`, where its row says **Paused**. The check takes the view's words as they are while
+  it sees that form.
 
 ## The take
 

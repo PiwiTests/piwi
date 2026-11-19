@@ -630,13 +630,18 @@ export const STORY = [
         'the paused page in the run page’s live view',
         60_000,
       );
+      state.pausedCall = await dashboard
+        .getByTestId('lane-panel')
+        .getByTestId('live-call-state')
+        .innerText()
+        .catch(() => '');
       // The editor counts the team's view of its run.
       state.viewsSaid = await waitFor(async () => {
         const said = await status();
         return said.includes('shared live · 1 view') ? said : null;
       }, "the team's view counted in VS Code's status item");
     },
-    async check({ instance, state }) {
+    async check({ instance, state, skip }) {
       const run = await instance.run(state.sharedRun);
       expect(run.origin !== 'ci', `the shared run is the developer's (${run.origin})`);
       expect(
@@ -644,6 +649,12 @@ export const STORY = [
         `the run page's row says the test is paused: ${JSON.stringify(state.pausedRow)}`,
       );
       expect(state.pausedFrame > 100, `the run page showed the paused page (${state.pausedFrame} pixels wide)`);
+      // The view says how long the call it waits at has run, as if it ran.
+      if (state.pausedCall.startsWith('Running for')) {
+        skip('#1567', `the run page's view says the test is paused: ${state.pausedCall}`);
+      } else {
+        expect(state.pausedCall.includes('Paused'), `the run page's view says the test is paused: ${state.pausedCall}`);
+      }
       expect(/^Piwi: paused · .* · shared live · 1 view/.test(state.viewsSaid), `VS Code says: ${state.viewsSaid}`);
     },
   }),
