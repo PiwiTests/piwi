@@ -576,10 +576,11 @@ export const MAX_TRACE_FRAMES = 1000;
  * server and the demo produce the same answer.
  */
 export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesResponse {
-  if (!parsed) return { status: 'no-trace', pages: [], total: 0, capped: false };
+  if (!parsed) return { status: 'no-trace', pages: [], total: 0, capped: false, startEpochMs: null };
   const total = parsed.screencastFrames.length;
+  const startEpochMs = traceStartEpochMs(parsed);
   const toWall = wallClockOf(parsed.contexts);
-  if (!toWall || total === 0) return { status: 'no-frames', pages: [], total, capped: false };
+  if (!toWall || total === 0) return { status: 'no-frames', pages: [], total, capped: false, startEpochMs };
 
   const byPage = new Map<string, TraceScreencastFrame[]>();
   for (const frame of parsed.screencastFrames) {
@@ -597,7 +598,14 @@ export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesRes
     };
   });
   pages.sort((a, b) => a.frames[0]!.epochMs - b.frames[0]!.epochMs);
-  return { status: 'ok', pages, total, capped: step > 1 };
+  return { status: 'ok', pages, total, capped: step > 1, startEpochMs };
+}
+
+/** When the test started on the trace's clock: its test runner's header, else its first browser context's. */
+function traceStartEpochMs(parsed: ParsedTraceData): number | null {
+  const timed = parsed.contexts.filter((c) => typeof c.wallTime === 'number' && Number.isFinite(c.wallTime));
+  const header = timed.find((c) => c.origin === 'testRunner') ?? timed[0];
+  return header ? Math.round(header.wallTime!) : null;
 }
 
 /**

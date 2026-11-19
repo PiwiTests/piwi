@@ -166,7 +166,9 @@ test.describe('Trace aria/screen snapshots', () => {
     await expect(before).toBeHidden();
   });
 
-  test('the Timeline tab shows a filmstrip of the page before each step', async ({ page }) => {
+  test("the Timeline tab's Screen lane shows the page through the test, in place of the filmstrip", async ({
+    page,
+  }) => {
     await page.goto(`/test-run-cases/${executionId}`);
     await waitForHydration(page);
 
@@ -175,9 +177,48 @@ test.describe('Trace aria/screen snapshots', () => {
       .getByRole('tab', { name: 'Timeline', exact: true })
       .click();
 
-    const filmstrip = page.getByRole('region', { name: 'Filmstrip of the page before each step' });
-    await expect(filmstrip).toBeVisible();
-    await expect(filmstrip.locator('[aria-label="failed"]')).toHaveCount(1);
+    const lane = page.getByRole('button', { name: 'Screen: open the page as the trace recorded it, at the failure' });
+    await expect(lane).toBeVisible();
+    await expect(page.locator('[data-timeline-screen] image').first()).toBeAttached();
+    // The lane shows what the filmstrip would: the filmstrip is gone.
+    await expect(page.getByRole('region', { name: 'Filmstrip of the page before each step' })).toHaveCount(0);
+
+    // Hovering the lane shows the page at that moment.
+    await lane.scrollIntoViewIfNeeded();
+    const box = (await lane.boundingBox())!;
+    await page.mouse.move(box.x + box.width * 0.95, box.y + box.height / 2);
+    await expect(page.getByTestId('timeline-screen-preview')).toContainText('Painted at');
+    await page.mouse.move(0, 0);
+
+    // From the keyboard, the lane opens its frames on the page at the failure, with the error raised on it.
+    await lane.focus();
+    await page.keyboard.press('Enter');
+    const viewer = page.getByRole('dialog', { name: /^Page at / });
+    await expect(viewer.getByRole('complementary', { name: 'Screenshot details' })).toContainText(
+      'locator.click: Timeout 1500ms exceeded.',
+    );
+    await page.keyboard.press('Escape');
+    await expect(viewer).toBeHidden();
+
+    // A drag across the axis zooms it and the steps under it; Reset zoom gives the window back.
+    const axis = page.locator('svg:has([data-timeline-screen])');
+    const plot = (await axis.boundingBox())!;
+    const y = plot.y + plot.height - 30;
+    await page.mouse.move(plot.x + plot.width * 0.3, y);
+    await page.mouse.down();
+    await page.mouse.move(plot.x + plot.width * 0.7, y, { steps: 6 });
+    await page.mouse.up();
+    const reset = page.getByTestId('timeline-zoom-reset');
+    await expect(reset).toBeVisible();
+    await expect(
+      page.getByRole('group', { name: 'Timeline window' }).getByRole('button', { pressed: true }),
+    ).toHaveCount(0);
+    await reset.click();
+    await expect(reset).toBeHidden();
+
+    // The lane can be turned off.
+    await page.getByTestId('timeline-screen-toggle').click();
+    await expect(lane).toBeHidden();
   });
 
   test("the Timeline tab shows the failing step's page as views and picks from the DOM of that moment", async ({

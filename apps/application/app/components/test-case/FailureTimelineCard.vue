@@ -56,6 +56,7 @@ import type { FailureTimeline, TimelineItem, TimelineLane, TimelineLanes } from 
 import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 import { useExecutionTimeline } from '~/composables/useExecutionTimeline';
+import { useTraceFrames } from '~/composables/useTraceFrames';
 import { useTimelineTypeFilter } from '~/composables/useTimelineTypeFilter';
 import {
   TIMELINE_TYPES,
@@ -92,7 +93,15 @@ import {
   type TimelineCitation,
   type WindowCuts,
 } from '~/utils/timeline-rows';
-import type { LightboxSubject } from '~/utils/lightbox';
+import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
+import {
+  MAX_SCREEN_LANES,
+  frameAspect,
+  frameIndexAt,
+  frameTiles,
+  placeTraceFrames,
+  type PlacedFramePage,
+} from '~/utils/timeline-frames';
 import { orderedStepParams, pausedOverlap, stepLabel } from '@piwitests/core/step-analysis';
 import { formatTimelineTime, pauseReasonText } from '~/utils/timeline';
 import { RESOURCE_TRACK_COLOR, seriesPaths } from '~/utils/resource-tracks';
@@ -183,10 +192,21 @@ const WINDOW_MODES: readonly { value: WindowMode; label: string }[] = [
   { value: 'around', label: 'Around the failure' },
   { value: 'whole', label: 'Whole test' },
 ];
+// A range dragged across the axis replaces the window until a window is picked again or the axis double-clicked.
+const zoom = ref<{ start: number; end: number } | null>(null);
+watch(
+  () => props.testRunsCaseId,
+  () => (zoom.value = null),
+);
+function pickMode(value: WindowMode): void {
+  mode.value = value;
+  zoom.value = null;
+}
 const span = computed(() => (data.value ? Math.max(1, data.value.end - data.value.origin) : 1));
 const domain = computed<{ start: number; end: number }>(() => {
   const tl = data.value;
   if (!tl) return { start: 0, end: 1 };
+  if (zoom.value) return zoom.value;
   if (mode.value === 'whole') return { start: 0, end: span.value };
   // A degenerate window (no failed step, or zero-width) falls back to the whole run.
   const w = tl.window;
@@ -267,9 +287,201 @@ const shownPauses = computed<TimelinePause[]>(() =>
   (data.value?.pauses ?? []).filter((p) => p.at + p.duration >= domain.value.start && p.at <= domain.value.end),
 );
 const hasPauseBand = computed(() => shownPauses.value.length > 0);
-const pauseBandTop = computed(() => TOP + (hasCallBand.value ? CALL_BAND_H : 0));
+const pauseBandTop = computed(() => bandsTop.value + (hasCallBand.value ? CALL_BAND_H : 0));
 const bandH = computed(() => (hasCallBand.value ? CALL_BAND_H : 0) + (hasPauseBand.value ? PAUSE_BAND_H : 0));
-const lanesTop = computed(() => TOP + bandH.value);
+const lanesTop = computed(() => bandsTop.value + bandH.value);
+
+// ── Screen lanes ─────────────────────────────────────────────────────────────
+// The trace's screencast on top of the axis, one lane per page: each tile shows
+// the page as it was at the tile's middle, dimmed when no new frame was painted
+// since the tile before. Hovering a lane shows the page at that moment, a click
+// opens the frames full screen there. On while the trace has frames, until the
+// viewer turns it off (kept per browser).
+const { data: framesData, frameUrl } = useTraceFrames(
+  () => props.testRunsCaseId,
+  () => showAxis.value,
+);
+const framePages = computed<PlacedFramePage[]>(() => {
+  const tl = data.value;
+  if (!tl) return [];
+  return placeTraceFrames(framesData.value, { origin: tl.origin, testStart: tl.testStart }).slice(0, MAX_SCREEN_LANES);
+});
+const showScreen = useLocalStorage('piwi-failure-timeline-screen', true, { initOnMounted: true });
+const screenOn = computed(() => showAxis.value && showScreen.value && framePages.value.length > 0);
+const SCREEN_TILE_H = 44;
+const SCREEN_LANE_H = SCREEN_TILE_H + 6;
+const screenAspect = computed(() => frameAspect(framePages.value));
+const bandsTop = computed(() => TOP + (screenOn.value ? framePages.value.length * SCREEN_LANE_H : 0));
+function screenLaneTop(page: number): number {
+  return TOP + page * SCREEN_LANE_H;
+}
+function screenLaneLabel(page: number): string {
+  return framePages.value.length > 1 ? `Page ${page + 1}` : 'Screen';
+}
+const screenTiles = computed(() => {
+  const count = Math.max(1, Math.floor(plotWidth.value / (SCREEN_TILE_H * screenAspect.value)));
+  const w = plotWidth.value / count;
+  return framePages.value.map((page) => {
+    const shown = frameTiles(page.frames, domain.value, count);
+    return shown.map((frame, i) => ({
+      x: plotLeft + i * w,
+      w,
+      src: frame >= 0 ? frameUrl(page.frames[frame]!.name) : null,
+      repeat: i > 0 && frame === shown[i - 1],
+    }));
+  });
+});
+
+/** The innermost step running at a moment, as its label. */
+function stepLabelAt(at: number): string | null {
+  let best: TimelineItem | null = null;
+  for (const step of data.value?.lanes.steps ?? []) {
+    const d = step.duration ?? 0;
+    if (step.at <= at && at <= step.at + d && (!best || d < (best.duration ?? 0))) best = step;
+  }
+  return best?.label ?? null;
+}
+
+/** The frame a page showed at the failure. */
+function failureFrame(page: PlacedFramePage): number {
+  return data.value ? frameIndexAt(page.frames, data.value.failureAt) : -1;
+}
+
+interface FrameHover {
+  src: string;
+  /** The moment under the pointer. */
+  at: number;
+  /** When the frame shown then was painted. */
+  paintedAt: number;
+  step: string | null;
+  atFailure: boolean;
+  aspect: number;
+}
+const {
+  data: hoveredFrame,
+  pos: framePos,
+  show: showFrame,
+  move: moveFrame,
+  hide: hideFrame,
+} = useChartTooltip<FrameHover>();
+const screenGuideX = ref<number | null>(null);
+
+/** The plot x of a pointer event, held to the plot. */
+function plotXOf(event: MouseEvent): number {
+  const svg = (event.currentTarget as Element).closest('svg');
+  const box = svg?.getBoundingClientRect();
+  const x = box ? event.clientX - box.left : plotLeft;
+  return Math.max(plotLeft, Math.min(plotRight.value, x));
+}
+function atOfX(x: number): number {
+  const { start, end } = domain.value;
+  return start + ((x - plotLeft) / plotWidth.value) * (end - start);
+}
+
+function onScreenMove(event: MouseEvent, pageIndex: number): void {
+  if (drag.active) return;
+  const page = framePages.value[pageIndex];
+  const x = plotXOf(event);
+  const at = atOfX(x);
+  const index = page ? frameIndexAt(page.frames, at) : -1;
+  screenGuideX.value = x;
+  if (!page || index < 0) {
+    hideFrame();
+    return;
+  }
+  const frame = page.frames[index]!;
+  if (hoveredFrame.value?.paintedAt === frame.at && hoveredFrame.value.src === frameUrl(frame.name)) {
+    hoveredFrame.value.at = at;
+    hoveredFrame.value.step = stepLabelAt(at);
+    moveFrame(event);
+    return;
+  }
+  showFrame(event, {
+    src: frameUrl(frame.name),
+    at,
+    paintedAt: frame.at,
+    step: stepLabelAt(at),
+    atFailure: index === failureFrame(page),
+    aspect: frame.width > 0 && frame.height > 0 ? frame.width / frame.height : screenAspect.value,
+  });
+}
+function onScreenLeave(): void {
+  hideFrame();
+  screenGuideX.value = null;
+}
+
+// The frames of one page full screen, from the one a click or a key picked.
+const lightbox = ref<{ page: number; index: number } | null>(null);
+const lightboxImages = computed<LightboxImage[]>(() => {
+  const page = lightbox.value ? framePages.value[lightbox.value.page] : null;
+  if (!page) return [];
+  const atFailure = failureFrame(page);
+  return page.frames.map((frame, i) => ({
+    src: frameUrl(frame.name),
+    name: `Page at ${formatRel(frame.at)}`,
+    failed: i === atFailure,
+    step: stepLabelAt(frame.at),
+    error: i === atFailure ? props.error || null : null,
+  }));
+});
+const lightboxIndex = computed<number | null>({
+  get: () => lightbox.value?.index ?? null,
+  set: (index) => (lightbox.value = index == null || !lightbox.value ? null : { ...lightbox.value, index }),
+});
+function openScreenAt(event: MouseEvent, pageIndex: number): void {
+  const page = framePages.value[pageIndex];
+  if (!page) return;
+  hideFrame();
+  lightbox.value = { page: pageIndex, index: Math.max(0, frameIndexAt(page.frames, atOfX(plotXOf(event)))) };
+}
+/** From the keyboard, a lane opens on the page at the failure. */
+function openScreenAtFailure(pageIndex: number): void {
+  const page = framePages.value[pageIndex];
+  if (page) lightbox.value = { page: pageIndex, index: Math.max(0, failureFrame(page)) };
+}
+
+// ── Drag to zoom ─────────────────────────────────────────────────────────────
+// A mouse drag across the plot zooms the axis and the table to the range it
+// covers; the click that ends a drag opens nothing.
+const drag = reactive({ from: null as number | null, to: 0, active: false });
+let dragEnded = false;
+function onPlotDown(event: PointerEvent): void {
+  if (event.button !== 0 || event.pointerType !== 'mouse') return;
+  const box = (event.currentTarget as SVGSVGElement).getBoundingClientRect();
+  const x = event.clientX - box.left;
+  const y = event.clientY - box.top;
+  if (x < plotLeft || x > plotRight.value || y < TOP || y > marksBottom.value) return;
+  Object.assign(drag, { from: x, to: x, active: false });
+}
+function onPlotPointerMove(event: PointerEvent): void {
+  onPlotMove(event);
+  if (drag.from == null) return;
+  drag.to = plotXOf(event);
+  if (!drag.active && Math.abs(drag.to - drag.from) > 4) {
+    drag.active = true;
+    (event.currentTarget as SVGSVGElement).setPointerCapture(event.pointerId);
+    hide();
+    onScreenLeave();
+  }
+}
+function onPlotUp(): void {
+  if (drag.from != null && drag.active) {
+    const a = Math.min(drag.from, drag.to);
+    const b = Math.max(drag.from, drag.to);
+    if (b - a >= 8) zoom.value = { start: atOfX(a), end: atOfX(b) };
+    dragEnded = true;
+    setTimeout(() => (dragEnded = false), 0);
+  }
+  Object.assign(drag, { from: null, active: false });
+}
+function onPlotClickCapture(event: MouseEvent): void {
+  if (!dragEnded) return;
+  dragEnded = false;
+  event.stopPropagation();
+}
+const brush = computed(() =>
+  drag.active && drag.from != null ? { x: Math.min(drag.from, drag.to), w: Math.abs(drag.to - drag.from) } : null,
+);
 const lanesHeight = computed(() => visibleLanes.value.length * LANE_H);
 
 // ── Resources rows ───────────────────────────────────────────────────────────
@@ -357,7 +569,7 @@ function cutArrowPath(side: 'start' | 'end', laneTop: number): string {
 const failureX = computed(() => (data.value ? xOf(data.value.failureAt) : 0));
 const windowShade = computed(() => {
   const tl = data.value;
-  if (!tl || mode.value !== 'whole' || tl.window.end <= tl.window.start) return null;
+  if (!tl || zoom.value || mode.value !== 'whole' || tl.window.end <= tl.window.start) return null;
   const x = xOf(tl.window.start);
   return { x, w: Math.max(1, xOf(tl.window.end) - x) };
 });
@@ -816,14 +1028,27 @@ function revealItem(item: TimelineItem) {
             v-for="option in WINDOW_MODES"
             :key="option.value"
             type="button"
-            :aria-pressed="mode === option.value ? 'true' : 'false'"
+            :aria-pressed="!zoom && mode === option.value ? 'true' : 'false'"
             class="rounded px-2 py-0.5 text-xs whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
-            :class="mode === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
-            @click="mode = option.value"
+            :class="!zoom && mode === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
+            @click="pickMode(option.value)"
           >
             {{ option.label }}
           </button>
         </div>
+        <span v-if="zoom" class="inline-flex items-center gap-1.5 text-xs text-muted tabular-nums">
+          {{ formatRel(zoom.start) }} to {{ formatRel(zoom.end) }}
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            data-testid="timeline-zoom-reset"
+            title="Show the window again (or double-click the axis)"
+            @click="zoom = null"
+          >
+            Reset zoom
+          </UButton>
+        </span>
         <TimelineTypeFilter
           v-if="showTypeFilter"
           :types="windowTypes"
@@ -833,6 +1058,23 @@ function revealItem(item: TimelineItem) {
           @only="onlyType"
           @show-all="showAllTypes"
         />
+        <button
+          v-if="framePages.length > 0"
+          type="button"
+          data-testid="timeline-screen-toggle"
+          :aria-pressed="showScreen ? 'true' : 'false'"
+          :title="showScreen ? 'Hide the page as the trace recorded it' : 'Show the page as the trace recorded it'"
+          class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium select-none outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+          :class="
+            showScreen
+              ? 'border-default bg-default text-default hover:bg-elevated/60'
+              : 'border-dashed border-accented text-muted hover:bg-elevated/60'
+          "
+          @click="showScreen = !showScreen"
+        >
+          <UIcon name="i-lucide-film" class="size-3.5 shrink-0" />
+          Screen
+        </button>
         <button
           v-if="resourceRows.length > 0"
           type="button"
@@ -863,8 +1105,14 @@ function revealItem(item: TimelineItem) {
           v-if="plotWidth > 0"
           :width="svgWidth"
           :height="svgHeight"
-          class="block"
-          @mousemove="onPlotMove"
+          class="block select-none"
+          :class="brush ? 'cursor-ew-resize' : ''"
+          @pointerdown="onPlotDown"
+          @pointermove="onPlotPointerMove"
+          @pointerup="onPlotUp"
+          @pointercancel="onPlotUp"
+          @click.capture="onPlotClickCapture"
+          @dblclick="zoom = null"
           @mouseleave="cursorState.on = false"
         >
           <!-- Default-window shade (only meaningful in whole-test view) -->
@@ -877,11 +1125,63 @@ function revealItem(item: TimelineItem) {
             class="fill-gray-400/10 dark:fill-gray-300/5"
           />
 
+          <!-- Screen lanes: the page as the trace's screencast recorded it, one lane per page -->
+          <g v-if="screenOn" data-timeline-screen>
+            <g v-for="(tiles, p) in screenTiles" :key="framePages[p]!.pageId" :data-timeline-screen-page="p">
+              <text
+                :x="0"
+                :y="screenLaneTop(p) + SCREEN_TILE_H / 2"
+                dominant-baseline="middle"
+                class="fill-gray-500 dark:fill-gray-400 text-[10px]"
+              >
+                {{ screenLaneLabel(p) }}
+              </text>
+              <rect
+                :x="plotLeft"
+                :y="screenLaneTop(p)"
+                :width="plotWidth"
+                :height="SCREEN_TILE_H"
+                rx="3"
+                class="fill-gray-100 dark:fill-gray-800"
+              />
+              <template v-for="(tile, i) in tiles" :key="i">
+                <image
+                  v-if="tile.src"
+                  :href="tile.src"
+                  :x="tile.x + 0.5"
+                  :y="screenLaneTop(p)"
+                  :width="Math.max(1, tile.w - 1)"
+                  :height="SCREEN_TILE_H"
+                  preserveAspectRatio="xMidYMin slice"
+                  :opacity="tile.repeat ? 0.45 : 1"
+                  class="pointer-events-none"
+                />
+              </template>
+              <rect
+                :x="plotLeft"
+                :y="screenLaneTop(p)"
+                :width="plotWidth"
+                :height="SCREEN_TILE_H"
+                fill="transparent"
+                class="cursor-zoom-in outline-none focus-visible:stroke-primary focus-visible:stroke-2"
+                role="button"
+                tabindex="0"
+                :aria-label="`${screenLaneLabel(p)}: open the page as the trace recorded it, at the failure`"
+                data-testid="timeline-screen-lane"
+                @mousemove="onScreenMove($event, p)"
+                @mouseleave="onScreenLeave"
+                @click="openScreenAt($event, p)"
+                @keydown.enter.prevent="openScreenAtFailure(p)"
+                @keydown.space.prevent="openScreenAtFailure(p)"
+              />
+            </g>
+          </g>
+
           <!-- Calls band: which method / test.step each run of actions came from -->
           <g v-if="hasCallBand">
             <text
               :x="0"
-              :y="TOP + CALL_BAND_H / 2"
+              :y="bandsTop + CALL_BAND_H / 2"
               dominant-baseline="middle"
               class="fill-gray-500 dark:fill-gray-400 text-[10px]"
             >
@@ -890,7 +1190,7 @@ function revealItem(item: TimelineItem) {
             <g v-for="span in callSpans" :key="span.id">
               <rect
                 :x="barRect(span.start, span.end - span.start).x"
-                :y="TOP + 2"
+                :y="bandsTop + 2"
                 :width="barRect(span.start, span.end - span.start).w"
                 :height="CALL_BAND_H - 4"
                 rx="2"
@@ -901,7 +1201,7 @@ function revealItem(item: TimelineItem) {
               <text
                 v-if="barRect(span.start, span.end - span.start).w > 44"
                 :x="barRect(span.start, span.end - span.start).x + 4"
-                :y="TOP + CALL_BAND_H / 2"
+                :y="bandsTop + CALL_BAND_H / 2"
                 dominant-baseline="middle"
                 class="fill-white text-[9px] pointer-events-none"
                 :style="{ clipPath: `inset(0 0 0 0)` }"
@@ -1143,6 +1443,27 @@ function revealItem(item: TimelineItem) {
             stroke-dasharray="4 3"
           />
 
+          <!-- The moment under the pointer on a screen lane -->
+          <line
+            v-if="screenGuideX != null"
+            :x1="screenGuideX"
+            :x2="screenGuideX"
+            :y1="TOP"
+            :y2="marksBottom"
+            class="stroke-gray-500/70 dark:stroke-gray-400/70 pointer-events-none"
+          />
+
+          <!-- The range a drag zooms to -->
+          <rect
+            v-if="brush"
+            :x="brush.x"
+            :y="TOP"
+            :width="brush.w"
+            :height="marksBottom - TOP"
+            class="fill-gray-500/10 stroke-gray-500 dark:fill-gray-400/10 dark:stroke-gray-400 pointer-events-none"
+            data-testid="timeline-zoom-brush"
+          />
+
           <!-- Axis ticks -->
           <g>
             <text
@@ -1184,8 +1505,11 @@ function revealItem(item: TimelineItem) {
         {{ resourceFactsText }}
       </p>
 
-      <!-- Filmstrip: the page before each step, from this run's trace screen snapshots. -->
+      <ScreenshotLightbox v-model="lightboxIndex" :images="lightboxImages" :subject="subject" />
+
+      <!-- Filmstrip: the page before each step, from this run's trace screen snapshots, where no lane shows the page. -->
       <TraceFilmstrip
+        v-if="!(showAxis && framePages.length > 0)"
         :test-runs-case-id="testRunsCaseId"
         :error="error"
         :failed="executionFailed(status)"
@@ -1611,6 +1935,20 @@ function revealItem(item: TimelineItem) {
         </p>
         <p v-else-if="hovered.status" class="text-gray-500">{{ hovered.status }}</p>
         <p v-if="hoveredCutText" class="text-gray-500">{{ hoveredCutText }}</p>
+      </ChartTooltip>
+      <ChartTooltip v-if="hoveredFrame" :pos="framePos" data-testid="timeline-screen-preview">
+        <img
+          :src="hoveredFrame.src"
+          alt=""
+          class="block w-60 rounded border border-default bg-elevated object-cover object-top"
+          :style="{ aspectRatio: String(hoveredFrame.aspect) }"
+        />
+        <p class="mt-1.5 tabular-nums text-gray-500 dark:text-gray-400">{{ formatRel(hoveredFrame.at) }}</p>
+        <p v-if="hoveredFrame.step" class="font-mono break-words">{{ hoveredFrame.step }}</p>
+        <p class="text-gray-500 tabular-nums">
+          Painted at {{ formatRel(hoveredFrame.paintedAt)
+          }}<template v-if="hoveredFrame.atFailure"> · on screen at the failure</template>
+        </p>
       </ChartTooltip>
     </Teleport>
   </SectionCard>

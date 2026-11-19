@@ -523,7 +523,7 @@ export async function getTraceSnapshotResourceFromBlob(
 /** The trace's screencast, page by page, on the timeline's clock. Feeds the timeline's Screen lane. */
 export async function getTraceFramesFromBlob(blobPath: string): Promise<TraceFramesResponse> {
   const bundle = await loadTraceBundle(blobPath);
-  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false };
+  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false, startEpochMs: null };
   return buildTraceFrames(bundle.parsed);
 }
 

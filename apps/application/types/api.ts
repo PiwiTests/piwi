@@ -984,6 +984,11 @@ export interface TraceFramesResponse {
   total: number;
   /** True when the trace recorded more than `MAX_TRACE_FRAMES`, so `pages` lists an even sample of them. */
   capped: boolean;
+  /**
+   * When the test started on the trace's clock, in epoch ms: its test runner's header, else its first browser
+   * context's. Null without a trace or a header.
+   */
+  startEpochMs: number | null;
 }
 
 /**

@@ -203,7 +203,7 @@ export async function apiGetDemoTraceSnapshot(testRunsCaseId: number, query?: UR
 export async function apiGetDemoTraceFrames(testRunsCaseId: number): Promise<unknown> {
   const { path } = await resolveCaseTrace(testRunsCaseId);
   const bundle = path ? await getTraceBundle(path) : null;
-  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false };
+  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false, startEpochMs: null };
   return buildTraceFrames(bundle.parsed);
 }
 

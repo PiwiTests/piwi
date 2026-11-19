@@ -1044,7 +1044,8 @@ export const HELP_TOPICS = {
     text: [
       'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure.',
       '',
-      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything.',
+      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything, or drag across the axis to zoom to a range (**Reset zoom** or a double-click gives the window back).',
+      '- **Screen** — with a trace, the page as its screencast recorded it, one lane per page: hover it to see the page at that moment and the step running then, click to open the frames full screen there. A dimmed tile shows the same frame as the one before. On while the trace has frames; the choice is remembered in this browser.',
       '- **Type chips** hide or show the steps, requests, console entries, dialogs and backend logs in the window. **Only** or Alt-click shows just one type; the failing step and the last shown type always stay. The line beside them says what is hidden, and the choice is remembered in this browser.',
       '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',

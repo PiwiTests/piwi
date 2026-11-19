@@ -77,6 +77,8 @@ describe('buildTraceFrames', () => {
       status: 'ok',
       total: 3,
       capped: false,
+      // The test runner's header says when the test started.
+      startEpochMs: 1_600_000_000_000,
       pages: [
         {
           pageId: 'page@1',
@@ -94,13 +96,19 @@ describe('buildTraceFrames', () => {
   });
 
   test('says when there is no trace, no frame, or no clock to place them on', () => {
-    expect(buildTraceFrames(null)).toEqual({ status: 'no-trace', pages: [], total: 0, capped: false });
+    expect(buildTraceFrames(null)).toEqual({
+      status: 'no-trace',
+      pages: [],
+      total: 0,
+      capped: false,
+      startEpochMs: null,
+    });
     expect(buildTraceFrames(parseTraceTexts([lines([libraryContext])])).status).toBe('no-frames');
 
     const unanchored = buildTraceFrames(
       parseTraceTexts([lines([{ type: 'screencast-frame', pageId: 'p', file: 'screencast/f.jpeg', timestamp: 1 }])]),
     );
-    expect(unanchored).toEqual({ status: 'no-frames', pages: [], total: 1, capped: false });
+    expect(unanchored).toEqual({ status: 'no-frames', pages: [], total: 1, capped: false, startEpochMs: null });
   });
 
   test('past the cap, lists an even sample of each page with its last frame', () => {
@@ -165,6 +173,8 @@ describe('committed demo trace', () => {
   test('lists its screencast on the wall clock Playwright names each frame by', () => {
     const result = buildTraceFrames(parsed);
     expect(result.status).toBe('ok');
+    // A trace without a test runner's header started when its browser context opened.
+    expect(result.startEpochMs).toBe(parsed.contexts[0]!.wallTime);
     expect(result.pages).toHaveLength(1);
     const frames = result.pages[0]!.frames;
     expect(frames).toHaveLength(9);
