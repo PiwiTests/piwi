@@ -8,6 +8,7 @@ import {
 } from '@piwitests/core/live-view';
 import {
   LiveWatch,
+  QUIET_MS,
   STALL_MS,
   STEADY_MS,
   heldLayers,
@@ -118,16 +119,18 @@ function watcher() {
   const heard: LiveViewerMessage[] = [];
   const states: LiveWatchState[] = [];
   const refused: Array<{ focus: LiveWorkerId; status: number | null }> = [];
+  const quiets: boolean[] = [];
   const watch = new LiveWatch(
     URL,
     {
       message: (message) => heard.push(message),
       state: (state) => states.push(state),
       focusRefused: (focus, status) => refused.push({ focus, status }),
+      quiet: (quiet) => quiets.push(quiet),
     },
     fake.fetcher,
   );
-  return { ...fake, watch, heard, states, refused };
+  return { ...fake, watch, heard, states, refused, quiets };
 }
 
 /** Let the stream's reads and the posts go on. */
@@ -367,6 +370,52 @@ describe('the run page’s watch', () => {
     await settle();
     expect(gets).toHaveLength(2);
     watch.close();
+  });
+
+  test('is quiet while its streams bring nothing past their opening, as behind a buffering proxy', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { watch, gets, quiets } = watcher();
+    watch.want({ focus: LANE, tiles: false, size: null, layers: [] });
+    await settle();
+    gets[0]!.write(HELLO);
+    await settle();
+    vi.advanceTimersByTime(QUIET_MS - 1);
+    expect(quiets).toEqual([]);
+    vi.advanceTimersByTime(1);
+    expect(quiets).toEqual([true]);
+    // Let go and opened again, the next stream brings its opening alone: the watch stays quiet.
+    vi.advanceTimersByTime(STALL_MS - QUIET_MS);
+    await settle();
+    vi.advanceTimersByTime(1000);
+    await settle();
+    expect(gets).toHaveLength(2);
+    gets[1]!.write(HELLO);
+    await settle();
+    expect(quiets).toEqual([true]);
+    // What comes after the opening ends it.
+    gets[1]!.write(LIVE_HEARTBEAT);
+    await settle();
+    expect(quiets).toEqual([true, false]);
+    watch.close();
+  });
+
+  test('is never quiet while the heartbeat comes, and is not quiet once closed', async () => {
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const { watch, gets, quiets } = watcher();
+    watch.want({ focus: LANE, tiles: false, size: null, layers: [] });
+    await settle();
+    gets[0]!.write(HELLO);
+    await settle();
+    for (let i = 0; i < 4; i++) {
+      vi.advanceTimersByTime(15_000);
+      gets[0]!.write(LIVE_HEARTBEAT);
+      await settle();
+    }
+    expect(quiets).toEqual([]);
+    vi.advanceTimersByTime(QUIET_MS);
+    expect(quiets).toEqual([true]);
+    watch.close();
+    expect(quiets).toEqual([true, false]);
   });
 
   test('stays closed once the instance refused it or ended it, until the page asks again', async () => {

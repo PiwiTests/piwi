@@ -26,7 +26,9 @@ import { LANE_LAYERS, readLaneLayers, type LaneLayer } from '@piwitests/core/liv
  * then sending its page's snapshots, whose pages the watch's id (`id`) names. It opens as soon as something is wanted, and closes once
  * nothing is. A stream that drops, breaks its framing or brings nothing for `STALL_MS` (the instance sends a heartbeat
  * every 15 s) is let go, its request aborted, and opens again, waiting longer each time, `RETRY_MS.length` times in a
- * row at most: a stream open `STEADY_MS` counts the tries afresh. One the instance refuses, or that ends saying why, or
+ * row at most: a stream open `STEADY_MS` counts the tries afresh. A stream that brings nothing for `QUIET_MS` makes the
+ * watch quiet (`LiveWatchEvents.quiet`), as a proxy that buffers the stream leaves it, through the streams opened
+ * again, until one brings more than what came as it opened. One the instance refuses, or that ends saying why, or
  * that gave up, stays closed until the page asks again (`resume`).
  * Nothing is kept: each message goes to the page as it comes.
  */
@@ -64,6 +66,8 @@ export interface LiveWatchEvents {
   state(state: LiveWatchState): void;
   /** The full view asked for could not be shown (`status`, the instance's answer; null for none): the watch stays. */
   focusRefused(focus: LiveWorkerId, status: number | null): void;
+  /** Whether the watch's streams bring nothing, not even the instance's heartbeat (`QUIET_MS`). */
+  quiet?(quiet: boolean): void;
 }
 
 /**
@@ -88,6 +92,11 @@ const RETRY_MS = [1000, 2000, 4000, 8000, 16000];
 const CHANGE_RETRY_MS = [500, 1000, 2000];
 /** How long a stream may bring nothing, its heartbeats included, before it counts as dropped. */
 export const STALL_MS = 45_000;
+/**
+ * How long a stream may bring nothing before the watch is quiet: past two of the heartbeats the instance sends every
+ * 15 s, and before `STALL_MS` lets the stream go.
+ */
+export const QUIET_MS = 35_000;
 /** How long a stream stays open before it counts as one that held: the next drop starts the tries again. */
 export const STEADY_MS = 30_000;
 
@@ -179,6 +188,8 @@ export class LiveWatch implements LiveWatchConnection {
   private steady: ReturnType<typeof setTimeout> | null = null;
   /** The watch closed saying why (refused, ended, given up): it opens again only as the page asks (`resume`). */
   private halted = false;
+  /** A stream brought nothing for `QUIET_MS`, and none since brought more than what came as it opened. */
+  private quiet = false;
 
   constructor(
     private readonly url: string,
@@ -235,7 +246,14 @@ export class LiveWatch implements LiveWatchConnection {
     this.controller?.abort();
     this.controller = null;
     this.forgetWatch();
+    this.hush(false);
     this.events.state({ kind: 'idle' });
+  }
+
+  private hush(quiet: boolean): void {
+    if (this.quiet === quiet) return;
+    this.quiet = quiet;
+    this.events.quiet?.(quiet);
   }
 
   /** The stream open is done with: its id, what it showed, and the changes asked of it go. */
@@ -283,11 +301,17 @@ export class LiveWatch implements LiveWatchConnection {
       void reader.cancel().catch(() => {});
       controller.abort();
     };
-    // A stream that brings nothing, not even its heartbeat, is half open: it is dropped.
+    // A stream that brings nothing, not even its heartbeat, is quiet, then half open: it is dropped.
     let stall: ReturnType<typeof setTimeout> | null = null;
+    let silent: ReturnType<typeof setTimeout> | null = null;
+    let reads = 0;
     const alive = (): void => {
       if (stall) clearTimeout(stall);
+      if (silent) clearTimeout(silent);
       stall = setTimeout(letGo, STALL_MS);
+      silent = setTimeout(() => {
+        if (this.controller === controller) this.hush(true);
+      }, QUIET_MS);
     };
     try {
       alive();
@@ -295,6 +319,8 @@ export class LiveWatch implements LiveWatchConnection {
         const { done, value } = await reader.read();
         if (done || this.controller !== controller) break;
         alive();
+        // What a buffering proxy holds back comes after what came with the stream's opening.
+        if (++reads > 1) this.hush(false);
         for (const raw of read(value)) {
           const message = readLiveViewerMessage(raw);
           if (!message) continue;
@@ -327,6 +353,7 @@ export class LiveWatch implements LiveWatchConnection {
       letGo();
     } finally {
       if (stall) clearTimeout(stall);
+      if (silent) clearTimeout(silent);
     }
     if (this.controller !== controller) return;
     if (ended) {

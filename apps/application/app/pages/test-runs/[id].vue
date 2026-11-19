@@ -1626,6 +1626,7 @@ const moreMenuItems = computed(() => {
               :signals="attentionNow"
               :focused="watchOpen ? watching : null"
               :state="live.state.value"
+              :quiet="live.quiet.value"
               :demo="isDemoMode"
               @focus="chooseWorker"
               @retry="live.resume()"

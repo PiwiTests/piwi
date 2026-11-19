@@ -51,6 +51,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](./share-live). |
+| **Watch** says nothing has come for 35 seconds | A reverse proxy buffers the live view's streams: turn its buffering off ([Reverse proxy](/operate/deployment#reverse-proxy-https)). |
 
 ## Watch a worker
 
@@ -71,9 +72,6 @@ A view follows its worker's lane: it says how each test ended, lists the lane's 
 worker restarts; untick **Follow the worker's next test** to end it with its test. The page's address names the lane
 (`?watch=2`; `?watch=3.2` for worker 2 of shard 3) for a link. It ends with the run, saying how it went, 30 s after its
 lane's worker left, as the live view turns off, or as you close it. A view that cannot open says why.
-
-A CI run never stops at a breakpoint or a `page.pause()`; a run on your machine does, and its row then says where,
-shared or not ([where a test stopped](./watch-a-run#where-a-test-stopped)).
 
 ## What is sent, to whom, and what is kept
 

@@ -13,6 +13,9 @@ import type { AiAttachedImage } from '../../../../utils/ai-provider';
 import { streamClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../../utils/ai-diagnosis';
 import { diagnosisFrame } from '../../../../utils/diagnosis-stream-frames';
 import { openAiKeys } from '../../../../utils/ai-credentials';
+import { streamHeaders } from '#shared/stream-headers';
+
+const STREAM_HEADERS = streamHeaders('text/event-stream');
 
 defineRouteMeta({
   openAPI: {
@@ -85,13 +88,8 @@ export default eventHandler(async (event) => {
         throw apiError({ statusCode: 409, message: 'Diagnosis is already running' });
       }
       if (existing.status === 'completed') {
-        // Return existing result as an immediate SSE stream
-        setResponseHeaders(event, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no',
-        });
+        // The stored result, as a stream of one event.
+        setResponseHeaders(event, STREAM_HEADERS);
         const encoder = new TextEncoder();
         return new Response(
           new ReadableStream({
@@ -100,14 +98,7 @@ export default eventHandler(async (event) => {
               controller.close();
             },
           }),
-          {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-              'X-Accel-Buffering': 'no',
-            },
-          },
+          { headers: STREAM_HEADERS },
         );
       }
     }
@@ -116,13 +107,7 @@ export default eventHandler(async (event) => {
   // The keys are opened once the diagnosis is sure to call the model.
   const config = await openAiKeys(db, resolved, requestCredentialActor(event, user), { projectId });
 
-  // SSE headers
-  setResponseHeaders(event, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
+  setResponseHeaders(event, STREAM_HEADERS);
 
   const encoder = new TextEncoder();
   let clientDisconnected = false;
