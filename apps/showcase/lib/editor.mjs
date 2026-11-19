@@ -28,6 +28,8 @@ const SETTINGS = {
   'extensions.confirmedUriHandlerExtensionIds': ['piwitests.piwi'],
   // The editor service's traffic in the Piwi log, which a failed take keeps.
   'piwi.trace.server': 'messages',
+  // A modal question (Share live's) drawn in the window, where a gesture answers it and the take films it.
+  'window.dialogStyle': 'custom',
 };
 
 export class Editor {
