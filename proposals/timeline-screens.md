@@ -10,15 +10,19 @@ puts them on the execution page's Timeline tab: as a lane on the time axis, and 
 - **Built:** the server reads the trace's `screencast-frame` events, in both shapes, and places them on the wall clock
   the timeline reads. `GET /api/test-run-cases/:id/trace-frames` lists them page by page, with the trace's test start,
   and `GET /api/test-run-cases/:id/trace-frame?name=` serves one; the demo answers both from its committed traces. The
-  timeline has the Screen lane (hover, click, Screen toggle), drag to zoom, and the page panel beside the step list
-  from `xl` (under the tapped row below it), with rows and bars marking each other on hover.
-- **Changed while building:** the failing step keeps its "Page at the failing step" block (DOM, accessibility tree,
+  timeline has the Screen lane (hover, click, Screen toggle), drag to zoom, and the page in the list three ways the
+  reader switches between, kept in a cookie: a side panel from `xl` (under the tapped row below it), a hover card, or a
+  thumbnail column. Rows and bars mark each other on hover.
+- **Changed while building:** the Screen chip is a toggle beside Resources, since the type filter counts timeline
+  items; a click on the lane opens the frames full screen, and the panel's arrows step between frames; a 1.63 trace's
+  per-action shots stay in the filmstrip, which shows where no lane does; every tile of the window loads, a few dozen
+  at most. The failing step keeps its "Page at the failing step" block (DOM, accessibility tree,
   picker) in its row, and the panel opens on the failing step before it ran rather than at the failure, so the two
   never show the same image. The panel shows from `xl`, not `lg`: below 1280 px the table has no room beside it.
   Frames of a trace recorded at another time than its execution (a fixture, a demo trace) are placed by the trace's
   test start.
 - **Left:** a tolerant "no visual change" comparison (below), and the lane on passing executions.
-- **Decided:** the event list shows the page in a side panel, not in a hover card or a thumbnail column.
+- **Decided:** all three treatments of the list ship behind a switch, the side panel by default.
 
 ## What a trace holds
 
@@ -57,5 +61,6 @@ wall clock, as the video marks do (`wallClockOf`).
 - **Visual change.** A focused field's caret repaints the page every 500 ms, so byte-identical frames are rare and
   "No change for 28 s" needs a tolerant comparison (a small grayscale signature per frame). Where it runs, server or
   browser, is decided with phase 2.
-- **Several pages.** One lane per page, or one lane that follows the page the current step acts on.
+- **Several pages.** The lane shows one row per page (three at most), and the panel shows the page that painted last
+  by then, so a closed popup's last frame stays in front until the main page paints again.
 - **Passing executions.** They have no axis today; whether they get the lane and the panel.

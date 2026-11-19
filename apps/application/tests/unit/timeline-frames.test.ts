@@ -5,7 +5,9 @@ import {
   frameIndexAt,
   frameTiles,
   pageInFront,
+  parsePageView,
   placeTraceFrames,
+  stepFrames,
   subjectMoment,
   type PlacedFrame,
 } from '../../app/utils/timeline-frames';
@@ -117,5 +119,40 @@ describe('pageInFront', () => {
     expect(pageInFront(pages, 200)).toEqual({ page: 0, frame: 0 });
     expect(pageInFront(pages, 350)).toEqual({ page: 1, frame: 0 });
     expect(pageInFront(pages, 500)).toEqual({ page: 0, frame: 1 });
+  });
+});
+
+describe('parsePageView', () => {
+  test('keeps a known view and falls back to the side panel', () => {
+    expect(parsePageView('thumbs')).toBe('thumbs');
+    expect(parsePageView('hover')).toBe('hover');
+    expect(parsePageView('grid')).toBe('panel');
+    expect(parsePageView(undefined)).toBe('panel');
+  });
+});
+
+describe('stepFrames', () => {
+  const pages = [{ pageId: 'main', frames: frames(100, 400) }];
+  const step = { kind: 'step', key: 's', label: 'Fill', failed: false, phase: 'after' } as const;
+
+  test('reads the page before and after a step, and says when no new frame came between', () => {
+    expect(stepFrames(pages, { ...step, at: 150, end: 450 }, 10_000)).toEqual({
+      before: { page: 0, frame: 0 },
+      after: { page: 0, frame: 1 },
+      unchanged: false,
+    });
+    const long = [{ pageId: 'main', frames: frames(100, 5_000) }];
+    expect(stepFrames(long, { ...step, at: 150, end: 1_500 }, 10_000).unchanged).toBe(true);
+    expect(stepFrames(pages, { ...step, at: 10, end: 50 }, 10_000)).toEqual({
+      before: null,
+      after: null,
+      unchanged: false,
+    });
+  });
+
+  test('says nothing of a short step, nor of a sampled frame list', () => {
+    expect(stepFrames(pages, { ...step, at: 150, end: 300 }, 10_000).unchanged).toBe(false);
+    const long = [{ pageId: 'main', frames: frames(100, 5_000) }];
+    expect(stepFrames(long, { ...step, at: 150, end: 1_500 }, 10_000, true).unchanged).toBe(false);
   });
 });

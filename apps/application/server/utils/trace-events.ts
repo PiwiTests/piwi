@@ -130,7 +130,7 @@ export interface TraceScreencastFrame {
   file: string;
   width: number;
   height: number;
-  /** When the page painted it, in the trace's own timebase (as action `startTime`). */
+  /** When the trace recorded it, in the trace's own timebase (as action `startTime`). */
   timestamp: number;
 }
 

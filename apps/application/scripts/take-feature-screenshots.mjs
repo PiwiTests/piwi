@@ -8462,13 +8462,15 @@ const SCENES = [
     { width: 390, suffix: '-mobile' },
   ].map(({ width, suffix }) => ({
     name: `timeline-screen-lane${suffix}`,
-    description: `Timeline tab of a failing execution with a 1.63 trace: the Screen lane over the axis, the page hovered, a dragged range, then a row's page, at ${width} px`,
+    description: `Timeline tab of a failing execution with a 1.63 trace: the Screen lane over the axis, the page hovered, a dragged range, a row's page, then the hover card and thumbnails, at ${width} px`,
     viewport: { width, height: width < 640 ? 2000 : 1300 },
     outputs: [
       `timeline-screen-lane${suffix}.png`,
       `timeline-screen-lane${suffix}-hover.png`,
       `timeline-screen-lane${suffix}-zoomed.png`,
       `timeline-screen-lane${suffix}-row.png`,
+      ...(width >= 1280 ? [`timeline-screen-lane${suffix}-hover-card.png`] : []),
+      `timeline-screen-lane${suffix}-thumbs.png`,
     ],
     async prepare({ request, base }) {
       this.executionId = await ingestTraceSnapshotCase(request, base);
@@ -8516,6 +8518,23 @@ const SCENES = [
       await panel.locator('img').waitFor();
       await settle();
       await shoot('row', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // The two other ways the list shows the page: a card on hover, and thumbnails.
+      const views = page.getByRole('group', { name: 'How the list shows the page' });
+      if (width >= 1280) {
+        await views.getByRole('button', { name: 'Hover card' }).click();
+        await page
+          .locator('table tbody tr', { hasText: 'Cancel' })
+          .first()
+          .hover({ position: { x: 240, y: 12 } });
+        await page.getByTestId('timeline-page-hover-card').locator('img').first().waitFor();
+        await settle();
+        await shoot('hover-card', { of: '[data-shot="evidence-card"]', pad: 12 });
+        await page.mouse.move(0, 0);
+      }
+      await views.getByRole('button', { name: 'Thumbnails' }).click();
+      await settle();
+      await shoot('thumbs', { of: '[data-shot="evidence-card"]', pad: 12 });
     },
   })),
   {

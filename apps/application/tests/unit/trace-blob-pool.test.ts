@@ -241,6 +241,18 @@ describe('upsertTraceBlob pools screenshots and screencast frames', () => {
     expect(await getTraceFrameFromBlob(blob.path, 'screenshots/c2-before.png')).toBeNull();
   });
 
+  test('the frame view serves a 1.63 frame a blob holds itself, stored before frames were pooled', async () => {
+    // A full ZIP stored as is, with no manifest: its frames never went to the pool.
+    const trace = buildTrace({ c1Before: png(1), c1After: png(2), c2Before: png(2) });
+    const path = `project-1/blobs/${createHash('sha256').update(trace).digest('hex')}.zip`;
+    storageFiles.set(path, trace);
+
+    const frame = await getTraceFrameFromBlob(path, 'screencast/page@p1-1000.jpeg');
+    expect(frame?.contentType).toBe('image/jpeg');
+    expect(frame!.bytes.equals(jpeg(7))).toBe(true);
+    expect(await getTraceFrameFromBlob(path, 'screencast/page@p1-9999.jpeg')).toBeNull();
+  });
+
   test('the frame view serves a frame an earlier Playwright kept under resources/, from the slim ZIP', async () => {
     // Its name is not the SHA-1 of its bytes, so ingestion keeps it in the slim ZIP.
     const events = [

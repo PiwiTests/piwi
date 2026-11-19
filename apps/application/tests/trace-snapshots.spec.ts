@@ -6,10 +6,11 @@ import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 /**
- * The trace aria/screen snapshots a Playwright 1.63 run records
- * (`trace: { snapshots: { dom, aria, screen } }`): the Screen tab's "Before the
- * failing action" screenshots and in-execution page diff, and the Timeline tab's
- * filmstrip. Driven by a real 1.63 trace fixture uploaded for a failing case.
+ * The trace aria/screen snapshots and the screencast a Playwright 1.63 run
+ * records (`trace: { snapshots: { dom, aria, screen } }`): the Screen tab's
+ * "Before the failing action" screenshots and in-execution page diff, the
+ * Timeline tab's Screen lane and page panel, and a passing test's filmstrip.
+ * Driven by a real 1.63 trace fixture uploaded for a failing case.
  */
 const TRACE = readFileSync(fileURLToPath(new URL('./fixtures/trace-aria-screen-1.63.zip', import.meta.url)));
 const TRACE_HASH = createHash('sha256').update(TRACE).digest('hex');
@@ -216,9 +217,10 @@ test.describe('Trace aria/screen snapshots', () => {
     await reset.click();
     await expect(reset).toBeHidden();
 
-    // The lane can be turned off.
+    // The lane can be turned off, and the page beside the steps goes with it.
     await page.getByTestId('timeline-screen-toggle').click();
     await expect(lane).toBeHidden();
+    await expect(page.getByTestId('timeline-page-panel')).toHaveCount(0);
   });
 
   test('beside the steps, a panel shows the page before or after a step, under the tapped row when narrower', async ({
@@ -257,6 +259,38 @@ test.describe('Trace aria/screen snapshots', () => {
       .first()
       .click();
     await expect(page.getByTestId('timeline-page-panel')).toHaveCount(1);
+  });
+
+  test('the page switch shows the page in a hover card or as thumbnails, and keeps the choice', async ({ page }) => {
+    const openTimeline = async () => {
+      await page.goto(`/test-run-cases/${executionId}`);
+      await waitForHydration(page);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+    };
+    await openTimeline();
+    const views = page.getByRole('group', { name: 'How the list shows the page' });
+
+    // A hover card: the page before and after the row under the pointer, and no side panel.
+    await views.getByRole('button', { name: 'Hover card' }).click();
+    await expect(page.getByTestId('timeline-page-panel')).toHaveCount(0);
+    await page.locator('table tbody tr', { hasText: 'Cancel' }).first().hover();
+    await expect(page.getByTestId('timeline-page-hover-card')).toContainText('At the failure');
+    await page.mouse.move(0, 0);
+    await expect(page.getByTestId('timeline-page-hover-card')).toHaveCount(0);
+
+    // Thumbnails: a column of the page after each row, each opening the frames full screen.
+    await views.getByRole('button', { name: 'Thumbnails' }).click();
+    await expect(page.getByRole('columnheader', { name: 'Page' })).toBeVisible();
+    await page.getByTestId('timeline-row-thumbnail').last().click();
+    await expect(page.getByRole('dialog', { name: /^Page at / })).toBeVisible();
+    await page.keyboard.press('Escape');
+
+    // The choice is kept for the next page.
+    await openTimeline();
+    await expect(views.getByRole('button', { name: 'Thumbnails' })).toHaveAttribute('aria-pressed', 'true');
   });
 
   test("the Timeline tab shows the failing step's page as views and picks from the DOM of that moment", async ({

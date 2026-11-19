@@ -3,6 +3,7 @@ import { join } from 'node:path';
 import { describe, test, expect } from 'vitest';
 import {
   MAX_TRACE_FRAMES,
+  MAX_TRACE_FRAME_PAGES,
   buildTraceFrames,
   traceFrameSource,
   traceImageContentType,
@@ -111,7 +112,7 @@ describe('buildTraceFrames', () => {
     expect(unanchored).toEqual({ status: 'no-frames', pages: [], total: 1, capped: false, startEpochMs: null });
   });
 
-  test('past the cap, lists an even sample of each page with its last frame', () => {
+  test('past the cap, lists an even sample of each page with its first and last frame', () => {
     const count = MAX_TRACE_FRAMES * 2 + 1;
     const frames = Array.from({ length: count }, (_, i) => ({
       type: 'screencast-frame',
@@ -124,10 +125,27 @@ describe('buildTraceFrames', () => {
     expect(result.total).toBe(count);
     expect(result.capped).toBe(true);
     const names = result.pages[0]!.frames.map((f) => f.name);
-    expect(names.length).toBeLessThanOrEqual(MAX_TRACE_FRAMES + 1);
+    expect(names).toHaveLength(MAX_TRACE_FRAMES);
     expect(names[0]).toBe('screencast/f-0.jpeg');
-    expect(names[1]).toBe('screencast/f-3.jpeg');
+    expect(names[1]).toBe('screencast/f-2.jpeg');
     expect(names.at(-1)).toBe(`screencast/f-${count - 1}.jpeg`);
+  });
+
+  test('lists the first pages only, so many small pages stay under the cap', () => {
+    const pages = 800;
+    const frames = Array.from({ length: pages * 2 }, (_, i) => ({
+      type: 'screencast-frame',
+      pageId: `page@${Math.floor(i / 2)}`,
+      file: `screencast/p${Math.floor(i / 2)}-${i % 2}.jpeg`,
+      timestamp: 500 + i,
+    }));
+    const result = buildTraceFrames(parseTraceTexts([lines([libraryContext, ...frames])]));
+
+    expect(result.pages.map((p) => p.pageId)).toEqual(
+      Array.from({ length: MAX_TRACE_FRAME_PAGES }, (_, i) => `page@${i}`),
+    );
+    expect(result.pages.every((p) => p.frames.length === 2)).toBe(true);
+    expect(result).toMatchObject({ total: pages * 2, capped: true });
   });
 });
 

@@ -57,6 +57,7 @@ import type { AttachmentInfo, PerformanceStep } from '~~/types/api';
 import { useClusterSectionLocator } from '~/composables/useClusterSectionLocator';
 import { useExecutionTimeline } from '~/composables/useExecutionTimeline';
 import { useTraceFrames } from '~/composables/useTraceFrames';
+import { useTimelinePageView } from '~/composables/useTimelinePageView';
 import { useTimelineTypeFilter } from '~/composables/useTimelineTypeFilter';
 import {
   TIMELINE_TYPES,
@@ -75,6 +76,7 @@ import StepParams from './StepParams.vue';
 import TimelineDuration from './TimelineDuration.vue';
 import TimelineTypeFilter from './TimelineTypeFilter.vue';
 import TimelinePagePanel from './TimelinePagePanel.vue';
+import TimelineToggle from './TimelineToggle.vue';
 import { executionFailed } from '#shared/file-classify';
 import { resolveLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
 import { timelinePauseSpans, type TimelinePause } from '#shared/failure-timeline';
@@ -97,11 +99,16 @@ import {
 import type { LightboxImage, LightboxSubject } from '~/utils/lightbox';
 import {
   MAX_SCREEN_LANES,
+  clampFrameAspect,
   frameAspect,
   frameIndexAt,
   frameTiles,
+  pageInFront,
   placeTraceFrames,
+  stepFrames,
+  subjectMoment,
   type PageSubject,
+  type PageView,
   type PlacedFramePage,
 } from '~/utils/timeline-frames';
 import { orderedStepParams, pausedOverlap, stepLabel } from '@piwitests/core/step-analysis';
@@ -310,6 +317,8 @@ const framePages = computed<PlacedFramePage[]>(() => {
 });
 const showScreen = useLocalStorage('piwi-failure-timeline-screen', true, { initOnMounted: true });
 const screenOn = computed(() => showAxis.value && showScreen.value && framePages.value.length > 0);
+/** The list is an even sample of the frames: no tile or line may say no new frame was painted. */
+const framesSampled = computed(() => framesData.value?.capped === true);
 const SCREEN_TILE_H = 44;
 const SCREEN_LANE_H = SCREEN_TILE_H + 6;
 const screenAspect = computed(() => frameAspect(framePages.value));
@@ -329,7 +338,7 @@ const screenTiles = computed(() => {
       x: plotLeft + i * w,
       w,
       src: frame >= 0 ? frameUrl(page.frames[frame]!.name) : null,
-      repeat: i > 0 && frame === shown[i - 1],
+      repeat: !framesSampled.value && i > 0 && frame === shown[i - 1],
     }));
   });
 });
@@ -359,14 +368,24 @@ interface FrameHover {
   atFailure: boolean;
   aspect: number;
 }
-const {
-  data: hoveredFrame,
-  pos: framePos,
-  show: showFrame,
-  move: moveFrame,
-  hide: hideFrame,
-} = useChartTooltip<FrameHover>();
-const screenGuideX = ref<number | null>(null);
+const hoveredFrame = ref<FrameHover | null>(null);
+// Mutated in place: only the floating element reads its coordinates, so a pointer move redraws it alone.
+const framePos = reactive({ x: 0, y: 0 });
+const FRAME_PREVIEW_W = 260;
+const FRAME_PREVIEW_H = 300;
+/** Place a floating element beside the pointer, flipped to stay inside the window. */
+function placeFloating(pos: { x: number; y: number }, event: MouseEvent, width: number, height: number): void {
+  const margin = 8;
+  let x = event.clientX + 14;
+  if (x + width > window.innerWidth - margin) x = event.clientX - 14 - width;
+  let y = event.clientY + 14;
+  if (y + height > window.innerHeight - margin) y = event.clientY - 14 - height;
+  pos.x = Math.max(margin, x);
+  pos.y = Math.max(margin, y);
+}
+function hideFrame(): void {
+  hoveredFrame.value = null;
+}
 
 /** The plot x of a pointer event, held to the plot. */
 function plotXOf(event: MouseEvent): number {
@@ -386,30 +405,28 @@ function onScreenMove(event: MouseEvent, pageIndex: number): void {
   const x = plotXOf(event);
   const at = atOfX(x);
   const index = page ? frameIndexAt(page.frames, at) : -1;
-  screenGuideX.value = x;
   if (!page || index < 0) {
     hideFrame();
     return;
   }
   const frame = page.frames[index]!;
+  placeFloating(framePos, event, FRAME_PREVIEW_W, FRAME_PREVIEW_H);
   if (hoveredFrame.value?.paintedAt === frame.at && hoveredFrame.value.src === frameUrl(frame.name)) {
     hoveredFrame.value.at = at;
     hoveredFrame.value.step = stepLabelAt(at);
-    moveFrame(event);
     return;
   }
-  showFrame(event, {
+  hoveredFrame.value = {
     src: frameUrl(frame.name),
     at,
     paintedAt: frame.at,
     step: stepLabelAt(at),
     atFailure: index === failureFrame(page),
-    aspect: frame.width > 0 && frame.height > 0 ? frame.width / frame.height : screenAspect.value,
-  });
+    aspect: clampFrameAspect(frame.width > 0 && frame.height > 0 ? frame.width / frame.height : screenAspect.value),
+  };
 }
 function onScreenLeave(): void {
   hideFrame();
-  screenGuideX.value = null;
 }
 
 // The frames of one page full screen, from the one a click or a key picked.
@@ -458,6 +475,11 @@ function onPlotDown(event: PointerEvent): void {
 function onPlotPointerMove(event: PointerEvent): void {
   onPlotMove(event);
   if (drag.from == null) return;
+  if ((event.buttons & 1) === 0) {
+    // The button came up outside the axis: the drag is over without a zoom.
+    Object.assign(drag, { from: null, active: false });
+    return;
+  }
   drag.to = plotXOf(event);
   if (!drag.active && Math.abs(drag.to - drag.from) > 4) {
     drag.active = true;
@@ -569,6 +591,9 @@ function cutArrowPath(side: 'start' | 'end', laneTop: number): string {
 }
 
 const failureX = computed(() => (data.value ? xOf(data.value.failureAt) : 0));
+const failureInView = computed(
+  () => data.value != null && data.value.failureAt >= domain.value.start && data.value.failureAt <= domain.value.end,
+);
 const windowShade = computed(() => {
   const tl = data.value;
   if (!tl || zoom.value || mode.value !== 'whole' || tl.window.end <= tl.window.start) return null;
@@ -602,10 +627,18 @@ const ticks = computed(() => {
 /** Each tick's label, blank where it would repeat the one before (a short window rounds several to `t+0`). */
 const tickLabels = computed(() =>
   ticks.value.map((tick, i, all) => {
-    const label = formatRel(tick);
-    return i > 0 && formatRel(all[i - 1]!) === label ? '' : label;
+    const label = formatTick(tick);
+    return i > 0 && formatTick(all[i - 1]!) === label ? '' : label;
   }),
 );
+/** A moment on the axis: within a minute and a half of the failure, as precise as a short window needs. */
+function formatTick(at: number): string {
+  const span = domain.value.end - domain.value.start;
+  const d = (at - (data.value?.failureAt ?? 0)) / 1000;
+  if (span >= 10_000 || Math.abs(d) >= 90) return formatRel(at);
+  const digits = span < 1_000 ? 2 : 1;
+  return `t${d < 0 ? '-' : '+'}${Math.abs(d).toFixed(digits)}s`;
+}
 
 // ── Marks and colors ─────────────────────────────────────────────────────────
 // A failure or an error takes the failed outcome color, a warning the warning
@@ -879,17 +912,34 @@ const renderList = computed<RenderEntry[]>(() => {
   return out;
 });
 
-// ── The page beside the list ─────────────────────────────────────────────────
-// With frames, each row of the list can show the page. From `xl` a panel beside
-// the table shows the hovered row's page, else the picked one: the failing step
-// before it ran until a row's time, a row or a moment is picked. Below `xl` a
-// row's time opens the page under that row. Hovering a row also marks its bar
-// on the axis, and hovering a bar marks its row.
-const wide = useMediaQuery('(min-width: 1280px)');
+// ── The page in the list ─────────────────────────────────────────────────────
+// With frames, each row of the list can show the page, three ways the reader
+// switches between (kept in a cookie): the side panel, where from `xl` a panel
+// beside the table shows the hovered row's page, else the picked one (the
+// failing step before it ran until a row's time, a row or a moment is picked);
+// a hover card, the page before and after the row under the pointer; or
+// thumbnails, a column of the page after each row. Without room for the side
+// panel, and on touch, a row's time opens the page under that row. Hovering a
+// row also marks its bar on the axis, and hovering a bar marks its row.
+const pageView = useTimelinePageView();
+const PAGE_VIEW_OPTIONS: readonly { value: PageView; label: string; title: string }[] = [
+  {
+    value: 'panel',
+    label: 'Side panel',
+    title: 'The page of the hovered or picked row beside the list, under the row on a narrower screen',
+  },
+  { value: 'hover', label: 'Hover card', title: 'The page before and after the row under the pointer' },
+  { value: 'thumbs', label: 'Thumbnails', title: 'The page after each row, in a column of the list' },
+];
+const wide = useMediaQuery('(min-width: 80rem)');
 // The table shows from `md`, the stacked cards below: the page opens under a row of the one on screen.
-const tableShown = useMediaQuery('(min-width: 768px)');
-const pagePanelOn = computed(() => showAxis.value && framePages.value.length > 0);
-const sidePanelOn = computed(() => pagePanelOn.value && wide.value);
+const tableShown = useMediaQuery('(min-width: 48rem)');
+const pagePanelOn = computed(() => screenOn.value);
+const sidePanelOn = computed(() => pagePanelOn.value && wide.value && pageView.value === 'panel');
+const hoverCardOn = computed(() => pagePanelOn.value && pageView.value === 'hover');
+const thumbsOn = computed(() => pagePanelOn.value && pageView.value === 'thumbs');
+/** The table's column count, for a row that spans it. */
+const tableCols = computed(() => (showAxis.value ? 4 : 3) + (thumbsOn.value ? 1 : 0));
 type StepPhaseView = 'before' | 'after';
 const pagePick = ref<{ key: string; phase: StepPhaseView } | { at: number } | null>(null);
 const inlinePick = ref<{ key: string; phase: StepPhaseView } | null>(null);
@@ -931,7 +981,8 @@ function rowSubject(entry: RenderEntry | undefined | null, phase: StepPhaseView)
 const panelSubject = computed<PageSubject | null>(() => {
   const tl = data.value;
   if (!sidePanelOn.value || !tl) return null;
-  const hovering = hoverKey.value ? rowSubject(entriesByKey.value.get(hoverKey.value), 'after') : null;
+  const hovered = hoverKey.value ? entriesByKey.value.get(hoverKey.value) : undefined;
+  const hovering = hovered ? rowSubject(hovered, rowPhase(hovered)) : null;
   if (hovering) return hovering;
   const pick = pagePick.value;
   if (pick && 'at' in pick) return { kind: 'moment', at: pick.at, label: stepLabelAt(pick.at) };
@@ -944,25 +995,31 @@ const panelSubject = computed<PageSubject | null>(() => {
 /** The row the side panel shows when no row is hovered. */
 const pickedKey = computed(() => {
   const pick = pagePick.value;
-  if (!pick) return failingEntry.value?.key ?? null;
-  return 'key' in pick ? pick.key : null;
+  if (pick && 'at' in pick) return null;
+  return pick && entriesByKey.value.has(pick.key) ? pick.key : (failingEntry.value?.key ?? null);
 });
 const inlineSubject = computed<PageSubject | null>(() =>
-  inlinePick.value && !wide.value
+  inlinePick.value && !sidePanelOn.value
     ? rowSubject(entriesByKey.value.get(inlinePick.value.key), inlinePick.value.phase)
     : null,
 );
 
-/** Show a row's page: in the side panel from `xl`, under the row below it (a second tap closes it). */
+/** The phase a row opens on: the picked one for the picked row, else after a step, before the failing one. */
+function rowPhase(entry: RenderEntry): StepPhaseView {
+  const pick = pagePick.value;
+  if (pick && 'key' in pick && pick.key === entry.key) return pick.phase;
+  return entry.kind === 'step' && !entry.failing ? 'after' : 'before';
+}
+/** Show a row's page: in the side panel when it shows, else under the row (a second tap closes it). */
 function pickRow(entry: RenderEntry): void {
   if (entry.kind === 'section') return;
-  const phase: StepPhaseView = entry.kind === 'step' && !entry.failing ? 'after' : 'before';
-  if (wide.value) pagePick.value = { key: entry.key, phase };
+  const phase = rowPhase(entry);
+  if (sidePanelOn.value) pagePick.value = { key: entry.key, phase };
   else inlinePick.value = inlinePick.value?.key === entry.key ? null : { key: entry.key, phase };
 }
 /** A click on a step row picks it, unless it lands on something of its own (a button, a link, a view). */
 function onStepRowClick(event: MouseEvent, entry: RenderEntry): void {
-  if (!pagePanelOn.value) return;
+  if (!pagePanelOn.value || window.getSelection()?.toString()) return;
   if ((event.target as Element).closest('button, a, input, iframe, [role="tab"], [role="tablist"]')) return;
   pickRow(entry);
 }
@@ -976,6 +1033,51 @@ function onInlinePhase(phase: StepPhaseView): void {
 function onPanelOpen(page: number, frame: number): void {
   hideFrame();
   lightbox.value = { page, index: frame };
+}
+
+// The hover card follows the pointer over a row, kept inside the window.
+const HOVER_CARD_W = 368;
+const HOVER_CARD_H = 300;
+const hoverCardPos = reactive({ x: 0, y: 0 });
+function onRowMove(event: MouseEvent): void {
+  if (hoverCardOn.value) placeFloating(hoverCardPos, event, HOVER_CARD_W, HOVER_CARD_H);
+}
+/** The image of the page a placement names, with its caption. */
+function placedShot(place: { page: number; frame: number } | null, caption: string, at: number) {
+  const frame = place ? framePages.value[place.page]?.frames[place.frame] : null;
+  return frame ? { src: frameUrl(frame.name), caption: `${caption} · ${formatRel(at)}` } : null;
+}
+/** The hovered row's page: before and after a step, when it happened for an event. */
+const hoverCard = computed(() => {
+  const tl = data.value;
+  if (!hoverCardOn.value || !hoverKey.value || !tl) return null;
+  const subject = rowSubject(entriesByKey.value.get(hoverKey.value), 'before');
+  if (!subject || subject.kind === 'moment') return null;
+  if (subject.kind === 'event') {
+    const shot = placedShot(pageInFront(framePages.value, subject.at), 'When it happened', subject.at);
+    return shot ? { shots: [shot], unchanged: false, failedLast: false } : null;
+  }
+  const frames = stepFrames(framePages.value, subject, tl.failureAt, framesSampled.value);
+  const afterAt = subjectMoment({ ...subject, phase: 'after' }, tl.failureAt);
+  const shots = [
+    placedShot(frames.before, 'Before', subject.at),
+    placedShot(frames.after, subject.failed ? 'At the failure' : 'After', afterAt),
+  ].filter((shot) => shot != null);
+  return shots.length ? { shots, unchanged: frames.unchanged, failedLast: subject.failed } : null;
+});
+
+/** A row's thumbnail: the page after a step (at the failure for the failing one), when an event happened. */
+function rowFrame(entry: RenderEntry): { page: number; frame: number; src: string } | null {
+  const tl = data.value;
+  const subject = thumbsOn.value && tl ? rowSubject(entry, 'after') : null;
+  if (!subject || !tl) return null;
+  const place = pageInFront(framePages.value, subjectMoment(subject, tl.failureAt));
+  const frame = place ? framePages.value[place.page]!.frames[place.frame]! : null;
+  return place && frame ? { ...place, src: frameUrl(frame.name) } : null;
+}
+function openRowFrame(entry: RenderEntry): void {
+  const frame = rowFrame(entry);
+  if (frame) onPanelOpen(frame.page, frame.frame);
 }
 
 /** The item of the hovered row, whose bar the axis marks. */
@@ -994,8 +1096,33 @@ function isHotRow(entry: RenderEntry): boolean {
 /** The row background: the picked row's selection, else the hover mark. */
 function rowStateClass(entry: RenderEntry): string {
   if (sidePanelOn.value && pickedKey.value === entry.key && !hoverKey.value) return SELECTED_ROW_CLASS;
-  return isHotRow(entry) ? 'bg-elevated/50' : '';
+  if (!isHotRow(entry)) return '';
+  const failed = entry.kind === 'step' ? entry.failing : entry.kind === 'event' && entry.item.failed;
+  return failed ? 'ring-1 ring-inset ring-accented' : 'bg-elevated/50';
 }
+/** A row's time as a button: it shows the page at that moment, beside the list or under the row. */
+function timeButtonAttrs(entry: RenderEntry) {
+  const at = entry.kind !== 'section' && entry.item ? formatRel(entry.item.at) : '';
+  return {
+    type: 'button' as const,
+    class:
+      'rounded underline decoration-dotted underline-offset-2 hover:decoration-solid hover:text-default outline-none focus-visible:outline-2 focus-visible:outline-primary',
+    title: 'Show the page at this moment',
+    'aria-label': `Show the page at ${at}`,
+    'aria-pressed': sidePanelOn.value ? pickedKey.value === entry.key : undefined,
+    'aria-expanded': sidePanelOn.value ? undefined : inlinePick.value?.key === entry.key,
+  };
+}
+/** What every page panel under a row is given. */
+const inlinePanelProps = computed(() => ({
+  pages: framePages.value,
+  frameUrl,
+  formatTime: formatRel,
+  failureAt: data.value?.failureAt ?? 0,
+  sampled: framesSampled.value,
+  onOpen: onPanelOpen,
+  onPhase: onInlinePhase,
+}));
 function hotBarClass(item: TimelineItem): string {
   return item.id === hotItemId.value ? 'stroke-gray-900 dark:stroke-white' : '';
 }
@@ -1160,13 +1287,13 @@ function revealItem(item: TimelineItem) {
           </button>
         </div>
         <span v-if="zoom" class="inline-flex items-center gap-1.5 text-xs text-muted tabular-nums">
-          {{ formatRel(zoom.start) }} to {{ formatRel(zoom.end) }}
+          {{ formatTick(zoom.start) }} to {{ formatTick(zoom.end) }}
           <UButton
             size="xs"
             color="neutral"
             variant="outline"
             data-testid="timeline-zoom-reset"
-            title="Show the window again (or double-click the axis)"
+            title="Show the window again (a double-click on the lanes under the Screen lane does it too)"
             @click="zoom = null"
           >
             Reset zoom
@@ -1181,44 +1308,24 @@ function revealItem(item: TimelineItem) {
           @only="onlyType"
           @show-all="showAllTypes"
         />
-        <button
+        <TimelineToggle
           v-if="framePages.length > 0"
-          type="button"
+          v-model="showScreen"
           data-testid="timeline-screen-toggle"
-          :aria-pressed="showScreen ? 'true' : 'false'"
-          :title="showScreen ? 'Hide the page as the trace recorded it' : 'Show the page as the trace recorded it'"
-          class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium select-none outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
-          :class="
-            showScreen
-              ? 'border-default bg-default text-default hover:bg-elevated/60'
-              : 'border-dashed border-accented text-muted hover:bg-elevated/60'
-          "
-          @click="showScreen = !showScreen"
-        >
-          <UIcon name="i-lucide-film" class="size-3.5 shrink-0" />
-          Screen
-        </button>
-        <button
+          icon="i-lucide-film"
+          label="Screen"
+          title-on="Hide the page as the trace recorded it"
+          title-off="Show the page as the trace recorded it"
+        />
+        <TimelineToggle
           v-if="resourceRows.length > 0"
-          type="button"
+          v-model="showResources"
           data-testid="timeline-resources-toggle"
-          :aria-pressed="showResources ? 'true' : 'false'"
-          :title="
-            showResources
-              ? 'Hide the CPU, memory and open pages of the worker that ran the test'
-              : 'Show the CPU, memory and open pages of the worker that ran the test'
-          "
-          class="inline-flex items-center gap-1.5 rounded-md border px-2 py-1 text-xs font-medium select-none outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
-          :class="
-            showResources
-              ? 'border-default bg-default text-default hover:bg-elevated/60'
-              : 'border-dashed border-accented text-muted hover:bg-elevated/60'
-          "
-          @click="showResources = !showResources"
-        >
-          <UIcon name="i-lucide-cpu" class="size-3.5 shrink-0" />
-          Resources
-        </button>
+          icon="i-lucide-cpu"
+          label="Resources"
+          title-on="Hide the CPU, memory and open pages of the worker that ran the test"
+          title-off="Show the CPU, memory and open pages of the worker that ran the test"
+        />
         <ChartLegend :items="showTypeFilter ? markKeyItems : legendItems" class="ml-auto" />
       </div>
 
@@ -1563,6 +1670,7 @@ function revealItem(item: TimelineItem) {
 
           <!-- Failure marker line -->
           <line
+            v-if="failureInView"
             :x1="failureX"
             :x2="failureX"
             :y1="TOP"
@@ -1570,16 +1678,6 @@ function revealItem(item: TimelineItem) {
             class="stroke-status-failed"
             stroke-width="1.5"
             stroke-dasharray="4 3"
-          />
-
-          <!-- The moment under the pointer on a screen lane -->
-          <line
-            v-if="screenGuideX != null"
-            :x1="screenGuideX"
-            :x2="screenGuideX"
-            :y1="TOP"
-            :y2="marksBottom"
-            class="stroke-gray-500/70 dark:stroke-gray-400/70 pointer-events-none"
           />
 
           <!-- The range a drag zooms to -->
@@ -1638,7 +1736,7 @@ function revealItem(item: TimelineItem) {
 
       <!-- Filmstrip: the page before each step, from this run's trace screen snapshots, where no lane shows the page. -->
       <TraceFilmstrip
-        v-if="!(showAxis && framePages.length > 0)"
+        v-if="!screenOn"
         :test-runs-case-id="testRunsCaseId"
         :error="error"
         :failed="executionFailed(status)"
@@ -1663,22 +1761,46 @@ function revealItem(item: TimelineItem) {
 
       <template v-if="steps.length > 0">
         <!-- Per-category summary line: the test body's steps, then setup and teardown -->
-        <p class="text-xs text-muted tabular-nums" data-testid="timeline-step-summary">
-          <template v-if="bodyLeafIndices.length"
-            >{{ bodyLeafIndices.length }} step{{ bodyLeafIndices.length === 1 ? '' : 's' }}</template
-          >
-          <template v-else-if="bodyNeverRan">The test body never ran</template>
-          <template v-else>No steps in the test body</template>
-          <template v-for="c in stepSummary" :key="c.category"
-            ><span aria-hidden="true"> · </span>{{ c.category }} ×{{ c.count }} <DurationValue :ms="c.duration"
-          /></template>
-          <template v-for="t in sectionTimes" :key="t.label"
-            ><span aria-hidden="true"> · </span>{{ t.label }} <DurationValue :ms="t.ms"
-          /></template>
-          <template v-if="pausedTotal > 0"
-            ><span aria-hidden="true"> · </span>paused <DurationValue :ms="pausedTotal"
-          /></template>
-        </p>
+        <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+          <p class="text-xs text-muted tabular-nums" data-testid="timeline-step-summary">
+            <template v-if="bodyLeafIndices.length"
+              >{{ bodyLeafIndices.length }} step{{ bodyLeafIndices.length === 1 ? '' : 's' }}</template
+            >
+            <template v-else-if="bodyNeverRan">The test body never ran</template>
+            <template v-else>No steps in the test body</template>
+            <template v-for="c in stepSummary" :key="c.category"
+              ><span aria-hidden="true"> · </span>{{ c.category }} ×{{ c.count }} <DurationValue :ms="c.duration"
+            /></template>
+            <template v-for="t in sectionTimes" :key="t.label"
+              ><span aria-hidden="true"> · </span>{{ t.label }} <DurationValue :ms="t.ms"
+            /></template>
+            <template v-if="pausedTotal > 0"
+              ><span aria-hidden="true"> · </span>paused <DurationValue :ms="pausedTotal"
+            /></template>
+          </p>
+          <div v-if="pagePanelOn" class="ml-auto flex items-center gap-2">
+            <span class="text-xs text-muted">Show the page</span>
+            <div
+              role="group"
+              aria-label="How the list shows the page"
+              class="inline-flex shrink-0 gap-0.5 rounded-md bg-elevated/60 p-0.5"
+              data-testid="timeline-page-view"
+            >
+              <button
+                v-for="option in PAGE_VIEW_OPTIONS"
+                :key="option.value"
+                type="button"
+                :title="option.title"
+                :aria-pressed="pageView === option.value ? 'true' : 'false'"
+                class="rounded px-2 py-0.5 text-xs whitespace-nowrap outline-none transition-colors focus-visible:outline-2 focus-visible:outline-primary"
+                :class="pageView === option.value ? SEGMENTED_SELECTED_CLASS : 'text-muted hover:text-default'"
+                @click="pageView = option.value"
+              >
+                {{ option.label }}
+              </button>
+            </div>
+          </div>
+        </div>
 
         <!-- Phone layout (below `md`): one stacked card per row, so the Step and
              Duration columns are never cut and the page never scrolls sideways.
@@ -1723,10 +1845,8 @@ function revealItem(item: TimelineItem) {
                 <span v-if="isCited(entry.item)" class="text-xs text-muted">Cited by Most likely</span>
                 <button
                   v-if="showAxis && entry.item && pagePanelOn"
-                  type="button"
-                  class="ml-auto tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap rounded underline decoration-dotted underline-offset-2 hover:decoration-solid outline-none focus-visible:outline-2 focus-visible:outline-primary"
-                  :aria-label="`Show the page at ${formatRel(entry.item.at)}`"
-                  :aria-expanded="inlinePick?.key === entry.key ? 'true' : 'false'"
+                  v-bind="timeButtonAttrs(entry)"
+                  class="ml-auto tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
                   @click.stop="pickRow(entry)"
                 >
                   {{ formatRel(entry.item.at) }}
@@ -1759,6 +1879,20 @@ function revealItem(item: TimelineItem) {
                   <StepLabel :step="entry.step" />
                 </p>
               </div>
+              <button
+                v-if="rowFrame(entry)"
+                type="button"
+                class="mt-1.5 block w-32 overflow-hidden rounded border border-default bg-elevated cursor-zoom-in outline-none focus-visible:outline-2 focus-visible:outline-primary"
+                :aria-label="`Open the page full screen, ${entry.item ? formatRel(entry.item.at) : ''}`"
+                @click.stop="openRowFrame(entry)"
+              >
+                <img
+                  :src="rowFrame(entry)!.src"
+                  alt=""
+                  loading="lazy"
+                  class="block aspect-video w-full object-cover object-top"
+                />
+              </button>
               <StepParams
                 v-if="openSteps.has(entry.index)"
                 :id="paramsId('card', entry.index)"
@@ -1797,12 +1931,7 @@ function revealItem(item: TimelineItem) {
                 inline
                 class="mt-2.5 border-t border-default pt-2.5"
                 :subject="inlineSubject"
-                :pages="framePages"
-                :frame-url="frameUrl"
-                :format-time="formatRel"
-                :failure-at="data.failureAt"
-                @open="onPanelOpen"
-                @phase="onInlinePhase"
+                v-bind="inlinePanelProps"
               />
               <FailingStepSnapshot
                 v-if="entry.failing"
@@ -1843,11 +1972,9 @@ function revealItem(item: TimelineItem) {
                 >
                 <button
                   v-if="showAxis && pagePanelOn"
-                  type="button"
-                  class="shrink-0 tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap rounded underline decoration-dotted underline-offset-2 hover:decoration-solid outline-none focus-visible:outline-2 focus-visible:outline-primary"
+                  v-bind="timeButtonAttrs(entry)"
+                  class="shrink-0 tabular-nums text-xs text-gray-400 dark:text-gray-500 whitespace-nowrap"
                   :class="isCited(entry.item) ? '' : 'ml-auto'"
-                  :aria-label="`Show the page at ${formatRel(entry.item.at)}`"
-                  :aria-expanded="inlinePick?.key === entry.key ? 'true' : 'false'"
                   @click.stop="pickRow(entry)"
                 >
                   {{ formatRel(entry.item.at) }}
@@ -1860,6 +1987,20 @@ function revealItem(item: TimelineItem) {
                   {{ formatRel(entry.item.at) }}
                 </span>
               </div>
+              <button
+                v-if="rowFrame(entry)"
+                type="button"
+                class="mt-1.5 block w-32 overflow-hidden rounded border border-default bg-elevated cursor-zoom-in outline-none focus-visible:outline-2 focus-visible:outline-primary"
+                :aria-label="`Open the page full screen, ${entry.item ? formatRel(entry.item.at) : ''}`"
+                @click.stop="openRowFrame(entry)"
+              >
+                <img
+                  :src="rowFrame(entry)!.src"
+                  alt=""
+                  loading="lazy"
+                  class="block aspect-video w-full object-cover object-top"
+                />
+              </button>
               <TimelineDuration
                 v-if="entry.item.duration != null"
                 :ms="entry.item.duration"
@@ -1874,13 +2015,8 @@ function revealItem(item: TimelineItem) {
                 inline
                 class="mt-2.5 cursor-default border-t border-default pt-2.5"
                 :subject="inlineSubject"
-                :pages="framePages"
-                :frame-url="frameUrl"
-                :format-time="formatRel"
-                :failure-at="data.failureAt"
                 @click.stop
-                @open="onPanelOpen"
-                @phase="onInlinePhase"
+                v-bind="inlinePanelProps"
               />
             </div>
           </template>
@@ -1892,6 +2028,7 @@ function revealItem(item: TimelineItem) {
              replace it, so the table shows from `md` up. -->
         <div
           :class="sidePanelOn ? 'hidden md:grid grid-cols-[minmax(0,1fr)_22rem] items-start gap-3' : 'hidden md:block'"
+          @mouseleave="hoverKey = null"
         >
           <TableScroller min-width="34rem" :bleed="false">
             <table class="w-full min-w-[34rem] border-separate border-spacing-0 text-sm">
@@ -1904,11 +2041,12 @@ function revealItem(item: TimelineItem) {
                   <th class="relative w-8" :class="showAxis ? '' : 'first:rounded-l-lg first:border-l'">
                     <span class="sr-only">Kind</span>
                   </th>
+                  <th v-if="thumbsOn" class="w-24">Page</th>
                   <th>Step</th>
                   <th class="w-40 last:rounded-r-lg last:border-r">Duration</th>
                 </tr>
               </thead>
-              <tbody @mouseleave="hoverKey = null">
+              <tbody @mouseleave="sidePanelOn || (hoverKey = null)">
                 <template v-for="entry in renderList" :key="entry.key">
                   <!-- A setup / teardown section: one row that folds its hooks and fixtures -->
                   <tr
@@ -1927,6 +2065,7 @@ function revealItem(item: TimelineItem) {
                         >✗</span
                       >
                     </td>
+                    <td v-if="thumbsOn" />
                     <td>
                       <button
                         type="button"
@@ -1958,6 +2097,7 @@ function revealItem(item: TimelineItem) {
                       :class="[entry.failing ? STATUS_PALETTE.failed.tint : '', rowStateClass(entry)]"
                       :data-cited="isCited(entry.item) ? '' : undefined"
                       @mouseenter="hoverKey = entry.key"
+                      @mousemove="onRowMove"
                       @click="onStepRowClick($event, entry)"
                     >
                       <td
@@ -1966,9 +2106,7 @@ function revealItem(item: TimelineItem) {
                       >
                         <button
                           v-if="pagePanelOn && entry.item"
-                          type="button"
-                          class="rounded underline decoration-dotted underline-offset-2 hover:decoration-solid hover:text-default outline-none focus-visible:outline-2 focus-visible:outline-primary"
-                          :aria-label="`Show the page at ${formatRel(entry.item.at)}`"
+                          v-bind="timeButtonAttrs(entry)"
                           data-testid="timeline-row-page"
                           @click.stop="pickRow(entry)"
                         >
@@ -1978,6 +2116,23 @@ function revealItem(item: TimelineItem) {
                       </td>
                       <td>
                         <StepStatusMark :role="entry.role" :not-run="status === 'didnotrun'" />
+                      </td>
+                      <td v-if="thumbsOn">
+                        <button
+                          v-if="rowFrame(entry)"
+                          type="button"
+                          class="block w-20 overflow-hidden rounded border border-default bg-elevated cursor-zoom-in outline-none focus-visible:outline-2 focus-visible:outline-primary"
+                          :aria-label="`Open the page full screen, ${entry.item ? formatRel(entry.item.at) : ''}`"
+                          data-testid="timeline-row-thumbnail"
+                          @click.stop="openRowFrame(entry)"
+                        >
+                          <img
+                            :src="rowFrame(entry)!.src"
+                            alt=""
+                            loading="lazy"
+                            class="block aspect-video w-full object-cover object-top"
+                          />
+                        </button>
                       </td>
                       <td class="min-w-0">
                         <div :style="stepIndent(entry)">
@@ -2057,18 +2212,8 @@ function revealItem(item: TimelineItem) {
                       </td>
                     </tr>
                     <tr v-if="tableShown && inlineSubject && inlinePick?.key === entry.key && data">
-                      <td :colspan="showAxis ? 4 : 3" class="border-b border-default bg-elevated/30 px-3 py-3">
-                        <TimelinePagePanel
-                          inline
-                          class="max-w-md"
-                          :subject="inlineSubject"
-                          :pages="framePages"
-                          :frame-url="frameUrl"
-                          :format-time="formatRel"
-                          :failure-at="data.failureAt"
-                          @open="onPanelOpen"
-                          @phase="onInlinePhase"
-                        />
+                      <td :colspan="tableCols" class="border-b border-default bg-elevated/30 px-3 py-3">
+                        <TimelinePagePanel inline class="max-w-md" :subject="inlineSubject" v-bind="inlinePanelProps" />
                       </td>
                     </tr>
                   </template>
@@ -2080,6 +2225,7 @@ function revealItem(item: TimelineItem) {
                       :class="[entry.item.failed ? STATUS_PALETTE.failed.tint : '', rowStateClass(entry)]"
                       :data-cited="isCited(entry.item) ? '' : undefined"
                       @mouseenter="hoverKey = entry.key"
+                      @mousemove="onRowMove"
                       @click="revealItem(entry.item)"
                     >
                       <td
@@ -2088,9 +2234,7 @@ function revealItem(item: TimelineItem) {
                       >
                         <button
                           v-if="pagePanelOn"
-                          type="button"
-                          class="rounded underline decoration-dotted underline-offset-2 hover:decoration-solid hover:text-default outline-none focus-visible:outline-2 focus-visible:outline-primary"
-                          :aria-label="`Show the page at ${formatRel(entry.item.at)}`"
+                          v-bind="timeButtonAttrs(entry)"
                           data-testid="timeline-row-page"
                           @click.stop="pickRow(entry)"
                         >
@@ -2105,6 +2249,23 @@ function revealItem(item: TimelineItem) {
                           :class="eventIconClass(entry.item)"
                           :title="eventTitle(entry.item)"
                         />
+                      </td>
+                      <td v-if="thumbsOn">
+                        <button
+                          v-if="rowFrame(entry)"
+                          type="button"
+                          class="block w-20 overflow-hidden rounded border border-default bg-elevated cursor-zoom-in outline-none focus-visible:outline-2 focus-visible:outline-primary"
+                          :aria-label="`Open the page full screen, ${entry.item ? formatRel(entry.item.at) : ''}`"
+                          data-testid="timeline-row-thumbnail"
+                          @click.stop="openRowFrame(entry)"
+                        >
+                          <img
+                            :src="rowFrame(entry)!.src"
+                            alt=""
+                            loading="lazy"
+                            class="block aspect-video w-full object-cover object-top"
+                          />
+                        </button>
                       </td>
                       <td>
                         <div :style="entry.nested ? { paddingInlineStart: '1.25rem' } : undefined">
@@ -2135,18 +2296,8 @@ function revealItem(item: TimelineItem) {
                       </td>
                     </tr>
                     <tr v-if="tableShown && inlineSubject && inlinePick?.key === entry.key && data">
-                      <td :colspan="showAxis ? 4 : 3" class="border-b border-default bg-elevated/30 px-3 py-3">
-                        <TimelinePagePanel
-                          inline
-                          class="max-w-md"
-                          :subject="inlineSubject"
-                          :pages="framePages"
-                          :frame-url="frameUrl"
-                          :format-time="formatRel"
-                          :failure-at="data.failureAt"
-                          @open="onPanelOpen"
-                          @phase="onInlinePhase"
-                        />
+                      <td :colspan="tableCols" class="border-b border-default bg-elevated/30 px-3 py-3">
+                        <TimelinePagePanel inline class="max-w-md" :subject="inlineSubject" v-bind="inlinePanelProps" />
                       </td>
                     </tr>
                   </template>
@@ -2162,6 +2313,7 @@ function revealItem(item: TimelineItem) {
               :frame-url="frameUrl"
               :format-time="formatRel"
               :failure-at="data.failureAt"
+              :sampled="framesSampled"
               @open="onPanelOpen"
               @move="(at) => (pagePick = { at })"
               @phase="onPanelPhase"
@@ -2201,6 +2353,32 @@ function revealItem(item: TimelineItem) {
           Painted at {{ formatRel(hoveredFrame.paintedAt)
           }}<template v-if="hoveredFrame.atFailure"> · on screen at the failure</template>
         </p>
+      </ChartTooltip>
+      <ChartTooltip
+        v-else-if="hoverCard"
+        :pos="hoverCardPos"
+        :max-width="HOVER_CARD_W"
+        data-testid="timeline-page-hover-card"
+      >
+        <div :style="{ width: `${HOVER_CARD_W - 18}px` }">
+          <div :class="hoverCard.shots.length > 1 ? 'grid grid-cols-2 gap-2' : ''">
+            <figure v-for="(shot, i) in hoverCard.shots" :key="i" class="min-w-0">
+              <img
+                :src="shot.src"
+                alt=""
+                class="block w-full rounded border bg-elevated object-cover object-top"
+                :class="
+                  hoverCard.failedLast && i === hoverCard.shots.length - 1 ? 'border-status-failed' : 'border-default'
+                "
+                :style="{ aspectRatio: String(clampFrameAspect(screenAspect)) }"
+              />
+              <figcaption class="mt-1 text-xs text-muted tabular-nums">{{ shot.caption }}</figcaption>
+            </figure>
+          </div>
+          <p v-if="hoverCard.unchanged" class="mt-1.5 text-xs text-muted">
+            No new frame was painted while this step ran.
+          </p>
+        </div>
       </ChartTooltip>
     </Teleport>
   </SectionCard>

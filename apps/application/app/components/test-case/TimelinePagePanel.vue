@@ -11,8 +11,9 @@
  * (`inline`, without the arrows).
  */
 import {
-  frameIndexAt,
+  clampFrameAspect,
   pageInFront,
+  stepFrames,
   subjectMoment,
   type PageSubject,
   type PlacedFramePage,
@@ -25,6 +26,8 @@ const props = defineProps<{
   /** A moment as the timeline writes it (`t-1.2s`). */
   formatTime: (at: number) => string;
   failureAt: number;
+  /** The frame list is an even sample: it may leave frames out. */
+  sampled?: boolean;
   /** Under its row: no arrows, a plainer frame. */
   inline?: boolean;
 }>();
@@ -57,15 +60,12 @@ const title = computed(() => {
   return s.failed ? 'At the failure' : 'After the step';
 });
 
-/** For a step: whether the page painted no new frame while it ran. */
-const unchanged = computed(() => {
-  const s = props.subject;
-  if (s.kind !== 'step' || !shown.value) return false;
-  const page = props.pages[shown.value.page]!;
-  const before = frameIndexAt(page.frames, s.at);
-  const after = frameIndexAt(page.frames, subjectMoment({ ...s, phase: 'after' }, props.failureAt));
-  return before >= 0 && before === after;
-});
+/** For a step: whether the page in front painted no new frame while it ran. */
+const unchanged = computed(() =>
+  props.subject.kind === 'step'
+    ? stepFrames(props.pages, props.subject, props.failureAt, props.sampled).unchanged
+    : false,
+);
 
 const neighbours = computed(() => {
   if (!shown.value) return { previous: null, next: null };
@@ -83,7 +83,9 @@ const phases = computed<{ value: 'before' | 'after'; label: string }[]>(() => [
 ]);
 
 const aspect = computed(() =>
-  frame.value && frame.value.width > 0 && frame.value.height > 0 ? frame.value.width / frame.value.height : 16 / 9,
+  clampFrameAspect(
+    frame.value && frame.value.width > 0 && frame.value.height > 0 ? frame.value.width / frame.value.height : 16 / 9,
+  ),
 );
 </script>
 

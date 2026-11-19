@@ -569,11 +569,15 @@ export function matchNetworkBodySha1(
 /** The most frames {@link buildTraceFrames} lists for one trace; past it, an even sample of them. */
 export const MAX_TRACE_FRAMES = 1000;
 
+/** The most pages {@link buildTraceFrames} lists: the first ones the trace painted. */
+export const MAX_TRACE_FRAME_PAGES = 10;
+
 /**
  * The trace's screencast, page by page, each frame on the wall clock the
- * timeline reads (epoch ms). A trace with more than {@link MAX_TRACE_FRAMES}
- * frames lists every n-th one of each page and its last. Node-free, so the
- * server and the demo produce the same answer.
+ * timeline reads (epoch ms). It lists the first {@link MAX_TRACE_FRAME_PAGES}
+ * pages; past {@link MAX_TRACE_FRAMES} frames, each page lists an even sample
+ * of its frames, its first and last included, sized by its share of them.
+ * Node-free, so the server and the demo produce the same answer.
  */
 export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesResponse {
   if (!parsed) return { status: 'no-trace', pages: [], total: 0, capped: false, startEpochMs: null };
@@ -588,17 +592,32 @@ export function buildTraceFrames(parsed: ParsedTraceData | null): TraceFramesRes
     if (frames) frames.push(frame);
     else byPage.set(frame.pageId, [frame]);
   }
-  const step = Math.ceil(total / MAX_TRACE_FRAMES);
-  const pages: TraceFramePage[] = [...byPage].map(([pageId, frames]) => {
-    const ordered = [...frames].sort((a, b) => a.timestamp - b.timestamp);
-    const kept = step > 1 ? ordered.filter((_, i) => i % step === 0 || i === ordered.length - 1) : ordered;
+  const ordered = [...byPage.values()]
+    .map((frames) => [...frames].sort((a, b) => a.timestamp - b.timestamp))
+    .sort((a, b) => a[0]!.timestamp - b[0]!.timestamp)
+    .slice(0, MAX_TRACE_FRAME_PAGES);
+  const listed = ordered.reduce((sum, frames) => sum + frames.length, 0);
+  const pages: TraceFramePage[] = ordered.map((frames) => {
+    const quota = Math.max(1, Math.floor((MAX_TRACE_FRAMES * frames.length) / listed));
     return {
-      pageId,
-      frames: kept.map((f) => ({ epochMs: toWall(f.timestamp), name: f.file, width: f.width, height: f.height })),
+      pageId: frames[0]!.pageId,
+      frames: evenSample(frames, quota).map((f) => ({
+        epochMs: toWall(f.timestamp),
+        name: f.file,
+        width: f.width,
+        height: f.height,
+      })),
     };
   });
-  pages.sort((a, b) => a.frames[0]!.epochMs - b.frames[0]!.epochMs);
-  return { status: 'ok', pages, total, capped: step > 1, startEpochMs };
+  const kept = pages.reduce((sum, page) => sum + page.frames.length, 0);
+  return { status: 'ok', pages, total, capped: kept < total, startEpochMs };
+}
+
+/** `count` items spread evenly over `items`, its first and last included (its last alone for one). */
+function evenSample<T>(items: readonly T[], count: number): T[] {
+  if (items.length <= count) return [...items];
+  if (count === 1) return [items[items.length - 1]!];
+  return Array.from({ length: count }, (_, i) => items[Math.round((i * (items.length - 1)) / (count - 1))]!);
 }
 
 /** When the test started on the trace's clock: its test runner's header, else its first browser context's. */

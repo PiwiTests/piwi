@@ -115,3 +115,49 @@ export function pageInFront(pages: readonly PlacedFramePage[], at: number): { pa
   });
   return best;
 }
+
+/** How the list shows the page: a panel beside it, a card on hover, or a column of thumbnails. */
+export const PAGE_VIEWS = ['panel', 'hover', 'thumbs'] as const;
+export type PageView = (typeof PAGE_VIEWS)[number];
+
+/** A stored page view, the side panel for anything else. */
+export function parsePageView(raw: unknown): PageView {
+  return PAGE_VIEWS.find((view) => view === raw) ?? 'panel';
+}
+
+/** The shortest step a "no new frame" line speaks for: a faster one ends before its own effect is painted. */
+export const UNCHANGED_STEP_MIN_MS = 1_000;
+
+/**
+ * A step's page before it ran and after it, and whether the page in front
+ * painted no new frame in between: said only of a step of at least
+ * {@link UNCHANGED_STEP_MIN_MS}, and never of a `sampled` frame list, which
+ * leaves frames out.
+ */
+export function stepFrames(
+  pages: readonly PlacedFramePage[],
+  step: Extract<PageSubject, { kind: 'step' }>,
+  failureAt: number,
+  sampled = false,
+): {
+  before: { page: number; frame: number } | null;
+  after: { page: number; frame: number } | null;
+  unchanged: boolean;
+} {
+  const before = pageInFront(pages, subjectMoment({ ...step, phase: 'before' }, failureAt));
+  const afterAt = subjectMoment({ ...step, phase: 'after' }, failureAt);
+  const after = pageInFront(pages, afterAt);
+  const unchanged =
+    !sampled &&
+    afterAt - step.at >= UNCHANGED_STEP_MIN_MS &&
+    before != null &&
+    after != null &&
+    before.page === after.page &&
+    before.frame === after.frame;
+  return { before, after, unchanged };
+}
+
+/** A frame's width over height held to 3:4 … 3:1, so a phone-sized page never towers over its panel. */
+export function clampFrameAspect(ratio: number): number {
+  return Math.min(3, Math.max(0.75, ratio));
+}
