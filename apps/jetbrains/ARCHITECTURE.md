@@ -1057,9 +1057,11 @@ meanwhile included. `PiwiRecordingTest` drives it with synthetic updates, the ca
 ## Send to editor
 
 `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the token
-from `PasswordSafe`. **Copy the pairing address for Piwi Picker** copies the pairing address, and names the ports a
-JetBrains Gateway backend's person forwards under **Ports** in the JetBrains Client, at the same numbers: the IDE's and
-the live run hubs' (`Glue.forwardingHint`; the platform has no public way to forward one). The handler mirrors
+from `PasswordSafe`. Each JetBrains product keeps its own token (`Glue.sendTokenUser`; the entry every IDE shared
+before is copied to it once, `Glue.ownSendToken`), so Unpair in one IDE changes no other's pairing. **Copy the pairing
+address for Piwi Picker** copies the pairing address, and names the ports a JetBrains Gateway backend's person forwards
+under **Ports** in the JetBrains Client, at the same numbers: the IDE's and the live run hubs' (`Glue.forwardingHint`;
+the platform has no public way to forward one). The handler mirrors
 `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
 
 **Pairing by code.** Beside it, without a token, `GET /api/piwi/hello` says which IDE listens (`Glue.editorHello`: the
@@ -1212,6 +1214,7 @@ file is opened.
 | ------------------------------------------------------------------- | ----------------------------------------------- |
 | The instance URL and the project (`PiwiSettings`)                   | `.idea/piwi.xml`, which a repository may commit |
 | The API key, **per instance** (`Glue.apiKeyEntry`)                  | the IDE's `PasswordSafe`                        |
+| The Send to editor token, **per product** (`Glue.sendTokenUser`)    | the IDE's `PasswordSafe`                        |
 | Choices made for this project on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
 | Each person's own options (`PiwiUserSettings`), in every project    | the IDE's `options/piwi.xml`                    |
 

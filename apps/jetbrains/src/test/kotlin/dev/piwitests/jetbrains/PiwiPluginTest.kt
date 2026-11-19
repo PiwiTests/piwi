@@ -1587,6 +1587,17 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /** Unpair renews this IDE's own token: the entry every JetBrains IDE shared before, which others may read, stays. */
+    fun testUnpairRenewsThisIdesTokenAloneNotTheOneJetBrainsIdesShared() {
+        val shared = PiwiCredentials.attributes(com.intellij.credentialStore.generateServiceName("Piwi", "sendToken"))
+        com.intellij.ide.passwordSafe.PasswordSafe.instance.setPassword(shared, "shared-token-0123456789")
+        val before = PiwiSendToken.ensure()
+        val after = PiwiSendToken.renew()
+        assertFalse(before == after)
+        assertEquals(after, PiwiSendToken.current())
+        assertEquals("shared-token-0123456789", com.intellij.ide.passwordSafe.PasswordSafe.instance.getPassword(shared))
+    }
+
     /** A request of Piwi Picker's pairing by code to the built-in server, the event queue run while it waits. */
     private fun pickerRequest(
         method: String,

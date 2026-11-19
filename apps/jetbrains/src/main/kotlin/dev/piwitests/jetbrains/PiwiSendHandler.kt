@@ -8,6 +8,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
@@ -47,13 +48,31 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-/** The pairing token Piwi Picker sends with each request, kept in the password safe: read on a pooled thread. */
+/**
+ * The pairing token Piwi Picker sends with each request, kept in the password safe: read on a pooled thread. Each
+ * JetBrains product keeps its own (`Glue.sendTokenUser`), so Unpair in one IDE leaves every other IDE's pairing as it
+ * is, and no other IDE holds a copy this one renews. The entry every JetBrains IDE shared before is read once, when this
+ * IDE's own is empty, and copied to it.
+ */
 object PiwiSendToken {
-    private val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
+    private val attributes by lazy {
+        PiwiCredentials.attributes(
+            generateServiceName("Piwi", Glue.sendTokenUser(ApplicationInfo.getInstance().build.productCode)),
+        )
+    }
+
+    /** The entry every JetBrains IDE of this machine shared, which a pairing made before may name. */
+    private val shared = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
 
     @Volatile private var cached: String? = null
 
-    fun current(): String = cached ?: (PasswordSafe.instance.getPassword(attributes) ?: "").also { cached = it }
+    fun current(): String = cached ?: load().also { cached = it }
+
+    @Synchronized
+    private fun load(): String = cached ?: Glue.ownSendToken(
+        PasswordSafe.instance.getPassword(attributes),
+        PasswordSafe.instance.getPassword(shared),
+    ) { PasswordSafe.instance.setPassword(attributes, it) }
 
     /** The token, minted once when none is kept; every open project's service hears the pairing it makes. */
     @Synchronized

@@ -3657,6 +3657,23 @@ object Glue {
         return token.isNotEmpty() && java.security.MessageDigest.isEqual(given.toByteArray(), token.toByteArray())
     }
 
+    /**
+     * The password-safe user of this IDE's Send to editor token: one per product (`WS`, `IU`, `RD`), so an IDE's Unpair
+     * changes no other JetBrains IDE's pairing, and a new version of the same IDE keeps it.
+     */
+    fun sendTokenUser(productCode: String): String = "sendToken ${productCode.ifBlank { "IDE" }}"
+
+    /**
+     * This IDE's Send to editor token: its own entry's (`own`), else the one every JetBrains IDE shared before
+     * (`shared`), copied to its own (`keep`), so a Piwi Picker paired with it stays paired; empty before any.
+     */
+    fun ownSendToken(own: String?, shared: String?, keep: (String) -> Unit): String {
+        if (!own.isNullOrEmpty()) return own
+        val earlier = shared.orEmpty()
+        if (earlier.isNotEmpty()) keep(earlier)
+        return earlier
+    }
+
     /** The header Piwi Picker polls a pairing request with (`@piwitests/core/editor-pairing`). */
     const val EDITOR_PAIRING_SECRET_HEADER = "x-pairing-secret"
 

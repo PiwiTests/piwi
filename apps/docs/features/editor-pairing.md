@@ -47,7 +47,8 @@ code…** and **Deny**; once paired, the browser it is paired with and since whe
 the runs while its Runs window is open), and the port it reaches the editor on. Not paired, it says how to pair.
 
 **Unpair** there (**Piwi: Unpair Piwi Picker**) gives the editor a new token, after asking: Piwi Picker, and any run
-started before, reach it again only once paired again. The connections to the runs Piwi Picker holds already last
+started before, reach it again only once paired again. Each JetBrains IDE keeps a token of its own, so Unpair in one
+leaves the others paired. The connections to the runs Piwi Picker holds already last
 until the editor service restarts. In VS Code, a window that kept the port of an earlier pairing
 outside 7247 to 7251 moves to one of them.
 

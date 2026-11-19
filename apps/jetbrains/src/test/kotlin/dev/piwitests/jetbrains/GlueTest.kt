@@ -2832,6 +2832,22 @@ class GlueTest {
     private val chrome = "chrome-extension://" + "a".repeat(32)
 
     @Test
+    fun `keeps a Send to editor token per JetBrains product, the one they shared copied once`() {
+        assertEquals("sendToken WS", Glue.sendTokenUser("WS"))
+        assertEquals("sendToken IU", Glue.sendTokenUser("IU"))
+        assertEquals("sendToken IDE", Glue.sendTokenUser(""))
+        val kept = mutableListOf<String>()
+        // This IDE's own token, whatever the shared one is: another IDE's Unpair changes nothing here.
+        assertEquals("own-token-0123456789", Glue.ownSendToken("own-token-0123456789", "shared-token-0123456", kept::add))
+        assertEquals(emptyList<String>(), kept)
+        // None of its own yet: the shared one, kept as its own, so a Piwi Picker paired before stays paired.
+        assertEquals("shared-token-0123456", Glue.ownSendToken(null, "shared-token-0123456", kept::add))
+        assertEquals(listOf("shared-token-0123456"), kept)
+        assertEquals("", Glue.ownSendToken("", null, kept::add))
+        assertEquals(1, kept.size)
+    }
+
+    @Test
     fun `hands Piwi Picker the token with the proof of the code typed, once, as the core's pairing requests do`() {
         var now = 1_000_000L
         var changes = 0
