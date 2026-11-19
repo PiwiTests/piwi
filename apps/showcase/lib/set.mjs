@@ -212,6 +212,8 @@ export async function buildSet(set, { say }) {
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
   await set.editor.command('Notifications: Clear All Notifications');
+  // The code takes the window's width: a stop's row of controls fits above its line, beside the worker's panel too.
+  await set.editor.command('View: Close Primary Side Bar');
 
   say('the developer’s browser with Piwi Picker, paired');
   set.browser = await launchDeveloperBrowser({

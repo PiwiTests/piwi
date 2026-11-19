@@ -28,7 +28,7 @@ again to the spec's summary check (a breakpoint at the caret, **Run the test at 
 reads the order's card. Beat 8's Runs window says the run ended (run-control PR 3 gives it no verdict) and the Testing
 view shows the test passed. In beat 10 the developer pastes a new test and runs it to its last line, and the agent, a
 client of the runs' MCP server configured from **Copy the runs' MCP server configuration**, clicks **Orders** by its
-ref, writes the steps and a check and resumes. One product bug found on the way is skipped where the check meets
+ref, writes the steps and a check and resumes. The watch beats show the live view where each person meets it: `watch-running` runs the fixed test headless from VS Code, which marks the line it runs, and watches it in the editor's own worker panel through its stop at a breakpoint; `back-on-the-team` runs the fix's CI on three workers, **Watch all** shows each worker's page, and one tile in full names the call its test is in until the run is green. One product bug found on the way is skipped where the check meets
 it, and only there ([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has
 no candidate for the story's failure (the reporter keeps no element of a click that navigates at once), so **Most
 likely** does not name **Pay now** either. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).

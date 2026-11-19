@@ -8,10 +8,11 @@ import { Agent, refOf, runsServer } from './lib/agent.mjs';
 import { dataUrlBytes, decodeImage, likeness } from './lib/likeness.mjs';
 import {
   RUN_VERDICT,
-  STOP_WORDS,
   laneLogProblems,
-  readLaneLog,
-  recordLaneView,
+  readWatchLog,
+  recordWatch,
+  runningLines,
+  tileProblems,
   watchedProblems,
 } from './lib/watching.mjs';
 import { PAGE_OBJECT, SPEC, push, read } from './lib/workspace.mjs';
@@ -74,8 +75,28 @@ const runCard = (runs) => runs.getByRole('region', { name: 'shop' }).and(runs.lo
 /** What hides Piwi's pause bar from an image of the page, as the reporter hides it from the stop's image. */
 const PAUSE_BAR_HIDDEN = '#__piwi-pause-bar { display: none !important; }';
 
-/** How long the Runs window is watched showing a running test. */
+/** How long VS Code's worker panel is watched showing a running test. */
 const WATCH_MS = 5000;
+
+/** The workers of the fix's CI run: one for each test of the shop's suite, so Watch all shows them side by side. */
+const CI_WORKERS = 3;
+
+/** The name of the image of the page in VS Code's worker panel ("Piwi: worker N"). */
+const WORKER_IMAGE = "The page of the worker's test";
+
+/** The frame of VS Code's worker panel, a webview beside the editor, once it shows; null before. */
+async function workerView(vscode) {
+  for (const frame of vscode.frames()) {
+    if (
+      await frame
+        .locator(`img#page[alt="${WORKER_IMAGE}"]`)
+        .count()
+        .catch(() => 0)
+    )
+      return frame;
+  }
+  return null;
+}
 
 /**
  * Runs `act` with `SLOW_MO` in the checkout's `.env`, which its Playwright config reads, so a run started from the
@@ -217,8 +238,9 @@ export const STORY = [
       const card = runCard(runs);
       const text = await card.innerText();
       expect(text.includes('acme-shop') && text.includes('Visual Studio Code'), `the run names its project and editor`);
+      // The editor names the spec by its whole path, anchored at its start.
       expect(
-        text.includes(`npx playwright test ${SPEC}:21 --workers=1 --headed`),
+        new RegExp(`npx playwright test "\\^/\\S*/${escaped(SPEC)}:21" --workers=1 --headed`).test(text),
         `the run is the test, headed, one worker: ${text.split('\n').slice(0, 4).join(' | ')}`,
       );
       const page = await testPage();
@@ -447,52 +469,80 @@ export const STORY = [
   beat({
     id: 'watch-running',
     title: 'Watch it run',
-    seconds: 12,
-    focus: ['vscode', 'runs'],
+    seconds: 14,
+    focus: ['vscode'],
     budget: 240_000,
     lines: {
-      en: ['Run it once more, and watch it in Piwi Picker:', 'the test’s page, live, as it runs.'],
+      en: [
+        'Run it once more, headless: the editor marks the line it runs,',
+        'and Watch shows its page live, beside the code.',
+      ],
     },
-    async run({ vscode, runs, gesture, repo, instance, state }) {
+    async run({ vscode, runs, gesture, palette, repo, instance, state }) {
       const line =
         read(repo.shop, SPEC)
           .split('\n')
           .findIndex((text) => text.includes("test('places an order'")) + 1;
       state.beforeWatched = (await instance.runs()).map((r) => r.id);
+      // The Testing view the last beat opened gives its room back to the code and the worker's panel.
+      await palette('View: Close Primary Side Bar');
       await slowedDown(repo.shop, async () => {
         await goTo(vscode, gesture, SPEC, line);
         await gesture.press('vscode', 'Control+Shift+Alt+K');
-        const card = runCard(runs);
-        await gesture.click('runs', card.getByRole('button', { name: 'Watch', exact: true }), { timeout: 120_000 });
-        const live = card.getByRole('img', { name: 'Live view of the test’s page', exact: true });
-        await live.waitFor({ timeout: 30_000 });
-        // What the Runs window shows of the running test, and when, as often as it can be read for WATCH_MS.
+        // The editor marks the line of the call the test is in, once the test reaches the spec's own calls.
+        state.runningLines = await waitFor(
+          async () => {
+            const marks = await runningLines(vscode);
+            return marks.length ? marks : null;
+          },
+          'the running line in the spec',
+          120_000,
+        );
+        await palette("Piwi: Watch a worker's test");
+        const view = await waitFor(() => workerView(vscode), "the worker's panel beside the editor");
+        const image = view.locator(`img#page[alt="${WORKER_IMAGE}"]`);
+        const stopped = view.locator('#controls:not([hidden])');
+        // What the panel shows of the running test, and when, as often as it can be read for WATCH_MS.
         const looks = [];
         const until = Date.now() + WATCH_MS;
         await waitFor(
           async () => {
-            const src = await live.getAttribute('src', { timeout: 1000 }).catch(() => null);
-            looks.push({ t: Date.now(), src, stopped: await card.getByText(STOP_WORDS).count() });
+            const src = await image.getAttribute('src', { timeout: 1000 }).catch(() => null);
+            looks.push({ t: Date.now(), src, stopped: await stopped.count() });
             return Date.now() >= until;
           },
-          `${WATCH_MS / 1000} s of the running test in the Runs window`,
+          `${WATCH_MS / 1000} s of the running test in the worker's panel`,
           WATCH_MS + 10_000,
         );
         state.watchedRunning = looks;
-        // The test then stops at the summary check's breakpoint, and goes on.
-        const stopped = card.getByText('Stopped at a breakpoint');
+        // The test then stops at the summary check's breakpoint, shown in the panel, and F5 resumes it.
+        const lens = vscode.locator('.codelens-decoration', { hasText: 'Stopped at a breakpoint' }).first();
         const next = await waitFor(
-          async () => ((await stopped.isVisible()) ? 'stopped' : (await card.count()) === 0 ? 'ended' : null),
+          async () => {
+            if (await stopped.count()) return 'panel';
+            if (await lens.isVisible()) return 'editor';
+            return (await runCard(runs).count()) === 0 ? 'ended' : null;
+          },
           'the watched test to stop at the breakpoint, or its run to end',
           90_000,
         );
-        if (next === 'stopped') await gesture.click('runs', card.getByRole('button', { name: 'Resume' }));
+        state.stoppedIn = next;
+        if (next !== 'ended') await gesture.press('vscode', 'F5');
         await runEnded(runs);
       });
+      // The panel closes, and the code has the window again.
+      const tab = vscode.locator('.tabs-container .tab', { hasText: 'Piwi: worker' });
+      await gesture.click('vscode', tab.locator('.action-label.codicon-close'));
+      await tab.waitFor({ state: 'detached' });
     },
     async check({ instance, state }) {
+      expect(
+        state.runningLines.some((mark) => /^Worker 1 · \S/.test(mark)),
+        `the running line names the worker and its call: ${JSON.stringify(state.runningLines)}`,
+      );
       const problems = watchedProblems(state.watchedRunning);
-      expect(!problems.length, `the Runs window showed the running test: ${problems.join('; ')}`);
+      expect(!problems.length, `the worker's panel showed the running test: ${problems.join('; ')}`);
+      expect(state.stoppedIn === 'panel', `the breakpoint's stop showed in the worker's panel (${state.stoppedIn})`);
       const test = await waitFor(async () => {
         const latest = (await instance.runs()).find((r) => !state.beforeWatched.includes(r.id));
         const found = latest && (await instance.run(latest.id)).testCases.find((c) => c.title === 'places an order');
@@ -510,17 +560,17 @@ export const STORY = [
     budget: 240_000,
     lines: {
       en: [
-        'The fix is pushed. On the team instance, the CI run is live:',
-        'watch its page beside the step it is on,',
-        'until the run turns green.',
+        'The fix is pushed, and CI runs the suite on three workers.',
+        'Watch all shows each worker’s page, live.',
+        'One in full: the call it is in, until the run is green.',
       ],
     },
     async run({ set, repo, dashboard, instance, gesture, state }) {
       gesture.note('the fix is committed and pushed');
       state.fixCommit = push(repo.shop, 'Fix the checkout test for the redesign');
       const before = (await instance.runs()).map((r) => r.id);
-      // A CI run slowed enough to watch, as a long suite's run is, on one worker: the lane watched runs every test.
-      state.ci = set.ci(state.fixCommit, 'ci-fix', { SLOW_MO: '1000' }, ['--workers=1']);
+      // A CI run slowed enough to watch, as a long suite's run is, each of its tests on a worker of its own.
+      state.ci = set.ci(state.fixCommit, 'ci-fix', { SLOW_MO: '1000' }, [`--workers=${CI_WORKERS}`]);
       const live = await waitFor(
         async () => (await instance.runs()).find((r) => !before.includes(r.id)),
         'the CI run of the fix on the instance',
@@ -531,49 +581,32 @@ export const STORY = [
       await dashboard.goto(`${instance.base}/projects/${set.projectId}`, { waitUntil: 'domcontentloaded' });
       await gesture.click('dashboard', dashboard.getByRole('link', { name: `Run #${live.id}`, exact: true }));
       await dashboard.waitForURL(`**/test-runs/${live.id}`);
-      // What the run was as its page loaded: a page that loaded while the run set up goes live as it starts.
-      const atLoad = (await instance.run(live.id)).status;
-      const watch = dashboard.getByRole('button', { name: /^Watch .* live$/ }).first();
-      const header = dashboard.locator('[data-shot="run-header"]');
-      // A live page shows Watch while a worker runs a test; a page the run's start never reached still says
-      // Initializing once the instance holds a finished test of the run, which a live page lists.
-      const page = await waitFor(
-        async () => {
-          if (await watch.isVisible()) return 'live';
-          const finished = (await instance.run(live.id)).testCases?.some((c) => FINISHED.has(c.status));
-          return finished && (await header.getByText('Initializing', { exact: true }).isVisible()) ? 'stuck' : null;
-        },
-        'the run page to show its workers',
-        120_000,
-      );
-      expect(page === 'live', `the run page never went live, though the run was ${atLoad} as it loaded`);
-      await recordLaneView(dashboard);
-      await gesture.click('dashboard', watch);
-      const frame = dashboard.getByTestId('lane-panel').getByRole('img', { name: /^The page .* as the test sees it$/ });
-      state.watched = await waitFor(
-        () =>
-          frame.evaluate((img) =>
-            img.complete && img.naturalWidth ? { width: img.naturalWidth, alt: img.alt } : null,
-          ),
-        "a frame of the worker's page",
+      await recordWatch(dashboard);
+      // The run page offers Watch all once a worker of the run is in its live view.
+      await gesture.click('dashboard', dashboard.getByTestId('watch-all-toggle'), { timeout: 120_000 });
+      await waitFor(
+        async () => tileProblems(await readWatchLog(dashboard)).length === 0,
+        `the page of ${CI_WORKERS} workers in Watch all`,
         60_000,
       );
+      // The checkout's worker, in full.
+      const tile = dashboard.getByRole('button', { name: /^Show Worker \d+ in full: places an order/ });
+      await gesture.click('dashboard', tile);
+      await dashboard.getByTestId('lane-panel').getByTestId('live-frame').waitFor({ timeout: 60_000 });
       state.ciExit = await state.ci;
       // The view stays open through the run's end, and says how the run ended.
       await waitFor(
-        async () => (await readLaneLog(dashboard)).statuses.some((said) => RUN_VERDICT.test(said.text)),
+        async () => (await readWatchLog(dashboard)).statuses.some((said) => RUN_VERDICT.test(said.text)),
         'the live view to say how the run ended',
         60_000,
       ).catch(() => null);
-      state.laneLog = await readLaneLog(dashboard);
+      state.watchLog = await readWatchLog(dashboard);
       await gesture.press('dashboard', 'Escape');
     },
     async check({ dashboard, instance, state }) {
-      expect(state.watched.width > 100, `the live view showed the page (${JSON.stringify(state.watched)})`);
       expect(state.ciExit === 0, `the fix's CI run passed (exit ${state.ciExit})`);
-      // Images kept coming, through each of the lane's tests, until the run ended and the view said it passed.
-      const problems = laneLogProblems(state.laneLog);
-      expect(!problems.length, `the live view followed the lane until the run was green: ${problems.join('; ')}`);
+      const problems = [...tileProblems(state.watchLog), ...laneLogProblems(state.watchLog)];
+      expect(!problems.length, `the watch followed the run until it was green: ${problems.join('; ')}`);
       const run = await waitFor(async () => {
         const r = await instance.run(state.liveRun);
         return r.status === 'running' ? null : r;

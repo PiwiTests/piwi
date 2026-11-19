@@ -47,7 +47,7 @@ script, the beats, the take and the cut work is in [`ARCHITECTURE.md`](ARCHITECT
 - **The checkout's packages are linked from this repository, never installed** (`linkPackages` in
   `lib/workspace.mjs`): a run tests this commit's reporter.
 - **A label a beat finds by its name is part of the check**: renaming a button or a command title a beat clicks (the
-  dashboard's **Debug in my editor** and **Watch**, the Runs window's, VS Code's lenses and commands) updates
+  dashboard's **Debug in my editor** and **Watch all**, the Runs window's, VS Code's lenses and commands) updates
   `story.mjs` in the same change. The nightly job is no pull request check, so nothing else tells.
 
 ## Commands
@@ -81,7 +81,7 @@ npm run showcase:format                                          # :check to ver
 - `showcase.mjs`: the command line; builds the set, plays the story (checked or filmed), keeps what a failure leaves,
   runs the cut.
 - `story.mjs`: the beats, their titles, lines, runs and checks; `lib/likeness.mjs` (an image of the page against a
-  screenshot of it) and `lib/watching.mjs` (a watched lane's views), what the checks read, their pure parts tested in
+  screenshot of it) and `lib/watching.mjs` (the editor's and the dashboard's views of a running test), what the checks read, their pure parts tested in
   `tests/`.
 - `lib/script.mjs`: `beat`, the gestures and their log, the lines' lint, `play`.
 - `lib/take.mjs`, `lib/capture.mjs`: the virtual take (the holds, the raises, the take log), the x11grab capture and

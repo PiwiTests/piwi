@@ -1,7 +1,7 @@
-// What a person watching a running test sees, read as the checks of the beats that watch: the dashboard's lane panel
-// on a CI run, recorded in its page as it changes, and the Runs window's live view of a running test, looked at as it
-// shows. The problems each one has are pure, so a test feeds them what a broken view would show.
-import { RUN_WORDS_EN } from '@piwitests/run-model/words';
+// What a person watching a running test sees, read as the checks of the beats that watch: VS Code's worker panel on the
+// developer's own run, looked at as it shows, and the dashboard's watch of a CI run (Watch all's tiles and the lane
+// panel), recorded in its page as it changes. The problems each one has are pure, so a test feeds them what a broken
+// view would show.
 
 /**
  * How the dashboard's live view says the run ended, once the run page knows how (it says "The run ended." first), and
@@ -15,39 +15,36 @@ export const VIEW_ENDED = ['The test ended.', 'The worker left the run.'];
  * from its last to the run's end.
  */
 export const MAX_FRAME_GAP_MS = 15_000;
-/** The fewest tests of a watched lane that run while it is watched, so that it hands over from one to the next. */
-export const MIN_LANE_TESTS = 2;
 /** The fewest images a watch shows of a lane whose test runs, slowed down, through the whole watch. */
 export const MIN_FRAMES = 3;
-/** The longest the Runs window's live view of a running test, slowed down, may show one image while it is watched. */
+/** The fewest calls the lane panel names under the image of a test it shows in full, slowed down. */
+export const MIN_CALLS = 2;
+/** The fewest workers Watch all shows an image of, in a CI run of three workers. */
+export const MIN_TILES = 2;
+/** The longest the editor's view of a running test, slowed down, may show one image while it is watched. */
 export const MAX_WATCH_GAP_MS = 3000;
 
-/** A pattern of a sentence of the run model's English words, each `$name$` placeholder standing for any text. */
-const wordsPattern = (words) => words.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/\\\$\w+\\\$/g, '.+');
 /**
- * What the Runs window says of a worker standing at a stop, whoever stopped it, or held at its failure: the run model's
- * words of every stop (`runs_stopped…`) and of a failure (`runs_failedAt`, `runs_stateFailed`), as one pattern of the
- * whole text.
+ * Records the dashboard's watch of a run in its page as it changes: Watch all's tiles (each new image of a worker's
+ * page, by the worker it shows), and the lane panel, docked beside the run page or a sheet: when each new image of the
+ * page showed, with how many of the lane's tests had ended then (its earlier tests and the outcome it shows), each
+ * call it named under the image, the images of its filmstrip, and each thing its status line said, with the same
+ * count. `readWatchLog` reads it back.
  */
-export const STOP_WORDS = new RegExp(
-  `^(?:${Object.entries(RUN_WORDS_EN)
-    .filter(([key]) => key.startsWith('runs_stopped') || key === 'runs_failedAt' || key === 'runs_stateFailed')
-    .map(([, words]) => wordsPattern(words))
-    .join('|')})$`,
-);
-
-/**
- * Records the dashboard's lane panel (docked beside the run page, or a sheet) in the page as it changes: when each new
- * image of the page showed, with how many of the lane's tests had ended then (its earlier tests and the outcome it
- * shows), and each thing its status line said, with the same count. `readLaneLog` reads it back.
- */
-export function recordLaneView(page) {
+export function recordWatch(page) {
   return page.evaluate(() => {
-    const log = { frames: [], statuses: [] };
-    window.__showcaseLaneLog = log;
+    const log = { tiles: {}, frames: [], calls: [], strip: 0, statuses: [] };
+    window.__showcaseWatchLog = log;
     let src = null;
     let status = null;
+    let call = null;
     const look = () => {
+      for (const tile of document.querySelectorAll('[data-testid="watch-all-tile"]')) {
+        const image = tile.querySelector('[data-testid="watch-all-image"]');
+        const worker = tile.dataset.worker;
+        const seen = (log.tiles[worker] ??= []);
+        if (image?.src && seen.at(-1)?.src !== image.src) seen.push({ t: Date.now(), src: image.src });
+      }
       const panel = document.querySelector('[data-testid="lane-panel"]');
       if (!panel) return;
       const img = panel.querySelector('[data-testid="live-frame"]');
@@ -58,6 +55,12 @@ export function recordLaneView(page) {
         src = img.src;
         log.frames.push({ t: Date.now(), ended });
       }
+      const named = panel.querySelector('[data-testid="live-call"]')?.textContent.replace(/\s+/g, ' ').trim() ?? '';
+      if (named && named !== call) {
+        call = named;
+        log.calls.push(named);
+      }
+      log.strip = Math.max(log.strip, panel.querySelectorAll('[data-testid="live-filmstrip-shot"]').length);
       const said = panel.querySelector('[data-testid="live-status"]')?.textContent.trim() ?? '';
       if (said !== status) {
         status = said;
@@ -75,17 +78,30 @@ export function recordLaneView(page) {
   });
 }
 
-/** What `recordLaneView` recorded in `page` so far. */
-export function readLaneLog(page) {
-  return page.evaluate(() => window.__showcaseLaneLog);
+/** What `recordWatch` recorded in `page` so far. */
+export function readWatchLog(page) {
+  return page.evaluate(() => window.__showcaseWatchLog);
 }
 
 /**
- * What is wrong with a lane panel's log of a run that passed: none when images kept coming, without a pause longer
- * than `maxGapMs`, through each of the lane's tests from the first one watched (`MIN_LANE_TESTS` of them at least) up
- * to the run's end, and the view stayed open until the run ended, saying it passed.
+ * What is wrong with Watch all's tiles of a run of several workers: none when `minTiles` workers at least showed an
+ * image of their page.
  */
-export function laneLogProblems({ frames, statuses }, maxGapMs = MAX_FRAME_GAP_MS) {
+export function tileProblems({ tiles }, minTiles = MIN_TILES) {
+  const shown = Object.entries(tiles).filter(([, images]) => images.length);
+  if (shown.length >= minTiles) return [];
+  return [
+    `Watch all showed the page of ${shown.length} of ${Object.keys(tiles).length} workers (${minTiles} at least)`,
+  ];
+}
+
+/**
+ * What is wrong with the lane panel's log of a run that passed, the lane shown in full: none when images kept coming,
+ * without a pause longer than `maxGapMs`, through each of the lane's tests from the first one watched up to the run's
+ * end, the view named the calls of its test (`MIN_CALLS` at least) and their filmstrip, and stayed open until the run
+ * ended, saying it passed.
+ */
+export function laneLogProblems({ frames, calls, strip, statuses }, maxGapMs = MAX_FRAME_GAP_MS) {
   const problems = [];
   const said = statuses.map((status) => status.text);
   const verdict = said.findIndex((text) => RUN_VERDICT.test(text));
@@ -95,6 +111,11 @@ export function laneLogProblems({ frames, statuses }, maxGapMs = MAX_FRAME_GAP_M
   }
   const cut = said.slice(0, verdict < 0 ? said.length : verdict).find((text) => VIEW_ENDED.includes(text));
   if (cut) problems.push(`the live view ended before the run: "${cut}" (${JSON.stringify(said)})`);
+  const named = calls.filter((text) => text.startsWith('At '));
+  if (named.length < MIN_CALLS) {
+    problems.push(`the live view named ${named.length} calls under the image: ${JSON.stringify(calls)}`);
+  }
+  if (!strip) problems.push('the live view showed no filmstrip of the calls that ended');
   if (frames.length < MIN_FRAMES) {
     problems.push(`the live view showed ${frames.length} images of the page`);
     return problems;
@@ -106,10 +127,6 @@ export function laneLogProblems({ frames, statuses }, maxGapMs = MAX_FRAME_GAP_M
   const longest = Math.max(...times.slice(1).map((t, i) => t - times[i]));
   if (longest > maxGapMs) problems.push(`the lane sent no image for ${longest / 1000} s`);
   const ended = statuses.length ? statuses[statuses.length - 1].ended : 0;
-  const watched = ended - frames[0].ended;
-  if (watched < MIN_LANE_TESTS) {
-    problems.push(`the lane ran ${watched} test while watched: its hand-over to a next test went unchecked`);
-  }
   for (let test = frames[0].ended; test < ended; test++) {
     if (!frames.some((shown) => shown.ended === test)) {
       const counts = JSON.stringify(frames.map((shown) => shown.ended));
@@ -120,10 +137,10 @@ export function laneLogProblems({ frames, statuses }, maxGapMs = MAX_FRAME_GAP_M
 }
 
 /**
- * What is wrong with the looks taken at the Runs window's live view of a running test (`{ t, src, stopped }` each,
- * `t` when it was taken): none when the view showed at each look but the first, the page changed in it `MIN_FRAMES`
- * times or more, never showing one image longer than `maxGapMs` from the first look to the last, and the test stood at
- * no stop.
+ * What is wrong with the looks taken at the editor's view of a running test (`{ t, src, stopped }` each, `t` when it
+ * was taken, `stopped` whether the view showed a stop's controls): none when the view showed at each look but the
+ * first, the page changed in it `MIN_FRAMES` times or more, never showing one image longer than `maxGapMs` from the
+ * first look to the last, and the test stood at no stop.
  */
 export function watchedProblems(looks, maxGapMs = MAX_WATCH_GAP_MS) {
   if (!looks.length) return ['the live view was never looked at'];
@@ -139,4 +156,21 @@ export function watchedProblems(looks, maxGapMs = MAX_WATCH_GAP_MS) {
   if (longest > maxGapMs) problems.push(`the live view showed one image for ${longest / 1000} s`);
   if (looks.some((look) => look.stopped)) problems.push('the test stopped while it was watched');
   return problems;
+}
+
+/**
+ * The running lines VS Code marks in its visible editors: the text it writes after each line of a call a test is in
+ * (`Worker 1 · Click getByRole('button')`), from the decoration's `::after` content.
+ */
+export function runningLines(vscode) {
+  return vscode.evaluate(() => {
+    const marks = [];
+    for (const span of document.querySelectorAll('.monaco-editor .view-line span')) {
+      const content = getComputedStyle(span, '::after').content;
+      if (!content || content === 'none' || content === 'normal') continue;
+      const text = content.replace(/^"|"$/g, '').replace(/\\"/g, '"');
+      if (/^Worker \d+/.test(text)) marks.push(text);
+    }
+    return marks;
+  });
 }
