@@ -3959,7 +3959,7 @@ object Glue {
     val PICKER_BUILT_IN_PORTS = 63342..63361
 
     const val PICKER_INTRO =
-        "Piwi Picker, the browser extension, sends the locators you pick to the caret and follows the runs this IDE starts."
+        "Piwi Picker, the browser extension, sends the locators you pick to the caret and follows the runs this project starts."
     const val PICKER_HOW_TO_PAIR =
         "To pair, click Pair under Editor in Piwi Picker's settings, then type here the code it shows."
     const val PICKER_ADDRESS_HINT =
@@ -3978,7 +3978,8 @@ object Glue {
     /**
      * The Piwi Picker tab's lines once paired, or Piwi Picker heard from: who it is paired with and since when, when it
      * was last heard from, and where it reaches this IDE; none before, the tab saying how to pair instead. The words of
-     * the VS Code extension's Piwi Picker view (`pickerRows` in `apps/vscode/src/picker-pairing.ts`).
+     * the VS Code extension's Piwi Picker view (`pickerRows` in `apps/vscode/src/picker-pairing.ts`), both held to the
+     * golden fixture `packages/editor/tests/golden/picker-pairing.json`.
      */
     fun pickerRows(state: PickerState, now: Long): List<PickerLine> {
         if (state.paired == null && state.heard == null) return emptyList()
@@ -3999,6 +4000,9 @@ object Glue {
             PickerLine("Listening on 127.0.0.1:${state.port}", if (found) "" else "not where Piwi Picker looks", found),
         )
     }
+
+    /** A request's title, in the Piwi Picker tab: who asks. */
+    fun pairingRequestTitle(client: String): String = "$client asks to pair"
 
     /** The notification of a pairing request: who asks, and what to type to allow it. */
     fun pairingPrompt(client: String): String =

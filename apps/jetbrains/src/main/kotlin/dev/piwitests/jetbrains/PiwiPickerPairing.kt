@@ -257,7 +257,7 @@ class PiwiPickerTab(private val project: Project) : Disposable {
             row { label(TAB).applyToComponent { font = JBUI.Fonts.label(16f).asBold() } }
             row { comment(Glue.PICKER_INTRO) }
             for (request in state.waiting) {
-                group("${request.client} asks to pair") {
+                group(Glue.pairingRequestTitle(request.client)) {
                     row { text(Glue.escapeHtml(Glue.pairingPrompt(request.client)), maxLineLength = 90) }
                     row {
                         button(PiwiPickerPairing.TYPE_THE_CODE) { PiwiPickerPairing.allow(project, request.id) }

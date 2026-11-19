@@ -1086,6 +1086,40 @@ class GlueTest {
         }
     }
 
+    /**
+     * The Piwi Picker tab's words, which the VS Code extension's Piwi Picker view says too: the golden fixture both read
+     * (`packages/editor/tests/golden/picker-pairing.json`), in the JetBrains words.
+     */
+    @Test
+    fun `the Piwi Picker tab says the words the VS Code view says`() {
+        val picker = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/picker-pairing.json").readText(),
+        ).asJsonObject
+        val instant = { iso: String -> java.time.Instant.parse(iso).toEpochMilli() }
+        val inJetBrains = { text: String, port: Int ->
+            text.replace("{cursor}", "caret").replace("{window}", "project").replace("{editor}", "IDE").replace("{port}", "$port")
+        }
+        val now = instant(picker.get("now").asString)
+        for (case in picker.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val name = case.get("name").asString
+            val port = case.get("port").let { if (it.isJsonPrimitive && it.asJsonPrimitive.isString) Glue.PICKER_BUILT_IN_PORTS.first else it.asInt }
+            val paired = case.get("paired").takeUnless { it.isJsonNull }?.asJsonObject?.let {
+                Glue.PickerPaired(instant(it.get("at").asString), it.get("client").takeUnless { c -> c.isJsonNull }?.asString)
+            }
+            val heard = case.get("heard").takeUnless { it.isJsonNull }?.asString?.let(instant)
+            val rows = Glue.pickerRows(Glue.PickerState(emptyList(), paired, heard, port), now).map { listOf(it.label, it.description) }
+            val expected = case.getAsJsonArray("rows").map { row -> row.asJsonArray.map { inJetBrains(it.asString, port) } }
+            assertEquals(name, expected, rows)
+        }
+        val request = picker.getAsJsonObject("request")
+        val client = request.get("client").asString
+        assertEquals(request.get("title").asString, Glue.pairingRequestTitle(client))
+        assertEquals(inJetBrains(request.get("prompt").asString, 0), Glue.pairingPrompt(client))
+        assertEquals(inJetBrains(picker.get("intro").asString, 0), Glue.PICKER_INTRO)
+        assertEquals(picker.get("howToPair").asString, Glue.PICKER_HOW_TO_PAIR)
+        assertEquals(picker.get("notACode").asString, Glue.NOT_A_CODE)
+    }
+
     @Test
     fun `the Runs tab lists each run in progress, its workers by lane with their tests, and its page`() {
         val run = session(

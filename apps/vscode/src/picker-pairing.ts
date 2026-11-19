@@ -1,7 +1,8 @@
 /**
  * The **Piwi Picker** view's pure half: what it shows of the pairing with Piwi Picker (the requests waiting for the
  * person's answer, the pairing kept, when Piwi Picker was last heard from, the port this window listens on), and the
- * words of the request's notification. Tested without an editor; `picker-view.ts` draws it.
+ * words of the request's notification. Tested without an editor; `picker-view.ts` draws it. The JetBrains plugin's
+ * Piwi Picker tab says the same words, both held to the golden fixture `packages/editor/tests/golden/picker-pairing.json`.
  */
 import { VSCODE_PAIRING_PORTS, type EditorPairingRequestView } from '@piwitests/core/editor-pairing';
 import { relativeTime } from './glue';
@@ -101,7 +102,7 @@ function listeningRow(state: PickerViewState): PickerRow {
 export function pickerRows(state: PickerViewState, now: number): PickerRow[] {
   const rows: PickerRow[] = state.waiting.map((request) => ({
     key: `request:${request.id}`,
-    label: `${request.client} asks to pair`,
+    label: pairingRequestTitle(request.client),
     description: 'type the code Piwi Picker shows',
     tooltip: `Type the code Piwi Picker shows only if you just clicked Pair there. It waits until ${new Date(request.expiresAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.`,
     icon: 'bell-dot',
@@ -134,6 +135,11 @@ export function pickerRows(state: PickerViewState, now: number): PickerRow[] {
   }
   rows.push(listeningRow(state));
   return rows;
+}
+
+/** A request's title, in the view: who asks. */
+export function pairingRequestTitle(client: string): string {
+  return `${client} asks to pair`;
 }
 
 /** The notification of a request: who asks, and what to type to allow it. */
