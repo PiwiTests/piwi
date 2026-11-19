@@ -9,15 +9,16 @@ lang: en-US
 <Needs desktop />
 
 The **Local runs** tray of the [desktop app](./desktop) lists every run the app starts: a **Re-run**, a reproduction, a
-bisect, a [Flake Lab](./flake-lab) run, a bug report's run, a run an agent started. It sits at the bottom right of
-the window and opens as a run starts and at each stop. **Local runs**, at the foot of the sidebar on every page, opens
-and closes it, and so do `g` then `t`. Closing it stops nothing.
+bisect, a [Flake Lab](./flake-lab) run, a bug report's run, a run an agent started. It is docked at the bottom of the
+window, under the page, and opens as a run starts and at each stop. Drag its top edge to resize it, or **Maximize**
+it; the window remembers its height. **Local runs**, at the foot of the sidebar, opens and closes it, and so do `g`
+then `t`. Closing it stops nothing.
 This page is about the runs the tray lists: how far each is, **Stop**, **Run again**, the code their stops make, their
 output, a reload and a restart. Each
 run's workers, their stops and their page: [Desktop app runs](./desktop-runs).
 
 <figure>
-  <img src="/screenshots/desktop-runs-tray.png" alt="The Local runs tray: a run counted 5 of 12 tests, 1 failed, its first worker stopped at its page.pause() with Resume, Step and Finish and its page, beside Stop and Hold failures">
+  <img src="/screenshots/desktop-runs-tray.png" alt="The desktop app's window, the Local runs tray docked under the run page: on its left three runs, the newest counted 5 of 12 tests, 1 failed, and waiting at a stop; on its right that run's worker stopped at its page.pause() with Resume, Step and Finish and its page">
   <figcaption>A run that goes on, counted as its own process counts its tests.</figcaption>
 </figure>
 
@@ -66,17 +67,12 @@ an error page), the system tells you of every stop, whatever the window shows, a
 window](./runs-window) or [an agent](./desktop-runs#for-agents) answers it. With no run of the app going on, the window
 stops listening, and a stop goes on at once.
 
-## Compact list
+## The runs list
 
-**Compact list**, in the tray's head, shows each run as one line: its state (**Running**, **Waiting** at a stop,
-**Passed**, **Failed**), its name, how far it is, and the one action it needs now: **Show the stop**, **Stop**,
-**Open the failure**, **Open run #N** or **Run again**, and, once it ended, **More actions** with the others. A click
-on a line shows the run whole, and **Show as one line** folds it again. A stop shows its run whole, as the tray opens on it. The tray remembers the choice.
-
-<figure>
-  <img src="/screenshots/desktop-runs-tray-compact.png" alt="The Local runs tray as a compact list: a run waiting at a stop with Show the stop, one that passed with Run again, and one that failed with Open the failure">
-  <figcaption>Three runs, one line each, each with the action it needs.</figcaption>
-</figure>
+On its left, the tray lists **Running now**, the runs another window of the app started, then **Finished**. Each
+line says how its run stands, marks a run whose test waits at a stop, and says how long it ran. A click shows the run
+on the right: its command, **Stop** or **Run again** and **More actions**, its links, its workers, what it failed on
+and its output. A stop shows its run, as the tray opens on it.
 
 ## Code from the runs
 

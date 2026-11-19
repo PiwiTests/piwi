@@ -9639,6 +9639,8 @@ const SCENES = [
         .click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
+      // Docked under the page, the tray takes most of the window, so the test's page shows whole.
+      await tray.getByRole('button', { name: 'Maximize local runs' }).click();
       await page.waitForFunction(() => window.__hub?.open() === 1);
       const root = '/home/dev/code/acme-checkout';
       const uri = `file://${root}/tests/checkout.spec.ts`;
@@ -9762,6 +9764,8 @@ const SCENES = [
         .click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
+      // Docked under the page, the tray takes most of the window, so the test's page shows whole.
+      await tray.getByRole('button', { name: 'Maximize local runs' }).click();
       await page.waitForFunction(() => window.__hub?.open() === 1);
       const root = '/home/dev/code/acme-checkout';
       const uri = `file://${root}/tests/checkout.spec.ts`;
@@ -9836,11 +9840,11 @@ const SCENES = [
   {
     name: 'desktop-runs-tray',
     description:
-      'Local runs tray (desktop app): three runs, the newest running with a worker stopped at its page.pause(), counted as its process counts its tests, then one that passed and one that failed, with Open the failure; whole and as the compact list, at the tray’s width and at 390 px',
+      'Local runs tray (desktop app), docked under the run page: three runs listed, the newest running with a worker stopped at its page.pause(), counted as its process counts its tests, then one that passed and one that failed, shown with its failed tests; the window, the tray alone and 390 px',
     tags: ['docs', 'desktop'],
     out: 'docs',
-    // The docs show the tray at its width; its 390 px shots go to .screens/.
-    outputs: ['desktop-runs-tray.png', 'desktop-runs-tray-compact.png'],
+    // The docs show the window with the tray docked; the other shots go to .screens/.
+    outputs: ['desktop-runs-tray.png'],
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
     localRunId: [51, 52, 53],
@@ -9990,31 +9994,27 @@ const SCENES = [
         null,
         { timeout: 30_000 },
       );
+      // The window, the tray docked under the run page and given most of its height.
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await tray.getByRole('separator', { name: 'Resize local runs' }).focus();
+      for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowUp');
+      await page.mouse.click(1, 1);
       await settle();
-      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+      await shoot('');
+      await shoot('panel', { of: '[aria-label="Local runs"]', pad: 0 });
       await page.setViewportSize({ width: 390, height: 844 });
       await settle();
       await shoot('narrow', { of: '[aria-label="Local runs"]', pad: 0 });
 
-      // The compact list: one line a run, with the one action it needs now.
-      await page.setViewportSize({ width: 1280, height: 1100 });
-      await tray.getByRole('button', { name: 'Compact list' }).click();
-      await tray.getByRole('button', { name: 'Show as one line' }).click();
-      await tray.locator('[data-shot="desktop-run-line"]').nth(2).waitFor();
-      await settle();
-      await shoot('compact', { of: '[aria-label="Local runs"]', pad: 0 });
-      await page.setViewportSize({ width: 390, height: 844 });
-      await settle();
-      await shoot('compact-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
-
-      // Report shots: an ended run's results, a run winding down after Stop, and the sidebar's entry once it ended with
-      // the tray closed.
-      await page.setViewportSize({ width: 1280, height: 1100 });
-      await tray.getByRole('button', { name: 'Compact list' }).click();
-      await tray.locator('[data-run]').nth(2).getByRole('button', { name: 'Expand output' }).click();
+      // Report shots: the run that failed chosen, with its failed tests; a run winding down after Stop; and the
+      // sidebar's entry once it ended with the tray closed.
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await tray.locator('[data-run-line]').nth(2).click();
       await tray.locator('[data-shot="desktop-run-results"]').waitFor();
       await settle();
+      await shoot('failed', { of: '[aria-label="Local runs"]', pad: 0 });
       await shoot('results', { of: '[data-shot="desktop-run-results"]', pad: 12 });
+      await tray.locator('[data-run-line]').nth(0).click();
       await tray.getByRole('button', { name: 'Stop', exact: true }).click();
       await tray.getByRole('button', { name: 'Force stop' }).waitFor();
       await tray.getByText(/^Ends within \d+ s$/).waitFor();

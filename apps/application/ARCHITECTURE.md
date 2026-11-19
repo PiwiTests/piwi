@@ -287,7 +287,9 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
+  (`DesktopLocalRunsTray`), docked under the page in the default layout's main column (the pages' panels take its
+  height off theirs, `--desktop-runs-height` in `app.config.ts`), its runs listed on its left and the one chosen on its
+  right: `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
   lane's Interact (turned off on the page, its input finished first by `DesktopRunLiveImage.release`, the stop is
   given back by `DesktopRunWorker`), and
   a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop

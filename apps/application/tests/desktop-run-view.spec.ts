@@ -312,14 +312,13 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
     await expect(worker.getByText('checkout › pays')).toBeVisible();
     await expect(worker.getByText('chromium · attempt 1')).toBeVisible();
-    // Hold failures is off: the run is not shown live, and a failure no pause bar shows would go on. Opening or closing
-    // its part of the tray changes nothing; the switch does.
+    // Hold failures is off: the run is not shown live, and a failure no pause bar shows would go on. Choosing its line in
+    // the tray's list changes nothing; the switch does.
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
     await expect(holdSwitch(page)).toHaveAccessibleDescription(
       'A failing test waits at its line for you to look at it and resume.',
     );
-    await tray(page).getByRole('button', { name: 'Collapse output' }).click();
-    await tray(page).getByRole('button', { name: 'Expand output' }).click();
+    await tray(page).locator('[data-run-line]').first().click();
     expect(commands.filter((c) => c.type === 'show')).toEqual([]);
     await holdSwitch(page).click();
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
@@ -1902,7 +1901,7 @@ test.describe('Desktop run live view', () => {
     await kept.evaluate((element) => element.setAttribute('data-kept', ''));
     await send(sessionOf([secondAt('s5')]));
     await expect(tabs).toHaveCount(0);
-    await expect(tray(page).getByRole('listitem')).toContainText('checkout › refunds');
+    await expect(tray(page).locator('article[data-run]').getByRole('listitem')).toContainText('checkout › refunds');
     await expect(tray(page).locator('[data-kept]')).toHaveCount(1);
     await send(sessionOf([first, secondAt('s5')]));
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
@@ -2147,7 +2146,7 @@ test.describe('Desktop run live view', () => {
     await expect(page).toHaveURL(new RegExp(`/test-run-cases/${pays}$`));
   });
 
-  test('shows each run as one line in the compact list, with the one action it needs now, whole on a click', async ({
+  test('lists the runs on the left and shows the one chosen, a run waiting at a stop marked and shown at its stop', async ({
     page,
   }) => {
     await installBridge(page);
@@ -2169,37 +2168,27 @@ test.describe('Desktop run live view', () => {
     };
     await page.evaluate((event) => window.__hub.send(event), withProgress(RUNNING));
 
-    const compact = tray(page).getByRole('button', { name: 'Compact list' });
-    await compact.click();
-    await expect(compact).toHaveAttribute('aria-pressed', 'true');
-    const line = tray(page).locator('[data-shot="desktop-run-line"]');
+    const runs = tray(page).getByRole('navigation', { name: 'Runs' });
+    const line = runs.locator('[data-run-line]');
     await expect(line).toHaveCount(1);
-    await expect(line).toContainText('Running');
-    await expect(line).toContainText('3 of 9 tests');
-    await expect(line.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
-    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toHaveCount(0);
-
-    // A stop shows the run whole, as the tray opens on it; back to one line, the line says the run waits, and its one
-    // action shows the stop again, its worker focused.
-    await page.evaluate((event) => window.__hub.send(event), withProgress(stopped('s1')));
-    await expect(line).toHaveCount(0);
-    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeVisible();
-    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
-    await expect(line).toContainText('Waiting');
-    await line.getByRole('button', { name: 'Show the stop' }).click();
-    await expect(line).toHaveCount(0);
-    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
-
-    // Back to one line, as the tray remembers after a reload.
-    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
-    await expect(line).toHaveCount(1);
-    await page.reload();
-    await waitForHydration(page);
-    await expect(tray(page).getByRole('button', { name: 'Compact list' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(tray(page).locator('[data-shot="desktop-run-line"]')).toHaveCount(1);
-
-    // A click on the line shows the run whole.
-    await tray(page).locator('[data-shot="desktop-run-line"]').getByRole('button', { expanded: false }).click();
+    await expect(line).toHaveAttribute('aria-current', 'true');
+    await expect(runs.getByRole('region', { name: 'Running now' })).toContainText('3 of 9 tests');
     await expect(tray(page).locator('article[data-run]')).toHaveCount(1);
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+
+    // A stop marks the run's line, and the right side shows its worker at the stop.
+    await page.evaluate((event) => window.__hub.send(event), withProgress(stopped('s1')));
+    await expect(line).toContainText('A test waits at a stop');
+    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeVisible();
+
+    // The tray's height: its top edge moves with the keyboard, and Maximize gives it most of the window.
+    const edge = tray(page).getByRole('separator', { name: 'Resize local runs' });
+    const before = Number(await edge.getAttribute('aria-valuenow'));
+    await edge.focus();
+    await page.keyboard.press('ArrowUp');
+    await expect(edge).toHaveAttribute('aria-valuenow', String(before + 40));
+    await tray(page).getByRole('button', { name: 'Maximize local runs' }).click();
+    await expect(tray(page).getByRole('button', { name: 'Restore local runs' })).toBeVisible();
+    await expect(edge).toHaveAttribute('aria-valuenow', await edge.getAttribute('aria-valuemax'));
   });
 });

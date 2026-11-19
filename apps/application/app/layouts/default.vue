@@ -618,6 +618,8 @@ onMounted(async () => {
          area so the page panel keeps its full width/height. -->
     <main id="main-content" tabindex="-1" class="flex-1 min-w-0 flex flex-col outline-none">
       <slot />
+      <!-- Desktop shell: the Local runs tray, docked under the page — local test runs keep streaming here across navigation -->
+      <DesktopLocalRunsTray />
     </main>
 
     <!-- Global "Open in editor" settings modal, toggled from file-path choosers and the user menu -->
@@ -643,9 +645,6 @@ onMounted(async () => {
 
     <!-- Desktop shell: a team instance asks to run tests here, waiting for the person's Run -->
     <DesktopTeamRunRequestModal @start="localRuns.startTeamRequest" />
-
-    <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
-    <DesktopLocalRunsTray />
 
     <!-- The assistant's panel: opened from the sidebar's Ask Piwi and the command palette, kept across navigation -->
     <AssistantPanel />
