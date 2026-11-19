@@ -58,6 +58,8 @@ export function useLiveWatch(runId: () => number) {
   /** Whether the lane panel has Inspect open on the full view. */
   const inspect = ref(false);
   const state = shallowRef<LiveWatchState>({ kind: 'idle' });
+  /** The watch's streams bring nothing, not even the instance's heartbeat: a proxy in front probably holds them. */
+  const quiet = ref(false);
   /** The id the instance named the open watch by, which the address of a page Inspect shows carries; null while none. */
   const watchId = ref<string | null>(null);
   const images = shallowRef<Record<string, LiveTile>>({});
@@ -131,6 +133,9 @@ export function useLiveWatch(runId: () => number) {
       // Nothing is watched any more: no image of it stays.
       if (next.kind === 'idle' || next.kind === 'closed') keep([]);
       listener?.hear({ kind: 'state', state: next });
+    },
+    quiet(next) {
+      quiet.value = next;
     },
     focusRefused(refused, status) {
       if (!focus.value || !sameWorker(focus.value, refused)) return;
@@ -261,6 +266,7 @@ export function useLiveWatch(runId: () => number) {
     tiles,
     focus,
     state,
+    quiet,
     watchId,
     images,
     show,

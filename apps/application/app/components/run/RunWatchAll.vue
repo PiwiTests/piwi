@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import type { Lane } from '#shared/live-lanes';
-import { LIVE_VIEW_END_TEXT, liveWorkerKey, liveWorkerName, type LiveWorkerState } from '#shared/live-view';
+import {
+  LIVE_VIEW_END_TEXT,
+  LIVE_WATCH_QUIET_TEXT,
+  liveWorkerKey,
+  liveWorkerName,
+  type LiveWorkerState,
+} from '#shared/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { LiveTile } from '~/composables/useLiveWatch';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
@@ -30,6 +36,8 @@ const props = defineProps<{
   /** The worker the lane panel shows. */
   focused: { shard: number | null; worker: number; slot?: number } | null;
   state: LiveWatchState;
+  /** The watch's streams bring nothing, not even the instance's heartbeat. */
+  quiet: boolean;
   demo: boolean;
 }>();
 const emit = defineEmits<{ focus: [worker: LiveWorkerState, row: TestCaseResult | null]; retry: [] }>();
@@ -112,6 +120,7 @@ const stateText = computed(() => {
   if (props.demo) {
     return 'The demo runs no browser: each tile names its worker’s step, and a click shows the call its test is in, with the checkout page from a recorded trace in Inspect.';
   }
+  if (props.quiet && !(state.kind === 'closed' && state.reason)) return LIVE_WATCH_QUIET_TEXT;
   if (state.kind === 'connecting' && state.again) return 'Opening the watch again…';
   if (state.kind !== 'closed') return null;
   if (state.reason) return LIVE_VIEW_END_TEXT[state.reason];
@@ -140,6 +149,9 @@ function tileLabel(view: TileView): string {
   >
     <p v-if="stateText" class="flex flex-wrap items-center gap-2 text-xs text-muted" role="status">
       {{ stateText }}
+      <DocLink v-if="quiet && !demo" to="operate/deployment#reverse-proxy-https" no-icon
+        >Reverse proxy settings</DocLink
+      >
       <UButton
         v-if="canRetry"
         size="xs"

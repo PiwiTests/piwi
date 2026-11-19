@@ -34,6 +34,7 @@
  */
 import {
   LIVE_VIEW_END_TEXT,
+  LIVE_WATCH_QUIET_TEXT,
   liveWorkerKey,
   liveWorkerName,
   type LiveCall,
@@ -769,7 +770,12 @@ function outcomeStatus(shown: LiveTestOutcome): string {
 /** The lane's tests that ended before the one the view shows or waits after, the latest first. */
 const earlier = computed(() => (outcome.value ? history.value.slice(0, -1) : [...history.value]).reverse());
 /** What the view says over its image: why it ended, with the run's verdict once the run's end ended it. */
-const statusLine = computed(() => (endReason.value === 'run-ended' && props.verdict ? props.verdict : notice.value));
+const statusLine = computed(() => {
+  if (endReason.value === 'run-ended' && props.verdict) return props.verdict;
+  // A watch that hears nothing says why before any other wait or refusal.
+  if (props.live.quiet.value && !endReason.value) return LIVE_WATCH_QUIET_TEXT;
+  return notice.value;
+});
 const title = computed(() => `${capitalized(name.value)}${ended.value ? '' : ' · live'}`);
 const alt = computed(
   () => `The page ${name.value} is on${shownCall.value ? `, at ${shownCall.value.title}` : ''}, as the test sees it`,

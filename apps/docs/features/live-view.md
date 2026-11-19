@@ -51,7 +51,7 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](./share-live). |
-| **Live view available**, but **Watch** shows no image | A reverse proxy buffers the streams: the watch gets a few hundred bytes, then nothing. Turn its buffering off ([Reverse proxy](/operate/deployment#reverse-proxy-https)). |
+| **Watch** says nothing has come for 35 seconds | A reverse proxy buffers the live view's streams: turn its buffering off ([Reverse proxy](/operate/deployment#reverse-proxy-https)). |
 
 ## Watch a worker
 
