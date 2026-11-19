@@ -1174,7 +1174,7 @@
     "message": "Éditeur"
   },
   "options_editorHint": {
-    "message": "Associé à VS Code ou à un IDE JetBrains de cet ordinateur doté de l’extension Piwi, Piwi Picker envoie à son curseur les locators choisis et les étapes enregistrées, et affiche les exécutions qu’il lance dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez."
+    "message": "Associé à VS Code ou à un IDE JetBrains doté de l’extension Piwi sur cet ordinateur, Piwi Picker envoie au curseur de l’éditeur les locators choisis et les étapes enregistrées, et affiche les exécutions que l’éditeur lance dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les suivez."
   },
   "options_editorAddress": {
     "message": "Adresse d’association"
@@ -1186,10 +1186,10 @@
     "message": "Dissocier"
   },
   "options_editorPairHint": {
-    "message": "Associer cherche les éditeurs ouverts sur cet ordinateur et interroge celui que vous choisissez : saisissez-y le code que Piwi Picker affiche."
+    "message": "Associer cherche les éditeurs ouverts sur cet ordinateur et envoie une demande à celui que vous choisissez : saisissez-y le code que Piwi Picker affiche."
   },
   "options_editorChoose": {
-    "message": "Associer quel éditeur ?"
+    "message": "Quel éditeur associer ?"
   },
   "options_editorChoice": {
     "message": "$product$ : $windows$",
@@ -1205,10 +1205,10 @@
     }
   },
   "options_editorFinding": {
-    "message": "Recherche des éditeurs de cet ordinateur…"
+    "message": "Recherche des éditeurs ouverts sur cet ordinateur…"
   },
   "options_editorNoneFound": {
-    "message": "Aucun éditeur doté de l’extension Piwi n’a répondu sur cet ordinateur. Ouvrez VS Code ou un IDE JetBrains avec Piwi à jour et cliquez de nouveau sur Associer, ou, pour une fenêtre distante, associez une adresse."
+    "message": "Aucun éditeur doté de l’extension Piwi n’a répondu sur cet ordinateur. Ouvrez VS Code ou un IDE JetBrains avec Piwi à jour et cliquez de nouveau sur Associer, ou, pour une fenêtre distante, associez-la par adresse."
   },
   "options_editorPairStarting": {
     "message": "Demande à $editor$…",
@@ -1248,7 +1248,7 @@
     "message": "Trois demandes d’association attendent déjà dans l’éditeur : répondez-y d’abord."
   },
   "options_editorPairUnsupported": {
-    "message": "L’éditeur à $url$ ne peut pas s’associer par code : mettez à jour Piwi dans l’éditeur, ou associez une adresse.",
+    "message": "L’éditeur à l’adresse $url$ ne peut pas s’associer par code : mettez-y Piwi à jour, ou associez-le par adresse.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1257,7 +1257,7 @@
     }
   },
   "options_editorPairUnreachable": {
-    "message": "L’éditeur à $url$ ne répond plus.",
+    "message": "L’éditeur à l’adresse $url$ ne répond plus.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1266,7 +1266,7 @@
     }
   },
   "options_editorManual": {
-    "message": "Associer une adresse"
+    "message": "Associer par adresse"
   },
   "options_editorManualHint": {
     "message": "Pour une fenêtre distante (SSH, WSL, un conteneur de développement), ou un éditeur qu’Associer ne trouve pas : lancez-y la commande Piwi « Copy the pairing address for Piwi Picker » et collez l’adresse ici."
@@ -1347,7 +1347,7 @@
     "message": "Piwi Picker a besoin de l’autorisation de joindre les éditeurs de cet ordinateur."
   },
   "options_editorNotProven": {
-    "message": "Associé à $url$, mais le programme sur ce port ne prouve pas qu’il est votre éditeur, donc rien ne lui est envoyé : cliquez sur Associer pour l’associer de nouveau, ou mettez à jour Piwi dans votre éditeur.",
+    "message": "Associé à $url$, mais le programme sur ce port ne prouve pas qu’il s’agit de votre éditeur, donc rien ne lui est envoyé : cliquez sur Associer pour l’associer de nouveau, ou mettez à jour Piwi dans votre éditeur.",
     "placeholders": {
       "url": {
         "content": "$1",

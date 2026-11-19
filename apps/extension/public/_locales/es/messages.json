@@ -1174,7 +1174,7 @@
     "message": "Editor"
   },
   "options_editorHint": {
-    "message": "Emparejado con VS Code o un IDE de JetBrains de este equipo que tenga la extensión de Piwi, Piwi Picker envía a su cursor los locators que eliges y los pasos que grabas, y muestra las ejecuciones que inicia en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas."
+    "message": "Emparejado con VS Code o un IDE de JetBrains de esta máquina que tenga la extensión de Piwi, Piwi Picker envía al cursor del editor los locators que eliges y los pasos que grabas, y muestra las ejecuciones que el editor inicia en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y seguirlas."
   },
   "options_editorAddress": {
     "message": "Dirección de emparejamiento"
@@ -1186,7 +1186,7 @@
     "message": "Desemparejar"
   },
   "options_editorPairHint": {
-    "message": "Emparejar busca los editores abiertos en este equipo y pregunta al que elijas: escribe allí el código que muestra Piwi Picker."
+    "message": "Emparejar busca los editores abiertos en esta máquina y envía una solicitud al que elijas: escribe allí el código que muestra Piwi Picker."
   },
   "options_editorChoose": {
     "message": "¿Con qué editor emparejar?"
@@ -1205,10 +1205,10 @@
     }
   },
   "options_editorFinding": {
-    "message": "Buscando los editores de este equipo…"
+    "message": "Buscando editores en esta máquina…"
   },
   "options_editorNoneFound": {
-    "message": "Ningún editor con la extensión de Piwi respondió en este equipo. Abre VS Code o un IDE de JetBrains con Piwi actualizado y vuelve a hacer clic en Emparejar, o, para una ventana remota, empareja con una dirección."
+    "message": "Ningún editor con la extensión de Piwi respondió en esta máquina. Abre VS Code o un IDE de JetBrains con Piwi actualizado y vuelve a hacer clic en Emparejar, o, para una ventana remota, empareja con una dirección."
   },
   "options_editorPairStarting": {
     "message": "Preguntando a $editor$…",
@@ -1248,7 +1248,7 @@
     "message": "Ya esperan tres solicitudes de emparejamiento en el editor: respóndelas allí primero."
   },
   "options_editorPairUnsupported": {
-    "message": "El editor en $url$ no puede emparejarse con un código: actualiza Piwi allí, o empareja con una dirección.",
+    "message": "El editor en $url$ no puede emparejarse por código: actualiza Piwi allí, o empareja con una dirección.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1269,7 +1269,7 @@
     "message": "Emparejar con una dirección"
   },
   "options_editorManualHint": {
-    "message": "Para una ventana remota (SSH, WSL, un contenedor de desarrollo), o un editor que Emparejar no encuentra: ejecuta en él «Piwi: Copy the pairing address for Piwi Picker» y pega aquí la dirección."
+    "message": "Para una ventana remota (SSH, WSL, un contenedor de desarrollo), o un editor que Emparejar no encuentre: ejecuta en él «Piwi: Copy the pairing address for Piwi Picker» y pega aquí la dirección."
   },
   "options_editorAddressPair": {
     "message": "Usar esta dirección"
@@ -1341,10 +1341,10 @@
     "message": "Esta no es una dirección de emparejamiento. Tiene la forma http://127.0.0.1:7247/piwi/send#… y la da el comando «Copy the pairing address for Piwi Picker» del editor."
   },
   "options_editorPermission": {
-    "message": "Piwi Picker necesita permiso para acceder al editor en este equipo."
+    "message": "Piwi Picker necesita permiso para acceder al editor en esta máquina."
   },
   "options_editorPairPermission": {
-    "message": "Piwi Picker necesita permiso para acceder a los editores de este equipo."
+    "message": "Piwi Picker necesita permiso para acceder a los editores de esta máquina."
   },
   "options_editorNotProven": {
     "message": "Emparejado con $url$, pero el programa de ese puerto no demuestra ser tu editor, así que no se le envía nada: haz clic en Emparejar para emparejar de nuevo, o actualiza Piwi en tu editor.",

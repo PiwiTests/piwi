@@ -1174,7 +1174,7 @@
     "message": "Editor"
   },
   "options_editorHint": {
-    "message": "Pareado com o VS Code ou um IDE JetBrains deste computador que tenha a extensão do Piwi, o Piwi Picker envia ao cursor dele os locators que você escolhe e os passos que você grava, e mostra as execuções que ele inicia na janela Execuções (Execuções, no menu da extensão), onde você as pausa, avança passo a passo e assiste."
+    "message": "Pareado com o VS Code ou um IDE JetBrains deste computador que tenha a extensão do Piwi, o Piwi Picker envia ao cursor do editor os locators que você escolhe e os passos que você grava, e mostra as execuções que o editor inicia na janela Execuções (Execuções, no menu da extensão), onde você as pausa, avança passo a passo e acompanha."
   },
   "options_editorAddress": {
     "message": "Endereço de pareamento"
@@ -1186,7 +1186,7 @@
     "message": "Desparear"
   },
   "options_editorPairHint": {
-    "message": "Parear procura os editores abertos neste computador e pergunta ao que você escolher: digite lá o código que o Piwi Picker mostra."
+    "message": "Parear procura os editores abertos neste computador e envia um pedido ao que você escolher: digite lá o código que o Piwi Picker mostra."
   },
   "options_editorChoose": {
     "message": "Parear com qual editor?"
@@ -1205,7 +1205,7 @@
     }
   },
   "options_editorFinding": {
-    "message": "Procurando os editores deste computador…"
+    "message": "Procurando editores neste computador…"
   },
   "options_editorNoneFound": {
     "message": "Nenhum editor com a extensão do Piwi respondeu neste computador. Abra o VS Code ou um IDE JetBrains com o Piwi atualizado e clique de novo em Parear, ou, para uma janela remota, pareie com um endereço."
@@ -1269,7 +1269,7 @@
     "message": "Parear com um endereço"
   },
   "options_editorManualHint": {
-    "message": "Para uma janela remota (SSH, WSL, um contêiner de desenvolvimento), ou um editor que Parear não encontra: execute nele “Piwi: Copy the pairing address for Piwi Picker” e cole o endereço aqui."
+    "message": "Para uma janela remota (SSH, WSL, um contêiner de desenvolvimento), ou um editor que Parear não encontre: execute nele “Piwi: Copy the pairing address for Piwi Picker” e cole o endereço aqui."
   },
   "options_editorAddressPair": {
     "message": "Usar este endereço"
@@ -1347,7 +1347,7 @@
     "message": "O Piwi Picker precisa de permissão para acessar os editores deste computador."
   },
   "options_editorNotProven": {
-    "message": "Pareado com $url$, mas o programa nessa porta não prova que é o seu editor, então nada vai para ele: clique em Parear para parear de novo, ou atualize o Piwi no seu editor.",
+    "message": "Pareado com $url$, mas o programa nessa porta não comprova ser o seu editor, então nada é enviado a ele: clique em Parear para parear de novo, ou atualize o Piwi no seu editor.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1356,7 +1356,7 @@
     }
   },
   "options_editorUnreachable": {
-    "message": "Pareado com $url$, mas nada responde lá agora: abra o seu editor com a extensão do Piwi. Se ele escuta agora em outra porta, clique em Parear para parear de novo.",
+    "message": "Pareado com $url$, mas nada responde lá agora: abra o seu editor com a extensão do Piwi. Se agora ele estiver escutando em outra porta, clique em Parear para parear de novo.",
     "placeholders": {
       "url": {
         "content": "$1",
