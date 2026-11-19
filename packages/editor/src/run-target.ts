@@ -97,6 +97,8 @@ const state: {
   flowTimer: ReturnType<typeof setTimeout> | null;
   host: RequestHost | null;
   links: Map<number, string>;
+  /** The instance the shell linked `links` for: it keeps each instance's folders apart. */
+  linksFor: string | null;
   held: Map<string, HeldRequest>;
   /** The requests being claimed and checked, and the stops heard for them meanwhile. */
   claiming: Set<string>;
@@ -117,6 +119,7 @@ const state: {
   flowTimer: null,
   host: null,
   links: new Map(),
+  linksFor: null,
   held: new Map(),
   claiming: new Set(),
   stoppedWhileClaiming: new Set(),
@@ -170,13 +173,24 @@ export function runTargetConnection(): RunTargetConnectionView {
     errorCode: state.error?.code ?? null,
     errorArgs: state.error?.args ?? {},
     keyToKeep: state.keyToKeep,
-    linkedProjectIds: [...state.links.keys()].sort((a, b) => a - b),
+    linkedProjectIds: [...linksHere().keys()].sort((a, b) => a - b),
     projectNames: Object.fromEntries(state.projectNames),
   };
 }
 
 function tellConnection(): void {
   tellWindow({ type: 'run-target', connection: runTargetConnection() });
+}
+
+const NO_LINKS: ReadonlyMap<number, string> = new Map();
+
+/**
+ * The folders the shell linked for the instance connected now: none while it linked them for another, until the shell
+ * keeps the new instance's key and hands its folders. What the instance hears of them and where its requests run come
+ * from here; the runs' hub keeps every folder the shell linked (`linkedFolders`).
+ */
+function linksHere(): ReadonlyMap<number, string> {
+  return state.instance !== null && state.linksFor === state.instance ? state.links : NO_LINKS;
 }
 
 /** The requests the window still asks about, for a window that opens later. */
@@ -203,7 +217,7 @@ function promptOf(held: HeldRequest): RunRequestPromptView {
       protected: plan.environment.protected,
       requiredTags: plan.environment.requiredTags,
     },
-    hasFolder: state.links.has(request.projectId),
+    hasFolder: linksHere().has(request.projectId),
     answerBy: new Date(held.answerBy).toISOString(),
   };
 }
@@ -346,7 +360,7 @@ function startHost(instance: string, key: string): void {
   const host = new RequestHost({
     instance,
     key,
-    describe: () => ({ platform: platformName(), version: appVersion, projectIds: [...state.links.keys()] }),
+    describe: () => ({ platform: platformName(), version: appVersion, projectIds: [...linksHere().keys()] }),
     onOffer: (offer) => void takeOffer(host, offer),
     onWithdrawn: () => {},
     onStop: (id) => void takeStop(host, id),
@@ -389,7 +403,7 @@ async function takeOffer(host: RequestHost, offer: RunRequestOffer): Promise<voi
     if (state.host !== host) return;
     let plan: RequestPlan;
     try {
-      plan = await planRequestedRun(request, state.links.get(request.projectId) ?? null, foldersRunning(), variables);
+      plan = await planRequestedRun(request, linksHere().get(request.projectId) ?? null, foldersRunning(), variables);
     } catch (error) {
       await host
         .answer(request.id, {
@@ -468,6 +482,7 @@ export async function useKeptKey(
 ): Promise<string[]> {
   const ended = shell.ended ?? [];
   state.links = links;
+  state.linksFor = instance;
   state.keyToKeep = false;
   state.adopted = new Set([...running, ...ended.map((run) => run.id)].filter((id) => !state.held.has(id)));
   if (shell.localRuns) useLocalRuns(shell.localRuns);
@@ -501,9 +516,10 @@ export function projectNameOf(id: number): string | null {
   return state.projectNames.get(id) ?? null;
 }
 
-/** The folders the shell links changed. */
+/** The folders the shell links for the instance connected now changed. */
 export function useLinks(links: Map<number, string>): void {
   state.links = links;
+  state.linksFor = state.instance;
   void state.host?.describe().catch(() => {});
   tellConnection();
 }
@@ -513,8 +529,8 @@ export function keyToKeep(): { instance: string; key: string } | null {
   return state.keyToKeep && state.instance && state.key ? { instance: state.instance, key: state.key } : null;
 }
 
-/** Disconnect from the instance: the shell forgets the key. Its key stays listed in Connected apps until revoked. */
-export function disconnectRunTarget(): void {
+/** Ends the connection, or the sign-in on its way, and forgets its key and its instance. */
+function endConnection(): void {
   if (state.flowTimer) clearTimeout(state.flowTimer);
   state.flowTimer = null;
   state.flow = null;
@@ -527,6 +543,21 @@ export function disconnectRunTarget(): void {
   state.keyToKeep = false;
   state.error = null;
   state.status = 'none';
+}
+
+/**
+ * Disconnect from the instance: the shell forgets the key. Its key stays listed in Connected apps until revoked. A
+ * connection the instance revoked keeps saying so, with its instance and its reason, until the next connect: the shell
+ * forgets a revoked key through here too.
+ */
+export function disconnectRunTarget(): void {
+  const revoked = state.status === 'revoked' ? { instance: state.instance, error: state.error } : null;
+  endConnection();
+  if (revoked) {
+    state.status = 'revoked';
+    state.instance = revoked.instance;
+    state.error = revoked.error;
+  }
   tellConnection();
 }
 
@@ -535,7 +566,7 @@ export function disconnectRunTarget(): void {
  * another instance disconnects the first. Answers the code and the page to open.
  */
 export async function connectRunTarget(instance: string): Promise<RunTargetConnectionView> {
-  disconnectRunTarget();
+  endConnection();
   state.instance = instance;
   let started: Awaited<ReturnType<typeof postDeviceFlow>>;
   try {
@@ -635,7 +666,7 @@ export async function planAgain(id: string): Promise<RunRequestPromptView | null
   if (!unanswered(id, held)) return null;
   const plan = await planRequestedRun(
     held.request,
-    state.links.get(held.request.projectId) ?? null,
+    linksHere().get(held.request.projectId) ?? null,
     foldersRunning(held),
     held.variables,
   );
@@ -668,7 +699,7 @@ async function planWaiting(): Promise<void> {
     waiting.map(([, held]) =>
       planRequestedRun(
         held.request,
-        state.links.get(held.request.projectId) ?? null,
+        linksHere().get(held.request.projectId) ?? null,
         foldersRunning(held),
         held.variables,
       ).catch(() => null),
@@ -711,7 +742,7 @@ export async function answerRunRequest(
   held.answering = true;
   try {
     if (decision === 'run') {
-      const folder = state.links.get(held.request.projectId) ?? null;
+      const folder = linksHere().get(held.request.projectId) ?? null;
       // Read again: a variable changed since the window showed the command changes the command.
       held.variables = await host.runVariables(id);
       // Stopped, dropped or disconnected while they were read: the window no longer shows it.
@@ -870,7 +901,8 @@ export async function requestedRunFailed(id: string, detail: string): Promise<vo
 
 /** The host is stopping: the connection to the instance closes, and the window's and the shell's listeners go. */
 export function shutdownRunTarget(): void {
-  disconnectRunTarget();
+  endConnection();
+  tellConnection();
   windowListeners.clear();
   shellListeners.clear();
 }
@@ -881,4 +913,5 @@ export function resetDesktopRunTarget(): void {
   appVersion = '0.0.0';
   appKind = 'desktop';
   state.links = new Map();
+  state.linksFor = null;
 }
