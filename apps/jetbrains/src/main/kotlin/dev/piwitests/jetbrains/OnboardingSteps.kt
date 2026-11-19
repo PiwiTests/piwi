@@ -56,7 +56,7 @@ object OnboardingSteps {
         Step(
             id = "pair",
             title = "Pair Piwi Picker",
-            text = "Piwi Picker, the browser extension, sends a locator you pick on any page to the caret, and follows the runs this project starts. Pairing gives it this editor's address.",
+            text = "Piwi Picker, the browser extension, sends a locator you pick on any page to the caret, and follows the runs this project starts. Click Pair under Editor in its settings, then type here the code it shows.",
             label = "Pair with Piwi Picker",
             actionId = "Piwi.PairPicker",
             image = null,

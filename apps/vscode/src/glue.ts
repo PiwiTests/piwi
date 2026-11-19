@@ -156,8 +156,8 @@ export type StatusMenuEntry = { command: string; label: string; args?: unknown[]
  * The status menu, in the JetBrains plugin's status popup's sections: the item's action first, Go to the stopped line
  * while a test is stopped (with Open the log beside a restart, and a recording's controls after it while one runs), the
  * run's controls and its share while a run is live, the failures
- * and the dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action
- * catalog, and offered only where its command acts.
+ * and the dashboard, the test at the cursor and Record here, then the connection and Piwi Picker's pairing. Each row
+ * is titled by the action catalog, and offered only where its command acts.
  */
 export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
   const title = (command: string) => {
@@ -215,7 +215,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
       ],
     ],
     ['Run and record', [state.spec && 'piwi.runTestAtCursor', state.spec && !state.recording && 'piwi.record']],
-    ['Connection', ['piwi.refresh', 'piwi.connect', 'piwi.openSettings']],
+    ['Connection', ['piwi.refresh', 'piwi.connect', 'piwi.pairPicker', 'piwi.openSettings']],
   ];
   const seen = new Set<string>();
   const entries: StatusMenuEntry[] = [];

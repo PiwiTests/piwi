@@ -1174,7 +1174,7 @@
     "message": "Editor"
   },
   "options_editorHint": {
-    "message": "Führen Sie in VS Code oder einer JetBrains-IDE mit der Piwi-Erweiterung „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse hier ein. Gewählte Locators und aufgezeichnete Schritte können dann an diesen Editor gesendet werden, nur auf diesem Computer, und werden an seinem Cursor eingefügt. Die Läufe, die er startet, erscheinen dann im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und ansehen."
+    "message": "Mit einem Editor auf diesem Computer gekoppelt (VS Code oder eine JetBrains-IDE mit der Piwi-Erweiterung), sendet Piwi Picker die gewählten Locators und die aufgezeichneten Schritte an den Cursor des Editors und zeigt die Läufe, die der Editor startet, im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und verfolgen."
   },
   "options_editorAddress": {
     "message": "Kopplungsadresse"
@@ -1184,6 +1184,95 @@
   },
   "options_editorUnpair": {
     "message": "Entkoppeln"
+  },
+  "options_editorPairHint": {
+    "message": "Koppeln sucht die auf diesem Computer geöffneten Editoren und sendet dem gewählten eine Anfrage: Geben Sie dort den Code ein, den Piwi Picker anzeigt."
+  },
+  "options_editorChoose": {
+    "message": "Mit welchem Editor koppeln?"
+  },
+  "options_editorChoice": {
+    "message": "$product$: $windows$",
+    "placeholders": {
+      "product": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      },
+      "windows": {
+        "content": "$2",
+        "example": "shop, api"
+      }
+    }
+  },
+  "options_editorFinding": {
+    "message": "Suche nach Editoren auf diesem Computer…"
+  },
+  "options_editorNoneFound": {
+    "message": "Kein Editor mit der Piwi-Erweiterung hat auf diesem Computer geantwortet. Öffnen Sie VS Code oder eine JetBrains-IDE mit aktueller Piwi-Erweiterung und klicken Sie erneut auf Koppeln, oder koppeln Sie ein entferntes Fenster mit einer Adresse."
+  },
+  "options_editorPairStarting": {
+    "message": "Anfrage an $editor$…",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairCode": {
+    "message": "Geben Sie diesen Code in $editor$ ein, sobald danach gefragt wird: $code$.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      },
+      "editor": {
+        "content": "$2",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairDenied": {
+    "message": "Der Editor hat abgelehnt: Nichts wurde gekoppelt."
+  },
+  "options_editorPairWrongCode": {
+    "message": "Der im Editor eingegebene Code ist nicht der hier angezeigte: Nichts wurde gekoppelt. Klicken Sie auf Koppeln, um es erneut zu versuchen."
+  },
+  "options_editorPairExpired": {
+    "message": "Die Anfrage ist abgelaufen, bevor sie im Editor zugelassen wurde. Klicken Sie auf Koppeln, um neu zu fragen."
+  },
+  "options_editorPairCancelled": {
+    "message": "Koppeln abgebrochen."
+  },
+  "options_editorPairTooMany": {
+    "message": "Im Editor warten schon drei Kopplungsanfragen: Beantworten Sie sie dort zuerst."
+  },
+  "options_editorPairUnsupported": {
+    "message": "Der Editor unter $url$ kann nicht per Code koppeln: Aktualisieren Sie Piwi dort, oder koppeln Sie mit einer Adresse.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorPairUnreachable": {
+    "message": "Der Editor unter $url$ antwortet nicht mehr.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorManual": {
+    "message": "Mit einer Adresse koppeln"
+  },
+  "options_editorManualHint": {
+    "message": "Für ein entferntes Fenster (SSH, WSL, ein Dev-Container) oder einen Editor, den Koppeln nicht findet: Führen Sie dort „Piwi: Copy the pairing address for Piwi Picker“ aus und fügen Sie die Adresse hier ein."
+  },
+  "options_editorAddressPair": {
+    "message": "Diese Adresse verwenden"
   },
   "options_siteAccessHeading": {
     "message": "Websites, auf denen Piwi Picker laufen darf"
@@ -1249,13 +1338,16 @@
     }
   },
   "options_editorInvalid": {
-    "message": "Das ist keine Kopplungsadresse. Sie sieht aus wie http://127.0.0.1:47211/piwi/send#… und kommt vom Befehl „Pair with Piwi Picker“ des Editors."
+    "message": "Das ist keine Kopplungsadresse. Sie sieht aus wie http://127.0.0.1:7247/piwi/send#… und kommt vom Befehl „Copy the pairing address for Piwi Picker“ des Editors."
   },
   "options_editorPermission": {
     "message": "Piwi Picker braucht die Berechtigung, den Editor auf diesem Computer zu erreichen."
   },
+  "options_editorPairPermission": {
+    "message": "Piwi Picker braucht die Berechtigung, die Editoren auf diesem Computer zu erreichen."
+  },
   "options_editorNotProven": {
-    "message": "Mit $url$ gekoppelt, aber das Programm an diesem Port beweist nicht, dass es Ihr Editor ist, daher geht nichts dorthin: Führen Sie „Piwi: Pair with Piwi Picker“ in Ihrem Editor erneut aus und koppeln Sie mit der kopierten Adresse, oder aktualisieren Sie Piwi dort.",
+    "message": "Mit $url$ gekoppelt, aber das Programm an diesem Port weist nicht nach, dass es Ihr Editor ist, daher wird nichts dorthin gesendet: Klicken Sie auf Koppeln, um neu zu koppeln, oder aktualisieren Sie Piwi in Ihrem Editor.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1264,7 +1356,7 @@
     }
   },
   "options_editorUnreachable": {
-    "message": "Mit $url$ gekoppelt, aber dort antwortet gerade nichts: Öffnen Sie Ihren Editor mit der Piwi-Erweiterung. Kopiert sein „Piwi: Pair with Piwi Picker“ eine andere Adresse, koppeln Sie mit dieser.",
+    "message": "Mit $url$ gekoppelt, aber dort antwortet gerade nichts: Öffnen Sie Ihren Editor mit der Piwi-Erweiterung. Hört er jetzt auf einem anderen Port, klicken Sie auf Koppeln, um neu zu koppeln.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1273,7 +1365,7 @@
     }
   },
   "options_editorNoAccess": {
-    "message": "Mit $url$ gekoppelt, aber der Browser hat Piwi Picker den Zugriff darauf entzogen: Führen Sie „Piwi: Pair with Piwi Picker“ in Ihrem Editor erneut aus und koppeln Sie mit der kopierten Adresse.",
+    "message": "Mit $url$ gekoppelt, aber der Browser hat Piwi Picker den Zugriff darauf entzogen: Klicken Sie auf Koppeln, um neu zu koppeln.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -6374,7 +6466,7 @@
     "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt jede Minute erneut, solange dieses Fenster geöffnet ist. Ist Ihr Editor auf einen anderen Port umgezogen, koppeln Sie Piwi Picker in den Einstellungen erneut mit ihm."
   },
   "runs_statusNotEditor": {
-    "message": "Das Programm am gekoppelten Port ist nicht die Piwi-Erweiterung Ihres Editors oder eine, die zu alt ist, um das zu beweisen: Piwi Picker hat ihm nichts gesendet. Öffnen Sie Ihren Editor, führen Sie erneut „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse in den Einstellungen ein."
+    "message": "Das Programm am gekoppelten Port ist nicht die Piwi-Erweiterung Ihres Editors oder eine, die zu alt ist, um das zu beweisen: Piwi Picker hat ihm nichts gesendet. Aktualisieren Sie Piwi in Ihrem Editor oder koppeln Sie in den Einstellungen neu."
   },
   "runs_statusNoHub": {
     "message": "Ihr Editor antwortet, aber keines seiner Fenster teilt seine Läufe: Aktualisieren Sie dort die Piwi-Erweiterung."

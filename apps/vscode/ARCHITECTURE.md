@@ -197,7 +197,8 @@ What the extension stores:
   (`piwi.sendToken`) and the runs' MCP server's token of each workspace (`piwi.agentsToken <workspace>`). The old key
   slot shared by every instance (`piwi.apiKey`) is deleted once (`forgetSharedKey`).
 - **Global state** (this machine): `piwi.walkthroughOpened`, `piwi.mcpOffered`, `piwi.sendPort`,
-  `piwi.sharedKeyForgotten`.
+  `piwi.sharedKeyForgotten`, the pairing Piwi Picker was given by code (`piwi.pickerPaired`: when, and its browser)
+  and when it was last heard from (`piwi.pickerHeard`).
 - **Workspace state** (this machine and this workspace, never a file the team shares): the desktop app chosen with
   Connect and its project (`piwi.desktop`, `piwi.desktopProject`, `piwi.desktopOffered`), the baselines
   (`piwi.baseline`), the environments (`piwi.environments`), `piwi.failuresGrouping`, `piwi.followEditor`, a recording's choices
@@ -834,7 +835,28 @@ added to `vscode.debug.breakpoints`. The API `activate` returns takes a debug li
 `src/send-listener.ts` is the Send to editor endpoint: `POST /piwi/send` on `127.0.0.1`, on the port kept in global
 state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
 
-- **Piwi: Pair with Piwi Picker** starts it and copies the pairing address as the browser's machine reaches it
+- **Where it listens.** A window with no listener takes the saved port, else the first free pairing port of
+  `VSCODE_PAIRING_PORTS` (7247 to 7251, where Piwi Picker's **Pair** looks), as it starts and every 10 s after
+  (`takeSavedPort`). A pairing port whose listener proves it holds this editor's token (`held`, `holdsToken`, the
+  token minted first when none is kept) is another window's, and ends the try as the saved port does; one another
+  program or another user holds is passed. The window that holds it shows in the view (`heldPort`).
+- **Pairing by code.** `GET /piwi/hello` answers without a token which editor listens (`editorHello`: VS Code's
+  `appName` and the window's folders); `POST /piwi/pairings` and `GET /piwi/pairings/<id>` are
+  `EditorPairingRequests` of `@piwitests/core/editor-pairing`. A new request shows a notification with **Type the
+  code…** and **Deny** and reveals the **Piwi Picker** view; `allowPickerPairing` asks in an input box for the code
+  Piwi Picker shows (the command's `code` argument stands in for it), reads the saved port again, saves the one Piwi
+  Picker reached (`pairing(true)`) and hands the token to the request with the proof of that code
+  (`allowEditorPairing`), which Piwi Picker's next poll takes once. The editor never makes nor sees Piwi Picker's
+  code but as typed, and cannot tell a wrong one: Piwi Picker refuses its proof.
+- **The Piwi Picker view** (`piwi.picker`, `src/picker-view.ts`, its rows from `pickerRows` in
+  `src/picker-pairing.ts`): the requests waiting with inline **Allow Piwi Picker to pair…** (the input box) and Deny, the pairing kept, when Piwi Picker was
+  last heard from (an authorized request from an extension's `Origin`, written once a minute at most), and the port.
+  Not paired, its welcome (`piwi.pickerView == unpaired`) says how to pair; **Unpair** shows once paired
+  (`piwi.pickerPaired`). **Unpair** (`piwi.unpairPicker`) asks, then mints a new token, makes the requests allowed and
+  not polled yet hand over nothing (`forgetTokens`), and lets go of a saved port outside the pairing ports for the
+  first one free.
+- **Piwi: Pair with Piwi Picker** reveals the view and says how to pair; it starts no listener and saves no port.
+  **Piwi: Copy the pairing address for Piwi Picker** copies the pairing address as the browser's machine reaches it
   (`pickerPairing`: `vscode.env.asExternalUri`, which a remote window forwards), on `127.0.0.1` whatever name VS
   Code gives it (`onLoopback`): `localhost` may resolve to `[::1]`, where another program could listen.
 - A run's `PIWI_EDITOR_SEND` keeps the loopback address (`runPairing`), since the reporter runs where the extension
@@ -842,9 +864,9 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
   listens (the saved port, Piwi Picker's pairing or a run's own) and again as the listener or the token changes
   (`piwi/setRunPairing`, `InitializationOptions.runPairing` on a restart), so a run started in a terminal that follows
   the window posts its picks here too. It starts no listener for this: a window with none names no pairing.
-- One window holds the saved port. A window with no listener tries it as it starts and every 10 s after
-  (`takeSavedPort`, `SAVED_PORT_RETRY_MS`), so it takes the port once the window holding it closes, and Piwi Picker's
-  pairing reaches every window's hub through it. A window listening on another port for a run's pairing keeps it.
+- One window holds the saved port, so it takes the port once the window holding it closes (`SAVED_PORT_RETRY_MS`),
+  and Piwi Picker's pairing reaches every window's hub through it. A window listening on another port for a run's
+  pairing keeps it.
 
 **Who gets an answer.** The listener answers only a request whose `Host` is `127.0.0.1` or `localhost` at its port, or
 at the port of the browser's machine a remote window forwards to it (`forwarded`, set as the pairing address goes

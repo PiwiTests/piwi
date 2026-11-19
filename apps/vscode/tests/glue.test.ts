@@ -200,6 +200,7 @@ describe('statusMenu', () => {
       '— Connection',
       'piwi.refresh',
       'piwi.connect',
+      'piwi.pairPicker',
       'piwi.openSettings',
     ]);
     expect(statusMenu(idle)[0]).toEqual({ command: 'piwi.refreshRun', label: 'Refresh the latest run' });
@@ -258,6 +259,7 @@ describe('statusMenu', () => {
       '— Connection',
       'piwi.refresh',
       'piwi.connect',
+      'piwi.pairPicker',
       'piwi.openSettings',
     ]);
     // A held failure takes no Step, and a run another window or a terminal started is theirs to stop.

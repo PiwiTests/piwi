@@ -258,8 +258,54 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
-  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+  async 'Piwi Picker pairs by code, once the person allows it'() {
+    // Pair with Piwi Picker listens where Piwi Picker looks: the first pairing port free, 7247 to 7251.
     await vscode.commands.executeCommand('piwi.pairPicker');
+    const base = await waitFor(async () => {
+      for (const port of [7247, 7248, 7249, 7250, 7251]) {
+        const hello = await fetch(`http://127.0.0.1:${port}/piwi/hello`).catch(() => null);
+        const body = hello?.ok ? await hello.json() : null;
+        if (body?.editor === 'vscode') return `http://127.0.0.1:${port}/piwi`;
+      }
+      return null;
+    }, 'the hello on a pairing port');
+    const origin = `chrome-extension://${'a'.repeat(32)}`;
+    const started = await fetch(`${base}/pairings`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ browser: 'Chrome', os: 'Linux' }),
+    });
+    assert.equal(started.status, 201);
+    const { id, secret, code } = await started.json();
+    // The editor makes no code: Piwi Picker shows one of its own, which the person types here.
+    assert.equal(code, undefined);
+    const poll = async () =>
+      (await fetch(`${base}/pairings/${id}`, { headers: { Origin: origin, 'x-pairing-secret': secret } })).json();
+    assert.deepEqual(await poll(), { status: 'waiting' });
+    // The view's Allow on the request's row, with the code typed.
+    await vscode.commands.executeCommand('piwi.allowPickerPairing', { requestId: id, code: 'bcdf ghjk' });
+    const answer = await poll();
+    assert.equal(answer.status, 'allowed');
+    // The proof Piwi Picker checks against its own code.
+    const proof = require('node:crypto')
+      .createHmac('sha256', 'BCDFGHJK')
+      .update(`piwi-editor-pairing:${id}:${answer.token}`)
+      .digest('hex');
+    assert.equal(answer.proof, proof);
+    // The token sends to the address Piwi Picker asked: `…/send` beside `…/pairings`.
+    const refused = await fetch(`${base}/send`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer nope' },
+      body: '{}',
+    });
+    assert.equal(refused.status, 401);
+    const live = await fetch(`${base}/live`, { headers: { Authorization: `Bearer ${answer.token}` } });
+    assert.equal(live.status, 200);
+    assert.deepEqual(await poll(), { status: 'claimed' });
+  },
+
+  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+    await vscode.commands.executeCommand('piwi.copyPickerAddress');
     const pairing = await vscode.env.clipboard.readText();
     const [url, token] = pairing.split('#');
     assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send$/);
@@ -1556,6 +1602,10 @@ const tests = {
       'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',
+      'piwi.copyPickerAddress',
+      'piwi.allowPickerPairing',
+      'piwi.denyPickerPairing',
+      'piwi.unpairPicker',
       'piwi.runCommand',
       'piwi.copyText',
       'piwi.runSelection',

@@ -91,7 +91,7 @@ written in the extension's language; locators, test ids and specs never are.
 | `scripting` | injects Pick an element, the recorder or another tool into that tab on demand, and marks your instance's pages once [connected](./extension-connection#what-is-sent); nothing else runs unasked |
 | `storage` | keeps your copy format and, only if you connect, the instance URL, URL patterns, cached catalogs and the last three [locator indexes](./tested-elements), on your machine. The API key and the desktop app's and editor's tokens live in the extension's own database, out of reach of web pages; the session and a running recording use `chrome.storage.session`, cleared when the browser closes |
 | `cookies` (optional, not granted in advance) | [Save login for tests](./devtools#save-login-for-tests) asks for it, for the one site whose login you save |
-| `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin. Never `<all_urls>`. The settings list every site allowed under **Sites Piwi Picker may run on**, each with **Revoke** |
+| `optional_host_permissions` (none granted in advance) | recording asks for the one site you are on, to follow you across its pages; a connection asks for your instance's origin; [pairing](./editor-pairing) asks for the editors' ports of `127.0.0.1`. Never `<all_urls>`. The settings list every site allowed under **Sites Piwi Picker may run on**, each with **Revoke** |
 
 ### The debugging bar
 

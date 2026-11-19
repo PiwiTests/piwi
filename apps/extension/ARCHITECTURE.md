@@ -56,6 +56,7 @@ Terms used in this file:
   mappings and the active project, what is read and what is sent, the desktop app, Share result, the requests and who
   makes them, connection health, cache freshness, host permissions for the instance, and the Test functions panel.
 - [The editor's runs](#the-editors-runs): following and steering the runs the paired editor starts.
+  - [Pairing with an editor](#pairing-with-an-editor): Pair, the editors found on their ports, and the code.
   - [Finding the hubs](#finding-the-hubs): the live endpoint beside Send to editor, the editor's proof, and when the
     hubs are found again.
   - [A connection per hub](#a-connection-per-hub): the WebSocket, its messages and commands, silence, and what keeps
@@ -257,7 +258,7 @@ connected or paired. The cards:
   - the patterns kept in this browser, a table whose **Save** keeps only them;
   - a folded **Add a site** form.
 - **Desktop app** (see "The desktop app").
-- **Editor**: the pairing that Send to editor and the Runs window use.
+- **Editor**: the pairing that Send to editor and the Runs window use (see "Pairing with an editor").
 - **Sites Piwi Picker may run on**: every host permission granted (`chrome.permissions.getAll`), each with a **Revoke**
   button. The list is redrawn on `chrome.permissions.onAdded` / `onRemoved` and when the recording's or the replay's
   state changes. `site-grants.ts` (pure) keeps the site of a running recording or replay, and the origins the instance
@@ -798,6 +799,31 @@ badge across the worker's restarts. A run that ends failed or timed out while no
 counted among the failed, whether or not its hub answers, until a Runs window takes the focus (`seen`): it stays in the
 window that long, past the ten minutes and the five runs an ended run is kept, then ten minutes more. It lives in the
 worker alone, so a restart of the worker forgets it.
+
+### Pairing with an editor
+
+The Editor card's **Pair** pairs by code, as the desktop app does (`@piwitests/core/editor-pairing`):
+
+1. Inside the click, before anything is awaited, it reads the grants held (`chrome.permissions.getAll`) and asks for
+   the origins of every port an editor of this computer listens on (`editorPairingBases`: VS Code's 7247 to 7251, a
+   JetBrains IDE's built-in server's 63342 to 63361). Each pattern comes from `hostPattern`, so Firefox asks for
+   `http://127.0.0.1/*` once; Chrome names the host once in its prompt.
+2. `findEditors` (`piwi-client.ts`) asks `GET …/hello` at each, at once, with a short timeout; an answer
+   `parseEditorHello` refuses is no editor. With more than one found, the card lists them, one button each.
+3. `startEditorPairing` posts `{ browser, os }` (`describeClient`, nothing else) to `…/pairings`, and the card shows
+   a code of its own (`newEditorPairingCode`), which never leaves the page: the person types it in the editor.
+   `pollEditorPairing` waits through `waitForApproval`, Cancel aborting it. The token the editor hands over comes
+   with `editorPairingProof` of the code typed; the card keeps it only when the proof is its own code's (`wrong-code`
+   otherwise, a typo or another program on the port), with `…/send` beside the routes it asked
+   (`EDITOR_SEND_PATH`), never with an address the editor names.
+4. While it waits, its grants are held (`holdGrants`), as Connect's and the desktop app's Pair hold theirs: no
+   `releaseGrant` gives one back meanwhile, which Firefox's one loopback pattern for every port needs, and the sites
+   card leaves them out. At the end, whatever came of it, the grants it asked for and nothing holds are given back,
+   those held before the click kept; a pairing that replaced another gives back the other's. **Use this address**
+   ends a Pair in progress.
+
+**Pair with an address**, folded under it, takes the address an editor's **Copy the pairing address for Piwi Picker**
+copies (`parseEditorPairing`), the way to pair a remote window, whose forwarded port Pair does not look at.
 
 ### Finding the hubs
 

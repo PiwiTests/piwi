@@ -90,7 +90,7 @@ line** on the debugger's Show Execution Point key:
   under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in its worker's tab of
   the Piwi tool window (**Worker 1**), with the same controls, where a click on the image picks the locator of the
   element under it (Playwright 1.60 or later). On a JetBrains
-  Gateway backend, forward the ports **Pair with Piwi Picker** names:
+  Gateway backend, forward the ports **Copy the pairing address for Piwi Picker** names:
   [Remote development](/guide/remote-development#jetbrains-gateway).
 - **[A running test](./watch-running-test)**: while the **Worker** tab watches one, an inlay after the line of
   the call it runs names it, and the **Page** tab lists its page's console and uncaught errors, each test named first

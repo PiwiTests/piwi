@@ -405,3 +405,115 @@ describe('the requests to the instance', () => {
     expect(importers).toEqual([]);
   });
 });
+
+describe('pairing with an editor by code', () => {
+  const base = 'http://127.0.0.1:7247/piwi';
+  afterEach(() => vi.unstubAllGlobals());
+
+  test('finds the editors that say what they are, each address once, and nothing else', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url === `${base}/hello`) {
+        return Response.json({ editor: 'vscode', product: 'Visual Studio Code', windows: ['shop'] });
+      }
+      if (url === 'http://127.0.0.1:63342/api/piwi/hello') {
+        return Response.json({ editor: 'jetbrains', product: 'WebStorm', windows: ['api', 'admin'] });
+      }
+      // Another program, a JetBrains IDE without Piwi, nothing at all.
+      if (url === 'http://127.0.0.1:7248/piwi/hello') return Response.json({ hello: 'world' });
+      if (url === 'http://127.0.0.1:63343/api/piwi/hello') return new Response('not found', { status: 404 });
+      throw new TypeError('Failed to fetch');
+    });
+    vi.stubGlobal('fetch', fetchMock);
+    const { findEditors } = await import('../../src/shared/piwi-client');
+    const found = await findEditors([
+      base,
+      'http://127.0.0.1:7248/piwi',
+      'http://127.0.0.1:7249/piwi',
+      'http://127.0.0.1:63342/api/piwi',
+      'http://127.0.0.1:63343/api/piwi',
+      base,
+    ]);
+    expect(found).toEqual([
+      { editor: 'vscode', product: 'Visual Studio Code', windows: ['shop'], base },
+      { editor: 'jetbrains', product: 'WebStorm', windows: ['api', 'admin'], base: 'http://127.0.0.1:63342/api/piwi' },
+    ]);
+    expect(fetchMock.mock.calls.filter(([url]) => url === `${base}/hello`)).toHaveLength(1);
+    for (const [, init] of fetchMock.mock.calls as unknown as Array<[string, RequestInit]>) {
+      expect(init.redirect).toBe('error');
+    }
+  });
+
+  test('starts a request with the browser’s name alone, and polls it to a token proved by the code shown', async () => {
+    const { startEditorPairing, pollEditorPairing } = await import('../../src/shared/piwi-client');
+    const { editorPairingProof } = await import('@piwitests/core/editor-pairing');
+    // The editor makes no code: the one shown here is this page's own.
+    const start = { id: '0123456789abcdef', secret: 'f'.repeat(64), interval: 2, expiresIn: 300 };
+    const fetchMock = vi.fn(async (_url: string, init?: RequestInit) =>
+      init?.method === 'POST' ? Response.json(start, { status: 201 }) : Response.json({ status: 'waiting' }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+    expect(await startEditorPairing(base, { browser: 'Chrome', os: 'Linux' })).toEqual(start);
+    const [url, init] = fetchMock.mock.calls[0] as unknown as [string, RequestInit];
+    expect(url).toBe(`${base}/pairings`);
+    expect(JSON.parse(String(init.body))).toEqual({ browser: 'Chrome', os: 'Linux' });
+
+    expect(await pollEditorPairing(base, start, 'BCDF-GHJK')).toEqual({ status: 'pending' });
+    const [pollUrl, pollInit] = fetchMock.mock.calls[1] as unknown as [string, RequestInit];
+    expect(pollUrl).toBe(`${base}/pairings/0123456789abcdef`);
+    expect(pollInit.headers).toEqual({ 'x-pairing-secret': start.secret });
+
+    const token = 'the-token-0123456789';
+    const proof = await editorPairingProof('BCDF-GHJK', start.id, token);
+    const answers: Array<[unknown, number]> = [
+      [{ status: 'allowed', token, proof }, 200],
+      // Another code typed, or another program on the editor's port: the token is dropped.
+      [{ status: 'allowed', token, proof: await editorPairingProof('BCDF-GHJL', start.id, token) }, 200],
+      [{ status: 'allowed', token }, 200],
+      [{ status: 'denied' }, 200],
+      [{ status: 'claimed' }, 200],
+      [{ error: 'gone' }, 404],
+    ];
+    const expected = [
+      { status: 'approved', apiKey: token, user: null },
+      { status: 'wrong-code' },
+      { status: 'wrong-code' },
+      { status: 'denied' },
+      { status: 'expired' },
+      { status: 'expired' },
+    ];
+    for (const [i, [body, status]] of answers.entries()) {
+      vi.stubGlobal(
+        'fetch',
+        vi.fn(async () => Response.json(body, { status })),
+      );
+      expect(await pollEditorPairing(base, start, 'bcdf ghjk')).toEqual(expected[i]);
+    }
+  });
+
+  test('says why a request could not start', async () => {
+    const { startEditorPairing } = await import('../../src/shared/piwi-client');
+    const client = { browser: 'Chrome', os: 'Linux' };
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ error: 'too many' }, { status: 429 })),
+    );
+    await expect(startEditorPairing(base, client)).rejects.toThrow('Three pairing requests wait in the editor already');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => new Response('not found', { status: 404 })),
+    );
+    await expect(startEditorPairing(base, client)).rejects.toThrow('cannot pair by code');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => Response.json({ id: 'nope', secret: 's' }, { status: 201 })),
+    );
+    await expect(startEditorPairing(base, client)).rejects.toThrow('cannot pair by code');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async () => {
+        throw new TypeError('Failed to fetch');
+      }),
+    );
+    await expect(startEditorPairing(base, client)).rejects.toThrow('stopped answering');
+  });
+});

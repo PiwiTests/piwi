@@ -204,7 +204,7 @@ export async function buildSet(set, { say }) {
     set.editor = error.editor;
     throw error;
   });
-  await set.editor.command('Piwi: Pair with Piwi Picker');
+  await set.editor.command('Piwi: Copy the pairing address for Piwi Picker');
   const pairing = await set.editor.clipboard();
   // The editor service tells its address in the set's discovery folder, never the developer's.
   for (let waited = 0; !fs.readdirSync(set.editorsDir).some((name) => name.endsWith('.json')); waited += 250) {

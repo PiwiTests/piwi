@@ -48,7 +48,7 @@
     {
       "id": "pair",
       "title": "Pair Piwi Picker",
-      "text": "Piwi Picker, the browser extension, sends a locator you pick on any page to the {cursor}, and follows the runs this {window} starts. Pairing gives it this editor's address.",
+      "text": "Piwi Picker, the browser extension, sends a locator you pick on any page to the {cursor}, and follows the runs this {window} starts. Click Pair under Editor in its settings, then type here the code it shows.",
       "action": "Pair with Piwi Picker"
     },
     {
