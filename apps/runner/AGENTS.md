@@ -9,15 +9,18 @@ built with the `runner` feature.
 
 ## Rules
 
-- **The window shares, it does not copy.** The connection card, the confirmation, the host's event stream and the live
-  view of a run (`useDesktopRunHub`, `DesktopRunSession`) come from `packages/run-ui` by auto-import, and a change both
-  windows need goes there. The window has no router, no store beyond the run list and no network call but the
+- **The window shares, it does not copy.** The connection's parts and what they do (`DesktopTeamConnectForm`,
+  `DesktopTeamSignIn`, `DesktopTeamFolders`, `useDesktopTeamConnection`), the confirmation, the host's event stream and
+  the live view of a run (`useDesktopRunHub`, `DesktopRunSession`) come from `packages/run-ui` by auto-import, and a
+  change both windows need goes there. The window has no router, no store beyond the run list and no network call but the
   layer's.
 - **Every text Runner shows comes from a catalog.** The window's own and the shell's are in `locales/<code>.json`
   (`runner_` through `useRunnerWords()`, `shell_` read by the shell, which also reads `runner_runInBackground` and
   `runner_startOnLogin` for its tray), the layer's in its own (`useRunUiWords()`).
   `tests/catalogs.test.ts` holds them to Piwi Picker's rules and fails on text written in a template. How to add a
   message or a language, and who reviewed each: [`locales/README.md`](locales/README.md).
+- **Every icon is bundled; the window fetches none.** `nuxt.config.ts` sets `icon.provider: 'none'` and scans the
+  window's and the layer's `.vue` and `.ts` files, so an icon's full name (`i-lucide-…`) must appear in one of them.
 - **The language comes from the shell.** `useRunnerLanguage` asks `desktop_get_language` before the window shows and
   follows `piwi:language`; inside the shell the window never reads the browser's language. `tests/e2e/window.spec.ts`
   shows the built window in French and German at its smallest size and fails on a text cut.
@@ -55,6 +58,7 @@ npm run runner:format:check
 npm run runner:build         # dist/server.cjs (the host)
 npm run runner:window        # .output/public (the window, `nuxt generate`)
 npm run runner:e2e           # the window in French and German (Playwright), after runner:window
+PIWI_DOCS_SHOTS=1 npm run runner:e2e -- docs-screenshots   # the docs' runner-*.png, after runner:window
 npm run runner:stage         # copies dist/server.cjs and .output/public into the shell's resources/runner-host
 ```
 

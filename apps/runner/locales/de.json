@@ -89,6 +89,184 @@
   "runner_languageFailed": {
     "message": "Sprache konnte nicht geändert werden"
   },
+  "runner_settingsHeading": {
+    "message": "Einstellungen"
+  },
+  "runner_connectionSettings": {
+    "message": "Verbindungseinstellungen"
+  },
+  "runner_connectedTo": {
+    "message": "Verbunden mit $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_connectingTo": {
+    "message": "Verbindung mit $host$ wird hergestellt",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_reconnectingTo": {
+    "message": "Verbindung mit $host$ wird wiederhergestellt",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_signingInAt": {
+    "message": "Wartet, bis Sie Piwi Runner auf $host$ zulassen",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_welcomeHeading": {
+    "message": "Mit Ihrer Team-Instanz verbinden"
+  },
+  "runner_stepsHeading": {
+    "message": "So funktioniert es"
+  },
+  "runner_stepConnect": {
+    "message": "Geben Sie die Adresse Ihrer Team-Instanz ein und lassen Sie Piwi Runner auf der Seite zu, die sich öffnet."
+  },
+  "runner_stepRequest": {
+    "message": "Öffnen Sie auf der Instanz einen Test und lassen Sie ihn auf Ihrem Rechner ausführen."
+  },
+  "runner_stepConfirm": {
+    "message": "Prüfen Sie die Anfrage hier und klicken Sie dann auf $run$: Die Tests laufen in Ihrem Ordner, in einem Browser auf Ihrem Bildschirm.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runner_clearFinished": {
+    "message": "Beendete entfernen"
+  },
+  "runner_openInstance": {
+    "message": "$host$ öffnen",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_startedAt": {
+    "message": "Gestartet um $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "14:02"
+      }
+    }
+  },
+  "runner_outputLines_one": {
+    "message": "$count$ Zeile",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runner_outputLines_other": {
+    "message": "$count$ Zeilen",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "24"
+      }
+    }
+  },
+  "runner_copyOutput": {
+    "message": "Ausgabe kopieren"
+  },
+  "runner_aboutHeading": {
+    "message": "Über Piwi Runner"
+  },
+  "runner_version": {
+    "message": "Version $version$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.73.0"
+      }
+    }
+  },
+  "runner_documentation": {
+    "message": "Dokumentation"
+  },
+  "runner_releaseNotes": {
+    "message": "Versionshinweise"
+  },
+  "runner_reportProblem": {
+    "message": "Problem melden"
+  },
+  "runner_navConnection": {
+    "message": "Verbindung"
+  },
+  "runner_navFolders": {
+    "message": "Ordner"
+  },
+  "runner_navGeneral": {
+    "message": "Allgemein"
+  },
+  "runner_runningHeading": {
+    "message": "Laufend"
+  },
+  "runner_finishedHeading": {
+    "message": "Beendet"
+  },
+  "runner_foldersHint": {
+    "message": "Die Tests jedes Projekts laufen in dem damit verknüpften Ordner, mit Ihren eigenen Werkzeugen und Ihrer Umgebung."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Von $host$ trennen?",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Die Anfragen der Instanz erreichen diesen Rechner dann nicht mehr. Um sich wieder zu verbinden, lassen Sie Piwi Runner erneut auf der Instanz zu."
+  },
+  "runner_offline": {
+    "message": "$host$ antwortet nicht: Die Anfragen der Instanz erreichen diesen Rechner wieder, sobald sie antwortet.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ und $logs$ finden Sie im Menü des Symbols im Infobereich.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
+  },
   "shell_trayTooltip": {
     "message": "$app$ (zum Öffnen klicken)",
     "placeholders": {

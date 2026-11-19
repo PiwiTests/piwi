@@ -341,7 +341,7 @@ options (`split`, `deviceScaleFactor`, `outputWidth`, …) are listed in the scr
   drift test fails on it.
 
 Images from other pipelines, which the harness's `--check` leaves alone (`EXTERNAL_DOCS_IMAGES` and the `picker-`,
-`vscode-` and `jetbrains-` prefixes):
+`vscode-`, `jetbrains-` and `runner-` prefixes):
 
 - the landing page's live-run video (`demo-live-run.mp4`) and its poster, from `scripts/record-demo-video.mjs` in
   `apps/application/`. It records a run of the demo's run simulator, on the live demo unless `--url` points it at a
@@ -357,7 +357,10 @@ Images from other pipelines, which the harness's `--check` leaves alone (`EXTERN
   header says how to run it. `apps/vscode/scripts/record-loop.mjs` films `editor-recording-loop.mp4` the same way, the
   recording's browser beside the editor on one screen ffmpeg captures. [`proposals/real-editor-checks.md`](../../proposals/real-editor-checks.md) records what was
   found about each product while the three pipelines were built. The README's *In your browser and your editor* row
-  and the Marketplace READMEs show the same images.
+  and the Marketplace READMEs show the same images;
+- Piwi Runner's window (`runner-*.png`, at its default width and 2×), by
+  `PIWI_DOCS_SHOTS=1 npm run runner:e2e -- docs-screenshots` from `apps/runner/`, after `npm run runner:window`; the
+  shell and the instance are played by the spec.
 
 Demo *evidence* media (the screenshots, traces and videos shown inside the product) is a different pipeline: see
 [`../application/scripts/AGENTS.md`](../application/scripts/AGENTS.md#demo-evidence-media).

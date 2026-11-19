@@ -9,7 +9,7 @@
   },
   "runner_runsHeading": {
     "message": "Runs",
-    "description": "Heading of the list of the runs this window started."
+    "description": "Tab of the window that shows the runs."
   },
   "runner_noRuns": {
     "message": "No runs yet. When a team instance asks for tests, you confirm them here first.",
@@ -69,19 +69,19 @@
   },
   "runner_runInBackground": {
     "message": "Run in background",
-    "description": "Checkbox of the window, and the same item in the tray menu: closing the window keeps Piwi Runner in the tray."
+    "description": "Switch of the window's settings, and the same item in the tray menu: closing the window keeps Piwi Runner in the tray."
   },
   "runner_runInBackgroundHint": {
     "message": "Closing the window keeps Piwi Runner in the tray: the instance reaches this machine only while it runs. Turned off, closing the window quits it.",
-    "description": "Under the Run in background checkbox: what it does."
+    "description": "Under the Run in background switch: what it does."
   },
   "runner_startOnLogin": {
     "message": "Start on login",
-    "description": "Checkbox, and the same item in the tray menu: Piwi Runner starts when the person signs in to their computer."
+    "description": "Switch of the window's settings, and the same item in the tray menu: Piwi Runner starts when the person signs in to their computer."
   },
   "runner_startOnLoginHint": {
     "message": "Starts Piwi Runner in the tray when you sign in.",
-    "description": "Under the Start on login checkbox: what it does."
+    "description": "Under the Start on login switch: what it does."
   },
   "runner_saveFailed": {
     "message": "Could not save the setting",
@@ -116,6 +116,216 @@
   "runner_languageFailed": {
     "message": "Could not change the language",
     "description": "Title of an error notification: the language could not be saved. The reason follows below it."
+  },
+  "runner_settingsHeading": {
+    "message": "Settings",
+    "description": "Tab of the window that holds the settings: the connection, the linked folders, the background settings, the language and About. One short word."
+  },
+  "runner_connectionSettings": {
+    "message": "Connection settings",
+    "description": "Tooltip of the connection status at the top of the window: a click on it opens the settings."
+  },
+  "runner_connectedTo": {
+    "message": "Connected to $host$",
+    "description": "At the top of the window, beside a green dot: the app takes requests from this instance. $host$ is its address without the scheme.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_connectingTo": {
+    "message": "Connecting to $host$",
+    "description": "At the top of the window, beside an amber dot: the app is connecting to this instance.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_reconnectingTo": {
+    "message": "Reconnecting to $host$",
+    "description": "At the top of the window, beside an amber dot: the instance does not answer and the app tries again.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_signingInAt": {
+    "message": "Waiting for you to allow it on $host$",
+    "description": "At the top of the window, beside an amber dot: the person has to allow Piwi Runner on the instance's page.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_welcomeHeading": {
+    "message": "Connect to your team instance",
+    "description": "Heading of the window while Piwi Runner is not connected, above the address field."
+  },
+  "runner_stepsHeading": {
+    "message": "How it works",
+    "description": "Heading of the three steps shown while Piwi Runner is not connected."
+  },
+  "runner_stepConnect": {
+    "message": "Enter your team instance's address and allow Piwi Runner on the page that opens.",
+    "description": "First of three steps shown while Piwi Runner is not connected."
+  },
+  "runner_stepRequest": {
+    "message": "On the instance, open a test and ask to run it on your machine.",
+    "description": "Second of three steps shown while Piwi Runner is not connected."
+  },
+  "runner_stepConfirm": {
+    "message": "Check the request here, then click $run$: the tests run in your folder, in a browser on your screen.",
+    "description": "Third of three steps shown while Piwi Runner is not connected. $run$ is the confirmation's Run button (runui_requestRun in the layer's catalog).",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runner_clearFinished": {
+    "message": "Clear finished",
+    "description": "Button beside runner_finishedHeading: removes the runs that ended from the list."
+  },
+  "runner_openInstance": {
+    "message": "Open $host$",
+    "description": "Button: opens the team instance in the browser, under the empty list of runs and in the connection's settings. $host$ is its address without the scheme.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_startedAt": {
+    "message": "Started at $time$",
+    "description": "Under a run's name: when the person clicked Run. $time$ is a time of day.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "14:02"
+      }
+    }
+  },
+  "runner_outputLines_one": {
+    "message": "$count$ line",
+    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), singular.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runner_outputLines_other": {
+    "message": "$count$ lines",
+    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), plural.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "24"
+      }
+    }
+  },
+  "runner_copyOutput": {
+    "message": "Copy output",
+    "description": "Button of a run's output: copies all of it, without its colors, to the clipboard."
+  },
+  "runner_aboutHeading": {
+    "message": "About",
+    "description": "Heading of the card that shows the app's version and its links, and its item in the list of the settings' sections. One or two words."
+  },
+  "runner_version": {
+    "message": "Version $version$",
+    "description": "In the About card: the version of Piwi Runner installed.",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.73.0"
+      }
+    }
+  },
+  "runner_documentation": {
+    "message": "Documentation",
+    "description": "Link of the About card: opens Piwi Runner's page of the documentation in the browser."
+  },
+  "runner_releaseNotes": {
+    "message": "Release notes",
+    "description": "Link of the About card: opens the list of releases in the browser."
+  },
+  "runner_reportProblem": {
+    "message": "Report a problem",
+    "description": "Link of the About card: opens the form to report a bug in the browser."
+  },
+  "runner_navConnection": {
+    "message": "Connection",
+    "description": "Section of the settings: the connection to the team instance. One or two words."
+  },
+  "runner_navFolders": {
+    "message": "Folders",
+    "description": "Section of the settings: the folders linked to the instance's projects. One or two words."
+  },
+  "runner_navGeneral": {
+    "message": "General",
+    "description": "Section of the settings: running in the background, starting on login and the language. One or two words."
+  },
+  "runner_runningHeading": {
+    "message": "Running now",
+    "description": "Heading of the runs going on, above their cards."
+  },
+  "runner_finishedHeading": {
+    "message": "Finished",
+    "description": "Heading of the runs that ended, above their list. runner_clearFinished empties it."
+  },
+  "runner_foldersHint": {
+    "message": "Each project's tests run in the folder linked to it, with your own tools and environment.",
+    "description": "Under the heading of the linked folders, in the settings."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Disconnect from $host$?",
+    "description": "Title of the question asked before disconnecting. $host$ is the instance's address without the scheme.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Requests from the instance stop reaching this machine. To connect again, you allow Piwi Runner on the instance again.",
+    "description": "Body of the question asked before disconnecting."
+  },
+  "runner_offline": {
+    "message": "$host$ does not answer: its requests reach this machine again once it does.",
+    "description": "Above the runs while the instance does not answer and the app tries again. $host$ is its address without the scheme.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ and $logs$ are in the tray icon's menu.",
+    "description": "In the About card. $updates$ and $logs$ are the tray menu's items shell_checkUpdates and shell_showLogs.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
   },
   "shell_trayTooltip": {
     "message": "$app$ (click to open)",

@@ -89,6 +89,184 @@
   "runner_languageFailed": {
     "message": "Não foi possível mudar o idioma"
   },
+  "runner_settingsHeading": {
+    "message": "Configurações"
+  },
+  "runner_connectionSettings": {
+    "message": "Configurações da conexão"
+  },
+  "runner_connectedTo": {
+    "message": "Conectado a $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_connectingTo": {
+    "message": "Conectando a $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_reconnectingTo": {
+    "message": "Reconectando a $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_signingInAt": {
+    "message": "Aguardando sua autorização em $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_welcomeHeading": {
+    "message": "Conecte-se à instância da sua equipe"
+  },
+  "runner_stepsHeading": {
+    "message": "Como funciona"
+  },
+  "runner_stepConnect": {
+    "message": "Digite o endereço da instância da sua equipe e autorize o Piwi Runner na página que abrir."
+  },
+  "runner_stepRequest": {
+    "message": "Na instância, abra um teste e peça para executá-lo na sua máquina."
+  },
+  "runner_stepConfirm": {
+    "message": "Confira o pedido aqui e clique em $run$: os testes são executados na sua pasta, em um navegador na sua tela.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runner_clearFinished": {
+    "message": "Remover as concluídas"
+  },
+  "runner_openInstance": {
+    "message": "Abrir $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_startedAt": {
+    "message": "Início: $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "14:02"
+      }
+    }
+  },
+  "runner_outputLines_one": {
+    "message": "$count$ linha",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runner_outputLines_other": {
+    "message": "$count$ linhas",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "24"
+      }
+    }
+  },
+  "runner_copyOutput": {
+    "message": "Copiar a saída"
+  },
+  "runner_aboutHeading": {
+    "message": "Sobre"
+  },
+  "runner_version": {
+    "message": "Versão $version$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.73.0"
+      }
+    }
+  },
+  "runner_documentation": {
+    "message": "Documentação"
+  },
+  "runner_releaseNotes": {
+    "message": "Notas da versão"
+  },
+  "runner_reportProblem": {
+    "message": "Relatar um problema"
+  },
+  "runner_navConnection": {
+    "message": "Conexão"
+  },
+  "runner_navFolders": {
+    "message": "Pastas"
+  },
+  "runner_navGeneral": {
+    "message": "Geral"
+  },
+  "runner_runningHeading": {
+    "message": "Em execução"
+  },
+  "runner_finishedHeading": {
+    "message": "Concluídas"
+  },
+  "runner_foldersHint": {
+    "message": "Os testes de cada projeto são executados na pasta vinculada a ele, com suas próprias ferramentas e seu ambiente."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Desconectar de $host$?",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Os pedidos da instância deixarão de chegar a esta máquina. Para conectar de novo, você precisará autorizar o Piwi Runner na instância outra vez."
+  },
+  "runner_offline": {
+    "message": "$host$ não responde: os pedidos dela voltam a chegar a esta máquina assim que ela responder.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ e $logs$ ficam no menu do ícone da área de notificação.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
+  },
   "shell_trayTooltip": {
     "message": "$app$ (clique para abrir)",
     "placeholders": {

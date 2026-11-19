@@ -25,8 +25,9 @@ unsigned first start: [the desktop app's installers](./desktop#where-it-is).
 Piwi Runner checks the latest release when it starts, and a notification says when a newer version is out. **Check for
 updates…** in the system tray menu checks again; when one is found, **Install and restart** downloads it, checks its
 signature, installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb` or `.rpm`) and starts
-the new version, after asking to stop the runs still going. Your connection and linked folders stay. A new release's
-Piwi Runner files can reach the release a few minutes after the desktop app's; until then the check finds nothing new
+the new version, after asking to stop the runs still going. Your connection and linked folders stay. **Settings → About**
+in its window shows the version installed and where the tray's update and log items are, with links to this page, the
+release notes and the page to report a problem. A new release's Piwi Runner files can reach the release a few minutes after the desktop app's; until then the check finds nothing new
 or fails, and the next one finds them. On a desktop that shows no tray icon, install a new version from the latest release over
 the old one.
 
@@ -42,24 +43,52 @@ folder, Linux package, settings, linked folders and keychain entry. Connected to
 
 ## Connect it
 
-Its window connects to an instance the way the desktop app does: enter the instance's address and click **Connect**,
-then allow **Piwi Runner** on the instance's page with the code the window shows. Its key stays in the operating
-system's keychain. Each project's folder is linked on the first request for it. The rest, from the confirmation to
-**Stop**, is described in [Run on my machine](./run-on-my-machine#in-the-app).
+Until it is connected, its window opens on the instance's address, with the three steps from a test there to its run
+here. It connects the way the desktop app does: enter the instance's address and click **Connect**, then allow **Piwi
+Runner** on the instance's page with the code the window shows. Its key stays in the operating system's keychain.
+Each project's folder is linked on the first request for it. The rest, from the confirmation to **Stop**, is described
+in [Run on my machine](./run-on-my-machine#in-the-app).
+
+Once connected, the top of the window says which instance it takes requests from, with a dot of its state: green while
+connected, amber while it connects or the instance does not answer, when a line above the runs also says that its
+requests reach the machine again once it answers. A click on it opens the connection's settings.
+
+**Settings** shows a section at a time: **Connection** (the instance, a button that opens it in the browser, and
+**Disconnect**, which asks first: connecting again means allowing Piwi Runner on the instance again), **Folders** (the
+folder linked to each project, with **Unlink**: the next request for that project asks for its folder again),
+**General** (the two background settings and the language) and **About**.
+
+<figure>
+  <img src="/screenshots/runner-settings.png" alt="Piwi Runner's Settings on its Connection section: the instance it is connected to, Open piwi.example.com, Disconnect, and the list of sections: Connection, Folders, General and About">
+  <figcaption>Settings, on the Connection section; the header says which instance Piwi Runner takes requests from.</figcaption>
+</figure>
 
 ## Pause and watch a run
 
 Each run Piwi Runner starts shows in its window live, as the desktop app's runs show in its
 [Local runs tray](./desktop-runs): each worker's test and where it stands, **Pause**, **Step**, **Resume** and
 **Finish**, **Pause all** and **Resume all**, and the stopped test's page, live with **Watch**. A `page.pause()`,
-a step or a breakpoint waits in the window until you answer it, and the window comes to the front. [**Hold failures**](./watch-a-run#hold-failures),
+a step or a breakpoint waits in the window until you answer it, and the window comes to the front, on its runs. [**Hold failures**](./watch-a-run#hold-failures),
 a switch on each running run you attend, off until you turn it on, keeps a failing test at its line too, until you
-resume it. Once the run reported to the
-instance, its card names it, **Run #78 · Open**, which opens its page there, and keeps it after the run ended. A run
-that goes on while the window reloads shows again, with **Stop**.
+resume it. Once the run reported to the instance, it shows **Run #78 · Open**, which opens its page there, and keeps
+it after the run ended. A run that goes on while the window reloads shows again, with **Stop**.
 **Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
 writes no file. A requested run cannot be [shared live](./share-live): the instance gives it no [live view](./live-view) key, since it
 [shows to you alone](./run-on-my-machine#a-requested-run-is-yours-alone). **Inspect** of a watched worker, which reads the test's pages from its trace, is the desktop app's alone.
+
+The runs show in two lists. **Running now** has a card for each run going on: its project, when it started and how
+long it has run, **Stop**, its workers live, the tests the request asked for and its output. **Finished** has a row for
+each run that ended, the last to end first: how it ended, its project, when it started and how long it took, and
+**Run #78 · Open** once it reported to the instance. A click on a row shows its tests and its output; a run that ended
+a moment ago comes in open, with what you had open on its card. The output keeps Playwright's colors, with its last
+300 lines on screen: it opens on its own once the run failed or could not run, and **Copy output** copies all of it,
+up to its last 2,000 lines, without the colors. **Clear finished** empties the Finished list; the window keeps the
+last 15 runs that ended in any case, never dropping one the moment it ends.
+
+<figure>
+  <img src="/screenshots/runner-runs.png" alt="Piwi Runner's runs: under Running now, a run's card with its worker running, Pause, Watch, Hold failures and Stop; under Finished, a run that failed, open on its output in Playwright's colors">
+  <figcaption>A run going on, and one that just failed, open on its output.</figcaption>
+</figure>
 
 Piwi Runner is the hub of its own runs only: Piwi Picker, the editors and an agent reach the runs the desktop app or an
 editor starts, not Piwi Runner's.
@@ -76,8 +105,8 @@ window forward. The tray menu has, with the [desktop app](./desktop)'s glyphs an
 - **Check for updates…** and **Show logs**;
 - **Quit Piwi Runner**, which stops its runs, after asking.
 
-The window has the same two settings, for a desktop that shows no tray icon (GNOME without an AppIndicator
-extension): turn **Run in background** off there, and closing the window quits.
+The **General** section of the window's **Settings** has the same two settings, for a desktop that shows no tray icon (GNOME without an
+AppIndicator extension): turn **Run in background** off there, and closing the window quits.
 
 Its icon is the Piwi mark on a teal tile with a play sign, so it reads apart from the desktop app's in the tray and the
 taskbar.
@@ -85,7 +114,7 @@ taskbar.
 ## Languages
 
 Piwi Runner speaks English, French, German, Spanish and Brazilian Portuguese, in its window, its tray menu and its
-questions: your system's language, or the one you choose under **Language** in its window. German, Spanish and
+questions: your system's language, or the one you choose in the **General** section of its window's **Settings**. German, Spanish and
 Portuguese are drafts no native reader has reviewed yet: while one is on screen, a line says so and links to a form for
 a correction. Test titles, files, commands and a run's output stay as they are, the reason a run could not start
 included, and so do two answers of the runs' hub, where a locator picked on the image and a code made at a stop wait
