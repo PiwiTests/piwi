@@ -1897,12 +1897,15 @@ instance's 401 for a key it no longer holds (`data.errorCode` `RUN_TARGET_KEY_RE
 that sends no code). The instance's stream sends `revoked` as the key or its owner is deleted, and when its own check of
 the key, as it subscribes and every minute after, is refused with a 401; any other refusal there closes the stream.
 The window then has the shell forget the key too, which disconnects (`disconnectRunTarget`): a connection the instance
-revoked keeps its state, its instance and its reason through that, until the next connect.
+revoked keeps its state and its reason through that, until the next connect, but no instance, so the runs' hub takes no
+page under it.
 
-The shell keeps each instance's folders apart, so the folders the target holds are for one instance (`linksFor`): what
-an instance hears of them (`describe`) and where its requests run read them only for the instance they were handed for
-(`linksHere`), none between connecting to another instance and the shell keeping its key, which hands that instance's
-folders. `linkedFolders`, which the runs' hub reads, keeps every folder handed, for the runs still going in them.
+The shell keeps each instance's folders apart, so the folders the target holds are for one instance (`linksFor`): the
+key it hands (`PUT /key`) names its instance, and so does `PUT /links`, whose folders are left aside while another
+instance is connected. What an instance hears of them (`describe`) and where its requests run read them only for the
+instance they were handed for (`linksHere`): none between connecting to another instance and the shell keeping its
+key, which hands that instance's folders, and the requests still asked about are checked again as they change.
+`linkedFolders`, which the runs' hub reads, holds the folders handed last, whichever instance they are for.
 
 Its requests go through `src/http.ts`. When the service's environment names a proxy (`HTTPS_PROXY`, `HTTP_PROXY`,
 `NO_PROXY`, upper or lower case, which both clients set from the editor's proxy settings):

@@ -481,15 +481,18 @@ export async function useKeptKey(
   shell: { localRuns?: readonly string[]; ended?: readonly EndedRun[] } = {},
 ): Promise<string[]> {
   const ended = shell.ended ?? [];
-  state.links = links;
-  state.linksFor = instance;
   state.keyToKeep = false;
   state.adopted = new Set([...running, ...ended.map((run) => run.id)].filter((id) => !state.held.has(id)));
   if (shell.localRuns) useLocalRuns(shell.localRuns);
   if (state.instance === instance && state.key === key && state.host) {
+    useLinksFor(instance, links);
     void state.host.describe().catch(() => {});
     tellConnection();
-  } else startHost(instance, key);
+  } else {
+    state.links = links;
+    state.linksFor = instance;
+    startHost(instance, key);
+  }
   let timer: ReturnType<typeof setTimeout> | undefined;
   const late = new Promise<false>((resolve) => (timer = setTimeout(() => resolve(false), ENDED_REPORT_WITHIN_MS)));
   const told = await Promise.all(
@@ -516,12 +519,27 @@ export function projectNameOf(id: number): string | null {
   return state.projectNames.get(id) ?? null;
 }
 
-/** The folders the shell links for the instance connected now changed. */
-export function useLinks(links: Map<number, string>): void {
-  state.links = links;
-  state.linksFor = state.instance;
+/**
+ * The folders the shell links for `instance` changed (the instance connected now when it names none). Folders for an
+ * instance other than the one connected now are left aside: the shell hands them again with its key.
+ */
+export function useLinks(links: Map<number, string>, instance: string | null = state.instance): void {
+  if (state.instance !== null && instance !== state.instance) return;
+  useLinksFor(instance, links);
   void state.host?.describe().catch(() => {});
   tellConnection();
+}
+
+/**
+ * Keep `links` as the folders of `instance`'s projects; when the folders of the instance connected now changed, the
+ * requests still asked about are checked again with them.
+ */
+function useLinksFor(instance: string | null, links: Map<number, string>): void {
+  const before = linksHere();
+  state.links = links;
+  state.linksFor = instance;
+  const after = linksHere();
+  if (before.size !== after.size || [...after].some(([id, folder]) => before.get(id) !== folder)) void planWaiting();
 }
 
 /** The key the device flow gave, for the shell to keep in the keychain; null once kept or with none. */
@@ -547,16 +565,15 @@ function endConnection(): void {
 
 /**
  * Disconnect from the instance: the shell forgets the key. Its key stays listed in Connected apps until revoked. A
- * connection the instance revoked keeps saying so, with its instance and its reason, until the next connect: the shell
- * forgets a revoked key through here too.
+ * connection the instance revoked keeps saying so, with its reason, until the next connect: the shell forgets a revoked
+ * key through here too.
  */
 export function disconnectRunTarget(): void {
-  const revoked = state.status === 'revoked' ? { instance: state.instance, error: state.error } : null;
+  const revoked = state.status === 'revoked' ? state.error : null;
   endConnection();
   if (revoked) {
     state.status = 'revoked';
-    state.instance = revoked.instance;
-    state.error = revoked.error;
+    state.error = revoked;
   }
   tellConnection();
 }

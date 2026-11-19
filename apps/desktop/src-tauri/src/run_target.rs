@@ -598,9 +598,11 @@ pub(crate) fn hand_local_runs(app: &AppHandle) {
     });
 }
 
+/// Hand the server the folders linked for `instance`'s projects, naming the
+/// instance: the server leaves them aside when it connected to another since.
 fn hand_links(app: &AppHandle, instance: &str) -> Result<(), String> {
     let server = server_info(app).ok_or("the local server is not running")?;
-    let body = json!({ "links": links_of(app, instance) });
+    let body = json!({ "instance": instance, "links": links_of(app, instance) });
     local_call(&server, "PUT", "/api/desktop/run-target/links", Some(&body)).map(|_| ())
 }
 

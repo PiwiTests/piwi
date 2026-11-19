@@ -156,15 +156,17 @@ export const RUN_TARGET_ROUTES = {
       return ok({ ok: true });
     },
   },
-  /** The folders linked to the instance's projects. */
+  /** The folders linked to the projects of the instance the shell names. */
   links: {
     method: 'PUT',
     path: '/links',
     shellOnly: true,
     handle: (request) => {
-      const links = linksOf(bodyOf(request).links);
-      if (!links) return refused(400, 'Invalid links');
-      useLinks(links);
+      const body = bodyOf(request);
+      const links = linksOf(body.links);
+      const instance = body.instance === undefined ? undefined : instanceUrlOf(body.instance);
+      if (!links || instance === null) return refused(400, 'Invalid instance or links');
+      useLinks(links, instance);
       return ok({ ok: true });
     },
   },

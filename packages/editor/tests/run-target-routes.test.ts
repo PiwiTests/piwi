@@ -347,6 +347,9 @@ describe('every host of the run-target routes', () => {
       expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, running })).status).toBe(400);
     }
     expect((await host.call('PUT', '/links', SHELL, { links: { x: folder } })).status).toBe(400);
+    expect(
+      (await host.call('PUT', '/links', SHELL, { instance: 'ftp://piwi.example.com', links: { 3: folder } })).status,
+    ).toBe(400);
     expect((await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, { decision: 'yes' })).status).toBe(400);
     for (const call of ROUTE_CALLS.filter((c) => c.route.includes(REQUEST_ID))) {
       expect((await host.call(call.method, call.route.replace(REQUEST_ID, 'x'), SHELL, {})).status, call.name).toBe(
