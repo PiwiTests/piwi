@@ -334,7 +334,7 @@ Each entry names folders under `server/api/`.
     runs whose **Hold failures** switch is on (off by default; on for a reproduction and for a run started with it on,
     `desktopHoldsByDefault`; **Run again** keeps this window's choice; never for a run nobody attends,
     `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`).
-    Expanding a run or closing the tray changes none of it (`tests/desktop-run-view.spec.ts`,
+    Choosing a run in the tray or closing it changes none of it (`tests/desktop-run-view.spec.ts`,
     `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the

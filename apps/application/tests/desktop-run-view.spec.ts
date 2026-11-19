@@ -1985,7 +1985,7 @@ test.describe('Desktop run live view', () => {
     await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
     await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
-    await expect(tray(page).getByRole('region', { name: 'Other runs of the desktop app' })).toHaveCount(0);
+    await expect(tray(page).getByRole('region', { name: 'Started in another window' })).toHaveCount(0);
     // The hub's stream opens again, and the run holds its failures again.
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);

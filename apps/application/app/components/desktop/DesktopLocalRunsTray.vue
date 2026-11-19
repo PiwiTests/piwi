@@ -103,8 +103,8 @@ function waits(run: LocalRun): boolean {
 
 // ── What the right side shows ─────────────────────────────────────────────────────────────────────────────────────
 
-/** The run chosen on the left: a run's key, or the ref of a run another window started; null for the default. */
-const selected = useState<number | string | null>('desktop-local-runs-selected', () => null);
+/** The run chosen on the left (`chosen` of the store): a run's key, or the ref of a run another window started. */
+const selected = store.chosen;
 
 /** The run the right side shows: the one chosen, else one waiting at a stop, else the newest running, else the newest. */
 const shownRun = computed<LocalRun | null>(() => {
@@ -123,23 +123,48 @@ function select(target: number | string) {
   selected.value = target;
 }
 
-/** A run a result's Run again starts leaves the run it came from shown, once. */
-let keepShown = false;
-function keepRunShown(run: LocalRun) {
-  keepShown = true;
-  selected.value = run.key;
+// The default shown is kept as chosen, so it does not move as other runs go on.
+watch(
+  () => shownRun.value?.key,
+  (key) => {
+    if (selected.value === null && key !== undefined) selected.value = key;
+  },
+  { immediate: true },
+);
+
+/** The right side, which the keyboard may be in. */
+const detail = useTemplateRef<HTMLElement>('detail');
+
+/**
+ * Shows `target` on the right as a run starts or stops, unless the person works in the run shown: the keyboard is in
+ * it (a control, the live view's Interact, the output's filter). The list marks a stop all the same.
+ */
+function showUnlessWorking(target: number | string) {
+  const working = !!detail.value && !!document.activeElement && detail.value.contains(document.activeElement);
+  if (!working) select(target);
 }
 
-// A run that starts is shown, as the person just started it.
+/** How long a result's Run again keeps the run it came from shown: the run it starts may wait on its environment. */
+const KEEP_SHOWN_MS = 10_000;
+let keepShownUntil = 0;
+function keepRunShown(run: LocalRun) {
+  keepShownUntil = Date.now() + KEEP_SHOWN_MS;
+  select(run.key);
+}
+
+// A run that starts here is shown, by a key the tray did not hold: a run cleared or removed shows nothing new.
+let heldKeys = new Set(runs.value.map((run) => run.key));
 watch(
-  () => runs.value[0]?.key,
-  (key, previous) => {
-    if (key === undefined || key === previous || previous === undefined) return;
-    if (keepShown) {
-      keepShown = false;
+  () => runs.value.map((run) => run.key),
+  (keys) => {
+    const started = runs.value.find((run) => !heldKeys.has(run.key) && run.status === 'running');
+    heldKeys = new Set(keys);
+    if (!started) return;
+    if (Date.now() < keepShownUntil) {
+      keepShownUntil = 0;
       return;
     }
-    if (runs.value[0]?.status === 'running') selected.value = key;
+    showUnlessWorking(started.key);
   },
 );
 
@@ -173,24 +198,29 @@ watchEffect(() => {
 });
 onBeforeUnmount(() => document.documentElement.style.removeProperty('--desktop-runs-height'));
 
-/** Drags the top edge: the tray grows as the pointer goes up. */
+/** Drags the top edge with the main button: the tray grows as the pointer goes up; a click alone changes nothing. */
 function startResize(event: PointerEvent) {
+  if (event.button !== 0) return;
   const edge = event.currentTarget as HTMLElement;
   const startY = event.clientY;
   const start = shownHeight.value;
-  maximized.value = false;
   edge.setPointerCapture(event.pointerId);
   const move = (moved: PointerEvent) => {
+    if ((moved.buttons & 1) === 0) return end();
+    if (moved.clientY === startY) return;
+    maximized.value = false;
     height.value = clampHeight(start + startY - moved.clientY);
   };
   const end = () => {
     edge.removeEventListener('pointermove', move);
     edge.removeEventListener('pointerup', end);
     edge.removeEventListener('pointercancel', end);
+    edge.removeEventListener('lostpointercapture', end);
   };
   edge.addEventListener('pointermove', move);
   edge.addEventListener('pointerup', end);
   edge.addEventListener('pointercancel', end);
+  edge.addEventListener('lostpointercapture', end);
 }
 
 function resizeByKey(event: KeyboardEvent) {
@@ -222,7 +252,7 @@ async function heardStop(session: HubSession, worker: HubWorker) {
   // The stop opened the tray: its worker's tab shows.
   if (!openShown) hub.chooseTab(session.ref, worker.parallelIndex);
   const run = runOf(session);
-  select(run ? run.key : session.ref);
+  showUnlessWorking(run ? run.key : session.ref);
   announce(desktopStopSaid(session, worker, stop));
   await nextTick();
   document
@@ -313,6 +343,12 @@ async function openFailure(run: LocalRun) {
   await navigateTo(page);
 }
 
+/** The run's Run again, here: the run it starts is shown, as the person just asked for it. */
+async function runAgain(run: LocalRun) {
+  const next = await store.rerun(run);
+  if (next) select(next.key);
+}
+
 /** Whether a run offers Run again: one it can start as it ran. */
 function rerunnable(run: LocalRun): boolean {
   return (run.kind !== 'flake' || !!run.flake) && run.kind !== 'request';
@@ -337,6 +373,40 @@ function moreActions(run: LocalRun) {
 }
 
 const empty = computed(() => runs.value.length === 0 && otherSessions.value.length === 0);
+
+/**
+ * The runs drawn on the right, the one shown visible: every running run, so showing another ends none of its live views
+ * or answers, and the run shown.
+ */
+const drawnRuns = computed(() =>
+  shownRun.value && !running.value.includes(shownRun.value) ? [...running.value, shownRun.value] : running.value,
+);
+
+/** Whether a test of a run another window started waits at a stop. */
+function sessionWaits(session: HubSession): boolean {
+  return session.workers.some((worker) => worker.stop);
+}
+
+/** Whether the tray is wide enough for the list beside the run shown; narrower, a select names the run shown. */
+const wide = useMediaQuery('(min-width: 768px)');
+
+/** The select's choices, narrow: each run of the tray with how it stands, then the runs another window started. */
+const runChoices = computed(() => [
+  ...runs.value.map((run) => ({ label: `${localRunTitle(run)} · ${badge(run).label}`, value: `run:${run.key}` })),
+  ...otherSessions.value.map((session) => ({
+    label: desktopRunName(session, words),
+    value: `session:${session.ref}`,
+  })),
+]);
+const chosenChoice = computed({
+  get: () =>
+    shownRun.value ? `run:${shownRun.value.key}` : shownSession.value ? `session:${shownSession.value.ref}` : undefined,
+  set: (value: string | undefined) => {
+    if (!value) return;
+    const at = value.indexOf(':');
+    select(value.slice(0, at) === 'run' ? Number(value.slice(at + 1)) : value.slice(at + 1));
+  },
+});
 </script>
 
 <template>
@@ -407,11 +477,12 @@ const empty = computed(() => runs.value.length === 0 && otherSessions.value.leng
       </p>
     </div>
 
-    <div v-else class="flex min-h-0 flex-1 flex-col md:flex-row">
-      <nav
-        aria-label="Runs"
-        class="max-h-36 shrink-0 overflow-y-auto border-b border-default md:max-h-none md:w-72 md:border-r md:border-b-0"
-      >
+    <div v-else class="flex min-h-0 flex-1" :class="wide ? 'flex-row' : 'flex-col'">
+      <!-- Narrow, a select names the run shown, so the run keeps the tray's height. -->
+      <div v-if="!wide" class="shrink-0 border-b border-default p-2">
+        <USelect v-model="chosenChoice" :items="runChoices" aria-label="Run shown" class="w-full" />
+      </div>
+      <nav v-else aria-label="Runs" class="w-72 shrink-0 overflow-y-auto border-r border-default">
         <template
           v-for="group in [
             { title: 'Running now', items: running },
@@ -452,19 +523,23 @@ const empty = computed(() => runs.value.length === 0 && otherSessions.value.leng
           </section>
           <section
             v-if="group.title === 'Running now' && otherSessions.length > 0"
-            aria-label="Other runs of the desktop app"
+            aria-labelledby="desktop-runs-other-windows"
           >
-            <h3 class="px-3 pt-2 pb-1 text-xs text-muted">Started in another window</h3>
+            <h3 id="desktop-runs-other-windows" class="px-3 pt-2 pb-1 text-xs text-muted">Started in another window</h3>
             <ul>
               <li v-for="session in otherSessions" :key="session.ref">
                 <button
                   type="button"
-                  class="flex w-full min-w-0 px-3 py-1.5 text-left hover:bg-elevated/60 focus-visible:outline-2 focus-visible:outline-primary"
+                  class="flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left hover:bg-elevated/60 focus-visible:outline-2 focus-visible:outline-primary"
                   :class="session.ref === shownSession?.ref ? SELECTED_ROW_CLASS : ''"
                   :aria-current="session.ref === shownSession?.ref || undefined"
                   @click="select(session.ref)"
                 >
-                  <span class="truncate text-sm font-medium">{{ desktopRunName(session, words) }}</span>
+                  <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ desktopRunName(session, words) }}</span>
+                  <span v-if="sessionWaits(session)" class="flex shrink-0 items-center text-warning">
+                    <UIcon name="i-lucide-circle-pause" class="size-3.5" aria-hidden="true" />
+                    <span class="sr-only">A test waits at a stop</span>
+                  </span>
                 </button>
               </li>
             </ul>
@@ -472,73 +547,70 @@ const empty = computed(() => runs.value.length === 0 && otherSessions.value.leng
         </template>
       </nav>
 
-      <div class="min-w-0 flex-1 overflow-y-auto px-3 py-2">
+      <div ref="detail" class="min-w-0 flex-1 overflow-y-auto px-3 py-2">
         <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />
-        <article v-if="shownRun" :key="shownRun.key" :data-run="shownRun.key" class="space-y-2">
+        <article
+          v-for="run in drawnRuns"
+          v-show="run.key === shownRun?.key"
+          :key="run.key"
+          :data-run="run.key"
+          :aria-label="localRunTitle(run)"
+          class="space-y-2"
+        >
           <div class="flex flex-wrap items-center gap-2">
-            <p
-              class="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted"
-              :title="localRunDetail(shownRun)"
-            >
-              {{ localRunDetail(shownRun) }}
+            <p class="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted" :title="localRunDetail(run)">
+              {{ localRunDetail(run) }}
             </p>
             <div class="ml-auto flex shrink-0 items-center gap-1">
               <DesktopRunStopButton
-                v-if="shownRun.status === 'running'"
-                :stopping="shownRun.stopRequested"
-                :since="shownRun.stopRequestedAt"
-                @stop="store.stopRun(shownRun)"
-                @force="store.stopRun(shownRun)"
+                v-if="run.status === 'running'"
+                :stopping="run.stopRequested"
+                :since="run.stopRequestedAt"
+                @stop="store.stopRun(run)"
+                @force="store.stopRun(run)"
               />
-              <UTooltip
-                v-else-if="rerunnable(shownRun)"
-                :text="`Run again: ${localRunTitle(shownRun)}, with the same options`"
-              >
+              <UTooltip v-else-if="rerunnable(run)" :text="`Run again: ${localRunTitle(run)}, with the same options`">
                 <UButton
                   size="xs"
                   color="neutral"
                   variant="outline"
                   icon="i-lucide-rotate-ccw"
                   aria-label="Run again"
-                  @click="void store.rerun(shownRun)"
+                  @click="void runAgain(run)"
                 />
               </UTooltip>
-              <UTooltip :text="separateLabel(shownRun)">
+              <UTooltip :text="separateLabel(run)">
                 <UButton
                   size="xs"
                   color="neutral"
                   variant="ghost"
-                  :icon="separate[shownRun.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
-                  :aria-label="separateLabel(shownRun)"
-                  @click="toggleSeparate(shownRun)"
+                  :icon="separate[run.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
+                  :aria-label="separateLabel(run)"
+                  @click="toggleSeparate(run)"
                 />
               </UTooltip>
-              <UDropdownMenu v-if="shownRun.status !== 'running'" :items="moreActions(shownRun)">
+              <UDropdownMenu v-if="run.status !== 'running'" :items="moreActions(run)">
                 <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-ellipsis" aria-label="More actions" />
               </UDropdownMenu>
             </div>
           </div>
-          <p
-            v-if="localRunEnvironmentNote(shownRun)"
-            class="text-xs text-warning"
-            data-testid="local-run-environment-note"
-          >
-            {{ localRunEnvironmentNote(shownRun) }}
+          <p v-if="localRunEnvironmentNote(run)" class="text-xs text-warning" data-testid="local-run-environment-note">
+            {{ localRunEnvironmentNote(run) }}
           </p>
           <DesktopRunHoldSwitch
-            v-if="shownRun.status === 'running' && !editorRunsOf(shownRun).length"
-            :run="shownRun"
-            :described-id="`desktop-run-hold-${shownRun.key}`"
+            v-if="run.status === 'running' && !editorRunsOf(run).length"
+            :run="run"
+            :described-id="`desktop-run-hold-${run.key}`"
             data-shot="desktop-run-hold"
           />
-          <div v-if="shownRun.piwiRunId != null" class="flex flex-wrap items-center gap-2">
+          <div v-if="run.piwiRunId != null" class="flex flex-wrap items-center gap-2">
             <UButton
-              v-if="shownRun.status === 'failed'"
+              v-if="run.status === 'failed'"
               size="xs"
               color="neutral"
               variant="outline"
               icon="i-lucide-external-link"
-              @click="openFailure(shownRun)"
+              @click="openFailure(run)"
             >
               Open the failure
             </UButton>
@@ -547,36 +619,36 @@ const empty = computed(() => runs.value.length === 0 && otherSessions.value.leng
               color="neutral"
               variant="outline"
               icon="i-lucide-external-link"
-              :to="`/test-runs/${shownRun.piwiRunId}`"
+              :to="`/test-runs/${run.piwiRunId}`"
               @click="trayOpen = false"
             >
-              Open run #{{ shownRun.piwiRunId }}
+              Open run #{{ run.piwiRunId }}
             </UButton>
             <UButton
-              v-if="shownRun.sourceRunId != null && shownRun.sourceRunId !== shownRun.piwiRunId"
+              v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"
               size="xs"
               color="neutral"
               variant="outline"
               icon="i-lucide-git-compare"
-              :to="localRunCompareTo(shownRun)!"
-              :title="`What changed between run #${shownRun.sourceRunId}, where these tests come from, and this one`"
+              :to="localRunCompareTo(run)!"
+              :title="`What changed between run #${run.sourceRunId}, where these tests come from, and this one`"
               @click="trayOpen = false"
             >
-              Compare with run #{{ shownRun.sourceRunId }}
+              Compare with run #{{ run.sourceRunId }}
             </UButton>
           </div>
-          <DesktopEditorRunNote v-if="editorRunsOf(shownRun).length" :runs="editorRunsOf(shownRun)" />
+          <DesktopEditorRunNote v-if="editorRunsOf(run).length" :runs="editorRunsOf(run)" />
           <DesktopRunSession
-            v-for="session in sessionsOf(shownRun)"
+            v-for="session in sessionsOf(run)"
             :key="session.ref"
             :session="session"
             @announce="announce"
           />
-          <DesktopLocalRunResults :run="shownRun" @keep-open="keepRunShown(shownRun)" />
-          <p v-if="separate[shownRun.key]" class="text-xs text-muted">The output is in a separate window.</p>
-          <DesktopRunOutputPane v-else :lines="shownRun.lines" />
+          <DesktopLocalRunResults :run="run" @keep-open="keepRunShown(run)" />
+          <p v-if="separate[run.key]" class="text-xs text-muted">The output is in a separate window.</p>
+          <DesktopRunOutputPane v-else :lines="run.lines" />
         </article>
-        <DesktopRunSession v-else-if="shownSession" :session="shownSession" named @announce="announce" />
+        <DesktopRunSession v-if="shownSession" :session="shownSession" named @announce="announce" />
       </div>
     </div>
   </section>
