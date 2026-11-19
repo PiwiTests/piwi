@@ -84,6 +84,9 @@ const WATCH_MS = 5000;
 /** The workers of the fix's CI run: one for each test of the shop's suite, so Watch all shows them side by side. */
 const CI_WORKERS = 3;
 
+/** A running line naming its call as Playwright's API does: `Worker 1 · locator.click internal:role=link[…]`. */
+const RAW_CALL = /^Worker \d+ · [a-z]\w*\.\w+/;
+
 /** The name of the image of the page in VS Code's worker panel ("Piwi: worker N"). */
 const WORKER_IMAGE = "The page of the worker's test";
 
@@ -534,11 +537,21 @@ export const STORY = [
       await gesture.click('vscode', tab.getByRole('button', { name: /^Close/ }));
       await tab.waitFor({ state: 'detached' });
     },
-    async check({ instance, state }) {
+    async check({ instance, state, skip }) {
+      const marks = JSON.stringify(state.runningLines);
       expect(
         state.runningLines.some((mark) => /^Worker 1 · \S/.test(mark)),
-        `the running line names the worker and its call: ${JSON.stringify(state.runningLines)}`,
+        `the running line names the worker and its call: ${marks}`,
       );
+      // An unwatched lane's line names its call as Playwright's API does, its selector raw.
+      if (state.runningLines.some((mark) => RAW_CALL.test(mark))) {
+        skip('#1564', `the running line names the call by its call log's title: ${marks}`);
+      } else {
+        expect(
+          state.runningLines.some((mark) => /^Worker 1 · [A-Z]\w* /.test(mark)),
+          `the running line names the call by its call log's title: ${marks}`,
+        );
+      }
       const problems = watchedProblems(state.watchedRunning);
       expect(!problems.length, `the worker's panel showed the running test: ${problems.join('; ')}`);
       const test = await waitFor(async () => {

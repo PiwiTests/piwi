@@ -55,7 +55,8 @@ export class DeveloperBrowser {
       await page.locator('html[data-ready]').waitFor({ state: 'attached' });
       await page.locator('#editor-address').fill(address);
       await page.locator('#editor-pair').click();
-      await page.locator('#editor-pill', { hasText: 'Paired' }).waitFor({ timeout: 15_000 });
+      // The whole word: a substring would match "Not paired" before the pairing is kept.
+      await page.locator('#editor-pill', { hasText: /^\s*Paired\s*$/ }).waitFor({ timeout: 15_000 });
     } finally {
       await page.close();
     }

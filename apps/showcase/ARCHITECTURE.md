@@ -99,7 +99,12 @@ travel, and scrolls the element into view before its box is read. An agent's too
 
 ## Known bugs
 
-The assertions a check skips, each only once it saw the bug's state. None does: a new skip lists its bug here.
+The assertions a check skips, each only once it saw the bug's state. A new skip lists its bug here.
+
+- [#1564](https://github.com/PiwiTests/piwi/issues/1564), in `watch-running`: the running line of a worker the editor
+  does not watch names its call as Playwright's API does (`Worker 1 · locator.click internal:role=link[…]`), where
+  the call log's title is promised (`Worker 1 · Click getByRole('link', { name: 'Cart' })`). The check takes the line
+  only as naming its worker while it sees that form.
 
 ## The take
 

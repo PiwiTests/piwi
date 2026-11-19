@@ -33,9 +33,9 @@ live view where each person meets it: `watch-running` runs the fixed test headle
 runs, and watches it in the editor's own worker panel to its end; `back-on-the-team` runs the fix's CI on three workers,
 **Watch all** shows each worker's page, and one tile in full names the call its test is in until the run is green. One
 product bug found on the way is skipped where the check meets it, and only there
-([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the healing has no candidate for the
-story's failure (the reporter keeps no element of a click that navigates at once), so **Most likely** does not name
-**Pay now** either. Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the running line of a worker the
+editor does not watch names its call as Playwright's API does, its selector raw
+([#1564](https://github.com/PiwiTests/piwi/issues/1564)). Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
 
 **V2, as built.** `--take virtual` (`npm run showcase:film`) films the story on the same set, and `--cut` (`npm run
 showcase:cut`) renders the cut and Part 6's outputs but the voice: the full cut in MP4 and WebM with and without burned
