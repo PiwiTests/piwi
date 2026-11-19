@@ -806,16 +806,19 @@ The Editor card's **Pair** pairs by code, as the desktop app does (`@piwitests/c
 
 1. Inside the click, before anything is awaited, it reads the grants held (`chrome.permissions.getAll`) and asks for
    the origins of every port an editor of this computer listens on (`editorPairingBases`: VS Code's 7247 to 7251, a
-   JetBrains IDE's built-in server's 63342 to 63361) and of the editor paired now. Each pattern comes from
-   `hostPattern`, so Firefox asks for `http://127.0.0.1/*` once; Chrome names the host once in its prompt.
+   JetBrains IDE's built-in server's 63342 to 63361). Each pattern comes from `hostPattern`, so Firefox asks for
+   `http://127.0.0.1/*` once; Chrome names the host once in its prompt.
 2. `findEditors` (`piwi-client.ts`) asks `GET …/hello` at each, at once, with a short timeout; an answer
    `parseEditorHello` refuses is no editor. With more than one found, the card lists them, one button each.
 3. `startEditorPairing` posts `{ browser, os }` (`describeClient`, nothing else) to `…/pairings`, and the card shows
    the code; `pollEditorPairing` waits through `waitForApproval`, Cancel aborting it. The token the editor hands over
    once allowed is kept with `…/send` beside the routes it asked (`EDITOR_SEND_PATH`), never with an address the
    editor names.
-4. At the end, whatever came of it, the grants it asked for and nothing holds are given back (`releaseGrant`), those
-   held before the click kept; a pairing that replaced another gives back the other's.
+4. While it waits, its grants are held (`holdGrants`), as Connect's and the desktop app's Pair hold theirs: no
+   `releaseGrant` gives one back meanwhile, which Firefox's one loopback pattern for every port needs, and the sites
+   card leaves them out. At the end, whatever came of it, the grants it asked for and nothing holds are given back,
+   those held before the click kept; a pairing that replaced another gives back the other's. **Use this address**
+   ends a Pair in progress.
 
 **Pair with an address**, folded under it, takes the address an editor's **Copy the pairing address for Piwi Picker**
 copies (`parseEditorPairing`), the way to pair a remote window, whose forwarded port Pair does not look at.

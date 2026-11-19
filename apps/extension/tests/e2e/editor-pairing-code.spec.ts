@@ -165,6 +165,65 @@ test.describe('Pair with an editor by code', () => {
     expect(await storedSecret(page, 'editor')).toBeNull();
   });
 
+  test('gives back the ports it asked for and no pairing keeps, never one granted before', async ({
+    context,
+    extensionId,
+  }) => {
+    const page = await context.newPage();
+    await openSettings(page, extensionId);
+    const before = 'http://127.0.0.1:63342/*';
+    await page.evaluate((granted) => {
+      const removed: string[] = [];
+      (window as unknown as { removed: string[] }).removed = removed;
+      chrome.permissions.getAll = (async () => ({ origins: [granted] })) as typeof chrome.permissions.getAll;
+      chrome.permissions.remove = (async ({ origins }: chrome.permissions.Permissions) => {
+        removed.push(...(origins ?? []));
+        return true;
+      }) as typeof chrome.permissions.remove;
+    }, before);
+    const card = page.locator('#editor-card');
+    await pair(page);
+    await expect(card.locator('#editor-code-line code')).toHaveText(CODE);
+    // While the request waits, nothing is given back.
+    expect(await page.evaluate(() => (window as unknown as { removed: string[] }).removed)).toEqual([]);
+    answer = 'allow';
+    await expect(card.locator('#editor-status')).toHaveText(`Paired with the editor at ${BASE}/send.`);
+    await expect.poll(() => page.evaluate(() => (window as unknown as { removed: string[] }).removed.length)).toBe(23);
+    const removed = await page.evaluate(() => (window as unknown as { removed: string[] }).removed);
+    expect(removed).not.toContain(`http://127.0.0.1:${PORT}/*`);
+    expect(removed).not.toContain(before);
+    expect(removed).toContain('http://127.0.0.1:7247/*');
+    expect(removed).toContain('http://127.0.0.1:63361/*');
+  });
+
+  test('lists the editors it finds, and Cancel there asks none', async ({ context, extensionId }) => {
+    const other = createServer((req, res) => {
+      res.setHeader('Access-Control-Allow-Origin', '*');
+      res.setHeader('Content-Type', 'application/json');
+      if (req.url === '/piwi/hello')
+        return res.end(JSON.stringify({ editor: 'vscode', product: 'Cursor', windows: [] }));
+      res.statusCode = 404;
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => other.listen(PORT - 1, '127.0.0.1', resolve));
+    try {
+      const page = await context.newPage();
+      await openSettings(page, extensionId);
+      const card = page.locator('#editor-card');
+      await card.getByRole('button', { name: 'Pair', exact: true }).click();
+      await expect(card.getByText('Pair with which editor?')).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Cursor', exact: true })).toBeVisible();
+      await expect(card.getByRole('button', { name: 'Piwi test editor: shop' })).toBeVisible();
+      await card.locator('#editor-choices').getByRole('button', { name: 'Cancel' }).click();
+      await expect(card.locator('#editor-choices')).toBeHidden();
+      await expect(card.getByRole('button', { name: 'Pair', exact: true })).toBeEnabled();
+      await expect(card.locator('#editor-status')).toHaveText('');
+      expect(starts).toEqual([]);
+    } finally {
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
+  });
+
   test('pairs with an address pasted, from the folded section', async ({ context, extensionId }) => {
     const page = await context.newPage();
     await openSettings(page, extensionId);

@@ -1,9 +1,4 @@
-import {
-  EDITOR_SEND_PATH,
-  editorPairingBaseOf,
-  editorPairingBases,
-  type FoundEditor,
-} from '@piwitests/core/editor-pairing';
+import { EDITOR_SEND_PATH, editorPairingBases, type FoundEditor } from '@piwitests/core/editor-pairing';
 import type { EditorPairing } from '@piwitests/core/editor-send';
 import {
   editorOriginPattern,
@@ -50,7 +45,7 @@ import {
   type DesktopSettings,
 } from '../shared/desktop-settings.js';
 import { normalizePathPrefix, parsePathPrefix } from '@piwitests/core/page-key';
-import { waitForApproval } from '../shared/connect-flow.js';
+import { waitForApproval, type ConnectOutcome, type ConnectPoll } from '../shared/connect-flow.js';
 import {
   CONNECTION_HEALTH_KEY,
   clearConnectionHealth,
@@ -798,14 +793,13 @@ async function connect(instanceUrl: string): Promise<void> {
     setConnecting(true);
     setStatus('');
     tabId = (await chrome.tabs.create({ url: start.verificationUrl })).id;
-    const outcome = await waitForApproval({
-      poll: () => pollConnect(instanceUrl, start.deviceCode),
-      interval: start.interval,
-      expiresIn: start.expiresIn,
-      sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-      now: () => Date.now(),
-      signal: controller.signal,
-    });
+    const instancePattern = originPattern(instanceUrl);
+    const letGo = holdGrants(instancePattern ? [instancePattern] : []);
+    const outcome = await waitForAnswer(
+      () => pollConnect(instanceUrl, start.deviceCode),
+      start,
+      controller.signal,
+    ).finally(letGo);
     if (outcome.status !== 'approved') {
       const messages = {
         denied: t('options_connectDenied'),
@@ -1104,10 +1098,49 @@ async function revokeInstanceHostPermission(instanceUrl: string): Promise<void> 
 }
 
 /**
- * Gives back the grant of `pattern` that the instance or a pairing let go of, unless another of them, a recording or a
- * replay still holds it: in Firefox, a pattern names no port, so every address on 127.0.0.1 shares one.
+ * The grants a connection or a pairing waiting for its answer uses, each with how many use it: none is given back
+ * meanwhile, nor listed under the sites. In Firefox, every address on 127.0.0.1 shares one pattern.
+ */
+const grantsInUse = new Map<string, number>();
+
+/** Holds `patterns` for a flow that waits for an answer; the function returned lets them go. */
+function holdGrants(patterns: readonly string[]): () => void {
+  for (const pattern of patterns) grantsInUse.set(pattern, (grantsInUse.get(pattern) ?? 0) + 1);
+  let held = true;
+  return () => {
+    if (!held) return;
+    held = false;
+    for (const pattern of patterns) {
+      const left = (grantsInUse.get(pattern) ?? 1) - 1;
+      if (left > 0) grantsInUse.set(pattern, left);
+      else grantsInUse.delete(pattern);
+    }
+  };
+}
+
+/** Polls a connection or a pairing every `interval` seconds until it is answered, expires or `signal` aborts it. */
+function waitForAnswer(
+  poll: () => Promise<ConnectPoll>,
+  start: { interval: number; expiresIn: number },
+  signal: AbortSignal,
+): Promise<ConnectOutcome> {
+  return waitForApproval({
+    poll,
+    interval: start.interval,
+    expiresIn: start.expiresIn,
+    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
+    now: () => Date.now(),
+    signal,
+  });
+}
+
+/**
+ * Gives back the grant of `pattern` that the instance or a pairing let go of, unless another of them, a recording, a
+ * replay or a flow waiting for its answer still holds it: in Firefox, a pattern names no port, so every address on
+ * 127.0.0.1 shares one.
  */
 async function releaseGrant(pattern: string): Promise<void> {
+  if (grantsInUse.has(pattern)) return;
   const [grant] = siteGrants([pattern], await grantHolders());
   if (grant && !canRevoke(grant)) return;
   await chrome.permissions.remove({ origins: [pattern] }).catch(() => false);
@@ -1219,8 +1252,6 @@ const editorPairPanel = document.getElementById('editor-pair-panel') as HTMLElem
 const editorCodeLine = document.getElementById('editor-code-line')!;
 const editorManual = document.getElementById('editor-manual') as HTMLDetailsElement;
 let editorPaired = false;
-/** The pairing as the card last read it, whose origin Pair looks at too. */
-let pairedEditor: EditorPairing | null = null;
 /** Set while Pair waits for a choice or for the Allow in the editor; aborting it ends the wait. */
 let pendingEditorPairing: AbortController | null = null;
 
@@ -1230,7 +1261,6 @@ function renderEditorPill(): void {
 
 async function renderEditorPairing(): Promise<void> {
   const pairing = await getEditorPairing();
-  pairedEditor = pairing;
   editorPaired = !!pairing;
   writeStatus(
     editorStatusEl,
@@ -1310,14 +1340,7 @@ async function pairWithEditor(editor: FoundEditor, signal: AbortSignal): Promise
   editorCodeLine.replaceChildren(...tNodes('options_editorPairCode', { code, editor: name }));
   editorPairPanel.hidden = false;
   writeStatus(editorStatusEl, '', '');
-  const outcome = await waitForApproval({
-    poll: () => pollEditorPairing(editor.base, start),
-    interval: start.interval,
-    expiresIn: start.expiresIn,
-    sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-    now: () => Date.now(),
-    signal,
-  });
+  const outcome = await waitForAnswer(() => pollEditorPairing(editor.base, start), start, signal);
   editorPairPanel.hidden = true;
   editorCodeLine.replaceChildren();
   if (outcome.status === 'approved') {
@@ -1341,14 +1364,13 @@ async function pairWithEditor(editor: FoundEditor, signal: AbortSignal): Promise
 }
 
 /**
- * Pair: asks every port an editor of this computer listens on (and the paired editor's) which editor answers there,
- * lets the person choose when more than one does, and asks that one. The origins are asked for first, inside the
- * click; those no pairing keeps are given back after.
+ * Pair: asks every port an editor of this computer listens on which editor answers there, lets the person choose when
+ * more than one does, and asks that one. The origins are asked for first, inside the click, held while it waits, and
+ * those no pairing keeps are given back after.
  */
 editorPairBtn.addEventListener('click', () => {
   editorCheck++;
-  const pairedBase = pairedEditor ? editorPairingBaseOf(pairedEditor.url) : null;
-  const bases = [...editorPairingBases(), ...(pairedBase ? [pairedBase] : [])];
+  const bases = editorPairingBases();
   const patterns = [...new Set(bases.map((base) => hostPattern(new URL(base).origin)))];
   // Read, then asked, before anything is awaited: the permission prompt needs the live click.
   const before = chrome.permissions.getAll().catch((): chrome.permissions.Permissions => ({ origins: [] }));
@@ -1356,6 +1378,7 @@ editorPairBtn.addEventListener('click', () => {
   pendingEditorPairing?.abort();
   const controller = new AbortController();
   pendingEditorPairing = controller;
+  const letGo = holdGrants(patterns);
   editorPairBtn.disabled = true;
   void (async () => {
     const grantedBefore = new Set((await before).origins ?? []);
@@ -1378,11 +1401,16 @@ editorPairBtn.addEventListener('click', () => {
         '',
       );
       const editor = found.length === 1 ? found[0]! : await chooseEditor(found, controller.signal);
-      if (!editor) return;
+      if (!editor) {
+        // Cancelled before any request: the card says how the pairing kept stands.
+        await renderEditorPairing();
+        return;
+      }
       await pairWithEditor(editor, controller.signal);
     } catch (err) {
       writeStatus(editorStatusEl, err instanceof Error ? err.message : String(err), 'error');
     } finally {
+      letGo();
       await releaseEditorGrants(patterns, grantedBefore);
       if (pendingEditorPairing === controller) {
         pendingEditorPairing = null;
@@ -1401,6 +1429,8 @@ for (const id of ['editor-pair-cancel', 'editor-choose-cancel']) {
 /** Pair with an address: the one an editor's Copy the pairing address for Piwi Picker copies, pasted. */
 editorAddressPairBtn.addEventListener('click', () => {
   editorCheck++;
+  // A Pair waiting for an editor's answer ends: the address pasted is the pairing kept.
+  pendingEditorPairing?.abort();
   // On 127.0.0.1 whatever loopback name it was typed with: the origin granted is the one kept.
   const pairing = parseEditorPairing(editorAddressEl.value);
   if (!pairing) {
@@ -1519,14 +1549,10 @@ desktopPairBtn.addEventListener('click', () => {
       desktopCodeLine.replaceChildren(...tNodes('options_desktopPairCode', { code }));
       setDesktopPairing(true);
       setDesktopStatus(start.windowOpen ? '' : t('options_desktopPairNoWindow'));
-      const outcome = await waitForApproval({
-        poll: () => pollDesktopPairing(url, start),
-        interval: start.interval,
-        expiresIn: start.expiresIn,
-        sleep: (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
-        now: () => Date.now(),
-        signal: controller.signal,
-      });
+      const letGo = holdGrants([hostPattern(url)]);
+      const outcome = await waitForAnswer(() => pollDesktopPairing(url, start), start, controller.signal).finally(
+        letGo,
+      );
       setDesktopPairing(false);
       if (outcome.status === 'approved') {
         await keepDesktopPairing(url, outcome.apiKey);
@@ -1641,7 +1667,10 @@ async function renderSiteAccess(): Promise<void> {
     grantHolders(),
   ]);
   if (render !== siteAccessRender) return;
-  const grants = siteGrants(granted.origins ?? [], holders);
+  const grants = siteGrants(
+    (granted.origins ?? []).filter((pattern) => !grantsInUse.has(pattern)),
+    holders,
+  );
   siteAccessEl.replaceChildren();
   if (grants.length === 0) {
     const empty = document.createElement('div');

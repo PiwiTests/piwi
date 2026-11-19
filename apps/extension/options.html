@@ -366,7 +366,11 @@
       /* The column header names each field; the placeholder only says what empty means, in the narrower type. */
       .mapping-row input::placeholder,
       .add-fields input::placeholder {
-        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
       }
       /* A line's remove button: its icon alone, red once hovered. */
       .mapping-row button.remove-mapping {
@@ -667,7 +671,13 @@
           <span data-i18n="options_desktopOffer">
             The desktop app you paired runs Piwi on this computer: use it as your instance, with its address and token.
           </span>
-          <button id="use-desktop" type="button" class="small primary" data-i18n="options_useDesktop" data-icon="monitor">
+          <button
+            id="use-desktop"
+            type="button"
+            class="small primary"
+            data-i18n="options_useDesktop"
+            data-icon="monitor"
+          >
             Use the desktop app as your instance
           </button>
         </div>
@@ -729,7 +739,13 @@
         <div id="sites-body">
           <div class="subhead">
             <h3 data-i18n="options_serverHeading" data-icon="plug">From your Piwi instance</h3>
-            <button id="refresh-server" type="button" class="small" data-i18n="options_serverRefresh" data-icon="refresh">
+            <button
+              id="refresh-server"
+              type="button"
+              class="small"
+              data-i18n="options_serverRefresh"
+              data-icon="refresh"
+            >
               Refresh
             </button>
           </div>
@@ -755,7 +771,9 @@
               Add a line
             </button>
             <span class="spacer"></span>
-            <button id="save" class="primary small" type="button" data-i18n="options_save" data-icon="save">Save</button>
+            <button id="save" class="primary small" type="button" data-i18n="options_save" data-icon="save">
+              Save
+            </button>
           </div>
 
           <details id="add-site" class="panel">
@@ -810,7 +828,13 @@
             </div>
             <div class="hint" id="add-note" hidden></div>
             <div class="row">
-              <button id="add-to-server" type="button" class="small primary" data-i18n="options_addToServer" data-icon="upload">
+              <button
+                id="add-to-server"
+                type="button"
+                class="small primary"
+                data-i18n="options_addToServer"
+                data-icon="upload"
+              >
                 Add to Piwi
               </button>
               <button id="add-locally" type="button" class="small" data-i18n="options_addLocally" data-icon="browser">
@@ -840,7 +864,8 @@
           </button>
         </div>
         <div class="hint" data-i18n="options_desktopUrlHint">
-          Shown in the app’s Settings → Desktop app, under Pair with Piwi Picker. Pair asks the app’s window to allow Piwi Picker.
+          Shown in the app’s Settings → Desktop app, under Pair with Piwi Picker. Pair asks the app’s window to allow
+          Piwi Picker.
         </div>
 
         <div id="desktop-pair-panel" class="panel code-panel" hidden>
@@ -892,8 +917,8 @@
         </div>
         <p class="lead" data-i18n="options_editorHint">
           Paired with VS Code or a JetBrains IDE on this computer that has Piwi’s extension, Piwi Picker sends the
-          locators you pick and the steps you record to its cursor, and shows the runs it starts in the Runs window (Runs,
-          in the popup), where you pause, step and watch them. Nothing leaves this computer.
+          locators you pick and the steps you record to its cursor, and shows the runs it starts in the Runs window
+          (Runs, in the popup), where you pause, step and watch them.
         </p>
         <div class="inline">
           <button id="editor-pair" type="button" class="primary" data-i18n="options_editorPair" data-icon="link">
@@ -937,7 +962,12 @@
           <label for="editor-address" data-i18n="options_editorAddress">Pairing address</label>
           <div class="inline">
             <input id="editor-address" class="mono" type="password" autocomplete="off" spellcheck="false" />
-            <button id="editor-address-pair" type="button" data-i18n="options_editorAddressPair" data-icon="check-circle">
+            <button
+              id="editor-address-pair"
+              type="button"
+              data-i18n="options_editorAddressPair"
+              data-icon="check-circle"
+            >
               Use this address
             </button>
           </div>
@@ -969,8 +999,8 @@
           </h2>
         </div>
         <p class="lead" data-i18n="options_siteAccessHint">
-          A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay
-          follows you across its pages. It asks for each site the first time a tool needs it.
+          A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay follows
+          you across its pages. It asks for each site the first time a tool needs it.
         </p>
         <div id="site-access"></div>
         <div class="card-foot"><div id="site-access-status" role="status"></div></div>

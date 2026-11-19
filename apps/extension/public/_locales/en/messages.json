@@ -1434,7 +1434,7 @@
     "description": "Heading of the settings section that pairs Piwi Picker with an editor on this computer, for Send to editor and the Runs window."
   },
   "options_editorHint": {
-    "message": "Paired with VS Code or a JetBrains IDE on this computer that has Piwi’s extension, Piwi Picker sends the locators you pick and the steps you record to its cursor, and shows the runs it starts in the Runs window (Runs, in the popup), where you pause, step and watch them. Nothing leaves this computer.",
+    "message": "Paired with VS Code or a JetBrains IDE on this computer that has Piwi’s extension, Piwi Picker sends the locators you pick and the steps you record to its cursor, and shows the runs it starts in the Runs window (Runs, in the popup), where you pause, step and watch them.",
     "description": "Settings page, Editor card: what pairing with an editor gives, above the Pair button."
   },
   "options_editorAddress": {
@@ -1476,7 +1476,7 @@
     "description": "Settings page, Editor card: status while Pair asks the ports of this computer which editors listen there."
   },
   "options_editorNoneFound": {
-    "message": "No editor with Piwi’s extension answered on this computer. Open VS Code or a JetBrains IDE with it and click Pair again, or, for a remote window, pair with an address.",
+    "message": "No editor with Piwi’s extension answered on this computer. Open VS Code or a JetBrains IDE with an up-to-date Piwi and click Pair again, or, for a remote window, pair with an address.",
     "description": "Settings page, Editor card: no editor answered Pair. Pair is options_editorPair; pair with an address is options_editorManual."
   },
   "options_editorPairStarting": {
@@ -7644,8 +7644,8 @@
     "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port, or the editor moved to another one. Nothing was sent to it."
   },
   "runs_statusNotEditor": {
-    "message": "The program on the paired port is not your editor’s Piwi extension, or one too old to prove it: Piwi Picker sent it nothing. Open your editor, run “Piwi: Pair with Piwi Picker” again and paste the address it copies in the settings.",
-    "description": "Runs window, when the program on the paired editor’s port answers with no proof and no live page: another program took the port, or an editor too old to prove it holds the pairing’s token. Nothing was sent to it. Piwi: Pair with Piwi Picker is the editor command’s name, in English."
+    "message": "The program on the paired port is not your editor’s Piwi extension, or one too old to prove it: Piwi Picker sent it nothing. Update Piwi in your editor, or pair again from the settings.",
+    "description": "Runs window, when the program on the paired editor’s port answers with no proof and no live page: another program took the port, or an editor too old to prove it holds the pairing’s token. Nothing was sent to it."
   },
   "runs_statusNoHub": {
     "message": "Your editor answers, but none of its windows shares its runs: update Piwi’s extension there.",

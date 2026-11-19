@@ -1174,7 +1174,7 @@
     "message": "Éditeur"
   },
   "options_editorHint": {
-    "message": "Associé à VS Code ou à un IDE JetBrains de cet ordinateur doté de l’extension Piwi, Piwi Picker envoie à son curseur les locators choisis et les étapes enregistrées, et affiche les exécutions qu’il lance dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez. Rien ne quitte cet ordinateur."
+    "message": "Associé à VS Code ou à un IDE JetBrains de cet ordinateur doté de l’extension Piwi, Piwi Picker envoie à son curseur les locators choisis et les étapes enregistrées, et affiche les exécutions qu’il lance dans la fenêtre Exécutions (Exécutions, dans le menu de l’extension), où vous les mettez en pause, les avancez pas à pas et les regardez."
   },
   "options_editorAddress": {
     "message": "Adresse d’association"
@@ -1208,7 +1208,7 @@
     "message": "Recherche des éditeurs de cet ordinateur…"
   },
   "options_editorNoneFound": {
-    "message": "Aucun éditeur doté de l’extension Piwi n’a répondu sur cet ordinateur. Ouvrez VS Code ou un IDE JetBrains avec elle et cliquez de nouveau sur Associer, ou, pour une fenêtre distante, associez une adresse."
+    "message": "Aucun éditeur doté de l’extension Piwi n’a répondu sur cet ordinateur. Ouvrez VS Code ou un IDE JetBrains avec Piwi à jour et cliquez de nouveau sur Associer, ou, pour une fenêtre distante, associez une adresse."
   },
   "options_editorPairStarting": {
     "message": "Demande à $editor$…",
@@ -6460,7 +6460,7 @@
     "message": "Le programme sur le port associé n’est pas cet éditeur : Piwi Picker ne lui a rien envoyé, et redemande chaque minute tant que cette fenêtre est ouverte. Si votre éditeur a changé de port, associez à nouveau Piwi Picker à votre éditeur dans les réglages."
   },
   "runs_statusNotEditor": {
-    "message": "Le programme sur le port associé n’est pas l’extension Piwi de votre éditeur, ou une trop ancienne pour le prouver : Piwi Picker ne lui a rien envoyé. Ouvrez votre éditeur, relancez la commande Piwi « Pair with Piwi Picker » et collez dans les réglages l’adresse copiée."
+    "message": "Le programme sur le port associé n’est pas l’extension Piwi de votre éditeur, ou une trop ancienne pour le prouver : Piwi Picker ne lui a rien envoyé. Mettez à jour Piwi dans votre éditeur, ou associez-le de nouveau depuis les réglages."
   },
   "runs_statusNoHub": {
     "message": "Votre éditeur répond, mais aucune de ses fenêtres ne partage ses exécutions : mettez à jour l’extension Piwi."

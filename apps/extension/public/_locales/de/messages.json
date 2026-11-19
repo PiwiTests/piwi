@@ -1174,7 +1174,7 @@
     "message": "Editor"
   },
   "options_editorHint": {
-    "message": "Mit VS Code oder einer JetBrains-IDE auf diesem Computer gekoppelt, die die Piwi-Erweiterung hat, sendet Piwi Picker die gewählten Locators und die aufgezeichneten Schritte an deren Cursor und zeigt die Läufe, die sie startet, im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und ansehen. Nichts verlässt diesen Computer."
+    "message": "Mit VS Code oder einer JetBrains-IDE auf diesem Computer gekoppelt, die die Piwi-Erweiterung hat, sendet Piwi Picker die gewählten Locators und die aufgezeichneten Schritte an deren Cursor und zeigt die Läufe, die sie startet, im Fenster „Läufe“ (Läufe, im Menü der Erweiterung), wo Sie sie anhalten, schrittweise ausführen und ansehen."
   },
   "options_editorAddress": {
     "message": "Kopplungsadresse"
@@ -1208,7 +1208,7 @@
     "message": "Suche nach den Editoren auf diesem Computer…"
   },
   "options_editorNoneFound": {
-    "message": "Kein Editor mit der Piwi-Erweiterung hat auf diesem Computer geantwortet. Öffnen Sie VS Code oder eine JetBrains-IDE damit und klicken Sie erneut auf Koppeln, oder koppeln Sie ein entferntes Fenster mit einer Adresse."
+    "message": "Kein Editor mit der Piwi-Erweiterung hat auf diesem Computer geantwortet. Öffnen Sie VS Code oder eine JetBrains-IDE mit einem aktuellen Piwi und klicken Sie erneut auf Koppeln, oder koppeln Sie ein entferntes Fenster mit einer Adresse."
   },
   "options_editorPairStarting": {
     "message": "Anfrage an $editor$…",
@@ -6460,7 +6460,7 @@
     "message": "Das Programm am gekoppelten Port ist nicht dieser Editor: Piwi Picker hat ihm nichts gesendet und fragt jede Minute erneut, solange dieses Fenster geöffnet ist. Ist Ihr Editor auf einen anderen Port umgezogen, koppeln Sie Piwi Picker in den Einstellungen erneut mit ihm."
   },
   "runs_statusNotEditor": {
-    "message": "Das Programm am gekoppelten Port ist nicht die Piwi-Erweiterung Ihres Editors oder eine, die zu alt ist, um das zu beweisen: Piwi Picker hat ihm nichts gesendet. Öffnen Sie Ihren Editor, führen Sie erneut „Piwi: Pair with Piwi Picker“ aus und fügen Sie die kopierte Adresse in den Einstellungen ein."
+    "message": "Das Programm am gekoppelten Port ist nicht die Piwi-Erweiterung Ihres Editors oder eine, die zu alt ist, um das zu beweisen: Piwi Picker hat ihm nichts gesendet. Aktualisieren Sie Piwi in Ihrem Editor oder koppeln Sie in den Einstellungen neu."
   },
   "runs_statusNoHub": {
     "message": "Ihr Editor antwortet, aber keines seiner Fenster teilt seine Läufe: Aktualisieren Sie dort die Piwi-Erweiterung."

@@ -891,6 +891,47 @@ export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionC
   }
 }
 
+/** A pairing's start as the desktop app or an editor answers it; null for anything else. */
+function pairingStartOf(body: unknown): Omit<DesktopPairingStart, 'windowOpen'> | null {
+  const b = (body ?? {}) as Partial<DesktopPairingStart>;
+  if (
+    typeof b.id !== 'string' ||
+    !/^[0-9a-f]{16}$/.test(b.id) ||
+    typeof b.secret !== 'string' ||
+    typeof b.code !== 'string'
+  ) {
+    return null;
+  }
+  return {
+    id: b.id,
+    secret: b.secret,
+    code: b.code,
+    interval: typeof b.interval === 'number' && b.interval > 0 ? b.interval : 2,
+    expiresIn: typeof b.expiresIn === 'number' && b.expiresIn > 0 ? b.expiresIn : 300,
+  };
+}
+
+/**
+ * One poll's answer of a pairing, the desktop app's or an editor's, in the shape the connect flow waits on: `approved`
+ * carries the token as `apiKey`. Null for an answer that is none of its statuses.
+ */
+function pairingPollOf(body: unknown): ConnectPoll | null {
+  const b = (body ?? {}) as { status?: unknown; token?: unknown };
+  switch (b.status) {
+    case 'waiting':
+      return { status: 'pending' };
+    case 'denied':
+      return { status: 'denied' };
+    case 'expired':
+    case 'claimed':
+      return { status: 'expired' };
+    case 'allowed':
+      return typeof b.token === 'string' && b.token ? { status: 'approved', apiKey: b.token, user: null } : null;
+    default:
+      return null;
+  }
+}
+
 /** A pairing the desktop app started: the code both sides show, and the secret only this extension polls with. */
 export interface DesktopPairingStart {
   id: string;
@@ -915,23 +956,10 @@ export async function startDesktopPairing(url: string, client: ClientInfo): Prom
   }
   if (res.status === 429) throw new Error(t('options_desktopPairTooMany'));
   if (!res.ok) throw new Error(t('options_desktopPairUnsupported', { url }));
-  const body = (await res.json().catch(() => ({}))) as Partial<DesktopPairingStart>;
-  if (
-    typeof body.id !== 'string' ||
-    !/^[0-9a-f]{16}$/.test(body.id) ||
-    typeof body.secret !== 'string' ||
-    typeof body.code !== 'string'
-  ) {
-    throw new Error(t('options_desktopPairUnsupported', { url }));
-  }
-  return {
-    id: body.id,
-    secret: body.secret,
-    code: body.code,
-    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 2,
-    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 300,
-    windowOpen: body.windowOpen !== false,
-  };
+  const body = (await res.json().catch(() => ({}))) as { windowOpen?: unknown };
+  const start = pairingStartOf(body);
+  if (!start) throw new Error(t('options_desktopPairUnsupported', { url }));
+  return { ...start, windowOpen: body.windowOpen !== false };
 }
 
 /**
@@ -947,21 +975,9 @@ export async function pollDesktopPairing(url: string, pairing: DesktopPairingSta
   // Gone: the app restarted and lost it, as good as expired.
   if (res.status === 404) return { status: 'expired' };
   if (!res.ok) throw new Error(t('common_desktopStatus', { status: res.status }));
-  const body = ((await desktopJson(res)) ?? {}) as { status?: unknown; token?: unknown };
-  switch (body.status) {
-    case 'waiting':
-      return { status: 'pending' };
-    case 'denied':
-      return { status: 'denied' };
-    case 'expired':
-    case 'claimed':
-      return { status: 'expired' };
-    case 'allowed':
-      if (typeof body.token !== 'string' || !body.token) throw new Error(t('options_desktopPairUnsupported', { url }));
-      return { status: 'approved', apiKey: body.token, user: null };
-    default:
-      throw new Error(t('options_desktopPairUnsupported', { url }));
-  }
+  const poll = pairingPollOf(await desktopJson(res));
+  if (!poll) throw new Error(t('options_desktopPairUnsupported', { url }));
+  return poll;
 }
 
 /** How long an editor may take to say what it is, on one of the ports Piwi Picker looks at. */
@@ -1002,22 +1018,9 @@ export async function startEditorPairing(base: string, client: ClientInfo): Prom
   }
   if (res.status === 429) throw new Error(t('options_editorPairTooMany'));
   if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
-  const body = (await res.json().catch(() => ({}))) as Partial<EditorPairingStart>;
-  if (
-    typeof body.id !== 'string' ||
-    !/^[0-9a-f]{16}$/.test(body.id) ||
-    typeof body.secret !== 'string' ||
-    typeof body.code !== 'string'
-  ) {
-    throw new Error(t('options_editorPairUnsupported', { url: base }));
-  }
-  return {
-    id: body.id,
-    secret: body.secret,
-    code: body.code,
-    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 2,
-    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 300,
-  };
+  const start = pairingStartOf(await res.json().catch(() => null));
+  if (!start) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  return start;
 }
 
 /**
@@ -1032,22 +1035,9 @@ export async function pollEditorPairing(base: string, pairing: EditorPairingStar
   // Gone: the editor restarted and lost it, as good as expired.
   if (res.status === 404) return { status: 'expired' };
   if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
-  const body = ((await res.json().catch(() => null)) ?? {}) as { status?: unknown; token?: unknown };
-  switch (body.status) {
-    case 'waiting':
-      return { status: 'pending' };
-    case 'denied':
-      return { status: 'denied' };
-    case 'expired':
-    case 'claimed':
-      return { status: 'expired' };
-    case 'allowed':
-      if (typeof body.token !== 'string' || !body.token)
-        throw new Error(t('options_editorPairUnsupported', { url: base }));
-      return { status: 'approved', apiKey: body.token, user: null };
-    default:
-      throw new Error(t('options_editorPairUnsupported', { url: base }));
-  }
+  const poll = pairingPollOf(await res.json().catch(() => null));
+  if (!poll) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  return poll;
 }
 
 export interface ReproRequestSend {

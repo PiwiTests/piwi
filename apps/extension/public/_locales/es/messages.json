@@ -1174,7 +1174,7 @@
     "message": "Editor"
   },
   "options_editorHint": {
-    "message": "Emparejado con VS Code o un IDE de JetBrains de este equipo que tenga la extensión de Piwi, Piwi Picker envía a su cursor los locators que eliges y los pasos que grabas, y muestra las ejecuciones que inicia en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas. Nada sale de este equipo."
+    "message": "Emparejado con VS Code o un IDE de JetBrains de este equipo que tenga la extensión de Piwi, Piwi Picker envía a su cursor los locators que eliges y los pasos que grabas, y muestra las ejecuciones que inicia en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión), donde puedes pausarlas, avanzarlas paso a paso y verlas."
   },
   "options_editorAddress": {
     "message": "Dirección de emparejamiento"
@@ -1208,7 +1208,7 @@
     "message": "Buscando los editores de este equipo…"
   },
   "options_editorNoneFound": {
-    "message": "Ningún editor con la extensión de Piwi respondió en este equipo. Abre VS Code o un IDE de JetBrains con ella y vuelve a hacer clic en Emparejar, o, para una ventana remota, empareja con una dirección."
+    "message": "Ningún editor con la extensión de Piwi respondió en este equipo. Abre VS Code o un IDE de JetBrains con Piwi actualizado y vuelve a hacer clic en Emparejar, o, para una ventana remota, empareja con una dirección."
   },
   "options_editorPairStarting": {
     "message": "Preguntando a $editor$…",
@@ -6460,7 +6460,7 @@
     "message": "El programa del puerto emparejado no es este editor: Piwi Picker no le envió nada y vuelve a preguntar cada minuto mientras esta ventana esté abierta. Si tu editor pasó a otro puerto, vuelve a emparejar Piwi Picker con él en la configuración."
   },
   "runs_statusNotEditor": {
-    "message": "El programa del puerto emparejado no es la extensión de Piwi de tu editor, o es una demasiado antigua para demostrarlo: Piwi Picker no le envió nada. Abre tu editor, vuelve a ejecutar «Piwi: Pair with Piwi Picker» y pega en la configuración la dirección que copia."
+    "message": "El programa del puerto emparejado no es la extensión de Piwi de tu editor, o es una demasiado antigua para demostrarlo: Piwi Picker no le envió nada. Actualiza Piwi en tu editor, o vuelve a emparejar desde la configuración."
   },
   "runs_statusNoHub": {
     "message": "Tu editor responde, pero ninguna de sus ventanas comparte sus ejecuciones: actualiza allí la extensión de Piwi."

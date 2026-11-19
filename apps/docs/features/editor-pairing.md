@@ -18,13 +18,15 @@ through one pairing. The desktop app has a pairing of its own, which the Runs wi
    computer listen on which editor answers there, VS Code on 7247 to 7251 and a JetBrains IDE's built-in server on
    63342 to 63361, and lists them when it finds more than one. The browser asks once for access to `127.0.0.1`;
    Piwi Picker gives back the ports it did not pair with.
-2. The editor shows the request: Piwi Picker in your browser asks to pair, with a code. Check that Piwi Picker shows
-   the same code, then click **Allow** in the editor's notification or in its pairing panel. Piwi Picker then has the
-   pairing's token, and the address it asked.
+2. The editor shows the request: Piwi Picker in your browser asks to pair, with a code. Check that you just clicked
+   Pair and that Piwi Picker shows the same code, then click **Allow** in the editor's notification or in its pairing
+   panel; deny a request you did not make. Piwi Picker then has the pairing's token, and the address it asked.
 
 **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE, also in the status bar
-item's menu) opens the pairing panel, and makes VS Code listen where Piwi Picker looks. A request nobody answers
-expires after five minutes, and an editor holds three at once at most.
+item's menu) opens the pairing panel. A request nobody answers expires after five minutes; a new Pair takes the place
+of the one before, an extension denied waits a minute before it asks again, and an editor holds three at once at
+most. VS Code windows listen where Piwi Picker looks once Piwi starts; a second window of the same editor leaves the
+port to the first.
 
 Without a code, the editor's **Piwi: Copy the pairing address for Piwi Picker** copies `http://127.0.0.1:<port>/…#<token>`,
 which Piwi Picker's **Pair with an address** takes. That is the way for a remote window, which Piwi Picker does not
@@ -43,7 +45,8 @@ The editor shows the pairing in a panel of its own: the **Piwi Picker** view of 
 the runs while its Runs window is open), and the port it reaches the editor on. Not paired, it says how to pair.
 
 **Unpair** there (**Piwi: Unpair Piwi Picker**) gives the editor a new token, after asking: Piwi Picker, and any run
-started before, reach it again only once paired again. In VS Code, a window that kept the port of an earlier pairing
+started before, reach it again only once paired again. The connections to the runs Piwi Picker holds already last
+until the editor service restarts. In VS Code, a window that kept the port of an earlier pairing
 outside 7247 to 7251 moves to one of them.
 
 ## What the pairing reaches
