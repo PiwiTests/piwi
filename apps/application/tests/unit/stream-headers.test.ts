@@ -50,12 +50,13 @@ describe('the headers of a streamed response', () => {
   });
 
   test('an event stream returned as a response (live runs, notifications, the desktop hubs) carries them', () => {
-    const response = createSSEEndpoint(nodeEvent(), () => undefined);
+    const event = nodeEvent();
+    const response = createSSEEndpoint(event, () => undefined);
 
     expect(response.headers.get('content-type')).toBe('text/event-stream');
     expect(response.headers.get('cache-control')).toBe(UNBUFFERED['Cache-Control']);
     expect(response.headers.get('x-accel-buffering')).toBe('no');
-    void response.body?.cancel();
+    event.node.req.emit('close');
   });
 
   test("the assistant's answer stream carries them", () => {
@@ -69,18 +70,24 @@ function sources(dir: string): string[] {
   return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
     const path = join(dir, entry.name);
     if (entry.isDirectory()) return sources(path);
-    return /\.(ts|vue)$/.test(entry.name) ? [path] : [];
+    return /\.(ts|vue|mjs|js)$/.test(entry.name) ? [path] : [];
   });
 }
 
 /** A Content-Type set by hand to a type read as it arrives, as a header object's key or `setResponseHeader`'s. */
 const STREAM_TYPE_BY_HAND =
-  /['"]Content-Type['"]\s*[:,]\s*(?:['"](?:text\/event-stream|application\/vnd\.piwi\.live-stream)|LIVE_STREAM_TYPE)/i;
+  /['"]Content-Type['"]\s*[:,]\s*(?:['"`](?:text\/event-stream|application\/vnd\.piwi\.live-stream)|LIVE_STREAM_TYPE)/i;
+/** A proxy header set by hand, which would override or stand in for `streamHeaders`'. */
+const PROXY_HEADER_BY_HAND = /['"`]X-Accel-Buffering['"`]/i;
 
 test('every streamed response takes its headers from streamHeaders', () => {
   const byHand = ['server', 'shared', join('app', 'demo')]
     .flatMap((dir) => sources(join(root, dir)))
-    .filter((path) => STREAM_TYPE_BY_HAND.test(readFileSync(path, 'utf8')))
+    .filter((path) => !path.endsWith(join('shared', 'stream-headers.ts')))
+    .filter((path) => {
+      const text = readFileSync(path, 'utf8');
+      return STREAM_TYPE_BY_HAND.test(text) || PROXY_HEADER_BY_HAND.test(text);
+    })
     .map((path) => relative(root, path));
 
   expect(byHand, 'set these headers with streamHeaders (#shared/stream-headers)').toEqual([]);
