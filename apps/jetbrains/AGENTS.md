@@ -120,7 +120,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The Send to editor endpoint proves it holds the token on every answer to a challenge, and `GET /api/piwi/live`
   lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`,
   `/api/piwi/live`, `/api/piwi/hello` and `/api/piwi/pairings` alone, and leaves the platform's `isAccessible` its check
-  of `Host`. The token goes to Piwi Picker by code only from the person's Allow (`PiwiPickerPairing.allow`). Checked by `PiwiPluginTest`
+  of `Host`. The token goes to Piwi Picker by code only once the person types the code it shows (`PiwiPickerPairing.allow`), with its proof. Checked by `PiwiPluginTest`
   (`testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint`,
   `testPiwiPickerListsTheLiveHubsThroughThePairing`). ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **The runs' MCP server's token lives in the `PasswordSafe`, one per project, and a stop's browser is shared only

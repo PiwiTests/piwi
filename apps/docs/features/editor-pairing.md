@@ -18,9 +18,11 @@ through one pairing. The desktop app has a pairing of its own, which the Runs wi
    computer listen on which editor answers there, VS Code on 7247 to 7251 and a JetBrains IDE's built-in server on
    63342 to 63361, and lists them when it finds more than one. The browser asks once for access to `127.0.0.1`;
    Piwi Picker gives back the ports it did not pair with.
-2. The editor shows the request: Piwi Picker in your browser asks to pair, with a code. Check that you just clicked
-   Pair and that Piwi Picker shows the same code, then click **Allow** in the editor's notification or in its pairing
-   panel; deny a request you did not make. Piwi Picker then has the pairing's token, and the address it asked.
+2. Piwi Picker shows a code, and the editor shows the request: Piwi Picker in your browser asks to pair. Click **Type
+   the code…** in the editor's notification or in its pairing panel and type the code Piwi Picker shows; deny a
+   request you did not make. The editor hands over the pairing's token with a proof of the code typed, and Piwi
+   Picker keeps it only when the proof is of its own code: a program that answers on an editor's port never sees the
+   code, so it cannot pair itself.
 
 **Piwi: Pair with Piwi Picker** (**Tools → Piwi → Pair with Piwi Picker** in a JetBrains IDE, also in the status bar
 item's menu) opens the pairing panel. A request nobody answers expires after five minutes; a new Pair takes the place
@@ -40,8 +42,8 @@ running as your user are not kept out.
 ## The pairing panel
 
 The editor shows the pairing in a panel of its own: the **Piwi Picker** view of the Piwi panel in VS Code, the
-**Piwi Picker** tab of the Piwi tool window in a JetBrains IDE. It lists a request that waits, with **Allow** and
-**Deny**; once paired, the browser it is paired with and since when, when Piwi Picker was last heard from (it asks for
+**Piwi Picker** tab of the Piwi tool window in a JetBrains IDE. It lists a request that waits, with **Type the
+code…** and **Deny**; once paired, the browser it is paired with and since when, when Piwi Picker was last heard from (it asks for
 the runs while its Runs window is open), and the port it reaches the editor on. Not paired, it says how to pair.
 
 **Unpair** there (**Piwi: Unpair Piwi Picker**) gives the editor a new token, after asking: Piwi Picker, and any run

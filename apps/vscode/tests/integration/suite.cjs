@@ -277,14 +277,21 @@ const tests = {
     });
     assert.equal(started.status, 201);
     const { id, secret, code } = await started.json();
-    assert.match(code, /^[A-Z]{4}-[A-Z]{4}$/);
+    // The editor makes no code: Piwi Picker shows one of its own, which the person types here.
+    assert.equal(code, undefined);
     const poll = async () =>
       (await fetch(`${base}/pairings/${id}`, { headers: { Origin: origin, 'x-pairing-secret': secret } })).json();
     assert.deepEqual(await poll(), { status: 'waiting' });
-    // The view's Allow on the request's row.
-    await vscode.commands.executeCommand('piwi.allowPickerPairing', { requestId: id });
+    // The view's Allow on the request's row, with the code typed.
+    await vscode.commands.executeCommand('piwi.allowPickerPairing', { requestId: id, code: 'bcdf ghjk' });
     const answer = await poll();
     assert.equal(answer.status, 'allowed');
+    // The proof Piwi Picker checks against its own code.
+    const proof = require('node:crypto')
+      .createHmac('sha256', 'BCDFGHJK')
+      .update(`piwi-editor-pairing:${id}:${answer.token}`)
+      .digest('hex');
+    assert.equal(answer.proof, proof);
     // The token sends to the address Piwi Picker asked: `…/send` beside `…/pairings`.
     const refused = await fetch(`${base}/send`, {
       method: 'POST',

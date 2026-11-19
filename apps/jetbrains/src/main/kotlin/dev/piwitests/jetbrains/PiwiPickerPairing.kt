@@ -13,6 +13,8 @@ import com.intellij.openapi.components.Service
 import com.intellij.openapi.components.service
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.project.ProjectManager
+import com.intellij.openapi.ui.InputValidator
+import com.intellij.openapi.ui.Messages
 import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.wm.IdeFocusManager
 import com.intellij.openapi.wm.ToolWindowManager
@@ -95,7 +97,7 @@ object PiwiPickerPairing {
     }
 
     /**
-     * Asks about a request in the project in use: a notification with Allow and Deny, the Piwi Picker tab shown beside,
+     * Asks about a request in the project in use: a notification with Type the code… and Deny, the Piwi Picker tab beside,
      * and the IDE's icon asking for attention, the person having just clicked Pair in the browser. With no project
      * open, or the plugin's services gone, nobody is asked yet. On the event thread.
      */
@@ -105,8 +107,8 @@ object PiwiPickerPairing {
                 ?: ProjectManager.getInstance().openProjects.firstOrNull()
             )?.takeIf { !it.isDisposed && it.getServiceIfCreated(PiwiProjectService::class.java) != null }
             ?: return
-        val notification = PiwiNotifier.create(PiwiNotice.REQUEST, Glue.escapeHtml(Glue.pairingPrompt(request.client, request.code)))
-            .addAction(NotificationAction.createSimpleExpiring("Allow") { allow(project, request.id) })
+        val notification = PiwiNotifier.create(PiwiNotice.REQUEST, Glue.escapeHtml(Glue.pairingPrompt(request.client)))
+            .addAction(NotificationAction.createSimpleExpiring(TYPE_THE_CODE) { allow(project, request.id) })
             .addAction(NotificationAction.createSimpleExpiring("Deny") { requests.answer(request.id, null) })
         asked[request.id] = notification
         notification.notify(project)
@@ -114,30 +116,62 @@ object PiwiPickerPairing {
         com.intellij.ui.AppIcon.getInstance().requestAttention(project, false)
     }
 
-    /** Allow: the token goes to the Piwi Picker that asked, on its next poll; the pairing is kept. */
-    fun allow(project: Project, id: String) {
+    /** The button that asks for the code Piwi Picker shows. */
+    const val TYPE_THE_CODE = "Type the code…"
+
+    /**
+     * Allow: the person types the code Piwi Picker shows (`typed`, else asked in a dialog on the event thread), and the
+     * token goes to the Piwi Picker that asked, on its next poll, with the proof of that code; the pairing is kept. Piwi
+     * Picker keeps it only when the code is its own.
+     */
+    fun allow(project: Project, id: String, typed: String? = null) {
+        val request = requests.waiting().firstOrNull { it.id == id }
+        if (request == null) return gone(project)
+        val code = typed ?: Messages.showInputDialog(
+            project,
+            "The code Piwi Picker shows, under Editor in its settings:",
+            "Pair Piwi Picker in ${request.client}",
+            null,
+            "",
+            object : InputValidator {
+                override fun checkInput(inputString: String?) = Glue.normalizeEditorPairingCode(inputString.orEmpty()) != null
+                override fun canClose(inputString: String?) = checkInput(inputString)
+            },
+        ) ?: return
         ApplicationManager.getApplication().executeOnPooledThread {
-            val request = requests.waiting().firstOrNull { it.id == id }
-            val token = request?.let { PiwiSendToken.ensure() }
-            if (request == null || token == null || !requests.answer(id, token)) {
-                ApplicationManager.getApplication().invokeLater {
-                    if (!project.isDisposed) {
-                        PiwiCommands.notify(
-                            project,
-                            "This pairing request no longer waits. Click Pair in Piwi Picker's settings again.",
-                            NotificationType.WARNING,
-                        )
+            when (Glue.allowEditorPairing(requests, id, PiwiSendToken.ensure(), code)) {
+                Glue.Allowed.NOT_A_CODE -> ApplicationManager.getApplication().invokeLater {
+                    if (!project.isDisposed) PiwiCommands.notify(project, Glue.NOT_A_CODE, NotificationType.WARNING)
+                }
+                Glue.Allowed.GONE -> gone(project)
+                Glue.Allowed.ALLOWED -> {
+                    val properties = PropertiesComponent.getInstance()
+                    properties.setValue(PAIRED_AT, System.currentTimeMillis().toString())
+                    properties.setValue(PAIRED_CLIENT, request.client)
+                    PiwiGetStarted.done("pair")
+                    changed()
+                    ApplicationManager.getApplication().invokeLater {
+                        if (!project.isDisposed) {
+                            PiwiNotifier.confirm(
+                                project,
+                                "The pairing went to Piwi Picker in ${request.client}. It keeps it if the code you typed is the one it shows.",
+                            )
+                        }
                     }
                 }
-                return@executeOnPooledThread
             }
-            val properties = PropertiesComponent.getInstance()
-            properties.setValue(PAIRED_AT, System.currentTimeMillis().toString())
-            properties.setValue(PAIRED_CLIENT, request.client)
-            PiwiGetStarted.done("pair")
-            changed()
-            ApplicationManager.getApplication().invokeLater {
-                if (!project.isDisposed) PiwiNotifier.confirm(project, "Paired with Piwi Picker in ${request.client}.")
+        }
+    }
+
+    /** Says the request waits no more. */
+    private fun gone(project: Project) {
+        ApplicationManager.getApplication().invokeLater {
+            if (!project.isDisposed) {
+                PiwiCommands.notify(
+                    project,
+                    "This pairing request no longer waits. Click Pair in Piwi Picker's settings again.",
+                    NotificationType.WARNING,
+                )
             }
         }
     }
@@ -155,9 +189,10 @@ object PiwiPickerPairing {
 }
 
 /**
- * The **Piwi Picker** tab of the Piwi tool window: a request Piwi Picker's Pair made, with Allow and Deny; once paired,
- * since when, when Piwi Picker was last heard from and the port it reaches this IDE on; not paired, how to pair. Its
- * words are `Glue.pickerRows`, as the VS Code extension's Piwi Picker view says them. **Pair with Piwi Picker** opens it.
+ * The **Piwi Picker** tab of the Piwi tool window: a request Piwi Picker's Pair made, with Type the code… and Deny;
+ * once paired, since when, when Piwi Picker was last heard from and the port it reaches this IDE on; not paired, how to
+ * pair. Its words are `Glue.pickerRows`, as the VS Code extension's Piwi Picker view says them. **Pair with Piwi
+ * Picker** opens it.
  */
 @Service(Service.Level.PROJECT)
 class PiwiPickerTab(private val project: Project) : Disposable {
@@ -223,9 +258,9 @@ class PiwiPickerTab(private val project: Project) : Disposable {
             row { comment(Glue.PICKER_INTRO) }
             for (request in state.waiting) {
                 group("${request.client} asks to pair") {
-                    row { text(Glue.escapeHtml(Glue.pairingPrompt(request.client, request.code)), maxLineLength = 90) }
+                    row { text(Glue.escapeHtml(Glue.pairingPrompt(request.client)), maxLineLength = 90) }
                     row {
-                        button("Allow") { PiwiPickerPairing.allow(project, request.id) }
+                        button(PiwiPickerPairing.TYPE_THE_CODE) { PiwiPickerPairing.allow(project, request.id) }
                         button("Deny") { PiwiPickerPairing.requests.answer(request.id, null) }
                     }
                 }

@@ -8,8 +8,9 @@
 
 To pair:
 
-1. In Piwi Picker's settings, under **Editor**, click **Pair**. It finds the editors open on this computer.
-2. Here, **Allow** the request once it shows the code Piwi Picker shows.
+1. In Piwi Picker's settings, under **Editor**, click **Pair**. It finds the editors open on this computer, and shows
+   a code.
+2. Here, click **Type the code…** in the request's notification, or in the **Piwi Picker** view, and type that code.
 
 The **Piwi Picker** view of the Piwi panel shows the pairing, when Piwi Picker was last heard from, and **Unpair**. In
 a remote window, or when Piwi Picker does not find this editor, run **Piwi: Copy the pairing address for Piwi Picker**

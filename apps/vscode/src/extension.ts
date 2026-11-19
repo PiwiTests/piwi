@@ -262,11 +262,18 @@ import {
   type SendListener,
   type SendResult,
 } from './send-listener';
-import { EditorPairingRequests, VSCODE_PAIRING_PORTS, editorHello } from '@piwitests/core/editor-pairing';
+import {
+  EditorPairingRequests,
+  VSCODE_PAIRING_PORTS,
+  allowEditorPairing,
+  editorHello,
+  normalizeEditorPairingCode,
+} from '@piwitests/core/editor-pairing';
 import {
   PICKER_HEARD_KEY,
   PICKER_PAIRED_KEY,
   heardAgain,
+  NOT_A_CODE,
   pairingPrompt,
   readPickerPaired,
   type PickerPaired,
@@ -1246,6 +1253,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
   };
   // Piwi Picker's pairing by code: the requests this window's listener takes, answered in a notification or the view.
+  const TYPE_THE_CODE = 'Type the code…';
   let pickerView: PickerView | null = null;
   /** The pairing port another window of this editor holds, which answers Piwi Picker while this one listens on none. */
   let heldPort: number | null = null;
@@ -1257,8 +1265,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         if (prompted.has(request.id)) continue;
         prompted.add(request.id);
         void pickerView?.reveal();
-        void vscode.window.showInformationMessage(pairingPrompt(request), 'Allow', 'Deny').then((choice) => {
-          if (choice === 'Allow') void allowPickerPairing(request.id);
+        void vscode.window.showInformationMessage(pairingPrompt(request), TYPE_THE_CODE, 'Deny').then((choice) => {
+          if (choice === TYPE_THE_CODE) void allowPickerPairing(request.id);
           else if (choice === 'Deny') denyPickerPairing(request.id);
         });
       }
@@ -1372,27 +1380,42 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     await context.globalState.update(PICKER_PAIRED_KEY, { at: Date.now(), client } satisfies PickerPaired);
     pickerView?.changed();
   };
-  /** Allow: the token goes to the Piwi Picker that asked, on its next poll, and the port it reached is saved. */
-  const allowPickerPairing = async (id: string) => {
+  const gone = () =>
+    void vscode.window.showWarningMessage(
+      "Piwi: this pairing request no longer waits. Click Pair in Piwi Picker's settings again.",
+    );
+  /**
+   * Allow: the person types the code Piwi Picker shows (`typed`, else asked in an input box), and the token goes to
+   * the Piwi Picker that asked, on its next poll, with the proof of that code; the port it reached is saved. Piwi
+   * Picker keeps the pairing only when the code is its own.
+   */
+  const allowPickerPairing = async (id: string, typed?: string) => {
     const request = pickerRequests.waiting().find((r) => r.id === id);
-    if (!request) {
-      void vscode.window.showWarningMessage(
-        "Piwi: this pairing request no longer waits. Click Pair in Piwi Picker's settings again.",
-      );
-      return;
-    }
+    if (!request) return gone();
+    const code =
+      typed ??
+      (await vscode.window.showInputBox({
+        title: `Pair Piwi Picker in ${request.client}`,
+        prompt: 'The code Piwi Picker shows, under Editor in its settings',
+        placeHolder: 'BCDF-GHJK',
+        ignoreFocusOut: true,
+        validateInput: (value) => (normalizeEditorPairingCode(value) ? null : NOT_A_CODE),
+      }));
+    if (code === undefined) return;
     // Another window may have saved another port since: the one Piwi Picker reached is the one saved.
     sendStore.port = context.globalState.get<number>(SEND_PORT);
     const { token } = await pairing(true);
-    if (!pickerRequests.answer(id, token)) {
-      void vscode.window.showWarningMessage(
-        "Piwi: this pairing request expired meanwhile. Click Pair in Piwi Picker's settings again.",
-      );
+    const answered = await allowEditorPairing(pickerRequests, id, token, code);
+    if (answered === 'not-a-code') {
+      void vscode.window.showWarningMessage(`Piwi: ${NOT_A_CODE}`);
       return;
     }
+    if (answered === 'gone') return gone();
     await keepPickerPaired(request.client);
     announceRunPairing();
-    void vscode.window.showInformationMessage(`Piwi: paired with Piwi Picker in ${request.client}.`);
+    void vscode.window.showInformationMessage(
+      `Piwi: the pairing went to Piwi Picker in ${request.client}. It keeps it if the code you typed is the one it shows.`,
+    );
   };
   const denyPickerPairing = (id: string) => {
     pickerRequests.answer(id, null);
@@ -2343,7 +2366,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       void vscode.window
         .showInformationMessage(
           found
-            ? "Piwi: in Piwi Picker's settings, under Editor, click Pair, then allow the request here."
+            ? "Piwi: in Piwi Picker's settings, under Editor, click Pair, then type here the code it shows."
             : "Piwi: Piwi Picker does not find this window on its own. Copy the pairing address, and paste it in Piwi Picker's settings under Editor, Pair with an address.",
           copy,
         )
@@ -2359,7 +2382,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     vscode.commands.registerCommand('piwi.allowPickerPairing', async (arg?: unknown) => {
       const id = requestIdOf(arg) ?? pickerRequests.waiting()[0]?.id;
-      if (id) await allowPickerPairing(id);
+      const code = (arg as { code?: unknown } | undefined)?.code;
+      if (id) await allowPickerPairing(id, typeof code === 'string' ? code : undefined);
     }),
     vscode.commands.registerCommand('piwi.denyPickerPairing', (arg?: unknown) => {
       const id = requestIdOf(arg) ?? pickerRequests.waiting()[0]?.id;

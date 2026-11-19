@@ -842,12 +842,14 @@ state (`piwi.sendPort`), with the token from `SecretStorage` (`piwi.sendToken`).
   program or another user holds is passed. The window that holds it shows in the view (`heldPort`).
 - **Pairing by code.** `GET /piwi/hello` answers without a token which editor listens (`editorHello`: VS Code's
   `appName` and the window's folders); `POST /piwi/pairings` and `GET /piwi/pairings/<id>` are
-  `EditorPairingRequests` of `@piwitests/core/editor-pairing`. A new request shows a notification with **Allow** and
-  **Deny** and reveals the **Piwi Picker** view; Allow (`allowPickerPairing`) reads the saved port again, saves the
-  one Piwi Picker reached (`pairing(true)`) and hands the token to the request, which Piwi Picker's next poll takes
-  once.
+  `EditorPairingRequests` of `@piwitests/core/editor-pairing`. A new request shows a notification with **Type the
+  code…** and **Deny** and reveals the **Piwi Picker** view; `allowPickerPairing` asks in an input box for the code
+  Piwi Picker shows (the command's `code` argument stands in for it), reads the saved port again, saves the one Piwi
+  Picker reached (`pairing(true)`) and hands the token to the request with the proof of that code
+  (`allowEditorPairing`), which Piwi Picker's next poll takes once. The editor never makes nor sees Piwi Picker's
+  code but as typed, and cannot tell a wrong one: Piwi Picker refuses its proof.
 - **The Piwi Picker view** (`piwi.picker`, `src/picker-view.ts`, its rows from `pickerRows` in
-  `src/picker-pairing.ts`): the requests waiting with inline Allow and Deny, the pairing kept, when Piwi Picker was
+  `src/picker-pairing.ts`): the requests waiting with inline **Allow Piwi Picker to pair…** (the input box) and Deny, the pairing kept, when Piwi Picker was
   last heard from (an authorized request from an extension's `Origin`, written once a minute at most), and the port.
   Not paired, its welcome (`piwi.pickerView == unpaired`) says how to pair; **Unpair** shows once paired
   (`piwi.pickerPaired`). **Unpair** (`piwi.unpairPicker`) asks, then mints a new token, makes the requests allowed and

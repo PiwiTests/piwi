@@ -14,7 +14,6 @@ const NOW = Date.parse('2026-11-19T15:00:00Z');
 const none: PickerViewState = { waiting: [], paired: null, heard: null, port: 7247, heldPort: null };
 const request = {
   id: '0123456789abcdef',
-  code: 'BCDF-GHJK',
   client: 'Chrome on macOS',
   createdAt: NOW - 10_000,
   expiresAt: NOW + 290_000,
@@ -34,7 +33,7 @@ describe('the Piwi Picker view', () => {
     expect(rows[0]).toEqual(
       expect.objectContaining({
         label: 'Chrome on macOS asks to pair',
-        description: 'code BCDF-GHJK',
+        description: 'type the code Piwi Picker shows',
         contextValue: 'piwi.pairingRequest',
         requestId: request.id,
       }),
@@ -97,8 +96,8 @@ describe('what is kept', () => {
   });
 });
 
-test('the notification names the browser and the code to compare', () => {
+test('the notification names the browser, and asks for the code Piwi Picker shows', () => {
   expect(pairingPrompt(request)).toBe(
-    'Piwi Picker in Chrome on macOS asks to pair with this editor, to send it the locators you pick and follow its runs. Allow it only if you just clicked Pair in Piwi Picker and it shows the code BCDF-GHJK.',
+    'Piwi Picker in Chrome on macOS asks to pair with this editor, to send it the locators you pick and follow its runs. If you just clicked Pair in Piwi Picker, type the code it shows.',
   );
 });

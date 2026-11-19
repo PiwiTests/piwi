@@ -2832,7 +2832,7 @@ class GlueTest {
     private val chrome = "chrome-extension://" + "a".repeat(32)
 
     @Test
-    fun `hands Piwi Picker the token once, on the first poll after Allow, as the core's pairing requests do`() {
+    fun `hands Piwi Picker the token with the proof of the code typed, once, as the core's pairing requests do`() {
         var now = 1_000_000L
         var changes = 0
         val requests = Glue.EditorPairingRequests(now = { now }, changed = { changes++ })
@@ -2841,16 +2841,22 @@ class GlueTest {
         val id = started.body["id"] as String
         val secret = started.body["secret"] as String
         assertTrue(Regex("^[0-9a-f]{16}$").matches(id))
-        assertTrue(Regex("^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$").matches(started.body["code"] as String))
+        // The IDE makes no code: Piwi Picker shows one of its own, which the person types here.
+        assertFalse(started.body.containsKey("code"))
         assertEquals(2, started.body["interval"])
         assertEquals(300L, started.body["expiresIn"])
         assertEquals(listOf("Chrome on macOS"), requests.waiting().map { it.client })
         assertEquals(mapOf("status" to "waiting"), requests.poll(id, secret).body)
-        assertTrue(requests.answer(id, "the-token-1234567890"))
+        assertEquals(Glue.Allowed.NOT_A_CODE, Glue.allowEditorPairing(requests, id, "the-token-1234567890", "hello"))
+        assertEquals(1, requests.waiting().size)
+        assertEquals(Glue.Allowed.ALLOWED, Glue.allowEditorPairing(requests, id, "the-token-1234567890", "bcdf ghjk"))
         assertEquals(emptyList<Glue.PairingRequestView>(), requests.waiting())
-        assertEquals(mapOf("status" to "allowed", "token" to "the-token-1234567890"), requests.poll(id, secret).body)
+        assertEquals(
+            mapOf("status" to "allowed", "token" to "the-token-1234567890", "proof" to Glue.editorPairingProof("BCDF-GHJK", id, "the-token-1234567890")),
+            requests.poll(id, secret).body,
+        )
         assertEquals(mapOf("status" to "claimed"), requests.poll(id, secret).body)
-        assertFalse(requests.answer(id, "another"))
+        assertEquals(Glue.Allowed.GONE, Glue.allowEditorPairing(requests, id, "another-token-123456", "BCDF-GHJK"))
         assertEquals(404, requests.poll(id, "f".repeat(64)).status)
         assertEquals(404, requests.poll("0123456789abcdef", secret).status)
         assertEquals(2, changes)
@@ -2863,7 +2869,7 @@ class GlueTest {
         val late = requests.start("moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "application/json", "{}").body
         now += Glue.EDITOR_PAIRING_TTL_MILLIS
         assertTrue(requests.expire())
-        assertFalse(requests.answer(late["id"] as String, "late"))
+        assertFalse(requests.answer(late["id"] as String, "late-token-12345678" to "p"))
         assertEquals(mapOf("status" to "expired"), requests.poll(late["id"] as String, late["secret"] as String).body)
         now += 61_000
         assertEquals(404, requests.poll(late["id"] as String, late["secret"] as String).status)
@@ -2880,7 +2886,7 @@ class GlueTest {
         val extension = { i: Int -> "chrome-extension://" + "abcdefghijklmnop"[i].toString().repeat(32) }
         repeat(Glue.MAX_WAITING_EDITOR_PAIRINGS) { assertEquals(201, requests.start(extension(it), "application/json", "{}").status) }
         assertEquals(429, requests.start(extension(9), "application/json", "{}").status)
-        requests.answer(requests.waiting().first().id, "the-token-1234567890")
+        requests.answer(requests.waiting().first().id, "the-token-1234567890" to "p")
         assertEquals(201, requests.start(extension(9), "application/json", "{}").status)
     }
 
@@ -2896,7 +2902,7 @@ class GlueTest {
         assertEquals(429, requests.start(chrome, "application/json", "{}").status)
         now += 61_000
         val third = requests.start(chrome, "application/json", "{}").body
-        assertTrue(requests.answer(third["id"] as String, "the-old-token-123456"))
+        assertTrue(requests.answer(third["id"] as String, "the-old-token-123456" to "p"))
         requests.forgetTokens()
         assertEquals(mapOf("status" to "expired"), requests.poll(third["id"] as String, third["secret"] as String).body)
     }
@@ -2937,9 +2943,16 @@ class GlueTest {
         )
         assertEquals("not where Piwi Picker looks", Glue.pickerRows(paired.copy(port = 8080), now).last().description)
         assertEquals(
-            "Piwi Picker in Chrome on macOS asks to pair with this IDE, to send it the locators you pick and follow its runs. Allow it only if you just clicked Pair in Piwi Picker and it shows the code BCDF-GHJK.",
-            Glue.pairingPrompt("Chrome on macOS", "BCDF-GHJK"),
+            "Piwi Picker in Chrome on macOS asks to pair with this IDE, to send it the locators you pick and follow its runs. If you just clicked Pair in Piwi Picker, type the code it shows.",
+            Glue.pairingPrompt("Chrome on macOS"),
         )
+        // The proof the core's `editorPairingProof` makes of the same code, request and token.
+        assertEquals(
+            "9dce09ed2dabb72ba5e238052afa36fcc0c563abfc4b2814d7c8684c2e966e1b",
+            Glue.editorPairingProof("bcdf-ghjk", "0123456789abcdef", "the-token-1234567890"),
+        )
+        assertEquals("BCDFGHJK", Glue.normalizeEditorPairingCode(" bcdf ghjk "))
+        for (typed in listOf("BCDFGHJ", "BCDF-GHJA", "")) assertNull(typed, Glue.normalizeEditorPairingCode(typed))
     }
 
     private fun tree(vararg files: String): Path {

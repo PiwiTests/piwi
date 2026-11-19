@@ -2,6 +2,9 @@ import { describe, expect, test } from 'vitest';
 import {
   EDITOR_PAIRING_TTL_MS,
   EditorPairingRequests,
+  allowEditorPairing,
+  editorPairingProof,
+  normalizeEditorPairingCode,
   JETBRAINS_PAIRING_PORTS,
   MAX_WAITING_EDITOR_PAIRINGS,
   VSCODE_PAIRING_PORTS,
@@ -76,6 +79,22 @@ describe('the hello', () => {
 });
 
 describe('a code and a client', () => {
+  test('reads a code as typed, in any case, with spaces or a dash, and nothing else', () => {
+    expect(normalizeEditorPairingCode('BCDF-GHJK')).toBe('BCDFGHJK');
+    expect(normalizeEditorPairingCode(' bcdf ghjk ')).toBe('BCDFGHJK');
+    expect(normalizeEditorPairingCode('BCDFGHJ')).toBeNull();
+    expect(normalizeEditorPairingCode('BCDF-GHJA')).toBeNull();
+    expect(normalizeEditorPairingCode('')).toBeNull();
+  });
+
+  test('proves the code typed for one request and one token, as both editors compute it', async () => {
+    const proof = '9dce09ed2dabb72ba5e238052afa36fcc0c563abfc4b2814d7c8684c2e966e1b';
+    expect(await editorPairingProof('bcdf-ghjk', '0123456789abcdef', 'the-token-1234567890')).toBe(proof);
+    expect(await editorPairingProof('BCDF-GHJL', '0123456789abcdef', 'the-token-1234567890')).not.toBe(proof);
+    expect(await editorPairingProof('BCDF-GHJK', '0123456789abcdee', 'the-token-1234567890')).not.toBe(proof);
+    expect(await editorPairingProof('nope', '0123456789abcdef', 'the-token-1234567890')).toBeNull();
+  });
+
   test('a code is eight consonants in two groups', () => {
     for (let i = 0; i < 50; i++)
       expect(newEditorPairingCode()).toMatch(/^[BCDFGHJKLMNPQRSTVWXZ]{4}-[BCDFGHJKLMNPQRSTVWXZ]{4}$/);
@@ -90,23 +109,29 @@ describe('a code and a client', () => {
 });
 
 describe('EditorPairingRequests', () => {
-  test('hands the token once, on the first poll after Allow', () => {
+  test('hands the token with the proof of the code typed, once, on the first poll after it', async () => {
     const time = clock();
     const requests = new EditorPairingRequests({ now: time.now });
     const start = started(requests);
-    expect(start.code).toMatch(/^[A-Z]{4}-[A-Z]{4}$/);
+    // The editor never makes the code: Piwi Picker shows its own.
+    expect(start).not.toHaveProperty('code');
     expect(start.interval).toBe(2);
     expect(start.expiresIn).toBe(300);
-    expect(requests.waiting()).toEqual([
-      expect.objectContaining({ id: start.id, code: start.code, client: 'Chrome on macOS' }),
-    ]);
+    expect(requests.waiting()).toEqual([expect.objectContaining({ id: start.id, client: 'Chrome on macOS' })]);
     expect(requests.poll(start.id, start.secret).body).toEqual({ status: 'waiting' });
 
-    expect(requests.answer(start.id, 'the-token-1234567890')).toBe(true);
+    // A typed text that is no code leaves the request waiting.
+    expect(await allowEditorPairing(requests, start.id, 'the-token-1234567890', 'hello')).toBe('not-a-code');
+    expect(requests.waiting()).toHaveLength(1);
+    expect(await allowEditorPairing(requests, start.id, 'the-token-1234567890', 'bcdf ghjk')).toBe('allowed');
     expect(requests.waiting()).toEqual([]);
-    expect(requests.poll(start.id, start.secret).body).toEqual({ status: 'allowed', token: 'the-token-1234567890' });
+    expect(requests.poll(start.id, start.secret).body).toEqual({
+      status: 'allowed',
+      token: 'the-token-1234567890',
+      proof: await editorPairingProof('BCDF-GHJK', start.id, 'the-token-1234567890'),
+    });
     expect(requests.poll(start.id, start.secret).body).toEqual({ status: 'claimed' });
-    expect(requests.answer(start.id, 'another')).toBe(false);
+    expect(await allowEditorPairing(requests, start.id, 'another-token-123456', 'BCDF-GHJK')).toBe('gone');
   });
 
   test('says no to a request the person denied, and hands no token', () => {
@@ -119,7 +144,7 @@ describe('EditorPairingRequests', () => {
   test('answers a wrong secret or an unknown id as no request at all', () => {
     const requests = new EditorPairingRequests();
     const start = started(requests);
-    requests.answer(start.id, 'the-token-1234567890');
+    requests.answer(start.id, { token: 'the-token-1234567890', proof: 'p' });
     expect(requests.poll(start.id, 'f'.repeat(64)).status).toBe(404);
     expect(requests.poll(start.id, undefined).status).toBe(404);
     expect(requests.poll('0123456789abcdef', start.secret).status).toBe(404);
@@ -137,7 +162,7 @@ describe('EditorPairingRequests', () => {
     expect(requests.expire()).toBe(true);
     expect(changes).toBe(2);
     expect(requests.waiting()).toEqual([]);
-    expect(requests.answer(start.id, 'late')).toBe(false);
+    expect(requests.answer(start.id, { token: 'late-token-12345678', proof: 'p' })).toBe(false);
     expect(requests.poll(start.id, start.secret).body).toEqual({ status: 'expired' });
     time.advance(61_000);
     expect(requests.poll(start.id, start.secret).status).toBe(404);
@@ -154,7 +179,7 @@ describe('EditorPairingRequests', () => {
     for (let i = 0; i < MAX_WAITING_EDITOR_PAIRINGS; i++)
       expect(requests.start(extension(i), JSON_TYPE, {}).status).toBe(201);
     expect(requests.start(extension(9), JSON_TYPE, {}).status).toBe(429);
-    requests.answer(requests.waiting()[0]!.id, 'the-token-1234567890');
+    requests.answer(requests.waiting()[0]!.id, { token: 'the-token-1234567890', proof: 'p' });
     expect(requests.start(extension(9), JSON_TYPE, {}).status).toBe(201);
   });
 
@@ -164,7 +189,7 @@ describe('EditorPairingRequests', () => {
     const second = started(requests);
     expect(requests.waiting().map((r) => r.id)).toEqual([second.id]);
     expect(requests.poll(first.id, first.secret).body).toEqual({ status: 'expired' });
-    expect(requests.answer(first.id, 'the-token-1234567890')).toBe(false);
+    expect(requests.answer(first.id, { token: 'the-token-1234567890', proof: 'p' })).toBe(false);
   });
 
   test('lets an extension the person denied ask again only a minute later', () => {
@@ -181,7 +206,7 @@ describe('EditorPairingRequests', () => {
   test('hands over nothing a request was allowed before Unpair', () => {
     const requests = new EditorPairingRequests();
     const start = started(requests);
-    requests.answer(start.id, 'the-old-token-123456');
+    requests.answer(start.id, { token: 'the-old-token-123456', proof: 'p' });
     requests.forgetTokens();
     expect(requests.poll(start.id, start.secret).body).toEqual({ status: 'expired' });
   });

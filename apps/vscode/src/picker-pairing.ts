@@ -102,8 +102,8 @@ export function pickerRows(state: PickerViewState, now: number): PickerRow[] {
   const rows: PickerRow[] = state.waiting.map((request) => ({
     key: `request:${request.id}`,
     label: `${request.client} asks to pair`,
-    description: `code ${request.code}`,
-    tooltip: `Allow it only if Piwi Picker shows the code ${request.code}. It waits until ${new Date(request.expiresAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.`,
+    description: 'type the code Piwi Picker shows',
+    tooltip: `Type the code Piwi Picker shows only if you just clicked Pair there. It waits until ${new Date(request.expiresAt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}.`,
     icon: 'bell-dot',
     contextValue: 'piwi.pairingRequest',
     requestId: request.id,
@@ -136,10 +136,13 @@ export function pickerRows(state: PickerViewState, now: number): PickerRow[] {
   return rows;
 }
 
-/** The notification of a request: who asks, and the code to compare with Piwi Picker's. */
-export function pairingPrompt(request: Pick<EditorPairingRequestView, 'client' | 'code'>): string {
-  return `Piwi Picker in ${request.client} asks to pair with this editor, to send it the locators you pick and follow its runs. Allow it only if you just clicked Pair in Piwi Picker and it shows the code ${request.code}.`;
+/** The notification of a request: who asks, and what to type to allow it. */
+export function pairingPrompt(request: Pick<EditorPairingRequestView, 'client'>): string {
+  return `Piwi Picker in ${request.client} asks to pair with this editor, to send it the locators you pick and follow its runs. If you just clicked Pair in Piwi Picker, type the code it shows.`;
 }
+
+/** The input box's message for a typed text that is no code. */
+export const NOT_A_CODE = 'Type the eight letters Piwi Picker shows, such as BCDF-GHJK.';
 
 /** Whether Piwi Picker is paired, by code or heard from: Unpair applies. */
 export function pickerPaired(state: Pick<PickerViewState, 'paired' | 'heard'>): boolean {

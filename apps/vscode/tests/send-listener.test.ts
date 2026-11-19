@@ -13,7 +13,12 @@ import {
   newEditorChallenge,
   type EditorSendPayload,
 } from '@piwitests/core/editor-send';
-import { EditorPairingRequests, type EditorPairingStart } from '@piwitests/core/editor-pairing';
+import {
+  EditorPairingRequests,
+  allowEditorPairing,
+  editorPairingProof,
+  type EditorPairingStart,
+} from '@piwitests/core/editor-pairing';
 import { liveUrlOf } from '@piwitests/core/run-hub';
 import { readLiveHubs } from '@piwitests/editor/discovery';
 import {
@@ -302,8 +307,12 @@ describe('pairing by code', () => {
     const poll = () =>
       fetch(`${base()}/pairings/${started.id}`, { headers: { Origin: CHROME, 'x-pairing-secret': started.secret } });
     expect(await (await poll()).json()).toEqual({ status: 'waiting' });
-    requests.answer(started.id, TOKEN);
-    expect(await (await poll()).json()).toEqual({ status: 'allowed', token: TOKEN });
+    expect(await allowEditorPairing(requests, started.id, TOKEN, 'BCDF-GHJK')).toBe('allowed');
+    expect(await (await poll()).json()).toEqual({
+      status: 'allowed',
+      token: TOKEN,
+      proof: await editorPairingProof('BCDF-GHJK', started.id, TOKEN),
+    });
     expect(await (await poll()).json()).toEqual({ status: 'claimed' });
     const wrong = await fetch(`${base()}/pairings/${started.id}`, { headers: { 'x-pairing-secret': 'nope' } });
     expect(wrong.status).toBe(404);

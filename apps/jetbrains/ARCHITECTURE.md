@@ -1065,16 +1065,18 @@ the live run hubs' (`Glue.forwardingHint`; the platform has no public way to for
 **Pairing by code.** Beside it, without a token, `GET /api/piwi/hello` says which IDE listens (`Glue.editorHello`: the
 product, `ApplicationNamesInfo`, and the open projects' names), and `POST /api/piwi/pairings` and
 `GET /api/piwi/pairings/<id>` are `Glue.EditorPairingRequests`, mirroring `@piwitests/core/editor-pairing`, held by
-`PiwiPickerPairing` for the whole IDE. A new request shows a `Piwi requests` notification with **Allow** and **Deny**
-in the project focused last, opens the **Piwi Picker** tab beside and asks for the IDE's attention; Allow there or in
-the tab mints the token if none is kept and hands it to the request, which Piwi Picker's next poll takes once. A
+`PiwiPickerPairing` for the whole IDE. A new request shows a `Piwi requests` notification with **Type the code…** and
+**Deny** in the project focused last, opens the **Piwi Picker** tab beside and asks for the IDE's attention. **Type the
+code…** there or in the tab asks for the code Piwi Picker shows in a dialog (`PiwiPickerPairing.allow`), mints the
+token if none is kept and hands it to the request with the proof of that code (`Glue.allowEditorPairing`), which Piwi
+Picker's next poll takes once; Piwi Picker refuses a proof that is not of its own code. A
 request's notification expires once it waits no more; with no project open, the request is asked about as a project
 opens its tab. The
 pairing (when, and Piwi Picker's browser) and when Piwi Picker was last heard from (a request the token let through
 from an extension's `Origin`, written once a minute at most) are application-level properties.
 
 **The Piwi Picker tab** (`PiwiPickerTab`, opened by **Pair with Piwi Picker**, also in the status bar item's popup):
-the requests waiting, with Allow and Deny; the pairing, when Piwi Picker was last heard from and the built-in server's
+the requests waiting, with **Type the code…** and **Deny**; the pairing, when Piwi Picker was last heard from and the built-in server's
 port (`Glue.pickerRows`, the words of the VS Code extension's Piwi Picker view); how to pair before any; **Copy the
 pairing address** and **Unpair** (`Piwi.UnpairPicker`: after asking, `PiwiSendToken.renew`, and the requests allowed
 and not polled yet hand over nothing). Every half minute while it is open, an `Alarm` expires the requests past their
@@ -1085,8 +1087,8 @@ thread, where the token, the file and its document are read: the built-in server
 password safe nor the disk. Only the writes run on the event thread.
 
 **Who gets an answer.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send` and `/api/piwi/live`, which
-the token authenticates, and on `/api/piwi/hello` and `/api/piwi/pairings`, which hand nothing over before the person's
-Allow (a start refuses any other `Origin` itself), and leaves the platform's `isAccessible` its check of `Host`, so a page reached under another
+the token authenticates, and on `/api/piwi/hello` and `/api/piwi/pairings`, which hand nothing over before the person
+types the code (a start refuses any other `Origin` itself), and leaves the platform's `isAccessible` its check of `Host`, so a page reached under another
 name than this machine's is refused. Every answer to a request carrying `x-piwi-editor-challenge`
 (`Glue.isEditorChallenge`), whatever its path and status, the preflight and the 401 included, carries
 `x-piwi-editor-proof` (`Glue.editorTokenProof`, mirroring `@piwitests/core/editor-send`, for the port the request

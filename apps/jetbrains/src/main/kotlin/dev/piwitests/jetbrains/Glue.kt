@@ -3700,11 +3700,39 @@ object Glue {
     /** The letters of a pairing code: consonants alone, none read as another. */
     private const val CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ"
 
-    /** A new pairing code, `BCDF-GHJK`: eight letters drawn from [CODE_LETTERS]. */
-    fun newEditorPairingCode(random: java.security.SecureRandom = java.security.SecureRandom()): String {
-        val letters = (1..8).map { CODE_LETTERS[random.nextInt(CODE_LETTERS.length)] }.joinToString("")
-        return "${letters.take(4)}-${letters.drop(4)}"
+    /**
+     * A code as the person typed it (`normalizeEditorPairingCode` in `@piwitests/core/editor-pairing`): its eight
+     * letters in capitals, `BCDFGHJK`, whatever their case and the spaces or dashes between them; null for anything else.
+     */
+    fun normalizeEditorPairingCode(typed: String): String? {
+        val letters = typed.uppercase().replace(Regex("[\\s-]"), "")
+        return letters.takeIf { it.length == 8 && it.all { letter -> letter in CODE_LETTERS } }
     }
+
+    /**
+     * The proof handed over with the token (`editorPairingProof` in `@piwitests/core/editor-pairing`): HMAC-SHA256 keyed
+     * by the code typed, normalized, over `piwi-editor-pairing:<id>:<token>`, lowercase hex. Piwi Picker keeps the token
+     * only when its own code makes the same proof. Null for a typed text that is no code.
+     */
+    fun editorPairingProof(code: String, id: String, token: String): String? {
+        val key = normalizeEditorPairingCode(code) ?: return null
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(key.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal("piwi-editor-pairing:$id:$token".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    /** How the person's typed code ended: handed over, no code (the request still waits), or no request waiting. */
+    enum class Allowed { ALLOWED, NOT_A_CODE, GONE }
+
+    /** The person typed the code Piwi Picker shows for request `id`: the token goes to it with the proof of that code. */
+    fun allowEditorPairing(requests: EditorPairingRequests, id: String, token: String, typed: String): Allowed {
+        val proof = editorPairingProof(typed, id, token) ?: return Allowed.NOT_A_CODE
+        return if (requests.answer(id, token to proof)) Allowed.ALLOWED else Allowed.GONE
+    }
+
+    /** The message for a typed text that is no code. */
+    const val NOT_A_CODE = "Type the eight letters Piwi Picker shows, such as BCDF-GHJK."
 
     /** One word of what Piwi Picker says it runs in: letters, digits, spaces, dots and dashes, 40 characters at most. */
     private fun clientWord(value: com.google.gson.JsonElement?): String {
@@ -3729,7 +3757,7 @@ object Glue {
     data class PairingAnswer(val status: Int, val body: Map<String, Any?>)
 
     /** What the IDE shows of a request waiting for the person's answer. */
-    data class PairingRequestView(val id: String, val code: String, val client: String, val createdAt: Long, val expiresAt: Long)
+    data class PairingRequestView(val id: String, val client: String, val createdAt: Long, val expiresAt: Long)
 
     /**
      * The pairing requests of this IDE, as `EditorPairingRequests` of `@piwitests/core/editor-pairing` keeps them:
@@ -3746,7 +3774,8 @@ object Glue {
             val origin: String,
             val secret: String,
             var status: String = "waiting",
-            var token: String? = null,
+            /** The token and the proof of the code typed, from the person's answer until the first poll takes them. */
+            var allowed: Pair<String, String>? = null,
             var endedAt: Long? = null,
         )
 
@@ -3806,7 +3835,7 @@ object Glue {
                     return PairingAnswer(429, mapOf("error" to "too many pairing requests wait already"))
                 }
                 Stored(
-                    PairingRequestView(hex(8), newEditorPairingCode(random), editorPairingClient(json), at, at + EDITOR_PAIRING_TTL_MILLIS),
+                    PairingRequestView(hex(8), editorPairingClient(json), at, at + EDITOR_PAIRING_TTL_MILLIS),
                     origin,
                     hex(32),
                 ).also { requests[it.view.id] = it }
@@ -3817,7 +3846,6 @@ object Glue {
                 mapOf(
                     "id" to request.view.id,
                     "secret" to request.secret,
-                    "code" to request.view.code,
                     "interval" to EDITOR_PAIRING_POLL_SECONDS,
                     "expiresIn" to EDITOR_PAIRING_TTL_MILLIS / 1000,
                 ),
@@ -3837,11 +3865,11 @@ object Glue {
                 ) {
                     return@synchronized PairingAnswer(404, mapOf("error" to "no such pairing request")) to expired
                 }
-                val token = request.token
-                if (request.status == "allowed" && token != null) {
+                val allowed = request.allowed
+                if (request.status == "allowed" && allowed != null) {
                     request.status = "claimed"
-                    request.token = null
-                    PairingAnswer(200, mapOf("status" to "allowed", "token" to token)) to expired
+                    request.allowed = null
+                    PairingAnswer(200, mapOf("status" to "allowed", "token" to allowed.first, "proof" to allowed.second)) to expired
                 } else {
                     PairingAnswer(200, mapOf("status" to request.status)) to expired
                 }
@@ -3850,13 +3878,17 @@ object Glue {
             return answer
         }
 
-        /** The person's answer to a waiting request: the token to hand over, or null for no. False when none waits. */
-        fun answer(id: String, token: String?): Boolean {
+        /**
+         * The person's answer to a waiting request: the token to hand over with the proof of the code typed
+         * ([allowEditorPairing] makes both), or null for no. False when none waits.
+         */
+        fun answer(id: String, allowed: Pair<String, String>?): Boolean {
             val (answered, expired) = synchronized(this) {
                 val expired = sweep()
                 val request = requests[id]?.takeIf { it.status == "waiting" } ?: return@synchronized false to expired
-                request.status = if (token.isNullOrEmpty()) "denied" else "allowed"
-                request.token = token?.takeIf { it.isNotEmpty() }
+                val given = allowed?.takeIf { it.first.isNotEmpty() }
+                request.status = if (given == null) "denied" else "allowed"
+                request.allowed = given
                 request.endedAt = now()
                 true to expired
             }
@@ -3870,7 +3902,7 @@ object Glue {
                 val at = now()
                 for (request in requests.values.filter { it.status == "allowed" }) {
                     request.status = "expired"
-                    request.token = null
+                    request.allowed = null
                     request.endedAt = at
                 }
             }
@@ -3912,7 +3944,7 @@ object Glue {
     const val PICKER_INTRO =
         "Piwi Picker, the browser extension, sends the locators you pick to the caret and follows the runs this IDE starts."
     const val PICKER_HOW_TO_PAIR =
-        "To pair, click Pair under Editor in Piwi Picker's settings, then allow the request here."
+        "To pair, click Pair under Editor in Piwi Picker's settings, then type here the code it shows."
     const val PICKER_ADDRESS_HINT =
         "With JetBrains Gateway, or when Piwi Picker does not find this IDE, copy the pairing address instead, and " +
             "paste it in Piwi Picker's settings under Editor, Pair with an address."
@@ -3951,10 +3983,10 @@ object Glue {
         )
     }
 
-    /** The notification of a pairing request: who asks, and the code to compare with Piwi Picker's. */
-    fun pairingPrompt(client: String, code: String): String =
+    /** The notification of a pairing request: who asks, and what to type to allow it. */
+    fun pairingPrompt(client: String): String =
         "Piwi Picker in $client asks to pair with this IDE, to send it the locators you pick and follow its runs. " +
-            "Allow it only if you just clicked Pair in Piwi Picker and it shows the code $code."
+            "If you just clicked Pair in Piwi Picker, type the code it shows."
 
     /**
      * What the dashboard's Open in IDE asks (`/api/piwi/open`): a file of a run, as a path relative to the

@@ -1613,7 +1613,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         return future.get(1, TimeUnit.SECONDS)
     }
 
-    /** Piwi Picker's Pair: the hello, a request the person allows, and the token handed to the next poll alone, once. */
+    /** Piwi Picker's Pair: the hello, the code the person types, and the token with its proof to the next poll, once. */
     fun testPiwiPickerPairsByCodeOnceThePersonAllowsIt() {
         val origin = "chrome-extension://" + "a".repeat(32)
         val hello = pickerRequest("GET", PiwiSendHandler.HELLO_PATH, origin)
@@ -1636,7 +1636,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
             assertEquals("""{"status":"waiting"}""", poll())
             assertEquals(404, pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = "nope").statusCode())
 
-            PiwiPickerPairing.allow(project, id)
+            // The code typed: Piwi Picker's own, which it checks the proof against.
+            PiwiPickerPairing.allow(project, id, "bcdf ghjk")
             val deadline = System.currentTimeMillis() + 10_000
             var allowed = poll()
             while (allowed.contains("waiting") && System.currentTimeMillis() < deadline) {
@@ -1647,6 +1648,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val token = com.google.gson.JsonParser.parseString(allowed).asJsonObject
             assertEquals(allowed, "allowed", token.get("status").asString)
             assertEquals(PiwiSendToken.current(), token.get("token").asString)
+            assertEquals(Glue.editorPairingProof("BCDF-GHJK", id, token.get("token").asString), token.get("proof").asString)
             assertEquals("""{"status":"claimed"}""", poll())
             assertEquals("Chrome on Linux", PiwiPickerPairing.paired()?.client)
         } finally {

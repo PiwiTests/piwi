@@ -191,7 +191,7 @@
       },
       {
         "view": "piwi.picker",
-        "contents": "Piwi Picker, the browser extension, sends the locators you pick to the cursor and follows the runs this window starts. To pair, click Pair under Editor in Piwi Picker's settings, then allow the request here.\n[Get Piwi Picker](https://piwitests.dev/features/extension)\nIn a remote window, or when Piwi Picker does not find this editor, pair with the address instead.\n[Copy the pairing address](command:piwi.copyPickerAddress)",
+        "contents": "Piwi Picker, the browser extension, sends the locators you pick to the cursor and follows the runs this window starts. To pair, click Pair under Editor in Piwi Picker's settings, then type here the code it shows.\n[Get Piwi Picker](https://piwitests.dev/features/extension)\nIn a remote window, or when Piwi Picker does not find this editor, pair with the address instead.\n[Copy the pairing address](command:piwi.copyPickerAddress)",
         "when": "piwi.pickerView == unpaired"
       }
     ],
@@ -268,7 +268,7 @@
           {
             "id": "pair",
             "title": "Pair Piwi Picker",
-            "description": "Piwi Picker, the browser extension, sends a locator you pick on any page to the cursor, and follows the runs this window starts. Click Pair under Editor in its settings, then allow the request here.\n[Pair with Piwi Picker](command:piwi.pairPicker)",
+            "description": "Piwi Picker, the browser extension, sends a locator you pick on any page to the cursor, and follows the runs this window starts. Click Pair under Editor in its settings, then type here the code it shows.\n[Pair with Piwi Picker](command:piwi.pairPicker)",
             "media": {
               "markdown": "walkthrough/pair.md"
             },
@@ -503,7 +503,7 @@
       },
       {
         "command": "piwi.allowPickerPairing",
-        "title": "Allow Piwi Picker to pair",
+        "title": "Allow Piwi Picker to pair…",
         "icon": "$(check)",
         "category": "Piwi"
       },

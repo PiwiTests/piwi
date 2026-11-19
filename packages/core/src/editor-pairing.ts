@@ -1,9 +1,12 @@
 /**
  * Pairing Piwi Picker with an editor by code. Piwi Picker finds the editors of this computer on the ports they listen
  * on (`GET …/hello` on {@link VSCODE_PAIRING_PORTS} and {@link JETBRAINS_PAIRING_PORTS}), asks the one the person
- * chooses to pair (`POST …/pairings`), and shows the code the editor's request shows too. On **Allow** in the editor,
- * Piwi Picker's next poll (`GET …/pairings/<id>` with the secret the start gave it) receives the Send to editor token,
- * once; the address is the one it asked, `…/send` beside `…/pairings`. Both editors serve these routes beside
+ * chooses to pair (`POST …/pairings`), and shows a code of its own ({@link newEditorPairingCode}), which it never
+ * sends. The person types that code in the editor; Piwi Picker's next poll (`GET …/pairings/<id>` with the secret the
+ * start gave it) receives the Send to editor token, once, with {@link editorPairingProof}, keyed by the code typed.
+ * Piwi Picker keeps the pairing only when the proof is the one its own code makes: a program that answers on an
+ * editor's port never sees the code, so it cannot pair itself. The address is the one Piwi Picker asked, `…/send`
+ * beside `…/pairings`. Both editors serve these routes beside
  * `…/send` and `…/live` (`@piwitests/core/editor-send`): VS Code under {@link VSCODE_PAIRING_BASE}, a JetBrains IDE's
  * built-in server under {@link JETBRAINS_PAIRING_BASE}.
  *
@@ -11,7 +14,7 @@
  * body is JSON, which a page cannot send to another origin without the preflight the editors answer for extensions
  * alone. A local program can claim both; the person's **Allow** in the editor is what hands the token over.
  */
-import { randomHex } from './hmac';
+import { hmacSha256Hex, randomHex } from './hmac';
 import { isExtensionOrigin } from './run-hub';
 
 /** The loopback ports a VS Code window's Send to editor listener takes first, in order: 7247 spells PAIR on a keypad. */
@@ -103,7 +106,7 @@ export function editorHello(editor: EditorKind, product: string, windows: readon
 /** The letters of a code: consonants alone, none read as another. */
 const CODE_LETTERS = 'BCDFGHJKLMNPQRSTVWXZ';
 
-/** A new code, `BCDF-GHJK`: eight letters, drawn without bias from the 20 of {@link CODE_LETTERS}. */
+/** A new code, `BCDF-GHJK`: eight letters, drawn without bias from the 20 of {@link CODE_LETTERS}. Piwi Picker's. */
 export function newEditorPairingCode(): string {
   let letters = '';
   while (letters.length < 8) {
@@ -113,6 +116,25 @@ export function newEditorPairingCode(): string {
     }
   }
   return `${letters.slice(0, 4)}-${letters.slice(4)}`;
+}
+
+/**
+ * A code as the person typed it: its eight letters in capitals, `BCDFGHJK`, whatever their case and the spaces or
+ * dashes between them; null for anything else.
+ */
+export function normalizeEditorPairingCode(typed: string): string | null {
+  const letters = typed.toUpperCase().replace(/[\s-]/g, '');
+  return letters.length === 8 && [...letters].every((letter) => CODE_LETTERS.includes(letter)) ? letters : null;
+}
+
+/**
+ * The proof an editor hands over with the token: HMAC-SHA256 keyed by the code typed (normalized) over
+ * `piwi-editor-pairing:<id>:<token>`, lowercase hex. Piwi Picker computes it from its own code and keeps the token only
+ * when the two are equal. Null for a typed text that is no code.
+ */
+export async function editorPairingProof(code: string, id: string, token: string): Promise<string | null> {
+  const key = normalizeEditorPairingCode(code);
+  return key ? hmacSha256Hex(key, `piwi-editor-pairing:${id}:${token}`) : null;
 }
 
 /** One word of what Piwi Picker says it runs in: letters, digits, spaces, dots and dashes, 40 characters at most. */
@@ -135,27 +157,29 @@ export function editorPairingClient(body: unknown): string {
 
 export type EditorPairingStatus = 'waiting' | 'allowed' | 'denied' | 'expired' | 'claimed';
 
-/** What a start answers Piwi Picker: the code both sides show, and the secret only it polls with. */
+/** What a start answers Piwi Picker: the request, and the secret only it polls with. */
 export interface EditorPairingStart {
   id: string;
   secret: string;
-  code: string;
   /** Seconds between polls. */
   interval: number;
   /** Seconds until the request expires. */
   expiresIn: number;
 }
 
-/** What a poll answers: the request's status, and the token once, the first time it is polled allowed. */
+/**
+ * What a poll answers: the request's status, and the first time it is polled allowed, the token with the proof of the
+ * code typed ({@link editorPairingProof}).
+ */
 export interface EditorPairingPoll {
   status: EditorPairingStatus;
   token?: string;
+  proof?: string;
 }
 
 /** What the editor shows of a request waiting for the person's answer. */
 export interface EditorPairingRequestView {
   id: string;
-  code: string;
   /** "Chrome on macOS". */
   client: string;
   createdAt: number;
@@ -173,9 +197,16 @@ interface StoredRequest extends EditorPairingRequestView {
   origin: string;
   secret: string;
   status: EditorPairingStatus;
-  token: string | null;
+  /** The token and the proof of the code typed, from the person's answer until the first poll takes them. */
+  allowed: EditorPairingAllowed | null;
   /** When it was answered or expired, from which it is kept {@link ANSWERED_KEPT_MS}. */
   endedAt: number | null;
+}
+
+/** What the person's answer hands over: the token, and the proof of the code they typed. */
+export interface EditorPairingAllowed {
+  token: string;
+  proof: string;
 }
 
 /** Whether two texts are the same, taking as long whatever character differs. */
@@ -253,12 +284,11 @@ export class EditorPairingRequests {
       origin,
       id: randomHex(8),
       secret: randomHex(32),
-      code: newEditorPairingCode(),
       client: editorPairingClient(body),
       createdAt: now,
       expiresAt: now + EDITOR_PAIRING_TTL_MS,
       status: 'waiting',
-      token: null,
+      allowed: null,
       endedAt: null,
     };
     this.requests.set(request.id, request);
@@ -268,7 +298,6 @@ export class EditorPairingRequests {
       body: {
         id: request.id,
         secret: request.secret,
-        code: request.code,
         interval: EDITOR_PAIRING_POLL_SECONDS,
         expiresIn: Math.round(EDITOR_PAIRING_TTL_MS / 1000),
       },
@@ -276,8 +305,8 @@ export class EditorPairingRequests {
   }
 
   /**
-   * `GET …/pairings/<id>` with the start's secret: the request's status, and the token the first time it is polled
-   * allowed, after which it is `claimed`. An unknown id or a wrong secret is a 404 alike.
+   * `GET …/pairings/<id>` with the start's secret: the request's status, and the token with its proof the first time
+   * it is polled allowed, after which it is `claimed`. An unknown id or a wrong secret is a 404 alike.
    */
   poll(id: string, secret: string | null | undefined): EditorPairingAnswer<EditorPairingPoll> {
     this.sweep();
@@ -285,22 +314,25 @@ export class EditorPairingRequests {
     if (!request || typeof secret !== 'string' || !sameText(secret, request.secret)) {
       return { status: 404, body: { error: 'no such pairing request' } };
     }
-    if (request.status === 'allowed' && request.token) {
-      const token = request.token;
+    if (request.status === 'allowed' && request.allowed) {
+      const { token, proof } = request.allowed;
       request.status = 'claimed';
-      request.token = null;
-      return { status: 200, body: { status: 'allowed', token } };
+      request.allowed = null;
+      return { status: 200, body: { status: 'allowed', token, proof } };
     }
     return { status: 200, body: { status: request.status } };
   }
 
-  /** The person's answer to a waiting request: the token to hand over, or null for no. False when none waits. */
-  answer(id: string, token: string | null): boolean {
+  /**
+   * The person's answer to a waiting request: the token to hand over with the proof of the code typed
+   * ({@link allowEditorPairing} makes both), or null for no. False when none waits.
+   */
+  answer(id: string, allowed: EditorPairingAllowed | null): boolean {
     this.sweep();
     const request = this.requests.get(id);
     if (!request || request.status !== 'waiting') return false;
-    request.status = token ? 'allowed' : 'denied';
-    request.token = token || null;
+    request.status = allowed?.token ? 'allowed' : 'denied';
+    request.allowed = allowed?.token ? allowed : null;
     request.endedAt = this.now();
     this.options.changed?.();
     return true;
@@ -312,7 +344,7 @@ export class EditorPairingRequests {
     for (const request of this.requests.values()) {
       if (request.status !== 'allowed') continue;
       request.status = 'expired';
-      request.token = null;
+      request.allowed = null;
       request.endedAt = now;
     }
   }
@@ -322,7 +354,7 @@ export class EditorPairingRequests {
     const now = this.now();
     return [...this.requests.values()]
       .filter((r) => r.status === 'waiting' && r.expiresAt > now)
-      .map(({ id, code, client, createdAt, expiresAt }) => ({ id, code, client, createdAt, expiresAt }));
+      .map(({ id, client, createdAt, expiresAt }) => ({ id, client, createdAt, expiresAt }));
   }
 
   /** Ends the waits past their time; true when one ended, for the editor to draw them again. */
@@ -337,4 +369,19 @@ export function editorPairingIdOf(path: string, base: string): string | null {
   if (!path.startsWith(prefix)) return null;
   const id = path.slice(prefix.length);
   return /^[0-9a-f]{16}$/.test(id) ? id : null;
+}
+
+/**
+ * The person typed the code Piwi Picker shows for the request `id`: the token goes to it with the proof of that code.
+ * `not-a-code` for a typed text that is no code (the request still waits), `gone` when the request waits no more.
+ */
+export async function allowEditorPairing(
+  requests: EditorPairingRequests,
+  id: string,
+  token: string,
+  typed: string,
+): Promise<'allowed' | 'not-a-code' | 'gone'> {
+  const proof = await editorPairingProof(typed, id, token);
+  if (!proof) return 'not-a-code';
+  return requests.answer(id, { token, proof }) ? 'allowed' : 'gone';
 }

@@ -1,8 +1,9 @@
 /**
  * The **Piwi Picker** view of the Piwi panel (`piwi.picker`): the pairing with Piwi Picker, the browser extension. A
- * request Piwi Picker makes shows there, with Allow and Deny, beside the notification that asks; once paired, it shows
- * since when, when Piwi Picker was last heard from and where this window listens. Not paired, its welcome says how to
- * pair. What it lists comes from `pickerRows` (`picker-pairing.ts`), tested without an editor.
+ * request Piwi Picker makes shows there, with Allow, which asks for the code Piwi Picker shows, and Deny, beside the
+ * notification; once paired, it shows since when, when Piwi Picker was last heard from and where this window listens.
+ * Not paired, its welcome says how to pair. What it lists comes from `pickerRows` (`picker-pairing.ts`), tested
+ * without an editor.
  */
 import * as vscode from 'vscode';
 import { setContextKey } from './context-keys';

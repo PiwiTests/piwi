@@ -144,8 +144,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
-- **The token goes to Piwi Picker by code only from the person's Allow** (the notification or the **Piwi Picker**
-  view, `allowPickerPairing`), to the request `EditorPairingRequests` started for an extension's `Origin`;
+- **The token goes to Piwi Picker by code only once the person types the code it shows** (the notification or the
+  **Piwi Picker** view, `allowPickerPairing`), with its proof, to the request `EditorPairingRequests` started for an
+  extension's `Origin`;
   `…/hello` names the product and the window's folders alone. Without a saved port, a window listens on the first
   free `VSCODE_PAIRING_PORTS`, and stops at one another window of this editor holds (`takeSavedPort`, `held`).
   Checked by `tests/send-listener.test.ts` ("pairing by code", "without a pairing saved …") and the integration
