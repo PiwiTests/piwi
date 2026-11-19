@@ -155,6 +155,10 @@ responsibilities.
   (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
   `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
   `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
+  Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
+  screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.
+  `tests/page-view-still.spec.ts` checks the page sees nothing change.
 - **A private temp file goes through `internal/support/private-file.ts`**: in `privateTempDir()`, never `os.tmpdir()`
   itself (on Windows, `%LOCALAPPDATA%\piwi\tmp`: a service account's `os.tmpdir()` is shared), written and read with
   `writePrivateFile`, `appendPrivateFile` and `readPrivateFile`; or it lives in a `fs.mkdtempSync` folder. Owner-only,

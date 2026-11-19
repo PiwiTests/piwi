@@ -643,7 +643,9 @@ export function maskSecretFields(page: Page, options: SecretFieldMaskOptions): S
       const before = [...reads].reverse().find((r) => r.ended <= frame.at && r.ended >= frame.at - FRESH_MS) ?? null;
       const after = await read();
       if (typeof after === 'string' || !after) return after;
-      const size = jpegSize(frame.data) ?? frame;
+      // An image the view took itself, larger than it asks, goes within the size it names (`fit`), scaled down here.
+      const own = jpegSize(frame.data) ?? frame;
+      const size = frame.fit ? fitViewSize(own, frame.fit.width, frame.fit.height) : own;
       if (
         before &&
         sameBoxes(before.boxes, after.boxes) &&
