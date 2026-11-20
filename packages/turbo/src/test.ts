@@ -258,6 +258,8 @@ export const test: TurboTest = base.extend<
   retryIntervals: [undefined, { option: true }],
   failFast: [false, { option: true }],
   skipStabilityWait: [false, { option: true }],
+  earlyInjection: [false, { option: true }],
+  fastTraces: [false, { option: true }],
 
   // One fixture does everything, so a test pays for one extra fixture whatever the options. The hooks are on for this
   // test only: a worker runs one test at a time, so the setting covers every page of the test, including the ones it
@@ -273,6 +275,8 @@ export const test: TurboTest = base.extend<
       retryIntervals,
       failFast,
       skipStabilityWait,
+      earlyInjection,
+      fastTraces,
       connectOptions,
       browserName,
       _turboReused: reused,
@@ -293,7 +297,9 @@ export const test: TurboTest = base.extend<
     const updating = testInfo.config.updateSnapshots === 'all' || testInfo.config.updateSnapshots === 'changed';
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
     const matches = screenshotMatches && !updating;
-    const hooks = fast || matches || !!intervals || failFast || skipStabilityWait || (reused && fastReset);
+    const early = earlyInjection && browserName === 'chromium';
+    const hooks =
+      fast || matches || !!intervals || failFast || skipStabilityWait || early || fastTraces || (reused && fastReset);
     if (hooks) {
       if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
         throw new Error(
@@ -311,6 +317,8 @@ export const test: TurboTest = base.extend<
     state.retryIntervals = intervals;
     state.failFast = failFast;
     state.skipStabilityWait = skipStabilityWait;
+    state.earlyInjection = early;
+    state.fastTraces = fastTraces;
     try {
       if (failFast) await context.addInitScript(IDLE_TRACKER);
       for (const rule of blockRequests)
@@ -390,6 +398,8 @@ export const test: TurboTest = base.extend<
       state.retryIntervals = undefined;
       state.failFast = false;
       state.skipStabilityWait = false;
+      state.earlyInjection = false;
+      state.fastTraces = false;
     }
   },
 });

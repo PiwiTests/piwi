@@ -1,5 +1,7 @@
 import { captureFailure, test, expect } from '../../src/test';
 import { chmodSync, mkdirSync } from 'node:fs';
+import { createServer } from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { screenshotMatchStore, state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
 
@@ -493,5 +495,82 @@ test.describe('skip stability wait', () => {
     await page.waitForTimeout(400);
     await page.locator('#b').click();
     await expect(page.locator('#b')).toHaveAttribute('data-n', '1');
+  });
+});
+
+type ServerPage = {
+  mainFrame(): { _contextData: Map<string, { context: { _injectedScriptPromise?: Promise<unknown> } }> };
+};
+
+/** The utility world's execution context of the tab's current document, in Playwright's server. */
+function utilityContext(page: Page) {
+  const connection = (page as unknown as { _connection: { toImpl: (object: unknown) => ServerPage } })._connection;
+  return connection.toImpl(page).mainFrame()._contextData.get('utility')!.context;
+}
+
+test.describe('early injection', () => {
+  test.use({ earlyInjection: true });
+
+  test("creates a new document's injected script before its first call", async ({ page }) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('data:text/html,<input placeholder="name"><iframe src="data:text/html,<p>inner</p>"></iframe>');
+    // The tab's document, not the frame inside it.
+    expect(state.counters.earlyInjections).toBe(before + 1);
+    expect(utilityContext(page)._injectedScriptPromise).toBeDefined();
+    await page.getByPlaceholder('name').fill('typed');
+    await expect(page.getByPlaceholder('name')).toHaveValue('typed');
+  });
+
+  test('leaves about:blank alone', async ({ page }) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('about:blank');
+    expect(state.counters.earlyInjections).toBe(before);
+  });
+});
+
+test.describe('without early injection', () => {
+  test('creates the injected script at the first call', async ({ page }) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('data:text/html,<input placeholder="name">');
+    expect(utilityContext(page)._injectedScriptPromise).toBeUndefined();
+    expect(state.counters.earlyInjections).toBe(before);
+  });
+});
+
+test.describe('fast traces', () => {
+  test.use({ fastTraces: true });
+
+  test('a trace requests no script body, and response.body() still reads it', async ({ context, page }, testInfo) => {
+    const server = createServer((request, response) => {
+      if (request.url === '/app.js') {
+        response.writeHead(200, { 'content-type': 'text/javascript' });
+        response.end('window.loaded = true;');
+        return;
+      }
+      response.writeHead(200, { 'content-type': 'text/html' });
+      response.end('<script src="/app.js"></script><p>traced</p>');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+    try {
+      await context.tracing.start({ snapshots: true });
+      const before = state.counters.skippedScriptBodies;
+      const [script] = await Promise.all([page.waitForResponse('**/app.js'), page.goto(url)]);
+      expect(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded)).toBe(true);
+      expect(await script.text()).toBe('window.loaded = true;');
+      await context.tracing.stop({ path: testInfo.outputPath('trace.zip') });
+      expect(state.counters.skippedScriptBodies).toBe(before + 1);
+    } finally {
+      server.close();
+    }
+  });
+
+  test('leaves a trace without DOM snapshots alone', async ({ context, page }) => {
+    // Such a trace records no response bodies.
+    await context.tracing.start({ snapshots: false });
+    const before = state.counters.skippedScriptBodies;
+    await page.goto('data:text/html,<script>window.inline = true</script>');
+    await context.tracing.stop();
+    expect(state.counters.skippedScriptBodies).toBe(before);
   });
 });

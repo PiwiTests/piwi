@@ -27,7 +27,8 @@ tell a real gain from noise.
    `instantAnimations`, `reuseContext` and `compileCache`. `signIn` and `blockRequests` need the suite's own paths and
    URLs, so no preset sets them.
 4. **Experimental hooks** wrap Playwright's server inside the test worker: `fastScreenshots`, `retryIntervals`,
-   `failFast`, `skipStabilityWait`, `fastReset`, `fastStackTraces`, `screenshotMatches` and `keepStaticCache`. They
+   `failFast`, `skipStabilityWait`, `fastReset`, `fastStackTraces`, `screenshotMatches`, `keepStaticCache`,
+   `earlyInjection` and `fastTraces`. They
    install only on the Playwright versions they were tested with, check the shape of every internal they wrap, and
    throw instead of falling back.
 5. **Context reuse is Playwright's own `reuseContext` plus a reset of what it leaves**: offline mode, extra headers,
@@ -94,6 +95,9 @@ out.
 | `skipStabilityWait` | One worker: TodoMVC 1.11× vs 1.03×, Shop 1.20× vs 1.10×, Inventory 1.06× vs 0.99×. |
 | `fastReset` | noop 0.93× vs 0.83×, TodoMVC 1.41× vs 1.21×, Shop 1.28× vs 1.27×. |
 | `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. |
+| `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
+| `earlyInjection` | Same app, one tab: the first fill after a navigation took 25 ms and the next 6 ms, the difference being Playwright creating its injected script in the document's utility world. Created as soon as the document's utility context exists: 9 to 11 ms, with the navigation 2 to 8 ms longer. TodoMVC (as above) 4,148 to 3,860 ms. |
+| `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). |
 | Per-test calls on a reused context (below) | `max`: noop 1.20× vs 1.01×, TodoMVC 1.44× vs 1.38×, Shop 1.32× vs 1.29×. |
 | Context reuse in `fast` | TodoMVC 1.16× vs 0.99×, Shop 1.12× vs 1.07×, Inventory 1.02× vs 1.03×, trivial tests 0.91× vs 0.95×. |
 
@@ -135,6 +139,12 @@ process, the two Chromium renderers held 3.3 GB: with a reused context, each wor
 renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken down.
 
 ### Tried and dropped
+
+- **A new tab for each test in place of the reset of the old one**, as Flashwright's recycled context does: the reset
+  took 27 ms, but the next navigation 82 to 90 ms instead of 30, in a renderer that had compiled nothing yet.
+- **The injected script created early in both worlds**: the navigation took 13 ms longer than with the utility world
+  alone, for no shorter first call; the main world is not where actions and assertions run. Running one selector query
+  as well, to compile the paths an action takes, changed nothing measurable.
 
 - **Differential DOM snapshots in traces**, from a fork of Playwright, shipped for a while as a vendored Apache-2.0
   script: no clear difference on the reference workload (+0.8%) or on Piwi's suite (−2.5% wall, interval −8.5% to

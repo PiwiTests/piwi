@@ -5,8 +5,12 @@
 //   retry intervals   replaces the backoff of Playwright's retry loop (assertions, waits, element resolution)
 //   fail fast         ends a failing web-first assertion once nothing can change the page before its timeout
 //   fast reset        when Playwright resets a reused context, clears the storage of the origins the test visited
-//                     through CDP, so the reset has no origin to load, and moves the mouse away only from a tab a
-//                     pointer acted in
+//                     through CDP, so the reset has no origin to load, moves the mouse away only from a tab a
+//                     pointer acted in, and leaves out the tab's second load of about:blank and its emulation
+//                     updates when the test changed neither and the next test asks for the same context options
+//   early injection   creates Playwright's injected script and utility script in the utility world of a tab's new
+//                     document as soon as its context exists, while the document loads, instead of at its first call
+//   fast traces       a trace that leaves out script bodies no longer fetches them from the browser first
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
@@ -48,6 +52,8 @@ export const state = {
   /** The responses each reused context received since its last reset, which keepStaticCache judges at the next. */
   staticCacheResponses: new WeakMap<object, ServerPage[]>(),
   screenshotMatches: false,
+  earlyInjection: false,
+  fastTraces: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
   sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
@@ -56,6 +62,7 @@ export const state = {
   error: undefined as Error | undefined,
   frameHooked: false,
   sessionHooked: false,
+  tracerHooked: false,
   counters: {
     optimizedScreenshots: 0,
     shortenedRetries: 0,
@@ -66,6 +73,9 @@ export const state = {
     screenshotMatches: 0,
     rememberedScreenshots: 0,
     keptCaches: 0,
+    lightPageResets: 0,
+    earlyInjections: 0,
+    skippedScriptBodies: 0,
   },
   elementHooked: false,
 };
@@ -402,21 +412,34 @@ function hookContextReset(core: ServerPage): void {
   const storage = reset.indexOf('setStorageState(progress2, this._options.storageState, "resetForReuse")');
   if (blank < 0 || storage < blank || !String(setStorageState).includes('this._origins'))
     throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
+  // fastReset: whether the next test asks for the context options the last one had, which the tab's own reset applies
+  // again otherwise (hookPageReset).
+  proto.resetForReuse = function (this: ServerPage, progress: unknown, params: unknown) {
+    const options = JSON.stringify(params ?? null);
+    sameOptions.set(this, lastOptions.get(this) === options);
+    lastOptions.set(this, options);
+    return resetForReuse.call(this, progress, params);
+  };
   // keepStaticCache: the reset leaves the HTTP cache of a context whose last test loaded static assets only.
   proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
-    const responses = state.staticCacheResponses.get(this);
-    if (mode !== 'resetForReuse' || !state.keepStaticCache || !responses)
-      return resetStorage.call(this, progress, storageState, mode);
-    const keep = await onlyStaticAssets(responses);
-    responses.length = 0;
-    if (!keep) return resetStorage.call(this, progress, storageState, mode);
-    this.clearCache = async () => {
-      state.counters.keptCaches++;
-    };
+    restoringStorage++;
     try {
-      return await resetStorage.call(this, progress, storageState, mode);
+      const responses = state.staticCacheResponses.get(this);
+      if (mode !== 'resetForReuse' || !state.keepStaticCache || !responses)
+        return await resetStorage.call(this, progress, storageState, mode);
+      const keep = await onlyStaticAssets(responses);
+      responses.length = 0;
+      if (!keep) return await resetStorage.call(this, progress, storageState, mode);
+      this.clearCache = async () => {
+        state.counters.keptCaches++;
+      };
+      try {
+        return await resetStorage.call(this, progress, storageState, mode);
+      } finally {
+        delete this.clearCache;
+      }
     } finally {
-      delete this.clearCache;
+      restoringStorage--;
     }
   };
   // Playwright's reset restores the storage once the test's other pages are closed and its tab is on about:blank. The
@@ -444,6 +467,117 @@ function hookContextReset(core: ServerPage): void {
     }
     return result;
   }
+}
+
+/** The context options each reused context was last reset with, as JSON. */
+const lastOptions = new WeakMap<object, string>();
+/** Whether each reused context's last reset asked for the options of the reset before it. */
+const sameOptions = new WeakMap<object, boolean>();
+/** Storage restores in progress: they load documents that run no action. */
+let restoringStorage = 0;
+
+/** Whether the test left the tab's own viewport, media and extra headers alone. */
+function untouchedEmulation(page: ServerPage): boolean {
+  const media = (page._emulatedMedia ?? {}) as Record<string, unknown>;
+  return (
+    page._emulatedSize === undefined &&
+    page._extraHTTPHeaders === undefined &&
+    Object.values(media).every((value) => value === undefined)
+  );
+}
+
+/**
+ * fastReset: the context's reset has just loaded about:blank in the tab, so the tab's own reset loads it again and
+ * applies the context's viewport and media to it again only when the test changed them or the next test asks for other
+ * context options. Its mouse reset always runs.
+ */
+function hookPageReset(Page: ServerPage): void {
+  const reset = Page.prototype.resetForReuse as ((progress: unknown) => Promise<void>) | undefined;
+  const source = String(reset);
+  if (
+    typeof reset !== 'function' ||
+    !source.includes('gotoImpl(progress2, "about:blank", {})') ||
+    !source.includes('this.delegate.resetForReuse(progress2)') ||
+    !['_emulatedSize', '_emulatedMedia', '_extraHTTPHeaders'].every((field) => source.includes(`this.${field} =`))
+  ) {
+    throw new IncompatibleError("Playwright's page reset no longer loads about:blank, then resets emulation and input");
+  }
+  Page.prototype.resetForReuse = function (this: ServerPage, progress: unknown) {
+    if (
+      state.fastReset &&
+      isChromium(this) &&
+      sameOptions.get(this.browserContext) &&
+      untouchedEmulation(this) &&
+      this.mainFrame().url() === 'about:blank'
+    ) {
+      state.counters.lightPageResets++;
+      return this.delegate.resetForReuse(progress);
+    }
+    return reset.call(this, progress);
+  };
+}
+
+/**
+ * earlyInjection: the utility world of a tab's new document, where Playwright's actions and assertions run, gets its
+ * injected script and utility script as soon as it exists, while the document loads, rather than at its first call.
+ */
+function hookEarlyInjection(proto: ServerPage): void {
+  const contextCreated = proto.contextCreated as ((world: string, context: ServerPage) => void) | undefined;
+  if (typeof contextCreated !== 'function') throw new IncompatibleError("Playwright's frame has no contextCreated()");
+  proto.contextCreated = function (this: ServerPage, world: string, context: ServerPage) {
+    contextCreated.call(this, world, context);
+    if (!state.earlyInjection || world !== 'utility' || restoringStorage || this.url() === 'about:blank') return;
+    if (this !== this._page?.mainFrame?.()) return;
+    if (typeof context?.injectedScript !== 'function' || typeof context._utilityScript !== 'function') {
+      state.error ??= new IncompatibleError("Playwright's execution context has no injectedScript()/_utilityScript()");
+      return;
+    }
+    state.counters.earlyInjections++;
+    // A document replaced before they are created rejects them: its context is gone with it.
+    context
+      .injectedScript()
+      .then(() => context._utilityScript())
+      .catch(() => {});
+  };
+}
+
+const NO_BODY = Buffer.alloc(0);
+
+/**
+ * fastTraces: Playwright's trace recorder requests the body of every response, then leaves out those of scripts unless
+ * the trace is live. A script's body is not requested at all: the request held up the page's load and the snapshot
+ * after it. The override covers the recorder's own request alone, so `response.body()` still reads the body.
+ */
+function hookTracer(page: ServerPage): void {
+  const tracer = page.browserContext?.tracing?._harTracer;
+  const proto = tracer && Object.getPrototypeOf(tracer);
+  const finished = proto?._onRequestFinished as ((request: ServerPage, response: ServerPage) => unknown) | undefined;
+  const source = String(finished);
+  const bodyRequest = source.indexOf('response2.internalBody()');
+  if (
+    typeof finished !== 'function' ||
+    bodyRequest < 0 ||
+    !source.includes('this._options.omitScripts && request2.resourceType() === "script"')
+  ) {
+    throw new IncompatibleError(
+      "Playwright's trace recorder no longer requests script bodies and then leaves them out",
+    );
+  }
+  // Up to its body request the handler runs without awaiting, so the override is in place for that request only.
+  if (source.slice(0, bodyRequest).includes('await '))
+    throw new IncompatibleError("Playwright's trace recorder awaits before it requests a response body");
+  proto._onRequestFinished = function (this: ServerPage, request: ServerPage, response: ServerPage) {
+    if (!state.fastTraces || !response || !this._options?.omitScripts || request.resourceType() !== 'script')
+      return finished.call(this, request, response);
+    state.counters.skippedScriptBodies++;
+    response.internalBody = () => Promise.resolve(NO_BODY);
+    try {
+      return finished.call(this, request, response);
+    } finally {
+      delete response.internalBody;
+    }
+  };
+  state.tracerHooked = true;
 }
 
 /** The CDP session of a server context's first page, on Chromium. */
@@ -499,6 +633,7 @@ function hookFrame(frame: ServerPage): void {
     return this.retryWithProgressAndTimeouts(progress, intervals, action);
   };
   hookFailFast(proto);
+  hookEarlyInjection(proto);
   const retryIfNotConnected = proto._retryWithProgressIfNotConnected as
     | ((progress: Progress, target: unknown, options: unknown, action: RetryAction) => Promise<unknown>)
     | undefined;
@@ -616,6 +751,7 @@ export function installHooks({ allowUntested = process.env.PIWI_TURBO_ALLOW_UNTE
   if (typeof Page?.prototype?.reportAsNew !== 'function')
     throw new IncompatibleError("Playwright's server Page has no reportAsNew()");
   hookContextReset(core);
+  hookPageReset(Page);
   hookBaselines(Page);
   hookScreenshotMatches(Page, version);
   const reportAsNew = Page.prototype.reportAsNew;
@@ -633,6 +769,7 @@ function hookClassesOf(page: ServerPage): void {
   try {
     if (!state.frameHooked) hookFrame(page.mainFrame());
     if (!state.sessionHooked && isChromium(page)) hookChromiumSession(page);
+    if (!state.tracerHooked) hookTracer(page);
   } catch (error) {
     state.error ??= error as Error;
   }

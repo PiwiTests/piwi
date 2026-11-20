@@ -41,7 +41,7 @@ import { test, expect } from '@piwitests/turbo/test';
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `safe` | Nothing a test observes changes. Traces the config records are kept for failures (recorded on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of each test worker.                               |
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests, in place of a new context for each test.                                                                                                           |
-| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, and a reset that keeps static assets cached. |
+| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, a reset that keeps static assets cached, Playwright's injected script created while a page loads, and traces that do not request the script bodies they leave out. |
 
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
@@ -196,6 +196,8 @@ withOptimizations(config, {
     fastStackTraces: true,
     screenshotMatches: true,
     keepStaticCache: true,
+    earlyInjection: true,
+    fastTraces: true,
   },
 });
 ```
@@ -217,7 +219,10 @@ withOptimizations(config, {
 - **`fastReset`** (Chromium, with `reuseContext`): between tests, the storage of every origin the test visited, the
   tab's session storage included, is cleared through CDP once Playwright's reset has moved the tab to `about:blank`,
   where Playwright's reset loads each origin again to clear it. The mouse is moved away from the tab only after a test
-  that used Playwright's mouse or touchscreen: input a test sends through its own CDP session is not seen.
+  that used Playwright's mouse or touchscreen: input a test sends through its own CDP session is not seen. The tab's
+  own reset, which loads `about:blank` a second time and applies the viewport and media again, is left out when the test
+  changed neither and the next test asks for the context options the last one had (a file's own `viewport` or
+  `colorScheme` brings it back): a reset took 14 ms in place of 31 ms, and Flashwright's TodoMVC suite 3% less time.
 - **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up
   a source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
   lookup; stack traces read the same.
@@ -237,11 +242,20 @@ withOptimizations(config, {
   A file the app changes at the same URL between tests, served with a `Last-Modified` date and no lifetime (an avatar,
   a stylesheet for each user), reaches the next test as it was: leave the hook off for such a suite. On Piwi's own
   dashboard, a page load took 328–342 ms in place of 404–450 ms.
+- **`earlyInjection`** (Chromium): Playwright's actions and assertions run through an injected script of about 180 KB,
+  which it creates in each new document at the first call. The script and its utility script are created in the
+  tab's new document as soon as it has a context, while the document loads: the first fill after a navigation took 9
+  to 11 ms in place of 25 ms, the navigation a few milliseconds longer, and Flashwright's TodoMVC suite, whose tests
+  each start on a new document, 7% less time. A document that gets no call pays for the script anyway.
+- **`fastTraces`**: a trace that records DOM snapshots leaves out the bodies of scripts unless it is live, and Playwright
+  requests each one from the browser before leaving it out, which holds up the page's load. Those bodies are no
+  longer requested; the trace is the same, and `response.body()` still reads them. TodoMVC with a trace of every test
+  (`retain-on-failure` without retries) took 12% less time.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
-`Page.prototype.expectScreenshot` and `BrowserContext.prototype.setStorageState`, a context's `response` events, from
-the first page the frame class, the element handle class and Chromium's CDP session, and the worker's
-`Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
+`Page.prototype.expectScreenshot`, `Page.prototype.resetForReuse`, `BrowserContext.prototype.setStorageState` and
+`BrowserContext.prototype.resetForReuse`, a context's `response` events, from the first page the frame class, the
+element handle class, Chromium's CDP session and the trace recorder, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
 were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the browser runs
 outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at your own risk. What each lever was
 measured to save is in the

@@ -42,4 +42,11 @@ export interface TurboOptions {
   failFast: boolean;
   /** Experimental: pointer actions skip the wait for the element to keep still; the hit-target check stays. */
   skipStabilityWait: boolean;
+  /**
+   * Experimental, Chromium: Playwright's injected script is created in each new document of a tab while the document
+   * loads, instead of at the first action or assertion after the navigation.
+   */
+  earlyInjection: boolean;
+  /** Experimental: a trace that leaves out script bodies does not request them from the browser. */
+  fastTraces: boolean;
 }

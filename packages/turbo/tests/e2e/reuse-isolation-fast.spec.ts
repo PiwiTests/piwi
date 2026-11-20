@@ -10,5 +10,6 @@ test('resets through the fast path', async ({ page }) => {
   await page.goto('about:blank');
   expect(state.counters.fastResets).toBeGreaterThan(0);
   expect(state.counters.skippedPointerResets).toBeGreaterThan(0);
+  expect(state.counters.lightPageResets).toBeGreaterThan(0);
   expect(state.counters.keptCaches).toBeGreaterThan(0);
 });

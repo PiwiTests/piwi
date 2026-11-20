@@ -144,7 +144,7 @@ surface races that slower runs hid: measure on your own suite before keeping any
 
 ## Experimental hooks
 
-**Experimental.** Eight options reach into Playwright's internals inside each test worker. `max` turns them all on;
+**Experimental.** Ten options reach into Playwright's internals inside each test worker. `max` turns them all on;
 name them under `experimental` to pick some. The [package
 README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-hooks) describes each one and its limits:
 
@@ -154,9 +154,12 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
   for the element to keep still. Leave the latter off for apps that ignore input while they animate.
 - `failFast` ends a failing assertion once nothing can change the page. It must stay off for a test that changes the
   page from its own Node code while an assertion waits.
-- `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, and the HTTP
-  cache kept while it holds only static assets. An app that changes a file at the same URL between tests, served with
-  no lifetime of its own, needs `keepStaticCache` off.
+- `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, the tab's
+  second reset left out when the test changed nothing it resets, and the HTTP cache kept while it holds only static
+  assets. An app that changes a file at the same URL between tests, served with no lifetime of its own, needs
+  `keepStaticCache` off.
+- `earlyInjection` (Chromium) creates the script Playwright's actions run through while each page loads, rather than
+  at its first action, and `fastTraces` stops traces requesting the script bodies they leave out.
 - `fastStackTraces` skips the source map lookup for the frames of Node and `node_modules`.
 
 ```ts
@@ -170,6 +173,8 @@ withOptimizations(config, {
     fastStackTraces: true,
     screenshotMatches: true,
     keepStaticCache: true,
+    earlyInjection: true,
+    fastTraces: true,
   },
 });
 ```

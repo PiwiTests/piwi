@@ -87,9 +87,22 @@ export interface Optimizations {
     skipStabilityWait?: boolean;
     /**
      * With `reuseContext`, on Chromium: the reset between tests clears the storage of the origins the test visited
-     * through CDP instead of loading each of them.
+     * through CDP instead of loading each of them, and resets the tab without loading about:blank a second time or
+     * applying its viewport and media again when the test left them alone and the next test asks for the same context
+     * options.
      */
     fastReset?: boolean;
+    /**
+     * Chromium: Playwright's injected script, which its actions and assertions run in, is created in each new document
+     * of a tab while the document loads, instead of at its first call. The first call after a navigation no longer
+     * waits for it; a document that gets no call pays for it anyway.
+     */
+    earlyInjection?: boolean;
+    /**
+     * A trace that records DOM snapshots leaves out the bodies of scripts unless it is live; Playwright still requests
+     * each one from the browser first, which holds up the page's load. With this, it does not.
+     */
+    fastTraces?: boolean;
     /**
      * The test worker's stack traces, which Playwright captures for every API call, look up source maps only for the
      * frames outside Node and `node_modules`. They read the same.
@@ -186,6 +199,8 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         fastStackTraces: true,
         screenshotMatches: true,
         keepStaticCache: true,
+        earlyInjection: true,
+        fastTraces: true,
       },
     };
   }
@@ -234,6 +249,8 @@ export function withOptimizations<T extends AnyConfig>(config: T, given: Optimiz
   if (experimental.fastStackTraces) use.fastStackTraces = true;
   if (experimental.screenshotMatches) use.screenshotMatches = true;
   if (experimental.keepStaticCache) use.keepStaticCache = true;
+  if (experimental.earlyInjection) use.earlyInjection = true;
+  if (experimental.fastTraces) use.fastTraces = true;
   if (options.compileCache) {
     enableCompileCache(options.compileCache === true ? defaultCompileCache() : options.compileCache);
   }

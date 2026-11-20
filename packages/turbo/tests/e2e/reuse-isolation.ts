@@ -219,6 +219,28 @@ export function defineIsolationTests(test: typeof turboTest): void {
     expect(state.dark).toBe(false);
   });
 
+  test.describe('with a viewport and color scheme of its own', () => {
+    test.use({ viewport: { width: 500, height: 400 }, colorScheme: 'dark' });
+
+    test('runs with the options it asks for', async ({ page }) => {
+      await page.goto(origin);
+      const state = await page.evaluate(() => ({
+        width: window.innerWidth,
+        dark: matchMedia('(prefers-color-scheme: dark)').matches,
+      }));
+      expect(state).toEqual({ width: 500, dark: true });
+    });
+  });
+
+  test('starts with the configured viewport and media after a test that asked for others', async ({ page }) => {
+    await page.goto(origin);
+    const state = await page.evaluate(() => ({
+      width: window.innerWidth,
+      dark: matchMedia('(prefers-color-scheme: dark)').matches,
+    }));
+    expect(state).toEqual({ width: 1280, dark: false });
+  });
+
   test('leaves a service worker behind', async ({ page }) => {
     await page.goto(origin);
     await page.evaluate(async () => {
