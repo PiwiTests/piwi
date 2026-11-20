@@ -49,7 +49,7 @@ export interface TurboOptions {
   earlyInjection: boolean;
   /**
    * Experimental: a trace that leaves out script bodies does not request them from the browser, and on Chromium leaves
-   * the DOM snapshots before and after each call in flight rather than awaiting them.
+   * the DOM snapshot after each call, and before most, in flight rather than awaiting it.
    */
   fastTraces: boolean;
 }

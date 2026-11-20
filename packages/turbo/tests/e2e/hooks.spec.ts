@@ -624,6 +624,7 @@ test.describe('fast traces', () => {
       await page.evaluate(slowSnapshots);
       await page.locator('input').fill('typed');
       await page.locator('button').click();
+      await page.waitForLoadState();
       await expect(page.locator('#n')).toHaveText('1');
       await page.evaluate(() => (document.querySelector('#n')!.textContent = '5'));
       await page.keyboard.press('Tab');
@@ -644,10 +645,34 @@ test.describe('fast traces', () => {
     const deferred = await record(true);
     expect(state.counters.deferredSnapshots).toBeGreaterThan(before);
     state.fastTraces = true;
-    const names = stock.map(([name]) => name);
-    expect(names).toContain('Frame.click #8 after');
-    expect(names).toContain('Frame.evaluateExpression #12 after');
-    expect(deferred).toEqual(stock);
+    const names = stock.snapshots.map(([name]) => name);
+    expect(names).toContain('Frame.click #9 after');
+    expect(names).toContain('Frame.evaluateExpression #13 after');
+    expect(stock.calls.filter((call) => call.startsWith('after')).length).toBe(14);
+    expect(deferred.calls).toEqual(stock.calls);
+    expect(deferred.snapshots).toEqual(stock.snapshots);
+  });
+
+  test('a page busy past the wait for a snapshot holds the calls after it once', async ({ browser, context }) => {
+    void context;
+    const traced = await browser.newContext();
+    const busy = await traced.newPage();
+    await busy.goto(url);
+    await traced.tracing.start({ snapshots: true });
+    // The page is busy for 5 s from its next task, which comes before the snapshot after this call.
+    await busy.evaluate(() => {
+      setTimeout(() => {
+        for (const end = Date.now() + 5_000; Date.now() < end;);
+      }, 0);
+    });
+    const started = Date.now();
+    const other = await traced.newPage();
+    await other.goto(url.replace('127.0.0.1', 'localhost'));
+    for (let i = 0; i < 3; i++) await other.keyboard.press('Tab');
+    await other.screenshot();
+    expect(Date.now() - started).toBeLessThan(4_500);
+    await traced.tracing.stop();
+    await traced.close();
   });
 });
 
@@ -671,8 +696,11 @@ function slowSnapshots() {
   };
 }
 
-/** The DOM snapshots of a trace, named by call, numbered in order, and phase, with call ids numbered the same way. */
-async function traceSnapshots(path: string): Promise<Array<[string, string]>> {
+/**
+ * A trace's calls as they start and end, and its DOM snapshots in the order they were written, named by call (numbered
+ * in order) and phase, with call ids numbered the same way.
+ */
+async function traceSnapshots(path: string): Promise<{ calls: string[]; snapshots: Array<[string, string]> }> {
   const zip = new ZipFile(path);
   const events = (await zip.read('trace.trace'))
     .toString('utf8')
@@ -684,13 +712,17 @@ async function traceSnapshots(path: string): Promise<Array<[string, string]>> {
   for (const event of events)
     if (event.type === 'before') calls.set(event.callId, `${event.class}.${event.method} #${calls.size}`);
   const numbered = (text: string) => text.replace(/[\w-]+@\d+/g, (callId) => calls.get(callId) ?? callId);
-  return events
-    .filter((event) => event.type === 'frame-snapshot')
-    .map(({ snapshot }): [string, string] => [
-      `${numbered(snapshot.callId)} ${snapshot.phase}`,
-      numbered(JSON.stringify(snapshot.html)),
-    ])
-    .sort(([a], [b]) => a.localeCompare(b));
+  return {
+    calls: events
+      .filter((event) => event.type === 'before' || event.type === 'after')
+      .map((event) => `${event.type} ${numbered(event.callId)}`),
+    snapshots: events
+      .filter((event) => event.type === 'frame-snapshot')
+      .map(({ snapshot }): [string, string] => [
+        `${numbered(snapshot.callId)} ${snapshot.phase}`,
+        numbered(JSON.stringify(snapshot.html)),
+      ]),
+  };
 }
 
 type HarFile = {

@@ -11,7 +11,8 @@
 //                     for the same context options
 //   early injection   creates Playwright's injected script and utility script in the utility world of a tab's new
 //                     document as soon as its context exists, while the document loads, instead of at its first call
-//   fast traces       a trace that leaves out script bodies does not request them from the browser
+//   fast traces       a trace that leaves out script bodies does not request them from the browser, and on Chromium
+//                     a traced call returns while its DOM snapshots are taken
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
@@ -652,12 +653,12 @@ function hookTracer(page: ServerPage): void {
 
 /** At most this many DOM snapshots of a trace in flight: one more is taken the stock way, holding its call. */
 const MAX_PENDING_SNAPSHOTS = 20;
-/** How long a call waits for the snapshots in flight before it goes on. */
-const PENDING_SNAPSHOTS_MS = 3_000;
+/** How long a snapshot in flight holds the calls that wait for it, as long as Playwright waits for one. */
+const SNAPSHOT_WAIT_MS = 3_000;
 /**
- * The calls that may start while the DOM snapshots taken before them are in flight. Each reaches the page through the
- * protocol session the snapshots use, after their requests, or sends input only after the snapshot Playwright takes
- * right before input, or after a round trip to the page: the page takes the snapshots first.
+ * The calls whose own before-snapshot may be left in flight. Each acts on its frame through that frame's protocol
+ * session, after the snapshot's request, or sends input only after the snapshot Playwright awaits right before input
+ * or a round trip to the page, so the page takes the snapshot first.
  */
 const SNAPSHOT_FREE_CALLS = new Set([
   ...['Frame', 'ElementHandle'].flatMap((type) =>
@@ -707,27 +708,54 @@ const SNAPSHOT_FREE_CALLS = new Set([
   'JSHandle.evaluateExpression',
   'JSHandle.evaluateExpressionHandle',
 ]);
-/** The DOM snapshots in flight, per trace recorder. */
+/**
+ * The calls that wait for the snapshots in flight before they start: those that reach the page outside the order of
+ * its protocol session (navigation, closing, the page's own input, rendering, emulation, a CDP session the test
+ * opened), and the trace's stop, which writes what the trace holds.
+ */
+const SNAPSHOT_BARRIER_CALLS = new Set([
+  'Frame.goto',
+  'Frame.dragAndDrop',
+  'Frame.drop',
+  'Page.reload',
+  'Page.goBack',
+  'Page.goForward',
+  'Page.close',
+  'Page.keyboardDown',
+  'Page.keyboardUp',
+  'Page.keyboardInsertText',
+  'Page.keyboardType',
+  'Page.keyboardPress',
+  'Page.mouseMove',
+  'Page.mouseDown',
+  'Page.mouseUp',
+  'Page.mouseClick',
+  'Page.mouseWheel',
+  'Page.touchscreenTap',
+  'Page.screenshot',
+  'Page.expectScreenshot',
+  'ElementHandle.screenshot',
+  'Page.setViewportSize',
+  'Page.emulateMedia',
+  'BrowserContext.close',
+  'CDPSession.send',
+  'Tracing.tracingStopChunk',
+  'Tracing.tracingStop',
+]);
+/** The DOM snapshots in flight, per trace recorder; each leaves the set when taken, or after `SNAPSHOT_WAIT_MS`. */
 const pendingSnapshots = new WeakMap<object, Set<Promise<void>>>();
-
-/** Waits for the snapshots `tracing` has in flight, for `PENDING_SNAPSHOTS_MS` at most. */
-async function settleSnapshots(tracing: object): Promise<void> {
-  const pending = pendingSnapshots.get(tracing);
-  if (!pending?.size) return;
-  let timer: NodeJS.Timeout | undefined;
-  const timeout = new Promise<void>((resolve) => (timer = setTimeout(resolve, PENDING_SNAPSHOTS_MS)));
-  await Promise.race([Promise.all(pending), timeout]);
-  clearTimeout(timer);
-}
+/** The trace recorder prototypes hookSnapshots has wrapped. */
+const snapshotsHooked = new WeakSet<object>();
 
 /**
- * fastTraces, on Chromium: the DOM snapshot a trace takes before and after a call is left in flight rather than
- * awaited, when it is the only capture of that phase. A call outside `SNAPSHOT_FREE_CALLS`, such as a navigation, a
- * close, keyboard input or the trace's own stop, waits for the snapshots in flight first. The snapshot taken right
+ * fastTraces, on Chromium: the DOM snapshot a trace takes after a call, and before a call in `SNAPSHOT_FREE_CALLS`, is
+ * left in flight rather than awaited, when it is the only capture of that phase (no screen or aria snapshots, no
+ * coverage). A call in `SNAPSHOT_BARRIER_CALLS` waits for the snapshots in flight first. The snapshot taken right
  * before an action's input is awaited as in stock.
  */
 function hookSnapshots(tracing: ServerPage): void {
   const proto = tracing && Object.getPrototypeOf(tracing);
+  if (proto && snapshotsHooked.has(proto)) return;
   const capture = proto?._captureSnapshot as
     | ((progress: ServerPage, sdkObject: ServerPage, phase: string) => Promise<void>)
     | undefined;
@@ -740,9 +768,11 @@ function hookSnapshots(tracing: ServerPage): void {
     !String(proto.onAfterCall).includes('return this._captureSnapshot(progress2, sdkObject, "after")') ||
     !String(proto.onBeforeInputAction).includes('return this._captureSnapshot(progress2, sdkObject, "action")') ||
     !captureSource.includes('this._snapshotter.captureSnapshot(page, progress2.metadata.id, phase') ||
+    !captureSource.includes('const options = this._state?.options;') ||
     !captureSource.includes('options?.snapshotScreen') ||
     !captureSource.includes('options?.snapshotAria') ||
-    !captureSource.includes('this._captureCoverage(')
+    !captureSource.includes('this._captureCoverage(') ||
+    !String(proto._captureCoverage).includes('this._coverageRecorder')
   ) {
     throw new IncompatibleError(
       "Playwright's trace recorder no longer takes its DOM snapshots the way fastTraces expects",
@@ -766,17 +796,29 @@ function hookSnapshots(tracing: ServerPage): void {
     if (!pending) pendingSnapshots.set(this, (pending = new Set()));
     const snapshots = pending;
     state.counters.deferredSnapshots++;
-    const snapshot = capture.call(this, progress, sdkObject, phase).catch(() => {});
+    const snapshot = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, SNAPSHOT_WAIT_MS);
+      timer.unref();
+      void capture
+        .call(this, progress, sdkObject, phase)
+        .catch(() => {})
+        .then(() => {
+          clearTimeout(timer);
+          resolve();
+        });
+    });
     snapshots.add(snapshot);
     void snapshot.then(() => snapshots.delete(snapshot));
     return Promise.resolve();
   };
   proto.onBeforeCall = function (this: ServerPage, progress: ServerPage, ...rest: unknown[]) {
     const { type, method } = progress.metadata ?? {};
-    if (!pendingSnapshots.get(this)?.size || SNAPSHOT_FREE_CALLS.has(`${type}.${method}`))
+    const pending = pendingSnapshots.get(this);
+    if (!pending?.size || !SNAPSHOT_BARRIER_CALLS.has(`${type}.${method}`))
       return onBeforeCall.call(this, progress, ...rest);
-    return settleSnapshots(this).then(() => onBeforeCall.call(this, progress, ...rest));
+    return Promise.all(pending).then(() => onBeforeCall.call(this, progress, ...rest));
   };
+  snapshotsHooked.add(proto);
 }
 
 /** The CDP session of a server context's first page, on Chromium. */
