@@ -1,7 +1,7 @@
 import { getDatabase } from '../../database';
 import { requireAuth } from '../../utils/auth';
 import { getAppSetting, setAppSetting, deleteAppSetting } from '../../utils/app-settings';
-import { encryptSecret, getEncryptionKey } from '../../utils/crypto';
+import { INSTANCE_SCM_CREDENTIALS_SETTING, instanceScmCredentialsProblem } from '#shared/handlers/credentials';
 import {
   AI_ROLES,
   storedRoles,
@@ -15,13 +15,14 @@ import { codexCliEnabled } from '../../utils/ai-codex-cli';
 import { deepseekCliEnabled } from '../../utils/ai-deepseek-cli';
 import { storedKeyFor } from '../../utils/ai-provider';
 import type { AiModelRole, AiProvider, SaveAiSettingsBody } from '~~/types/api';
+import { aiEndpoint, aiRoleCredentialProblem, saveAiRoleKey } from '../../utils/ai-credentials';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Settings'],
     summary: 'Save AI settings',
     description:
-      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and SCM token. Each role has its own provider/model/baseUrl/apiKey, or `reuse` to inherit another role. An `apiKey` or `scmToken` is encrypted at rest, so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
+      'Updates the per-role AI configuration (diagnosis, research, embedding, assistant), auto-diagnose toggle, custom instructions, and the SCM credentials of the instance (`scmCredentialIds`: credentials of the source control service shared with all projects; an empty list clears them). Each role has its own provider/model/baseUrl and key, or `reuse` to inherit another role. A typed `apiKey` is saved as a credential of the `ai` service bound to the endpoint of the role (it rotates the credential the role names while nothing else names it, else makes one shared with all projects), so saving one answers HTTP 409 while `PIWI_SECRET_KEY` is unset; `credentialId` names a saved credential instead, which must be shared with all projects and sent under the endpoint of the role; `null` for either removes the key of the role. A role that keeps its credential while its provider or base URL moves outside the destination of the credential answers 400. Requires `settings:manage` (administrators only). Env-managed conflict: when AI is configured via environment variables the environment is authoritative for provider, key, and base URL — those fields are ignored. Only per-role model and temperature overrides, and a role the environment leaves out that reuses one it sets, are applied (`roles: null` clears them). The response always reflects the effective configuration.',
     'x-required-permission': 'settings:manage',
   },
 });
@@ -38,7 +39,7 @@ function parseTemperature(role: AiModelRole, value: number | null | undefined): 
 }
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
 
   const runtimeConfig = useRuntimeConfig();
   const envAi = runtimeConfig.ai as { provider?: string } | undefined;
@@ -47,7 +48,26 @@ export default eventHandler(async (event) => {
 
   const db = await getDatabase();
 
-  // Custom instructions and SCM token are stored independently of the provider config.
+  // The SCM fields are checked before anything is written.
+  if ((body as { scmToken?: unknown }).scmToken !== undefined) {
+    throw apiError({
+      statusCode: 400,
+      message:
+        'An SCM token is saved as a credential (Settings → Credentials), then listed here with scmCredentialIds.',
+    });
+  }
+  let scmCredentialIds: number[] | undefined;
+  if (body.scmCredentialIds !== undefined) {
+    const raw = body.scmCredentialIds ?? [];
+    if (!Array.isArray(raw) || raw.some((id) => !Number.isInteger(id) || id <= 0)) {
+      throw apiError({ statusCode: 400, message: 'scmCredentialIds is a list of credential ids.' });
+    }
+    scmCredentialIds = [...new Set(raw)];
+    const problem = await instanceScmCredentialsProblem(db, scmCredentialIds);
+    if (problem) throw apiError({ statusCode: 400, message: problem });
+  }
+
+  // Custom instructions and the SCM credentials are stored independently of the provider config.
   if (body.customInstructions !== undefined) {
     const trimmed = body.customInstructions?.trim() || null;
     if (trimmed) await setAppSetting(db, 'ai_instructions', { value: trimmed });
@@ -62,10 +82,10 @@ export default eventHandler(async (event) => {
     else await deleteAppSetting(db, 'ai_language');
   }
 
-  if (body.scmToken !== undefined) {
-    const trimmed = body.scmToken?.trim() || null;
-    if (trimmed) await setAppSetting(db, 'scm_token', { value: encryptSecret(trimmed, getEncryptionKey()) });
-    else await deleteAppSetting(db, 'scm_token');
+  if (scmCredentialIds !== undefined) {
+    if (scmCredentialIds.length > 0)
+      await setAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING, { ids: scmCredentialIds });
+    else await deleteAppSetting(db, INSTANCE_SCM_CREDENTIALS_SETTING);
   }
 
   // Only touch the provider config when the request actually carries it.
@@ -110,11 +130,8 @@ export default eventHandler(async (event) => {
       return readAiSettings(db);
     }
 
-    const resolveKey = (provided: string | null | undefined, existingEnc?: string): string | undefined => {
-      if (provided === undefined) return existingEnc; // preserve
-      if (provided === '' || provided === null) return undefined; // remove
-      return encryptSecret(provided, getEncryptionKey());
-    };
+    /** The keys typed for roles, saved as credentials once the whole body passed its checks. */
+    const typedKeys: Array<{ role: AiModelRole; endpoint: string; key: string; credentialId: number | null }> = [];
 
     const out: Partial<Record<AiModelRole, RawStoredRole>> = {};
     for (const role of AI_ROLES) {
@@ -170,27 +187,56 @@ export default eventHandler(async (event) => {
           message: `Role "${role}": OpenAI-compatible provider requires baseUrl and model`,
         });
       }
-      // A stored key is kept only for the provider and base URL it was saved for;
-      // pointing the role elsewhere needs the key entered again.
       const existing = existingRoles[role];
-      if (
-        !localCli &&
-        cfg.apiKey === undefined &&
-        existing?.apiKey &&
-        !storedKeyFor({ ...existing, apiKey: 'stored' }, provider, baseUrl)
-      ) {
-        throw apiError({
-          statusCode: 400,
-          message: `Role "${role}": enter the API key again. A saved key is only sent to the provider and base URL it was saved for.`,
-        });
+      // A local CLI carries no key or base URL: the CLI owns auth and endpoint.
+      let credentialId: number | undefined;
+      let legacyKey: string | undefined;
+      const endpoint = localCli ? null : aiEndpoint(provider, baseUrl);
+      if (endpoint) {
+        const typed = typeof cfg.apiKey === 'string' ? cfg.apiKey.trim() : '';
+        if (typed) {
+          if (typeof cfg.credentialId === 'number') {
+            const problem = await aiRoleCredentialProblem(db, role, cfg.credentialId, endpoint);
+            if (problem) throw apiError({ statusCode: 400, message: problem });
+          }
+          // Saved below, once the whole body passed its checks: it rotates the role's own credential, else makes one.
+          typedKeys.push({
+            role,
+            endpoint,
+            key: typed,
+            credentialId: cfg.credentialId ?? existing?.credentialId ?? null,
+          });
+        } else if (cfg.apiKey === null || cfg.apiKey === '' || cfg.credentialId === null) {
+          credentialId = undefined;
+        } else if (typeof cfg.credentialId === 'number') {
+          const problem = await aiRoleCredentialProblem(db, role, cfg.credentialId, endpoint);
+          if (problem) throw apiError({ statusCode: 400, message: problem });
+          credentialId = cfg.credentialId;
+        } else if (existing?.credentialId != null) {
+          // The credential the role names is sent only under its destination: another endpoint needs another key.
+          if (await aiRoleCredentialProblem(db, role, existing.credentialId, endpoint)) {
+            throw apiError({
+              statusCode: 400,
+              message: `Role "${role}": enter the API key again, or pick another credential. A saved key is only sent to the provider and base URL it was saved for.`,
+            });
+          }
+          credentialId = existing.credentialId;
+        } else if (existing?.apiKey) {
+          if (!storedKeyFor({ ...existing, apiKey: 'stored' }, provider, baseUrl)) {
+            throw apiError({
+              statusCode: 400,
+              message: `Role "${role}": enter the API key again. A saved key is only sent to the provider and base URL it was saved for.`,
+            });
+          }
+          legacyKey = existing.apiKey;
+        }
       }
-      // claude-cli carries no key or base URL — the CLI owns auth and endpoint.
-      const apiKey = localCli ? undefined : resolveKey(cfg.apiKey, existing?.apiKey);
       out[role] = {
         provider,
         model,
         baseUrl: localCli ? '' : baseUrl,
-        ...(apiKey ? { apiKey } : {}),
+        ...(credentialId != null ? { credentialId } : {}),
+        ...(legacyKey ? { apiKey: legacyKey } : {}),
         ...(temperature !== undefined ? { temperature } : {}),
       };
     }
@@ -211,6 +257,11 @@ export default eventHandler(async (event) => {
           message: 'The embedding role requires an OpenAI-compatible provider (Anthropic has no embeddings API)',
         });
       }
+    }
+
+    for (const typed of typedKeys) {
+      const id = await saveAiRoleKey(db, { ...typed, createdBy: user.id || null });
+      out[typed.role] = { ...out[typed.role], credentialId: id };
     }
 
     const autoDiagnose = 'autoDiagnose' in body ? Boolean(body.autoDiagnose) : Boolean(existing.autoDiagnose);

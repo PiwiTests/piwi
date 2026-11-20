@@ -228,6 +228,11 @@ export interface ChangeCoverage {
   totalChangedFiles: number | null;
   /** False when no SCM diff was available (no token, or the fetch failed). */
   scmAvailable: boolean;
+  /**
+   * For a run of a deployed environment whose deployed commit is not the head, or is unknown: the sentence that says
+   * what the run reached of the application is the deployed version's (`changeCoverageDeployedNote`).
+   */
+  deployedNote?: string | null;
 }
 
 export interface ChangeCoverageInput {

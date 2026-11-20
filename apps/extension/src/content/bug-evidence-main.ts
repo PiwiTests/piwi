@@ -2,7 +2,7 @@ import { BUG_EVIDENCE_LIMITS, reportedRequestUrl } from '@piwitests/core/bug-rep
 import { BUG_RELAY, ownOrigin, type BugRelayEntry } from '../shared/bug-relay.js';
 
 /**
- * Runs in the page's main world while a bug recording or a replay is on,
+ * Runs in the page's main world while a recording or a replay is on,
  * registered by the background worker for its origin at `document_start`. Notes
  * console errors and warnings, uncaught errors, unhandled rejections, and
  * requests that failed or answered 400 or more (method, URL without query

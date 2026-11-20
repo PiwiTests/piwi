@@ -1,7 +1,7 @@
 /**
- * The ids the editor clients freeze at 1.0 (D25 of `proposals/1.0-stabilization.md`): every command, setting and MCP
- * provider id the VS Code extension contributes, and every action id and notification group the JetBrains plugin
- * declares, which keybindings, keymaps and settings files name. The register lists each one, and nothing the
+ * The ids the editor clients freeze at 1.0 (D25 of `proposals/1.0-stabilization.md`): every command, setting, MCP
+ * provider, view and submenu id the VS Code extension contributes, and every action, action group and notification
+ * group id the JetBrains plugin declares, which keybindings, keymaps, layouts and settings files name. The register lists each one, and nothing the
  * manifests do not hold.
  */
 import { readFileSync } from 'node:fs';
@@ -25,28 +25,41 @@ function idsIn(text: string, pattern: RegExp): string[] {
 }
 
 describe('the editor ids D25 freezes', () => {
-  test("list every command, setting and MCP provider id of the VS Code extension's manifest", () => {
+  test("list every command, setting, MCP provider, view and submenu id of the VS Code extension's manifest", () => {
     const manifest = JSON.parse(readFileSync(resolve(root, 'apps/vscode/package.json'), 'utf8')) as {
       contributes: {
         commands: Array<{ command: string }>;
         configuration: { properties: Record<string, unknown> } | Array<{ properties: Record<string, unknown> }>;
         mcpServerDefinitionProviders: Array<{ id: string }>;
+        views: Record<string, Array<{ id: string }>>;
+        viewsContainers: Record<string, Array<{ id: string }>>;
+        submenus: Array<{ id: string }>;
       };
     };
-    const { commands, configuration, mcpServerDefinitionProviders } = manifest.contributes;
+    const { commands, configuration, mcpServerDefinitionProviders, views, viewsContainers, submenus } =
+      manifest.contributes;
     const settings = [configuration].flat().flatMap((c) => Object.keys(c.properties));
     const contributed = [
       ...commands.map((c) => c.command),
       ...settings,
       ...mcpServerDefinitionProviders.map((p) => p.id),
+      ...Object.values(views)
+        .flat()
+        .map((v) => v.id),
+      ...submenus.map((s) => s.id),
     ];
     const registered = idsIn(bullet('- **The VS Code extension**'), /^piwi\.[A-Za-z][\w.]*$/);
     expect(registered).toEqual([...new Set(contributed)].sort());
+    // The panels its views sit in, by their bare ids.
+    const panels = Object.values(viewsContainers)
+      .flat()
+      .map((c) => c.id);
+    expect(panels.filter((id) => !idsIn(bullet('- **The VS Code extension**'), /^[a-z]+$/).includes(id))).toEqual([]);
   });
 
-  test("list every action id of the JetBrains plugin's plugin.xml", () => {
+  test("list every action and action group id of the JetBrains plugin's plugin.xml", () => {
     const pluginXml = readFileSync(resolve(root, 'apps/jetbrains/src/main/resources/META-INF/plugin.xml'), 'utf8');
-    const declared = [...pluginXml.matchAll(/<action id="([^"]+)"/g)].map((m) => m[1]!);
+    const declared = [...pluginXml.matchAll(/<(?:action|group) id="([^"]+)"/g)].map((m) => m[1]!);
     const registered = idsIn(bullet('- **The JetBrains plugin**'), /^Piwi\.[A-Za-z]+(\.[A-Za-z]+)?$/);
     expect(registered).toEqual([...new Set(declared)].sort());
   });

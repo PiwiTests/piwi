@@ -142,3 +142,96 @@ export function branchUrl(repositoryUrl: string | null | undefined, branch: stri
       return `${repo.base}/branch/${encoded}`;
   }
 }
+
+/**
+ * The API each host serves its repositories under, as an SCM credential's
+ * destination names it: the host's API origin, then the path of its
+ * repositories. A destination is the origin alone, or a path under the
+ * repositories' (one owner's, one repository's).
+ */
+const SCM_API: Record<ScmProviderName, { origin: string; repositories: string }> = {
+  github: { origin: 'https://api.github.com', repositories: '/repos/' },
+  gitlab: { origin: 'https://gitlab.com', repositories: '/api/v4/projects/' },
+  bitbucket: { origin: 'https://api.bitbucket.org', repositories: '/2.0/repositories/' },
+};
+
+/** The destination of an SCM credential for each host's whole API. */
+export const SCM_API_DESTINATIONS: Record<ScmProviderName, string> = {
+  github: `${SCM_API.github.origin}/`,
+  gitlab: `${SCM_API.gitlab.origin}/`,
+  bitbucket: `${SCM_API.bitbucket.origin}/`,
+};
+
+/**
+ * The host an SCM credential's destination is for, or null when it is none
+ * Piwi calls: the API of GitHub, Bitbucket, the GitLab cloud or a GitLab host
+ * of `gitlabHosts` (`PIWI_SCM_GITLAB_HOSTS`), over https, whole or narrowed to
+ * a path under its repositories.
+ */
+export function scmDestinationHost(
+  destination: string,
+  gitlabHosts: ReadonlySet<string> = new Set(),
+): ScmProviderName | null {
+  let url: URL;
+  try {
+    url = new URL(destination);
+  } catch {
+    return null;
+  }
+  if (url.protocol !== 'https:' || url.port || url.username || url.password) return null;
+  const host = url.hostname.toLowerCase();
+  const name = (Object.keys(SCM_API) as ScmProviderName[]).find(
+    (key) => new URL(SCM_API[key].origin).hostname === host,
+  );
+  const provider = name ?? (gitlabHosts.has(host) ? 'gitlab' : null);
+  if (!provider) return null;
+  const path = url.pathname.endsWith('/') ? url.pathname : `${url.pathname}/`;
+  if (path === '/') return provider;
+  if (!path.startsWith(SCM_API[provider].repositories)) return null;
+  // GitLab names a project by its whole path, `group%2Fproject`, encoded as one segment: a destination narrows it to one project.
+  if (provider === 'gitlab') {
+    return /^[^/]*%2F[^/]*\/$/i.test(path.slice(SCM_API.gitlab.repositories.length)) ? provider : null;
+  }
+  return provider;
+}
+
+/**
+ * An SCM credential's destination as it is stored: GitHub and Bitbucket
+ * ignore the case of an owner and a repository, so their path is kept in
+ * lower case, as {@link scmRepositoryApiUrl} writes it.
+ */
+export function normalizeScmDestination(destination: string): string {
+  const host = scmDestinationHost(destination);
+  if (host !== 'github' && host !== 'bitbucket') return destination;
+  const url = new URL(destination);
+  return `${url.origin}${url.pathname.toLowerCase()}`;
+}
+
+/**
+ * The API URL of a repository, which an SCM credential's destination must
+ * hold for the credential to go with its calls: GitHub's and Bitbucket's in
+ * lower case, GitLab's with the project's path as one encoded segment. Null
+ * for a host Piwi has no client for.
+ */
+export function scmRepositoryApiUrl(repositoryUrl: string | null | undefined): string | null {
+  const repo = repositoryUrl ? repoBase(repositoryUrl) : null;
+  if (!repo) return null;
+  const url = new URL(repo.base);
+  const path = url.pathname.replace(/^\/+|\/+$/g, '').replace(/\.git$/, '');
+  if (!path.includes('/')) return null;
+  if (repo.host === 'gitlab') return `https://${url.hostname}${SCM_API.gitlab.repositories}${encodeURIComponent(path)}`;
+  const [owner, name] = path.toLowerCase().split('/');
+  return `${SCM_API[repo.host].origin}${SCM_API[repo.host].repositories}${owner}/${name}`;
+}
+
+/**
+ * The destination of an SCM credential for a repository's host, its whole
+ * API: GitHub's or Bitbucket's, or the GitLab host's (`https://gitlab.com/`,
+ * `https://gitlab.example.com/`). Null for a host Piwi has no client for.
+ */
+export function scmApiDestination(repositoryUrl: string | null | undefined): string | null {
+  const host = detectScmHost(repositoryUrl);
+  if (!host) return null;
+  if (host !== 'gitlab') return SCM_API_DESTINATIONS[host];
+  return `https://${canonicalScmHostname(new URL(repositoryUrl!).hostname)}/`;
+}

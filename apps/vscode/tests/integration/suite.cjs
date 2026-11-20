@@ -115,7 +115,7 @@ const tests = {
     assert.equal(failure.message, "locator('.cart-row').nth(2) was not found (removes a row, run #41)");
   },
 
-  async 'its quick fixes heal in place and open the evidence'() {
+  async "its quick fixes edit in place, and its evidence is the failure node's"() {
     await vscode.window.showTextDocument(pageObject);
     const failure = vscode.languages.getDiagnostics(pageObject).find((d) => d.code?.value === 'ci-failure');
     const actions = await waitFor(async () => {
@@ -129,11 +129,15 @@ const tests = {
     }, 'the heal quick fix');
     const titles = actions.map((a) => a.title);
     assert.ok(titles.includes("Piwi: heal with getByRole('row', { name: /Mug/ })"), titles.join(' | '));
-    assert.ok(titles.includes('Piwi: open the trace'), titles.join(' | '));
-    assert.ok(titles.includes('Piwi: open the failure in the dashboard'), titles.join(' | '));
-    assert.ok(titles.includes('Piwi: copy context for agent'), titles.join(' | '));
-    const copy = actions.find((a) => a.title === 'Piwi: copy context for agent');
-    await vscode.commands.executeCommand(copy.command.command, ...copy.command.arguments);
+    // A quick fix edits: the trace, the dashboard and the context for an agent are the failure node's.
+    for (const title of [
+      'Piwi: open the trace',
+      'Piwi: open the failure in the dashboard',
+      'Piwi: copy context for agent',
+    ]) {
+      assert.ok(!titles.includes(title), titles.join(' | '));
+    }
+    await vscode.commands.executeCommand('piwi.copyAgentContext', { uri: pageObject.toString(), executionId: 900 });
     assert.match(await vscode.env.clipboard.readText(), /^# Failing test: removes a row/);
 
     const heal = actions.find((a) => a.title.startsWith('Piwi: heal with'));
@@ -186,11 +190,12 @@ const tests = {
     );
   },
 
-  async 'the Testing view runs a test with the command Piwi builds, as the editor’s own run'() {
+  async 'the Testing view runs its tests with the command Piwi builds, as the editor’s own run'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     await vscode.commands.executeCommand('testing.runAll');
     const run = await waitFor(() => api.lastRun(), 'the run the Testing view started');
-    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3');
+    // Every test: the config whole, with no filter.
+    assert.equal(run.command, 'npx playwright test');
     assert.match(run.ref, /^ed-[0-9a-f]{8}$/);
     assert.equal(run.env.PIWI_ORIGIN_REF, run.ref);
   },
@@ -227,7 +232,9 @@ const tests = {
       .flatMap((h) => h.contents)
       .map((c) => (typeof c === 'string' ? c : c.value))
       .join('\n');
-    assert.match(text, /\*\*CI failure\*\* · \[removes a row\]/);
+    // The diagnostic under the pointer says what failed: the hover gives the failure's page.
+    assert.match(text, /\[Open in dashboard\]\(http:\/\/127\.0\.0\.1:\d+\/test-run-cases\/900\)/);
+    assert.doesNotMatch(text, /\*\*CI failure\*\*/);
   },
 
   async 'page. completes with the chains the suite uses on this file’s pages'() {
@@ -251,8 +258,54 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
-  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+  async 'Piwi Picker pairs by code, once the person allows it'() {
+    // Pair with Piwi Picker listens where Piwi Picker looks: the first pairing port free, 7247 to 7251.
     await vscode.commands.executeCommand('piwi.pairPicker');
+    const base = await waitFor(async () => {
+      for (const port of [7247, 7248, 7249, 7250, 7251]) {
+        const hello = await fetch(`http://127.0.0.1:${port}/piwi/hello`).catch(() => null);
+        const body = hello?.ok ? await hello.json() : null;
+        if (body?.editor === 'vscode') return `http://127.0.0.1:${port}/piwi`;
+      }
+      return null;
+    }, 'the hello on a pairing port');
+    const origin = `chrome-extension://${'a'.repeat(32)}`;
+    const started = await fetch(`${base}/pairings`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ browser: 'Chrome', os: 'Linux' }),
+    });
+    assert.equal(started.status, 201);
+    const { id, secret, code } = await started.json();
+    // The editor makes no code: Piwi Picker shows one of its own, which the person types here.
+    assert.equal(code, undefined);
+    const poll = async () =>
+      (await fetch(`${base}/pairings/${id}`, { headers: { Origin: origin, 'x-pairing-secret': secret } })).json();
+    assert.deepEqual(await poll(), { status: 'waiting' });
+    // The view's Allow on the request's row, with the code typed.
+    await vscode.commands.executeCommand('piwi.allowPickerPairing', { requestId: id, code: 'bcdf ghjk' });
+    const answer = await poll();
+    assert.equal(answer.status, 'allowed');
+    // The proof Piwi Picker checks against its own code.
+    const proof = require('node:crypto')
+      .createHmac('sha256', 'BCDFGHJK')
+      .update(`piwi-editor-pairing:${id}:${answer.token}`)
+      .digest('hex');
+    assert.equal(answer.proof, proof);
+    // The token sends to the address Piwi Picker asked: `…/send` beside `…/pairings`.
+    const refused = await fetch(`${base}/send`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer nope' },
+      body: '{}',
+    });
+    assert.equal(refused.status, 401);
+    const live = await fetch(`${base}/live`, { headers: { Authorization: `Bearer ${answer.token}` } });
+    assert.equal(live.status, 200);
+    assert.deepEqual(await poll(), { status: 'claimed' });
+  },
+
+  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+    await vscode.commands.executeCommand('piwi.copyPickerAddress');
     const pairing = await vscode.env.clipboard.readText();
     const [url, token] = pairing.split('#');
     assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send$/);
@@ -408,7 +461,8 @@ const tests = {
     const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
     vscode.debug.addBreakpoints([breakpoint]);
     try {
-      await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1] });
+      // A Debug with Piwi run pauses at them; a plain Run, at none.
+      await vscode.commands.executeCommand('piwi.runTests', { uri: spec.toString(), testIds: [1], debugging: true });
       const run = api.lastRun();
       assert.equal(run.env.PIWI_PAUSE_AT, 'tests/checkout.spec.ts:3');
       // Built in the editor from the instance's args; the instance's own command text is never run. The fixture
@@ -492,9 +546,18 @@ const tests = {
   async 'a run started here shows where it stops, its controls steer it, and its breakpoints follow the editor’s'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
+    // A run heard of, not started here, pauses at the editor's breakpoints with `always` alone.
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('breakpoints', 'always', vscode.ConfigurationTarget.Global);
     assert.ok(channel, 'the run names the run channel');
     const ref = 'ed-0000c0de';
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    // No editor open: the stop opens its file, whatever the tests before left open.
+    assert.deepEqual(
+      vscode.workspace.textDocuments.filter((d) => d.isDirty).map((d) => d.uri.toString()),
+      [],
+    );
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     // A worker of the run, as the capture fixtures play it on its run connection.
     const { socket, heard, send, heardOne } = runWorker(channel, ref);
     const sessionOf = () => api.runSessions().find((s) => s.ref === ref);
@@ -522,11 +585,13 @@ const tests = {
         locator: "getByRole('button', { name: 'Pay now' })",
         bar: true,
       });
-      // The file opens at the paused line, marked, with what is about to run and the controls above it.
+      // The file opens at the paused line, marked, with what is about to run and the controls above it. The mark is
+      // drawn in each editor that shows the file as the stop is heard; the cursor moves once the stop's file opens.
       await waitFor(() => api.executionPoints(pageObject.toString()).includes(3), 'the execution point');
-      const editor = vscode.window.activeTextEditor;
-      assert.equal(editor?.document.uri.toString(), pageObject.toString());
-      assert.equal(editor.selection.active.line, 3);
+      await waitFor(() => {
+        const editor = vscode.window.activeTextEditor;
+        return editor?.document.uri.toString() === pageObject.toString() && editor.selection.active.line === 3;
+      }, 'the cursor at the paused line, in the active editor');
       const lenses = await waitFor(async () => {
         const titles = await pausedLenses(pageObject);
         return titles.length ? titles : null;
@@ -654,6 +719,7 @@ const tests = {
       await new Promise((resolve) => setTimeout(resolve, 200));
       assert.equal(heard.filter((m) => m.type === 'control' && m.action === 'resume').length, 1);
     } finally {
+      await settings.update('breakpoints', undefined, vscode.ConfigurationTarget.Global);
       socket.destroy();
       await vscode.window.showTextDocument(spec);
       await vscode.commands.executeCommand('workbench.action.files.revert');
@@ -670,6 +736,9 @@ const tests = {
     const channel = api.lastRun().env.PIWI_RUN_CHANNEL;
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
     const breakpoint = new vscode.SourceBreakpoint(new vscode.Location(spec, new vscode.Position(2, 0)));
+    // A run a terminal starts pauses at the editor's breakpoints with `always` alone.
+    const settings = vscode.workspace.getConfiguration('piwi');
+    await settings.update('breakpoints', 'always', vscode.ConfigurationTarget.Global);
     vscode.debug.addBreakpoints([breakpoint]);
     // The run a terminal started names itself, on the channel of the window's discovery file.
     const ref = 'terminal-4242-1730000000000';
@@ -714,6 +783,7 @@ const tests = {
       await vscode.commands.executeCommand('piwi.endTest');
       await heardOne('End the test', (m) => m.type === 'control' && m.action === 'end' && m.stop === 1);
     } finally {
+      await settings.update('breakpoints', undefined, vscode.ConfigurationTarget.Global);
       vscode.debug.removeBreakpoints([breakpoint]);
       socket.destroy();
     }
@@ -1532,6 +1602,10 @@ const tests = {
       'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',
+      'piwi.copyPickerAddress',
+      'piwi.allowPickerPairing',
+      'piwi.denyPickerPairing',
+      'piwi.unpairPicker',
       'piwi.runCommand',
       'piwi.copyText',
       'piwi.runSelection',
@@ -1653,7 +1727,9 @@ const tests = {
     // A yes: the test runs headed, with one worker, and its run alone stops at the failing line.
     await api.openDebugLink(link, (_prompt, answer) => Promise.resolve(answer));
     const run = await waitFor(() => (api.lastRun() !== before ? api.lastRun() : null), 'the debug run');
-    assert.equal(run.command, 'npx playwright test tests/checkout.spec.ts:3 --project=chromium --workers=1 --headed');
+    // The test by its whole path, anchored at its start.
+    const spec = `^${require('node:fs').realpathSync(workspace)}/tests/checkout.spec.ts:3`;
+    assert.equal(run.command, `npx playwright test "${spec}" --project=chromium --workers=1 --headed`);
     assert.ok(run.env.PIWI_PAUSE_AT.split(';').includes('tests/pages/checkout.page.ts:5'), run.env.PIWI_PAUSE_AT);
     assert.equal(vscode.debug.breakpoints.length, breakpoints, 'no breakpoint added to the editor’s');
     const { socket, heard, send, heardOne, answers } = runWorker(run.env.PIWI_RUN_CHANNEL, run.ref, [

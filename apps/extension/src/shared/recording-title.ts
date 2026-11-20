@@ -37,7 +37,7 @@ export function titleFromSteps(steps: readonly RecordedStep[]): string | null {
 
 /**
  * The title of a recording's spec and steps file: the one it was given (the
- * review panel's field, filled from the first page's own title as the
+ * finish panel's field, filled from the first page's own title as the
  * recording starts), else one made from its steps.
  */
 export function recordingTitle(state: Pick<RecordingState, 'title'>, steps: readonly RecordedStep[]): string | null {

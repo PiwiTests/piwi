@@ -20,6 +20,7 @@ function result(overrides: Partial<ForecastResult> & { at: number }): ForecastRe
     durationMs: 1_000,
     versions: new Set([v('src/cart.ts', 'a'), v('src/api.ts', 'b')]),
     ciCommit: null,
+    target: 'none',
     ...overrides,
   };
 }
@@ -78,6 +79,35 @@ describe('forecastReuse', () => {
       OPTS,
     );
     expect(out.total.reusable).toBe(0);
+  });
+
+  test('a pass of another target, or of an unknown deployed version, stands in for nothing', () => {
+    const out = forecastReuse(
+      [
+        result({ at: T0 + DAY, target: 'environment 1' }),
+        result({ at: T0 + DAY + 1, target: 'environment 2' }),
+        result({ at: T0 + DAY + 2, target: null }),
+        result({ at: T0 + DAY + 3, target: null }),
+        result({ at: T0 + DAY + 4, target: 'environment 1', outcome: 'failed' }),
+      ],
+      OPTS,
+    );
+    expect(out.total).toMatchObject({ results: 5, reusable: 1, failed: 1 });
+    expect(out.tests).toEqual([expect.objectContaining({ testCaseId: 1, failed: 1 })]);
+  });
+
+  test('a test failing with its code unchanged in two targets is listed once, naming its latest failure', () => {
+    const latest = result({ at: T0 + DAY + 3, target: 'environment 1', outcome: 'failed' });
+    const out = forecastReuse(
+      [
+        result({ at: T0 + DAY, target: 'environment 1' }),
+        result({ at: T0 + DAY + 1, target: 'environment 2' }),
+        result({ at: T0 + DAY + 2, target: 'environment 2', outcome: 'failed' }),
+        latest,
+      ],
+      OPTS,
+    );
+    expect(out.tests).toEqual([expect.objectContaining({ failed: 2, lastExecutionId: latest.executionId })]);
   });
 
   test('within one run, the pass of an earlier run stands in', () => {

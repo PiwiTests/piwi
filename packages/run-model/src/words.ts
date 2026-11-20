@@ -1,3 +1,5 @@
+import type { HubAnswerCode } from '@piwitests/core/run-hub';
+
 /**
  * The words of the run model: those its functions return or use, and the words of the interface the surfaces share
  * (a stop's card, its page, its controls). Each key is a key of Piwi Picker's catalogs
@@ -175,12 +177,62 @@ export const RUN_WORDS_EN = {
   runs_ciProject: '$project$',
   runs_ciReadOnly:
     'Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.',
+  // A run on the team instance: its number and page there, and sharing it live.
+  runs_runNumber: 'Run #$id$',
+  runs_openRunPage: 'Open',
+  runs_shareLive: 'Share live',
+  runs_stopSharing: 'Stop sharing',
   // Who drives a stop, taken or given back.
   runs_takeControl: 'Take control',
   runs_takeControlTitle: 'Drive this stop yourself: an agent’s actions here wait until you give it back',
   runs_giveBack: 'Give back',
   runs_giveBackTitle: 'Give this stop back: an agent may act on it again',
+  // What a hub answers a command, by the code its answer carries (`RUN_ANSWER_KEYS`).
+  runs_answerPausing: 'Pausing at the next call.',
+  runs_answerStepping: 'Stepping to the next call.',
+  runs_answerResuming: 'Resuming.',
+  runs_answerFinishing: 'Finishing the test without stopping at a breakpoint.',
+  runs_answerEndingSkipped: 'Ending the test: it is reported as skipped.',
+  runs_answerEndingFailed: 'The test failed already: it ends as it failed.',
+  runs_answerWentOn: 'The test went on.',
+  runs_answerRunning: 'The test is running.',
+  runs_answerStoppedAlready: 'The test is stopped already.',
+  runs_answerDriveOn: 'You drive this stop: an agent would wait until you give it back.',
+  runs_answerDriveTaken: 'You drive this stop: the agent waits until you give it back.',
+  runs_answerDriveBack: 'You gave this stop back: an agent may act on it.',
+  runs_answerDriveNone: 'You did not drive this stop.',
+  runs_answerHoldOn: 'A failure no pause bar shows waits at its line in this run until someone answers it.',
+  runs_answerHoldOff: 'A failure of this run no pause bar shows goes on at once.',
+  runs_answerHoldUnattended: 'Nobody attends a run of this kind: its failures go on at once, whoever watches it.',
+  runs_answerShareOn:
+    'Sharing the run live on $instance$: whoever may open it there can watch its tests’ pages while someone does.',
+  runs_answerShareOff: 'Stopped sharing the run: nothing more goes to $instance$.',
 } as const;
+
+/**
+ * The message each code of a hub's answer (`HubAnswer.code`) is said with; Share live's two name the instance the run
+ * is shared on (`$instance$`).
+ */
+export const RUN_ANSWER_KEYS = {
+  pausing: 'runs_answerPausing',
+  stepping: 'runs_answerStepping',
+  resuming: 'runs_answerResuming',
+  finishing: 'runs_answerFinishing',
+  'ending-skipped': 'runs_answerEndingSkipped',
+  'ending-failed': 'runs_answerEndingFailed',
+  'went-on': 'runs_answerWentOn',
+  running: 'runs_answerRunning',
+  'stopped-already': 'runs_answerStoppedAlready',
+  'drive-on': 'runs_answerDriveOn',
+  'drive-taken': 'runs_answerDriveTaken',
+  'drive-back': 'runs_answerDriveBack',
+  'drive-none': 'runs_answerDriveNone',
+  'hold-on': 'runs_answerHoldOn',
+  'hold-off': 'runs_answerHoldOff',
+  'hold-unattended': 'runs_answerHoldUnattended',
+  'share-on': 'runs_answerShareOn',
+  'share-off': 'runs_answerShareOff',
+} as const satisfies Record<HubAnswerCode, keyof typeof RUN_WORDS_EN>;
 
 /** A key of the catalogs that the run model's functions return or use, or a word of the interface the surfaces share. */
 export type RunWordKey = keyof typeof RUN_WORDS_EN;

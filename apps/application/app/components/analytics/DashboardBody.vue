@@ -19,6 +19,7 @@ import {
   type DashboardWidget,
 } from '#shared/analytics/dashboards';
 import type { DashboardList, DashboardView } from '#shared/handlers/dashboards';
+import type { InstanceEnvironment } from '#shared/handlers/environments';
 import type { ProjectMenuItem, TestRunForChart } from '~~/types/api';
 
 const props = defineProps<{ view: DashboardView; list: DashboardList | null; tv: boolean }>();
@@ -66,7 +67,7 @@ const { data: availableProjects } = await useFetch('/api/projects/menu', {
   transform: (r: { items: ProjectMenuItem[] }) => r.items,
 });
 
-// Environment options for the Filters block (same source as the home filters).
+// Branch options for the Filters block, and the newest run (same source as the home filters).
 const { data: recentTestRuns } = await useFetch('/api/test-runs/recent', {
   lazy: true,
   server: false,
@@ -74,13 +75,22 @@ const { data: recentTestRuns } = await useFetch('/api/test-runs/recent', {
   transform: (r: { items: TestRunForChart[] }) => r.items,
 });
 
-const availableEnvironments = computed(() => {
-  const envSet = new Set<string>();
-  for (const run of recentTestRuns.value ?? []) {
-    if (run.environment) envSet.add(run.environment);
-  }
-  return [...envSet].sort();
+// Environment options for the Filters block: the environments of the projects in reach, by key.
+const { data: instanceEnvironments } = useFetch('/api/environments', {
+  lazy: true,
+  server: false,
+  default: () => [] as InstanceEnvironment[],
+  transform: (r: { environments: InstanceEnvironment[] }) => r.environments,
 });
+
+const availableEnvironments = computed(() =>
+  instanceEnvironmentFilterItems({
+    environments: instanceEnvironments.value ?? [],
+    selected: state.value.environments,
+  }),
+);
+const defaultEnvironments = computed(() => (instanceEnvironments.value ?? []).some((e) => e.defaults > 0));
+const defaultEnvironment = computed(() => sharedDefaultEnvironment(instanceEnvironments.value ?? []));
 
 const availableBranches = computed(() => {
   const branchSet = new Set<string>();
@@ -753,6 +763,8 @@ useViewScroll(() => dashboardPanelBody('analytics'));
           :title="editing ? 'Default filters' : 'Filters'"
           :available-projects="availableProjects"
           :available-environments="availableEnvironments"
+          :default-environments="defaultEnvironments"
+          :default-environment="defaultEnvironment"
           :available-branches="availableBranches"
           :summary="scopeSummary"
         />

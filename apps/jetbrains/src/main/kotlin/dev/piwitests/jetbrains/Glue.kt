@@ -70,6 +70,22 @@ object Glue {
         else -> EditorWords.words("hold.auto")
     }
 
+    /** A row of Run options…: the option it changes (`headed` or `holdFailures`), its label, its current value, and why. */
+    data class RunOptionRow(val option: String, val label: String, val value: String, val detail: String)
+
+    /** The rows of Run options…: Run headed, on or off, then Hold failures, with the current choice, as VS Code's. */
+    fun runOptionRows(headed: Boolean, hold: String): List<RunOptionRow> = listOf(
+        RunOptionRow(
+            "headed",
+            EditorWords.words("run-options.headed"),
+            if (headed) "On" else "Off",
+            EditorWords.words(if (headed) "run-options.headed.on" else "run-options.headed.off"),
+        ),
+        RunOptionRow("holdFailures", EditorWords.words("run-options.hold"), EditorWords.words("hold.${holdKey(hold)}.short"), holdFailuresLabel(hold)),
+    )
+
+    private fun holdKey(choice: String) = if (choice in HOLD_FAILURES_CHOICES) choice else "auto"
+
     /** What a run sends the service of Hold failures: true for `on`, false for `off`, nothing for `auto` or another. */
     fun holdFailuresOption(choice: String): Boolean? = when (choice) {
         "on" -> true
@@ -315,6 +331,34 @@ object Glue {
             ?: contexts.firstOrNull { it.problemKind == "unreachable" || it.problemKind == "desktop-unproven" }
             ?: contexts.firstOrNull()
 
+    /**
+     * The context the environment widget speaks for: the one whose Playwright config folder holds `file`, the deepest
+     * when several do, which shows its own environment or none; with `file` in no config, the first context that shows
+     * one; null when none does (`ContextStatus.environment`).
+     */
+    fun environmentContext(status: StatusResult?, file: String?): ContextStatus? {
+        val contexts = status?.contexts.orEmpty()
+        val holding = contexts.filter { holds(it.root, file) }.maxByOrNull { folderPath(it.root!!).length }
+        val shown = holding ?: contexts.firstOrNull { it.environment != null }
+        return shown?.takeIf { it.environment != null }
+    }
+
+    /**
+     * The contexts **Choose environment…** offers: those that read a project, and those with an environment chosen,
+     * which can always be set to none, whatever the connection.
+     */
+    fun environmentContexts(status: StatusResult?): List<ContextStatus> =
+        status?.contexts.orEmpty().filter { it.projectId != null || it.environment?.id != null }
+
+    /** A choice of **Choose environment…** in its popup: `Production · production · protected · current`. */
+    fun environmentEntryText(item: EnvironmentItem): String =
+        listOfNotNull(
+            item.label,
+            item.description.ifBlank { null },
+            "protected".takeIf { item.protected },
+            "current".takeIf { item.picked },
+        ).joinToString(" · ")
+
     /** A path with `/` separators and one trailing `/`, so a folder holds what starts with it. */
     private fun folderPath(path: String) = path.replace('\\', '/').trimEnd('/') + "/"
 
@@ -339,11 +383,23 @@ object Glue {
 
     private fun plural(n: Int, one: String, many: String = "${one}s") = "$n ${if (n == 1) one else many}"
 
-    /** A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the editor's own. */
-    private fun liveText(live: LiveRun): String {
-        val run = if (live.ci) "CI run" else "run"
-        return "Piwi: $run #${live.runId} · ${countWords(live.done, live.total, live.failed)}" + if (live.own) " · yours" else ""
+    /**
+     * A run in progress in the status bar: `Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours` for the
+     * editor's own, or who started it when a person did not (` · Started by Claude Code`); another's names its branch
+     * (`CI run #130 on feature-x`), as VS Code's `liveText`.
+     */
+    private fun liveText(live: LiveRun): String =
+        "Piwi: ${othersRun(live, "run")} · ${liveCount(live)}" + if (live.own) " · ${live.label ?: "yours"}" else ""
+
+    /** A run in progress the editor did not start, as both status lines name it: `CI run #130 on feature-x`. */
+    private fun othersRun(live: LiveRun, run: String): String {
+        val named = "${if (live.ci) "CI ${run.lowercase()}" else run} #${live.runId}"
+        return if (live.own || live.branch == null) named else "$named on ${live.branch}"
     }
+
+    /** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
+    private fun liveCount(live: LiveRun): String =
+        countWords(live.done, live.total, live.failed) + if ((live.stuck ?: 0) > 0) " · ${live.stuck} stuck?" else ""
 
     /**
      * How far a run is, as both editors word it wherever they count one: `3 of 9 · 1 failed · 1 flaky · 1 ended at a
@@ -370,14 +426,17 @@ object Glue {
         return run?.live ?: runs?.contexts?.firstNotNullOfOrNull { context -> context.live?.takeIf { it.own } }
     }
 
-    /** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
+    /**
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     */
     private fun liveLine(live: LiveRun): String {
         val run = when {
-            live.own -> "Your run"
-            live.ci -> "CI run"
-            else -> "Run"
+            live.own && live.label != null -> "Run #${live.runId} (${live.label})"
+            live.own -> "Your run #${live.runId}"
+            else -> othersRun(live, "Run")
         }
-        return "\n$run #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}"
+        return "\n$run is running: ${liveCount(live)}"
     }
 
     /** The status bar text while the latest run is read again (**Refresh the latest run**, first in its popup). */
@@ -500,10 +559,8 @@ object Glue {
                 val done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests
                 StatusView("Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}", tooltip, r.url, refresh, StatusIcon.RUNNING)
             }
-            failing > 0 -> {
-                val fixedText = if (fixed > 0) " · $fixed fixed locally" else ""
-                StatusView("Piwi: $failing failing$fixedText$flaky", tooltip, r.url, refresh, StatusIcon.FAILING, alarm)
-            }
+            // The tests failing alone: what was fixed locally and the flaky tests are the tooltip's.
+            failing > 0 -> StatusView("Piwi: $failing failing", tooltip, r.url, refresh, StatusIcon.FAILING, alarm)
             r.status != "passed" && r.status != "failed" -> StatusView("Piwi: ${r.statusText ?: r.status}", tooltip, r.url, refresh, StatusIcon.WARNING)
             fixed > 0 -> StatusView("Piwi: $fixed fixed locally", tooltip, r.url, refresh, StatusIcon.PASSED)
             else -> StatusView("Piwi: ${r.passedTests} passed$flaky", tooltip, r.url, refresh, StatusIcon.PASSED)
@@ -525,11 +582,12 @@ object Glue {
 
 
     /** What a project opened in safe mode says: the editor service runs the repository's tests and reads its `.env`. */
-    const val UNTRUSTED = "Piwi starts once you trust this project: it runs the project's tests and reads its .env."
+    const val UNTRUSTED = "Piwi starts once you trust this project, with Trust project… in the safe mode banner at the " +
+        "top of an editor: it runs the project's tests and reads its .env."
 
     /** What the status bar item, the Piwi tool window and the settings page say of a project in safe mode. */
     const val WAITING_FOR_TRUST = "Piwi waits for you to trust this project: it runs the project's tests and reads its " +
-        ".env. Trusting it starts Piwi."
+        ".env. Trust project… in the safe mode banner at the top of an editor starts Piwi."
 
     /**
      * What a project whose `.csproj` references Playwright for .NET, and that holds no Playwright config, hears once:
@@ -697,7 +755,7 @@ object Glue {
         val told = sessions.values.filter { !it.ended && !it.terminal && it.checkout == null && it.progress?.status == "running" }
         val session = if (ownLive == null) told.firstOrNull() else told.firstOrNull { ownLive.ref != null && it.ref == ownLive.ref }
         val progress = session?.progress ?: return ownLive?.let { it to own.root }
-        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref))
+        val counted = (ownLive ?: LiveRun(status = "running", own = true, ref = session.ref, label = session.label))
             .copy(done = progress.done, total = progress.total, failed = progress.failed)
         return counted to (if (ownLive != null) own.root else session.root)
     }
@@ -804,7 +862,15 @@ object Glue {
         else -> null
     }
 
-    /** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
+    /** An environment choice as `PiwiLocalSettings` keeps it: the service's answer, as JSON. */
+    fun encodeEnvironment(kept: KeptEnvironment): String = com.google.gson.Gson().toJson(kept)
+
+    /** An environment choice `PiwiLocalSettings` keeps; null for a value it cannot read. */
+    fun decodeEnvironment(text: String?): KeptEnvironment? =
+        runCatching { com.google.gson.Gson().fromJson(text, KeptEnvironment::class.java) }.getOrNull()
+            ?.takeIf { it.id > 0 && it.projectId > 0 && it.name.isNotBlank() && it.serverUrl.isNotBlank() }
+
+    /** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
     fun failureRunArgs(failure: WorkspaceFailure): RunTestsArgs? {
         val uri = failure.uri ?: return null
         val id = failure.testCaseId ?: return null
@@ -817,7 +883,7 @@ object Glue {
      */
     fun contextRootOf(status: StatusResult?, uri: String?): String? {
         val contexts = status?.contexts.orEmpty()
-        val path = uri?.let { runCatching { java.nio.file.Path.of(java.net.URI(it)) }.getOrNull() }
+        val path = pathOfUri(uri)
         val holding = contexts.mapNotNull { c -> c.root?.takeIf { root -> path != null && path.startsWith(java.nio.file.Path.of(root)) } }
         return holding.maxByOrNull { it.length } ?: contexts.firstOrNull { it.connected }?.root
     }
@@ -856,8 +922,8 @@ object Glue {
     /**
      * What a change of the runs from `before` to `after` draws again: nothing when only the run in progress moved
      * ([runsInFiles]); the files whose tests show a result when only the tests of the run in progress began or ended
-     * (`liveTests`), which only a test's line shows; every file Piwi reads when anything else the files show changed,
-     * such as the latest run or its baseline.
+     * (`liveTests`, and `runTests` as the runs the IDE follows tell them), which only a test's line shows; every file
+     * Piwi reads when anything else the files show changed, such as the latest run or its baseline.
      */
     fun redraw(before: RunStatusResult?, after: RunStatusResult?): Redraw {
         val shownBefore = runsInFiles(before)
@@ -869,8 +935,14 @@ object Glue {
         }
     }
 
+    /** The specs the tests of the runs the IDE follows stand in (`runTests`), which a tests' redraw draws too. */
+    fun runTestFiles(runs: RunStatusResult?): Set<java.nio.file.Path> =
+        (runs?.contexts.orEmpty().flatMap { it.runTests.orEmpty() } + runs?.runTests.orEmpty().flatMap { it.tests })
+            .mapNotNull { pathOfUri(it.uri) }
+            .toSet()
+
     private fun withoutLiveTests(runs: RunStatusResult?): RunStatusResult? =
-        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null) })
+        runs?.copy(contexts = runs.contexts?.map { it.copy(liveTests = null, runTests = null) }, runTests = null)
 
     /** On the ladder, when the checked-out branch has no run yet and another branch's is shown: which one, and why. */
     fun fallbackNote(run: RunStatus?): String {
@@ -903,6 +975,15 @@ object Glue {
     /** What the mark of an uncovered change means; the service's hover says it too. */
     const val UNCOVERED_EXPLAINED =
         "The orange bar at the left of a line: it changed since the default branch, and no test reaches this file."
+
+    /**
+     * The first line (0-based) after `line` that no test runs by a `piwi/coverage` answer, from the top again past the
+     * last; null when the answer has none.
+     */
+    fun nextNotRunLine(result: CoverageResult?, line: Int): Int? {
+        val starts = result?.notRun.orEmpty().map { it.start }.sorted()
+        return starts.firstOrNull { it > line } ?: starts.firstOrNull()
+    }
 
     /** A coverage mark's tooltip, in the gutter and the scroll bar: what it says of its lines, then what the marks mean. */
     fun coverageMarkTooltip(mark: CoverageMark): String {
@@ -978,6 +1059,9 @@ object Glue {
      */
     val CODE_LENS_CHOICES = listOf("all", "problems", "off")
 
+    /** The running lines `piwi.runningLines` marks: every lane's, the watched one's alone, or none. */
+    val RUNNING_LINES_CHOICES = listOf("all", "watched", "off")
+
     /**
      * How the agent signs in to Piwi's MCP server (`EditorCredentials.mcpAuthorization`): `key`, with the IDE's key, or
      * `sign-in`, through the instance's OAuth, for a token of its own.
@@ -1012,9 +1096,10 @@ object Glue {
     /**
      * What a run changed, once it ended, in the service's words (`RunEnded.verdict`): `1 of 3 CI failures fixed, 2
      * still failing (login.spec.ts › logs in, checkout.spec.ts › pays)`; a warning with the service's actions when
-     * something fails, and **Only on failure** when nothing does while `setting` is `always`. Null when `setting` keeps
-     * it quiet, or for a CI run of the branch when `scope` is `mine`; a run of each test several times says how its
-     * runs went whatever the setting.
+     * something fails, then **Only on failure** when nothing does while `setting` is `always`, and last **Settings…**,
+     * which opens Piwi's settings page, as VS Code's `runVerdict`. Null when `setting` keeps it quiet, or for a CI run of
+     * the branch when `scope` is `mine`; a run of each test several times says how its runs went whatever the setting,
+     * with the service's actions alone.
      */
     fun runVerdict(ended: RunEnded, setting: String = "always", scope: String = "mineAndCi"): RunVerdict? {
         val words = ended.verdict ?: return null
@@ -1022,7 +1107,8 @@ object Glue {
         if (!words.always && (setting == "never" || (setting == "failures" && !words.failing))) return null
         val actions = words.actions.mapNotNull { VERDICT_ACTIONS[it] }
         val onlyOnFailure = if (!words.always && !words.failing && setting == "always") listOf(ONLY_ON_FAILURE) else emptyList()
-        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure)
+        val settings = if (words.always) emptyList() else listOf(EmptyLink.SETTINGS.label)
+        return RunVerdict(words.failing, "Piwi: ${words.title}", words.text, actions + onlyOnFailure + settings)
     }
 
     /** The labels of a verdict's actions, by the service's ids (`RunEnded.verdict.actions`). */
@@ -1118,7 +1204,8 @@ object Glue {
     fun latestRunOffered(live: LiveRun?, pageIds: Collection<Int>): Boolean = live == null || live.runId !in pageIds
 
     /**
-     * One sentence on the connection, for the tool window and the settings page; with no status, why: the project waits
+     * One sentence on the connection, for the tool window and the settings page, in the words of the tool window's empty
+     * text: an instance that does not answer said so, never as a lost connection. With no status, why: the project waits
      * for trust, the service cannot start, it stopped (`stopped`), or it has not started yet.
      */
     fun connectionSummary(
@@ -1137,7 +1224,7 @@ object Glue {
         val unproven = contexts.firstOrNull { it.problemKind == "desktop-unproven" }
         val c = contexts.firstOrNull { it.connected }
             ?: return if (unreachable != null) {
-                "Not connected. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
+                "The instance does not answer. ${unreachable.problem ?: ""} Piwi reads it again on its own.$hint"
             } else if (unproven != null) {
                 "Not connected. " + (unproven.problem ?: "") + hint
             } else {
@@ -1190,8 +1277,8 @@ object Glue {
     /** The tool window's text while no service answers: why, and the links that start it or show its log. */
     fun serviceDownText(trusted: Boolean, startProblem: String?, stopped: Boolean): EmptyText = when {
         !trusted -> EmptyText(WAITING_FOR_TRUST)
-        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG))
-        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES)
+        startProblem != null -> EmptyText(startProblem, listOf(EmptyLink.OPEN_LOG.link))
+        stopped -> EmptyText(SERVICE_STOPPED, SERVICE_FIXES.map { it.link })
         else -> EmptyText(NOT_STARTED)
     }
 
@@ -1243,39 +1330,46 @@ object Glue {
         }
     }
 
-    /** An action the Piwi tool window's empty text links, by its id. */
+    /** An action the Piwi tool window's empty text links: its label, and the id of the action it runs. */
+    data class Link(val label: String, val actionId: String)
+
+    /** An action the Piwi tool window's empty text links while no service answers, by its id. */
     enum class EmptyLink(val label: String, val actionId: String) {
         RESTART_SERVICE("Restart the editor service", "Piwi.RestartService"),
         OPEN_LOG("Open the log", "Piwi.OpenLog"),
         CONNECT("Connect…", "Piwi.Connect"),
-        RETRY("Retry", "Piwi.Refresh"),
         SETTINGS("Settings…", "Piwi.OpenSettings"),
-        COMPARE("Compare with…", "Piwi.CompareWith"),
-        RECORD_NEW_FILE("Record a new test file…", "Piwi.RecordNewFile"),
+        ;
+
+        val link get() = Link(label, actionId)
     }
 
     /** What the Piwi tool window says with no failure to list, and the actions it links. */
-    data class EmptyText(val text: String, val links: List<EmptyLink> = emptyList())
+    data class EmptyText(val text: String, val links: List<Link> = emptyList())
 
     /**
-     * The tool window's empty text, from the state the service says the view is in (`view`), in its words: an instance
-     * that does not answer, with Retry and Settings…; a desktop app that did not prove its token; an instance still
-     * being read; no run yet, or none for the baseline chosen (`baselineNoRun`), with Compare with…; no connection,
-     * with Connect… and Record a new test file…, which needs none; else no failure in the run read (`runId`).
+     * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
+     * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
+     * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen
+     * (`baselineNoRun`), no connection; else no failure in the run read (`runId`).
      */
-    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText = when (view?.state) {
-        "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", listOf(EmptyLink.CONNECT, EmptyLink.RECORD_NEW_FILE))
-        "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…")
-        "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", listOf(EmptyLink.RETRY, EmptyLink.SETTINGS))
-        "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", listOf(EmptyLink.RETRY))
-        "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", listOf(EmptyLink.COMPARE))
-        else -> EmptyText(
-            when {
-                baselineNoRun != null -> baselineNoRun
-                runId != null -> "No failure in run #$runId"
-                else -> "No failure in the latest run"
-            },
-        )
+    fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
+        val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
+        return when (view?.state) {
+            "disconnected" -> EmptyText(view.message ?: "Not connected to a Piwi instance", links)
+            "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…", links)
+            "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
+            "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
+            "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", links)
+            else -> EmptyText(
+                when {
+                    baselineNoRun != null -> baselineNoRun
+                    runId != null -> "No failure in run #$runId"
+                    else -> "No failure in the latest run"
+                },
+                links,
+            )
+        }
     }
 
     /** What Disconnect says when nothing is saved to forget. */
@@ -1868,7 +1962,7 @@ object Glue {
             PickOutcome.NO_LOCATOR -> "$went: line ${at.line} of $name holds no locator anymore."
             PickOutcome.NO_FILE -> "$went: ${at.file} is not in this project."
             PickOutcome.NOT_RUNNING -> "$went. $SERVICE_NOT_RUNNING"
-            PickOutcome.NO_ANSWER -> "$went: the Piwi editor service did not answer."
+            PickOutcome.NO_ANSWER -> "$went. $SERVICE_NO_ANSWER"
         }
     }
 
@@ -1957,8 +2051,20 @@ object Glue {
         else -> null
     }
 
+    /**
+     * The path a `file:` URI of the editor service names, its escapes read; null for another URI. The `[`, `]`, `|` and
+     * `^` that Node.js before 20.18.3 and 22.12 leaves unescaped in a path are read as themselves, which
+     * `java.net.URI` refuses as they are.
+     */
+    fun pathOfUri(uri: String?): Path? = uri?.let {
+        val escaped = it.replace(URI_UNESCAPED) { c -> "%%%02X".format(c.value[0].code) }
+        runCatching { Path.of(java.net.URI(escaped)) }.getOrNull()
+    }
+
+    private val URI_UNESCAPED = Regex("[\\[\\]|^]")
+
     /** What names a file in the edits: its normalized path, which two spellings of its URI share. */
-    fun fileKey(uri: String?): String? = uri?.let { runCatching { Path.of(java.net.URI(it)).normalize().toString() }.getOrNull() ?: it }
+    fun fileKey(uri: String?): String? = uri?.let { pathOfUri(it)?.normalize()?.toString() ?: it }
 
     /**
      * The edits that moved the documents' lines, in order, while a run is live: a run's code is the documents as they
@@ -2139,6 +2245,8 @@ object Glue {
         private val heard = HashSet<String>()
         private val files = HashSet<String>()
         private val seen = HashSet<String>()
+        /** The headless stops the Worker tab showed, offered to the Paused page tab as new ones once it shows them no more. */
+        private val panel = HashSet<String>()
         private var held: Set<String> = emptySet()
 
         /** The stop the Paused page tab shows, or showed last; null while it is closed. */
@@ -2173,11 +2281,15 @@ object Glue {
             stamps[field] = ++changes
         }
 
-        /** The sessions changed, with their stops held now at the lines they stand on (`stops`, in order). */
+        /**
+         * The sessions changed, with their stops held now at the lines they stand on (`stops`, in order); `watched` tells
+         * a stop the Worker tab shows, which has no other page, as VS Code's `StopsShown.changed`.
+         */
         fun changed(
             sessions: Map<String, RunSession>,
             stops: List<ShownStop>,
             now: Long = System.currentTimeMillis(),
+            watched: (ShownStop) -> Boolean = { false },
         ): StopsChange {
             val slots = sessions.values.flatMap { s -> s.workers.orEmpty().map { slotKey(s.ref ?: "", it.parallelIndex) } }.toSet()
             if (reserved?.let { it.until <= now || it.slot !in slots } == true) reserved = null
@@ -2186,16 +2298,21 @@ object Glue {
             heard.retainAll(held)
             files.retainAll(held)
             seen.retainAll(held)
+            panel.retainAll(held)
             val open = stops.filter { stopKey(it) !in heard }
             open.forEach { heard.add(stopKey(it)) }
-            val shown = viewed ?: return StopsChange(open, open.firstOrNull { !it.stop.bar })
+            val paged = { s: ShownStop -> !s.stop.bar && !watched(s) }
+            // The stops new to the page: those heard now, and those the Worker tab showed until now.
+            val offered = stops.filter { it in open || (stopKey(it) in panel && !watched(it)) }
+            for (s in stops) if (!s.stop.bar && watched(s)) panel.add(stopKey(s)) else panel.remove(stopKey(s))
+            val shown = viewed ?: return StopsChange(open, offered.firstOrNull(paged))
             if (stopKey(shown) in held) return StopsChange(open, null)
             val waited = reserved?.takeIf { it.slot == slotKey(shown) }
             if (waited != null) {
                 val next = stops.firstOrNull { slotKey(it) == waited.slot && stopKey(it) != waited.key } ?: return StopsChange(open, null)
-                if (!next.stop.bar) return StopsChange(open, next)
+                if (paged(next)) return StopsChange(open, next)
             }
-            return StopsChange(open, open.firstOrNull { !it.stop.bar } ?: stops.firstOrNull { !it.stop.bar })
+            return StopsChange(open, offered.firstOrNull(paged) ?: stops.firstOrNull(paged))
         }
 
         /** The Paused page tab shows `stop`'s page; null once it is closed. */
@@ -2429,7 +2546,7 @@ object Glue {
     /** The accessible name of the Worker tab's image while it watches a CI run's worker. */
     const val CI_WORKER_PAGE_NAME = "The page of the CI worker's test"
 
-    /** The running lines of the watched slots, by run and slot, with `line` heard: a line with no call goes. */
+    /** The running lines of the slots, by run and slot, with `line` heard: a line with no call goes. */
     fun withRunningLine(lines: Map<Pair<String, Int>, RunningLine>, line: RunningLine): Map<Pair<String, Int>, RunningLine> {
         val key = line.ref to line.lane
         return if (line.call == null) lines - key else lines + (key to line)
@@ -2437,7 +2554,8 @@ object Glue {
 
     /**
      * The running lines to mark: each of a run still live whose slot's worker still runs that test and stands at no
-     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after.
+     * stop, so a line goes as the test ends or stops and as the run ends, whatever the service says after. A worker a
+     * Pause waits for in a call has its waiting line instead ([waitingLinesShown]).
      */
     fun runningLinesShown(lines: Map<Pair<String, Int>, RunningLine>, sessions: Map<String, RunSession>): List<RunningLine> =
         lines.values.filter { line ->
@@ -2445,12 +2563,26 @@ object Glue {
             val session = sessions[line.ref]?.takeIf { !it.ended } ?: return@filter false
             val worker = session.workers.orEmpty().firstOrNull { it.parallelIndex == line.lane } ?: return@filter false
             val test = worker.test ?: return@filter false
-            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test)
+            worker.worker == line.worker && worker.stop == null && worker.state != "stopped" && (test.id == null || test.id == call.test) &&
+                !(worker.pausing && worker.waiting?.line != null)
         }
 
     /** The text after the running call's line: `Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })`. */
-    fun runningLineText(line: RunningLine): String =
-        "Piwi: ${workerName(line.lane)} runs ${clipped(line.call?.title.orEmpty())}"
+    fun runningLineText(line: RunningLine): String = runningLineText(listOf(line))
+
+    /**
+     * The text after a line several slots' running calls are at, each worker named beside its call:
+     * `Piwi: Worker 2, Worker 4 run Click; Worker 3 runs Fill`.
+     */
+    fun runningLineText(lines: List<RunningLine>): String {
+        val calls = LinkedHashMap<String, MutableList<String>>()
+        for (line in lines.sortedWith(compareBy<RunningLine>({ it.ref }, { it.lane }))) {
+            calls.getOrPut(line.call?.title.orEmpty()) { mutableListOf() } += workerName(line.lane)
+        }
+        return "Piwi: " + calls.entries.joinToString("; ") { (title, workers) ->
+            "${workers.joinToString(", ")} ${if (workers.size > 1) "run" else "runs"} ${clipped(title)}"
+        }
+    }
 
     /**
      * The Page tab of the Piwi tool window: what the page of the watched slot says, one line each, as the lane's events
@@ -2541,6 +2673,91 @@ object Glue {
                     val run = if (runs.size > 1) "${runTitle(session, runs)} · " else ""
                     WatchTarget(session.ref ?: "", w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · $run$doing")
                 }
+        }
+    }
+
+    /**
+     * A row of the Runs tab, as VS Code's Runs view has it (`runNodes`): a run in progress (`run`, `run-elsewhere` for one
+     * started in a terminal or a desktop app's job, stopped where it runs), one of its workers (`worker-running`,
+     * `worker-watchable`, `worker-watch-only` for a test that cannot pause now, `worker-stopped`, `worker-held` at a
+     * failure, which takes Resume alone, `worker-between`) with its watch target and stop, or its page (`page`). A row
+     * opens its stop's line, its test's, or the page.
+     */
+    data class RunRow(
+        val key: String,
+        val kind: String,
+        val text: String,
+        val detail: String,
+        val ref: String,
+        val worker: WatchTarget? = null,
+        val stop: ShownStop? = null,
+        val uri: String? = null,
+        val line: Int = 0,
+        val url: String? = null,
+        /** A run's Hold failures, on or off; null for a run nobody attends and for any other row. */
+        val hold: Boolean? = null,
+    )
+
+    /**
+     * The Runs tab: each run in progress, newest first, named as the status bar names it with how far it is, then each
+     * of its workers by its lane with its test and whether it stands stopped, and its page on the dashboard once its
+     * process names it, as VS Code's `runNodes`.
+     */
+    fun runRows(sessions: Map<String, RunSession>): List<RunRow> {
+        val live = sessions.values.filter { !it.ended }
+        val stops = stopsOf(sessions)
+        return live.reversed().flatMap { session ->
+            val ref = session.ref ?: ""
+            val progress = session.progress
+            val howFar = when {
+                session.starting -> "starting"
+                progress != null -> countWords(progress.done, progress.total, progress.failed, progress.flaky, progress.endedAtStop ?: 0)
+                else -> ""
+            }
+            val run = RunRow(
+                key = ref,
+                kind = if (session.terminal || session.checkout != null) "run-elsewhere" else "run",
+                text = runLabel(session, live),
+                // A run that holds its failures says so in the words' first clause: `Hold failures on`.
+                detail = listOf(
+                    howFar,
+                    session.label.orEmpty(),
+                    if (session.hold?.on == true) EditorWords.words("hold.run.on", "by" to "").substringBefore(":") else "",
+                ).filter { it.isNotEmpty() }.joinToString(" · "),
+                ref = ref,
+                hold = session.hold?.on,
+            )
+            val workers = session.workers.orEmpty().sortedBy { it.parallelIndex }.map { w ->
+                val test = w.test?.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ").ifEmpty { null }
+                val kind = when {
+                    w.state == "stopped" -> if (w.stop?.let(::isFailure) == true) "worker-held" else "worker-stopped"
+                    w.state == "between" || test == null -> "worker-between"
+                    !w.watchable -> "worker-running"
+                    w.pausing || w.test?.cannotPause != null -> "worker-watch-only"
+                    else -> "worker-watchable"
+                }
+                val stop = stops.firstOrNull { it.ref == ref && it.worker == w.worker }
+                RunRow(
+                    key = "$ref\n${w.parallelIndex}",
+                    kind = kind,
+                    text = workerName(w.parallelIndex),
+                    detail = when {
+                        test == null -> "between tests"
+                        w.state == "stopped" -> "$test · stopped"
+                        w.pausing -> "$test · pausing"
+                        else -> test
+                    },
+                    ref = ref,
+                    worker = WatchTarget(ref, w.worker, w.parallelIndex, "${workerName(w.parallelIndex)} · ${test ?: "between tests"}"),
+                    stop = stop,
+                    uri = w.stop?.uri ?: w.test?.uri,
+                    line = w.stop?.line ?: w.test?.line ?: 0,
+                )
+            }
+            val page = session.page?.let {
+                listOf(RunRow("$ref\npage", "page", "Open run #${it.id}", "on the dashboard", ref, url = it.url))
+            }.orEmpty()
+            listOf(run) + workers + page
         }
     }
 
@@ -2765,7 +2982,8 @@ object Glue {
 
     /**
      * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), as
-     * VS Code's `runTitle`; else [runLabel]. Its ref after it while another of `among` reads the same.
+     * VS Code's `runTitle`; else [runLabel]; then who started it when a person did not (`· Started by Claude Code`). Its
+     * ref after it while another of `among` reads the same.
      */
     fun runTitle(session: RunSession, among: Collection<RunSession> = emptyList()): String = apart(::plainTitle, session, among)
 
@@ -2778,7 +2996,8 @@ object Glue {
 
     private fun plainTitle(session: RunSession): String {
         val name = session.name
-        return if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+        val title = if (session.page != null && name != null) "Run #${session.page.id} · $name" else plainLabel(session)
+        return session.label?.let { "$title · $it" } ?: title
     }
 
     private fun apart(name: (RunSession) -> String, session: RunSession, among: Collection<RunSession>): String {
@@ -2786,8 +3005,23 @@ object Glue {
         return if (among.any { it.ref != session.ref && name(it) == text }) "$text (${session.ref})" else text
     }
 
+    /** The files a chord of Piwi's acts in from the keyboard: JavaScript and TypeScript, as the specs Piwi runs. */
+    private val CHORD_FILES = setOf("js", "jsx", "ts", "tsx", "mjs", "cjs", "mts", "cts")
+
+    /**
+     * Whether a chord of Piwi's (`packages/editor/src/keys.ts`) acts from the keyboard: in an editor of a JavaScript or
+     * TypeScript file (`fileName`, null outside an editor) or in the Piwi tool window, where none of the actions it
+     * shares a chord with acts (`SHARED_CHORDS`: the Database tool window's, a Java, Kotlin script, Go or Terraform
+     * file's).
+     */
+    fun chordActsIn(fileName: String?, inPiwiWindow: Boolean): Boolean =
+        inPiwiWindow || fileName?.substringAfterLast('.', "")?.lowercase() in CHORD_FILES
+
     /** The Hold failures action's text: what a click does to the only live run that has one; else a choice to come. */
-    fun holdActionText(controls: RunControls): String = when (controls.onlyHold?.on) {
+    fun holdActionText(controls: RunControls): String = holdActionText(controls.onlyHold?.on)
+
+    /** Hold failures' text for a run holding them (`true`), one not (`false`), or any run (`null`). */
+    fun holdActionText(on: Boolean?): String = when (on) {
         true -> "Turn hold failures off"
         false -> "Turn hold failures on"
         null -> "Turn hold failures on or off for the run"
@@ -2808,7 +3042,7 @@ object Glue {
 
     /** A stop's place, as the choice among several and the paused page name it: `checkout.page.ts:5`. */
     fun stopPlace(stop: RunStop): String {
-        val path = runCatching { Path.of(java.net.URI(stop.uri ?: "")) }.getOrNull()
+        val path = pathOfUri(stop.uri)
         return "${path?.fileName ?: stop.uri.orEmpty().substringAfterLast('/')}:${stop.line + 1}"
     }
 
@@ -2894,6 +3128,20 @@ object Glue {
         }
     }
 
+    /** A line a pausing test waits at, marked in the code with End the test: its worker, its file, its line, its words. */
+    data class WaitingLine(val waiting: WaitingWorker, val uri: String, val line: Int, val text: String)
+
+    /**
+     * The lines where a pausing test waits in a call (`RunWorker.waiting`), each a line of its run's code:
+     * `Piwi: Worker 2 · Pausing · waits in Click getByRole('button')`, as VS Code's `waitingMarks`. A call the worker
+     * names no place of has none.
+     */
+    fun waitingLinesShown(sessions: Map<String, RunSession>): List<WaitingLine> = waitingWorkers(sessions).mapNotNull { w ->
+        val uri = w.waiting.uri ?: return@mapNotNull null
+        val line = w.waiting.line ?: return@mapNotNull null
+        WaitingLine(w, uri, line, "Piwi: ${workerName(w.slot)} · Pausing · waits in ${clipped(w.waiting.title)}")
+    }
+
     /** The longest call the status bar names before it cuts it, in characters. */
     private const val STATUS_CALL_MAX = 60
 
@@ -2910,8 +3158,8 @@ object Glue {
     private fun sameFile(a: String?, b: String?): Boolean {
         if (a == null || b == null) return false
         if (a == b) return true
-        val paths = runCatching { Path.of(java.net.URI(a)).normalize() to Path.of(java.net.URI(b)).normalize() }.getOrNull()
-        return paths != null && paths.first == paths.second
+        val first = pathOfUri(a)?.normalize()
+        return first != null && first == pathOfUri(b)?.normalize()
     }
 
     /** Whether a stop is at a line of the file at `uri`. */
@@ -3135,14 +3383,46 @@ object Glue {
      * What a run was given of the IDE's breakpoints: where the edit log stood when it started (`since`), the line of
      * each breakpoint in its code by the IDE's breakpoint, and the places last sent (null before any).
      */
-    class RunBreakpoints(val since: Int, val lines: MutableMap<Any, EditorBreakpoint>, var sent: String?)
+    class RunBreakpoints(
+        val since: Int,
+        val lines: MutableMap<Any, EditorBreakpoint>,
+        var sent: String?,
+        /** Whether it pauses at the IDE's breakpoints ([takesBreakpoints]); null for a run not started here. */
+        val takes: Boolean? = null,
+        /** The run ended: what is kept of it is [takes], for a rerun under its ref. */
+        val ended: Boolean = false,
+    )
 
-    /** A run started at `since` with `breakpoints`; one heard of but not started here was given none Piwi knows. */
-    fun runStarted(since: Int, breakpoints: List<RunBreakpoint>?): RunBreakpoints = RunBreakpoints(
+    /**
+     * A run started at `since` with `breakpoints`, which it takes or not (`takes`); one heard of but not started here
+     * was given none Piwi knows.
+     */
+    fun runStarted(since: Int, breakpoints: List<RunBreakpoint>?, takes: Boolean? = null): RunBreakpoints = RunBreakpoints(
         since,
         breakpoints.orEmpty().mapNotNull { b -> b.key?.let { it to b.place } }.toMap(HashMap()),
         breakpoints?.let { list -> breakpointsText(list.map { it.place }) },
+        takes,
     )
+
+    /** The choices of `PiwiUserSettings.breakpoints`: which runs pause at the IDE's breakpoints. */
+    val BREAKPOINTS_CHOICES = listOf("debug", "always", "never")
+
+    /**
+     * `PiwiUserSettings.breakpoints` as kept: one of [BREAKPOINTS_CHOICES], an older `true` or `false` read as `always`
+     * or `never`, else `debug`: Debug with Piwi alone pauses at the IDE's breakpoints, as the IDE's own Run and Debug.
+     */
+    fun breakpointsMode(value: String?): String = when (value) {
+        "always", "true" -> "always"
+        "never", "false" -> "never"
+        else -> "debug"
+    }
+
+    /**
+     * Whether a run pauses at the IDE's breakpoints: every run with `always`, a Debug with Piwi run with `debug`; never a
+     * repeated run (Verify ×3), which nobody attends.
+     */
+    fun takesBreakpoints(mode: String, args: RunTestsArgs?): Boolean =
+        args?.repeat == null && (mode == "always" || (mode == "debug" && (args?.debugging == true || args?.debug != null)))
 
     /** Keep what a run was given, the oldest of more than [MAX_BREAKPOINT_RUNS] runs forgotten. */
     fun <T> remember(runs: LinkedHashMap<String, T>, ref: String, value: T) {
@@ -3170,22 +3450,128 @@ object Glue {
 
     /**
      * The `piwi/setRunBreakpoints` the live runs need for the IDE's `breakpoints`: one per run whose places
-     * ([runPlaces]) differ from those it has (`runs`, by ref: those its command started with, else the last sent), which
-     * `runs` then records. A run heard of without its start maps from now.
+     * ([runPlaces], none for a run that takes no breakpoints) differ from those it has (`runs`, by ref: those its
+     * command started with, else the last sent), which `runs` then records; none to a run that takes none and was given
+     * none. A run heard of without its start maps from now, and takes them as `heardTakes` says.
      */
     fun breakpointUpdates(
         sessions: Map<String, RunSession>,
         breakpoints: List<RunBreakpoint>,
         runs: LinkedHashMap<String, RunBreakpoints>,
         edits: EditLog,
+        heardTakes: Boolean = true,
     ): List<SetRunBreakpointsParams> = sessions.keys.mapNotNull { ref ->
         val run = runs[ref] ?: runStarted(edits.now(), null).also { remember(runs, ref, it) }
-        val places = runPlaces(run, breakpoints, edits)
+        val takes = run.takes ?: heardTakes
+        // A run that takes none and was given none keeps the breakpoints its command names, if any.
+        if (!takes && run.sent == null) return@mapNotNull null
+        val places = if (takes) runPlaces(run, breakpoints, edits) else emptyList()
         val text = breakpointsText(places)
         if (run.sent == text) return@mapNotNull null
         run.sent = text
         SetRunBreakpointsParams(ref, places)
     }
+
+    /**
+     * The service messages (`##teamcity[…]`, by node id) that draw a run's tests in the IDE's test tree from its
+     * `piwi/runTest` events: a suite per Playwright project, in it per spec file (by its path in the config's folder) and
+     * per `describe` block, opened the first time a test of it begins; a node per attempt of a test, a retry named so,
+     * which the worker's next `test-end` ends with its status, read against the one it was expected to end with (`ok`: a
+     * `test.fail()` test that failed passes, one that passed fails), an interrupted test as ignored. Not thread-safe: one
+     * caller at a time.
+     */
+    class RunTestTree {
+        private var next = 0
+        private val suites = LinkedHashMap<List<String>, String>()
+        private val running = HashMap<Int, String>()
+
+        /** The message that says the run reports its tests, before any of them. */
+        fun start(): List<String> = listOf("##teamcity[enteredTheMatrix]")
+
+        /** The messages an event adds to the tree; none for an end with no test begun by its worker. */
+        fun lines(event: RunTestEvent): List<String> {
+            if (event.type == "test-end") {
+                val node = running.remove(event.worker) ?: return emptyList()
+                return when {
+                    event.status == "skipped" -> listOf(message("testIgnored", "nodeId" to node), message("testFinished", "nodeId" to node))
+                    event.status == "interrupted" -> listOf(
+                        message("testIgnored", "nodeId" to node, "message" to "Interrupted"),
+                        message("testFinished", "nodeId" to node),
+                    )
+                    event.ok == true -> listOf(message("testFinished", "nodeId" to node))
+                    else -> listOf(
+                        message("testFailed", "nodeId" to node, "message" to failedWords(event.status)),
+                        message("testFinished", "nodeId" to node),
+                    )
+                }
+            }
+            val test = event.test ?: return emptyList()
+            val path = pathOfUri(test.uri) ?: return emptyList()
+            val file = path.toString().replace('\\', '/')
+            val shown = event.root
+                ?.let { root -> runCatching { java.nio.file.Paths.get(root).relativize(path).toString().replace('\\', '/') }.getOrNull() }
+                ?.takeIf { it.isNotEmpty() && !it.startsWith("..") }
+                ?: file.substringAfterLast('/')
+            val titles = test.title.orEmpty().ifEmpty { listOf("test") }
+            val out = mutableListOf<String>()
+            // An end missed before the worker's next test: that test is left as the platform leaves an unfinished one.
+            running.remove(event.worker)
+            // The project, the spec, then each describe block around the test: each level's key, name and location.
+            val levels = buildList {
+                test.project?.takeIf { it.isNotEmpty() }?.let { add(Triple("project\u0000$it", it, null)) }
+                add(Triple("file\u0000$file", shown, "file://$file"))
+                titles.dropLast(1).forEach { add(Triple("describe\u0000$it", it, "file://$file")) }
+            }
+            var parent = "0"
+            for (depth in levels.indices) {
+                val key = levels.take(depth + 1).map { it.first }
+                val (_, name, location) = levels[depth]
+                parent = suites[key] ?: (++next).toString().also { node ->
+                    suites[key] = node
+                    val attributes = listOfNotNull("nodeId" to node, "parentNodeId" to parent, "name" to name, location?.let { "locationHint" to it })
+                    out += message("testSuiteStarted", *attributes.toTypedArray())
+                }
+            }
+            val node = (++next).toString()
+            running[event.worker] = node
+            val name = titles.last() + if (test.retry > 0) " (retry ${test.retry})" else ""
+            out += message("testStarted", "nodeId" to node, "parentNodeId" to parent, "name" to name, "locationHint" to "file://$file:${test.line + 1}")
+            return out
+        }
+
+        /** The suites' ends, the innermost first, once the run's process ended. */
+        fun finish(): List<String> = suites.values.reversed().map { message("testSuiteFinished", "nodeId" to it) }
+
+        private fun failedWords(status: String?) = when (status) {
+            "timedOut" -> "Timed out"
+            "passed" -> "Expected to fail, but passed"
+            else -> "Failed"
+        }
+
+        private fun message(name: String, vararg attributes: Pair<String, String>) =
+            "##teamcity[$name ${attributes.joinToString(" ") { (k, v) -> "$k='${escaped(v)}'" }}]"
+
+        private fun escaped(value: String) = buildString {
+            for (c in value) {
+                when (c) {
+                    '|' -> append("||")
+                    '\'' -> append("|'")
+                    '\n' -> append("|n")
+                    '\r' -> append("|r")
+                    '[' -> append("|[")
+                    ']' -> append("|]")
+                    '\u0085' -> append("|x")
+                    '\u2028' -> append("|l")
+                    '\u2029' -> append("|p")
+                    else -> append(c)
+                }
+            }
+        }
+    }
+
+    /** The offer of the IDE's Playwright runner, made once, at a run the plugin's console runs. */
+    const val RUNNER_OFFER = "Run Piwi's runs in the IDE's Playwright runner? Its test tree adds Debug and Rerun Failed " +
+        "Tests; Piwi's run controls work there too."
 
     /** The longest paused page the plugin decodes, in base64 characters: 12 MB of JPEG. */
     const val MAX_IMAGE_DATA = 16 * 1024 * 1024
@@ -3270,6 +3656,358 @@ object Glue {
         val given = Regex("^Bearer\\s+(\\S+)$", RegexOption.IGNORE_CASE).find(header ?: "")?.groupValues?.get(1) ?: return false
         return token.isNotEmpty() && java.security.MessageDigest.isEqual(given.toByteArray(), token.toByteArray())
     }
+
+    /**
+     * The password-safe user of this IDE's Send to editor token: one per product (`WS`, `IU`, `RD`), so an IDE's Unpair
+     * changes no other JetBrains IDE's pairing, and a new version of the same IDE keeps it.
+     */
+    fun sendTokenUser(productCode: String): String = "sendToken ${productCode.ifBlank { "IDE" }}"
+
+    /**
+     * This IDE's Send to editor token: its own entry's (`own`), else the one every JetBrains IDE shared before
+     * (`shared`), copied to its own (`keep`), so a Piwi Picker paired with it stays paired; empty before any.
+     */
+    fun ownSendToken(own: String?, shared: String?, keep: (String) -> Unit): String {
+        if (!own.isNullOrEmpty()) return own
+        val earlier = shared.orEmpty()
+        if (earlier.isNotEmpty()) keep(earlier)
+        return earlier
+    }
+
+    /** The header Piwi Picker polls a pairing request with (`@piwitests/core/editor-pairing`). */
+    const val EDITOR_PAIRING_SECRET_HEADER = "x-pairing-secret"
+
+    /** How long a pairing request waits for the person's answer. */
+    const val EDITOR_PAIRING_TTL_MILLIS = 5 * 60_000L
+
+    /** Seconds Piwi Picker waits between polls. */
+    const val EDITOR_PAIRING_POLL_SECONDS = 2
+
+    /** Requests waiting at once; one more is refused (429) until one is answered or expires. */
+    const val MAX_WAITING_EDITOR_PAIRINGS = 3
+
+    /** How long a request answered or expired is still told as such to a poll, before it is forgotten (404). */
+    private const val ANSWERED_KEPT_MILLIS = 60_000L
+
+    /** The most windows a hello names, and the longest name of one, or of the product. */
+    private const val MAX_HELLO_WINDOWS = 8
+    private const val MAX_HELLO_TEXT = 80
+
+    /** A name as the hello gives it: no control character, one space between words, cut to its limit. */
+    private fun shownName(value: String): String =
+        value.replace(Regex("\\p{Cntrl}"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_HELLO_TEXT)
+
+    /**
+     * What `GET /api/piwi/hello` answers, with no token: this is a JetBrains IDE, which product, and the projects it has
+     * open, as `editorHello` in `@piwitests/core/editor-pairing` writes it.
+     */
+    fun editorHello(product: String, projects: List<String>): Map<String, Any> = mapOf(
+        "editor" to "jetbrains",
+        "product" to shownName(product).ifEmpty { "jetbrains" },
+        "windows" to projects.map(::shownName).filter { it.isNotEmpty() }.take(MAX_HELLO_WINDOWS),
+    )
+
+    private val CHROME_EXTENSION = Regex("^chrome-extension://[a-p]{32}$")
+    private val FIREFOX_EXTENSION = Regex("^moz-extension://[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
+
+    /** Whether an `Origin` is a browser extension's (`isExtensionOrigin` in `@piwitests/core/run-hub`); never a page's. */
+    fun isExtensionOrigin(origin: String?): Boolean =
+        origin != null && (CHROME_EXTENSION.matches(origin) || FIREFOX_EXTENSION.matches(origin))
+
+    /** The letters of a pairing code: consonants alone, none read as another. */
+    private const val CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ"
+
+    /**
+     * A code as the person typed it (`normalizeEditorPairingCode` in `@piwitests/core/editor-pairing`): its eight
+     * letters in capitals, `BCDFGHJK`, whatever their case and the spaces or dashes between them; null for anything else.
+     */
+    fun normalizeEditorPairingCode(typed: String): String? {
+        val letters = typed.uppercase().replace(Regex("[\\s-]"), "")
+        return letters.takeIf { it.length == 8 && it.all { letter -> letter in CODE_LETTERS } }
+    }
+
+    /**
+     * The proof handed over with the token (`editorPairingProof` in `@piwitests/core/editor-pairing`): HMAC-SHA256 keyed
+     * by the code typed, normalized, over `piwi-editor-pairing:<id>:<token>`, lowercase hex. Piwi Picker keeps the token
+     * only when its own code makes the same proof. Null for a typed text that is no code.
+     */
+    fun editorPairingProof(code: String, id: String, token: String): String? {
+        val key = normalizeEditorPairingCode(code) ?: return null
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(key.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal("piwi-editor-pairing:$id:$token".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    /** How the person's typed code ended: handed over, no code (the request still waits), or no request waiting. */
+    enum class Allowed { ALLOWED, NOT_A_CODE, GONE }
+
+    /** The person typed the code Piwi Picker shows for request `id`: the token goes to it with the proof of that code. */
+    fun allowEditorPairing(requests: EditorPairingRequests, id: String, token: String, typed: String): Allowed {
+        val proof = editorPairingProof(typed, id, token) ?: return Allowed.NOT_A_CODE
+        return if (requests.answer(id, token to proof)) Allowed.ALLOWED else Allowed.GONE
+    }
+
+    /** The message for a typed text that is no code. */
+    const val NOT_A_CODE = "Type the eight letters Piwi Picker shows, such as BCDF-GHJK."
+
+    /** One word of what Piwi Picker says it runs in: letters, digits, spaces, dots and dashes, 40 characters at most. */
+    private fun clientWord(value: com.google.gson.JsonElement?): String {
+        val text = value?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return ""
+        return text.replace(Regex("[^\\p{L}\\p{N} .-]"), "").replace(Regex("\\s+"), " ").trim().take(40)
+    }
+
+    /** "Chrome on macOS", from the start's `{ browser, os }`; "a browser" when it names none. */
+    fun editorPairingClient(body: com.google.gson.JsonObject?): String {
+        val browser = clientWord(body?.get("browser")).ifEmpty { "a browser" }
+        val os = clientWord(body?.get("os"))
+        return if (os.isEmpty()) browser else "$browser on $os"
+    }
+
+    /** The id a poll's path names (`/api/piwi/pairings/<id>`): 16 lowercase hex characters; null for any other path. */
+    fun editorPairingIdOf(path: String, prefix: String): String? {
+        if (!path.startsWith("$prefix/")) return null
+        return path.removePrefix("$prefix/").takeIf { Regex("^[0-9a-f]{16}$").matches(it) }
+    }
+
+    /** What a route answers: the status code and the JSON body. */
+    data class PairingAnswer(val status: Int, val body: Map<String, Any?>)
+
+    /** What the IDE shows of a request waiting for the person's answer. */
+    data class PairingRequestView(val id: String, val client: String, val createdAt: Long, val expiresAt: Long)
+
+    /**
+     * The pairing requests of this IDE, as `EditorPairingRequests` of `@piwitests/core/editor-pairing` keeps them:
+     * started by Piwi Picker, answered by the person, polled until Piwi Picker has the token or hears no. `changed`
+     * hears every change of the requests waiting. Safe from any thread.
+     */
+    class EditorPairingRequests(
+        private val now: () -> Long = System::currentTimeMillis,
+        private val changed: () -> Unit = {},
+    ) {
+        private class Stored(
+            val view: PairingRequestView,
+            /** The extension that asked: one request of it waits at a time. */
+            val origin: String,
+            val secret: String,
+            var status: String = "waiting",
+            /** The token and the proof of the code typed, from the person's answer until the first poll takes them. */
+            var allowed: Pair<String, String>? = null,
+            var endedAt: Long? = null,
+        )
+
+        private val requests = LinkedHashMap<String, Stored>()
+        private val random = java.security.SecureRandom()
+
+        private fun hex(bytes: Int): String =
+            ByteArray(bytes).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        /** Expires the requests past their time and forgets those answered long enough ago; true when one expired. */
+        private fun sweep(): Boolean {
+            val at = now()
+            var expired = false
+            val each = requests.values.iterator()
+            while (each.hasNext()) {
+                val request = each.next()
+                if (request.status == "waiting" && request.view.expiresAt <= at) {
+                    request.status = "expired"
+                    request.endedAt = at
+                    expired = true
+                }
+                val ended = request.endedAt
+                if (ended != null && at - ended > ANSWERED_KEPT_MILLIS) each.remove()
+            }
+            return expired
+        }
+
+        /**
+         * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON object alone (403, 415 and
+         * 400 otherwise). It takes the place of a request the same extension made before and nobody answered yet; an
+         * extension the person denied waits a minute before it asks again, and none asks while
+         * [MAX_WAITING_EDITOR_PAIRINGS] wait (429 both). `body` is the text as it came.
+         */
+        fun start(origin: String?, contentType: String?, body: String?): PairingAnswer {
+            if (origin == null || !isExtensionOrigin(origin)) {
+                return PairingAnswer(403, mapOf("error" to "only a browser extension can ask to pair"))
+            }
+            if (contentType?.lowercase()?.startsWith("application/json") != true) {
+                return PairingAnswer(415, mapOf("error" to "the body must be application/json"))
+            }
+            val json = runCatching { JsonParser.parseString(body ?: "") }.getOrNull() as? JsonObject
+                ?: return PairingAnswer(400, mapOf("error" to "the body must be a JSON object"))
+            val request = synchronized(this) {
+                val expired = sweep()
+                val at = now()
+                val own = requests.values.filter { it.origin == origin }
+                if (own.any { it.status == "denied" }) {
+                    if (expired) changed()
+                    return PairingAnswer(429, mapOf("error" to "the person said no a moment ago"))
+                }
+                for (earlier in own.filter { it.status == "waiting" }) {
+                    earlier.status = "expired"
+                    earlier.endedAt = at
+                }
+                if (waitingNow().size >= MAX_WAITING_EDITOR_PAIRINGS) {
+                    changed()
+                    return PairingAnswer(429, mapOf("error" to "too many pairing requests wait already"))
+                }
+                Stored(
+                    PairingRequestView(hex(8), editorPairingClient(json), at, at + EDITOR_PAIRING_TTL_MILLIS),
+                    origin,
+                    hex(32),
+                ).also { requests[it.view.id] = it }
+            }
+            changed()
+            return PairingAnswer(
+                201,
+                mapOf(
+                    "id" to request.view.id,
+                    "secret" to request.secret,
+                    "interval" to EDITOR_PAIRING_POLL_SECONDS,
+                    "expiresIn" to EDITOR_PAIRING_TTL_MILLIS / 1000,
+                ),
+            )
+        }
+
+        /**
+         * `GET …/pairings/<id>` with the start's secret: the request's status, and the token the first time it is
+         * polled allowed, after which it is `claimed`. An unknown id or a wrong secret is a 404 alike.
+         */
+        fun poll(id: String, secret: String?): PairingAnswer {
+            val (answer, expired) = synchronized(this) {
+                val expired = sweep()
+                val request = requests[id]
+                if (request == null || secret == null ||
+                    !java.security.MessageDigest.isEqual(secret.toByteArray(), request.secret.toByteArray())
+                ) {
+                    return@synchronized PairingAnswer(404, mapOf("error" to "no such pairing request")) to expired
+                }
+                val allowed = request.allowed
+                if (request.status == "allowed" && allowed != null) {
+                    request.status = "claimed"
+                    request.allowed = null
+                    PairingAnswer(200, mapOf("status" to "allowed", "token" to allowed.first, "proof" to allowed.second)) to expired
+                } else {
+                    PairingAnswer(200, mapOf("status" to request.status)) to expired
+                }
+            }
+            if (expired) changed()
+            return answer
+        }
+
+        /**
+         * The person's answer to a waiting request: the token to hand over with the proof of the code typed
+         * ([allowEditorPairing] makes both), or null for no. False when none waits.
+         */
+        fun answer(id: String, allowed: Pair<String, String>?): Boolean {
+            val (answered, expired) = synchronized(this) {
+                val expired = sweep()
+                val request = requests[id]?.takeIf { it.status == "waiting" } ?: return@synchronized false to expired
+                val given = allowed?.takeIf { it.first.isNotEmpty() }
+                request.status = if (given == null) "denied" else "allowed"
+                request.allowed = given
+                request.endedAt = now()
+                true to expired
+            }
+            if (answered || expired) changed()
+            return answered
+        }
+
+        /** Unpair: the requests allowed and not polled yet hand over nothing, as if they had expired. */
+        fun forgetTokens() {
+            synchronized(this) {
+                val at = now()
+                for (request in requests.values.filter { it.status == "allowed" }) {
+                    request.status = "expired"
+                    request.allowed = null
+                    request.endedAt = at
+                }
+            }
+        }
+
+        private fun waitingNow(): List<PairingRequestView> {
+            val at = now()
+            return requests.values.filter { it.status == "waiting" && it.view.expiresAt > at }.map { it.view }
+        }
+
+        /** The requests waiting for the person's answer, oldest first. */
+        fun waiting(): List<PairingRequestView> = synchronized(this) { waitingNow() }
+
+        /** Ends the waits past their time; true when one ended, for the IDE to draw them again. */
+        fun expire(): Boolean {
+            val expired = synchronized(this) { sweep() }
+            if (expired) changed()
+            return expired
+        }
+    }
+
+    /** The pairing kept: when, and the browser of a pairing by code (null for one by address). */
+    data class PickerPaired(val at: Long, val client: String?)
+
+    /** What the Piwi Picker tab shows the pairing from. `port` is the built-in server's. */
+    data class PickerState(
+        val waiting: List<PairingRequestView>,
+        val paired: PickerPaired?,
+        val heard: Long?,
+        val port: Int,
+    )
+
+    /** A line of the Piwi Picker tab: what it says, a comment beside it, and whether it says all is well. */
+    data class PickerLine(val label: String, val description: String, val ok: Boolean)
+
+    /** The ports Piwi Picker looks for a JetBrains IDE on: the built-in server's, 63342 and the 19 after it. */
+    val PICKER_BUILT_IN_PORTS = 63342..63361
+
+    const val PICKER_INTRO =
+        "Piwi Picker, the browser extension, sends the locators you pick to the caret and follows the runs this project starts."
+    const val PICKER_HOW_TO_PAIR =
+        "To pair, click Pair under Editor in Piwi Picker's settings, then type here the code it shows."
+    const val PICKER_ADDRESS_HINT =
+        "With JetBrains Gateway, or when Piwi Picker does not find this IDE, copy the pairing address instead, and " +
+            "paste it in Piwi Picker's settings under Editor, Pair with an address."
+
+    /** The date a pairing was made: `Nov 19` this year, `Nov 19, 2025` another. */
+    private fun pairedDay(at: Long, now: Long): String {
+        val zone = java.time.ZoneId.systemDefault()
+        val date = java.time.Instant.ofEpochMilli(at).atZone(zone)
+        val sameYear = date.year == java.time.Instant.ofEpochMilli(now).atZone(zone).year
+        val pattern = if (sameYear) "MMM d" else "MMM d, yyyy"
+        return date.format(java.time.format.DateTimeFormatter.ofPattern(pattern, java.util.Locale.US))
+    }
+
+    /**
+     * The Piwi Picker tab's lines once paired, or Piwi Picker heard from: who it is paired with and since when, when it
+     * was last heard from, and where it reaches this IDE; none before, the tab saying how to pair instead. The words of
+     * the VS Code extension's Piwi Picker view (`pickerRows` in `apps/vscode/src/picker-pairing.ts`), both held to the
+     * golden fixture `packages/editor/tests/golden/picker-pairing.json`.
+     */
+    fun pickerRows(state: PickerState, now: Long): List<PickerLine> {
+        if (state.paired == null && state.heard == null) return emptyList()
+        val paired = state.paired
+        val heard = state.heard
+        val found = state.port in PICKER_BUILT_IN_PORTS
+        return listOf(
+            PickerLine(
+                if (paired?.client != null) "Paired with Piwi Picker in ${paired.client}" else "Paired with Piwi Picker",
+                if (paired != null) "since ${pairedDay(paired.at, now)}" else "",
+                true,
+            ),
+            PickerLine(
+                if (heard == null) "Not heard from yet" else "Last heard ${relativeTime(java.time.Instant.ofEpochMilli(heard).toString(), now)}",
+                "",
+                heard != null,
+            ),
+            PickerLine("Listening on 127.0.0.1:${state.port}", if (found) "" else "not where Piwi Picker looks", found),
+        )
+    }
+
+    /** A request's title, in the Piwi Picker tab: who asks. */
+    fun pairingRequestTitle(client: String): String = "$client asks to pair"
+
+    /** The notification of a pairing request: who asks, and what to type to allow it. */
+    fun pairingPrompt(client: String): String =
+        "Piwi Picker in $client asks to pair with this IDE, to send it the locators you pick and follow its runs. " +
+            "If you just clicked Pair in Piwi Picker, type the code it shows."
 
     /**
      * What the dashboard's Open in IDE asks (`/api/piwi/open`): a file of a run, as a path relative to the
@@ -4098,5 +4836,144 @@ object Glue {
         if (query.isEmpty()) return -1
         val at = text.indexOf(query, from.coerceIn(0, text.length), ignoreCase = true)
         return if (at >= 0) at else text.indexOf(query, 0, ignoreCase = true)
+    }
+
+    // ── The Tests tab ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    /** The id of a config's node, which the tab adds above the service's nodes: this, then the config's folder. */
+    const val CONFIG_NODE = "config\u001f"
+
+    /**
+     * A node of the Tests tab: one of the service's (`TestTreeNode`), or a Playwright config's (`kind` `config`), which
+     * holds a config's nodes and says why Playwright could not list its tests (`error`). Children in the service's order
+     * (`sortText`).
+     */
+    data class TestsNode(
+        val id: String,
+        val label: String,
+        val kind: String,
+        val uri: String?,
+        /** The 0-based line it opens at: a test's call, a describe block's; null for a node that opens no line. */
+        val line: Int?,
+        val runnable: Boolean,
+        val test: TreeTest?,
+        val project: String?,
+        val error: String?,
+        val children: List<TestsNode>,
+    )
+
+    private fun testsNode(n: TestTreeNode): TestsNode = TestsNode(
+        id = n.id.orEmpty(),
+        label = n.label.orEmpty(),
+        kind = n.kind.orEmpty(),
+        uri = n.uri,
+        line = n.range?.start,
+        runnable = n.runnable,
+        test = n.test,
+        project = n.project,
+        error = null,
+        children = n.children.orEmpty().sortedBy { it.sortText.orEmpty() }.map(::testsNode),
+    )
+
+    /**
+     * The Tests tab's tree of the service's answer (`piwi/testItems`): each config's nodes, under a node per config when
+     * there are several or when one could not be listed, which says why, as VS Code's Testing view shows them.
+     */
+    fun testsTree(result: TestItemsResult?): List<TestsNode> {
+        val contexts = result?.contexts.orEmpty()
+        val configs = contexts.size > 1 || contexts.any { it.listing?.error != null }
+        if (!configs) return contexts.firstOrNull()?.nodes.orEmpty().sortedBy { it.sortText.orEmpty() }.map(::testsNode)
+        return contexts.map { c ->
+            TestsNode(
+                id = CONFIG_NODE + c.root.orEmpty(),
+                label = c.label.orEmpty(),
+                kind = "config",
+                uri = null,
+                line = null,
+                runnable = true,
+                test = null,
+                project = null,
+                error = c.listing?.error,
+                children = c.nodes.orEmpty().sortedBy { it.sortText.orEmpty() }.map(::testsNode),
+            )
+        }
+    }
+
+    /** The order of the results a node's children make its own: the first of these one of them has. */
+    private val TESTS_STATUS_ORDER = listOf("running", "paused", "failed", "flaky", "passed", "skipped")
+
+    /** A node's result: a test's own; any other node's, the first of `TESTS_STATUS_ORDER` its tests have; else null. */
+    fun testsStatus(node: TestsNode): String? {
+        node.test?.let { return it.status }
+        val statuses = node.children.mapNotNull(::testsStatus).toSet()
+        return TESTS_STATUS_ORDER.firstOrNull { it in statuses }
+    }
+
+    /**
+     * Whether a test matches every word of a filter, case aside: its title, one of its tags, its owner (`owner:ada`), its
+     * result (`failed`), `flaky` or `quarantined`.
+     */
+    private fun testMatches(test: TreeTest, words: List<String>): Boolean {
+        val said = listOfNotNull(
+            test.title,
+            test.status,
+            test.owner?.let { "owner:${it.replace(Regex("\\s+"), "-")}" },
+            "quarantined".takeIf { test.quarantined },
+        ) + test.tags.orEmpty()
+        return words.all { word -> said.any { it.contains(word, ignoreCase = true) } }
+    }
+
+    /**
+     * The tree as a filter shows it, as VS Code's Testing view filters by title, tag, owner and result: each test that
+     * matches it, with the nodes above it; a node whose name matches (a spec, a folder), whole. Unchanged without one.
+     */
+    fun testsFiltered(nodes: List<TestsNode>, filter: String): List<TestsNode> {
+        val words = filter.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
+        if (words.isEmpty()) return nodes
+        fun keep(n: TestsNode): TestsNode? {
+            val test = n.test
+            if (test != null) return n.takeIf { testMatches(test, words) }
+            if (n.kind != "config" && words.all { n.label.contains(it, ignoreCase = true) }) return n
+            val children = n.children.mapNotNull(::keep)
+            return if (children.isEmpty()) null else n.copy(children = children)
+        }
+        return nodes.mapNotNull(::keep)
+    }
+
+    /**
+     * The ids a run of the selected nodes sends (`piwi/testRuns`): the runnable ones; with a filter on, the tests each
+     * shows instead (a project's node as it is), so a run takes what the tab shows.
+     */
+    fun testsRunIds(selected: List<TestsNode>, filtered: Boolean): List<String> {
+        fun shown(n: TestsNode): List<String> = when {
+            !n.runnable -> emptyList()
+            n.test != null || n.kind == "project" -> listOf(n.id)
+            else -> n.children.flatMap(::shown)
+        }
+        return selected.flatMap { if (filtered) shown(it) else listOfNotNull(it.id.takeIf { _ -> it.runnable }) }.distinct()
+    }
+
+    /**
+     * What the test tree's results stand for, per Playwright config: the latest run, the run in progress and its
+     * failures, as VS Code's `resultsKey`; a change reads the tree again.
+     */
+    fun testsResultsKey(runs: RunStatusResult?): String = runs?.contexts.orEmpty().joinToString("\n") {
+        listOf(it.root, it.run?.id, it.live?.runId, it.failures, it.overlays, it.resolved).joinToString("|")
+    }
+
+    /** What the Tests tab says while it shows no test and the editor service answers. */
+    fun testsEmptyText(result: TestItemsResult?, filtered: Boolean): String = when {
+        result == null -> "Reading the tests…"
+        filtered -> "No test matches the filter."
+        result.contexts.orEmpty().any { it.listing?.running == true } -> "Playwright is listing the tests…"
+        else -> "No Playwright test found."
+    }
+
+    /** A result's duration as the Tests tab writes it after a test: `850 ms`, `1.2 s`, `2 min 5 s`. */
+    fun testsDuration(ms: Long?): String? = when {
+        ms == null -> null
+        ms < 1_000 -> "$ms ms"
+        ms < 60_000 -> "%.1f s".format(java.util.Locale.ROOT, ms / 1000.0)
+        else -> "${ms / 60_000} min ${(ms % 60_000) / 1000} s"
     }
 }

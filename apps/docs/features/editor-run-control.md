@@ -55,7 +55,7 @@ controls:
 
 `Stopped at a breakpoint · Fill "MORNING10" getByLabel('Coupon code') · attempt 2`  Resume  Step  Finish  Write code…
 
-It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. Both editors' line holds Resume, Step, Finish and **Write code…** (Resume alone at a failure), VS Code's lenses giving way; VS Code's hover holds all controls;
+It says [why the test stopped](./watch-a-run#where-a-test-stopped); `attempt 2` shows on a retry. Its test's gutter mark shows it paused. Both editors' line holds Resume, Step, Finish and **Write code…** (Resume alone at a failure), VS Code's lenses giving way; VS Code's hover holds all controls;
 the color is `piwi.executionPointBackground`. In a JetBrains IDE the line is an inlay whose words are links,
 the arrow's click and the inlay's context menu list the controls, and the color is **Settings → Editor → Color Scheme → Piwi → Line a run is
 stopped at**. The mark goes when the test goes on (from the editor or the bar), ends, or closes its page.
@@ -77,23 +77,22 @@ The run's code is your files as they stood when it started. The mark follows lin
 ## A headless run
 
 A run Piwi starts follows your config, headless by default, unless you turn
-[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens `Piwi: paused page` beside VS Code's editor, or **Paused page** in the JetBrains
-Piwi tool window, which keeps its stop until it goes on, and after a **Step** or **Run to the cursor** from the editor
-waits up to 10 seconds for its next stop. **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**)
-opens it at any stop.
+[headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens its worker's page (`Piwi: worker 1` beside VS Code's editor, the JetBrains tool window's
+**Worker 1** tab) with the line's controls, unless that worker's [watch](./watch-running-test) shows it. It keeps its
+stop until it goes on, after a **Step** or **Run to the cursor** from the editor waits up to 10 seconds for the next,
+and **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**) opens it at any stop.
 
 <figure>
-  <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: paused page tab showing the cart page with the coupon typed in">
+  <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: worker 1 tab showing the cart page with the coupon typed in">
   <figcaption>A headless run paused before it clicks Apply: the page at the stop, beside the editor.</figcaption>
 </figure>
 
 Clicking the image picks a locator when the reporter supports it, on Playwright 1.60 or later: it replaces the
 stopped line's, and the tab shows the result or refusal.
 
-**Watch** updates the paused page until you hide or close the tab, resume or switch stops, and
+**Watch** updates the page until you hide or close the tab, resume or switch stops, and
 [**Interact**](./watch-running-test#interact) plays your input on it, taking the stop.
-The preview uses the editor's connection: no Piwi Picker, pairing, live-view setting or port forwarding. Older reporters
-keep the still image. To watch the test before it stops: [Watch a local test](./watch-running-test).
+It needs no Piwi Picker ([remote development](/guide/remote-development)), and older reporters keep the still image. To watch the test before it stops: [Watch a local test](./watch-running-test).
 
 ## Share with Playwright tools
 
@@ -108,8 +107,8 @@ in them. It stays shared until the test ends; no agent can share it.
 A breakpoint you add, remove or toggle applies to the run from its next call, in every worker, later ones included.
 One that only moves because you edited the lines above it keeps the line the run has, and one you set in an edited file
 applies to that line of the run's code. The breakpoints that count are those a run's start reads: line
-breakpoints in script files under a Playwright config's folder, while `piwi.breakpoints` (**Pause the runs Piwi starts
-at the editor's breakpoints** in a JetBrains IDE) is on. A logpoint, or a breakpoint that does not suspend, never stops
+breakpoints in script files under a Playwright config's folder, in a Debug with Piwi run ([the
+setting](./editor-breakpoints#the-setting) widens this). A logpoint, or a breakpoint that does not suspend, never stops
 the test; a condition is not read, so a conditional breakpoint stops at each pass.
 
 ## How it works

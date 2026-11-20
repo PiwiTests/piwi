@@ -6,6 +6,10 @@
  *
  * Everything here is best-effort: a run with no repository, no baseline commit
  * or no SCM token yields no section and no gaps, never an error.
+ *
+ * A run of a deployed environment reached the deployed application's lines,
+ * which are the change's only when the deployed commit is its head: the answer
+ * then says so (`deployedNote`), and counts the reach as it does any run's.
  */
 
 import { and, desc, eq, inArray } from 'drizzle-orm';
@@ -56,6 +60,7 @@ import {
   type PatchedFile,
 } from '#shared/handlers/locator-breaks';
 import { getLocatorIndex } from '../locator-usages';
+import { runChangeCoverageNote as runDeployedNote } from '#shared/handlers/deployed-changes';
 
 /** Recent commits scanned per run to estimate churn, age and escape history. */
 const CHURN_COMMIT_SCAN = 12;
@@ -378,6 +383,7 @@ export async function computeRunChangeCoverage(db: DbClient, runId: number): Pro
     scmAvailable: true,
     commitCoverage: await changeCommitCoverage(db, run.projectId, headSha),
   });
+  coverage.deployedNote = await runDeployedNote(db, run, headSha).catch(() => null);
 
   // A run off the default branch tags its rows with its own branch; a
   // default-branch run writes canonical rows (branch null).
@@ -568,10 +574,12 @@ export async function readChangeCoverage(
   let headSha = query.headSha ?? null;
   let baseBranch: string | null = null;
   let runId = query.runId ?? null;
+  let inspected: { id: number; environmentId: number | null; startTime: Date } | null = null;
 
   if (runId != null) {
     const [run] = await db.select().from(testRuns).where(eq(testRuns.id, runId));
     if (!run || run.projectId !== projectId || !isVisibleRun(run, null)) return empty(false);
+    inspected = run;
     const meta = (run.metadata as RunMetadata | null) ?? null;
     headSha = meta?.scm?.commit?.trim() || null;
     repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
@@ -620,7 +628,7 @@ export async function readChangeCoverage(
   const ticketKey = (await readProjectIntegration(db, projectId).catch(() => null))?.projectKey ?? null;
   const tickets = extractTicketIds([baseBranch, ...changes.commits.map((c) => c.message)], { ticketKey });
 
-  return computeChangeCoverage(db, projectId, {
+  const coverage = await computeChangeCoverage(db, projectId, {
     changedFiles,
     runId,
     baseSha,
@@ -633,6 +641,8 @@ export async function readChangeCoverage(
     scmAvailable: true,
     commitCoverage: await changeCommitCoverage(db, projectId, headSha),
   });
+  if (inspected) coverage.deployedNote = await runDeployedNote(db, inspected, headSha).catch(() => null);
+  return coverage;
 }
 
 /**
@@ -655,6 +665,7 @@ export function toPrChangeCoverage(
     projectId: gaps.projectId ?? null,
     prNumber: gaps.prNumber ?? null,
     changeTimeGaps: gaps.changeTimeGaps ?? 0,
+    deployedNote: coverage.deployedNote ?? null,
     totalFiles: coverage.countedFiles,
     uncoveredFiles: coverage.uncoveredFiles,
     reachedFiles: coverage.reachedFiles,

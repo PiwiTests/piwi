@@ -34,11 +34,11 @@ beforeEach(() => {
 const entry = { level: 'error', source: 'console', message: 'Leaving', page: '/cart', time: 1 };
 
 describe('handleRelayLeft', () => {
-  it('keeps the entries for the bug recording whose token they carry, checked as relayed ones are', async () => {
+  it('keeps the entries for the recording whose token they carry, checked as relayed ones are', async () => {
     const { startRecording } = await import('../../src/shared/recording-storage');
     const { getBugEvidence } = await import('../../src/shared/bug-storage');
     const { handleRelayLeft } = await import('../../src/background/relay-left');
-    const state = await startRecording('https://shop.test/*', 'bug');
+    const state = await startRecording('https://shop.test/*');
     const answer = await handleRelayLeft({
       token: state.bugToken,
       entries: { console: [{ ...entry, message: 'x'.repeat(900), extra: 'dropped' }], requests: 'not a list' },
@@ -62,7 +62,7 @@ describe('handleRelayLeft', () => {
     const { startRecording } = await import('../../src/shared/recording-storage');
     const { getBugEvidence } = await import('../../src/shared/bug-storage');
     const { handleRelayLeft } = await import('../../src/background/relay-left');
-    await startRecording('https://shop.test/*', 'bug');
+    await startRecording('https://shop.test/*');
     expect(await handleRelayLeft({ token: 'another', entries: { console: [entry] } })).toEqual({ ok: false });
     expect(await handleRelayLeft({ entries: { console: [entry] } })).toEqual({ ok: false });
     expect((await getBugEvidence()).console).toEqual([]);

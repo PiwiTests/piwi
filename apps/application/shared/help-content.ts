@@ -62,7 +62,7 @@ export const HELP_TOPICS = {
   },
   'integrations.run-scope': {
     title: 'Runs that write to the ticket',
-    text: 'The runs whose results comment on, move or update a tracked issue: the fix, regression and still-failing notes, the transitions and the description updates.\n\n- **Branches** — names or `*` patterns (`release/*`)\n- **Default branch** — the project default branch, whatever it is named\n- **Environments** — names or `*` patterns\n\nNothing named means every run. A run from an editor, a lab run, a bisect step or a reproduction never writes, nor does a developer run of part of the suite.',
+    text: 'The runs whose results comment on, move or update a tracked issue: the fix, regression and still-failing notes, the transitions and the description updates.\n\n- **Branches** — names or `*` patterns (`release/*`)\n- **Default branch** — the project default branch, whatever it is named\n- **Environments** — the project’s environments, or typed keys and `*` patterns, each matching an environment’s key or an alias, ignoring case\n\nNothing named means every run. A run from an editor, a lab run, a bisect step or a reproduction never writes, nor does a developer run of part of the suite.',
     doc: 'features/issue-automation#the-runs-that-write',
   },
   'integrations.auto-create': {
@@ -126,12 +126,12 @@ export const HELP_TOPICS = {
   },
   'cluster.scm-fetch-failed': {
     title: 'Changes not read',
-    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM token (**Settings → Source control**, or the project’s **Source control** settings). On the desktop app, run `git fetch` in the linked folder.',
+    text: 'Piwi knows the range, but the host did not return its commits: a private repository needs an SCM credential (the project’s **Source control** settings, or **Settings → Source control**). On the desktop app, run `git fetch` in the linked folder.',
     doc: 'guide/source-control#troubleshooting',
   },
   'cluster.scm-host-error': {
     title: 'Host error',
-    text: 'Piwi asked the host for the commits in this range with the SCM token set, and the host answered with the error the line shows. A 403 or a 404 means the token cannot read this repository: give it read access to the repository contents. A rate limit or a server error passes with time: open the cluster again later. Until then, **More actions › Copy git log** lists the range in your own clone.',
+    text: 'Piwi asked the host for the commits in this range with the SCM credential set, and the host answered with the error the line shows. A 403 or a 404 means its token cannot read this repository: give it read access to the repository contents. A rate limit or a server error passes with time: open the cluster again later. Until then, **More actions › Copy git log** lists the range in your own clone.',
     doc: 'guide/source-control#troubleshooting',
   },
 
@@ -374,6 +374,11 @@ export const HELP_TOPICS = {
     text: 'Default branch counts runs on each project’s default branch, so a broken feature branch does not move the trends; a run whose branch is unknown counts only in a project that never reported a branch. All branches counts everything; picking branches by hand overrides both.',
     doc: 'features/analytics#branch-policy',
   },
+  'analytics.environment-policy': {
+    title: 'Environment policy',
+    text: 'Default environment counts runs of each project’s default environment, and every environment of a project that has none; a run with no environment counts only in those. All environments counts everything; picking environments by hand overrides both.',
+    doc: 'features/analytics#environment-policy',
+  },
   'analytics.test-filter': {
     title: 'Test filter',
     text: 'Narrow every number to some tests: a selection (resolved by key in each project), test tags, or browsers. It means the tests that match today, with their whole history, and it counts from stored executions, so it reaches back only as far as retention keeps runs.',
@@ -441,7 +446,7 @@ export const HELP_TOPICS = {
   },
   'project.timeline': {
     title: 'Timeline markers',
-    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to an environment; some are added automatically when the Playwright or reporter version, the runner, a browser or a server under test changes between runs, and when a run is flagged as an environment incident.',
+    text: 'Dated events — deploys, config changes, infra migrations, incidents — overlaid as vertical lines on the trend charts, so you can tell whether a change moved your results or performance. Markers can be scoped to one of the project’s environments, and a deploy marker can name the commit it deployed; some are added automatically when the Playwright or reporter version, the runner, a browser or a server under test changes between runs, and when a run is flagged as an environment incident.',
     doc: 'features/timeline-markers',
     envVars: ['PIWI_AUTO_MARKERS'],
   },
@@ -474,6 +479,7 @@ export const HELP_TOPICS = {
       '- **Not scoped** — the quarantine list, and the gaps and map of the Coverage tab, which belong to the project whatever the filters.',
       '- **Branch only** — the Code view of the Coverage tab reads the one branch picked; coverage is read per commit, so environments and **Full runs only** do not apply.',
       '- **Branch** — with none picked, the default branch and the runs that report no branch; **All branches** reads every branch.',
+      '- **Environment** — with none picked, the project’s default environment when it has one, never a run with no environment; **All environments** reads every environment.',
     ].join('\n'),
     doc: 'features/ui-overview#project-detail',
   },
@@ -493,8 +499,8 @@ export const HELP_TOPICS = {
     doc: 'features/ai-diagnosis#custom-instructions',
   },
   'project.scm-token': {
-    title: 'SCM token',
-    text: 'A GitHub, GitLab or Bitbucket token Piwi reads the repository with (the commits and diffs behind a failure, uncovered changes, `CODEOWNERS`) and, with write access, posts pull-request feedback and opens auto-heal pull requests with. A project’s own token overrides the one in **Settings → Source control**. Stored encrypted. On the desktop app, a project linked to a clone of its repository reads with git instead, without a token.',
+    title: 'SCM credential',
+    text: 'The credential (**Settings → Credentials**) whose GitHub, GitLab or Bitbucket token Piwi reads the repository with (the commits and diffs behind a failure, uncovered changes, `CODEOWNERS`) and, with write access, posts pull-request feedback and opens auto-heal pull requests with. It is sent only to the API of the repository’s host, and each use is logged. A project’s own goes before the instance’s, picked in **Settings → Source control**. On the desktop app, a project linked to a clone of its repository reads with git instead, without one.',
     doc: 'guide/source-control',
   },
   'case.stability-trend': {
@@ -528,7 +534,7 @@ export const HELP_TOPICS = {
     text: [
       'The addresses this project’s application is served at, as patterns over the whole URL: `*` matches within one path segment, `**` across segments. Piwi Picker reads them when it connects and tries them in this order to tell which project a page belongs to; a pattern saved in one browser overrides them there.',
       '',
-      '- **Environment** is a label.',
+      '- **Environment** is one of the project’s environments, or none for every one. The run page warns when a run’s `baseURL` is outside every pattern of its environment.',
       '- **Branch** is the one deployed at those addresses, whose tests Tested elements shows.',
       '- **Path prefix** is the part of the path the site serves its pages under and the tests did not (`/app`). Piwi Picker removes it before comparing the page with the pages the tests ran on.',
       '- **Tests’ path prefix** is the reverse: the part of the path the tests ran under and the site does not. Piwi Picker puts it in front.',
@@ -540,15 +546,53 @@ export const HELP_TOPICS = {
     text: [
       'Lets the people who may open a CI run of this project, or a run a developer shares from their machine (Share live), watch from the run page the page each of its workers is on while it runs, and see when its test is paused.',
       '',
-      '- **Sent** — small JPEG images of the test’s page, a few a second, with the call each was taken at. Only while someone watches that worker.',
-      '- **To** — the people who may open the run, over this instance. The images show what the page shows, the secret fields painted over.',
-      '- **Masked** — before an image leaves the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), by `@piwitests/reporter` 0.64.0 or later: an older one masks nothing. A secret in the page’s own text is not masked.',
-      '- **Kept** — nothing: relayed and dropped, never in the database, the logs or an export.',
+      '- **Sent** — only while someone watches that worker: small JPEG images of the test’s page, a few a second, with the call each was taken at and the call’s log; while the panel shows them, the page’s events (console and uncaught errors, failed, pending and API requests, the errors and warnings the backend logged), its text as roles and names, and a filmstrip of its calls; with **Inspect** open, the page at each call as a document, with its stylesheets, fonts and images.',
+      '- **To** — the people who may open the run, over this instance. It shows what the page shows, the secrets hidden as below.',
+      '- **Masked** — in the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), painted over in the images by `@piwitests/reporter` 0.64.0 or later (an older one masks nothing); the secret fields’ values removed from the text and Inspect’s pages, the masked elements from the text, and credentials hidden in addresses and the call’s log, typed text too. A secret the page writes as its own text is not masked. A project with masked elements gets no Inspect page.',
+      '- **Kept** — Inspect’s pages and what they name stay in the instance’s memory while their test runs, and go with the run at the latest. The rest is relayed and dropped. None of it reaches the database, the logs or an export.',
       '- **Ask to watch** — with sign-in on, a reader of a running local run nobody shares asks its developer to share it, once per 5 minutes; the developer sees who asks. On by default.',
       '',
       'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
     doc: 'features/live-view',
+  },
+  'project.run-variables': {
+    title: 'Run variables',
+    text: [
+      'Environment variables, `NAME=value`, that every run Piwi starts for this project gets, for an app that picks a tenant, a region or a brand with one (`TENANT=acme`).',
+      '',
+      '- **Applied to** — the desktop app’s runs (Re-run, Run with options, Reproduce, Bisect, Flake Lab, a bug report’s reproduction), **Run on my machine**, whose confirmation shows them, and the editors’ runs, which ask before their first run with them. Every command Piwi gives to copy starts with them.',
+      '- **Values** — 1 to 500 letters, digits, spaces and `_ - . , : / @ + =`: no `$`, backslash, quote or shell operator. Never a secret: commands and confirmations show them; a secret stays in each machine’s `.env`.',
+      '- **Refused names** — those that change which code runs, which browser starts, where results go or the CI a run reports: `PATH`, `HOME`, `PREFIX`, `NODE_OPTIONS`, `CI`, and names starting with `PIWI_`, `PLAYWRIGHT_`, `NODE_`, `NPM_`, `GIT_` or `GITHUB_`, among others. Each app that runs the tests checks them again, and runs nothing when one fails.',
+      '- **Building and starting the app** stay in the Playwright config: read the variable there (`webServer.env`, `projectName`), so CI and a terminal run the same steps.',
+    ].join('\n'),
+    doc: 'features/run-variables',
+  },
+  'project.environments': {
+    title: 'Environments',
+    text: [
+      'An environment is a deployment of the application the tests run against (Local, Integration, Staging, Production). Each run reports a label, the reporter’s `environment` option or `PIWI_ENVIRONMENT`, and goes to the environment whose key or alias matches it, ignoring case; a label nothing matches adds a **discovered** one.',
+      '',
+      '- **Picked** — for Run on my machine, the desktop app’s runs and the editors’ runs, and for the retry, selection, locator and Flake Lab commands; and in the project page’s **Filters** and the **Status** filter, which also offer **No environment**.',
+      '- **Run variables** — set over the project’s on the runs Piwi starts for it, with `PIWI_ENVIRONMENT` set to its key: the config reads them (`TEST_ENV=staging`). Never a secret, since commands and confirmations show them.',
+      '- **Secrets** — stay in each machine’s own file, `.env.staging`, which the config loads with `dotenv` and git ignores. The **env file** names it; Piwi never reads it.',
+      '- **Built from the checkout** — the app under test comes from the same commit as the tests (a `webServer`, a preview deployment), unlike a deployed environment.',
+      '- **Protected** — only the project’s managers start runs against it from Piwi, after a confirmation, and only for the tests carrying a required tag (`@smoke`) and the setup and teardown projects they depend on, which Playwright runs whole. Never a default.',
+      '- **Archived** — out of the pickers; its runs keep it. A deleted one comes back when a run reports its label again.',
+    ].join('\n'),
+    doc: 'features/environments',
+  },
+  'project.default-environment': {
+    title: 'Default environment',
+    text: [
+      'The environment this project’s views read when none is picked, as they read the default branch. Unset, they read every environment.',
+      '',
+      '- **Reads it** — the project page and its tabs, the flaky list, Analytics, quarantine candidates, pull request feedback’s “already flaky on the default branch”, and MCP’s `list_flaky_tests`.',
+      '- **No environment** — a run that reports none counts only under **All environments**.',
+      '- **Every environment** — a quarantined test’s release streak, as its quarantine holds in all of them, and the **Status** filter when it names none.',
+      '- **Archived** — an archived default reads as none until it is unarchived.',
+    ].join('\n'),
+    doc: 'features/environments#default-environment',
   },
   'project.ci-rerun': {
     title: 'CI actions',
@@ -560,11 +604,11 @@ export const HELP_TOPICS = {
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
       '- **Jenkins or a Custom request** — one request to the CI server, recognized by the dispatch id the job passes on as `PIWI_ORIGIN_REF`.',
       '',
-      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The buttons use the default action for what they start, unless a run’s environment names another. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
+      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The buttons use the default action for what they start, unless an action names the run’s environment, one of the project’s. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the project’s SCM token (which needs write scope); a CI server takes the one **CI server token** of this section, sent only under the one base URL it was saved with, so every CI server action must use the same base URL. Without a token of its own, a request carries the operator’s instance credential and sends no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
+      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
     ].join('\n'),
     doc: 'features/ci-rerun',
     envVars: [
@@ -591,8 +635,8 @@ export const HELP_TOPICS = {
   },
   'project.local-folder': {
     title: 'Linked local folder',
-    text: 'The checkout on this machine that produces this project’s runs. Linking it enables running tests from the app and opening files in your IDE. Its default run options are what each Re-run button of the project starts from. Both stay on this machine, never on the server.',
-    doc: 'features/desktop#running-tests-from-the-app',
+    text: 'The folder on this machine that holds this project’s Playwright config, where Playwright runs and the test paths of its runs start: in a monorepo, the config’s subfolder, not the repository root.\n\n- **Choose folder…** — offers the folders found on this machine and checks the one you pick against the project’s tests\n- **Once linked** — the app runs its tests and opens its files in your IDE; each Re-run button of the project starts from its default run options\n\nThe link and the options stay on this machine, never on the server.',
+    doc: 'features/desktop#projects-from-local-folders',
   },
 
   // ── Test run detail ───────────────────────────────────────────────────
@@ -621,7 +665,7 @@ export const HELP_TOPICS = {
   },
   'run.live-view-demo': {
     title: 'Simulated run results',
-    text: 'This run simulates test results. Watching a browser needs a real run connected to your Piwi instance.',
+    text: 'This run simulates test results, and the call each worker’s test is in: **Watch** shows its call log, and **Inspect** the checkout page from a recorded trace, at the disabled Pay button in the **Stuck test** scenario. The image of the page, its events and its text need a real run connected to your Piwi instance.',
     doc: 'features/live-view#turn-it-on',
   },
   'run.live-no-workers': {
@@ -753,6 +797,18 @@ export const HELP_TOPICS = {
     doc: 'features/run-changes',
     recipe: { question: 'Regression or flake?', doc: 'recipes/regression-or-flaky' },
   },
+  'run.deployedCommit': {
+    title: 'Deployed commit',
+    text: [
+      'The commit of the application a run of a **deployed environment** ran against, which can differ from the commit of the tests. The first source that names one wins:',
+      '',
+      '- **The server** — an instrumented server under test reports its `appCommit`.',
+      '- **A deploy marker** — the latest deploy marker of the environment before the run started that carries a commit, which the deploy pipeline posts.',
+      '',
+      'Suspect lines, the Changes tab and the AI diagnosis read the application’s changes between deployed commits. With neither source, the deployed version is unknown and may differ from the run’s commit.',
+    ].join('\n'),
+    doc: 'features/deployed-environments#the-deployed-commit',
+  },
   'run.timeline': {
     title: 'Workers timeline',
     text: [
@@ -766,7 +822,7 @@ export const HELP_TOPICS = {
       '- **Show waits** marks the wasted waits; **Show locks** shows when each named lock was held and how much of the run it serialized.',
       '- **Paused** — a pale striped band over a test is a stop at an editor breakpoint: the test stood still while someone looked at the page. Its time stays on the clock and out of the test’s duration (for a test that ended under the bar, Piwi corrects the runner’s count where Playwright lets it), and the slowest-step and wasted-time figures leave it out too; the bar of a test that stood paused ends where the test ended.',
       '- **Leaks** — under each worker row, a red tail runs from the end of the test that left a browser, context or page open to its close or the worker’s end, and an amber one from an object’s last use to its close, in its own test. Hover one for where it was opened and the line that last used it, where its close belongs; click it to open the test. **Show leaks** turns them off.',
-      '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Hover them for the values at that moment and the tests running then. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
+      '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Over the timeline, a line follows the pointer, the test bars included, with each track’s value beside it. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
     doc: 'features/ui-overview#test-run-detail',
   },
@@ -988,12 +1044,14 @@ export const HELP_TOPICS = {
     text: [
       'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure.',
       '',
-      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything.',
+      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything, or drag across the axis to zoom to a range (**Reset zoom** or a double-click gives the window back).',
+      '- **Screen** — with a trace, the page as its screencast recorded it, one lane per page: hover it to see the page at that moment and the step running then, click to open the frames full screen there. A dimmed tile shows the same frame as the one before. On while the trace has frames; turning it off takes the page out of the list too, and the choice is remembered in this browser.',
+      '- **Show the page** — with the Screen lane, three ways for the list: **Side panel** beside the table, the page after the step you hover or picked by its time (the failing step before it ran, until you pick another; **Before** and **After** switch), and a request, console entry or dialog when it happened; **Hover card**, the page before and after the row under the pointer; **Thumbnails**, a column of the page after each row. A row’s time opens the page under that row where no side panel shows. The choice is remembered in this browser, and hovering a row marks its bar on the axis.',
       '- **Type chips** hide or show the steps, requests, console entries, dialogs and backend logs in the window. **Only** or Alt-click shows just one type; the failing step and the last shown type always stay. The line beside them says what is hidden, and the choice is remembered in this browser.',
       '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
       '- **Paused** — a stop at an editor breakpoint, a band over the lanes. Every timestamp stays on the clock; a step that ran across a stop says how long it stood paused, which its share of the test leaves out.',
-      '- **Resources** — when the run sent its resource report, rows under the lanes draw the CPU and memory of the worker that ran the test with the browsers it started, and the pages open in that worker; the pointer reads their values, and the line below says what earlier tests left open and how long the browsers waited for a CPU. Off until you turn it on; the choice is remembered in this browser.',
+      '- **Resources** — when the run sent its resource report, rows under the lanes draw the CPU and memory of the worker that ran the test with the browsers it started, and the pages open in that worker; a line follows the pointer across every lane, with each row’s value beside it, and the line below says what earlier tests left open and how long the browsers waited for a CPU. Off until you turn it on; the choice is remembered in this browser.',
       '',
       'When a run’s reporter recorded no step start times, positions are estimated from durations and the card says so.',
     ].join('\n'),
@@ -1135,7 +1193,7 @@ export const HELP_TOPICS = {
   // ── Notifications / subscribe ─────────────────────────────────────────
   'notifications.subscribe': {
     title: 'Project notifications',
-    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert, and optionally the branches and environments to hear about — `*` matches any characters, as in `release/*`.',
+    text: 'Get notified about this project’s runs through your channels. Choose which events trigger an alert, and optionally the branches and environments to hear about — `*` matches any characters, as in `release/*`. An environment matches its key or an alias, ignoring case, so `prod*` also covers an environment added later.',
     doc: 'features/notifications#branches-and-environments',
   },
 
@@ -1313,13 +1371,13 @@ export const HELP_TOPICS = {
   },
   'settings.pr-feedback': {
     title: 'Pull-request feedback',
-    text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM token with write access.',
+    text: 'When a run finishes on a branch with an open pull request, Piwi can post a summary comment — new failures separated from pre-existing ones, with suggested locators — and set a commit status. Needs PIWI_SITE_URL and an SCM credential with write access.',
     doc: 'features/pr-feedback',
     envVars: ['PIWI_SITE_URL'],
   },
   'settings.auto-heal': {
     title: 'Auto-heal pull requests',
-    text: 'When a locator breaks on the default branch and healing has high-confidence evidence, Piwi opens the fix pull request itself — a deterministic one-line locator edit per broken call site. Off by default, with an explicit per-project allowlist. Needs PIWI_SITE_URL and an SCM token with write access.',
+    text: 'When a locator breaks on the default branch and healing has high-confidence evidence, Piwi opens the fix pull request itself — a deterministic one-line locator edit per broken call site. Off by default, with an explicit per-project allowlist. Needs PIWI_SITE_URL and an SCM credential with write access.',
     doc: 'features/auto-heal',
     envVars: ['PIWI_SITE_URL'],
   },
@@ -1334,6 +1392,30 @@ export const HELP_TOPICS = {
       'PIWI_ZEPHYR_API_TOKEN',
       'PIWI_ZEPHYR_REGION',
     ],
+  },
+  'settings.credentials': {
+    title: 'Credentials',
+    text: [
+      'A credential is a secret Piwi sends to another service, saved once and named wherever it is needed: a CI server action picks one instead of repeating a user and a token, a project’s source control picks the token it reads and writes its repository with, an AI role the key it calls its provider with, a Jira or Zephyr Scale connection its API token, and a Slack channel of the instance its bot token.',
+      '',
+      '- **Destination**: the base URL the secret may be sent under. A request elsewhere is refused, and changing the destination asks for the secret again.',
+      '- **Projects**: the projects that may use it. A Project admin shares one with the projects they manage; sharing with all projects takes an administrator.',
+      '- **Inputs and Custom requests**: for a CI server, the action inputs a request carrying it may send, and whether a Custom request may carry it (it reaches any path under the destination).',
+      '- **Source control**: a token sent to the API of GitHub, GitLab or Bitbucket, the whole API or a path under its repositories.',
+      '- **AI provider**: the key of a role of **Settings → AI**, sent to its provider; a key typed there is saved as one.',
+      '- **Jira Cloud, Zephyr Scale, Slack**: the token of a connection of **Settings → Integrations** (Jira’s user is the account’s e-mail) or of a Slack channel of the instance, saved as one when typed in its form.',
+      '- **Secret source**: saved here, encrypted, or, for an administrator, read at each use from a server variable named `PIWI_CREDENTIAL_…`.',
+      '',
+      'The secret is encrypted with `PIWI_SECRET_KEY` and never shown again. **Disable** refuses every use at once. Every use is logged: who started it, for which project, where it went and how it ended.',
+    ].join('\n'),
+    doc: 'operate/credentials',
+    envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS', 'PIWI_CI_SERVER_TOKEN'],
+  },
+  'settings.credentials.log': {
+    title: 'Credential log',
+    text: 'Every use, newest first, of one credential in its panel, and of every credential, deleted ones included, in the page’s Log: a dispatch, a comment, a commit status, a pull request, a write to Jira or Zephyr Scale or a Slack message is one row, settled once the service answers (`ok` or `failed`), and a read (a Check, a repository read, a call to an AI model, a connection opened) is counted in one row per project, result and hour. A refused use (the project is not in its scope, the URL is outside its destination, it is disabled) is logged too, before anything is sent. Kept `PIWI_RETENTION_CREDENTIAL_LOG_DAYS` days.',
+    doc: 'operate/credentials#the-log',
+    envVars: ['PIWI_RETENTION_CREDENTIAL_LOG_DAYS'],
   },
   'settings.integrations.zephyr-connection': {
     title: 'Zephyr Scale Cloud',

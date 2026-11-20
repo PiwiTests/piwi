@@ -172,11 +172,11 @@ function beforeLine(call: string, method: string, params: Record<string, unknown
 }
 
 /**
- * A browser case's budget: its launch, which a full suite's load slows, two `waitFor`s for the trace it writes, and
- * the browser's own calls and close.
+ * A browser case's budget: its launch, which a full suite's load slows, a `waitFor` for the trace it writes, and the
+ * browser's own calls, the trace's stop and the close.
  */
 const LAUNCH_MS = 30_000;
-const CASE_MS = LAUNCH_MS + 2 * WAIT_MS + 15_000;
+const CASE_MS = LAUNCH_MS + WAIT_MS + 30_000;
 const launchTracing = (tracesDir: string) => chromium!.launch({ tracesDir, timeout: LAUNCH_MS });
 
 describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser writes', { timeout: CASE_MS }, () => {
@@ -196,7 +196,13 @@ describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser
       const own = readerOf(traces, 'attempt', (call) => (call === 'never' ? 'never' : null));
       await own.reader.turn();
       await own.reader.turn();
-      const clicked = await waitFor(() => own.kept.find((n) => n.title === 'click' && n.phase === 'after'));
+      // The browser writes the trace after its calls return: every call's page is on disk once the reader keeps it.
+      const calls = ['goto', 'fill', 'click', 'textContent'];
+      const clicked = await waitFor(
+        () =>
+          calls.every((title) => own.kept.some((n) => n.title === title)) &&
+          own.kept.find((n) => n.title === 'click' && n.phase === 'after'),
+      );
       expect(clicked).toMatchObject({
         type: 'snapshot',
         shard: null,
@@ -204,7 +210,7 @@ describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser
         main: true,
         test: 'shop › shows the password',
       });
-      expect(new Set(own.kept.map((n) => n.title))).toEqual(new Set(['goto', 'fill', 'click', 'textContent']));
+      expect(new Set(own.kept.map((n) => n.title))).toEqual(new Set(calls));
       const rendered = await own.store.render('0', clicked.call, 'after');
       if ('status' in rendered) throw new Error(rendered.message);
       expect(rendered.viewport).toEqual({ width: 800, height: 600 });
@@ -225,12 +231,18 @@ describe.skipIf(!chromium)('the reader of a lane’s trace, on a trace a browser
       expect('html' in before && before.html).not.toContain(SECRET);
       own.reader.close();
 
-      // A runner's title of a call, as the lane's layers named it, names its pages; the text it types hidden.
+      // The trace finished, a reader of it keeps the same pages with a runner's title of each call, as the lane's
+      // layers named it, or with none; the text the title types is hidden in it.
+      await context.tracing.stop();
+      const plain = readerOf(traces, 'attempt');
       const titled = readerOf(traces, 'attempt', () => `Fill "${SECRET}" getByLabel('Password')`);
+      await plain.reader.turn();
       await titled.reader.turn();
-      await titled.reader.turn();
-      await waitFor(() => titled.kept.length >= own.kept.length);
-      expect(titled.kept.every((n) => !n.title.includes(SECRET))).toBe(true);
+      const pages = (kept: DesktopInspectNotice[]) => kept.map((n) => `${n.frame} ${n.index}`).sort();
+      expect(plain.kept.length).toBeGreaterThan(0);
+      expect(pages(titled.kept)).toEqual(pages(plain.kept));
+      expect(titled.kept.every((n) => n.title.startsWith('Fill "') && !n.title.includes(SECRET))).toBe(true);
+      plain.reader.close();
       titled.reader.close();
     } finally {
       await browser.close();

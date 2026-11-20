@@ -57,12 +57,24 @@ Wherever capture is on, the plugin also serves `GET /__piwi/environment`: the ru
 | `utcOffsetMinutes` | The local zone's offset from UTC now, in minutes |
 | `globalization` | The ICU version and its locale data, `full` or `small`: `icu 76.1 full` |
 | `environmentName` | `NODE_ENV` |
-| `appVersion` | Always `null` |
+| `appVersion` | The plugin's `appVersion` option, else `PIWI_APP_VERSION`, else `null` |
+| `appCommit` | The commit the application was built from (below) |
 | `hostname` | `os.hostname()` |
 | `instance` | A random id of the process, the one the coverage endpoints name |
 | `startedAt`, `now` | When the process started (ISO date) and the server's clock (epoch ms) |
 
 It is served under the same rule as the route manifest: never turn capture on for a public production server, where this endpoint would describe the host to anyone who asks.
+
+`appVersion` and `appCommit` tell the dashboard which version of the application a run tested, for an environment deployed apart from the tests' checkout. `appCommit` is the first of these that holds 7 to 40 hexadecimal characters, lower-cased, else `null`: the plugin's `appCommit` option, `PIWI_APP_COMMIT`, then the commit variable of the hosting platform the server runs on (`VERCEL_GIT_COMMIT_SHA`, `RENDER_GIT_COMMIT`, `RAILWAY_GIT_COMMIT_SHA`, `SOURCE_COMMIT`). To set the options, export the plugin from `piwiPlugin` in place of the default export:
+
+```typescript
+// Nuxt: server/plugins/piwi-test-logs.ts
+import { piwiPlugin } from '@piwitests/instrumentation-nitro'
+
+export default piwiPlugin({ appVersion: '1.4.0', appCommit: process.env.GIT_COMMIT })
+```
+
+Where capture is off (production, by default), nothing serves it: post a deploy marker with the commit from the deploy pipeline instead ([Timeline markers](https://piwitests.dev/features/timeline-markers)).
 
 ## Server coverage
 

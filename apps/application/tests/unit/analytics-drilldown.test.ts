@@ -68,6 +68,11 @@ describe('analytics drill-down', () => {
     expect(
       parseDrillQuery({ source: 'analytics', allBranches: 'true' }, { now, timeZone: 'UTC' })!.defaultBranchOnly,
     ).toBe(false);
+    expect(scope.allEnvironments).toBe(false);
+    expect(
+      parseDrillQuery({ source: 'analytics', allEnvironments: 'true' }, { now, timeZone: 'UTC' })!.allEnvironments,
+    ).toBe(true);
+    expect(drillDownHref('flaky', 2, { period: 'last-7d', allEnvironments: 'true' })).toContain('allEnvironments=true');
   });
 
   test('a drill-down stays the same drill-down when the page changes a tab, a list page or a search', () => {

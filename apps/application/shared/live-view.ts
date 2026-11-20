@@ -113,3 +113,7 @@ export const LIVE_VIEW_END_TEXT: Record<LiveViewEnd, string> = {
   replaced: 'You opened another view of this run in its place.',
   unshared: 'The developer stopped sharing this run from their machine.',
 };
+
+/** What a view says while its watch is quiet: its streams bring nothing, not even the instance's heartbeat. */
+export const LIVE_WATCH_QUIET_TEXT =
+  'Nothing has come from the instance for 35 seconds, not even its heartbeat: a proxy in front of it is probably holding the stream back. Its buffering needs to be off (proxy_buffering off in nginx).';

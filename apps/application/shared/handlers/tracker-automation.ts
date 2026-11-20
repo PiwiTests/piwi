@@ -1,6 +1,7 @@
 /**
  * What the automatic-creation rules read about a project's clusters, from the
- * database: the runs each failed in (branch, environment, start, failures), its
+ * database: the runs each failed in (branch, environment and the key and
+ * aliases of the environment it resolves to, start, failures), its
  * tests' tags, its owner, whether an issue still tracks it (as a new filing
  * reads it) or a filing for it is queued, whether it is snoozed and whether its
  * tests show flakiness. Shared by the server's run trigger and
@@ -24,6 +25,7 @@ import { describeCluster } from '../describe-cluster';
 import { clusterIssueFilings, clusterKnownIssues, clusterReopenings, knownIssueTracks } from './known-issues';
 import type { DrizzleDB } from './db';
 import { flakyResultSql } from './test-case-aggregates';
+import { environmentFilterFacts } from './environments';
 
 /** Failing (cluster, run) rows read per call, newest first: well past what a threshold needs. */
 const FAILURE_ROWS_LIMIT = 5000;
@@ -81,6 +83,7 @@ export async function gatherAutoCreateFacts(
         occurrences: sql<number>`count(*)`,
         branch: testRuns.branch,
         environment: testRuns.environment,
+        environmentId: testRuns.environmentId,
         startTime: testRuns.startTime,
       })
       .from(testRunsCases)
@@ -97,6 +100,7 @@ export async function gatherAutoCreateFacts(
         testRunsCases.testRunId,
         testRuns.branch,
         testRuns.environment,
+        testRuns.environmentId,
         testRuns.startTime,
       )
       .orderBy(desc(testRunsCases.testRunId))
@@ -113,6 +117,10 @@ export async function gatherAutoCreateFacts(
   ]);
 
   const reopenings = await clusterReopenings(db, knownIssues);
+  const runEnvironments = await environmentFilterFacts(
+    db,
+    failureRows.map((row) => row.environmentId),
+  );
   const testIds = [...new Set(testRows.map((row) => row.testCaseId))];
   const [tests, retryPasses] = testIds.length
     ? await Promise.all([
@@ -141,6 +149,9 @@ export async function gatherAutoCreateFacts(
         occurrences: Number(row.occurrences),
         branch: row.branch ?? null,
         environment: row.environment ?? null,
+        environmentKey: row.environmentId != null ? (runEnvironments.get(row.environmentId)?.key ?? null) : null,
+        environmentAliases:
+          row.environmentId != null ? (runEnvironments.get(row.environmentId)?.aliases ?? null) : null,
         isDefaultBranch: row.branch != null && row.branch === opts.defaultBranch,
       }));
     const clusterTests = testRows

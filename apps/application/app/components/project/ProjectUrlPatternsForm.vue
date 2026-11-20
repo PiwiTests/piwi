@@ -1,9 +1,9 @@
 <script setup lang="ts">
 /**
  * The project's URL patterns: the addresses its application is served at,
- * which Piwi Picker resolves the project of a page from. Suggests one pattern
- * per origin the suite already visited, grouped by the environment its runs
- * were reported with.
+ * which Piwi Picker resolves the project of a page from, each for one of the
+ * project's environments or for every one. Suggests one pattern per origin the
+ * suite already visited, grouped by the environment its runs' label resolves to.
  */
 import { parsePathPrefix } from '@piwitests/core/page-key';
 import type { UrlPatternItem, UrlPatternSuggestion, UrlPatternSuggestions } from '#shared/handlers/url-patterns';
@@ -13,13 +13,16 @@ const props = defineProps<{ projectId: number }>();
 interface Row {
   key: number;
   pattern: string;
+  /** The environment's label as written: its key when picked. */
   environment: string;
+  environmentId: number | null;
   branch: string;
   pathPrefix: string;
   testPathPrefix: string;
 }
 
 const toast = useToast();
+const { forLabel } = useProjectEnvironments(() => props.projectId);
 const rows = ref<Row[]>([]);
 const saved = ref('');
 const suggestions = ref<UrlPatternSuggestion[]>([]);
@@ -41,6 +44,7 @@ function toRows(items: UrlPatternItem[]): Row[] {
     key: nextKey++,
     pattern: i.pattern,
     environment: i.environment ?? '',
+    environmentId: i.environmentId,
     branch: i.branch ?? '',
     pathPrefix: i.pathPrefix ?? '',
     testPathPrefix: i.testPathPrefix ?? '',
@@ -52,6 +56,7 @@ function snapshot(list: Row[]): string {
     list.map((r) => [
       r.pattern.trim(),
       r.environment.trim(),
+      r.environmentId,
       r.branch.trim(),
       r.pathPrefix.trim(),
       r.testPathPrefix.trim(),
@@ -90,24 +95,29 @@ const shownSuggestions = computed(() =>
 );
 
 interface SuggestionGroup {
-  environment: string | null;
+  key: string;
+  /** The environment's name, else the label no environment takes; null for the runs that reported none. */
+  name: string | null;
   items: UrlPatternSuggestion[];
 }
 
-/** Suggestions by environment, in the order of each one's most visited site; those without one last. */
+/**
+ * Suggestions by the environment their runs' label resolves to (a label no environment takes is a group of its own),
+ * in the order of each one's most visited site; those without one last.
+ */
 const suggestionGroups = computed<SuggestionGroup[]>(() => {
-  const groups = new Map<string | null, UrlPatternSuggestion[]>();
+  const groups = new Map<string, SuggestionGroup>();
   for (const suggestion of shownSuggestions.value) {
-    const items = groups.get(suggestion.environment);
-    if (items) items.push(suggestion);
-    else groups.set(suggestion.environment, [suggestion]);
+    const environment = forLabel(suggestion.environment);
+    const key = environment ? `id:${environment.id}` : suggestion.environment ? `label:${suggestion.environment}` : '';
+    const group = groups.get(key);
+    if (group) group.items.push(suggestion);
+    else groups.set(key, { key, name: environment?.name ?? suggestion.environment, items: [suggestion] });
   }
-  return [...groups]
-    .map(([environment, items]) => ({ environment, items }))
-    .sort((a, b) => Number(a.environment === null) - Number(b.environment === null));
+  return [...groups.values()].sort((a, b) => Number(a.name === null) - Number(b.name === null));
 });
 
-const byEnvironment = computed(() => suggestionGroups.value.some((g) => g.environment !== null));
+const byEnvironment = computed(() => suggestionGroups.value.some((g) => g.name !== null));
 
 async function load() {
   loading.value = true;
@@ -127,11 +137,14 @@ async function load() {
   }
 }
 
-function addRow(pattern = '', environment: string | null = null) {
+/** Adds a row; `label`, a run's label, picks the environment it resolves to, else stays as written. */
+function addRow(pattern = '', label: string | null = null) {
+  const environment = forLabel(label);
   rows.value.push({
     key: nextKey++,
     pattern,
-    environment: environment ?? '',
+    environment: environment?.key ?? label ?? '',
+    environmentId: environment?.id ?? null,
     branch: '',
     pathPrefix: '',
     testPathPrefix: '',
@@ -214,7 +227,13 @@ watch(() => props.projectId, load, { immediate: true });
               class="w-full font-mono"
             />
           </UFormField>
-          <UInput v-model="row.environment" placeholder="Environment" aria-label="Environment" class="w-full" />
+          <SettingEnvironmentPicker
+            v-model:environment-id="row.environmentId"
+            v-model:label="row.environment"
+            :project-id="projectId"
+            none-label="Every environment"
+            class="w-full"
+          />
           <UInput v-model="row.branch" placeholder="Default branch" aria-label="Branch" class="w-full font-mono" />
           <UFormField :error="prefixError(row.pathPrefix)" :name="`path-prefix-${row.key}`">
             <UInput
@@ -276,20 +295,20 @@ watch(() => props.projectId, load, { immediate: true });
         <p class="text-sm font-semibold text-highlighted">Visited by the suite</p>
         <section
           v-for="group in suggestionGroups"
-          :key="group.environment ?? ''"
+          :key="group.key"
           :class="byEnvironment ? 'space-y-2 rounded-lg border border-default p-3' : 'space-y-2'"
           data-testid="url-pattern-suggestion-group"
         >
           <div v-if="byEnvironment" class="flex flex-wrap items-center justify-between gap-2">
-            <p class="text-sm font-semibold text-highlighted">{{ group.environment ?? 'No environment' }}</p>
+            <p class="text-sm font-semibold text-highlighted">{{ group.name ?? 'No environment' }}</p>
             <UButton
-              v-if="group.environment !== null && group.items.length > 1"
+              v-if="group.name !== null && group.items.length > 1"
               label="Add all"
               color="neutral"
               variant="outline"
               size="sm"
-              :aria-label="`Add all ${group.environment} suggestions`"
-              :title="`Add the ${group.items.length} ${group.environment} suggestions`"
+              :aria-label="`Add all ${group.name} suggestions`"
+              :title="`Add the ${group.items.length} ${group.name} suggestions`"
               @click="addSuggestions(group.items)"
             />
           </div>

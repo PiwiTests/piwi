@@ -2,6 +2,8 @@ package dev.piwitests.jetbrains
 
 import com.intellij.icons.AllIcons
 import com.intellij.openapi.util.IconLoader
+import com.intellij.openapi.util.ScalableIcon
+import com.intellij.ui.AnimatedIcon
 import javax.swing.Icon
 
 /**
@@ -22,15 +24,60 @@ object PiwiIcons {
     val FLAKY: Icon = IconLoader.getIcon("/icons/testFlaky.svg", PiwiIcons::class.java)
 
     /**
-     * A running test: a ring on the outcome palette's running color, as VS Code's mark, apart from the IDE's run
-     * triangle that starts a test.
+     * A running test: a ring on the outcome palette's running color, apart from the IDE's run triangle that starts a
+     * test, still in a list, whose renderer does not animate.
      */
-    val RUNNING: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
+    val RUNNING_STILL: Icon = IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
+
+    /**
+     * A test that stands at a stop of a run the IDE follows: two bars on the pause bar's violet, as VS Code's mark;
+     * `status-mark-colors.test.ts` holds its colors.
+     */
+    val PAUSED: Icon = IconLoader.getIcon("/icons/testPaused.svg", PiwiIcons::class.java)
+
+    /** The running ring turning, as VS Code's mark spins: the result icon's, eight frames a second as the IDE's spinner. */
+    val RUNNING: Icon = TurningRing(RUNNING_STILL)
+
+    /** The running ring's frames, an eighth of a turn each, and how long each shows. */
+    private const val RUNNING_FRAMES = 8
+    private const val RUNNING_FRAME_MILLIS = 1000 / RUNNING_FRAMES
+
+    /** `ring` turning about its center, drawn again at each scale an editor asks for (a zoomed editor's gutter). */
+    private class TurningRing(private val ring: Icon, private val scale: Float = 1f) :
+        AnimatedIcon(RUNNING_FRAME_MILLIS, *Array<Icon>(RUNNING_FRAMES) { Turned(ring, it * 360.0 / RUNNING_FRAMES) }),
+        ScalableIcon {
+        override fun getScale(): Float = scale
+
+        override fun scale(scaleFactor: Float): Icon =
+            TurningRing(if (ring is ScalableIcon) ring.scale(scaleFactor) else ring, scaleFactor)
+    }
+
+    /** `icon` turned by `degrees` about its center, smoothly. */
+    private class Turned(private val icon: Icon, private val degrees: Double) : Icon {
+        override fun getIconWidth() = icon.iconWidth
+
+        override fun getIconHeight() = icon.iconHeight
+
+        override fun paintIcon(c: java.awt.Component?, g: java.awt.Graphics, x: Int, y: Int) {
+            val turned = g.create() as java.awt.Graphics2D
+            try {
+                turned.setRenderingHint(java.awt.RenderingHints.KEY_INTERPOLATION, java.awt.RenderingHints.VALUE_INTERPOLATION_BILINEAR)
+                turned.setRenderingHint(java.awt.RenderingHints.KEY_ANTIALIASING, java.awt.RenderingHints.VALUE_ANTIALIAS_ON)
+                turned.rotate(Math.toRadians(degrees), x + iconWidth / 2.0, y + iconHeight / 2.0)
+                icon.paintIcon(c, turned, x, y)
+            } finally {
+                turned.dispose()
+            }
+        }
+    }
 
     /**
      * Piwi's mark, the tool window's, the status item's, a notification's and the language server widget's: the filled
      * one in the classic UI, the outline one in the New UI (`PiwiIconMappings.json`).
      */
+    /** Interact, the hand of Piwi Picker's and the desktop app's Interact, on a worker's page. */
+    val INTERACT: Icon = IconLoader.getIcon("/icons/interact.svg", PiwiIcons::class.java)
+
     val PIWI: Icon = IconLoader.getIcon("/icons/piwi.svg", PiwiIcons::class.java)
 
     /** The mark with a red dot, the tool window's while tests fail. */
@@ -61,13 +108,17 @@ object PiwiIcons {
         "flaky" to FLAKY,
     )
 
-    /** A test's outcome as its line's result icon draws it, which the CI run tab draws too. */
-    fun outcome(status: String?): Icon = when (status) {
+    /**
+     * A test's outcome as its line's result icon draws it, which the CI run tab draws too, its running ring still
+     * (`turning` false) in a list.
+     */
+    fun outcome(status: String?, turning: Boolean = true): Icon = when (status) {
         "failed" -> FAILED
         "flaky" -> FLAKY
         "passed" -> AllIcons.RunConfigurations.TestPassed
         "skipped" -> AllIcons.RunConfigurations.TestIgnored
-        "running" -> RUNNING
+        "running" -> if (turning) RUNNING else RUNNING_STILL
+        "paused" -> PAUSED
         else -> AllIcons.RunConfigurations.TestNotRan
     }
 
@@ -89,6 +140,15 @@ object PiwiIcons {
     val TRACE: Icon = AllIcons.FileTypes.Archive
     val SCREENSHOT: Icon = AllIcons.FileTypes.Image
     val REPRODUCE: Icon = AllIcons.Nodes.Desktop
+
+    /** An instance that does not answer: a cloud struck through, as VS Code's `$(piwi-unreachable)`. */
+    val UNREACHABLE: Icon = piwi("unreachable")
+
+    /** Flake Lab: a flask. */
+    val FLAKE_LAB: Icon = piwi("flask")
+
+    /** An issue to file: a circle with a dot, as VS Code's codicon. */
+    val ISSUE: Icon = piwi("issue")
     val BISECT: Icon = AllIcons.Vcs.Branch
 
     /** A stop's code actions, as `plugin.xml` draws `Piwi.PickAtStop` and the others. */

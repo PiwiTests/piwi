@@ -10,9 +10,16 @@
  * plan at the commit of its latest failure, in a throwaway worktree of the
  * linked folder. Nothing runs before **Run with Playwright**, **Reproduce**,
  * **Bisect** or **Run the lab**; the verdict is recorded on the request, where
- * the sender reads it.
+ * the sender reads it. Each runs for the environment picked here
+ * (`DesktopEnvironmentField`): a bug report's steps start on the last one
+ * picked for the folder, a bisect on one built from the checkout.
  */
 import { reproArgs, type ReproOptions } from '#shared/desktop-repro';
+import {
+  environmentReady,
+  type DesktopEnvironmentChoice,
+  type DesktopEnvironmentPurpose,
+} from '#shared/desktop-environments';
 import { shortCommit } from '#shared/scm-urls';
 import { buildReproduceArgs } from '~/utils/local-run-args';
 import { FLAKE_LAB_JOB_DISPLAY } from '~/composables/useDesktopLocalRuns';
@@ -106,6 +113,18 @@ const title = computed(() =>
 );
 const expires = computed(() => (current.value ? new Date(current.value.expiresAt) : null));
 
+/** The environment the run is for, and whether its protection was confirmed for this run. */
+const environment = ref<DesktopEnvironmentChoice | null>(null);
+const confirmed = ref(false);
+const environmentPurpose = computed<DesktopEnvironmentPurpose>(() =>
+  !job.value ? 'repro' : job.value.plan ? 'flake' : isBisect.value ? 'bisect' : 'reproduce',
+);
+// Another request or project starts on its own environment.
+watch([() => current.value?.id, projectId], () => {
+  environment.value = null;
+  confirmed.value = false;
+});
+
 async function decline() {
   const request = current.value;
   if (!request) return;
@@ -121,8 +140,16 @@ async function run() {
   if (!request || !project || starting.value) return;
   starting.value = true;
   try {
+    if (!environmentReady(environment.value, confirmed.value)) return;
     if (request.job) {
-      await store.startJob({ projectId: project.id, projectLabel: project.label || project.name, request });
+      await store.startJob({
+        projectId: project.id,
+        projectLabel: project.label || project.name,
+        request,
+        environment: environment.value,
+        confirmed: confirmed.value,
+      });
+      confirmed.value = false;
       remove(request.id);
       return;
     }
@@ -134,7 +161,10 @@ async function run() {
       steps: request.steps,
       args: args.value,
       bugReportId: request.bugReportId,
+      environment: environment.value,
+      confirmed: confirmed.value,
     });
+    confirmed.value = false;
     remove(request.id);
   } catch (error) {
     toast.add({ title: 'Could not start the run', description: errorMessage(error), color: 'error' });
@@ -208,7 +238,7 @@ async function run() {
           variant="soft"
           icon="i-lucide-folder-x"
           title="No project is linked to a folder"
-          description="Link a project to its checkout in its Settings, Local folder, then send the request again."
+          description="Link a project to its folder, the one that holds its Playwright config, in its Settings, Local folder, then send the request again."
         />
 
         <template v-else>
@@ -233,6 +263,15 @@ async function run() {
             <UIcon name="i-lucide-folder-check" class="size-4 text-success shrink-0" />
             <code class="break-all">{{ chosen.path }}</code>
           </p>
+
+          <DesktopEnvironmentField
+            v-if="chosen"
+            :key="`${current.id}-${chosen.id}`"
+            v-model="environment"
+            v-model:confirmed="confirmed"
+            :project-id="chosen.id"
+            :purpose="environmentPurpose"
+          />
 
           <div v-if="!job" class="grid grid-cols-2 gap-3">
             <UFormField label="Headed" name="headed" description="Show the browser (--headed).">
@@ -270,7 +309,7 @@ async function run() {
         <UButton color="neutral" variant="ghost" @click="decline">Decline</UButton>
         <UButton
           :icon="job?.plan ? 'i-lucide-flask-conical' : isBisect ? 'i-lucide-git-commit-horizontal' : 'i-lucide-play'"
-          :disabled="!chosen"
+          :disabled="!chosen || !environmentReady(environment, confirmed)"
           :loading="starting"
           @click="run"
           >{{ !job ? 'Run with Playwright' : job.plan ? 'Run the lab' : isBisect ? 'Bisect' : 'Reproduce' }}</UButton

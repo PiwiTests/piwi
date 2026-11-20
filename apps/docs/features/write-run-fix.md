@@ -25,7 +25,7 @@ extension, does the same steps from the browser, and the desktop app runs them o
 
 | Step | In the editor | Outside the editor | Read on |
 |---|---|---|---|
-| Write the test | **Record a new test file…**, or **Record here…** at the cursor | Piwi Picker's **Record actions**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
+| Write the test | **Record a new test file…**, or **Record here…** at the cursor | Piwi Picker's **Record**, then **Send to editor** | [Record tests from the editor](./editor-recording), [Recorded code](./recorded-code) |
 | Run it | **Run with Piwi** from the gutter, the Testing view or the test at the cursor; **Verify ×3** | the desktop app's **Re-run** of tests | [Runs from the editor](./editor-runs), [Desktop app runs](./desktop-runs) |
 | Watch it | the status bar, and the run's page on the instance | the Runs window, and the page itself once you **Watch** at a stop | [Follow a run](./watch-a-run), [Watch a local test](./watch-running-test) |
 | Stop it | a breakpoint, **Pause**, **Step**, **Run to the cursor** | the pause bar in the test's page | [Breakpoints in the browser](./editor-breakpoints), [Pause and step from the editor](./editor-run-control) |
@@ -48,7 +48,7 @@ terminal is followed too, when the editor is open: [Runs started outside Piwi](.
 
 ## Stop it and write the fix there
 
-Set a breakpoint on the line you are working on and run the test. It stops before that line's call, in a headed
+Set a breakpoint on the line you are working on and debug the test (**Debug the test at the cursor**). It stops before that line's call, in a headed
 browser with Piwi's pause bar, or, headless, with the page shown in the editor. **Pick a locator**, **Record** and
 **Assert** (in the headed browser) and **Mock a request** write their code where the stopped statement stands now, after the edits you made
 since the run started ([Code from a pause](./editor-stop-code)); **End the test** skips the rest of it

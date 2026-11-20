@@ -4,7 +4,8 @@
  * from their machine (Share live), can watch the page each of its workers is on, from the run page, and the elements
  * each image paints over beside the secret fields (Playwright locators, one a line), and whether a signed-in reader of
  * a run nobody shares may ask its developer to share it (Ask to watch, on by default). The live view is off by
- * default; the section says what goes out, from which runs, to whom, what is masked, and that nothing is kept.
+ * default; the section says what goes out (the images, the call's log, the page's events and text, the filmstrip and
+ * Inspect's pages), from which runs, to whom, what is masked, and what the instance keeps.
  */
 import { MAX_LIVE_MASKS, liveMaskProblem } from '@piwitests/core/live-view';
 import type { ProjectWithTestRuns } from '~~/types/api';
@@ -106,18 +107,26 @@ async function submit() {
         <dl class="grid gap-x-4 gap-y-2 text-sm sm:grid-cols-[8rem_1fr]">
           <dt class="font-semibold text-highlighted">What goes out</dt>
           <dd class="text-highlighted leading-relaxed">
-            Small images of the test's page, a few a second, each with the call it was taken at. Only from a CI run or a
-            run its developer shares, and only while someone watches that worker: a run nobody watches sends no image.
+            Small images of the test's page, a few a second, each with the call it was taken at, and the call's log.
+            While the panel shows them: the page's events (console and uncaught errors, failed, pending and API
+            requests, the errors and warnings the backend logged), its text as roles and names, and a filmstrip of its
+            calls. With Inspect open: the page at each call as a document, with its stylesheets, fonts and images. Only
+            from a CI run or a run its developer shares, and only while someone watches that worker: a run nobody
+            watches sends none of it.
           </dd>
           <dt class="font-semibold text-highlighted">Who sees it</dt>
           <dd class="text-highlighted leading-relaxed">
-            The people who may open the run. The images show what the page shows, as its screenshots and traces do, with
-            the secret fields and the masked elements painted over by the worker. A secret written in the page's own
-            text is not masked.
+            The people who may open the run. It shows what the page shows, as its screenshots and traces do. The worker
+            paints the secret fields and the masked elements over in the images, removes the secret fields' values from
+            the text and Inspect's pages and the masked elements from the text, and hides credentials in addresses and
+            in the call's log, typed text too. A secret the page writes as its own text is not masked. A project with
+            masked elements gets no Inspect page.
           </dd>
           <dt class="font-semibold text-highlighted">What is kept</dt>
           <dd class="text-highlighted leading-relaxed">
-            Nothing: the images are relayed and dropped, never stored, logged or exported. The trace stays the record.
+            The images, the log, the events, the text and the filmstrip are relayed and dropped. Inspect's pages and
+            their stylesheets, fonts and images stay in the instance's memory while their test runs, and go with the run
+            at the latest. None of it is stored, logged or exported. The trace stays the record.
           </dd>
         </dl>
       </div>

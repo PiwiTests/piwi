@@ -11,12 +11,18 @@
  */
 import {
   parseRunRequest,
+  readRunRequestFolderHints,
   RUN_REQUEST_ID,
+  RUN_TARGET_FEATURES,
   type RunRequest,
   type RunRequestOffer,
   type RunRequestOutcome,
+  type RunRequestFolderHints,
 } from '@piwitests/core/run-request';
+import { parseEnvironmentForRun } from '@piwitests/core/environments';
+import { parseRunVariables, RUN_VARIABLE_LIMITS } from '@piwitests/core/run-variables';
 import { instanceFetch } from './http';
+import type { RequestRunVariables } from './request-run';
 
 /** What the target's stream and its list say, in the instance's words. */
 type StreamEvent =
@@ -105,6 +111,9 @@ const DEFAULT_TIMING = {
 };
 
 /** A refusal of a target route, with the instance's status. */
+/** How long reading a request's run variables may take before the plan fails, in milliseconds. */
+const RUN_VARIABLES_WAIT_MS = 15_000;
+
 export class RequestHostError extends Error {
   constructor(
     readonly status: number,
@@ -252,11 +261,20 @@ export class RequestHost {
     this.retry = this.poll = null;
   }
 
-  /** Claim a request offered here: the instance answers the request, or refuses it once another app claimed it. */
+  /**
+   * Claim a request offered here, saying what this app does beyond a request (`RUN_TARGET_FEATURES`): the instance
+   * answers the request, or refuses it once another app claimed it, or when its project sets run variables and the
+   * claim did not say it applies them.
+   */
   async claim(id: string): Promise<RunRequest> {
     if (!isRequestId(id)) throw new RequestHostError(404, 'No run request has this id');
     const claimed = readRequest(
-      await this.call('POST', `/api/run-targets/requests/${id}/claim`, undefined, { onlyRequest: true }),
+      await this.call(
+        'POST',
+        `/api/run-targets/requests/${id}/claim`,
+        { features: [...RUN_TARGET_FEATURES] },
+        { onlyRequest: true },
+      ),
     );
     this.claimed.add(id);
     this.offered.delete(id);
@@ -296,6 +314,21 @@ export class RequestHost {
     await this.call('POST', `/api/run-targets/requests/${id}/state`, update, { onlyRequest: true });
   }
 
+  /**
+   * What helps this app find the folder of a request it claimed on this machine: the project's repository and the
+   * folders the person's own runs of it came from. No hint from an instance that answers none (an older one) or fails.
+   */
+  async folderHints(id: string): Promise<RunRequestFolderHints> {
+    const none: RunRequestFolderHints = { repositoryUrl: null, folders: [] };
+    if (!isRequestId(id)) return none;
+    try {
+      const route = `/api/run-targets/requests/${id}/folder-hints`;
+      return readRunRequestFolderHints(await this.call('GET', route, undefined, { onlyRequest: true }));
+    } catch {
+      return none;
+    }
+  }
+
   /** Tell the instance this app's platform, version and the projects it has a folder for; it names them back. */
   async describe(): Promise<void> {
     const { platform, version, projectIds } = this.options.describe();
@@ -305,6 +338,32 @@ export class RequestHost {
       projectIds: projectIds.slice(0, 200),
     });
     if (!this.stopped) this.takeNames(described?.projects);
+  }
+
+  /**
+   * The run variables of a request this app claimed and the environment it names, as `parseEnvironmentForRun` and
+   * `parseRunVariables` read them (the project's and the environment's merged, `RUN_VARIABLE_LIMITS.merged` at most):
+   * a list or an environment either refuses, or an answer it cannot read, is a problem the plan fails with. An
+   * instance that predates them answers 404: its projects set none, and its requests name no environment.
+   */
+  async runVariables(id: string): Promise<RequestRunVariables> {
+    if (!isRequestId(id)) return { ok: false, problems: ['No run request has this id.'] };
+    try {
+      const answer = await this.call<{ runVariables?: unknown; environment?: unknown }>(
+        'GET',
+        `/api/run-targets/requests/${id}/run-variables`,
+        undefined,
+        { onlyRequest: true, timeoutMs: RUN_VARIABLES_WAIT_MS },
+      );
+      const environment = parseEnvironmentForRun(answer?.environment);
+      const variables = parseRunVariables(answer?.runVariables, RUN_VARIABLE_LIMITS.merged);
+      const problems = [...(environment.ok ? [] : environment.problems), ...(variables.ok ? [] : variables.problems)];
+      if (!environment.ok || !variables.ok) return { ok: false, problems };
+      return environment.value ? { ...variables, environment: environment.value } : variables;
+    } catch (error) {
+      if (error instanceof RequestHostError && error.status === 404) return { ok: true, value: [] };
+      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };
+    }
   }
 
   /** Where the connection stands now. */
@@ -320,9 +379,10 @@ export class RequestHost {
     method: string,
     route: string,
     body?: unknown,
-    { onlyRequest = false }: { onlyRequest?: boolean } = {},
+    { onlyRequest = false, timeoutMs }: { onlyRequest?: boolean; timeoutMs?: number } = {},
   ): Promise<T> {
     const response = await this.fetch(`${this.options.instance}${route}`, {
+      ...(timeoutMs ? { signal: AbortSignal.timeout(timeoutMs) } : {}),
       method,
       headers: {
         Authorization: `Bearer ${this.options.key}`,

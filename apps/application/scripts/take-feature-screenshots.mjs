@@ -86,6 +86,33 @@ const OUT_TARGETS = {
 
 const DEFAULT_VIEWPORT = { width: 1280, height: 860 };
 
+/** The folders the link dialog finds for a project in the desktop scenes: one a run came from, one clone. */
+const LINK_FOLDER_SUGGESTIONS = [
+  { path: '/home/dev/code/acme-shop/e2e', playwrightConfig: 'playwright.config.ts', specsFound: 12, source: 'run' },
+  {
+    path: '/home/dev/code/acme-shop-review/e2e',
+    playwrightConfig: 'playwright.config.ts',
+    specsFound: 12,
+    source: 'clone',
+  },
+];
+
+/** A monorepo's root picked by hand: no config at its root, none of the tests, the config folder below it. */
+const MONOREPO_ROOT_CHECK = {
+  path: '/home/dev/code/acme-shop',
+  exists: true,
+  playwrightConfig: null,
+  specsChecked: 12,
+  specsFound: 0,
+  missingSpecs: ['tests/checkout.spec.ts'],
+  repository: null,
+  sameRepository: null,
+  fits: false,
+  alternatives: [
+    { path: '/home/dev/code/acme-shop/e2e', playwrightConfig: 'playwright.config.ts', specsFound: 12, source: 'below' },
+  ],
+};
+
 /**
  * A real Playwright 1.63 trace recorded with `snapshots: { dom, aria, screen }`,
  * ingested by the failing-step-evidence scene so the timeline can show the page
@@ -147,7 +174,7 @@ async function ingestTraceSnapshotCase(request, base) {
             { title: 'Navigate to "data:text/html"', category: 'navigation', duration: 40, startTime: 0 },
             { title: 'Fill "a@b.test"', category: 'input', duration: 20, startTime: 50 },
             { title: 'Click "Pay now"', category: 'click', duration: 30, startTime: 80 },
-            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 120, failed: true },
+            { title: 'Click "Cancel"', category: 'click', duration: 1500, startTime: 300, failed: true },
           ],
         },
       ],
@@ -1184,10 +1211,12 @@ function sceneMode(scene) {
  *   - the `vscode-*.png` images are the VS Code extension's, written by
  *     `apps/vscode/scripts/take-screenshots.mjs`;
  *   - the `jetbrains-*.png` images are the JetBrains plugin's, written by
- *     `apps/jetbrains/scripts/take-screenshots.mjs`.
+ *     `apps/jetbrains/scripts/take-screenshots.mjs`;
+ *   - the `runner-*.png` images are Piwi Runner's window, written by
+ *     `apps/runner/tests/e2e/docs-screenshots.spec.ts` with `PIWI_DOCS_SHOTS=1`.
  */
 const EXTERNAL_DOCS_IMAGES = new Set(['demo-live-run-poster.png', 'tested-elements-overlay.png']);
-const EXTERNAL_DOCS_IMAGE_PREFIXES = ['picker-', 'vscode-', 'jetbrains-'];
+const EXTERNAL_DOCS_IMAGE_PREFIXES = ['picker-', 'vscode-', 'jetbrains-', 'runner-'];
 
 /** The steps of the coupon report the repro-request scene shows. */
 const REPRO_SCENE_STEPS = (() => {
@@ -1293,6 +1322,10 @@ const REPRO_SCENE_STEPS = (() => {
  *   inspection  — desktop mode: mocked `desktop_inspect_folder` answer (default READY_INSPECTION)
  *   importableRuns — desktop mode: archives `desktop_find_importable_runs` reports (default [])
  *   pickedFiles — desktop mode: archives the native import picker returns (default [])
+ *   folderSuggestions — desktop mode: the folders `desktop_suggest_project_folders` finds for a project (default [])
+ *   folderCheck — desktop mode: what `desktop_check_project_folder` answers (default: the folder picked fits)
+ *   requestFindings, requestRepository — desktop mode: the folders `desktop_find_request_folders` finds for a request
+ *                 and the repository it names (default none)
  *   localRunId  — desktop mode: the shell's id of the local run `desktop_run_local_tests` starts, or a list of the
  *                 ids of the runs it starts in turn (default none)
  *   serverPort, activePort — desktop mode: the port the settings name and the one the server listens on (default 3000)
@@ -2260,7 +2293,7 @@ const RESOURCES_TIMELINE_EXECUTION = 705;
 /**
  * The Timeline tab of a failed execution with its Resources rows switched on: the CPU and memory of the worker that
  * ran it with the browsers it started, and the pages open in that worker, under the lanes, the pointer over them so
- * the readout gives their values, at `width` px in `colorScheme`.
+ * the line under it crosses every lane with each row's value beside it, at `width` px in `colorScheme`.
  */
 /**
  * The leaky run's workers timeline: under each worker's row, what it kept open
@@ -2307,7 +2340,7 @@ function runTimelineLeaksScene(colorScheme, suffix) {
 function timelineResourcesScene(width, colorScheme, suffix) {
   return {
     name: `failure-timeline-resources${suffix}`,
-    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them, at ${width} px (${colorScheme})`,
+    description: `A failed execution's Timeline tab with the Resources rows on and the pointer over them: the line across every lane, each row's value beside it, at ${width} px (${colorScheme})`,
     route: `/test-run-cases/${RESOURCES_TIMELINE_EXECUTION}`,
     viewport: { width, height: width < 640 ? 2600 : 1500 },
     colorScheme,
@@ -2318,10 +2351,12 @@ function timelineResourcesScene(width, colorScheme, suffix) {
       if ((await toggle.getAttribute('aria-pressed')) !== 'true') await toggle.click();
       const rows = page.locator('[data-shot="evidence-card"] [data-timeline-resources]');
       await rows.waitFor({ timeout: 30_000 });
+      // The card in view before the pointer moves: a scroll during the shot would carry the chart off the pointer.
+      await page.locator('[data-shot="evidence-card"]').scrollIntoViewIfNeeded();
       await settle();
       const box = await rows.boundingBox();
       if (box) await page.mouse.move(box.x + box.width * 0.6, box.y + box.height / 2);
-      await page.getByTestId('timeline-resources-readout').waitFor({ timeout: 10_000 });
+      await page.getByTestId('resource-cursor').waitFor({ timeout: 10_000 });
       await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
     },
   };
@@ -3639,43 +3674,287 @@ const SCENES = [
     { name: 'project-ci-settings-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions, the one CI server token and its Save, at ${width} px`,
+    description: `Project → Settings → CI: the CI section in the Integrations group, with its actions and its Save, at ${width} px`,
     mode: 'demo',
     route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
     async run({ page, shoot, settle }) {
       await page.getByTestId('ci-actions-list').waitFor({ timeout: 90000 });
-      await page.getByTestId('ci-server-token').waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
   })),
   ...[
-    { name: 'project-ci-token', width: 1280, height: 700 },
-    { name: 'project-ci-token-mobile', width: 375, height: 900 },
+    { name: 'project-ci-credential', width: 1280, height: 1100 },
+    { name: 'project-ci-credential-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → CI: the one CI server token field, stating the base URL it is bound to, at ${width} px`,
-    mode: 'demo',
+    description: `Project → Settings → CI: a Jenkins action's editor, its credential picked from the ones shared with the project and the request preview naming it, at ${width} px`,
     route: '/projects/2?tab=settings&section=ci',
     viewport: { width, height },
+    of: '[data-shot="ci-server-target"]',
     async run({ page, shoot, settle }) {
-      const field = page.locator('[data-shot="ci-server-token"]');
-      await field.waitFor({ timeout: 90000 });
-      await field.evaluate((node) => node.scrollIntoView({ block: 'center' }));
+      const row = page.getByTestId('ci-action-row').filter({ hasText: 'Re-run failed tests' });
+      await row.getByTestId('ci-action-edit').click({ timeout: 90000 });
+      await page
+        .getByTestId('ci-server-credential-description')
+        .filter({ hasText: 'is sent' })
+        .waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },
   })),
   ...[
-    { name: 'project-live-view-settings', width: 1280, height: 800 },
-    { name: 'project-live-view-settings-mobile', width: 375, height: 1100 },
+    { name: 'project-scm-credential', width: 1280, height: 900 },
+    { name: 'project-scm-credential-mobile', width: 375, height: 1300 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → Source control: the SCM credential the project's repository calls carry, picked from the ones shared with it, at ${width} px`,
+    route: '/projects/1?tab=settings&section=source-control',
+    viewport: { width, height },
+    of: '[data-shot="project-scm-credential"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .getByTestId('scm-credential-description')
+        .filter({ hasText: 'is sent to' })
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-ci-scm-credential', width: 1280, height: 1100 },
+    { name: 'project-ci-scm-credential-mobile', width: 375, height: 1700 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → CI: a new GitHub action's Credential, the project's by default or one shared with the project for its dispatch, at ${width} px`,
+    route: '/projects/1?tab=settings&section=ci',
+    viewport: { width, height },
+    of: '[data-shot="ci-action-scm-credential"]',
+    async run({ page, shoot, settle }) {
+      // Project 1 has no CI action yet: turn them on (nothing is saved) to add one.
+      await page.getByTestId('ci-actions-enabled').click({ timeout: 90000 });
+      await page.getByTestId('ci-action-add').click();
+      await page.locator('[data-shot="ci-action-scm-credential"]').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-source-control', width: 1280, height: 800 },
+    { name: 'settings-source-control-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Source control: the instance's SCM credentials, for every project that names none, at ${width} px`,
+    route: '/settings/source-control',
+    viewport: { width, height },
+    of: '[data-shot="source-control-token"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .getByRole('button', { name: 'Instance repository credentials' })
+        .filter({ hasText: 'GitHub · example' })
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-scm-credential-form', width: 1280, height: 1000 },
+    { name: 'settings-scm-credential-form-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a new Source control credential, its destination one click per host, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-new').click({ timeout: 90000 });
+      await page.getByTestId('credential-service').click();
+      await page.getByRole('option', { name: 'Source control' }).click();
+      await page.getByTestId('credential-form').getByRole('button', { name: 'GitHub', exact: true }).click();
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-scm-credential-panel', width: 1280, height: 1000 },
+    { name: 'settings-scm-credential-panel-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: an SCM credential's panel, the project that names it and its log of repository reads, a commit status and a pull-request comment, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-4').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-credentials', width: 1280, height: 800 },
+    { name: 'settings-credentials-mobile', width: 375, height: 1100 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: each credential's user, destination, projects, the actions that name it and its last use, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    of: '[data-shot="credentials-list"]',
+  })),
+  {
+    name: 'credentials-settings',
+    description:
+      'Settings → Credentials at 1280 px: the list, and a credential’s panel with its user, destination, projects, the CI actions that name it and its log',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/credentials',
+    viewport: { width: 1280, height: 800 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-1').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
+  ...[
+    { name: 'settings-credentials-log', width: 1280, height: 900 },
+    { name: 'settings-credentials-log-mobile', width: 375, height: 1400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: the log of every credential, deleted ones included, each row naming its credential and CI action, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    of: '[data-shot="credentials-log"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="credentials-log"]')
+        .getByTestId('credential-use')
+        .first()
+        .waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'settings-credential-variable', width: 1280, height: 1000 },
+    { name: 'settings-credential-variable-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a credential whose secret is read from a PIWI_CREDENTIAL_* variable of the server, its panel saying the variable is not set, then its edit form, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-2').click({ timeout: 90000 });
+      await page.getByTestId('credential-panel').getByText('not set on the server').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('panel');
+      await page.getByRole('button', { name: 'Edit or rotate' }).click();
+      await page.getByTestId('credential-secret-env').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot('form');
+    },
+  })),
+  ...[
+    { name: 'settings-credential-panel', width: 1280, height: 1000 },
+    { name: 'settings-credential-panel-mobile', width: 375, height: 1500 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Settings → Credentials: a credential's panel, with what names it, Disable and Delete, and its log, at ${width} px`,
+    route: '/settings/credentials',
+    viewport: { width, height },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-1').click({ timeout: 90000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-live-view-settings', width: 1280, height: 1100 },
+    { name: 'project-live-view-settings-mobile', width: 375, height: 1900 },
   ].map(({ name, width, height }) => ({
     name,
     description: `Project → Settings → Live view: the switch, the masked elements, and what goes out, to whom and what is kept, at ${width} px`,
     route: '/projects/1?tab=settings&section=live-view',
     viewport: { width, height },
     of: '[data-shot="project-live-view-settings"]',
+  })),
+  ...[
+    { name: 'project-run-variables-settings', width: 1280, height: 900, docs: true },
+    { name: 'project-run-variables-settings-mobile', width: 375, height: 1300, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    description: `Project → Settings → Run variables: the project's name and value rows, and the command they start in each shell, at ${width} px`,
+    route: '/projects/2?tab=settings&section=run-variables',
+    viewport: { width, height },
+    of: '[data-shot="project-run-variables-settings"]',
+  })),
+  ...[
+    { name: 'project-environments-settings', width: 1280, height: 1000, docs: true },
+    { name: 'project-environments-settings-mobile', width: 375, height: 1600, docs: false },
+  ].map(({ name, width, height, docs }) => ({
+    name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
+    description: `Project → Settings → Environments: the project's environments in picker order, each with its key, aliases, run variables and protection, the archived ones apart, at ${width} px`,
+    route: '/projects/1?tab=settings&section=environments',
+    viewport: { width, height },
+    of: '[data-shot="project-environments-settings"]',
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-testid="environments-list"], [data-testid="environments-empty"]')
+        .first()
+        .waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'environment-activity', width: 1280 },
+    { name: 'environment-activity-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Project → Settings → Environments, Staging's last run, incidents and deploys: the deploy markers and the commits its recent runs ran against, at ${width} px`,
+    route: '/projects/1?tab=settings&section=environments',
+    viewport: { width, height: 1000 },
+    of: '[data-shot="environment-activity"]',
+    async run({ page, shoot, settle }) {
+      const row = page.locator('[data-testid="environments-list"] > *').filter({ hasText: 'Staging' }).first();
+      await row.getByTestId('environment-activity-open').click();
+      await page.locator('[data-shot="environment-activity"]').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'run-changes-deployed', width: 1280 },
+    { name: 'run-changes-deployed-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Run Changes tab of a Staging run: the deployed commits of the run and its baseline, the application's commits between them and the deploys in between, at ${width} px`,
+    route: '/test-runs/2?tab=changes',
+    viewport: { width, height: 1200 },
+    of: '[data-shot="run-changes-deployed"]',
+    pad: 12,
+  })),
+  ...[
+    { name: 'project-default-environment', width: 1280 },
+    { name: 'project-default-environment-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `Project → Settings → Environments: the default environment the project's views read, Staging for API Integration, at ${width} px`,
+    route: '/projects/2?tab=settings&section=environments',
+    viewport: { width, height: 700 },
+    of: '[data-shot="project-default-environment"]',
+  })),
+  ...[
+    { name: 'project-filters-default-environment', width: 1280 },
+    { name: 'project-filters-default-environment-mobile', width: 375 },
+  ].map(({ name, width }) => ({
+    name,
+    description: `A project page's Filters reading its default environment, Default environment (Staging), with the runs of the other environments it hides, at ${width} px`,
+    route: '/projects/2',
+    viewport: { width, height: 900 },
+    of: '[data-shot="project-filters"]',
   })),
   ...[
     { name: 'project-url-patterns-empty', width: 1280 },
@@ -4562,6 +4841,8 @@ const SCENES = [
                 lastError: null,
                 managedBy: 'db',
                 hasCredentials: true,
+                credentialId: null,
+                credentialName: null,
                 credentialValues: {},
                 hasWebhookToken: false,
                 createdAt: null,
@@ -5209,7 +5490,7 @@ const SCENES = [
     // Execution 37 carries an attachment, a trace and a visual diff, so the
     // evidence tabs are populated rather than empty.
     route: '/test-run-cases/37',
-    viewport: { width: 1280, height: 1500 },
+    viewport: { width: 1280, height: 1760 },
     of: '[data-shot="evidence-card"]',
     pad: 12,
     deviceScaleFactor: 2,
@@ -5318,7 +5599,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources',
     description:
-      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows: hovered, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
+      "The leaky run's workers timeline with the CPU, memory and open-pages tracks above the rows, each in its color: hovered, each track's value beside the line, with memory turned off, with each worker's open pages and each test's CPU under its row, then at phone width",
     tags: ['docs'],
     out: 'docs',
     // Web Dashboard's newest run is the seed's leaky one: its pages pile up test after test.
@@ -5332,7 +5613,7 @@ const SCENES = [
       await settle();
       const box = await band.boundingBox();
       await page.mouse.move(box.x + box.width * 0.62, box.y + box.height * 0.5);
-      await page.getByTestId('timeline-resource-tooltip').waitFor();
+      await page.getByTestId('resource-cursor').waitFor();
       await shoot('hover');
       await page.mouse.move(0, 0);
       // The menu's two groups name some items alike: the tracks above the rows come first.
@@ -5536,7 +5817,7 @@ const SCENES = [
   {
     name: 'run-timeline-resources-sharded',
     description:
-      "A run sharded over two machines: each shard's CPU, memory and open-pages tracks above its own worker rows, the second shard's hovered",
+      "A run sharded over two machines: each shard's CPU, memory and open-pages tracks above its own worker rows, the pointer over the second shard's, each shard's values beside the line",
     // The Web Dashboard run before the leaky one ran as two shards, each with its own resource report.
     route: '/test-runs/63?tab=timeline',
     viewport: { width: 1280, height: 1000 },
@@ -5548,7 +5829,7 @@ const SCENES = [
       await settle();
       const box = await band.boundingBox();
       await page.mouse.move(box.x + box.width * 0.4, box.y + box.height * 0.5);
-      await page.getByTestId('timeline-resource-tooltip').waitFor();
+      await page.getByTestId('resource-cursor').waitFor();
       await shoot();
     },
   },
@@ -5587,11 +5868,12 @@ const SCENES = [
   },
   {
     name: 'run-changes',
-    description: 'Run Changes tab: one baseline, new failures, fixed, slower/faster and commits since',
+    description:
+      'Run Changes tab: one baseline, new failures, fixed, slower/faster, commits since and the deployed application',
     tags: ['docs'],
     out: 'docs',
     route: '/test-runs/2?tab=changes',
-    viewport: { width: 1280, height: 1560 },
+    viewport: { width: 1280, height: 2060 },
     of: '[data-shot="run-changes"]',
     pad: 12,
   },
@@ -8175,6 +8457,88 @@ const SCENES = [
       await shoot();
     },
   })),
+  ...[
+    { width: 1280, suffix: '' },
+    { width: 390, suffix: '-mobile' },
+  ].map(({ width, suffix }) => ({
+    name: `timeline-screen-lane${suffix}`,
+    description: `Timeline tab of a failing execution with a 1.63 trace: the Screen lane over the axis, the page hovered, a dragged range, a row's page, then the hover card and thumbnails, at ${width} px`,
+    viewport: { width, height: width < 640 ? 2000 : 1300 },
+    outputs: [
+      `timeline-screen-lane${suffix}.png`,
+      `timeline-screen-lane${suffix}-hover.png`,
+      `timeline-screen-lane${suffix}-zoomed.png`,
+      `timeline-screen-lane${suffix}-row.png`,
+      ...(width >= 1280 ? [`timeline-screen-lane${suffix}-hover-card.png`] : []),
+      `timeline-screen-lane${suffix}-thumbs.png`,
+    ],
+    async prepare({ request, base }) {
+      this.executionId = await ingestTraceSnapshotCase(request, base);
+    },
+    async run({ page, goto, settle, shoot }) {
+      await goto(`/test-run-cases/${this.executionId}`);
+      await page
+        .getByRole('tablist', { name: 'Evidence sections' })
+        .getByRole('tab', { name: 'Timeline', exact: true })
+        .click();
+      const lane = page.getByTestId('timeline-screen-lane').first();
+      await lane.waitFor({ state: 'visible', timeout: 30_000 });
+      await lane.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      const box = await lane.boundingBox();
+      await page.mouse.move(box.x + box.width * 0.62, box.y + box.height / 2);
+      await page.getByTestId('timeline-screen-preview').waitFor({ timeout: 10_000 });
+      await settle();
+      await shoot('hover', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // A drag across the steps lane, on the first part of the test.
+      const axis = await page.locator('svg:has([data-timeline-screen])').boundingBox();
+      const y = axis.y + axis.height - 40;
+      await page.mouse.move(box.x + box.width * 0.02, y);
+      await page.mouse.down();
+      await page.mouse.move(box.x + box.width * 0.2, y, { steps: 4 });
+      await page.mouse.move(box.x + box.width * 0.35, y, { steps: 4 });
+      await page.mouse.up();
+      await page.getByTestId('timeline-zoom-reset').waitFor({ timeout: 10_000 });
+      await page.mouse.move(0, 0);
+      await settle();
+      await shoot('zoomed', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // The failing step's page at the failure: beside the table from 1280 px, under its tapped row below.
+      await page.getByTestId('timeline-zoom-reset').click();
+      if (width < 1280)
+        await page
+          .getByRole('button', { name: /^Show the page at / })
+          .last()
+          .click();
+      const panel = page.getByTestId('timeline-page-panel');
+      await panel.getByRole('button', { name: 'At the failure', exact: true }).click();
+      await panel.locator('img').waitFor();
+      await settle();
+      await shoot('row', { of: '[data-shot="evidence-card"]', pad: 12 });
+
+      // The two other ways the list shows the page: a card on hover, and thumbnails.
+      const views = page.getByRole('group', { name: 'How the list shows the page' });
+      if (width >= 1280) {
+        await views.getByRole('button', { name: 'Hover card' }).click();
+        // In view first: the capture must not scroll the row away from the pointer.
+        await page.locator('[data-shot="evidence-card"]').scrollIntoViewIfNeeded();
+        await page
+          .locator('table tbody tr', { hasText: 'Cancel' })
+          .first()
+          .hover({ position: { x: 240, y: 12 } });
+        await page.getByTestId('timeline-page-hover-card').locator('img').first().waitFor();
+        await settle();
+        await shoot('hover-card', { of: '[data-shot="evidence-card"]', pad: 12 });
+        await page.mouse.move(0, 0);
+      }
+      await views.getByRole('button', { name: 'Thumbnails' }).click();
+      await settle();
+      await shoot('thumbs', { of: '[data-shot="evidence-card"]', pad: 12 });
+    },
+  })),
   {
     name: 'failing-step-picker',
     description: "Timeline tab: Open in picker on the failing step's page, the picker over the DOM of that moment",
@@ -8969,6 +9333,44 @@ const SCENES = [
     },
   },
   {
+    name: 'changelog',
+    description:
+      "Settings → About, then the Changelog window: the changelog shipped with this build, the running version's release marked and open, at 1280 and 390 px",
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['changelog.png', 'changelog-narrow.png'],
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('about-changelog').click();
+      await page.locator('[data-shot="changelog"] [data-release]').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot();
+      await page.setViewportSize({ width: 390, height: 844 });
+      await settle();
+      await shoot('narrow');
+    },
+  },
+  {
+    name: 'desktop-update-changelog',
+    description:
+      'Settings → About in the desktop app: the Updates card with its Changelog button, then the Changelog window it opens',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/settings/about',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['desktop-update-changelog.png', 'desktop-update-changelog-modal.png'],
+    async run({ page, shoot, settle }) {
+      const card = page.locator('[data-shot="desktop-updates"]');
+      await card.getByTestId('update-card-changelog').waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="desktop-updates"]', pad: 24 });
+      await card.getByTestId('update-card-changelog').click();
+      await page.locator('[data-shot="changelog"] [data-release]').first().waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('modal');
+    },
+  },
+  {
     name: 'settings-desktop',
     description:
       'Settings → Desktop app (desktop app), the first page of Settings there: the address and token, Piwi Picker pairing, the data location and the background service',
@@ -9237,6 +9639,8 @@ const SCENES = [
         .click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
+      // Docked under the page, the tray takes most of the window, so the test's page shows whole.
+      await tray.getByRole('button', { name: 'Maximize local runs' }).click();
       await page.waitForFunction(() => window.__hub?.open() === 1);
       const root = '/home/dev/code/acme-checkout';
       const uri = `file://${root}/tests/checkout.spec.ts`;
@@ -9360,6 +9764,8 @@ const SCENES = [
         .click();
       const tray = page.getByRole('region', { name: 'Local runs' });
       await tray.waitFor();
+      // Docked under the page, the tray takes most of the window, so the test's page shows whole.
+      await tray.getByRole('button', { name: 'Maximize local runs' }).click();
       await page.waitForFunction(() => window.__hub?.open() === 1);
       const root = '/home/dev/code/acme-checkout';
       const uri = `file://${root}/tests/checkout.spec.ts`;
@@ -9434,11 +9840,11 @@ const SCENES = [
   {
     name: 'desktop-runs-tray',
     description:
-      'Local runs tray (desktop app): three runs, the newest running with a worker stopped at its page.pause(), counted as its process counts its tests, then one that passed and one that failed, with Open the failure; whole and as the compact list, at the tray’s width and at 390 px',
+      'Local runs tray (desktop app), docked under the run page: three runs listed, the newest running with a worker stopped at its page.pause(), counted as its process counts its tests, then one that passed and one that failed, shown with its failed tests; the window, the tray alone and 390 px',
     tags: ['docs', 'desktop'],
     out: 'docs',
-    // The docs show the tray at its width; its 390 px shots go to .screens/.
-    outputs: ['desktop-runs-tray.png', 'desktop-runs-tray-compact.png'],
+    // The docs show the window with the tray docked; the other shots go to .screens/.
+    outputs: ['desktop-runs-tray.png'],
     mode: 'desktop',
     link: { path: '/home/dev/code/acme-checkout', exists: true },
     localRunId: [51, 52, 53],
@@ -9588,22 +9994,41 @@ const SCENES = [
         null,
         { timeout: 30_000 },
       );
+      // The window, the tray docked under the run page and given most of its height.
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await tray.getByRole('separator', { name: 'Resize local runs' }).focus();
+      for (let i = 0; i < 7; i++) await page.keyboard.press('ArrowUp');
+      await page.mouse.click(1, 1);
       await settle();
-      await shoot('', { of: '[aria-label="Local runs"]', pad: 0 });
+      await shoot('');
+      await shoot('panel', { of: '[aria-label="Local runs"]', pad: 0 });
       await page.setViewportSize({ width: 390, height: 844 });
       await settle();
       await shoot('narrow', { of: '[aria-label="Local runs"]', pad: 0 });
 
-      // The compact list: one line a run, with the one action it needs now.
-      await page.setViewportSize({ width: 1280, height: 1100 });
-      await tray.getByRole('button', { name: 'Compact list' }).click();
-      await tray.getByRole('button', { name: 'Show as one line' }).click();
-      await tray.locator('[data-shot="desktop-run-line"]').nth(2).waitFor();
+      // Report shots: the run that failed chosen, with its failed tests; a run winding down after Stop; and the
+      // sidebar's entry once it ended with the tray closed.
+      await page.setViewportSize({ width: 1280, height: 1000 });
+      await tray.locator('[data-run-line]').nth(2).click();
+      await tray.locator('[data-shot="desktop-run-results"]').waitFor();
       await settle();
-      await shoot('compact', { of: '[aria-label="Local runs"]', pad: 0 });
+      await shoot('failed', { of: '[aria-label="Local runs"]', pad: 0 });
+      await shoot('results', { of: '[data-shot="desktop-run-results"]', pad: 12 });
+      await tray.locator('[data-run-line]').nth(0).click();
+      await tray.getByRole('button', { name: 'Stop', exact: true }).click();
+      await tray.getByRole('button', { name: 'Force stop' }).waitFor();
+      await tray.getByText(/^Ends within \d+ s$/).waitFor();
+      await settle();
+      await shoot('stopping', { of: '[aria-label="Local runs"]', pad: 0 });
       await page.setViewportSize({ width: 390, height: 844 });
       await settle();
-      await shoot('compact-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+      await shoot('stopping-narrow', { of: '[aria-label="Local runs"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await tray.getByRole('button', { name: 'Close local runs' }).click();
+      await exit(53, 130);
+      await page.getByTestId('local-runs-unseen').waitFor();
+      await settle();
+      await shoot('sidebar-entry', { of: '[data-testid="local-runs-entry"]', pad: 12 });
     },
   },
   {
@@ -10218,6 +10643,61 @@ const SCENES = [
     },
   },
   {
+    name: 'desktop-team-run-request-find',
+    description:
+      'A run request for a project with no folder on this machine: which folder it needs, and what Find it for me found (desktop shell, and Piwi Runner)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/',
+    viewport: { width: 1280, height: 1000 },
+    requestRepository: 'github.com/acme/checkout',
+    requestFindings: [
+      {
+        path: '/home/dev/code/acme-checkout',
+        playwrightConfig: 'playwright.config.ts',
+        specsFound: 1,
+        source: 'run',
+      },
+      {
+        path: '/home/dev/Documents/GitHub/acme-checkout',
+        playwrightConfig: 'playwright.config.ts',
+        specsFound: 1,
+        source: 'clone',
+      },
+    ],
+    async run({ page, shoot, settle }) {
+      const request = {
+        id: '1f1e2d3c4b5a69788796a5b4c3d2e1f0',
+        instance: 'https://piwi.example.com',
+        projectId: 1,
+        projectName: 'Acme Checkout',
+        tests: [
+          { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', line: 42, projectName: 'chromium' },
+        ],
+        options: { headed: true },
+        source: { runId: 2, branch: 'main', commit: 'a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2d3e' },
+        checks: [{ id: 'folder', level: 'fail', message: 'No folder is linked to this project on this machine.' }],
+        runnable: false,
+        command: '',
+        hasFolder: false,
+        answerBy: new Date(Date.now() + 600_000).toISOString(),
+      };
+      await page.route('**/api/desktop/events', (route) =>
+        route.fulfill({
+          contentType: 'text/event-stream',
+          body: `data: ${JSON.stringify({ type: 'run-request', request })}\n\n`,
+        }),
+      );
+      await page.reload();
+      const folder = page.getByTestId('team-run-request-folder');
+      await folder.waitFor({ timeout: 60_000 });
+      await folder.getByRole('button', { name: 'Find it for me' }).click();
+      await folder.getByText('Found on this computer').waitFor();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
     name: 'desktop-team-instance-card',
     description:
       'Settings → Desktop app → Run on my machine: connected to a team instance, with a linked folder (desktop shell)',
@@ -10476,6 +10956,86 @@ const SCENES = [
     },
   },
   {
+    name: 'project-from-folder-monorepo',
+    description: 'New-project modal: a monorepo root offers the folder that holds the Playwright config',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    inspection: {
+      ...READY_INSPECTION,
+      playwrightConfig: null,
+      playwrightInstalled: false,
+      reporterInstalled: false,
+      reporterConfigured: false,
+      configuredProjectName: null,
+    },
+    folderCheck: {
+      ...MONOREPO_ROOT_CHECK,
+      path: READY_INSPECTION.path,
+      alternatives: [{ ...MONOREPO_ROOT_CHECK.alternatives[0], path: `${READY_INSPECTION.path}/e2e` }],
+    },
+    route: '/projects',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'New project' }).click();
+      await page.getByRole('heading', { name: 'Create new project' }).waitFor();
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-new-project-alternatives').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'link-folder-dialog',
+    description: 'Link a project to its folder: the folders found on this machine (desktop shell)',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    folderSuggestions: LINK_FOLDER_SUGGESTIONS,
+    route: '/projects/2?tab=settings&section=local-folder',
+    of: '[role="dialog"]:has([data-shot="desktop-link-folder"])',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-link-folder-offers').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'link-folder-dialog-mismatch',
+    description: 'The same dialog once a folder picked by hand does not match the project',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    folderCheck: MONOREPO_ROOT_CHECK,
+    route: '/projects/2?tab=settings&section=local-folder',
+    of: '[role="dialog"]:has([data-shot="desktop-link-folder"])',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByText('No folder of this project found on this machine').waitFor();
+      await dialog.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-link-folder-check').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
+    name: 'link-folder-dialog-mobile',
+    description: 'The dialog with the folders found, at phone width',
+    tags: ['desktop'],
+    mode: 'desktop',
+    link: null,
+    folderSuggestions: LINK_FOLDER_SUGGESTIONS,
+    viewport: { width: 375, height: 812 },
+    route: '/projects/2?tab=settings&section=local-folder',
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByTestId('desktop-link-folder-offers').waitFor();
+      await settle();
+      await shoot();
+    },
+  },
+  {
     name: 'edit-local-folder',
     description: 'Project settings: linked folder with setup checks (desktop shell)',
     tags: ['desktop'],
@@ -10552,6 +11112,7 @@ const SCENES = [
     route: '/projects/2?tab=settings&section=local-folder',
     async run({ page, shoot, settle }) {
       await page.getByRole('button', { name: 'Choose folder…' }).click();
+      await page.getByRole('dialog').getByRole('button', { name: 'Choose folder…' }).click();
       const dialog = page.getByRole('dialog');
       await dialog.getByRole('heading', { name: 'Import previous runs' }).waitFor();
       await settle();

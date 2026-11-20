@@ -31,6 +31,7 @@ import com.intellij.openapi.startup.ProjectActivity
 import com.intellij.openapi.util.Computable
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
+import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VfsUtilCore
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.vfs.VirtualFileManager
@@ -61,6 +62,14 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 /**
+ * The file a `file:` URI of the editor service names (`file:///C:/Users/Jean%20Dupont/a.spec.ts`), read by
+ * `Glue.pathOfUri`; null for another URI or a file the IDE does not find. A service URI is not a VFS URL, which escapes nothing: never
+ * `VirtualFileManager.findFileByUrl` on one.
+ */
+internal fun fileOfUri(uri: String?): VirtualFile? =
+    Glue.pathOfUri(uri)?.let { runCatching { LocalFileSystem.getInstance().findFileByNioFile(it) }.getOrNull() }
+
+/**
  * The instance and project this project reports to, when the environment and `.env` name
  * none: **Settings → Tools → Piwi**, kept in `.idea/piwi.xml`. The key is not here but in the
  * password safe, per instance.
@@ -85,7 +94,9 @@ class PiwiSettings : PersistentStateComponent<PiwiSettings.State> {
  * a recording's choices: the Playwright project, the start page, and the last page
  * expression typed that was not among those offered; how the failures tool window groups
  * the failures (`file`, `cluster`, `owner` or `flat`); the baseline chosen with **Compare with…** for each Playwright
- * config folder (`Glue.encodeBaseline`; the ladder is no entry); the runs' MCP server's port; and the options the
+ * config folder (`Glue.encodeBaseline`; the ladder is no entry); the environment chosen with **Choose environment…** for
+ * each Playwright config folder, with its instance and project (`Glue.encodeEnvironment`; none is no entry); the runs'
+ * MCP server's port; and the options the
  * settings registry scopes to a project (`project`): the severity of a failure's diagnostic
  * (`Glue.FAILURE_SEVERITIES`) and whether the runs are served to agents.
  */
@@ -101,6 +112,7 @@ class PiwiLocalSettings : PersistentStateComponent<PiwiLocalSettings.State> {
         var recordPage: String = "",
         var failuresGrouping: String = "file",
         var baselines: MutableMap<String, String> = mutableMapOf(),
+        var environments: MutableMap<String, String> = mutableMapOf(),
         var failureSeverity: String = "error",
         var serveRunsToAgents: Boolean = true,
         var agentsPort: Int = 0,
@@ -131,7 +143,7 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
         var runNotifications: String = "failures",
         var runNotificationsScope: String = "mineAndCi",
         var statusBarAlert: String = "new",
-        var breakpoints: Boolean = true,
+        var breakpoints: String = "debug",
         var runHeaded: Boolean = false,
         var runHoldFailures: String = "auto",
         var playwrightRunner: Boolean = false,
@@ -140,6 +152,7 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
         var locatorWarnings: Boolean = true,
         var failingTestTint: Boolean = true,
         var ciPositions: Boolean = true,
+        var runningLines: String = "all",
         var mcpAuthorization: String = "key",
     )
 
@@ -173,7 +186,7 @@ class PiwiUserSettings : PersistentStateComponent<PiwiUserSettings.State> {
         }
 
         /** The options the editor service is handed with the credentials. */
-        fun handed(state: State): List<Any> = listOf(state.codeLens, state.locatorWarnings, state.statusBarAlert, state.mcpAuthorization)
+        fun handed(state: State): List<Any> = listOf(state.codeLens, state.locatorWarnings, state.statusBarAlert, state.mcpAuthorization, state.runningLines)
     }
 }
 
@@ -201,6 +214,20 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile var failuresResult: FailuresResult? = null
         private set
 
+    /** The test tree (`piwi/testItems`), once the Tests tab asked for it; null before. */
+    @Volatile var testItems: TestItemsResult? = null
+        private set
+
+    /** Whether the Tests tab asked for the test tree: the runs' changes then read it again. */
+    @Volatile private var testsWanted = false
+
+    /** What the published results of the test tree stand for (`Glue.testsResultsKey`): a change reads the tree again. */
+    @Volatile private var testsResultsKey: String? = null
+
+    /** Whether a read of the test tree runs, and whether another was asked for meanwhile. */
+    private val testsReading = AtomicBoolean()
+    private val testsReadAgain = AtomicBoolean()
+
     /** Whether a click on the status bar item is reading the latest run again. */
     @Volatile var refreshing = false
         private set
@@ -209,7 +236,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     @Volatile private var disposed = false
 
     /** What ends the work queued for later: this service disposed, or its project. */
-    private val gone = Condition<Any?> { disposed || project.isDisposed }
+    internal val gone = Condition<Any?> { disposed || project.isDisposed }
 
     /** Why the editor service could not start (`Glue.nodeProblem`); null once it starts. */
     @Volatile var startProblem: String? = null
@@ -232,6 +259,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     private var statusPushes = 0L
     private var runsPushes = 0L
     private var failuresPushes = 0L
+    private var testItemsPushes = 0L
 
     /** Whether a whole read runs, and whether another was asked for meanwhile: it follows once the first ends. */
     private val reading = AtomicBoolean()
@@ -361,6 +389,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 if (gone.value(null)) return@invokeLater
                 tools.getToolWindow(PiwiFailuresToolWindowFactory.ID)?.isAvailable = found.configDirs.isNotEmpty()
                 project.service<StatusBarWidgetsManager>().updateWidget(PiwiStatusBarWidgetFactory::class.java)
+                project.service<StatusBarWidgetsManager>().updateWidget(PiwiEnvironmentWidgetFactory::class.java)
             }
             restartServer(runningOnly = found.configDirs.isEmpty())
             openGetStartedOnce(found)
@@ -475,9 +504,11 @@ class PiwiProjectService(private val project: Project) : Disposable {
             runs = null
             failuresResult = null
             failures = emptyList()
+            testItems = null
             statusPushes++
             runsPushes++
             failuresPushes++
+            testItemsPushes++
         }
         changed()
     }
@@ -593,7 +624,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * read action: call it off the event thread.
      */
     fun breakpoints(): List<Glue.RunBreakpoint> {
-        if (!user().breakpoints) return emptyList()
+        if (Glue.breakpointsMode(user().breakpoints) == "never") return emptyList()
         val roots = status?.contexts.orEmpty().mapNotNull { it.root }
         if (roots.isEmpty()) return emptyList()
         val found = ApplicationManager.getApplication().runReadAction(
@@ -630,11 +661,13 @@ class PiwiProjectService(private val project: Project) : Disposable {
             desktop = local.desktop,
             desktopProject = local.desktopProject.ifBlank { null },
             baselines = local.baselines.mapNotNull { (root, text) -> Glue.decodeBaseline(text)?.let { root to it } }.toMap(),
+            environments = local.environments.mapNotNull { (root, text) -> Glue.decodeEnvironment(text)?.let { root to it } }.toMap(),
             failureSeverity = local.failureSeverity.takeIf { it in Glue.FAILURE_SEVERITIES },
             codeLens = user.codeLens.takeIf { it in Glue.CODE_LENS_CHOICES },
             locatorWarnings = user.locatorWarnings,
             mcpAuthorization = user.mcpAuthorization.takeIf { it in Glue.MCP_AUTHORIZATIONS },
             statusBarAlert = user.statusBarAlert.takeIf { it in Glue.STATUS_BAR_ALERTS },
+            runningLines = user.runningLines.takeIf { it in Glue.RUNNING_LINES_CHOICES },
         )
     }
 
@@ -698,6 +731,18 @@ class PiwiProjectService(private val project: Project) : Disposable {
         val kept = Glue.encodeBaseline(choice)
         if (kept == null) baselines.remove(root) else baselines[root] = kept
         server()?.setBaseline(SetBaselineParams(root, choice))
+    }
+
+    /**
+     * Run the tests of the context at `root` for the environment `id`, or none (**Choose environment…**): sent to the
+     * service (`piwi/setEnvironment`), which says so in `piwi/statusChanged` and answers the choice the context holds,
+     * kept in `PiwiLocalSettings` with its instance and project. Waits on the service: never on the event thread.
+     */
+    fun setEnvironment(root: String, id: Int?) {
+        val answer = server()?.setEnvironment(SetEnvironmentParams(root, id))?.orNull() ?: return
+        val environments = local().environments
+        val kept = answer.kept?.let(Glue::encodeEnvironment)
+        if (kept == null) environments.remove(root) else environments[root] = kept
     }
 
     /** Whether the password safe holds a key for the instance. */
@@ -887,7 +932,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /**
      * The status `piwi/statusChanged` carries: the connection of each context, and the desktop app. The open files'
-     * coverage is asked again, from the service as it is now connected.
+     * coverage is asked again, from the service as it is now connected, and the test tree is read when the Tests tab
+     * asked for it and holds none: the service started, or started again, since.
      */
     fun statusChanged(result: StatusResult) {
         synchronized(lock) {
@@ -898,6 +944,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
         refreshKnownAddresses()
         offerDesktop(result)
         project.getServiceIfCreated(PiwiCoverageMarks::class.java)?.askOpen()
+        if (testsWanted && testItems == null) readTestItems()
     }
 
     /** A file's coverage changed (`piwi/coverageChanged`): its Code Vision lines are asked again. On any thread. */
@@ -916,7 +963,53 @@ class PiwiProjectService(private val project: Project) : Disposable {
             runs = result
             runsPushes++
         }
+        testsResultsChanged(result)
         changed()
+    }
+
+    /** The test tree `piwi/testItemsChanged` carries, which a listing changed. */
+    fun testItemsChanged(result: TestItemsResult) {
+        synchronized(lock) {
+            testItems = result
+            testItemsPushes++
+        }
+        changed()
+    }
+
+    /** The runs changed: the test tree is read again when its results stand for other runs, once the Tests tab asked. */
+    private fun testsResultsChanged(result: RunStatusResult?) {
+        val key = Glue.testsResultsKey(result)
+        if (key == testsResultsKey) return
+        testsResultsKey = key
+        if (testsWanted) readTestItems()
+    }
+
+    /**
+     * Read the test tree, on a pooled thread, then tell the listeners: the Tests tab asks for it as it is first shown,
+     * which starts the service's listing, and the runs' changes ask again. A read asked for while one runs follows it.
+     */
+    fun readTestItems() {
+        testsWanted = true
+        testsReadAgain.set(true)
+        if (!testsReading.compareAndSet(false, true)) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            try {
+                while (testsReadAgain.getAndSet(false) && !gone.value(null)) {
+                    val pushes = synchronized(lock) { testItemsPushes }
+                    val read = server()?.testItems(TestItemsParams())?.orNull()
+                    synchronized(lock) { if (read != null && testItemsPushes == pushes) testItems = read }
+                    changed()
+                }
+            } finally {
+                testsReading.set(false)
+            }
+            if (testsReadAgain.get()) readTestItems()
+        }
+    }
+
+    /** Read the test tree again once the Tests tab asked for it: **Read the instance and the configs again**. */
+    fun refreshTestItems() {
+        if (testsWanted) readTestItems()
     }
 
     /** The failures `piwi/failuresChanged` carries, such as a line an edit moved. */
@@ -974,6 +1067,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
         }
         readKnownAddresses()
+        testsResultsChanged(runs)
         changed()
         offerDesktop(status)
     }
@@ -1022,19 +1116,25 @@ class PiwiProjectService(private val project: Project) : Disposable {
             }
             testsDrawnAt = System.currentTimeMillis()
         }
+        // A spec whose tests showed no result yet shows those its runs tell of (`runTests`), and one they leave clears.
+        val named = Glue.runTestFiles(drawn) + Glue.runTestFiles(shown)
         drawn = shown
-        drawAgain(redraw)
+        drawAgain(redraw, named)
     }
 
     /**
-     * Draw the open files Piwi reads again, or only those whose tests show a result: their gutter, their backgrounds and
-     * Code Vision. Other files, and other languages, keep their highlighting.
+     * Draw the open files Piwi reads again, or only those whose tests show a result and those `named`: their gutter,
+     * their backgrounds and Code Vision. Other files, and other languages, keep their highlighting.
      */
-    private fun drawAgain(kind: Glue.Redraw) {
+    private fun drawAgain(kind: Glue.Redraw, named: Set<java.nio.file.Path> = emptySet()) {
         if (kind == Glue.Redraw.NONE) return
         val open = FileEditorManager.getInstance(project).openFiles.filter { PiwiLspServerSupportProvider.isSupported(it) }
         filesWithTests.retainAll(open.mapTo(HashSet()) { it.url })
-        val files = if (kind == Glue.Redraw.ALL) open else open.filter { it.url in filesWithTests }
+        val files = if (kind == Glue.Redraw.ALL) {
+            open
+        } else {
+            open.filter { it.url in filesWithTests || runCatching { it.toNioPath() }.getOrNull() in named }
+        }
         if (files.isEmpty()) return
         val analyzer = DaemonCodeAnalyzer.getInstance(project)
         ApplicationManager.getApplication().runReadAction {
@@ -1088,11 +1188,21 @@ class PiwiProjectService(private val project: Project) : Disposable {
      * changed, or after [SUMMARY_TTL_MILLIS]. Null while the service does not run, and for a file that is not on disk.
      */
     fun fileSummary(file: VirtualFile, stamp: Long): CompletableFuture<FileSummary?>? {
-        val server = server() ?: return null
+        val ask = summaryOf ?: server()?.let { server -> { uri: String -> server.fileSummary(UriParams(uri)) } } ?: return null
         val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return null
         // Read before the request: a change pushed while it is sent makes the next pass ask again.
-        return summaries.get(uri, stamp, pushed.get(), System.currentTimeMillis()) { server.fileSummary(UriParams(uri)) }
+        return summaries.get(uri, stamp, pushed.get(), System.currentTimeMillis()) { ask(uri) }
     }
+
+    /**
+     * What answers `piwi/fileSummary` for a file's URI in the service's place, as `PiwiPluginTest` does; null asks the
+     * service. The summaries kept from the one before go as it changes.
+     */
+    @Volatile internal var summaryOf: ((String) -> CompletableFuture<FileSummary?>)? = null
+        set(value) {
+            field = value
+            summaries.clear()
+        }
 
     /**
      * Once per project, when the first-run queue gives it the turn: when the desktop app runs while another instance is

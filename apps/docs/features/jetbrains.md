@@ -66,13 +66,14 @@ The rest is native, and every action that is not about a selected item is under 
 line** on the debugger's Show Execution Point key:
 
 - **The Piwi tool window** names the connection and holds the [failures view](./editor-failures#the-failures-view),
-  since the IDE highlights open files only.
+  since the IDE highlights open files only, and a **Tests** tab: the tree of
+  [VS Code's Testing view](./editor-runs#the-testing-view-vs-code), with a filter, each node run from its right-click.
 - **Code Vision** shows the lines above files, locators and failing lines, a line's entries side by side (a failing
-  line's reason, **Run this test**, **Screenshot** and **Trace**), up to the number the IDE's Code Vision settings show
+  line's reason and **Run with Piwi**), up to the number the IDE's Code Vision settings show
   per line (five by default), in a group named Piwi under **Settings → Editor → Inlay Hints → Code Vision**, where they
   can be moved or hidden; each test's result is in the gutter, and either click on its icon opens the test's actions:
-  **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, a failure's trace
-  and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
+  **Run with Piwi** and **Verify ×3 with Piwi**, which report to the instance as Piwi's own runs do, **Record steps in
+  this test…**, a failure's trace and screenshot, **Open in dashboard**, **Copy context for agent** and the test's Flake Lab commands.
 - **[The status bar](./editor-status-bar)** item has an icon for the run's state, and the error color for a new
   failure a run you started produced. It counts a run you started (`3 of 9 · 1 failed`) as
   the run itself reports it, with no instance too; with one, the run's node in the Piwi tool window counts it the same
@@ -84,11 +85,12 @@ line** on the debugger's Show Execution Point key:
 - **[Recording](./editor-recording)** starts from **Record here…**, Alt+Enter or Alt+Insert, and **New → Playwright test
   (recorded)…** on a folder of a Playwright config; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
-  started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Run to
-  the caret**, **Finish** and **End the test**; they are also in the status bar item's menu, after each stop to go to, and
-  under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in the Piwi tool window's **Paused page**
-  tab, where a click on the image picks the locator of the element under it (Playwright 1.60 or later). On a JetBrains
-  Gateway backend, forward the ports **Pair with Piwi Picker** names:
+  started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Finish** and **Write code…**, the
+  other controls in its context menu; they are also in the status bar item's menu, after each stop to go to, and
+  under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in its worker's tab of
+  the Piwi tool window (**Worker 1**), with the same controls, where a click on the image picks the locator of the
+  element under it (Playwright 1.60 or later). On a JetBrains
+  Gateway backend, forward the ports **Copy the pairing address for Piwi Picker** names:
   [Remote development](/guide/remote-development#jetbrains-gateway).
 - **[A running test](./watch-running-test)**: while the **Worker** tab watches one, an inlay after the line of
   the call it runs names it, and the **Page** tab lists its page's console and uncaught errors, each test named first
@@ -108,12 +110,17 @@ line** on the debugger's Show Execution Point key:
 - **[Open in editor](./ide-integration#jetbrains-ides-the-piwi-plugin)**: a path clicked in the dashboard or the desktop
   app opens at its line, with nothing to set up.
 
-The shortcuts are those of VS Code ([Commands](./editors#commands)), but a run's controls, which use the debugger's
-shortcuts of your keymap while they apply and the debugger does not take them ([the
-controls](./editor-run-control#the-controls)): in the default keymap `F9` resumes, `F8` steps, `Alt+F9` runs to the
-caret (`Alt+Shift+9` in the Linux default keymaps) and `Shift+F8` finishes, and Pause has none; in the Visual Studio
-keymaps `F5`, `F10`, `Ctrl+F10` and `Shift+F11`, and Pause the debugger's `Ctrl+Alt+Break`. **Settings → Keymap**
-changes them (search `Piwi`).
+<figure>
+  <img src="/screenshots/jetbrains-tests.png" alt="WebStorm: the Piwi tool window's Tests tab, a spec's tests with their results, a test's two Playwright projects, a loop's two tests and the Not in this checkout group">
+  <figcaption>The Tests tab: each test's latest result, a node per Playwright project, a loop's tests one by one.</figcaption>
+</figure>
+
+The shortcuts are those of VS Code ([Commands](./editors#commands)), but in a keymap that gives one to another action
+([Keys](/reference/editor-commands#keys)) and for a run's controls, which use the debugger's shortcuts of your keymap
+while they apply and the debugger does not take them ([the controls](./editor-run-control#the-controls)): in the
+default keymap `F9` resumes, `F8` steps, `Alt+F9` runs to the caret (`Alt+Shift+9` in the Linux default keymaps) and
+`Shift+F8` finishes, and Pause has none; in the Visual Studio keymaps `F5`, `F10`, `Ctrl+F10` and `Shift+F11`, and
+Pause the debugger's `Ctrl+Alt+Break`. **Settings → Keymap** changes them (search `Piwi`).
 
 Each Piwi balloon is titled Piwi and filed by kind in **Settings → Appearance & Behavior → Notifications**: Piwi
 (results), Piwi requests (Debug in my editor, a run shared live: they stay until answered), Piwi suggestions, Piwi

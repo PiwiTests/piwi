@@ -24,9 +24,14 @@ export const READY_INSPECTION = {
  * answers: `link` (`desktop_get_project_link`, else no linked folder),
  * `inspection` (`desktop_inspect_folder`, else `READY_INSPECTION`),
  * `requestFolders` (`desktop_request_folders`, the folders linked to a team
- * instance's projects by project id, else none),
+ * instance's projects by project id, else none), `requestFindings` and
+ * `requestRepository` (the folders `desktop_find_request_folders` finds for a
+ * request, and the repository it names, else none),
  * `importableRuns` and `pickedFiles` (the archives the folder holds and the
- * native import picker returns, else none), `localRunId` (the shell's id of a
+ * native import picker returns, else none), `folderSuggestions` (the folders
+ * `desktop_suggest_project_folders` finds for a project, else none),
+ * `folderCheck` (what `desktop_check_project_folder` answers for any folder,
+ * else that the folder picked fits), `localRunId` (the shell's id of a
  * local run `desktop_run_local_tests` starts, which then goes on until the
  * scene ends; a list gives each start the next id of it, the last one again
  * once they are used; else none starts), and `serverPort` and `activePort` (the port
@@ -45,8 +50,12 @@ export function bridgeScript(shape = {}) {
   const link = shape.link ?? null;
   const importableRuns = shape.importableRuns ?? [];
   const pickedFiles = shape.pickedFiles ?? [];
+  const folderSuggestions = shape.folderSuggestions ?? [];
+  const folderCheck = shape.folderCheck ?? null;
   const localRunIds = [shape.localRunId ?? null].flat();
   const requestFolders = shape.requestFolders ?? {};
+  const requestFindings = shape.requestFindings ?? [];
+  const requestRepository = shape.requestRepository ?? null;
   const serverPort = shape.serverPort ?? 3000;
   const activePort = shape.activePort ?? serverPort;
   const update = shape.update ?? null;
@@ -70,6 +79,23 @@ export function bridgeScript(shape = {}) {
               return Promise.resolve(${JSON.stringify(importableRuns)});
             case 'desktop_pick_import_files':
               return Promise.resolve(${JSON.stringify(pickedFiles)});
+            case 'desktop_suggest_project_folders':
+              return Promise.resolve(${JSON.stringify(folderSuggestions)});
+            case 'desktop_check_project_folder':
+              return Promise.resolve(
+                ${JSON.stringify(folderCheck)} ?? {
+                  path: args.path,
+                  exists: true,
+                  playwrightConfig: 'playwright.config.ts',
+                  specsChecked: 0,
+                  specsFound: 0,
+                  missingSpecs: [],
+                  repository: null,
+                  sameRepository: null,
+                  fits: true,
+                  alternatives: [],
+                },
+              );
             case 'desktop_get_project_link':
               return Promise.resolve(window.__mockLink);
             case 'desktop_set_project_link':
@@ -98,8 +124,23 @@ export function bridgeScript(shape = {}) {
               return ${update ? `Promise.resolve(${JSON.stringify(update.releaseNotes)})` : `Promise.reject('no update found, run a check first')`};
             case 'desktop_request_folders':
               return Promise.resolve(${JSON.stringify(requestFolders)});
+            case 'desktop_find_request_folders':
+              return Promise.resolve({
+                search: 1,
+                folders: ${JSON.stringify(requestFindings)},
+                complete: true,
+                repository: ${JSON.stringify(requestRepository)},
+              });
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
+            // The project sets no run variables, and the environment a run is for reads back unprotected, as it was.
+            case 'desktop_environment_run_settings':
+              return Promise.resolve({
+                runVariables: [],
+                environment: args?.environment
+                  ? { id: args.environment.id, protected: false, requiredTags: [], envFile: null }
+                  : null,
+              });
             case 'desktop_run_local_tests':
               window.__runArgs = args;
               return Promise.resolve(localRunIds[Math.min(localRunsStarted++, localRunIds.length - 1)]);

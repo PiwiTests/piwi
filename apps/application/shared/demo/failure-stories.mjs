@@ -2922,6 +2922,14 @@ export const SIMULATOR_ERRORS = {
   emailLabelRenamed: FAILURE_STORIES[1].failingCases[0].error,
 };
 
+/**
+ * The call logs the simulator's workers play in a run's live view, as cluster 1's errors carry them: the Pay click
+ * that waits on the disabled button.
+ */
+export const SIMULATOR_CALL_LOGS = {
+  checkoutPay: PAY_CALL_LOG,
+};
+
 // ── Environment incident ────────────────────────────────────────────────────
 // The staging host that refuses every connection in the seeded incident run
 // and in the simulator's "Staging down" scenario: both build the error of a

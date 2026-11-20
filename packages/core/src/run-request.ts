@@ -14,6 +14,16 @@
 export const RUN_REQUEST_KINDS = ['run'] as const;
 export type RunRequestKind = (typeof RUN_REQUEST_KINDS)[number];
 
+/**
+ * What a target does beyond running a request, as it says with each claim: `run-variables`, it applies the project's
+ * run variables (`@piwitests/core/run-variables`), checked again, to the run and shows them in its confirmation;
+ * `environments`, it applies the environment a request names (`@piwitests/core/environments`): its run variables over
+ * the project's, `PIWI_ENVIRONMENT`, a protected environment's required tags and confirmation. A claim without the
+ * feature a request needs answers 409, and the request waits for an app that has it, with words that say to update.
+ */
+export const RUN_TARGET_FEATURES = ['run-variables', 'environments'] as const;
+export type RunTargetFeature = (typeof RUN_TARGET_FEATURES)[number];
+
 /** The bounds of a request, fixed here rather than in a setting. */
 export const RUN_REQUEST_LIMITS = {
   tests: { min: 1, max: 200 },
@@ -149,7 +159,7 @@ const PLAYWRIGHT_PROJECT = /^[\p{L}\p{N}_.:@/+][\p{L}\p{N}\p{M}_ .:@/+()-]{0,99}
  * and isolates, zero-width characters), U+2028 and U+2029, and every default-ignorable code point (variation
  * selectors, the Hangul fillers, the combining grapheme joiner).
  */
-const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
+export const HIDDEN_CHARACTER = /[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Default_Ignorable_Code_Point}]/u;
 /** What a shell or a glob expands, and `:`, which Playwright reads as the start of a line number. */
 const SPEC_PATH_SPECIAL = /[*?|&%^"<>$`:!]/;
 /** What git refuses in a ref name, besides control characters: `..`, `~ ^ : ? * [ \`, a space and `@{`. */
@@ -209,24 +219,27 @@ function isRunRequestTitle(value: unknown): value is string {
  * `absolutePath` is the spec's path as Playwright loads it: the config's folder, as Playwright resolves it (links
  * resolved the same way, or nothing matches), joined with the test's `filePath`, which the target checked names an
  * existing regular file, with `\` read as a separator as the parser reads it. Every `\` is written as `/`, which
- * Playwright also tests on Windows. A target passes this, the project as one `--project=<name>` element, and every
- * other argument as elements of the argv it spawns, never through a shell.
+ * Playwright tests on Windows from 1.63. Up to 1.62 it tests the native path and the file's `file:` URL instead, so on
+ * Windows the target passes `fileUrl`, the spec's URL as Node's `pathToFileURL` writes it, which the pattern takes as
+ * an alternative. A target passes this, the project as one `--project=<name>` element, and every other argument as
+ * elements of the argv it spawns, never through a shell.
  *
  * A line selects every test that starts on it, and the tests of a `describe` that starts on it (tests made in a loop
  * share one line), so the target shows what `playwright test --list` finds with these arguments before **Run**.
  */
-export function specFileArgument(absolutePath: string, line: number): string {
+export function specFileArgument(absolutePath: string, line: number, fileUrl?: string): string {
   if (!Number.isInteger(line) || line < 1) throw new RangeError(`A line number is a whole number from 1: ${line}`);
-  return `${specFilePattern(absolutePath)}:${line}`;
+  return `${specFilePattern(absolutePath, fileUrl)}:${line}`;
 }
 
 /**
  * The Playwright CLI argument that selects every test of one spec file: {@link specFileArgument} without a line, for
  * a target that selects the tests by title (a `--grep` beside it) because its folder is not on the request's commit.
  */
-export function specFilePattern(absolutePath: string): string {
-  const escaped = absolutePath.replaceAll('\\', '/').replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
-  return `/^${escaped}$/`;
+export function specFilePattern(absolutePath: string, fileUrl?: string): string {
+  const escape = (text: string) => text.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
+  const escaped = escape(absolutePath.replaceAll('\\', '/'));
+  return fileUrl ? `/^(?:${escaped}|${escape(fileUrl)})$/` : `/^${escaped}$/`;
 }
 
 /** Whether a value is a Playwright project name a request may carry. */
@@ -403,4 +416,45 @@ export function parseRunRequest(value: unknown): RunRequestParse<RunRequest> {
       source: parsedSource,
     },
   };
+}
+
+/**
+ * What a target is told to find a request's folder with on its machine (`GET /api/run-targets/requests/:id/folder-hints`):
+ * the project's repository, and the folders the requester's own runs of the project were reported from, newest first.
+ * Never part of a request, so an app that does not ask for them reads every request as before.
+ */
+export interface RunRequestFolderHints {
+  /** The project's repository, `https://host/owner/repo`; null when the instance knows none. */
+  repositoryUrl: string | null;
+  /** Absolute paths on the machines that ran them. */
+  folders: string[];
+}
+
+/** How many folders the hints name at most. */
+export const MAX_RUN_REQUEST_HINT_FOLDERS = 5;
+
+/**
+ * An absolute path on a disk of the machine: `/` on macOS and Linux, a drive letter on Windows. Never a network path
+ * (`\\server\share`, `//server/share`), which a check would make the machine connect to.
+ */
+const ABSOLUTE_PATH = /^(?:\/(?!\/)|[A-Za-z]:[\\/])/;
+/** An http(s) URL with a host and a path, and no space. */
+const REPOSITORY_URL = /^https?:\/\/[^\s/]+\/\S+$/;
+
+/**
+ * Folder hints read from untrusted input. What does not pass is left out, never refused: a URL that is not http(s), a
+ * path that is not absolute on a disk of the machine, a hidden character, a value over 500 characters; folders once
+ * each, at most `MAX_RUN_REQUEST_HINT_FOLDERS`.
+ */
+export function readRunRequestFolderHints(value: unknown): RunRequestFolderHints {
+  const record = isRecord(value) ? value : {};
+  const readable = (text: unknown): text is string =>
+    typeof text === 'string' && text.length > 0 && text.length <= MAX_PATH_CHARS && !HIDDEN_CHARACTER.test(text);
+  const url = record.repositoryUrl;
+  const folders: string[] = [];
+  for (const folder of Array.isArray(record.folders) ? record.folders : []) {
+    if (folders.length === MAX_RUN_REQUEST_HINT_FOLDERS) break;
+    if (readable(folder) && ABSOLUTE_PATH.test(folder) && !folders.includes(folder)) folders.push(folder);
+  }
+  return { repositoryUrl: readable(url) && REPOSITORY_URL.test(url) ? url : null, folders };
 }

@@ -1,7 +1,8 @@
 // Read-only inspection of a folder on this machine, so the dashboard can tell
 // what a checkout is before creating or linking a Piwi project to it: the name
-// it would report under, whether Playwright is present, and whether the
-// `@piwitests/reporter` package is installed and wired into the config.
+// it would report under, whether Playwright is present, whether the
+// `@piwitests/reporter` package is installed and wired into the config, and the
+// env files it holds, by name, for the environments that load one.
 //
 // The heuristics deliberately mirror the reporter CLI's own `detect.ts`
 // (`packages/reporter/src/cli/detect.ts`): same config-file lookup order, same
@@ -10,17 +11,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
+use crate::folder_search::find_config;
 use crate::runner::{resolve_node_module, resolve_playwright_cli};
-
-/// Playwright's own config lookup order.
-const CONFIG_NAMES: [&str; 6] = [
-    "playwright.config.ts",
-    "playwright.config.mts",
-    "playwright.config.cts",
-    "playwright.config.js",
-    "playwright.config.mjs",
-    "playwright.config.cjs",
-];
 
 const REPORTER_PACKAGE: &str = "@piwitests/reporter";
 
@@ -51,9 +43,15 @@ pub struct FolderInspection {
     reporter_configured: bool,
     /// `projectName` value parsed out of the Playwright config, when set.
     configured_project_name: Option<String>,
+    /// The config sets `projectName` with an expression (`` `shop-${tenant}` ``), whose value only a run knows: it
+    /// may read the project's run variables.
+    project_name_computed: bool,
     /// The Playwright config declares a `webServer` — Playwright starts the app
     /// under test itself, so a reproduction/bisect exercises the real app.
     web_server: bool,
+    /// The env files at the folder's root, by name (`.env.staging`), never read: an environment that loads one
+    /// says when the folder lacks it ([`crate::environments::env_files_in`]).
+    env_files: Vec<String>,
 }
 
 /// Whether the config source declares a `webServer` block. A `webServer:` key
@@ -90,12 +88,6 @@ fn read_package_json(folder: &Path) -> Option<PackageJson> {
     serde_json::from_str(&raw).ok()
 }
 
-fn find_config(folder: &Path) -> Option<&'static str> {
-    CONFIG_NAMES
-        .into_iter()
-        .find(|name| folder.join(name).is_file())
-}
-
 /// The config's contents, or `None` when there is no config or it is
 /// unreadable/oversized — in which case nothing can be said about it.
 fn read_config(folder: &Path, config: Option<&str>) -> Option<String> {
@@ -107,39 +99,83 @@ fn read_config(folder: &Path, config: Option<&str>) -> Option<String> {
     std::fs::read_to_string(&path).ok()
 }
 
-/// Pull a literal `projectName: '<value>'` out of the config source. A value
-/// that is not a plain single-line literal (template interpolation, an
-/// expression) is not detectable and yields `None`.
-fn parse_config_project_name(source: &str) -> Option<String> {
+/// How a config source sets `projectName`.
+#[derive(Debug, PartialEq)]
+enum ConfigProjectName {
+    /// A plain single-line literal: `projectName: 'web'`.
+    Literal(String),
+    /// An expression whose value only a run knows: a template with `${…}`, a concatenation, a variable. It may read
+    /// the project's run variables.
+    Computed,
+    /// No `projectName` key.
+    Unset,
+}
+
+/// How the config source sets `projectName`: the first key written as a plain literal, else whether a key is written
+/// with an expression. A key is `projectName` (bare or quoted) followed by `:`, not part of a longer name nor on a
+/// `//` comment line.
+fn config_project_name(source: &str) -> ConfigProjectName {
     let bytes = source.as_bytes();
+    let word = |b: u8| b.is_ascii_alphanumeric() || matches!(b, b'_' | b'$');
+    let skip_space = |mut i: usize| {
+        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+            i += 1;
+        }
+        i
+    };
+    let mut computed = false;
     let mut from = 0;
     while let Some(found) = source[from..].find("projectName") {
-        let mut i = from + found + "projectName".len();
+        let start = from + found;
+        let mut i = start + "projectName".len();
         from = i;
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
+        let before = start.checked_sub(1).map(|at| bytes[at]);
+        let quoted = matches!(before, Some(b'\'' | b'"')) && before == bytes.get(i).copied();
+        if quoted {
             i += 1;
-        }
-        if i >= bytes.len() || bytes[i] != b':' {
+        } else if before.is_some_and(|b| word(b) || b == b'.') || bytes.get(i).is_some_and(|&b| word(b)) {
             continue;
         }
-        i += 1;
-        while i < bytes.len() && bytes[i].is_ascii_whitespace() {
-            i += 1;
-        }
-        if i >= bytes.len() || !matches!(bytes[i], b'\'' | b'"' | b'`') {
+        let line_start = source[..start].rfind('\n').map_or(0, |at| at + 1);
+        if source[line_start..start].trim_start().starts_with("//") {
             continue;
         }
-        let quote = bytes[i] as char;
-        let start = i + 1;
-        let Some(end) = source[start..].find(quote) else {
+        i = skip_space(i);
+        if bytes.get(i) != Some(&b':') {
+            continue;
+        }
+        i = skip_space(i + 1);
+        let Some(&quote) = bytes.get(i).filter(|b| matches!(b, b'\'' | b'"' | b'`')) else {
+            computed = true;
             continue;
         };
-        let value = &source[start..start + end];
-        if !value.is_empty() && !value.contains('\n') && !value.contains("${") {
-            return Some(value.to_string());
+        let value_start = i + 1;
+        let Some(length) = source[value_start..].find(quote as char) else {
+            computed = true;
+            continue;
+        };
+        let value = &source[value_start..value_start + length];
+        let after = skip_space(value_start + length + 1);
+        let ends = after >= bytes.len() || matches!(bytes[after], b',' | b'}' | b')' | b']' | b';');
+        if ends && !value.is_empty() && !value.contains('\n') && !value.contains("${") {
+            return ConfigProjectName::Literal(value.to_string());
         }
+        computed = true;
     }
-    None
+    if computed {
+        ConfigProjectName::Computed
+    } else {
+        ConfigProjectName::Unset
+    }
+}
+
+/// The `projectName` the config writes as a plain literal, when it does: what the tests read of a source.
+#[cfg(test)]
+fn parse_config_project_name(source: &str) -> Option<String> {
+    match config_project_name(source) {
+        ConfigProjectName::Literal(name) => Some(name),
+        _ => None,
+    }
 }
 
 /// Unscoped, filesystem-safe name: `@acme/checkout` → `checkout`.
@@ -163,14 +199,21 @@ fn inspect(folder: &Path) -> FolderInspection {
             reporter_installed: false,
             reporter_configured: false,
             configured_project_name: None,
+            project_name_computed: false,
             web_server: false,
+            env_files: Vec::new(),
         };
     }
 
     let package = read_package_json(folder);
     let config = find_config(folder);
     let config_source = read_config(folder, config);
-    let configured_project_name = config_source.as_deref().and_then(parse_config_project_name);
+    let project_name = config_source.as_deref().map_or(ConfigProjectName::Unset, config_project_name);
+    let project_name_computed = project_name == ConfigProjectName::Computed;
+    let configured_project_name = match project_name {
+        ConfigProjectName::Literal(name) => Some(name),
+        _ => None,
+    };
 
     let package_name = package.as_ref().and_then(|p| p.name.clone());
     let dependency_declared = package.as_ref().is_some_and(|p| {
@@ -208,7 +251,9 @@ fn inspect(folder: &Path) -> FolderInspection {
             .as_deref()
             .is_some_and(|s| s.contains(REPORTER_PACKAGE)),
         configured_project_name,
+        project_name_computed,
         web_server: config_source.as_deref().is_some_and(has_web_server),
+        env_files: crate::environments::env_files_in(folder),
     }
 }
 
@@ -418,6 +463,20 @@ mod tests {
         assert!(!result.playwright_installed);
         assert!(!result.reporter_installed);
         assert!(!result.reporter_configured);
+        assert!(result.env_files.is_empty());
+    }
+
+    #[test]
+    fn names_the_env_files_the_folder_holds() {
+        let folder = Folder::new("env-files");
+        folder.write(".env.staging", "BASE_URL=https://staging.example.com");
+        folder.write(".env", "A=1");
+        folder.write("notes.env", "A=1");
+
+        assert_eq!(
+            inspect(&folder.0).env_files,
+            vec![".env".to_string(), ".env.staging".to_string()]
+        );
     }
 
     #[test]
@@ -506,6 +565,31 @@ mod tests {
         let result = inspect(&folder.0);
 
         assert!(result.playwright_installed);
+    }
+
+    #[test]
+    fn a_project_name_the_config_computes_is_told_apart_from_none() {
+        use ConfigProjectName::{Computed, Literal, Unset};
+        for computed in [
+            "wrapConfig(defineConfig({}), { projectName: `shop-${process.env.TENANT}` })",
+            "wrapConfig(c, { projectName: 'shop-' + process.env.TENANT })",
+            "reporter: [['@piwitests/reporter', { projectName: process.env.PROJECT }]]",
+            "wrapConfig(c, { 'projectName': `shop-${tenant}` })",
+            "// projectName: 'shop',\nwrapConfig(c, { projectName: `shop-${t}` })",
+        ] {
+            assert_eq!(config_project_name(computed), Computed, "{computed}");
+        }
+        for unset in [
+            "export default defineConfig({ use: { baseURL } })",
+            "const piwiProjectName = 'x'; options.projectNameFallback;",
+            "use: { baseURL: `https://${projectName}.test` }",
+            "const { projectName, baseURL } = tenantSettings(); f(projectName, x);",
+            "// projectName: 'shop',",
+        ] {
+            assert_eq!(config_project_name(unset), Unset, "{unset}");
+        }
+        assert_eq!(config_project_name("{ projectName: 'web', }"), Literal("web".into()));
+        assert_eq!(config_project_name("{ \"projectName\": \"web\" }"), Literal("web".into()));
     }
 
     #[test]

@@ -112,7 +112,7 @@ describe('a run started as the person chose', () => {
       headed: true,
       holdFailures: true,
     })) as RunCommand;
-    expect(repeated.args).toEqual(['tests/cart.spec.ts:3', '--repeat-each=3', '--retries=0', '--headed']);
+    expect(repeated.args).toEqual([`^${dir}/tests/cart.spec.ts:3`, '--repeat-each=3', '--retries=0', '--headed']);
     // Its workers keep a run connection, but the run has no Hold failures to turn on.
     const [channelPath, token] = repeated.env!.PIWI_RUN_CHANNEL!.split('#') as [string, string];
     const worker = new FakeWorker(channelPath, dir).attach(token, repeated.ref!, 0, [...RUN_TAKES]);

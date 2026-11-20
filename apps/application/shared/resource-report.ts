@@ -282,6 +282,11 @@ function span(value: unknown): WireResourceSpan | null {
   return out;
 }
 
+/** A worker's count of pages over time, rebuilt: whole numbers, within the timeline's bounds. */
+function pageCounts(value: unknown): SeriesPoint[] {
+  return points(value, TIMELINE_WORKER_POINTS_CAP).map(([at, n]): SeriesPoint => [at, Math.round(n)]);
+}
+
 /** A timeline as a reporter sent it, rebuilt within the report's bounds; null when it holds nothing. */
 export function sanitizeResourceTimeline(value: unknown): WireResourceTimeline | null {
   const raw = obj(value);
@@ -292,8 +297,9 @@ export function sanitizeResourceTimeline(value: unknown): WireResourceTimeline |
     const item = obj(entry);
     const worker = item ? int(item.worker) : null;
     if (!item || worker === null) continue;
-    const series = points(item.points, TIMELINE_WORKER_POINTS_CAP).map(([at, n]): SeriesPoint => [at, Math.round(n)]);
-    if (series.length > 0) pages.push({ worker, points: series });
+    const series = pageCounts(item.points);
+    const leftOpen = pageCounts(item.leftOpen);
+    if (series.length > 0) pages.push({ worker, points: series, ...(leftOpen.length > 0 ? { leftOpen } : {}) });
   }
   const workers: NonNullable<WireResourceTimeline['workers']> = [];
   for (const entry of Array.isArray(raw.workers) ? raw.workers.slice(0, WORKERS_CAP) : []) {

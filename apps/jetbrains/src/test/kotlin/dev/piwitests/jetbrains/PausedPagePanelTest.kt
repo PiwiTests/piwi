@@ -11,7 +11,7 @@ import java.awt.event.MouseEvent
 import java.awt.image.BufferedImage
 import javax.swing.ImageIcon
 import javax.swing.JButton
-import javax.swing.JCheckBox
+import javax.swing.JToggleButton
 import javax.swing.JComponent
 import javax.swing.JLabel
 import javax.swing.JList
@@ -31,8 +31,8 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         val panel = PausedPagePanel()
         val asked = mutableListOf<Boolean>()
         panel.configureLive(true, true, true) { asked += it }
-        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch" }
-        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val live = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Watch" }
+        val interact = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Interact" }
         assertFalse(live.isSelected)
         assertFalse(interact.isSelected)
         assertFalse(interact.isEnabled)
@@ -94,7 +94,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
 
     fun testInteractGoingOffGivesTheStopBackAndTurningItOnTakesNone() {
         val (panel, picture, sent) = interacting(clickCounts = true)
-        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val interact = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Interact" }
         val heard = mutableListOf<String>()
         panel.interactOff = { heard += "given back" }
         panel.releaseInput = { heard += "released" }
@@ -127,7 +127,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
 
     fun testEscapeGoesToThePageWhileAnActionRunsInTheTestsWindow() {
         val (panel, picture, sent) = interacting(clickCounts = true)
-        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val interact = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Interact" }
         val heard = mutableListOf<String>()
         panel.interactOff = { heard += "given back" }
         panel.releaseInput = { heard += "released" }
@@ -157,8 +157,8 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.interactOff = { heard += "given back" }
         panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
         panel.viewport = PausedImage("image/jpeg", null, 800, 600)
-        val live = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Watch" }
-        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val live = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Watch" }
+        val interact = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Interact" }
         val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
         fun clickHeldBack() {
             live.doClick()
@@ -188,7 +188,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
         panel.viewport = PausedImage("image/jpeg", null, 400, 300)
         panel.watching(true)
-        val interact = descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }
+        val interact = descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Interact" }
         val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
         fun mouse(id: Int, modifiers: Int = InputEvent.CTRL_DOWN_MASK) = MouseEvent(picture, id, 1L, modifiers, 200, 100, 2, false, MouseEvent.BUTTON1)
         picture.mouseListeners.forEach { it.mousePressed(mouse(MouseEvent.MOUSE_PRESSED)) }
@@ -297,7 +297,7 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         panel.show("Paused", BufferedImage(800, 600, BufferedImage.TYPE_INT_RGB))
         panel.viewport = PausedImage("image/jpeg", null, 800, 600)
         panel.watching(true)
-        descendants(panel).filterIsInstance<JCheckBox>().single { it.text == "Interact" }.doClick()
+        descendants(panel).filterIsInstance<JToggleButton>().single { it.text == "Interact" }.doClick()
         val picture = descendants(panel).filterIsInstance<JLabel>().single { it.icon is ImageIcon }
         return Triple(panel, picture, sent)
     }

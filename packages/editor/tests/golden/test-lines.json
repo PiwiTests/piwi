@@ -1,0 +1,348 @@
+{
+  "spec": {
+    "file": "tests/checkout.spec.ts",
+    "text": "import { test } from '@playwright/test';\n\ntest.describe('checkout', () => {\n  test('applies a coupon', async ({ page }) => {\n    await page.getByLabel('Coupon code').fill('MUGS10');\n  });\n\n  test('pays by card', async ({ page }) => {\n    await page.getByRole('button', { name: 'Pay' }).click();\n  });\n\n  test('shows the total', async ({ page }) => {});\n\n  test('keeps the cart', async ({ page }) => {});\n\n  test('a new test', async ({ page }) => {});\n});\n"
+  },
+  "summary": {
+    "file": {
+      "line": 0,
+      "title": "4 tests in Piwi · 1 failing",
+      "command": {
+        "title": "Run every test of this spec with Piwi",
+        "command": "piwi.runTests",
+        "arguments": [
+          {
+            "uri": "file:///w/tests/checkout.spec.ts",
+            "testIds": [],
+            "locations": ["tests/checkout.spec.ts"]
+          }
+        ]
+      }
+    },
+    "lines": [
+      {
+        "line": 3,
+        "title": "failing in run #124 on fix_coupon_<v2> · passed 9 of 10 runs · in smoke & *nightly*",
+        "command": {
+          "title": "Open in dashboard",
+          "command": "piwi.openInDashboard",
+          "arguments": ["http://piwi/tests/4"]
+        },
+        "status": "failed",
+        "endLine": 5,
+        "failure": {
+          "line": 4,
+          "headline": "getByLabel('Coupon code') was not visible",
+          "message": null,
+          "executionId": 901,
+          "url": "http://piwi/executions/901",
+          "state": "failing",
+          "diagnosed": false
+        },
+        "testCaseId": 4,
+        "actions": [
+          {
+            "group": "run",
+            "kind": "run",
+            "title": "Run with Piwi",
+            "section": "",
+            "command": {
+              "title": "Run with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [4]
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "debug",
+            "title": "Debug with Piwi",
+            "section": "",
+            "command": {
+              "title": "Debug with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [4],
+                  "headed": true,
+                  "holdFailures": true,
+                  "debugging": true
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "verify",
+            "title": "Verify ×3 with Piwi",
+            "section": "",
+            "command": {
+              "title": "Verify ×3 with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [],
+                  "locations": ["tests/checkout.spec.ts:4"],
+                  "repeat": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "problem": true,
+        "line": 4,
+        "title": "✗ Failed here · getByLabel('Coupon code') was not visible",
+        "command": {
+          "title": "Open the failure in the dashboard",
+          "command": "piwi.openInDashboard",
+          "arguments": ["http://piwi/executions/901"]
+        }
+      },
+      {
+        "problem": true,
+        "line": 4,
+        "title": "Run with Piwi",
+        "command": {
+          "title": "Run with Piwi",
+          "command": "piwi.runTests",
+          "arguments": [
+            {
+              "uri": "file:///w/tests/checkout.spec.ts",
+              "testIds": [4]
+            }
+          ]
+        }
+      },
+      {
+        "line": 7,
+        "title": "flaky in recent runs · passed 8 of 10 runs · flaky score 42",
+        "command": {
+          "title": "Open in dashboard",
+          "command": "piwi.openInDashboard",
+          "arguments": ["http://piwi/tests/5"]
+        },
+        "status": "flaky",
+        "endLine": 9,
+        "testCaseId": 5,
+        "actions": [
+          {
+            "group": "run",
+            "kind": "run",
+            "title": "Run with Piwi",
+            "section": "",
+            "command": {
+              "title": "Run with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [5]
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "debug",
+            "title": "Debug with Piwi",
+            "section": "",
+            "command": {
+              "title": "Debug with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [5],
+                  "headed": true,
+                  "holdFailures": true,
+                  "debugging": true
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "verify",
+            "title": "Verify ×3 with Piwi",
+            "section": "",
+            "command": {
+              "title": "Verify ×3 with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [],
+                  "locations": ["tests/checkout.spec.ts:8"],
+                  "repeat": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "line": 11,
+        "title": "running in your run #125",
+        "command": {
+          "title": "Open in dashboard",
+          "command": "piwi.openInDashboard",
+          "arguments": ["http://piwi/tests/6"]
+        },
+        "status": "running",
+        "endLine": 11,
+        "testCaseId": 6,
+        "actions": [
+          {
+            "group": "run",
+            "kind": "run",
+            "title": "Run with Piwi",
+            "section": "",
+            "command": {
+              "title": "Run with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [6]
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "debug",
+            "title": "Debug with Piwi",
+            "section": "",
+            "command": {
+              "title": "Debug with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [6],
+                  "headed": true,
+                  "holdFailures": true,
+                  "debugging": true
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "verify",
+            "title": "Verify ×3 with Piwi",
+            "section": "",
+            "command": {
+              "title": "Verify ×3 with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [],
+                  "locations": ["tests/checkout.spec.ts:12"],
+                  "repeat": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "line": 13,
+        "title": "paused, line 14, in your run #125",
+        "command": {
+          "title": "Open in dashboard",
+          "command": "piwi.openInDashboard",
+          "arguments": ["http://piwi/tests/7"]
+        },
+        "status": "paused",
+        "endLine": 13,
+        "testCaseId": 7,
+        "actions": [
+          {
+            "group": "run",
+            "kind": "run",
+            "title": "Run with Piwi",
+            "section": "",
+            "command": {
+              "title": "Run with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [7]
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "debug",
+            "title": "Debug with Piwi",
+            "section": "",
+            "command": {
+              "title": "Debug with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [7],
+                  "headed": true,
+                  "holdFailures": true,
+                  "debugging": true
+                }
+              ]
+            }
+          },
+          {
+            "group": "run",
+            "kind": "verify",
+            "title": "Verify ×3 with Piwi",
+            "section": "",
+            "command": {
+              "title": "Verify ×3 with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///w/tests/checkout.spec.ts",
+                  "testIds": [],
+                  "locations": ["tests/checkout.spec.ts:14"],
+                  "repeat": 3
+                }
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "line": 15,
+        "title": "passed in your run #125",
+        "status": "passed",
+        "endLine": 15
+      }
+    ]
+  },
+  "marks": [
+    [3, "failed", "Piwi: failing in run #124 on fix_coupon_<v2> · passed 9 of 10 runs · in smoke & *nightly*"],
+    [7, "flaky", "Piwi: flaky in recent runs · passed 8 of 10 runs · flaky score 42"],
+    [11, "running", "Piwi: running in your run #125"],
+    [13, "paused", "Piwi: paused, line 14, in your run #125"],
+    [15, "passed", "Piwi: passed in your run #125"]
+  ],
+  "failing": {
+    "test": [3, 5],
+    "line": 4
+  },
+  "lenses": [
+    [0, ["4 tests in Piwi · 1 failing"]],
+    [4, ["✗ Failed here · getByLabel('Coupon code') was not visible", "Run with Piwi"]]
+  ]
+}

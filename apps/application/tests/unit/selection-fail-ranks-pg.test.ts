@@ -4,9 +4,24 @@ import { seedFailRanksFixture } from './fail-ranks-fixture';
 
 /**
  * The recency rank of each test's newest failure within its latest results on
- * PostgreSQL: the same fixture and rule as `selection-fail-ranks.test.ts`.
- * Runs against `PIWI_POSTGRES_TEST_URL`, in a database of its own.
+ * PostgreSQL: the same fixture and rule as `selection-fail-ranks.test.ts`. And
+ * the plan of the catalog query: it reads the project's runs once, not once per
+ * test and subquery, so its estimated cost does not grow with the tests times
+ * the pages of `test_runs`. Runs against `PIWI_POSTGRES_TEST_URL`, in a
+ * database of its own.
  */
+
+/** A node of a plan `EXPLAIN (FORMAT JSON)` returns, with the fields the test reads. */
+interface PlanNode {
+  'Relation Name'?: string;
+  Plans?: PlanNode[];
+}
+
+/** How many nodes of `plan`, its subplans included, read the table `table`. */
+function scansOf(plan: PlanNode, table: string): number {
+  const own = plan['Relation Name'] === table ? 1 : 0;
+  return own + (plan.Plans ?? []).reduce((sum, child) => sum + scansOf(child, table), 0);
+}
 
 const postgresUrl = process.env.PIWI_POSTGRES_TEST_URL;
 const databaseName = `piwi_fail_ranks_${process.pid}`;
@@ -17,7 +32,7 @@ if (postgresUrl) {
   process.env.PIWI_DATABASE_URL = url.toString();
 }
 
-describe.skipIf(!postgresUrl)('firstFailRank on PostgreSQL', async () => {
+describe.skipIf(!postgresUrl)('the selection catalog on PostgreSQL', async () => {
   const { default: postgres } = await import('postgres');
   const { drizzle } = await import('drizzle-orm/postgres-js');
   const { migrate } = await import('drizzle-orm/postgres-js/migrator');
@@ -27,6 +42,7 @@ describe.skipIf(!postgresUrl)('firstFailRank on PostgreSQL', async () => {
   const admin = postgres(postgresUrl!, { onnotice: () => {}, max: 1 });
   let client: ReturnType<typeof postgres> | undefined;
   let db: ReturnType<typeof drizzle<typeof schema>>;
+  let fixture: Awaited<ReturnType<typeof seedFailRanksFixture>>;
 
   beforeAll(async () => {
     await admin.unsafe(`DROP DATABASE IF EXISTS ${databaseName}`);
@@ -36,6 +52,7 @@ describe.skipIf(!postgresUrl)('firstFailRank on PostgreSQL', async () => {
     await migrate(db, {
       migrationsFolder: fileURLToPath(new URL('../../server/database/migrations-pg', import.meta.url)),
     });
+    fixture = await seedFailRanksFixture(db, schema);
   });
 
   afterAll(async () => {
@@ -44,16 +61,41 @@ describe.skipIf(!postgresUrl)('firstFailRank on PostgreSQL', async () => {
     await admin.end();
   });
 
-  test('ranks the newest failure among the latest results of eligible runs', async () => {
-    const fixture = await seedFailRanksFixture(db, schema);
+  test('ranks the newest failure among the latest results of eligible runs, with the aggregates or without', async () => {
+    for (const withAggregates of [false, true]) {
+      const catalog = await loadSelectionCatalog(db as never, fixture.projectId, {
+        withFailRanks: true,
+        withAggregates,
+      });
+      const ranks = new Map(
+        catalog.filter((row) => row.firstFailRank != null).map((row) => [row.id, row.firstFailRank]),
+      );
 
-    const catalog = await loadSelectionCatalog(db as never, fixture.projectId, {
-      withFailRanks: true,
-      withAggregates: false,
+      expect(catalog.map((row) => row.id).sort((a, b) => a - b)).toEqual(fixture.testCaseIds);
+      expect(ranks, `withAggregates: ${withAggregates}`).toEqual(fixture.expected);
+    }
+  });
+
+  test("reads the project's runs once, in every subquery of every test", async () => {
+    const statements: { query: string; params: unknown[] }[] = [];
+    const logged = drizzle(client!, {
+      schema,
+      logger: { logQuery: (query, params) => statements.push({ query, params }) },
     });
-    const ranks = new Map(catalog.filter((row) => row.firstFailRank != null).map((row) => [row.id, row.firstFailRank]));
 
-    expect(catalog.map((row) => row.id).sort((a, b) => a - b)).toEqual(fixture.testCaseIds);
-    expect(ranks).toEqual(fixture.expected);
+    for (const opts of [
+      { withFailRanks: true, withAggregates: true },
+      { withFailRanks: false, withAggregates: false },
+    ]) {
+      statements.length = 0;
+      await loadSelectionCatalog(logged as never, fixture.projectId, opts);
+      let scans = 0;
+      for (const { query, params } of statements) {
+        const [row] = await client!.unsafe(`EXPLAIN (FORMAT JSON) ${query}`, params as never[]);
+        scans += scansOf((row!['QUERY PLAN'] as Array<{ Plan: PlanNode }>)[0]!.Plan, 'test_runs');
+      }
+
+      expect(scans, JSON.stringify(opts)).toBe(1);
+    }
   });
 });

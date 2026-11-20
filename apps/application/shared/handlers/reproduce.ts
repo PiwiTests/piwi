@@ -8,7 +8,9 @@
  * run before this one in the same environment, on the same branch, else the
  * branch it forked from, else any — and its `bad` end is the failing run's own
  * commit. When either commit is missing the bisect degrades to a plain reason,
- * so a demo with no SCM metadata still renders the recipe.
+ * so a demo with no SCM metadata still renders the recipe. A failing run of a
+ * deployed environment hands the bisect its environment and the deploys between
+ * the two runs (`deployedChanges`), since a bisect finds a change of the tests only.
  */
 import { eq } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../../server/database/schema';
@@ -17,9 +19,12 @@ import { selectBaselineRun } from '../../server/utils/branch-baseline';
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { readProjectDefaultBranch, resolveFallbackBranch } from './baseline-scope';
 import { getReproducingArm } from './flake-lab';
+import { readProjectRunVariables } from './run-variables';
+import { deployedChanges } from './deployed-changes';
 import {
   buildBisectScript,
   buildReproRecipe,
+  type BisectDeployed,
   type BisectedCommit,
   type BisectResult,
   type ReproduceDesktopContext,
@@ -86,10 +91,12 @@ async function readBisectedCommit(
 export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInput): Promise<ReproduceContext> {
   const [run] = await db
     .select({
+      id: testRuns.id,
       projectId: testRuns.projectId,
       startTime: testRuns.startTime,
       branch: testRuns.branch,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       metadata: testRuns.metadata,
       playwrightVersion: testRuns.playwrightVersion,
     })
@@ -101,6 +108,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
   const repositoryUrl = normalizeGitUrl(scm?.remoteUrl ?? null);
 
   let lastGreenCommit: string | null = null;
+  let deployed: BisectDeployed | null = null;
   if (run) {
     const defaultBranch = await readProjectDefaultBranch(db, run.projectId, run.metadata);
     const baseline = await selectBaselineRun(db, {
@@ -111,9 +119,18 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
       fallbackBranch: resolveFallbackBranch(run.metadata, defaultBranch).branch,
     });
     lastGreenCommit = (baseline?.run.metadata as RunScm)?.scm?.commit ?? null;
+    const changes = run.environmentId != null ? await deployedChanges(db, run, baseline?.run ?? null) : null;
+    if (changes) {
+      deployed = {
+        environment: changes.environment.name,
+        deploys: changes.deploys.map(({ label, commit, deployedAt }) => ({ label, commit, deployedAt })),
+        more: changes.more,
+      };
+    }
   }
 
   const projectName = input.cases.find((c) => c.projectName)?.projectName ?? null;
+  const runVariables = run ? ((await readProjectRunVariables(db, run.projectId)) ?? []) : [];
 
   const reproduce = buildReproRecipe({
     commit,
@@ -123,9 +140,16 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
     environment: run?.environment ?? null,
     baseUrl: input.baseUrl ?? null,
     cases: input.cases,
+    runVariables,
   });
 
-  const bisect = buildBisectScript({ good: lastGreenCommit, bad: commit, verifyCommand: input.verifyCommand });
+  const bisect = buildBisectScript({
+    good: lastGreenCommit,
+    bad: commit,
+    verifyCommand: input.verifyCommand,
+    runVariables,
+    deployed,
+  });
 
   const bisectedCommit = await readBisectedCommit(db, input.clusterId, repositoryUrl);
   const testCaseIds = [...new Set(input.testCaseIds ?? [])];
@@ -136,6 +160,7 @@ export async function computeReproduceContext(db: DrizzleDB, input: ReproduceInp
     cases: input.cases,
     browserName: input.browserName,
     commit,
+    environmentId: run?.environmentId ?? null,
     good: lastGreenCommit,
     bad: commit,
     clusterId: input.clusterId ?? null,

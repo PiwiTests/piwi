@@ -1,4 +1,14 @@
-import { sqliteTable, text, integer, real, index, uniqueIndex, primaryKey, check } from 'drizzle-orm/sqlite-core';
+import {
+  sqliteTable,
+  text,
+  integer,
+  real,
+  index,
+  uniqueIndex,
+  primaryKey,
+  check,
+  type AnySQLiteColumn,
+} from 'drizzle-orm/sqlite-core';
 import { sql } from 'drizzle-orm';
 
 // Projects table
@@ -11,8 +21,11 @@ export const projects = sqliteTable(
     description: text('description'),
     diagnosisInstructions: text('diagnosis_instructions'),
     aiLanguage: text('ai_language'), // per-project AI response language override (e.g. "French")
-    scmToken: text('scm_token'), // Per-project SCM token for GitHub/GitLab/Bitbucket API access
-    /** Per-project CI server token, encrypted with the base URL it may be sent under (`{ url, token }`). */
+    /** A project's SCM token (encrypted), which the startup import moves to a credential, emptying the column. */
+    scmToken: text('scm_token'),
+    /** The SCM credential the project's repository calls carry (`credentials.id`); null for the instance's. A credential is not deleted while a project names it. */
+    scmCredentialId: integer('scm_credential_id'),
+    /** A project's CI server token (`{ url, token }`, encrypted), which the startup import moves to a credential, emptying the column. */
     ciServerToken: text('ci_server_token'),
     repositoryUrl: text('repository_url'), // The repository every SCM call of the project reads (normalized https URL); pinned by the first run that names one, changed by a project admin
     defaultBranch: text('default_branch'), // Repository default branch; null = resolve from SCM provider, else 'main'
@@ -35,6 +48,10 @@ export const projects = sqliteTable(
     askToWatch: integer('ask_to_watch', { mode: 'boolean' }).notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
     statusFilter: text('status_filter', { mode: 'json' }), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: text('tag_keys', { mode: 'json' }), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
+    defaultEnvironmentId: integer('default_environment_id').references((): AnySQLiteColumn => environments.id, {
+      onDelete: 'set null',
+    }), // The environment the project's views read by default, as they read the default branch; null = every environment
+    runVariables: text('run_variables', { mode: 'json' }), // RunVariable[] (@piwitests/core/run-variables) — the environment variables every run Piwi starts for the project gets, and every command it gives to copy starts with; null = none
     createdAt: integer('created_at', { mode: 'timestamp' })
       .notNull()
       .$defaultFn(() => new Date()),
@@ -44,6 +61,42 @@ export const projects = sqliteTable(
   },
   (table) => ({
     updatedAtIdx: index('idx_projects_updated_at').on(table.updatedAt),
+    defaultEnvironmentIdx: index('idx_projects_default_environment').on(table.defaultEnvironmentId),
+  }),
+);
+
+// A project's environments: the deployments of its application its tests run against (Local, Staging, Production).
+// A run reports a label; ingest resolves it to one of these by key or alias (`@piwitests/core/environments`), and an
+// unknown label creates a `discovered` one. A run Piwi starts for an environment gets its run variables.
+export const environments = sqliteTable(
+  'environments',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    key: text('key').notNull(), // the label its runs report; `PIWI_ENVIRONMENT` of a run Piwi starts for it
+    keyFold: text('key_fold').notNull(), // the key in lower case: unique in the project
+    name: text('name').notNull(),
+    description: text('description'),
+    aliases: text('aliases', { mode: 'json' }), // string[]: other labels, or `*` patterns, that resolve to it; null = none
+    runVariables: text('run_variables', { mode: 'json' }), // RunVariable[]: set over the project's on the runs Piwi starts for it; null = none
+    appFromCheckout: integer('app_from_checkout', { mode: 'boolean' }).notNull().default(false), // true = the app under test is built from the run's checkout
+    protected: integer('protected', { mode: 'boolean' }).notNull().default(false), // true = confirmed, limited to its required tags, started by a project manager only, never by an agent
+    requiredTags: text('required_tags', { mode: 'json' }), // string[]: the tags a protected environment's runs are limited to
+    envFile: text('env_file'), // the file its config loads (`.env.staging`), never read by Piwi
+    position: integer('position').notNull().default(0), // the order pickers show
+    discovered: integer('discovered', { mode: 'boolean' }).notNull().default(false), // true = created by a run's label, until a manager saves it
+    archivedAt: integer('archived_at', { mode: 'timestamp' }), // set = out of the pickers; its runs keep it
+    createdAt: integer('created_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    updatedAt: integer('updated_at', { mode: 'timestamp' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectKeyIdx: uniqueIndex('idx_environments_project_key').on(t.projectId, t.keyFold),
   }),
 );
 
@@ -73,7 +126,8 @@ export const testRuns = sqliteTable(
     reusedCount: integer('reused_count').notNull().default(0), // tests a pass reuse plan skipped, recorded in `reused_results`; -1 when the run claimed a plan whose reuse could not be recorded
     filterDetails: text('filter_details', { mode: 'json' }), // JSON: { grep?, grepInvert? }
 
-    environment: text('environment'), // Deployment environment (e.g. 'production', 'staging', 'development')
+    environment: text('environment'), // The label the run reported (e.g. 'production', 'staging'), trimmed
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`); null for none
     branch: text('branch'), // Scalar SCM branch (logical branch, never 'HEAD') for index efficiency; projects metadata.scm.branch
     metadata: text('metadata', { mode: 'json' }), // Additional metadata as JSON
     origin: text('origin').notNull().default('local'), // What launched the run, `runOrigin(metadata)`, written with every metadata write; read by the eligibility rule
@@ -115,6 +169,12 @@ export const testRuns = sqliteTable(
     requesterIdx: index('idx_test_runs_requester').on(table.requesterId),
     reporterIdx: index('idx_test_runs_reporter').on(table.reporterId),
     projectCommitIdx: index('idx_test_runs_project_commit').on(table.projectId, table.commit),
+    projectEnvironmentStartIdx: index('idx_test_runs_project_environment_start').on(
+      table.projectId,
+      table.environmentId,
+      table.startTime,
+    ),
+    environmentIdx: index('idx_test_runs_environment').on(table.environmentId),
   }),
 );
 
@@ -1071,10 +1131,10 @@ export const networkRequests = sqliteTable(
     runIdx: index('idx_nr_run').on(t.testRunId),
     caseStatusIdx: index('idx_nr_case').on(t.testRunsCaseId, t.status),
     normalizedUrlIdx: index('idx_nr_normalized_url').on(t.normalizedUrl),
-    // Server traces arrive only from instrumented backends; the capability probe looks for one.
-    serverTracesIdx: index('idx_nr_server_traces')
+    // Only a request an instrumented backend answered carries its logs or its spans; the capability probe looks for one.
+    instrumentedIdx: index('idx_nr_instrumented')
       .on(t.testRunId)
-      .where(sql`server_traces IS NOT NULL`),
+      .where(sql`server_logs IS NOT NULL OR server_traces IS NOT NULL`),
   }),
 );
 
@@ -1188,6 +1248,8 @@ export const integrationConnections = sqliteTable(
     baseUrl: text('base_url').notNull(),
     config: text('config', { mode: 'json' }), // provider-specific, non-secret (flavor, site id, default space…)
     credentials: text('credentials'), // AES-256-GCM JSON: { email, apiToken } | { token } | { pat }
+    /** The credential the connection's requests carry (`credentials.id`); the startup import moves `credentials` to one. */
+    credentialId: integer('credential_id'),
     status: text('status').notNull().default('unverified'), // 'unverified' | 'ok' | 'failed'
     lastCheckedAt: integer('last_checked_at', { mode: 'timestamp_ms' }),
     lastError: text('last_error'),
@@ -1331,7 +1393,9 @@ export const markers = sqliteTable(
     label: text('label').notNull(),
     description: text('description'),
     category: text('category').notNull().default('event'), // 'deploy', 'config', 'infra', 'incident', 'release', 'event'
-    environment: text('environment'), // Optional scope; null = applies to all environments
+    environment: text('environment'), // The environment's label as written (a key, or a run's label); null = applies to all environments
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`)
+    commit: text('commit'), // A deploy marker's deployed commit: 7 to 40 hexadecimal characters
     source: text('source').notNull().default('manual'), // 'manual' | 'auto'
     runId: integer('run_id').references(() => testRuns.id, { onDelete: 'set null' }), // Optional link to the run that triggered/relates to the marker
     createdAt: integer('created_at', { mode: 'timestamp' })
@@ -1344,6 +1408,7 @@ export const markers = sqliteTable(
   (table) => ({
     projectOccurredIdx: index('idx_markers_project_occurred').on(table.projectId, table.occurredAt),
     runIdIdx: index('idx_markers_run_id').on(table.runId),
+    environmentIdx: index('idx_markers_environment').on(table.environmentId),
   }),
 );
 
@@ -2084,7 +2149,8 @@ export const projectUrlPatterns = sqliteTable(
       .notNull()
       .references(() => projects.id, { onDelete: 'cascade' }),
     pattern: text('pattern').notNull(),
-    environment: text('environment'), // free label: 'staging', 'production'
+    environment: text('environment'), // The environment's label as written (its key); null for every environment
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the label resolves to (`resolveEnvironment`)
     branch: text('branch'), // the branch deployed at these URLs; null for the default branch
     pathPrefix: text('path_prefix'), // the path the site serves its pages under and the tests did not ('/app')
     testPathPrefix: text('test_path_prefix'), // the path the tests ran the pages under and the site does not ('/app')
@@ -2098,6 +2164,7 @@ export const projectUrlPatterns = sqliteTable(
   },
   (t) => ({
     projectPatternIdx: uniqueIndex('idx_project_url_patterns_pattern').on(t.projectId, t.pattern),
+    environmentIdx: index('idx_project_url_patterns_environment').on(t.environmentId),
   }),
 );
 
@@ -2654,6 +2721,8 @@ export type OAuthClient = typeof oauthClients.$inferSelect;
 export type OAuthGrant = typeof oauthGrants.$inferSelect;
 export type OAuthAuthorizationRequest = typeof oauthAuthorizationRequests.$inferSelect;
 export type ProjectUrlPattern = typeof projectUrlPatterns.$inferSelect;
+export type Environment = typeof environments.$inferSelect;
+export type NewEnvironment = typeof environments.$inferInsert;
 export type AccountToken = typeof accountTokens.$inferSelect;
 export type NewAccountToken = typeof accountTokens.$inferInsert;
 export type NotificationChannel = typeof notificationChannels.$inferSelect;
@@ -3148,6 +3217,8 @@ export const runRequests = sqliteTable(
       .notNull()
       .references(() => users.id, { onDelete: 'cascade' }),
     targetId: integer('target_id').references(() => runTargets.id, { onDelete: 'set null' }), // set by the claim
+    claimFeatures: text('claim_features', { mode: 'json' }), // string[]: what the target that claimed it said it does beyond a run request, from RUN_TARGET_FEATURES (`run-variables`)
+    environmentId: integer('environment_id').references(() => environments.id, { onDelete: 'set null' }), // The environment the run is for; null for none (the config decides)
     kind: text('kind').notNull(), // RunRequestKind
     tests: text('tests', { mode: 'json' }).notNull(), // RunRequestTest[]
     options: text('options', { mode: 'json' }).notNull(), // RunRequestOptions
@@ -3175,6 +3246,95 @@ export const runRequests = sqliteTable(
     projectIdx: index('idx_run_requests_project').on(t.projectId),
     stateIdx: index('idx_run_requests_state').on(t.state, t.expiresAt),
     runIdx: index('idx_run_requests_run').on(t.runId),
+    environmentIdx: index('idx_run_requests_environment').on(t.environmentId),
     requestTokenIdx: index('idx_run_requests_run_token').on(t.requestTokenDigest),
   }),
 );
+
+// Credentials: the secrets Piwi sends to other services, saved once and referenced by id
+// (`server/utils/credentials.ts`). The secret is sealed with the destination it may be sent under and never returned.
+export const credentials = sqliteTable(
+  'credentials',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    name: text('name').notNull(), // unique on the instance, ignoring case
+    description: text('description'),
+    service: text('service').notNull(), // CredentialService
+    userName: text('user_name'), // the user name a Basic credential pairs with the secret; not secret
+    destination: text('destination').notNull(), // the base URL the secret may be sent under
+    secret: text('secret'), // AES-256-GCM JSON { destination, secret } or { destination, env }; null for one the environment sets
+    secretEnv: text('secret_env'), // the PIWI_CREDENTIAL_* variable the secret is read from at each use; null for a saved secret
+    allProjects: integer('all_projects', { mode: 'boolean' }).notNull().default(false), // else the rows of credential_projects
+    allowedInputs: text('allowed_inputs', { mode: 'json' }), // string[]: the CI action inputs a request carrying it may send; null for every input
+    customRequests: integer('custom_requests', { mode: 'boolean' }).notNull().default(false), // whether a Custom CI server request may carry it
+    disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false), // every use is refused
+    managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    rotatedAt: integer('rotated_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    // Unique ignoring case, as the routes compare names.
+    nameIdx: uniqueIndex('idx_credentials_name_lower').on(sql`lower(${t.name})`),
+    createdByIdx: index('idx_credentials_created_by').on(t.createdBy),
+  }),
+);
+
+// The projects a credential is shared with, when it is not shared with all projects.
+export const credentialProjects = sqliteTable(
+  'credential_projects',
+  {
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+  },
+  (t) => ({
+    pk: primaryKey({ columns: [t.credentialId, t.projectId] }),
+    projectIdx: index('idx_credential_projects_project').on(t.projectId),
+  }),
+);
+
+// Every use of a credential, refusals included: one row per use that changes something outside Piwi, one row per
+// credential, feature, project, result and hour for a read (`count`). Kept PIWI_RETENTION_CREDENTIAL_LOG_DAYS days.
+export const credentialUses = sqliteTable(
+  'credential_uses',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    credentialId: integer('credential_id').references(() => credentials.id, { onDelete: 'set null' }),
+    credentialName: text('credential_name').notNull(), // the name at the time of use, kept after a delete
+    feature: text('feature').notNull(), // CredentialFeature
+    projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
+    userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
+    apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    subjectType: text('subject_type'), // 'ci-action'
+    subjectId: text('subject_id'),
+    destination: text('destination'), // the request's origin and path, never its query
+    result: text('result').notNull(), // 'sent' | 'ok' | 'failed' | 'refused'
+    reason: text('reason'), // why it failed or was refused, the secret masked
+    count: integer('count').notNull().default(1),
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastAt: integer('last_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    credentialIdx: index('idx_credential_uses_credential').on(t.credentialId, t.createdAt),
+    projectIdx: index('idx_credential_uses_project').on(t.projectId, t.createdAt),
+    createdIdx: index('idx_credential_uses_created').on(t.createdAt),
+    userIdx: index('idx_credential_uses_user').on(t.userId),
+    apiKeyIdx: index('idx_credential_uses_api_key').on(t.apiKeyId),
+  }),
+);
+
+export type CredentialRow = typeof credentials.$inferSelect;
+export type CredentialUseRow = typeof credentialUses.$inferSelect;

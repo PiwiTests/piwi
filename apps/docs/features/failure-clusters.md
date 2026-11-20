@@ -81,7 +81,8 @@ Top to bottom:
    - **What changed**: commits and files since the last passing run (or your baseline), the diff, and with
      [coverage](./server-coverage) the first [suspect line](/guide/concepts#suspect-lines). Missing setup shows what to
      set up ([troubleshooting](/guide/source-control#troubleshooting)); **Browse commits** picks a baseline when none
-     passed. One commit on both sides: the change is not in the code.
+     passed. One commit on both sides: the change is not in the code. A cluster first seen in a
+     [deployed environment](./deployed-environments#the-first-failing-deploy) leads with its first failing deploy.
 2. The section **Next** points at (the AI diagnosis, the locator fix…) as its own card.
 3. **Affected tests**, picking whose evidence shows, then that evidence.
 4. [**More ways to fix**](./fix-plans#more-ways-to-fix), then the [occurrence chart](#occurrences-over-time) and the

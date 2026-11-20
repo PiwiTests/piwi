@@ -480,6 +480,28 @@ const PNG_FILES = [
 ];
 const ICO_FILES = ['apps/application/public/favicon.ico', 'apps/docs/public/favicon.ico'];
 
+// The rows of the tray menu Piwi Desktop and Piwi Runner share, each with its concept's glyph: the Piwi mark for the
+// app, else the dashboard's lucide icon. One mid gray reads on a light menu and a dark one, as a menu's bitmaps keep
+// their colors; 32 px, which the menu draws at 16 points.
+const MENU_ICON_GRAY = '#8a8f98';
+const lucide = JSON.parse(readFileSync(resolve(ROOT, 'node_modules/@iconify-json/lucide/icons.json'), 'utf8'));
+const lucideIcon = (name) =>
+  `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="32" height="32" style="color:${MENU_ICON_GRAY}">${lucide.icons[name].body}</svg>`;
+const MENU_ICONS = {
+  piwi: monoMark(MENU_ICON_GRAY, 32),
+  'show-stop': lucideIcon('circle-pause'),
+  'stop-run': lucideIcon('square'),
+  agents: lucideIcon('bot'),
+  connection: lucideIcon('monitor'),
+  update: lucideIcon('download'),
+  folder: lucideIcon('folder-open'),
+  logs: lucideIcon('scroll-text'),
+  quit: lucideIcon('power'),
+};
+for (const [name, markup] of Object.entries(MENU_ICONS)) {
+  PNG_FILES.push([`apps/desktop/src-tauri/menu-icons/${name}.png`, 32, markup]);
+}
+
 for (const [path, content] of Object.entries(SVG_FILES)) write(path, content);
 
 /**
@@ -515,6 +537,9 @@ const ICON_FONT_GLYPHS = [
   { name: 'piwi-stop-live', codepoint: 0xe003, svg: pluginGlyph('stopLive.svg') },
   { name: 'piwi-reload', codepoint: 0xe004, svg: pluginGlyph('reload.svg') },
   { name: 'piwi-run-to-cursor', codepoint: 0xe005, svg: svgGlyph(RUN_TO_CURSOR, 'RUN_TO_CURSOR') },
+  { name: 'piwi-region', codepoint: 0xe006, svg: pluginGlyph('region.svg') },
+  { name: 'piwi-mock', codepoint: 0xe007, svg: pluginGlyph('mock.svg') },
+  { name: 'piwi-unreachable', codepoint: 0xe008, svg: pluginGlyph('unreachable.svg') },
 ];
 
 /** The icon font as WOFF: the glyphs as an SVG font, then TrueType, then WOFF. */

@@ -86,7 +86,7 @@ describe('explain_setting', () => {
   });
 
   test('never returns a secret: a stored token or a key in the environment only reads as set', async () => {
-    await setAppSetting(db as never, 'scm_token', { value: 'ghp_secret_token_123' });
+    await setAppSetting(db as never, 'scm_credentials', { ids: [1] });
     process.env.PIWI_AI_ASSISTANT_API_KEY = 'sk-secret-key-456';
     process.env.PIWI_AI_ASSISTANT_MODEL = 'claude-haiku';
     const token = await explain(administrator, 'source-control.scm-token');
@@ -94,7 +94,6 @@ describe('explain_setting', () => {
     // The id the field had on the AI page still answers.
     expect(await explain(administrator, 'ai.scm-token')).toMatchObject({ id: 'source-control.scm-token', set: true });
     expect(token).not.toHaveProperty('value');
-    expect(JSON.stringify(token)).not.toContain('ghp_secret_token_123');
     const assistant = await explain(administrator, 'ai.assistant');
     expect(assistant.environment).toEqual({
       managed: true,

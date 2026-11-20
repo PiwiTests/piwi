@@ -23,7 +23,13 @@ import {
 import type { VerifiedFix } from '#shared/handlers/flake-verified';
 import { flakeVerdictWord } from '~/utils/flake-lab';
 
-const props = defineProps<{ testCaseId: number; projectId?: number | null; projectLabel?: string | null }>();
+const props = defineProps<{
+  testCaseId: number;
+  projectId?: number | null;
+  projectLabel?: string | null;
+  /** The environment of each of the test's recent runs, one per run, which the desktop app's lab starts from. */
+  carriedEnvironmentIds?: readonly (number | null)[];
+}>();
 
 const route = useRoute();
 const profile = ref<FlakeProfile | null>(null);
@@ -71,9 +77,20 @@ const reproduced = computed(() => experiments.value.some((e) => e.kind === 'repr
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
-const reproduceCommand = computed(() => flakeCommand(props.testCaseId));
-const verifyCommand = computed(() => flakeCommand(props.testCaseId, 'verify'));
-async function copyCommand(command: string) {
+// `piwi flake` takes no test filter, so it cannot keep to a protected environment's required tags.
+const { environmentId: flakeEnvironmentId } = useCommandEnvironment(() => props.projectId, null, {
+  protectedAllowed: false,
+});
+const flakeRunVariables = useProjectRunVariables(
+  () => props.projectId,
+  () => flakeEnvironmentId.value,
+);
+const reproduceCommand = computed(() => flakeRunVariables.command(flakeCommand(props.testCaseId)));
+const verifyCommand = computed(() => flakeRunVariables.command(flakeCommand(props.testCaseId, 'verify')));
+/** Copies `kind`'s command once the project's run variables are read, so it starts with them. */
+async function copyCommand(kind: 'reproduce' | 'verify') {
+  await flakeRunVariables.ready();
+  const command = kind === 'verify' ? verifyCommand.value : reproduceCommand.value;
   await copy(command, { toast: 'Command copied' });
   copiedCommand.value = command;
 }
@@ -265,7 +282,7 @@ function detailLine(s: FlakeSuspect): string | null {
             :icon="copied && copiedCommand === reproduceCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
             :title="reproduceCommand"
             data-testid="copy-flake-command"
-            @click="copyCommand(reproduceCommand)"
+            @click="copyCommand('reproduce')"
           >
             Copy command
           </UButton>
@@ -277,15 +294,22 @@ function detailLine(s: FlakeSuspect): string | null {
             :icon="copied && copiedCommand === verifyCommand ? 'i-lucide-check' : 'i-lucide-clipboard'"
             :title="verifyCommand"
             data-testid="copy-flake-verify-command"
-            @click="copyCommand(verifyCommand)"
+            @click="copyCommand('verify')"
           >
             Copy verify command
           </UButton>
+          <CommandEnvironmentPicker
+            v-model="flakeEnvironmentId"
+            :project-id="projectId"
+            protected-refused="protected, Flake Lab takes no tag filter"
+            class="w-48"
+          />
           <FlakeLabDesktopButton
             :test-case-id="testCaseId"
             :project-id="projectId ?? null"
             :project-label="projectLabel"
             :suspect-count="profile?.suspects.length ?? 0"
+            :carried-environment-ids="carriedEnvironmentIds ?? []"
             @finished="reloadExperiments"
           />
         </div>

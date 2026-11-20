@@ -12,10 +12,10 @@ import type {
   LiveRun,
   RunEnded,
   RunStatusResult,
-  SpecTest,
   StatusResult,
   TestAtResult,
   TestItemsResult,
+  TestTreeNode,
 } from '@piwitests/editor/protocol';
 import { NOTICE_KEYS } from '@piwitests/editor/protocol';
 import { CLIENT_WORDS } from '@piwitests/editor/words';
@@ -79,6 +79,8 @@ import {
   statusContext,
   testAtRun,
   testDecorations,
+  lensLines,
+  LENSES_PER_LINE,
   testHoverMarkdown,
   testLineArg,
   testActionsAt,
@@ -86,6 +88,8 @@ import {
   testActionPicks,
   TEST_HOVER_COMMANDS,
   withBaseline,
+  environmentItem,
+  withEnvironment,
   writeBlock,
   SPEC_FILE,
   failureMessage,
@@ -95,8 +99,8 @@ import {
   testItemTags,
   failuresViewDescription,
   testOutcome,
-  testRunsOf,
   testTree,
+  treeHoldsSpec,
   treeTests,
   unfollowedOutcome,
   withSpec,
@@ -109,6 +113,9 @@ import {
   runStartLine,
   runStartOptions,
   withRunStart,
+  breakpointsMode,
+  runTakesBreakpoints,
+  testCoverageOf,
 } from '../src/glue';
 
 const connected: StatusResult = {
@@ -193,6 +200,7 @@ describe('statusMenu', () => {
       '— Connection',
       'piwi.refresh',
       'piwi.connect',
+      'piwi.pairPicker',
       'piwi.openSettings',
     ]);
     expect(statusMenu(idle)[0]).toEqual({ command: 'piwi.refreshRun', label: 'Refresh the latest run' });
@@ -251,6 +259,7 @@ describe('statusMenu', () => {
       '— Connection',
       'piwi.refresh',
       'piwi.connect',
+      'piwi.pairPicker',
       'piwi.openSettings',
     ]);
     // A held failure takes no Step, and a run another window or a terminal started is theirs to stop.
@@ -320,7 +329,7 @@ describe('statusBarView', () => {
       null,
     );
     expect(view).toEqual({
-      text: '$(server) Piwi: unreachable',
+      text: '$(piwi-unreachable) Piwi: unreachable',
       tooltip: `${problem}\n\nPiwi reads it again on its own.\n\n[Retry](command:piwi.refresh) · [Restart the editor service](command:piwi.restartService) · [Connect…](command:piwi.connect)`,
       action: 'retry',
       url: null,
@@ -419,7 +428,7 @@ describe('statusBarView', () => {
     };
     // CI failures the developer did not cause: counted, never the alarm.
     expect(statusBarView(connected, failing(false))).toMatchObject({
-      text: '$(error) Piwi: 3 failing · 2 flaky',
+      text: '$(error) Piwi: 3 failing',
       action: 'refresh',
       error: false,
     });
@@ -435,7 +444,7 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, ...counts }] };
     };
     const view = statusBarView(connected, local({ failingTests: 2, resolved: 1, overlays: 2 }));
-    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing · 1 fixed locally', error: false });
+    expect(view).toMatchObject({ text: '$(error) Piwi: 2 failing', error: false });
     expect(view.tooltip).toBe(
       `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\n2 local runs since · 1 test fixed locally · 2 failing\n\n${FROM}\n\n${LINKS}`,
     );
@@ -469,7 +478,7 @@ describe('statusBarView', () => {
     );
     // While the run goes on, the item and the tooltip count its failed results alike.
     const running = statusBarView(connected, projects('running'));
-    expect(running.text).toBe('$(sync~spin) Piwi: 118 of 120 · 2 failed');
+    expect(running.text).toBe('$(loading~spin) Piwi: 118 of 120 · 2 failed');
     expect(running.tooltip).toMatch(/: 116 passed, 2 failed, 0 flaky, 0 skipped\n/);
   });
 
@@ -517,15 +526,33 @@ describe('statusBarView', () => {
       return { contexts: [{ ...runs.contexts[0]!, failingTests: 3, live: over && { ...inProgress, ...over } }] };
     };
     expect(statusBarView(connected, live({}))).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
       tooltip: `Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n\nYour run #124 is running: 4 of 9 · 1 failed\n\n${FROM}\n\n${LINKS}`,
       action: 'refresh',
       liveUrl: null,
       error: false,
     });
     expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 4 of 9',
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
+    });
+    // Another's run names its branch, the developer's own the short form.
+    expect(statusBarView(connected, live({ own: false, ci: true, failed: 0, branch: 'feature-x' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: CI run #124 on feature-x · 4 of 9',
+      tooltip: expect.stringContaining('\n\nCI run #124 on feature-x is running: 4 of 9\n\n'),
+    });
+    expect(statusBarView(connected, live({ branch: 'feature-x' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+    });
+    // A test that may be stuck counts beside the run's results.
+    expect(statusBarView(connected, live({ stuck: 1 }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours',
+      tooltip: expect.stringContaining('\n\nYour run #124 is running: 4 of 9 · 1 failed · 1 stuck?\n\n'),
+    });
+    // An agent's run is never the person's own.
+    expect(statusBarView(connected, live({ label: 'Started by Claude Code' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code',
+      tooltip: expect.stringContaining('\n\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n\n'),
     });
     // The editor's own run counts from its own process's events, which the instance may not have heard yet.
     const told = (ref: string) =>
@@ -533,32 +560,32 @@ describe('statusBarView', () => {
         ? { total: 9, done: 6, failed: 2, flaky: 0, skipped: 0, status: 'running' as const, failure: null }
         : undefined;
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, told)).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
+      text: '$(loading~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
       tooltip: expect.stringContaining('\n\nYour run #124 is running: 6 of 9 · 2 failed\n\n'),
     });
     // Another's run, or one the events do not count, keeps the instance's count.
     expect(statusBarView(connected, live({ ref: 'ed-2' }), false, Date.now(), null, told).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
     );
     expect(statusBarView(connected, live({ ref: 'ed-1', own: false }), false, Date.now(), null, told).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed',
     );
     // Its session ended: the count it told last stays until the instance's reaches it, so it never goes back.
     const counts = new OwnRunCounts();
     let session: typeof told = told;
     const kept = (ref: string, instance: LiveRun) => counts.count(ref, session(ref), instance);
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
     );
     session = () => undefined;
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 6 of 9 · 2 failed · yours',
     );
     expect(statusBarView(connected, live({ ref: 'ed-1', done: 7 }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 7 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 7 of 9 · 1 failed · yours',
     );
     expect(statusBarView(connected, live({ ref: 'ed-1' }), false, Date.now(), null, kept).text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
     );
     // With its page, the run in progress is linked first, its number named: the latest run's link stays beside it.
     const linked = statusBarView(connected, live({ url: 'http://piwi/test-runs/124' }));
@@ -576,7 +603,7 @@ describe('statusBarView', () => {
       contexts: [runs.contexts[0]!, { ...runs.contexts[0]!, root: '/w/admin', live: null }],
     };
     expect(statusBarView(other, elsewhere, false, Date.now(), '/w/admin/tests/a.spec.ts').text).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · yours',
     );
     const notOwn: RunStatusResult = {
       contexts: [{ ...elsewhere.contexts[0]!, live: { ...inProgress, own: false } }, elsewhere.contexts[1]!],
@@ -589,7 +616,7 @@ describe('statusBarView', () => {
       contexts: [{ root: '/w', branch: 'wip', run: null, failures: 0, live: { ...inProgress, done: 0, failed: 0 } }],
     };
     expect(statusBarView(connected, first)).toMatchObject({
-      text: '$(sync~spin) Piwi: run #124 · 0 of 9 · yours',
+      text: '$(loading~spin) Piwi: run #124 · 0 of 9 · yours',
       tooltip: `No run of Acme on wip yet\n\nYour run #124 is running: 0 of 9\n\n${FROM}\n\n[Open in dashboard](command:piwi.openInDashboard) · [Compare with…](command:piwi.compareWith)`,
       action: 'refresh',
     });
@@ -622,6 +649,38 @@ describe('statusBarView', () => {
       }),
     ).toBe('tests');
     expect(filesRedraw(testing, run({}))).toBe('all');
+    // So does a test of a run the editor follows, as its worker tells it: paused at a stop.
+    expect(
+      filesRedraw(testing, {
+        contexts: [
+          {
+            ...testing.contexts[0]!,
+            runTests: [
+              {
+                uri: 'file:///w/tests/cart.spec.ts',
+                title: ['adds a mug'],
+                status: 'paused',
+                words: 'paused, line 4,',
+              },
+            ],
+          },
+        ],
+      }),
+    ).toBe('tests');
+    // And a test of a run in a config no instance reads, which the contexts leave out.
+    expect(
+      filesRedraw(testing, {
+        ...testing,
+        runTests: [
+          {
+            root: '/w2',
+            tests: [
+              { uri: 'file:///w2/tests/cart.spec.ts', title: ['adds a mug'], status: 'running', words: 'running' },
+            ],
+          },
+        ],
+      }),
+    ).toBe('tests');
     expect(filesRedraw(null, latest)).toBe('all');
     expect(filesRedraw(null, null)).toBe('none');
     // The failures view's first node follows the editor's own run alone.
@@ -633,7 +692,7 @@ describe('statusBarView', () => {
   test('a running run shows its progress', () => {
     expect(
       statusBarView(connected, run({ status: 'running', passedTests: 40, failedTests: 1, flakyTests: 0 })),
-    ).toMatchObject({ text: '$(sync~spin) Piwi: 41 of 120 · 1 failed', action: 'refresh' });
+    ).toMatchObject({ text: '$(loading~spin) Piwi: 41 of 120 · 1 failed', action: 'refresh' });
   });
 
   test('an interrupted run names its status', () => {
@@ -650,8 +709,8 @@ describe('statusBarView', () => {
   });
 
   test('while a click reads the run again, the item’s icon spins', () => {
-    expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(sync~spin) Piwi: 2 failing');
-    expect(refreshingText('Piwi')).toBe('$(sync~spin) Piwi');
+    expect(refreshingText('$(error) Piwi: 2 failing')).toBe('$(loading~spin) Piwi: 2 failing');
+    expect(refreshingText('Piwi')).toBe('$(loading~spin) Piwi');
   });
 
   describe('with several Playwright configs', () => {
@@ -673,7 +732,7 @@ describe('statusBarView', () => {
     test('speaks for the config of the active file, the deepest that holds it', () => {
       const view = statusBarView(several, runs, false, Date.now(), '/w/apps/admin/tests/users.spec.ts');
       expect(view).toMatchObject({
-        text: '$(error) Piwi: 2 failing · 2 flaky',
+        text: '$(error) Piwi: 2 failing',
         url: 'http://piwi/test-runs/300',
         error: false,
       });
@@ -972,6 +1031,32 @@ describe('the coverage marks of a file', () => {
   });
 });
 
+describe('the lenses above a file’s lines', () => {
+  const line = (at: number, title: string, status?: 'passed') => ({ line: at, title, ...(status ? { status } : {}) });
+  test('leave out a test’s own line, a blank title, a line outside the document and a stopped line', () => {
+    const summary = {
+      file: line(0, '3 tests in Piwi'),
+      lines: [
+        line(2, 'passed in its latest run', 'passed'),
+        line(3, '2 tests · click'),
+        line(4, ' '),
+        line(-1, 'before the file'),
+        line(9, 'past its end'),
+        line(5, '1 test · fill'),
+      ],
+    };
+    expect(lensLines(summary, 9).map((l) => l.title)).toEqual(['3 tests in Piwi', '2 tests · click', '1 test · fill']);
+    expect(lensLines(summary, 9, new Set([3])).map((l) => l.title)).toEqual(['3 tests in Piwi', '1 test · fill']);
+  });
+
+  test('hold eight on a line at most, as Code Vision’s slots', () => {
+    const many = Array.from({ length: LENSES_PER_LINE + 3 }, (_, i) => line(4, `lens ${i}`));
+    expect(lensLines({ file: null, lines: many }, 9).map((l) => l.title)).toEqual(
+      many.slice(0, LENSES_PER_LINE).map((l) => l.title),
+    );
+  });
+});
+
 describe('the tests of a file', () => {
   test('are drawn with their latest result, a failing one over its whole body', () => {
     expect(
@@ -1069,6 +1154,10 @@ describe('the tests of a file', () => {
     const more = encodeURIComponent(JSON.stringify([{ uri: 'file:///w/a.spec.ts', line: 3 }]));
     expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts')).toBe(
       `**Piwi**: passed in its latest run · passed 4 of 4 runs\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open}) · [More…](command:piwi.testActions?${more})`,
+    );
+    // With its card, the card takes the result's place, the links kept.
+    expect(testHoverMarkdown(test!, 'file:///w/a.spec.ts', '**Piwi** · pays\n\nNo result yet')).toBe(
+      `**Piwi** · pays\n\nNo result yet\n\n[Run](command:piwi.runTests?${run}) · [Open in dashboard](command:piwi.openInDashboard?${open}) · [More…](command:piwi.testActions?${more})`,
     );
     expect(TEST_HOVER_COMMANDS).toEqual(['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions']);
     // A service that gives neither: the result alone.
@@ -1589,7 +1678,7 @@ describe('the recording’s controls', () => {
         { title: 'Pause', command: 'piwi.pauseRecording' },
       ],
       status: '$(record) Piwi: recording · 6 steps',
-      tooltip: 'Recording into checkout.spec.ts. Click to stop.',
+      tooltip: 'Recording into checkout.spec.ts. Click for Stop recording and Pause.',
     });
     expect(recordingView('paused', 1, false, 'a.spec.ts')).toMatchObject({
       title: '$(circle-large-outline) Paused · 1 step',
@@ -1960,7 +2049,7 @@ describe('the failures view', () => {
     expect(failingRuns(null)).toEqual([]);
   });
 
-  test('Run this test names the failure’s config', () => {
+  test('Run with Piwi names the failure’s config', () => {
     expect(failureRunArgs({ ...failing, root: '/w/apps/admin', uri: 'file:///w/shared/pages/admin.ts' })).toEqual({
       uri: 'file:///w/shared/pages/admin.ts',
       root: '/w/apps/admin',
@@ -2062,8 +2151,32 @@ describe('the verdict of a run started from the editor', () => {
   });
 });
 
+describe('which runs pause at the breakpoints', () => {
+  test('reads piwi.breakpoints, an older true or false as always or never, Debug with Piwi by default', () => {
+    expect([undefined, 'debug', 'x', true, 'always', false, 'never'].map(breakpointsMode)).toEqual([
+      'debug',
+      'debug',
+      'debug',
+      'always',
+      'always',
+      'never',
+      'never',
+    ]);
+  });
+
+  test('a Debug with Piwi run takes them with debug, every run with always, none with never', () => {
+    const plain = { uri: 'file:///a.spec.ts', testIds: [1] };
+    const debugging = { ...plain, debugging: true };
+    const failure = { ...plain, debug: { stop: { uri: plain.uri, line: 4 }, title: 'pays' } };
+    expect([plain, debugging, failure].map((args) => runTakesBreakpoints('debug', args))).toEqual([false, true, true]);
+    expect([plain, debugging].map((args) => runTakesBreakpoints('always', args))).toEqual([true, true]);
+    expect(runTakesBreakpoints('always', { ...plain, repeat: 3 })).toBe(false);
+    expect([plain, debugging].map((args) => runTakesBreakpoints('never', args))).toEqual([false, false]);
+  });
+});
+
 describe('a test’s actions from its gutter', () => {
-  const SECTIONS = { run: '', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
+  const SECTIONS = { run: '', record: 'Record', evidence: 'Evidence', agent: 'Agent', lab: 'Flake Lab' } as const;
   const action = (group: TestAction['group'], title: string): TestAction => ({
     group,
     section: SECTIONS[group],
@@ -2291,7 +2404,9 @@ describe('an open link from the dashboard', () => {
 });
 
 describe('the Testing view', () => {
-  const test1 = (over: Partial<SpecTest> = {}): SpecTest => ({
+  const CHECKOUT = 'file:///w/tests/cart/checkout.spec.ts';
+  const ROWS = 'file:///w/tests/rows.spec.ts';
+  const test1 = (over: Partial<TreeTest> = {}): TreeTest => ({
     title: 'pays',
     suite: [],
     line: 2,
@@ -2305,92 +2420,124 @@ describe('the Testing view', () => {
     owner: null,
     quarantined: false,
     resultDurationMs: null,
+    root: '/w',
+    uri: CHECKOUT,
+    playwright: [],
     ...over,
   });
+  const node = (
+    kind: TestTreeNode['kind'],
+    id: string,
+    label: string,
+    children: TestTreeNode[] = [],
+    uri: string | null = null,
+  ): TestTreeNode => ({
+    id,
+    label,
+    kind,
+    uri,
+    range: null,
+    sortText: label,
+    runnable: true,
+    test: null,
+    project: null,
+    children,
+  });
+  const leaf = (id: string, test: TreeTest): TestTreeNode => ({
+    ...node('test', id, test.title, [], test.uri),
+    range: { start: test.line, end: test.endLine },
+    test,
+  });
+  const checkoutId = 'spec\x1f/w\x1ftests/cart/checkout.spec.ts';
+  const rowsId = 'spec\x1f/w\x1ftests/rows.spec.ts';
+  const checkout = node(
+    'spec',
+    checkoutId,
+    'checkout.spec.ts',
+    [
+      node(
+        'describe',
+        `${checkoutId}\x1ecart`,
+        'cart',
+        [
+          leaf(
+            `${checkoutId}\x1fcart\x1fpays`,
+            test1({ suite: ['cart'], line: 3, location: 'tests/cart/checkout.spec.ts:4' }),
+          ),
+          leaf(
+            `${checkoutId}\x1fcart\x1fpays\x1f2`,
+            test1({ suite: ['cart'], line: 7, endLine: 9, testCaseId: 2, location: 'tests/cart/checkout.spec.ts:8' }),
+          ),
+        ],
+        CHECKOUT,
+      ),
+      leaf(
+        `${checkoutId}\x1fis new`,
+        test1({
+          title: 'is new',
+          line: 12,
+          testCaseId: null,
+          status: null,
+          location: 'tests/cart/checkout.spec.ts:13',
+        }),
+      ),
+    ],
+    CHECKOUT,
+  );
+  const tests = (children: TestTreeNode[]) => node('folder', 'folder\x1f/w\x1ftests', 'tests', children);
+  const cart = (children: TestTreeNode[]) => node('folder', 'folder\x1f/w\x1ftests/cart', 'cart', children);
   const answer: TestItemsResult = {
     contexts: [
       {
         root: '/w',
         label: 'shop',
-        specs: [
-          {
-            uri: 'file:///w/tests/cart/checkout.spec.ts',
-            file: 'tests/cart/checkout.spec.ts',
-            tests: [
-              test1({ title: 'pays', suite: ['cart'], line: 3, location: 'tests/cart/checkout.spec.ts:4' }),
-              test1({
-                title: 'pays',
-                suite: ['cart'],
-                line: 7,
-                endLine: 9,
-                testCaseId: 2,
-                location: 'tests/cart/checkout.spec.ts:8',
-              }),
-              test1({
-                title: 'is new',
-                line: 12,
-                testCaseId: null,
-                status: null,
-                location: 'tests/cart/checkout.spec.ts:13',
-              }),
-            ],
-          },
-          { uri: 'file:///w/tests/rows.spec.ts', file: 'tests/rows.spec.ts', tests: [] },
-        ],
+        listing: null,
+        nodes: [tests([cart([checkout]), node('spec', rowsId, 'rows.spec.ts', [], ROWS)])],
       },
     ],
   };
+  /** Each spec of an answer as `label: tests`, as its folders nest them. */
+  const specs = (result: TestItemsResult): string[] => {
+    const of = (nodes: readonly TestTreeNode[]): string[] =>
+      nodes.flatMap((n) => (n.kind === 'spec' ? [`${n.label}: ${treeTests([n]).length}`] : of(n.children)));
+    return result.contexts.flatMap((c) => of(c.nodes));
+  };
 
-  test('nests each spec under its folders, and its tests under their describe blocks, told apart by their order', () => {
+  test('shows one config’s nodes as the service builds them, its tests first to last', () => {
     const tree = testTree(answer);
-    expect(tree.map((n) => [n.kind, n.label])).toEqual([['folder', 'tests']]);
-    const tests = tree[0]!;
-    expect(tests.children.map((n) => [n.kind, n.label, n.sortText])).toEqual([
-      ['folder', 'cart', '0cart'],
-      ['spec', 'rows.spec.ts', '1rows.spec.ts'],
-    ]);
-    const spec = tests.children[0]!.children[0]!;
-    expect(spec).toMatchObject({ kind: 'spec', id: 'file:///w/tests/cart/checkout.spec.ts', uri: spec.id });
-    expect(spec.children.map((n) => [n.kind, n.label])).toEqual([
-      ['suite', 'cart'],
-      ['test', 'is new'],
-    ]);
-    const suite = spec.children[0]!;
-    expect(suite.children.map((n) => [n.id, n.range])).toEqual([
-      [`${spec.id}\x1fcart\x1fpays`, { start: 3, end: 4 }],
-      [`${spec.id}\x1fcart\x1fpays\x1f2`, { start: 7, end: 9 }],
-    ]);
-    expect(suite.children[0]!.test).toMatchObject({ root: '/w', uri: spec.id, testCaseId: 1 });
+    expect(tree).toBe(answer.contexts[0]!.nodes);
     expect(treeTests(tree).map((t) => t.location)).toEqual([
       'tests/cart/checkout.spec.ts:4',
       'tests/cart/checkout.spec.ts:8',
       'tests/cart/checkout.spec.ts:13',
     ]);
+    expect(treeHoldsSpec(answer, ROWS)).toBe(true);
+    expect(treeHoldsSpec(answer, 'file:///w/tests/other.spec.ts')).toBe(false);
   });
 
-  test('tells a describe block from a test of the same title beside it', () => {
-    const spec = {
-      uri: 'file:///w/tests/login.spec.ts',
-      file: 'tests/login.spec.ts',
-      tests: [
-        test1({ title: 'login', suite: [], line: 2 }),
-        test1({ title: 'with SSO', suite: ['login'], line: 6, testCaseId: 2 }),
+  test('puts each Playwright config at the top when there are several, or when one could not be listed, saying why', () => {
+    const two: TestItemsResult = {
+      contexts: [answer.contexts[0]!, { root: '/w/e2e', label: 'e2e', listing: null, nodes: [] }],
+    };
+    expect(testTree(two).map((n) => [n.kind, n.label, n.id, n.error])).toEqual([
+      ['config', 'shop', 'config\x1f/w', null],
+      ['config', 'e2e', 'config\x1f/w/e2e', null],
+    ]);
+    const failed: TestItemsResult = {
+      contexts: [
+        {
+          ...answer.contexts[0]!,
+          listing: { at: null, error: 'Playwright is not installed in /w: run npm install there.', running: false },
+        },
       ],
     };
-    const [node] = testTree({ contexts: [{ root: '/w', label: 'shop', specs: [spec] }] });
-    const children = node!.children[0]!.children;
-    expect(children.map((n) => n.kind)).toEqual(['test', 'suite']);
-    expect(new Set(children.map((n) => n.id)).size).toBe(2);
-  });
-
-  test('puts each Playwright config at the top when there are several', () => {
-    const two: TestItemsResult = {
-      contexts: [answer.contexts[0]!, { root: '/w/e2e', label: 'e2e', specs: [] }],
-    };
-    expect(testTree(two).map((n) => [n.kind, n.label, n.id])).toEqual([
-      ['config', 'shop', 'config\x1f/w'],
-      ['config', 'e2e', 'config\x1f/w/e2e'],
-    ]);
+    const [config] = testTree(failed);
+    expect(config).toMatchObject({
+      kind: 'config',
+      error: 'Playwright is not installed in /w: run npm install there.',
+      runnable: true,
+    });
+    expect(config!.children).toBe(answer.contexts[0]!.nodes);
   });
 
   test('says flaky beside a flaky test, which the view shows as passed, and tags it so its filter finds it', () => {
@@ -2410,6 +2557,7 @@ describe('the Testing view', () => {
       resultDurationMs: null,
       root: '/w',
       uri: 'file:///w/checkout.spec.ts',
+      playwright: [],
     });
     expect(testItemTags(test('flaky'))).toEqual(['flaky']);
     for (const status of ['passed', 'failed', 'skipped', 'running', 'unknown', null] as const) {
@@ -2425,6 +2573,8 @@ describe('the Testing view', () => {
     expect(testOutcome('flaky', null)).toEqual({ state: 'passed' });
     expect(testOutcome('skipped', null)).toEqual({ state: 'skipped' });
     expect(testOutcome('running', null)).toEqual({ state: 'started' });
+    // A test at a stop of the editor's own run still runs.
+    expect(testOutcome('paused', null)).toEqual({ state: 'started' });
     expect(testOutcome('unknown', null)).toBeNull();
     expect(testOutcome(null, null)).toBeNull();
     const failure = {
@@ -2450,60 +2600,22 @@ describe('the Testing view', () => {
     expect(failureMessage({ ...failure, message: '', diagnosed: true })).toBe('Failed');
   });
 
-  test('runs the tests by id when Piwi knows them all, else by location, one run per config', () => {
-    const tests = treeTests(testTree(answer));
-    expect(testRunsOf(tests.slice(0, 2))).toEqual([
-      { uri: 'file:///w/tests/cart/checkout.spec.ts', root: '/w', testIds: [1, 2] },
-    ]);
-    expect(testRunsOf(tests)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [],
-        locations: ['tests/cart/checkout.spec.ts:4', 'tests/cart/checkout.spec.ts:8', 'tests/cart/checkout.spec.ts:13'],
-      },
-    ]);
-    // Debug with Piwi: headed, holding the failures.
-    expect(testRunsOf(tests.slice(0, 2), undefined, true)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [1, 2],
-        headed: true,
-        holdFailures: true,
-      },
-    ]);
-    expect(testRunsOf(tests.slice(0, 1), 3)).toEqual([
-      {
-        uri: 'file:///w/tests/cart/checkout.spec.ts',
-        root: '/w',
-        testIds: [],
-        locations: ['tests/cart/checkout.spec.ts:4'],
-        repeat: 3,
-      },
-    ]);
-    const other = { ...tests[0]!, root: '/w/e2e', uri: 'file:///w/e2e/a.spec.ts' };
-    expect(testRunsOf([tests[0]!, other]).map((r) => r.root)).toEqual(['/w', '/w/e2e']);
-  });
-
-  test('takes one spec’s own answer in place, and lets a spec the service no longer answers leave', () => {
-    const edited = test1({ title: 'pays', line: 9, location: 'tests/rows.spec.ts:10' });
+  test('takes one spec’s own answer in place, and lets a spec the service no longer answers leave with its folders', () => {
+    const edited = test1({ line: 9, location: 'tests/rows.spec.ts:10', uri: ROWS });
     const one: TestItemsResult = {
       contexts: [
         {
           ...answer.contexts[0]!,
-          specs: [{ uri: 'file:///w/tests/rows.spec.ts', file: 'tests/rows.spec.ts', tests: [edited] }],
+          nodes: [tests([node('spec', rowsId, 'rows.spec.ts', [leaf(`${rowsId}\x1fpays`, edited)], ROWS)])],
         },
       ],
     };
-    const merged = withSpec(answer, 'file:///w/tests/rows.spec.ts', one);
-    expect(merged.contexts[0]!.specs.map((s) => [s.file, s.tests.length])).toEqual([
-      ['tests/cart/checkout.spec.ts', 3],
-      ['tests/rows.spec.ts', 1],
-    ]);
-    const gone = withSpec(answer, 'file:///w/tests/rows.spec.ts', { contexts: [] });
-    expect(gone.contexts[0]!.specs.map((s) => s.file)).toEqual(['tests/cart/checkout.spec.ts']);
-    expect(withSpec({ contexts: [] }, 'file:///w/tests/rows.spec.ts', one).contexts[0]!.specs).toHaveLength(1);
+    expect(specs(withSpec(answer, ROWS, one))).toEqual(['checkout.spec.ts: 3', 'rows.spec.ts: 1']);
+    expect(specs(withSpec(answer, ROWS, { contexts: [] }))).toEqual(['checkout.spec.ts: 3']);
+    // The cart folder held checkout.spec.ts alone: it leaves with it.
+    const gone = withSpec(answer, CHECKOUT, { contexts: [] });
+    expect(gone.contexts[0]!.nodes[0]!.children.map((n) => n.label)).toEqual(['rows.spec.ts']);
+    expect(specs(withSpec({ contexts: [] }, ROWS, one))).toEqual(['rows.spec.ts: 1']);
   });
 
   test('publishes the results again when the run, its baseline or the runs laid over it change, and names them', () => {
@@ -2535,6 +2647,9 @@ describe('the Testing view', () => {
     expect(resultsRunName(runs())).toBe('Piwi: run #120 on main');
     expect(resultsRunName(null)).toBe('Piwi: the latest runs');
     expect(liveRunName({ runId: 124, own: true } as LiveRun)).toBe('Piwi: your run #124');
+    expect(liveRunName({ runId: 124, own: true, label: 'Started by Claude Code' } as LiveRun)).toBe(
+      'Piwi: run #124 (Started by Claude Code)',
+    );
     expect(liveRunName({ runId: 125, own: false } as LiveRun)).toBe('Piwi: run #125');
     // A CI run of the branch says so: it is not the person's tests running.
     expect(liveRunName({ runId: 126, own: false, ci: true, branch: 'main' } as LiveRun)).toBe(
@@ -2674,7 +2789,7 @@ describe('the status item while runs are followed', () => {
       '$(error) Piwi: held at its failure · a.spec.ts:4',
     );
     expect(runLineText({ text: 'Piwi: run #124 · 4 of 9 · 1 failed', state: 'running', calls: 0 }, 0)).toBe(
-      '$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed',
+      '$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed',
     );
     const pausing = {
       text: 'Piwi: pausing… · waits in waitForResponse',
@@ -2712,5 +2827,84 @@ describe('the failures view’s description', () => {
       'by cluster · Baseline: CI run #124 on main',
     );
     expect(failuresViewDescription('owner', '')).toBe('by owner');
+  });
+});
+
+describe('the coverage view', () => {
+  const result = {
+    uri: 'file:///w/src/basket.ts',
+    state: 'exact' as const,
+    executed: [
+      { start: 7, end: 8, tests: 2 },
+      { start: 16, end: 18, tests: 1 },
+    ],
+    notRun: [{ start: 10, end: 10 }],
+    changed: [],
+    tests: 2,
+    executedLines: 5,
+    executableLines: 8,
+    blob: 'b',
+    label: null,
+  };
+
+  test('counts the lines run of the executable ones, and lists each span with the tests that ran it', () => {
+    expect(testCoverageOf(result)).toEqual({
+      count: { covered: 5, total: 8 },
+      spans: [
+        { start: 7, end: 8, executed: 2 },
+        { start: 10, end: 10, executed: 0 },
+        { start: 16, end: 18, executed: 1 },
+      ],
+    });
+    // A run that recorded no executable lines: those run, and those known not run, are the total.
+    expect(testCoverageOf({ ...result, executableLines: null }).count).toEqual({ covered: 5, total: 6 });
+  });
+});
+
+describe('the environment item', () => {
+  const context = (root: string, environment: StatusResult['contexts'][number]['environment']) => ({
+    root,
+    connected: true,
+    serverUrl: 'https://piwi.example.com',
+    source: 'environment' as const,
+    projectId: 7,
+    projectName: 'Acme',
+    environment,
+    branch: 'main',
+    locators: 0,
+    reachedFiles: 0,
+    problem: null,
+  });
+  const staging = {
+    id: 4,
+    text: 'Staging',
+    tooltip: 'The runs Piwi starts for Acme are for Staging.',
+    protected: false,
+  };
+  const production = { id: 5, text: 'Production', tooltip: 'Protected.', protected: true };
+
+  test('shows the environment of the active file’s config, or none, and else of the first that shows one', () => {
+    const status = { contexts: [context('/w/a', null), context('/w/b', staging), context('/w/b/c', production)] };
+    expect(environmentItem(status, '/w/b/c/tests/x.spec.ts')).toEqual({
+      root: '/w/b/c',
+      text: '$(lock) Production',
+      tooltip: 'Protected.',
+      protected: true,
+    });
+    // The active file's config shows none: no other config's environment stands in for it.
+    expect(environmentItem(status, '/w/a/x.spec.ts')).toBeNull();
+    expect(environmentItem(status, '/elsewhere/notes.md')).toMatchObject({
+      root: '/w/b',
+      text: '$(server-environment) Staging',
+    });
+    expect(environmentItem({ contexts: [context('/w/a', null)] }, null)).toBeNull();
+    expect(environmentItem(null, null)).toBeNull();
+  });
+
+  test('keeps a choice per root, none as no entry', () => {
+    const qa = { id: 6, name: 'QA', serverUrl: 'https://piwi.example.com', projectId: 7 };
+    const kept = withEnvironment({ '/a': { ...qa, id: 4, name: 'Staging' } }, '/b', qa);
+    expect(kept).toEqual({ '/a': { ...qa, id: 4, name: 'Staging' }, '/b': qa });
+    expect(withEnvironment(kept, '/a', null)).toEqual({ '/b': qa });
   });
 });

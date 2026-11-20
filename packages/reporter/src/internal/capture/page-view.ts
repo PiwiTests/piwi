@@ -1,6 +1,6 @@
 import type { Page } from '@playwright/test';
 import { FrameAcks, LatestPacer, isViewSize } from '@piwitests/core/run-view';
-import { barHiddenShots, jpegCodec, jpegSize, within } from './live-mask.js';
+import { barHiddenShots, jpegCodec, jpegSize, thumbnailOf, within } from './live-mask.js';
 import { callMethod, internalCall } from './quiet-capture.js';
 
 /**
@@ -11,17 +11,23 @@ import { callMethod, internalCall } from './quiet-capture.js';
  * size and quality every later client gets; the view's end stops its own client alone, so that one stays whole. Its
  * frames are acknowledged at the view's pace (`FrameAcks`), one held at a time. Playwright gives a page one screencast
  * client of its own: where the view cannot hold it (the test runs one itself, another view of the page holds it), an
- * image of the page every `shotMs`, its caret as the page shows it. A test that starts or stops a screencast while a
- * view holds the page's client (`guardScreencast`) ends that client first, and the view goes on with images, as every
- * later view of that page does. A frame the same as the one before is dropped; one longer than `maxFrameBytes` is too,
- * an image of the page at `lightQuality` taken in its place, one at a time and `shotMs` apart, and when that one is too
- * long as well, the view says once why no frame goes (`refuse`), until a frame goes again. Frames go at most `fps` a
+ * image of the page every `shotMs`, its caret as the page shows it. Every image the view takes itself is at the size it
+ * asks of the screencast: a screenshot that `screen` scales down as it paints it, the lighter one scaled here. A test
+ * that starts or stops a screencast while a view holds the page's client (`guardScreencast`) ends that client first,
+ * and the view goes on with images, as every later view of that page does. A frame the same as the one before is
+ * dropped, unless none went for that one; one longer than `maxFrameBytes` is too, an image of the page at
+ * `lightQuality` taken in its place, one at a time and `shotMs` apart, and when that one is too long as well, the view
+ * says once why no frame goes (`refuse`), until a frame goes again. Frames go at most `fps` a
  * second (fewer when `spacing` holds a heavy one back), the latest one alone while the way out is `busy`. Each frame
  * passes through the view's `screen` before it goes: the frame goes as it returns it, or none goes, or the viewers
  * hear why none goes, the latest frame alone waiting meanwhile. Piwi's pause bar, which a headed stop shows in the
  * page, is painted over in each frame that may show it (`pauseBarShows`), by `screen` in the same pass as its own
  * boxes. The latest sent is kept in memory until the view ends, and sent again on `resend`, for a viewer that came
- * since (a still page paints no other). Nothing here stores a frame.
+ * since (a still page paints no other). A still page, its test waiting on a locator, paints no frame to try again
+ * with: when its screencast gives the view none within `FIRST_FRAME_MS` (a screencast that sends a frame only as the
+ * page changes, or one a test's video started first, with none to give yet), or `screen` sends none for the latest and
+ * no other comes within `shotMs`, an image of the page goes in its place, at the size the view asks, `STILL_SHOTS`
+ * times at most until the page paints anew. Nothing here stores a frame.
  */
 
 /** How much earlier than the time Playwright names (its paint, or its dispatch) a screencast frame may show the page. */
@@ -33,6 +39,10 @@ const SCREENCAST_LAG_MS = 100;
 const BAR_READ_MS = 1000;
 /** How old a frame that names no time (before Playwright 1.61) is taken to be, against when the pause bar came down. */
 const UNDATED_MS = 1000;
+/** How long a view waits for its screencast's first frame before an image of the page goes in its place. */
+const FIRST_FRAME_MS = 500;
+/** The most images of a still page a view tries, since a frame last went or the page painted anew. */
+const STILL_SHOTS = 3;
 
 type Started = { dispose?: () => Promise<unknown> } | undefined;
 type Screencast = {
@@ -113,6 +123,12 @@ export interface FrameBox {
 interface Size {
   width: number;
   height: number;
+}
+
+/** An image a view took: its JPEG, the viewport it shows in CSS pixels, and the size it goes at, at most. */
+interface PageImage extends Size {
+  data: Buffer;
+  fit?: Size;
 }
 
 /**
@@ -265,6 +281,11 @@ export interface PageFrame {
    * before any read.
    */
   at: number;
+  /**
+   * The size the image goes at, at most, for one the view took itself that is larger: `screen` scales it down as it
+   * paints it, in the one pass that decodes and encodes it.
+   */
+  fit?: { width: number; height: number };
 }
 
 export interface PageViewOptions {
@@ -280,7 +301,10 @@ export interface PageViewOptions {
   maxFrameBytes: number;
   /** The JPEG quality of the lighter image taken in place of a frame too long to send. */
   lightQuality: number;
-  /** How often the view takes an image of the page where it cannot use the screencast, and a lighter one at most. */
+  /**
+   * How often the view takes an image of the page where it cannot use the screencast, and a lighter one at most; and
+   * how long it waits, after a frame that did not go, before it takes an image of a still page in its place.
+   */
   shotMs: number;
   /** Whether the way out is backed up: the latest frame alone waits. */
   busy(): boolean;
@@ -334,7 +358,27 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
   const viewport = await viewportOf(page);
   if (!viewport) return null;
   let closed = false;
+  /** The latest frame the page gave the view: its screencast's, or an image taken of it. */
   let last: Buffer | null = null;
+  /**
+   * Whether an image the same as `last` goes to `screen` again: none went for `last`, and a still page paints no other.
+   */
+  let again = false;
+  /** How many frames the page gave the view: an image of a still page goes only when none came meanwhile. */
+  let given = 0;
+  /**
+   * The latest frame the page painted: its screencast's, or the view's timed image of it, never an image taken of a
+   * still page. A screencast paints a frame, the same as the one before, as an image of the page is taken.
+   */
+  let paintedLast: Buffer | null = null;
+  /** Whether an image taken of the still page went to `screen` since the page painted a frame unlike `paintedLast`. */
+  let imaged = false;
+  /** The images of a still page tried since a frame the page painted last went, the next one's wait, and its take. */
+  let stills = 0;
+  let stillTimer: ReturnType<typeof setTimeout> | null = null;
+  let stillShot: Promise<void> | null = null;
+  /** The image taken afresh as the masks changed, on its way. */
+  let refreshing: Promise<void> | null = null;
   /** The latest frame sent, or why no frame goes: kept for a viewer that comes later, in memory, until the end. */
   let sent: PageFrame | { refused: string | undefined } | null = null;
   /** Whether the viewers heard that no frame goes, since the last frame that went. */
@@ -371,8 +415,14 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       return bar;
     });
     paintMs = bar.length && painting && jpegCodec() ? Date.now() - painting : 0;
-    if (typeof shown === 'string') return refuse(shown);
-    if (shown) deliver(shown);
+    if (shown && typeof shown !== 'string') {
+      // A frame the page painted went: a still page that shows nothing later is tried afresh.
+      if (frame.data === paintedLast) stills = 0;
+      return deliver(shown);
+    }
+    if (shown) refuse(shown);
+    // The viewers hear why none goes, where `screen` said; a still page is tried again either way.
+    dropped(frame);
   };
   const pacer = new LatestPacer<PageFrame>({
     intervalMs: interval,
@@ -382,7 +432,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if (!options.live()) return;
       screening = true;
       screened = show(frame)
-        .catch(() => undefined)
+        .catch(() => dropped(frame))
         .finally(() => {
           screening = false;
           screened = null;
@@ -394,51 +444,144 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
    * image's size at CSS scale (a page without one, whose viewport Playwright names in no other pixels).
    */
   const shownSize = (shot: Buffer): Size => page.viewportSize() ?? jpegSize(shot) ?? viewport;
+  /**
+   * An image of the page now, at `quality`, through an internal call (Playwright's screenshot, which leaves the page's
+   * emulation as the test set it and takes one image of the page at a time), and the viewport it shows, in CSS pixels;
+   * larger than the size the view asks of the screencast, it names that size (`fit`), which `screen` scales it down to.
+   * Null when none could be taken.
+   */
+  const takeImage = async (quality: number): Promise<PageImage | null> => {
+    if (closed) return null;
+    const shot = await internalCall(page, () =>
+      page.screenshot({ type: 'jpeg', quality, scale: 'css', caret: 'initial', timeout: 5000 }),
+    ).catch(() => null);
+    if (!shot) return null;
+    const size = shownSize(shot);
+    const asked = options.size(size);
+    const own = jpegSize(shot);
+    const larger = !!own && (own.width > asked.width || own.height > asked.height);
+    return { data: shot, ...size, ...(larger ? { fit: asked } : {}) };
+  };
   /** The lighter image on its way, and when the last one was asked. */
   let lighter: Promise<void> | null = null;
+  /** The frame too long each lighter image stands for. */
+  const standsFor = new WeakMap<Buffer, Buffer>();
   let lighterAt = -Infinity;
   /** A frame too long to send: a lower quality image of the page goes in its place, or the viewers hear why not. */
   const lighten = (): void => {
     const now = Date.now();
     if (lighter || now - lighterAt < options.shotMs) return;
     lighterAt = now;
-    lighter = internalCall(page, () =>
-      page.screenshot({ type: 'jpeg', quality: options.lightQuality, scale: 'css', caret: 'initial', timeout: 5000 }),
-    )
-      .then(
-        (shot) => {
-          if (closed) return;
-          if (shot.length <= options.maxFrameBytes) return pacer.offer({ data: shot, ...shownSize(shot), at: now });
-          refuse();
-        },
-        () => undefined,
-      )
+    const heavy = last;
+    lighter = takeImage(options.lightQuality)
+      .then((shot) => {
+        if (!shot || closed) return;
+        // Its length is told before `screen`: it is scaled down here, at the lighter quality.
+        const quality = options.lightQuality;
+        const data = shot.fit
+          ? (thumbnailOf(shot.data, { ...shot.fit, quality, maxBytes: Number.POSITIVE_INFINITY })?.data ?? shot.data)
+          : shot.data;
+        if (data.length > options.maxFrameBytes) return refuse();
+        // It stands for the frame too long, which stays the latest: when none goes for it, it is tried again.
+        if (heavy) standsFor.set(data, heavy);
+        pacer.offer({ data, width: shot.width, height: shot.height, at: now });
+      })
       .finally(() => {
         lighter = null;
       });
   };
-  const onFrame = (data: Buffer, width: number, height: number, at: number): void => {
-    if (closed || last?.equals(data)) return;
+  /**
+   * About how long a frame is at the size it goes at: its own length, else, for one that names a smaller size (`fit`),
+   * its share of it by the pixels it keeps. `screen` takes it at the lighter quality where it is too long at the
+   * view's.
+   */
+  const goingLength = (data: Buffer, width: number, height: number, fit?: Size): number => {
+    if (!fit) return data.length;
+    const own = jpegSize(data) ?? { width, height };
+    return Math.round(data.length * Math.min(1, (fit.width * fit.height) / (own.width * own.height)));
+  };
+  /**
+   * A frame of the page: one it `painted` (its screencast's, or the view's timed image of it), else an image taken of
+   * it. One the same as the frame before goes no further, unless none went for that one (`again`).
+   */
+  const onFrame = (data: Buffer, width: number, height: number, at: number, painted = false, fit?: Size): void => {
+    if (closed || (last?.equals(data) && !again)) return;
+    if (painted) {
+      // The frame the screencast paints again as an image of the still page is taken: that image stands for it.
+      if (imaged && paintedLast?.equals(data)) return;
+      imaged = false;
+      paintedLast = data;
+    }
+    again = false;
     last = data;
-    if (data.length > options.maxFrameBytes) return lighten();
+    given++;
+    if (goingLength(data, width, height, fit) > options.maxFrameBytes) return lighten();
     const named = isViewSize(width, height);
-    pacer.offer({ data, width: named ? width : viewport.width, height: named ? height : viewport.height, at });
+    const shown = { width: named ? width : viewport.width, height: named ? height : viewport.height };
+    pacer.offer({ data, ...shown, at, ...(fit ? { fit } : {}) });
+  };
+  /**
+   * Take an image of the page now and give it to the view as a frame the page did not paint, at the size the view asks
+   * of the screencast (`takeImage`). None goes when the page gave the view a frame while it was taken, which is as new
+   * (the screencast paints one as it is taken). False when none could be taken and no frame came meanwhile.
+   */
+  const imageNow = async (): Promise<boolean> => {
+    const at = Date.now();
+    const before = given;
+    const shot = await takeImage(options.quality);
+    if (given !== before) return true;
+    if (!shot) return false;
+    imaged = true;
+    onFrame(shot.data, shot.width, shot.height, at, false, shot.fit);
+    return true;
+  };
+  /**
+   * An image of the page goes `ms` from now unless the page gave the view a frame meanwhile, while the view holds its
+   * screencast: a still page paints none. None goes while one is being taken, which comes as a frame of its own; one
+   * that cannot be taken is tried again `shotMs` later.
+   */
+  const stillLater = (ms: number): void => {
+    if (closed || stills >= STILL_SHOTS) return;
+    if (stillTimer) clearTimeout(stillTimer);
+    const before = given;
+    stillTimer = setTimeout(() => {
+      stillTimer = null;
+      if (closed || shooting || stillShot || given !== before || !options.live()) return;
+      stills++;
+      const taking: Promise<void> = imageNow().then((taken) => {
+        if (stillShot === taking) stillShot = null;
+        if (!taken) stillLater(options.shotMs);
+      });
+      stillShot = taking;
+    }, ms);
+    stillTimer.unref?.();
+  };
+  /**
+   * No frame went for `frame` (`screen` sent none, or why none goes): when it is, or a lighter image stands for, the
+   * latest the page gave, the next
+   * image the same as it goes to `screen` again, and while the view holds the screencast one is taken `shotMs` from
+   * now, `STILL_SHOTS` times at most until a frame the page painted goes. A newer frame goes in its place otherwise.
+   */
+  const dropped = (frame: PageFrame): void => {
+    if (closed || (standsFor.get(frame.data) ?? frame.data) !== last || stills >= STILL_SHOTS) return;
+    again = true;
+    if (shooting) stills++;
+    else stillLater(options.shotMs);
   };
   const screencast = screencastOf(page);
   let end: (() => Promise<unknown>) | null = null;
   let shots: ReturnType<typeof setTimeout> | null = null;
   let shooting = false;
+  /** The timed image on its way. */
+  let timed: Promise<PageImage | null> | null = null;
   const shoot = async (): Promise<void> => {
     shots = null;
     if (closed || page.isClosed()) return;
     const at = Date.now();
-    const shot = await internalCall(page, () =>
-      page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
-    ).catch(() => null);
-    if (shot) {
-      const size = shownSize(shot);
-      onFrame(shot, size.width, size.height, at);
-    }
+    timed = takeImage(options.quality);
+    const shot = await timed;
+    timed = null;
+    if (shot) onFrame(shot.data, shot.width, shot.height, at, true, shot.fit);
     if (!closed) {
       shots = setTimeout(() => void shoot(), options.shotMs);
       shots.unref?.();
@@ -467,6 +610,8 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
   };
   if (typeof screencast?.start === 'function' && !TEST_SCREENCASTS.has(page)) {
     holders.add(holder);
+    // A screencast that paints only as the page changes gives a still page's view no first frame.
+    stillLater(FIRST_FRAME_MS);
     starting = internalCall(page, () =>
       screencast.start!({
         size: options.size(viewport),
@@ -478,7 +623,7 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
             typeof frame.timestamp === 'number' && Number.isFinite(frame.timestamp)
               ? Math.min(frame.timestamp, now) - SCREENCAST_LAG_MS
               : Number.NEGATIVE_INFINITY;
-          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight, at);
+          onFrame(frame.data, frame.viewportWidth, frame.viewportHeight, at, true);
           return acks.next();
         },
       }),
@@ -518,16 +663,12 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       if (closed) return;
       sent = null;
       last = null;
-      const at = Date.now();
-      void internalCall(page, () =>
-        page.screenshot({ type: 'jpeg', quality: options.quality, scale: 'css', caret: 'initial', timeout: 5000 }),
-      ).then(
-        (shot) => {
-          const size = shownSize(shot);
-          onFrame(shot, size.width, size.height, at);
-        },
-        () => undefined,
-      );
+      stills = 0;
+      const taking: Promise<void> = imageNow().then((taken) => {
+        if (refreshing === taking) refreshing = null;
+        if (!taken) stillLater(options.shotMs);
+      });
+      refreshing = taking;
     },
     close: async () => {
       closed = true;
@@ -535,9 +676,11 @@ export async function openPageView(page: Page, options: PageViewOptions): Promis
       acks.close();
       pacer.close();
       if (shots) clearTimeout(shots);
+      if (stillTimer) clearTimeout(stillTimer);
       holders.delete(holder);
-      // A lighter image, and a frame in `screen`, on their way are the view's last calls to the page.
-      await Promise.all([lighter, screened]);
+      // A lighter image, a timed one, an image of a still page or one taken afresh, and a frame in `screen`, on their
+      // way are the view's last calls to the page.
+      await Promise.all([lighter, timed, stillShot, refreshing, screened]);
       const stop = end;
       end = null;
       if (stop && !page.isClosed()) await stop().catch(() => undefined);

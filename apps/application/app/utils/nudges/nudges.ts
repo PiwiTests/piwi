@@ -83,7 +83,7 @@ export const NUDGES: readonly Nudge[] = [
     when: ({ diagnosed, scm }) => diagnosed && describeScmStatus(scm).needsToken,
     offer: { kind: 'guide', guide: 'add-scm-token' },
     title: 'The diagnosis did not see the code changes',
-    body: 'No SCM token is set for this project or the instance, so Piwi could not read the commits behind this failure. The guide shows where the token goes.',
+    body: 'No SCM credential is set for this project or the instance, so Piwi could not read the commits behind this failure. The guide shows where it goes.',
     requires: {},
   },
   {

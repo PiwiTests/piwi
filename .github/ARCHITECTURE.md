@@ -61,9 +61,10 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
     `s3 + postgres`), all four on `main`;
   - the package smoke test: Linux on a pull request, plus Windows, macOS and a Linux leg on the reporter's Playwright
     floor when it changes the packages or their dependencies, and all four on `main`.
-- A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the editor service or core (`runner`)
-  runs the `Piwi Runner` job: the layer's and the app's unit tests, then the host's bundle and the window's static
-  build. Neither the signing nor the installers are built there.
+- A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the run model, the editor service,
+  core or the catalog and text checks of `shared/` (`runner`) runs the `Piwi Runner` job: the layer's and the app's
+  unit tests, the host's bundle and the window's static build, then the built window in French and German
+  (`runner:e2e`). Neither the signing nor the installers are built there.
 - The JetBrains Plugin Verifier runs on two IDEs for a pull request and on four on `main`, where the plugin job also
   writes the Gradle cache.
 - Some jobs run on pull requests only: the extension, VS Code and desktop suites, the docs build, the container image
@@ -73,7 +74,8 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 
 - It measures the pull request's build against its base commit's build. The `build` job caches that build by its sha
   when it runs on `main`. When the base commit has none, the `perf-base` job builds it alongside the pull request's own
-  build, cached for the pull request's runs only.
+  build, cached for the pull request's runs only. Either way `perf-base` hands it to the `measure` jobs as the run's
+  `perf-base-output` artifact, so an eviction of the cache between the jobs fails nothing.
 - The pages are split across two `measure` jobs that run at once. Each measures both builds on its own pages, so every
   comparison is made on one machine. A `report` job joins their results into the job summary and the `perf-results`
   artifact.

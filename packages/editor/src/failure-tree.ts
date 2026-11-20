@@ -11,6 +11,8 @@ import type {
   FailuresResult,
   FailuresRun,
   FailuresView,
+  FailuresViewLink,
+  FailuresViewState,
   FailureTreeIcon,
   FailureTreeNode,
   ProblemKind,
@@ -18,6 +20,7 @@ import type {
   SummaryLine,
   WorkspaceFailure,
 } from './protocol.js';
+import { EDITOR_ACTIONS } from './actions.js';
 
 export const FAILURES_GROUPINGS: readonly FailuresGrouping[] = ['file', 'cluster', 'owner', 'flat'];
 
@@ -473,31 +476,58 @@ function sentence(text: string): string {
  * chosen), and no connection.
  */
 export function failuresView(contexts: ContextViewState[], failing: number): FailuresView {
-  if (failing > 0) return { state: 'failures', message: null };
+  const view = (state: FailuresViewState, message: string | null): FailuresView => ({
+    state,
+    message,
+    links: VIEW_LINKS[state].map(viewLink),
+  });
+  if (failing > 0) return view('failures', null);
   const read = contexts.find((c) => c.connected && c.hasRun);
-  if (read) return { state: 'clear', message: `No failure in the latest run of ${read.branch ?? 'this branch'}.` };
+  if (read) return view('clear', `No failure in the latest run of ${read.branch ?? 'this branch'}.`);
   const unreachable = contexts.find((c) => c.problemKind === 'unreachable');
   if (unreachable) {
-    return {
-      state: 'unreachable',
-      message: `${sentence(unreachable.problem ?? 'The instance does not answer')} Piwi tries again on its own.`,
-    };
+    return view(
+      'unreachable',
+      `${sentence(unreachable.problem ?? 'The instance does not answer')} Piwi tries again on its own.`,
+    );
   }
   const unproven = contexts.find((c) => c.problemKind === 'desktop-unproven');
-  if (unproven)
-    return { state: 'desktop-unproven', message: sentence(unproven.problem ?? 'Restart or update the desktop app') };
-  if (contexts.some((c) => c.loading)) return { state: 'loading', message: 'Piwi is reading the instance…' };
+  if (unproven) return view('desktop-unproven', sentence(unproven.problem ?? 'Restart or update the desktop app'));
+  if (contexts.some((c) => c.loading)) return view('loading', 'Piwi is reading the instance…');
   const idle = contexts.find((c) => c.connected);
   if (idle) {
-    return {
-      state: 'norun',
-      message: idle.baseline
+    return view(
+      'norun',
+      idle.baseline
         ? `Baseline: ${idle.baseline}. Compare with another run.`
         : `No run of ${idle.projectName ?? 'this project'} yet. Run the tests with the Piwi reporter.`,
-    };
+    );
   }
+  return view(
+    'disconnected',
+    'Piwi is not connected to an instance, so it has no run to show. Recording works without one.',
+  );
+}
+
+/**
+ * The actions each state of a failures view links, by VS Code command id: reading the instance again is **Retry** there,
+ * where it answers a failure; every other link is the action catalog's title.
+ */
+const VIEW_LINKS: Record<FailuresViewState, readonly string[]> = {
+  failures: [],
+  clear: ['piwi.refreshRun'],
+  unreachable: ['piwi.refresh', 'piwi.openSettings'],
+  'desktop-unproven': ['piwi.refresh', 'piwi.openLog'],
+  loading: [],
+  norun: ['piwi.compareWith', 'piwi.getStarted'],
+  disconnected: ['piwi.connect', 'piwi.recordFile'],
+};
+
+function viewLink(command: string): FailuresViewLink {
+  const action = EDITOR_ACTIONS.find((a) => a.vscode === command)!;
   return {
-    state: 'disconnected',
-    message: 'Piwi is not connected to an instance, so it has no run to show. Recording works without one.',
+    label: command === 'piwi.refresh' ? 'Retry' : action.title,
+    vscode: command,
+    jetbrains: action.jetbrains![0]!,
   };
 }

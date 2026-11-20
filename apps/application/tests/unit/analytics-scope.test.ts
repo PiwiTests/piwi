@@ -36,6 +36,19 @@ describe('the scope keeps reading today’s URL keys', () => {
     expect(parseAnalyticsScope({}).defaultBranchOnly).toBe(true);
     expect(parseAnalyticsScope({ allBranches: 'true' }).defaultBranchOnly).toBe(false);
   });
+
+  test('without environments the default-environment policy is on, and allEnvironments turns it off', () => {
+    expect(parseAnalyticsScope({}).allEnvironments).toBeUndefined();
+    expect(parseAnalyticsScope({ allEnvironments: 'true' }).allEnvironments).toBe(true);
+    // Picked environments override the policy, which the query then leaves out.
+    const picked = parseAnalyticsScope({ environments: 'staging', allEnvironments: 'true' });
+    expect(picked).toMatchObject({ environments: ['staging'] });
+    expect(picked.allEnvironments).toBeUndefined();
+    expect(analyticsScopeToQuery(parseAnalyticsScope({ allEnvironments: 'true' }))).toMatchObject({
+      allEnvironments: 'true',
+    });
+    expect(queryHasScope({ allEnvironments: 'true' })).toBe(true);
+  });
 });
 
 describe('the new keys', () => {
@@ -144,5 +157,20 @@ describe('the piwi-analytics-scope cookie', () => {
       browsers: 'firefox',
     });
     expect(scopeFromState(stateFromScope(scope))).toEqual(scope);
+    const everyEnvironment = parseAnalyticsScope({ allEnvironments: 'true' });
+    expect(stateFromScope(everyEnvironment).allEnvironments).toBe(true);
+    expect(scopeFromState(stateFromScope(everyEnvironment))).toEqual(everyEnvironment);
+  });
+
+  test('All environments is kept, and an older cookie reads the default environment', () => {
+    expect(decodeScopeCookie(JSON.stringify({ days: 30, allEnvironments: true })).allEnvironments).toBe(true);
+    expect(decodeScopeCookie(JSON.stringify({ days: 30 })).allEnvironments).toBe(false);
+    expect(
+      scopeFromState({ ...DEFAULT_ANALYTICS_SCOPE_STATE, environments: ['prod'], allEnvironments: true }),
+    ).toMatchObject({ environments: ['prod'] });
+    expect(
+      scopeFromState({ ...DEFAULT_ANALYTICS_SCOPE_STATE, environments: ['prod'], allEnvironments: true })
+        .allEnvironments,
+    ).toBeUndefined();
   });
 });

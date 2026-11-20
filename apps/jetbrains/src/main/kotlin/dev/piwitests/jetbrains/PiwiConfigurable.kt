@@ -102,13 +102,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                         .comment("A CI failure or a teammate's never turns it red unless you choose any")
                 }
                 row {
-                    checkBox("Pause the runs Piwi starts at the editor's breakpoints, with the picker")
-                        .bindSelected({ user.breakpoints }, { user.breakpoints = it })
+                    comboBox(Glue.BREAKPOINTS_CHOICES, ChoiceRenderer("breakpoints"))
+                        .label("The runs that pause at the editor's breakpoints, with the picker:", LabelPosition.TOP)
+                        .bindItem({ Glue.breakpointsMode(user.breakpoints) }, { user.breakpoints = it ?: "debug" })
                         .comment(
-                            "A run with a breakpoint in a test or page object pauses before the action on that line, " +
-                                "headless unless the runs start headed: its page shows in the Paused page tab. Needs " +
-                                "@piwitests/reporter 0.48.0 or later, and 0.62.0 or later to stop headless: with an " +
-                                "older reporter, or one whose version Piwi cannot read, the run starts headed",
+                            "Debug with Piwi alone by default, as the IDE's own Run and Debug. A run with a breakpoint in " +
+                                "a test or page object pauses before the action on that line, headless unless the runs " +
+                                "start headed: its page shows in the Paused page tab. Needs @piwitests/reporter 0.48.0 or " +
+                                "later, and 0.62.0 or later to stop headless: with an older reporter, or one whose version " +
+                                "Piwi cannot read, the run starts headed",
                         )
                 }
                 row {
@@ -180,6 +182,15 @@ class PiwiConfigurable(private val project: Project) : BoundConfigurable("Piwi",
                 row {
                     checkBox("Show where a CI run of the branch stands, at the end of each line it runs")
                         .bindSelected({ user.ciPositions }, { user.ciPositions = it })
+                }
+                row {
+                    comboBox(Glue.RUNNING_LINES_CHOICES, ChoiceRenderer("runningLines"))
+                        .label("The line each running test of your run is at:", LabelPosition.TOP)
+                        .bindItem(
+                            { user.runningLines.takeIf { it in Glue.RUNNING_LINES_CHOICES } ?: "all" },
+                            { user.runningLines = it ?: "all" },
+                        )
+                        .comment("Marked with an inlay naming the worker; a worker of an older reporter only while the Worker tab watches it")
                 }
             }
             group(SettingsWords.GROUPS.getValue("agents")) {

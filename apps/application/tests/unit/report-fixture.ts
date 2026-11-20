@@ -22,6 +22,7 @@ export function fixtureBundle(): ReportBundle {
     scopeText: {
       projects: 'All projects',
       branches: 'Each project’s default branch',
+      environments: 'staging, No environment',
       runs: 'Full runs only',
       tests: null,
     },

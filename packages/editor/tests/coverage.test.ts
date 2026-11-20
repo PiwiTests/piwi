@@ -23,6 +23,7 @@ import {
   coverageIndexFor,
   coverageMarks,
   COVERAGE_MARKS_EXPLAINED,
+  coveredFiles,
   coverageVersions,
   gitBlobId,
   mayHaveCoverage,
@@ -33,6 +34,7 @@ import {
 import type { CodeIndex, FileCoverage } from '../src/piwi-client';
 import { startServer } from '../src/server';
 import type {
+  CoverageFilesResult,
   CoverageResult,
   FileSummary,
   RunCommand,
@@ -113,6 +115,7 @@ const CODE_INDEX: CodeIndex = {
     { file: 2, tests: [0], origin: 'server', runtime: 'server', via: 'route' },
     { file: 3, tests: [0], origin: 'client', runtime: 'browser', via: 'coverage' },
   ],
+  routes: [{ file: 2, route: 'GET /api/orders/:id', line: 24, tests: [0] }],
   builtAt: null,
   truncated: false,
 };
@@ -501,6 +504,12 @@ describe('the version the marks come from', () => {
     expect(mayHaveCoverage(older, 'src/Web/Program.cs')).toBe(true);
   });
 
+  test('names the files the tests’ coverage recorded, those of some tests alone, never one reached by route', () => {
+    expect(coveredFiles(CODE_INDEX, null)).toEqual([BASKET_FILE, ORDER_FILE, CART_FILE]);
+    expect(coveredFiles(CODE_INDEX, new Set([12]))).toEqual([BASKET_FILE]);
+    expect(coveredFiles(CODE_INDEX, new Set([99]))).toEqual([]);
+  });
+
   test('is gated by a code index of the branch the coverage is read for only', () => {
     expect(coverageIndexFor(CODE_INDEX, null, null, 'main')).toBe(CODE_INDEX);
     expect(coverageIndexFor(CODE_INDEX, null, 'main', 'main')).toBe(CODE_INDEX);
@@ -625,6 +634,24 @@ describe('coverage in the editor', () => {
     });
   });
 
+  test('puts a lens on each route a file handles that tests called, at its handler’s line', async () => {
+    fs.writeFileSync(
+      path.join(dir, 'src/Web/Program.cs'),
+      Array.from({ length: 30 }, (_, i) => `// ${i + 1}`).join('\n'),
+    );
+    const summary = (await client.sendRequest('piwi/fileSummary', { uri: uri('src/Web/Program.cs') })) as FileSummary;
+    expect(summary.lines).toContainEqual(
+      expect.objectContaining({
+        line: 23,
+        title: expect.stringMatching(/^GET \/api\/orders\/:id · 1 test/),
+        command: expect.objectContaining({
+          title: 'Run the test that calls this route with Piwi',
+          command: 'piwi.runTests',
+        }),
+      }),
+    );
+  });
+
   test('puts a lens on each function that ran, which runs its tests recording the backend’s coverage', async () => {
     const summary = (await client.sendRequest('piwi/fileSummary', { uri: uri(BASKET_FILE) })) as FileSummary;
     expect(summary.file).toMatchObject({
@@ -694,6 +721,53 @@ describe('coverage in the editor', () => {
       `**Piwi coverage** · no test runs this line\n\n${COVERAGE_MARKS_EXPLAINED}`,
     );
     expect(await hover(BASKET_FILE, 0)).toBe('');
+  });
+
+  test('lists the files the coverage names with their marks, those of some tests alone, and the tests behind a line', async () => {
+    const root = ((await client.sendRequest('piwi/status')) as StatusResult).contexts[0]!.root;
+    const all = (await client.sendRequest('piwi/coverageFiles', { root })) as CoverageFilesResult;
+    expect(all.truncated).toBe(false);
+    expect(all.files.find((f) => f.uri === uri(BASKET_FILE))).toMatchObject({
+      state: 'exact',
+      executedLines: 7,
+      executableLines: 8,
+    });
+    // A file reached through the routes its tests call alone has no coverage to show.
+    expect(all.files.map((f) => f.uri)).not.toContain(uri('src/Web/Program.cs'));
+    const removing = (await client.sendRequest('piwi/coverageFiles', { root, testIds: [12] })) as CoverageFilesResult;
+    expect(removing.files.map((f) => f.uri)).toEqual([uri(BASKET_FILE)]);
+    // A file's marks are those of the tests asked about alone: the first test ran four of its eight lines.
+    const adding = (await client.sendRequest('piwi/coverageFiles', { root, testIds: [11] })) as CoverageFilesResult;
+    expect(adding.files.find((f) => f.uri === uri(BASKET_FILE))).toMatchObject({
+      executed: [
+        { start: 7, end: 8, tests: 1 },
+        { start: 12, end: 13, tests: 1 },
+      ],
+      notRun: [
+        { start: 10, end: 10 },
+        { start: 16, end: 18 },
+      ],
+      executedLines: 4,
+      executableLines: 8,
+      label: '4 of 8 lines run by 1 test',
+    });
+    expect(await client.sendRequest('piwi/coverageFiles', { root: '/elsewhere' })).toEqual({
+      files: [],
+      truncated: false,
+    });
+
+    expect(await client.sendRequest('piwi/coverageTests', { uri: uri(BASKET_FILE), line: 7 })).toEqual({
+      args: { uri: uri(BASKET_FILE), root, testIds: [11, 12], coverage: 'server' },
+      count: 2,
+    });
+    expect(await client.sendRequest('piwi/coverageTests', { uri: uri(BASKET_FILE), line: 16 })).toEqual({
+      args: { uri: uri(BASKET_FILE), root, testIds: [12], coverage: 'server' },
+      count: 1,
+    });
+    expect(await client.sendRequest('piwi/coverageTests', { uri: uri(BASKET_FILE), line: 10 })).toEqual({
+      args: null,
+      count: 0,
+    });
   });
 
   test('an edit places the marks through the diff, and marks the lines changed since the coverage run', async () => {

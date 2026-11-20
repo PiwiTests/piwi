@@ -2,12 +2,17 @@ import type { Page } from '@playwright/test';
 import { LatestPacer, fitViewSize } from '@piwitests/core/run-view';
 import { maskSecretFields, type SecretFieldMask } from './live-mask.js';
 import { openPageView, type PageFrame, type PageView } from './page-view.js';
+import { outsideCalls } from './quiet-capture.js';
 
 /**
  * The worker's lane, as every viewer outside the page sees it: the test it runs (Playwright's id), the page that test
- * shows (its `page` fixture's, else the first page the browser opened during it, else the next one still open once
- * that one closes), and the stop it stands at with that stop's page. The page shown is the stop's while the worker
- * stands at one (its own page when the stop names none), else the running test's; none between two tests.
+ * shows, and the stop it stands at with that stop's page. The page shown is the stop's while the worker stands at one
+ * (its own page when the stop names none), else the running test's; none between two tests. A test shows its `page`
+ * fixture's page once it opens; a test without one shows the page its latest call or wait landed on (`laneCalled`),
+ * whichever context it belongs to, and before its first call, or once that page closed, the page the browser opened
+ * last that is still open, in a `beforeAll` or an earlier test included. Only a page the browser opened
+ * (`laneSawPage`) shows. Views open and listeners hear a change outside the Playwright call that caused it
+ * (`outsideCalls`), so a read of theirs is never a part of the test's call.
  *
  * One live view of the page shown (`openPageView`) feeds every sink that subscribes: the editor's views of a stop and
  * of the lane through the run connection (`run-channel.ts`), and the team instance's (`live-view.ts`). Its frames are
@@ -51,7 +56,10 @@ export interface LaneSink {
   spacing?(frame: PageFrame): number;
   /** The longest frame it takes, in bytes. */
   maxFrameBytes: number;
-  /** The quality of the lighter image taken in place of a frame too long, and how often at most. */
+  /**
+   * The quality of the lighter image taken in place of a frame too long, and how often at most; `shotMs` is also how
+   * long a view waits, after a frame that did not go, before it takes an image of a still page.
+   */
   lightQuality: number;
   shotMs: number;
   /**
@@ -88,8 +96,8 @@ interface LaneTest {
   id: string;
   /** The `page` fixture's page, which it shows first. */
   fixture: Page | null;
-  /** The pages the browser opened during it, oldest first. */
-  seen: Page[];
+  /** The page its latest call landed on, among the pages the browser opened. */
+  called: Page | null;
 }
 
 /** The latest frame given, or why none goes. */
@@ -114,6 +122,8 @@ interface Source {
 
 let test: LaneTest | null = null;
 let stop: { id: number; page: Page | null } | null = null;
+/** The pages the browser opened in this worker that may still be open, oldest first. */
+const opened: Page[] = [];
 const subscribers = new Set<Subscriber>();
 /** Who hears the page shown change (`onLanePage`), and the page they heard last. */
 const pageListeners = new Set<() => void>();
@@ -124,7 +134,7 @@ const closingOf = new WeakMap<Page, Promise<void>>();
 
 /** A test with Playwright's id `id` begins: its page shows once known. */
 export function laneTestBegan(id: string): void {
-  test = { id, fixture: null, seen: [] };
+  test = { id, fixture: null, called: null };
   void sync();
   tellPage();
 }
@@ -137,11 +147,33 @@ export function lanePage(page: Page): void {
   tellPage();
 }
 
-/** A page the browser opened: the running test shows it while it shows no other. */
+/**
+ * A page the browser opened, during a test or outside one: a test with no `page` fixture shows it while no call of the
+ * test has landed on a page still open, or once a call lands on it.
+ */
 export function laneSawPage(page: Page): void {
-  if (!test || test.seen.includes(page)) return;
-  test.seen.push(page);
-  if (!source) void sync();
+  if (opened.includes(page)) return;
+  opened.push(page);
+  if (typeof page.once === 'function') {
+    page.once('close', () => {
+      const at = opened.indexOf(page);
+      if (at >= 0) opened.splice(at, 1);
+      tellPage();
+    });
+  }
+  if (!test) return;
+  void sync();
+  tellPage();
+}
+
+/**
+ * A call or a wait of the running test landed on `page`: a test with no `page` fixture shows it, when the browser
+ * opened it.
+ */
+export function laneCalled(page: Page): void {
+  if (!test || test.called === page || !opened.includes(page)) return;
+  test.called = page;
+  void sync();
   tellPage();
 }
 
@@ -183,7 +215,10 @@ export function onLanePage(listener: () => void): () => void {
   return () => pageListeners.delete(listener);
 }
 
-/** Tell the listeners the page shown changed, when it did since they last heard; nothing is read while none listens. */
+/**
+ * Tell the listeners the page shown changed, when it did since they last heard, outside the call that changed it;
+ * nothing is read while none listens.
+ */
 function tellPage(): void {
   if (!pageListeners.size) return;
   let page: Page | null;
@@ -194,7 +229,9 @@ function tellPage(): void {
   }
   if (page === pageTold) return;
   pageTold = page;
-  for (const listener of pageListeners) listener();
+  outsideCalls(() => {
+    for (const listener of pageListeners) listener();
+  });
 }
 
 /**
@@ -220,13 +257,25 @@ function current(kept: Kept): boolean {
   return at.test === (test?.id ?? null) && at.stop === (stop?.id ?? null);
 }
 
-/** The page shown now: the stop's, else the running test's; null between two tests or with none open. */
+/**
+ * The page shown now: the stop's, else the running test's (its `page` fixture's, else the page of its latest call,
+ * else the page the browser opened last); null between two tests or with none open.
+ */
 function lanePageShown(): Page | null {
   const open = (page: Page | null): Page | null => (page && !page.isClosed() ? page : null);
   const own = open(stop?.page ?? null);
   if (own) return own;
   if (!test) return null;
-  return open(test.fixture) ?? test.seen.find((page) => !page.isClosed()) ?? null;
+  return open(test.fixture) ?? open(test.called) ?? lastOpened();
+}
+
+/** The page the browser opened last that is still open; null for none. */
+function lastOpened(): Page | null {
+  for (let at = opened.length - 1; at >= 0; at--) {
+    const page = opened[at]!;
+    if (!page.isClosed()) return page;
+  }
+  return null;
 }
 
 /** A subscriber's pace: the latest frame alone waits, and one of where the lane no longer stands never goes. */
@@ -279,11 +328,7 @@ export function subscribeLane(sink: LaneSink): LaneSubscription {
     },
     refresh: () => {
       // No frame masked before goes: the ones waiting are dropped with the latest kept.
-      for (const subscriber of subscribers) {
-        subscriber.last = null;
-        subscriber.pacer.close();
-        subscriber.pacer = pacerOf(subscriber);
-      }
+      for (const subscriber of subscribers) forgetFrames(subscriber);
       if (source) source.latest = null;
       void source?.view.then((view) => view?.refresh());
     },
@@ -320,18 +365,28 @@ function asked(): Asked {
   };
 }
 
+/** Drop the frames a subscriber kept and the ones waiting to go to it. */
+function forgetFrames(subscriber: Subscriber): void {
+  subscriber.last = null;
+  subscriber.pacer.close();
+  subscriber.pacer = pacerOf(subscriber);
+}
+
 /**
- * Open the view of the page shown for the sinks, close it with none, open it again on another page or ask; settles
- * once the view it closed did.
+ * Open the view of the page shown for the sinks, close it with none, open it again on another page or ask, outside the
+ * call that changed it; settles once the view it closed did. A frame of another page goes to no sink, now or again.
  */
 function sync(): Promise<void> {
   const page = subscribers.size ? lanePageShown() : null;
   const options = page ? asked() : null;
   const key = options ? JSON.stringify(options) : '';
   if (source && source.page === page && source.asked === key) return Promise.resolve();
-  const closed = source ? close(source) : Promise.resolve();
-  source = page && options ? open(page, options, key) : null;
-  return closed;
+  if (source && source.page !== page) for (const subscriber of subscribers) forgetFrames(subscriber);
+  return outsideCalls(() => {
+    const closed = source ? close(source) : Promise.resolve();
+    source = page && options ? open(page, options, key) : null;
+    return closed;
+  });
 }
 
 function close(shown: Source): Promise<void> {

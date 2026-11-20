@@ -1,6 +1,8 @@
 /**
- * The Testing view's Piwi tests (`piwi.testExplorer`): the specs the catalog knows, as they stand, each test with its
- * latest result as the service reads it (`piwi/testItems`), published as a test run whenever the latest run changes;
+ * The Testing view's Piwi tests (`piwi.testExplorer`): the tree the service builds (`piwi/testItems`), from the tests
+ * Playwright lists for each config and the specs as they stand, each test with its latest result, published as a test
+ * run whenever the latest run changes, and the tree a listing changes as the service pushes it
+ * (`piwi/testItemsChanged`);
  * a run in progress followed as a test run of its own, whose output says what each worker runs and where it stops; and
  * two run profiles, **Run with Piwi** and **Verify ×3 with Piwi**, that run tests as every other run of the extension
  * does, through the command the service builds.
@@ -8,28 +10,40 @@
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import {
+  COVERAGE_FILES_REQUEST,
+  REFRESH_REQUEST,
   TEST_ITEMS_REQUEST,
+  TEST_RUNS_REQUEST,
+  type CoverageFilesParams,
+  type CoverageFilesResult,
+  type CoverageResult,
   type LiveRun,
   type LiveTestStatus,
   type RunCommand,
   type RunEnded,
   type RunSession,
+  type RunTest,
+  type RunTestEvent,
   type RunStatusResult,
   type RunTestsArgs,
   type TestItemsParams,
   type TestItemsResult,
+  type TestRunsParams,
+  type TestTreeNode,
 } from '@piwitests/editor/protocol';
-import { sessionLines, testsBegun } from './run-control';
+import { attemptOutcome, combinedOutcome, sessionLines, testsBegun } from './run-control';
 import {
+  RUNNABLE_TAG,
   SPEC_FILE,
   VERIFY_REPEAT,
   liveRunName,
   resultsKey,
   resultsRunName,
+  testCoverageOf,
   testItemTags,
   testOutcome,
-  testRunsOf,
   testTree,
+  treeHoldsSpec,
   unfollowedOutcome,
   withSpec,
   type TestNode,
@@ -43,6 +57,23 @@ const RUN_FOLLOW_WAIT_MS = 15_000;
 const SPEC_EDIT_MS = 300;
 /** The type of a test run's task (`taskDefinitions` in `package.json`), told apart by its ref. */
 const RUN_TASK_TYPE = 'piwi';
+
+/** The tag of every item a run takes: the profiles run only those (`TestRunProfile.tag`). */
+const RUNNABLE = new vscode.TestTag(RUNNABLE_TAG);
+
+/** A file with no coverage, for a coverage view entry whose answer is no longer held. */
+const EMPTY_COVERAGE: CoverageResult = {
+  uri: '',
+  state: 'none',
+  executed: [],
+  notRun: [],
+  changed: [],
+  tests: 0,
+  executedLines: 0,
+  executableLines: null,
+  blob: null,
+  label: null,
+};
 
 /** A command a run profile started: its config, its ref, and how far it got. */
 interface ProfilePart {
@@ -64,9 +95,17 @@ interface ProfileRun {
   /** The tests it runs, and the result each was last shown with. */
   tests: Map<vscode.TestItem, TreeTest>;
   shown: Set<vscode.TestItem>;
+  /** Each test's last attempt in each Playwright project, as its workers ended them (`piwi/runTest`). */
+  attempts: Map<vscode.TestItem, Map<string, TestOutcome>>;
   parts: ProfilePart[];
   /** While its commands are being started: it does not end before the last one started. */
   starting: boolean;
+  /** A run of the Coverage profile: before it ends, the coverage of what its tests reach shows in the coverage view. */
+  coverage: boolean;
+  /** Its test run ended: once, by its last command or by Stop while its coverage was read. */
+  ended: boolean;
+  /** Stop was asked. */
+  cancelled: () => boolean;
 }
 
 /** The run in progress of a Playwright config, as its own test run, or as the one of the profile that started it. */
@@ -76,6 +115,10 @@ interface Followed {
   profile: ProfileRun | null;
   /** The last result of each test the run began or ended, by its id. */
   results: Map<number, LiveTestStatus>;
+  /** What the instance said of each test that may be stuck while it runs (`LiveTest.stuck`), by its id. */
+  stuck: Map<number, string>;
+  /** The stuck words each item was told in the run's output, once each. */
+  toldStuck: Map<vscode.TestItem, string>;
   /** The state each item was last shown in. */
   shown: Map<vscode.TestItem, string>;
   /** The editor's own run: its tests show as running; another run's show their results alone. */
@@ -100,15 +143,23 @@ export class TestExplorer implements vscode.Disposable {
   private readonly disposables: vscode.Disposable[] = [];
   /** The service's last answer, which a spec's own answer replaces in place. */
   private answer: TestItemsResult = { contexts: [] };
+  /** The test each worker of a run began last, by ref and worker, which its `test-end` ends. */
+  private readonly begun = new Map<string, RunTest>();
   /** Each test's item and what the service says of it, and the items of each test the catalog knows, by its id. */
   private readonly testOf = new Map<vscode.TestItem, TreeTest>();
   private byCase = new Map<number, vscode.TestItem[]>();
+  /** Each test's item, by Playwright's id of the test in each of its projects. */
+  private byPlaywright = new Map<string, vscode.TestItem>();
   /** The result each test was last shown with. */
   private readonly results = new Map<string, Shown>();
   private runs: RunStatusResult | null = null;
   /** What the published results stand for (`resultsKey`); null before the first. */
   private published: string | null = null;
   private readonly profiles = new Set<ProfileRun>();
+  /** The Coverage profile runs whose coverage is being read, after their last command. */
+  private readonly reading = new Set<ProfileRun>();
+  /** The `piwi/coverageFiles` answer each file of the coverage view stands for. */
+  private readonly coverageOf = new WeakMap<vscode.FileCoverage, CoverageResult>();
   /** The exit codes of commands that ended while a profile run was starting them, by ref, until it takes them. */
   private readonly endedEarly = new Map<string, number | null>();
   private readonly followed = new Map<string, Followed>();
@@ -123,19 +174,48 @@ export class TestExplorer implements vscode.Disposable {
     private readonly lc: LanguageClient,
     private readonly runTests: (args: RunTestsArgs) => Promise<RunCommand | null>,
   ) {
-    this.controller.refreshHandler = () => this.read().then(() => this.publish());
-    this.controller.createRunProfile('Run with Piwi', vscode.TestRunProfileKind.Run, (request, token) =>
-      this.runProfile(request, token),
+    // Refresh lists each config again (`piwi/refresh`), then reads the tree, which the listings push as they end.
+    this.controller.refreshHandler = () =>
+      this.lc
+        .sendRequest(REFRESH_REQUEST)
+        .catch(() => null)
+        .then(() => this.read())
+        .then(() => this.publish());
+    this.controller.createRunProfile(
+      'Run with Piwi',
+      vscode.TestRunProfileKind.Run,
+      (request, token) => this.runProfile(request, token),
+      undefined,
+      RUNNABLE,
     );
     // Debug with Piwi: headed, each failure held at its line, Piwi's run control rather than a debug session.
-    this.controller.createRunProfile('Debug with Piwi', vscode.TestRunProfileKind.Debug, (request, token) =>
-      this.runProfile(request, token, undefined, true),
+    this.controller.createRunProfile(
+      'Debug with Piwi',
+      vscode.TestRunProfileKind.Debug,
+      (request, token) => this.runProfile(request, token, undefined, true),
+      undefined,
+      RUNNABLE,
     );
+    // Coverage with Piwi: the run, then the coverage Piwi holds of the files its tests reach, in the coverage view.
+    const coverage = this.controller.createRunProfile(
+      'Run with Piwi',
+      vscode.TestRunProfileKind.Coverage,
+      (request, token) => this.runProfile(request, token, undefined, false, true),
+      undefined,
+      RUNNABLE,
+    );
+    coverage.loadDetailedCoverage = (_run, file) =>
+      Promise.resolve(
+        testCoverageOf(this.coverageOf.get(file) ?? EMPTY_COVERAGE).spans.map(
+          (s) => new vscode.StatementCoverage(s.executed, new vscode.Range(s.start, 0, s.end, Number.MAX_SAFE_INTEGER)),
+        ),
+      );
     this.controller.createRunProfile(
       `Verify ×${VERIFY_REPEAT} with Piwi`,
       vscode.TestRunProfileKind.Run,
       (request, token) => this.runProfile(request, token, VERIFY_REPEAT),
       false,
+      RUNNABLE,
     );
     this.disposables.push(
       this.controller,
@@ -183,7 +263,11 @@ export class TestExplorer implements vscode.Disposable {
       }
       if (!c.live) continue;
       followed ??= this.follow(c.root, c.live);
-      for (const t of c.liveTests ?? []) followed.results.set(t.testCaseId, t.status);
+      followed.stuck.clear();
+      for (const t of c.liveTests ?? []) {
+        followed.results.set(t.testCaseId, t.status);
+        if (t.stuck) followed.stuck.set(t.testCaseId, t.stuck);
+      }
       this.progress(followed);
     }
     if (!ended.length && !full && resultsKey(runs) === this.published) return;
@@ -193,6 +277,18 @@ export class TestExplorer implements vscode.Disposable {
       if (ended.length && !full) this.published = resultsKey(this.runs);
       else this.publish();
     });
+  }
+
+  /**
+   * The service pushed the whole tree, which a listing changed (`piwi/testItemsChanged`): drawn in turn with the reads,
+   * the results published again when it made an item anew.
+   */
+  itemsChanged(answer: TestItemsResult): void {
+    this.chain = this.chain
+      .then(() => {
+        if (this.draw(asEditorUris(answer))) this.publish();
+      })
+      .catch(drawFailed);
   }
 
   /** A test run's task ended, with its exit code: the profile run that started it settles once its run is read. */
@@ -260,8 +356,9 @@ export class TestExplorer implements vscode.Disposable {
     for (const followed of this.followed.values()) if (!followed.profile) followed.run.end();
     for (const profile of this.profiles) {
       for (const part of profile.parts) if (part.timer) clearTimeout(part.timer);
-      profile.run.end();
+      this.endProfile(profile);
     }
+    for (const profile of this.reading) this.endProfile(profile);
     this.followed.clear();
     this.profiles.clear();
     for (const d of this.disposables) d.dispose();
@@ -304,7 +401,7 @@ export class TestExplorer implements vscode.Disposable {
 
   /** Whether the tree holds a spec. */
   private holds(uri: string): boolean {
-    return this.answer.contexts.some((c) => c.specs.some((s) => s.uri === uri));
+    return treeHoldsSpec(this.answer, uri);
   }
 
   /**
@@ -316,6 +413,7 @@ export class TestExplorer implements vscode.Disposable {
     this.answer = answer;
     this.testOf.clear();
     this.byCase = new Map();
+    this.byPlaywright = new Map();
     const made = { result: false };
     this.sync(this.controller.items, testTree(answer), made);
     return made.result;
@@ -331,7 +429,11 @@ export class TestExplorer implements vscode.Disposable {
       }
       item.label = node.label;
       item.sortText = node.sortText;
-      item.tags = testItemTags(node.test).map((tag) => new vscode.TestTag(tag));
+      item.tags = [
+        ...testItemTags(node.test).map((tag) => new vscode.TestTag(tag)),
+        ...(node.runnable ? [RUNNABLE] : []),
+      ];
+      item.error = node.error ?? undefined;
       // To the end of the call's last line, so the cursor anywhere in the test is in it.
       item.range = node.range ? new vscode.Range(node.range.start, 0, node.range.end, 10_000) : undefined;
       if (node.test) {
@@ -339,6 +441,7 @@ export class TestExplorer implements vscode.Disposable {
         if (node.test.testCaseId !== null) {
           this.byCase.set(node.test.testCaseId, [...(this.byCase.get(node.test.testCaseId) ?? []), item]);
         }
+        for (const p of node.test.playwright) this.byPlaywright.set(p.id, item);
       }
       this.sync(item.children, node.children, made);
       return item;
@@ -405,6 +508,8 @@ export class TestExplorer implements vscode.Disposable {
       run,
       profile,
       results: new Map(),
+      stuck: new Map(),
+      toldStuck: new Map(),
       shown: new Map(),
       own: live.own,
       ref: live.ref ?? null,
@@ -429,8 +534,11 @@ export class TestExplorer implements vscode.Disposable {
     // A profile run's tests show running as their workers begin them, an instance or not.
     const profile = [...this.profiles].find((p) => p.run === run);
     for (const begun of profile ? testsBegun(before, session) : []) {
-      const item = this.itemAt(begun.uri, begun.line);
-      if (item && profile!.tests.has(item) && !profile!.shown.has(item)) run.started(item);
+      const item = this.itemOf(begun);
+      // A test shown from its workers' events runs again on a retry, or in another project.
+      if (item && profile!.tests.has(item) && (!profile!.shown.has(item) || profile!.attempts.has(item))) {
+        run.started(item);
+      }
     }
     for (const line of sessionLines(before, session)) {
       const at = line.at
@@ -440,9 +548,39 @@ export class TestExplorer implements vscode.Disposable {
     }
   }
 
+  /**
+   * A worker of a run began or ended a test (`piwi/runTest`): a profile run shows each attempt's result as it ends, from
+   * the run's own events, whether an instance follows the run or not (`attemptOutcome`). A test the run of an instance
+   * shows later takes that result instead.
+   */
+  testEvent(event: RunTestEvent): void {
+    if (this.disposed) return;
+    const key = `${event.ref}\n${event.worker}`;
+    if (event.type === 'test-begin') {
+      if (event.test) this.begun.set(key, event.test);
+      return;
+    }
+    const test = event.test ?? this.begun.get(key);
+    this.begun.delete(key);
+    const profile = [...this.profiles].find((p) => p.parts.some((part) => part.ref === event.ref));
+    if (!test || !profile) return;
+    const item = this.itemOf(test);
+    const outcome = attemptOutcome(event.status, test, event.ok);
+    if (!item || !outcome || !profile.tests.has(item)) return;
+    // Each project's last attempt counts: the test fails when one of them failed (`combinedOutcome`).
+    const projects = profile.attempts.get(item) ?? profile.attempts.set(item, new Map()).get(item)!;
+    projects.set(test.project, outcome);
+    this.show(profile.run, item, combinedOutcome([...projects.values()]));
+    // A test that runs in several projects shows each project's result on its node too.
+    const project = item.children.get(`${item.id}\x1d${test.project}`);
+    if (project) this.show(profile.run, project, outcome);
+    profile.shown.add(item);
+  }
+
   /** The service stopped: its runs' sessions ended with it, and a rerun of a ref starts anew. */
   sessionsCleared(): void {
     this.sessions.clear();
+    this.begun.clear();
   }
 
   /** The test run that follows the run of `ref`: a profile run's command, else a run in progress followed. */
@@ -450,6 +588,14 @@ export class TestExplorer implements vscode.Disposable {
     for (const profile of this.profiles) if (profile.parts.some((p) => p.ref === ref)) return profile.run;
     for (const followed of this.followed.values()) if (followed.ref === ref) return followed.run;
     return null;
+  }
+
+  /**
+   * The item of a test a run's worker runs: by Playwright's id, which the listing gives; else the test whose call holds
+   * its line.
+   */
+  private itemOf(test: Pick<RunTest, 'id' | 'uri' | 'line'>): vscode.TestItem | undefined {
+    return this.byPlaywright.get(test.id) ?? this.itemAt(test.uri, test.line);
   }
 
   /** The test whose `test(…)` call holds the 0-based `line` of the spec at `uri`. */
@@ -475,6 +621,21 @@ export class TestExplorer implements vscode.Disposable {
             ? { state: 'failed' as const, message: `Failed in run #${followed.runId}.`, line: null }
             : testOutcome(status, null);
         if (outcome) this.show(followed.run, item, outcome);
+      }
+    }
+    // A test of the editor's own run that may be stuck says so in the run's output, at its line, once.
+    if (!followed.own) return;
+    // A test no longer stuck may be told again, once its next attempt is.
+    for (const item of followed.toldStuck.keys()) {
+      if (!followed.stuck.has(this.testOf.get(item)?.testCaseId ?? -1)) followed.toldStuck.delete(item);
+    }
+    for (const [id, words] of followed.stuck) {
+      for (const item of this.byCase.get(id) ?? []) {
+        if (followed.profile && !followed.profile.tests.has(item)) continue;
+        if (followed.toldStuck.get(item) === words) continue;
+        followed.toldStuck.set(item, words);
+        const at = item.uri && item.range ? new vscode.Location(item.uri, item.range.start) : undefined;
+        followed.run.appendOutput(`${item.label}: ${words}, in run #${followed.runId}\r\n`, at, item);
       }
     }
   }
@@ -518,40 +679,126 @@ export class TestExplorer implements vscode.Disposable {
         profile.run.errored(item, new vscode.TestMessage(outcome.message));
       }
     }
+    if (!profile.coverage) {
+      this.endProfile(profile);
+      return;
+    }
+    this.reading.add(profile);
+    void this.showCoverage(profile).finally(() => {
+      this.reading.delete(profile);
+      this.endProfile(profile);
+    });
+  }
+
+  /** End a profile run's test run, once. */
+  private endProfile(profile: ProfileRun): void {
+    if (profile.ended) return;
+    profile.ended = true;
     profile.run.end();
   }
 
   /**
-   * Run the tests a request names, one command per Playwright config, as every test run of the extension (the
-   * breakpoints included): its test run shows them queued, then the run Piwi follows for each command.
+   * The coverage Piwi holds of the files a Coverage profile run's tests reach, per Playwright config, as those tests
+   * recorded it, in its test run; a test the instance does not know yet is said to have none.
+   */
+  private async showCoverage(profile: ProfileRun): Promise<void> {
+    const byRoot = new Map<string, number[]>();
+    let unknown = 0;
+    for (const test of profile.tests.values()) {
+      if (test.testCaseId === null) unknown++;
+      else byRoot.set(test.root, [...(byRoot.get(test.root) ?? []), test.testCaseId]);
+    }
+    if (unknown) {
+      profile.run.appendOutput(
+        `Piwi: no coverage of ${unknown === 1 ? '1 test' : `${unknown} tests`} the instance does not know yet.\r\n`,
+      );
+    }
+    for (const [root, testIds] of byRoot) {
+      if (profile.cancelled()) return;
+      const params: CoverageFilesParams = { root, testIds };
+      const answer = await this.lc.sendRequest<CoverageFilesResult>(COVERAGE_FILES_REQUEST, params).catch(() => null);
+      if (profile.ended) return;
+      for (const result of answer?.files ?? []) {
+        const { count } = testCoverageOf(result);
+        const file = new vscode.FileCoverage(
+          vscode.Uri.parse(result.uri),
+          new vscode.TestCoverageCount(count.covered, count.total),
+        );
+        this.coverageOf.set(file, result);
+        profile.run.addCoverage(file);
+      }
+      if (answer?.truncated) profile.run.appendOutput(`Piwi: the coverage view shows the first files of ${root}.\r\n`);
+    }
+  }
+
+  /**
+   * Run the nodes a request names, each by the narrowest filter Playwright takes for it, as the service builds the runs
+   * (`piwi/testRuns`), one command per config and set of projects, as every test run of the extension (the
+   * breakpoints included): its test run shows their tests queued, then the run Piwi follows for each command.
    */
   private async runProfile(
     request: vscode.TestRunRequest,
     token: vscode.CancellationToken,
     repeat?: number,
     debug = false,
+    coverage = false,
   ) {
+    const runnable = (item: vscode.TestItem) => item.tags.some((t) => t.id === RUNNABLE_TAG);
     const excluded = new Set(request.exclude ?? []);
     const picked = new Map<vscode.TestItem, TreeTest>();
     const visit = (item: vscode.TestItem) => {
-      if (excluded.has(item)) return;
+      if (excluded.has(item) || !runnable(item)) return;
       const test = this.testOf.get(item);
+      const parent = item.parent ? this.testOf.get(item.parent) : undefined;
       if (test) picked.set(item, test);
+      // A project's node: its test shows the result.
+      else if (parent && item.parent) picked.set(item.parent, parent);
       else item.children.forEach(visit);
     };
-    if (request.include) request.include.forEach(visit);
-    else this.controller.items.forEach(visit);
+    const roots: vscode.TestItem[] = [];
+    if (request.include) roots.push(...request.include);
+    else this.controller.items.forEach((item) => roots.push(item));
+    roots.forEach(visit);
     const run = this.controller.createTestRun(request, repeat ? `Piwi: verify ×${repeat}` : 'Piwi', false);
     if (!picked.size) {
       run.end();
       return;
     }
     for (const item of picked.keys()) run.enqueued(item);
-    const profile: ProfileRun = { run, tests: picked, shown: new Set(), parts: [], starting: true };
+    const profile: ProfileRun = {
+      run,
+      tests: picked,
+      shown: new Set(),
+      attempts: new Map(),
+      parts: [],
+      starting: true,
+      coverage,
+      ended: false,
+      cancelled: () => token.isCancellationRequested,
+    };
     // Followed from the start: a command's run, or its end, may come while the next command starts.
     this.profiles.add(profile);
     token.onCancellationRequested(() => this.cancelProfile(profile));
-    for (const args of testRunsOf([...picked.values()], repeat, debug)) {
+    const params: TestRunsParams = {
+      nodes: roots.filter(runnable).map((item) => item.id),
+      exclude: [...excluded].map((item) => item.id),
+      ...(repeat ? { repeat } : {}),
+      ...(debug ? { debug: true } : {}),
+    };
+    const runs = await this.lc.sendRequest<RunTestsArgs[]>(TEST_RUNS_REQUEST, params).catch(() => null);
+    if (!runs?.length) {
+      const message = runs
+        ? 'None of these tests can run from this checkout: read the tests again, or run them from their spec.'
+        : 'Piwi could not build the commands that run these tests.';
+      for (const item of picked.keys()) {
+        this.results.set(item.id, { state: 'errored', message });
+        run.errored(item, new vscode.TestMessage(message));
+      }
+      this.profiles.delete(profile);
+      this.endProfile(profile);
+      return;
+    }
+    for (const args of runs) {
       if (token.isCancellationRequested) break;
       const part: ProfilePart = {
         root: args.root!,
@@ -598,13 +845,15 @@ export class TestExplorer implements vscode.Disposable {
    * for skipped. A run its command started may go on reaching the instance; the published results show it.
    */
   private cancelProfile(profile: ProfileRun): void {
+    // Stopped while its coverage is read: it ends now, without it.
+    if (this.reading.has(profile)) return this.endProfile(profile);
     if (!this.profiles.has(profile)) return;
     this.terminate(profile.parts.flatMap((p) => (p.ref ? [p.ref] : [])));
     this.profiles.delete(profile);
     for (const part of profile.parts) if (part.timer) clearTimeout(part.timer);
     for (const followed of this.followed.values()) if (followed.profile === profile) followed.profile = null;
     for (const item of profile.tests.keys()) if (!profile.shown.has(item)) profile.run.skipped(item);
-    profile.run.end();
+    this.endProfile(profile);
   }
 
   /** Terminate the tasks of these commands. */
@@ -621,12 +870,14 @@ export class TestExplorer implements vscode.Disposable {
  * them with: the service spells them as Node does.
  */
 function asEditorUris(answer: TestItemsResult): TestItemsResult {
-  return {
-    contexts: answer.contexts.map((c) => ({
-      ...c,
-      specs: c.specs.map((s) => ({ ...s, uri: vscode.Uri.parse(s.uri).toString() })),
-    })),
-  };
+  const spelled = (uri: string) => (uri ? vscode.Uri.parse(uri).toString() : uri);
+  const node = (n: TestTreeNode): TestTreeNode => ({
+    ...n,
+    uri: n.uri === null ? null : spelled(n.uri),
+    test: n.test ? { ...n.test, uri: spelled(n.test.uri) } : null,
+    children: n.children.map(node),
+  });
+  return { contexts: answer.contexts.map((c) => ({ ...c, nodes: c.nodes.map(node) })) };
 }
 
 /** A tree that could not be drawn stays as it was; the reads after it go on. */

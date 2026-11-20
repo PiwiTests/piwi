@@ -8,6 +8,7 @@ import { inArray } from 'drizzle-orm';
 import { projects } from '../../server/database/schema';
 import type { DrizzleDB } from '../handlers/db';
 import { analyticsScopeToQuery, hasTestFilter, type AnalyticsScope } from '../analytics/scope';
+import { NO_ENVIRONMENT_FILTER } from '../environments';
 import { getMetric, type MetricId } from '../analytics/metrics';
 import {
   applyWidgetScope,
@@ -100,6 +101,15 @@ async function scopeText(
       : policy.kind === 'any'
         ? s.labels.allBranches
         : s.labels.defaultBranch;
+  const environmentPolicy = ctx.environmentPolicy;
+  const environments =
+    environmentPolicy.kind === 'list'
+      ? environmentPolicy.environments
+          .map((name) => (name === NO_ENVIRONMENT_FILTER ? s.labels.noEnvironment : name))
+          .join(', ')
+      : environmentPolicy.kind === 'any'
+        ? s.labels.allEnvironments
+        : s.labels.defaultEnvironment;
   const tests: string[] = [];
   if (scope.selection) tests.push(scope.selection);
   if (scope.tests?.tags?.length) tests.push(scope.tests.tags.map((t) => `@${t}`).join(' '));
@@ -108,6 +118,7 @@ async function scopeText(
   return {
     projects: projectsText,
     branches,
+    environments,
     runs: scope.fullRunsOnly ? s.labels.fullRunsOnly : s.labels.allRuns,
     tests: hasTestFilter(scope) ? tests.join(' · ') || s.labels.testFilter : null,
   };

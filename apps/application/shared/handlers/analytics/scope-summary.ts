@@ -1,11 +1,19 @@
-import { and, desc, gte, inArray, isNull, lt, or, sql } from 'drizzle-orm';
-import { markers, projects, testRuns, testRunsCases, testSelections } from '../../../server/database/schema';
+import { and, desc, eq, gte, inArray, lt, sql } from 'drizzle-orm';
+import {
+  environments,
+  markers,
+  projects,
+  testRuns,
+  testRunsCases,
+  testSelections,
+} from '../../../server/database/schema';
 import type { DrizzleDB } from '../db';
 import type { AnalyticsScope } from '../../analytics/scope';
 import type { AnalyticsMarker, AnalyticsScopeSummary } from '../../analytics/types';
 import { BUILTIN_SELECTIONS } from '../../selection/builtins';
 import { contextRunConditions, dayRange, getAnalyticsContext, type ProjectAccess } from './common';
 import { firstRollupDay } from './rollups';
+import { environmentPolicyMarkerCondition } from './environment-policy';
 
 /** Categories drawn on a cross-project trend; with one project in scope every marker is drawn. */
 const CROSS_PROJECT_MARKER_CATEGORIES = ['release', 'infra', 'incident'];
@@ -46,6 +54,9 @@ export async function getAnalyticsScopeSummary(
     description: markers.description,
     category: markers.category,
     environment: markers.environment,
+    environmentId: markers.environmentId,
+    environmentName: environments.name,
+    commit: markers.commit,
     source: markers.source,
     runId: markers.runId,
     createdAt: markers.createdAt,
@@ -58,9 +69,9 @@ export async function getAnalyticsScopeSummary(
     projectFilter(markers.projectId),
   ];
   if (!singleProject) inPeriodConditions.push(inArray(markers.category, CROSS_PROJECT_MARKER_CATEGORIES));
-  if (scope.environments && scope.environments.length > 0) {
-    inPeriodConditions.push(or(isNull(markers.environment), inArray(markers.environment, scope.environments)));
-  }
+  // A marker counts under the environments the scope reads, in its own project, through its environment's key or its
+  // label; one of every environment always counts.
+  inPeriodConditions.push(environmentPolicyMarkerCondition(ctx.environmentPolicy) ?? undefined);
 
   const [periodMarkers, anchors, selectionRows, browserRows, firstDay] = await Promise.all([
     none
@@ -68,6 +79,7 @@ export async function getAnalyticsScopeSummary(
       : db
           .select(markerFields)
           .from(markers)
+          .leftJoin(environments, eq(environments.id, markers.environmentId))
           .where(and(...inPeriodConditions))
           .orderBy(markers.occurredAt),
     none
@@ -75,6 +87,7 @@ export async function getAnalyticsScopeSummary(
       : db
           .select(markerFields)
           .from(markers)
+          .leftJoin(environments, eq(environments.id, markers.environmentId))
           .where(projectFilter(markers.projectId))
           .orderBy(desc(markers.occurredAt))
           .limit(ANCHOR_LIMIT),

@@ -39,7 +39,7 @@ export type FeatureNeed =
 export const FEATURE_NEED_LABELS: Record<FeatureNeed, string> = {
   fixtures: 'capture fixtures',
   llm: 'an AI key',
-  scm: 'an SCM token',
+  scm: 'an SCM credential',
   backend: 'a backend integration',
   desktop: 'the desktop app',
   extension: 'the browser extension',
@@ -505,6 +505,31 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/change-impact',
       },
       {
+        title: 'Run variables',
+        summary:
+          'Environment variables a project sets on every run Piwi starts for it and at the start of every command it gives to copy: the tenant one app serves several projects from.',
+        needs: [],
+        where: 'Project → Settings → Run variables',
+        doc: 'features/run-variables',
+      },
+      {
+        title: 'Environments',
+        summary:
+          'The deployments a project’s tests run against (Local, Staging, Production), kept as records: each run’s label resolves to one, and a run Piwi starts for one gets its run variables.',
+        needs: [],
+        where: 'Project → Settings → Environments',
+        doc: 'features/environments',
+      },
+      {
+        title: 'Deployed environments',
+        summary:
+          'For a run against a deployed environment, the application’s commit it ran against, from its server or its deploy markers: the Changes tab, suspect lines and the AI diagnosis read its changes, and a failure cluster names its first failing deploy.',
+        needs: [],
+        where: 'Test run header → Application; Test run → Changes; failure pages; Project → Settings → Environments',
+        doc: 'features/deployed-environments',
+        parent: 'Environments',
+      },
+      {
         title: 'Reuse forecast',
         summary:
           'How much recent test time re-ran code that had already passed unchanged, from recorded coverage, and the tests that failed with their code unchanged.',
@@ -695,6 +720,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'Run and debug',
       },
       {
+        title: 'Test card',
+        summary:
+          'Hover a test in VS Code or click its result in a JetBrains IDE: its latest runs as a strip, each linked to its run, how many passed, its median duration, its last failure, its owner, tags and quarantine.',
+        needs: ['editor'],
+        where: "The test's hover in VS Code; a click on its result icon in a JetBrains IDE",
+        doc: 'features/editor-test-card',
+        part: 'Run and debug',
+      },
+      {
         title: "The editor's status bar",
         summary:
           "The Piwi item in VS Code's or a JetBrains IDE's status bar: the latest run of your branch or the run in progress, for the config of the file you edit, red only for a new failure a run you started from the editor produced.",
@@ -706,7 +740,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Runs started outside Piwi',
         summary:
-          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it stops at its breakpoints and takes its controls, as a run Piwi started does.",
+          "A Playwright run you start yourself, in a terminal or with a JetBrains IDE's own Run, in a folder of your editor's workspace, follows that editor window: it takes its controls as a run Piwi started does, and its breakpoints with piwi.breakpoints set to Every run.",
         needs: ['fixtures'],
         where:
           "npx playwright test in a terminal of the workspace, or a JetBrains IDE's gutter Run and Playwright run configurations; PIWI_EDITOR=off runs it alone",
@@ -716,7 +750,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Breakpoints in the browser',
         summary:
-          "Set a breakpoint in VS Code or a JetBrains IDE: the next run Piwi starts pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
+          "Set a breakpoint in VS Code or a JetBrains IDE: the next test you debug with Piwi pauses there in a headed browser, with Piwi's bar to resume, step, or pick a locator that replaces the one on that line.",
         needs: ['fixtures', 'editor'],
         where: "The editor's breakpoints; piwi.breakpoints, or Settings → Tools → Piwi in a JetBrains IDE",
         doc: 'features/editor-breakpoints',
@@ -797,7 +831,8 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
     features: [
       {
         title: 'Browser extension',
-        summary: 'Record actions, build and lint locators, and copy context for an agent, straight from the page.',
+        summary:
+          'Record tests and bug reports, build and lint locators, and copy context for an agent, straight from the page.',
         needs: ['extension'],
         where: 'Browser extension',
         doc: 'features/extension',
@@ -830,11 +865,11 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'On the page',
       },
       {
-        title: 'Record actions',
+        title: 'Record a test',
         summary:
-          'Clicks and fills across a site recorded into a runnable Playwright spec, paused, titled and replayed before you export it.',
+          'Clicks and fills across a site recorded into a runnable Playwright test, with checks of what the page shows and its evidence, paused, titled and replayed before you copy it.',
         needs: ['extension'],
-        where: 'Browser extension → Record actions',
+        where: 'Browser extension → Record',
         doc: 'features/record-actions',
         part: 'On the page',
       },
@@ -842,7 +877,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         title: 'Lint overlay',
         summary: 'The buttons, links and fields of a page no stable locator finds alone, each with the test id to add.',
         needs: ['extension'],
-        where: 'Browser extension → More tools → Lint overlay',
+        where: 'Browser extension → Pick → Lint overlay',
         doc: 'features/lint-overlay',
         part: 'On the page',
       },
@@ -851,7 +886,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           'On a live page, the elements your tests reach and through which tests, the buttons, links and fields none reaches, and the brittle locators to replace.',
         needs: ['extension'],
-        where: 'Browser extension → Tested elements',
+        where: 'Browser extension → Tests → Tested elements',
         doc: 'features/tested-elements',
         part: 'On the page',
       },
@@ -874,20 +909,20 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         part: 'DevTools',
       },
       {
-        title: 'Report a bug',
+        title: 'Record a bug report',
         summary:
-          'Record the steps to a bug, mark what the page should show, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
+          'Record the steps to a bug, mark what the page should show instead of what it shows, and get a failing Playwright test, a Markdown report and the evidence, from the browser.',
         needs: ['extension'],
-        where: 'Browser extension → Report a bug',
+        where: 'Browser extension → Record → Check an element',
         doc: 'features/report-a-bug',
         part: 'Bugs',
       },
       {
-        title: 'Replay a bug report',
+        title: 'Replay a recording',
         summary:
-          'Play a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
+          'Play a recording or a bug report again in a tab, on your own dev server, and see whether the bug shows there; or run its steps with Playwright in the desktop app.',
         needs: ['extension'],
-        where: 'Browser extension → Replay a bug report',
+        where: 'Browser extension → Tests → Replay',
         doc: 'features/replay-a-bug-report',
         part: 'Bugs',
       },
@@ -905,7 +940,7 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         summary:
           "A window beside the test's browser that pauses, steps and resumes the tests your editor runs, writes code from a stop through the editor, and shows a headless test's page live, to click, type and pick a locator on.",
         needs: ['fixtures', 'extension'],
-        where: 'Browser extension → More tools → Runs',
+        where: 'Browser extension → Tests → Runs',
         doc: 'features/runs-window',
       },
     ],

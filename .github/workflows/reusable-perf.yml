@@ -8,7 +8,7 @@ name: Performance
 # The pages are split across the `measure` jobs, which run at once: each measures both builds in turn on its own pages
 # (`run.mjs --shard`), so every comparison is made on one machine, and the `report` job joins their results into the job
 # summary and the `perf-results` artifact, which perf-comment.yml posts on the pull request. The base commit's build is
-# the one ci.yml's `perf-base` job cached.
+# the `perf-base-output` artifact of ci.yml's `perf-base` job.
 # A regression is reported, not enforced: the jobs fail only when the suite itself cannot run.
 on:
   workflow_call:
@@ -58,17 +58,14 @@ jobs:
       - name: Read the base and head commits
         id: base
         run: |
-          echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
           echo "short=$(git rev-parse --short HEAD^1)" >> "$GITHUB_OUTPUT"
           echo "head_short=$(git rev-parse --short HEAD^2)" >> "$GITHUB_OUTPUT"
 
-      # Saved by ci.yml: by the build job when the base commit ran on main, else by the perf-base job of this run.
-      - name: Restore the base build
-        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Download the base build
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
+          name: perf-base-output
           path: base/apps/application/.output
-          key: perf-base-output-v1-${{ steps.base.outputs.sha }}
-          fail-on-cache-miss: true
 
       - name: Wait for PostgreSQL
         run: timeout 60 bash -c 'until docker exec postgres psql -h 127.0.0.1 -U postgres -c "SELECT 1" >/dev/null 2>&1; do sleep 1; done'

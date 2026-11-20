@@ -22,6 +22,7 @@ const { authState, logout } = useAuth();
 const settingsNav = await useSettingsNav();
 const { openSettings: openIdeSettings } = useOpenInIde();
 const isDesktop = useIsDesktop();
+const { openChangelog } = useChangelog();
 
 // Tailwind's own `neutral` palette lives under `--color-old-neutral-*`: Nuxt UI
 // points `--color-neutral-*` at the active gray scale.
@@ -221,6 +222,11 @@ const items = computed<DropdownMenuItem[][]>(() => {
             },
           ],
         ],
+      },
+      {
+        label: 'Changelog',
+        icon: 'i-lucide-scroll-text',
+        onSelect: () => openChangelog(),
       },
       {
         label: 'GitHub repository',

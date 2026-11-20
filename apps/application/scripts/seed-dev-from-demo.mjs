@@ -107,13 +107,18 @@ const REBASE_START = 'CREATE TEMP TABLE _rebase';
 const rebaseAt = sql.indexOf(REBASE_START);
 if (rebaseAt === -1) throw new Error(`no timestamp rebase block in ${sqlPath} — regenerate it with app:seed:demo`);
 
-// Data rows are `INSERT INTO … VALUES (…)`. The seed's schema section also
+// Data rows are `INSERT INTO … VALUES (…)`, and a project's default environment an `UPDATE` once its environments
+// exist (a project row cannot name an environment inserted after it). The seed's schema section also
 // carries `INSERT INTO … SELECT` statements that copy rows into the `__new_*`
 // tables of SQLite's table-rebuild dance; those belong to the demo SPA's own
 // schema build and have no counterpart here.
 const statements = splitSqlStatements(sql.slice(0, rebaseAt))
   .map((s) => s.trim())
-  .filter((s) => s.startsWith('INSERT INTO') && /\bVALUES\s*\(/i.test(s));
+  .filter(
+    (s) =>
+      (s.startsWith('INSERT INTO') && /\bVALUES\s*\(/i.test(s)) ||
+      /^UPDATE projects SET default_environment_id = \d+ WHERE id = \d+;?$/.test(s),
+  );
 
 const rebaseStatements = splitSqlStatements(sql.slice(rebaseAt))
   .map((s) => s.trim())

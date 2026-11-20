@@ -5,149 +5,58 @@
  * connected, the folders linked to the instance's projects are listed here, each by the name the instance gives its
  * project (its id when it gives none); a request for a project with none asks for its folder in its confirmation.
  * Disconnecting removes the key from the keychain; it stays listed in the instance's Connected apps until it is revoked
- * there.
+ * there. Its parts are shared with each host's own views (`DesktopTeamSignIn`, `DesktopTeamConnectForm`,
+ * `DesktopTeamFolders`), and what they do is `useDesktopTeamConnection`'s.
  */
-import type { RunTargetConnectionView } from '@piwitests/editor/run-target-view';
-
 /** The app's name, as the instance's page asks the person to allow it. */
 defineProps<{ appName: string }>();
 
-const { connection } = useDesktopTeamRequests();
-const toast = useToast();
-const instanceUrl = ref('');
-const busy = ref(false);
-const folders = ref<Record<string, string>>({});
+const { connection, connected, busy, keeping, loadConnection, loadFolders, disconnect } = useDesktopTeamConnection();
+const words = useRunUiWords();
+const { t } = words;
 
-const { data: initial } = useFetch<{ connection: RunTargetConnectionView }>('/api/desktop/run-target', {
-  server: false,
-  default: () => ({ connection: connection.value }),
-});
-watch(
-  () => initial.value?.connection,
-  (value) => {
-    if (value) connection.value = value;
-  },
-  { immediate: true },
-);
-
-const connected = computed(() => ['connecting', 'online', 'offline'].includes(connection.value.state));
-
-async function loadFolders() {
-  const core = tauriCore();
-  if (!core || !connected.value) {
-    folders.value = {};
-    return;
-  }
-  folders.value = (await core.invoke<Record<string, string> | null>('desktop_request_folders').catch(() => null)) ?? {};
-}
+onMounted(loadConnection);
 watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')], loadFolders, { immediate: true });
-
-async function connect() {
-  if (!instanceUrl.value.trim() || busy.value) return;
-  busy.value = true;
-  try {
-    connection.value = await $fetch<RunTargetConnectionView>('/api/desktop/run-target/connect', {
-      method: 'POST',
-      body: { instance: instanceUrl.value.trim() },
-    });
-    if (connection.value.verificationUrl) openPage(connection.value.verificationUrl);
-  } catch (error) {
-    toast.add({ title: 'Could not connect', description: errorMessage(error), color: 'error' });
-  } finally {
-    busy.value = false;
-  }
-}
-
-function openPage(url: string) {
-  tauriCore()
-    ?.invoke('desktop_open_external', { url })
-    .catch(() => {});
-}
-
-async function disconnect() {
-  const core = tauriCore();
-  if (!core || busy.value) return;
-  busy.value = true;
-  try {
-    await core.invoke('desktop_forget_run_target');
-  } catch (error) {
-    toast.add({ title: 'Could not disconnect', description: errorMessage(error), color: 'error' });
-  } finally {
-    busy.value = false;
-  }
-}
-
-async function unlink(projectId: string) {
-  await tauriCore()
-    ?.invoke('desktop_unlink_request_folder', { projectId })
-    .catch((error: unknown) =>
-      toast.add({ title: 'Could not unlink', description: errorMessage(error), color: 'error' }),
-    );
-  await loadFolders();
-}
 </script>
 
 <template>
   <div class="space-y-4 text-sm">
     <p class="text-muted">
-      Each request shows in this window first, with its tests, the checks of your folder and the command: nothing runs
-      until you click <strong>Run</strong>. The run reports to the instance, and only you see it there.
+      <RunUiText name="runui_connectionHowItWorks">
+        <template #run>
+          <strong>{{ t('runui_requestRun') }}</strong>
+        </template>
+      </RunUiText>
     </p>
 
     <div class="space-y-1">
-      <div class="text-muted">Status</div>
-      <div class="text-highlighted">{{ CONNECTION_WORDS[connection.state] }}</div>
-      <code v-if="connection.instance && connection.state !== 'none'" class="text-xs break-all">{{
-        connection.instance
-      }}</code>
-      <p v-if="connection.error" class="text-xs text-error">{{ connection.error }}</p>
-    </div>
-
-    <div v-if="connection.state === 'signing-in'" class="space-y-2">
-      <p class="text-muted">
-        The instance's page asks you to allow <strong>{{ appName }}</strong> with this code:
-        <code class="text-highlighted">{{ connection.userCode }}</code>
-      </p>
-      <div class="flex flex-wrap gap-2">
-        <UButton
-          v-if="connection.verificationUrl"
-          color="neutral"
-          variant="outline"
-          @click="openPage(connection.verificationUrl)"
-          >Open the page again</UButton
-        >
-        <UButton color="neutral" variant="ghost" :loading="busy" @click="disconnect">Cancel</UButton>
+      <div class="text-muted">{{ t('runui_connectionStatus') }}</div>
+      <div class="flex items-start gap-2">
+        <span
+          aria-hidden="true"
+          :class="['mt-1.5 size-2 shrink-0 rounded-full', CONNECTION_STATE_DOTS[connection.state]]"
+          data-testid="team-instance-dot"
+        />
+        <div class="min-w-0 space-y-0.5">
+          <div class="text-highlighted">{{ connectionStateWords(connection.state, words) }}</div>
+          <code v-if="connection.instance && connection.state !== 'none'" class="block text-xs break-all">{{
+            connection.instance
+          }}</code>
+        </div>
       </div>
+      <p v-if="connection.error" class="text-xs text-error">{{ connectionErrorWords(connection, words) }}</p>
     </div>
 
-    <form v-else-if="!connected" method="post" class="flex flex-col sm:flex-row gap-2" @submit.prevent="connect">
-      <UInput
-        v-model="instanceUrl"
-        type="url"
-        placeholder="https://piwi.example.com"
-        class="flex-1"
-        aria-label="Team instance address"
-      />
-      <UButton type="submit" :loading="busy" :disabled="!instanceUrl.trim()">Connect</UButton>
-    </form>
-
+    <DesktopTeamSignIn v-if="connection.state === 'signing-in'" :app-name="appName" />
+    <DesktopTeamConnectForm v-else-if="!connected" />
     <template v-else>
       <div class="space-y-1">
-        <div class="text-muted">Linked folders</div>
-        <p v-if="Object.keys(folders).length === 0" class="text-xs text-muted">
-          None yet: a request for a project asks for its folder.
-        </p>
-        <ul v-else class="space-y-1">
-          <li v-for="(folder, projectId) in folders" :key="projectId" class="flex items-start gap-2 min-w-0">
-            <span class="text-xs text-muted shrink-0">{{
-              connection.projectNames[Number(projectId)] || `Project ${projectId}`
-            }}</span>
-            <code class="text-xs break-all flex-1">{{ folder }}</code>
-            <UButton color="neutral" variant="ghost" size="xs" @click="unlink(String(projectId))">Unlink</UButton>
-          </li>
-        </ul>
+        <div class="text-muted">{{ t('runui_connectionLinkedFolders') }}</div>
+        <DesktopTeamFolders />
       </div>
-      <UButton color="neutral" variant="outline" :loading="busy" @click="disconnect">Disconnect</UButton>
+      <UButton color="neutral" variant="outline" :loading="busy" :disabled="keeping" @click="disconnect">{{
+        t('runui_connectionDisconnect')
+      }}</UButton>
     </template>
   </div>
 </template>

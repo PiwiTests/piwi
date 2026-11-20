@@ -5,6 +5,7 @@ import { getDatabase } from '../../database';
 import { resolveAiConfig } from '../../utils/ai-provider';
 import { resolveStep } from '../../utils/ai-step-resolver';
 import type { StepResolutionRequest } from '#shared/ai-step-resolution';
+import { requestCredentialActor } from '../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -68,7 +69,11 @@ export default eventHandler(async (event) => {
   }
 
   const db = await getDatabase();
-  const config = await resolveAiConfig(db);
+  const config = await resolveAiConfig(db, {
+    open: true,
+    roles: ['research', 'diagnosis'],
+    actor: requestCredentialActor(event, user),
+  });
   // Planning/grounding reuses the research role (cheaper tier) with a diagnosis
   // fallback — the same ladder the test-function extractor uses.
   const role = config?.roles.research ?? config?.roles.diagnosis;

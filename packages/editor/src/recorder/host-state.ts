@@ -28,7 +28,6 @@ export interface HostRecording {
   events: RawCaptureEvent[];
   startedAt: number | null;
   grantedOriginPattern: string | null;
-  mode: 'actions';
   /** Paused from the recorder's bar or the editor: no event is appended until it resumes. */
   paused: boolean;
 }
@@ -71,7 +70,6 @@ export class RecorderHost {
       events: [],
       startedAt: options.startedAt,
       grantedOriginPattern: null,
-      mode: 'actions',
       paused: false,
     };
     this.session = { [RECORDING_KEY]: recording };
@@ -135,7 +133,7 @@ export class RecorderHost {
   recording(): HostRecording {
     const stored = this.session[RECORDING_KEY];
     if (isRecord(stored) && Array.isArray(stored.events)) return stored as unknown as HostRecording;
-    return { active: false, events: [], startedAt: null, grantedOriginPattern: null, mode: 'actions', paused: false };
+    return { active: false, events: [], startedAt: null, grantedOriginPattern: null, paused: false };
   }
 
   /** Pauses or resumes the recording, as the editor asks: the recorder reads it on every page it records. */

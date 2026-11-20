@@ -7,6 +7,7 @@
  * is `#shared/fix-plan-markdown`.
  */
 import type { PatchValidation } from '#shared/patch';
+import type { RunVariable } from '#shared/run-variables';
 import type { LocatorEdit } from '#shared/locator-healing.types';
 import type { ReproRecipe, BisectResult, BisectedCommit, ReproduceDesktopContext } from '#shared/reproduce';
 import type { ClusterSuspectLinesAnswer } from '#shared/suspect-lines';
@@ -104,6 +105,16 @@ export interface FixPlan {
      * re-run of the cluster runs them (`clusterRerunCases`).
      */
     cases: RetryCase[];
+    /**
+     * The cases the command cannot name: a test whose file path and title cannot both be passed on, when the others
+     * need a filter it lacks (`buildRerunPlan`). Empty in the usual case; every case when the command is empty.
+     */
+    leftOut: RetryCase[];
+    /**
+     * The project's run variables, which the command needs set: the page, the Markdown and the issues show it with
+     * them (`commandWithRunVariables`), and the editors run it with them.
+     */
+    runVariables: RunVariable[];
     /** What happens on the dashboard when it passes. */
     expectation: string;
     /** The trailer to put in the fix's commit message, so the fix is tied to this cluster. */

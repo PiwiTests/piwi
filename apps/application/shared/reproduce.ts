@@ -14,7 +14,9 @@
  * unknown Playwright version drops the pin, and a missing bisect window returns
  * a plain reason instead of a script.
  */
+import { runVariableAssignments, withRunVariables } from '@piwitests/core/run-variables';
 import { buildRetryArgs, type RetryCase } from '#shared/retry-command';
+import { commandWithRunVariables, type RunVariable } from '#shared/run-variables';
 import { isPlainRevision } from '#shared/scm-urls';
 
 // The recipe's values come from the reporter and are pasted into a shell, so each must look like what it names.
@@ -69,10 +71,26 @@ export interface ReproInput {
   baseUrl: string | null;
   /** The failing tests, for the exact `playwright test` invocation. */
   cases: RetryCase[];
+  /** The project's run variables, which the test step starts with. */
+  runVariables?: readonly RunVariable[];
+}
+
+/**
+ * The deployed environment a failing run tested, for its bisect: a bisect walks the tests' commits, so against a
+ * deployed environment it finds a change of the tests only; the deploy markers between the last passing run and the
+ * failing one say what changed in the application.
+ */
+export interface BisectDeployed {
+  /** The environment's name. */
+  environment: string;
+  /** The environment's deploy markers between the two runs, oldest first. */
+  deploys: Array<{ label: string; commit: string | null; deployedAt: string | Date }>;
+  /** More deploys happened between the two runs than are listed: the listed ones are the latest. */
+  more: boolean;
 }
 
 export type BisectResult =
-  | { available: false; reason: string }
+  | { available: false; reason: string; deployed?: BisectDeployed }
   | {
       available: true;
       /** Last green commit — the `good` end of the window. */
@@ -87,6 +105,7 @@ export type BisectResult =
       powershell: string;
       /** One line saying what the script does. */
       explanation: string;
+      deployed?: BisectDeployed;
     };
 
 export interface BisectInput {
@@ -96,6 +115,10 @@ export interface BisectInput {
   bad: string | null;
   /** The command that proves a commit good (exit 0) or bad (non-zero). */
   verifyCommand: string;
+  /** The project's run variables, which each step's run gets. */
+  runVariables?: readonly RunVariable[];
+  /** Set when the failing run tested a deployed environment. */
+  deployed?: BisectDeployed | null;
 }
 
 /**
@@ -128,6 +151,8 @@ export interface ReproduceDesktopContext {
   browserName: string | null;
   /** The failing commit to check out for a reproduction. */
   commit: string | null;
+  /** The environment of the failing run, which a reproduction starts on unless it is protected; null for none. */
+  environmentId?: number | null;
   /** The bisect window's `good` end (last green commit), when known. */
   good: string | null;
   /** The bisect window's `bad` end (failing commit), when known. */
@@ -189,8 +214,17 @@ export function buildReproRecipe(input: ReproInput): ReproRecipe {
   //    specs and projects, as one command a CI re-run would run, the same on
   //    every shell.
   const testArgs = buildRetryArgs(input.cases);
-  const testCmd = testArgs ? `npx playwright test ${testArgs}` : 'npx playwright test';
-  steps.push({ step: 'Run the failing test', bash: testCmd, powershell: testCmd });
+  if (testArgs || input.cases.length === 0) {
+    const testCmd = testArgs ? `npx playwright test ${testArgs}` : 'npx playwright test';
+    const variables = input.runVariables ?? [];
+    steps.push({
+      step: 'Run the failing test',
+      bash: commandWithRunVariables(testCmd, variables, 'bash'),
+      powershell: commandWithRunVariables(testCmd, variables, 'powershell'),
+    });
+  } else {
+    notes.push('No failing test has a file path a command can name, so the step that runs it is left out.');
+  }
 
   const env: ReproEnv[] = [];
   if (input.environment) env.push({ label: 'Environment', value: input.environment });
@@ -224,12 +258,34 @@ export function reproScript(recipe: ReproRecipe, shell: 'bash' | 'powershell'): 
   return lines.join('\n').trimEnd();
 }
 
+/** What a deployed environment means for a bisect, as a sentence: "Staging is deployed: …". */
+export function bisectDeployedNote(deployed: BisectDeployed): string {
+  const deploys =
+    deployed.deploys.length === 0
+      ? `no deploy marker of ${deployed.environment} falls between the two runs`
+      : `${deployed.environment}'s deploys between the two runs say what changed in the application`;
+  return `${deployed.environment} is deployed: a bisect walks the tests' commits, so it can find a change of the tests, never one of the application, and ${deploys}.`;
+}
+
 /**
  * Build the `git bisect` that finds the breaking commit between the last green
- * commit and the failing one, or explain why the window is missing.
+ * commit and the failing one, or explain why the window is missing. Against a
+ * deployed environment, the result names it and the deploys between the two
+ * runs, and its sentences say what the bisect can find.
  */
 export function buildBisectScript(input: BisectInput): BisectResult {
+  const result = bisectScript(input);
+  const deployed = input.deployed;
+  if (!deployed) return result;
+  const note = bisectDeployedNote(deployed);
+  return result.available
+    ? { ...result, explanation: `${result.explanation} ${note}`, deployed }
+    : { ...result, reason: `${result.reason} ${note}`, deployed };
+}
+
+function bisectScript(input: BisectInput): BisectResult {
   const { good, bad, verifyCommand } = input;
+  const variables = input.runVariables ?? [];
 
   if (!bad) {
     return {
@@ -253,19 +309,35 @@ export function buildBisectScript(input: BisectInput): BisectResult {
   if (good === bad) {
     return {
       available: false,
-      reason:
-        'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the code.',
+      reason: input.deployed
+        ? 'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the tests.'
+        : 'The last passing run tested the same commit, so there is nothing to bisect: what broke it is not in the code.',
     };
   }
 
-  const command = verifyCommand.trim() || 'npx playwright test';
+  const command = verifyCommand.trim();
+  if (!command) {
+    return {
+      available: false,
+      reason: 'The failing tests have no file path or title a command can name, so no bisect is built for them.',
+    };
+  }
   const goodShort = good.slice(0, 7);
   const badShort = bad.slice(0, 7);
 
-  // git and npx are portable, so the two forms are the same commands. `git
-  // bisect run` re-runs the command at each step: exit 0 marks the commit good,
-  // any non-zero marks it bad — exactly what a failing `playwright test` does.
-  const script = [`git bisect start ${bad} ${good}`, `git bisect run ${command}`, 'git bisect reset'].join('\n');
+  // git and npx are portable, so the two forms are the same commands but for the run variables: bash passes them with
+  // `env` before the command, PowerShell sets them for the session first. `git bisect run` re-runs the command at each
+  // step: exit 0 marks the commit good, any non-zero marks it bad — exactly what a failing `playwright test` does.
+  const steps = [`git bisect start ${bad} ${good}`, 'git bisect reset'];
+  const scriptFor = (shell: 'bash' | 'powershell') => {
+    if (shell === 'powershell') {
+      // The session's variables reach git and the `sh` it runs the command in: no argument carries them.
+      const set = withRunVariables('', variables, 'powershell').trim();
+      return [...(set ? [set] : []), steps[0], `git bisect run ${command}`, steps[1]].join('\n');
+    }
+    const run = variables.length > 0 ? `env ${runVariableAssignments(variables, 'bash')} ${command}` : command;
+    return [steps[0], `git bisect run ${run}`, steps[1]].join('\n');
+  };
 
   return {
     available: true,
@@ -273,8 +345,8 @@ export function buildBisectScript(input: BisectInput): BisectResult {
     bad,
     goodShort,
     badShort,
-    bash: script,
-    powershell: script,
+    bash: scriptFor('bash'),
+    powershell: scriptFor('powershell'),
     explanation: `Walks the commits between the last green (${goodShort}) and the failing commit (${badShort}), re-running the test at each step until it names the first commit that broke it — a non-zero exit marks a commit bad. \`git bisect reset\` returns you to where you started.`,
   };
 }

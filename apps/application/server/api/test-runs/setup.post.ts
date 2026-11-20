@@ -16,6 +16,7 @@ import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility
 import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
 import { liveViewRelay, storeLiveViewKey } from '../../utils/live-view';
 import { publicRunUrl } from '#shared/run-url';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 
 defineRouteMeta({
   openAPI: {
@@ -142,7 +143,7 @@ export default eventHandler(async (event) => {
           failedTests: 0,
           skippedTests: 0,
           didNotRunTests: 0,
-          environment: body.environment || null,
+          ...(await resolveRunEnvironment(db as never, project.id, body.environment)),
           branch: resolveRunBranch(body.metadata),
           label: body.label || null,
           metadata,
@@ -206,7 +207,7 @@ export default eventHandler(async (event) => {
         failedTests: 0,
         skippedTests: 0,
         didNotRunTests: 0,
-        environment: body.environment || null,
+        ...(await resolveRunEnvironment(db as never, project.id, body.environment)),
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
         metadata: requestMetadata,

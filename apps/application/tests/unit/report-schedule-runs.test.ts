@@ -395,6 +395,42 @@ describe('the schedule preview', () => {
     const team = await preview({ dashboard: 'team', scope: { owner: '@payments' } });
     expect(team.bundle.dashboard.ref).toBe('team');
   });
+
+  test('with no environment picked, the schedule reads the default environments over an All environments dashboard', async () => {
+    const { createDashboard, dashboardActorFor } = await import('../../shared/handlers/dashboards');
+    const { getBuiltinDashboard } = await import('../../shared/analytics/dashboards');
+    const { definition } = getBuiltinDashboard('executive');
+    const everyEnvironment = await createDashboard(
+      db as any,
+      {
+        name: 'Every environment',
+        visibility: 'shared',
+        definition: { ...definition, scope: { ...definition.scope, allEnvironments: true } },
+      },
+      dashboardActorFor(null, null),
+    );
+    const dashboard = String(everyEnvironment.id);
+    expect(reports.scheduleFilters({})).toMatchObject({ allEnvironments: false });
+    expect(reports.scheduleFilters({ environments: 'staging' })).not.toHaveProperty('allEnvironments');
+    expect((await preview({ dashboard, scope: {} })).bundle.scope.allEnvironments).toBe(false);
+    expect((await preview({ dashboard, scope: { allEnvironments: 'true' } })).bundle.scope.allEnvironments).toBe(true);
+
+    // Stored filters that keep no `allEnvironments` read the default environments too.
+    const view = await createWeekly({ dashboard });
+    await db
+      .update(schema.reportSchedules)
+      .set({ scope: { defaultBranchOnly: true, fullRunsOnly: true } })
+      .where(eq(schema.reportSchedules.id, view.id));
+    const run = await reports.runReportScheduleNow(db as any, view.id, admin, {
+      access: 'all',
+      timeZone: 'UTC',
+      deliver: false,
+      now: NOW,
+    });
+    expect((await reports.getReportSnapshot(db as any, run.snapshotId, 'all')).bundle.scope.allEnvironments).toBe(
+      false,
+    );
+  });
 });
 
 describe('who may do what', () => {

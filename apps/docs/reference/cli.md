@@ -228,6 +228,7 @@ Playwright (`run` only; `143` for `SIGTERM`) · `2` could not resolve, or Playwr
 | `--json` | Print the full resolution as JSON (`select` only) |
 | `--reuse` | Experimental, `run` only: [plan](#plan) the selection with pass reuse, then run only the tests the plan keeps. `full` plans the whole suite. Not with `--shard` |
 | `--plan <id>` | Experimental, `run` only: run the tests of a stored [plan](#plan), or with `--shard` one shard of them |
+| `--environment <key>` | Experimental, with `--reuse` or `--plan`: the [environment](/features/environments) the run reports (env `PIWI_ENVIRONMENT`, which `run` sets for Playwright): only passes of that environment are reused. With `--plan`, the plan's environment when none is named; a run naming another runs every test. The reporter's `environment` option, when the config sets it, wins over the variable: name the same one |
 | `-h`, `--help` | Show help |
 
 Pass extra Playwright arguments after `--`: `piwi run smoke -- --headed --workers=1`.
@@ -268,6 +269,7 @@ shard passes Playwright's own `--shard`. A shard that cannot use the plan runs t
 | `--server-url <url>` | Dashboard URL (env `PIWI_DASHBOARD_URL`, `.env`, the desktop app) |
 | `--api-key <key>` | API key (env `PIWI_API_KEY`, `.env`) |
 | `--project <name\|id>` | Project (env `PIWI_PROJECT_NAME`, `.env`) |
+| `--environment <key>` | The [environment](/features/environments) the planned run reports (env `PIWI_ENVIRONMENT`): only passes of that environment are reused |
 | `--json` | Print the plan as JSON instead of its id |
 | `-h`, `--help` | Show help |
 
@@ -389,8 +391,9 @@ npx @piwitests/reporter ai resolve --grep "checkout"
 
 ## `codegen`
 
-Turn a [steps file](/reference/steps-format) into a Playwright spec. Piwi Picker saves one with
-[**Download steps**](/features/record-actions). The spec is written for a test project: URLs on the recorded
+Turn a [steps file](/reference/steps-format) into a Playwright spec. Piwi Picker's **Download .piwibug** saves one as
+the `steps.json` of the [bug report file](/reference/bug-report-file) of a [recording](/features/record-actions): rename
+the file to `.zip` to take it out. The spec is written for a test project: URLs on the recorded
 site become paths, so your config's `baseURL` applies; each element uses the first of its recorded locators that the
 [stability rules](/reference/locator-stability) call stable; and after each step that leads to another page, the spec
 waits for that page's URL. Nothing is sent anywhere unless a project is configured.

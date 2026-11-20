@@ -1,7 +1,7 @@
 import type { ViewportBox } from '@piwitests/core/recording';
 
 /**
- * The screenshots of the page as each step of a bug recording began, and the
+ * The screenshots of the page as each step of a recording began, and the
  * ones a replay shows for a step it hands to the person, in the background
  * worker's IndexedDB: a recording can take a hundred, more than session
  * storage holds. Only the worker opens it, since a content script's IndexedDB
@@ -10,7 +10,7 @@ import type { ViewportBox } from '@piwitests/core/recording';
 
 const DB_NAME = 'piwi-step-views';
 const DB_VERSION = 1;
-/** A bug recording's views, by the id the recorder gave each. */
+/** A recording's views, by the id the recorder gave each. */
 const RECORDING = 'recording';
 /** The views of the replay running now, by step. */
 const REPLAY = 'replay';

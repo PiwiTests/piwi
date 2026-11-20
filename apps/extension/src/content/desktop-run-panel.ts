@@ -3,7 +3,7 @@ import { formatNumber, t, tNodes, uiLanguage } from '../shared/i18n.js';
 import { icon } from '../shared/icons.js';
 import { richText, stepView, urlView } from '../shared/step-view.js';
 import { DESKTOP_DIALOG_HOST_ID } from './record-ui.js';
-import { VERDICT_ICONS, verdictText, wait, type ReplayVerdict } from './replay-core.js';
+import { verdictIcon, verdictText, wait, type ReplayVerdict } from './replay-core.js';
 import { attachPanelShadow } from './panel-root.js';
 import { shareable, shareResultRow } from './share-result.js';
 import { askWorker, button, DIALOG_CSS, holdFocus } from './replay-ui.js';
@@ -114,7 +114,7 @@ export function openDesktopRun(steps: PiwiSteps, bugReportId: number | null, sty
     const box = document.createElement('div');
     box.className = `verdict ${verdict.kind}`;
     const heading = line(verdictTitle, 'title');
-    heading.prepend(icon(VERDICT_ICONS[verdict.kind]));
+    heading.prepend(icon(verdictIcon(verdict, recorded)));
     const said = line('', '');
     said.append(...richText(detail));
     box.append(heading, said);

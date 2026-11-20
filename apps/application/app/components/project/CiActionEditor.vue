@@ -10,7 +10,6 @@ import {
   CI_ACTION_KIND_LABELS,
   CI_ACTION_KINDS,
   MAX_CI_ACTION_NAME_LENGTH,
-  MAX_CI_ENVIRONMENT_LENGTH,
   MAX_CI_INPUT_VALUE_LENGTH,
   type CiAction,
   type CiActionKind,
@@ -31,15 +30,18 @@ const props = defineProps<{
   /** The names the project's other actions have. */
   otherNames: string[];
   instanceUrl: string | null;
-  /** Whether the project holds a CI server token, and the base URL it is bound to. */
-  hasToken: boolean;
-  tokenUrl: string | null;
+  /** The project the action belongs to, whose credentials a CI server target picks from. */
+  projectId: number;
+  /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
+  repositoryUrl?: string | null;
 }>();
 const emit = defineEmits<{ save: [action: CiAction, defaultFor: CiActionKind[]] }>();
 const open = defineModel<boolean>('open', { default: false });
 
 const draft = ref<CiActionDraft>(ciActionDraft(null));
 const error = ref<string | null>(null);
+/** What the CI server target says a save of the project would refuse about its credential. */
+const credentialProblem = ref<string | null>(null);
 
 watch(open, (isOpen) => {
   if (!isOpen) return;
@@ -49,6 +51,19 @@ watch(open, (isOpen) => {
 });
 
 const isCiServer = computed(() => draft.value.type === 'jenkins' || draft.value.type === 'custom');
+/** The repository host a GitHub, GitLab or Bitbucket action dispatches on, whose SCM credential it may name. */
+const repositoryHost = computed(() =>
+  draft.value.type === 'github' || draft.value.type === 'gitlab' || draft.value.type === 'bitbucket'
+    ? draft.value.type
+    : null,
+);
+// Another host takes another credential: a change of the target's type within one draft drops the one picked.
+watch(
+  () => [draft.value, draft.value.type] as const,
+  ([current, type], [previous, previousType]) => {
+    if (current === previous && type !== previousType) current.scmCredentialId = null;
+  },
+);
 const sendsInputs = computed(() => draft.value.type !== 'custom');
 
 const KIND_HELP: Partial<Record<CiActionKind, string>> = {
@@ -83,6 +98,10 @@ const inputPairs = computed<[string, string][]>(() =>
 );
 
 function submit() {
+  if (isCiServer.value && credentialProblem.value) {
+    error.value = credentialProblem.value;
+    return;
+  }
   const result = ciActionFromDraft(draft.value, { otherNames: props.otherNames, instanceUrl: props.instanceUrl });
   if (!result.action) {
     error.value = result.error;
@@ -179,12 +198,29 @@ function submit() {
             class="font-mono"
           />
         </div>
-        <div v-else class="rounded-md border border-default p-3">
+        <FormFieldGroup
+          v-if="repositoryHost"
+          label="Credential"
+          help="settings.credentials"
+          description="The SCM credential its dispatch and Check carry: a token scoped to CI, while the project’s keeps reading and writing feedback."
+          data-testid="ci-action-scm-credential"
+          data-shot="ci-action-scm-credential"
+        >
+          <ScmCredentialPicker
+            v-model="draft.scmCredentialId"
+            :project-id="projectId"
+            :host="repositoryHost"
+            :repository-url="repositoryUrl ?? null"
+            none-label="The project’s SCM credential, else the instance’s"
+            label="Dispatch credential"
+          />
+        </FormFieldGroup>
+        <div v-if="isCiServer" class="rounded-md border border-default p-3">
           <CiServerTargetFields
             v-model="draft.ciServer"
+            v-model:problem="credentialProblem"
             :instance-url="instanceUrl"
-            :has-token="hasToken"
-            :token-url="tokenUrl"
+            :project-id="projectId"
             :inputs="inputPairs"
           />
         </div>
@@ -279,13 +315,15 @@ function submit() {
         <UFormField
           label="Environment"
           name="ciActionEnvironment"
-          description="The environment this action runs in, such as staging. A run in that environment starts this action first."
+          description="The environment this action runs in. A run of that environment starts this action first."
         >
-          <UInput
-            v-model="draft.environment"
-            placeholder="optional, e.g. staging"
-            :maxlength="MAX_CI_ENVIRONMENT_LENGTH"
+          <SettingEnvironmentPicker
+            v-model:environment-id="draft.environmentId"
+            v-model:label="draft.environment"
+            :project-id="projectId"
+            none-label="Any environment"
             class="w-full sm:max-w-xs"
+            data-testid="ci-action-environment"
           />
         </UFormField>
 

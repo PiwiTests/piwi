@@ -130,7 +130,7 @@ test.describe.serial('project URL patterns', () => {
     await expect(card.getByLabel('URL pattern', { exact: true })).toHaveCount(2);
     for (const [index, pattern] of ['https://admin.shop.example/**', 'https://shop.example/**'].entries()) {
       await expect(card.getByLabel('URL pattern', { exact: true }).nth(index)).toHaveValue(pattern);
-      await expect(card.getByLabel('Environment').nth(index)).toHaveValue('production');
+      await expect(card.getByLabel('Environment').nth(index)).toHaveText('production');
     }
     await expect(production).toBeHidden();
     await expect(staging).toBeVisible();
@@ -145,7 +145,7 @@ test.describe.serial('project URL patterns', () => {
     await expect(card.getByRole('heading', { name: 'URL patterns' })).toBeVisible();
     await expect(card.getByText('No pattern yet.')).toBeVisible();
     await card.getByRole('button', { name: 'Add https://staging.shop.example/**' }).click();
-    await expect(card.getByLabel('Environment')).toHaveValue('staging');
+    await expect(card.getByLabel('Environment')).toHaveText('staging');
     await expect(card.getByTestId('url-pattern-prefix-hint')).toContainText(
       'your site serves the pages under this path, the tests did not, e.g. /app',
     );
@@ -277,7 +277,7 @@ test.describe.serial('project URL patterns without a baseURL', () => {
     const card = page.locator('[data-shot="project-url-patterns"]');
     await expect(card.getByText('From page.goto calls')).toBeVisible();
     await card.getByRole('button', { name: 'Add https://goto.shop.example/**' }).click();
-    await expect(card.getByLabel('Environment')).toHaveValue('qa');
+    await expect(card.getByLabel('Environment')).toHaveText('qa');
     await card.getByRole('button', { name: 'Save patterns' }).click();
     await expect(page.getByText('URL patterns saved', { exact: true })).toBeVisible();
 

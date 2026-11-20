@@ -392,8 +392,14 @@ export interface WireResourceTimeline {
   cpuPct: SeriesPoint[];
   /** Bytes the run's processes held in memory, as `profile.memory.kind` measures them. */
   memoryBytes: SeriesPoint[];
-  /** Pages open in each worker, one point at each change. Empty without the capture fixtures. */
-  pages: Array<{ worker: number; points: SeriesPoint[] }>;
+  /**
+   * Pages open in each worker, one point at each change. Empty without the
+   * capture fixtures. `leftOpen` counts the ones of them left open past the
+   * test or describe block that opened them, each from that scope's end to
+   * its close or its worker's end; a worker without it had none. Sent with
+   * the run's report, so absent from live posts and from reporters before it.
+   */
+  pages: Array<{ worker: number; points: SeriesPoint[]; leftOpen?: SeriesPoint[] }>;
   /**
    * The objects behind the run's leaked and lingering findings, each with the
    * stretch it stayed open for nothing: a leak from the end of the scope that
@@ -776,6 +782,8 @@ export interface ServerEnvironmentResponse {
   globalization?: string | null;
   environmentName?: string | null;
   appVersion?: string | null;
+  /** The commit the application was built from: 7 to 40 hexadecimal characters (`deployedCommitOf`). */
+  appCommit?: string | null;
   hostname?: string | null;
   /** An id of the server process: another one after a restart. */
   instance?: string | null;

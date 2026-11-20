@@ -130,4 +130,19 @@ describe('applyWidgetScope', () => {
   test('without an override the dashboard scope is used as is', () => {
     expect(applyWidgetScope(base, undefined)).toBe(base);
   });
+
+  test('an environment list narrows picked environments or every environment, never the default environments', () => {
+    const pinned = { environments: ['production'] };
+    const byDefault = applyWidgetScope({ ...DEFAULT_ANALYTICS_SCOPE }, pinned);
+    expect(byDefault.environments).toBeUndefined();
+    expect(byDefault.allEnvironments).toBeUndefined();
+    expect(applyWidgetScope({ ...DEFAULT_ANALYTICS_SCOPE, allEnvironments: true }, pinned).environments).toEqual([
+      'production',
+    ]);
+    expect(applyWidgetScope({ ...base, environments: ['prod', 'production'] }, pinned).environments).toEqual([
+      'production',
+    ]);
+    // Disjoint lists match nothing rather than every environment.
+    expect(applyWidgetScope(base, pinned).environments).toEqual(['\u0000']);
+  });
 });

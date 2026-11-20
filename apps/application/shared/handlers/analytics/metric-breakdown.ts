@@ -311,7 +311,7 @@ async function rollupPartition(
           projectIds: ctx.allowed,
           fromDay,
           toDay,
-          environments: ctx.scope.environments,
+          environmentPolicy: ctx.environmentPolicy,
           branchPolicy: ctx.branchPolicy,
           fullRunsOnly: ctx.scope.fullRunsOnly,
         });

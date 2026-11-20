@@ -32,6 +32,16 @@ export function sqliteClientConfig(url: string, connections = POOL_CONNECTIONS):
 /** How long a write waits for this process's open transaction before it fails. */
 const TRANSACTION_WAIT_MS = 30_000;
 
+/**
+ * Whether the statement `sql` only reads, so it runs beside an open transaction: a `SELECT`, or a `WITH` that names
+ * none of `INSERT`, `UPDATE`, `DELETE` and `REPLACE`. Any other statement waits for the transaction to end, so a read
+ * taken for a write only waits.
+ */
+export function readsOnly(sql: string): boolean {
+  if (/^\s*select\b/i.test(sql)) return true;
+  return /^\s*with\b/i.test(sql) && !/\b(insert|update|delete|replace)\b/i.test(sql);
+}
+
 /** Whether `promise` settles within `ms`. */
 function settlesWithin(promise: Promise<void>, ms: number): Promise<boolean> {
   return new Promise((resolve) => {
@@ -103,7 +113,7 @@ export async function configureSqliteConnections(client: Client): Promise<void> 
       throw new Error(`SQLite write waited ${TRANSACTION_WAIT_MS} ms for an open transaction`);
     }
   };
-  const isRead = (stmt: InStatement | string) => /^\s*select\b/i.test(typeof stmt === 'string' ? stmt : stmt.sql);
+  const isRead = (stmt: InStatement | string) => readsOnly(typeof stmt === 'string' ? stmt : stmt.sql);
 
   client.execute = async (stmt: InStatement | string, args?: InArgs) => {
     while (open && !isRead(stmt)) await transactionEnded();

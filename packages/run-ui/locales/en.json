@@ -1,0 +1,1284 @@
+{
+  "runui_connectionIntro": {
+    "message": "Take run requests from your team instance: a test you open there runs here, in a browser on your screen.",
+    "description": "Under the heading Run on my machine: what connecting the app to a team instance is for."
+  },
+  "runui_connectionHowItWorks": {
+    "message": "Each request shows in this window first, with its tests, the checks of your folder and the command: nothing runs until you click $run$. The run reports to the instance, and only you see it there.",
+    "description": "First paragraph of the connection card. $run$ is the Run button's label (runui_requestRun), in bold.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runui_connectionStatus": {
+    "message": "Status",
+    "description": "Label above the state of the connection to the team instance."
+  },
+  "runui_connectionStateNone": {
+    "message": "Not connected",
+    "description": "State of the connection: no team instance is connected."
+  },
+  "runui_connectionStateSigningIn": {
+    "message": "Waiting for you to allow this app on the instance",
+    "description": "State of the connection: the instance's page waits for the person to allow the app."
+  },
+  "runui_connectionStateConnecting": {
+    "message": "Connecting",
+    "description": "State of the connection: the app is connecting to the instance."
+  },
+  "runui_connectionStateOnline": {
+    "message": "Connected: requests from your pages come here",
+    "description": "State of the connection: connected, the run requests the person makes on the instance's pages arrive in this app."
+  },
+  "runui_connectionStateOffline": {
+    "message": "Connected, the instance does not answer: trying again",
+    "description": "State of the connection: connected, but the instance stopped answering; the app retries."
+  },
+  "runui_connectionStateRevoked": {
+    "message": "Disconnected by the instance",
+    "description": "State of the connection: the instance revoked the app's key."
+  },
+  "runui_connectionAllowWithCode": {
+    "message": "The instance's page asks you to allow $app$ with this code: $code$",
+    "description": "While signing in. $app$ is the app's name in bold (Piwi Runner, Piwi Desktop); $code$ is the code the instance's page shows, as code.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "code": {
+        "content": "$2",
+        "example": "WXYZ-1234"
+      }
+    }
+  },
+  "runui_connectionOpenPageAgain": {
+    "message": "Open the page again",
+    "description": "Button: opens the instance's sign-in page in the browser again."
+  },
+  "runui_connectionAddressLabel": {
+    "message": "Team instance address",
+    "description": "Accessible label of the field where the person types the instance's address."
+  },
+  "runui_connectionConnect": {
+    "message": "Connect",
+    "description": "Button: connects the app to the team instance whose address was typed."
+  },
+  "runui_connectionLinkedFolders": {
+    "message": "Linked folders",
+    "description": "Label above the list of the folders linked to the instance's projects on this machine."
+  },
+  "runui_connectionNoLinkedFolder": {
+    "message": "None yet: a request for a project asks for its folder.",
+    "description": "In place of the list of linked folders, while there is none."
+  },
+  "runui_connectionProject": {
+    "message": "Project $id$",
+    "description": "A project the instance gave no name, by its number, in the list of linked folders.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_connectionUnlink": {
+    "message": "Unlink",
+    "description": "Button beside a linked folder: forgets the link between the folder and its project."
+  },
+  "runui_connectionDisconnect": {
+    "message": "Disconnect",
+    "description": "Button: disconnects the app from the team instance and forgets its key."
+  },
+  "runui_connectionConnectFailed": {
+    "message": "Could not connect",
+    "description": "Title of an error notification: connecting to the instance failed. The reason follows below it."
+  },
+  "runui_connectionDisconnectFailed": {
+    "message": "Could not disconnect",
+    "description": "Title of an error notification: disconnecting from the instance failed."
+  },
+  "runui_connectionUnlinkFailed": {
+    "message": "Could not unlink",
+    "description": "Title of an error notification: forgetting a linked folder failed."
+  },
+  "runui_connectionErrorDisconnected": {
+    "message": "The instance disconnected this app.",
+    "description": "Under the state of the connection: the instance revoked the app's key without saying why."
+  },
+  "runui_connectionErrorNoAnswer": {
+    "message": "The instance did not answer.",
+    "description": "Under the state of the connection: connecting failed, the instance did not answer."
+  },
+  "runui_connectionErrorStatus": {
+    "message": "The instance answered $status$ to connect.",
+    "description": "Under the state of the connection: the instance answered the connection with an unexpected HTTP status. $status$ is its number.",
+    "placeholders": {
+      "status": {
+        "content": "$1",
+        "example": "500"
+      }
+    }
+  },
+  "runui_connectionErrorSignInTimedOut": {
+    "message": "The sign-in on the instance expired: connect again.",
+    "description": "Under the state of the connection: the person did not allow the app on the instance's page in time."
+  },
+  "runui_connectionErrorSignInExpired": {
+    "message": "The sign-in expired.",
+    "description": "Under the state of the connection: the instance said the sign-in expired."
+  },
+  "runui_connectionErrorDenied": {
+    "message": "The connection was denied on the instance.",
+    "description": "Under the state of the connection: the person denied the app on the instance's page."
+  },
+  "runui_yourTeamInstance": {
+    "message": "your team instance",
+    "description": "Names the team instance in a sentence when its address is unknown."
+  },
+  "runui_aTest": {
+    "message": "a test",
+    "description": "The tests of a request when there is one, in the sentence runui_requestIntro."
+  },
+  "runui_tests_one": {
+    "message": "$count$ test",
+    "description": "A number of tests, singular form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_tests_other": {
+    "message": "$count$ tests",
+    "description": "A number of tests, plural form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_optionHeaded": {
+    "message": "headed",
+    "description": "An option of a run request, in a list after a middle dot: the browser shows its window. Lower case."
+  },
+  "runui_optionHeadless": {
+    "message": "headless",
+    "description": "An option of a run request, in a list after a middle dot: the browser runs without a window. Lower case."
+  },
+  "runui_optionTrace": {
+    "message": "trace $mode$",
+    "description": "An option of a run request: Playwright's trace setting. $mode$ is Playwright's value, untranslated. Lower case.",
+    "placeholders": {
+      "mode": {
+        "content": "$1",
+        "example": "on"
+      }
+    }
+  },
+  "runui_optionRepeat": {
+    "message": "repeat $times$×",
+    "description": "An option of a run request: each test runs this many times. Lower case.",
+    "placeholders": {
+      "times": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_optionWorkers_one": {
+    "message": "$count$ worker",
+    "description": "An option of a run request: the number of Playwright workers, singular. Lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_optionWorkers_other": {
+    "message": "$count$ workers",
+    "description": "An option of a run request: the number of Playwright workers, plural. Lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "runui_optionProject": {
+    "message": "project $name$",
+    "description": "An option of a run request: the Playwright project it runs. $name$ is the project's name. Lower case.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "chromium"
+      }
+    }
+  },
+  "runui_requestTitle": {
+    "message": "Run on this machine?",
+    "description": "Title of the dialog that confirms a run request from the team instance."
+  },
+  "runui_requestTitleFor": {
+    "message": "Run on this machine for $environment$?",
+    "description": "Title of the dialog that confirms a run request from the team instance, when the request names an environment. $environment$ is its name.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
+  "runui_requestIntro": {
+    "message": "You asked $host$ to run $tests$ of $project$ here, in the folder linked to that project. It runs the code of that folder on this machine; nothing runs until you click $run$. The request ends unanswered at $time$.",
+    "description": "First paragraph of the confirmation. $host$ is the instance's address and $project$ the project's name, both highlighted; $tests$ is runui_aTest or runui_tests; $run$ is the Run button's label in bold; $time$ a time of day.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "project": {
+        "content": "$2",
+        "example": "Acme Checkout"
+      },
+      "run": {
+        "content": "$3",
+        "example": "Run"
+      },
+      "tests": {
+        "content": "$4",
+        "example": "3 tests"
+      },
+      "time": {
+        "content": "$5",
+        "example": "3:45 PM"
+      }
+    }
+  },
+  "runui_requestProject": {
+    "message": "project $id$",
+    "description": "A project the instance gave no name, by its number, inside a sentence. Lower case.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_requestRunTitle": {
+    "message": "$tests$ for $host$",
+    "description": "The name of a requested run in the list of runs. $tests$ is the test's title or runui_tests; $host$ the instance's address.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "3 tests"
+      }
+    }
+  },
+  "runui_requestFolderOlderCopy": {
+    "message": "The linked folder lacks some of these tests: it may be an older copy of $code$. Get its latest version (or ask whoever set up these tests to), or use another copy that holds them all.",
+    "description": "When the linked folder lacks some of the request's tests. $code$ is runui_requestProjectCode.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "Acme Checkout's code"
+      }
+    }
+  },
+  "runui_requestFolderNotRight": {
+    "message": "The linked folder is not the right one.",
+    "description": "When the folder linked to the project holds no Playwright config. Followed by runui_requestFolderNeeded."
+  },
+  "runui_requestFolderNeeded": {
+    "message": "Piwi needs your copy of $code$ on this computer: the folder that holds its Playwright config ($config$) and these tests, such as $spec$.",
+    "description": "When the request has no folder it can run in. $code$ is runui_requestProjectCode or runui_requestProjectCodeAt; $config$ and $spec$ are file names, as code.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "Acme Checkout's code"
+      },
+      "config": {
+        "content": "$2",
+        "example": "playwright.config.ts"
+      },
+      "spec": {
+        "content": "$3",
+        "example": "tests/cart.spec.ts"
+      }
+    }
+  },
+  "runui_requestProjectCode": {
+    "message": "$project$'s code",
+    "description": "The code of a project, inside a sentence. $project$ is the project's name.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Checkout"
+      }
+    }
+  },
+  "runui_requestProjectCodeAt": {
+    "message": "$project$'s code ($repository$)",
+    "description": "The code of a project and its repository, inside a sentence. $repository$ is an address without its scheme.",
+    "placeholders": {
+      "project": {
+        "content": "$1",
+        "example": "Acme Checkout"
+      },
+      "repository": {
+        "content": "$2",
+        "example": "github.com/acme/shop"
+      }
+    }
+  },
+  "runui_requestFoundHeading": {
+    "message": "Found on this computer",
+    "description": "Heading of the folders Find it for me found."
+  },
+  "runui_requestFoundFromRun": {
+    "message": "A run of yours came from this folder.",
+    "description": "Under a found folder: a run the person made came from it."
+  },
+  "runui_requestFoundClone": {
+    "message": "A copy of $repository$.",
+    "description": "Under a found folder: it is a copy of the project's repository. $repository$ is an address without its scheme.",
+    "placeholders": {
+      "repository": {
+        "content": "$1",
+        "example": "github.com/acme/shop"
+      }
+    }
+  },
+  "runui_requestFoundHolds": {
+    "message": "Holds $config$ and $tests$.",
+    "description": "Under a found folder: what it holds. $config$ is the Playwright config's file name, as code; $tests$ is runui_requestTestFile, runui_requestTestFiles or runui_requestSomeTestFiles.",
+    "placeholders": {
+      "config": {
+        "content": "$1",
+        "example": "playwright.config.ts"
+      },
+      "tests": {
+        "content": "$2",
+        "example": "the test files"
+      }
+    }
+  },
+  "runui_requestTestFile": {
+    "message": "the test file",
+    "description": "In runui_requestFoundHolds: the request's one test file."
+  },
+  "runui_requestTestFiles": {
+    "message": "the test files",
+    "description": "In runui_requestFoundHolds: all of the request's test files."
+  },
+  "runui_requestSomeTestFiles": {
+    "message": "$found$ of the $total$ test files: it may be an older copy",
+    "description": "In runui_requestFoundHolds: some of the request's test files only.",
+    "placeholders": {
+      "found": {
+        "content": "$1",
+        "example": "2"
+      },
+      "total": {
+        "content": "$2",
+        "example": "3"
+      }
+    }
+  },
+  "runui_requestUseFolderLabel": {
+    "message": "Use $path$",
+    "description": "Accessible label of the Use this folder button. $path$ is the folder's path.",
+    "placeholders": {
+      "path": {
+        "content": "$1",
+        "example": "/home/dana/shop"
+      }
+    }
+  },
+  "runui_requestUseFolder": {
+    "message": "Use this folder",
+    "description": "Button beside a found folder: links it to the project."
+  },
+  "runui_requestNoneFound": {
+    "message": "No copy of $code$ was found in the usual places on this computer.",
+    "description": "When Find it for me found nothing. $code$ is runui_requestProjectCode.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "Acme Checkout's code"
+      }
+    }
+  },
+  "runui_requestNoOtherFound": {
+    "message": "No other copy of $code$ was found in the usual places on this computer.",
+    "description": "When Find it for me found no other folder than the linked one. $code$ is runui_requestProjectCode.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "Acme Checkout's code"
+      }
+    }
+  },
+  "runui_requestNoneFoundPartly": {
+    "message": "No copy of $code$ was found in the places Piwi could look through.",
+    "description": "When Find it for me found nothing, some places being unreadable. $code$ is runui_requestProjectCode.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "Acme Checkout's code"
+      }
+    }
+  },
+  "runui_requestNoOtherFoundPartly": {
+    "message": "No other copy of $code$ was found in the places Piwi could look through.",
+    "description": "When Find it for me found no other folder, some places being unreadable. $code$ is runui_requestProjectCode.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "Acme Checkout's code"
+      }
+    }
+  },
+  "runui_requestSetUpFirst": {
+    "message": "If you have one elsewhere, choose its folder. If not, the code has to be set up on this computer first: ask whoever set up these tests to help you.",
+    "description": "After runui_requestNoneFound and its kin."
+  },
+  "runui_requestSetUpFirstFrom": {
+    "message": "If you have one elsewhere, choose its folder. If not, the code has to be set up on this computer first: ask whoever set up these tests to help you (it comes from $repository$).",
+    "description": "After runui_requestNoneFound and its kin, when the project's repository is known. $repository$ is an address without its scheme.",
+    "placeholders": {
+      "repository": {
+        "content": "$1",
+        "example": "github.com/acme/shop"
+      }
+    }
+  },
+  "runui_requestFindFolder": {
+    "message": "Find it for me",
+    "description": "Button: the app looks for the project's folder on this computer."
+  },
+  "runui_requestLookAgain": {
+    "message": "Look again",
+    "description": "Button: the app looks for the project's folder again."
+  },
+  "runui_requestChooseFolder": {
+    "message": "Choose the folder…",
+    "description": "Button: opens the system's folder picker."
+  },
+  "runui_requestChooseOtherFolder": {
+    "message": "Choose another folder…",
+    "description": "Button, when some folders were found: opens the system's folder picker."
+  },
+  "runui_requestRunsIn": {
+    "message": "Runs in the linked folder and reports to $host$",
+    "description": "Above the command a request runs. $host$ is the instance's address.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_requestProtectedNote": {
+    "message": "$environment$ is protected: only the tests tagged $tags$ run, beside the setup and teardown projects they depend on, which Playwright runs whole. The run starts only once you confirm it.",
+    "description": "Under the command of a request for a protected environment (production, as a rule): what its run keeps to, and that it waits for the confirmation below. $environment$ is its name; $tags$ the tags its runs are limited to, joined by commas.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_requestProtectedConfirm": {
+    "message": "Yes, run these tests against $environment$",
+    "description": "Label of the checkbox the person ticks before Run is enabled, for a request of a protected environment. $environment$ is its name.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      }
+    }
+  },
+  "runui_requestNotNow": {
+    "message": "Not now",
+    "description": "Button: declines the run request."
+  },
+  "runui_requestRun": {
+    "message": "Run",
+    "description": "Button: runs the request's tests on this machine."
+  },
+  "runui_requestFindFailed": {
+    "message": "Could not look for the folder",
+    "description": "Title of an error notification: looking for the project's folder failed."
+  },
+  "runui_requestLinkFailed": {
+    "message": "Could not link the folder",
+    "description": "Title of an error notification: linking the folder failed."
+  },
+  "runui_requestStartFailed": {
+    "message": "Could not start the run",
+    "description": "Title of an error notification: starting the requested run failed."
+  },
+  "runui_checkFolderNone": {
+    "message": "No folder is linked to this project on this machine.",
+    "description": "A failed check of a run request: no folder of this machine is linked to the request's project."
+  },
+  "runui_checkFolderGone": {
+    "message": "The linked folder no longer exists: choose it again.",
+    "description": "A failed check of a run request: the folder linked to the project was moved or deleted."
+  },
+  "runui_checkFolderLinked": {
+    "message": "Linked folder: $folder$",
+    "description": "A passed check of a run request: the folder the run will run in. $folder$ is its path.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/shop"
+      }
+    }
+  },
+  "runui_checkVariablesInvalid": {
+    "message": "The project's run variables cannot be set: $problems$",
+    "description": "A failed check of a run request: the project's run variables, set on the instance, cannot be given to the run. $problems$ is the instance's explanation, in English.",
+    "placeholders": {
+      "problems": {
+        "content": "$1",
+        "example": "PATH is a name the shell keeps."
+      }
+    }
+  },
+  "runui_checkVariablesSet": {
+    "message": "Runs with the project's run variables: $variables$.",
+    "description": "A passed check of a run request: the run gets the project's run variables. $variables$ is how the shell sets them, as code.",
+    "placeholders": {
+      "variables": {
+        "content": "$1",
+        "example": "BASE_URL=https://staging.example.com"
+      }
+    }
+  },
+  "runui_checkEnvironmentSet": {
+    "message": "Runs for $environment$: PIWI_ENVIRONMENT=$key$.",
+    "description": "A passed check of a run request: the run is for an environment of the project, whose key it gets as PIWI_ENVIRONMENT. $environment$ is its name, $key$ its key.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "key": {
+        "content": "$2",
+        "example": "staging"
+      }
+    }
+  },
+  "runui_checkEnvironmentProtected": {
+    "message": "Runs for $environment$, a protected environment: only the tests tagged $tags$ run, beside the setup and teardown projects they depend on, which Playwright runs whole.",
+    "description": "A warning of a run request: the run is for a protected environment, and only the tests carrying one of its required tags run, beside the setup and teardown projects they depend on, which Playwright runs whole. $environment$ is its name; $tags$ the tags, joined by commas.",
+    "placeholders": {
+      "environment": {
+        "content": "$1",
+        "example": "Staging"
+      },
+      "tags": {
+        "content": "$2",
+        "example": "@smoke, @readonly"
+      }
+    }
+  },
+  "runui_checkFolderBusy": {
+    "message": "Another run is going in this folder: this one can run once it ends.",
+    "description": "A failed check of a run request: another run uses the same folder."
+  },
+  "runui_checkConfigMissing": {
+    "message": "The folder holds no Playwright config.",
+    "description": "A failed check of a run request: the linked folder has no playwright.config file."
+  },
+  "runui_checkSpecsMissing": {
+    "message": "Not in the folder: $files$.",
+    "description": "A failed check of a run request: some test files are missing from the folder. $files$ is a comma-separated list of file paths.",
+    "placeholders": {
+      "files": {
+        "content": "$1",
+        "example": "tests/cart.spec.ts, tests/login.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsMissingMore_one": {
+    "message": "Not in the folder: $files$ and $count$ more.",
+    "description": "A failed check of a run request, when more files are missing than it names, singular form. $files$ is a comma-separated list of the first three file paths; $count$ the number of the others.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsMissingMore_other": {
+    "message": "Not in the folder: $files$ and $count$ more.",
+    "description": "A failed check of a run request, when more files are missing than it names, plural form. $files$ is a comma-separated list of the first three file paths; $count$ the number of the others.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      },
+      "files": {
+        "content": "$2",
+        "example": "tests/a.spec.ts, tests/b.spec.ts, tests/c.spec.ts"
+      }
+    }
+  },
+  "runui_checkSpecsFound": {
+    "message": "The specs are in the folder.",
+    "description": "A passed check of a run request: every test file is in the folder."
+  },
+  "runui_checkPlaywrightMissing": {
+    "message": "Playwright is not installed in the folder: run `npm install` there.",
+    "description": "A failed check of a run request. Keep the command between backticks as it is."
+  },
+  "runui_checkPlaywrightInstalled": {
+    "message": "Playwright is installed.",
+    "description": "A passed check of a run request: Playwright is installed in the folder."
+  },
+  "runui_checkCommitDiffers": {
+    "message": "Your folder is $here$; the run you came from was $there$. The tests are selected by title.",
+    "description": "A warning of a run request: the folder is not on the commit of the run the request came from. $here$ is runui_checkOnBranchAt, runui_checkOnBranch, runui_checkAtCommit or runui_checkOutsideGit; $there$ is one of the first three.",
+    "placeholders": {
+      "here": {
+        "content": "$1",
+        "example": "on main at 1a2b3c4"
+      },
+      "there": {
+        "content": "$2",
+        "example": "on main at 5d6e7f8"
+      }
+    }
+  },
+  "runui_checkOnBranchAt": {
+    "message": "on $branch$ at $commit$",
+    "description": "Where a folder or a run stands in git, inside runui_checkCommitDiffers. $branch$ is a branch name, $commit$ a short commit id.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "main"
+      },
+      "commit": {
+        "content": "$2",
+        "example": "1a2b3c4"
+      }
+    }
+  },
+  "runui_checkOnBranch": {
+    "message": "on $branch$",
+    "description": "Where a folder stands in git when its commit is unknown, inside runui_checkCommitDiffers.",
+    "placeholders": {
+      "branch": {
+        "content": "$1",
+        "example": "main"
+      }
+    }
+  },
+  "runui_checkAtCommit": {
+    "message": "at $commit$",
+    "description": "Where a folder or a run stands in git when its branch is unknown, inside runui_checkCommitDiffers. $commit$ is a short commit id.",
+    "placeholders": {
+      "commit": {
+        "content": "$1",
+        "example": "1a2b3c4"
+      }
+    }
+  },
+  "runui_checkOutsideGit": {
+    "message": "outside a git repository",
+    "description": "Where a folder stands when it is not in a git repository, inside runui_checkCommitDiffers."
+  },
+  "runui_checkCommitSame": {
+    "message": "Your folder is on the commit the run came from.",
+    "description": "A passed check of a run request: the folder is on the commit of the run the request came from."
+  },
+  "runui_checkChangesUncommitted": {
+    "message": "Your folder has uncommitted changes.",
+    "description": "A warning of a run request: the folder has changes not committed to git."
+  },
+  "runui_checkCommandTooLong": {
+    "message": "The command for these tests is longer than $max$ characters: ask for fewer tests.",
+    "description": "A failed check of a run request: too many tests for one command. $max$ is a number.",
+    "placeholders": {
+      "max": {
+        "content": "$1",
+        "example": "24,000"
+      }
+    }
+  },
+  "runui_durationSeconds": {
+    "message": "$seconds$ s",
+    "description": "A duration or a time since a test began, in seconds: in runs_waitedFor, and in the list of the responses a test kept. Short unit symbol.",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_durationMinutes": {
+    "message": "$minutes$ min $seconds$ s",
+    "description": "A duration of a minute or more, in runs_waitedFor. Short unit symbols.",
+    "placeholders": {
+      "minutes": {
+        "content": "$1",
+        "example": "2"
+      },
+      "seconds": {
+        "content": "$2",
+        "example": "5"
+      }
+    }
+  },
+  "runui_shareInstanceUnknown": {
+    "message": "the Piwi instance this run reports to",
+    "description": "Names the instance in runui_shareWarning when the run's page does not name it."
+  },
+  "runui_shareWarning": {
+    "message": "While this run is shared on $instance$, anyone with its page open there sees each stop of its tests: the call, its file and line, and the test's title, even while nobody watches. While someone watches a worker, images of its test's page go there too, each with its call and the test's title. Anyone who can open the run there can watch, and on an instance with authentication off, anyone who can reach it. Nothing is stored, and Stop sharing ends it within seconds.",
+    "description": "Asked before the window first shares a run live. $instance$ is the instance's address, or runui_shareInstanceUnknown. Stop sharing is the button's label (runui_stopSharing).",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_liveSharedOn": {
+    "message": "Shared live on $instance$",
+    "description": "Under a run shared live, before a middle dot and who watches. $instance$ is the instance's address.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_liveShared": {
+    "message": "Shared live",
+    "description": "Under a run shared live, when the instance's address is unknown, before a middle dot and who watches."
+  },
+  "runui_liveNobodyWatches": {
+    "message": "nobody watches yet",
+    "description": "After runui_liveSharedOn and a middle dot: no view of the run is open on the instance. Lower case."
+  },
+  "runui_liveViews_one": {
+    "message": "$count$ view open",
+    "description": "After runui_liveSharedOn and a middle dot: how many views of the run are open on the instance, singular. Lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_liveViews_other": {
+    "message": "$count$ views open",
+    "description": "After runui_liveSharedOn and a middle dot: how many views of the run are open on the instance, plural. Lower case.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_stopSharingRunTitle": {
+    "message": "Stop sharing run #$id$ live?",
+    "description": "Title of the question Stop sharing asks. $id$ is the run's number on the instance.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "412"
+      }
+    }
+  },
+  "runui_stopSharingTitle": {
+    "message": "Stop sharing the run live?",
+    "description": "Title of the question Stop sharing asks, before the run has a number on the instance."
+  },
+  "runui_theTeamInstance": {
+    "message": "the team instance",
+    "description": "Names the instance in a sentence when its address is unknown."
+  },
+  "runui_stopSharingNobody": {
+    "message": "Nothing more of it goes to $instance$.",
+    "description": "Body of the question Stop sharing asks, while no view is open. $instance$ is the instance's address, or runui_theTeamInstance.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_stopSharingOneView": {
+    "message": "The view open on $instance$ closes, and nothing more of the run goes there.",
+    "description": "Body of the question Stop sharing asks, while one view is open. $instance$ is the instance's address, or runui_theTeamInstance.",
+    "placeholders": {
+      "instance": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_stopSharingViews_one": {
+    "message": "The $count$ view open on $instance$ closes, and nothing more of the run goes there.",
+    "description": "Body of the question Stop sharing asks, while several views are open, in the singular form a language may use for more than one. $instance$ is the instance's address.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      },
+      "instance": {
+        "content": "$2",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_stopSharingViews_other": {
+    "message": "The $count$ views open on $instance$ close, and nothing more of the run goes there.",
+    "description": "Body of the question Stop sharing asks, while several views are open. $instance$ is the instance's address.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      },
+      "instance": {
+        "content": "$2",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runui_codeAssert": {
+    "message": "Assertion the agent made",
+    "description": "Heading of a code to copy: an assertion an agent made at a stop."
+  },
+  "runui_codeSteps": {
+    "message": "Steps the agent took",
+    "description": "Heading of a code to copy: the steps an agent recorded at a stop."
+  },
+  "runui_codeLocator": {
+    "message": "Locator the agent picked",
+    "description": "Heading of a code to copy: a locator an agent picked for the stopped line."
+  },
+  "runui_codeLocatorPicked": {
+    "message": "Locator picked",
+    "description": "Heading of a locator to copy, picked on the image of a stop."
+  },
+  "runui_imagePickTitle": {
+    "message": "Click the image to name the element under the pointer (or Shift+click it); Escape stops",
+    "description": "Tooltip of the Pick on the image toggle (runs_pickAt) over the image of a stopped test's page. Shift+click is a click with the Shift key held; Escape is the Escape key, named as the keyboard labels it. One sentence."
+  },
+  "runui_laneNextTest": {
+    "message": "The page shows as the next test starts.",
+    "description": "In place of a watched worker's page, while the worker is between two tests: its next test's page shows once it starts. One sentence."
+  },
+  "runui_laneInspect": {
+    "message": "Inspect",
+    "description": "Toggle button over a watched worker's page: shows the page of its running test at each of its calls, under the image. A button: keep it short."
+  },
+  "runui_workerWindowFailed": {
+    "message": "The window could not open",
+    "description": "Title of an error notice when a worker's own window failed to open; the error's own text follows under it. A short sentence."
+  },
+  "runui_workerOpenWindowTitle": {
+    "message": "Open in a window, kept above the others",
+    "description": "Tooltip of the icon button beside a worker's test name: it opens the worker in a window of its own, kept above the app's other windows."
+  },
+  "runui_workerOpenWindowLabel": {
+    "message": "Open this worker in a window, kept above the others",
+    "description": "Name screen readers give the icon button beside a worker's test name: it opens the worker in a window of its own, kept above the app's other windows."
+  },
+  "runui_workerCannotPause": {
+    "message": "This test never stops: $reason$",
+    "description": "Under a worker's test name, when the test cannot stop at a breakpoint. $reason$ is why, a sentence the reporter sends in English.",
+    "placeholders": {
+      "reason": {
+        "content": "$1",
+        "example": "Playwright's Inspector runs the test (PWDEBUG), run without --debug"
+      }
+    }
+  },
+  "runui_workerAssertRegionTitle": {
+    "message": "Pick a region of the page: its ARIA snapshot becomes a $method$ check to copy",
+    "description": "Tooltip of the Assert a region button at a stop: the check comes to this window to copy. $method$ is Playwright's assertion, written as code (toMatchAriaSnapshot), never translated.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "toMatchAriaSnapshot"
+      }
+    }
+  },
+  "runui_workerMockTitle": {
+    "message": "Choose a response the page got: it becomes a $method$ mock to copy",
+    "description": "Tooltip of the Mock a request button at a stop: the mock comes to this window to copy. $method$ is Playwright's method, written as code (page.route), never translated.",
+    "placeholders": {
+      "method": {
+        "content": "$1",
+        "example": "page.route"
+      }
+    }
+  },
+  "runui_workerResponsesListed_one": {
+    "message": "$count$ response listed.",
+    "description": "Read out by screen readers once Mock a request lists the responses the test kept, here one.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runui_workerResponsesListed_other": {
+    "message": "$count$ responses listed.",
+    "description": "Read out by screen readers once Mock a request lists the responses the test kept, here several or none.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "12"
+      }
+    }
+  },
+  "runui_driverAgentMayAct": {
+    "message": "An agent may act on this stop",
+    "description": "At the foot of a stopped worker's page, beside the Take control button, while an agent follows the run and nobody drives the stop. A short line."
+  },
+  "runui_sessionStartingWorker": {
+    "message": "Starting a worker…",
+    "description": "Under a run in the Local runs tray, until its first worker is heard from. A short line."
+  },
+  "runui_sessionWorkersLabel": {
+    "message": "The workers of $run$",
+    "description": "Name screen readers give the list of a run's workers. $run$ is the run's name: its Piwi project, else its folder.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Acme Checkout"
+      }
+    }
+  },
+  "runui_commonCopy": {
+    "message": "Copy",
+    "description": "Small button that copies a code or a locator to the clipboard. One short word."
+  },
+  "runui_commonCopied": {
+    "message": "Copied",
+    "description": "Label a Copy button takes for two seconds once it copied. One short word."
+  },
+  "runui_commonCancel": {
+    "message": "Cancel",
+    "description": "Button that closes a question, or the sign-in on the instance, without doing what it asks. One short word."
+  },
+  "runui_commonUnknownError": {
+    "message": "Unknown error",
+    "description": "Said in place of an error's message when the error carries none, under a title such as Could not connect. A few words."
+  },
+  "runui_hubAskToWatchRun": {
+    "message": "$who$ asks to watch run #$id$ live",
+    "description": "Title of a notice that stays until answered: a teammate on the team instance asks to watch a run of this machine live. $who$ is the teammate's name, $id$ the run's number on the instance. Its buttons are Share live and Not now.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "412"
+      },
+      "who": {
+        "content": "$2",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "runui_hubAskToWatch": {
+    "message": "$who$ asks to watch this run live",
+    "description": "Title of a notice that stays until answered: a teammate on the team instance asks to watch a run of this machine live, before the run has a number there. $who$ is the teammate's name. Its buttons are Share live and Not now.",
+    "placeholders": {
+      "who": {
+        "content": "$1",
+        "example": "Ada Lovelace"
+      }
+    }
+  },
+  "runui_hubNotNow": {
+    "message": "Not now",
+    "description": "Button of the notice a teammate's ask to watch a run brings: declines it, and the teammate is told. Also the title of the notice saying why declining failed. Two or three words."
+  },
+  "runui_hubNotice": {
+    "message": "Runs",
+    "description": "Title of a notice about a run this machine started (a stop that went on, a code not made); its text comes from the app. One word."
+  },
+  "runui_hubNotConnected": {
+    "message": "The window is not connected to the runs: it connects again in a moment.",
+    "description": "Said under a control of a run (Pause, Watch, Share live…) when the window has lost its connection to the runs. One sentence."
+  },
+  "runui_hubNoAnswer": {
+    "message": "The app did not answer.",
+    "description": "Said under a control of a run (Pause, Watch, Share live…) when the app that runs the tests did not answer it. One short sentence."
+  },
+  "runui_copyCopiedToClipboard": {
+    "message": "Copied to clipboard",
+    "description": "Notice shown once a code block's Copy button copied its code. A few words."
+  },
+  "runui_copyCopiedTitle": {
+    "message": "Copied!",
+    "description": "Tooltip of a code block's Copy button for two seconds once it copied. One or two words."
+  },
+  "runui_copyHeading": {
+    "message": "Code from the runs",
+    "description": "Heading of the list of the code made at the stops of the runs this machine started, and of the locators their tests picked, each to copy. A few words."
+  },
+  "runui_copyLocatorCopied": {
+    "message": "Locator copied",
+    "description": "Notice shown once a locator, picked at a stop or listed in Code from the runs, is copied to the clipboard. A few words."
+  },
+  "runui_copyCodeCopied": {
+    "message": "Code copied",
+    "description": "Notice shown once a code of the Code from the runs list is copied to the clipboard. A few words."
+  },
+  "runui_copyImportsCopied": {
+    "message": "Imports copied",
+    "description": "Notice shown once the import lines a code needs are copied to the clipboard. A few words."
+  },
+  "runui_copyImports": {
+    "message": "Copy the imports",
+    "description": "Small button under a code of the Code from the runs list: copies the import lines the code needs at the top of its file. A few words."
+  },
+  "runui_copyAbove": {
+    "message": "Above $place$",
+    "description": "Label at the top of a code block: the code goes above the line $place$, a test file and its line number. A few words.",
+    "placeholders": {
+      "place": {
+        "content": "$1",
+        "example": "tests/checkout.spec.ts:42"
+      }
+    }
+  },
+  "runui_copyImportsPlace": {
+    "message": "Imports, at the top of the file",
+    "description": "Label at the top of the block of import lines a code needs: they go at the top of the test file. A few words."
+  },
+  "runui_copyWarnings": {
+    "message": "What to check in the code",
+    "description": "Name screen readers give the list, under a code of the Code from the runs list, of what to check in that code."
+  },
+  "runui_copyShowFewer": {
+    "message": "Show fewer",
+    "description": "Button under the Code from the runs list once it shows every item: shows only the latest three again. Two or three words."
+  },
+  "runui_copyShowAll": {
+    "message": "Show all $total$",
+    "description": "Button under the Code from the runs list: shows every item, not only the latest three. $total$ is how many there are, always more than three. A few words.",
+    "placeholders": {
+      "total": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_shareCopyPageLink": {
+    "message": "Copy the run page's link",
+    "description": "Small button beside a run shared live: copies the address of the run's page on the team instance. A few words."
+  },
+  "runui_shareStopSharing": {
+    "message": "Stop sharing…",
+    "description": "Small button beside a run shared live: asks before it stops sharing the run. The ellipsis says a question follows. Two or three words."
+  },
+  "runui_shareLiveTooltip": {
+    "message": "Let a teammate watch this run from its page on your Piwi instance",
+    "description": "Tooltip of the Share live button of a run. Piwi is the product's name. One line."
+  },
+  "runui_shareAskTitle": {
+    "message": "Share this run live?",
+    "description": "Title of the question the first Share live in a session of the app asks, above what sharing sends and to whom. A few words."
+  },
+  "runui_pageOpenRun": {
+    "message": "Open run #$id$",
+    "description": "Name screen readers give the Open link beside a run's number: opens the run's page. $id$ is the run's number on the instance it reports to.",
+    "placeholders": {
+      "id": {
+        "content": "$1",
+        "example": "412"
+      }
+    }
+  },
+  "runui_requestsBytes": {
+    "message": "$size$ B",
+    "description": "Size of a response the test kept, under a thousand bytes, in the list Mock a request chooses from. Short unit symbol.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "512"
+      }
+    }
+  },
+  "runui_requestsKilobytes": {
+    "message": "$size$ kB",
+    "description": "Size of a response the test kept, in kilobytes with one decimal, in the list Mock a request chooses from. Short unit symbol.",
+    "placeholders": {
+      "size": {
+        "content": "$1",
+        "example": "1.5"
+      }
+    }
+  },
+  "runui_connectionKeepKeyFailed": {
+    "message": "Could not keep the key: disconnected",
+    "description": "Title of an error notice: the system's keychain refused to keep the key the team instance gave this app, so the app disconnected from the instance. One short line."
+  },
+  "runui_runStop": {
+    "message": "Stop",
+    "description": "Button that stops a run of tests on this machine as Ctrl+C would in a terminal: Playwright winds down and writes its report. One short word."
+  },
+  "runui_runForceStop": {
+    "message": "Force stop",
+    "description": "Button shown in place of runui_runStop while a run winds down: it kills the run’s process at once. Two short words."
+  },
+  "runui_runForceStopHint": {
+    "message": "Kill the process now: Playwright may not write its report",
+    "description": "Tooltip of runui_runForceStop: what killing the process costs."
+  },
+  "runui_runStopsWithin": {
+    "message": "Ends within $seconds$ s",
+    "description": "Beside runui_runForceStop while a run winds down: at most how many seconds remain before it ends, since the app kills a process that still runs then. Short.",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_runStopsWithinHint": {
+    "message": "Playwright is winding down and writing its report. A process still running then is killed.",
+    "description": "Tooltip of runui_runStopsWithin."
+  },
+  "runui_outputWaiting": {
+    "message": "Waiting for output…",
+    "description": "In a run’s output pane before the run printed its first line."
+  },
+  "runui_outputFilter": {
+    "message": "Filter the output",
+    "description": "Placeholder and label of the field above a run’s output that keeps only the lines holding its text. A few words."
+  },
+  "runui_outputMatches_one": {
+    "message": "$shown$ of $count$ line",
+    "description": "Beside the output filter: how many lines hold its text, of the lines the pane keeps. Singular form, on the lines kept.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputMatches_other": {
+    "message": "$shown$ of $count$ lines",
+    "description": "Beside the output filter: how many lines hold its text, of the lines the pane keeps. Plural form, on the lines kept.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputNoMatch": {
+    "message": "No line holds this text",
+    "description": "In a run’s output pane when no line holds the filter’s text."
+  },
+  "runui_outputWrap": {
+    "message": "Wrap long lines",
+    "description": "Toggle button of a run’s output pane, shown as an icon: long lines wrap instead of scrolling sideways."
+  },
+  "runui_outputFirstError": {
+    "message": "Go to the first error",
+    "description": "Button of a run’s output pane, shown as an icon: scrolls to the first error the run printed."
+  },
+  "runui_outputLatest": {
+    "message": "Go to the latest line",
+    "description": "Button over a run’s output once the person scrolled up: scrolls back to the newest line and follows the output again."
+  },
+  "runui_outputCopy": {
+    "message": "Copy output",
+    "description": "Button of a run’s output pane: copies every line it keeps, without colors."
+  },
+  "runui_outputLabel": {
+    "message": "Output",
+    "description": "Accessible name of a run’s output pane, the scrolling text the run printed. One short word."
+  },
+  "runui_resultsLabel": {
+    "message": "Results",
+    "description": "Accessible name of the list of a finished run’s tests and how each came out."
+  },
+  "runui_resultPassed": {
+    "message": "Passed",
+    "description": "How a test of a finished run came out: it passed. One word."
+  },
+  "runui_resultFailed": {
+    "message": "Failed",
+    "description": "How a test of a finished run came out: it failed. One word."
+  },
+  "runui_resultFlaky": {
+    "message": "Flaky",
+    "description": "How a test of a finished run came out: it failed, then passed on a retry. One word."
+  },
+  "runui_resultSkipped": {
+    "message": "Skipped",
+    "description": "How a test of a finished run came out: it was skipped. One word."
+  },
+  "runui_resultInterrupted": {
+    "message": "Interrupted",
+    "description": "How a test of a finished run came out: the run was stopped while it ran. One word."
+  },
+  "runui_resultDidNotRun": {
+    "message": "Did not run",
+    "description": "How a test of a finished run came out: the run ended before it started. A few words."
+  },
+  "runui_resultUnknown": {
+    "message": "No result in the output",
+    "description": "How a test of a finished run came out when its output does not say: the reporter printed no line for it. A few words."
+  },
+  "runui_resultsMore_one": {
+    "message": "Show $count$ more",
+    "description": "Button under the list of a finished run’s tests: shows the one it leaves out. Singular form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_resultsMore_other": {
+    "message": "Show $count$ more",
+    "description": "Button under the list of a finished run’s tests: shows those it leaves out. Plural form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  }
+}

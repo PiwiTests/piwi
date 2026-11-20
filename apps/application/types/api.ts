@@ -141,7 +141,14 @@ export interface MarkerInfo {
   label: string;
   description: string | null;
   category: string;
+  /** The environment's label as written; null for every environment. */
   environment: string | null;
+  /** The environment the label resolves to. */
+  environmentId: number | null;
+  /** That environment's name, where the list answers it. */
+  environmentName?: string | null;
+  /** A deploy marker's deployed commit. */
+  commit: string | null;
   source: string; // 'manual' | 'auto'
   runId: number | null;
   createdAt: string | Date;
@@ -319,6 +326,8 @@ export interface ProjectUnscopedRun {
   id: number;
   startTime: string | Date;
   environment: string | null;
+  /** The key of the environment `environment` resolves to; null for none. */
+  environmentKey: string | null;
   branch: string | null;
   isFullRun: boolean;
   /** The viewer's own run, which the filters never hide. */
@@ -436,18 +445,21 @@ export interface ProjectWithTestRuns {
   ownRuns?: TestRunSummary[];
   diagnosisInstructions?: string | null;
   aiLanguage?: string | null;
+  /** Whether the project names an SCM credential of its own (`scmCredentialId`). */
   hasScmToken?: boolean;
-  /** Whether a CI server token is stored for the project. */
-  hasCiServerToken?: boolean;
-  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
-  ciServerTokenUrl?: string | null;
-  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  /** The SCM credential the project's repository calls carry; null for the instance's. */
+  scmCredentialId?: number | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
   defaultBranch?: string | null;
   /** The project's setting, else its most common run branch, else `main`: what a run scope reads with no branch picked. */
   effectiveDefaultBranch?: string;
+  /** The environment the project's views read by default, as they read the default branch; null for every environment. */
+  defaultEnvironmentId?: number | null;
+  /** The default environment a run scope reads with no environment picked; null for none, or when it is archived. */
+  effectiveDefaultEnvironment?: Pick<import('#shared/environments').EnvironmentRecord, 'id' | 'key' | 'name'> | null;
   openApiUrl?: string | null;
   /** Link to a test in the team's test management tool, `{id}` replaced by the test's external ID. */
   externalIdUrl?: string | null;
@@ -475,6 +487,8 @@ export interface ProjectWithTestRuns {
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
   /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
   tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
+  /** The run variables: the environment variables every run Piwi starts for the project gets. */
+  runVariables?: import('@piwitests/core/run-variables').RunVariable[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
   capabilities?: Partial<
     Record<import('#shared/capabilities').CapabilityId, import('#shared/capabilities').ProjectDecision>
@@ -490,12 +504,11 @@ export interface ProjectDetails {
   label?: string | null;
   description?: string | null;
   diagnosisInstructions?: string | null;
+  /** Whether the project names an SCM credential of its own (`scmCredentialId`). */
   hasScmToken: boolean;
-  /** Whether a CI server token is stored for the project. */
-  hasCiServerToken?: boolean;
-  /** The base URL the stored CI server token may be sent under (the token goes nowhere else); null unless the caller has `project:manage`. */
-  ciServerTokenUrl?: string | null;
-  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which a project without a base URL of its own dispatches to; null unless the caller has `project:manage`. */
+  /** The SCM credential the project's repository calls carry; null for the instance's. */
+  scmCredentialId?: number | null;
+  /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
   defaultBranch?: string | null;
   /** The project's CI actions (secrets excluded). */
@@ -519,6 +532,8 @@ export interface ProjectDetails {
   coverageAreas?: import('@piwitests/core/coverage-scope').CoverageArea[] | null;
   /** The patterns that read the issue key and the test case key out of a test's tags; null when both are off. */
   tagKeys?: import('#shared/integrations/tag-keys').TagKeyPatterns | null;
+  /** The run variables: the environment variables every run Piwi starts for the project gets. */
+  runVariables?: import('@piwitests/core/run-variables').RunVariable[];
   color?: string | null;
   tags?: TagInfo[];
   /** Stored per-project capability decisions, for the edit form's overrides. */
@@ -555,6 +570,8 @@ export interface TestRunSummary {
   reports?: ReportInfo[];
   browsers?: string[];
   environment?: string | null;
+  /** The key of the environment `environment` resolves to; null for none. Set on a project's run lists. */
+  environmentKey?: string | null;
   branch?: string | null;
   label?: string | null;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -610,7 +627,29 @@ export interface TestRunDetails {
   runErrors?: WireRunError[] | null;
   /** Where the run executed: each shard's runner, each project's browser, each server under test. */
   environments?: RunEnvironments;
+  /** The label the run reported (the reporter's `environment` option or `PIWI_ENVIRONMENT`), as it came. */
   environment?: string | null;
+  /** The project's environment the label resolves to, by key or alias; null for none. */
+  environmentId?: number | null;
+  /** That environment's name; null for none. */
+  environmentName?: string | null;
+  /** Whether that environment is protected; a copied command never starts on a protected one. */
+  environmentProtected?: boolean;
+  /** Whether that environment is archived; a copied command never starts on an archived one. */
+  environmentArchived?: boolean;
+  /** Why the run may not have tested its environment: another label than the one it was started for, a `baseURL` outside its URL patterns. */
+  environmentWarnings?: string[];
+  /** Whether that environment's application is built from the run's checkout; null for no environment. */
+  environmentAppFromCheckout?: boolean | null;
+  /** The application's commit a run of a deployed environment ran against: its server's, else its latest deploy marker's. */
+  deployedCommit?: {
+    commit: string;
+    source: 'server' | 'marker';
+    origin?: string;
+    markerId?: number;
+    markerLabel?: string;
+    deployedAt?: string | Date;
+  } | null;
   label?: string | null;
   playwrightVersion?: string | null;
   reporterVersion?: string | null;
@@ -916,6 +955,40 @@ export interface TraceSnapshotsResponse {
    * failing step in the timeline. Null when the failing step recorded no aria.
    */
   failingAriaText?: string | null;
+}
+
+/** One image of a page from the trace's screencast. */
+export interface TraceFrame {
+  /** When the trace recorded it, in epoch ms (a few ms after the page painted it): the clock of the timeline's `origin`. */
+  epochMs: number;
+  /** The frame's name in the trace, which `GET /api/test-run-cases/:id/trace-frame?name=` serves. */
+  name: string;
+  /** The image's size in pixels; 0 when the trace did not record it. */
+  width: number;
+  height: number;
+}
+
+/** One page's screencast, its frames in the order the page painted them. */
+export interface TraceFramePage {
+  pageId: string;
+  frames: TraceFrame[];
+}
+
+/** `GET /api/test-run-cases/:id/trace-frames` */
+export interface TraceFramesResponse {
+  /** `no-frames` when the trace recorded no screencast, or none it can place on the clock. */
+  status: 'ok' | 'no-trace' | 'no-frames';
+  /** The pages in the order their first frame was recorded, the first `MAX_TRACE_FRAME_PAGES` of them. */
+  pages: TraceFramePage[];
+  /** How many frames the trace recorded, every page together. */
+  total: number;
+  /** True when the listed pages are an even sample of their frames, past `MAX_TRACE_FRAMES`; `total` also counts unlisted pages. */
+  capped: boolean;
+  /**
+   * When the test started on the trace's clock, in epoch ms: its test runner's header, else its first browser
+   * context's. Null without a trace or a header.
+   */
+  startEpochMs: number | null;
 }
 
 /**
@@ -1226,6 +1299,11 @@ export interface FailureClusterDetail extends ClusterResolutionFields {
   firstSeenRunId: number;
   lastSeenRunId: number;
   firstSeenAt: string | Date | null;
+  /**
+   * For a cluster first seen in a deployed environment: the deploys between the last run of it where one of its tests
+   * passed and the run it first failed in, the last one its first failing deploy. Null otherwise.
+   */
+  firstFailingDeploy?: Serialize<import('#shared/handlers/deployed-changes').FirstFailingDeploy> | null;
   occurrences: number;
   affectedTests: number;
   /** How many of those tests are quarantined, beyond the listed `affectedTestCases` too. */
@@ -1593,6 +1671,8 @@ export interface TestCaseHistoryPoint {
   repeatEachIndex?: number | null;
   startTime: string | Date;
   runStatus: string;
+  /** The project's environment the run's label resolves to; null for none. */
+  environmentId?: number | null;
 }
 
 /**
@@ -1755,6 +1835,11 @@ export interface DiagnosisContextCoverage {
     executedLines: number;
   } | null;
   /**
+   * The environment the failing run tested: its name, whether it is built from the checkout, and for a deployed one
+   * its deployed commit and the deploy markers listed. null for a run with no environment.
+   */
+  environmentUnderTest?: import('#shared/handlers/environment-context').EnvironmentContextCoverage | null;
+  /**
    * The code the execution ran that the test's last passing execution with coverage did not, and the reverse:
    * the baseline execution and the counts the context carried. null when there is nothing to compare.
    */
@@ -1909,7 +1994,15 @@ export type AiModelRole = 'diagnosis' | 'research' | 'embedding' | 'assistant';
 /** A fully-resolved provider config for a single role (server-side; holds the raw key). */
 export interface ResolvedAiRole {
   provider: AiProvider;
+  /**
+   * The key: once `openAiKeys` opened the role's credential for a call, or a key the setting still holds because it
+   * could not be moved to a credential; empty otherwise.
+   */
   apiKey: string;
+  /** The `ai` credential the role's key is in; absent or null for a local CLI or a key not moved to the store. */
+  credentialId?: number | null;
+  /** Why the credential refused to open, which a call with the role throws. */
+  refusal?: string;
   model: string;
   baseUrl: string | null;
   /** OpenAI-compat only: sampling temperature. Omitted from the request when null (provider default applies) — reasoning models (o1/o3/GPT-5-class) reject any explicit value. */
@@ -1927,6 +2020,9 @@ export interface ResolvedAiRole {
 export interface AiConfig {
   provider: AiProvider;
   apiKey: string;
+  /** The diagnosis role's credential, and why it refused to open (see `ResolvedAiRole`). */
+  credentialId?: number | null;
+  refusal?: string;
   model: string;
   baseUrl: string | null;
   temperature: number | null;
@@ -1962,6 +2058,8 @@ export interface AiRoleSettings {
   baseUrl: string | null;
   reuse: AiModelRole | null;
   hasApiKey: boolean;
+  /** The `ai` credential the role's key is in (Settings → Credentials); absent or null when none. */
+  credentialId?: number | null;
   /** OpenAI-compat only: sampling temperature override, or null for the provider default. */
   temperature: number | null;
 }
@@ -1978,14 +2076,17 @@ export interface AiSettings {
     assistant: AiRoleSettings | null;
   };
   autoDiagnose: boolean;
+  /** Whether the instance has an SCM credential: `scmCredentialIds` is not empty. */
   hasScmToken: boolean;
+  /** The instance's SCM credentials, which a project's repository calls carry when the project names none. */
+  scmCredentialIds: number[];
   envManaged: boolean;
   customInstructions: string | null;
   /** The AI response language ("French", "Japanese", …); null keeps English prose. */
   language: string | null;
   /** True when the language is fixed by `PIWI_AI_LANGUAGE` (rendered locked). */
   languageEnvManaged: boolean;
-  /** False when `PIWI_SECRET_KEY` is unset, so an API key or SCM token cannot be saved. */
+  /** False when `PIWI_SECRET_KEY` is unset, so an API key cannot be saved. */
   canStoreSecrets: boolean;
   /** True when this server may run the local Claude Code CLI: the desktop app, or `PIWI_CLAUDE_CLI_PATH` set. */
   claudeCliAvailable: boolean;
@@ -2006,7 +2107,10 @@ export interface AiRoleConfigInput {
   provider?: string | null;
   model?: string | null;
   baseUrl?: string | null;
+  /** A key typed for the role: it creates the role's credential, or rotates the one it names; null or '' removes the role's. */
   apiKey?: string | null;
+  /** An `ai` credential to name instead (Settings → Credentials); null removes the role's. */
+  credentialId?: number | null;
   reuse?: AiModelRole | null;
   /** OpenAI-compat only: sampling temperature override, or null/omitted for the provider default. */
   temperature?: number | null;
@@ -2019,7 +2123,8 @@ export interface SaveAiSettingsBody {
   roles?: Partial<Record<AiModelRole, AiRoleConfigInput | null>> | null;
   autoDiagnose?: boolean;
   customInstructions?: string | null;
-  scmToken?: string | null;
+  /** The instance's SCM credentials (`credentials.id`, source control, shared with all projects); empty clears them. */
+  scmCredentialIds?: number[] | null;
   /** The instance-wide AI response language; ignored when env-managed. */
   language?: string | null;
 }

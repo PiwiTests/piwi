@@ -7,6 +7,7 @@ import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
+import com.intellij.openapi.actionSystem.DataKey
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
@@ -36,7 +37,6 @@ import com.intellij.ui.dsl.builder.COLUMNS_LARGE
 import com.intellij.ui.dsl.builder.columns
 import com.intellij.ui.dsl.builder.panel
 import java.io.IOException
-import java.net.URI
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
@@ -63,11 +63,18 @@ private fun AnActionEvent.appliesWhen(applies: Boolean) {
     presentation.isVisible = applies || place !in CONTEXT_MENUS
 }
 
+/** The 0-based line a popup's Record here starts at (a test's Record steps in this test), which it takes over the caret's. */
+val RECORD_LINE: DataKey<Int> = DataKey.create("piwi.recordLine")
+
 /** Piwi: Record here… — steps at the caret, or a new test there outside every test, function and class, from a browser the project's Playwright opens. */
 open class RecordHereAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
-    override fun update(e: AnActionEvent) = e.appliesWhen(canRecord(e))
+    // From the keyboard, the chord stops a running recording instead, whatever file it is in (`StopRecordingAction`).
+    override fun update(e: AnActionEvent) = e.appliesWhen(
+        canRecord(e) &&
+            !(e.place == ActionPlaces.KEYBOARD_SHORTCUT && e.project?.getServiceIfCreated(PiwiRecordings::class.java)?.any() == true),
+    )
 
     /** Whether a recording can start at the event's caret. */
     protected fun canRecord(e: AnActionEvent): Boolean {
@@ -80,7 +87,7 @@ open class RecordHereAction : AnAction(), DumbAware {
         val project = e.project ?: return
         val editor = e.getData(CommonDataKeys.EDITOR) ?: return
         val file = e.getData(CommonDataKeys.VIRTUAL_FILE) ?: return
-        PiwiRecordFlow.recordHere(project, editor, file)
+        PiwiRecordFlow.recordHere(project, editor, file, e.getData(RECORD_LINE))
     }
 }
 
@@ -147,7 +154,7 @@ class StopRecordingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
-        e.appliesWhen(recordingOf(e)?.stopping == false)
+        e.appliesWhen(chordActsHere(e) && recordingOf(e)?.stopping == false)
     }
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -206,7 +213,8 @@ object PiwiRecordFlow {
             Glue.inConfigDirs(file.nioPathOrNull(), project.service<PiwiProjectService>().playwrightConfigDirs()) &&
             project.getServiceIfCreated(PiwiRecordings::class.java)?.sessionFor(file) == null
 
-    fun recordHere(project: Project, editor: Editor, file: VirtualFile) = start(project, editor, file, null)
+    /** Record here at the editor's caret, or at the start of the 0-based `line` when given. */
+    fun recordHere(project: Project, editor: Editor, file: VirtualFile, line: Int? = null) = start(project, editor, file, null, line)
 
     /**
      * Record a new test file: the service says where the spec goes (`piwi/newTestFile`: beside the spec at hand in a
@@ -218,7 +226,7 @@ object PiwiRecordFlow {
         val uri = atHand?.let { runCatching { it.toNioPath().toUri().toString() }.getOrNull() }
         background(project, "Piwi: finding where the test file goes") {
             val offered = project.service<PiwiProjectService>().server()?.newTestFile(NewTestFileParams(uri))?.orNull()
-            val path = offered?.uri?.let { runCatching { Path.of(URI(it)) }.getOrNull() }
+            val path = Glue.pathOfUri(offered?.uri)
             val folder = path?.parent ?: fallback
             val offeredName = path?.fileName?.toString()
             val name = offeredName?.takeIf { !Files.exists(folder.resolve(it)) }
@@ -281,7 +289,7 @@ object PiwiRecordFlow {
             }
         }
         ApplicationManager.getApplication().invokeLater({
-            val path = runCatching { Path.of(java.net.URI(uri)) }.getOrNull()
+            val path = Glue.pathOfUri(uri)
             val file = path?.let { LocalFileSystem.getInstance().refreshAndFindFileByNioFile(it) }
             if (file == null) {
                 PiwiCommands.notify(project, "Piwi could not open the file to record into: $uri.", NotificationType.WARNING)
@@ -320,7 +328,7 @@ object PiwiRecordFlow {
         generateSequence(1) { it + 1 }.map { if (it == 1) "recorded$suffix" else "recorded-$it$suffix" }
             .first { !Files.exists(directory.resolve(it)) }
 
-    private fun start(project: Project, editor: Editor, file: VirtualFile, fixedInto: String?) {
+    private fun start(project: Project, editor: Editor, file: VirtualFile, fixedInto: String?, at: Int? = null) {
         val uri = runCatching { file.toNioPath().toUri().toString() }.getOrNull() ?: return
         if (!FileDocumentManager.getInstance().requestWriting(editor.document, project)) return
         if (project.getServiceIfCreated(PiwiRecordings::class.java)?.sessionFor(file) != null) {
@@ -328,7 +336,12 @@ object PiwiRecordFlow {
             return
         }
         val document = editor.document
-        val offset = if (fixedInto == "file") 0 else editor.caretModel.offset
+        if (at != null && at !in 0 until document.lineCount) return
+        val offset = when {
+            fixedInto == "file" -> 0
+            at != null -> document.getLineStartOffset(at)
+            else -> editor.caretModel.offset
+        }
         val line = document.getLineNumber(offset)
         val character = offset - document.getLineStartOffset(line)
         background(project, "Piwi: preparing the recording") {
@@ -378,7 +391,7 @@ object PiwiRecordFlow {
                 val cause = if (error is CompletionException || error is ExecutionException) error.cause ?: error else error
                 cause?.message?.trim()?.ifEmpty { null }?.removeSuffix(".") ?: "the request to the Piwi editor service failed"
             }
-            !request.isDone -> "the Piwi editor service did not answer"
+            !request.isDone -> return "Piwi could not start the recording. ${Glue.SERVICE_NO_ANSWER}"
             else -> "the Piwi editor service did not say where the cursor is"
         }
         return "Piwi could not start the recording: $reason."

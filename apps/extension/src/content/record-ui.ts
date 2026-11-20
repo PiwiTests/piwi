@@ -7,7 +7,7 @@ import { copyWithFeedback } from '../shared/clipboard.js';
 export const HUD_HOST_ID = 'piwi-record-hud-host';
 export const PANEL_HOST_ID = 'piwi-record-review-host';
 export const FRAME_HOST_ID = 'piwi-record-frame-host';
-/** A bug recording's dialogs (what is wrong, what is missing, which page), above the HUD. */
+/** A recording's dialogs (the checks, Something is missing), above the bar. */
 export const BUG_DIALOG_HOST_ID = 'piwi-bug-dialog-host';
 
 /** A replay's panel, its file dialog, and its fake cursor. */
@@ -90,7 +90,7 @@ export function fileStamp(time: number): string {
 
 /**
  * Asks the worker to replay `steps` in this tab, on this page's origin;
- * `recordingViews` are the step screenshots a bug recording took, which the
+ * `recordingViews` are the step screenshots a recording took, which the
  * replay shows for a step it hands to the person. Answers why it could not
  * start.
  */

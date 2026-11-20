@@ -1,0 +1,567 @@
+{
+  "runner_tagline": {
+    "message": "Lance sur cette machine les tests que demande une instance d’équipe."
+  },
+  "runner_connectionHeading": {
+    "message": "Exécuter sur ma machine"
+  },
+  "runner_runsHeading": {
+    "message": "Exécutions"
+  },
+  "runner_noRuns": {
+    "message": "Aucune exécution pour l’instant. Quand une instance d’équipe demande des tests, vous les confirmez d’abord ici."
+  },
+  "runner_statusRunning": {
+    "message": "En cours"
+  },
+  "runner_statusPassed": {
+    "message": "Réussie"
+  },
+  "runner_statusFailed": {
+    "message": "En échec"
+  },
+  "runner_statusStopped": {
+    "message": "Arrêtée"
+  },
+  "runner_statusError": {
+    "message": "Exécution impossible"
+  },
+  "runner_stopping": {
+    "message": "Arrêt en cours…"
+  },
+  "runner_holdFailures": {
+    "message": "Retenir les échecs"
+  },
+  "runner_holdFailuresHint": {
+    "message": "Un test en échec attend ici que vous le regardiez avant que l’exécution continue."
+  },
+  "runner_output": {
+    "message": "Sortie"
+  },
+  "runner_stillRunning": {
+    "message": "Lancée avant le rechargement de la fenêtre, toujours en cours"
+  },
+  "runner_backgroundHeading": {
+    "message": "En arrière-plan"
+  },
+  "runner_runInBackground": {
+    "message": "Fonctionner en arrière-plan"
+  },
+  "runner_runInBackgroundHint": {
+    "message": "Fermer la fenêtre garde Piwi Runner dans la zone de notification : l’instance ne joint cette machine que tant qu’il fonctionne. Désactivé, fermer la fenêtre quitte l’application."
+  },
+  "runner_startOnLogin": {
+    "message": "Lancer à l’ouverture de session"
+  },
+  "runner_startOnLoginHint": {
+    "message": "Lance Piwi Runner dans la zone de notification quand vous ouvrez votre session."
+  },
+  "runner_saveFailed": {
+    "message": "Impossible d’enregistrer le réglage"
+  },
+  "runner_languageHeading": {
+    "message": "Langue"
+  },
+  "runner_languageSystem": {
+    "message": "Celle du système ($language$)",
+    "placeholders": {
+      "language": {
+        "content": "$1",
+        "example": "Français"
+      }
+    }
+  },
+  "runner_languageHint": {
+    "message": "La langue des textes de Piwi Runner. Les titres des tests, les fichiers, les commandes et la sortie des tests restent tels quels."
+  },
+  "runner_languageDraft": {
+    "message": "Cette traduction est un brouillon : aucun lecteur natif ne l’a encore relue."
+  },
+  "runner_languageDraftLink": {
+    "message": "Proposer une correction"
+  },
+  "runner_languageFailed": {
+    "message": "Impossible de changer la langue"
+  },
+  "runner_settingsHeading": {
+    "message": "Réglages"
+  },
+  "runner_connectionSettings": {
+    "message": "Réglages de la connexion"
+  },
+  "runner_connectedTo": {
+    "message": "Connecté à $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_connectingTo": {
+    "message": "Connexion à $host$ en cours",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_reconnectingTo": {
+    "message": "Reconnexion à $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_signingInAt": {
+    "message": "En attente de votre autorisation sur $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_welcomeHeading": {
+    "message": "Connectez-vous à votre instance d’équipe"
+  },
+  "runner_stepsHeading": {
+    "message": "Comment ça marche"
+  },
+  "runner_stepConnect": {
+    "message": "Saisissez l’adresse de votre instance d’équipe et autorisez Piwi Runner sur la page qui s’ouvre."
+  },
+  "runner_stepRequest": {
+    "message": "Sur l’instance, ouvrez un test et demandez à l’exécuter sur votre machine."
+  },
+  "runner_stepConfirm": {
+    "message": "Vérifiez la demande ici, puis cliquez sur $run$ : les tests s’exécutent dans votre dossier, dans un navigateur sur votre écran.",
+    "placeholders": {
+      "run": {
+        "content": "$1",
+        "example": "Run"
+      }
+    }
+  },
+  "runner_clearFinished": {
+    "message": "Retirer les terminées"
+  },
+  "runner_openInstance": {
+    "message": "Ouvrir $host$",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_startedAt": {
+    "message": "Lancée à $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "14:02"
+      }
+    }
+  },
+  "runner_outputLines_one": {
+    "message": "$count$ ligne",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "runner_outputLines_other": {
+    "message": "$count$ lignes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "24"
+      }
+    }
+  },
+  "runner_aboutHeading": {
+    "message": "À propos"
+  },
+  "runner_version": {
+    "message": "Version $version$",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.73.0"
+      }
+    }
+  },
+  "runner_documentation": {
+    "message": "Documentation"
+  },
+  "runner_releaseNotes": {
+    "message": "Notes de version"
+  },
+  "runner_reportProblem": {
+    "message": "Signaler un problème"
+  },
+  "runner_navConnection": {
+    "message": "Connexion"
+  },
+  "runner_navFolders": {
+    "message": "Dossiers"
+  },
+  "runner_navGeneral": {
+    "message": "Général"
+  },
+  "runner_runningHeading": {
+    "message": "En cours"
+  },
+  "runner_finishedHeading": {
+    "message": "Terminées"
+  },
+  "runner_foldersHint": {
+    "message": "Les tests de chaque projet s’exécutent dans le dossier qui lui est lié, avec vos propres outils et votre environnement."
+  },
+  "runner_disconnectQuestion": {
+    "message": "Se déconnecter de $host$ ?",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_disconnectBody": {
+    "message": "Les demandes de l’instance n’atteindront plus cette machine. Pour vous reconnecter, vous autoriserez de nouveau Piwi Runner sur l’instance."
+  },
+  "runner_offline": {
+    "message": "$host$ ne répond pas : ses demandes atteindront de nouveau cette machine dès qu’elle répondra.",
+    "placeholders": {
+      "host": {
+        "content": "$1",
+        "example": "piwi.example.com"
+      }
+    }
+  },
+  "runner_trayHint": {
+    "message": "$updates$ et $logs$ se trouvent dans le menu de l’icône de la zone de notification.",
+    "placeholders": {
+      "logs": {
+        "content": "$1",
+        "example": "Show logs"
+      },
+      "updates": {
+        "content": "$2",
+        "example": "Check for updates…"
+      }
+    }
+  },
+  "shell_trayTooltip": {
+    "message": "$app$ (cliquez pour ouvrir)",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_open": {
+    "message": "Ouvrir $app$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_showLogs": {
+    "message": "Afficher les journaux"
+  },
+  "shell_checkUpdates": {
+    "message": "Rechercher des mises à jour…"
+  },
+  "shell_quit": {
+    "message": "Quitter $app$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitQuestion": {
+    "message": "Quitter $app$ ?",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_quitButton": {
+    "message": "Quitter"
+  },
+  "shell_cancel": {
+    "message": "Annuler"
+  },
+  "shell_runsGoingQuit_one": {
+    "message": "$count$ exécution de tests locale est encore en cours : quitter l’arrête.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingQuit_other": {
+    "message": "$count$ exécutions de tests locales sont encore en cours : quitter les arrête.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_one": {
+    "message": "$count$ exécution de tests locale est encore en cours : la mise à jour l’arrête.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingUpdate_other": {
+    "message": "$count$ exécutions de tests locales sont encore en cours : la mise à jour les arrête.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_runsGoingRestart_one": {
+    "message": "$count$ exécution de tests locale est encore en cours : redémarrer l’arrête.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "1"
+      }
+    }
+  },
+  "shell_runsGoingRestart_other": {
+    "message": "$count$ exécutions de tests locales sont encore en cours : redémarrer les arrête.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "2"
+      }
+    }
+  },
+  "shell_restartQuestion": {
+    "message": "Redémarrer Piwi ?"
+  },
+  "shell_restartButton": {
+    "message": "Redémarrer"
+  },
+  "shell_splashSlow": {
+    "message": "Le serveur local met plus de temps que d’habitude à démarrer. Toujours en attente : la fenêtre s’ouvre dès qu’il est prêt."
+  },
+  "shell_splashRestarting": {
+    "message": "Le serveur local s’est arrêté. Redémarrage en cours : la fenêtre se rouvre dès qu’il est prêt."
+  },
+  "shell_splashStopped": {
+    "message": "Le serveur local s’est arrêté et n’a pas pu redémarrer. Quittez et relancez $app$.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateCheckFailed": {
+    "message": "Impossible de rechercher des mises à jour : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnsupported": {
+    "message": "Cette installation de $app$ ne peut pas se mettre à jour seule. Téléchargez les nouvelles versions sur $page$.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "page": {
+        "content": "$2",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateLatest": {
+    "message": "$app$ $version$ est la dernière version.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateTitle": {
+    "message": "Mettre à jour $app$",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateAvailable": {
+    "message": "$app$ $offered$ est disponible (vous avez $installed$). La mise à jour s’installe maintenant, puis $app$ redémarre.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "installed": {
+        "content": "$2",
+        "example": "0.70.0"
+      },
+      "offered": {
+        "content": "$3",
+        "example": "0.71.0"
+      }
+    }
+  },
+  "shell_updateWhatsNew": {
+    "message": "Nouveautés : $page$",
+    "placeholders": {
+      "page": {
+        "content": "$1",
+        "example": "https://github.com/PiwiTests/piwi/releases"
+      }
+    }
+  },
+  "shell_updateInstall": {
+    "message": "Installer et redémarrer"
+  },
+  "shell_updateNotNow": {
+    "message": "Pas maintenant"
+  },
+  "shell_updateQuestion": {
+    "message": "Mettre à jour $app$ ?",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateButton": {
+    "message": "Mettre à jour"
+  },
+  "shell_updateDownloading": {
+    "message": "$app$ : téléchargement de la mise à jour",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "shell_updateDownloadingPercent": {
+    "message": "$app$ : téléchargement de la mise à jour, $percent$ %",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "percent": {
+        "content": "$2",
+        "example": "42"
+      }
+    }
+  },
+  "shell_updateFailed": {
+    "message": "La mise à jour a échoué : $error$",
+    "placeholders": {
+      "error": {
+        "content": "$1",
+        "example": "signature mismatch"
+      }
+    }
+  },
+  "shell_splashStarting": {
+    "message": "Démarrage du serveur local…"
+  },
+  "shell_pickFolderTitle": {
+    "message": "Choisissez votre copie du code du projet : le dossier qui contient playwright.config.ts"
+  },
+  "shell_useFolderTitle": {
+    "message": "Utiliser ce dossier ?"
+  },
+  "shell_useFolderBody": {
+    "message": "Piwi exécute dans ce dossier les tests des demandes d’exécution de ce projet, une fois que vous cliquez sur Exécuter."
+  },
+  "shell_useFolderButton": {
+    "message": "Utiliser ce dossier"
+  },
+  "shell_betterFolderTitle": {
+    "message": "Lier le dossier qui contient les tests ?"
+  },
+  "shell_betterFolderNotIn": {
+    "message": "Les tests de cette demande ne sont pas dans $folder$.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code"
+      }
+    }
+  },
+  "shell_betterFolderIn": {
+    "message": "Ils sont dans $folder$, qui contient la configuration Playwright : c’est là que Playwright s’exécute.",
+    "placeholders": {
+      "folder": {
+        "content": "$1",
+        "example": "/home/dana/code/shop"
+      }
+    }
+  },
+  "shell_betterFolderLink": {
+    "message": "Lier ce dossier"
+  },
+  "shell_betterFolderKeep": {
+    "message": "Garder mon choix"
+  },
+  "shell_updateNotification": {
+    "message": "$app$ $version$ est disponible",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      },
+      "version": {
+        "content": "$2",
+        "example": "0.72.0"
+      }
+    }
+  },
+  "shell_updateInstallFrom": {
+    "message": "Installez-la depuis $menu$ dans le menu de l’icône de la zone de notification, ou téléchargez-la depuis la dernière version publiée.",
+    "placeholders": {
+      "menu": {
+        "content": "$1",
+        "example": "Check for updates…"
+      }
+    }
+  }
+}

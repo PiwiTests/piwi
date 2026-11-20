@@ -263,7 +263,7 @@ reporter.
 file, so ownership works with no test edits; a `piwi:owner` annotation wins wherever a team wants to be explicit. That
 derived owner is used in pull-request comments, on the flaky leaderboard, and by the `owners`
 [notification filter](/features/notifications#subscriptions), which routes a run only to the team whose tests broke. A
-public repository's `CODEOWNERS` is read without a token; a private one needs an [SCM token](/guide/source-control),
+public repository's `CODEOWNERS` is read without a token; a private one needs an [SCM credential](/guide/source-control),
 and without it ownership comes from the annotations alone.
 
 ### Issues the tests declare

@@ -38,16 +38,19 @@ import type {
   RunStartOptions,
   RunStatusResult,
   RunTestsArgs,
-  SpecTest,
   StatusResult,
+  KeptEnvironment,
   FileSummary,
   SummaryLine,
   TestAtResult,
   TestFailure,
   TestItemsResult,
   TestLineStatus,
+  TestTreeNode,
+  TreeTest,
   WorkspaceFailure,
 } from '@piwitests/editor/protocol';
+import { CONFIG_NODE } from '@piwitests/editor/protocol';
 import { actionTitle, EDITOR_ACTIONS } from '@piwitests/editor/actions';
 import { editorWords } from '@piwitests/editor/words';
 import * as path from 'node:path';
@@ -153,14 +156,19 @@ export type StatusMenuEntry = { command: string; label: string; args?: unknown[]
  * The status menu, in the JetBrains plugin's status popup's sections: the item's action first, Go to the stopped line
  * while a test is stopped (with Open the log beside a restart, and a recording's controls after it while one runs), the
  * run's controls and its share while a run is live, the failures
- * and the dashboard, the test at the cursor and Record here, then the connection. Each row is titled by the action
- * catalog, and offered only where its command acts.
+ * and the dashboard, the test at the cursor and Record here, then the connection and Piwi Picker's pairing. Each row
+ * is titled by the action catalog, and offered only where its command acts.
  */
 export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
   const title = (command: string) => {
     const action = EDITOR_ACTIONS.find((a) => a.vscode === command);
     return action ? actionTitle(action, 'vscode') : command;
   };
+  const recordingRows = [
+    !!state.recording && 'piwi.stopRecording',
+    state.recording === 'paused' && 'piwi.resumeRecording',
+    state.recording === 'recording' && 'piwi.pauseRecording',
+  ];
   const sections: Array<[string, Array<string | false>]> = [
     [
       '',
@@ -174,9 +182,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
           none: false as const,
         }[state.action],
         state.action === 'restart' && 'piwi.openLog',
-        !!state.recording && 'piwi.stopRecording',
-        state.recording === 'paused' && 'piwi.resumeRecording',
-        state.recording === 'recording' && 'piwi.pauseRecording',
+        ...recordingRows,
       ],
     ],
     [
@@ -209,7 +215,7 @@ export function statusMenu(state: StatusMenuState): StatusMenuEntry[] {
       ],
     ],
     ['Run and record', [state.spec && 'piwi.runTestAtCursor', state.spec && !state.recording && 'piwi.record']],
-    ['Connection', ['piwi.refresh', 'piwi.connect', 'piwi.openSettings']],
+    ['Connection', ['piwi.refresh', 'piwi.connect', 'piwi.pairPicker', 'piwi.openSettings']],
   ];
   const seen = new Set<string>();
   const entries: StatusMenuEntry[] = [];
@@ -287,18 +293,37 @@ function desktopHint(status: StatusResult | null, desktopChosen: boolean): strin
 }
 
 /**
- * A run in progress in the status bar: `$(sync~spin) Piwi: run #124 · 4 of 9 · 1 failed`, and ` · yours` for the
- * editor's own.
+ * A run in progress in the status bar: `$(loading~spin) Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck?`, and ` · yours`
+ * for the editor's own, or who started it when a person did not (` · Started by Claude Code`); another's names its
+ * branch (`CI run #130 on feature-x`).
  */
 function liveText(live: LiveRun): string {
-  const run = live.ci ? 'CI run' : 'run';
-  return `$(sync~spin) Piwi: ${run} #${live.runId} · ${countWords(live.done, live.total, live.failed)}${live.own ? ' · yours' : ''}`;
+  const whose = live.own ? ` · ${live.label ?? 'yours'}` : '';
+  return `$(loading~spin) Piwi: ${othersRun(live, 'run')} · ${liveCount(live)}${whose}`;
 }
 
-/** The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`. */
+/** A run in progress the editor did not start, as both status lines name it: `CI run #130 on feature-x`. */
+function othersRun(live: LiveRun, run: 'run' | 'Run'): string {
+  const named = `${live.ci ? `CI ${run.toLowerCase()}` : run} #${live.runId}`;
+  return live.own || !live.branch ? named : `${named} on ${live.branch}`;
+}
+
+/** How far a run in progress is, with how many of its tests may be stuck: `4 of 9 · 1 failed · 1 stuck?`. */
+function liveCount(live: LiveRun): string {
+  return `${countWords(live.done, live.total, live.failed)}${live.stuck ? ` · ${live.stuck} stuck?` : ''}`;
+}
+
+/**
+ * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
+ * Claude Code) is running: …` for one a person did not start.
+ */
 function liveLine(live: LiveRun): string {
-  const run = live.own ? 'Your run' : live.ci ? 'CI run' : 'Run';
-  return `${run} #${live.runId} is running: ${countWords(live.done, live.total, live.failed)}`;
+  const run = live.own
+    ? live.label
+      ? `Run #${live.runId} (${live.label})`
+      : `Your run #${live.runId}`
+    : othersRun(live, 'Run');
+  return `${run} is running: ${liveCount(live)}`;
 }
 
 /** The tooltip's link to a run in progress, before the others: `Open run #124 (running)`. */
@@ -365,7 +390,7 @@ export const RUN_LINE_GLYPHS: Record<RunLineState, string> = {
   stopped: '$(debug-pause)',
   pausing: '$(debug-pause)',
   live: '$(broadcast)',
-  running: '$(sync~spin)',
+  running: '$(loading~spin)',
   passed: '$(pass)',
   failed: '$(error)',
   interrupted: '$(warning)',
@@ -382,7 +407,7 @@ export function runLineText(line: RunLine, now: number): string {
 
 /** The item's text while the latest run is read again: its icon spins. */
 export function refreshingText(text: string): string {
-  return `$(sync~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
+  return `$(loading~spin) ${text.replace(/^\$\([^)]*\)\s*/, '')}`;
 }
 
 type StatusContext = StatusResult['contexts'][number];
@@ -534,7 +559,7 @@ export function statusBarView(
   }
   if (!shown.connected && shown.problemKind === 'unreachable') {
     return {
-      text: '$(server) Piwi: unreachable',
+      text: '$(piwi-unreachable) Piwi: unreachable',
       tooltip: lines(
         md(shown.problem ?? 'The instance did not answer'),
         which,
@@ -649,15 +674,17 @@ export function statusBarView(
     const done = r.passedTests + r.failedTests + r.flakyTests + r.skippedTests;
     return {
       ...view,
-      text: live ? liveText(live) : `$(sync~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
+      text: live
+        ? liveText(live)
+        : `$(loading~spin) Piwi: ${countWords(done, r.totalTests, r.failedTests, r.flakyTests)}`,
     };
   }
   const flaky = r.flakyTests ? ` · ${r.flakyTests} flaky` : '';
+  // The tests failing alone: what was fixed locally and the flaky tests are the tooltip's.
   if (failing > 0) {
-    const fixedText = fixed ? ` · ${fixed} fixed locally` : '';
     return {
       ...view,
-      text: `$(error) Piwi: ${failing} failing${fixedText}${flaky}`,
+      text: `$(error) Piwi: ${failing} failing`,
       error: !!run?.alarm,
     };
   }
@@ -688,19 +715,29 @@ export function pickNotice(at: { file: string; line: number }, outcome: 'replace
  */
 export function runsInFiles(runs: RunStatusResult | null): string {
   return JSON.stringify(
-    runs?.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })) ?? null,
+    runs && {
+      contexts: runs.contexts.map((c) => ({ ...c, live: undefined, stream: undefined, updatedAt: undefined })),
+      runTests: runs.runTests,
+    },
   );
 }
 
 /**
  * What a change of the runs from `before` to `after` draws again in the files: `none` when only the run in progress
- * moved ({@link runsInFiles}); `tests` when only the tests of the run in progress began or ended (`liveTests`), which
- * only a test's line shows; `all` when anything else the files show changed, such as the latest run or its baseline.
+ * moved ({@link runsInFiles}); `tests` when only the tests of the run in progress began or ended (`liveTests`, and
+ * `runTests` as the runs the editor follows tell them), which only a test's line shows; `all` when anything else the
+ * files show changed, such as the latest run or its baseline.
  */
 export function filesRedraw(before: RunStatusResult | null, after: RunStatusResult | null): 'none' | 'tests' | 'all' {
   if (runsInFiles(before) === runsInFiles(after)) return 'none';
   const withoutTests = (runs: RunStatusResult | null) =>
-    runsInFiles(runs && { ...runs, contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined })) });
+    runsInFiles(
+      runs && {
+        ...runs,
+        contexts: runs.contexts.map((c) => ({ ...c, liveTests: undefined, runTests: undefined })),
+        runTests: undefined,
+      },
+    );
   return withoutTests(before) === withoutTests(after) ? 'tests' : 'all';
 }
 
@@ -880,7 +917,44 @@ export function withBaseline(
   return next;
 }
 
-/** What **Run this test** runs for a failure: its test, from the Playwright config it belongs to. */
+/**
+ * The environment item: the environment of the config whose folder holds the active file, the deepest when several
+ * do, or none when that config shows none; with the active file in no config, of the first config that shows one; null
+ * when none shows one (`StatusResult.contexts[].environment`). Its text leads with the glyph of an environment, a lock
+ * for a protected one.
+ */
+export function environmentItem(
+  status: StatusResult | null,
+  activeFile: string | null,
+): { root: string; text: string; tooltip: string; protected: boolean } | null {
+  const contexts = status?.contexts ?? [];
+  const holding = activeFile
+    ? contexts.filter((c) => isUnder(c.root, activeFile)).sort((a, b) => b.root.length - a.root.length)[0]
+    : undefined;
+  const shown = holding ?? contexts.find((c) => c.environment);
+  const environment = shown?.environment;
+  if (!shown || !environment) return null;
+  return {
+    root: shown.root,
+    text: `${environment.protected ? '$(lock)' : '$(server-environment)'} ${environment.text}`,
+    tooltip: environment.tooltip,
+    protected: environment.protected,
+  };
+}
+
+/** The environments kept for each config, by its root, with `root`'s set to `kept`: none (null) is left out. */
+export function withEnvironment(
+  kept: Record<string, KeptEnvironment> | undefined,
+  root: string,
+  choice: KeptEnvironment | null,
+): Record<string, KeptEnvironment> {
+  const next = { ...kept };
+  if (choice === null) delete next[root];
+  else next[root] = choice;
+  return next;
+}
+
+/** What **Run with Piwi** runs for a failure: its test, from the Playwright config it belongs to. */
 export function failureRunArgs(failure: WorkspaceFailure): RunTestsArgs | null {
   if (failure.testCaseId === undefined) return null;
   return { uri: failure.uri, ...(failure.root ? { root: failure.root } : {}), testIds: [failure.testCaseId] };
@@ -902,14 +976,36 @@ export interface TestDecoration {
   actions: boolean;
 }
 
+/**
+ * Which runs pause at the editor's breakpoints (`piwi.breakpoints`): `debug`, a Debug with Piwi run alone, its default;
+ * `always`, every run; `never`, none.
+ */
+export type BreakpointsMode = 'debug' | 'always' | 'never';
+
+/** `piwi.breakpoints` as set: one of its choices, `true` and `false` read as `always` and `never`, else `debug`. */
+export function breakpointsMode(value: unknown): BreakpointsMode {
+  if (value === true || value === 'always') return 'always';
+  if (value === false || value === 'never') return 'never';
+  return 'debug';
+}
+
+/**
+ * Whether a run pauses at the editor's breakpoints: every run with `always`, a Debug with Piwi run with `debug`; never a
+ * repeated run (Verify ×3), which nobody attends.
+ */
+export function runTakesBreakpoints(mode: BreakpointsMode, args: RunTestsArgs | null): boolean {
+  if (args?.repeat) return false;
+  return mode === 'always' || (mode === 'debug' && !!(args?.debugging || args?.debug));
+}
+
 /** The commands a test's gutter hover runs: `enabledCommands` of its trusted `MarkdownString`. */
 export const TEST_HOVER_COMMANDS = ['piwi.openInDashboard', 'piwi.runTests', 'piwi.testActions'];
 
 /**
- * A test's gutter hover in the file at `uri`: its result, then **Run**, **Open in dashboard** and **More…**, its
- * actions (`piwi.testActions`), when it has them.
+ * A test's hover in the file at `uri`: its card (`piwi/testCard`'s Markdown), else its result in one line, then
+ * **Run**, **Open in dashboard** and **More…**, its actions (`piwi.testActions`), when it has them.
  */
-export function testHoverMarkdown(test: TestDecoration, uri: string): string {
+export function testHoverMarkdown(test: TestDecoration, uri: string, card: string | null = null): string {
   const link = (title: string, command: string, args: unknown[]) =>
     `[${title}](command:${command}?${encodeURIComponent(JSON.stringify(args))})`;
   const links = [
@@ -919,7 +1015,31 @@ export function testHoverMarkdown(test: TestDecoration, uri: string): string {
     test.dashboardUrl ? link('Open in dashboard', 'piwi.openInDashboard', [test.dashboardUrl]) : '',
     test.actions ? link('More…', 'piwi.testActions', [{ uri, line: test.line } satisfies TestLine]) : '',
   ].filter(Boolean);
-  return links.length ? `${test.hover}\n\n${links.join(' · ')}` : test.hover;
+  const head = card ?? test.hover;
+  return links.length ? `${head}\n\n${links.join(' · ')}` : head;
+}
+
+/** The most lenses one line holds, as the JetBrains plugin's Code Vision slots (`Glue.CODE_VISION_SLOTS`). */
+export const LENSES_PER_LINE = 8;
+
+/**
+ * The lines CodeLens draws above the code of a document of `lineCount` lines, in the service's order: the file's line,
+ * then each line without a test status (a test's own line is drawn in the gutter and its hover), the first
+ * `LENSES_PER_LINE` of a line, but a blank title, a line outside the document and a line `stopped` at, which its stop's
+ * row draws. The JetBrains plugin's Code Vision draws the same rows (`Glue.codeVisionSlot`), a stopped line's too.
+ */
+export function lensLines(
+  summary: FileSummary,
+  lineCount: number,
+  stopped: ReadonlySet<number> = new Set(),
+): SummaryLine[] {
+  const perLine = new Map<number, number>();
+  return [...(summary.file ? [summary.file] : []), ...summary.lines.filter((l) => !l.status)].filter((l) => {
+    if (l.title.trim() === '' || l.line < 0 || l.line >= lineCount) return false;
+    const before = perLine.get(l.line) ?? 0;
+    perLine.set(l.line, before + 1);
+    return before < LENSES_PER_LINE && !stopped.has(l.line);
+  });
 }
 
 /** The decorations of a file's tests: the summary lines that carry a result. */
@@ -987,6 +1107,30 @@ export function coverageDecorations(
  */
 export function hasCoverageMarks(result: CoverageResult | null | undefined): boolean {
   return result?.state === 'exact' || result?.state === 'mapped' || !!result?.uncovered?.length;
+}
+
+/** A file's coverage as VS Code's Test Coverage view counts it: the lines run, of the executable ones. */
+export interface CoverageCount {
+  covered: number;
+  total: number;
+}
+
+/**
+ * What VS Code's Test Coverage view shows of a `piwi/coverageFiles` file: the lines run of the executable lines (those
+ * run when a run recorded no executable lines), and each span, run by so many tests or by none.
+ */
+export function testCoverageOf(result: CoverageResult): {
+  count: CoverageCount;
+  spans: Array<{ start: number; end: number; executed: number }>;
+} {
+  const notRun = result.notRun.reduce((n, s) => n + s.end - s.start + 1, 0);
+  return {
+    count: { covered: result.executedLines, total: result.executableLines ?? result.executedLines + notRun },
+    spans: [
+      ...result.executed.map((s) => ({ start: s.start, end: s.end, executed: s.tests })),
+      ...result.notRun.map((s) => ({ start: s.start, end: s.end, executed: 0 })),
+    ].sort((a, b) => a.start - b.start),
+  };
 }
 
 /** When a run the editor started says what it changed: `piwi.runNotifications`. */
@@ -1447,7 +1591,7 @@ export function recordingView(
       title: `$(circle-large-outline) ${editorWords('recording.block.edited', words)}`,
       actions: [resume, { title: editorWords('recording.keep-edits'), command: 'piwi.stopRecording' }],
       status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
-      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click to stop and keep your edits.`,
+      tooltip: `The recording into ${file} is paused: you edited the recorded block. Click, then Stop recording keeps your edits.`,
     };
   }
   if (state === 'paused') {
@@ -1455,7 +1599,7 @@ export function recordingView(
       title: `$(circle-large-outline) ${editorWords('recording.block.paused', words)}`,
       actions: [stop, resume],
       status: `$(circle-large-outline) ${editorWords('recording.status.paused', words)}`,
-      tooltip: `The recording into ${file} is paused. Click to stop.`,
+      tooltip: `The recording into ${file} is paused. Click for Stop recording and Resume.`,
     };
   }
   if (state === 'starting') {
@@ -1463,14 +1607,14 @@ export function recordingView(
       title: `$(loading~spin) ${editorWords('recording.block.starting')}`,
       actions: [stop],
       status: `$(loading~spin) ${editorWords('recording.status.starting')}`,
-      tooltip: `Recording into ${file}. Click to stop.`,
+      tooltip: `Recording into ${file}. Click for Stop recording and Pause.`,
     };
   }
   return {
     title: `$(record) ${editorWords('recording.block.recording', words)}`,
     actions: [stop, { title: editorWords('recording.pause'), command: 'piwi.pauseRecording' }],
     status: `$(record) ${editorWords('recording.status.recording', words)}`,
-    tooltip: `Recording into ${file}. Click to stop.`,
+    tooltip: `Recording into ${file}. Click for Stop recording and Pause.`,
   };
 }
 
@@ -1785,150 +1929,88 @@ export function withHiddenMessage(value: unknown, key: string): string[] | null 
   return hidden.includes(key) ? null : [...hidden, key];
 }
 
+/** Whether the nodes hold the spec at `uri`. */
+function holdsSpec(nodes: readonly TestTreeNode[], uri: string): boolean {
+  return nodes.some((n) => (n.kind === 'spec' && n.uri === uri) || holdsSpec(n.children, uri));
+}
+
+/** Whether a tree holds the spec at `uri`. */
+export function treeHoldsSpec(answer: TestItemsResult, uri: string): boolean {
+  return answer.contexts.some((c) => holdsSpec(c.nodes, uri));
+}
+
+/** The nodes without the spec at `uri`, and without a folder that held it alone. */
+function withoutSpec(nodes: readonly TestTreeNode[], uri: string): TestTreeNode[] {
+  return nodes.flatMap((n) => {
+    if (n.kind === 'spec' && n.uri === uri) return [];
+    if (n.kind !== 'folder' || !holdsSpec(n.children, uri)) return [n];
+    const children = withoutSpec(n.children, uri);
+    return children.length ? [{ ...n, children }] : [];
+  });
+}
+
+/** The nodes with `fresh` grafted in: a folder both hold takes the fresh one's children, any other fresh node replaces. */
+function grafted(nodes: readonly TestTreeNode[], fresh: readonly TestTreeNode[]): TestTreeNode[] {
+  const out = [...nodes];
+  for (const node of fresh) {
+    const at = out.findIndex((n) => n.id === node.id);
+    if (at < 0) out.push(node);
+    else if (node.kind === 'folder') out[at] = { ...out[at]!, children: grafted(out[at]!.children, node.children) };
+    else out[at] = node;
+  }
+  return out;
+}
+
 /**
- * The tests last answered, with one spec's own answer (`piwi/testItems` with `catalog: false`) in place of it: a spec
- * the answer holds joins its Playwright config, in the order of the files; one it does not hold leaves the tree.
+ * The tests last answered, with one spec's own answer (`piwi/testItems` with `catalog: false`, the spec with the
+ * folders above it) in place of it: a spec the answer holds joins its Playwright config; one it does not hold leaves
+ * the tree, with the folders it alone was in.
  */
 export function withSpec(answer: TestItemsResult, uri: string, spec: TestItemsResult): TestItemsResult {
-  const fresh = spec.contexts
-    .flatMap((context) => context.specs.map((s) => ({ context, s })))
-    .find((x) => x.s.uri === uri);
-  const contexts = answer.contexts.map((c) => ({ ...c, specs: c.specs.filter((s) => s.uri !== uri) }));
+  const fresh = spec.contexts.find((c) => holdsSpec(c.nodes, uri));
+  const contexts = answer.contexts.map((c) => ({ ...c, nodes: withoutSpec(c.nodes, uri) }));
   if (fresh) {
-    const into = contexts.find((c) => c.root === fresh.context.root);
-    if (into) into.specs = [...into.specs, fresh.s].sort((a, b) => a.file.localeCompare(b.file));
-    else contexts.push({ ...fresh.context, specs: [fresh.s] });
+    const into = contexts.find((c) => c.root === fresh.root);
+    if (into) into.nodes = grafted(into.nodes, fresh.nodes);
+    else contexts.push(fresh);
   }
-  return { contexts: contexts.filter((c) => c.specs.length) };
+  return { contexts: contexts.filter((c) => c.nodes.length || c.listing?.error) };
 }
 
 /** A test of the Testing view's tree, with the Playwright config it runs from. */
-export type TreeTest = SpecTest & { root: string; uri: string };
+export type { TreeTest };
 
-/** A node of the Testing view's Piwi tree: a Playwright config, a folder, a spec, a describe block or a test. */
-export interface TestNode {
-  /**
-   * Unique in the tree, and stable through the edits that move a test: its spec, its describe blocks and its title,
-   * joined by `\x1f` (VS Code refuses `\0` in an id).
-   */
-  id: string;
-  label: string;
-  kind: 'config' | 'folder' | 'spec' | 'suite' | 'test';
-  /** The spec's URI, on a spec, a describe block and a test. */
-  uri: string | null;
-  /** A test's 0-based lines, from the start of its `test(…)` call to its end. */
-  range: { start: number; end: number } | null;
-  /** On a test, what the service says of it. */
-  test: TreeTest | null;
-  /** How the view orders it among its siblings: folders before specs, by name; a spec's content as in the file. */
-  sortText: string;
+/**
+ * A node of the Testing view's Piwi tree: one of the service's (`piwi/testItems`), or a Playwright config's, which
+ * holds a config's nodes and says why Playwright could not list its tests.
+ */
+export interface TestNode extends Omit<TestTreeNode, 'kind' | 'children'> {
+  kind: TestTreeNode['kind'] | 'config';
+  /** Why Playwright could not list the config's tests, on a config's node. */
+  error?: string | null;
   children: TestNode[];
 }
 
 /**
- * The Testing view's tree of the tests the service lists (`piwi/testItems`): a node per Playwright config when there
- * are several, then each spec's folders, the spec, its describe blocks and its tests. Two tests of one title in the
- * same describe blocks of a spec are told apart by their order.
+ * The Testing view's tree of the service's answer: each config's nodes, under a node per config when there are several
+ * or when one could not be listed, which says why.
  */
 export function testTree(result: TestItemsResult): TestNode[] {
-  const several = result.contexts.length > 1;
-  const configs = result.contexts.map((context): TestNode => {
-    const config: TestNode = {
-      id: `config\x1f${context.root}`,
-      label: context.label,
-      kind: 'config',
-      uri: null,
-      range: null,
-      test: null,
-      sortText: context.label,
-      children: [],
-    };
-    const folders = new Map<string, TestNode>();
-    /** The node a spec's folder is, created with the folders above it. */
-    const folderOf = (parts: string[]): TestNode => {
-      let parent = config;
-      for (let i = 0; i < parts.length; i++) {
-        const key = parts.slice(0, i + 1).join('/');
-        let folder = folders.get(key);
-        if (!folder) {
-          folder = {
-            id: `folder\x1f${context.root}\x1f${key}`,
-            label: parts[i]!,
-            kind: 'folder',
-            uri: null,
-            range: null,
-            test: null,
-            sortText: `0${parts[i]}`,
-            children: [],
-          };
-          folders.set(key, folder);
-          parent.children.push(folder);
-        }
-        parent = folder;
-      }
-      return parent;
-    };
-    for (const spec of context.specs) {
-      const parts = spec.file.split('/');
-      const name = parts.pop()!;
-      const specNode: TestNode = {
-        id: spec.uri,
-        label: name,
-        kind: 'spec',
-        uri: spec.uri,
-        range: null,
-        test: null,
-        sortText: `1${name}`,
-        children: [],
-      };
-      folderOf(parts).children.push(specNode);
-      const suites = new Map<string, TestNode>();
-      const seen = new Map<string, number>();
-      for (const test of spec.tests) {
-        let parent = specNode;
-        for (let i = 0; i < test.suite.length; i++) {
-          const key = test.suite.slice(0, i + 1).join('\x1f');
-          let suite = suites.get(key);
-          if (!suite) {
-            // `\x1e`, not `\x1f`: a describe block and a test of the same title side by side are two items.
-            suite = {
-              id: `${spec.uri}\x1e${key}`,
-              label: test.suite[i]!,
-              kind: 'suite',
-              uri: spec.uri,
-              range: null,
-              test: null,
-              sortText: sortLine(test.line),
-              children: [],
-            };
-            suites.set(key, suite);
-            parent.children.push(suite);
-          }
-          parent = suite;
-        }
-        const key = [...test.suite, test.title].join('\x1f');
-        const count = (seen.get(key) ?? 0) + 1;
-        seen.set(key, count);
-        parent.children.push({
-          id: `${spec.uri}\x1f${key}${count > 1 ? `\x1f${count}` : ''}`,
-          label: test.title,
-          kind: 'test',
-          uri: spec.uri,
-          range: { start: test.line, end: test.endLine },
-          test: { ...test, root: context.root, uri: spec.uri },
-          sortText: sortLine(test.line),
-          children: [],
-        });
-      }
-    }
-    return config;
-  });
-  return several ? configs : (configs[0]?.children ?? []);
-}
-
-/** A line as text that sorts in its order. */
-function sortLine(line: number): string {
-  return String(line).padStart(6, '0');
+  const configs = result.contexts.length > 1 || result.contexts.some((c) => c.listing?.error);
+  if (!configs) return result.contexts[0]?.nodes ?? [];
+  return result.contexts.map((context): TestNode => ({
+    id: `${CONFIG_NODE}${context.root}`,
+    label: context.label,
+    kind: 'config',
+    uri: null,
+    range: null,
+    sortText: context.label,
+    runnable: true,
+    test: null,
+    project: null,
+    error: context.listing?.error ?? null,
+    children: context.nodes,
+  }));
 }
 
 /** The tests of a tree, leaves first-to-last. */
@@ -1949,6 +2031,12 @@ export const FLAKY_TAG = 'flaky';
 
 /** The Testing view's tag of a quarantined test: `@piwi:quarantined`. */
 export const QUARANTINED_TAG = 'quarantined';
+
+/**
+ * The Testing view's tag of every item a run takes (`@piwi:runnable`), which the run profiles are limited to: not the
+ * Not in this checkout group.
+ */
+export const RUNNABLE_TAG = 'runnable';
 
 /**
  * The tags the Testing view's filter finds a test by (`@piwi:flaky`, `@piwi:@smoke`, `@piwi:owner:alice`): flaky, for a
@@ -1978,6 +2066,7 @@ export function testOutcome(status: TestLineStatus | null, failure: TestFailure 
     case 'skipped':
       return { state: 'skipped' };
     case 'running':
+    case 'paused':
       return { state: 'started' };
     case 'failed':
       return { state: 'failed', message: failureMessage(failure), line: failure?.line ?? null };
@@ -1995,28 +2084,6 @@ export function failureMessage(failure: TestFailure | null): string {
   const message = failure?.message?.trim() ?? '';
   const why = [headline, message && message !== headline ? message : ''].filter(Boolean).join('\n\n') || 'Failed';
   return failure?.state === 'edited' ? `${why}\n\nThe line it failed at changed since the run.` : why;
-}
-
-/**
- * The runs of a Testing view's request: one per Playwright config, its tests by id when Piwi knows them all, else
- * every one by its location; with `repeat`, by their locations, that many times; to debug them (Debug with Piwi),
- * headed, holding their failures.
- */
-export function testRunsOf(tests: readonly TreeTest[], repeat?: number, debug = false): RunTestsArgs[] {
-  const byRoot = new Map<string, TreeTest[]>();
-  for (const t of tests) byRoot.set(t.root, [...(byRoot.get(t.root) ?? []), t]);
-  return [...byRoot].map(([root, held]) => {
-    const ids = held.map((t) => t.testCaseId);
-    const byId = !repeat && ids.every((id) => id !== null);
-    return {
-      uri: held[0]!.uri,
-      root,
-      testIds: byId ? [...new Set(ids as number[])] : [],
-      ...(byId ? {} : { locations: [...new Set(held.map((t) => t.location))] }),
-      ...(repeat ? { repeat } : {}),
-      ...(debug ? { headed: true, holdFailures: true } : {}),
-    };
-  });
 }
 
 /**
@@ -2063,11 +2130,12 @@ export function unfollowedOutcome(
 }
 
 /**
- * The name of the test run that follows a run in progress: `Piwi: your run #124`, `Piwi: CI run #125 on main`, else
- * `Piwi: run #126 on main`, whoever started it, by the branch it runs on when it names one.
+ * The name of the test run that follows a run in progress: `Piwi: your run #124`, or `Piwi: run #124 (Started by Claude
+ * Code)` for the editor's own run an agent started, `Piwi: CI run #125 on main`, else `Piwi: run #126 on main`, whoever
+ * started it, by the branch it runs on when it names one.
  */
 export function liveRunName(live: LiveRun): string {
-  if (live.own) return `Piwi: your run #${live.runId}`;
+  if (live.own) return live.label ? `Piwi: run #${live.runId} (${live.label})` : `Piwi: your run #${live.runId}`;
   return `Piwi: ${live.ci ? 'CI run' : 'run'} #${live.runId}${live.branch ? ` on ${live.branch}` : ''}`;
 }
 
@@ -2123,7 +2191,7 @@ export function withRunStart<T extends RunTestsArgs | RunSelectionParams>(args: 
 /** The choices in words, as **Piwi: Run options…** names them: `Run headed: on · Hold failures: Auto`. */
 export function runStartText(choices: RunStartChoices): string {
   const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!.label;
-  return `Run headed: ${choices.headed ? 'on' : 'off'} · Hold failures: ${hold}`;
+  return editorWords('run-options.state', { headed: choices.headed ? 'on' : 'off', hold });
 }
 
 /** The status bar item tooltip's line on the choices, with the link that changes them. */
@@ -2138,13 +2206,11 @@ export function runOptionPicks(
   const hold = HOLD_FAILURES_CHOICES.find((c) => c.choice === choices.holdFailures)!;
   return [
     {
-      label: 'Run headed',
+      label: editorWords('run-options.headed'),
       description: choices.headed ? 'On' : 'Off',
-      detail: choices.headed
-        ? 'Every test runs with its browser window shown. Pick to turn it off.'
-        : 'Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.',
+      detail: editorWords(choices.headed ? 'run-options.headed.on' : 'run-options.headed.off'),
       option: 'headed',
     },
-    { label: 'Hold failures', description: hold.label, detail: hold.detail, option: 'holdFailures' },
+    { label: editorWords('run-options.hold'), description: hold.label, detail: hold.detail, option: 'holdFailures' },
   ];
 }

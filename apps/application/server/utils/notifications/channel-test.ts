@@ -25,7 +25,8 @@ export function unsavedTestTarget(type: DeliverableChannelType, config: Record<s
   return { type, config, secret: key === 'token' ? value.trim() : value };
 }
 
-const TEST_TEXT = ':bell: Test notification from Piwi Dashboard';
+/** The text a test message to a Slack channel carries. */
+export const CHANNEL_TEST_TEXT = ':bell: Test notification from Piwi Dashboard';
 
 /** The short text a chat webhook answers a refusal with (`no_service`, `invalid_payload`), or ''. */
 async function refusalDetail(res: Response): Promise<string> {
@@ -55,13 +56,13 @@ export async function deliverChannelTest(target: ChannelTestTarget): Promise<voi
   }
   if (type === 'slack' && slackDelivery(config) === 'api') {
     if (!target.secret) throw new Error('No Slack bot token');
-    await postSlackApiMessage(target.secret, String(config.channelId ?? '').trim(), { text: TEST_TEXT });
+    await postSlackApiMessage(target.secret, String(config.channelId ?? '').trim(), { text: CHANNEL_TEST_TEXT });
     return;
   }
   if (type === 'slack') {
     const webhookUrl = config.webhookUrl as string;
     if (!webhookUrl) throw new Error('No Slack webhook URL');
-    const res = await postSlackWebhook(webhookUrl, { text: TEST_TEXT });
+    const res = await postSlackWebhook(webhookUrl, { text: CHANNEL_TEST_TEXT });
     if (!res.ok) throw await refusal('Slack', res);
     return;
   }
@@ -102,7 +103,7 @@ function destinationKey(owner: string, target: ChannelTestTarget): string {
   if (type === 'email') destination = config.address;
   else if (type === 'webhook') destination = [config.url, target.secret ?? ''];
   else if (type === 'slack' && slackDelivery(config) === 'api') {
-    destination = [String(config.channelId ?? '').trim(), target.secret ?? ''];
+    destination = [String(config.channelId ?? '').trim(), target.secret ?? '', config.credentialId ?? null];
   }
   return createHash('sha256')
     .update(JSON.stringify([owner, type, destination ?? null]))

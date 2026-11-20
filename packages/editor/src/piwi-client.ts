@@ -16,6 +16,23 @@ import type { PiwiConnection } from '@piwitests/core/dotenv';
 import type { BisectResultBody } from '@piwitests/core/bisect';
 import type { DesktopJobRequest, DesktopJobVerdict, FlakeLabJobPlan } from '@piwitests/core/desktop-job';
 import { LIVE_STREAM_TYPE } from '@piwitests/core/live-view';
+import { parseEnvironmentForRun, type EnvironmentForRun } from '@piwitests/core/environments';
+import { parseRunVariables, RUN_VARIABLE_LIMITS, type RunVariable } from '@piwitests/core/run-variables';
+
+/**
+ * A project's run variables as a client read them, with the environment chosen for the runs: the run variables the
+ * runs get (the project's, and the environment's over them) and that environment, as `parseRunVariables` and
+ * `parseEnvironmentForRun` read them; `unreadable` when the instance did not answer them (a later run asks again),
+ * `unknown` (the words why) when no project is known to read them for.
+ */
+export type RunVariablesRead =
+  | { ok: true; value: RunVariable[]; environment?: EnvironmentForRun | null; unknown?: string }
+  | { ok: false; problems: string[]; unreadable?: true; unknown?: string };
+
+/** One of a project's environments, as the editors offer it to choose: its own fields, and its description. */
+export interface EnvironmentOption extends EnvironmentForRun {
+  description: string | null;
+}
 import type { TimeoutAdvice } from './analysis.js';
 import { instanceFetch } from './http.js';
 
@@ -51,6 +68,11 @@ export interface CodeIndex {
     runtime?: 'browser' | 'server';
     via?: 'coverage' | 'route';
   }>;
+  /**
+   * The routes a file handles that tests called, at the 1-based line the declared manifest gives their handler's body
+   * (`route`: `GET /api/orders/:id`), with the tests that called it; absent from an older instance.
+   */
+  routes?: Array<{ file: number; route: string; line: number; tests: number[] }>;
   builtAt: string | null;
   truncated: boolean;
 }
@@ -201,9 +223,29 @@ export type BranchFailure = BranchFailures['failures'][number];
 export type BranchResolved = NonNullable<BranchFailures['resolved']>[number];
 export type BranchFlaky = NonNullable<BranchFailures['flaky']>[number];
 
+/** One execution of a test, as its history lists them (`GET /api/test-cases/:id/history`), newest first. */
+export interface TestExecution {
+  runId: number;
+  status: string;
+  /** In ms; null when unknown. */
+  duration: number | null;
+  error: string | null;
+  /** It passed on a retry after an attempt failed: flaky. */
+  passedAfterFailure?: boolean | null;
+  /** The attempt: 0 for the first, 1 for the first retry. A run's results are the last attempts of each repetition in each project. */
+  retries?: number | null;
+  /** Its repetition (`--repeat-each`) and Playwright project's name, which tell a run's results apart. */
+  repeatEachIndex?: number | null;
+  browserName?: string | null;
+  /** When its run started. */
+  startTime: string | null;
+}
+
 /** The fields the editor reads of a run's details (`GET /api/test-runs/:id`). */
 export interface RunDetails {
   id: number;
+  /** Its project; absent from an instance that does not send it. */
+  projectId?: number;
   /** `running`, `initializing`, `finalizing`, or the final status. */
   status: string;
   branch: string | null;
@@ -386,6 +428,16 @@ export function forgetShared(answers: ResponseCache): void {
   }
 }
 
+/** The most attempts the instance answers for a test's history. */
+export const TEST_HISTORY_ROWS = 50;
+
+/** What the instance answers for running some tests: its own arguments and command, and each test's spec and line. */
+export interface RunArgsAnswer {
+  args: string[];
+  command: string;
+  tests: Array<{ filePath: string; line: number | null }>;
+}
+
 export class PiwiClient {
   /**
    * `answers` keeps what an `ETag` came with: the instance answers 304 while it holds, and the same value is used; a
@@ -518,6 +570,68 @@ export class PiwiClient {
     return body.items ?? [];
   }
 
+  /**
+   * A project's run variables, as `parseRunVariables` reads them: a list it refuses, or one that cannot be read, is a
+   * problem every run refuses. An instance that predates them answers 404: its projects set none. With
+   * `environmentId`, the project's and that environment's merged (`RUN_VARIABLE_LIMITS.merged` at most) and the
+   * environment as `parseEnvironmentForRun` reads it, which must be the one asked for: an environment the project no
+   * longer has (404), one only its managers run against (403), and an answer that names no environment refuse it.
+   */
+  async runVariables(projectId: number, environmentId: number | null = null): Promise<RunVariablesRead> {
+    const query = environmentId === null ? '' : `?environment=${environmentId}`;
+    try {
+      const body = await this.get<{ runVariables?: unknown; environment?: unknown }>(
+        `/api/projects/${projectId}/run-variables${query}`,
+        true,
+      );
+      if (environmentId === null) return parseRunVariables(body?.runVariables);
+      const environment = parseEnvironmentForRun(body?.environment);
+      const variables = parseRunVariables(body?.runVariables, RUN_VARIABLE_LIMITS.merged);
+      if (!environment.ok || !variables.ok) {
+        return {
+          ok: false,
+          problems: [...(environment.ok ? [] : environment.problems), ...(variables.ok ? [] : variables.problems)],
+        };
+      }
+      if (environment.value?.id !== environmentId) {
+        return { ok: false, problems: ['The instance did not name the environment chosen: update it.'] };
+      }
+      return { ...variables, environment: environment.value };
+    } catch (error) {
+      const status = error instanceof PiwiHttpError ? error.status : null;
+      if (status === 404 && environmentId === null) return { ok: true, value: [] };
+      if (status === 404) {
+        return { ok: false, problems: ['The environment chosen is no longer one of the project’s: choose another.'] };
+      }
+      if (status === 403 && environmentId !== null) {
+        return { ok: false, problems: ['Only the project’s managers run its tests against this environment.'] };
+      }
+      return { ok: false, problems: [`They could not be read: ${(error as Error).message}`], unreadable: true };
+    }
+  }
+
+  /**
+   * A project's environments to choose from for its runs, in the order the instance lists them: those archived, and
+   * any `parseEnvironmentForRun` refuses, left out. None from an instance that predates them (404).
+   */
+  async environments(projectId: number): Promise<EnvironmentOption[]> {
+    let body: { environments?: unknown };
+    try {
+      body = await this.get<{ environments?: unknown }>(`/api/projects/${projectId}/environments`);
+    } catch (error) {
+      if (error instanceof PiwiHttpError && error.status === 404) return [];
+      throw error;
+    }
+    const listed = Array.isArray(body?.environments) ? body.environments : [];
+    return listed.flatMap((raw: unknown): EnvironmentOption[] => {
+      const record = (raw ?? {}) as { archived?: unknown; description?: unknown };
+      const parsed = parseEnvironmentForRun(raw);
+      if (record.archived === true || !parsed.ok || !parsed.value) return [];
+      const description = typeof record.description === 'string' && record.description ? record.description : null;
+      return [{ ...parsed.value, description: description && description.slice(0, 500) }];
+    });
+  }
+
   /** The project a name or a numeric id names; null when none does. */
   async resolveProject(project: string): Promise<{ id: number; name: string } | null> {
     const all = await this.projects();
@@ -582,13 +696,24 @@ export class PiwiClient {
     return body.items ?? [];
   }
 
-  /** The Playwright arguments and command that run these tests, through the selection resolver. */
-  async runArgs(projectId: number, testIds: number[]): Promise<{ args: string[]; command: string }> {
-    const body = await this.post<{ materialization?: { args?: string[]; command?: string } }>(
+  /**
+   * The Playwright arguments and command that run these tests, through the selection resolver, and each test's spec
+   * (relative to the config's folder) and line, which the service writes as its own filters (`ownTestFilters`).
+   */
+  async runArgs(projectId: number, testIds: number[]): Promise<RunArgsAnswer> {
+    const body = await this.post<{ tests?: unknown; materialization?: { args?: string[]; command?: string } }>(
       `/api/projects/${projectId}/selections/preview`,
       { definition: { include: [{ ids: testIds }] }, format: 'args' },
     );
-    return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '' };
+    const tests = Array.isArray(body.tests)
+      ? body.tests.flatMap((t: unknown) => {
+          const test = t as { filePath?: unknown; line?: unknown } | null;
+          if (!test || typeof test.filePath !== 'string') return [];
+          const line = typeof test.line === 'number' && Number.isInteger(test.line) && test.line > 0 ? test.line : null;
+          return [{ filePath: test.filePath, line }];
+        })
+      : [];
+    return { args: body.materialization?.args ?? [], command: body.materialization?.command ?? '', tests };
   }
 
   /**
@@ -869,6 +994,12 @@ export class PiwiClient {
   /** An execution's page in the dashboard. */
   executionUrl(executionId: number): string {
     return `${this.connection.serverUrl}/test-run-cases/${executionId}`;
+  }
+
+  /** A test's latest executions, newest first, the instance's fifty at most. */
+  /** A test's attempts, newest run first, `TEST_HISTORY_ROWS` at most. */
+  testHistory(testCaseId: number): Promise<{ items: TestExecution[] }> {
+    return this.get(`/api/test-cases/${testCaseId}/history`);
   }
 
   /** A run's page in the dashboard. */

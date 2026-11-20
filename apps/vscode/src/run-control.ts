@@ -10,6 +10,7 @@
  * as it stands and back. And the CI runs of the branch (`piwi/ciSessionChanged`), read-only: the **CI Runs** view's
  * nodes, the CI positions marked at a line, and what the worker panel says of a CI run's lane it watches.
  */
+import type { TestOutcome } from './glue';
 import type {
   CiSession,
   CiTest,
@@ -173,7 +174,7 @@ export type Sessions = ReadonlyMap<string, RunSession>;
  * A session heard, with what the runs were given (`runs`, by ref): the sessions kept with it (`withSession`), and
  * whether it is new to them (`fresh`). A run new to them that was not started here, or a rerun of a command under the
  * ref of a run that ended (VS Code's **Tasks: Rerun Last Task**), maps its lines from `now`, the edits since its start;
- * a run that ended is forgotten.
+ * a run that ended keeps only whether it took the breakpoints (`ended`), which its rerun takes as it did.
  */
 export function heardSession(
   sessions: Sessions,
@@ -182,8 +183,9 @@ export function heardSession(
   now: number,
 ): { sessions: Map<string, RunSession>; fresh: boolean } {
   const fresh = !session.ended && !sessions.has(session.ref);
-  if (fresh && !runs.has(session.ref)) remember(runs, session.ref, runStarted(now, null));
-  if (session.ended) runs.delete(session.ref);
+  const kept = runs.get(session.ref);
+  if (fresh && (!kept || kept.ended)) remember(runs, session.ref, runStarted(now, null, kept?.takes));
+  if (session.ended && kept) remember(runs, session.ref, { ...runStarted(now, null, kept.takes), ended: true });
   return { sessions: withSession(sessions, session), fresh };
 }
 
@@ -195,7 +197,10 @@ export function withSession(sessions: Sessions, session: RunSession): Map<string
   return next;
 }
 
-/** A session whose stops and tests name their files as `spell` spells a document's URI, which they are compared with. */
+/**
+ * A session whose stops, tests and waiting calls name their files as `spell` spells a document's URI, which they are
+ * compared with.
+ */
 export function spelledSession(session: RunSession, spell: (uri: string) => string): RunSession {
   return {
     ...session,
@@ -203,6 +208,7 @@ export function spelledSession(session: RunSession, spell: (uri: string) => stri
       ...w,
       test: w.test && { ...w.test, uri: spell(w.test.uri) },
       stop: w.stop && { ...w.stop, uri: spell(w.stop.uri) },
+      waiting: w.waiting && { ...w.waiting, uri: w.waiting.uri === null ? null : spell(w.waiting.uri) },
     })),
   };
 }
@@ -584,15 +590,40 @@ export interface SessionLine {
 }
 
 /**
- * The tests a run's change begins, each attempt once, by its spec and the line of its `test(…)` call: the Testing view
- * shows them running from the run's own events, whether an instance follows the run or not.
+ * An attempt's result as the Testing view shows it from the run's own events (`piwi/runTest`'s `test-end`): skipped;
+ * passed when it ended as it was expected to (`ok`: a `test.fail()` test that failed passes); else failed at its
+ * test's line (a timeout too, and a `test.fail()` test that passed); null for an attempt that did not end on its own
+ * (`interrupted`, a worker that left), which leaves the result to the run's end.
  */
-export function testsBegun(before: RunSession | undefined, now: RunSession): Array<{ uri: string; line: number }> {
+export function attemptOutcome(status: string | undefined, test: RunTest, ok: boolean | undefined): TestOutcome | null {
+  if (status === 'skipped') return { state: 'skipped' };
+  if (status !== 'passed' && status !== 'failed' && status !== 'timedOut') return null;
+  if (ok) return { state: 'passed' };
+  const attempt = test.retry ? ` (attempt ${test.retry + 1})` : '';
+  const how = status === 'passed' ? 'Expected to fail, but passed' : status === 'timedOut' ? 'Timed out' : 'Failed';
+  return { state: 'failed', message: `${how} in this run${attempt}.`, line: test.line };
+}
+
+/** A test's result from its projects' last attempts: failed when one failed, else passed when one passed, else skipped. */
+export function combinedOutcome(outcomes: readonly TestOutcome[]): TestOutcome {
+  return (
+    outcomes.find((o) => o.state === 'failed') ?? outcomes.find((o) => o.state === 'passed') ?? { state: 'skipped' }
+  );
+}
+
+/**
+ * The tests a run's change begins, each attempt once, by Playwright's id, its spec and the line of its `test(…)` call:
+ * the Testing view shows them running from the run's own events, whether an instance follows the run or not.
+ */
+export function testsBegun(
+  before: RunSession | undefined,
+  now: RunSession,
+): Array<{ id: string; uri: string; line: number }> {
   return now.workers.flatMap((worker) => {
     const was = before?.workers.find((w) => w.worker === worker.worker);
     const test = worker.test;
     if (!test || (test.id === was?.test?.id && test.retry === was.test.retry)) return [];
-    return [{ uri: test.uri, line: test.line }];
+    return [{ id: test.id, uri: test.uri, line: test.line }];
   });
 }
 
@@ -733,8 +764,8 @@ export function runLabel(session: RunSession, among: Iterable<RunSession> = []):
 
 /**
  * A run as a chooser and the Watch chooser name it: its page and what it runs (`Run #78 · checkout.spec.ts:12`), the
- * same in the JetBrains plugin (`Glue.runTitle`); else `runLabel`. Its ref after it while another of `among` reads the
- * same.
+ * same in the JetBrains plugin (`Glue.runTitle`); else `runLabel`; then who started it when a person did not (`·
+ * Started by Claude Code`). Its ref after it while another of `among` reads the same.
  */
 export function runTitle(session: RunSession, among: Iterable<RunSession> = []): string {
   return apart(plainTitle, session, among);
@@ -748,7 +779,8 @@ function plainLabel(session: RunSession): string {
 }
 
 function plainTitle(session: RunSession): string {
-  return session.page && session.name ? `${runName(session.page)} · ${session.name}` : plainLabel(session);
+  const title = session.page && session.name ? `${runName(session.page)} · ${session.name}` : plainLabel(session);
+  return session.label ? `${title} · ${session.label}` : title;
 }
 
 function apart(name: (s: RunSession) => string, session: RunSession, among: Iterable<RunSession>): string {
@@ -1106,7 +1138,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   // A spinner while a run goes on; once every run that counts ended, how they ended: passed, failed (a failed test, a
   // failure of its own, a timeout), else stopped short (interrupted).
   const glyph = told.some((p) => p.status === 'running')
-    ? '$(sync~spin)'
+    ? '$(loading~spin)'
     : failed || told.some((p) => p.status === 'failed' || p.status === 'timedout')
       ? '$(error)'
       : told.every((p) => p.status === 'passed')
@@ -1152,7 +1184,7 @@ export function progressItem(sessions: Sessions): ControlItem | null {
   };
 }
 
-/** The line of the call a watched lane's test runs, as the editor marks it: its 0-based line now and its words. */
+/** The line of the call a lane's test runs, as the editor marks it: its 0-based line now and its words. */
 export interface RunningMark {
   line: number;
   text: string;
@@ -1160,7 +1192,7 @@ export interface RunningMark {
 
 /**
  * The running lines the service tells (`piwi/runningLine`), one per lane of a run, each a line of the run's code, kept
- * until the service says it goes (the test ended or stopped, the watch ended) or its run ends.
+ * until the service says it goes (the test ended or stopped, the setting no longer marks it) or its run ends.
  */
 export class RunningLines {
   private readonly lines = new Map<string, RunningLine>();
@@ -1202,16 +1234,25 @@ export class RunningLines {
 
   /**
    * The marks in the document `uri` of `lineCount` lines, each at its line now (`forward` maps a line of the run `ref`'s
-   * code through the edits since it started), by lane: `Worker 1 · Click getByRole('button')`.
+   * code through the edits since it started), one per line, naming its lanes by their call:
+   * `Worker 1 · Click getByRole('button')`, `Worker 2, Worker 4 · Click`, `Worker 2 · Click; Worker 3 · Fill`.
    */
   marks(uri: string, lineCount: number, forward: (uri: string, line: number, ref: string) => number): RunningMark[] {
-    return [...this.lines.values()]
+    const byLine = new Map<number, Map<string, string[]>>();
+    const lines = [...this.lines.values()]
       .filter((told) => told.call?.uri === uri)
-      .sort((a, b) => a.ref.localeCompare(b.ref) || a.lane - b.lane)
-      .flatMap((told) => {
-        const line = forward(uri, told.call!.line, told.ref);
-        return line >= 0 && line < lineCount ? [{ line, text: `${workerName(told.lane)} · ${told.call!.title}` }] : [];
-      });
+      .sort((a, b) => a.ref.localeCompare(b.ref) || a.lane - b.lane);
+    for (const told of lines) {
+      const line = forward(uri, told.call!.line, told.ref);
+      if (line < 0 || line >= lineCount) continue;
+      const calls = byLine.get(line) ?? new Map<string, string[]>();
+      calls.set(told.call!.title, [...(calls.get(told.call!.title) ?? []), workerName(told.lane)]);
+      byLine.set(line, calls);
+    }
+    return [...byLine].map(([line, calls]) => ({
+      line,
+      text: [...calls].map(([title, workers]) => `${workers.join(', ')} · ${title}`).join('; '),
+    }));
   }
 }
 
@@ -1509,7 +1550,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'assert-region',
-    icon: '$(screen-full)',
+    icon: '$(piwi-region)',
     title: editorWords('action.assert-region'),
     command: RUN_COMMANDS.assertRegion,
     key: 'piwi.runCanAssertRegion',
@@ -1517,7 +1558,7 @@ export const STOP_ACTIONS: readonly StopAction[] = [
   },
   {
     action: 'mock',
-    icon: '$(arrow-swap)',
+    icon: '$(piwi-mock)',
     title: editorWords('action.mock'),
     command: RUN_COMMANDS.mock,
     key: 'piwi.runCanMock',
@@ -1605,12 +1646,42 @@ export function waitingWorkers(sessions: Sessions, target: RunTarget | null = nu
   );
 }
 
+/** A line where a pausing test waits, marked in the code with End the test for its run and worker (`target`). */
+export interface WaitingMark extends RunningMark {
+  target: { ref: string; worker: number };
+}
+
+/**
+ * The lines in the document `uri` of `lineCount` lines where a pausing test waits in a call (`RunWorker.waiting`), each
+ * at its line now (`forward`, as `RunningLines.marks`): `Worker 2 · Pausing · waits in Click getByRole('button')`.
+ */
+export function waitingMarks(
+  sessions: Sessions,
+  uri: string,
+  lineCount: number,
+  forward: (uri: string, line: number, ref: string) => number,
+): WaitingMark[] {
+  return waitingWorkers(sessions).flatMap((w) => {
+    if (w.waiting.uri !== uri || w.waiting.line === null) return [];
+    const line = forward(uri, w.waiting.line, w.ref);
+    if (line < 0 || line >= lineCount) return [];
+    const text = `${workerName(w.slot)} · Pausing · waits in ${w.waiting.title}`;
+    return [{ line, text, target: { ref: w.ref, worker: w.worker } }];
+  });
+}
+
 /**
  * What End the test answers: a stop, when the command names one (`since`, from a lens or a hover) or a stop can end;
  * else the pausing workers whose test waits in a call, of the run and worker the command names, to end there.
  */
 export function endChoice(sessions: Sessions, stopCanEnd: boolean, target: RunTarget | null): 'stop' | WaitingWorker[] {
-  if (stopCanEnd || target?.since !== undefined) return 'stop';
+  if (target?.since !== undefined) return 'stop';
+  // A command naming a waiting worker (its waiting line's hover) ends its test, whatever stop could end too.
+  if (target?.worker !== undefined) {
+    const named = waitingWorkers(sessions, target);
+    if (named.length) return named;
+  }
+  if (stopCanEnd) return 'stop';
   return waitingWorkers(sessions, target);
 }
 
@@ -1895,15 +1966,30 @@ export interface RunBreakpoints {
   since: number;
   lines: Map<string, EditorBreakpoint>;
   sent: string;
+  /**
+   * Whether the run pauses at the editor's breakpoints (`runTakesBreakpoints`), as it started here; absent for a run
+   * heard of but not started here, which takes them only while `piwi.breakpoints` is `always`.
+   */
+  takes?: boolean;
+  /** The run ended: what is kept of it is `takes`, for a rerun under its ref. */
+  ended?: true;
 }
 
-/** A run started at `since` with `breakpoints`; one heard of but not started here was given none Piwi knows. */
-export function runStarted(since: number, breakpoints: readonly RunBreakpoint[] | null): RunBreakpoints {
+/**
+ * A run started at `since` with `breakpoints`, which it takes or not (`takes`); one heard of but not started here was
+ * given none Piwi knows.
+ */
+export function runStarted(
+  since: number,
+  breakpoints: readonly RunBreakpoint[] | null,
+  takes?: boolean,
+): RunBreakpoints {
   const places = (breakpoints ?? []).map((b) => ({ uri: b.uri, line: b.line }));
   return {
     since,
     lines: new Map((breakpoints ?? []).map((b, i) => [b.id, places[i]!])),
     sent: breakpoints ? JSON.stringify(places) : '',
+    ...(takes === undefined ? {} : { takes }),
   };
 }
 
@@ -1935,14 +2021,16 @@ export function runPlaces(
 
 /**
  * The `piwi/setRunBreakpoints` the live runs need for the editor's `breakpoints`: one per run whose places
- * (`runPlaces`) differ from those it has (`runs`, by ref: the ones its command started with, else the last sent),
- * which `runs` then records. A run heard of without its start maps from now.
+ * (`runPlaces`, none for a run that takes no breakpoints) differ from those it has (`runs`, by ref: the ones its command
+ * started with, else the last sent), which `runs` then records; none to a run that takes none and was given none. A
+ * run heard of without its start maps from now, and takes them as `heardTakes` says.
  */
 export function breakpointUpdates(
   sessions: Sessions,
   breakpoints: readonly RunBreakpoint[],
   runs: Map<string, RunBreakpoints>,
   edits: EditLog,
+  heardTakes = true,
 ): SetRunBreakpointsParams[] {
   const updates: SetRunBreakpointsParams[] = [];
   for (const ref of sessions.keys()) {
@@ -1951,7 +2039,10 @@ export function breakpointUpdates(
       run = runStarted(edits.now(), null);
       remember(runs, ref, run);
     }
-    const places = runPlaces(run, breakpoints, edits);
+    const takes = run.takes ?? heardTakes;
+    // A run that takes none and was given none keeps the breakpoints its command names, if any.
+    if (!takes && run.sent === '') continue;
+    const places = takes ? runPlaces(run, breakpoints, edits) : [];
     const text = JSON.stringify(places);
     if (run.sent === text) continue;
     run.sent = text;
@@ -2006,6 +2097,41 @@ export interface PausedPageView {
    * (`canOpenTrace`), off while an ask waits for the service's answer (`asking`); null or absent otherwise.
    */
   trace?: { asking: boolean } | null;
+  /**
+   * The stop's controls on the page, as the stopped line's row (`stopLensControls`): Resume, Step, Finish and Write
+   * code…, each a command run for the stop the page shows; `shown` tells a press on a page no longer shown apart.
+   */
+  controls?: { shown: number; items: StopControl[] } | null;
+}
+
+/**
+ * How input reaches a page, the same on every page that takes it: Interact sends clicks, scrolling and typing, the
+ * first driving the stop, and stays on for the worker's next stops while Watch is on.
+ */
+export const INPUT_RULE = editorWords('page.input-rule');
+
+/** Watch's glyph, the eye of Watch a worker's test, and Interact's, Piwi Picker's hand, drawn in the text's color. */
+const WATCH_GLYPH =
+  '<svg class="glyph" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 3C4.6 3 1.9 5.3 1 8c.9 2.7 3.6 5 7 5s6.1-2.3 7-5c-.9-2.7-3.6-5-7-5zm0 8.5a3.5 3.5 0 1 1 0-7 3.5 3.5 0 0 1 0 7zM8 6a2 2 0 1 0 0 4 2 2 0 0 0 0-4z"/></svg>';
+const INTERACT_GLYPH =
+  '<svg class="glyph line" viewBox="0 0 24 24" aria-hidden="true"><path d="M8.25 13.25V5.75a1.5 1.5 0 0 1 3 0V11.25"/><path d="M11.25 10.75V4.25a1.5 1.5 0 0 1 3 0v6.5"/><path d="M14.25 10.75V5.75a1.5 1.5 0 0 1 3 0V13.25"/><path d="M17.25 9.75a1.5 1.5 0 0 1 3 0V14.25a7 7 0 0 1-7 7h-1a7 7 0 0 1-5.6-2.8L4.25 14.85a1.6 1.6 0 0 1 2.5-2L8.25 14.75"/></svg>';
+
+/** A toggle of the page: a checkbox named by its words, drawn as a button with its glyph, pressed while checked. */
+function toggleHtml(
+  id: 'live' | 'interact',
+  words: string,
+  glyph: string,
+  attrs: { hidden?: boolean; disabled?: boolean },
+) {
+  return `<label class="toggle"${attrs.hidden ? ' hidden' : ''}><input id="${id}" type="checkbox"${attrs.disabled ? ' disabled' : ''} aria-label="${words}">${glyph}<span>${words}</span></label>`;
+}
+
+/** The stop's controls on the page: a toolbar of buttons, empty and hidden away from a stop. */
+function controlsHtml(controls: PausedPageView['controls']): string {
+  const items = controls?.items ?? [];
+  return `<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls"${items.length ? '' : ' hidden'}>${items
+    .map((c) => `<button type="button" data-command="${escapeHtml(c.command)}">${escapeHtml(c.title)}</button>`)
+    .join('')}</div>`;
 }
 
 /** What **Open the trace so far** says it does, as its tooltip. */
@@ -2193,24 +2319,26 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
   const pick = src && view.pick ? view.pick : null;
   const live = view.live && scriptUri ? view.live : null;
   const layers = live && view.lane ? (view.layers ?? { text: false, filmstrip: false, note: null }) : null;
-  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick || live ? `; script-src 'nonce-${nonce}'` : ''}`;
+  const controls = view.controls?.items.length ? view.controls : null;
+  const csp = `default-src 'none'; img-src data:; style-src 'nonce-${nonce}'${pick || live || controls ? `; script-src 'nonce-${nonce}'` : ''}`;
   return [
     '<!DOCTYPE html>',
     '<html lang="en">',
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools{display:flex;gap:12px;margin-bottom:8px}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools,.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.toggle{position:relative;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--vscode-panel-border);border-radius:2px;cursor:pointer}.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0}.toggle:has(input:checked){background:var(--vscode-inputOption-activeBackground);border-color:var(--vscode-inputOption-activeBorder)}.toggle:has(input:focus-visible){outline:1px solid var(--vscode-focusBorder)}.toggle:has(input:disabled){opacity:.5;cursor:default}.glyph{width:16px;height:16px;fill:currentColor}.glyph.line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-button-border,transparent);border-radius:2px;padding:2px 8px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:disabled{opacity:.5;cursor:default}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.ci
-        ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label hidden><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
+        ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: true, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
         : view.lane
-          ? `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label><input id="interact" type="checkbox" disabled> Interact</label><button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
-          : `<div class="tools"><label><input id="live" type="checkbox"> Watch</label><label${live.input ? '' : ' hidden'}><input id="interact" type="checkbox" disabled> Interact</label></div><details><summary>How the preview works</summary><p>Watch updates the page while this test is paused. Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for this worker's next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator. Nothing is stored or shared with the team.</p></details>`
+          ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { disabled: true })}<button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
+          : `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: !live.input, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of this stopped test as it changes. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
       : '',
+    controlsHtml(view.controls),
     pick && !live ? `<p class="hint">${escapeHtml(PICK_HINT)}</p>` : '',
     live
       ? '<p id="note" class="note" role="status"></p>'
@@ -2225,8 +2353,16 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     layers ? layersHtml(layers) : '',
     live
       ? `<script nonce="${nonce}" src="${escapeHtml(scriptUri!)}"></script>`
-      : pick
-        ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));</script>`
+      : pick || controls
+        ? `<script nonce="${nonce}">const vscode=acquireVsCodeApi();${
+            pick
+              ? `const page=document.getElementById('page');page.addEventListener('click',(e)=>vscode.postMessage({type:'pick',shown:${pick.shown},x:e.offsetX,y:e.offsetY,width:page.clientWidth,height:page.clientHeight}));`
+              : ''
+          }${
+            controls
+              ? `document.getElementById('controls').addEventListener('click',(e)=>{const b=e.target.closest('button[data-command]');if(b)vscode.postMessage({type:'control',command:b.dataset.command,shown:${controls.shown}});});`
+              : ''
+          }</script>`
         : '',
     '</body>',
     '</html>',
@@ -2372,6 +2508,139 @@ export function ciLaneRedraws(
   return !view || view.caption !== caption || (view.live?.on ?? false) !== watching;
 }
 
+/**
+ * A row of the **Runs** view: a run in progress, one of its workers, or its page on the dashboard. It names its run
+ * (`ref`), and a worker its `worker` and the stop it stands at (`since`), so the run commands take it as their target
+ * (`runTargetArg`) from the view's menus; `kind` is the menus' `viewItem`.
+ */
+export interface RunNode {
+  key: string;
+  label: string;
+  description: string;
+  tooltip: string;
+  /** A codicon id. */
+  icon: string;
+  kind:
+    | 'run'
+    | 'run-elsewhere'
+    | 'worker-running'
+    | 'worker-watchable'
+    | 'worker-watch-only'
+    | 'worker-stopped'
+    | 'worker-held'
+    | 'worker-between'
+    | 'page';
+  ref: string;
+  worker?: number;
+  since?: string;
+  /** A run's **Hold failures**, on or off; absent for a run nobody attends and for any other row. */
+  hold?: boolean;
+  /** What a click opens: a place in a file, or a page on the dashboard; null for nothing. */
+  open: { uri: string; line: number; character: number } | { url: string } | null;
+  children: RunNode[];
+}
+
+/**
+ * The **Runs** view: each run in progress, newest first, named as the status bar names it, with how far it is, then
+ * each of its workers by its lane with its test and whether it stands stopped there or runs, and its page on the
+ * dashboard once its process names it. A run started in a terminal or a desktop app's job is stopped where it runs
+ * (`run-elsewhere`); a worker held at a failure takes Resume alone (`worker-held`), and one that cannot pause now is
+ * watched only (`worker-watch-only`).
+ */
+export function runNodes(sessions: Sessions): RunNode[] {
+  const live = [...sessions.values()].filter((s) => !s.ended);
+  return live.reverse().map((session): RunNode => {
+    const key = session.ref;
+    const progress = session.progress;
+    const howFar = session.starting
+      ? 'starting'
+      : progress
+        ? countWords(progress.done, progress.total, progress.failed, progress.flaky, progress.endedAtStop ?? 0)
+        : '';
+    const workers = [...session.workers]
+      .sort((a, b) => a.parallelIndex - b.parallelIndex)
+      .map((w): RunNode => {
+        const name = workerName(w.parallelIndex);
+        const test = w.test ? testTitle(w.test) : null;
+        const stop = w.stop ? stopsOf(new Map([[session.ref, session]])).find((s) => s.worker === w.worker) : undefined;
+        const kind =
+          w.state === 'stopped'
+            ? w.stop?.reason === 'failure'
+              ? 'worker-held'
+              : 'worker-stopped'
+            : w.state === 'between' || !test
+              ? 'worker-between'
+              : !w.watchable
+                ? 'worker-running'
+                : w.pausing || w.test?.cannotPause
+                  ? 'worker-watch-only'
+                  : 'worker-watchable';
+        const where = stop ? stopCaption(stop, sessions) : null;
+        return {
+          key: `${key}\n${w.parallelIndex}`,
+          label: name,
+          description: test
+            ? `${test}${w.state === 'stopped' ? ' · stopped' : w.pausing ? ' · pausing' : ''}`
+            : 'between tests',
+          tooltip: where ? `${name} · ${test}\n\n${where}` : test ? `${name} runs ${test}` : `${name} is between tests`,
+          icon:
+            kind === 'worker-held'
+              ? 'error'
+              : kind === 'worker-stopped'
+                ? 'debug-pause'
+                : kind === 'worker-between'
+                  ? 'circle-outline'
+                  : 'play-circle',
+          kind,
+          ref: session.ref,
+          worker: w.worker,
+          ...(w.stop ? { since: w.stop.since } : {}),
+          open: w.stop
+            ? { uri: w.stop.uri, line: w.stop.line, character: 0 }
+            : w.test
+              ? { uri: w.test.uri, line: w.test.line, character: 0 }
+              : null,
+          children: [],
+        };
+      });
+    const page: RunNode[] = session.page
+      ? [
+          {
+            key: `${key}\npage`,
+            label: `Open run #${session.page.id}`,
+            description: 'on the dashboard',
+            tooltip: `Open run #${session.page.id} on the dashboard: ${session.page.url}`,
+            icon: 'globe',
+            kind: 'page',
+            ref: session.ref,
+            open: { url: session.page.url },
+            children: [],
+          },
+        ]
+      : [];
+    const title = runTitle(session, live);
+    return {
+      key,
+      label: runLabel(session, live),
+      // A run that holds its failures says so in the words' first clause: `Hold failures on`.
+      description: [
+        howFar,
+        session.label ?? '',
+        session.hold?.on ? editorWords('hold.run.on', { by: '' }).split(':')[0]! : '',
+      ]
+        .filter(Boolean)
+        .join(' · '),
+      tooltip: [title, howFar, session.hold ? holdText(session.hold) : ''].filter(Boolean).join('\n\n'),
+      icon: 'loading~spin',
+      kind: session.terminal || session.checkout ? 'run-elsewhere' : 'run',
+      ref: session.ref,
+      ...(session.hold ? { hold: session.hold.on } : {}),
+      open: null,
+      children: [...workers, ...page],
+    };
+  });
+}
+
 /** A node of the **CI Runs** view: a run, the link to its page, a test, or a test's Watch. */
 export interface CiNode {
   key: string;
@@ -2386,7 +2655,7 @@ export interface CiNode {
 
 /** A CI test's outcome as the gutter draws it, the running one spinning. */
 const CI_TEST_ICONS: Record<CiTest['status'], string> = {
-  running: 'sync~spin',
+  running: 'loading~spin',
   passed: 'mark:passed',
   failed: 'mark:failed',
   flaky: 'mark:flaky',

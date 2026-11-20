@@ -70,9 +70,8 @@ export function createGlobalSetup(
       return;
     }
 
-    // `playwright test --list` runs globalSetup but executes no tests, so
-    // registering here would leave an empty phantom run on the dashboard. Skip
-    // registration but still chain userSetup so the user's own setup keeps working.
+    // A list run (`playwright test --list`) registers no run, here as in the
+    // reporter; the user's own setup is still chained.
     if (isListMode()) {
       logger.debug('List mode detected — skipping run registration.');
       if (userSetup) return userSetup(config);

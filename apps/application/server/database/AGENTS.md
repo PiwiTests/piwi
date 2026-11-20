@@ -56,6 +56,10 @@ merge keeps the branch's history as stable as it can:
   ``sql`${testRunsCases.status} = 'passed'` ``, not `eq(testRunsCases.status, 'passed')`. PostgreSQL's cached generic
   plans and SQLite's planner cannot match a bound parameter to the index's constant, so the query reads every row. The
   capability probes (`shared/handlers/setup-status.ts`) and the `fixme` count (`fixmeSkipPredicate`) rely on this.
+- **A `LIMIT 1` existence check scoped to a project starts from the project's runs or tests**, newest first, and looks
+  each one up in the large table's index, after one check that any project has such a row (`projectRunHasRow`). A
+  join from the large table makes PostgreSQL read all of it for a project that has none
+  (`tests/unit/capability-probes-pg.test.ts` counts the pages each probe reads).
 - **`test_runs.origin` and `test_runs.commit_sha` derive from the run's `metadata`.** Every insert or update that
   writes `metadata` writes `origin: runOrigin(<the same value>)` and `commit: runCommit(<the same value>)` beside it
   (`updateRunMetadata`, `server/utils/run-metadata.ts`, does both), as `branch` follows `resolveRunBranch`. A query
@@ -67,6 +71,13 @@ merge keeps the branch's history as stable as it can:
   stepped once, it frees a single page and holds the write lock until the statement is garbage-collected, and every
   write on another connection fails with `SQLITE_BUSY` meanwhile (`reclaimSpace`, `server/utils/retention.ts`).
   `executeMultiple` waits for an open transaction, as writes do (`server/database/sqlite-connections.ts`).
+- **Every PostgreSQL pool opens through `openPostgresPool`** (`server/database/postgres-pool.ts`): its connections
+  turn JIT compilation off, or follow the server's setting when a pooler refuses the parameter
+  (`tests/unit/postgres-pool.test.ts`, `postgres-pool-pg.test.ts`).
+- **A subquery run once per row (one per test case) leaves out ineligible runs through a CTE**:
+  `ineligibleRunsInProject` in `db.with(…)` and `eligibleExecutionAmong`, so the project's runs are read once per
+  query, not once per subquery as with `eligibleExecutionInProject` (`loadSelectionCatalog`;
+  `tests/unit/selection-fail-ranks-pg.test.ts` counts the plan's scans of `test_runs`).
 - **A select from one table renders the columns of its fields' own `sql` without their table**, so a correlated
   subquery written there compares the subquery's own columns. Nest the subquery in a `sql` of its own (as
   `latestRunStatusSql` and `loadSelectionCatalog`'s `lastLine` do) or spell the outer column out;

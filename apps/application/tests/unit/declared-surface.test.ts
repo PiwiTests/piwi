@@ -69,6 +69,26 @@ describe('buildManifestGraph', () => {
     expect(nodes[0]?.origin).toBe('manifest');
   });
 
+  test('keeps on each handler file the line each of its routes’ bodies starts at', () => {
+    const { nodes } = buildManifestGraph(
+      {
+        routes: [
+          { method: 'GET', pattern: '/api/orders/{id:int}', handler: 'src/Orders.cs', line: 24 },
+          { method: 'POST', pattern: '/api/orders', handler: 'src/Orders.cs', line: 40 },
+          { method: 'GET', pattern: '/api/orders/{slug}', handler: 'src/Catalog.cs', line: 55 },
+          { method: 'GET', pattern: '/api/cart', line: 7 },
+        ],
+      },
+      'instrumentation',
+    );
+    const lines = (key: string) =>
+      (nodes.find((n) => n.kind === 'handler' && n.key === key)?.attrs as { lines?: Record<string, number> })?.lines;
+    // Two patterns folded to one route keep each handler's own line.
+    expect(lines('src/Orders.cs')).toEqual({ 'GET /api/orders/:id': 24, 'POST /api/orders': 40 });
+    expect(lines('src/Catalog.cs')).toEqual({ 'GET /api/orders/:id': 55 });
+    expect(nodes.find((n) => n.kind === 'route' && n.key === 'GET /api/cart')?.attrs).not.toHaveProperty('line');
+  });
+
   test('keeps the declared patterns, every one that folds to the same key', () => {
     const { nodes } = buildManifestGraph(
       {

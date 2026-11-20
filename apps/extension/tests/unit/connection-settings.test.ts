@@ -185,6 +185,7 @@ describe("the instance's patterns", () => {
         projectLabel: 'Shop',
         pattern: 'https://staging.shop.test/**',
         environment: 'staging',
+        environmentName: 'Staging',
         branch: 'develop',
         pathPrefix: '/app',
         testPathPrefix: '/v2',
@@ -217,12 +218,20 @@ describe("the instance's patterns", () => {
         pathPrefix: '/app',
         testPathPrefix: '/v2',
         environment: 'staging',
+        environmentName: 'Staging',
       },
       { urlPattern: 'https://admin.test/**', projectId: 2, projectLabel: 'Admin' },
     ]);
     expect(after.serverProjects).toEqual(answer.projects);
     expect(after.serverSyncedAt).toBe(1234);
     expect(after.connectedAs).toBe('Test User');
+  });
+
+  it('keeps the label alone when an instance names no environment for it', () => {
+    const item = { ...answer.items[0]!, environmentName: undefined };
+    const after = applyServerSync(conn({ instanceUrl: 'https://piwi.test' }), { ...answer, items: [item] }, 1);
+    expect(after.serverMappings[0]).toMatchObject({ environment: 'staging' });
+    expect(after.serverMappings[0]).not.toHaveProperty('environmentName');
   });
 
   it('a later sync replaces the previous one, removed patterns included', () => {

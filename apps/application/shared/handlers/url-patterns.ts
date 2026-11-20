@@ -2,7 +2,9 @@ import { and, asc, desc, eq, inArray, like } from 'drizzle-orm';
 import { z } from 'zod';
 import { urlMatches } from '@piwitests/core/function-match';
 import { parsePathPrefix, type PathPrefixProblem } from '@piwitests/core/page-key';
+import { ENVIRONMENT_LIMITS } from '@piwitests/core/environments';
 import {
+  environments,
   graphNodes,
   locatorUsages,
   networkRequests,
@@ -13,6 +15,7 @@ import {
 } from '../../server/database/schema';
 import { projectRouteOrigins, runBaseUrls, urlOrigin } from '#shared/graph';
 import type { DrizzleDB } from './db';
+import { resolveRunEnvironment } from './environments';
 import { notPrivateRun } from '../run-eligibility';
 
 /**
@@ -46,7 +49,7 @@ export const pathPrefixSchema = z
   });
 
 export const MAX_URL_PATTERNS_PER_PROJECT = 100;
-const MAX_ENVIRONMENT_LENGTH = 40;
+const MAX_ENVIRONMENT_LENGTH = ENVIRONMENT_LIMITS.keyChars;
 
 export const urlPatternInputSchema = z.object({
   pattern: z
@@ -70,7 +73,10 @@ export type UrlPatternInput = z.input<typeof urlPatternInputSchema>;
 export interface UrlPatternItem {
   id: number;
   pattern: string;
+  /** The environment's label as written (its key); null for every environment. */
   environment: string | null;
+  /** The environment the label resolves to, or null. */
+  environmentId: number | null;
   branch: string | null;
   pathPrefix: string | null;
   testPathPrefix: string | null;
@@ -93,6 +99,7 @@ export async function listProjectUrlPatterns(db: DrizzleDB, projectId: number): 
       id: projectUrlPatterns.id,
       pattern: projectUrlPatterns.pattern,
       environment: projectUrlPatterns.environment,
+      environmentId: projectUrlPatterns.environmentId,
       branch: projectUrlPatterns.branch,
       pathPrefix: projectUrlPatterns.pathPrefix,
       testPathPrefix: projectUrlPatterns.testPathPrefix,
@@ -112,7 +119,10 @@ async function projectExists(db: DrizzleDB, projectId: number): Promise<boolean>
   return !!row;
 }
 
-/** Replaces the project's list with `items`, in that order. */
+/**
+ * Replaces the project's list with `items`, in that order. Each environment label resolves as a run's does
+ * (`resolveRunEnvironment`), discovering an environment nothing takes.
+ */
 export async function replaceProjectUrlPatterns(
   db: DrizzleDB,
   projectId: number,
@@ -126,13 +136,15 @@ export async function replaceProjectUrlPatterns(
     seen.add(pattern);
   }
   const now = new Date();
+  const resolved: Awaited<ReturnType<typeof resolveRunEnvironment>>[] = [];
+  for (const item of items) resolved.push(await resolveRunEnvironment(db, projectId, clean(item.environment)));
   await db.delete(projectUrlPatterns).where(eq(projectUrlPatterns.projectId, projectId));
   if (items.length > 0) {
     await db.insert(projectUrlPatterns).values(
       items.map((item, position) => ({
         projectId,
         pattern: item.pattern.trim(),
-        environment: clean(item.environment),
+        ...resolved[position]!,
         branch: clean(item.branch),
         pathPrefix: cleanPrefix(item.pathPrefix),
         testPathPrefix: cleanPrefix(item.testPathPrefix),
@@ -145,7 +157,7 @@ export async function replaceProjectUrlPatterns(
   return { ok: true, items: await listProjectUrlPatterns(db, projectId) };
 }
 
-/** Appends one pattern; refuses one the project already has. */
+/** Appends one pattern, its environment label resolved as a run's; refuses one the project already has. */
 export async function addProjectUrlPattern(
   db: DrizzleDB,
   projectId: number,
@@ -160,7 +172,7 @@ export async function addProjectUrlPattern(
   await db.insert(projectUrlPatterns).values({
     projectId,
     pattern,
-    environment: clean(input.environment),
+    ...(await resolveRunEnvironment(db, projectId, clean(input.environment))),
     branch: clean(input.branch),
     pathPrefix: cleanPrefix(input.pathPrefix),
     testPathPrefix: cleanPrefix(input.testPathPrefix),
@@ -176,7 +188,11 @@ export interface VisibleUrlPattern {
   projectName: string;
   projectLabel: string;
   pattern: string;
+  /** The environment's label as written (its key); null for every environment. */
   environment: string | null;
+  /** The environment the label resolves to, and its name, which Piwi Picker shows; null when none. */
+  environmentId: number | null;
+  environmentName: string | null;
   branch: string | null;
   pathPrefix: string | null;
   testPathPrefix: string | null;
@@ -195,12 +211,15 @@ export async function listVisibleUrlPatterns(db: DrizzleDB, scope: 'all' | Set<n
       projectLabel: projects.label,
       pattern: projectUrlPatterns.pattern,
       environment: projectUrlPatterns.environment,
+      environmentId: projectUrlPatterns.environmentId,
+      environmentName: environments.name,
       branch: projectUrlPatterns.branch,
       pathPrefix: projectUrlPatterns.pathPrefix,
       testPathPrefix: projectUrlPatterns.testPathPrefix,
     })
     .from(projectUrlPatterns)
     .innerJoin(projects, eq(projects.id, projectUrlPatterns.projectId))
+    .leftJoin(environments, eq(environments.id, projectUrlPatterns.environmentId))
     .where(scope === 'all' ? undefined : inArray(projectUrlPatterns.projectId, [...scope]))
     .orderBy(asc(projectUrlPatterns.projectId), asc(projectUrlPatterns.position), asc(projectUrlPatterns.id));
   return rows.map((r) => ({ ...r, projectLabel: r.projectLabel || r.projectName }));

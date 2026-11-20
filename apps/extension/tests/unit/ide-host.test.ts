@@ -123,7 +123,7 @@ describe('the IDE bundle’s chrome', () => {
 
 describe('the recorder over the IDE bundle’s chrome', () => {
   it('keeps its recording through messages to the launcher, one per append', async () => {
-    const state = { active: true, events: [], startedAt: 1, grantedOriginPattern: null, mode: 'actions' };
+    const state = { active: true, events: [], startedAt: 1, grantedOriginPattern: null };
     const { requests, binding } = launcher((request) => {
       if (request.kind !== 'message') return undefined;
       const message = request.message as { type: string };

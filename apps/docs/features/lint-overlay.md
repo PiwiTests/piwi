@@ -8,7 +8,7 @@ lang: en-US
 
 <Needs extension />
 
-The **Lint overlay**, under **More tools** in the [Piwi Picker](./extension) popup, checks every button, link and
+The **Lint overlay**, under **Pick** in the [Piwi Picker](./extension) popup, checks every button, link and
 field of the page with the ranking [Pick an element](./pick-an-element) uses.
 
 One click outlines every interactive element no stable locator finds alone and says what to add, with a **Copy**

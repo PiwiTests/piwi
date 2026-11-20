@@ -1,6 +1,7 @@
 /** The guide anchors of the Projects list (`/projects`) and of a project's pages (`/projects/[id]` and its sub-pages). */
 
 const PROJECT_1 = { project: { id: 1, name: 'e2e-checkout' } };
+const PROJECT_2 = { project: { id: 2, name: 'api-integration' } };
 const PROJECT_3 = { project: { id: 3, name: 'ui-components' } };
 const PROJECT_5 = { project: { id: 5, name: 'web-dashboard' } };
 const USERS_ENDPOINTS = {
@@ -494,7 +495,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The Source control section: the project’s repository, SCM token, default branch, commit and gate statuses and generated specs.',
+      'The Source control section: the project’s repository, SCM credential, default branch, commit and gate statuses and generated specs.',
     doc: 'guide/source-control',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
   },
@@ -504,7 +505,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'source-control' } }],
     describes:
-      'The project’s SCM token: a read-only Git host token, stored encrypted, that lets diagnosis read the commits behind a failure.',
+      'The project’s SCM credential: the Git host token, saved under Settings → Credentials, that lets diagnosis read the commits behind a failure.',
     help: 'project.scm-token',
     doc: 'guide/source-control',
     sample: { route: '/projects/1?tab=settings&section=source-control', expect: PROJECT_1 },
@@ -515,7 +516,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
-      'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, and the one CI server token they share.',
+      'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, each CI server one naming its credential.',
     doc: 'features/ci-rerun',
     requires: { permission: 'project:manage' },
     sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
@@ -564,6 +565,40 @@ export const PROJECTS_ANCHORS = [
     help: 'project.live-view',
     doc: 'features/live-view',
     sample: { route: '/projects/1?tab=settings&section=live-view', expect: PROJECT_1 },
+  },
+  {
+    id: 'project-settings-run-variables',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'run-variables' } }],
+    describes:
+      'The Run variables section: the environment variables (a tenant, a region) every run Piwi starts for the project gets, and its copied commands start with.',
+    requires: { permission: 'project:manage' },
+    help: 'project.run-variables',
+    doc: 'features/run-variables',
+    sample: { route: '/projects/1?tab=settings&section=run-variables', expect: PROJECT_1 },
+  },
+  {
+    id: 'project-settings-environments',
+    kind: 'tab',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'environments' } }],
+    describes:
+      'The Environments section: the deployments the project’s tests run against, each with its key, aliases, run variables and protection, in picker order.',
+    help: 'project.environments',
+    doc: 'features/environments',
+    sample: { route: '/projects/1?tab=settings&section=environments', expect: PROJECT_1 },
+  },
+  {
+    id: 'project-default-environment',
+    kind: 'block',
+    pages: ['/projects/[id]'],
+    reveal: [{ query: { tab: 'settings', section: 'environments' } }],
+    describes:
+      'The default environment: the one the project page, its tabs, Analytics and quarantine candidates read when no environment is picked.',
+    help: 'project.default-environment',
+    doc: 'features/environments#default-environment',
+    sample: { route: '/projects/2?tab=settings&section=environments', expect: PROJECT_2 },
   },
   {
     id: 'project-settings-capabilities',

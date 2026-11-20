@@ -31,9 +31,9 @@ describe('splitRerunArgs undoes quoteShellArg', () => {
       { filePath: 'tests/posts.$postId.spec.ts', title: 'shows', line: null, projectName: 'chromium' },
     ]);
     expect(splitRerunArgs(args)).toEqual([
-      'tests/login.spec.ts:10',
-      'tests/cart page.spec.ts:4',
-      'tests/posts..postId.spec.ts',
+      '/tests/login.spec.ts:10',
+      '/tests/cart(?: |.20)page.spec.ts:4',
+      '/tests/posts..postId.spec.ts',
       '--project=chromium',
       '--project=mobile safari',
     ]);

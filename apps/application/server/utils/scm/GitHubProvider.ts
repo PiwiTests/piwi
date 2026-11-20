@@ -28,6 +28,7 @@ import type {
 import { TtlCache } from '../ttl-cache';
 import { isValidGitRef, encodeGitRef, encodePathSegments } from './refs';
 import type { CiActionTarget } from '#shared/ci-actions';
+import { scmRepositoryApiUrl } from '#shared/scm-urls';
 
 /** Turn a non-2xx GitHub response into an Error carrying the API's own message. */
 async function githubError(res: Response, action: string): Promise<Error> {
@@ -89,6 +90,11 @@ export class GitHubProvider extends ScmProvider {
     token: string | null,
   ) {
     super(token);
+  }
+
+  /** The repository's API URL, which the credential's destination must hold. */
+  get apiUrl(): string {
+    return scmRepositoryApiUrl(this.webUrl)!;
   }
 
   protected override makeHeaders() {
@@ -376,12 +382,12 @@ export class GitHubProvider extends ScmProvider {
         const body = (await res.json().catch(() => ({}))) as { message?: string };
         const msg = body?.message ?? `GitHub API returned ${res.status}`;
         if (res.status === 403 && msg.toLowerCase().includes('rate limit')) {
-          return 'GitHub API rate limit exceeded. Set an SCM token in Settings → Source control to increase the limit.';
+          return 'GitHub API rate limit exceeded. Pick an SCM credential in Settings → Source control to increase the limit.';
         }
         if (res.status === 404)
           return 'Repository not found on GitHub. Check the remote URL in your test run metadata.';
         if (res.status === 401)
-          return 'GitHub API authentication failed. Check your SCM token in Settings → Source control.';
+          return 'GitHub API authentication failed. Check the SCM credential in Settings → Credentials.';
         return `GitHub API error: ${msg}`;
       }
       return `No commits found on ${branch ? `branch '${branch}'` : 'the default branch'}.`;
@@ -440,7 +446,7 @@ export class GitHubProvider extends ScmProvider {
     return (await this.postPullRequestComment(prNumber, marker, body)) !== null;
   }
 
-  override async postPullRequestComment(
+  protected override async doPostPullRequestComment(
     prNumber: number,
     marker: string,
     body: string,
@@ -482,7 +488,7 @@ export class GitHubProvider extends ScmProvider {
     }
   }
 
-  override async postCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
+  protected override async doPostCommitStatus(sha: string, status: ScmCommitStatus): Promise<boolean> {
     if (!this.token || !isValidGitRef(sha)) return false;
     try {
       const res = await fetch(`https://api.github.com/repos/${this.repoPath}/statuses/${encodeGitRef(sha)}`, {
@@ -516,7 +522,7 @@ export class GitHubProvider extends ScmProvider {
     return data.object?.sha ?? null;
   }
 
-  override async createBranch(name: string, fromSha: string): Promise<void> {
+  protected override async doCreateBranch(name: string, fromSha: string): Promise<void> {
     const res = await fetch(`https://api.github.com/repos/${this.repoPath}/git/refs`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
@@ -526,7 +532,7 @@ export class GitHubProvider extends ScmProvider {
     if (!res.ok) throw await githubError(res, 'create branch');
   }
 
-  override async commitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
+  protected override async doCommitFiles(branch: string, message: string, files: ScmFileEdit[]): Promise<string> {
     const headSha = await this.getBranchHead(branch);
     if (!headSha) throw new Error(`GitHub commit failed: branch ${branch} not found`);
 
@@ -572,7 +578,7 @@ export class GitHubProvider extends ScmProvider {
     return newSha;
   }
 
-  override async createPullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
+  protected override async doCreatePullRequest(input: CreatePullRequestInput): Promise<ScmPullRequest> {
     const res = await fetch(`https://api.github.com/repos/${this.repoPath}/pulls`, {
       method: 'POST',
       headers: { ...this.makeHeaders(), 'Content-Type': 'application/json' },
@@ -593,7 +599,7 @@ export class GitHubProvider extends ScmProvider {
 
   // ── CI re-run ──────────────────────────────────────────────────────────────
 
-  override async dispatchRerun(
+  protected override async doDispatchRerun(
     target: CiActionTarget,
     playwrightArgs: string,
     request: RerunDispatchRequest = {},

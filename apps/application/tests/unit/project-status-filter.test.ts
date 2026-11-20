@@ -18,21 +18,27 @@ describe('resolveProjectRunScope', () => {
   test('trims and deduplicates the lists, and keeps full runs only unless turned off', () => {
     expect(resolveProjectRunScope({ environments: [' prod ', 'prod', '', 3], branches: ['main'] })).toEqual({
       environments: ['prod'],
+      allEnvironments: true,
       branches: ['main'],
       allBranches: false,
       fullRunsOnly: true,
     });
     expect(resolveProjectRunScope({ allBranches: true, fullRunsOnly: false })).toEqual({
       environments: [],
+      allEnvironments: true,
       branches: [],
       allBranches: true,
       fullRunsOnly: false,
     });
   });
+
+  test('names no environment for every environment, never the project’s default one', () => {
+    expect(resolveProjectRunScope({ environments: [], allEnvironments: false })?.allEnvironments).toBe(true);
+  });
 });
 
 describe('describeProjectRunScope', () => {
-  const scope = { environments: [], branches: [], allBranches: false, fullRunsOnly: true };
+  const scope = { environments: [], allEnvironments: true, branches: [], allBranches: false, fullRunsOnly: true };
 
   test('names the branches, the environments and the run kind', () => {
     expect(describeProjectRunScope(scope, 'main')).toBe('the default branch (main), full runs only');
@@ -95,6 +101,7 @@ describe('listProjects: the latest run follows the status filter', () => {
     const filtered = (await listProjects(db as never)).find((p: any) => p.name === 'filtered');
     expect(filtered.statusFilter).toEqual({
       environments: ['prod'],
+      allEnvironments: true,
       branches: [],
       allBranches: false,
       fullRunsOnly: true,

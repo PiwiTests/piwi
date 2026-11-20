@@ -23,7 +23,8 @@ Playwright Test suites in JavaScript and TypeScript.
   Alt+Enter away: the same edit an auto-heal pull request would make.
 - **The Piwi tool window.** The run's failures as a tree, grouped by file, cluster or owner, with your runs since; each
   test re-runs, opens its trace or its page from its right-click menu. Compare with another branch, a run by its id, or your local
-  runs only.
+  runs only. Its **Tests** tab lists every test Playwright finds, each folder, spec, describe block, test or Playwright
+  project run from its right-click.
 - **The tests behind each line.** Each test's latest result in the gutter, a failing test's body tinted, and above
   each locator line and each application file the tests that use or reach it, ready to run (Code Vision).
 - **Coverage marks.** With coverage recorded, the lines your tests ran, in TypeScript, JavaScript and C# alike, the
@@ -32,8 +33,8 @@ Playwright Test suites in JavaScript and TypeScript.
   change that renames a string your tests find elements by, each with a quick fix.
 - **Tests recorded at the caret.** **Tools → Piwi → Record here…** opens a browser through your project's own
   Playwright and writes what you do there into the test, calling your page objects when connected. No instance needed.
-- **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. That run
-  pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the
+- **The status bar.** The latest run, the run you started as it runs, and what it changed once it ended. A run you
+  debug pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes with the
   debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the page made, and a
   headless test's page shows in the Piwi tool window, where a click picks the locator.
 

@@ -8,6 +8,7 @@ import com.intellij.notification.NotificationType
 import com.intellij.openapi.actionSystem.ActionUpdateThread
 import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
+import com.intellij.openapi.application.ApplicationInfo
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.command.WriteCommandAction
 import com.intellij.openapi.components.service
@@ -40,7 +41,6 @@ import java.awt.datatransfer.StringSelection
 import java.io.File
 import java.net.InetSocketAddress
 import java.net.URI
-import java.nio.file.Path
 import java.security.SecureRandom
 import java.util.Base64
 import java.util.concurrent.CompletableFuture
@@ -48,19 +48,43 @@ import java.util.concurrent.ExecutionException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.TimeoutException
 
-/** The pairing token Piwi Picker sends with each request, kept in the password safe: read on a pooled thread. */
+/**
+ * The pairing token Piwi Picker sends with each request, kept in the password safe: read on a pooled thread. Each
+ * JetBrains product keeps its own (`Glue.sendTokenUser`), so Unpair in one IDE leaves every other IDE's pairing as it
+ * is, and no other IDE holds a copy this one renews. The entry every JetBrains IDE shared before is read once, when this
+ * IDE's own is empty, and copied to it.
+ */
 object PiwiSendToken {
-    private val attributes = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
+    private val attributes by lazy {
+        PiwiCredentials.attributes(
+            generateServiceName("Piwi", Glue.sendTokenUser(ApplicationInfo.getInstance().build.productCode)),
+        )
+    }
+
+    /** The entry every JetBrains IDE of this machine shared, which a pairing made before may name. */
+    private val shared = PiwiCredentials.attributes(generateServiceName("Piwi", "sendToken"))
 
     @Volatile private var cached: String? = null
 
-    fun current(): String = cached ?: (PasswordSafe.instance.getPassword(attributes) ?: "").also { cached = it }
+    fun current(): String = cached ?: load().also { cached = it }
+
+    @Synchronized
+    private fun load(): String = cached ?: Glue.ownSendToken(
+        PasswordSafe.instance.getPassword(attributes),
+        PasswordSafe.instance.getPassword(shared),
+    ) { PasswordSafe.instance.setPassword(attributes, it) }
 
     /** The token, minted once when none is kept; every open project's service hears the pairing it makes. */
     @Synchronized
-    fun ensure(): String = current().ifEmpty {
+    fun ensure(): String = current().ifEmpty { mint() }
+
+    /** A new token in place of the one kept (Unpair): whoever holds the old one reaches this IDE no more. */
+    @Synchronized
+    fun renew(): String = mint()
+
+    private fun mint(): String {
         val bytes = ByteArray(24).also { SecureRandom().nextBytes(it) }
-        Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).also {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(bytes).also {
             PasswordSafe.instance.setPassword(attributes, it)
             cached = it
             PiwiSendHandler.announceRunPairing()
@@ -81,23 +105,28 @@ object PiwiSendToken {
  * runs of every IDE window and project. The platform's own check of the `Host` header applies to
  * both (a page reached under another name is refused), and every answer to a request carrying a
  * challenge carries the proof that this IDE holds the token (`Glue.editorTokenProof`), paired or
- * not, so Piwi Picker sends the token only here.
+ * not, so Piwi Picker sends the token only here. Without a token, `GET /api/piwi/hello` says which
+ * IDE listens, and `POST /api/piwi/pairings` asks the person to pair (`PiwiPickerPairing`): the
+ * token goes to Piwi Picker only once they allow it.
  */
 class PiwiSendHandler : HttpRequestHandler() {
     override fun isSupported(request: FullHttpRequest): Boolean {
         val path = QueryStringDecoder(request.uri()).path()
         val method = request.method()
-        return (path == PATH && (method == HttpMethod.POST || method == HttpMethod.OPTIONS)) ||
-            (path == LIVE_PATH && (method == HttpMethod.GET || method == HttpMethod.OPTIONS))
+        val get = method == HttpMethod.GET || method == HttpMethod.OPTIONS
+        val post = method == HttpMethod.POST || method == HttpMethod.OPTIONS
+        return (path == PATH && post) || (path == LIVE_PATH && get) || (path == HELLO_PATH && get) ||
+            (path == PAIRINGS_PATH && post) || (Glue.editorPairingIdOf(path, PAIRINGS_PATH) != null && get)
     }
 
     /**
-     * A browser extension's origin is allowed on these paths, which the token authenticates; another origin is as the
-     * platform rules. The platform's `isAccessible` keeps its check of the `Host` header.
+     * A browser extension's origin is allowed on these paths, which the token or the person's Allow guards; another
+     * origin is as the platform rules. The platform's `isAccessible` keeps its check of the `Host` header.
      */
     override fun isOriginAllowed(request: HttpRequest): OriginCheckResult {
         val origin = request.headers().get(HttpHeaderNames.ORIGIN)
-        val ours = QueryStringDecoder(request.uri()).path() in setOf(PATH, LIVE_PATH)
+        val path = QueryStringDecoder(request.uri()).path()
+        val ours = path in setOf(PATH, LIVE_PATH, HELLO_PATH, PAIRINGS_PATH) || Glue.editorPairingIdOf(path, PAIRINGS_PATH) != null
         return if (ours && origin != null && EXTENSION_ORIGIN.matches(origin)) OriginCheckResult.ALLOW else super.isOriginAllowed(request)
     }
 
@@ -109,6 +138,31 @@ class PiwiSendHandler : HttpRequestHandler() {
         // A preflight carries no challenge, and needs no token: it is answered here, on the server's thread.
         if (preflight && challenge == null) {
             respond(context, origin, HttpResponseStatus.NO_CONTENT, null, null)
+            return true
+        }
+        val path = urlDecoder.path()
+        if (!preflight && (path == HELLO_PATH || path == PAIRINGS_PATH || Glue.editorPairingIdOf(path, PAIRINGS_PATH) != null)) {
+            // Read here, while the request is held: answered on a pooled thread, as the IDE's projects are named there.
+            val body = if (path == PAIRINGS_PATH && request.content().readableBytes() <= MAX_PAIRING_BYTES) {
+                request.content().toString(Charsets.UTF_8)
+            } else {
+                null
+            }
+            val tooLarge = path == PAIRINGS_PATH && body == null
+            val contentType = request.headers().get(HttpHeaderNames.CONTENT_TYPE)
+            val secret = request.headers().get(Glue.EDITOR_PAIRING_SECRET_HEADER)
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val answer = when {
+                    path == HELLO_PATH -> Glue.PairingAnswer(200, PiwiPickerPairing.hello())
+                    tooLarge && Glue.isExtensionOrigin(origin) -> Glue.PairingAnswer(413, mapOf("error" to "too large"))
+                    path == PAIRINGS_PATH -> PiwiPickerPairing.requests.start(origin, contentType, body)
+                    else -> PiwiPickerPairing.requests.poll(Glue.editorPairingIdOf(path, PAIRINGS_PATH)!!, secret)
+                }
+                // A challenge is answered with the proof here too, whatever the path.
+                val token = if (challenge == null || port == null) null else runCatching { PiwiSendToken.current() }.getOrNull()
+                val proof = if (token.isNullOrEmpty()) null else Glue.editorTokenProof(token, port!!, challenge!!)
+                respond(context, origin, HttpResponseStatus.valueOf(answer.status), answer.body, proof)
+            }
             return true
         }
         val authorization = request.headers().get(HttpHeaderNames.AUTHORIZATION)
@@ -126,12 +180,12 @@ class PiwiSendHandler : HttpRequestHandler() {
                 token == null -> HttpResponseStatus.INTERNAL_SERVER_ERROR to mapOf("error" to "the pairing's token could not be read")
                 preflight -> HttpResponseStatus.NO_CONTENT to null
                 live -> try {
-                    live(authorization, token)
+                    live(authorization, token).also { (status, _) -> heardFrom(origin, status) }
                 } catch (e: Exception) {
                     HttpResponseStatus.INTERNAL_SERVER_ERROR to mapOf("error" to "the live hubs could not be read")
                 }
                 else -> try {
-                    answer(authorization, token, body)
+                    answer(authorization, token, body).also { (status, _) -> heardFrom(origin, status) }
                 } catch (e: Exception) {
                     HttpResponseStatus.UNPROCESSABLE_ENTITY to mapOf("error" to (e.message ?: e.javaClass.simpleName))
                 }
@@ -139,6 +193,11 @@ class PiwiSendHandler : HttpRequestHandler() {
             respond(context, origin, status, answer, proof)
         }
         return true
+    }
+
+    /** A request the token let through from a browser extension: Piwi Picker reached the pairing. */
+    private fun heardFrom(origin: String?, status: HttpResponseStatus) {
+        if (status != HttpResponseStatus.UNAUTHORIZED && Glue.isExtensionOrigin(origin)) PiwiPickerPairing.heard()
     }
 
     /** The live hubs, with the pairing's token: those of the services whose discovery file names a running process. */
@@ -292,7 +351,7 @@ class PiwiSendHandler : HttpRequestHandler() {
         val start = edit.range?.start ?: refuse("the editor service named no range")
         val end = edit.range?.end ?: refuse("the editor service named no range")
         if (start.line != end.line) refuse("the range spans several lines")
-        val path = runCatching { Path.of(URI(uri)) }.getOrNull() ?: refuse("$uri is not a file")
+        val path = Glue.pathOfUri(uri) ?: refuse("$uri is not a file")
         val file = LocalFileSystem.getInstance().refreshAndFindFileByNioFile(path) ?: refuse("$name is not on disk")
         val document = ApplicationManager.getApplication().runReadAction(Computable { FileDocumentManager.getInstance().getDocument(file) })
             ?: refuse("$name cannot be edited as text")
@@ -372,7 +431,10 @@ class PiwiSendHandler : HttpRequestHandler() {
         if (origin != null && EXTENSION_ORIGIN.matches(origin)) {
             headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_ORIGIN, origin)
             headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_METHODS, "GET, POST, OPTIONS")
-            headers.set(HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS, "Authorization, Content-Type, ${Glue.EDITOR_CHALLENGE_HEADER}")
+            headers.set(
+                HttpHeaderNames.ACCESS_CONTROL_ALLOW_HEADERS,
+                "Authorization, Content-Type, ${Glue.EDITOR_CHALLENGE_HEADER}, ${Glue.EDITOR_PAIRING_SECRET_HEADER}",
+            )
             headers.set(HttpHeaderNames.ACCESS_CONTROL_EXPOSE_HEADERS, Glue.EDITOR_PROOF_HEADER)
             headers.set(HttpHeaderNames.VARY, "Origin")
         }
@@ -382,6 +444,11 @@ class PiwiSendHandler : HttpRequestHandler() {
     companion object {
         const val PATH = "/api/piwi/send"
         const val LIVE_PATH = "/api/piwi/live"
+        const val HELLO_PATH = "/api/piwi/hello"
+        const val PAIRINGS_PATH = "/api/piwi/pairings"
+
+        /** The largest pairing request body read: Piwi Picker names a browser and a system. */
+        private const val MAX_PAIRING_BYTES = 4096
 
         /**
          * Where a run posts a locator picked at its stop (`PIWI_EDITOR_SEND`): this endpoint on the built-in server's
@@ -422,10 +489,28 @@ class PiwiSendHandler : HttpRequestHandler() {
 }
 
 /**
- * Piwi: Pair with Piwi Picker — copies the address Piwi Picker's settings take, and names the ports a JetBrains Gateway
- * backend's person forwards, the IDE's and the run hubs' read from the discovery files.
+ * Piwi: Pair with Piwi Picker — shows the **Piwi Picker** tab, where a request Piwi Picker's Pair makes waits for Allow,
+ * with Copy the pairing address for an IDE Piwi Picker does not find.
  */
 class PairPickerAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabledAndVisible = e.project != null
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        project.service<PiwiPickerTab>().open()
+    }
+}
+
+/**
+ * Piwi: Copy the pairing address for Piwi Picker — copies the address Piwi Picker's settings take under Pair with an
+ * address, and names the ports a JetBrains Gateway
+ * backend's person forwards, the IDE's and the run hubs' read from the discovery files.
+ */
+class CopyPickerAddressAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
@@ -445,10 +530,35 @@ class PairPickerAction : AnAction(), DumbAware {
                 if (project != null) {
                     PiwiCommands.notify(
                         project,
-                        "The pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor. " +
-                            Glue.forwardingHint(port, hubs),
+                        "The pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor, " +
+                            "Pair with an address. " + Glue.forwardingHint(port, hubs),
                     )
                 }
+            }
+        }
+    }
+}
+
+/** Piwi: Unpair Piwi Picker — a new token, after asking: Piwi Picker reaches this IDE again only once paired again. */
+class UnpairPickerAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val unpair = com.intellij.openapi.ui.Messages.showOkCancelDialog(
+            e.project,
+            "This IDE takes a new token: Piwi Picker reaches it again only once you pair again, and so do the runs started " +
+                "before. The connections to the runs Piwi Picker holds already last until the editor service restarts.",
+            "Unpair Piwi Picker?",
+            "Unpair",
+            "Cancel",
+            com.intellij.openapi.ui.Messages.getWarningIcon(),
+        ) == com.intellij.openapi.ui.Messages.OK
+        if (!unpair) return
+        ApplicationManager.getApplication().executeOnPooledThread {
+            PiwiPickerPairing.unpair()
+            val project = e.project ?: return@executeOnPooledThread
+            ApplicationManager.getApplication().invokeLater {
+                if (!project.isDisposed) PiwiNotifier.confirm(project, "Piwi Picker is unpaired from this IDE.")
             }
         }
     }

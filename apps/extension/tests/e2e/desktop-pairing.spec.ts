@@ -311,8 +311,9 @@ test.describe('the desktop app as the instance', () => {
     await recordRemovals(page);
     await pairByHand(page);
     const editor = page.locator('#editor-card');
+    await editor.getByText('Pair with an address').click();
     await editor.getByLabel('Pairing address').fill(`${desktop}/piwi/send#editor_token_0123456789`);
-    await editor.getByRole('button', { name: 'Pair' }).click();
+    await editor.getByRole('button', { name: 'Use this address' }).click();
     await expect(editor.locator('#editor-pill')).toHaveText('Paired');
     await editor.getByRole('button', { name: 'Unpair' }).click();
     await expect(editor.locator('#editor-pill')).toHaveText('Not paired');

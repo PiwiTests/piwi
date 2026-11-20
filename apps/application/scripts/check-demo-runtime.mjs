@@ -674,6 +674,62 @@ async function answerQuestion(panel, answer, pick) {
   return lastAnswer(panel, 2);
 }
 
+// ── The live view of a simulated run ───────────────────────────────────────
+// The demo runs no browser: its simulator plays each worker's call log, and
+// Inspect's pages are a committed trace's, which its service worker serves.
+
+/**
+ * Runs the **Stuck test** scenario and opens its PayPal test's lane panel from its row's **Watch**: the panel says it
+ * shows no image, its call log waits on the disabled Pay button, and Inspect shows the checkout page at that click.
+ * `watch` attaches the checks every page of the demo gets.
+ */
+async function checkDemoLiveView(browser, watch) {
+  const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
+  await context.addInitScript(() => {
+    if (window !== window.top) return;
+    localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() }));
+  });
+  const page = await context.newPage();
+  watch(page);
+  try {
+    await page.goto(`${ORIGIN}${BASE}`, { waitUntil: 'domcontentloaded' });
+    await waitForServiceWorker(page);
+    await page.locator('[data-tour="home-page"]').waitFor({ timeout: 60000 });
+    const simulate = page.getByRole('button', { name: 'Simulate a test run' });
+    await page.waitForFunction(() => !document.querySelector('[data-tour="demo-simulator"] button[disabled]'));
+    await simulate.click();
+    await page.locator('[data-scenario="stuck"]').click();
+    await page.waitForURL(/\/test-runs\/\d+/, { timeout: 60000 });
+    await page.getByPlaceholder(/Search tests/).fill('PayPal');
+    // The test waits on its Pay click for about 25 s at the scenario's speed.
+    await page.locator('[data-testid="live-watch"]:visible').first().click({ timeout: 30000 });
+    const panel = page.getByTestId('lane-panel');
+    const log = panel.getByTestId('live-call-log');
+    await log.filter({ hasText: 'element is not enabled' }).waitFor({ timeout: 20000 });
+    check(
+      (await panel.getByTestId('live-status').textContent())?.includes('runs no browser') === true,
+      'the demo’s lane panel says it shows no image of the page',
+    );
+    check(
+      (await log.textContent())?.includes("waiting for getByRole('button', { name: 'Pay' })") === true &&
+        (await panel.getByTestId('live-call-target').textContent()) === 'Its element is not enabled',
+      'the stuck PayPal test’s call log waits on the disabled Pay button',
+    );
+    await panel.getByTestId('live-inspect-section').getByRole('button', { name: 'Inspect' }).click();
+    const frame = panel.getByTestId('live-inspect-frame').locator('iframe').contentFrame();
+    const pay = frame.locator('#pay[disabled]');
+    check(
+      await pay.waitFor({ timeout: 20000 }).then(
+        () => true,
+        () => false,
+      ),
+      'Inspect shows the checkout page at the Pay click, from the demo’s trace',
+    );
+  } finally {
+    await context.close();
+  }
+}
+
 async function checkDemoAssistant(browser, watch) {
   const context = await browser.newContext({ viewport: WIDE, locale: 'en-US' });
   await context.addInitScript(() => {
@@ -1249,6 +1305,7 @@ async function main() {
   try {
     if (!ANCHORS_ONLY) {
       await checkDemoFlows(page);
+      await checkDemoLiveView(browser, watch);
       await checkGuidedTour(browser, watch);
       await checkAuthoredGuides(browser, watch);
       await checkGuideStopInPopover(browser, watch);
@@ -1284,7 +1341,7 @@ async function main() {
     return;
   }
   console.log(
-    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, every guided tour, every authored guide, the assistant’s prepared answers and every guide anchor all work.',
+    '✓ The built demo runs: service worker, in-browser API, export download, quality report, report snapshots, saved dashboards, the flake profile, a verified flake fix, the Flake Lab tab, a stuck test’s live view, every guided tour, every authored guide, the assistant’s prepared answers and every guide anchor all work.',
   );
 }
 

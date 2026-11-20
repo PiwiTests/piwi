@@ -10,7 +10,7 @@ lang: en-US
 
 In a project that turns the live view on, a running test of a CI run, or of a run a developer
 [shares from their machine](./share-live), gets **Watch** on its run page on the team instance: the page that worker
-is on, a few images a second, each with the call it was taken at, for a CI run that seems stuck or a teammate's
+is on, a few images a second, each with the call it was taken at, for a CI run that seems [stuck](./stuck-tests) or a teammate's
 paused test. Nothing you do in the view reaches the test.
 
 ## Where to watch a run
@@ -51,13 +51,15 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 | **Live view waiting** | No worker is connected yet: they are starting. |
 | **No worker connected** | Tests run without one: the specs import `test` from `@playwright/test`, not the [capture fixtures](/guide/capture-fixtures). |
 | **Not shared live** | The run is on a developer's machine: they [share it](./share-live). |
+| **Watch** says nothing has come for 35 seconds | A reverse proxy buffers the live view's streams: turn its buffering off ([Reverse proxy](/operate/deployment#reverse-proxy-https)). |
 
 ## Watch a worker
 
 On the run page's **Tests** tab, **Watch** at the end of a running test's row opens its worker's view, docked beside
 the page (a sheet on a smaller screen): the test's page as the browser paints it, under it the call the image was
-taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the
-caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
+taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page shows as the view opens,
+then sends no new image, so the caption names the step the test began since. Widen the panel or open it full
+screen; a click on the image zooms.
 Under it, the page's [events, text and filmstrip](./live-view-layers) and [Inspect](./live-inspect); [Watch all](./watch-all)
 shows every worker at once.
 
@@ -71,9 +73,6 @@ A view follows its worker's lane: it says how each test ended, lists the lane's 
 worker restarts; untick **Follow the worker's next test** to end it with its test. The page's address names the lane
 (`?watch=2`; `?watch=3.2` for worker 2 of shard 3) for a link. It ends with the run, saying how it went, 30 s after its
 lane's worker left, as the live view turns off, or as you close it. A view that cannot open says why.
-
-A CI run never stops at a breakpoint or a `page.pause()`; a run on your machine does, and its row then says where,
-shared or not ([where a test stopped](./watch-a-run#where-a-test-stopped)).
 
 ## What is sent, to whom, and what is kept
 
@@ -110,7 +109,8 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 - **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
-- **The test's `page`.** The view shows the page of Playwright's `page` fixture; a popup or a second page is not shown.
+- **One page at a time**: the `page` fixture's, else the page of the test's latest call
+  ([which](/guide/capture-fixtures#where-capture-works)).
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
   that person's oldest. Its workers send 4 MB of images a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
@@ -121,6 +121,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 - [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
+- [Stuck tests](./stuck-tests): a test past its usual time
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a local run live](./share-live): let a teammate watch a run on your machine
 - [Runs window](./runs-window): the live view of a test your editor runs, with its controls

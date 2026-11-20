@@ -1,6 +1,6 @@
 import type { TestCaseResult } from '~~/types/api';
 import type { RetryCase } from '~/utils/retry-command';
-import { buildRetryCommand, retryCaseOf, retryProjects } from '~/utils/retry-command';
+import { buildRetryCommand, NO_RETRY_COMMAND, retryCaseOf, retryProjects } from '~/utils/retry-command';
 import { isFlakyExecution } from '#shared/utils/test-counts';
 
 /**
@@ -15,10 +15,19 @@ import { isFlakyExecution } from '#shared/utils/test-counts';
  * flaky set the ones that passed after an earlier attempt failed (`isFlakyExecution`); the
  * whole set every test that was not skipped. File, line and project come from the row
  * itself, which makes the command exact. The naming mode and the run options are the
- * page's shared choices (`useRetryOptions`).
+ * page's shared choices (`useRetryOptions`). The command copied starts with the project's run variables, and with
+ * an environment's when `environmentId` names one (`useProjectRunVariables`).
  */
-export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] | null | undefined>) {
+export function useRunRetryCommand(
+  testCases: MaybeRefOrGetter<TestCaseResult[] | null | undefined>,
+  projectId?: MaybeRefOrGetter<number | null | undefined>,
+  environmentId?: MaybeRefOrGetter<number | null | undefined>,
+) {
   const { mode, optionsFor } = useRetryOptions();
+  const runVariables = useProjectRunVariables(
+    () => toValue(projectId),
+    () => toValue(environmentId),
+  );
 
   const testKeyOf = (tc: TestCaseResult) =>
     `${tc.testCaseId ?? tc.location ?? tc.title}|${(tc.browser as { projectName?: string } | null)?.projectName ?? ''}`;
@@ -53,12 +62,17 @@ export function useRunRetryCommand(testCases: MaybeRefOrGetter<TestCaseResult[] 
   const projects = computed(() => retryProjects(failedCases.value));
 
   const command = computed(() =>
-    buildRetryCommand(failedCases.value, { mode: mode.value, options: optionsFor(projects.value) }),
+    runVariables.command(
+      buildRetryCommand(failedCases.value, { mode: mode.value, options: optionsFor(projects.value) }),
+    ),
   );
 
   const { copy, copied } = useCopy();
-  function copyCommand() {
+  const toast = useToast();
+  async function copyCommand() {
+    await runVariables.ready();
     if (command.value) copy(command.value, { toast: 'Retry command copied' });
+    else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
   }
 
   const title = computed(() => (copied.value ? 'Copied!' : copyPreview(command.value)));

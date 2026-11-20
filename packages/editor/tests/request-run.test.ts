@@ -6,9 +6,34 @@ import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { requiredTagsGrepInvert, type EnvironmentForRun } from '@piwitests/core/environments';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
-import { argsLength, planRequestedRun, REQUESTED_RUN_ARGS_MAX_CHARS, requestedRunArgs } from '../src/request-run';
+import {
+  argsLength,
+  planRequestedRun,
+  REQUESTED_RUN_ARGS_MAX_CHARS,
+  requestedRunArgs,
+  requestedRunDisplay,
+} from '../src/request-run';
+
+const STAGING: EnvironmentForRun = {
+  id: 4,
+  key: 'staging',
+  name: 'Staging',
+  protected: false,
+  requiredTags: [],
+  envFile: '.env.staging',
+};
+const PRODUCTION: EnvironmentForRun = {
+  id: 5,
+  key: 'production',
+  name: 'Production',
+  protected: true,
+  requiredTags: ['@smoke', '@readonly'],
+  envFile: null,
+};
 
 let folder: string;
 
@@ -79,6 +104,16 @@ describe('requestedRunArgs', () => {
     ]);
   });
 
+  test('on Windows, each spec by its file: URL too', () => {
+    const spec = path.join(folder, 'tests', 'checkout.spec.ts');
+    const url = pathToFileURL(spec, { windows: true }).href;
+    expect(requestedRunArgs(request(), folder, false, true).slice(0, 2)).toEqual([
+      specFileArgument(spec, 12, url),
+      specFileArgument(spec, 30, url),
+    ]);
+    expect(requestedRunArgs(request(), folder, true, true)[0]).toBe(specFilePattern(spec, url));
+  });
+
   test('by title, each spec file once and one --grep of the escaped titles, in one element', () => {
     const args = requestedRunArgs(request({ options: { headed: false, project: 'firefox' } }), folder, true);
     expect(args).toEqual([
@@ -86,6 +121,22 @@ describe('requestedRunArgs', () => {
       '--grep=(?:^| )(?:pays with a saved card|refunds \\(partly\\))(?: @\\S+)*$',
       '--project=firefox',
     ]);
+  });
+
+  test('for a protected environment, keeps the run to the tests carrying one of its required tags, last', () => {
+    const spec = path.join(folder, 'tests', 'checkout.spec.ts');
+    const args = requestedRunArgs(request(), folder, false, false, PRODUCTION);
+    expect(args).toEqual([
+      specFileArgument(spec, 12),
+      specFileArgument(spec, 30),
+      '--project=chromium',
+      '--headed',
+      `--grep-invert=${requiredTagsGrepInvert(['@smoke', '@readonly'])}`,
+    ]);
+    // Another environment adds nothing: its variables go to the process.
+    expect(requestedRunArgs(request(), folder, false, false, STAGING)).toEqual(
+      requestedRunArgs(request(), folder, false, false),
+    );
   });
 
   test('a test with no line never runs its whole file: the request goes by title', () => {
@@ -119,6 +170,106 @@ describe('planRequestedRun', () => {
     expect(plan.args[0]).toBe(specFileArgument(path.join(folder, 'tests', 'checkout.spec.ts'), 12));
     expect(plan.display.startsWith('npx playwright test ')).toBe(true);
     expect(plan).toMatchObject({ branch: 'main', commit });
+  });
+
+  test('starts the command with the project’s run variables, and names them among the checks', async () => {
+    const commit = git('rev-parse', 'HEAD');
+    const variables = [
+      { name: 'TENANT', value: 'acme' },
+      { name: 'REGION', value: 'eu west' },
+    ];
+    const plan = await planRequestedRun(request({ source: { commit } }), folder, [], { ok: true, value: variables });
+    expect(plan.runnable).toBe(true);
+    expect(plan.variables).toEqual(variables);
+    expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
+      id: 'variables',
+      level: 'ok',
+      code: 'variables-set',
+      args: { variables: "TENANT=acme REGION='eu west'" },
+      message: "Runs with the project's run variables: TENANT=acme REGION='eu west'.",
+    });
+    expect(plan.display).toMatch(
+      process.platform === 'win32'
+        ? /^\$env:TENANT='acme'; \$env:REGION='eu west'; npx playwright test /
+        : /^TENANT=acme REGION='eu west' npx playwright test /,
+    );
+    // The arguments stay the command's alone: the variables go to the process's environment.
+    expect(plan.args.some((arg) => arg.includes('TENANT'))).toBe(false);
+  });
+
+  test('runs for the environment the request names: its key and variables in the command, a check naming it', async () => {
+    const commit = git('rev-parse', 'HEAD');
+    const variables = [{ name: 'TEST_ENV', value: 'staging' }];
+    const plan = await planRequestedRun(request({ source: { commit } }), folder, [], {
+      ok: true,
+      value: variables,
+      environment: STAGING,
+    });
+    expect(plan).toMatchObject({ runnable: true, variables, environment: STAGING });
+    expect(plan.checks.find((c) => c.id === 'environment')).toEqual({
+      id: 'environment',
+      level: 'ok',
+      code: 'environment-set',
+      args: { environment: 'Staging', key: 'staging' },
+      message: 'Runs for Staging: PIWI_ENVIRONMENT=staging.',
+    });
+    expect(plan.display).toMatch(
+      process.platform === 'win32'
+        ? /^\$env:TEST_ENV='staging'; \$env:PIWI_ENVIRONMENT='staging'; npx playwright test /
+        : /^TEST_ENV=staging PIWI_ENVIRONMENT=staging npx playwright test /,
+    );
+    expect(plan.args.some((arg) => arg.includes('staging'))).toBe(false);
+  });
+
+  test('a protected environment warns, keeps the run to its required tags and shows the filter in the command', async () => {
+    const commit = git('rev-parse', 'HEAD');
+    const plan = await planRequestedRun(request({ source: { commit } }), folder, [], {
+      ok: true,
+      value: [],
+      environment: PRODUCTION,
+    });
+    expect(plan.runnable).toBe(true);
+    expect(plan.checks.find((c) => c.id === 'environment')).toEqual({
+      id: 'environment',
+      level: 'warn',
+      code: 'environment-protected',
+      args: { environment: 'Production', key: 'production', tags: '@smoke, @readonly' },
+      message:
+        'Runs for Production, a protected environment: only the tests tagged @smoke, @readonly run, beside the setup and teardown projects they depend on, which Playwright runs whole.',
+    });
+    const filter = `--grep-invert=${requiredTagsGrepInvert(['@smoke', '@readonly'])}`;
+    expect(plan.args[plan.args.length - 1]).toBe(filter);
+    expect(plan.display.endsWith(` '${filter}'`)).toBe(true);
+  });
+
+  test('the command shown quotes what a shell would read, in the shell of the machine', () => {
+    const args = ['tests/a.spec.ts:3', '--grep=(?:^| )(?:it’s paid)$', '--project=chromium'];
+    expect(requestedRunDisplay(args, [{ name: 'TENANT', value: 'acme' }], STAGING, 'bash')).toBe(
+      "TENANT=acme PIWI_ENVIRONMENT=staging npx playwright test tests/a.spec.ts:3 '--grep=(?:^| )(?:it’s paid)$' --project=chromium",
+    );
+    expect(requestedRunDisplay(args, [{ name: 'TENANT', value: 'acme' }], STAGING, 'powershell')).toBe(
+      "$env:TENANT='acme'; $env:PIWI_ENVIRONMENT='staging'; npx playwright test tests/a.spec.ts:3 '--grep=(?:^| )(?:it’’s paid)$' --project=chromium",
+    );
+    expect(requestedRunDisplay(['tests/a.spec.ts'], [], null, 'bash')).toBe('npx playwright test tests/a.spec.ts');
+  });
+
+  test('a list of run variables a target refuses fails the check and leaves no command', async () => {
+    const plan = await planRequestedRun(request(), folder, [], {
+      ok: false,
+      problems: ['NODE_OPTIONS is not a variable a project can set.'],
+    });
+    expect(plan.runnable).toBe(false);
+    expect(plan.args).toEqual([]);
+    expect(plan.display).toBe('');
+    expect(plan.variables).toEqual([]);
+    expect(plan.environment).toBeNull();
+    expect(plan.checks.find((c) => c.id === 'variables')).toEqual({
+      id: 'variables',
+      level: 'fail',
+      code: 'variables-invalid',
+      args: { problems: 'NODE_OPTIONS is not a variable a project can set.' },
+      message: "The project's run variables cannot be set: NODE_OPTIONS is not a variable a project can set.",
+    });
   });
 
   test('off the request’s commit, or with changes, warns and selects by title', async () => {

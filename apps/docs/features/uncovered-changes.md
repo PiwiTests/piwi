@@ -54,7 +54,7 @@ with the branch it merges into, so every push reports the whole pull request: th
 open on its branch, so a push-triggered workflow reads its pull request too. Any other run is compared with the
 commit of the last passing run. A public repository is read without a token, so
 its uncovered changes and their gaps appear in Piwi, though nothing is posted; a private one needs a
-[token](/guide/source-control#set-the-token). With no diff, nothing appears.
+[SCM credential](/guide/source-control#set-the-credential). With no diff, nothing appears.
 
 ## On the pull request
 
@@ -130,6 +130,8 @@ jobs uploaded their reports.
 - **Naming conventions.** Files map to routes and pages through Nitro and Nuxt file naming; other frameworks rely on
   locators, code reach and coverage, so without those more of their files are *not observable* and not counted.
 - **Ten files listed.** The comment names at most ten files per list and counts the rest.
+- **A deployed environment.** A run against one reached the [deployed](/features/deployed-environments) application's
+  lines: when its deployed commit is not the change's head, or is unknown, the section says so.
 
 ## Related
 

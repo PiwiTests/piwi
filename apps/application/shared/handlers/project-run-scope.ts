@@ -3,24 +3,36 @@
  * for every handler behind a project tab that reads run history.
  */
 import { and, eq, inArray, isNull, or, sql, type SQL, type SQLWrapper } from 'drizzle-orm';
-import { testRuns } from '../../server/database/schema';
-import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
-import type { ProjectRunScope } from '../project-run-scope';
+import { environments, projects, testRuns } from '../../server/database/schema';
+import { resolveStoredDefaultBranch } from '../../server/utils/scm/stored-default-branch';
+import { scopeEnvironments, type ProjectRunScope } from '../project-run-scope';
 import { notLabRun } from './probes';
+import { environmentScopeSql } from './environment-scope';
+import { defaultEnvironmentJoin } from './default-environment';
 import type { DrizzleDB } from './db';
 
 /**
  * The `test_runs` conditions of a scope over one project's runs. The default
  * branch is the project's stored one (`resolveStoredDefaultBranch`), and a run
- * with no branch counts on it.
+ * with no branch counts on it; the default environment is the project's
+ * (`projectDefaultEnvironment`, an archived one reading as none), and a run
+ * with no environment never counts on it. One read of the project gives both.
  */
 export async function projectRunScopeConditions(
   db: DrizzleDB,
   projectId: number,
   scope: ProjectRunScope,
 ): Promise<SQL[]> {
-  const defaultBranch = scopeReadsDefaultBranch(scope) ? await projectDefaultBranch(db, projectId) : '';
-  return runScopeConditions(scope, defaultBranch);
+  const readsBranch = scopeReadsDefaultBranch(scope);
+  const readsEnvironment = scopeReadsDefaultEnvironment(scope);
+  if (!readsBranch && !readsEnvironment) return runScopeConditions(scope, '');
+  const [project] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch, defaultEnvironment: environments.key })
+    .from(projects)
+    .leftJoin(environments, defaultEnvironmentJoin())
+    .where(eq(projects.id, projectId));
+  const defaultBranch = readsBranch ? await resolveStoredDefaultBranch(db, project ?? { id: projectId }) : '';
+  return runScopeConditions(scope, defaultBranch, project?.defaultEnvironment ?? null);
 }
 
 /** Whether a scope reads the default branch, the one case its conditions need it. */
@@ -28,11 +40,24 @@ export function scopeReadsDefaultBranch(scope: ProjectRunScope): boolean {
   return scope.branches.length === 0 && !scope.allBranches;
 }
 
-/** `projectRunScopeConditions` with the default branch already resolved. */
-export function runScopeConditions(scope: ProjectRunScope, defaultBranch: string): SQL[] {
+/** Whether a scope reads the default environment, the one case its conditions need it. */
+function scopeReadsDefaultEnvironment(scope: ProjectRunScope): boolean {
+  return scope.environments.length === 0 && !scope.allEnvironments;
+}
+
+/**
+ * `projectRunScopeConditions` with the default branch and the key of the default environment already resolved (null
+ * for none: every environment).
+ */
+export function runScopeConditions(
+  scope: ProjectRunScope,
+  defaultBranch: string,
+  defaultEnvironment: string | null = null,
+): SQL[] {
   const conditions: SQL[] = [];
   if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments.length > 0) conditions.push(inArray(testRuns.environment, scope.environments));
+  const environment = environmentScopeSql(scopeEnvironments(scope, defaultEnvironment));
+  if (environment) conditions.push(environment);
   if (scope.branches.length > 0) {
     conditions.push(inArray(testRuns.branch, scope.branches));
   } else if (!scope.allBranches) {

@@ -16,6 +16,12 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A word both editors write themselves is read from `@piwitests/editor/words`** (`words.json`: a stop's controls and
   code actions, a recording's states, a worker's name, the choices of Hold failures), never written here again; the
   JetBrains plugin restates the file and `GlueTest` holds its copy to it.
+- **The words both editors compute from the same answer are held equal by the golden fixtures**
+  (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, a spec's test marks and lens rows, the Piwi
+  Picker view's words):
+  `tests/golden.test.ts` here and `GlueTest` (the marks and rows: `PiwiPluginTest`, drawn by the gutter's annotator and
+  the Code Vision providers) read the same file, so a change to either side's words changes the fixture and the other
+  side.
 - **A setting is registered in the editor service's settings registry first** (`packages/editor/src/settings.json`: its
   group, order, scope, type, default and choice labels); `package.json`'s groups follow it, a team's option
   window-scoped and a person's application-scoped, written to the user's settings. Checked by `tests/settings.test.ts`.
@@ -26,11 +32,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   the cursor for the caret and the window for the project. `packages/editor/tests/actions.test.ts` holds `package.json`
   to it.
 - **The command ids the service names are part of the protocol.** They are the ids of `PiwiCommand.command` in
-  `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a quick fix: renaming one changes the service and
+  `packages/editor/src/protocol.ts`, and `piwi.copyAgentContext` in a test's action list: renaming one changes the service and
   both clients in the same change ([Clients and versions](../../packages/editor/ARCHITECTURE.md#clients-and-versions)),
   and is a breaking change for users, whose keybindings and settings name the ids (`proposals/1.0-stabilization.md`
   freezes them, with the extension's own command ids, settings and MCP provider ids, `piwi.mcp` and `piwi.runs`). A new
-  command id or setting is registered in its D25 in the same change
+  command id, setting, view or submenu is registered in its D25 in the same change
   (`apps/application/tests/unit/editor-ids-register.test.ts`).
   `tests/walkthrough.test.ts` also fails when a walkthrough step names a command, view or context key that no longer
   exists.
@@ -42,8 +48,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   (`piwi/statusChanged` still makes the extension read the status, the failures, the coverage and the MCP servers
   again.)
   ([Failures view](ARCHITECTURE.md#failures-view))
-- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts`, `src/run-control.ts` and
-  `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
+- **`src/glue.ts`, `src/connect.ts`, `src/breakpoints.ts`, `src/send-listener.ts`, `src/run-control.ts`,
+  `src/picker-pairing.ts` and `src/debug-link.ts` use no VS Code API.** Put logic that needs no editor there, so the unit tests (`npm run vscode:test`) cover it.
   ([The pure half](ARCHITECTURE.md#the-pure-half))
 - **A run control names the stop it answers, and a line sent for a run is a line of the run's code.** Resume, Step, Run
   to the cursor, Finish and End the test at a stop pass the stop's `since` (End the test while a Pause waits, `give-up`,
@@ -70,9 +76,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A test run is a VS Code task** (`runAsTask`, the `piwi` type of `taskDefinitions` in `package.json`).
   `tasks.onDidEndTaskProcess` gives the exit code the service needs (`piwi/commandEnded`) on every VS Code version and
   in every shell. ([Test runs as tasks](ARCHITECTURE.md#test-runs-as-tasks))
-- **A default keybinding uses a chord that VS Code's default keymap leaves free, and the JetBrains plugin binds the
-  same chord.** Today: `ctrl+shift+alt` (`cmd` on macOS) with `r`, `f` and `k`. The letters each editor's keymaps
-  already take, and the JetBrains conflicts, are in [Keybindings](ARCHITECTURE.md#keybindings).
+- **A default keybinding is the editor service's chord table (`packages/editor/src/keys.ts`), `ctrl+shift+alt` (`cmd`
+  on macOS) with a letter VS Code's default keymap leaves free (`VSCODE_TAKEN`), acting only where `CHORD_CONTEXT`
+  says, as the JetBrains plugin's do.** `packages/editor/tests/keys.test.ts` holds `contributes.keybindings` to it. ([Keybindings](ARCHITECTURE.md#keybindings))
 - **A run's controls are the exception: they take the debugger's keys, only while they apply and the debugger does
   not take the key**: Stop on `!inDebugMode`, the others on `debugState != 'stopped'` (`contributes.keybindings`).
   **Pause** has no default key: a key bound for as long as a test runs takes one from the workbench.
@@ -90,9 +96,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   else on the stop at the caret's line; else on the only stop whose file or page the person was shown; else it asks**
   (`StopsShown.choose`, as the JetBrains plugin's `Glue.StopsShown.choose`). Checked by `tests/run-control.test.ts`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A held headless stop the worker panel showed is offered to the paused page as a new stop once the panel hides or
-  closes, the page closed or not** (`StopsShown.changed`, `WorkerPanelHooks.changed`). Checked by
-  `tests/run-control.test.ts`.
+- **One page per worker: a headless stop shows on the worker panel while it watches the stop's slot in sight, else on
+  the paused page, titled after the worker too; once the panel's watch of a slot is accepted, it takes that slot's
+  headless stop from the paused page** (`WorkerPanelHooks.watching`, `takeSlot`), and a held stop the panel showed goes
+  back to the paused page as the panel hides or closes or its watch ends (`StopsShown.changed`,
+  `WorkerPanelHooks.changed`). `tests/run-control.test.ts` checks `StopsShown`; the panels, the integration suite.
 - **Every command has its concept's codicon, present in VS Code 1.91, or Piwi's own glyph from `media/piwi-icons.woff`
   (`contributes.icons`, generated: never edited by hand), or is listed as waiting for one, and a glyph has one
   meaning.** The concepts are Appendix A of `proposals/editor-ux-coherence.md`. Checked by `tests/menus.test.ts` ("the
@@ -103,9 +111,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   ([Undo during a recording](ARCHITECTURE.md#undo-during-a-recording))
 - **The outcome marks (`media/test-*.svg`), the failing and recording tints and their scrollbar marks
   (`contributes.colors`) and the held failure's arrow (`media/failure-point.svg`) restate `STATUS_COLORS`' fills**, the
-  flaky and running marks byte for byte the JetBrains plugin's (VS Code's running ring adds the style that spins it),
-  as are the recording marks (`media/recording*.svg`), the tints at the alphas its color schemes blend at. Checked by
-  `apps/application/tests/unit/status-mark-colors.test.ts`.
+  flaky, running and paused marks byte for byte the JetBrains plugin's (VS Code's running ring adds the style that
+  spins it; the paused mark takes the pause bar's violet), as are the recording marks (`media/recording*.svg`), the
+  tints at the alphas its color schemes blend at. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
 - **The coverage marks default to `COVERAGE_MARK_COLORS` in `@piwitests/core/coverage`**, the run and not-run marks the
   dashboard's, as do the JetBrains color schemes. Checked by `apps/application/tests/unit/coverage-mark-colors.test.ts`.
 
@@ -137,6 +145,13 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **Only the pairing Piwi Picker is given saves the listener's port** (`sendPairing`): a run's pairing takes any free
   port while another window holds the saved one, and leaves it saved. Checked by `tests/send-listener.test.ts` ("keeps
   the port Piwi Picker was given …"). ([Breakpoints](ARCHITECTURE.md#breakpoints))
+- **The token goes to Piwi Picker by code only once the person types the code it shows** (the notification or the
+  **Piwi Picker** view, `allowPickerPairing`), with its proof, to the request `EditorPairingRequests` started for an
+  extension's `Origin`;
+  `…/hello` names the product and the window's folders alone. Without a saved port, a window listens on the first
+  free `VSCODE_PAIRING_PORTS`, and stops at one another window of this editor holds (`takeSavedPort`, `held`).
+  Checked by `tests/send-listener.test.ts` ("pairing by code", "without a pairing saved …") and the integration
+  suite. ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **The runs' MCP server's token lives in `SecretStorage`, one per workspace (`agentsTokenKey`), and reaches an agent
   only through the provider `piwi.runs` or the configuration the person copies, which says it holds it**
   (`keptAgentsToken`, `runsMcpConfiguration`). A token the service answers or tells (`piwi/agentsChanged`) replaces the
@@ -196,12 +211,13 @@ npm run vscode:package            # dist/piwi.vsix
 - `src/failures-view.ts`: the **Failures** view of the **Piwi** panel.
 - `src/test-explorer.ts`: Piwi's tests in VS Code's Testing view.
 - `src/recording.ts`: recording a test from the editor.
-- `src/send-listener.ts`: the Send to editor endpoint.
+- `src/send-listener.ts`: the Send to editor endpoint, and Piwi Picker's pairing by code on it.
+- `src/picker-view.ts`: the **Piwi Picker** view of the pairing; `src/picker-pairing.ts`: its pure half.
 - `src/debug-link.ts`: a debug link read and checked; `src/debug-from-link.ts`: the prompt, then the run.
 - `src/breakpoints.ts`: the breakpoints a test run passes to the service.
 - `src/run-view.ts`: the run controls (the stops, their commands, the paused page); `src/worker-panel.ts`: the worker
   panel (**Piwi: worker N**); `src/ci-view.ts`: the CI runs of the branch, read-only (the **CI Runs** view, the CI
-  positions); `src/run-control.ts`: their pure half.
+  positions); `src/runs-view.ts`: the **Runs** view of the runs in progress; `src/run-control.ts`: their pure half.
 - `walkthrough/`, `media/`: the walkthrough's steps, and the gutter icons and the execution point's arrow.
 - `scripts/`: the screenshots script, and the fixture project it shares with the JetBrains plugin.
 - `tests/`: the unit tests, `tests/integration/` and `tests/e2e/`.

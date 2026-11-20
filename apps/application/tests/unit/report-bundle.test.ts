@@ -2,6 +2,7 @@ import { beforeAll, describe, expect, test } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
+import { eq } from 'drizzle-orm';
 import { migrateToLatest } from './temp-db';
 
 delete process.env.PIWI_DATABASE_URL;
@@ -105,6 +106,28 @@ describe('collectReportBundle', () => {
     });
     const notes = bundle.bands.flatMap((b) => b.widgets.flatMap((w) => w.notes));
     expect(notes).toContain('«\u202fRisques\u202f» ne tient pas compte du filtre de tests.');
+  });
+
+  test('names the environments it reads: picked ones, the default environments, or every one', async () => {
+    const text = async (query: Record<string, string>, language?: 'fr') =>
+      (await collectReportBundle(db as any, { dashboard: 'executive', scope: parseAnalyticsScope(query), language }))
+        .scopeText.environments;
+    expect(await text({})).toBe('All environments');
+    expect(await text({ environments: 'staging,(none)' })).toBe('staging, No environment');
+    await db
+      .insert(schema.environments)
+      .values({ id: 11, projectId: 1, key: 'staging', keyFold: 'staging', name: 'Staging' });
+    await db.update(schema.projects).set({ defaultEnvironmentId: 11 }).where(eq(schema.projects.id, 1));
+    try {
+      expect(await text({})).toBe('Each project’s default environment, or every environment for a project without one');
+      expect(await text({}, 'fr')).toBe(
+        'L’environnement par défaut de chaque projet, ou tous les environnements pour un projet qui n’en a pas',
+      );
+      expect(await text({ allEnvironments: 'true' })).toBe('All environments');
+    } finally {
+      await db.update(schema.projects).set({ defaultEnvironmentId: null }).where(eq(schema.projects.id, 1));
+      await db.delete(schema.environments).where(eq(schema.environments.id, 11));
+    }
   });
 
   test('with a cost of a CI minute, wasted minutes carry their cost', async () => {

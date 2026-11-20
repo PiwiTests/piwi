@@ -1,10 +1,11 @@
 <script setup lang="ts">
 /**
- * Project settings → Source control: the repository, its token and default branch,
- * whether quarantined failures fail the commit status, whether the gate verdict
- * gets a commit status of its own, and where the specs generated from bug
- * reports go. The token is write-only: a blank field keeps the stored one.
+ * Project settings → Source control: the repository, the SCM credential its
+ * calls carry (Settings → Credentials) and its default branch, whether
+ * quarantined failures fail the commit status, whether the gate verdict gets a
+ * commit status of its own, and where the specs generated from bug reports go.
  */
+import { detectScmHost, scmApiDestination } from '#shared/scm-urls';
 import type { ProjectWithTestRuns } from '~~/types/api';
 
 const props = defineProps<{ project: ProjectWithTestRuns; showGeneratedSpecs: boolean }>();
@@ -14,6 +15,7 @@ const isDesktop = useIsDesktop();
 const { state, dirty } = useStoredForm(() => {
   return {
     repositoryUrl: props.project.repositoryUrl || '',
+    scmCredentialId: props.project.scmCredentialId ?? null,
     defaultBranch: props.project.defaultBranch || '',
     quarantineFailsStatus: props.project.quarantineFailsStatus === true,
     gateStatus: props.project.gateStatus === true,
@@ -23,15 +25,20 @@ const { state, dirty } = useStoredForm(() => {
     },
   };
 });
-const scmToken = ref('');
-const hasToken = computed(() => Boolean(props.project.hasScmToken));
+/** The repository whose API the credential must hold: the field's, once it reads as one, else the stored one. */
+const repository = computed(() => {
+  const typed = state.value.repositoryUrl.trim();
+  return detectScmHost(typed) ? typed : props.project.repositoryUrl || null;
+});
+const host = computed(() => detectScmHost(repository.value));
+const destination = computed(() => scmApiDestination(repository.value));
 
 const { saving, save } = useProjectPatch(() => props.project.id);
 
 async function submit() {
   const stored = await save(
     {
-      scmToken: scmToken.value.trim() || undefined,
+      scmCredentialId: state.value.scmCredentialId,
       repositoryUrl: state.value.repositoryUrl.trim() || null,
       defaultBranch: state.value.defaultBranch || null,
       quarantineFailsStatus: state.value.quarantineFailsStatus,
@@ -44,12 +51,7 @@ async function submit() {
     'Source control saved',
   );
   if (!stored) return;
-  scmToken.value = '';
   emit('saved');
-}
-
-async function removeToken() {
-  if (await save({ scmToken: null }, 'SCM token removed')) emit('saved');
 }
 </script>
 
@@ -64,7 +66,7 @@ async function removeToken() {
         <UFormField
           label="Repository"
           name="repositoryUrl"
-          description="The repository Piwi reads commits, diffs and source from with the SCM token. The first run that names one sets it; runs from another repository are left out of every SCM call."
+          description="The repository Piwi reads commits, diffs and source from with the SCM credential. The first run that names one sets it; runs from another repository are left out of every SCM call."
         >
           <UInput
             v-model="state.repositoryUrl"
@@ -73,38 +75,23 @@ async function removeToken() {
           />
         </UFormField>
 
-        <UFormField
-          name="scmToken"
+        <FormFieldGroup
+          label="Credential"
+          help="project.scm-token"
           data-tour="project-scm-token"
-          :description="
-            hasToken
-              ? 'Leave empty to keep the stored token, or enter a new value to replace it.'
-              : 'For GitHub, GitLab, or Bitbucket. Without one, the project uses the token of Settings → Source control.'
-          "
+          data-shot="project-scm-credential"
+          description="The token Piwi reads and writes the repository with, saved once under Settings → Credentials. Without one, the instance’s credential for the repository’s host, from Settings → Source control."
         >
-          <template #label>
-            <span class="inline-flex items-center gap-1">SCM token <HelpHint topic="project.scm-token" /></span>
-          </template>
-          <UInput
-            v-model="scmToken"
-            type="password"
-            autocomplete="off"
-            :placeholder="hasToken ? '•••••••• (unchanged)' : 'ghp_..., glpat-..., or bitbucket token'"
-            class="w-full font-mono"
+          <ScmCredentialPicker
+            v-model="state.scmCredentialId"
+            :project-id="project.id"
+            :host="host"
+            :repository-url="repository"
+            :destination="destination"
+            none-label="The instance’s SCM credentials"
+            label="Repository credential"
           />
-          <UButton
-            v-if="hasToken"
-            size="xs"
-            color="error"
-            variant="link"
-            class="px-0 mt-1"
-            icon="i-lucide-trash-2"
-            :disabled="saving"
-            @click="removeToken"
-          >
-            Remove stored token
-          </UButton>
-        </UFormField>
+        </FormFieldGroup>
 
         <UFormField
           label="Default branch"
@@ -133,14 +120,12 @@ async function removeToken() {
           <USwitch v-model="state.gateStatus" label="Post the gate verdict as a commit status" />
         </UFormField>
 
-        <UFormField
+        <FormFieldGroup
           v-if="showGeneratedSpecs"
-          name="generatedSpecs"
+          label="Generated specs"
+          help="bug-report.spec"
           description="For the failing test Piwi writes from a bug report: where it goes and what it imports test and expect from, such as ../fixtures when your tests use their own."
         >
-          <template #label>
-            <span class="inline-flex items-center gap-1">Generated specs <HelpHint topic="bug-report.spec" /></span>
-          </template>
           <div class="grid gap-2 sm:grid-cols-2">
             <UInput
               v-model="state.generatedSpecs.bugsFolder"
@@ -155,14 +140,12 @@ async function removeToken() {
               aria-label="Test import"
             />
           </div>
-        </UFormField>
+        </FormFieldGroup>
       </div>
 
       <template #footer>
         <div class="flex justify-end">
-          <UButton type="submit" icon="i-lucide-check" :loading="saving" :disabled="!dirty && !scmToken.trim()">
-            Save changes
-          </UButton>
+          <UButton type="submit" icon="i-lucide-check" :loading="saving" :disabled="!dirty"> Save changes </UButton>
         </div>
       </template>
     </SectionCard>

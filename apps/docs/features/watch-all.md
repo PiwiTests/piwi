@@ -16,8 +16,8 @@ CI run or a run [shared from a developer's machine](./share-live).
 
 ## What a tile shows
 
-- **The page**, as the worker's test sees it: one image a second, 320 pixels wide, the latest alone. A still page sends
-  none until it changes.
+- **The page**, as the worker's test sees it: one image a second, 320 pixels wide, the latest alone. A still page shows
+  as the tile opens, then sends none until it changes.
 - **The worker**, by its lane (`Worker 2`, as the rows and the Timeline name it), the test it runs and its step.
 - **What its test needs attention for**: where it stands [stopped](./watch-a-run#where-a-test-stopped)
   (`Stopped at a breakpoint`), or **Stuck?** once the dashboard marks it ([Stuck tests](./stuck-tests)).
@@ -60,8 +60,9 @@ second, whatever the view asks; the dashboard passes one a second of them to a t
 ## In the demo
 
 The live demo runs no browser: **Watch all** on a simulated run shows each running worker's step where its image
-would be, and its stops and **Stuck?** marks. A tile opens no full view there, so no page events, text, filmstrip or
-Inspect.
+would be, and its stops and **Stuck?** marks. A click on a tile opens its worker's panel with no image: the call its
+test is in, with its log, and [Inspect](./live-inspect#in-the-demo) on the checkout page from a recorded trace. Its
+page events, text and filmstrip stay empty.
 
 ## Related
 

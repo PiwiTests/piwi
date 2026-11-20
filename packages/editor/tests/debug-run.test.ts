@@ -307,8 +307,10 @@ describe('a debug run through the service', () => {
   test('runs the test headed with one worker, stops once at the failing line, and outlines the suggested locator', async () => {
     const own = { uri: uri('tests/cart.spec.ts'), line: 9 };
     const run = await debugCommand({ breakpoints: [own] });
-    expect(run.args).toEqual(['tests/cart.spec.ts:5', '--project=chromium', '--workers=1', '--headed']);
-    expect(run.command).toBe('npx playwright test tests/cart.spec.ts:5 --project=chromium --workers=1 --headed');
+    expect(run.args).toEqual([`^${dir}/tests/cart.spec.ts:5`, '--project=chromium', '--workers=1', '--headed']);
+    expect(run.command).toBe(
+      `npx playwright test "^${dir}/tests/cart.spec.ts:5" --project=chromium --workers=1 --headed`,
+    );
     expect(run.env?.PIWI_PAUSE_AT).toBe('tests/cart.spec.ts:10;tests/pages/cart.page.ts:7');
 
     const worker = workerOf(run);
@@ -403,7 +405,7 @@ describe('a debug run through the service', () => {
   test('only stops when the instance has no suggested locator, and says when it matches nothing', async () => {
     // A failure with no suggestion, in every project: the stop comes, and no count is asked.
     const plain = await debugCommand({}, { project: null, execution: 901 });
-    expect(plain.args).toEqual(['tests/cart.spec.ts:5', '--workers=1', '--headed']);
+    expect(plain.args).toEqual([`^${dir}/tests/cart.spec.ts:5`, '--workers=1', '--headed']);
     const worker = workerOf(plain);
     try {
       worker.stopAt(1, 7, true);

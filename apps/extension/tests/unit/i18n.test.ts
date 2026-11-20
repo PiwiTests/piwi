@@ -37,7 +37,7 @@ beforeEach(async () => {
 
 describe('t', () => {
   it('reads the browser’s catalog and fills named placeholders', () => {
-    expect(t('popup_stopRecording', { count: 3 })).toBe('Stop recording (3)');
+    expect(t('popup_finishRecording', { count: 3 })).toBe('Finish (3)');
     expect(t('options_cached', { functions: '12 functions', projects: '2 projects' })).toBe(
       'Catalog saved: 12 functions from 2 projects.',
     );
@@ -84,7 +84,7 @@ describe('the Options override', () => {
     expect(chosenLanguage()).toBe('fr');
     expect(uiLanguage()).toBe('fr');
     expect(t('popup_pick')).toBe('Choisir un élément');
-    expect(t('popup_stopRecording', { count: 3 })).toBe('Arrêter l’enregistrement (3)');
+    expect(t('popup_finishRecording', { count: 3 })).toBe('Terminer (3)');
     expect(tn('options_saved', 1)).toBe('1 ligne enregistrée.');
   });
 

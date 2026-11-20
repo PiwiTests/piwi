@@ -5,16 +5,15 @@ import { MARKER_CATEGORIES, DEFAULT_MARKER_CATEGORY } from '#shared/marker-categ
 
 /**
  * Create or edit form for one timeline marker, shown in place inside the
- * markers panel. Emits `saved` once the API accepted it, `cancel` to go back
- * to the list, and `delete` when the user asks to delete the edited marker
- * (the panel confirms it).
+ * markers panel: its environment is one of the project's, or all, and a deploy
+ * marker takes the commit it deployed. Emits `saved` once the API accepted it,
+ * `cancel` to go back to the list, and `delete` when the user asks to delete
+ * the edited marker (the panel confirms it).
  */
 const props = defineProps<{
   projectId: number;
   /** When set, the form edits this marker; otherwise it creates a new one. */
   marker?: MarkerInfo | null;
-  /** Environment values seen in this project's runs, offered as suggestions. */
-  environments?: string[];
 }>();
 
 const emit = defineEmits<{ saved: [id: number]; cancel: []; delete: [marker: MarkerInfo] }>();
@@ -41,17 +40,26 @@ const state = reactive({
   occurredAt: toLocalInput(props.marker?.occurredAt ?? new Date()),
   category: props.marker?.category || DEFAULT_MARKER_CATEGORY,
   environment: props.marker?.environment ?? '',
+  environmentId: props.marker?.environmentId ?? null,
+  commit: props.marker?.commit ?? '',
   description: props.marker?.description ?? '',
 });
 
 const isEdit = computed(() => !!props.marker);
 const saving = ref(false);
-const environmentListId = useId();
+const isDeploy = computed(() => state.category === 'deploy');
+
+/** A deployed commit as the routes take it: 7 to 40 hexadecimal characters. */
+const COMMIT = /^[0-9a-f]{7,40}$/i;
 
 function validate(s: typeof state): FormError[] {
   const errors: FormError[] = [];
   if (!s.label.trim()) errors.push({ name: 'label', message: 'Give the marker a label' });
   if (!s.occurredAt) errors.push({ name: 'occurredAt', message: 'Pick when it happened' });
+  const commit = s.commit.trim();
+  if (s.category === 'deploy' && commit && !COMMIT.test(commit)) {
+    errors.push({ name: 'commit', message: 'A commit is 7 to 40 hexadecimal characters' });
+  }
   return errors;
 }
 
@@ -62,6 +70,7 @@ async function handleSave() {
     occurredAt: new Date(state.occurredAt).toISOString(),
     category: state.category,
     environment: state.environment.trim() || null,
+    commit: isDeploy.value ? state.commit.trim() || null : null,
     description: state.description.trim() || null,
   };
 
@@ -105,19 +114,34 @@ async function handleSave() {
         <UInput v-model="state.occurredAt" type="datetime-local" class="w-full" />
       </UFormField>
 
-      <UFormField label="Environment" name="environment" hint="Optional">
-        <UInput
-          v-model="state.environment"
-          :list="environmentListId"
-          placeholder="All environments"
+      <UFormField label="Environment" name="environment">
+        <SettingEnvironmentPicker
+          v-model:environment-id="state.environmentId"
+          v-model:label="state.environment"
+          :project-id="projectId"
+          none-label="All environments"
           icon="i-lucide-server"
           class="w-full"
+          data-testid="marker-environment"
         />
-        <datalist :id="environmentListId">
-          <option v-for="env in environments || []" :key="env" :value="env" />
-        </datalist>
       </UFormField>
     </div>
+
+    <UFormField
+      v-if="isDeploy"
+      label="Commit"
+      name="commit"
+      hint="Optional"
+      description="The application's commit this deploy put in place, which the environment's later runs ran against."
+    >
+      <UInput
+        v-model="state.commit"
+        placeholder="e.g. 3f9c2a1"
+        icon="i-lucide-git-commit-horizontal"
+        class="w-full font-mono"
+        data-testid="marker-commit"
+      />
+    </UFormField>
 
     <UFormField label="Description" name="description" hint="Optional">
       <UTextarea

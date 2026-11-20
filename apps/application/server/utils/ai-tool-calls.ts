@@ -17,6 +17,7 @@ import {
 } from './ai-provider';
 import type { ResolvedAiRole } from '~~/types/api';
 import type { AssistantToolMode } from '#shared/assistant';
+import { assertAiKey } from './ai-credentials';
 
 export interface AiToolDef {
   name: string;
@@ -547,6 +548,7 @@ export function knownToolMode(config: ResolvedAiRole): AssistantToolMode | null 
  * steps that follow.
  */
 export async function* toolStep(config: ResolvedAiRole, req: AiStepRequest): AsyncGenerator<AiStepChunk> {
+  assertAiKey(config);
   const mode = knownToolMode(config);
   if (mode === 'json-action') {
     yield { type: 'reply', reply: await jsonActionStep(config, req) };

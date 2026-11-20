@@ -6,8 +6,8 @@ description: Use when you need to see a UI or server change working in the real 
 # Run the dashboard locally
 
 Use this whenever you need to *see* a change working: a screen, a flow, an API response. It is the
-tested sequence; the pitfalls at the end each cost a previous session real time, so follow the
-commands as written rather than improvising with `nuxt dev` and a hand-rolled Playwright script.
+tested sequence: follow the commands as written rather than improvising with `nuxt dev` and a
+hand-rolled Playwright script, which run into the pitfalls listed at the end.
 
 Everything runs from `apps/application/`. Node 24+, dependencies installed (`npm ci` at the
 repository root).
@@ -150,7 +150,7 @@ use the same ones and are the reference when in doubt.
 AI is not configured on the dev server: the diagnosis panels show their "not configured" state, and
 clusters without a stored title fall back to the deterministic one.
 
-## Pitfalls (each of these has already cost a session)
+## Pitfalls
 
 - **Do not wait for `networkidle` without a timeout.** The run, execution and notification surfaces
   hold a Server-Sent Events stream open, so the network never goes idle. The screens script waits for

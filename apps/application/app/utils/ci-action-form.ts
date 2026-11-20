@@ -59,10 +59,15 @@ export interface CiActionDraft {
   github: { workflow: string; ref: string; argsInput: string; dispatchIdInput: string };
   gitlab: { ref: string; argsVariable: string };
   bitbucket: { pipeline: string; argsVariable: string };
+  /** The SCM credential a GitHub, GitLab or Bitbucket action's dispatch carries; null for the project's. */
+  scmCredentialId: number | null;
   ciServer: CiServerFormState;
   inputs: CiActionInputDraft[];
   accepts: CiActionKind[];
+  /** The environment's label as written: its key when picked from the project's environments. */
   environment: string;
+  /** The environment picked, one of the project's; null for any environment. */
+  environmentId: number | null;
   /** The kinds this action is the default for. */
   defaultFor: CiActionKind[];
 }
@@ -125,10 +130,12 @@ export function ciActionDraft(action: CiAction | null, settings?: CiActionsSetti
       pipeline: target?.type === 'bitbucket' ? target.pipeline : '',
       argsVariable: target?.type === 'bitbucket' ? target.argsVariable : 'PIWI_RERUN_ARGS',
     },
+    scmCredentialId: target && target.type !== 'ci-server' ? (target.credentialId ?? null) : null,
     ciServer: target?.type === 'ci-server' ? ciServerFormFromAction(target) : ciServerFormState(null),
     inputs: (action?.inputs ?? []).map(inputDraft),
     accepts: action ? [...action.accepts] : ['tests'],
     environment: action?.environment ?? '',
+    environmentId: action?.environmentId ?? null,
     defaultFor,
   };
 }
@@ -192,6 +199,7 @@ function targetFromDraft(
   draft: CiActionDraft,
   instanceUrl: string | null,
 ): { target: CiActionTarget; error: null } | { target: null; error: string } {
+  const scmCredential = draft.scmCredentialId ? { credentialId: draft.scmCredentialId } : {};
   if (draft.type === 'github') {
     const { workflow, ref, argsInput, dispatchIdInput } = draft.github;
     if (!workflow.trim()) return { target: null, error: 'GitHub needs the workflow file to dispatch.' };
@@ -204,6 +212,7 @@ function targetFromDraft(
         ref: ref.trim(),
         argsInput: argsInput.trim(),
         ...(dispatchIdInput.trim() ? { dispatchIdInput: dispatchIdInput.trim() } : {}),
+        ...scmCredential,
       },
       error: null,
     };
@@ -213,7 +222,12 @@ function targetFromDraft(
       return { target: null, error: 'GitLab needs a ref and the variable that receives the arguments.' };
     }
     return {
-      target: { type: 'gitlab', ref: draft.gitlab.ref.trim(), argsVariable: draft.gitlab.argsVariable.trim() },
+      target: {
+        type: 'gitlab',
+        ref: draft.gitlab.ref.trim(),
+        argsVariable: draft.gitlab.argsVariable.trim(),
+        ...scmCredential,
+      },
       error: null,
     };
   }
@@ -229,6 +243,7 @@ function targetFromDraft(
         type: 'bitbucket',
         pipeline: draft.bitbucket.pipeline.trim(),
         argsVariable: draft.bitbucket.argsVariable.trim(),
+        ...scmCredential,
       },
       error: null,
     };
@@ -269,6 +284,7 @@ export function ciActionFromDraft(
     inputs: inputs.inputs,
     accepts: CI_ACTION_KINDS.filter((kind) => draft.accepts.includes(kind)),
     ...(environment ? { environment } : {}),
+    ...(draft.environmentId != null ? { environmentId: draft.environmentId } : {}),
   };
   const reserved = reservedInputName(action);
   if (reserved) {
@@ -287,4 +303,24 @@ export function duplicateCiActionName(name: string, taken: string[]): string {
   let candidate = named(' (copy)');
   for (let n = 2; used.has(candidate.toLowerCase()); n++) candidate = named(` (copy ${n})`);
   return candidate;
+}
+
+/**
+ * A duplicate of an action: a new id, a name unlike any `taken` one (`duplicateCiActionName`), and every other field
+ * copied, except an environment `archived` says is archived, which the duplicate leaves for any environment.
+ */
+export function duplicateCiAction(
+  action: CiAction,
+  taken: string[],
+  archived: (environmentId: number) => boolean,
+): CiAction {
+  const { environment, environmentId, ...fields } = structuredClone(action);
+  const keepsEnvironment = environmentId === undefined || !archived(environmentId);
+  return {
+    ...fields,
+    ...(keepsEnvironment && environment !== undefined ? { environment } : {}),
+    ...(keepsEnvironment && environmentId !== undefined ? { environmentId } : {}),
+    id: newCiActionId(),
+    name: duplicateCiActionName(action.name, taken),
+  };
 }

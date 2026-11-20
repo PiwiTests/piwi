@@ -10,7 +10,7 @@ import type { FallbackReason } from './cdp-input.js';
 import type { RelayedEntries } from './bug-relay.js';
 
 /**
- * A bug recording's evidence, in `chrome.storage.session` beside the recording
+ * A recording's evidence, in `chrome.storage.session` beside the recording
  * itself (`recording-storage.ts`).
  *
  * Kept under its own keys rather than inside `RecordingState`: every captured
@@ -30,7 +30,7 @@ export const CDP_EVIDENCE_KEY = 'piwiBugCdpEvidence';
  */
 export type ScreenshotFailure = 'not-granted' | 'not-in-front' | 'failed';
 
-/** Whether a bug recording collects through the debugging protocol, and why not when it does not. */
+/** Whether a recording collects through the debugging protocol, and why not when it does not. */
 export interface DebuggingState {
   state: 'on' | 'off';
   reason: FallbackReason | null;
@@ -59,8 +59,6 @@ export interface StoredBugEvidence {
   outline: string | null;
   /** Why the last screenshot could not be taken, until one is. */
   screenshotNote: string | null;
-  /** The title typed in the finish panel. */
-  title: string | null;
   /** The page's context, taken at Finish. */
   context: BugContext | null;
   /** How many screenshots are kept, so the HUD need not read them to count them. */
@@ -84,7 +82,6 @@ const EMPTY: StoredBugEvidence = {
   requestsDropped: 0,
   outline: null,
   screenshotNote: null,
-  title: null,
   context: null,
   screenshots: 0,
 };
@@ -162,7 +159,7 @@ export function appendBugEntries(entries: {
 }
 
 export function setBugEvidenceFields(
-  fields: Partial<Pick<StoredBugEvidence, 'outline' | 'screenshotNote' | 'title' | 'context'>>,
+  fields: Partial<Pick<StoredBugEvidence, 'outline' | 'screenshotNote' | 'context'>>,
 ): Promise<StoredBugEvidence> {
   return update((current) => ({ ...current, ...fields }));
 }

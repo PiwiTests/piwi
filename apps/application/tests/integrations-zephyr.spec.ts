@@ -25,7 +25,7 @@ async function listZephyr(request: APIRequestContext): Promise<Summary[]> {
 
 async function removeConnections(request: APIRequestContext) {
   for (const c of (await listZephyr(request)).filter((c) => c.name === NAME)) {
-    await request.delete(`/api/integrations/connections/${c.id}`);
+    await request.delete(`/api/integrations/connections/${c.id}?deleteCredential=true`);
   }
 }
 

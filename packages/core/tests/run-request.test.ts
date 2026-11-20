@@ -8,6 +8,7 @@ import {
   parseRunRequest,
   parseRunRequestOptions,
   parseRunRequestTest,
+  readRunRequestFolderHints,
   specFileArgument,
   specFilePattern,
 } from '../src/run-request';
@@ -327,6 +328,21 @@ describe('specFileArgument', () => {
     expect(re.test('C:/shop/app/auth/i+x.spec.ts')).toBe(false);
   });
 
+  test('on Windows, takes the file: URL too, which Playwright up to 1.62 tests in place of the /-separated path', () => {
+    const native = 'C:\\my shop\\tests\\a.spec.ts';
+    const url = 'file:///C:/my%20shop/tests/a.spec.ts';
+    const { re, line } = playwrightReads(specFileArgument(native, 3, url));
+    expect(line).toBe(3);
+    // Playwright 1.59 to 1.62 tests the native path, then the URL; 1.63 on, the native path, then the `/`-separated one.
+    expect(re.test(native)).toBe(false);
+    expect(re.test(url)).toBe(true);
+    expect(re.test('C:/my shop/tests/a.spec.ts')).toBe(true);
+    for (const other of ['file:///C:/my%20shop/tests/a.spec.tsx', 'file:///C:/my%20shop/e2e/tests/a.spec.ts']) {
+      expect(re.test(other), other).toBe(false);
+    }
+    expect(playwrightReads(specFilePattern(native, url)).re.test(url)).toBe(true);
+  });
+
   test('without a line, matches every test of the one spec file', () => {
     const { re, line } = playwrightReads(specFilePattern('/home/me/shop/tests/a.spec.ts'));
     expect(line).toBe(null);
@@ -337,5 +353,40 @@ describe('specFileArgument', () => {
   test('refuses a line that is not a line number', () => {
     expect(() => specFileArgument('/home/me/a.spec.ts', 0)).toThrow(RangeError);
     expect(() => specFileArgument('/home/me/a.spec.ts', 1.5)).toThrow(RangeError);
+  });
+});
+
+describe('readRunRequestFolderHints', () => {
+  test('keeps an http(s) repository and absolute folders, once each, at most five', () => {
+    const folders = ['/home/robin/code/shop/e2e', 'C:\\Users\\robin\\shop', 'D:/work/shop', '/a', '/b', '/c'];
+    expect(
+      readRunRequestFolderHints({
+        repositoryUrl: 'https://github.com/acme/shop',
+        folders: [...folders, '/home/robin/code/shop/e2e'],
+      }),
+    ).toEqual({ repositoryUrl: 'https://github.com/acme/shop', folders: folders.slice(0, 5) });
+  });
+
+  test('leaves out what does not pass, and reads anything else as no hint', () => {
+    expect(
+      readRunRequestFolderHints({
+        repositoryUrl: 'file:///srv/shop',
+        folders: [
+          'relative/e2e',
+          '\\\\server\\share\\shop',
+          '//server/share',
+          '',
+          42,
+          '/ok',
+          `/${'x'.repeat(600)}`,
+          '/bidi\u202e',
+        ],
+      }),
+    ).toEqual({ repositoryUrl: null, folders: ['/ok'] });
+    expect(readRunRequestFolderHints('nothing')).toEqual({ repositoryUrl: null, folders: [] });
+    expect(readRunRequestFolderHints({ repositoryUrl: 'https://host with space/x' })).toEqual({
+      repositoryUrl: null,
+      folders: [],
+    });
   });
 });

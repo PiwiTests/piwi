@@ -49,8 +49,8 @@ first result, or with **New project**.
 `/projects/:id`: one project's history. The **header** names the project, its description and tags, and where it
 stands: the latest run that [ran to its end](/guide/concepts#test-run) and the [pass rate](/guide/concepts#pass-rate) of the last 20 such runs, then the open clusters, flaky tests
 and quarantined tests, each a link. The **Filters** block under it (environment, branch, full runs only) scopes the
-header and every tab that reads run history; with no branch picked it reads the
-[default branch](./branches#the-default-branch), and a note counts the runs it hides,
+header and every tab that reads run history; with nothing picked it reads the
+[default branch](./branches#the-default-branch) and [environment](./environments#default-environment), and a note counts the runs it hides,
 [your own](/guide/getting-started#_3-run-your-tests) aside, which the runs table lists all the same. Beside the
 [**Quality report**](./quality-reports) and [**Import**](/guide/importing-runs) buttons, **More actions** holds Edit,
 [Test functions](./test-functions), [Selections](./test-selection), [Locators](#locators),
@@ -145,10 +145,10 @@ command palette or `g` then `s`: your **Account** and connected accounts ([OAuth
 **Roles** (what each role can do, read-only), **Storage**
 ([Storage](/operate/storage#storage-management)), **Tags**, **Pull requests** ([Pull-request feedback](./pr-feedback)),
 **Auto-heal** ([Auto-heal PRs](./auto-heal)), **Source control**
-([SCM token](/guide/source-control#set-the-token)), **Integrations** ([Jira Cloud](/operate/integrations), [Zephyr Scale Cloud](/operate/zephyr-scale)),
+([SCM credentials](/guide/source-control#set-the-credential)), **Integrations** ([Jira Cloud](/operate/integrations), [Zephyr Scale Cloud](/operate/zephyr-scale)),
 **Performance** ([wasted-time patterns](./slow-tests#wasted-time) and timeout hygiene), **AI** ([AI provider](/guide/ai-provider)),
 **Notifications** ([Notifications & alerts](./notifications)), **Localization**
-([Localization](/operate/localization)) and **About**, and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
+([Localization](/operate/localization)) and **About** (version and **Changelog**), and in the [desktop app](./desktop) **Desktop app** first. A setting backed by
 an environment variable is shown read-only with the variable's name ([Configuration reference](/reference/configuration)).
 
 ## Setup

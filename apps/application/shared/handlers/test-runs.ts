@@ -1,6 +1,8 @@
 import { runPlanId } from '../run-plan';
+import { markerAppliesToRun } from '../marker-environments';
 import { eq, sql, desc, and, isNotNull, inArray, or, notInArray, count, lt, gte, getTableColumns } from 'drizzle-orm';
 import {
+  environments,
   testRuns,
   testCases,
   testRunsCases,
@@ -41,6 +43,7 @@ import { isOptInCapabilityOn, isPassiveCapabilityDeclined } from './capabilities
 import { hasResourceReport } from './resource-reports';
 import { countRunVideos } from './run-videos';
 import { loadRunEnvironments } from './environment-snapshots';
+import { runEnvironmentFacts } from './environments';
 import { getLocatorHealingBatch } from '../../server/utils/locator-healing';
 import { publicRunColumns } from './public-run';
 import { workerKey } from '#shared/worker-lane';
@@ -147,8 +150,13 @@ export async function getTestRun(
   // stored per-case wasted_time_ms (computed at ingest) is authoritative.
   wastedPatterns: readonly string[] | null = null,
 ) {
-  const testRunResults = await db.select().from(testRuns).where(eq(testRuns.id, id));
-  const testRun = testRunResults[0];
+  // The run's environment comes with it, for the facts the page shows of it (`runEnvironmentFacts`).
+  const [found] = await db
+    .select({ run: testRuns, environment: environments })
+    .from(testRuns)
+    .leftJoin(environments, eq(environments.id, testRuns.environmentId))
+    .where(eq(testRuns.id, id));
+  const testRun = found?.run;
   if (!testRun) return null;
 
   const projectResults = await db.select().from(projects).where(eq(projects.id, testRun.projectId));
@@ -353,8 +361,7 @@ export async function getTestRun(
     .where(and(eq(markers.projectId, testRun.projectId), lt(markers.occurredAt, testRun.startTime)))
     .orderBy(desc(markers.occurredAt))
     .limit(10);
-  const precedingMarker =
-    precedingMarkerCandidates.find((m) => m.environment == null || m.environment === testRun.environment) ?? null;
+  const precedingMarker = precedingMarkerCandidates.find((m) => markerAppliesToRun(m, testRun)) ?? null;
 
   // Distinct endpoints seen by the run — feeds the "Slow endpoints (n)" tab
   // count from the run payload, so the strip never shows a bare label. Uses
@@ -391,6 +398,7 @@ export async function getTestRun(
     machineRuns: await isOptInCapabilityOn(db, testRun.projectId, 'machine-runs'),
     project: projectPublic,
     environments: await loadRunEnvironments(db, id),
+    ...(await runEnvironmentFacts(db, testRun, found.environment ?? null)),
     networkRequestCount: endpointCount,
     reports: reportResults.map((r: any) => ({
       id: r.id,

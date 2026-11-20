@@ -10,17 +10,27 @@ withDefaults(
     partialRuns?: number;
     /** Runs hidden by the default-branch policy. */
     otherBranchRuns?: number;
+    /** Runs hidden by the default-environment policy. */
+    otherEnvironmentRuns?: number;
   }>(),
-  { partialRuns: 0, otherBranchRuns: 0 },
+  { partialRuns: 0, otherBranchRuns: 0, otherEnvironmentRuns: 0 },
 );
 
-const emit = defineEmits<{ 'include-partial': []; 'all-branches': [] }>();
+const emit = defineEmits<{ 'include-partial': []; 'all-branches': []; 'all-environments': [] }>();
 
 const ACTION_CLASS = 'underline decoration-dotted underline-offset-2 hover:decoration-solid hover:text-highlighted';
 </script>
 
 <template>
-  <p v-if="otherBranchRuns > 0 || partialRuns > 0" class="flex flex-wrap gap-x-4 gap-y-1" data-testid="hidden-runs">
+  <p
+    v-if="otherBranchRuns > 0 || partialRuns > 0 || otherEnvironmentRuns > 0"
+    class="flex flex-wrap gap-x-4 gap-y-1"
+    data-testid="hidden-runs"
+  >
+    <span v-if="otherEnvironmentRuns > 0">
+      {{ hiddenRunsPhrase(otherEnvironmentRuns, 'other-environments') }} ·
+      <button type="button" :class="ACTION_CLASS" @click="emit('all-environments')">Show all environments</button>
+    </span>
     <span v-if="otherBranchRuns > 0">
       {{ hiddenRunsPhrase(otherBranchRuns, 'other-branches') }} ·
       <button type="button" :class="ACTION_CLASS" @click="emit('all-branches')">Show all branches</button>

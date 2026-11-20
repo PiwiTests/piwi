@@ -135,6 +135,7 @@ jobs:
               - 'packages/core/**'
               - 'packages/picker-dom/**'
               - 'packages/run-model/**'
+              - 'shared/i18n-catalogs.ts'
             # Both editor clients ship the recorder's IDE bundle, which the editor service builds from the extension.
             vscode:
               - 'apps/vscode/**'
@@ -154,17 +155,22 @@ jobs:
               - 'apps/extension/public/_locales/**'
               - 'apps/extension/scripts/build.mjs'
               - 'apps/docs/public/screenshots/jetbrains-*.png'
-            # The desktop app bundles the Node version of the Dockerfile's base image.
+            # The desktop app bundles the Node version of the Dockerfile's base image, and Piwi Runner's catalogs, whose
+            # shell messages it says.
             desktop:
               - 'apps/desktop/**'
+              - 'apps/runner/locales/**'
               - 'Dockerfile'
-            # Piwi Runner's host and window, the layer the window shares with the dashboard, and the editor service's
-            # run target the host serves.
+            # Piwi Runner's host and window, the layer the window shares with the dashboard, the run model's words it
+            # says, the editor service's run target the host serves, and the checks of its catalogs and templates.
             runner:
               - 'apps/runner/**'
               - 'packages/run-ui/**'
+              - 'packages/run-model/**'
               - 'packages/editor/**'
               - 'packages/core/**'
+              - 'shared/i18n-catalogs.ts'
+              - 'shared/ui-text-scan.ts'
               - 'package.json'
               - 'package-lock.json'
             # The site, and what apps/docs/scripts generate pages from.
@@ -297,9 +303,8 @@ jobs:
           # The tarballs are already gzipped.
           compression-level: 0
 
-      # The performance job of a pull request measures against its base commit's build, restored by this key and path
-      # (perf-base, reusable-perf.yml). A cache saved on main serves every pull request; one a pull request saves
-      # serves it alone.
+      # The performance job of a pull request measures against its base commit's build, which perf-base restores by
+      # this key and path. A cache saved on main serves every pull request; one a pull request saves serves it alone.
       - name: Stage the build as a performance base
         if: github.event_name == 'push'
         run: |
@@ -601,7 +606,8 @@ jobs:
         run: npm run showcase:test
 
   # Piwi Runner: the shared layer's tests (it loads under the dashboard's server rendering and the window's single-page
-  # build), the host's and the window's tests, and both builds. The shell's Rust tests run in the desktop job.
+  # build), the host's and the window's tests, both builds, and the built window in French and German. The shell's
+  # Rust tests run in the desktop job.
   runner:
     name: Piwi Runner
     needs: changes
@@ -618,6 +624,8 @@ jobs:
 
       - name: Set up the workspace
         uses: ./.github/actions/setup-workspace
+        with:
+          playwright: shell
 
       - name: Test the shared layer
         working-directory: packages/run-ui
@@ -634,6 +642,10 @@ jobs:
       - name: Build the window
         working-directory: apps/runner
         run: npm run runner:window
+
+      - name: Test the window in other languages
+        working-directory: apps/runner
+        run: npm run runner:e2e
 
   e2e:
     name: E2E (storage=${{ matrix.storage }}, db=${{ matrix.database }}, shard ${{ matrix.shard }})
@@ -1032,7 +1044,9 @@ jobs:
 
   # The base commit's build the performance job measures against. The build job cached it by its sha when that commit
   # ran on main; when it did not (main's change left the build alone, or a later push cancelled its run), it is built
-  # here, alongside this pull request's own build, and cached for this pull request's runs only.
+  # here, alongside this pull request's own build, and cached for this pull request's runs only. Either way it reaches
+  # the performance job as this run's artifact, kept a day as `build-output` is: a cache can be evicted between two
+  # jobs.
   perf-base:
     name: Performance base
     needs: changes
@@ -1051,13 +1065,12 @@ jobs:
         id: base
         run: echo "sha=$(git rev-parse HEAD^1)" >> "$GITHUB_OUTPUT"
 
-      - name: Look for the base build
+      - name: Restore the base build
         id: cache
         uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
-          lookup-only: true
 
       - name: Check out the base
         if: steps.cache.outputs.cache-hit != 'true'
@@ -1083,6 +1096,17 @@ jobs:
         with:
           path: base/apps/application/.output
           key: perf-base-output-v1-${{ steps.base.outputs.sha }}
+
+      - name: Upload the base build
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: perf-base-output
+          path: base/apps/application/.output
+          # `.output` is dot-prefixed, so without this the upload silently skips it.
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 1
 
   # The heaviest pages measured on this build and on the base commit's, posted as a comment on the pull request by
   # perf-comment.yml once this run completes.

@@ -2,6 +2,7 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, watch, ref } from 'vue';
 import type { CacheSnapshot } from 'vue-virtual-scroller';
 import type { RunClusterMeta, TestCaseResult } from '~~/types/api';
+import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
@@ -14,7 +15,7 @@ import { compareWorkers, workerNumber } from '#shared/worker-lane';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
-import { buildRetryCommand, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
+import { buildRetryCommand, NO_RETRY_COMMAND, retryCaseOf, retryProjects, type RetryCase } from '~/utils/retry-command';
 import {
   RUN_SEARCH_FIELDS,
   collectTestSearchValues,
@@ -66,6 +67,10 @@ const props = defineProps<{
   projectName?: string | null;
   /** The run the rows belong to: a desktop re-run of a selection is compared with it. */
   runId?: number | null;
+  /** The environment of that run, which a copied command of the selection starts on unless protected or archived. */
+  environmentId?: number | null;
+  /** That environment's facts, with the run, so the selection's command starts on it without the project's list. */
+  shownEnvironment?: ShownEnvironment | null;
 }>();
 
 const emit = defineEmits<{ 'quarantine-changed': []; watch: [worker: LiveWorkerState, testCase: TestCaseResult] }>();
@@ -675,15 +680,28 @@ const selectedTestsLabel = computed(
 const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 /** The Playwright projects the selected tests ran in, the ones the command can name. */
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
+const { environmentId: selectionEnvironmentId } = useCommandEnvironment(
+  () => props.projectKey,
+  () => (props.shownEnvironment === undefined ? props.environmentId : props.shownEnvironment),
+  { listOnMount: props.shownEnvironment === undefined },
+);
+const selectionRunVariables = useProjectRunVariables(
+  () => props.projectKey,
+  () => selectionEnvironmentId.value,
+);
 const selectionCommand = computed(() =>
-  buildRetryCommand(selectedRetryCases.value, {
-    mode: retryMode.value,
-    options: retryOptionsFor(selectedProjects.value),
-  }),
+  selectionRunVariables.command(
+    buildRetryCommand(selectedRetryCases.value, {
+      mode: retryMode.value,
+      options: retryOptionsFor(selectedProjects.value),
+    }),
+  ),
 );
 const { copy: copySelection } = useCopy();
-function copySelectionCommand() {
+async function copySelectionCommand() {
+  await selectionRunVariables.ready();
   if (selectionCommand.value) copySelection(selectionCommand.value, { toast: 'Retry command copied' });
+  else toast.add({ title: NO_RETRY_COMMAND, color: 'neutral' });
 }
 const selectedClusterIds = computed(() => [
   ...new Set(selectedRows.value.map((tc) => tc.failureClusterId).filter((id): id is number => id != null)),
@@ -899,6 +917,7 @@ defineExpose({ scrollToCase });
           :label="`Re-run ${selectedTestsLabel}`"
           :run-title="`${selectedTestsLabel} of run #${runId}`"
           :source-run-id="runId"
+          :environment-id="environmentId"
         />
         <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">
           <UButton
@@ -912,7 +931,11 @@ defineExpose({ scrollToCase });
             Copy retry command
           </UButton>
           <template #content>
-            <RetryCommandOptions :projects="selectedProjects" />
+            <RetryCommandOptions
+              v-model:environment-id="selectionEnvironmentId"
+              :projects="selectedProjects"
+              :project-id="projectKey"
+            />
           </template>
         </UPopover>
         <CoverageLossPopover

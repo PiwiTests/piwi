@@ -20,8 +20,8 @@ const {
   getConnectionRow,
   createTracker,
   createTestManagement,
-  testManagementForRow,
-  trackerForRow,
+  openTestManagement,
+  openTracker,
   listTrackerConnections,
   ensureEnvManagedConnections,
   testConnection,
@@ -165,9 +165,9 @@ describe('the factory', () => {
   test('is never built for a tracker, and a tracker is never built for Zephyr, whatever credentials it holds', async () => {
     const connection = await zephyr({ credentials: { apiToken: TOKEN, email: 'ci@example.com' } });
     expect(await createTracker(db as never, connection.id)).toBeNull();
-    expect(trackerForRow((await getConnectionRow(db as never, connection.id))!)).toBeNull();
+    expect(await openTracker(db as never, (await getConnectionRow(db as never, connection.id))!)).toBeNull();
     const row = (await getConnectionRow(db as never, (await jira()).id))!;
-    expect(testManagementForRow(row)).toBeNull();
+    expect(await openTestManagement(db as never, row)).toBeNull();
   });
 });
 
@@ -397,7 +397,7 @@ describe('the Check and Test budget', () => {
     const created = await zephyr();
     const row = await getConnectionRow(db as never, created.id);
     fetchMock.mockImplementation(async () => json(fixture('projects-first')));
-    await testManagementForRow(row!)!.whoAmI();
+    await (await openTestManagement(db as never, row!))!.whoAmI();
     expect(budgets).toEqual([120_000]);
   });
 });

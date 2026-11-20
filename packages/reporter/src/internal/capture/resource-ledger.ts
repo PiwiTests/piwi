@@ -7,7 +7,7 @@ import type { APIRequestContext, Browser, BrowserContext, Page, TestInfo } from 
 import { PIWI_ENV_KEYS, PIWI_RESOURCES_RESULTS_ENV } from '../config/env.js';
 import { ATTACHMENT_NAMES } from './attachments.js';
 import { callSitePath, framePath } from './locator-healing.js';
-import { internalCall, resolvePlaywrightPackageJson } from './quiet-capture.js';
+import { internalCall, outsideCalls, resolvePlaywrightPackageJson } from './quiet-capture.js';
 import { PageReader, WorkerMetrics, type PageMain, type TestMetrics } from './worker-metrics.js';
 import { roleOf } from '../support/system-readers.js';
 import { appendPrivateFile } from '../support/private-file.js';
@@ -246,6 +246,34 @@ interface Instrumentation {
 interface ChannelOwnerLike {
   _type?: string;
   _parent?: ChannelOwnerLike | null;
+  /** A frame's page (internal). */
+  _page?: object | null;
+}
+
+/** Who hears the page each call a test makes lands on (`onTestCallPage`). */
+const callPageListeners = new Set<(page: object) => void>();
+
+/**
+ * The page a call's object belongs to: itself, or up its `_parent` chain the first page, or the page a frame names
+ * (`_page`), whatever the frame's parent; null for none.
+ */
+function pageOfCall(object: ChannelOwnerLike): object | null {
+  for (let owner: ChannelOwnerLike | null | undefined = object; owner; owner = owner._parent) {
+    if (owner._type === 'Page') return owner;
+    if (owner._type === 'Frame' && owner._page) return owner._page;
+  }
+  return null;
+}
+
+/**
+ * Hear the page each call a test makes lands on, as the call begins: a call or a wait on the client (`waitForURL`,
+ * `waitForEvent` and their kin) on a page, one of its frames, or an element of it, through a connection the ledger
+ * follows. Neither a close, an internal call nor a `route()` handler's answer is heard. Each listener is told outside
+ * the call (`outsideCalls`), so a Playwright call it makes is its own. Returns what stops hearing them.
+ */
+export function onTestCallPage(listener: (page: object) => void): () => void {
+  callPageListeners.add(listener);
+  return () => callPageListeners.delete(listener);
 }
 
 /** What Playwright passes with each protocol call (internal): a test's call carries its frames, Piwi's reads `internal`. */
@@ -679,6 +707,7 @@ export class ResourceLedger {
     }
     if (options?.internal || !options?.frames?.length || TRAFFIC_TYPES.has(String(object._type))) return;
     if (CLOSE_METHODS.has(String(method))) return this.noteClosing(object);
+    this.tellCallPage(object);
     const site = zoneSite(options);
     this.touch(object, site);
     if (result && typeof (result as Promise<unknown>).then === 'function') {
@@ -696,6 +725,7 @@ export class ResourceLedger {
     const id = info?.waitId;
     if (id === undefined) return;
     if (info?.phase === 'before' && !options?.internal && options?.frames?.length) {
+      this.tellCallPage(object);
       if (this.waits.size >= WAITS_CAP) this.waits.clear();
       const site = zoneSite(options);
       this.waits.set(id, { object, site });
@@ -705,6 +735,13 @@ export class ResourceLedger {
       this.waits.delete(id);
       if (waited) this.touch(waited.object, waited.site);
     }
+  }
+
+  /** Tell the listeners of `onTestCallPage` the page a call of the test lands on, when it lands on one. */
+  private tellCallPage(object: ChannelOwnerLike): void {
+    if (!callPageListeners.size) return;
+    const page = pageOfCall(object);
+    if (page) for (const listener of callPageListeners) this.guard(() => outsideCalls(() => listener(page)));
   }
 
   /**

@@ -47,6 +47,18 @@ export const RUNS_ANCHORS = [
     sample: { route: '/test-runs/63', expect: { run: { id: 63, project: 'web-dashboard' } } },
   },
   {
+    id: 'run-deployed-commit',
+    kind: 'block',
+    pages: ['/test-runs/[id]'],
+    reveal: [{ open: 'run-details' }],
+    describes:
+      'The Application line of the run’s Details: the deployed commit the run tested and where it came from, or that the app was built from the checkout.',
+    shownWhen: 'When the run’s environment is known.',
+    help: 'run.deployedCommit',
+    doc: 'features/deployed-environments',
+    sample: { route: '/test-runs/2', expect: { run: { id: 2, project: 'e2e-checkout' } } },
+  },
+  {
     id: 'run-test-management-sync',
     kind: 'block',
     pages: ['/test-runs/[id]'],

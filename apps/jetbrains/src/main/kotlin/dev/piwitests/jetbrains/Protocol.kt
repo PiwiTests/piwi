@@ -16,9 +16,9 @@ data class PiwiCommand(val title: String? = null, val command: String? = null, v
 
 /**
  * A line of `piwi/fileSummary`. On a test's line, `status` is its latest result (`passed`, `failed`, `flaky`,
- * `skipped`, `running` while the run in progress runs it, or `unknown`), shown in the gutter with `title` as its
- * tooltip, `endLine` where its call ends, `failure` where and why it failed, `testCaseId` the test's id, and
- * `actions` what its gutter mark offers.
+ * `skipped`, `running` while the run in progress runs it, `paused` while it stands at a stop of a run the IDE follows,
+ * or `unknown`), shown in the gutter with `title` as its tooltip, `endLine` where its call ends, `failure` where and
+ * why it failed, `testCaseId` the test's id, and `actions` what its gutter mark offers.
  */
 data class SummaryLine(
     val line: Int = 0,
@@ -33,9 +33,9 @@ data class SummaryLine(
 )
 
 /**
- * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `evidence`, `agent`, `lab`),
- * whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action that does
- * it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
+ * An action on a test from its gutter mark (`SummaryLine.actions`), in its `group` (`run`, `record`, `evidence`, `agent`,
+ * `lab`), whose words `section` gives for the separator before it: `kind` (`run`, `verify`) names the IDE's own action
+ * that does it at the test's line; `debug` runs `command` once the files are saved; any other runs `command`.
  */
 data class TestAction(
     val group: String = "run",
@@ -90,8 +90,10 @@ data class SpecTests(val uri: String? = null, val testIds: List<Int>? = null, va
 data class TestAtResult(val test: EditorTest? = null, val spec: SpecTests? = null, val location: String? = null)
 
 /**
- * `piwi/testItems`: the catalog's specs the workspace holds, unless `catalog` is false, and the specs `uris` names, each
- * test as it stands with its latest result, for a client's own test tree (VS Code's Testing view).
+ * `piwi/testItems`: the tests of the workspace as a tree, for a client's own test tree. Under each Playwright config,
+ * the specs Playwright lists for it, each test as the listing gives it or as the spec's text reads while the spec has
+ * changes the listing has not seen, then the catalog's tests none of them is (`notInCheckout`). `catalog` false
+ * answers the specs `uris` names alone, each with the folders above it.
  */
 data class TestItemsParams(val uris: List<String>? = null, val catalog: Boolean? = null)
 
@@ -117,11 +119,62 @@ data class SpecTest(
     val resultDurationMs: Long? = null,
 )
 
-/** The tests of one spec, `file` relative to its Playwright config's folder. */
-data class SpecTestItems(val uri: String? = null, val file: String? = null, val tests: List<SpecTest>? = null)
+/**
+ * A test of the tree: a test of a spec as it stands (`SpecTest`), the folder of the Playwright config it runs from, its
+ * spec (empty for a test the checkout does not hold) and Playwright's id of it in each project, from the listing.
+ */
+data class TreeTest(
+    val title: String? = null,
+    val suite: List<String>? = null,
+    val line: Int = 0,
+    val endLine: Int = 0,
+    val location: String? = null,
+    val testCaseId: Int? = null,
+    val status: String? = null,
+    val failure: TestFailure? = null,
+    val url: String? = null,
+    val tags: List<String>? = null,
+    val owner: String? = null,
+    val quarantined: Boolean = false,
+    val resultDurationMs: Long? = null,
+    val root: String? = null,
+    val uri: String? = null,
+    val playwright: List<PlaywrightTestId>? = null,
+)
 
-/** The specs of each Playwright config holding one, in the configs' order. */
-data class TestItemsContext(val root: String? = null, val label: String? = null, val specs: List<SpecTestItems>? = null)
+/** Playwright's id of a test in one of its projects. */
+data class PlaywrightTestId(val project: String? = null, val id: String? = null)
+
+/** 0-based lines, `start` to `end` inclusive. */
+data class LineRange(val start: Int = 0, val end: Int = 0)
+
+/**
+ * A node of the test tree: `kind` is `folder`, `spec`, `describe`, `test`, `project` or `notInCheckout`; `runnable` is
+ * false in the `notInCheckout` group.
+ */
+data class TestTreeNode(
+    val id: String? = null,
+    val label: String? = null,
+    val kind: String? = null,
+    val uri: String? = null,
+    val range: LineRange? = null,
+    val sortText: String? = null,
+    val runnable: Boolean = false,
+    val test: TreeTest? = null,
+    val project: String? = null,
+    val children: List<TestTreeNode>? = null,
+)
+
+/** A config's listing: when it was last listed whole (ms since the epoch), why the last listing failed, and if one runs. */
+data class TestListing(val at: Long? = null, val error: String? = null, val running: Boolean = false)
+
+/** One Playwright config's tree: its folders and specs, then the `notInCheckout` group. */
+data class TestItemsContext(
+    val root: String? = null,
+    val label: String? = null,
+    val listing: TestListing? = null,
+    val nodes: List<TestTreeNode>? = null,
+)
 
 data class TestItemsResult(val contexts: List<TestItemsContext>? = null)
 
@@ -153,6 +206,57 @@ data class CoverageResult(
 /** A line breakpoint of the IDE: the file's URI and its 0-based line. */
 data class EditorBreakpoint(val uri: String, val line: Int)
 
+/** `piwi/coverageFiles`: the files under a Playwright config's folder the coverage names, those of `testIds` alone. */
+data class CoverageFilesParams(val root: String, val testIds: List<Int>? = null)
+
+/** Each file the coverage names, with its marks; `truncated` past the most the service reads. */
+data class CoverageFilesResult(val files: List<CoverageResult>? = null, val truncated: Boolean = false)
+
+/** `piwi/testCard`: a test's card, laid out as the dashboard's test row. */
+data class TestCardParams(val uri: String, val testCaseId: Int)
+
+/**
+ * One of a test's latest results: `passed`, `failed`, `flaky` or `skipped`, its run and its page, and the result in
+ * words (`run #3 · failed · 1.2 s`).
+ */
+data class TestCardResult(
+    val status: String? = null,
+    val runId: Int = 0,
+    val url: String? = null,
+    val at: String? = null,
+    val durationMs: Long? = null,
+    val label: String? = null,
+)
+
+/** A test's latest failure: its run's page, `Last failed in run #3, 2 d ago`, and why in one line. */
+data class TestCardFailure(
+    val runId: Int = 0,
+    val url: String? = null,
+    val where: String? = null,
+    val why: String? = null,
+)
+
+/**
+ * A test's card: its latest results, newest first, how they went (`summary`), its latest failure, its owner, tags and
+ * quarantine (`about`), and the card in words as Markdown.
+ */
+data class TestCard(
+    val testCaseId: Int = 0,
+    val title: String? = null,
+    val url: String? = null,
+    val results: List<TestCardResult>? = null,
+    val summary: String? = null,
+    val failure: TestCardFailure? = null,
+    val about: List<String>? = null,
+    val markdown: String? = null,
+)
+
+/** `piwi/coverageTests`: the tests the coverage says ran a line (0-based) of an application file. */
+data class CoverageTestsParams(val uri: String, val line: Int)
+
+/** A run of the tests that ran the line, and how many; `args` null when none did. */
+data class CoverageTestsResult(val args: RunTestsArgs? = null, val count: Int = 0)
+
 /**
  * `piwi/runArgs`: the tests to run. `breakpoints`, the IDE's enabled line breakpoints, pause the run before a call on
  * their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion) when their file is
@@ -181,6 +285,26 @@ data class RunTestsArgs(
     val debug: DebugRun? = null,
     val headed: Boolean? = null,
     val holdFailures: Boolean? = null,
+    /** A Debug with Piwi run, which pauses at the IDE's breakpoints while `breakpoints` is `debug`; `debug` is one too. */
+    val debugging: Boolean? = null,
+    /** Every test of the config, in place of `locations` and `testIds`. */
+    val all: Boolean? = null,
+    /** The Playwright projects the tests run in alone (`--project`); every project when absent. */
+    val projects: List<String>? = null,
+    /** The title filters of one test of a line that holds several (`--grep`, `--grep-invert`). */
+    val grep: String? = null,
+    val grepInvert: String? = null,
+)
+
+/**
+ * `piwi/testRuns`: the runs of the test tree's nodes picked (a config's node is `config` + `\u001f` + its folder),
+ * without those `exclude` names under them, each by the narrowest filter Playwright takes for it.
+ */
+data class TestRunsParams(
+    val nodes: List<String>,
+    val exclude: List<String>? = null,
+    val repeat: Int? = null,
+    val debug: Boolean? = null,
 )
 
 /**
@@ -218,7 +342,8 @@ data class RunCommandArgs(
  * says the run pauses at a `page.pause()` of a spec it runs, where a locator can be picked: the plugin names its
  * Send to editor pairing (`PIWI_EDITOR_SEND`), as for a run with breakpoints (`PIWI_PAUSE_AT`). `label` says who
  * started it when a person did not (`Started by Claude Code`, an agent's `run_start`). `name` is what the run is called
- * (`checkout.spec.ts:12`), its Run tab's title and its name wherever it is picked.
+ * (`checkout.spec.ts:12`), its Run tab's title and its name wherever it is picked. `protected` says the run is for a
+ * protected environment, confirmed for this run alone: the plugin offers no Rerun of it and keeps no run configuration.
  */
 data class RunCommand(
     val cwd: String? = null,
@@ -230,6 +355,7 @@ data class RunCommand(
     val pauses: Boolean? = null,
     val label: String? = null,
     val name: String? = null,
+    val protected: Boolean? = null,
 )
 
 /** `piwi/startRun`: run the command the service built for an agent's `run_start`, as a person's run starts. */
@@ -263,6 +389,12 @@ data class TraceResult(val path: String? = null, val cwd: String? = null, val co
 
 data class ScreenshotResult(val path: String? = null)
 
+/**
+ * `piwi/fileIssue`: `url`, the page of the failure's cluster where the dashboard files its issue, while no ticket is
+ * linked; otherwise `message` says why, `issueUrl` being the ticket already filed when there is one.
+ */
+data class FileIssueResult(val url: String? = null, val message: String? = null, val issueUrl: String? = null)
+
 data class ContextStatus(
     val root: String? = null,
     val connected: Boolean = false,
@@ -271,6 +403,11 @@ data class ContextStatus(
     val source: String? = null,
     val projectId: Int? = null,
     val projectName: String? = null,
+    /**
+     * The environment the runs Piwi starts for this config's tests are for (`piwi/setEnvironment`), as the environment
+     * widget shows it; null while the project lists no environment and none is chosen, where the widget hides.
+     */
+    val environment: StatusEnvironment? = null,
     val branch: String? = null,
     val locators: Int = 0,
     val reachedFiles: Int = 0,
@@ -290,6 +427,51 @@ data class ContextStatus(
 )
 
 data class NamedInstance(val serverUrl: String? = null, val source: String? = null)
+
+/**
+ * A context's environment as the environment widget shows it: `id` the one chosen (null for none, where the Playwright
+ * config decides), `text` what the widget says, `tooltip` what hovering it says, and whether it is `protected`: every
+ * run against it is confirmed, and keeps to the tests carrying its required tags.
+ */
+data class StatusEnvironment(
+    val id: Int? = null,
+    val text: String = "",
+    val tooltip: String = "",
+    val protected: Boolean = false,
+)
+
+/** `piwi/environments`: what **Choose environment…** offers for the context at `root`; null for a root that is no context's. */
+data class EnvironmentsParams(val root: String)
+
+/** The choices, **None** first, then the project's environments in its order; `title` names the project. */
+data class EnvironmentsResult(val root: String = "", val title: String = "", val items: List<EnvironmentItem>? = null)
+
+/**
+ * One choice of **Choose environment…**: `id` the environment's (null for **None**), `label` its name, `description` its
+ * key, `detail` its description and what a protected one keeps to, `picked` the choice in force.
+ */
+data class EnvironmentItem(
+    val id: Int? = null,
+    val label: String = "",
+    val description: String = "",
+    val detail: String? = null,
+    val picked: Boolean = false,
+    val protected: Boolean = false,
+)
+
+/**
+ * An environment chosen for a context's runs: its `id` and `name`, and the instance (`serverUrl`) and the project whose
+ * environment it is; it applies to the context only while the context reads them.
+ */
+data class KeptEnvironment(val id: Int = 0, val name: String = "", val serverUrl: String = "", val projectId: Int = 0)
+
+/**
+ * `piwi/setEnvironment`: choose the environment of the runs of the context at `root`, its id, or null for none. The
+ * answer is the choice the context holds after it (`kept`, null for none), which the plugin keeps for the root.
+ */
+data class SetEnvironmentParams(val root: String, val environmentId: Int?)
+
+data class SetEnvironmentResult(val kept: KeptEnvironment? = null)
 
 /** `piwi/status`; `desktopUrl` is the desktop app running on this machine, null when it does not run. */
 data class StatusResult(val contexts: List<ContextStatus>? = null, val desktopUrl: String? = null)
@@ -327,10 +509,29 @@ data class LiveRun(
     val ci: Boolean = false,
     /** The branch it runs on, as it reported it; null for a run that names none. */
     val branch: String? = null,
+    /** Who started an own run when a person did not (`Started by Claude Code`); null for a person's run. */
+    val label: String? = null,
+    /** How many of its tests run much longer than they pass (`LiveTest.stuck`); null for none. */
+    val stuck: Int? = null,
 )
 
-/** A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`. */
-data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
+/**
+ * A test of the run in progress: `running` once it began, then `passed`, `failed`, `flaky` or `skipped`; `stuck` what
+ * the instance said of a running attempt that runs much longer than it passes, while it is not stopped.
+ */
+data class LiveTest(val testCaseId: Int = 0, val status: String? = null, val stuck: String? = null)
+
+/**
+ * A test of a run the IDE follows, as its line shows it: its spec, its titles (`RunTest.title`), its `status`
+ * (`running`, `paused` at a stop, `failed` while its failure is held too, then its result) and the `words` its line says
+ * of it, which change with the stop it stands at though the status stays.
+ */
+data class RunLineTest(
+    val uri: String = "",
+    val title: List<String> = emptyList(),
+    val status: String = "running",
+    val words: String = "",
+)
 
 /**
  * The latest run a context reads; `checkedOut` differs from `branch` while the checked-out branch has no run.
@@ -339,7 +540,9 @@ data class LiveTest(val testCaseId: Int = 0, val status: String? = null)
  * `statusBarAlert` chooses), `resolved` the tests those runs fixed and `overlays` those runs. `live` is
  * the run in progress the context follows, the editor's own or one on its branch, `stream` `live` while the instance's
  * event stream is connected or `polling`, `updatedAt` when the latest run was last read (ISO 8601), and `liveTests` the
- * tests `live` began or ended until the latest run is read once it ended, `reporterVersion` the version of
+ * tests `live` began or ended until the latest run is read once it ended, `runTests` the tests of the runs the IDE
+ * follows as their workers tell them (running or at a stop, then each result of a run that names no page on an
+ * instance, until another run of the config begins), `reporterVersion` the version of
  * `@piwitests/reporter` the project installs (null when none is found), `baseline` the baseline chosen and what it
  * found, `branches` the branches a baseline can be chosen from, the default branch first.
  */
@@ -357,6 +560,7 @@ data class RunStatus(
     val stream: String? = null,
     val updatedAt: String? = null,
     val liveTests: List<LiveTest>? = null,
+    val runTests: List<RunLineTest>? = null,
     val reporterVersion: String? = null,
     val baseline: Baseline? = null,
     val branches: List<String>? = null,
@@ -375,7 +579,14 @@ data class Baseline(val choice: BaselineChoice? = null, val label: String? = nul
 /** `piwi/setBaseline`: the baseline chosen for the context at `root`, read at once. */
 data class SetBaselineParams(val root: String, val choice: BaselineChoice)
 
-data class RunStatusResult(val contexts: List<RunStatus>? = null)
+/**
+ * The runs each context reads (`contexts`), and for each config no instance reads, which `contexts` leaves out, the tests
+ * of the runs the IDE follows that its lines show (`runTests`).
+ */
+data class RunStatusResult(val contexts: List<RunStatus>? = null, val runTests: List<UnreadRunTests>? = null)
+
+/** A config no instance reads, by its folder, and the tests of its runs the IDE follows that its lines show. */
+data class UnreadRunTests(val root: String = "", val tests: List<RunLineTest> = emptyList())
 
 /**
  * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
@@ -503,7 +714,10 @@ data class CiFrame(
 data class RunEnded(
     val root: String? = null,
     val runId: Int = 0,
-    /** `editor`, a command built for this IDE; `ci`, a CI run of the branch the service followed. */
+    /**
+     * `editor`, a command built for this IDE; `terminal` or `runner`, a run started in a terminal or in the IDE's own
+     * test runner that followed the IDE; `ci`, a CI run of the branch the service followed.
+     */
     val origin: String = "editor",
     /** The branch a CI run ran on. */
     val branch: String? = null,
@@ -572,11 +786,18 @@ data class WorkspaceFailure(
     val isNew: Boolean? = null,
     val duration: Long? = null,
     val hasScreenshot: Boolean? = null,
+    /** File an issue (`piwi/fileIssue`): on a failure with a cluster, of a team instance. */
+    val fileIssue: Boolean? = null,
+    /**
+     * Whether its test has a flake suspect no experiment tested yet, and the failure is not the desktop app's own: Flake
+     * Lab in the desktop app runs it.
+     */
+    val untestedSuspects: Boolean? = null,
     /** Go to the test: its `test(…)` line in its spec; null where its spec holds no one test of its title. */
     val test: EditorBreakpoint? = null,
-    /** Verify the test ×3: its run by its location, three times; null where `test` is. */
+    /** Verify ×3 with Piwi: its run by its location, three times; null where `test` is. */
     val verify: RunTestsArgs? = null,
-    /** Debug this failure: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
+    /** Debug with Piwi: the run that stops once at the line it failed through (`RunTestsArgs.debug`); null without. */
     val debug: RunTestsArgs? = null,
 )
 
@@ -652,7 +873,15 @@ data class FailuresParams(val grouping: String? = null)
  * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, loading, disconnected)
  * and the sentence it shows for it; null beside failures.
  */
-data class FailuresView(val state: String = "failures", val message: String? = null)
+data class FailuresView(
+    val state: String = "failures",
+    val message: String? = null,
+    /** The actions the state's text links, in order, by their label and their id in each editor. */
+    val links: List<FailuresViewLink> = emptyList(),
+)
+
+/** An action a failures view's state links: its label, and the command or action that runs it in each editor. */
+data class FailuresViewLink(val label: String = "", val vscode: String = "", val jetbrains: String = "")
 
 /**
  * `piwi/failures`: the failures, the baseline run of the one context that has a run, runs laid over none or failures
@@ -880,7 +1109,9 @@ data class DesktopResult(val url: String? = null, val projects: List<ProjectRef>
 /**
  * `piwi/setCredentials`: the instance saved in the IDE, and, with `desktop`, the desktop app first while it runs,
  * on the project `desktopProject` names, else the one linked there to the folder. `baselines` are the baselines chosen
- * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `failureSeverity` is the
+ * per context root, kept on this machine; when sent, a context they leave out reads the ladder. `environments` are the
+ * environments chosen per context root, as `piwi/setEnvironment` answered them, kept on this machine; when sent, a
+ * context they leave out runs with none. `failureSeverity` is the
  * severity of a failure's diagnostic (`error`, `warning`, `information` or `off`; `error` when null): a run on another
  * branch is a warning at most, and `off` publishes none while the tool window and the gutter still show the failures.
  * `mcpAuthorization` is how the agent signs in to Piwi's MCP server (`piwi/mcp`): `key`, with the connection's key, or
@@ -894,11 +1125,13 @@ data class EditorCredentials(
     val desktop: Boolean = false,
     val desktopProject: String? = null,
     val baselines: Map<String, BaselineChoice>? = null,
+    val environments: Map<String, KeptEnvironment>? = null,
     val failureSeverity: String? = null,
     val mcpAuthorization: String? = null,
     val statusBarAlert: String? = null,
     val codeLens: String? = null,
     val locatorWarnings: Boolean? = null,
+    val runningLines: String? = null,
 )
 
 /**
@@ -992,6 +1225,25 @@ data class RunTest(
     val project: String? = null,
     val retry: Int = 0,
     val cannotPause: String? = null,
+)
+
+/**
+ * `piwi/runTest`: a worker of a run began a test (`test-begin`, with `test`), or ended the test it began last
+ * (`test-end`, with Playwright's `status` of it), each once, as it happens.
+ */
+data class RunTestEvent(
+    val ref: String? = null,
+    /** The folder of the run's Playwright config; null when no context holds it. */
+    val root: String? = null,
+    val worker: Int = 0,
+    val type: String? = null,
+    val test: RunTest? = null,
+    val status: String? = null,
+    /**
+     * Of a `test-end` a worker said: whether `status` is the one the test was expected to end with (a `test.fail()`
+     * test that failed is ok, one that passed is not); null for a worker that left, whose test ends `interrupted`.
+     */
+    val ok: Boolean? = null,
 )
 
 /**
@@ -1344,9 +1596,10 @@ data class LaneThumb(val call: String = "", val title: String = "", val index: I
 
 /**
  * `piwi/runningLine`, to a client that takes it (`runningLine` in its initialization options): the call the running
- * test of the slot the IDE watches (`piwi/laneView`) is in, of the worker `worker`; or none (`call` null) once the line
- * goes: the test ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run
- * did. Sent only when it differs from the last one sent for the slot.
+ * test of a slot is in, of the worker `worker`, for each slot `runningLines` in the credentials marks; or none (`call`
+ * null) once the line goes: the test ended or stopped (a stop has a mark of its own), the worker left, the run ended or
+ * the setting no longer marks the slot. Sent only when it differs from the last one sent for the slot, the lines that
+ * changed together.
  */
 data class RunningLine(val ref: String = "", val lane: Int = 0, val worker: Int = 0, val call: RunningCall? = null)
 
@@ -1504,8 +1757,20 @@ interface PiwiLanguageServer : LanguageServer {
     @JsonRequest("piwi/testItems")
     fun testItems(params: TestItemsParams): CompletableFuture<TestItemsResult?>
 
+    @JsonRequest("piwi/testRuns")
+    fun testRuns(params: TestRunsParams): CompletableFuture<List<RunTestsArgs>?>
+
     @JsonRequest("piwi/coverage")
     fun coverage(params: UriParams): CompletableFuture<CoverageResult?>
+
+    @JsonRequest("piwi/coverageFiles")
+    fun coverageFiles(params: CoverageFilesParams): CompletableFuture<CoverageFilesResult?>
+
+    @JsonRequest("piwi/coverageTests")
+    fun coverageTests(params: CoverageTestsParams): CompletableFuture<CoverageTestsResult?>
+
+    @JsonRequest("piwi/testCard")
+    fun testCard(params: TestCardParams): CompletableFuture<TestCard?>
 
     @JsonRequest("piwi/runArgs")
     fun runArgs(params: RunTestsArgs): CompletableFuture<RunCommand?>
@@ -1535,6 +1800,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/screenshot")
     fun screenshot(params: TraceParams): CompletableFuture<ScreenshotResult?>
+
+    @JsonRequest("piwi/fileIssue")
+    fun fileIssue(params: TraceParams): CompletableFuture<FileIssueResult?>
 
     @JsonRequest("piwi/agentContext")
     fun agentContext(params: TraceParams): CompletableFuture<AgentContextResult?>
@@ -1652,6 +1920,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonNotification("piwi/setBaseline")
     fun setBaseline(params: SetBaselineParams)
+
+    @JsonRequest("piwi/environments")
+    fun environments(params: EnvironmentsParams): CompletableFuture<EnvironmentsResult?>
+
+    @JsonRequest("piwi/setEnvironment")
+    fun setEnvironment(params: SetEnvironmentParams): CompletableFuture<SetEnvironmentResult?>
 
     @JsonNotification("piwi/declineRecord")
     fun declineRecord(params: DeclineRecordParams)

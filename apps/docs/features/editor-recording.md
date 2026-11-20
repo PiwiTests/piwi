@@ -25,6 +25,9 @@ works in VS Code (and Cursor, VSCodium) and in the JetBrains IDEs with the
 | VS Code | **Piwi: Record here…**, from the command palette, the editor's context menu (**Piwi** submenu) or a spec's editor title (unless a stop's controls hold it), or **Ctrl+.** (**Cmd+.** on macOS); any editor's title shows **Stop recording** while one runs | **Piwi: Record a new test file…**, also in the explorer's **Piwi** submenu while the editor is connected to an instance |
 | JetBrains IDE | **Tools → Piwi → Record here…**, **Alt+Enter** or **Alt+Insert** (Generate), or the editor's context menu (**Piwi** submenu) | **New → Playwright test (recorded)…** on a folder of a Playwright config, or the project view's **Piwi** submenu |
 
+**Record steps in this test…**, among a test's actions (its result icon in a JetBrains IDE, **Piwi: Show the test's
+actions…** in VS Code), records into that test after the last line of its body, wherever the cursor is.
+
 Before the browser opens, the editor asks for:
 
 1. **The start page**: a path on the project's `baseURL`, or an address; left empty, the browser opens the `baseURL`.
@@ -74,7 +77,7 @@ actions for the test that holds the block, the new test or the test you recorded
   cursor ×3** does.
 
 Both save the file, then run the test by the line of its `test(…)` call
-(`npx playwright test tests/checkout.spec.ts:42`), so neither needs an instance. A verification that reached none is
+(`npx playwright test "^/repo/tests/checkout.spec.ts:42"`, by its whole path), so neither needs an instance. A verification that reached none is
 told by its exit code, which cannot tell a pass from a skip: `None of 3 runs failed: tests/checkout.spec.ts:42`, or
 `Failed at least 1 of 3: tests/checkout.spec.ts:42 (exit code 1)`. Steps recorded into a
 page object or a helper offer neither action: no test holds them.
@@ -95,7 +98,7 @@ page object or helper has none of its own, and offers none.
 A locator picked with the [Piwi Picker](./extension) browser extension in your everyday browser, or a flow it
 recorded, lands at the editor's cursor too, once Piwi Picker is [paired with the editor](./editor-pairing). A picked
 locator's row, the top locator of the [Elements sidebar](./devtools#the-elements-sidebar), the
-[Locators console](./devtools#the-piwi-panel) in DevTools and the recording review then show **Send to editor**. A
+[Locators console](./devtools#the-piwi-panel) in DevTools and a recording's finish panel then show **Send to editor**. A
 locator is inserted in the copy form you chose; a recording is rendered as the body of a test, like
 [`piwi codegen --body`](/reference/cli#codegen), or as a new test outside one. With no editor open, a JetBrains IDE
 puts it in a new scratch file. A locator picked at a stop of a run Piwi starts reaches the editor the same way.
@@ -116,5 +119,5 @@ puts it in a new scratch file. A locator picked at a stop of a run Piwi starts r
 
 - [Recorded code](./recorded-code): what a recording writes, and the options that shape it.
 - [Editor extensions](./editors): everything else the editor shows from your suite.
-- [Piwi Picker](./extension): records in your everyday browser, for a bug report or a steps file.
+- [Piwi Picker](./extension): records in your everyday browser, for a test or a bug report with its evidence.
 - [Test functions](./test-functions): the page objects and helpers a recording calls.

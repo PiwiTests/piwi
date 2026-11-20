@@ -426,7 +426,7 @@ export const FEEDBACK_CHANNELS = {
   translation: {
     url: `${REPOSITORY}/issues/new?template=translation.yml`,
     include: [
-      'The language, and where in Piwi Picker the text appears (the popup, the settings, Report a bug, the store listing).',
+      'The language, and where in Piwi Picker the text appears (the popup, the settings, the recording bar, the store listing).',
       'What it says now, copied or as a screenshot.',
       'What it should say, and why if it helps.',
     ],

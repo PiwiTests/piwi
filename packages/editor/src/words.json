@@ -40,5 +40,14 @@
   "hold.off.short": "Off",
   "hold.run.on": "Hold failures on: a failed test waits at its line{by}",
   "hold.run.off": "Hold failures off{by}",
-  "hold.run.by-agent": ", as an agent set it"
+  "hold.run.by-agent": ", as an agent set it",
+  "page.watch": "Watch",
+  "page.interact": "Interact",
+  "page.input-rule": "At a stop, Interact sends clicks, scrolling and typing to the page; your first one drives the stop. It stays on for the worker’s next stops while Watch is on; Escape turns it off and gives the stop back, but goes to the page while a pick or a check runs there. Shift+click picks a locator.",
+  "run-options.title": "Run options",
+  "run-options.headed": "Run headed",
+  "run-options.headed.on": "Every test runs with its browser window shown. Pick to turn it off.",
+  "run-options.headed.off": "Runs follow the Playwright config, headed for a page.pause() or, with a reporter older than 0.62.0, a breakpoint. Pick to run every test headed.",
+  "run-options.hold": "Hold failures",
+  "run-options.state": "Run headed: {headed} · Hold failures: {hold}"
 }

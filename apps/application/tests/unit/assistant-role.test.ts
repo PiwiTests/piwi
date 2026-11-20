@@ -4,13 +4,14 @@
  * `PIWI_AI_ASSISTANT_*` variables, it is its own. The limits are parsed and
  * clamped like the AI-step limits, and their registry entries match the code.
  */
-import { afterAll, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
+import { afterAll, beforeAll, beforeEach, describe, expect, test, vi, afterEach } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import * as schema from '../../server/database/schema.sqlite';
 import type { DbClient } from '../../server/database';
 import { PIWI_ENV_VARS } from '#shared/piwi-env-vars';
 import { migrateToLatest } from './temp-db';
+import { stubAiKeyEnv } from './ai-key-env';
 
 delete process.env.PIWI_DATABASE_URL;
 process.env.PIWI_SECRET_KEY ||= 'assistant-role-test-secret-key-0123456789';
@@ -19,6 +20,12 @@ let envAi: Record<string, string | undefined> = {};
 vi.stubGlobal('useRuntimeConfig', () => ({ ai: envAi }));
 
 const { assistantRole, resolveAiConfig } = await import('../../server/utils/ai-provider');
+
+/** The configuration a call to the model reads: the environment's keys set as the server reads them, then opened. */
+async function resolveForCall() {
+  stubAiKeyEnv(envAi);
+  return resolveAiConfig(db, { open: true });
+}
 const { readAiSettings } = await import('../../server/utils/ai-settings');
 const { setAppSetting, deleteAppSetting } = await import('../../server/utils/app-settings');
 const { encryptSecret, getEncryptionKey } = await import('../../server/utils/crypto');
@@ -33,6 +40,9 @@ beforeAll(async () => {
   db = sqlite as unknown as DbClient;
 });
 
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 beforeEach(async () => {
   envAi = {};
   await deleteAppSetting(db, 'ai');
@@ -49,7 +59,7 @@ const diagnosis = {
 describe('the assistant role from Settings', () => {
   test('unset, it answers with the diagnosis role', async () => {
     await setAppSetting(db, 'ai', { roles: { diagnosis } });
-    const config = (await resolveAiConfig(db))!;
+    const config = (await resolveForCall())!;
     expect(config.roles.assistant).toBeNull();
     expect(assistantRole(config)).toMatchObject({
       provider: 'anthropic',
@@ -63,7 +73,7 @@ describe('the assistant role from Settings', () => {
     await setAppSetting(db, 'ai', {
       roles: { diagnosis, assistant: { reuse: 'diagnosis', model: 'claude-haiku-4-5' } },
     });
-    const config = (await resolveAiConfig(db))!;
+    const config = (await resolveForCall())!;
     expect(assistantRole(config)).toMatchObject({
       provider: 'anthropic',
       model: 'claude-haiku-4-5',
@@ -77,7 +87,7 @@ describe('the assistant role from Settings', () => {
     await setAppSetting(db, 'ai', {
       roles: { diagnosis, assistant: { provider: 'openai', model: 'qwen2.5', baseUrl: 'http://localhost:11434/v1' } },
     });
-    expect(assistantRole((await resolveAiConfig(db))!)).toMatchObject({
+    expect(assistantRole((await resolveForCall())!)).toMatchObject({
       provider: 'openai',
       model: 'qwen2.5',
       baseUrl: 'http://localhost:11434/v1',
@@ -91,8 +101,9 @@ describe('the assistant role from the environment', () => {
 
   test('a model alone reuses the main provider, key and base URL', async () => {
     envAi = { ...env, assistantModel: 'env-chat', assistantTemperature: '0.2' };
-    expect(assistantRole((await resolveAiConfig(db))!)).toEqual({
+    expect(assistantRole((await resolveForCall())!)).toEqual({
       provider: 'openai',
+      credentialId: expect.any(Number),
       apiKey: 'env-key',
       model: 'env-chat',
       baseUrl: 'https://llm.internal/v1',
@@ -107,7 +118,7 @@ describe('the assistant role from the environment', () => {
       assistantProvider: 'anthropic',
       assistantApiKey: 'sk-ant-chat',
     };
-    expect(assistantRole((await resolveAiConfig(db))!)).toMatchObject({
+    expect(assistantRole((await resolveForCall())!)).toMatchObject({
       provider: 'anthropic',
       apiKey: 'sk-ant-chat',
       model: 'claude-haiku-4-5',
@@ -116,7 +127,7 @@ describe('the assistant role from the environment', () => {
 
   test('without its model, it answers with the diagnosis role', async () => {
     envAi = { ...env };
-    const config = (await resolveAiConfig(db))!;
+    const config = (await resolveForCall())!;
     expect(config.roles.assistant).toBeNull();
     expect(assistantRole(config).model).toBe('env-model');
   });
@@ -145,7 +156,7 @@ describe('the Codex CLI provider roles', () => {
       embeddingProvider: 'codex-cli',
       embeddingModel: 'test-model',
     };
-    const config = (await resolveAiConfig(db))!;
+    const config = (await resolveForCall())!;
     expect(config.roles.diagnosis).toMatchObject({ provider: 'codex-cli', model: '', apiKey: '' });
     expect(config.roles.research).toMatchObject({ provider: 'codex-cli', model: 'test-model' });
     expect(config.roles.embedding).toBeNull();
@@ -174,7 +185,7 @@ describe('the DeepSeek CLI provider roles', () => {
       embeddingProvider: 'deepseek-cli',
       embeddingModel: 'test-model',
     };
-    const config = (await resolveAiConfig(db))!;
+    const config = (await resolveForCall())!;
     expect(config.roles.diagnosis).toMatchObject({ provider: 'deepseek-cli', model: '', apiKey: '' });
     expect(config.roles.research).toMatchObject({ provider: 'deepseek-cli', model: 'test-model' });
     expect(config.roles.embedding).toBeNull();

@@ -1,7 +1,19 @@
 import { desc, eq } from 'drizzle-orm';
 import { notificationChannels } from '~~/server/database/schema';
 import { sanitizeChannelConfig } from '~~/server/utils/channels';
-import { CHANNEL_TYPES, channelConfigProblem, type ChannelType } from '#shared/notifications/channel-setup';
+import {
+  CHANNEL_TYPES,
+  channelConfigProblem,
+  slackDelivery,
+  type ChannelType,
+} from '#shared/notifications/channel-setup';
+import {
+  deleteCredentialIfUnused,
+  freeCredentialName,
+  insertCredential,
+  slackChannelCredentialProblem,
+} from '#shared/handlers/credentials';
+import { SLACK_API_ENDPOINT } from '#shared/credentials';
 import { loadReportChannels, type ReportChannel } from '#shared/handlers/reports';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { DEMO_CHANNEL } from './demo-channel';
@@ -12,7 +24,10 @@ import { demoHttpError } from './http-error';
  * channels added in the demo, stored in the in-browser database like every
  * other demo write. Every channel is global, as on a server without
  * authentication. Nothing is ever sent, so no secret is stored: a channel
- * keeps only the config fields the server would return.
+ * keeps only the config fields the server would return. A Slack channel
+ * posting through the Web API names a Slack credential, as the server's
+ * channels of the instance do: the saved one picked, or one made for its
+ * token, which holds no secret here.
  */
 
 export interface DemoChannel {
@@ -58,6 +73,34 @@ export async function createDemoChannel(
   const type = b.type as ChannelType;
   const problem = channelConfigProblem(type, config as Record<string, unknown>);
   if (problem) throw demoHttpError(400, problem);
+  let stored = sanitizeChannelConfig(config as Record<string, unknown>);
+  if (type === 'slack' && slackDelivery(config as Record<string, unknown>) === 'api') {
+    const picked = (config as Record<string, unknown>).credentialId;
+    let credentialId: number;
+    if (typeof picked === 'number') {
+      const refused = await slackChannelCredentialProblem(db, picked);
+      if (refused) throw demoHttpError(400, refused);
+      credentialId = picked;
+    } else {
+      credentialId = await insertCredential(
+        db,
+        {
+          name: await freeCredentialName(db, name),
+          description: null,
+          service: 'slack',
+          user: null,
+          destination: SLACK_API_ENDPOINT,
+          scope: { allProjects: true },
+          allowedInputs: null,
+          customRequests: false,
+          disabled: false,
+        },
+        null,
+        null,
+      );
+    }
+    stored = { credentialId, channelId: String(stored.channelId ?? '').trim() };
+  }
 
   // Ids follow the account email's, which lives outside the table.
   const [last] = await db
@@ -71,7 +114,7 @@ export async function createDemoChannel(
       id: Math.max(last?.id ?? 0, DEMO_CHANNEL.id) + 1,
       name,
       type,
-      config: sanitizeChannelConfig(config as Record<string, unknown>),
+      config: stored,
       userId: null,
       verified: false,
     })
@@ -79,8 +122,15 @@ export async function createDemoChannel(
   return { success: true, channel: toDemoChannel(row!) };
 }
 
-/** Delete a channel added in the demo; the account email stays, as the server keeps a personal email channel. */
-export async function deleteDemoChannel(db: DrizzleDB, id: number): Promise<{ success: true }> {
+/**
+ * Delete a channel added in the demo, and the credential it sent with when asked and nothing else names it; the
+ * account email stays, as the server keeps a personal email channel.
+ */
+export async function deleteDemoChannel(
+  db: DrizzleDB,
+  id: number,
+  deleteCredential = false,
+): Promise<{ success: true; credentialDeleted: boolean }> {
   if (id === DEMO_CHANNEL.id) {
     throw demoHttpError(
       400,
@@ -90,9 +140,12 @@ export async function deleteDemoChannel(db: DrizzleDB, id: number): Promise<{ su
   const deleted = await db
     .delete(notificationChannels)
     .where(eq(notificationChannels.id, id))
-    .returning({ id: notificationChannels.id });
+    .returning({ id: notificationChannels.id, config: notificationChannels.config });
   if (!deleted.length) throw demoHttpError(404, 'Channel not found');
-  return { success: true };
+  const credentialId = (deleted[0]!.config as { credentialId?: unknown } | null)?.credentialId;
+  const credentialDeleted =
+    deleteCredential && typeof credentialId === 'number' ? await deleteCredentialIfUnused(db, credentialId) : false;
+  return { success: true, credentialDeleted };
 }
 
 /** Every channel a report schedule can name, as the server's `loadReportChannels` lists them. */

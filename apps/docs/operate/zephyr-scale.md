@@ -8,11 +8,11 @@ lang: en-US
 
 Connect Zephyr Scale Cloud, the test management app for Jira, to the dashboard, and bind a project to a Zephyr
 project. Piwi reads the project's test cases and, once the binding is live, writes a finished run's results back as
-one test run ([Results in Zephyr Scale](/features/test-management)). The connection holds the token in one place,
-managed by an administrator.
+one test run ([Results in Zephyr Scale](/features/test-management)). The connection holds the token in one place, a
+[credential](./credentials#connections-and-slack-channels) managed by an administrator.
 
 A connection is instance infrastructure, like an [issue tracker connection](./integrations): one row per external
-system, shared by every project, with its token encrypted at rest with `PIWI_SECRET_KEY`. Zephyr Scale is never
+system, shared by every project, with its token encrypted with `PIWI_SECRET_KEY`. Zephyr Scale is never
 offered as an issue tracker, so a project cannot be bound to it for links or for filing issues.
 
 ## Connecting Zephyr Scale Cloud
@@ -20,7 +20,8 @@ offered as an issue tracker, so a project cannot be bound to it for links or for
 1. In Jira, open your profile picture, then **Zephyr API keys**, and create a token. Use a dedicated account, so the
    token does not end with a person's access.
 2. **Settings → Integrations → Connect Zephyr Scale Cloud** (administrator only): pick the **Region** your Zephyr
-   Scale Cloud runs in (US, EU, AU or DE), paste the token, and choose **Check**. Then **Save**.
+   Scale Cloud runs in (US, EU, AU or DE), paste the token or pick a **Saved credential**, and choose **Check**.
+   Then **Save**.
 
 **Check** signs in on the region's API and lists the projects the token sees, without saving anything. **Test
 connection** on the saved connection signs in again and records the result on its card. Both give up after about
@@ -31,7 +32,8 @@ reach the region's host through any proxy, firewall or VPN.
 
 Zephyr Scale Cloud runs one API per region, and Piwi calls the host the chosen region names. It never takes a host
 from the form, so a typed address is ignored and an unknown region is refused. Changing the region of a saved
-connection asks for the token again, because a token belongs to one region.
+connection asks for the token again, because a token belongs to one region: its credential is sent only to that
+region's API.
 
 ## Bind a project
 
@@ -45,7 +47,8 @@ kept apart from the issue tracker binding, so saving one never changes the other
   turn it off to send. See [Results in Zephyr Scale](/features/test-management).
 - **Where a test’s case key comes from** is its tags, its external ID, or both. A key is a tag or an ID that
   matches the project's test case key pattern, such as `SHOP-T123`, with no `@`.
-- **Runs in scope** picks the branches and environments the binding covers, as the issue tracker binding does.
+- **Runs in scope** picks the branches and [environments](/features/environments) the binding covers, as the issue
+  tracker binding does: an environment by its key, an alias or a `*` pattern, ignoring case.
 - **Result statuses** name the statuses Piwi uses for a pass, a fail, a flaky test and a test not executed, and
   how a flaky or skipped test is reported. The pickers list the statuses and folders of the chosen project; typing a
   name the tool does not list is allowed. A flaky status is needed to report flaky tests as `flaky`.
@@ -95,7 +98,8 @@ Zephyr Scale rate limits each token, so Piwi spaces out every call of a connecti
 
 Set `PIWI_ZEPHYR_API_TOKEN`, and optionally `PIWI_ZEPHYR_REGION` (`us` by default), to manage the connection from
 the environment instead. It then shows a lock badge and is read-only in the dashboard: change it by editing the
-environment and restarting. The token stays in the environment and never enters the database. A region the variable
+environment and restarting. Its read-only credential reads the token from the environment, never the database. A
+region the variable
 does not name is logged and replaced by `us`. See
 [Environment-managed vs dashboard-managed](./integrations#environment-managed-vs-dashboard-managed) for how the two
 kinds of connection behave.

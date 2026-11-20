@@ -8,9 +8,14 @@ import {
   resolveTestRunCaseProjectId,
 } from '../../../../utils/project-access';
 import { resolveAiConfig } from '../../../../utils/ai-provider';
+import { requestCredentialActor } from '../../../../utils/credentials';
 import type { AiAttachedImage } from '../../../../utils/ai-provider';
 import { streamClusterDiagnosis, isDiagnosisRunning, isDiagnosisStale } from '../../../../utils/ai-diagnosis';
 import { diagnosisFrame } from '../../../../utils/diagnosis-stream-frames';
+import { openAiKeys } from '../../../../utils/ai-credentials';
+import { streamHeaders } from '#shared/stream-headers';
+
+const STREAM_HEADERS = streamHeaders('text/event-stream');
 
 defineRouteMeta({
   openAPI: {
@@ -34,7 +39,12 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, projectId, user } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveClusterProjectId,
+    'Failure cluster',
+  );
 
   const body = (await readBody(event).catch(() => null)) as {
     additionalContext?: string;
@@ -48,8 +58,8 @@ export default eventHandler(async (event) => {
   const [cluster] = await db.select().from(failureClusters).where(eq(failureClusters.id, id));
   if (!cluster) throw apiError({ statusCode: 404, message: 'Failure cluster not found' });
 
-  const config = await resolveAiConfig(db);
-  if (!config)
+  const resolved = await resolveAiConfig(db);
+  if (!resolved)
     throw apiError({ statusCode: 503, errorCode: 'AI_NOT_CONFIGURED', message: 'AI diagnosis is not configured' });
 
   const isExecutionScope = body?.scope === 'execution' && Boolean(body?.executionId);
@@ -78,13 +88,8 @@ export default eventHandler(async (event) => {
         throw apiError({ statusCode: 409, message: 'Diagnosis is already running' });
       }
       if (existing.status === 'completed') {
-        // Return existing result as an immediate SSE stream
-        setResponseHeaders(event, {
-          'Content-Type': 'text/event-stream',
-          'Cache-Control': 'no-cache',
-          Connection: 'keep-alive',
-          'X-Accel-Buffering': 'no',
-        });
+        // The stored result, as a stream of one event.
+        setResponseHeaders(event, STREAM_HEADERS);
         const encoder = new TextEncoder();
         return new Response(
           new ReadableStream({
@@ -93,26 +98,16 @@ export default eventHandler(async (event) => {
               controller.close();
             },
           }),
-          {
-            headers: {
-              'Content-Type': 'text/event-stream',
-              'Cache-Control': 'no-cache',
-              Connection: 'keep-alive',
-              'X-Accel-Buffering': 'no',
-            },
-          },
+          { headers: STREAM_HEADERS },
         );
       }
     }
   }
 
-  // SSE headers
-  setResponseHeaders(event, {
-    'Content-Type': 'text/event-stream',
-    'Cache-Control': 'no-cache',
-    Connection: 'keep-alive',
-    'X-Accel-Buffering': 'no',
-  });
+  // The keys are opened once the diagnosis is sure to call the model.
+  const config = await openAiKeys(db, resolved, requestCredentialActor(event, user), { projectId });
+
+  setResponseHeaders(event, STREAM_HEADERS);
 
   const encoder = new TextEncoder();
   let clientDisconnected = false;

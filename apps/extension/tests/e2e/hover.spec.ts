@@ -152,7 +152,6 @@ test.describe('hover reveals', () => {
             type: 'piwi-start-recording',
             originPattern: `${origin}/*`,
             tabId: tab,
-            mode: 'actions',
           }),
         { origin: ORIGIN, tab: tabId },
       );

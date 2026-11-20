@@ -1,6 +1,6 @@
 ---
 title: Local runs tray
-description: "The desktop app's Local runs tray: each Playwright run it starts, counted as the run's own process counts its tests, a failed run's end leading to its first failure, a compact list of one line a run, its output, and all of it kept through a reload."
+description: "The desktop app's Local runs tray: each Playwright run it starts, counted as the run's own process counts its tests, Stop and Force stop, a failed run's end leading to its first failure, its output to filter and copy, and the runs that ended kept through a reload and a restart."
 lang: en-US
 ---
 
@@ -9,14 +9,16 @@ lang: en-US
 <Needs desktop />
 
 The **Local runs** tray of the [desktop app](./desktop) lists every run the app starts: a **Re-run**, a reproduction, a
-bisect, a [Flake Lab](./flake-lab) run, a bug report's run, a run an agent started. It sits at the bottom right of
-the window and opens as a run starts, at each stop, and from **1 local run** in the sidebar. Closing it stops nothing.
+bisect, a [Flake Lab](./flake-lab) run, a bug report's run, a run an agent started. It is docked at the bottom of the
+window, under the page, and opens as a run starts and at each stop. Drag its top edge to resize it, or **Maximize**
+it; the window remembers its height. While it is open, the run page's **On your machine** card points to it.
+**Local runs**, at the foot of the sidebar, opens and closes it, and so do `g` then `t`. Closing it stops nothing.
 This page is about the runs the tray lists: how far each is, **Stop**, **Run again**, the code their stops make, their
-output and a reload. Each
+output, a reload and a restart. Each
 run's workers, their stops and their page: [Desktop app runs](./desktop-runs).
 
 <figure>
-  <img src="/screenshots/desktop-runs-tray.png" alt="The Local runs tray: a run counted 5 of 12 tests, 1 failed, its first worker stopped at its page.pause() with Resume, Step and Finish and its page, beside Stop and Hold failures">
+  <img src="/screenshots/desktop-runs-tray.png" alt="The desktop app's window, the Local runs tray docked under the run page: on its left three runs, the newest counted 5 of 12 tests, 1 failed, and waiting at a stop; on its right that run's worker stopped at its page.pause() with Resume, Step and Finish and its page">
   <figcaption>A run that goes on, counted as its own process counts its tests.</figcaption>
 </figure>
 
@@ -24,7 +26,7 @@ run's workers, their stops and their page: [Desktop app runs](./desktop-runs).
 
 A run says how far it is as its own process counts its tests: **5 of 12 tests · 1 failed**, a test held at its
 failure among the failed, then the flaky ones and those [ended at a stop](./end-the-test). Its run button on the page
-and **1 local run** in the sidebar count the same. Before its first test, and with a reporter that does not count,
+and the sidebar's entry, **1 local run** while it goes on, count the same. Before its first test, and with a reporter that does not count,
 the run counts the results Playwright prints.
 
 Once it reported to the app, a run links **Open run #N**, and **Compare with run #N** when its tests come from another
@@ -34,10 +36,25 @@ several Playwright projects reports one run for each: the failure is the first o
 in that project's run. **Run again**
 starts an ended run as it ran, with its options and its [**Hold failures**](./watch-a-run#hold-failures).
 
+**Stop** ends a run as `Ctrl+C` would in a terminal: Playwright stops its workers and the reporter still sends the
+run's end. While it winds down, the button gives way to **Force stop**, which kills the process at once, beside
+**Ends within 10 s**, after which the app kills it anyway. Force stop takes no click for a moment, so a double-click
+only stops. [Piwi Runner](./piwi-runner) stops a run the same way.
+
+An ended run lists the tests it failed on above its output, failed then flaky, each with its project, the first lines
+of its error and its file, to open in your editor. They come from its runs on the dashboard, else from its output.
+Each has **Open**; a test of a run of tests also has **Run again**, for that test alone, and **Run again with Hold
+failures** when the run can hold.
+
+An ended run's **More actions** menu holds **Copy the command**, for a run of tests: the command that runs them in
+your terminal, as the run button's **Copy as command** writes it, and **Remove from the list**; **Clear finished
+runs** removes all of them. While the tray is
+closed, a run that ends marks the sidebar's **Local runs** with a dot, red when it failed, until you open the tray.
+
 A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder
 ([A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor)) says where its tests wait,
-**In Visual Studio Code**, read only, with no **Hold failures**: the editor holds them. Its line reads **Waiting** while
-one does, **Stop** still ends it, and it ends with its own verdict.
+**In Visual Studio Code**, read only, with no **Hold failures**: the editor holds them. Its line is marked while one
+waits, **Stop** still ends it, and it ends with its own verdict.
 
 ## Stops while you look elsewhere
 
@@ -49,17 +66,12 @@ an error page), the system tells you of every stop, whatever the window shows, a
 window](./runs-window) or [an agent](./desktop-runs#for-agents) answers it. With no run of the app going on, the window
 stops listening, and a stop goes on at once.
 
-## Compact list
+## The runs list
 
-**Compact list**, in the tray's head, shows each run as one line: its state (**Running**, **Waiting** at a stop,
-**Passed**, **Failed**), its name, how far it is, and the one action it needs now: **Show the stop**, **Stop**,
-**Open the failure**, **Open run #N** or **Run again**. A click on a line shows the run whole, and **Show as one
-line** folds it again. A stop shows its run whole, as the tray opens on it. The tray remembers the choice.
-
-<figure>
-  <img src="/screenshots/desktop-runs-tray-compact.png" alt="The Local runs tray as a compact list: a run waiting at a stop with Show the stop, one that passed with Run again, and one that failed with Open the failure">
-  <figcaption>Three runs, one line each, each with the action it needs.</figcaption>
-</figure>
+On its left (a select in a narrow window), the tray lists **Running now**, **Started in another window**, then
+**Finished**. A line of its own says how its run stands and how long it ran; any line is marked while a test waits
+at a stop. A click shows the run on the right: its command, actions, links, workers, failures and output. A run that
+starts or stops is shown, unless you are working in the run shown.
 
 ## Code from the runs
 
@@ -83,7 +95,11 @@ on disk in the folder linked to the project.
 
 ## Its output
 
-Each run shows its output under its workers, in Playwright's terminal colors. **Open the output in a
+Each run shows its output under its workers, in Playwright's terminal colors, following its newest line until you
+scroll up; **Go to the latest line** follows it again. Above it, a field keeps only the lines holding what you type,
+case and accents ignored; **Go to the first error** scrolls to the first failure Playwright printed; a toggle wraps
+long lines; and **Copy output** copies every line the tray keeps, without the colors. Its corner drags it taller.
+**Open the output in a
 separate window**, the window button on the run, moves it to a window of its own, beside your editor or on another
 screen, still updating, with the run's **Stop**. Closing that window, or the same button, now **Show the output
 here**, brings it back. The window stays open whatever page the app shows, an analytics dashboard in TV mode
@@ -100,10 +116,13 @@ was starting, its first Playwright project or its next, goes on with the one the
 starting as the window reloaded ends, saying so: run it again. What the run printed while the window reloaded is lost, and the tray
 keeps the last 300 lines of each run's output through a reload.
 
+The last 15 runs that ended outlive a restart of the app, with their last 300 lines of output, **Run again** and their
+links. Each shows how long it took instead of its counts.
+
 ## Limits
 
-- **One window's runs.** Another window of the app lists its own; this tray shows their workers under **Other runs
-  of the desktop app**.
+- **One window's runs.** Another window of the app lists its own; this tray lists them under **Started in another
+  window**, their workers shown as you choose one or a test of theirs stops.
 - **A run that reports to the team instance** (a run it asked for) has no **Open run #N**, **Compare with run #N** or **Open the
   failure** here: under its workers, **Run #78 · Open** opens its page on the instance in your browser.
 

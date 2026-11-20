@@ -55,12 +55,12 @@ import {
 } from '@piwitests/run-model/stop';
 import { tabsAdvanced, tabsAfter, tabsChosen, type WorkerTabs } from '@piwitests/run-model/tabs';
 import { ViewInputBatcher, keyOnView, pastedText, type ViewModifier } from '@piwitests/run-model/view-input';
+import { RUN_ANSWER_KEYS } from '@piwitests/run-model/words';
 import { BUTTON_CSS, makeButton } from '../shared/buttons.js';
 import { copyWithFeedback } from '../shared/clipboard.js';
 import { decorateIcons, icon, iconText, setLabel, type IconName } from '../shared/icons.js';
 import { formatNumber, formatUnit, initI18n, localizeDocument, t, tn, tNodes } from '../shared/i18n.js';
 import {
-  ANSWER_KEYS,
   RUNS_PING_MS,
   RUNS_PORT,
   RUN_COMMAND,
@@ -357,12 +357,12 @@ function answerText(answer: RunsAnswer, hub: string, run?: RunsRun): string {
   if (answer.failure === 'offline') return t('runs_failOffline', { tool: toolName(hub) });
   if (answer.failure === 'timeout') return t('runs_failTimeout', { tool: toolName(hub) });
   if (answer.failure === 'unwatched') return t('runs_failUnwatched');
-  if (!answer.code || !(answer.code in ANSWER_KEYS)) return answer.message;
+  if (!answer.code || !(answer.code in RUN_ANSWER_KEYS)) return answer.message;
   if (answer.code === 'share-on' || answer.code === 'share-off') {
     const instance = instanceOf({ page: run?.session.live?.page ?? null });
     return t(answer.code === 'share-on' ? 'runs_answerShareOn' : 'runs_answerShareOff', { instance });
   }
-  return t(ANSWER_KEYS[answer.code]);
+  return t(RUN_ANSWER_KEYS[answer.code]);
 }
 
 // ── Commands ────────────────────────────────────────────────────────────────────────────────────────────────────────

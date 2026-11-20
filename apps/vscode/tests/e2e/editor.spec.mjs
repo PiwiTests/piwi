@@ -70,10 +70,10 @@ test.afterEach(async ({}, testInfo) => {
   await page?.keyboard.press('Escape');
 });
 
-test('the status bar item counts what still fails and what the local run fixed', async () => {
+test('the status bar item counts what still fails', async () => {
   const item = page.locator('.statusbar-item', { hasText: 'Piwi:' }).first();
   await expect(item).toHaveText(/2 failing/);
-  await expect(item).toHaveText(/1 fixed/);
+  await expect(item).not.toHaveText(/fixed/);
 });
 
 test('the Problems panel lists the run’s two failures at their lines, with their reasons', async () => {
@@ -111,7 +111,7 @@ test('the hover on the failing locator names the failing test and the run', asyn
     .first();
   await token.hover();
   const hover = page.locator('.monaco-hover:not(.hidden)').first();
-  await expect(hover).toContainText('CI failure');
+  await expect(hover).toContainText('Open in dashboard');
   await expect(hover).toContainText('pays by card');
   await expect(hover).toContainText('run #124');
   await page.mouse.move(10, 400);
@@ -127,6 +127,43 @@ test('the spec’s lens counts the spec’s own tests', async () => {
   await openFile(page, SPEC_FILE);
   const lens = page.locator('.monaco-editor .codelens-decoration', { hasText: /tests? in Piwi/ }).first();
   await expect(lens).toHaveText(/^3 tests in Piwi\b/);
+});
+
+test('no row of lenses is cut short, in an editor of the window’s width or of half of it', async () => {
+  /**
+   * The rows of the active editor, and those cut short: their text past their box, or their box past the code's area,
+   * the vertical scrollbar's band included.
+   */
+  const cut = () =>
+    page.evaluate(() => {
+      const editor = document.activeElement?.closest('.monaco-editor');
+      const right = editor?.querySelector('.editor-scrollable')?.getBoundingClientRect().right ?? 0;
+      // A row scrolled out of view is not drawn.
+      const rows = [...(editor?.querySelectorAll('.codelens-decoration') ?? [])].filter(
+        (row) => row.getBoundingClientRect().width > 0,
+      );
+      return {
+        rows: rows.length,
+        texts: rows.map((row) => row.textContent),
+        cut: rows
+          .filter((row) => row.scrollWidth > row.clientWidth + 1 || row.getBoundingClientRect().right > right + 1)
+          .map((row) => row.textContent),
+      };
+    });
+  for (const split of [false, true]) {
+    if (split) await command(page, 'View: Split Editor Right');
+    for (const file of [PAGE_OBJECT_FILE, SPEC_FILE]) {
+      await openFile(page, file);
+      // The active editor's rows once it drew them, the other group's showing already.
+      await expect.poll(async () => (await cut()).rows, `${file}${split ? ', split' : ''}`).toBeGreaterThan(0);
+      const { texts, cut: short } = await cut();
+      expect(short, `${file}${split ? ', split' : ''}`).toEqual([]);
+      // A failing line's row holds its reason and Run with Piwi, its evidence among the test's actions.
+      if (file === SPEC_FILE)
+        expect(texts).toContainEqual(expect.stringMatching(/^✗ Failed here · .+\s\|\sRun with Piwi$/));
+    }
+  }
+  await command(page, 'View: Join All Editor Groups');
 });
 
 test('a spec’s editor title offers Record here…, and its Run button the spec’s runs', async () => {

@@ -5,15 +5,136 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { createRequire } from 'node:module';
+import { pathToFileURL } from 'node:url';
+import { ENVIRONMENT_VARIABLE, requiredTagsGrepInvert, type EnvironmentForRun } from '@piwitests/core/environments';
 import { specFileArgument, specFilePattern, type RunRequest } from '@piwitests/core/run-request';
+import {
+  bashQuote,
+  powerShellQuote,
+  runVariableAssignments,
+  withRunVariables,
+  type RunVariable,
+  type RunVariableShell,
+} from '@piwitests/core/run-variables';
 import { currentBranch, hasUncommittedChanges, headCommit, playwrightConfigFile, repositoryRoot } from './workspace';
+
+/**
+ * What a check says, as a code a window words in its own language from the check's `args`; `message` is the same
+ * sentence in English (`requestCheckSentence`).
+ */
+export type RequestCheckCode =
+  | 'folder-none'
+  | 'folder-gone'
+  | 'folder-linked'
+  | 'variables-invalid'
+  | 'variables-set'
+  | 'environment-set'
+  | 'environment-protected'
+  | 'folder-busy'
+  | 'config-missing'
+  | 'specs-missing'
+  | 'specs-found'
+  | 'playwright-missing'
+  | 'playwright-installed'
+  | 'commit-differs'
+  | 'commit-same'
+  | 'changes-uncommitted'
+  | 'command-too-long';
+
+/**
+ * The values a check's sentence names, by code: the linked folder (`folder`), why the project's run variables cannot
+ * be set (`problems`, the instance's English sentences) or how they are set (`variables`, as the shell writes them),
+ * the environment the run is for (`environment`, its name; `key`; and a protected one's required tags, `tags`, joined
+ * by `, `), the missing specs named and how many
+ * more (`files`, `more`), the folder's branch and short commit and the run's (`branch`, `commit`, `sourceBranch`,
+ * `sourceCommit`, empty when unknown), and the longest command (`max`).
+ */
+export type RequestCheckArgs = Readonly<Record<string, string | number>>;
 
 /** One row of the confirmation: a check that failed stops **Run**, a warning does not. */
 export interface RequestCheck {
-  id: 'folder' | 'busy' | 'config' | 'specs' | 'playwright' | 'command' | 'commit' | 'changes';
+  id:
+    | 'folder'
+    | 'variables'
+    | 'environment'
+    | 'busy'
+    | 'config'
+    | 'specs'
+    | 'playwright'
+    | 'command'
+    | 'commit'
+    | 'changes';
   level: 'ok' | 'warn' | 'fail';
+  code: RequestCheckCode;
+  args: RequestCheckArgs;
   message: string;
 }
+
+/** What a check of `code` says in English, with the values of `args`. */
+export function requestCheckSentence(code: RequestCheckCode, args: RequestCheckArgs = {}): string {
+  const value = (name: string) => String(args[name] ?? '');
+  switch (code) {
+    case 'folder-none':
+      return 'No folder is linked to this project on this machine.';
+    case 'folder-gone':
+      return 'The linked folder no longer exists: choose it again.';
+    case 'folder-linked':
+      return `Linked folder: ${value('folder')}`;
+    case 'variables-invalid':
+      return `The project's run variables cannot be set: ${value('problems')}`;
+    case 'variables-set':
+      return `Runs with the project's run variables: ${value('variables')}.`;
+    case 'environment-set':
+      return `Runs for ${value('environment')}: ${ENVIRONMENT_VARIABLE}=${value('key')}.`;
+    case 'environment-protected':
+      return `Runs for ${value('environment')}, a protected environment: only the tests tagged ${value('tags')} run, beside the setup and teardown projects they depend on, which Playwright runs whole.`;
+    case 'folder-busy':
+      return 'Another run is going in this folder: this one can run once it ends.';
+    case 'config-missing':
+      return 'The folder holds no Playwright config.';
+    case 'specs-missing': {
+      const more = Number(args.more ?? 0);
+      return `Not in the folder: ${value('files')}${more > 0 ? ` and ${more} more` : ''}.`;
+    }
+    case 'specs-found':
+      return 'The specs are in the folder.';
+    case 'playwright-missing':
+      return 'Playwright is not installed in the folder: run `npm install` there.';
+    case 'playwright-installed':
+      return 'Playwright is installed.';
+    case 'commit-differs': {
+      const at = (branch: string, commit: string) =>
+        [branch ? `on ${branch}` : null, commit ? `at ${commit}` : null].filter(Boolean).join(' ');
+      const here = at(value('branch'), value('commit')) || 'outside a git repository';
+      return `Your folder is ${here}; the run you came from was ${at(value('sourceBranch'), value('sourceCommit'))}. The tests are selected by title.`;
+    }
+    case 'commit-same':
+      return 'Your folder is on the commit the run came from.';
+    case 'changes-uncommitted':
+      return 'Your folder has uncommitted changes.';
+    case 'command-too-long':
+      return `The command for these tests is longer than ${Number(args.max).toLocaleString('en-US')} characters: ask for fewer tests.`;
+  }
+}
+
+/** A check, its English sentence from its code. */
+function check(
+  id: RequestCheck['id'],
+  level: RequestCheck['level'],
+  code: RequestCheckCode,
+  args: RequestCheckArgs = {},
+): RequestCheck {
+  return { id, level, code, args, message: requestCheckSentence(code, args) };
+}
+
+/**
+ * What a target reads for a request's run: the run variables it gets (the project's, and when the request names an
+ * environment, the environment's over them) and that environment, both checked (`parseRunVariables`,
+ * `parseEnvironmentForRun`); any problem refuses both, and `unreadable` says the instance did not answer.
+ */
+export type RequestRunVariables =
+  | { ok: true; value: RunVariable[]; environment?: EnvironmentForRun | null }
+  | { ok: false; problems: string[]; unreadable?: true };
 
 /** What the target found in the folder, and the command it would run there. */
 export interface RequestPlan {
@@ -22,8 +143,15 @@ export interface RequestPlan {
   runnable: boolean;
   /** The arguments after `playwright test`, each one argv element; empty while a check fails. */
   args: string[];
-  /** The command as the confirmation shows it. */
+  /** The command as the confirmation shows it, starting with the run variables and `PIWI_ENVIRONMENT`. */
   display: string;
+  /** The run variables the run gets, checked; empty while a check fails. */
+  variables: RunVariable[];
+  /**
+   * The environment the run is for, whose key the run gets as `PIWI_ENVIRONMENT` and whose required tags keep a
+   * protected one's run to them (`args`); null for none, and while a check fails.
+   */
+  environment: EnvironmentForRun | null;
   /** Whether the tests are selected by title, because the folder is not on the request's commit or has changes. */
   byTitle: boolean;
   branch: string | null;
@@ -95,16 +223,27 @@ export function picksByTitle(request: RunRequest, offCommit: boolean): boolean {
 /**
  * The arguments after `playwright test` for `request` in `folder` (its real path, as Playwright resolves the
  * config's folder): each test by `file:line`, or with `byTitle` each spec file and one `--grep` of the titles, then
- * the project and the options. A test with no line is never run as its whole file: the request goes by title. A
- * `--grep` value is one element written `--grep=<pattern>`, so it never reads as an option.
+ * the project and the options, then for a protected `environment` the `--grep-invert` that keeps the run to the tests
+ * carrying one of its required tags (`requiredTagsGrepInvert`). A test with no line is never run as its whole file:
+ * the request goes by title. A `--grep` or `--grep-invert` value is one element written `--grep=<pattern>`, so it
+ * never reads as an option. `windows`: whether Playwright runs on Windows, where each spec is also matched by its
+ * `file:` URL.
  */
-export function requestedRunArgs(request: RunRequest, folder: string, byTitle: boolean): string[] {
+export function requestedRunArgs(
+  request: RunRequest,
+  folder: string,
+  byTitle: boolean,
+  windows = process.platform === 'win32',
+  environment: EnvironmentForRun | null = null,
+): string[] {
   byTitle = picksByTitle(request, byTitle);
   const unique = (values: string[]) => [...new Set(values)];
   const files = (test: { filePath: string }) => path.resolve(folder, test.filePath.replaceAll('\\', '/'));
+  // On Windows, each spec's `file:` URL too, which Playwright up to 1.62 tests in place of the `/`-separated path.
+  const url = (file: string) => (windows ? pathToFileURL(file, { windows: true }).href : undefined);
   const args = byTitle
-    ? unique(request.tests.map((t) => specFilePattern(files(t))))
-    : unique(request.tests.map((t) => specFileArgument(files(t), t.line!)));
+    ? unique(request.tests.map((t) => specFilePattern(files(t), url(files(t)))))
+    : unique(request.tests.map((t) => specFileArgument(files(t), t.line!, url(files(t)))));
   if (byTitle) {
     // Playwright matches the title path (project, file, describe blocks, title) and the tags, joined by spaces, and
     // ignores case. Each title is anchored at the end, before the tags, and after a space or the start: a test whose
@@ -123,12 +262,47 @@ export function requestedRunArgs(request: RunRequest, folder: string, byTitle: b
   // Each repetition reports its own result, as the editors' repeat does.
   if (options.repeatEach && options.repeatEach > 1) args.push(`--repeat-each=${options.repeatEach}`, '--retries=0');
   if (options.workers) args.push(`--workers=${options.workers}`);
+  if (environment?.protected) args.push(requiredTagsFilterArg(environment));
   return args;
 }
 
-/** One argument as the confirmation shows it: quoted when it holds a space or a quote. */
-function displayArg(arg: string): string {
-  return /[\s"']/.test(arg) ? `"${arg.replaceAll('"', '\\"')}"` : arg;
+/**
+ * The argument that keeps a run for a protected environment to the tests carrying one of its required tags:
+ * `--grep-invert=<pattern>` (`requiredTagsGrepInvert`), as the desktop app's shell adds it too.
+ */
+export function requiredTagsFilterArg(environment: Pick<EnvironmentForRun, 'requiredTags'>): string {
+  return `--grep-invert=${requiredTagsGrepInvert(environment.requiredTags)}`;
+}
+
+/** Characters an argument the confirmation shows holds bare: what neither shell changes. */
+const DISPLAY_PLAIN = /^[A-Za-z0-9_@+:,./=-]+$/;
+
+/** The shell the confirmation writes the command for: this machine's. */
+const DISPLAY_SHELL: RunVariableShell = process.platform === 'win32' ? 'powershell' : 'bash';
+
+/** One argument as the confirmation shows it: bare when plain, else single-quoted as `shell` reads it. */
+function displayArg(arg: string, shell: RunVariableShell): string {
+  if (DISPLAY_PLAIN.test(arg)) return arg;
+  return shell === 'bash' ? bashQuote(arg) : powerShellQuote(arg);
+}
+
+/**
+ * The command the confirmation shows: `npx playwright test` and `args`, after `PIWI_ENVIRONMENT` set to the
+ * environment's key and, first, the run variables, as `shell` writes them (`withRunVariables`).
+ */
+export function requestedRunDisplay(
+  args: readonly string[],
+  variables: readonly RunVariable[],
+  environment: EnvironmentForRun | null,
+  shell: RunVariableShell = DISPLAY_SHELL,
+): string {
+  const command = ['npx', 'playwright', 'test', ...args.map((arg) => displayArg(arg, shell))].join(' ');
+  if (!environment) return withRunVariables(command, variables, shell);
+  const label =
+    shell === 'bash'
+      ? `${ENVIRONMENT_VARIABLE}=${bashQuote(environment.key)} ${command}`
+      : `$env:${ENVIRONMENT_VARIABLE}=${powerShellQuote(environment.key)}; ${command}`;
+  return withRunVariables(label, variables, shell);
 }
 
 /**
@@ -136,22 +310,31 @@ function displayArg(arg: string): string {
  * `request`, and build the command. A failed check names its fix and leaves the command empty; a branch or a commit
  * other than the request's, or uncommitted changes, warns and selects the tests by title, since a line may have moved.
  * `runningIn` names the folders a run of this app is going in, requested or the person's own: one of them fails the
- * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`.
+ * check, and so does a command past `REQUESTED_RUN_ARGS_MAX_CHARS`. `variables` are the run variables and the
+ * environment as the target read them from the instance (`RequestRunVariables`): a problem fails the check, and the
+ * command starts with them, `PIWI_ENVIRONMENT` set to the environment's key, a protected one's run kept to its
+ * required tags.
  */
 export async function planRequestedRun(
   request: RunRequest,
   folder: string | null,
   runningIn: string[] = [],
+  variables: RequestRunVariables = { ok: true, value: [] },
 ): Promise<RequestPlan> {
   const checks: RequestCheck[] = [];
+  const environment = variables.ok ? (variables.environment ?? null) : null;
   const done = (extra: Partial<RequestPlan> = {}): RequestPlan => {
     const runnable = !checks.some((c) => c.level === 'fail');
     const args = runnable ? (extra.args ?? []) : [];
+    const applied = runnable && variables.ok ? variables.value : [];
+    const appliedEnvironment = runnable ? environment : null;
     return {
       checks,
       runnable,
       args,
-      display: runnable ? ['npx', 'playwright', 'test', ...args.map(displayArg)].join(' ') : '',
+      display: runnable ? requestedRunDisplay(args, applied, appliedEnvironment) : '',
+      variables: applied,
+      environment: appliedEnvironment,
       byTitle: extra.byTitle ?? false,
       branch: extra.branch ?? null,
       commit: extra.commit ?? null,
@@ -159,7 +342,7 @@ export async function planRequestedRun(
   };
 
   if (!folder) {
-    checks.push({ id: 'folder', level: 'fail', message: 'No folder is linked to this project on this machine.' });
+    checks.push(check('folder', 'fail', 'folder-none'));
     return done();
   }
   let real: string;
@@ -167,40 +350,44 @@ export async function planRequestedRun(
     real = fs.realpathSync(folder);
     if (!fs.statSync(real).isDirectory()) throw new Error('not a folder');
   } catch {
-    checks.push({ id: 'folder', level: 'fail', message: 'The linked folder no longer exists: choose it again.' });
+    checks.push(check('folder', 'fail', 'folder-gone'));
     return done();
   }
-  checks.push({ id: 'folder', level: 'ok', message: 'The folder is linked.' });
-  if (runningIn.some((other) => realFolder(other) === real)) {
-    checks.push({
-      id: 'busy',
-      level: 'fail',
-      message: 'Another run is going in this folder: this one can run once it ends.',
-    });
+  checks.push(check('folder', 'ok', 'folder-linked', { folder }));
+  if (!variables.ok) {
+    checks.push(check('variables', 'fail', 'variables-invalid', { problems: variables.problems.join(' ') }));
+  } else if (variables.value.length > 0) {
+    checks.push(
+      check('variables', 'ok', 'variables-set', {
+        variables: runVariableAssignments(variables.value, DISPLAY_SHELL),
+      }),
+    );
   }
+  if (environment?.protected) {
+    checks.push(
+      check('environment', 'warn', 'environment-protected', {
+        environment: environment.name,
+        key: environment.key,
+        tags: environment.requiredTags.join(', '),
+      }),
+    );
+  } else if (environment) {
+    checks.push(check('environment', 'ok', 'environment-set', { environment: environment.name, key: environment.key }));
+  }
+  if (runningIn.some((other) => realFolder(other) === real)) checks.push(check('busy', 'fail', 'folder-busy'));
 
-  if (!playwrightConfigFile(real)) {
-    checks.push({ id: 'config', level: 'fail', message: 'The folder holds no Playwright config.' });
-  }
+  if (!playwrightConfigFile(real)) checks.push(check('config', 'fail', 'config-missing'));
 
   const missing = [...new Set(request.tests.map((t) => t.filePath))].filter((f) => !specInFolder(real, f));
   if (missing.length > 0) {
-    const named = missing.slice(0, NAMED_SPECS).join(', ');
-    const more = missing.length > NAMED_SPECS ? ` and ${missing.length - NAMED_SPECS} more` : '';
-    checks.push({ id: 'specs', level: 'fail', message: `Not in the folder: ${named}${more}.` });
+    const files = missing.slice(0, NAMED_SPECS).join(', ');
+    checks.push(check('specs', 'fail', 'specs-missing', { files, more: Math.max(0, missing.length - NAMED_SPECS) }));
   } else {
-    checks.push({ id: 'specs', level: 'ok', message: 'The specs are in the folder.' });
+    checks.push(check('specs', 'ok', 'specs-found'));
   }
 
-  if (!playwrightInstalled(real)) {
-    checks.push({
-      id: 'playwright',
-      level: 'fail',
-      message: 'Playwright is not installed in the folder: run `npm install` there.',
-    });
-  } else {
-    checks.push({ id: 'playwright', level: 'ok', message: 'Playwright is installed.' });
-  }
+  if (!playwrightInstalled(real)) checks.push(check('playwright', 'fail', 'playwright-missing'));
+  else checks.push(check('playwright', 'ok', 'playwright-installed'));
 
   const root = await repositoryRoot(real);
   const [branch, commit, changed] = await Promise.all([
@@ -211,27 +398,22 @@ export async function planRequestedRun(
   const { source } = request;
   const onCommit = !!source.commit && !!commit && sameCommit(source.commit, commit);
   if (source.commit && !onCommit) {
-    const here = [branch ? `on ${branch}` : null, commit ? `at ${commit.slice(0, 7)}` : null].filter(Boolean);
-    const there = [source.branch ? `on ${source.branch}` : null, `at ${source.commit.slice(0, 7)}`].filter(Boolean);
-    checks.push({
-      id: 'commit',
-      level: 'warn',
-      message: `Your folder is ${here.join(' ') || 'outside a git repository'}; the run you came from was ${there.join(' ')}. The tests are selected by title.`,
-    });
+    checks.push(
+      check('commit', 'warn', 'commit-differs', {
+        branch: branch ?? '',
+        commit: commit ? commit.slice(0, 7) : '',
+        sourceBranch: source.branch ?? '',
+        sourceCommit: source.commit.slice(0, 7),
+      }),
+    );
   } else if (onCommit) {
-    checks.push({ id: 'commit', level: 'ok', message: 'Your folder is on the commit the run came from.' });
+    checks.push(check('commit', 'ok', 'commit-same'));
   }
-  if (changed) {
-    checks.push({ id: 'changes', level: 'warn', message: 'Your folder has uncommitted changes.' });
-  }
+  if (changed) checks.push(check('changes', 'warn', 'changes-uncommitted'));
   const byTitle = picksByTitle(request, !onCommit || changed);
-  const args = requestedRunArgs(request, real, byTitle);
+  const args = requestedRunArgs(request, real, byTitle, undefined, environment);
   if (argsLength(args) > REQUESTED_RUN_ARGS_MAX_CHARS) {
-    checks.push({
-      id: 'command',
-      level: 'fail',
-      message: `The command for these tests is longer than ${REQUESTED_RUN_ARGS_MAX_CHARS.toLocaleString('en-US')} characters: ask for fewer tests.`,
-    });
+    checks.push(check('command', 'fail', 'command-too-long', { max: REQUESTED_RUN_ARGS_MAX_CHARS }));
   }
   return done({ args, byTitle, branch, commit });
 }

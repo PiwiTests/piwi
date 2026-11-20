@@ -9,7 +9,7 @@
 import { mergeTestCases } from '#shared/handlers/test-case-merge';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
 import { and, eq, inArray } from 'drizzle-orm';
-import type { ZodType } from 'zod';
+import { z, type ZodType } from 'zod';
 import {
   users,
   files,
@@ -148,6 +148,7 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
+import { apiGetDemoLiveSnapshot } from './live-view';
 import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
@@ -182,12 +183,15 @@ import {
 } from './dashboards';
 import { createDemoChannel, deleteDemoChannel, demoReportChannels, listDemoChannels } from './channels';
 import { apiPerfettoTestRun, apiPerfettoTestRunCase } from './perfetto';
+import { apiDemoChangelog } from './changelog';
 import {
   apiGetDemoTraceStacks,
   apiGetDemoTraceNetwork,
   apiGetDemoTraceNetworkBody,
   apiGetDemoTraceSnapshots,
   apiGetDemoTraceSnapshot,
+  apiGetDemoTraceFrames,
+  apiGetDemoTraceFrame,
 } from './trace-insights';
 import {
   listProjects,
@@ -205,6 +209,9 @@ import {
   INVALID_LIVE_VIEW_MASKS,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
+  InvalidRunVariablesError,
+  InvalidCiActionsError,
+  InvalidDefaultEnvironmentError,
   InvalidTagKeysError,
   updateProject,
   createProject,
@@ -214,6 +221,17 @@ import {
   getProjectsOverview,
 } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
+import { projectDefaultEnvironment } from '#shared/handlers/default-environment';
+import {
+  copyEnvironments,
+  createEnvironment,
+  deleteEnvironment,
+  listInstanceEnvironments,
+  environmentRunSettings,
+  listProjectEnvironments,
+  updateEnvironment,
+} from '#shared/handlers/environments';
+import { environmentInputSchema, environmentPatchSchema } from '#shared/environments';
 import { SOLE_USER } from '#shared/own-runs';
 import { listTags, createTag, updateTag, deleteTag } from '#shared/handlers/tags';
 import {
@@ -276,6 +294,8 @@ import {
   type ProbeResultInput,
 } from '#shared/handlers/probes';
 import { computeChangeCoverage } from '#shared/handlers/change-coverage';
+import { runChangeCoverageNote } from '#shared/handlers/deployed-changes';
+import { getEnvironmentActivity } from '#shared/handlers/environment-activity';
 import {
   isBuiltinKey,
   parseRankBy,
@@ -508,13 +528,21 @@ import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiActions,
   demoCiActionCheck,
-  demoCiServerTokenMarker,
-  demoCiServerTokenUrl,
   demoClusterRerunInfo,
   demoExecutionRerunInfo,
   demoRerunCluster,
   demoRerunExecution,
 } from './ci-rerun';
+import {
+  demoAllCredentialUses,
+  demoCreateCredential,
+  demoCredentialUses,
+  demoDeleteCredential,
+  demoGetCredential,
+  demoListCredentials,
+  demoUpdateCredential,
+} from './credentials';
+import { ciActionsCredentialProblem, projectScmCredentialProblem } from '#shared/handlers/credentials';
 import {
   apiGetWastedWaits,
   apiPutWastedWaits,
@@ -563,6 +591,14 @@ interface RouteEntry {
  * user means authentication is off, and an unknown one acts as an
  * administrator too, so the demo never locks itself out.
  */
+/** A marker's commit as the server's route takes it: 7 to 40 hexadecimal characters, or none. */
+function assertDemoMarkerCommit(commit: unknown): void {
+  if (commit == null) return;
+  if (typeof commit !== 'string' || !/^[0-9a-f]{7,40}$/i.test(commit.trim())) {
+    throw demoHttpError(400, 'commit must be 7 to 40 hexadecimal characters');
+  }
+}
+
 async function resolveDemoAccess(actingUserId: number | null): Promise<AccessSummary> {
   if (!actingUserId) return ADMIN_ACCESS;
   const db = await getDemoDb();
@@ -723,6 +759,14 @@ function demoRequester(ctx: DemoCtx | undefined): number {
 function demoAccess(ctx: DemoCtx | undefined): AccessSummary {
   return ctx?.access ?? ADMIN_ACCESS;
 }
+
+/** The acting user as the credential handlers read them: their access and id. */
+function demoViewer(ctx: DemoCtx | undefined) {
+  return { access: demoAccess(ctx), userId: ctx?.actingUserId ?? null };
+}
+
+/** The body of `POST /api/projects/:id/environments/copy`, as its server route reads it. */
+const environmentCopyBodySchema = z.object({ fromProjectId: z.number().int().positive() }).strict();
 
 /** The entities an issue is drafted and filed for, as the server's issue routes accept them. */
 const ISSUE_ENTITY_TYPES: IssueEntityType[] = ['failure_cluster', 'test_runs_case', 'test_run', 'bug_report'];
@@ -1004,11 +1048,10 @@ const routes: RouteEntry[] = [
       if (!project) return project;
       const {
         scmToken: _scm,
-        ciServerToken,
+        ciServerToken: _ciServerToken,
         ...rest
       } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
-      const ciServerTokenUrl = demoCan(ctx, 'project:manage', +m[1]!) ? demoCiServerTokenUrl(ciServerToken) : null;
-      return { ...rest, ciServerTokenUrl, ciServerInstanceUrl: null };
+      return { ...rest, ciServerInstanceUrl: null };
     },
   },
   {
@@ -1017,18 +1060,56 @@ const routes: RouteEntry[] = [
     permission: 'project:manage',
     handler: async (m, body, _, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      // A browser demo has no server secret to encrypt with (the server uses
-      // encryptSecret with PIWI_SECRET_KEY), so the SCM token is stored as-is,
-      // and every GET strips it. A CI server token is never stored: only the
-      // base URL it would be bound to.
       try {
         const db = await getDemoDb();
-        const update = body as Parameters<typeof updateProject>[2];
+        const update = body as Parameters<typeof updateProject>[2] & { ciServerToken?: unknown; scmToken?: unknown };
+        if (update?.ciServerToken !== undefined) {
+          throw demoHttpError(
+            400,
+            'ciServerToken is replaced by credentials: create one with POST /api/credentials and name its id in the CI server action’s credentialId.',
+          );
+        }
+        if (update?.scmToken !== undefined) {
+          throw demoHttpError(
+            400,
+            'scmToken is replaced by credentials: create one with POST /api/credentials (service scm) and name its id in scmCredentialId.',
+          );
+        }
+        const [stored] = await db
+          .select({
+            ciRerun: projects.ciRerun,
+            scmCredentialId: projects.scmCredentialId,
+            repositoryUrl: projects.repositoryUrl,
+          })
+          .from(projects)
+          .where(eq(projects.id, +m[1]!));
+        const repository =
+          update?.repositoryUrl === undefined ? (stored?.repositoryUrl ?? null) : update.repositoryUrl?.trim() || null;
+        // As the server: a credential named before, with the repository unchanged, is not checked again.
+        const repositoryChanged = update?.repositoryUrl !== undefined && repository !== (stored?.repositoryUrl ?? null);
+        if (
+          typeof update?.scmCredentialId === 'number' &&
+          (update.scmCredentialId !== stored?.scmCredentialId || repositoryChanged)
+        ) {
+          const problem = await projectScmCredentialProblem(db as never, +m[1]!, update.scmCredentialId, repository);
+          if (problem) throw demoHttpError(400, problem);
+        }
         assertDemoCiActions(update);
-        const ciServerToken = await demoCiServerTokenMarker(db, +m[1]!, update);
         // As the server: store the normalized actions (a value with no `actions` list converts to actions).
         const ciRerun = update?.ciRerun == null ? update?.ciRerun : resolveCiActionsSettings(update.ciRerun);
-        const project = await updateProject(db, +m[1]!, { ...update, ciRerun, ciServerToken });
+        if (ciRerun) {
+          const storedActions = stored?.ciRerun ? resolveCiActionsSettings(stored.ciRerun).actions : [];
+          const credentialProblem = await ciActionsCredentialProblem(
+            db as never,
+            +m[1]!,
+            ciRerun,
+            storedActions,
+            new Set(),
+            repository,
+          );
+          if (credentialProblem) throw demoHttpError(400, credentialProblem);
+        }
+        const project = await updateProject(db, +m[1]!, { ...update, ciRerun });
         if (update?.coverageScope !== undefined || update?.coverageAreas !== undefined) {
           await recountProjectCoverage(await getDemoDb(), +m[1]!);
         }
@@ -1042,7 +1123,13 @@ const routes: RouteEntry[] = [
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
-        if (e instanceof InvalidTagKeysError) throw demoHttpError(400, e.message);
+        if (
+          e instanceof InvalidTagKeysError ||
+          e instanceof InvalidRunVariablesError ||
+          e instanceof InvalidCiActionsError ||
+          e instanceof InvalidDefaultEnvironmentError
+        )
+          throw demoHttpError(400, e.message);
         throw e;
       }
     },
@@ -1421,6 +1508,24 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
     handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
+  },
+  // The page of a simulated worker at a call, for Inspect: a moment of the committed checkout trace, as the server
+  // serves a live page. The rest of the live view runs in the page (`app/demo/live-watch.ts`).
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/watch\/([^/]+)\/snapshot$/,
+    handler: async (m, _b, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiGetDemoLiveSnapshot(+m[1]!, query ?? new URLSearchParams());
+    },
+  },
+
+  {
+    method: 'GET',
+    pattern: /^\/api\/environments$/,
+    handler: async (_, __, ___, ctx) => ({
+      environments: await listInstanceEnvironments(await getDemoDb(), ctx?.scope ?? 'all'),
+    }),
   },
 
   // Test runs
@@ -2707,6 +2812,22 @@ const routes: RouteEntry[] = [
       return apiGetDemoTraceSnapshot(+m[1]!, query);
     },
   },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-frames$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceFrames(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-frame$/,
+    handler: async (m, _body, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceFrame(+m[1]!, query);
+    },
+  },
   // The demo cannot pixel-diff in the browser — it serves the overlay the
   // seed generated with the real diff code, straight from the files row.
   {
@@ -2795,6 +2916,7 @@ const routes: RouteEntry[] = [
         occurredAt?: string;
         category?: string;
         environment?: string | null;
+        commit?: string | null;
         description?: string | null;
         runId?: number | string | null;
       };
@@ -2806,6 +2928,7 @@ const routes: RouteEntry[] = [
       if (b.category && !MARKER_CATEGORY_IDS.includes(b.category)) throw demoHttpError(400, 'Unknown marker category');
       if (b.environment != null && b.environment.length > 120)
         throw demoHttpError(400, 'environment must be at most 120 characters');
+      assertDemoMarkerCommit(b.commit);
       if (b.description != null && b.description.length > 2000) {
         throw demoHttpError(400, 'description must be at most 2000 characters');
       }
@@ -2822,6 +2945,7 @@ const routes: RouteEntry[] = [
         occurredAt,
         category: b.category,
         environment: b.environment ?? null,
+        commit: b.commit ?? null,
         description: b.description ?? null,
         runId,
       });
@@ -2840,6 +2964,10 @@ const routes: RouteEntry[] = [
       if (b.category !== undefined && !MARKER_CATEGORY_IDS.includes(b.category as string)) {
         throw demoHttpError(400, 'Unknown marker category');
       }
+      if (b.environment != null && (typeof b.environment !== 'string' || b.environment.length > 120)) {
+        throw demoHttpError(400, 'environment must be at most 120 characters');
+      }
+      assertDemoMarkerCommit(b.commit);
       const patch = { ...b, ...(b.occurredAt ? { occurredAt: new Date(b.occurredAt) } : {}) };
       return updateMarker(await getDemoDb(), +m[1]!, patch as Parameters<typeof updateMarker>[2]);
     },
@@ -3214,7 +3342,8 @@ const routes: RouteEntry[] = [
       const runId = runNum != null && Number.isFinite(runNum) ? runNum : null;
       // The demo has no SCM provider; show a small representative diff so the
       // uncovered-changes join renders against the seeded reach.
-      return computeChangeCoverage(await getDemoDb(), +m[1]!, {
+      const db = await getDemoDb();
+      const coverage = await computeChangeCoverage(db, +m[1]!, {
         changedFiles: [
           { filePath: 'src/api/orders.post.ts', additions: 41, deletions: 3 },
           { filePath: 'src/components/OrderRow.vue', additions: 8, deletions: 2 },
@@ -3225,6 +3354,25 @@ const routes: RouteEntry[] = [
         tickets: ['PROJ-418'],
         scmAvailable: true,
       });
+      // A run of a deployed environment says what its reach of the application is of, as the server's answer does.
+      const [inspected] =
+        runId != null
+          ? await db
+              .select({
+                id: testRuns.id,
+                projectId: testRuns.projectId,
+                environmentId: testRuns.environmentId,
+                startTime: testRuns.startTime,
+                metadata: testRuns.metadata,
+              })
+              .from(testRuns)
+              .where(eq(testRuns.id, runId))
+          : [];
+      if (inspected && inspected.projectId === +m[1]!) {
+        const head = (inspected.metadata as { scm?: { commit?: string | null } } | null)?.scm?.commit ?? null;
+        coverage.deployedNote = await runChangeCoverageNote(db, inspected, head);
+      }
+      return coverage;
     },
   },
   {
@@ -3597,7 +3745,7 @@ const routes: RouteEntry[] = [
       const requesterId = demoRequester(ctx);
       const input = await demoReadRunRequestBody(body, requesterId);
       assertDemoScope(ctx, input.projectId);
-      return apiCreateRunRequest(requesterId, input);
+      return apiCreateRunRequest(requesterId, input, demoCan(ctx, 'project:manage', input.projectId));
     },
   },
   {
@@ -3805,6 +3953,55 @@ const routes: RouteEntry[] = [
     },
   },
 
+  // Credentials — the server's shared handlers; the demo stores no secret
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (_m, _b, q, ctx) =>
+      demoListCredentials(await getDemoDb(), demoViewer(ctx), Object.fromEntries(q ?? []), (projectId) =>
+        assertDemoScope(ctx ? { ...ctx, permission: ['project:manage'] } : ctx, projectId),
+      ),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/credentials$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (_m, body, _q, ctx) =>
+      demoCreateCredential(await getDemoDb(), demoViewer(ctx), body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/uses$/,
+    permission: 'credentials:manage',
+    handler: async (_m, _b, q) => demoAllCredentialUses(await getDemoDb(), Object.fromEntries(q ?? [])),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, _q, ctx) => demoGetCredential(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, body, _q, ctx) => demoUpdateCredential(await getDemoDb(), demoViewer(ctx), +m[1]!, body),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, _q, ctx) => demoDeleteCredential(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)\/uses$/,
+    permission: ['credentials:manage', 'project:manage'],
+    handler: async (m, _b, q, ctx) =>
+      demoCredentialUses(await getDemoDb(), demoViewer(ctx), +m[1]!, Object.fromEntries(q ?? [])),
+  },
+
   // Integrations — one canned connection per provider, answered from constants
   {
     method: 'GET',
@@ -3838,7 +4035,7 @@ const routes: RouteEntry[] = [
     method: 'DELETE',
     pattern: /^\/api\/integrations\/connections\/(\d+)$/,
     permission: 'connections:manage',
-    handler: async () => ({ success: true }),
+    handler: async () => ({ success: true, credentialDeleted: false }),
   },
   {
     method: 'POST',
@@ -4065,6 +4262,106 @@ const routes: RouteEntry[] = [
   },
   {
     method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/run-variables$/,
+    handler: async (m, _, q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const raw = q?.get('environment');
+      let environmentId: number | null = null;
+      if (raw != null && raw !== '') {
+        environmentId = parseRouteId(raw);
+        if (environmentId === null) throw demoHttpError(400, 'Invalid environment ID');
+      }
+      const settings = await environmentRunSettings(await getDemoDb(), projectId, environmentId, {
+        canManage: demoCan(ctx, 'project:manage', projectId),
+      });
+      if (!settings.ok) throw demoHttpError(settings.statusCode, settings.message);
+      return { runVariables: settings.runVariables, environment: settings.environment };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/environments$/,
+    handler: async (m, _b, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const canManage = demoCan(ctx, 'project:manage', projectId);
+      const db = await getDemoDb();
+      return {
+        environments: await listProjectEnvironments(db, projectId, { canManage }),
+        defaultEnvironmentId: (await projectDefaultEnvironment(db, projectId))?.id ?? null,
+      };
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)\/activity$/,
+    handler: async (m, _b, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const activity = await getEnvironmentActivity(await getDemoDb(), projectId, +m[2]!);
+      if (!activity) throw demoHttpError(404, 'No such environment in this project');
+      return activity;
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/environments$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = environmentInputSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const result = await createEnvironment(await getDemoDb(), +m[1]!, parsed.data);
+      if (!result.ok) throw demoHttpError(result.statusCode, result.problems.join(' '));
+      return { environment: result.environment };
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/copy$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      const projectId = +m[1]!;
+      await assertDemoEntityScope(ctx, 'project', projectId);
+      const parsed = environmentCopyBodySchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const { fromProjectId } = parsed.data;
+      if (fromProjectId === projectId) throw demoHttpError(400, 'Pick another project to copy from');
+      if (!demoCan(ctx, 'project:read', fromProjectId)) {
+        throw demoHttpError(403, 'No access to the project to copy from');
+      }
+      return copyEnvironments(await getDemoDb(), fromProjectId, projectId, {
+        canManageSource: demoCan(ctx, 'project:manage', fromProjectId),
+      });
+    },
+  },
+  {
+    method: 'PATCH',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const parsed = environmentPatchSchema.safeParse(body);
+      if (!parsed.success) throw demoHttpError(400, 'Invalid request body');
+      const result = await updateEnvironment(await getDemoDb(), +m[1]!, +m[2]!, parsed.data);
+      if (!result.ok) throw demoHttpError(result.statusCode, result.problems.join(' '));
+      return { environment: result.environment };
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/projects\/(\d+)\/environments\/(\d+)$/,
+    permission: 'project:manage',
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const result = await deleteEnvironment(await getDemoDb(), +m[1]!, +m[2]!);
+      if (!result.ok) throw demoHttpError(result.statusCode, result.problems.join(' '));
+      return { deleted: true };
+    },
+  },
+  {
+    method: 'GET',
     pattern: /^\/api\/projects\/(\d+)\/bug-reports$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
@@ -4236,6 +4533,12 @@ const routes: RouteEntry[] = [
         arch: null,
         dbBackend: 'sql.js (in-browser)',
       }),
+  },
+
+  {
+    method: 'GET',
+    pattern: /^\/api\/changelog$/,
+    handler: (_, _body, query) => apiDemoChangelog(query),
   },
 
   // Health — demo runs entirely client-side, so "the database" is always the
@@ -4489,9 +4792,9 @@ routes.push(
   {
     method: 'DELETE',
     pattern: /^\/api\/channels\/(\d+)$/,
-    handler: async (m) => {
+    handler: async (m, _body, query) => {
       const id = parseInt(m[1]!);
-      const result = await deleteDemoChannel(await getDemoDb(), id);
+      const result = await deleteDemoChannel(await getDemoDb(), id, query?.get('deleteCredential') === 'true');
       // Like the server, a channel's subscriptions go with it.
       for (let i = _demoSubs.length - 1; i >= 0; i--) if (_demoSubs[i]!.channelId === id) _demoSubs.splice(i, 1);
       return result;

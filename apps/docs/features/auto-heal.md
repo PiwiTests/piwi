@@ -54,8 +54,8 @@ strongest thing the dashboard does, so the posture is conservative by design.
 - **`PIWI_SITE_URL`** must be set, so the links in the PR body resolve.
 - A run that recorded its git remote URL (the reporter's `collectScmInfo`, on by default), and the **capture
   fixtures**, which record the snapshots every edit but a diff rename comes from.
-- An **SCM token with write scope**, resolved as [Source control](/guide/source-control#set-the-token) describes: a per-project token, falling back
-  to the global one. It needs:
+- An **SCM credential with write scope**, resolved as [Source control](/guide/source-control#set-the-credential)
+  describes: the project's, falling back to the instance's. Its token needs:
   - **GitHub** — `repo` (classic), or a fine-grained token with **Contents: write** + **Pull requests: write**.
   - **GitLab** — `api`.
   - **Bitbucket** — an access token that can write to the repository. Bitbucket Cloud has no draft pull requests, so

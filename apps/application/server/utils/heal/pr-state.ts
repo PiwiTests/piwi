@@ -17,7 +17,7 @@
  */
 import { and, asc, eq, inArray } from 'drizzle-orm';
 import { healActions, testRunsCases } from '../../database/schema';
-import { resolveScmToken, scmProviderForUrl } from '../scm';
+import { openScmProvider } from '../scm';
 import { projectRepositoryFor } from '../scm/project-repository';
 import { recordOutcome } from '../outcomes';
 import { healEditKey, type HealActionPayload, type HealActionResult } from '#shared/auto-heal';
@@ -55,7 +55,6 @@ export async function refreshOpenHealActions(
     .orderBy(asc(healActions.updatedAt))
     .limit(opts.limit ?? PR_STATE_BATCH);
 
-  const tokens = new Map<number, string | null>();
   for (const row of rows) {
     await db
       .update(healActions)
@@ -65,17 +64,14 @@ export async function refreshOpenHealActions(
     const prNumber = (row.result as HealActionResult | null)?.prNumber;
     if (!prNumber) continue;
     try {
-      if (!tokens.has(row.projectId)) tokens.set(row.projectId, await resolveScmToken(db, row.projectId));
-      const token = tokens.get(row.projectId);
-      if (!token) continue;
-      // Only the project's pinned repository is read with its token.
+      // Only the project's pinned repository is read, with the credential its calls carry.
       const repository = await projectRepositoryFor(
         db,
         row.projectId,
         (row.payload as HealActionPayload).repositoryUrl,
       );
-      const provider = repository ? scmProviderForUrl(repository, token) : null;
-      if (!provider) continue;
+      const provider = repository ? await openScmProvider(db, row.projectId, repository) : null;
+      if (!provider?.hasToken) continue;
 
       const state = (await provider.fetchPullRequest(prNumber))?.state;
       refresh.checked++;

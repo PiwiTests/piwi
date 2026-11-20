@@ -43,8 +43,9 @@ Windows, the Secret Service on Linux), never in a file, and holds its connection
 An app connects to one instance at a time. **Disconnect** removes the key from the keychain; the app stays listed in
 the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
 
-The folder of each project is linked on this machine, per instance: the first request for a project asks for it, and
-**Settings → Desktop app** lists the linked folders by project name, with **Unlink**.
+Each project's folder is linked on this machine, per instance, when its first request asks; **Settings → Desktop
+app** lists them, with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
+in your code folders; a picked folder without the tests gets a better one offered.
 
 ## Ask for a run
 
@@ -65,6 +66,9 @@ the linked folder, and the exact command. Nothing runs until you click **Run**:
   tests are picked by their titles (`--grep`) rather than by their lines, which may have moved.
 - **One run per folder**: while another run goes on in the folder, the request waits, and is checked again once it
   ends. A command takes at most 24,000 characters.
+- **The [environment](./environments)** the request names, which an older app cannot apply, and the
+  [run variables](./run-variables) of the project and the environment: listed among the checks; the command starts
+  with them.
 
 **Not now** declines it, or refuses it with the checks that failed, and the page says which. A request nobody answers
 in the app within 10 minutes ends.
@@ -124,11 +128,6 @@ Someone who holds `run:delete` on the project can delete it through the API with
 
 A [share link](./share-links) you make for one of its executions opens for whoever has the link, as any share link
 does, so you can show a teammate what happened on your machine. It appears in the project's list of share links.
-
-## One instance, one replica
-
-Whether an app is online is held in the server's memory, as live run updates are. The instance runs as one replica, as
-the [deployment page](/operate/deployment) requires.
 
 ## Related
 

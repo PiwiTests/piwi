@@ -5,21 +5,20 @@
  * toggle (`tools`); then the image or the live view, with what it says of it (the default slot); and at its foot, who
  * drives the stop, with Take control or Give back (`foot`).
  */
-import { desktopSay } from '../utils/run-view';
-
 defineProps<{
   /** Who watches the page, as the run model says it; none while nobody does. */
   watchers?: string | null;
 }>();
 
 const captionId = useId();
+const words = useRunUiWords();
 </script>
 
 <template>
   <figure class="m-0 overflow-hidden rounded-lg border border-default bg-default" :aria-labelledby="captionId">
     <div class="flex flex-wrap items-center gap-x-2 gap-y-1 min-h-9 py-1 pl-2.5 pr-1.5 border-b border-default">
       <div class="flex flex-col min-w-0 mr-auto">
-        <span :id="captionId" class="text-xs font-semibold text-muted">{{ desktopSay('runs_pageCaption') }}</span>
+        <span :id="captionId" class="text-xs font-semibold text-muted">{{ words.say('runs_pageCaption') }}</span>
         <span
           v-if="watchers"
           class="flex items-center gap-1.5 text-xs text-muted"

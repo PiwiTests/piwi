@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  Merged into Piwi Runner's Info.plist (`bundle.macOS.infoPlist` in runner.conf.json): the languages its texts ship in
+  (apps/runner/locales/), so macOS shows its own panels and menu items, the folder picker among them, in the
+  system's language when it is one of them.
+-->
+<plist version="1.0">
+<dict>
+  <key>CFBundleLocalizations</key>
+  <array>
+    <string>en</string>
+    <string>de</string>
+    <string>es</string>
+    <string>fr</string>
+    <string>pt-BR</string>
+  </array>
+</dict>
+</plist>

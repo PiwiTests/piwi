@@ -21,6 +21,7 @@ import { sanitizeResourceReport } from '#shared/resource-report';
 import { saveResourceReportPart } from '#shared/handlers/resource-reports';
 import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots';
 import type { TestRunSubmitPayload } from '#shared/types';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 
 /**
  * Create the run of a batch delivery that joins no sharded run (`/submit`, `/upload/results`): it replaces the
@@ -62,7 +63,7 @@ export async function createBatchRun(
       failedTests: sumFailedAndTimedOut(body.failedTests, body.timedOutTests),
       skippedTests: body.skippedTests || 0,
       didNotRunTests: body.didNotRunTests || 0,
-      environment: body.environment || null,
+      ...(await resolveRunEnvironment(db as never, projectId, body.environment)),
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata,

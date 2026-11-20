@@ -3,10 +3,15 @@ import { describe, test, expect } from 'vitest';
 import { mkdtempSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import {
+  buildRerunCommand,
   buildRetryCommand,
   buildRetryArgs,
   buildTitleGrepFlag,
+  commandSpec,
+  isSpecFilter,
+  isTitleFilter,
   quoteShellArg,
   retryOptionFlags,
   retryProjects,
@@ -59,7 +64,7 @@ test('empty cases', () => {
 
 test('single case', () => {
   const cmd = buildRetryCommand([sampleCases[0]!]);
-  expect(cmd).toBe('npx playwright test "tests/login.spec.ts:10" --project="chromium"');
+  expect(cmd).toBe('npx playwright test "/tests/login.spec.ts:10" --project="chromium"');
 });
 
 test('custom pkgRunner', () => {
@@ -73,7 +78,7 @@ test('dedupe same file:line', () => {
     { filePath: 'tests/foo.spec.ts', title: 'dup2', line: 10, projectName: 'chromium' },
   ];
   const cmd = buildRetryCommand(dupes);
-  // Only one "tests/foo.spec.ts:10" arg despite 2 cases
+  // Only one "/tests/foo.spec.ts:10" arg despite 2 cases
   expect(cmd.match(/tests\/foo\.spec\.ts:10/g)?.length).toBe(1);
 });
 
@@ -84,16 +89,16 @@ test('normalizes Windows backslash paths to forward slashes', () => {
     { filePath: 'tests\\case-files-live.spec.ts', title: 'win test', line: 393, projectName: 'chromium' },
   ];
   expect(buildRetryCommand(winCases)).toBe(
-    'npx playwright test "tests/case-files-live.spec.ts:393" --project="chromium"',
+    'npx playwright test "/tests/case-files-live.spec.ts:393" --project="chromium"',
   );
-  expect(buildRetryCommand(winCases, { mode: 'file' })).toContain('"tests/case-files-live.spec.ts"');
+  expect(buildRetryCommand(winCases, { mode: 'file' })).toContain('"/tests/case-files-live.spec.ts"');
   expect(buildRetryCommand(winCases)).not.toContain('\\');
 });
 
 test('quotes paths containing spaces', () => {
   const spaced = [{ filePath: 'tests/my dir/foo.spec.ts', title: 'spaced', line: 12, projectName: 'chromium' }];
-  expect(buildRetryCommand(spaced)).toContain('"tests/my dir/foo.spec.ts:12"');
-  expect(buildRetryCommand(spaced, { mode: 'file' })).toContain('"tests/my dir/foo.spec.ts"');
+  expect(buildRetryCommand(spaced)).toContain('"/tests/my(?: |.20)dir/foo.spec.ts:12"');
+  expect(buildRetryCommand(spaced, { mode: 'file' })).toContain('"/tests/my(?: |.20)dir/foo.spec.ts"');
 });
 
 test('no project name', () => {
@@ -171,7 +176,7 @@ describe('buildTitleGrepFlag', () => {
         `printf '%s\\n' ${cmd.replace(/^npx playwright test /, '').replace(/ && npx playwright test /g, ' ')}`,
       ]);
       expect(existsSync(marker)).toBe(false);
-      expect(cmd).toContain('"tests/ok.spec.ts:4"');
+      expect(cmd).toContain('"/tests/ok.spec.ts:4"');
       expect(cmd).not.toContain('$(');
     });
 
@@ -195,10 +200,10 @@ describe('buildTitleGrepFlag', () => {
 describe('unsafe file paths and project names are left out', () => {
   test('a path holding characters a shell expands names its file with `.` in their place, and such a project is dropped', () => {
     expect(buildRetryCommand([{ filePath: 'tests/`id`.spec.ts', title: 't', line: 1, projectName: 'chromium' }])).toBe(
-      'npx playwright test "tests/.id..spec.ts:1" --project="chromium"',
+      'npx playwright test "/tests/(?:.|.60)id(?:.|.60).spec.ts:1" --project="chromium"',
     );
     expect(buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: 'x$(id)' }])).toBe(
-      'npx playwright test "tests/a.spec.ts:1"',
+      'npx playwright test "/tests/a.spec.ts:1"',
     );
   });
 
@@ -211,7 +216,7 @@ describe('unsafe file paths and project names are left out', () => {
       expect(grep).toBe('npx playwright test --grep "x. ; Start-Process calc ; #" --project="chromium"');
       expect(
         buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 't', line: 1, projectName: `x${quote} ; calc ; #` }]),
-      ).toBe('npx playwright test "tests/a.spec.ts:1"');
+      ).toBe('npx playwright test "/tests/a.spec.ts:1"');
       expect(quoteShellArg(`a${quote}b`)).toBeNull();
     }
   });
@@ -222,15 +227,15 @@ describe('unsafe file paths and project names are left out', () => {
         { filePath: 'tests/$(id).spec.ts', title: 't', line: null },
         { filePath: 'tests/b.spec.ts', title: 't', line: null },
       ]),
-    ).toBe('"tests/.[(]id[)].spec.ts" "tests/b.spec.ts"');
+    ).toBe('"/tests/.[(]id[)].spec.ts" "/tests/b.spec.ts"');
   });
 });
 
 describe('a spec whose path holds a character a regular expression reads', () => {
   test('is written as a pattern that names its own file, with nothing a shell expands', () => {
     const cases = [{ filePath: 'tests/c++.spec.ts', title: 'adds', line: 7, projectName: null }];
-    expect(buildRetryCommand(cases)).toBe('npx playwright test "tests/c[+][+].spec.ts:7"');
-    expect(buildRetryArgs(cases)).toBe('"tests/c[+][+].spec.ts:7"');
+    expect(buildRetryCommand(cases)).toBe('npx playwright test "/tests/c[+][+].spec.ts:7"');
+    expect(buildRetryArgs(cases)).toBe('"/tests/c[+][+].spec.ts:7"');
   });
 });
 
@@ -248,8 +253,8 @@ describe('run options', () => {
     });
     const flags = ' --headed --trace=retain-on-failure --repeat-each=3 --retries=0 --workers=2';
     expect(cmd).toBe(
-      `npx playwright test "tests/login.spec.ts:10" "tests/login.spec.ts:42" --project="chromium"${flags}` +
-        ` && npx playwright test "tests/checkout.spec.ts:88" --project="firefox"${flags}`,
+      `npx playwright test "/tests/login.spec.ts:10" "/tests/login.spec.ts:42" --project="chromium"${flags}` +
+        ` && npx playwright test "/tests/checkout.spec.ts:88" --project="firefox"${flags}`,
     );
   });
 
@@ -276,7 +281,7 @@ describe('run options', () => {
   test('one project runs every test in one command', () => {
     const cmd = buildRetryCommand(sampleCases, { options: { project: 'webkit' } });
     expect(cmd).toBe(
-      'npx playwright test "tests/login.spec.ts:10" "tests/login.spec.ts:42" "tests/checkout.spec.ts:88" --project="webkit"',
+      'npx playwright test "/tests/login.spec.ts:10" "/tests/login.spec.ts:42" "/tests/checkout.spec.ts:88" --project="webkit"',
     );
   });
 
@@ -299,7 +304,7 @@ describe('run options', () => {
     const args = splitRerunArgs(cmd).slice(3);
     expect(args.slice(-3)).toEqual(['--project=chromium', '--headed', '--workers=2']);
     for (const arg of args.slice(0, -3))
-      expect(arg).toMatch(/^tests\/area-\d+\/a-rather-long-spec-file-name-\d+\.spec\.ts$/);
+      expect(arg).toMatch(/^\/tests\/area-\d+\/a-rather-long-spec-file-name-\d+\.spec\.ts$/);
   });
 
   test('the flags read back as separate arguments', () => {
@@ -310,7 +315,7 @@ describe('run options', () => {
       'npx',
       'playwright',
       'test',
-      'tests/login.spec.ts:10',
+      '/tests/login.spec.ts:10',
       '--project=chromium',
       '--headed',
       '--trace=on',
@@ -330,4 +335,128 @@ test('the projects offered are the ones the tests ran in that every shell quotes
     { filePath: 'e.spec.ts', title: 'e', projectName: 'webkit' },
   ];
   expect(retryProjects(cases)).toEqual(['chromium', 'webkit']);
+});
+
+describe('a filter that would match every test', () => {
+  const empty = { filePath: '', title: '', line: 3, projectName: 'chromium' };
+
+  test('an empty path, or a line with no path, is left out', () => {
+    expect(buildRetryCommand([empty])).toBe('');
+    expect(buildRetryCommand([empty], { mode: 'file' })).toBe('');
+    expect(buildRetryCommand([empty, sampleCases[0]!])).toBe(
+      'npx playwright test "/tests/login.spec.ts:10" --project="chromium"',
+    );
+    expect(buildRetryArgs([empty])).toBe('');
+  });
+
+  test('an empty title is left out', () => {
+    expect(buildRetryCommand([empty], { mode: 'grep' })).toBe('');
+    expect(buildRetryCommand([empty, sampleCases[0]!], { mode: 'grep' })).toBe(
+      'npx playwright test --grep "should login" --project="chromium"',
+    );
+  });
+
+  test('a path that starts with a dash is left out', () => {
+    expect(buildRetryCommand([{ ...empty, filePath: '--ui' }])).toBe('');
+    expect(buildRetryArgs([{ ...empty, filePath: '-x.spec.ts' }])).toBe('');
+  });
+});
+
+describe('a test left out of a retry', () => {
+  test('takes its project with it', () => {
+    expect(
+      buildRetryArgs([
+        { filePath: 'tests/a.spec.ts', title: 'a', line: null, projectName: 'p1' },
+        { filePath: '', title: 'b', line: null, projectName: 'p2' },
+      ]),
+    ).toBe('"/tests/a.spec.ts" --project="p1"');
+  });
+
+  test('a blank title is left out like an empty one', () => {
+    expect(buildRetryCommand([{ filePath: '', title: '  ', line: null, projectName: null }], { mode: 'grep' })).toBe(
+      '',
+    );
+    expect(buildTitleGrepFlag([' ', 'pays'])).toBe(' -g "pays"');
+  });
+});
+
+describe('a filter that matches more than it names', () => {
+  test('a title made only of characters a shell expands is left out', () => {
+    expect(isTitleFilter('$')).toBe(false);
+    expect(isTitleFilter('!! ')).toBe(false);
+    expect(isTitleFilter('pays $10')).toBe(true);
+    expect(
+      buildRetryCommand([{ filePath: 'a.spec.ts', title: '$', line: 1, projectName: null }], { mode: 'grep' }),
+    ).toBe('');
+    expect(buildTitleGrepFlag(['!!', 'pays'])).toBe(' -g "pays"');
+  });
+
+  test('a path made only of `.` and `/` is left out, with or without a line', () => {
+    for (const spec of ['.', '/', './', '/:2', '..:3', '', '.:5:7', '/./i', '//g'])
+      expect(isSpecFilter(spec)).toBe(false);
+    for (const spec of ['a.spec.ts', 'tests/a.spec.ts:2', '.github/a.spec.ts', './tests/a.spec.ts:3:1', '/tests/']) {
+      expect(isSpecFilter(spec)).toBe(true);
+    }
+    expect(buildRetryCommand([{ filePath: '\\', title: 't', line: 2, projectName: null }])).toBe('');
+    expect(buildRetryArgs([{ filePath: '.', title: 't', line: null, projectName: null }])).toBe('');
+  });
+});
+
+describe('a spec named from a folder’s start', () => {
+  /** Whether Playwright takes `file` for a copied spec filter: its file part, a regular expression ignoring case. */
+  const takes = (arg: string, file: string) => new RegExp(arg.replace(/(?::\d+){1,2}$/, ''), 'gi').test(file);
+
+  test('never takes a spec whose folder’s name ends as its own', () => {
+    const [spec] = splitRerunArgs(buildRetryCommand([{ filePath: 'tests/a.spec.ts', title: 'pays', line: 3 }])).slice(
+      3,
+    );
+    expect(spec).toBe('/tests/a.spec.ts:3');
+    expect(takes(spec!, '/repo/tests/a.spec.ts')).toBe(true);
+    expect(takes(spec!, 'C:/repo/tests/a.spec.ts')).toBe(true);
+    expect(takes(spec!, 'file:///C:/repo/tests/a.spec.ts')).toBe(true);
+    expect(takes(spec!, '/repo/xtests/a.spec.ts')).toBe(false);
+    expect(takes(spec!, '/repo/my tests/a.spec.ts')).toBe(false);
+    // A folder whose path ends as its own still matches: the dashboard does not know the checkout's folder.
+    expect(takes(spec!, '/repo/e2e/tests/a.spec.ts')).toBe(true);
+  });
+
+  test('takes a spec whose path its file: URL encodes, as Windows Playwright up to 1.62 tests it', () => {
+    for (const filePath of [
+      'my tests/a.spec.ts',
+      'tests/café.spec.ts',
+      'tests/#1 [x] {y} ~^%`.spec.ts',
+      '測試/a.spec.ts',
+    ]) {
+      const [spec] = splitRerunArgs(buildRetryArgs([{ filePath, title: 't', line: 3 }]));
+      expect(spec, filePath).toMatch(/:3$/);
+      const posix = `C:/repo/${filePath}`;
+      expect(takes(spec!, posix), posix).toBe(true);
+      expect(takes(spec!, `/repo/${filePath}`), filePath).toBe(true);
+      const url = pathToFileURL(`C:\\repo\\${filePath.replace(/\//g, '\\')}`, { windows: true }).href;
+      expect(url).toContain('%');
+      expect(takes(spec!, url), url).toBe(true);
+      expect(takes(spec!, url.replace('/repo/', '/repo/x')), url).toBe(false);
+    }
+    expect(commandSpec('my tests/a.spec.ts')).toBe('/my(?: |.20)tests/a.spec.ts');
+    expect(commandSpec('tests/é.spec.ts')).toBe('/tests/(?:é|.C3.A9).spec.ts');
+    expect(commandSpec('tests/[id].spec.ts')).toBe('/tests/(?:[[]|.5B)id(?:]|.5D).spec.ts');
+    expect(commandSpec('tests/a%b.spec.ts')).toBe('/tests/a(?:.|.25)b.spec.ts');
+  });
+
+  test('names a spec once, however its path’s separators are written', () => {
+    const cases = [
+      { filePath: 'tests\\a.spec.ts', title: 'x', line: 3 },
+      { filePath: 'tests/a.spec.ts', title: 'y', line: 3 },
+    ];
+    expect(buildRetryCommand(cases)).toBe('npx playwright test "/tests/a.spec.ts:3"');
+    expect(buildRetryArgs(cases)).toBe('"/tests/a.spec.ts:3"');
+    expect(buildRerunCommand(cases)).toBe('npx playwright test "/tests/a.spec.ts" -g "x|y"');
+  });
+
+  test('is written once, and never before a path that starts at a root', () => {
+    expect(commandSpec('tests/a.spec.ts')).toBe('/tests/a.spec.ts');
+    expect(commandSpec('/abs/tests/a.spec.ts')).toBe('/abs/tests/a.spec.ts');
+    expect(commandSpec('C:\\abs\\a.spec.ts')).toBe('C:/abs/a.spec.ts');
+    expect(buildRetryArgs([{ filePath: 'a.spec.ts', title: 't', line: null }])).toBe('"/a.spec.ts"');
+  });
 });

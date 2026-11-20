@@ -1,6 +1,6 @@
 import { BUG_EVIDENCE_LIMITS } from '@piwitests/core/bug-report';
 import type { ViewportBox } from '@piwitests/core/recording';
-import { getRecordingState, recordingMode, RECORDING_KEY, type RecordingState } from '../shared/recording-storage.js';
+import { getRecordingState, RECORDING_KEY, type RecordingState } from '../shared/recording-storage.js';
 import {
   clearRecordingViews,
   countRecordingViews,
@@ -19,7 +19,7 @@ import { sessionArea } from '../shared/session-area.js';
 import { captureThroughDebugger } from './cdp-evidence.js';
 
 /**
- * The page as each step of a bug recording began: the recorder asks for a
+ * The page as each step of a recording began: the recorder asks for a
  * view once the page has settled after a step, or as an action starts when
  * none is left, under an id it makes up, and keeps the id on the step. The
  * worker takes the screenshot, through the recording's debugging session or,
@@ -80,7 +80,7 @@ export async function handleStepView(
   const id = message.id;
   if (typeof id !== 'string' || !VIEW_ID.test(id) || tab?.id == null) return captured(false);
   const state = await getRecordingState();
-  if (!state.active || recordingMode(state) !== 'bug') return captured(false);
+  if (!state.active || !state.bugToken) return captured(false);
   await deleteRecordingView(id).catch(() => undefined);
   if ((await countRecordingViews().catch(() => Infinity)) >= BUG_EVIDENCE_LIMITS.stepShots) return captured(false);
   const takenAt = Date.now();

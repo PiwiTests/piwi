@@ -18,6 +18,14 @@ usePageReload(refresh);
 const { data: historyData } = await useFetch(`/api/test-cases/${testCaseId}/history`, {
   transform: (r: { items: TestCaseHistoryPoint[] }) => r.items,
 });
+/** The environment of each of the test's recent runs, one per run: the desktop app's lab starts on the most common. */
+const historyEnvironmentIds = computed(() => {
+  const byRun = new Map<number, number | null>();
+  for (const point of historyData.value ?? []) {
+    if (!byRun.has(point.runId)) byRun.set(point.runId, point.environmentId ?? null);
+  }
+  return [...byRun.values()];
+});
 provideExternalIdUrl(() => testCase.value?.project?.externalIdUrl);
 provideTestManagementKeys(() => testCase.value?.project?.id);
 
@@ -253,6 +261,7 @@ useViewScroll(
           :test-case-id="Number(testCaseId)"
           :project-id="testCase.project?.id ?? null"
           :project-label="testCase.project?.label ?? testCase.project?.name ?? null"
+          :carried-environment-ids="historyEnvironmentIds"
         />
 
         <div v-else class="flex flex-col gap-4" data-tour="test-overview">

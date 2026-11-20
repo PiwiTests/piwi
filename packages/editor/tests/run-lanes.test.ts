@@ -20,8 +20,15 @@ import {
   type HubSession,
 } from '@piwitests/core/run-hub';
 import { ClientLaneView } from '../src/client-page-view';
-import type { LaneFrame, RunningLine, RunSession } from '../src/protocol';
-import { RunSessions, type LaneViewFrame, type LaneViewLayer, type Viewer } from '../src/run-sessions';
+import type { LaneFrame, RunningLine, RunningLinesChoice, RunSession } from '../src/protocol';
+import {
+  RunSessions,
+  type LaneViewFrame,
+  type LaneViewLayer,
+  type RunSessionsOptions,
+  type Viewer,
+} from '../src/run-sessions';
+import { RunningLines } from '../src/running-lines';
 import { FakeWorker, last, service, waitFor, writeRunWorkspace, type Service } from './run-fixtures';
 
 const ORIGIN = `chrome-extension://${'c'.repeat(32)}`;
@@ -45,7 +52,7 @@ function fakeSocket() {
 }
 
 /** The run `ed-1` in sessions of its own, and how each of its workers joins, talks and hears. */
-function harness(requestMs = 2000, laneTextMs = 40) {
+function harness(requestMs = 2000, laneTextMs = 40, more: Partial<RunSessionsOptions> = {}) {
   const sent: RunSession[] = [];
   const sessions = new RunSessions({
     notify: (session) => void sent.push(session),
@@ -57,6 +64,7 @@ function harness(requestMs = 2000, laneTextMs = 40) {
     requestMs,
     lingerMs: 60_000,
     laneTextMs,
+    ...more,
   });
   const join = (workerIndex: number, parallelIndex: number, features: RunFeature[] = ['view-lane']) => {
     const socket = fakeSocket();
@@ -112,6 +120,22 @@ function harness(requestMs = 2000, laneTextMs = 40) {
     return { socket, read, heard, asked, answerAll, begin };
   };
   return { sessions, sent, join };
+}
+
+/** The running lines of `sessions` as a client that marks them as `choice` says hears them (`told`), told at once. */
+function runningLines(
+  sessions: () => RunSessions,
+  told: RunningLine[],
+  choice: () => RunningLinesChoice | null = () => 'all',
+  paceMs = 0,
+): RunningLines {
+  return new RunningLines({
+    laneRunning: (ref, lane) => sessions().laneRunning(ref, lane),
+    lanePositions: (ref, lane) => sessions().lanePositions(ref, lane),
+    notify: async (line) => void told.push(line),
+    choice,
+    paceMs,
+  });
 }
 
 function viewer(): Viewer & { lanes: LaneViewFrame[]; layers: LaneViewLayer[] } {
@@ -633,13 +657,13 @@ describe('a lane the editor client watches', () => {
     const w = join(0, 0, ['view-lane', 'layers']);
     const lines: RunningLine[] = [];
     const told: LaneViewLayer[] = [];
+    const marked = runningLines(() => sessions, lines);
     const client = new ClientLaneView(
       sessions,
       async () => {},
       undefined,
       async (layer) => void told.push(layer),
-      async (line) => void lines.push(line),
-      () => true,
+      marked,
     );
     const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
     await watch(w, client.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }));
@@ -655,25 +679,26 @@ describe('a lane the editor client watches', () => {
     expect(last(lines)).toEqual({ ...at, call: { test: 't0', title: "Fill getByLabel('Name')", uri, line: 8 } });
     // A stop has a mark of its own: the line goes, and a call log heard at the stop brings none back.
     stopAt(w, 1);
-    client.changed();
+    marked.changed();
     expect(last(lines)).toEqual({ ...at, call: null });
     w.read(callLog('t0', 'Click', 4));
     expect(last(lines)).toEqual({ ...at, call: null });
     w.read({ type: 'running', stop: 1 });
     w.read(callLog('t0', 'Click', 5));
     expect(last(lines)).toMatchObject({ call: { line: 4 } });
-    // A call with no place in the user's code names no line.
+    // A call with no place in the user's code leaves the line where the last placed call was.
+    const placed = lines.length;
     w.read({
       type: 'lane-layer',
       test: 't0',
       layer: 'calls',
       log: { ...callLogOf('Expect', 5), call: { title: 'Expect', file: null, line: null } },
     });
-    expect(last(lines)).toEqual({ ...at, call: null });
+    expect(lines).toHaveLength(placed);
     w.read(callLog('t0', 'Click', 6));
     // The test's end takes it, and a late call log of that test brings none back.
     w.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
-    client.changed();
+    marked.changed();
     expect(last(lines)).toEqual({ ...at, call: null });
     const count = lines.length;
     w.read(callLog('t0', 'Click', 6));
@@ -683,7 +708,7 @@ describe('a lane the editor client watches', () => {
     w.read(callLog('t0', 'Goto', 2));
     expect(last(lines)).toMatchObject({ call: { line: 1 } });
     sessions.commandEnded('ed-1');
-    client.changed();
+    marked.changed();
     expect(last(lines)).toEqual({ ...at, call: null });
   });
 
@@ -696,7 +721,11 @@ describe('a lane the editor client watches', () => {
       async () => {},
       undefined,
       async () => {},
-      async (line) => void lines.push(line),
+      runningLines(
+        () => sessions,
+        lines,
+        () => null,
+      ),
     );
     const layersHeard = () => w.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
     await watch(w, plain.watch({ ref: 'ed-1', lane: 0, on: true, layers: ['events'] }));
@@ -705,13 +734,13 @@ describe('a lane the editor client watches', () => {
     expect(lines).toEqual([]);
     plain.dispose();
 
+    // A lane whose worker says no position keeps no line once its watch ends.
     const marks = new ClientLaneView(
       sessions,
       async () => {},
       undefined,
       async () => {},
-      async (line) => void lines.push(line),
-      () => true,
+      runningLines(() => sessions, lines),
     );
     await watch(w, marks.watch({ ref: 'ed-1', lane: 0, on: true }));
     w.read(callLog('t0', 'Click', 7));
@@ -735,6 +764,158 @@ describe('a lane the editor client watches', () => {
     client.changed();
     expect(sessions.watchesLane(client.viewer, 'ed-1', 1)).toBe(false);
     expect(await client.watch({ ref: 'ed-1', lane: -1, on: true })).toMatchObject({ ok: false });
+  });
+});
+
+describe('the running line of every lane', () => {
+  const position = (test: string, title: string, line: number): RunToHub => ({
+    type: 'position',
+    testId: test,
+    title,
+    place: { file: 'tests/a.spec.ts', line },
+  });
+  const uri = 'file:///work/shop/tests/a.spec.ts';
+  const positionsHeard = (w: { heard(): HubToRun[] }) =>
+    w.heard().flatMap((m) => (m.type === 'positions' ? [m.on] : []));
+
+  /** Sessions whose workers' positions go to running lines marked as `choice` says. */
+  function marked(choice: () => RunningLinesChoice | null, paceMs = 0) {
+    const told: RunningLine[] = [];
+    let lines: RunningLines | null = null;
+    const run = harness(2000, 40, {
+      wantsPositions: () => lines?.wantsPositions() ?? false,
+      position: (at, call) => lines?.fromPosition(at, call),
+    });
+    lines = runningLines(() => run.sessions, told, choice, paceMs);
+    return { ...run, told, lines };
+  }
+
+  test('marks each lane from its worker’s positions, the watched lane’s from its call log, until its test stops or ends', async () => {
+    let choice: RunningLinesChoice = 'all';
+    const { sessions, join, told, lines } = marked(() => choice);
+    const features: RunFeature[] = ['view-lane', 'layers', 'positions'];
+    const w0 = join(0, 0, features);
+    const w1 = join(1, 1, features);
+    const older = join(2, 2, ['view-lane', 'layers']);
+    // A worker whose reporter says positions is asked for them; an older one is not.
+    expect(positionsHeard(w0)).toEqual([true]);
+    expect(positionsHeard(older)).toEqual([]);
+    w1.read(position('t1', 'Click', 7));
+    expect(told).toEqual([{ ref: 'ed-1', lane: 1, worker: 1, call: { test: 't1', title: 'Click', uri, line: 6 } }]);
+    // A position of a test the lane no longer runs marks nothing.
+    w1.read(position('t0', 'Fill', 9));
+    expect(told).toHaveLength(1);
+    // The watched lane follows its call log, whatever its worker's positions say.
+    const client = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async () => {},
+      lines,
+    );
+    await watch(w0, client.watch({ ref: 'ed-1', lane: 0, on: true }));
+    w0.read(callLog('t0', 'Goto', 3));
+    w0.read(position('t0', 'Goto', 30));
+    expect(last(told)).toEqual({ ref: 'ed-1', lane: 0, worker: 0, call: { test: 't0', title: 'Goto', uri, line: 2 } });
+    // Once its watch ends, its positions take over, its line staying until then.
+    const count = told.length;
+    client.dispose();
+    expect(told).toHaveLength(count);
+    w0.read(position('t0', 'Check', 12));
+    expect(last(told)).toMatchObject({ lane: 0, call: { title: 'Check', line: 11 } });
+    // A stop has a mark of its own; a test's end and a worker that leaves take the line too.
+    stopAt(w1, 1);
+    lines.changed();
+    expect(last(told)).toEqual({ ref: 'ed-1', lane: 1, worker: 1, call: null });
+    w0.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
+    lines.changed();
+    expect(last(told)).toEqual({ ref: 'ed-1', lane: 0, worker: 0, call: null });
+    w0.begin();
+    w0.read(position('t0', 'Goto', 3));
+    w0.socket.destroy();
+    await new Promise((r) => setTimeout(r, 0));
+    lines.changed();
+    expect(last(told)).toEqual({ ref: 'ed-1', lane: 0, worker: 0, call: null });
+    // `watched` asks no worker for positions, and `all` again asks them once more.
+    choice = 'watched';
+    lines.switched();
+    sessions.positionsChanged();
+    expect(positionsHeard(w1)).toEqual([true, false]);
+    choice = 'all';
+    sessions.positionsChanged();
+    expect(positionsHeard(w1)).toEqual([true, false, true]);
+  });
+
+  test('takes away the lines the setting no longer marks: each but the watched lane’s with watched, all with off', async () => {
+    let choice: RunningLinesChoice = 'all';
+    const { sessions, join, told, lines } = marked(() => choice);
+    const w0 = join(0, 0, ['view-lane', 'layers', 'positions']);
+    const w1 = join(1, 1, ['view-lane', 'layers', 'positions']);
+    const client = new ClientLaneView(
+      sessions,
+      async () => {},
+      undefined,
+      async () => {},
+      lines,
+    );
+    await watch(w0, client.watch({ ref: 'ed-1', lane: 0, on: true }));
+    w0.read(callLog('t0', 'Goto', 3));
+    w1.read(position('t1', 'Click', 7));
+    expect(told.map((line) => line.lane)).toEqual([0, 1]);
+    choice = 'watched';
+    lines.switched();
+    expect(last(told)).toEqual({ ref: 'ed-1', lane: 1, worker: 1, call: null });
+    // A worker asked for none is heard no more, though one is said before it hears so.
+    w1.read(position('t1', 'Click', 8));
+    expect(told).toHaveLength(3);
+    choice = 'off';
+    lines.switched();
+    await client.switched();
+    expect(last(told)).toEqual({ ref: 'ed-1', lane: 0, worker: 0, call: null });
+    // With none marked, the watch asks no call log.
+    const layersHeard = w0.heard().flatMap((m) => (m.type === 'layers' ? [m.layers] : []));
+    expect(last(layersHeard)).toEqual([]);
+  });
+
+  test('keeps the next test’s line waiting to be told, though the line shown before it went', async () => {
+    const { join, told, lines } = marked(() => 'all', 40);
+    const w = join(0, 0, ['view-lane', 'layers', 'positions']);
+    w.read(position('t0', 'Click', 5));
+    w.read({ type: 'test-end', testId: 't0', status: 'passed', pausedMs: 0 });
+    lines.changed();
+    w.read({
+      type: 'test-begin',
+      testId: 't9',
+      title: ['b'],
+      file: 'tests/a.spec.ts',
+      line: 1,
+      project: '',
+      retry: 0,
+      cannotPause: null,
+    });
+    w.read(position('t9', 'Fill', 6));
+    // Another worker's change comes before the pace ends.
+    lines.changed();
+    await waitFor(() => (told.length > 1 ? true : undefined));
+    expect(told.map((line) => line.call?.title ?? null)).toEqual(['Click', 'Fill']);
+  });
+
+  test('tells the lines that changed together, once a pace at most', async () => {
+    const { join, told } = marked(() => 'all', 40);
+    const workers = [0, 1, 2, 3].map((i) => join(i, i, ['view-lane', 'layers', 'positions']));
+    workers.forEach((w, i) => w.read(position(`t${i}`, 'Click', 5)));
+    // The first goes at once, the three that came within the pace together at its end.
+    expect(told.map((line) => line.lane)).toEqual([0]);
+    workers[0]!.read(position('t0', 'Fill', 6));
+    workers[0]!.read(position('t0', 'Check', 7));
+    await waitFor(() => (told.length > 1 ? true : undefined));
+    expect(told.map((line) => [line.lane, line.call?.title])).toEqual([
+      [0, 'Click'],
+      [1, 'Click'],
+      [2, 'Click'],
+      [3, 'Click'],
+      [0, 'Check'],
+    ]);
   });
 });
 

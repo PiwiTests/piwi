@@ -23,7 +23,7 @@ import { finalizeCodeReach } from '@piwitests/core/code-reach';
 import type { CoverageRuntime } from '@piwitests/core/coverage';
 import { sameFilePath } from '@piwitests/core/locator-break';
 import type { LocatorIndexTest } from '@piwitests/core/locator-index';
-import { codeReach, graphEdges, testRuns } from '../database/schema';
+import { codeReach, graphEdges, graphNodes, testRuns } from '../database/schema';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { handlerNodeKey, testEndpointKey } from '#shared/graph';
 import { indexTests, locatorBranchTag, resolveBranchView } from './locator-usages';
@@ -289,6 +289,8 @@ export async function upsertCodeReach(
 export interface CodeReachPair extends ReachKind {
   testCaseId: number;
   file: string;
+  /** The route the test called that the file handles (`GET /api/orders/:id`), for a reach `via` a route. */
+  route?: string;
 }
 
 /**
@@ -393,7 +395,14 @@ async function serverReachPairs(db: DrizzleDB, projectId: number, file?: string)
     const testCaseId = Number(r.test);
     if (!Number.isInteger(testCaseId)) continue;
     for (const f of filesOf.get(r.route) ?? []) {
-      out.set(`${testCaseId}\x00${f}`, { testCaseId, file: f, runtime: 'server', via: 'route', origin: 'server' });
+      out.set(`${testCaseId}\x00${f}\x00${r.route}`, {
+        testCaseId,
+        file: f,
+        runtime: 'server',
+        via: 'route',
+        origin: 'server',
+        route: r.route,
+      });
     }
   }
   return [...out.values()];
@@ -440,9 +449,71 @@ export interface CodeIndex {
   tests: LocatorIndexTest[];
   /** Per file (a position in `files`) and kind of reach, the tests reaching it (positions in `tests`). */
   reach: Array<{ file: number; tests: number[] } & ReachKind>;
+  /**
+   * The routes a file handles that tests called, each at the 1-based line its handler's body starts at, as the
+   * declared manifest names it (`route`: `GET /api/orders/:id`), with the tests that called it; only routes with a line.
+   */
+  routes: Array<{ file: number; route: string; line: number; tests: number[] }>;
   /** When the newest coverage row was recorded; null when none was. */
   builtAt: string | null;
   truncated: boolean;
+}
+
+/**
+ * The routes of the indexed files that tests called, each at the line the declared manifest gives its handler's body
+ * in that file (the handler node's `attrs.lines`): the viewed branch's node, else the default branch's, never a pruned
+ * one. A route without a line is left out.
+ */
+async function routesOfFiles(
+  db: DrizzleDB,
+  projectId: number,
+  branch: string | null,
+  pairs: readonly CodeReachPair[],
+  files: readonly string[],
+  position: ReadonlyMap<number, number>,
+): Promise<CodeIndex['routes']> {
+  const fileAt = new Map(files.map((f, i) => [f, i]));
+  const testsOf = new Map<string, { file: number; path: string; route: string; tests: Set<number> }>();
+  for (const p of pairs) {
+    const file = fileAt.get(p.file);
+    const test = position.get(p.testCaseId);
+    if (!p.route || file === undefined || test === undefined) continue;
+    const key = `${file}\x00${p.route}`;
+    const entry = testsOf.get(key) ?? { file, path: p.file, route: p.route, tests: new Set<number>() };
+    entry.tests.add(test);
+    testsOf.set(key, entry);
+  }
+  const keys = [...new Set([...testsOf.values()].map((e) => e.path))];
+  // Per handler file, its routes' lines: the viewed branch's node wins over the default branch's.
+  const linesOf = new Map<string, { own: boolean; lines: Record<string, unknown> }>();
+  for (let i = 0; i < keys.length; i += INSERT_CHUNK) {
+    const nodes = await db
+      .select({ key: graphNodes.key, branch: graphNodes.branch, attrs: graphNodes.attrs })
+      .from(graphNodes)
+      .where(
+        and(
+          eq(graphNodes.projectId, projectId),
+          eq(graphNodes.kind, 'handler'),
+          isNull(graphNodes.prunedAt),
+          inArray(graphNodes.key, keys.slice(i, i + INSERT_CHUNK)),
+          branch ? or(isNull(graphNodes.branch), eq(graphNodes.branch, branch)) : isNull(graphNodes.branch),
+        ),
+      );
+    for (const n of nodes) {
+      const lines = (n.attrs as { lines?: unknown } | null)?.lines;
+      if (!lines || typeof lines !== 'object') continue;
+      const own = n.branch !== null;
+      if (!linesOf.get(n.key)?.own) linesOf.set(n.key, { own, lines: lines as Record<string, unknown> });
+    }
+  }
+  return [...testsOf.values()]
+    .flatMap((e) => {
+      const line = linesOf.get(e.path)?.lines[e.route];
+      return typeof line === 'number' && Number.isInteger(line) && line > 0
+        ? [{ file: e.file, route: e.route, line, tests: [...e.tests].sort((a, b) => a - b) }]
+        : [];
+    })
+    .sort((a, b) => a.file - b.file || a.line - b.line || a.route.localeCompare(b.route));
 }
 
 /** The code index of a project on a branch. */
@@ -469,6 +540,9 @@ export async function getCodeIndex(db: DrizzleDB, projectId: number, branch?: st
       if (ids.length) reach.push({ file: i, tests: ids.sort((a, b) => a - b), ...REACH_KINDS[rank]! });
     });
   });
+  // Graph nodes name a branch other than the default one; the default branch's are canonical (null).
+  const branchName = view.name && view.name !== view.defaultBranch ? view.name : null;
+  const routes = await routesOfFiles(db, projectId, branchName, pairs, kept, position);
   const [newest] = await db
     .select({ at: codeReach.lastSeenAt })
     .from(codeReach)
@@ -481,6 +555,7 @@ export async function getCodeIndex(db: DrizzleDB, projectId: number, branch?: st
     files: kept,
     tests,
     reach,
+    routes,
     builtAt: newest?.at ? newest.at.toISOString() : null,
     truncated,
   };

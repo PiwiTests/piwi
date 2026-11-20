@@ -55,6 +55,7 @@ import {
 import {
   DEMO_TEST_MANAGEMENT_CASES,
   DEMO_TEST_MANAGEMENT_CONNECTION,
+  DEMO_TEST_MANAGEMENT_CREDENTIAL,
   DEMO_TEST_MANAGEMENT_CONNECTION_ID,
   DEMO_TEST_MANAGEMENT_PROJECT_KEY,
 } from '../shared/demo/demo-test-management.mjs';
@@ -120,10 +121,13 @@ function q(v) {
   return `'${String(v).replace(/'/g, "''")}'`;
 }
 
+// Column names are quoted: a column may be an SQL keyword (`markers.commit`).
 function insert(table, rows) {
   return rows
     .map((row) => {
-      const cols = Object.keys(row).join(', ');
+      const cols = Object.keys(row)
+        .map((column) => `"${column}"`)
+        .join(', ');
       const vals = Object.values(row).map(q).join(', ');
       return `INSERT INTO ${table} (${cols}) VALUES (${vals});`;
     })
@@ -212,19 +216,22 @@ const PROJECTS = [
     description: 'Integration tests for REST API endpoints',
     created_at: ts('2025-02-15'),
     updated_at: ts('2025-04-25T07:15:00'),
+    // The API serves several tenants from one build: every run Piwi starts, and every command it gives to copy, picks
+    // this one.
+    run_variables: [{ name: 'TENANT', value: 'acme' }],
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
-    // the CI settings list its CI actions.
+    // the CI settings list its CI actions, each naming the Jenkins credential.
     ci_rerun: {
       enabled: true,
       actions: [
         {
           id: 'rerun-failed-tests',
           name: 'Re-run failed tests',
+          // No base URL: the credential's destination is the one it dispatches under.
           target: {
             type: 'ci-server',
             preset: 'jenkins',
-            baseUrl: 'https://jenkins.example.com/',
-            user: 'piwi-bot',
+            credentialId: 1,
             fields: { job: 'api/integration', ref: 'main' },
           },
           inputs: [],
@@ -237,7 +244,7 @@ const PROJECTS = [
             type: 'ci-server',
             preset: 'jenkins',
             baseUrl: 'https://jenkins.example.com/',
-            user: 'piwi-bot',
+            credentialId: 1,
             fields: { job: 'api/smoke', ref: 'main' },
           },
           inputs: [{ name: 'TARGET_ENV', kind: 'fixed', value: 'staging' }],
@@ -251,7 +258,7 @@ const PROJECTS = [
             type: 'ci-server',
             preset: 'jenkins',
             baseUrl: 'https://jenkins.example.com/',
-            user: 'piwi-bot',
+            credentialId: 1,
             fields: { job: 'api/nightly', ref: 'main' },
           },
           inputs: [{ name: 'SUITE', kind: 'choice', options: ['smoke', 'regression', 'full'], default: 'regression' }],
@@ -350,6 +357,14 @@ const PROJECT_URL_PATTERNS = [
     path_prefix: null,
     test_path_prefix: '/shop',
   },
+  // The two dev servers developers' runs open (`CHECKOUT_BASE_URLS.development`), which Local takes by its alias.
+  ...['http://localhost:3000/**', 'http://localhost:5173/**'].map((pattern) => ({
+    pattern,
+    environment: 'local',
+    branch: null,
+    path_prefix: null,
+    test_path_prefix: null,
+  })),
 ].map((p, position) => ({
   id: position + 1,
   project_id: 1,
@@ -359,7 +374,7 @@ const PROJECT_URL_PATTERNS = [
   updated_at: URL_PATTERN_TIME,
 }));
 
-// ── Bug reports (sent from Piwi Picker's Report a bug) ─────────────────────
+// ── Bug reports (sent from a Piwi Picker recording) ────────────────────────
 // One open report on the checkout project, with the steps a tester recorded on
 // staging, the value the page showed, and the evidence they chose to send.
 const BUG_REPORT_TIME = Math.floor(new Date('2025-04-24T15:20:00Z').getTime() / 1000);
@@ -536,6 +551,12 @@ const APP_SETTINGS = [
     key: 'capabilities',
     value: { decisions: { 'machine-runs': 'enabled' } },
     updated_at: ts('2025-04-20T09:00:00'),
+  },
+  // Settings → Source control: the GitHub credential every project without its own reads its repository with.
+  {
+    key: 'scm_credentials',
+    value: { ids: [3] },
+    updated_at: ts('2025-04-02T09:00:00'),
   },
 ];
 // Runs kept forever: the v2.4.0 release run (by the release marker linked to
@@ -812,6 +833,147 @@ const CHECKOUT_BASE_URLS = {
   integration: ['https://integration.checkout.example.com'],
   development: ['http://localhost:3000', 'http://localhost:5173'],
 };
+
+// ── Environments ──────────────────────────────────────────────────────────
+// Each project's environments, as `environments` stores them (`shared/handlers/environments.ts`). A manager declared
+// the four the runs report (`ENVIRONMENTS`), Local taking `development` by its alias. Each sets `TEST_ENV`, which the
+// suite's config reads to load `.env.<TEST_ENV>`, and the checkout project's deployments also set their `BASE_URL`.
+// Production is protected: a run Piwi starts there runs the @smoke tests only, for a project manager. Local is built
+// from the checkout; Integration, Staging and Production are marked deployed. The checkout project also keeps
+// `preview`, discovered from the label of a preview deployment's run and never saved by a manager: built from the
+// checkout, as every environment is until a manager marks it deployed.
+const ENVIRONMENT_TIME = ts('2025-04-10T09:00:00Z');
+const DISCOVERED_ENVIRONMENT_TIME = ts('2025-04-18T14:00:00Z');
+
+/** A project's declared environments, setting `BASE_URL` for each deployment `baseUrls` names by key. */
+function declaredEnvironments(baseUrls = {}) {
+  const runVariables = (key) => [
+    { name: 'TEST_ENV', value: key },
+    ...(baseUrls[key] ? [{ name: 'BASE_URL', value: baseUrls[key] }] : []),
+  ];
+  return [
+    {
+      key: 'local',
+      name: 'Local',
+      description: 'Built from the run’s checkout and served by the config’s webServer.',
+      aliases: ['development'],
+      run_variables: runVariables('local'),
+      app_from_checkout: 1,
+      protected: 0,
+      required_tags: null,
+      env_file: null,
+    },
+    {
+      key: 'integration',
+      name: 'Integration',
+      description: 'Deployed from main after every merge.',
+      aliases: null,
+      run_variables: runVariables('integration'),
+      app_from_checkout: 0,
+      protected: 0,
+      required_tags: null,
+      env_file: '.env.integration',
+    },
+    {
+      key: 'staging',
+      name: 'Staging',
+      description: 'Deployed from develop. Its data is reset every night at 02:00.',
+      aliases: ['stg'],
+      run_variables: runVariables('staging'),
+      app_from_checkout: 0,
+      protected: 0,
+      required_tags: null,
+      env_file: '.env.staging',
+    },
+    {
+      key: 'production',
+      name: 'Production',
+      description: 'The live application, used by customers.',
+      aliases: ['prod'],
+      run_variables: runVariables('production'),
+      app_from_checkout: 0,
+      protected: 1,
+      required_tags: ['@smoke'],
+      env_file: '.env.production',
+    },
+  ];
+}
+
+const PROJECT_ENVIRONMENTS = [];
+for (const project of PROJECTS) {
+  const baseUrls =
+    project.id === 1
+      ? Object.fromEntries(['integration', 'staging', 'production'].map((key) => [key, CHECKOUT_BASE_URLS[key][0]]))
+      : {};
+  const own = declaredEnvironments(baseUrls).map((environment) => ({
+    ...environment,
+    discovered: 0,
+    created_at: ENVIRONMENT_TIME,
+  }));
+  if (project.id === 1) {
+    own.push({
+      key: 'preview',
+      name: 'preview',
+      description: null,
+      aliases: null,
+      run_variables: null,
+      app_from_checkout: 1,
+      protected: 0,
+      required_tags: null,
+      env_file: null,
+      discovered: 1,
+      created_at: DISCOVERED_ENVIRONMENT_TIME,
+    });
+  }
+  own.forEach(({ created_at, ...environment }, position) => {
+    PROJECT_ENVIRONMENTS.push({
+      id: PROJECT_ENVIRONMENTS.length + 1,
+      project_id: project.id,
+      ...environment,
+      key_fold: environment.key.toLowerCase(),
+      position,
+      archived_at: null,
+      created_at,
+      updated_at: created_at,
+    });
+  });
+}
+
+/**
+ * The environment of a project a run's label resolves to, by the rule of `resolveEnvironment`
+ * (`@piwitests/core/environments`): the label trimmed, then the key ignoring case, then an exact alias, then a `*`
+ * alias, in position order. No label resolves to none; a label nothing takes stops the seed, since the server would
+ * discover an environment for it.
+ */
+function seedEnvironmentId(projectId, label) {
+  const trimmed = typeof label === 'string' ? label.trim() : '';
+  if (trimmed === '') return null;
+  const lower = trimmed.toLowerCase();
+  const own = PROJECT_ENVIRONMENTS.filter((e) => e.project_id === projectId);
+  const exact = (alias) => !alias.includes('*') && alias.toLowerCase() === lower;
+  const glob = (alias) =>
+    alias.includes('*') && new RegExp(`^${alias.split('*').map(escapeRegExp).join('.*')}$`, 'i').test(trimmed);
+  const found =
+    own.find((e) => e.key_fold === lower) ??
+    own.find((e) => (e.aliases ?? []).some(exact)) ??
+    own.find((e) => (e.aliases ?? []).some(glob));
+  if (!found) throw new Error(`Project ${projectId}: no seeded environment takes the run label ${trimmed}`);
+  return found.id;
+}
+
+// API Integration reads Staging by default: its project page, its tabs and Analytics count Staging's runs until another
+// environment, or All environments, is picked. The other projects read every environment.
+const DEFAULT_ENVIRONMENTS = [
+  {
+    projectId: 2,
+    environmentId: PROJECT_ENVIRONMENTS.find((e) => e.project_id === 2 && e.key === 'staging').id,
+  },
+];
+
+function escapeRegExp(text) {
+  return text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /** The `use.baseURL` of each run's Playwright projects, by run id, for the runs that record one. */
 const RUN_BASE_URLS = new Map();
 const RUN_GREPS = {
@@ -3745,6 +3907,243 @@ const CONNECTED_APP_KEYS = [
     last_used_at: ts('2025-04-25T08:00:00'),
   },
 ];
+// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project that
+// no action names yet, whose secret is read from a server variable, the GitHub token of every example repository the
+// instance's source control lists, the shop-web one the checkout project names, and the Zephyr Scale token of the
+// canned connection. The demo stores no secret. Its log: dispatches, a refusal, the Check reads of one hour,
+// repository reads, a commit status, a pull request comment, and the connection's reads and results upload.
+const CREDENTIALS = [
+  {
+    id: 1,
+    name: 'Jenkins · piwi-bot',
+    description: 'The Jenkins user allowed to build the API jobs.',
+    service: 'ci-server',
+    user_name: 'piwi-bot',
+    destination: 'https://jenkins.example.com/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-03-10T09:00:00') * 1000,
+    rotated_at: ts('2025-04-01T09:00:00') * 1000,
+    last_used_at: ts('2025-04-24T15:42:00') * 1000,
+  },
+  {
+    id: 2,
+    name: 'Jenkins · release-bot',
+    description: 'Starts the release smoke jobs; sends only the target environment.',
+    service: 'ci-server',
+    user_name: 'release-bot',
+    destination: 'https://jenkins.example.com/job/release/',
+    secret: null,
+    secret_env: 'PIWI_CREDENTIAL_RELEASE_BOT',
+    all_projects: 1,
+    allowed_inputs: ['TARGET_ENV'],
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-18T11:00:00') * 1000,
+    rotated_at: ts('2025-04-18T11:00:00') * 1000,
+    last_used_at: null,
+  },
+  {
+    id: 3,
+    name: 'GitHub · example',
+    description: 'Reads the example repositories; the instance’s source control.',
+    service: 'scm',
+    user_name: null,
+    destination: 'https://api.github.com/repos/example/',
+    secret: null,
+    all_projects: 1,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-02-20T09:00:00') * 1000,
+    rotated_at: ts('2025-04-02T09:00:00') * 1000,
+    last_used_at: ts('2025-04-25T08:40:00') * 1000,
+  },
+  {
+    id: 4,
+    name: 'GitHub · shop-web',
+    description: 'Writes pull-request feedback and commit statuses on shop-web.',
+    service: 'scm',
+    user_name: null,
+    destination: 'https://api.github.com/repos/example/shop-web/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-03-05T10:00:00') * 1000,
+    rotated_at: ts('2025-03-05T10:00:00') * 1000,
+    last_used_at: ts('2025-04-25T09:05:00') * 1000,
+  },
+  {
+    id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+    name: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
+    description: null,
+    service: 'zephyr-scale',
+    user_name: null,
+    destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
+    secret: null,
+    all_projects: 1,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-10T09:00:00') * 1000,
+    rotated_at: ts('2025-04-10T09:00:00') * 1000,
+    last_used_at: ts('2025-04-25T08:15:00') * 1000,
+  },
+];
+const CREDENTIAL_PROJECTS = [
+  { credential_id: 1, project_id: 2 },
+  { credential_id: 4, project_id: 1 },
+];
+/** The SCM credential each project names; the others read with the instance's. */
+const PROJECT_SCM_CREDENTIALS = { 1: 4 };
+for (const project of PROJECTS) project.scm_credential_id = PROJECT_SCM_CREDENTIALS[project.id] ?? null;
+const credentialUse = (id, at, fields) => ({
+  id,
+  credential_id: 1,
+  credential_name: 'Jenkins · piwi-bot',
+  project_id: 2,
+  user_id: DEFAULT_DEMO_USER.id,
+  api_key_id: null,
+  subject_type: 'ci-action',
+  count: 1,
+  created_at: ts(at) * 1000,
+  last_at: ts(at) * 1000,
+  ...fields,
+});
+const CREDENTIAL_USES = [
+  credentialUse(1, '2025-04-22T10:05:00', {
+    feature: 'ci-check',
+    subject_id: 'smoke-staging',
+    destination: 'https://jenkins.example.com/job/api/job/smoke/api/json',
+    result: 'ok',
+    reason: null,
+    count: 3,
+    last_at: ts('2025-04-22T10:31:00') * 1000,
+  }),
+  credentialUse(2, '2025-04-23T09:12:00', {
+    feature: 'ci-dispatch',
+    subject_id: 'rerun-failed-tests',
+    destination: 'https://jenkins.example.com/job/api/job/integration/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(3, '2025-04-23T17:40:00', {
+    feature: 'ci-dispatch',
+    subject_id: 'smoke-staging',
+    destination: 'https://jenkins.example.com/job/api/job/smoke/buildWithParameters',
+    result: 'failed',
+    reason: 'The CI server answered 503',
+  }),
+  credentialUse(4, '2025-04-24T08:02:00', {
+    feature: 'ci-dispatch',
+    project_id: 1,
+    user_id: null,
+    subject_id: 'rerun-checkout',
+    destination: 'https://jenkins.example.com/job/checkout/buildWithParameters',
+    result: 'refused',
+    reason: 'The credential "Jenkins · piwi-bot" is not shared with this project.',
+  }),
+  credentialUse(5, '2025-04-24T15:42:00', {
+    feature: 'ci-dispatch',
+    subject_id: 'rerun-failed-tests',
+    destination: 'https://jenkins.example.com/job/api/job/integration/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(6, '2025-04-25T08:02:00', {
+    credential_id: 3,
+    credential_name: 'GitHub · example',
+    feature: 'scm-read',
+    project_id: 3,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: 'https://api.github.com/repos/example/design-system',
+    result: 'ok',
+    reason: null,
+    count: 14,
+    last_at: ts('2025-04-25T08:40:00') * 1000,
+  }),
+  credentialUse(7, '2025-04-25T09:00:00', {
+    credential_id: 4,
+    credential_name: 'GitHub · shop-web',
+    feature: 'scm-read',
+    project_id: 1,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: 'https://api.github.com/repos/example/shop-web',
+    result: 'ok',
+    reason: null,
+    count: 22,
+    last_at: ts('2025-04-25T09:05:00') * 1000,
+  }),
+  credentialUse(8, '2025-04-25T09:04:00', {
+    credential_id: 4,
+    credential_name: 'GitHub · shop-web',
+    feature: 'scm-status',
+    project_id: 1,
+    user_id: null,
+    subject_type: 'commit',
+    subject_id: SCM_REPOS[1].commits[0].sha,
+    destination: 'https://api.github.com/repos/example/shop-web',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(9, '2025-04-25T09:05:00', {
+    credential_id: 4,
+    credential_name: 'GitHub · shop-web',
+    feature: 'scm-comment',
+    project_id: 1,
+    user_id: null,
+    subject_type: 'pull-request',
+    subject_id: '42',
+    destination: 'https://api.github.com/repos/example/shop-web',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(10, '2025-04-25T08:00:00', {
+    credential_id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+    credential_name: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
+    feature: 'integration-read',
+    project_id: null,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
+    result: 'ok',
+    reason: null,
+    count: 6,
+    last_at: ts('2025-04-25T08:15:00') * 1000,
+  }),
+  credentialUse(11, '2025-04-25T08:15:00', {
+    credential_id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
+    credential_name: DEMO_TEST_MANAGEMENT_CREDENTIAL.name,
+    feature: 'integration-write',
+    project_id: null,
+    user_id: null,
+    subject_type: null,
+    subject_id: null,
+    destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
+    result: 'ok',
+    reason: null,
+  }),
+];
 const RUN_TARGETS = [
   {
     id: 1,
@@ -5881,6 +6280,8 @@ const REBASE_SQL = [
   `UPDATE projects SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE markers SET occurred_at = occurred_at + ${D}, created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
   `UPDATE project_url_patterns SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
+  // archived_at is nullable; NULL + delta stays NULL.
+  `UPDATE environments SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, archived_at = archived_at + ${D};`,
   `UPDATE bug_reports SET created_at = created_at + ${D}, updated_at = updated_at + ${D}, closed_at = closed_at + ${D};`,
   `UPDATE bug_reproductions SET created_at = created_at + ${D};`,
   `UPDATE users SET created_at = created_at + ${D}, updated_at = updated_at + ${D};`,
@@ -5913,6 +6314,9 @@ const REBASE_SQL = [
   `UPDATE network_requests SET start_time = start_time + ${D_MS};`,
   `UPDATE groups SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE group_members SET created_at = created_at + ${D_MS};`,
+  // last_used_at is nullable; NULL + delta stays NULL.
+  `UPDATE credentials SET created_at = created_at + ${D_MS}, rotated_at = rotated_at + ${D_MS}, last_used_at = last_used_at + ${D_MS};`,
+  `UPDATE credential_uses SET created_at = created_at + ${D_MS}, last_at = last_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
   `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
@@ -6742,7 +7146,8 @@ for (const gap of SCENARIO_GAPS) {
 
 // ── Environment change markers (rng-free) ───────────────────────────────────
 // What `syncEnvironmentMarkersForRun` writes as each run finishes: against the
-// previous run of its project on the same branch and environment label,
+// previous run of its project on the same branch and environment (every seeded
+// label resolves to one),
 // incident runs left out on both sides, one marker per kind that changed, none
 // for a project that declines markers.
 {
@@ -6756,7 +7161,7 @@ for (const gap of SCENARIO_GAPS) {
         (p) =>
           p.project_id === run.project_id &&
           p.start_time < run.start_time &&
-          (p.environment ?? null) === (run.environment ?? null) &&
+          seedEnvironmentId(p.project_id, p.environment) === seedEnvironmentId(run.project_id, run.environment) &&
           (p.branch ?? null) === (run.branch ?? null),
       )
       .at(-1);
@@ -7208,6 +7613,7 @@ const TEST_MANAGEMENT_CONNECTIONS = [
     base_url: DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl,
     config: DEMO_TEST_MANAGEMENT_CONNECTION.config,
     credentials: null,
+    credential_id: DEMO_TEST_MANAGEMENT_CREDENTIAL.id,
     status: 'unverified',
     last_checked_at: null,
     last_error: null,
@@ -7377,6 +7783,63 @@ const INTEGRATION_ACTIONS = SYNC_RUNS.map((run, index) => {
   }
 }
 
+// ── Each run's environment (rng-free) ──────────────────────────────────────
+// The environment each run's label resolves to, as ingest stores it with the run.
+for (const run of TEST_RUNS) run.environment_id = seedEnvironmentId(run.project_id, run.environment);
+
+// ── What else names an environment (rng-free) ──────────────────────────────
+// Markers, URL patterns and CI actions keep their label as written and the environment it resolves to, as the routes
+// and the server's automatic markers store them.
+for (const row of [
+  ...MARKERS,
+  ...RELEASE_MARKERS,
+  ...EARLIER_RELEASES,
+  ...INCIDENT_MARKERS,
+  ...ENVIRONMENT_MARKERS,
+  ...PROJECT_URL_PATTERNS,
+]) {
+  row.environment_id = seedEnvironmentId(row.project_id, row.environment);
+}
+for (const project of PROJECTS) {
+  for (const action of project.ci_rerun?.actions ?? []) {
+    if (action.environment) action.environmentId = seedEnvironmentId(project.id, action.environment);
+  }
+}
+
+// ── Deploys of the checkout project's Staging (rng-free) ──────────────────
+// Staging is a deployed environment: its deploy pipeline posts a deploy marker with the commit it deployed, half an
+// hour before the first Staging run that tested it, so each Staging run reads its deployed commit from the latest
+// one and the Changes tab, the failure pages and the environment's activity name its deploys.
+const STAGING_ENVIRONMENT_ID = seedEnvironmentId(1, 'staging');
+const DEPLOY_MARKERS = [];
+{
+  const stagingRuns = TEST_RUNS.filter(
+    (run) => run.project_id === 1 && run.environment_id === STAGING_ENVIRONMENT_ID,
+  ).sort((a, b) => a.start_time - b.start_time || a.id - b.id);
+  let deployed = null;
+  for (const run of stagingRuns) {
+    const meta = typeof run.metadata === 'string' ? JSON.parse(run.metadata) : run.metadata;
+    const commit = meta?.scm?.commit ?? null;
+    if (!commit || commit === deployed) continue;
+    deployed = commit;
+    const at = run.start_time - 1800;
+    DEPLOY_MARKERS.push({
+      project_id: 1,
+      occurred_at: at,
+      label: `Staging deploy ${DEPLOY_MARKERS.length + 1}`,
+      description: 'Posted by the deploy pipeline.',
+      category: 'deploy',
+      environment: 'staging',
+      environment_id: STAGING_ENVIRONMENT_ID,
+      commit: commit.toLowerCase(),
+      source: 'manual',
+      run_id: null,
+      created_at: at,
+      updated_at: at,
+    });
+  }
+}
+
 // ── Assemble SQL ───────────────────────────────────────────────────────────
 const lines = [
   '-- Piwi Dashboard demo seed',
@@ -7407,6 +7870,11 @@ const lines = [
   insert('api_keys', CONNECTED_APP_KEYS),
   insert('run_targets', RUN_TARGETS),
   '',
+  '-- Credentials (Settings → Credentials) and their log',
+  insert('credentials', CREDENTIALS),
+  insert('credential_projects', CREDENTIAL_PROJECTS),
+  insert('credential_uses', CREDENTIAL_USES),
+  '',
   '-- Starred projects (of the identity the demo opens as)',
   insert('project_stars', PROJECT_STARS),
   '',
@@ -7415,6 +7883,15 @@ const lines = [
   '',
   '-- Project-tag associations',
   insert('project_tags', PROJECT_TAGS),
+  '',
+  '-- Project environments (referenced by test_runs)',
+  insert('environments', PROJECT_ENVIRONMENTS),
+  '',
+  '-- Default environments (the environment a project reads when none is picked), once the environments exist',
+  ...DEFAULT_ENVIRONMENTS.map(
+    ({ projectId, environmentId }) =>
+      `UPDATE projects SET default_environment_id = ${environmentId} WHERE id = ${projectId};`,
+  ),
   '',
   "-- Test management: the checkout project's Zephyr Scale binding and the catalog of its project",
   insert('integration_connections', TEST_MANAGEMENT_CONNECTIONS),
@@ -7459,6 +7936,7 @@ const lines = [
       ...m,
     })),
   ),
+  insert('markers', DEPLOY_MARKERS),
   '',
   '-- Test selections',
   insert('test_selections', SELECTIONS),
@@ -7573,6 +8051,7 @@ console.log(`✅  Demo seed written to ${OUTPUT}`);
 console.log(`✅  Version file written to ${VERSION_OUTPUT}`);
 console.log(`   Hash       : ${hash}`);
 console.log(`   Projects   : ${PROJECTS.length}`);
+console.log(`   Environments: ${PROJECT_ENVIRONMENTS.length}`);
 console.log(`   Users      : ${USERS.length}`);
 console.log(`   Groups     : ${GROUPS.length}`);
 console.log(`   Bindings   : ${ROLE_BINDINGS.length}`);

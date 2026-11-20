@@ -12,9 +12,11 @@ import { apiError } from '../../server/utils/api-error';
 import {
   answerRunRequest,
   connectRunTarget,
+  disconnectRunTarget,
   instanceUrlOf,
   keyToKeep,
   launchOf,
+  linkedFolders,
   linksOf,
   outcomeOf,
   planAgain,
@@ -354,6 +356,88 @@ describe('a key the instance revoked', () => {
     expect(runTargetConnection()).toMatchObject({ state: 'revoked', keyToKeep: false });
     expect(keyToKeep()).toBe(null);
     expect(JSON.stringify(shell)).not.toContain(KEY);
+  });
+
+  test('stays revoked, with its reason, once the shell forgets it, until the next connect', async () => {
+    const heard: RunTargetMessage[] = [];
+    subscribeRunTargetWindow((message) => heard.push(message));
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => heard.some((m) => m.type === 'run-request'));
+
+    instance.revoke();
+    await until(() => runTargetConnection().state === 'revoked');
+    const revoked = runTargetConnection();
+    expect(revoked).toMatchObject({ instance: instance.url, errorCode: 'disconnected' });
+    expect(revoked.error).toBeTruthy();
+
+    // The window has the shell forget the revoked key, which disconnects the server: the instance is no longer the
+    // one the runs' pages may come from.
+    disconnectRunTarget();
+    expect(runTargetConnection()).toMatchObject({
+      state: 'revoked',
+      instance: null,
+      error: revoked.error,
+      errorCode: 'disconnected',
+    });
+    expect(heard[heard.length - 1]).toMatchObject({ type: 'run-target', connection: { state: 'revoked' } });
+
+    expect(await connectRunTarget(instance.url)).toMatchObject({ state: 'signing-in', error: null, errorCode: null });
+  });
+});
+
+describe('connecting to another instance', () => {
+  test('tells it none of the folders linked for the one before, until the shell hands its own', async () => {
+    const other = await fakeInstance();
+    try {
+      const heard: RunTargetMessage[] = [];
+      subscribeRunTargetWindow((message) => heard.push(message));
+      useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+      await until(() => instance.calls.some((c) => c.path === '/api/run-targets/self'));
+
+      disconnectRunTarget();
+      await connectRunTarget(other.url);
+      await until(() => other.calls.some((c) => c.path === '/api/run-targets/self'));
+      expect(other.calls.find((c) => c.path === '/api/run-targets/self')!.body).toMatchObject({ projectIds: [] });
+      expect(runTargetConnection()).toMatchObject({ instance: other.url, linkedProjectIds: [] });
+      // Its request for a project of the same id is not planned in the other instance's folder.
+      const fromOther = () =>
+        heard.filter(
+          (m): m is Extract<RunTargetMessage, { type: 'run-request' }> =>
+            m.type === 'run-request' && m.request.instance === other.url,
+        );
+      await until(() => fromOther().length > 0);
+      expect(fromOther()[0]!.request).toMatchObject({ hasFolder: false, runnable: false });
+      // The runs' hub keeps the folders handed last, for the runs still going there.
+      expect(linkedFolders()).toEqual([{ id: 3, path: folder }]);
+      // Folders the shell names for another instance than the one connected now are left aside.
+      useLinks(new Map([[7, folder]]), instance.url);
+      expect(runTargetConnection().linkedProjectIds).toEqual([]);
+
+      // The shell keeps the new key and hands this instance's folders: the request held meanwhile is checked again.
+      useKeptKey(other.url, KEY, new Map([[3, folder]]));
+      expect(runTargetConnection().linkedProjectIds).toEqual([3]);
+      await until(() => fromOther().some((m) => m.request.runnable));
+      expect(fromOther().pop()!.request).toMatchObject({ hasFolder: true, runnable: true });
+      await until(() =>
+        other.calls.some(
+          (c) => c.path === '/api/run-targets/self' && (c.body as { projectIds: number[] }).projectIds.includes(3),
+        ),
+      );
+    } finally {
+      await other.close();
+    }
+  });
+
+  test('connected to the same instance again, tells it its folders before the shell keeps the key', async () => {
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => instance.calls.some((c) => c.path === '/api/run-targets/self'));
+
+    disconnectRunTarget();
+    instance.calls.length = 0;
+    await connectRunTarget(instance.url);
+    await until(() => instance.calls.some((c) => c.path === '/api/run-targets/self'));
+    expect(instance.calls.find((c) => c.path === '/api/run-targets/self')!.body).toMatchObject({ projectIds: [3] });
+    expect(runTargetConnection().linkedProjectIds).toEqual([3]);
   });
 });
 

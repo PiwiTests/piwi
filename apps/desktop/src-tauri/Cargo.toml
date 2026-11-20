@@ -1,6 +1,6 @@
 [package]
 name = "piwi-desktop"
-version = "0.70.0" # x-release-please-version
+version = "0.74.0" # x-release-please-version
 description = "Piwi Desktop app"
 authors = ["piwitests"]
 license = "FSL-1.1-MIT"
@@ -20,7 +20,7 @@ tauri-build = { version = "2", features = [] }
 # always on in debug builds). It stays dormant unless the app is launched with
 # `--devtools` or `PIWI_DEBUG` set — see `run()` in src/lib.rs — so a normal
 # shipped launch is unchanged, but a user chasing a bug can open the inspector.
-tauri = { version = "2", features = ["tray-icon", "devtools"] }
+tauri = { version = "2", features = ["tray-icon", "devtools", "image-png"] }
 tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
@@ -47,6 +47,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 semver = "1"
 # A folder's real path without Windows' `\\?\` verbatim prefix (`runner::real_path`). Already built for Tauri.
 dunce = "1"
+# The system's language, which Piwi Runner speaks until one is chosen in its window (`shell_words.rs`).
+sys-locale = "0.3"
 # Only compiled into e2e test builds (see the `e2e-testing` feature). Lets a
 # Playwright runner drive the real webview to smoke-test the shell integration.
 tauri-plugin-playwright = { version = "0.4", optional = true }

@@ -21,6 +21,9 @@ import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
 import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
 import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
+import { commitUrl } from '#shared/scm-urls';
+import { deployedCommitSource } from '#shared/deployed-words';
+import { normalizeGitUrl } from '~~/server/utils/scm/git-url';
 
 /**
  * The run page's detail header (the run variant of `DetailHeader`): status,
@@ -72,6 +75,16 @@ const canFileRunIssue = computed(
 );
 const runIssueOpen = ref(false);
 
+// The environment the page's copied commands and run requests are for: the run's, unless protected or archived.
+const shownEnvironment = computed(() => shownEnvironmentOf(props.testRun));
+const { environmentId: commandEnvironmentId } = useCommandEnvironment(
+  () => props.testRun?.projectId,
+  () => shownEnvironment.value,
+  { listOnMount: false },
+);
+/** Why the run may not have tested its environment, one sentence each. */
+const environmentWarnings = computed(() => props.testRun?.environmentWarnings ?? []);
+
 const storageStats = computed(() => props.testRun?.storageStats);
 const ci = computed(() => props.testRun?.metadata?.ci);
 
@@ -106,6 +119,22 @@ const environmentWarning = computed(() => {
   return null;
 });
 const scm = computed(() => props.testRun?.metadata?.scm);
+/** The application's commit a run of a deployed environment ran against, linked in the run's repository. */
+const deployed = computed(() => {
+  const found = props.testRun?.deployedCommit;
+  if (!found) return null;
+  const source = deployedCommitSource(found);
+  return {
+    short: found.commit.slice(0, 7),
+    title: `The application's deployed commit ${found.commit}, ${source}`,
+    href: commitUrl(normalizeGitUrl(scm.value?.remoteUrl ?? null), found.commit),
+    source,
+  };
+});
+/** A deployed environment whose deployed commit nothing named. */
+const deployedUnknown = computed(
+  () => props.testRun?.environmentAppFromCheckout === false && !props.testRun?.deployedCommit,
+);
 /** Where the run started and the editor that steers it (`runStartedFrom`). */
 const startedFrom = computed(() => runStartedFrom(props.testRun?.metadata));
 const tags = computed(() => props.testRun?.metadata?.tags as string[] | undefined);
@@ -188,8 +217,10 @@ const {
   copyCommand: copyRetryCommand,
   copied: retryCopied,
   title: retryTitle,
-} = useRunRetryCommand(() =>
-  runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases),
+} = useRunRetryCommand(
+  () => (runEnded.value ? props.testRun?.testCases : (props.liveCases ?? props.testRun?.testCases)),
+  () => props.testRun?.projectId,
+  () => commandEnvironmentId.value,
 );
 
 /**
@@ -428,7 +459,11 @@ function onLabelKeydown(e: KeyboardEvent) {
           <span class="hidden sm:inline">Copy retry command</span>
         </UButton>
         <template #content>
-          <RetryCommandOptions :projects="retryProjects" />
+          <RetryCommandOptions
+            v-model:environment-id="commandEnvironmentId"
+            :projects="retryProjects"
+            :project-id="testRun?.projectId"
+          />
         </template>
       </UPopover>
 
@@ -442,6 +477,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         :run-title="rerunMain.runTitle"
         :preset-options="rerunMain.options"
         :source-run-id="testRun?.id"
+        :environment-id="testRun?.environmentId ?? null"
         :other-sets="rerunSets.slice(1)"
       />
 
@@ -450,6 +486,8 @@ function onLabelKeydown(e: KeyboardEvent) {
         :project-id="testRun.projectId"
         :machine-runs="testRun.machineRuns ?? false"
         :choices="machineChoices"
+        :shown-environment-id="testRun.environmentId ?? null"
+        :shown-environment="shownEnvironment"
       />
 
       <UButton
@@ -521,7 +559,22 @@ function onLabelKeydown(e: KeyboardEvent) {
       </ClientOnly>
       <template v-if="testRun?.environment">
         <span class="text-dimmed">·</span>
-        <EnvironmentBadge :name="testRun.environment" />
+        <EnvironmentBadge :name="testRun.environmentName ?? testRun.environment" :label="testRun.environment" />
+        <template v-if="deployed">
+          <a
+            v-if="deployed.href"
+            :href="deployed.href"
+            target="_blank"
+            rel="noopener"
+            class="hover:underline decoration-dotted underline-offset-2"
+            :title="deployed.title"
+            data-testid="run-deployed-commit"
+            >app <code class="font-mono">{{ deployed.short }}</code></a
+          >
+          <span v-else :title="deployed.title" data-testid="run-deployed-commit"
+            >app <code class="font-mono">{{ deployed.short }}</code></span
+          >
+        </template>
       </template>
       <template v-if="(testRun?.reusedCount ?? 0) > 0">
         <span class="text-dimmed">·</span>
@@ -622,6 +675,24 @@ function onLabelKeydown(e: KeyboardEvent) {
             · {{ environmentWarning }}</span
           >
         </span>
+      </div>
+      <div
+        v-if="deployed || deployedUnknown || testRun?.environmentAppFromCheckout"
+        class="flex items-start gap-1.5 min-w-0"
+        data-testid="run-application"
+        data-tour="run-deployed-commit"
+      >
+        <span class="text-muted shrink-0 inline-flex items-center gap-1"
+          >Application <HelpHint topic="run.deployedCommit"
+        /></span>
+        <span v-if="deployed" class="min-w-0 break-words"
+          >Deployed <code class="font-mono" :title="deployed.title">{{ deployed.short }}</code
+          >, {{ deployed.source }}</span
+        >
+        <span v-else-if="deployedUnknown" class="min-w-0 break-words"
+          >Deployed, at a commit nothing reported: it may differ from the run's commit</span
+        >
+        <span v-else>Built from the run's checkout</span>
       </div>
       <UModal v-model:open="environmentOpen" title="Run environment" :ui="{ content: 'max-w-3xl' }">
         <template #body>
@@ -766,6 +837,17 @@ function onLabelKeydown(e: KeyboardEvent) {
 
     <template #below>
       <div class="space-y-3 empty:hidden">
+        <div
+          v-if="environmentWarnings.length"
+          class="flex items-start gap-2 text-sm"
+          data-testid="run-environment-warnings"
+          data-shot="run-environment-warnings"
+        >
+          <UIcon name="i-lucide-triangle-alert" class="size-4 shrink-0 mt-0.5 text-warning" aria-hidden="true" />
+          <ul class="space-y-0.5 text-highlighted leading-relaxed">
+            <li v-for="warning in environmentWarnings" :key="warning">{{ warning }}</li>
+          </ul>
+        </div>
         <RunErrors
           v-if="runErrors.length"
           :errors="runErrors"

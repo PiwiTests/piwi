@@ -27,7 +27,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, user } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
 
   const sha = getQuery(event).sha as string | undefined;
   if (!sha) throw apiError({ statusCode: 400, message: 'Missing sha query parameter' });
@@ -55,7 +55,10 @@ export default eventHandler(async (event) => {
   const repositoryUrl = normalizeGitUrl(meta?.scm?.remoteUrl ?? null);
   if (!repositoryUrl) return null;
 
-  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId);
+  const provider = await createScmProvider(repositoryUrl, db, cluster.projectId, {
+    // The virtual administrator of an instance without sign-in is id 0, no user row.
+    actor: { userId: user.id || null, apiKeyId: (event.context.apiKeyId as number | undefined) ?? null },
+  });
   if (!provider) return null;
 
   try {

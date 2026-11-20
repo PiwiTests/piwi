@@ -54,6 +54,7 @@ function makeData(overrides: Partial<ParsedTraceData> = {}): ParsedTraceData {
     consoleEntries: [],
     networkRequests: [],
     frameSnapshots: [],
+    screencastFrames: [],
     failingAction,
     failingActionIndex: 0,
     contexts: [],

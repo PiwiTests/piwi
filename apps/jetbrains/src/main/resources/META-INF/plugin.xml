@@ -35,8 +35,8 @@
           Playwright and writes what you do there into the test, calling your page objects when connected. No
           instance needed.</li>
       <li><b>The status bar.</b> The latest run of the Playwright config you are editing in, the run you started as it
-          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions. That run
-          pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes
+          runs, and what it changed once it ended, in red while tests fail; a click lists Piwi's actions. A run you
+          debug pauses at your breakpoints, its paused line marked in the editor, and steps, runs to the caret or resumes
           with the debugger's keys; from the paused line, the plugin writes an assertion or a mock of a request the
           page made.</li>
     </ul>
@@ -87,6 +87,8 @@
         <!-- The New UI's outline mark at 16 and 20 px in place of the classic filled one, written by the brand generator. -->
         <iconMapper mappingFile="PiwiIconMappings.json"/>
         <statusBarWidgetFactory id="piwi.status" implementation="dev.piwitests.jetbrains.PiwiStatusBarWidgetFactory"/>
+        <statusBarWidgetFactory id="piwi.environment" implementation="dev.piwitests.jetbrains.PiwiEnvironmentWidgetFactory"
+                                order="after piwi.status"/>
         <!-- The Paused page and Worker tabs close; the failures tab does not (isCloseable = false). -->
         <toolWindow id="Piwi" anchor="bottom" icon="/icons/piwi.svg" canCloseContents="true"
                     factoryClass="dev.piwitests.jetbrains.PiwiFailuresToolWindowFactory"/>
@@ -121,9 +123,14 @@
             <group id="Piwi.Run" text="Run" compact="true">
                 <action id="Piwi.RunTestAtCursor" class="dev.piwitests.jetbrains.RunTestAtCursorAction"
                         text="Run the test at the caret" icon="AllIcons.Actions.Execute"
-                        description="Run the test whose test(…) call holds the caret, in the Run tool window, with the breakpoints">
+                        description="Run the test whose test(…) call holds the caret, in the Run tool window">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift K"/>
+                    <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift J" replace-all="true"/>
+                    <keyboard-shortcut keymap="Visual Studio OSX" first-keystroke="meta alt shift J" replace-all="true"/>
                 </action>
+                <action id="Piwi.DebugTestAtCursor" class="dev.piwitests.jetbrains.DebugTestAtCursorAction"
+                        text="Debug the test at the caret" icon="AllIcons.Actions.StartDebugger"
+                        description="Run the test whose test(…) call holds the caret headed, stopping at the breakpoints and holding its failures"/>
                 <action id="Piwi.VerifyTestAtCursor" class="dev.piwitests.jetbrains.VerifyTestAtCursorAction"
                         text="Verify the test at the caret ×3"
                         icon="AllIcons.Actions.Rerun"
@@ -131,7 +138,7 @@
                 </action>
                 <action id="Piwi.RunSpec" class="dev.piwitests.jetbrains.RunSpecAction" text="Run this spec"
                         icon="AllIcons.Actions.RunAll"
-                        description="Run the tests of this spec Piwi knows, in the Run tool window, with the breakpoints">
+                        description="Run every test of this spec as it stands, in the Run tool window">
                 </action>
                 <action id="Piwi.RunTestsForFile" icon="/icons/testsForFile.svg" class="dev.piwitests.jetbrains.RunTestsForFileAction"
                         text="Run the tests that reach this file" description="Run them in the Run tool window">
@@ -143,8 +150,14 @@
                         text="Re-run the failing tests" icon="AllIcons.RunConfigurations.RerunFailedTests"
                         description="Run every test that still fails, or whose failing line changed since its run">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift F"/>
+                    <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift T" replace-all="true"/>
+                    <keyboard-shortcut keymap="ReSharper OSX" first-keystroke="meta alt shift T" replace-all="true"/>
+                    <keyboard-shortcut keymap="TextMate" first-keystroke="meta alt shift J" replace-all="true"/>
                     <synonym text="Rerun failed tests"/>
                 </action>
+                <action id="Piwi.RunOptions" class="dev.piwitests.jetbrains.RunOptionsAction" text="Run options…"
+                        icon="AllIcons.General.Settings"
+                        description="Run headed and Hold failures, for every run Piwi starts in every project"/>
                 <action id="Piwi.RunHeaded" class="dev.piwitests.jetbrains.RunHeadedAction" text="Turn headed runs on or off"
                         description="Run every test Piwi starts headed, in every project, with its browser window shown"/>
                 <action id="Piwi.RunHoldFailures" class="dev.piwitests.jetbrains.RunHoldFailuresAction"
@@ -158,6 +171,9 @@
                         icon="/icons/record.svg"
                         description="Open a browser with the project's Playwright and write what you do there at the caret: steps of the test, method or function it is in, else a new test">
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                    <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift G" replace-all="true"/>
+                    <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift G" remove="true"/>
+                    <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt shift Z" replace-all="true"/>
                     <synonym text="Playwright codegen"/>
                     <synonym text="Record a test"/>
                 </action>
@@ -169,8 +185,11 @@
                 <action id="Piwi.StopRecording" class="dev.piwitests.jetbrains.StopRecordingAction" text="Stop recording"
                         icon="/icons/stopRecording.svg"
                         description="Close the recording's browser; the recorded lines stay, one undo away">
-                    <!-- Record here's chord: the two never apply to the same file at once. -->
+                    <!-- Record here's chord: from the keyboard, Record here gives way while a recording runs. -->
                     <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift R"/>
+                    <keyboard-shortcut keymap="Visual Studio" first-keystroke="ctrl alt shift G" replace-all="true"/>
+                    <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift G" remove="true"/>
+                    <keyboard-shortcut keymap="Mac OS X 10.5+" first-keystroke="meta alt shift Z" replace-all="true"/>
                 </action>
                 <action id="Piwi.PauseRecording" class="dev.piwitests.jetbrains.PauseRecordingAction" text="Pause recording"
                         icon="/icons/recordPaused.svg"
@@ -181,7 +200,13 @@
                         description="Write what is done in the browser again, over the recorded lines">
                 </action>
                 <action id="Piwi.PairPicker" icon="/icons/pair.svg" class="dev.piwitests.jetbrains.PairPickerAction" text="Pair with Piwi Picker"
-                        description="Copy the address Piwi Picker sends locators and recorded steps to"/>
+                        description="Show the Piwi Picker tab: Pair in Piwi Picker's settings asks this IDE, which you allow here"/>
+                <action id="Piwi.CopyPickerAddress" icon="AllIcons.Actions.MenuPaste" class="dev.piwitests.jetbrains.CopyPickerAddressAction"
+                        text="Copy the pairing address for Piwi Picker"
+                        description="Copy the address Piwi Picker's settings take under Pair with an address, for an IDE Pair does not find"/>
+                <action id="Piwi.UnpairPicker" icon="AllIcons.Actions.GC" class="dev.piwitests.jetbrains.UnpairPickerAction"
+                        text="Unpair Piwi Picker"
+                        description="A new pairing token: Piwi Picker reaches this IDE again only once paired again"/>
             </group>
             <separator/>
             <!--
@@ -280,6 +305,9 @@
                 <action id="Piwi.CompareWith" class="dev.piwitests.jetbrains.CompareWithAction" text="Compare with…"
                         icon="AllIcons.Actions.Diff"
                         description="Choose the run the failures are read against: a branch, a run, or your local runs only"/>
+                <action id="Piwi.ChooseEnvironment" class="dev.piwitests.jetbrains.ChooseEnvironmentAction"
+                        text="Choose environment…" icon="AllIcons.Webreferences.Server"
+                        description="Choose the environment the runs Piwi starts for this config's tests are for, or none"/>
                 <action id="Piwi.GroupFailuresBy" class="dev.piwitests.jetbrains.GroupFailuresByAction"
                         text="Group the failures by…" icon="AllIcons.Actions.ShowAsTree"
                         description="Group the failures of the Piwi tool window by file, cluster or owner, or list them flat"/>
@@ -342,7 +370,12 @@
             <action id="Piwi.OpenRunPage" class="dev.piwitests.jetbrains.OpenRunPageAction" text="Open the page of a run of this project"
                     icon="AllIcons.General.Web" description="Open the page of the run started or followed here"/>
             <action id="Piwi.OpenFailures" class="dev.piwitests.jetbrains.OpenFailuresAction" text="Open the failures"
-                    icon="/icons/piwi.svg" description="Open the Piwi tool window's failures"/>
+                    icon="/icons/piwi.svg" description="Open the Piwi tool window's failures">
+                <keyboard-shortcut keymap="$default" first-keystroke="ctrl alt shift B"/>
+                <keyboard-shortcut keymap="Default for XWin" first-keystroke="ctrl alt shift G" replace-all="true"/>
+                <keyboard-shortcut keymap="ReSharper" first-keystroke="ctrl alt shift B" remove="true"/>
+                <keyboard-shortcut keymap="ReSharper OSX" first-keystroke="meta alt shift S" replace-all="true"/>
+            </action>
             <action id="Piwi.ShowFlakyTests" class="dev.piwitests.jetbrains.ShowFlakyTestsAction" icon="/icons/testFlaky.svg"
                     text="Show the run's flaky tests" description="Open the Piwi tool window on the run's flaky tests"/>
             <action id="Piwi.NodeSettings" class="dev.piwitests.jetbrains.NodeSettingsAction" text="Node.js settings…"
@@ -351,13 +384,22 @@
                     text="Go to the recorded lines" icon="AllIcons.Actions.EditSource"
                     description="Open the lines the recording in progress writes"/>
         </group>
+        <!-- The Tests tab's actions on its selected nodes (`TESTS_SELECTION`): its toolbar, its right-click menu, and Find Action. -->
+        <group id="Piwi.TestsActions">
+            <action id="Piwi.Tests.Run" class="dev.piwitests.jetbrains.RunTestsNodesAction" text="Run with Piwi"
+                    description="Run the selected tests, each folder, spec or describe block by its own filter"/>
+            <action id="Piwi.Tests.Debug" class="dev.piwitests.jetbrains.DebugTestsNodesAction" text="Debug with Piwi"
+                    description="Run the selected tests headed, at your breakpoints, holding each failure"/>
+            <action id="Piwi.Tests.Verify" class="dev.piwitests.jetbrains.VerifyTestsNodesAction" text="Verify ×3 with Piwi"
+                    description="Run the selected tests three times, without retries"/>
+        </group>
         <!-- The Piwi tool window's actions on its selected failure (`FAILURE_NODE`): its right-click menu, and Find Action. -->
         <group id="Piwi.FailureActions">
-            <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run this test"
+            <action id="Piwi.Failure.RunTest" class="dev.piwitests.jetbrains.RunFailureTestAction" text="Run with Piwi"
                     description="Run the selected failure's test as Piwi runs it"/>
-            <action id="Piwi.Failure.Debug" class="dev.piwitests.jetbrains.DebugFailureAction" text="Debug this failure"
+            <action id="Piwi.Failure.Debug" class="dev.piwitests.jetbrains.DebugFailureAction" text="Debug with Piwi"
                     description="Run the selected failure's test headed, stopping once at the line it failed through"/>
-            <action id="Piwi.Failure.Verify" class="dev.piwitests.jetbrains.VerifyFailureAction" text="Verify the test ×3"
+            <action id="Piwi.Failure.Verify" class="dev.piwitests.jetbrains.VerifyFailureAction" text="Verify ×3 with Piwi"
                     description="Run the selected failure's test three times, without retries"/>
             <action id="Piwi.Failure.GoToTest" class="dev.piwitests.jetbrains.GoToFailureTestAction" text="Go to the test"
                     description="Open the selected failure's test at its test(…) line"/>
@@ -374,6 +416,11 @@
             <action id="Piwi.Failure.FindBreakingCommit" class="dev.piwitests.jetbrains.FindBreakingCommitAction"
                     text="Find the breaking commit in the desktop app"
                     description="Find the commit that broke the selected CI failure's test, in the desktop app"/>
+            <action id="Piwi.Failure.FlakeLab" class="dev.piwitests.jetbrains.FlakeLabFailureAction"
+                    text="Run Flake Lab on its untested suspects in the desktop app"
+                    description="Run Flake Lab on the flake suspects no experiment tested yet of the selected CI failure's test, in the desktop app"/>
+            <action id="Piwi.Failure.FileIssue" class="dev.piwitests.jetbrains.FileIssueAction" text="File an issue"
+                    description="Open the page of the selected failure's cluster, where the dashboard files an issue"/>
         </group>
         <!--
           While a run is live, its controls where the debugger keeps its own: a stop's first in the editor's context
@@ -401,6 +448,7 @@
         <group id="Piwi.EditorPopup" class="dev.piwitests.jetbrains.PiwiEditorPopupGroup" text="Piwi" icon="/icons/piwi.svg" popup="true">
             <add-to-group group-id="EditorPopupMenu" anchor="last"/>
             <reference ref="Piwi.RunTestAtCursor"/>
+            <reference ref="Piwi.DebugTestAtCursor"/>
             <reference ref="Piwi.VerifyTestAtCursor"/>
             <reference ref="Piwi.RunSpec"/>
             <reference ref="Piwi.RunTestsForFile"/>

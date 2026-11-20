@@ -32,16 +32,26 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 ### Service and protocol
 
 - **No logic the VS Code extension would need too.** A new feature starts as a service request.
+- **A `file:` URI from the service is read by `Glue.pathOfUri` alone, and finds its file through `fileOfUri`, never a
+  VFS URL lookup (`findFileByUrl`)**, which reads no escape (`%20` for a space). `GlueTest` finds no other
+  `Path.of(URI(…))`, `URI.create`, `URLDecoder` nor `findFileByUrl`; `PiwiPluginTest` checks `fileOfUri`.
 - **A change to `protocol.ts` updates `Protocol.kt` in the same change.** `Protocol.kt` mirrors
   `packages/editor/src/protocol.ts` for lsp4j; `testTheBundledServiceAnswersThroughTheDescriptor` (`PiwiPluginTest`)
   reads the bundled service's answers with it.
-- **A change to `@piwitests/core/editor-send` or `@piwitests/core/editor-discovery` updates `Glue.kt` in the same
-  change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
-  `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
+- **A change to `@piwitests/core/editor-send`, `@piwitests/core/editor-pairing` or `@piwitests/core/editor-discovery`
+  updates `Glue.kt` in the same change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof`
+  mirror the first, `Glue.EditorPairingRequests` and `Glue.editorHello` the second, `Glue.parseEditorDiscovery` and
+  `Glue.liveHubs` the third; `GlueTest` checks them.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **A word both editors write themselves comes from `packages/editor/src/words.json`, restated in `EditorWords.WORDS`**
   (a stop's controls and code actions, a recording's states, a worker's name, the choices of Hold failures), and a change
   to the file updates the copy in the same change; `GlueTest` holds the two equal.
+- **The words both editors compute from the same answer are held equal by the golden fixtures**
+  (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, a spec's test marks and lens rows, the Piwi
+  Picker tab's words): `GlueTest`
+  (the marks and rows: `PiwiPluginTest`, drawn by `PiwiTestAnnotator` and `PiwiCodeVisionProvider`) and the VS Code
+  extension's `tests/golden.test.ts` read the same file, so a change to either side's words changes the fixture and the
+  other side.
 - **The settings page's group titles and choice labels are the editor service's settings registry**
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's
@@ -52,8 +62,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   Connect's failure words are the editor service's table, which VS Code reads; `GlueTest` holds the copy to it.
 - **An action's text is the action catalog's title** (`packages/editor/src/actions.ts`), the same as VS Code's but the
   caret for the cursor and the project for the window. `packages/editor/tests/actions.test.ts` holds `plugin.xml` to it.
-- **An action id is frozen at 1.0: keymaps name it.** Renaming one breaks users' keymaps, and a new one is registered in
-  D25 of `proposals/1.0-stabilization.md` in the same change
+- **An action or action group id is frozen at 1.0: keymaps and customized menus name it.** Renaming one breaks users'
+  keymaps, and a new one is registered in D25 of `proposals/1.0-stabilization.md` in the same change
   (`apps/application/tests/unit/editor-ids-register.test.ts`).
 - **The run controls reach the service only through `RunRemote`**, which `PiwiRunControlTest` replaces.
   ([Run control](ARCHITECTURE.md#run-control))
@@ -98,7 +108,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A text from a run never renders as HTML, and an image from a run is sized before it is decoded.** Labels set
   `html.disable`, and a tooltip goes through `Glue.htmlTooltip`, which escapes it: the platform renders every
   component's tooltip as HTML. A filmstrip image is decoded only once its JPEG header names a size within twice a
-  thumbnail's (`Glue.stripImageBytes`). Checked by `GlueTest` and `PausedPagePanelTest`.
+  thumbnail's (`Glue.stripImageBytes`). Checked by `GlueTest`, `PausedPagePanelTest` and `PiwiTestCardTest`.
 - **Open in IDE answers only a page of a known origin**: the Piwi instance an open project is connected to, the
   desktop app, or the `PIWI_DASHBOARD_URL` of the IDE's environment (which reaches every open project). An instance's
   page finds files only in the projects connected to it. Every other request gets a 403 from `PiwiOpenHandler` itself (`OpenOrigins.kt`, `OpenOriginsTest`,
@@ -109,8 +119,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   given twice, `PiwiOpenHandler` checks both files again by their canonical paths (`Glue.debugFileRefusal`), and the
   service builds the run. Checked by `GlueTest`. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **The Send to editor endpoint proves it holds the token on every answer to a challenge, and `GET /api/piwi/live`
-  lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`
-  and `/api/piwi/live` alone, and leaves the platform's `isAccessible` its check of `Host`. Checked by `PiwiPluginTest`
+  lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`,
+  `/api/piwi/live`, `/api/piwi/hello` and `/api/piwi/pairings` alone, and leaves the platform's `isAccessible` its check
+  of `Host`. The token goes to Piwi Picker by code only once the person types the code it shows (`PiwiPickerPairing.allow`), with its proof. Checked by `PiwiPluginTest`
   (`testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint`,
   `testPiwiPickerListsTheLiveHubsThroughThePairing`). ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **The runs' MCP server's token lives in the `PasswordSafe`, one per project, and a stop's browser is shared only
@@ -137,10 +148,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **The IDE's Playwright runner is reached only after `PlaywrightRunnerGate.available()`**, which names none of the
   runner's classes: they belong to the `JavaScript` plugin.
   ([Playwright runner](ARCHITECTURE.md#playwright-runner))
-- **The default chords are the VS Code extension's** (`$default` keymap): `Ctrl+Alt+Shift+R` records and stops a
-  recording, `Ctrl+Alt+Shift+F` re-runs the failing tests and `Ctrl+Alt+Shift+K` runs the test at the caret.
-  `PiwiPluginTest` checks the R and F bindings; the platform's own keymaps leave them free except on macOS, and some
-  plugins and keymaps use them ([`apps/vscode/ARCHITECTURE.md`](../vscode/ARCHITECTURE.md#keybindings)).
+- **Piwi's chords are the editor service's table (`packages/editor/src/keys.ts`)**: the VS Code extension's in the
+  `$default` keymap, another letter (`replace-all`) or none (`remove`) where a bundled keymap gives that chord to
+  another action, and from the keyboard they act only in a JavaScript or TypeScript editor or the Piwi tool window
+  (`chordActsHere`). `packages/editor/tests/keys.test.ts` checks them against `keymap-chords.json`; for a new IDE
+  release, run `scripts/keymap-chords.py` on it. ([Keymaps](ARCHITECTURE.md#keymaps))
 - **The run controls use the debugger actions' shortcuts (`use-shortcut-of`), and give way to the debugger where it
   takes the key.** From the keyboard, Resume, Step, Run to caret and Finish give way to a suspended debug session, Pause
   to a running one, Stop to any (`givesWayTo`); `PiwiRunActionPromoter` puts them first only while a run is live.
@@ -149,16 +161,17 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   stop passes the stop's `since` (End the test while a Pause waits, `give-up`, answers none); Run to caret and the breakpoints map the editor's lines back through `Glue.EditLog`
   (`Glue.runPlaces` for the breakpoints). Checked by `GlueTest` and `PiwiRunControlTest`.
   ([Run control](ARCHITECTURE.md#run-control))
-- **A new stop takes the focus only on the worker slot the person is on (the last to take the focus, or acted on: a
-  control, a code action, a press, key or pick on the Paused page, never a pointer moving; never one only watched), or
-  while no other held stop's file was opened or left closed and no Step or Run to caret from the IDE waits,
-  `Glue.RESERVED_MILLIS` at most. While an editor is in use, any other stays closed (2024.1 opens no file without
-  selecting it), counts as opened and is listed in the status bar item's menu. The Paused page tab keeps a held stop,
-  then waits as long for the stepped slot, and is selected unless the Worker tab is in sight.** `Glue.StopsShown`
-  decides (a refusal, `ok: false`, undoing what nothing changed since), with `Glue.selectsPausedPage`, and
-  `PiwiRunSessions.draw` opens, drawing again as a wait ends (an `Alarm`), after a refusal and after acting that ends a
-  wait, as in the VS Code extension; checked by `GlueTest`, fed the pushes the service sends.
-  ([Run control](ARCHITECTURE.md#run-control))
+- **A new stop takes the focus only on the worker slot the person is on, or while no other held stop's file was opened
+  or left closed and no Step or Run to caret from the IDE waits, `Glue.RESERVED_MILLIS` at most.** `Glue.StopsShown`
+  decides, with `Glue.selectsPausedPage` for the Paused page tab, and `PiwiRunSessions.draw` opens, as in the VS Code
+  extension; checked by `GlueTest`, fed the pushes the service sends. What counts as the slot the person is on, and
+  what an editor in use and the Paused page tab do meanwhile: [Run control](ARCHITECTURE.md#run-control).
+- **One page per worker, as in the VS Code extension: a headless stop shows in the Worker tab while it watches the
+  stop's slot in sight (`workerShows`), else in the Paused page tab, named after the worker too; once the Worker tab's
+  watch of a slot is accepted, it takes that slot's headless stop from the Paused page tab** (`takeSlot`), and a held
+  stop it showed goes back as it hides or closes or its watch ends (each draws again). Both tabs hold the stopped line's
+  row as a toolbar (`pageControls`), and the Worker tab offers Interact at a stop that takes input. Checked by
+  `GlueTest` and `PiwiRunControlTest`.
 - **An action at a stop from a key or a menu acts, for a control within `Glue.RESUMED_MILLIS` of an answer, until
   another stop of that slot opens or its run holds the slot no more, on a stop of the answered slot or on none, whatever
   the caret says; else on the stop at the caret's line; else on the only stop whose file or page the person was shown;
@@ -169,9 +182,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `LspServer.getDocumentVersion` is known (`whenOpened`, an `Alarm` on the event thread, three seconds at most), so the
   platform sends the service the change; checked by `PiwiRunControlTest` (`testTheCodeAStopMadeIsWrittenInOneCommand`).
   ([Code from a stop](ARCHITECTURE.md#code-from-a-stop))
-- **The running line's inlay goes as its test ends or stops, as the run ends and as the watch does, whatever the
-  service says after** (`Glue.runningLinesShown`, drawn on every draw). Checked by `GlueTest` and `PiwiRunControlTest`
-  (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`, `testARunningLineOfASlotNoLongerWatchedIsNotTaken`).
+- **A running line's inlay goes as its test ends or stops and as the run ends, whatever the service says after, and
+  the slots at one line share one inlay** (`Glue.runningLinesShown`, `Glue.runningLineText`, drawn on every draw).
+  Checked by `GlueTest` and `PiwiRunControlTest` (`testTheRunningLineIsMarkedUntilTheTestEndsOrStops`,
+  `testEverySlotsRunningLineIsMarkedOneInlayALine`).
   ([Run control](ARCHITECTURE.md#run-control))
 - **The Worker tab's watch goes on while the Worker tab or the Page tab is in sight, and ends once neither is**
   (`laneSightChanged`). Checked by `PiwiRunControlTest` (`testThePageTabKeepsTheWatchWhileItShows`).
@@ -179,9 +193,11 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A rerun under the ref of a run that ended maps its lines from when it is first heard**, never from the ended run's
   start. Checked by `PiwiRunControlTest` (`testARerunUnderTheRefOfARunThatEndedMapsItsLinesFromItsOwnStart`).
   ([Run control](ARCHITECTURE.md#run-control))
-- **A run started in a terminal has the controls but Stop, and starts with the IDE's breakpoints**
-  (`piwi/setBreakpoints`, sent as they change). Checked by `PiwiRunControlTest`
-  (`testARunStartedInATerminalTakesTheBreakpointsAndEndsThere`). ([Run control](ARCHITECTURE.md#run-control))
+- **A run pauses at the IDE's breakpoints as `breakpoints` says: a Debug with Piwi run alone by default (`debug`), every
+  run with `always`, a run started in a terminal included (`piwi/setBreakpoints`), none with `never`**
+  (`Glue.takesBreakpoints`, kept per run). A run started in a terminal has the controls but Stop. Checked by `GlueTest`
+  and `PiwiRunControlTest` (`testOnlyADebugWithPiwiRunTakesTheBreakpointsByDefault`,
+  `testARunStartedInATerminalTakesTheBreakpointsAndEndsThere`). ([Run control](ARCHITECTURE.md#run-control))
 - **Every run of a Playwright run configuration Piwi made is followed** (`PiwiRunSessions.followRunner`), its Rerun,
   Rerun Failed Tests and Debug included, so Stop ends it and the service hears its end. Checked by
   `PiwiRunControlTest`. ([Playwright runner](ARCHITECTURE.md#playwright-runner))
@@ -192,7 +208,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `FinishMarkAction` at the end, so one Undo after Stop goes back to before the recording; `PiwiRecordingTest` checks
   it. ([Pause, Stop and undo](ARCHITECTURE.md#pause-stop-and-undo))
 - **A popup entry that a registered action does is that action**, wrapped by `registeredWith` to act on what the popup
-  is about (`STOP`, `TEST_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
+  is about (`STOP`, `RUN`, `WORKER`, `TEST_LINE`, `RECORD_LINE`, `RUN_PAGE`, `FAILURE_NODE`), so its key shows and Find Action reaches it; a new one
   gets an id in D25.
 - **Every action but a toggle draws its concept's glyph, one glyph per concept**: a platform icon with a New UI glyph
   on 2024.1, or Piwi's own in `icons/` (a `_dark` copy beside it), as Appendix A of `proposals/editor-ux-coherence.md`
@@ -202,12 +218,13 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   settings groups ("Open the run page"), a capital only first or in a proper noun (Piwi, Piwi Picker, Playwright, MCP,
   Claude Code, Cursor, Node.js, CI). The platform's own names keep theirs (Settings → Tools, Run to Cursor). Checked
   for actions by `PiwiPluginTest` (`testEveryActionsTextIsInSentenceCase`).
-- **The flaky and running marks (`icons/testFlaky.svg`, `testRunning.svg`) are VS Code's, byte for byte** (VS Code's
-  running ring adds the style that spins it), in
-  `STATUS_COLORS`' fills, and so are the recording marks (`icons/recording*.svg`, `recordPaused*.svg`); both color
-  schemes' failing and recording tints blend those fills over classic Default's (`#ffffff`) or Darcula's (`#2b2b2b`)
-  background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
-- **`icons/testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg` and `reload.svg` are also VS Code's font glyphs**: after
+- **The flaky, running and paused marks (`icons/testFlaky.svg`, `testRunning.svg`, `testPaused.svg`) are VS Code's,
+  byte for byte** (VS Code's running ring adds the style that spins it; `PiwiIcons.RUNNING` turns this one in code, on
+  the result icon alone), in `STATUS_COLORS`' fills and the pause bar's violet, and so are the recording marks
+  (`icons/recording*.svg`, `recordPaused*.svg`); both color schemes' failing and recording tints blend those fills
+  over classic Default's (`#ffffff`) or Darcula's (`#2b2b2b`) background. Checked by `apps/application/tests/unit/status-mark-colors.test.ts`.
+- **`icons/testFlaky.svg`, `pauseWatch.svg`, `stopLive.svg`, `reload.svg`, `region.svg`, `mock.svg` and
+  `unreachable.svg` are also VS Code's font glyphs** (`ICON_FONT_GLYPHS`): after
   editing one, run `npm run app:generate:brand` (`apps/application/`), which draws them into
   `apps/vscode/media/piwi-icons.woff`.
 - **`Glue.kt` is the pure half, tested without an IDE** (`GlueTest`). Put logic that needs no platform API there.
@@ -241,8 +258,10 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
   and receives the service's notifications (`PiwiLsp4jClient`).
 - `PiwiProjectService.kt`: one project's state: the pushed answers, the configs found, the credentials, the settings.
 - `Protocol.kt`: the protocol for lsp4j. `Glue.kt`: the pure half.
-- `PiwiTestAnnotator.kt`, `PiwiCodeVisionProvider.kt`, `PiwiCoverageMarks.kt`: what the editor shows on a file.
-- `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`: the **Piwi** tool window and the status bar item.
+- `PiwiTestAnnotator.kt`, `PiwiTestCard.kt`, `PiwiCodeVisionProvider.kt`, `PiwiCoverageMarks.kt`: what the editor
+  shows on a file (`PiwiTestCard.kt`: the card a click on a test's result icon opens).
+- `PiwiFailuresToolWindow.kt`, `PiwiStatusBar.kt`, `PiwiRunsTab.kt`, `PiwiTestsTab.kt`: the **Piwi** tool window, the
+  status bar item, and the tool window's **Runs** and **Tests** tabs.
 - `PiwiCommands.kt`, `PiwiActions.kt`, `PiwiPlaywrightRunner.kt`: the commands, the actions under **Tools → Piwi**, the
   IDE's Playwright runner.
 - `PiwiRunControl.kt`: the run controls (`PiwiRunSessions`: the stops, the execution point, the inlay, the paused
@@ -251,13 +270,15 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiRunLineMarker.kt`: Piwi's entries in the IDE run icon's menu, and the Gutter Icons switch of the result icon.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
+  `PiwiPickerPairing.kt`: Piwi Picker's pairing by code and the **Piwi Picker** tab.
 - `PiwiConnect.kt`, `PiwiConnectPanel.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect, its panel and the
   settings pages.
 - `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.
 - `src/main/java/…/PiwiCredentials.java`: credential attributes built from Java. `src/main/resources/`: `plugin.xml`,
   color schemes, icons.
 - `src/test/kotlin/…`: the unit tests (`GlueTest`, `OpenOriginsTest`, `Lsp4jAccessTest`) and the platform tests
-  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`, `PausedPagePanelTest`).
+  (`PiwiPluginTest`, `PiwiRecordingTest`, `PiwiOpenHandlerTest`, `PiwiRunControlTest`, `PausedPagePanelTest`,
+  `PiwiTestCardTest`).
 - `scripts/`: the screenshots script and `xinput.py`.
 
 ## ARCHITECTURE.md sections

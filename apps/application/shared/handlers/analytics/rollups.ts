@@ -18,6 +18,7 @@ import type { DrizzleDB } from '../db';
 import { notLabRun } from '../probes';
 import { dayKey, DAY_MS, FAILING_RUN_STATUSES, TERMINAL_RUN_STATUSES } from './common';
 import { branchPolicyCondition, type BranchPolicy } from './branch-policy';
+import { environmentPolicyLabelCondition, type EnvironmentPolicy } from './environment-policy';
 
 /** The numbers a rollup row carries, summed over the runs of its cell. */
 export interface RollupTotals {
@@ -481,7 +482,7 @@ export interface RollupFilter {
   /** Inclusive UTC day range. */
   fromDay: string;
   toDay: string;
-  environments?: string[];
+  environmentPolicy?: EnvironmentPolicy;
   branchPolicy?: BranchPolicy;
   fullRunsOnly: boolean;
 }
@@ -497,8 +498,11 @@ function rollupConditions(filter: RollupFilter): SQL[] | null {
   const conditions: SQL[] = [gte(t.day, filter.fromDay), lte(t.day, filter.toDay)];
   if (filter.projectIds !== 'all') conditions.push(inArray(t.projectId, filter.projectIds));
   if (filter.fullRunsOnly) conditions.push(eq(t.fullRun, 1));
-  if (filter.environments && filter.environments.length > 0)
-    conditions.push(inArray(t.environment, filter.environments));
+  // A cell keyed '' holds the runs with no label.
+  const environment = filter.environmentPolicy
+    ? environmentPolicyLabelCondition(filter.environmentPolicy, { environment: t.environment, projectId: t.projectId })
+    : null;
+  if (environment) conditions.push(environment);
   const branch = filter.branchPolicy
     ? branchPolicyCondition(filter.branchPolicy, { branch: t.branch, projectId: t.projectId }, 'empty')
     : null;

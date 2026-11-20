@@ -28,6 +28,31 @@ class GlueTest {
     )
 
     @Test
+    fun `the environment widget speaks for the selected file's config alone, else the first that shows an environment`() {
+        val staging = StatusEnvironment(id = 4, text = "Staging", tooltip = "For Staging.")
+        val production = StatusEnvironment(id = 5, text = "Production", tooltip = "Protected.", protected = true)
+        val plain = ContextStatus(root = "/w/a")
+        val shop = ContextStatus(root = "/w/shop", projectId = 7, environment = staging)
+        val admin = ContextStatus(root = "/w/shop/admin", environment = production)
+        val status = StatusResult(listOf(plain, shop, admin))
+        assertEquals(admin, Glue.environmentContext(status, "/w/shop/admin/tests/users.spec.ts"))
+        // The selected file's config shows none: no other config's environment stands in for it.
+        assertNull(Glue.environmentContext(status, "/w/a/tests/cart.spec.ts"))
+        assertEquals(shop, Glue.environmentContext(status, "/elsewhere/notes.md"))
+        assertNull(Glue.environmentContext(StatusResult(listOf(plain)), "/w/a/x.spec.ts"))
+        // A config with an environment chosen is offered whatever the connection, so it can be set to none.
+        assertEquals(listOf(shop, admin), Glue.environmentContexts(status))
+        val kept = KeptEnvironment(5, "Production", "https://piwi.example.com", 7)
+        assertEquals(kept, Glue.decodeEnvironment(Glue.encodeEnvironment(kept)))
+        assertNull(Glue.decodeEnvironment("5"))
+        assertEquals(
+            "Production · production · protected · current",
+            Glue.environmentEntryText(EnvironmentItem(5, "Production", "production", null, picked = true, protected = true)),
+        )
+        assertEquals("None · the Playwright config decides", Glue.environmentEntryText(EnvironmentItem(null, "None", "the Playwright config decides")))
+    }
+
+    @Test
     fun `before the service starts, says when it will and leads to the settings`() {
         val view = Glue.statusView(null, null)
         assertEquals("Piwi", view.text)
@@ -75,6 +100,18 @@ class GlueTest {
     }
 
     @Test
+    fun `a chord of Piwi's acts from the keyboard in a JavaScript or TypeScript editor or the Piwi tool window alone`() {
+        assertTrue(Glue.chordActsIn("checkout.spec.ts", inPiwiWindow = false))
+        assertTrue(Glue.chordActsIn("helpers.MJS", inPiwiWindow = false))
+        assertTrue(Glue.chordActsIn(null, inPiwiWindow = true))
+        // Where the actions sharing its chord act: a Java, Kotlin script, Go or Terraform file, the Database tool window.
+        for (file in listOf("Main.java", "build.gradle.kts", "main.go", "main.tf", "README")) {
+            assertFalse(file, Glue.chordActsIn(file, inPiwiWindow = false))
+        }
+        assertFalse(Glue.chordActsIn(null, inPiwiWindow = false))
+    }
+
+    @Test
     fun `a run is named by what it runs, with its number once it has one, as VS Code names it`() {
         val named = RunSession(ref = "ed-1", root = "/w/shop", name = "checkout.spec.ts:12")
         assertEquals("checkout.spec.ts:12", Glue.runLabel(named))
@@ -82,6 +119,8 @@ class GlueTest {
         val numbered = named.copy(page = RunPage(78, "http://piwi/runs/78"))
         assertEquals("Run #78", Glue.runLabel(numbered))
         assertEquals("Run #78 · checkout.spec.ts:12", Glue.runTitle(numbered))
+        // An agent's run says who started it.
+        assertEquals("Run #78 · checkout.spec.ts:12 · Started by Claude Code", Glue.runTitle(numbered.copy(label = "Started by Claude Code")))
         assertEquals("Run in shop (ed-1)", Glue.runTitle(RunSession(ref = "ed-1", root = "/w/shop")))
         // Two runs of one name in one list are told apart by their refs.
         val again = named.copy(ref = "ed-2")
@@ -216,9 +255,9 @@ class GlueTest {
             file = entry(0, "3 tests in Piwi · 1 failing"),
             lines = listOf(
                 entry(9, "✗ locator('#pay') was not found"),
-                entry(9, "Run this test"),
-                entry(9, "Screenshot"),
-                entry(9, "Trace"),
+                entry(9, "Run with Piwi"),
+                entry(9, "Flake Lab · run 20 times"),
+                entry(9, "Flake Lab · find the breaking commit"),
                 entry(4, "passed 44 of 48 runs", status = "failing"),
                 entry(4, "Flaky · Flake Lab"),
                 entry(12, ""),
@@ -226,9 +265,9 @@ class GlueTest {
         )
         val slots = (0 until Glue.CODE_VISION_SLOTS).map { slot -> Glue.codeVisionSlot(summary, slot).map { it.line to it.title } }
         assertEquals(listOf(0 to "3 tests in Piwi · 1 failing", 9 to "✗ locator('#pay') was not found", 4 to "Flaky · Flake Lab"), slots[0])
-        assertEquals(listOf(9 to "Run this test"), slots[1])
-        assertEquals(listOf(9 to "Screenshot"), slots[2])
-        assertEquals(listOf(9 to "Trace"), slots[3])
+        assertEquals(listOf(9 to "Run with Piwi"), slots[1])
+        assertEquals(listOf(9 to "Flake Lab · run 20 times"), slots[2])
+        assertEquals(listOf(9 to "Flake Lab · find the breaking commit"), slots[3])
         assertEquals(emptyList<Pair<Int, String?>>(), slots[4])
     }
 
@@ -246,7 +285,7 @@ class GlueTest {
             ),
             Glue.statusView(status, null),
         )
-        assertEquals("Not connected. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
+        assertEquals("The instance does not answer. $problem Piwi reads it again on its own.", Glue.connectionSummary(status))
         val refused = StatusResult(listOf(ContextStatus(root = "/w", problem = "Refused.", problemKind = "refused")))
         assertEquals(Glue.StatusAction.CONNECT, Glue.statusView(refused, null).action)
     }
@@ -328,7 +367,7 @@ class GlueTest {
 
     @Test
     fun `a failing run, a running run, an interrupted run and no run`() {
-        assertEquals("Piwi: 3 failing · 2 flaky", Glue.statusView(connected, runs(passed.copy(status = "failed", failedTests = 3))).text)
+        assertEquals("Piwi: 3 failing", Glue.statusView(connected, runs(passed.copy(status = "failed", failedTests = 3))).text)
         assertEquals(
             "Piwi: 41 of 120 · 1 failed",
             Glue.statusView(connected, runs(passed.copy(status = "running", passedTests = 40, failedTests = 1, flakyTests = 0))).text,
@@ -349,7 +388,7 @@ class GlueTest {
             ),
         )
         val view = Glue.statusView(connected, local(2, 1, 2))
-        assertEquals("Piwi: 2 failing · 1 fixed locally", view.text)
+        assertEquals("Piwi: 2 failing", view.text)
         assertEquals(
             "Run #41 of Acme on feature/pay: 115 passed, 3 failed, 0 flaky, 0 skipped\n" +
                 "2 local runs since · 1 test fixed locally\nhttp://piwi, from the workspace .env",
@@ -386,6 +425,22 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // Another's run names its branch, the developer's own the short form.
+        val ci = Glue.statusView(connected, live(failed, inProgress.copy(own = false, ci = true, failed = 0, branch = "feature-x")))
+        assertEquals("Piwi: CI run #124 on feature-x · 4 of 9", ci.text)
+        assertEquals(true, ci.tooltip.contains("\nCI run #124 on feature-x is running: 4 of 9\n"))
+        assertEquals(
+            "Piwi: run #124 · 4 of 9 · 1 failed · yours",
+            Glue.statusView(connected, live(failed, inProgress.copy(branch = "feature-x"))).text,
+        )
+        // A test that may be stuck counts beside the run's results.
+        val stuck = Glue.statusView(connected, live(failed, inProgress.copy(stuck = 1)))
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · 1 stuck? · yours", stuck.text)
+        assertEquals(true, stuck.tooltip.contains("\nYour run #124 is running: 4 of 9 · 1 failed · 1 stuck?\n"))
+        // An agent's run is never the person's own.
+        val agent = Glue.statusView(connected, live(failed, inProgress.copy(label = "Started by Claude Code")))
+        assertEquals("Piwi: run #124 · 4 of 9 · 1 failed · Started by Claude Code", agent.text)
+        assertEquals(true, agent.tooltip.contains("\nRun #124 (Started by Claude Code) is running: 4 of 9 · 1 failed\n"))
         // Once it ended, the latest run again.
         assertEquals("Piwi: 3 failing", Glue.statusView(connected, live(failed, null)).text)
         // On a branch without a run yet.
@@ -442,10 +497,10 @@ class GlueTest {
             admin.tooltip.lines(),
         )
         val shop = Glue.statusView(status, runs, file = "/w/shop/cart.spec.ts")
-        assertEquals("Piwi: 3 failing · 2 flaky", shop.text)
+        assertEquals("Piwi: 3 failing", shop.text)
         assertEquals("The active file's Playwright config, in shop (one of 2)", shop.tooltip.lines()[1])
         // A file in neither, or none: the first connected, and how to see another's run.
-        assertEquals("Piwi: 3 failing · 2 flaky", Glue.statusView(status, runs, file = "/w/README.md").text)
+        assertEquals("Piwi: 3 failing", Glue.statusView(status, runs, file = "/w/README.md").text)
         assertEquals(
             "The Playwright config in shop (one of 2): open a file of another one to see its run",
             Glue.statusView(status, runs).tooltip.lines()[1],
@@ -661,7 +716,7 @@ class GlueTest {
             Glue.pickNotice(at, Glue.PickOutcome.NOT_RUNNING),
         )
         assertEquals(
-            "The picked locator was inserted in a new scratch file: the Piwi editor service did not answer.",
+            "The picked locator was inserted in a new scratch file. ${Glue.SERVICE_NO_ANSWER}",
             Glue.pickNotice(at, Glue.PickOutcome.NO_ANSWER, scratch = true),
         )
     }
@@ -778,7 +833,7 @@ class GlueTest {
     private fun session(ref: String, vararg workers: RunWorker, ended: Boolean = false) = RunSession(ref, "/work/shop", workers.toList(), ended)
 
     @Test
-    fun `the running line of a watched slot is marked until its test ends or stops, or its run ends`() {
+    fun `the running line of a slot is marked until its test ends or stops, or its run ends`() {
         val call = RunningCall("t1", "Click getByRole('button', { name: 'Pay' })", specUri, 7)
         val line = RunningLine("ed-1", 1, 3, call)
         val lines = Glue.withRunningLine(emptyMap(), line)
@@ -788,6 +843,12 @@ class GlueTest {
         assertEquals(mapOf(("ed-1" to 0) to other), Glue.withRunningLine(lines + (("ed-1" to 0) to other), line.copy(call = null)))
         assertEquals("Piwi: Worker 2 runs Click getByRole('button', { name: 'Pay' })", Glue.runningLineText(line))
         assertEquals("Piwi: Worker 2 runs ${"x".repeat(59)}…", Glue.runningLineText(line.copy(call = call.copy(title = "x".repeat(80)))))
+        // Slots at one line are named in one text, each worker beside its call.
+        val fill = RunningLine("ed-1", 2, 4, call.copy(title = "Fill getByLabel('Name')"))
+        assertEquals(
+            "Piwi: Worker 1, Worker 2 run Click getByRole('button', { name: 'Pay' }); Worker 3 runs Fill getByLabel('Name')",
+            Glue.runningLineText(listOf(fill, line, other)),
+        )
 
         val running = mapOf("ed-1" to session("ed-1", RunWorker(3, 1, "running", runTest())))
         assertEquals(listOf(line), Glue.runningLinesShown(lines, running))
@@ -975,6 +1036,142 @@ class GlueTest {
         )
     }
 
+    /**
+     * The rows above a spec's lines, each line's entries in the service's order across Code Vision's slots, as the
+     * golden fixture holds them and VS Code's `lensLines` draws them.
+     */
+    @Test
+    fun `Code Vision draws the rows the golden fixture holds`() {
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/test-lines.json").readText(),
+        ).asJsonObject
+        val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
+        val rows = sortedMapOf<Int, MutableList<String>>()
+        for (slot in 0 until Glue.CODE_VISION_SLOTS) {
+            for (line in Glue.codeVisionSlot(summary, slot)) rows.getOrPut(line.line) { mutableListOf() } += line.title.orEmpty()
+        }
+        val expected = golden.getAsJsonArray("lenses").map { row ->
+            row.asJsonArray.let { it[0].asInt to it[1].asJsonArray.map { title -> title.asString } }
+        }
+        assertEquals(expected, rows.map { (line, titles) -> line to titles })
+        // A line holds as many entries as VS Code's lenses on a line.
+        val perLine = Regex("export const LENSES_PER_LINE = (\\d+);")
+            .find(java.io.File("../vscode/src/glue.ts").readText())?.groupValues?.get(1)?.toInt()
+        assertEquals(perLine, Glue.CODE_VISION_SLOTS)
+    }
+
+    /**
+     * The golden fixtures both editors' pure halves read (`packages/editor/tests/golden/`): the same inputs give the same
+     * words as in VS Code, whose `tests/golden.test.ts` reads the same file.
+     */
+    @Test
+    fun `the golden fixtures give the words VS Code gives`() {
+        val gson = com.google.gson.Gson()
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/status-and-runs.json").readText(),
+        ).asJsonObject
+        val status = golden.getAsJsonObject("status")
+        val context = gson.fromJson(status.get("context"), ContextStatus::class.java)
+        for (case in status.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val runs = RunStatusResult(listOf(gson.fromJson(case.get("runs"), RunStatus::class.java)))
+            assertEquals(case.get("name").asString, case.get("text").asString, Glue.statusView(StatusResult(listOf(context)), runs).text)
+        }
+        for (case in golden.getAsJsonObject("runs").getAsJsonArray("cases").map { it.asJsonObject }) {
+            val sessions = case.getAsJsonArray("sessions").map { gson.fromJson(it, RunSession::class.java) }
+            val rows = Glue.runRows(sessions.associateBy { it.ref ?: "" }).map { listOf(it.kind, it.text, it.detail) }
+            val expected = case.getAsJsonArray("rows").map { row -> row.asJsonArray.map { it.asString } }
+            assertEquals(case.get("name").asString, expected, rows)
+            val workers = case.getAsJsonArray("workers").map { it.asString }
+            assertEquals(case.get("name").asString, workers, Glue.workersNowText(sessions.associateBy { it.ref ?: "" })?.split("\n").orEmpty())
+        }
+    }
+
+    /**
+     * The Piwi Picker tab's words, which the VS Code extension's Piwi Picker view says too: the golden fixture both read
+     * (`packages/editor/tests/golden/picker-pairing.json`), in the JetBrains words.
+     */
+    @Test
+    fun `the Piwi Picker tab says the words the VS Code view says`() {
+        val picker = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/picker-pairing.json").readText(),
+        ).asJsonObject
+        val instant = { iso: String -> java.time.Instant.parse(iso).toEpochMilli() }
+        val inJetBrains = { text: String, port: Int ->
+            text.replace("{cursor}", "caret").replace("{window}", "project").replace("{editor}", "IDE").replace("{port}", "$port")
+        }
+        val now = instant(picker.get("now").asString)
+        for (case in picker.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val name = case.get("name").asString
+            val port = case.get("port").let { if (it.isJsonPrimitive && it.asJsonPrimitive.isString) Glue.PICKER_BUILT_IN_PORTS.first else it.asInt }
+            val paired = case.get("paired").takeUnless { it.isJsonNull }?.asJsonObject?.let {
+                Glue.PickerPaired(instant(it.get("at").asString), it.get("client").takeUnless { c -> c.isJsonNull }?.asString)
+            }
+            val heard = case.get("heard").takeUnless { it.isJsonNull }?.asString?.let(instant)
+            val rows = Glue.pickerRows(Glue.PickerState(emptyList(), paired, heard, port), now).map { listOf(it.label, it.description) }
+            val expected = case.getAsJsonArray("rows").map { row -> row.asJsonArray.map { inJetBrains(it.asString, port) } }
+            assertEquals(name, expected, rows)
+        }
+        val request = picker.getAsJsonObject("request")
+        val client = request.get("client").asString
+        assertEquals(request.get("title").asString, Glue.pairingRequestTitle(client))
+        assertEquals(inJetBrains(request.get("prompt").asString, 0), Glue.pairingPrompt(client))
+        assertEquals(inJetBrains(picker.get("intro").asString, 0), Glue.PICKER_INTRO)
+        assertEquals(picker.get("howToPair").asString, Glue.PICKER_HOW_TO_PAIR)
+        assertEquals(picker.get("notACode").asString, Glue.NOT_A_CODE)
+    }
+
+    @Test
+    fun `the Runs tab lists each run in progress, its workers by lane with their tests, and its page`() {
+        val run = session(
+            "ed-1",
+            RunWorker(1, 1, "stopped", runTest(), stopAt(specUri, 4), watchable = true),
+            RunWorker(0, 0, "running", runTest(), watchable = true),
+            RunWorker(2, 2, "between"),
+        ).copy(
+            page = RunPage(124, "https://piwi.test/test-runs/124"),
+            progress = RunProgress(total = 9, done = 4, failed = 1),
+        )
+        val sessions = mapOf(
+            "ed-1" to run,
+            "terminal-1" to session("terminal-1").copy(terminal = true, hold = RunHoldFailures(on = true)),
+            "ended" to session("ended").copy(ended = true),
+        )
+        val rows = Glue.runRows(sessions)
+        assertEquals(
+            listOf(
+                listOf("run-elsewhere", "terminal-1"),
+                listOf("run", "Run #124", "4 of 9 · 1 failed"),
+                listOf("worker-watchable", "Worker 1", "checkout › pays"),
+                listOf("worker-stopped", "Worker 2", "checkout › pays · stopped"),
+                listOf("worker-between", "Worker 3", "between tests"),
+                listOf("page", "Open run #124", "on the dashboard"),
+            ),
+            rows.map { r -> if (r.kind == "run-elsewhere") listOf(r.kind, r.ref) else listOf(r.kind, r.text, r.detail) },
+        )
+        assertEquals("Hold failures on", rows[0].detail)
+        assertEquals(true, rows[0].hold)
+        assertEquals(null, rows[1].hold)
+        // A stopped worker names its stop and opens its line, a running one its test's, the page the dashboard.
+        assertEquals(4, rows[3].line)
+        assertEquals(Glue.stopsOf(sessions).single().stop.since, rows[3].stop?.stop?.since)
+        assertEquals(2, rows[2].line)
+        assertEquals(1, rows[3].worker?.worker)
+        assertEquals("https://piwi.test/test-runs/124", rows[5].url)
+    }
+
+    @Test
+    fun `the Runs tab offers Resume alone at a failure, Watch alone on a test that cannot pause, Stop on the IDE's own runs`() {
+        val held = RunWorker(0, 0, "stopped", runTest(), stopAt(specUri, 4).copy(reason = "failure"), watchable = true)
+        val pausing = RunWorker(1, 1, "running", runTest(), watchable = true, pausing = true)
+        val rows = Glue.runRows(
+            mapOf(
+                "ed-1" to session("ed-1", held, pausing),
+                "desktop-1" to session("desktop-1").copy(checkout = RunCheckout("abc1234")),
+            ),
+        )
+        assertEquals(listOf("run-elsewhere", "run", "worker-held", "worker-watch-only"), rows.map { it.kind })
+    }
+
     @Test
     fun `the workers a Worker tab can watch, and what it says of its slot`() {
         val sessions = mapOf(
@@ -1109,6 +1306,20 @@ class GlueTest {
         val going = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), waiting = waiting)))
         assertNull(Glue.runControls(going).waiting)
         assertEquals(emptyList<Glue.WaitingWorker>(), Glue.waitingWorkers(going))
+        // Its line is marked in the code, with End the test for its worker; a call with no place has none.
+        assertEquals(
+            listOf(
+                Glue.WaitingLine(
+                    Glue.WaitingWorker("ed-1", 2, waiting, 0),
+                    specUri,
+                    4,
+                    "Piwi: Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' })",
+                ),
+            ),
+            Glue.waitingLinesShown(restarted),
+        )
+        val nowhere = mapOf("ed-1" to session("ed-1", RunWorker(0, 0, "running", runTest(), pausing = true, waiting = waiting.copy(line = null))))
+        assertEquals(emptyList<Glue.WaitingLine>(), Glue.waitingLinesShown(nowhere))
     }
 
     @Test
@@ -1145,11 +1356,13 @@ class GlueTest {
     private class Pushes(private val unopened: Set<Int> = emptySet(), private val closed: Set<Int> = emptySet()) {
         val shown = Glue.StopsShown()
         var now = 0L
+        /** The slots the Worker tab holds: their stops are its, never the Paused page tab's. */
+        var watched = emptySet<Int>()
 
         fun push(vararg workers: RunWorker): Pair<List<Pair<Int, Boolean>>, Pair<Int, Int>?> {
             now += 100
             val sessions = mapOf("ed-1" to RunSession("ed-1", "/work/shop", workers.toList()))
-            val change = shown.changed(sessions, Glue.stopsOf(sessions), now)
+            val change = shown.changed(sessions, Glue.stopsOf(sessions), now) { it.slot in watched }
             val opened = change.open.filter { it.stop.line !in unopened }.map { stop ->
                 val focus = shown.focusFor(stop, now)
                 shown.opened(stop, focus, focus || stop.stop.line !in closed)
@@ -1310,12 +1523,16 @@ class GlueTest {
     }
 
     @Test
-    fun `the IDE gives a stop of the slot the Worker tab watches the Paused page for its input, but not the focus`() {
-        // The Worker tab only watches slot 1: its stop is any other worker's to the focus and the Paused page tab.
+    fun `the IDE shows a stop of the slot the Worker tab holds there alone, and in the Paused page once it holds it no more`() {
+        // One page per worker: the Worker tab holds slot 1, so its stop opens its file but no Paused page tab.
         val pushes = Pushes()
+        pushes.watched = setOf(1)
         pushes.push(stoppedAt(0, 3), runningWorker(1))
         assertEquals(listOf(1 to false) to null, pushes.push(stoppedAt(0, 3), stoppedAt(1, 5)))
         pushes.answer("resume", stoppedAt(0, 3))
+        assertEquals(none to null, pushes.push(runningWorker(0), stoppedAt(1, 5)))
+        // Closed, or its watch ended, the stop it held goes to the Paused page tab as a new one.
+        pushes.watched = emptySet()
         assertEquals(none to (1 to 5), pushes.push(runningWorker(0), stoppedAt(1, 5)))
     }
 
@@ -1755,6 +1972,29 @@ class GlueTest {
     }
 
     private fun at(key: String, line: Int, uri: String = specUri) = Glue.RunBreakpoint(EditorBreakpoint(uri, line), key)
+
+    @Test
+    fun `the breakpoints go to a run that takes them alone, and a run heard of takes them with always`() {
+        val places = listOf(EditorBreakpoint(specUri, 4))
+        val edits = Glue.EditLog()
+        val runs = LinkedHashMap<String, Glue.RunBreakpoints>()
+        val live = mapOf("ed-debug" to session("ed-debug"), "ed-plain" to session("ed-plain"), "terminal-1" to session("terminal-1"))
+        Glue.remember(runs, "ed-debug", Glue.runStarted(edits.now(), emptyList(), takes = true))
+        Glue.remember(runs, "ed-plain", Glue.runStarted(edits.now(), emptyList(), takes = false))
+        // With `debug`: the Debug with Piwi run alone; the run heard of keeps what its command names.
+        assertEquals(
+            listOf(SetRunBreakpointsParams("ed-debug", places)),
+            Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits, heardTakes = false),
+        )
+        assertEquals(
+            listOf(SetRunBreakpointsParams("terminal-1", places)),
+            Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits, heardTakes = true),
+        )
+        assertEquals(
+            listOf(SetRunBreakpointsParams("terminal-1", emptyList())),
+            Glue.breakpointUpdates(live, listOf(at("b1", 4)), runs, edits, heardTakes = false),
+        )
+    }
 
     @Test
     fun `the breakpoints go to each live run whose breakpoints differ, once`() {
@@ -2226,31 +2466,41 @@ class GlueTest {
     }
 
     @Test
+    fun `Run options lists Run headed and Hold failures with their choices now, in VS Code's words`() {
+        assertEquals(
+            listOf(
+                Glue.RunOptionRow("headed", "Run headed", "Off", EditorWords.words("run-options.headed.off")),
+                Glue.RunOptionRow("holdFailures", "Hold failures", "Auto", EditorWords.words("hold.auto")),
+            ),
+            Glue.runOptionRows(headed = false, hold = "auto"),
+        )
+        assertEquals(listOf("On", "On"), Glue.runOptionRows(headed = true, hold = "on").map { it.value })
+        assertEquals("Auto", Glue.runOptionRows(headed = true, hold = "unknown")[1].value)
+    }
+
+    @Test
     fun `the tool window tells an instance that does not answer, no run and no connection apart`() {
-        val down = Glue.failuresEmpty(FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own."), null, null)
+        // The service links each state's actions: the tool window draws them by their label and action id.
+        val retry = FailuresViewLink("Retry", "piwi.refresh", "Piwi.Refresh")
+        val settings = FailuresViewLink("Open settings", "piwi.openSettings", "Piwi.OpenSettings")
+        val down = Glue.failuresEmpty(
+            FailuresView("unreachable", "Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", listOf(retry, settings)),
+            null,
+            null,
+        )
         assertEquals("Could not reach https://piwi.corp: timeout. Piwi tries again on its own.", down.text)
-        assertEquals(listOf(Glue.EmptyLink.RETRY, Glue.EmptyLink.SETTINGS), down.links)
-        val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet."), null, null)
-        assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.EmptyLink.COMPARE)), none)
+        assertEquals(listOf(Glue.Link("Retry", "Piwi.Refresh"), Glue.Link("Open settings", "Piwi.OpenSettings")), down.links)
+        val compare = FailuresViewLink("Compare with…", "piwi.compareWith", "Piwi.CompareWith")
+        val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet.", listOf(compare)), null, null)
+        assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.Link("Compare with…", "Piwi.CompareWith"))), none)
         assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
-        assertEquals(
-            Glue.EmptyText("Not connected to a Piwi instance", listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE)),
-            Glue.failuresEmpty(FailuresView("disconnected"), null, null),
-        )
-        assertEquals(
-            Glue.EmptyText(
-                "Piwi is not connected to an instance, so it has no run to show. Recording works without one.",
-                listOf(Glue.EmptyLink.CONNECT, Glue.EmptyLink.RECORD_NEW_FILE),
-            ),
-            Glue.failuresEmpty(
-                FailuresView("disconnected", "Piwi is not connected to an instance, so it has no run to show. Recording works without one."),
-                null,
-                null,
-            ),
-        )
+        assertEquals(Glue.EmptyText("Not connected to a Piwi instance"), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
-        assertEquals(listOf(Glue.EmptyLink.RETRY), Glue.failuresEmpty(FailuresView("desktop-unproven", "Restart or update the desktop app."), null, null).links)
-        assertEquals(Glue.EmptyText("No failure in run #41"), Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), null, 41))
+        val refresh = FailuresViewLink("Refresh the latest run", "piwi.refreshRun", "Piwi.RefreshRun")
+        assertEquals(
+            Glue.EmptyText("No failure in run #41", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
+            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main.", listOf(refresh)), null, 41),
+        )
     }
 
     @Test
@@ -2341,6 +2591,21 @@ class GlueTest {
     }
 
     @Test
+    fun `which runs pause at the IDE's breakpoints, Debug with Piwi alone by default, an older true or false as always or never`() {
+        assertEquals(
+            listOf("debug", "debug", "always", "always", "never", "never"),
+            listOf(null, "debug", "true", "always", "false", "never").map { Glue.breakpointsMode(it) },
+        )
+        val plain = RunTestsArgs("file:///a.spec.ts", listOf(1))
+        val debugging = plain.copy(debugging = true)
+        val failure = plain.copy(debug = DebugRun(EditorBreakpoint("file:///a.spec.ts", 4), "pays"))
+        assertEquals(listOf(false, true, true), listOf(plain, debugging, failure).map { Glue.takesBreakpoints("debug", it) })
+        assertEquals(listOf(true, true), listOf(plain, debugging).map { Glue.takesBreakpoints("always", it) })
+        assertEquals(false, Glue.takesBreakpoints("always", plain.copy(repeat = 3)))
+        assertEquals(listOf(false, false), listOf(plain, debugging).map { Glue.takesBreakpoints("never", it) })
+    }
+
+    @Test
     fun `the settings page's groups, choices and defaults are the editor service's registry`() {
         val file = java.io.File("../../packages/editor/src/settings.json")
         assertTrue(file.absolutePath, file.isFile)
@@ -2359,8 +2624,9 @@ class GlueTest {
         val lists = mapOf(
             "runNotifications" to Glue.RUN_NOTIFICATIONS, "runNotificationsScope" to Glue.RUN_NOTIFICATION_SCOPES,
             "statusBarAlert" to Glue.STATUS_BAR_ALERTS, "failureSeverity" to Glue.FAILURE_SEVERITIES,
+            "breakpoints" to Glue.BREAKPOINTS_CHOICES,
             "runHoldFailures" to Glue.HOLD_FAILURES_CHOICES, "mcpAuthorization" to Glue.MCP_AUTHORIZATIONS,
-            "codeLens" to Glue.CODE_LENS_CHOICES,
+            "codeLens" to Glue.CODE_LENS_CHOICES, "runningLines" to Glue.RUNNING_LINES_CHOICES,
         )
         assertEquals(choices.mapValues { it.value.keys.toList() }, lists)
         // A team's option is the project's shared setting, a project's the person's in this project (`PiwiLocalSettings`),
@@ -2595,6 +2861,148 @@ class GlueTest {
         }
         assertEquals("x-piwi-editor-challenge", Glue.EDITOR_CHALLENGE_HEADER)
         assertEquals("x-piwi-editor-proof", Glue.EDITOR_PROOF_HEADER)
+    }
+
+    private val chrome = "chrome-extension://" + "a".repeat(32)
+
+    @Test
+    fun `keeps a Send to editor token per JetBrains product, the one they shared copied once`() {
+        assertEquals("sendToken WS", Glue.sendTokenUser("WS"))
+        assertEquals("sendToken IU", Glue.sendTokenUser("IU"))
+        assertEquals("sendToken IDE", Glue.sendTokenUser(""))
+        val kept = mutableListOf<String>()
+        // This IDE's own token, whatever the shared one is: another IDE's Unpair changes nothing here.
+        assertEquals("own-token-0123456789", Glue.ownSendToken("own-token-0123456789", "shared-token-0123456", kept::add))
+        assertEquals(emptyList<String>(), kept)
+        // None of its own yet: the shared one, kept as its own, so a Piwi Picker paired before stays paired.
+        assertEquals("shared-token-0123456", Glue.ownSendToken(null, "shared-token-0123456", kept::add))
+        assertEquals(listOf("shared-token-0123456"), kept)
+        assertEquals("", Glue.ownSendToken("", null, kept::add))
+        assertEquals(1, kept.size)
+    }
+
+    @Test
+    fun `hands Piwi Picker the token with the proof of the code typed, once, as the core's pairing requests do`() {
+        var now = 1_000_000L
+        var changes = 0
+        val requests = Glue.EditorPairingRequests(now = { now }, changed = { changes++ })
+        val started = requests.start(chrome, "application/json; charset=utf-8", """{"browser":"Chrome","os":"macOS"}""")
+        assertEquals(201, started.status)
+        val id = started.body["id"] as String
+        val secret = started.body["secret"] as String
+        assertTrue(Regex("^[0-9a-f]{16}$").matches(id))
+        // The IDE makes no code: Piwi Picker shows one of its own, which the person types here.
+        assertFalse(started.body.containsKey("code"))
+        assertEquals(2, started.body["interval"])
+        assertEquals(300L, started.body["expiresIn"])
+        assertEquals(listOf("Chrome on macOS"), requests.waiting().map { it.client })
+        assertEquals(mapOf("status" to "waiting"), requests.poll(id, secret).body)
+        assertEquals(Glue.Allowed.NOT_A_CODE, Glue.allowEditorPairing(requests, id, "the-token-1234567890", "hello"))
+        assertEquals(1, requests.waiting().size)
+        assertEquals(Glue.Allowed.ALLOWED, Glue.allowEditorPairing(requests, id, "the-token-1234567890", "bcdf ghjk"))
+        assertEquals(emptyList<Glue.PairingRequestView>(), requests.waiting())
+        assertEquals(
+            mapOf("status" to "allowed", "token" to "the-token-1234567890", "proof" to Glue.editorPairingProof("BCDF-GHJK", id, "the-token-1234567890")),
+            requests.poll(id, secret).body,
+        )
+        assertEquals(mapOf("status" to "claimed"), requests.poll(id, secret).body)
+        assertEquals(Glue.Allowed.GONE, Glue.allowEditorPairing(requests, id, "another-token-123456", "BCDF-GHJK"))
+        assertEquals(404, requests.poll(id, "f".repeat(64)).status)
+        assertEquals(404, requests.poll("0123456789abcdef", secret).status)
+        assertEquals(2, changes)
+
+        // Denied, and expired then forgotten.
+        val denied = requests.start(chrome, "application/json", "{}").body
+        assertTrue(requests.answer(denied["id"] as String, null))
+        assertEquals(mapOf("status" to "denied"), requests.poll(denied["id"] as String, denied["secret"] as String).body)
+        // Another extension: the one denied waits a minute before it asks again.
+        val late = requests.start("moz-extension://0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0", "application/json", "{}").body
+        now += Glue.EDITOR_PAIRING_TTL_MILLIS
+        assertTrue(requests.expire())
+        assertFalse(requests.answer(late["id"] as String, "late-token-12345678" to "p"))
+        assertEquals(mapOf("status" to "expired"), requests.poll(late["id"] as String, late["secret"] as String).body)
+        now += 61_000
+        assertEquals(404, requests.poll(late["id"] as String, late["secret"] as String).status)
+    }
+
+    @Test
+    fun `starts a pairing request only for an extension's JSON object, and only a few at once`() {
+        val requests = Glue.EditorPairingRequests()
+        assertEquals(403, requests.start("https://example.com", "application/json", "{}").status)
+        assertEquals(403, requests.start(null, "application/json", "{}").status)
+        assertEquals(403, requests.start("chrome-extension://short", "application/json", "{}").status)
+        assertEquals(415, requests.start(chrome, "text/plain", "{}").status)
+        for (body in listOf(null, "", "  ", "not json", "null", "3", "[]")) assertEquals(body.toString(), 400, requests.start(chrome, "application/json", body).status)
+        val extension = { i: Int -> "chrome-extension://" + "abcdefghijklmnop"[i].toString().repeat(32) }
+        repeat(Glue.MAX_WAITING_EDITOR_PAIRINGS) { assertEquals(201, requests.start(extension(it), "application/json", "{}").status) }
+        assertEquals(429, requests.start(extension(9), "application/json", "{}").status)
+        requests.answer(requests.waiting().first().id, "the-token-1234567890" to "p")
+        assertEquals(201, requests.start(extension(9), "application/json", "{}").status)
+    }
+
+    @Test
+    fun `takes the place of an extension's earlier request, waits a minute after a Deny, and forgets tokens on Unpair`() {
+        var now = 1_000_000L
+        val requests = Glue.EditorPairingRequests(now = { now })
+        val first = requests.start(chrome, "application/json", "{}").body
+        val second = requests.start(chrome, "application/json", "{}").body
+        assertEquals(listOf(second["id"]), requests.waiting().map { it.id })
+        assertEquals(mapOf("status" to "expired"), requests.poll(first["id"] as String, first["secret"] as String).body)
+        assertTrue(requests.answer(second["id"] as String, null))
+        assertEquals(429, requests.start(chrome, "application/json", "{}").status)
+        now += 61_000
+        val third = requests.start(chrome, "application/json", "{}").body
+        assertTrue(requests.answer(third["id"] as String, "the-old-token-123456" to "p"))
+        requests.forgetTokens()
+        assertEquals(mapOf("status" to "expired"), requests.poll(third["id"] as String, third["secret"] as String).body)
+    }
+
+    @Test
+    fun `says which IDE listens, and names Piwi Picker's browser alone, as the core does`() {
+        assertEquals(
+            mapOf("editor" to "jetbrains", "product" to "WebStorm", "windows" to listOf("shop", "api")),
+            Glue.editorHello("WebStorm", listOf("shop", "", "api")),
+        )
+        val hello = Glue.editorHello("Web\u0007Storm", (1..12).map { "p$it" } + "x".repeat(200))
+        assertEquals("Web Storm", hello["product"])
+        assertEquals(8, (hello["windows"] as List<*>).size)
+        val body = { text: String -> JsonParser.parseString(text).asJsonObject }
+        assertEquals("Chrome on macOS", Glue.editorPairingClient(body("""{"browser":"Chrome","os":"macOS"}""")))
+        assertEquals("Firefox", Glue.editorPairingClient(body("""{"browser":"Firefox"}""")))
+        assertEquals("bEdgeb on Windows11", Glue.editorPairingClient(body("""{"browser":"<b>Edge</b>","os":"Windows\n11"}""")))
+        assertEquals("a browser", Glue.editorPairingClient(null))
+        assertEquals("0123456789abcdef", Glue.editorPairingIdOf("/api/piwi/pairings/0123456789abcdef", "/api/piwi/pairings"))
+        assertNull(Glue.editorPairingIdOf("/api/piwi/pairings/../send", "/api/piwi/pairings"))
+        assertNull(Glue.editorPairingIdOf("/api/piwi/pairings", "/api/piwi/pairings"))
+        assertEquals("x-pairing-secret", Glue.EDITOR_PAIRING_SECRET_HEADER)
+    }
+
+    @Test
+    fun `says in the Piwi Picker tab who is paired, when it was last heard from and where it listens, as VS Code does`() {
+        val now = java.time.Instant.parse("2026-11-19T15:00:00Z").toEpochMilli()
+        val none = Glue.PickerState(emptyList(), null, null, 63342)
+        assertEquals(emptyList<Glue.PickerLine>(), Glue.pickerRows(none, now))
+        val paired = none.copy(paired = Glue.PickerPaired(java.time.Instant.parse("2026-11-03T10:00:00Z").toEpochMilli(), "Firefox on Linux"), heard = now - 120_000)
+        assertEquals(
+            listOf("Paired with Piwi Picker in Firefox on Linux" to "since Nov 3", "Last heard 2 min ago" to "", "Listening on 127.0.0.1:63342" to ""),
+            Glue.pickerRows(paired, now).map { it.label to it.description },
+        )
+        assertEquals(
+            listOf("Paired with Piwi Picker", "Last heard 5 s ago", "Listening on 127.0.0.1:63342"),
+            Glue.pickerRows(none.copy(heard = now - 5_000), now).map { it.label },
+        )
+        assertEquals("not where Piwi Picker looks", Glue.pickerRows(paired.copy(port = 8080), now).last().description)
+        assertEquals(
+            "Piwi Picker in Chrome on macOS asks to pair with this IDE, to send it the locators you pick and follow its runs. If you just clicked Pair in Piwi Picker, type the code it shows.",
+            Glue.pairingPrompt("Chrome on macOS"),
+        )
+        // The proof the core's `editorPairingProof` makes of the same code, request and token.
+        assertEquals(
+            "9dce09ed2dabb72ba5e238052afa36fcc0c563abfc4b2814d7c8684c2e966e1b",
+            Glue.editorPairingProof("bcdf-ghjk", "0123456789abcdef", "the-token-1234567890"),
+        )
+        assertEquals("BCDFGHJK", Glue.normalizeEditorPairingCode(" bcdf ghjk "))
+        for (typed in listOf("BCDFGHJ", "BCDF-GHJA", "")) assertNull(typed, Glue.normalizeEditorPairingCode(typed))
     }
 
     private fun tree(vararg files: String): Path {
@@ -3334,7 +3742,7 @@ class GlueTest {
                 true,
                 "Piwi: run #124",
                 "1 of 3 CI failures fixed, 2 still failing (login.spec.ts › logs in, checkout.spec.ts › pays)",
-                listOf("Open the failures", "Open in dashboard", "Re-run failing"),
+                listOf("Open the failures", "Open in dashboard", "Re-run failing", "Settings…"),
             ),
             Glue.runVerdict(ended),
         )
@@ -3343,7 +3751,7 @@ class GlueTest {
     @Test
     fun `a run where nothing fails is an information, offering Only on failure`() {
         assertEquals(
-            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure")),
+            Glue.RunVerdict(false, "Piwi: run #124", "1 of 1 CI failure fixed", listOf("Open the failures", "Open in dashboard", "Only on failure", "Settings…")),
             Glue.runVerdict(passing),
         )
     }
@@ -3455,6 +3863,18 @@ class GlueTest {
         assertEquals(Glue.Redraw.NONE, Glue.redraw(null, null))
         assertEquals(Glue.Redraw.TESTS, Glue.redraw(latest, testing))
         assertEquals(Glue.Redraw.TESTS, Glue.redraw(testing, ended))
+        // A test of a run the IDE follows, as its worker tells it, draws the tests' lines again too.
+        val mug = RunLineTest("file:///w/tests/cart.spec.ts", listOf("adds a mug"), "paused")
+        val paused = ended.copy(contexts = ended.contexts!!.map { it.copy(runTests = listOf(mug)) })
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(ended, paused))
+        // Its spec is drawn again, though no test of it showed a result before.
+        assertEquals(setOf(java.nio.file.Path.of(java.net.URI(mug.uri))), Glue.runTestFiles(paused))
+        assertEquals(emptySet<java.nio.file.Path>(), Glue.runTestFiles(ended))
+        // So does a test of a run in a config no instance reads, which the contexts leave out.
+        val unread = RunLineTest("file:///w2/tests/cart.spec.ts", listOf("adds a mug"), "running")
+        val elsewhere = ended.copy(runTests = listOf(UnreadRunTests("/w2", listOf(unread))))
+        assertEquals(Glue.Redraw.TESTS, Glue.redraw(ended, elsewhere))
+        assertEquals(setOf(java.nio.file.Path.of(java.net.URI(unread.uri))), Glue.runTestFiles(elsewhere))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(ended, next))
         assertEquals(Glue.Redraw.ALL, Glue.redraw(null, latest))
         // Another baseline is another run in the files.
@@ -3550,6 +3970,94 @@ class GlueTest {
             ),
             Glue.coverageMarks(mappedCoverage, 20, shown = true),
         )
+    }
+
+    @Test
+    fun `a test marked to fail passes in a run's test tree by failing, and fails by passing`() {
+        val tree = Glue.RunTestTree()
+        fun begin(worker: Int) = tree.lines(
+            RunTestEvent("ed-1", "/w", worker, "test-begin", RunTest("id", listOf("pays"), "file:///w/tests/cart.spec.ts", 3, "chromium", 0)),
+        )
+        fun end(worker: Int, status: String, ok: Boolean?) = tree.lines(RunTestEvent("ed-1", "/w", worker, "test-end", status = status, ok = ok))
+        begin(0)
+        assertEquals(listOf("##teamcity[testFinished nodeId='3']"), end(0, "failed", ok = true))
+        begin(0)
+        assertEquals(
+            listOf(
+                "##teamcity[testFailed nodeId='4' message='Expected to fail, but passed']",
+                "##teamcity[testFinished nodeId='4']",
+            ),
+            end(0, "passed", ok = false),
+        )
+        // An interruption is what it is, whatever `ok` says.
+        begin(0)
+        assertEquals(
+            listOf("##teamcity[testIgnored nodeId='5' message='Interrupted']", "##teamcity[testFinished nodeId='5']"),
+            end(0, "interrupted", ok = false),
+        )
+    }
+
+    @Test
+    fun `a run's test events draw its tests under their project, spec and describe blocks, each attempt ended by its worker`() {
+        val tree = Glue.RunTestTree()
+        fun begin(worker: Int, vararg title: String, retry: Int = 0) = tree.lines(
+            RunTestEvent("ed-1", "/w", worker, "test-begin", RunTest("id", title.toList(), "file:///w/tests/cart.spec.ts", 3, "chromium", retry)),
+        )
+        // The service says `ok` as a reporter that does not say what it expected reads: `passed`.
+        fun end(worker: Int, status: String) = tree.lines(RunTestEvent("ed-1", "/w", worker, "test-end", status = status, ok = status == "passed"))
+        assertEquals(listOf("##teamcity[enteredTheMatrix]"), tree.start())
+        assertEquals(
+            listOf(
+                "##teamcity[testSuiteStarted nodeId='1' parentNodeId='0' name='chromium']",
+                "##teamcity[testSuiteStarted nodeId='2' parentNodeId='1' name='tests/cart.spec.ts' locationHint='file:///w/tests/cart.spec.ts']",
+                "##teamcity[testSuiteStarted nodeId='3' parentNodeId='2' name='cart' locationHint='file:///w/tests/cart.spec.ts']",
+                "##teamcity[testStarted nodeId='4' parentNodeId='3' name='adds a |'mug|'' locationHint='file:///w/tests/cart.spec.ts:4']",
+            ),
+            begin(0, "cart", "adds a 'mug'"),
+        )
+        // Another worker's test of the same block, at once: the suites are there already.
+        assertEquals(
+            listOf("##teamcity[testStarted nodeId='5' parentNodeId='3' name='removes it' locationHint='file:///w/tests/cart.spec.ts:4']"),
+            begin(1, "cart", "removes it"),
+        )
+        assertEquals(
+            listOf("##teamcity[testFailed nodeId='5' message='Timed out']", "##teamcity[testFinished nodeId='5']"),
+            end(1, "timedOut"),
+        )
+        assertEquals(listOf("##teamcity[testFinished nodeId='4']"), end(0, "passed"))
+        // An end with no test begun by its worker adds nothing; a retry is a node of its own.
+        assertEquals(emptyList<String>(), end(0, "passed"))
+        assertEquals(
+            listOf("##teamcity[testStarted nodeId='6' parentNodeId='3' name='removes it (retry 1)' locationHint='file:///w/tests/cart.spec.ts:4']"),
+            begin(1, "cart", "removes it", retry = 1),
+        )
+        assertEquals(
+            listOf("##teamcity[testIgnored nodeId='6']", "##teamcity[testFinished nodeId='6']"),
+            end(1, "skipped"),
+        )
+        // A worker gone mid-test: its test was interrupted, not failed.
+        begin(2, "cart", "pays")
+        assertEquals(
+            listOf("##teamcity[testIgnored nodeId='7' message='Interrupted']", "##teamcity[testFinished nodeId='7']"),
+            end(2, "interrupted"),
+        )
+        assertEquals(
+            listOf(
+                "##teamcity[testSuiteFinished nodeId='3']",
+                "##teamcity[testSuiteFinished nodeId='2']",
+                "##teamcity[testSuiteFinished nodeId='1']",
+            ),
+            tree.finish(),
+        )
+    }
+
+    @Test
+    fun `the next line no test runs is after the clicked one, from the top again past the last`() {
+        val coverage = CoverageResult(notRun = listOf(LineSpan(11, 11), LineSpan(4, 5)))
+        assertEquals(11, Glue.nextNotRunLine(coverage, 8))
+        assertEquals(4, Glue.nextNotRunLine(coverage, 11))
+        assertEquals(null, Glue.nextNotRunLine(CoverageResult(), 0))
+        assertEquals(null, Glue.nextNotRunLine(null, 0))
     }
 
     @Test
@@ -3670,9 +4178,9 @@ class GlueTest {
     @Test
     fun theToolWindowOffersToRestartAServiceThatStoppedAndShowsTheLogOfOneThatCouldNotStart() {
         assertEquals(Glue.EmptyText(Glue.WAITING_FOR_TRUST), Glue.serviceDownText(trusted = false, startProblem = "no node", stopped = true))
-        assertEquals(Glue.EmptyText("no node", listOf(Glue.EmptyLink.OPEN_LOG)), Glue.serviceDownText(true, "no node", stopped = true))
+        assertEquals(Glue.EmptyText("no node", listOf(Glue.EmptyLink.OPEN_LOG.link)), Glue.serviceDownText(true, "no node", stopped = true))
         assertEquals(
-            Glue.EmptyText(Glue.SERVICE_STOPPED, listOf(Glue.EmptyLink.RESTART_SERVICE, Glue.EmptyLink.OPEN_LOG)),
+            Glue.EmptyText(Glue.SERVICE_STOPPED, listOf(Glue.EmptyLink.RESTART_SERVICE.link, Glue.EmptyLink.OPEN_LOG.link)),
             Glue.serviceDownText(true, null, stopped = true),
         )
         assertEquals(Glue.EmptyText(Glue.NOT_STARTED), Glue.serviceDownText(true, null, stopped = false))
@@ -4071,5 +4579,129 @@ class GlueTest {
         assertEquals(first, Glue.findIn(text, "PAY", text.indexOf("pay later") + 1))
         assertEquals(-1, Glue.findIn(text, "checkout", 0))
         assertEquals(-1, Glue.findIn(text, "", 0))
+    }
+
+    // ── The Tests tab ────────────────────────────────────────────────────────────────────────────────────────────────
+
+    private fun treeTest(title: String, status: String? = null, tags: List<String> = emptyList(), owner: String? = null) =
+        TreeTest(title = title, suite = emptyList(), status = status, tags = tags, owner = owner, root = "/w", uri = "file:///w/a.spec.ts")
+
+    private fun treeNode(
+        id: String,
+        kind: String,
+        label: String,
+        sortText: String = label,
+        children: List<TestTreeNode> = emptyList(),
+        test: TreeTest? = null,
+        runnable: Boolean = true,
+    ) = TestTreeNode(id = id, label = label, kind = kind, sortText = sortText, runnable = runnable, test = test, children = children)
+
+    private val testsAnswer = TestItemsResult(
+        listOf(
+            TestItemsContext(
+                root = "/w",
+                label = "shop",
+                nodes = listOf(
+                    treeNode("missing", "notInCheckout", "Not in this checkout", "2", runnable = false, children = listOf(
+                        treeNode("missing/gone", "test", "was deleted", test = treeTest("was deleted", "passed").copy(uri = ""), runnable = false),
+                    )),
+                    treeNode("spec/a", "spec", "a.spec.ts", "1a.spec.ts", children = listOf(
+                        treeNode("spec/a/refunds", "test", "refunds", "000006", test = treeTest("refunds", "failed", owner = "Ada L")),
+                        treeNode("spec/a/pays", "test", "pays", "000002", test = treeTest("pays", "passed", tags = listOf("@smoke")), children = listOf(
+                            treeNode("spec/a/pays\u001dchromium", "project", "chromium", "0"),
+                            treeNode("spec/a/pays\u001dfirefox", "project", "firefox", "1"),
+                        )),
+                    )),
+                ),
+            ),
+        ),
+    )
+
+    @Test
+    fun testTheTestsTabShowsTheServicesNodesInTheirOrderAConfigsNodeWhenSeveralOrWhenOneCannotBeListed() {
+        val nodes = Glue.testsTree(testsAnswer)
+        assertEquals(listOf("a.spec.ts", "Not in this checkout"), nodes.map { it.label })
+        assertEquals(listOf("pays", "refunds"), nodes[0].children.map { it.label })
+        assertEquals(listOf("chromium", "firefox"), nodes[0].children[0].children.map { it.label })
+        // A spec's result: the first of failed, flaky, passed its tests have.
+        assertEquals("failed", Glue.testsStatus(nodes[0]))
+        assertEquals("passed", Glue.testsStatus(nodes[0].children[0]))
+        val failed = testsAnswer.copy(
+            contexts = testsAnswer.contexts!!.map { it.copy(listing = TestListing(error = "Playwright is not installed in /w: run npm install there.")) },
+        )
+        val configs = Glue.testsTree(failed)
+        assertEquals(listOf("config\u001f/w"), configs.map { it.id })
+        assertEquals("Playwright is not installed in /w: run npm install there.", configs[0].error)
+        assertEquals(listOf("a.spec.ts", "Not in this checkout"), configs[0].children.map { it.label })
+        assertEquals(emptyList<Glue.TestsNode>(), Glue.testsTree(null))
+        assertEquals("Reading the tests…", Glue.testsEmptyText(null, false))
+        assertEquals("No test matches the filter.", Glue.testsEmptyText(testsAnswer, true))
+    }
+
+    @Test
+    fun testTheServicesUrisAreReadByFileOfUriNeverAsVfsUrls() {
+        val sources = listOf("src/main/kotlin", "src/main/java").map { java.io.File(it) }
+        assertTrue(sources.all { it.isDirectory })
+        val vfsUrl = Regex("findFileByUrl\\(", RegexOption.IGNORE_CASE)
+        val calls = sources.flatMap { it.walkTopDown().filter { file -> file.extension in setOf("kt", "java") } }
+            .flatMap { file -> file.readLines().withIndex().filter { vfsUrl.containsMatchIn(it.value) }.map { "${file.name}:${it.index + 1}" } }
+        assertEquals(emptyList<String>(), calls)
+    }
+
+    @Test
+    fun testAServiceUriIsReadAsAPathWithItsEscapesAndWhatAnOlderNodeLeftUnescaped() {
+        assertEquals(Path.of("/w/Jean Dupont/a.spec.ts"), Glue.pathOfUri("file:///w/Jean%20Dupont/a.spec.ts"))
+        assertEquals(Path.of("/w/app/[locale]/a.spec.ts"), Glue.pathOfUri("file:///w/app/%5Blocale%5D/a.spec.ts"))
+        assertEquals(Path.of("/w/app/[locale]/a|b^c.spec.ts"), Glue.pathOfUri("file:///w/app/[locale]/a|b^c.spec.ts"))
+        assertNull(Glue.pathOfUri("https://example.com/a.spec.ts"))
+        assertNull(Glue.pathOfUri(null))
+        // Both spellings name one file.
+        assertEquals(Glue.fileKey("file:///w/app/%5Blocale%5D/a.spec.ts"), Glue.fileKey("file:///w/app/[locale]/a.spec.ts"))
+    }
+
+    @Test
+    fun testOnlyPathOfUriReadsAUriAsAPath() {
+        // `Path.of(URI(…))`, `Paths.get`, `File(URI…)` or `URI.create`, and `URLDecoder`, which reads `+` as a space.
+        val read = Regex("(Path\\.of|Paths\\.get|File)\\((java\\.net\\.)?URI(\\.create)?\\(|URLDecoder")
+        val sources = listOf("src/main/kotlin", "src/main/java").map { java.io.File(it) }
+        assertTrue(sources.all { it.isDirectory })
+        val reads = sources.flatMap { it.walkTopDown().filter { file -> file.extension in setOf("kt", "java") } }
+            .flatMap { file -> file.readLines().filter { read.containsMatchIn(it) }.map { file.name } }
+        assertEquals(listOf("Glue.kt"), reads)
+    }
+
+    @Test
+    fun testTheTestsTabsFilterKeepsTheTestsWhoseTitleTagOwnerOrResultHoldsItsWordsAndASpecWhole() {
+        val nodes = Glue.testsTree(testsAnswer)
+        fun labels(filter: String) = Glue.testsFiltered(nodes, filter).flatMap { n -> listOf(n.label) + n.children.map { "  ${it.label}" } }
+        assertEquals(listOf("a.spec.ts", "  pays"), labels("@smoke"))
+        assertEquals(listOf("a.spec.ts", "  refunds"), labels("owner:ada-l failed"))
+        assertEquals(listOf("Not in this checkout", "  was deleted"), labels("deleted"))
+        assertEquals(listOf("a.spec.ts", "  pays", "  refunds"), labels("A.SPEC"))
+        assertSame(nodes, Glue.testsFiltered(nodes, "  "))
+        assertEquals(emptyList<Glue.TestsNode>(), Glue.testsFiltered(nodes, "nothing like it"))
+    }
+
+    @Test
+    fun testARunOfTheTestsTabSendsTheRunnableNodesAndWithTheFilterOnTheTestsItShows() {
+        val nodes = Glue.testsTree(testsAnswer)
+        val spec = nodes[0]
+        val firefox = spec.children[0].children[1]
+        assertEquals(listOf("spec/a", "spec/a/pays\u001dfirefox"), Glue.testsRunIds(listOf(spec, firefox, nodes[1]), false))
+        // With the filter on: the tests the spec shows, not the spec whole.
+        val shown = Glue.testsFiltered(nodes, "@smoke")
+        assertEquals(listOf("spec/a/pays"), Glue.testsRunIds(shown, true))
+        assertEquals(emptyList<String>(), Glue.testsRunIds(listOf(nodes[1]), true))
+    }
+
+    @Test
+    fun testTheTestsTabWritesADurationAndReadsTheTreeAgainWhenItsRunsChange() {
+        assertEquals("850 ms", Glue.testsDuration(850))
+        assertEquals("1.2 s", Glue.testsDuration(1234))
+        assertEquals("2 min 5 s", Glue.testsDuration(125_000))
+        assertNull(Glue.testsDuration(null))
+        val runs = RunStatusResult(listOf(RunStatus(root = "/w", failures = 1)))
+        assertEquals(Glue.testsResultsKey(runs), Glue.testsResultsKey(RunStatusResult(listOf(RunStatus(root = "/w", failures = 1)))))
+        assertNotEquals(Glue.testsResultsKey(runs), Glue.testsResultsKey(RunStatusResult(listOf(RunStatus(root = "/w", failures = 2)))))
     }
 }

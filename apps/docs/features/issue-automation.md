@@ -29,7 +29,7 @@ A rule counts only the runs it names:
 | Field | What it means |
 |---|---|
 | **Branches** | Branch names or `*` patterns (`release/*`). With **Default branch** on, the project's default branch too, whatever it is named. Nothing named: every branch. |
-| **Environments** | Environment names or `*` patterns (`prod*`). Nothing named: every environment. |
+| **Environments** | The project's [environments](./environments), picked from its list, or typed keys and `*` patterns (`prod*`), each matching an environment's key or an alias, ignoring case. A run whose label has no environment matches by its label. Nothing named: every environment. |
 | **Occurrences** | The failing executions counted in those runs. |
 | **Runs** | The distinct runs among them, so one run with ten failing retries counts once. |
 | **Days** | The days since the first counted occurrence, measured at the run being checked. |

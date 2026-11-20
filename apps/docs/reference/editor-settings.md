@@ -42,10 +42,10 @@ the choice of the desktop app on this machine only.
 | `piwi.runNotifications` | When a run ends, whether a notification says what it changed: always, only when something fails, or never | Say what it changed when something fails | Yours |
 | `piwi.runNotificationsScope` | The runs it says it for: the runs started here, or also the branch's CI runs | The runs started here and the branch's CI runs | Yours |
 | `piwi.statusBarAlert` | When the status bar item turns red: for a new failure a run started here caused, for any failing test, or never | For a new failure a run started here caused | Yours |
-| `piwi.breakpoints` | Whether the runs Piwi starts pause at the editor's breakpoints: [Editor breakpoints](/features/editor-breakpoints) | on | Yours |
+| `piwi.breakpoints` | Which runs pause at the editor's breakpoints, Debug with Piwi, every run or none: [Editor breakpoints](/features/editor-breakpoints) | Debug with Piwi | Yours |
 | `piwi.runHeaded` | Whether every run Piwi starts runs headed, its browser window shown | off | Yours |
 | `piwi.runHoldFailures` | [Hold failures](/features/watch-a-run) from each run's start: Auto, On or Off | Auto | Yours |
-| `piwi.testExplorer` | VS Code: whether the Testing view lists Piwi's tests, with their results | on | Yours, which a project may set |
+| `piwi.testExplorer` | VS Code: whether the Testing view lists Piwi's tests, with their results; off leaves the view to another extension's tree, such as Microsoft's Playwright Test | on | Yours, which a project may set |
 | JetBrains: **Run the tests in the IDE's Playwright runner** | Whether a run starts in the IDE's Playwright runner (a test tree, Debug, Rerun Failed Tests) or in the Run tool window's console. The runner comes with the IDE's JavaScript plugin, as in WebStorm, IntelliJ IDEA Ultimate and Rider; where it lacks one, the option is off and says why | off | Yours |
 
 ## In the editor
@@ -59,6 +59,7 @@ the choice of the desktop app on this machine only.
 | `piwi.locatorWarnings` | Whether a locator the [locator stability rules](/reference/locator-stability) find brittle is warned at, with its stable alternative as a quick fix | on | Yours |
 | `piwi.failingTestTint` | Whether a failing test and the line it failed at are tinted; the gutter still marks them, unless `piwi.gutterIcons` is off | on | Yours |
 | `piwi.ciPositions` | Whether a CI run of the branch shows where it stands, at the end of each line: [Editor CI runs](/features/editor-ci-runs) | on | Yours |
+| `piwi.runningLines` | Which lines of your run are marked as running: every running test's, the watched worker's alone, or none: [The running line](/features/watch-running-test#the-running-line) | Every running test's | Yours |
 
 ## Agents (MCP)
 
@@ -71,7 +72,7 @@ the choice of the desktop app on this machine only.
 
 | Setting | What it chooses | Default | Kind |
 |---|---|---|---|
-| `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid: `agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on) and `reporter-missing` (a run did not reach the instance, from a config without the Piwi reporter). Remove a kind to see its message again | none | Yours |
+| `piwi.hiddenMessages` | VS Code: the kinds of messages **Don't Show Again** hid: `agent-let-go` (a stop an agent held goes on once the agent went idle), `window-shared` (a run is shared live, as the window's runs are), `unattended-resumed` (a test stopped where nobody attends the run goes on), `reporter-missing` (a run did not reach the instance, from a config without the Piwi reporter) and `picker-inserted` (what Piwi Picker inserted at the cursor). Remove a kind to see its message again | none | Yours |
 | `piwi.trace.server` | VS Code: whether the traffic with the editor service is traced in the Piwi output channel | Off | Yours |
 
 ## Related

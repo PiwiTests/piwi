@@ -25,6 +25,7 @@ import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.fileEditor.ex.FileEditorManagerEx
 import com.intellij.openapi.fileEditor.impl.text.TextEditorProvider
+import com.intellij.openapi.util.Disposer
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.vfs.VirtualFile
 import com.intellij.openapi.wm.RegisterToolWindowTask
@@ -50,7 +51,7 @@ import java.util.Base64
 import java.util.concurrent.CopyOnWriteArrayList
 import javax.imageio.ImageIO
 import javax.swing.ImageIcon
-import javax.swing.JCheckBox
+import javax.swing.JToggleButton
 import javax.swing.JLabel
 
 /**
@@ -633,23 +634,50 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         assertEquals(emptyList<Int>(), inlayLine())
     }
 
-    /** A running line of a slot the Worker tab watches no more is not taken, however late it comes. */
-    fun testARunningLineOfASlotNoLongerWatchedIsNotTaken() {
+    /** The line a Pause waits at is marked with End the test while the worker waits there, and goes as it stops. */
+    fun testTheLineAPauseWaitsAtIsMarkedUntilTheTestStops() {
+        val file = file("tests/coupon.spec.ts", coupon)
+        myFixture.openFileInEditor(file)
+        val waiting = RunWaiting("Click getByRole('button', { name: 'Apply' })", uri(file), 5, "2026-10-25T10:00:00.000Z", true)
+        fun inlayLines() = myFixture.editor.inlayModel.getAfterLineEndElementsInRange(0, myFixture.editor.document.textLength)
+            .filter { it.renderer is WaitingLineInlay }.map { myFixture.editor.document.getLineNumber(it.offset) }
+        hear(RunSession("ed-wait", base.path, listOf(RunWorker(0, 1, "running", test(), pausing = true, waiting = waiting))))
+        assertEquals(listOf("Piwi: Worker 2 · Pausing · waits in Click getByRole('button', { name: 'Apply' })"), sessions.waitingShown())
+        assertEquals(listOf(5), inlayLines())
+        // The worker stopped: the line goes.
+        val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(file), 5, 4, null, false, "2026-10-25T10:00:07.000Z")
+        hear(RunSession("ed-wait", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop))))
+        assertEquals(emptyList<String>(), sessions.waitingShown())
+        assertEquals(emptyList<Int>(), inlayLines())
+        hear(RunSession("ed-wait", ended = true))
+    }
+
+    /** Each slot's running line is marked, watched or not, the slots at the same line named in one inlay. */
+    fun testEverySlotsRunningLineIsMarkedOneInlayALine() {
         val file = file("tests/coupon.spec.ts", coupon)
         myFixture.openFileInEditor(file)
         val call = RunningCall("t1", "Click getByRole('button', { name: 'Apply' })", uri(file), 5)
         hear(RunSession("ed-late", base.path, listOf(RunWorker(0, 1, "running", test()), RunWorker(1, 0, "running", test()))))
-        watched("ed-late", 1) {
-            sessions.runningLine(RunningLine("ed-late", 1, 0, call))
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(1, sessions.runningShown().size)
-            sessions.showWorker("ed-late", 0)
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(emptyList<String>(), sessions.runningShown())
-            sessions.runningLine(RunningLine("ed-late", 1, 0, call.copy(line = 4)))
-            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-            assertEquals(emptyList<String>(), sessions.runningShown())
-        }
+        fun inlays() = myFixture.editor.inlayModel.getAfterLineEndElementsInRange(0, myFixture.editor.document.textLength)
+            .filter { it.renderer is RunningLineInlay }.map { (it.renderer as RunningLineInlay).text }
+        // No slot is watched: each slot's line the service tells is marked, the slots at one line in one inlay.
+        sessions.runningLine(RunningLine("ed-late", 1, 0, call))
+        sessions.runningLine(RunningLine("ed-late", 0, 1, call))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(listOf("Piwi: Worker 1, Worker 2 run Click getByRole('button', { name: 'Apply' })"), inlays())
+        sessions.runningLine(RunningLine("ed-late", 0, 1, call.copy(title = "Fill \"MORNING10\" getByLabel('Coupon code')")))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(
+            listOf("Piwi: Worker 1 runs Fill \"MORNING10\" getByLabel('Coupon code'); Worker 2 runs Click getByRole('button', { name: 'Apply' })"),
+            inlays(),
+        )
+        sessions.runningLine(RunningLine("ed-late", 0, 1, call.copy(line = 4)))
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(2, inlays().size)
+        // Watching a slot and ending the watch leaves the lines to the service.
+        watched("ed-late", 1) {}
+        PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(2, sessions.runningShown().size)
     }
 
     /**
@@ -1148,26 +1176,90 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertEquals(PausedPageParams("ed-2", 0), pages.single())
             assertEquals("Paused · Click getByRole('button', { name: 'Pay now' }) · attempt 2 · unread.page.ts:4", shown.pageCaption)
             assertEquals(4, shown.pageImage!!.width)
-            assertEquals(PiwiRunSessions.PAUSED_PAGE, window.contentManager.selectedContent?.displayName)
+            // One page per worker: the tab is named after the stop's worker, and holds the stopped line's row.
+            assertEquals("Worker 1", window.contentManager.selectedContent?.displayName)
+            assertEquals(listOf("Resume", "Step", "Finish"), shown.pageControls)
             hear(RunSession("ed-2", ended = true))
             assertEquals("The run ended.", sessions.shown().pageCaption)
             assertNull(sessions.shown().pageImage)
             // The tab closes, and the next stop opens it again.
-            val tab = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE)
+            assertEquals(emptyList<String>(), sessions.shown().pageControls)
+            val tab = window.contentManager.findContent("Worker 1")
             assertTrue(tab.isCloseable)
             window.contentManager.removeContent(tab, true)
-            assertNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
+            assertNull(window.contentManager.findContent("Worker 1"))
             hear(RunSession("ed-3", base.path, listOf(RunWorker(0, 0, "stopped", test(retry = 1), unread.copy(since = "2026-10-25T10:00:02.000Z")))))
-            waitFor("the paused page again") { window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE) }
+            waitFor("the paused page again") { window.contentManager.findContent("Worker 1") }
         } finally {
             ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
         }
     }
 
     /**
+     * The Worker tab offers Interact at a stop of its slot that takes input, once its watch is accepted, as the Paused
+     * page tab does, with the stop's controls; not while the worker runs, nor at a stop that takes none.
+     */
+    /**
+     * One page per worker: once the Worker tab's watch of a slot is accepted, it takes the slot's headless stop from the
+     * Paused page tab, which closes; Watch off gives the stop back to the Paused page tab.
+     */
+    fun testTheWorkerTabTakesItsSlotsStopFromThePausedPageAndGivesItBackAsWatchGoesOff() {
+        val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        sessions.inSight = { true }
+        try {
+            val spec = file("tests/coupon.spec.ts", coupon)
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:11.000Z")
+            hear(RunSession("ed-12", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, watchable = true))))
+            waitFor("the paused page") { sessions.shown().pageTab }
+            sessions.showWorker("ed-12", 0)
+            waitFor("the watch") { lanes.lastOrNull()?.takeIf { it.ref == "ed-12" && it.on } }
+            waitFor("the stop taken") { sessions.shown().takeIf { it.pageTab == null } }
+            assertEquals(listOf("Resume", "Step", "Finish"), sessions.shown().workerControls)
+            val worker = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            UIUtil.findComponentsOfType(worker, JToggleButton::class.java).single { it.text == "Watch" }.doClick()
+            waitFor("the stop given back") { sessions.shown().pageTab }
+        } finally {
+            sessions.inSight = { it.isShowing }
+            ToolWindowManager.getInstance(project).unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    fun testTheWorkerTabOffersInteractAtAStopThatTakesInput() {
+        val spec = file("tests/coupon.spec.ts", coupon)
+        hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "running", test(), watchable = true))))
+        watched("ed-8", 0) { window ->
+            assertFalse(sessions.shown().workerInteract)
+            assertEquals(emptyList<String>(), sessions.shown().workerControls)
+            val input = listOf("view", "input")
+            val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:09.000Z")
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, watchable = true, takes = input))))
+            assertTrue(sessions.shown().workerInteract)
+            assertEquals(listOf("Resume", "Step", "Finish"), sessions.shown().workerControls)
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val interact = UIUtil.findComponentsOfType(panel, JToggleButton::class.java).single { it.text == "Interact" }
+            interact.doClick()
+            assertTrue(panel.interacting)
+            // Carried to the slot's next stop that takes input, Interact is on for it: going off gives that one back.
+            val next = stop.copy(since = "2026-10-25T10:00:10.000Z")
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), next, watchable = true, takes = input))))
+            assertTrue(panel.interacting)
+            interact.doClick()
+            assertEquals(DriveStopParams("ed-8", 0, next.since!!, false), waitFor("the next stop given back") { drives.lastOrNull() })
+            // At a stop that takes none, it goes off, giving back the stop it was on for, and is offered no more.
+            interact.doClick()
+            hear(RunSession("ed-8", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop.copy(since = "2026-10-25T10:00:11.000Z"), watchable = true))))
+            assertFalse(panel.interacting)
+            assertFalse(sessions.shown().workerInteract)
+            waitFor("the stop given back again") { drives.takeIf { it.size == 2 } }
+            assertEquals(DriveStopParams("ed-8", 0, next.since!!, false), drives.last())
+        }
+    }
+
+    /**
      * Watch a worker's test opens the Worker tab on a worker whose reporter shows its running test, its caption following
-     * the worker through its stop and the run's end; a headless stop of its worker opens the Paused page, selected
-     * while the tool window does not show, and the run's end turns Watch off.
+     * the worker through its stop and the run's end; a headless stop of its worker out of sight opens the Paused page
+     * tab, selected while the tool window does not show, and the run's end turns Watch off.
      */
     fun testAWorkersTestIsWatchedInTheWorkerTab() {
         val window = ToolWindowManager.getInstance(project).registerToolWindow(RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
@@ -1183,12 +1275,14 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("pause", "Click getByRole('button', { name: 'Apply' })", uri(spec), 5, 4, null, false, "2026-10-25T10:00:07.000Z")
             hear(RunSession("ed-7", base.path, listOf(RunWorker(0, 1, "stopped", test(), stop, watchable = true))))
             assertEquals("Worker 2 · Paused · Click getByRole('button', { name: 'Apply' }) · coupon.spec.ts:6", sessions.shown().workerCaption)
+            // Out of sight, the Worker tab shows the stop with the stopped line's row, and the Paused page tab, named
+            // after the worker too, takes it, selected while the tool window does not show. The Worker tab in sight
+            // keeps its place (`Glue.selectsPausedPage`, checked by `GlueTest`).
+            assertEquals(listOf("Resume", "Step", "Finish"), sessions.shown().workerControls)
             waitFor("the paused page asked") { pages.lastOrNull()?.takeIf { it.ref == "ed-7" } }
-            assertNotNull(window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE))
-            // The headless tool window never shows, so nobody sees the Worker tab: the Paused page is selected. The
-            // Worker tab in sight keeps its place (`Glue.selectsPausedPage`, checked by `GlueTest`).
+            assertEquals("Worker 2", sessions.shown().pageTab)
             assertFalse(window.isVisible)
-            assertEquals(PiwiRunSessions.PAUSED_PAGE, sessions.shown().selectedTab)
+            assertEquals("Worker 2", sessions.shown().selectedTab)
             hear(RunSession("ed-7", ended = true))
             assertEquals("Worker 2 · the run ended.", sessions.shown().workerCaption)
             assertFalse(sessions.shown().workerWatch)
@@ -1334,8 +1428,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val first = "2026-10-28T10:00:01.000Z"
             hear(RunSession("ed-9", base.path, listOf(RunWorker(0, 0, "stopped", test(), at(first), takes = live))))
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
-            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
-            val interact = UIUtil.findComponentsOfType(panel, JCheckBox::class.java).single { it.text == "Interact" }
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val interact = UIUtil.findComponentsOfType(panel, JToggleButton::class.java).single { it.text == "Interact" }
             // A tool window out of sight watches no page: Watch on and the watch accepted are played here.
             panel.liveWanted = true
             panel.watching(true)
@@ -1400,8 +1494,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
             hear(RunSession("ed-10", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("view", "input", "pick-at")))))
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
-            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
-            val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val boxes = UIUtil.findComponentsOfType(panel, JToggleButton::class.java)
             val interact = boxes.single { it.text == "Interact" }
             boxes.single { it.text == "Watch" }.doClick()
             waitFor("the watch accepted") { interact.takeIf { it.isEnabled } }
@@ -1442,8 +1536,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             val stop = RunStop("pause", "Click getByRole('button', { name: 'Pay now' })", uri(pageObject), 3, 4, null, false, since)
             hear(RunSession("ed-11", base.path, listOf(RunWorker(0, 0, "stopped", test(), stop, takes = listOf("view", "input", "pick-at")))))
             waitFor("the paused page") { sessions.shown().takeIf { it.pageImage != null } }
-            val panel = window.contentManager.findContent(PiwiRunSessions.PAUSED_PAGE).component as PausedPagePanel
-            val boxes = UIUtil.findComponentsOfType(panel, JCheckBox::class.java)
+            val panel = window.contentManager.findContent("Worker 1").component as PausedPagePanel
+            val boxes = UIUtil.findComponentsOfType(panel, JToggleButton::class.java)
             val live = boxes.single { it.text == "Watch" }
             val interact = boxes.single { it.text == "Interact" }
             val picture = UIUtil.findComponentsOfType(panel, JLabel::class.java).single { it.icon is ImageIcon }
@@ -1490,6 +1584,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val service = project.service<PiwiProjectService>()
         service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
         val manager = XDebuggerManager.getInstance(project).breakpointManager
+        // Every run takes them, a run heard of but not started here too.
+        PiwiUserSettings.state().breakpoints = "always"
         try {
             hear(running("ed-3"))
             assertEquals(SetRunBreakpointsParams("ed-3", emptyList()), waitFor("the breakpoints at the start") { breakpoints.firstOrNull() })
@@ -1527,6 +1623,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             Thread.sleep(300)
             assertEquals(5, breakpoints.size)
         } finally {
+            PiwiUserSettings.state().breakpoints = "debug"
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             // No service runs here: a read leaves nothing of the pushed status to the next tests.
             service.refreshStatus()
@@ -1534,6 +1631,85 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
             PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
         }
+    }
+
+    /**
+     * With the default `debug`, a Debug with Piwi run takes the IDE's breakpoints, a plain Run and a run started in a
+     * terminal none.
+     */
+    fun testOnlyADebugWithPiwiRunTakesTheBreakpointsByDefault() {
+        val type = TestLineBreakpointType()
+        XBreakpointType.EXTENSION_POINT_NAME.point.registerExtension(type, testRootDisposable)
+        val spec = file("tests/checkout.spec.ts", "test('pays', async ({ page }) => {\n  await page.goto('/');\n});\n")
+        val service = project.service<PiwiProjectService>()
+        service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
+        val manager = XDebuggerManager.getInstance(project).breakpointManager
+        try {
+            assertEquals("debug", Glue.breakpointsMode(PiwiUserSettings.state().breakpoints))
+            sessions.started("ed-debug", emptyList(), takes = true)
+            sessions.started("ed-plain", emptyList(), takes = false)
+            hear(running("ed-debug"))
+            hear(running("ed-plain"))
+            WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
+            assertEquals(
+                SetRunBreakpointsParams("ed-debug", listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the Debug with Piwi run's breakpoint") { breakpoints.firstOrNull { it.ref == "ed-debug" } },
+            )
+            Thread.sleep(300)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            assertTrue("a plain Run is sent none", breakpoints.none { it.ref == "ed-plain" })
+            assertTrue("a terminal's run takes none", editorBreakpoints.none { it.places.isNotEmpty() })
+            // A rerun of each (the Run tool window's Rerun) takes them as its run did.
+            val before = breakpoints.size
+            for (ref in listOf("ed-debug", "ed-plain")) {
+                hear(RunSession(ref, base.path, emptyList(), ended = true))
+                hear(running(ref))
+            }
+            assertEquals(
+                SetRunBreakpointsParams("ed-debug", listOf(EditorBreakpoint(uri(spec), 1))),
+                waitFor("the rerun's breakpoint") { breakpoints.drop(before).firstOrNull { it.ref == "ed-debug" } },
+            )
+            assertTrue("a plain Run's rerun is sent none", breakpoints.none { it.ref == "ed-plain" })
+        } finally {
+            WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
+            service.refreshStatus()
+            val deadline = System.currentTimeMillis() + 10_000
+            while (service.status != null && System.currentTimeMillis() < deadline) Thread.sleep(20)
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+    }
+
+    /** A run's tab draws its tests in the IDE's test tree as its workers begin and end them, its output beside them. */
+    fun testARunTabDrawsTheRunsTestsAsItsWorkersBeginAndEndThem() {
+        val spec = file("tests/cart.spec.ts", "test('adds a mug', async () => {});\n")
+        val handler = NopProcessHandler()
+        val relay = TestTreeRelay(handler)
+        val trees = project.service<PiwiRunTestTrees>()
+        trees.follow("ed-tree", relay)
+        fun begin(worker: Int, id: String, title: String) = RunTestEvent(
+            "ed-tree", base.path, worker, "test-begin", RunTest(id, listOf("cart", title), uri(spec), 0, "chromium"),
+        )
+        // Heard before the tab shows: kept until the relay starts.
+        trees.heard(begin(0, "a", "adds a mug"))
+        val view = PiwiRunTab.testConsole(project, relay, "Piwi: cart.spec.ts") { _, _ -> null }
+        relay.startNotify()
+        handler.startNotify()
+        trees.heard(begin(1, "b", "removes it"))
+        trees.heard(RunTestEvent("ed-tree", base.path, 0, "test-end", status = "passed", ok = true))
+        trees.heard(RunTestEvent("ed-tree", base.path, 1, "test-end", status = "failed", ok = false))
+        handler.destroyProcess()
+        val console = view as com.intellij.execution.testframework.sm.runner.ui.SMTRunnerConsoleView
+        val root = console.resultsViewer.testsRootNode
+        val tests = waitFor("the run's two tests ended") {
+            PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            root.allTests.filter { it.isLeaf }.takeIf { leaves -> leaves.size == 2 && leaves.none { it.isInProgress } }
+        }
+        assertEquals(listOf("adds a mug" to true, "removes it" to false), tests.map { it.name to it.isPassed })
+        assertEquals(
+            listOf("chromium", "tests/cart.spec.ts", "cart"),
+            generateSequence(tests[0].parent) { it.parent }.takeWhile { it != root }.map { it.name }.toList().reversed(),
+        )
+        Disposer.dispose(view)
     }
 
     /**
@@ -1547,6 +1723,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
         val service = project.service<PiwiProjectService>()
         service.statusChanged(StatusResult(listOf(ContextStatus(root = base.path, connected = true))))
         val manager = XDebuggerManager.getInstance(project).breakpointManager
+        // A run a terminal starts takes them with `always`.
+        PiwiUserSettings.state().breakpoints = "always"
         try {
             WriteAction.runAndWait<Throwable> { manager.addLineBreakpoint(type, spec.url, 1, null) }
             assertEquals(
@@ -1565,6 +1743,7 @@ class PiwiRunControlTest : BasePlatformTestCase() {
             assertTrue(myFixture.testAction(actions.getAction("Piwi.EndTest")).isEnabled)
             assertEquals(RunControlParams("terminal-41-1", 0, "end", since = since), waitFor("End the test") { controls.firstOrNull() })
         } finally {
+            PiwiUserSettings.state().breakpoints = "debug"
             WriteAction.runAndWait<Throwable> { manager.allBreakpoints.filter { it.type === type }.forEach { manager.removeBreakpoint(it) } }
             service.refreshStatus()
             val deadline = System.currentTimeMillis() + 10_000

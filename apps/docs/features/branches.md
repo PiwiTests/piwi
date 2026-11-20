@@ -28,7 +28,7 @@ Each project has a **Default branch** setting in the **Source control** section 
 
 ## Filtering by branch
 
-On a project page, the **Filters** block carries a **branch** multi-select (the git-branch icon) next to the environment filter. It appears once any of the project's runs carries a branch. With no branch picked, the page reads the project's default branch and the runs that report no branch, like [Analytics](./analytics#branch-policy); **All branches** beside it reads every branch, and the branches you pick read exactly those. The header, the runs list, the test catalog, the failure clusters, the flaky leaderboard, the Flake Lab and the performance trends all follow it; a note under the filters counts the runs on other branches they hide.
+On a project page, the **Filters** block carries a **branch** multi-select (the git-branch icon) next to the environment filter. It appears once any of the project's runs carries a branch. With no branch picked, the page reads the project's default branch and the runs that report no branch, like [Analytics](./analytics#branch-policy); **All branches** beside it reads every branch, and the branches you pick read exactly those. The header, the runs list, the test catalog, the failure clusters, the flaky leaderboard, the Flake Lab and the performance trends all follow it; a note under the filters counts the runs on other branches they hide. A project's [default environment](./environments#default-environment) works the same way: with no environment picked the page reads it, **All environments** reads every one, and the note counts the runs in other environments.
 
 The branch is an indexed column, so every project tab (the runs list included), Analytics and the MCP `list_runs` tool filter by it in the database. Runs reported before the column existed carry the branch recorded in their metadata, so old history still filters.
 
@@ -54,12 +54,12 @@ the sidebar when any of its runs started in the last ten days. Flake Lab and pro
 - **Choosing the base branch** — the Changes tab lets you take the baseline from any branch with an earlier full run, so a long-lived branch can be compared against `release/2` rather than `main`; the choice is in the URL (`?baseBranch=`) and on the API and MCP tool. See [What changed in a run](./run-changes#the-baseline).
 - **The environment, visual and page diffs** of one execution prefer the same environment, then the same branch, then
   the most recent pass: there is no base-branch rung ([the rule](./run-changes#one-execution-s-baseline)).
-- **Pull-request feedback** builds its "new failures vs. pre-existing" split from the same baseline, so a failure the PR did not introduce is reported as pre-existing, and the `max-new-regressions` rule of the [CI merge gate](/features/merge-gate) counts the same new failures. A failure whose test is already flaky on the default branch is also marked *Also flaky on `main` … — likely not yours*; the mark does not move it out of the new failures or the gate's count.
+- **Pull-request feedback** builds its "new failures vs. pre-existing" split from the same baseline, so a failure the PR did not introduce is reported as pre-existing, and the `max-new-regressions` rule of the [CI merge gate](/features/merge-gate) counts the same new failures. A failure whose test is already flaky on the default branch, in the project's default environment when it has one, is also marked *Also flaky on `main` … — likely not yours*; the mark does not move it out of the new failures or the gate's count.
 - **Performance alerts** — the `perf.regression` [notification](./notifications) measures a run against the previous runs on the same branch **in the same environment**.
 
 ## From an agent (MCP)
 
-The MCP `list_runs` tool takes a `branch` argument, so an agent can ask "what is failing on `main`" without pulling every run. `list_flaky_tests` takes no branch; it reads the same default-branch view as the dashboard's flaky leaderboard. See the [MCP server](/features/mcp).
+The MCP `list_runs` tool takes a `branch` argument, so an agent can ask "what is failing on `main`" without pulling every run. `list_flaky_tests` takes no branch; it reads the same default-branch view as the dashboard's flaky leaderboard, in the project's default environment unless its `environment` argument names another or `allEnvironments` asks for every one. See the [MCP server](/features/mcp).
 
 ## Notifications
 
@@ -67,7 +67,7 @@ Notification subscriptions can filter by branch and alert only on the default br
 
 ## Limits
 
-- **Views read the default branch by default.** Analytics counts each project's default branch (plus runs with no branch) until you pick branches or *All branches* (see [Branch policy](./analytics#branch-policy)). The flaky leaderboard does the same unless you scope it, with the [fallbacks](#the-default-branch) while the default branch is unknown.
+- **Views read the default branch by default.** Analytics counts each project's default branch (plus runs with no branch) until you pick branches or *All branches* (see [Branch policy](./analytics#branch-policy)). The flaky leaderboard does the same unless you scope it, with the [fallbacks](#the-default-branch) while the default branch is unknown. Both read a project's default environment too, when it has one.
 - **Branches are a run dimension, not entities.** There is no per-branch merge-readiness verdict, branch-class gate policy, or retention by branch class.
 - **A run needs a resolvable branch.** A purely local run with no CI variables, a detached `HEAD`, and no `PIWI_BRANCH` records no branch at all, so it will not appear under any branch filter.
 

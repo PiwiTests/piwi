@@ -6,7 +6,7 @@
  * Duplicate, Check and Remove. Edits stay in the form until the settings are
  * saved; Check reads the action as it is in the form.
  */
-import { duplicateCiActionName } from '~/utils/ci-action-form';
+import { duplicateCiAction } from '~/utils/ci-action-form';
 import {
   CI_ACTION_DEFAULT_KEYS,
   CI_ACTION_KINDS,
@@ -14,7 +14,6 @@ import {
   MAX_CI_ACTIONS,
   ciActionDefaultKinds,
   ciActionTargetSummary,
-  newCiActionId,
   type CiAction,
   type CiActionCheckResult,
   type CiActionKind,
@@ -23,11 +22,10 @@ import {
 
 const props = defineProps<{
   projectId: number;
+  /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
+  repositoryUrl?: string | null;
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
-  /** Whether the project holds a CI server token, and the base URL it is bound to. */
-  hasToken: boolean;
-  tokenUrl: string | null;
 }>();
 const settings = defineModel<CiActionsSettings>({ required: true });
 
@@ -42,9 +40,13 @@ const DEFAULT_BADGES: Record<CiActionKind, string> = {
 /** The badges in the order the editor lists the defaults. */
 const BADGE_KINDS: CiActionKind[] = ['tests', 'flakeLab', 'suite'];
 
+const { byId: environmentById } = useProjectEnvironments(() => props.projectId);
+
 const rows = computed(() =>
   settings.value.actions.map((action) => ({
     action,
+    environment:
+      (action.environmentId != null ? environmentById(action.environmentId)?.name : null) ?? action.environment,
     summary: ciActionTargetSummary(action.target),
     accepts: action.accepts.map((kind) => CI_ACTION_KIND_LABELS[kind]).join(', '),
     inputs: action.inputs.map((input) =>
@@ -87,11 +89,11 @@ function saveAction(action: CiAction, defaultFor: CiActionKind[]) {
 
 function duplicate(action: CiAction) {
   if (full.value) return;
-  const name = duplicateCiActionName(
-    action.name,
+  const copy = duplicateCiAction(
+    toRaw(action),
     settings.value.actions.map((a) => a.name),
+    (environmentId) => environmentById(environmentId)?.archived === true,
   );
-  const copy: CiAction = { ...structuredClone(toRaw(action)), id: newCiActionId(), name };
   const at = settings.value.actions.findIndex((a) => a.id === action.id);
   const actions = [...settings.value.actions];
   actions.splice(at + 1, 0, copy);
@@ -179,7 +181,7 @@ const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-mut
               <p class="break-words text-xs text-muted">
                 <span class="font-mono">{{ row.summary }}</span>
                 · Accepts {{ row.accepts }}
-                <template v-if="row.action.environment"> · Environment {{ row.action.environment }}</template>
+                <template v-if="row.environment"> · Environment {{ row.environment }}</template>
                 <template v-if="row.inputs.length">
                   · Inputs <span class="font-mono">{{ row.inputs.join(', ') }}</span></template
                 >
@@ -269,8 +271,8 @@ const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-mut
       :default-for="editingDefaults"
       :other-names="otherNames"
       :instance-url="instanceUrl"
-      :has-token="hasToken"
-      :token-url="tokenUrl"
+      :project-id="projectId"
+      :repository-url="repositoryUrl ?? null"
       @save="saveAction"
     />
   </div>

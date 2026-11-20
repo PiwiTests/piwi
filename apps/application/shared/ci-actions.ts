@@ -21,7 +21,6 @@ import {
   ciServerTargetProblem,
   DEFAULT_ARGS_PARAMETER,
   DEFAULT_DISPATCH_PARAMETER,
-  normalizeCiServerBaseUrl,
   resolveCiServerTarget,
   type CiRequestTemplate,
   type CiServerAuth,
@@ -66,13 +65,19 @@ export type CiActionTarget =
       argsInput: string;
       /** The input that receives the dispatch id, sent only when set. */
       dispatchIdInput?: string;
+      /** The SCM credential its dispatch and Check carry (`credentials.id`); absent, the project's. */
+      credentialId?: number;
     }
-  | { type: 'gitlab'; ref: string; argsVariable: string }
-  | { type: 'bitbucket'; pipeline: string; argsVariable: string }
+  | { type: 'gitlab'; ref: string; argsVariable: string; credentialId?: number }
+  | { type: 'bitbucket'; pipeline: string; argsVariable: string; credentialId?: number }
   | {
       type: 'ci-server';
       preset: CiServerPreset;
+      /** Absent, the credential's destination, else the instance's `PIWI_CI_SERVER_URL`. */
       baseUrl?: string;
+      /** The credential its requests carry (`credentials.id`); absent, the instance's, under its URL. */
+      credentialId?: number;
+      /** The user name a project's CI server token pairs with; the startup import moves it to the credential. */
       user?: string;
       /** The preset's fields (Jenkins: `job`, `argsParameter`, `dispatchParameter`, `ref`); Custom keeps only `ref`. */
       fields: Record<string, string>;
@@ -88,8 +93,10 @@ export interface CiAction {
   target: CiActionTarget;
   inputs: CiActionInput[];
   accepts: CiActionKind[];
-  /** The environment this action runs in; a run in that environment picks it first. */
+  /** The environment this action runs in, as written (its key when picked); a run of that environment picks it first. */
   environment?: string;
+  /** The environment `environment` names, one of the project's (`environments.id`). */
+  environmentId?: number;
 }
 
 export interface CiActionsSettings {
@@ -115,6 +122,7 @@ export function ciServerTargetOf(target: Extract<CiActionTarget, { type: 'ci-ser
   return {
     preset: target.preset,
     ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
+    ...(target.credentialId ? { credentialId: target.credentialId } : {}),
     ...(target.user ? { user: target.user } : {}),
     rerun: target.fields,
     ...(target.custom ? { custom: { auth: target.custom.auth, rerun: target.custom.request } } : {}),
@@ -145,10 +153,16 @@ function rawCiServerTarget(target: Record<string, unknown>): Record<string, unkn
   return {
     preset: target.preset,
     baseUrl: target.baseUrl,
+    credentialId: target.credentialId,
     user: target.user,
     rerun: target.fields,
     ...(custom ? { custom: { auth: custom.auth, rerun: custom.request } } : {}),
   };
+}
+
+/** A posted credential id: a positive integer, else absent. */
+function credentialIdOf(raw: unknown): { credentialId?: number } {
+  return typeof raw === 'number' && Number.isInteger(raw) && raw > 0 ? { credentialId: raw } : {};
 }
 
 /** A target from an untrusted payload, or null when it cannot dispatch. */
@@ -160,17 +174,26 @@ function resolveTarget(input: unknown): CiActionTarget | null {
     const argsInput = str(input.argsInput);
     const dispatchIdInput = str(input.dispatchIdInput);
     if (!workflow || !ref || !argsInput) return null;
-    return { type: 'github', workflow, ref, argsInput, ...(dispatchIdInput ? { dispatchIdInput } : {}) };
+    return {
+      type: 'github',
+      workflow,
+      ref,
+      argsInput,
+      ...(dispatchIdInput ? { dispatchIdInput } : {}),
+      ...credentialIdOf(input.credentialId),
+    };
   }
   if (input.type === 'gitlab') {
     const ref = str(input.ref);
     const argsVariable = str(input.argsVariable);
-    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable } : null;
+    return ref && argsVariable ? { type: 'gitlab', ref, argsVariable, ...credentialIdOf(input.credentialId) } : null;
   }
   if (input.type === 'bitbucket') {
     const pipeline = str(input.pipeline);
     const argsVariable = str(input.argsVariable);
-    return pipeline && argsVariable ? { type: 'bitbucket', pipeline, argsVariable } : null;
+    return pipeline && argsVariable
+      ? { type: 'bitbucket', pipeline, argsVariable, ...credentialIdOf(input.credentialId) }
+      : null;
   }
   if (input.type === 'ci-server') {
     const resolved = resolveCiServerTarget(rawCiServerTarget(input));
@@ -179,6 +202,7 @@ function resolveTarget(input: unknown): CiActionTarget | null {
       type: 'ci-server',
       preset: resolved.preset,
       ...(resolved.baseUrl ? { baseUrl: resolved.baseUrl } : {}),
+      ...(resolved.credentialId ? { credentialId: resolved.credentialId } : {}),
       ...(resolved.user ? { user: resolved.user } : {}),
       fields: resolved.rerun,
       ...(resolved.custom ? { custom: { auth: resolved.custom.auth, request: resolved.custom.rerun } } : {}),
@@ -226,6 +250,7 @@ function resolveAction(input: unknown): CiAction | null {
   const rawId = str(input.id);
   const accepts = CI_ACTION_KINDS.filter((kind) => Array.isArray(input.accepts) && input.accepts.includes(kind));
   const environment = str(input.environment).slice(0, MAX_CI_ENVIRONMENT_LENGTH);
+  const environmentId = input.environmentId;
   return {
     id: ACTION_ID.test(rawId) ? rawId : newCiActionId(),
     name,
@@ -233,6 +258,9 @@ function resolveAction(input: unknown): CiAction | null {
     inputs: resolveInputs(input.inputs, target),
     accepts: accepts.length ? accepts : ['tests'],
     ...(environment ? { environment } : {}),
+    ...(typeof environmentId === 'number' && Number.isSafeInteger(environmentId) && environmentId > 0
+      ? { environmentId }
+      : {}),
   };
 }
 
@@ -565,14 +593,22 @@ const KIND_PHRASE: Record<CiActionKind, string> = {
  * The action a dispatch of `kind` uses. Among the actions that accept the kind
  * and can serve the run (a GitHub, GitLab or Bitbucket action only a run whose
  * repository is on that host; a CI server action always), the one whose
- * environment is the run's, else the default for the kind, else the first.
+ * environment is the run's (`environmentId`), else whose label equals the
+ * run's ignoring case, else the default for the kind, else the first.
  * `actionId` (an id or an exact name) names one instead, which must accept the
  * kind and serve the run too.
  */
 export function pickCiAction(
   settings: CiActionsSettings,
   kind: CiActionKind,
-  run: { provider: ScmProviderName | null; environment?: string | null; actionId?: string | null },
+  run: {
+    provider: ScmProviderName | null;
+    /** The run's label. */
+    environment?: string | null;
+    /** The environment the run's label resolved to. */
+    environmentId?: number | null;
+    actionId?: string | null;
+  },
 ): CiActionPick {
   const requested = run.actionId?.trim();
   if (requested) {
@@ -600,8 +636,10 @@ export function pickCiAction(
         : 'Its run has no supported repository to dispatch to.',
     };
   }
-  const environment = run.environment?.trim();
-  const byEnvironment = environment ? serving.find((a) => a.environment === environment) : undefined;
+  const environment = run.environment?.trim().toLowerCase();
+  const byEnvironment =
+    (run.environmentId != null ? serving.find((a) => a.environmentId === run.environmentId) : undefined) ??
+    (environment ? serving.find((a) => a.environment?.toLowerCase() === environment) : undefined);
   const defaultId = settings.defaults[CI_ACTION_DEFAULT_KEYS[kind]];
   const action = byEnvironment ?? serving.find((a) => a.id === defaultId) ?? serving[0]!;
   return { action, reason: null };
@@ -618,30 +656,4 @@ export interface CiActionCheckResult {
 /** The input and argument names a dispatch of this action sends, which the target must declare. */
 export function ciActionSentNames(action: CiAction): string[] {
   return [...builtInInputNames(action.target), ...action.inputs.map((i) => i.name)];
-}
-
-/**
- * The one CI server base URL the project's token may be bound to: the URL
- * every CI server action sends under (its own, else the instance's). The token
- * is one value for the project, so it cannot be saved while the actions use
- * more than one URL. With no CI server action it is the instance's URL.
- */
-export function ciServerTokenBinding(
-  settings: CiActionsSettings,
-  instanceUrl: string | null,
-): { url: string; error: null } | { url: null; error: string } {
-  const urls = new Set<string>();
-  for (const action of settings.actions) {
-    if (action.target.type !== 'ci-server') continue;
-    const url = normalizeCiServerBaseUrl(action.target.baseUrl) ?? instanceUrl;
-    if (url) urls.add(url);
-  }
-  if (urls.size > 1) {
-    return {
-      url: null,
-      error: `The CI server actions send to ${urls.size} different base URLs (${[...urls].join(', ')}), and the token is bound to one: give them the same base URL, or save the token while one is in use.`,
-    };
-  }
-  const url = [...urls][0] ?? instanceUrl;
-  return url ? { url, error: null } : { url: null, error: 'Set the CI server base URL before saving its token' };
 }

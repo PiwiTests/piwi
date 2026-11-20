@@ -1226,6 +1226,90 @@
       "when": 1794507865720,
       "tag": "0174_run_reporter",
       "breakpoints": true
+    },
+    {
+      "idx": 175,
+      "version": "7",
+      "when": 1794837291726,
+      "tag": "0175_spotty_the_leader",
+      "breakpoints": true
+    },
+    {
+      "idx": 176,
+      "version": "7",
+      "when": 1794850694606,
+      "tag": "0176_credentials",
+      "breakpoints": true
+    },
+    {
+      "idx": 177,
+      "version": "7",
+      "when": 1794853779382,
+      "tag": "0177_credential_secret_env",
+      "breakpoints": true
+    },
+    {
+      "idx": 178,
+      "version": "7",
+      "when": 1794856658555,
+      "tag": "0178_credential_name_lower",
+      "breakpoints": true
+    },
+    {
+      "idx": 179,
+      "version": "7",
+      "when": 1794858813717,
+      "tag": "0179_credential_fk_indexes",
+      "breakpoints": true
+    },
+    {
+      "idx": 180,
+      "version": "7",
+      "when": 1794860258677,
+      "tag": "0180_project_scm_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 181,
+      "version": "7",
+      "when": 1794867796320,
+      "tag": "0181_connection_credential",
+      "breakpoints": true
+    },
+    {
+      "idx": 182,
+      "version": "7",
+      "when": 1794932062175,
+      "tag": "0182_curved_edwin_jarvis",
+      "breakpoints": true
+    },
+    {
+      "idx": 183,
+      "version": "7",
+      "when": 1795007580138,
+      "tag": "0183_dashing_amphibian",
+      "breakpoints": true
+    },
+    {
+      "idx": 184,
+      "version": "7",
+      "when": 1795011693919,
+      "tag": "0184_hard_jamie_braddock",
+      "breakpoints": true
+    },
+    {
+      "idx": 185,
+      "version": "7",
+      "when": 1795029951266,
+      "tag": "0185_spooky_talkback",
+      "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "7",
+      "when": 1795032556227,
+      "tag": "0186_discovered_environments_from_checkout",
+      "breakpoints": true
     }
   ]
 }

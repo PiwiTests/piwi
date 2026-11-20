@@ -11,6 +11,7 @@ import {
   syncLookupUnsureMessage,
   type SyncActionPayload,
 } from '#shared/integrations/test-management-sync';
+import { requestCredentialActor } from '../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -25,7 +26,7 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
-  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
+  const { db, projectId, user } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
 
   const action = await findFailedSync(db, id);
   if (!action) throw apiError({ statusCode: 409, message: 'This run has no failed results sync' });
@@ -37,12 +38,18 @@ export default eventHandler(async (event) => {
   });
   if (refused) throw apiError({ statusCode: 409, message: syncAgainRefusedMessage(refused) });
 
-  const { client } = await requireTestManagementClient(event, db, action.connectionId, {
-    timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
-    signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
-    maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
-    deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
-  });
+  const { client } = await requireTestManagementClient(
+    event,
+    db,
+    action.connectionId,
+    {
+      timeoutMs: ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+      signal: AbortSignal.timeout(ZEPHYR_INTERACTIVE_TIMEOUT_MS),
+      maxWaitMs: INTERACTIVE_MAX_WAIT_MS,
+      deadlineAt: Date.now() + ZEPHYR_INTERACTIVE_TIMEOUT_MS,
+    },
+    requestCredentialActor(event, user),
+  );
   let queued;
   try {
     queued = await requeueFailedSync(db, client, action);

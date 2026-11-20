@@ -3,11 +3,18 @@
  * Desktop shell only: how a local folder stands with Piwi — the Playwright and
  * `@piwitests/reporter` setup checks from a `DesktopFolderInspection`, one row
  * per check. Warnings are guidance, not blockers: a project can be created or
- * linked first and set up after.
+ * linked first and set up after. With `environments`, one row per environment
+ * that loads an env file says whether the folder holds it: the file is a
+ * secret of this machine, which Piwi copies into a reproduction's worktree and
+ * never reads.
  */
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
-const props = defineProps<{ inspection: DesktopFolderInspection }>();
+const props = defineProps<{
+  inspection: DesktopFolderInspection;
+  /** The environments of the project (and of its team project) that load an env file. */
+  environments?: Array<{ name: string; envFile: string }>;
+}>();
 
 const { copy } = useCopy();
 
@@ -34,13 +41,31 @@ const checks = computed<Check[]>(() => {
       ? {
           ok: true,
           label: 'Config sends results to Piwi',
-          detail: i.configuredProjectName ? `projectName: ${i.configuredProjectName}` : undefined,
+          detail: i.configuredProjectName
+            ? `projectName: ${i.configuredProjectName}`
+            : i.projectNameComputed
+              ? 'projectName: computed by the config, with the run variables of the project it runs for'
+              : undefined,
         }
       : { ok: false, label: 'Config does not use the Piwi reporter' },
   ];
 });
 
 const ready = computed(() => checks.value.every((c) => c.ok));
+
+/** One row per env file the environments load, each once: found in the folder, or missing. */
+const envFileChecks = computed<Check[]>(() => {
+  const held = new Set(props.inspection.envFiles ?? []);
+  const byFile = new Map<string, string[]>();
+  for (const environment of props.environments ?? []) {
+    byFile.set(environment.envFile, [...(byFile.get(environment.envFile) ?? []), environment.name]);
+  }
+  return [...byFile].map(([file, names]) =>
+    held.has(file)
+      ? { ok: true, label: `${file} is in the folder`, detail: `loaded for ${names.join(', ')}` }
+      : { ok: false, label: `${file} is not in the folder`, detail: `${names.join(', ')} loads it` },
+  );
+});
 
 /**
  * One command fixes both "not installed" and "not configured". Invoked through
@@ -54,7 +79,7 @@ const INIT_COMMAND = 'npx @piwitests/reporter init';
 <template>
   <div class="space-y-2">
     <ul class="space-y-1.5">
-      <li v-for="check in checks" :key="check.label" class="flex items-center gap-2 text-sm">
+      <li v-for="check in [...checks, ...envFileChecks]" :key="check.label" class="flex items-center gap-2 text-sm">
         <UIcon
           :name="check.ok ? 'i-lucide-circle-check-big' : 'i-lucide-triangle-alert'"
           class="size-4 shrink-0"

@@ -197,6 +197,63 @@ describe('buildPrComment', () => {
     expect(body).toContain('a \\| b');
   });
 
+  test('renders what a run wrote literally: no link, no markup, no mention', () => {
+    const body = buildPrComment(
+      summary({
+        projectName: 'shop @org/admins',
+        failedTests: 1,
+        newRegressions: [
+          entry({
+            title: 'pays](https://elsewhere.example) @org/admins <img src=x>\n## Done',
+            headline: 'cc @someone, see [here](https://elsewhere.example), www.elsewhere.example, fixes #12, $5-$10',
+            owner: '@org/checkout',
+            clusterId: 3,
+          }),
+        ],
+        newClusters: [{ id: 3, signature: 'Error @team [x](https://elsewhere.example)', caseCount: 1 }],
+      }),
+    );
+    expect(body).not.toMatch(/(?<!`)@(org|someone|team)/);
+    expect(body).not.toMatch(/(?<!\\)\]\(https:\/\/elsewhere/);
+    expect(body).not.toMatch(/(?<!\\)<img/);
+    expect(body).not.toMatch(/^## Done/m);
+    expect(body).not.toMatch(/https:\/\/elsewhere|www\.elsewhere|#12/);
+    expect(body).toContain('\\$5-\\$10');
+    expect(body).toContain('owner `@org/checkout`');
+    expect(body).toContain('### ❌ Piwi — shop @\u200Borg/admins');
+  });
+
+  test('shows code as written, a pipe included', () => {
+    const body = buildPrComment(
+      summary({
+        failedTests: 1,
+        newRegressions: [entry({ owner: 'a|b', suggestedLocator: 'getByText(/Save|Submit/)' })],
+      }),
+    );
+    expect(body).toContain('owner `a|b`');
+    expect(body).toContain('`getByText(/Save|Submit/)`');
+  });
+
+  test('keeps an excerpt made of backticks inside its code block', () => {
+    const body = buildPrComment(
+      summary({ failedTests: 1, newRegressions: [entry({ errorExcerpt: '```' }), entry({ title: 'after' })] }),
+    );
+    expect(body).toContain('  ````\n  ```\n  ````');
+    expect(body).toContain('[after](');
+  });
+
+  test('encodes a link destination so its parentheses cannot end the link', () => {
+    const body = buildPrComment(
+      summary({
+        failedTests: 1,
+        newRegressions: [
+          entry({ issue: { key: 'SHOP-1', url: 'https://tracker.example/SHOP-1) [x](https://elsewhere.example' } }),
+        ],
+      }),
+    );
+    expect(body).toContain('[SHOP-1](https://tracker.example/SHOP-1%29%20[x]%28https://elsewhere.example)');
+  });
+
   test('quotes a timeout with where Playwright was waiting, the way notifications do', () => {
     const raw = `TimeoutError: locator.click: Timeout 30000ms exceeded.
 Call log:

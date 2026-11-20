@@ -20,11 +20,15 @@ import { DESKTOP_CHALLENGE_HEADER, DESKTOP_PROOF_HEADER, desktopTokenProof } fro
 import { buildSession, type RecordedStep } from '@piwitests/core/recording';
 import { toStepsDocument } from '@piwitests/core/steps';
 import { parseRecordChannel } from '@piwitests/core/ide-recorder';
+import { requiredTagsGrepInvert } from '@piwitests/core/environments';
 import { startServer } from '../src/server';
+import { service as runService } from './run-fixtures';
 import { committedTextAt } from '../src/workspace';
 import type {
   AgentContextResult,
   ApplyPickResult,
+  EnvironmentsResult,
+  SetEnvironmentResult,
   FailuresResult,
   FileSummary,
   McpServersResult,
@@ -45,10 +49,15 @@ import type {
   StatusResult,
   TestAtResult,
   TestItemsResult,
+  TestTreeNode,
+  TreeTest,
   TestsForFile,
   TraceResult,
 } from '../src/protocol';
 import type { LaunchRequest, ServiceToLauncher } from '../src/recorder/ipc';
+import { ProjectOptionsError } from '../src/recorder/project-options';
+import { CONFIG_NODE } from '../src/protocol';
+import type { ListRunner } from '../src/test-listing';
 import type { LauncherEvents } from '../src/recorder/sessions';
 
 /** The record channel every test run the service builds names: a socket path and its token. */
@@ -187,6 +196,8 @@ let fixtureCommit = '';
 
 /** What the instance answers for a run's arguments and the smoke selection's command, once a test sets them. */
 let hostileMaterialization: unknown = null;
+/** The tests the instance's selection preview names, with their specs and lines; none while null. */
+let previewTests: unknown = null;
 let hostileSelectionCommand: string | null = null;
 
 /**
@@ -204,6 +215,38 @@ const runStreamOpens = new Map<number, number>();
 const runDetails = new Map<number, Record<string, unknown>>();
 /** How long `GET /api/test-runs/:id` takes to answer a run as it stood when asked. */
 let detailsDelayMs = 0;
+/** What the instance answers project 7's run variables with; null answers 404, as an instance that predates them. */
+let projectRunVariables: unknown = null;
+/** What the instance answers project 7's environments with; null answers 404, as an instance that predates them. */
+let projectEnvironments: unknown = null;
+/** What the instance answers project 7's run variables for an environment with, by its id; none answers 404. */
+const environmentRunVariables = new Map<number, unknown>();
+
+/** An environment as `GET /api/projects/:id/environments` lists it. */
+function environmentRecord(id: number, key: string, name: string, extra: Record<string, unknown> = {}) {
+  return {
+    id,
+    key,
+    name,
+    description: null as string | null,
+    aliases: [],
+    runVariables: [],
+    appFromCheckout: false,
+    protected: false,
+    requiredTags: [] as string[],
+    envFile: null,
+    position: id,
+    discovered: false,
+    archived: false,
+    ...extra,
+  };
+}
+
+/** An environment as the run variables route names it. */
+function environmentForRun(record: ReturnType<typeof environmentRecord>) {
+  const { id, key, name, protected: locked, requiredTags, envFile } = record;
+  return { id, key, name, protected: locked, requiredTags, envFile };
+}
 /** Runs whose stream the instance answers with a 404, and the requests it refused, by run. */
 const goneRunStreams = new Map<number, number>();
 /** The run each ref names, as `latest-run?origin=editor&ref=` answers it. */
@@ -255,6 +298,11 @@ let url = '';
 let client: MessageConnection;
 let stop: () => void;
 const runStatuses: RunStatusResult[] = [];
+/** The fixture has no Playwright: its listing fails, unless a test lists its tests here. */
+const NO_PLAYWRIGHT: ListRunner = () =>
+  Promise.reject(new ProjectOptionsError('playwright-missing', 'Playwright is not installed in the fixture.'));
+let listRunner: ListRunner = NO_PLAYWRIGHT;
+const testItemsPushes: TestItemsResult[] = [];
 /** The `piwi/failuresChanged` notifications of the first service, in order. */
 const failuresChanges: FailuresResult[] = [];
 const diagnostics = new Map<
@@ -349,6 +397,19 @@ beforeAll(async () => {
       return res.end(JSON.stringify(found ?? null));
     }
     if (u === '/api/projects/menu') return res.end(JSON.stringify({ items: [{ id: 7, name: 'Acme Mugs' }] }));
+    if (u === '/api/projects/7/run-variables') {
+      if (projectRunVariables === null) res.statusCode = 404;
+      return res.end(JSON.stringify(projectRunVariables ?? { message: 'Not found' }));
+    }
+    if (u.startsWith('/api/projects/7/run-variables?')) {
+      const answer = environmentRunVariables.get(Number(new URL(u, url).searchParams.get('environment')));
+      if (answer === undefined) res.statusCode = 404;
+      return res.end(JSON.stringify(answer ?? { message: 'Not found' }));
+    }
+    if (u === '/api/projects/7/environments') {
+      if (projectEnvironments === null) res.statusCode = 404;
+      return res.end(JSON.stringify(projectEnvironments ?? { message: 'Not found' }));
+    }
     const baselineKey = req.headers['x-api-key'] === BASELINE_KEY;
     if (u.startsWith('/api/projects/7/locator-index')) {
       const branches = [{ name: 'feature/x', lastSeenAt: '2026-09-27T00:00:00Z', tests: 3 }];
@@ -799,6 +860,7 @@ beforeAll(async () => {
     if (u === '/api/projects/7/selections/preview') {
       return res.end(
         JSON.stringify({
+          ...(previewTests ? { tests: previewTests } : {}),
           materialization: hostileMaterialization ?? {
             args: ['tests/checkout.spec.ts:3'],
             command: 'npx playwright test tests/checkout.spec.ts:3',
@@ -835,8 +897,12 @@ beforeAll(async () => {
   stop = startServer(createConnection(toServer, toClient), {
     env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
     debounceMs: 10,
+    listTests: (configFile, args) => listRunner(configFile, args),
   });
   client = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+  client.onNotification('piwi/testItemsChanged', (p: TestItemsResult) => {
+    testItemsPushes.push(p);
+  });
   client.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: never[] }) => {
     diagnostics.set(p.uri, p.diagnostics);
   });
@@ -995,20 +1061,12 @@ describe('the Piwi language server', () => {
       edit?: { changes: Record<string, Array<{ newText: string }>> };
       command?: { command: string; arguments: unknown[] };
     }>;
+    // A quick fix edits: running the test, its trace, its context and its page are the failure node's.
     expect(actions.map((a) => a.title)).toEqual([
       "Piwi: heal with getByRole('row', { name: /Mug/ })",
-      'Piwi: run this test',
-      'Piwi: open the trace',
       'Piwi: apply the fix plan (1 file), then run its verification',
-      'Piwi: copy context for agent',
-      'Piwi: open the failure in the dashboard',
     ]);
-    expect(actions[1]!.command).toEqual({
-      title: 'Run this test',
-      command: 'piwi.runTests',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
-    });
-    const apply = actions[3] as unknown as {
+    const apply = actions[1] as unknown as {
       edit: { changes: Record<string, Array<{ newText: string }>> };
       command: { command: string; arguments: unknown[] };
     };
@@ -1028,13 +1086,11 @@ describe('the Piwi language server', () => {
         },
       ],
     });
-    // The context is gathered once the action is picked.
-    expect(actions[4]!.command).toEqual({
-      title: 'Copy context for agent',
-      command: 'piwi.copyAgentContext',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
-    });
-    const gathered = (await client.sendRequest('piwi/agentContext', actions[4]!.command!.arguments[0])) as {
+    // The context is gathered once the failure node's Copy context for agent is picked.
+    const gathered = (await client.sendRequest('piwi/agentContext', {
+      uri: uri('tests/pages/checkout.page.ts'),
+      executionId: 900,
+    })) as {
       text: string;
     };
     const context = gathered.text.split('\n');
@@ -1048,22 +1104,30 @@ describe('the Piwi language server', () => {
     expect(actions[0]!.edit!.changes[uri('tests/pages/checkout.page.ts')]![0]!.newText).toBe(
       "  row = () => this.page.getByRole('row', { name: /Mug/ });",
     );
-    expect(actions[2]!.command).toEqual({
-      title: 'Open the trace',
-      command: 'piwi.openTrace',
-      arguments: [{ uri: uri('tests/pages/checkout.page.ts'), executionId: 900 }],
-    });
     // A client that previews annotated edits gets the plan as a confirmed change; this one does not.
-    expect(JSON.stringify(actions[3])).not.toContain('annotationId');
+    expect(JSON.stringify(actions[1])).not.toContain('annotationId');
 
     const hover = (await client.sendRequest('textDocument/hover', {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(`**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41`);
+    // The diagnostic on this line says what failed and why: the hover gives the detail, then the failure's page.
+    expect(hover.contents.value).not.toContain('**CI failure**');
+    expect(hover.contents.value).toMatch(/^```text\nError: locator\.click: Timeout 5000ms exceeded\./);
+    expect(hover.contents.value).toContain(`\n\n[Open in dashboard](${url}/test-run-cases/900)`);
     expect(hover.contents.value).toMatch(/!\[Failure screenshot\]\(file:\/\/.*900\.png\)/);
     expect(hover.contents.value).toContain(
       'Known issue: [SHOP-12 Cart rows missing](https://jira.test/browse/SHOP-12) · In Progress',
+    );
+    // Over the line's indentation, outside the diagnostic's range, the editor shows no diagnostic: the hover says it.
+    const indented = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri('tests/pages/checkout.page.ts') },
+      position: { line: 4, character: 0 },
+    })) as { contents: { value: string } };
+    expect(indented.contents.value).toMatch(
+      new RegExp(
+        `^\\*\\*CI failure\\*\\* · \\[removes a row\\]\\(${url}/test-run-cases/900\\) · run #41\n\nlocator\\('`,
+      ),
     );
     expect(hover.contents.value).toContain("**`locator('.cart-row').nth(2)`**");
 
@@ -1142,7 +1206,7 @@ describe('the Piwi language server', () => {
             locations: ['tests/rows.spec.ts:4'],
             repeat: 3,
           },
-          // Debug this failure: the dashboard's Debug in my editor run of its spec, stopping at the page object's line.
+          // Debug with Piwi: the dashboard's Debug in my editor run of its spec, stopping at the page object's line.
           debug: {
             uri: uri('tests/rows.spec.ts'),
             root: dir,
@@ -1156,6 +1220,9 @@ describe('the Piwi language server', () => {
           },
           duration: 5012,
           hasScreenshot: true,
+          // File an issue, on its cluster; its test has a flake suspect no experiment tested.
+          fileIssue: true,
+          untestedSuspects: true,
         },
       ],
       run: {
@@ -1179,7 +1246,7 @@ describe('the Piwi language server', () => {
       runLabel: 'Run #41 · CI · main · 1 failing',
       failing: 1,
       rerun: [{ uri: uri('tests/pages/checkout.page.ts'), root: dir, testIds: [3] }],
-      view: { state: 'failures', message: null },
+      view: { state: 'failures', message: null, links: [] },
     });
     expect(failures.tree[0]!.children.map((group) => [group.key, group.children.map((leaf) => leaf.key)])).toEqual([
       ['group:file:tests/rows.spec.ts', ['failure:900']],
@@ -1201,6 +1268,18 @@ describe('the Piwi language server', () => {
       ['Reproduce this flake', 'piwi.runCommand'],
       ['Verify the flake fix', 'piwi.runCommand'],
     ]);
+    // File an issue looks for a ticket when asked: this failure's cluster has one, which it names.
+    const at = uri('tests/pages/checkout.page.ts');
+    expect(await client.sendRequest('piwi/fileIssue', { uri: at, executionId: 900 })).toEqual({
+      url: null,
+      message: 'Piwi: an issue is filed for this failure already: SHOP-12 Cart rows missing.',
+      issueUrl: 'https://jira.test/browse/SHOP-12',
+    });
+    expect(await client.sendRequest('piwi/fileIssue', { uri: at, executionId: 1 })).toEqual({
+      url: null,
+      message: 'Piwi: this failure is no longer in the latest run.',
+      issueUrl: null,
+    });
   });
 
   test('groups the failures as the client last asked, for the failures it pushes too', async () => {
@@ -1547,21 +1626,27 @@ describe('the Piwi language server', () => {
       },
     ]);
 
-    // The gutter's actions, in their groups: Run and Verify ×3 at the test's line, the test in the dashboard, then the
-    // Flake Lab commands of its line.
+    // The gutter's actions, in their groups: Run and Verify ×3 at the test's line, Record steps in its body, the test in
+    // the dashboard, then the Flake Lab commands of its line.
     const actions = spec.lines[0]!.actions!;
     expect(actions.map((a) => [a.group, a.title, a.kind])).toEqual([
       ['run', 'Run with Piwi', 'run'],
       ['run', 'Debug with Piwi', 'debug'],
       ['run', 'Verify ×3 with Piwi', 'verify'],
+      ['record', 'Record steps in this test…', undefined],
       ['evidence', 'Open in dashboard', undefined],
       ['lab', 'Reproduce this flake', undefined],
       ['lab', 'Verify the flake fix', undefined],
     ]);
-    expect(actions.map((a) => a.section)).toEqual(['', '', '', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    expect(actions.map((a) => a.section)).toEqual(['', '', '', 'Record', 'Evidence', 'Flake Lab', 'Flake Lab']);
+    expect(actions[3]!.command).toEqual({
+      title: 'Record steps in this test…',
+      command: 'piwi.record',
+      arguments: [uri('tests/checkout.spec.ts'), spec.lines[0]!.endLine! - 1],
+    });
     // A test that passed debugs headed, holding its failures.
     expect(actions[1]!.command.arguments).toEqual([
-      { uri: uri('tests/checkout.spec.ts'), testIds: [1], headed: true, holdFailures: true },
+      { uri: uri('tests/checkout.spec.ts'), testIds: [1], headed: true, holdFailures: true, debugging: true },
     ]);
     expect(actions[2]!.command.arguments).toEqual([
       { uri: uri('tests/checkout.spec.ts'), testIds: [], locations: ['tests/checkout.spec.ts:3'], repeat: 3 },
@@ -1578,7 +1663,7 @@ describe('the Piwi language server', () => {
     expect(none).toEqual({ file: null, lines: [] });
   });
 
-  test('marks where and why a test failed, with its evidence above the line', async () => {
+  test('marks where and why a test failed, with its evidence among the test’s actions', async () => {
     const spec = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
     const evidence = { uri: uri('tests/rows.spec.ts'), executionId: 900 };
     expect(spec.lines).toEqual([
@@ -1612,24 +1697,12 @@ describe('the Piwi language server', () => {
       {
         problem: true,
         line: 6,
-        title: 'Run this test',
+        title: 'Run with Piwi',
         command: {
-          title: 'Run this test',
+          title: 'Run with Piwi',
           command: 'piwi.runTests',
           arguments: [{ uri: uri('tests/rows.spec.ts'), testIds: [3] }],
         },
-      },
-      {
-        problem: true,
-        line: 6,
-        title: 'Screenshot',
-        command: { title: 'Open the screenshot', command: 'piwi.openScreenshot', arguments: [evidence] },
-      },
-      {
-        problem: true,
-        line: 6,
-        title: 'Trace',
-        command: { title: 'Open the trace', command: 'piwi.openTrace', arguments: [evidence] },
       },
     ]);
 
@@ -1654,10 +1727,15 @@ describe('the Piwi language server', () => {
     const shot = (await client.sendRequest('piwi/screenshot', evidence)) as ScreenshotResult;
     expect(fs.readFileSync(shot.path, 'utf-8')).toBe('PK-stub');
     expect(await client.sendRequest('piwi/screenshot', { ...evidence, executionId: 1 })).toBeNull();
-    // A failed test's gutter offers its evidence and its context for an agent.
+    // A failed test's gutter offers its evidence, which its failing line leaves out, and its context for an agent.
     expect(spec.lines[0]!.actions!.map((a) => a.title)).toEqual(
-      expect.arrayContaining(['Open in dashboard', 'Copy context for agent']),
+      expect.arrayContaining(['Open the trace', 'Open the screenshot', 'Open in dashboard', 'Copy context for agent']),
     );
+    expect(spec.lines[0]!.actions!.find((a) => a.title === 'Open the trace')!.command).toEqual({
+      title: 'Open the trace',
+      command: 'piwi.openTrace',
+      arguments: [evidence],
+    });
     // A failed test debugs as the dashboard's Debug in my editor does: stopping once at the line it failed through.
     expect(spec.lines[0]!.actions!.find((a) => a.kind === 'debug')!.command.arguments).toEqual([
       {
@@ -1675,6 +1753,16 @@ describe('the Piwi language server', () => {
       title: 'Copy context for agent',
       command: 'piwi.copyAgentContext',
       arguments: [evidence],
+    }); // Steps are recorded after the last line of the test's body, inside it.
+    expect(spec.lines[0]!.actions!.find((a) => a.group === 'record')).toEqual({
+      group: 'record',
+      section: 'Record',
+      title: 'Record steps in this test…',
+      command: {
+        title: 'Record steps in this test…',
+        command: 'piwi.record',
+        arguments: [uri('tests/rows.spec.ts'), 6],
+      },
     });
   });
 
@@ -1705,6 +1793,153 @@ describe('the Piwi language server', () => {
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),
       name: 'checkout.spec.ts:3',
     });
+  });
+
+  test('asks before a run gets the project’s run variables, and runs nothing when they cannot be set', async () => {
+    const runArgs = () =>
+      client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/checkout.spec.ts'),
+        testIds: [1],
+      }) as Promise<RunCommand | null>;
+    const asked: string[] = [];
+    let answer: { title: string } | null = { title: 'Not now' };
+    const prompt = client.onRequest('window/showMessageRequest', (params: { message: string }) => {
+      asked.push(params.message);
+      return answer;
+    });
+    projectRunVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await client.sendRequest('piwi/refresh');
+      // Not now: nothing runs, and the next run asks again.
+      expect(await runArgs()).toBeNull();
+      expect(asked).toEqual([
+        'Acme Mugs sets run variables that every run Piwi starts for its tests gets: TENANT=acme. Run its tests with them?',
+      ]);
+      answer = { title: 'Allow' };
+      const command = await runArgs();
+      expect(asked).toHaveLength(2);
+      // The command stays the same: the variables go to the run's environment, before the service's own.
+      expect(command).toMatchObject({
+        command: 'npx playwright test tests/checkout.spec.ts:3',
+        env: { TENANT: 'acme', PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: command!.ref },
+      });
+      expect(Object.keys(command!.env!)[0]).toBe('TENANT');
+      // Allowed once, the same values run without asking again.
+      expect(await runArgs()).not.toBeNull();
+      expect(asked).toHaveLength(2);
+
+      projectRunVariables = { runVariables: [{ name: 'NODE_OPTIONS', value: '--require ./x.js' }] };
+      await client.sendRequest('piwi/refresh');
+      expect(await runArgs()).toBeNull();
+      expect(asked).toHaveLength(2);
+    } finally {
+      prompt.dispose();
+      projectRunVariables = null;
+      await client.sendRequest('piwi/refresh');
+    }
+  });
+
+  test('runs for the environment chosen for the folder, and asks before every run against a protected one', async () => {
+    const runArgs = (extra: Record<string, unknown> = {}) =>
+      client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/checkout.spec.ts'),
+        testIds: [1],
+        ...extra,
+      }) as Promise<RunCommand | null>;
+    const choose = (environmentId: number | null) =>
+      client.sendRequest('piwi/setEnvironment', { root: dir, environmentId }) as Promise<SetEnvironmentResult | null>;
+    const asked: string[] = [];
+    let answer: (message: string) => { title: string } | null = () => ({ title: 'Allow' });
+    const prompt = client.onRequest('window/showMessageRequest', (params: { message: string }) => {
+      asked.push(params.message);
+      return answer(params.message);
+    });
+    const staging = environmentRecord(4, 'staging', 'Staging', { description: 'Reset every night.' });
+    const qa = environmentRecord(6, 'qa', 'QA');
+    const production = environmentRecord(5, 'production', 'Production', { protected: true, requiredTags: ['@smoke'] });
+    projectEnvironments = {
+      environments: [staging, qa, production, environmentRecord(7, 'old', 'Old', { archived: true })],
+    };
+    // The project sets TENANT; Staging and QA set nothing of their own.
+    const tenant = [{ name: 'TENANT', value: 'acme' }];
+    environmentRunVariables.set(4, { runVariables: tenant, environment: environmentForRun(staging) });
+    environmentRunVariables.set(6, { runVariables: tenant, environment: environmentForRun(qa) });
+    environmentRunVariables.set(5, { runVariables: [], environment: environmentForRun(production) });
+    const status = async () => ((await client.sendRequest('piwi/status')) as StatusResult).contexts[0]!;
+    try {
+      await client.sendRequest('piwi/refresh');
+      // None first, then the project's environments the instance did not archive.
+      const choices = (await client.sendRequest('piwi/environments', { root: dir })) as EnvironmentsResult;
+      expect(choices.title).toBe('Run the tests of Acme Mugs for…');
+      expect(choices.items.map((item) => [item.id, item.label, item.description, item.picked])).toEqual([
+        [null, 'None', 'the Playwright config decides', true],
+        [4, 'Staging', 'staging', false],
+        [6, 'QA', 'qa', false],
+        [5, 'Production', 'production', false],
+      ]);
+      expect(choices.items[1]!.detail).toBe('Reset every night.');
+      expect(choices.items[3]!.detail).toBe(
+        'Protected: each run is confirmed, and only the tests tagged @smoke run, beside the setup and teardown projects they depend on, which Playwright runs whole.',
+      );
+      expect((await status()).environment).toMatchObject({ id: null, text: 'No environment' });
+      expect(await client.sendRequest('piwi/environments', { root: '/elsewhere' })).toBeNull();
+
+      // The choice names the instance and the project, which the client keeps; an id the project lists not is refused.
+      expect(await choose(4)).toEqual({ kept: { id: 4, name: 'Staging', serverUrl: url, projectId: 7 } });
+      expect(await choose(9)).toEqual({ kept: { id: 4, name: 'Staging', serverUrl: url, projectId: 7 } });
+      expect((await status()).environment?.text).toBe('Staging');
+      const command = await runArgs();
+      expect(asked).toEqual([
+        'Acme Mugs and its environment Staging set run variables that every run Piwi starts for its tests against Staging gets: TENANT=acme PIWI_ENVIRONMENT=staging. Run its tests with them?',
+      ]);
+      expect(command).toMatchObject({
+        command: 'npx playwright test tests/checkout.spec.ts:3',
+        env: { TENANT: 'acme', PIWI_ENVIRONMENT: 'staging', PIWI_ORIGIN: 'editor' },
+      });
+      expect(command!.protected).toBeUndefined();
+      // The same variables for another environment are another set: asked again.
+      await choose(6);
+      expect(await runArgs()).toMatchObject({ env: { TENANT: 'acme', PIWI_ENVIRONMENT: 'qa' } });
+      expect(asked).toHaveLength(2);
+
+      // A protected environment asks before every run, and keeps it to the required tags, the run's own filter kept.
+      await choose(5);
+      expect((await status()).environment?.protected).toBe(true);
+      answer = () => ({ title: 'Not now' });
+      expect(await runArgs()).toBeNull();
+      expect(asked[2]).toBe(
+        'Production is a protected environment of Acme Mugs: only the tests tagged @smoke run, beside the setup and teardown projects they depend on, which Playwright runs whole. Run against Production?',
+      );
+      answer = () => ({ title: 'Run against Production' });
+      const kept = await runArgs({ grepInvert: 'slow' });
+      const filter = requiredTagsGrepInvert(['@smoke'], 'slow');
+      expect(kept).toMatchObject({
+        args: ['tests/checkout.spec.ts:3', '--grep-invert', filter],
+        command: `npx playwright test tests/checkout.spec.ts:3 --grep-invert "${filter}"`,
+        env: { PIWI_ENVIRONMENT: 'production' },
+        protected: true,
+      });
+      expect(await runArgs()).not.toBeNull();
+      expect(asked).toHaveLength(5);
+
+      // An environment the project no longer has runs nothing, and the item says so.
+      await choose(4);
+      projectEnvironments = { environments: [qa, production] };
+      environmentRunVariables.delete(4);
+      await client.sendRequest('piwi/refresh');
+      expect((await status()).environment).toMatchObject({ id: 4, text: 'Staging' });
+      expect((await status()).environment?.tooltip).toMatch(/^Staging is no longer one of Acme Mugs’s environments/);
+      expect(await runArgs()).toBeNull();
+      expect(asked).toHaveLength(5);
+      // None stays offered, and is chosen.
+      expect(await choose(null)).toEqual({ kept: null });
+    } finally {
+      prompt.dispose();
+      await choose(null);
+      projectEnvironments = null;
+      environmentRunVariables.clear();
+      await client.sendRequest('piwi/refresh');
+    }
   });
 
   test('finds the test at the cursor, and the tests of its spec', async () => {
@@ -1795,59 +2030,93 @@ describe('the Piwi language server', () => {
   });
 });
 
+/** Each spec of a tree, with its tests, as its folders nest them. */
+function specsOf(nodes: readonly TestTreeNode[]): Array<{ uri: string | null; label: string; tests: TreeTest[] }> {
+  return nodes.flatMap((n) =>
+    n.kind === 'spec'
+      ? [{ uri: n.uri, label: n.label, tests: testsOf(n.children) }]
+      : n.kind === 'folder'
+        ? specsOf(n.children)
+        : [],
+  );
+}
+
+/** The tests of a tree, first to last. */
+function testsOf(nodes: readonly TestTreeNode[]): TreeTest[] {
+  return nodes.flatMap((n) => (n.test ? [n.test] : testsOf(n.children)));
+}
+
+/** The first node of a tree that `pick` takes. */
+function nodeOf(nodes: readonly TestTreeNode[], pick: (n: TestTreeNode) => boolean): TestTreeNode | undefined {
+  for (const n of nodes) {
+    if (pick(n)) return n;
+    const found = nodeOf(n.children, pick);
+    if (found) return found;
+  }
+  return undefined;
+}
+
 describe('the test tree', () => {
-  test('lists the catalog’s specs as they stand, each test with its latest result and where it failed', async () => {
+  test('before a config is listed, lists the catalog’s specs as they stand, each test with its latest result', async () => {
     const items = (await client.sendRequest('piwi/testItems', {})) as TestItemsResult;
-    expect(items).toEqual({
-      contexts: [
-        {
-          root: dir,
-          label: path.basename(dir),
-          specs: [
-            {
-              uri: uri('tests/checkout.spec.ts'),
-              file: 'tests/checkout.spec.ts',
-              tests: [
-                {
-                  title: 'pays',
-                  suite: [],
-                  line: 2,
-                  // As its open document stands: an earlier test opened it with a body.
-                  endLine: expect.any(Number),
-                  location: 'tests/checkout.spec.ts:3',
-                  testCaseId: 1,
-                  status: 'passed',
-                  failure: null,
-                  url: `${url}/test-cases/1`,
-                  // The catalog's tags, owner and latest duration, and the project's quarantine.
-                  tags: ['@smoke', '@checkout'],
-                  owner: 'ada',
-                  quarantined: true,
-                  resultDurationMs: 988,
-                },
-              ],
-            },
-            {
-              uri: uri('tests/rows.spec.ts'),
-              file: 'tests/rows.spec.ts',
-              tests: [
-                expect.objectContaining({
-                  title: 'removes a row',
-                  line: 3,
-                  endLine: 7,
-                  location: 'tests/rows.spec.ts:4',
-                  testCaseId: 3,
-                  status: 'failed',
-                  failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
-                  // The failure's own duration, not the catalog's run's.
-                  resultDurationMs: 5012,
-                }),
-              ],
-            },
-          ],
-        },
-      ],
+    expect(items.contexts).toHaveLength(1);
+    expect(items.contexts[0]).toMatchObject({ root: dir, label: path.basename(dir), listing: { at: null } });
+    expect(specsOf(items.contexts[0]!.nodes)).toEqual([
+      {
+        uri: uri('tests/checkout.spec.ts'),
+        label: 'checkout.spec.ts',
+        tests: [
+          {
+            title: 'pays',
+            suite: [],
+            line: 2,
+            // As its open document stands: an earlier test opened it with a body.
+            endLine: expect.any(Number),
+            location: 'tests/checkout.spec.ts:3',
+            testCaseId: 1,
+            status: 'passed',
+            failure: null,
+            url: `${url}/test-cases/1`,
+            // The catalog's tags, owner and latest duration, and the project's quarantine.
+            tags: ['@smoke', '@checkout'],
+            owner: 'ada',
+            quarantined: true,
+            resultDurationMs: 988,
+            root: dir,
+            uri: uri('tests/checkout.spec.ts'),
+            playwright: [],
+          },
+        ],
+      },
+      {
+        uri: uri('tests/rows.spec.ts'),
+        label: 'rows.spec.ts',
+        tests: [
+          expect.objectContaining({
+            title: 'removes a row',
+            line: 3,
+            endLine: 7,
+            location: 'tests/rows.spec.ts:4',
+            testCaseId: 3,
+            status: 'failed',
+            failure: expect.objectContaining({ line: 6, executionId: 900, state: 'failing' }),
+            // The failure's own duration, not the catalog's run's.
+            resultDurationMs: 5012,
+          }),
+        ],
+      },
+    ]);
+    // The fixture has no Playwright: the listing says why, and the tree has no Not in this checkout group.
+    const listed = await waitFor(async () => {
+      const again = (await client.sendRequest('piwi/testItems', {})) as TestItemsResult;
+      return again.contexts[0]?.listing?.error ? again : undefined;
     });
+    expect(listed.contexts[0]!.listing).toEqual({
+      at: null,
+      error: 'Playwright is not installed in the fixture.',
+      running: false,
+    });
+    expect(listed.contexts[0]!.nodes.map((n) => n.kind)).not.toContain('notInCheckout');
   });
 
   test('answers the specs it is asked for, a test Piwi does not know and its describe blocks included', async () => {
@@ -1869,10 +2138,12 @@ describe('the test tree', () => {
       catalog: false,
     })) as TestItemsResult;
     expect(items.contexts).toHaveLength(1);
-    expect(items.contexts[0]!.specs).toEqual([
+    // The spec, with the folders above it.
+    expect(items.contexts[0]!.nodes.map((n) => [n.kind, n.label])).toEqual([['folder', 'tests']]);
+    expect(specsOf(items.contexts[0]!.nodes)).toEqual([
       {
         uri: uri('tests/grouped.spec.ts'),
-        file: 'tests/grouped.spec.ts',
+        label: 'grouped.spec.ts',
         tests: [
           expect.objectContaining({ title: 'pays', suite: ['cart', 'as a guest'], line: 3, testCaseId: 1 }),
           {
@@ -1889,6 +2160,9 @@ describe('the test tree', () => {
             owner: null,
             quarantined: false,
             resultDurationMs: null,
+            root: dir,
+            uri: uri('tests/grouped.spec.ts'),
+            playwright: [],
           },
         ],
       },
@@ -1897,12 +2171,162 @@ describe('the test tree', () => {
     const all = (await client.sendRequest('piwi/testItems', {
       uris: [uri('tests/grouped.spec.ts'), uri('tests/rows.spec.ts')],
     })) as TestItemsResult;
-    expect(all.contexts[0]!.specs.map((s) => s.file)).toEqual([
-      'tests/checkout.spec.ts',
-      'tests/grouped.spec.ts',
-      'tests/rows.spec.ts',
+    expect(specsOf(all.contexts[0]!.nodes).map((s) => s.label)).toEqual([
+      'checkout.spec.ts',
+      'grouped.spec.ts',
+      'rows.spec.ts',
     ]);
     fs.rmSync(path.join(dir, 'tests/grouped.spec.ts'));
+  });
+
+  test('takes the tests Playwright lists, each project’s, and puts the catalog’s tests none of them is apart', async () => {
+    const LISTED = [
+      "import { test } from '@playwright/test';",
+      'for (const n of [1, 2]) test(`adds mug ${n}`, async () => {});',
+      "test.describe('cart', () => {",
+      "  test('pays', async () => {});",
+      '});',
+      '',
+    ].join('\n');
+    // Written with the line endings of a Windows checkout.
+    write('tests/listed.spec.ts', LISTED.replace(/\n/g, '\r\n'));
+    // The listing starts after the spec was last written.
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    const test = (fields: Record<string, unknown>) => ({
+      id: 'id',
+      file: 'tests/listed.spec.ts',
+      line: 2,
+      column: 26,
+      title: 'adds mug 1',
+      suites: [],
+      project: 'chromium',
+      tags: [],
+      ...fields,
+    });
+    const tests = [
+      test({ id: 'm1' }),
+      test({ id: 'm2', title: 'adds mug 2' }),
+      test({ id: 'pc', line: 4, column: 3, title: 'pays', suites: [{ title: 'cart', line: 3 }], tags: ['@smoke'] }),
+      test({ id: 'pf', line: 4, column: 3, title: 'pays', suites: [{ title: 'cart', line: 3 }], project: 'firefox' }),
+      test({ id: 'cc', file: 'tests/checkout.spec.ts', line: 3, column: 1, title: 'pays' }),
+      test({ id: 'cf', file: 'tests/checkout.spec.ts', line: 3, column: 1, title: 'pays', project: 'firefox' }),
+    ];
+    listRunner = () => Promise.resolve({ stdout: `PIWI_TESTS ${JSON.stringify(tests)}\n`, stderr: '' });
+    try {
+      // Read the configs again: the listed config is listed again, and its tree pushed.
+      await client.sendRequest('piwi/refresh');
+      const pushed = await waitFor(() =>
+        testItemsPushes.find((p) => p.contexts[0]?.listing?.at !== null && p.contexts[0]?.listing?.error === null),
+      );
+      const nodes = pushed.contexts[0]!.nodes;
+      const specs = specsOf(nodes);
+      // The catalog's rows.spec.ts is not listed: the tree is the listing's.
+      expect(specs.map((s) => s.label)).toEqual(['checkout.spec.ts', 'listed.spec.ts']);
+      expect(
+        specs[1]!.tests.map((t) => [t.title, t.suite, t.line, t.endLine, t.location, t.playwright, t.tags]),
+      ).toEqual([
+        ['adds mug 1', [], 1, 1, 'tests/listed.spec.ts:2', [{ project: 'chromium', id: 'm1' }], []],
+        ['adds mug 2', [], 1, 1, 'tests/listed.spec.ts:2', [{ project: 'chromium', id: 'm2' }], []],
+        [
+          'pays',
+          ['cart'],
+          3,
+          3,
+          'tests/listed.spec.ts:4',
+          [
+            { project: 'chromium', id: 'pc' },
+            { project: 'firefox', id: 'pf' },
+          ],
+          ['@smoke'],
+        ],
+      ]);
+      // A test of several projects has a node per project; a describe block spans its lines.
+      const cart = nodeOf(nodes, (n) => n.kind === 'describe' && n.label === 'cart')!;
+      expect(cart.range).toEqual({ start: 2, end: 4 });
+      expect(cart.children[0]!.children.map((p) => [p.kind, p.label, p.runnable])).toEqual([
+        ['project', 'chromium', true],
+        ['project', 'firefox', true],
+      ]);
+      // checkout.spec.ts, from the listing or, open with changes, from its text: each test with its projects' ids.
+      expect(specs[0]!.tests.map((t) => [t.title, t.testCaseId, t.playwright.map((p) => p.id)])).toEqual([
+        ['pays', 1, ['cc', 'cf']],
+      ]);
+      // The catalog's test of a spec the checkout does not hold, last, in a group no run takes.
+      const group = nodes[nodes.length - 1]!;
+      expect([group.kind, group.label, group.runnable]).toEqual(['notInCheckout', 'Not in this checkout', false]);
+      expect(group.children.map((n) => n.label)).toEqual(['tests/gone.spec.ts']);
+      expect(testsOf(group.children)).toEqual([
+        expect.objectContaining({ title: 'was deleted', testCaseId: 9, status: 'passed', uri: '', location: '' }),
+      ]);
+      // Each node picked runs by the narrowest filter Playwright takes, a loop's test by its title too.
+      const mug = nodeOf(nodes, (n) => n.kind === 'test' && n.label === 'adds mug 1')!;
+      const firefox = cart.children[0]!.children[1]!;
+      const debugged = (await client.sendRequest('piwi/testRuns', {
+        nodes: [mug.id, firefox.id],
+        debug: true,
+      })) as RunTestsArgs[];
+      const debugging = { headed: true, holdFailures: true, debugging: true };
+      expect(debugged).toEqual([
+        {
+          uri: uri('tests/listed.spec.ts'),
+          root: dir,
+          testIds: [],
+          locations: ['tests/listed.spec.ts:2'],
+          grep: 'listed.spec.ts( @[^ ]+)* adds mug 1',
+          ...debugging,
+        },
+        {
+          uri: uri('tests/listed.spec.ts'),
+          root: dir,
+          testIds: [],
+          locations: ['tests/listed.spec.ts:4'],
+          projects: ['firefox'],
+          ...debugging,
+        },
+      ]);
+      const command = async (picked: string[]) => {
+        const [run] = (await client.sendRequest('piwi/testRuns', { nodes: picked })) as RunTestsArgs[];
+        return ((await client.sendRequest('piwi/runArgs', run)) as RunCommand).command;
+      };
+      expect(await command([mug.id])).toBe(
+        `npx playwright test "^${dir}/tests/listed.spec.ts:2" --grep "listed.spec.ts( @[^ ]+)* adds mug 1"`,
+      );
+      expect(await command([firefox.id])).toBe(
+        `npx playwright test "^${dir}/tests/listed.spec.ts:4" --project firefox`,
+      );
+      // A folder, a spec and a test by their whole paths, anchored at their start.
+      expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe(
+        `npx playwright test "^${dir}/tests/."`,
+      );
+      expect(await command([`${CONFIG_NODE}${dir}`])).toBe('npx playwright test');
+      // The Not in this checkout group runs nothing.
+      expect(await client.sendRequest('piwi/testRuns', { nodes: [group.id] })).toEqual([]);
+      // Open as the editor holds it, with `\n`: its tests are still the listing's.
+      open('tests/listed.spec.ts', LISTED);
+      const held = (await client.sendRequest('piwi/testItems', {
+        uris: [uri('tests/listed.spec.ts')],
+        catalog: false,
+      })) as TestItemsResult;
+      expect(specsOf(held.contexts[0]!.nodes)[0]!.tests.map((t) => [t.title, t.playwright.length])).toEqual([
+        ['adds mug 1', 1],
+        ['adds mug 2', 1],
+        ['pays', 2],
+      ]);
+      // An edit the listing has not seen: the spec's tests are read from its text again, a loop's as one test.
+      change('tests/listed.spec.ts', LISTED.replace('pays', 'pays twice'), 2);
+      const edited = (await client.sendRequest('piwi/testItems', {
+        uris: [uri('tests/listed.spec.ts')],
+        catalog: false,
+      })) as TestItemsResult;
+      expect(specsOf(edited.contexts[0]!.nodes)[0]!.tests.map((t) => [t.title, t.playwright.length])).toEqual([
+        ['adds mug ${n}', 0],
+        ['pays twice', 0],
+      ]);
+      await client.sendNotification('textDocument/didClose', { textDocument: { uri: uri('tests/listed.spec.ts') } });
+    } finally {
+      listRunner = NO_PLAYWRIGHT;
+      fs.rmSync(path.join(dir, 'tests/listed.spec.ts'));
+    }
   });
 });
 
@@ -1916,7 +2340,7 @@ describe('recording from a paused test', () => {
         testIds: [],
         locations: ['tests/paused.spec.ts:3'],
       })) as RunCommand;
-      expect(command.command).toBe('npx playwright test tests/paused.spec.ts:3 --headed');
+      expect(command.command).toBe(`npx playwright test "^${dir}/tests/paused.spec.ts:3" --headed`);
       expect(command.pauses).toBe(true);
       expect(parseRecordChannel(command.env?.PIWI_RECORD_CHANNEL)).not.toBeNull();
       // A page.pause() left in a comment pauses nothing.
@@ -1926,7 +2350,7 @@ describe('recording from a paused test', () => {
         testIds: [],
         locations: ['tests/paused.spec.ts:3'],
       })) as RunCommand;
-      expect(commented.command).toBe('npx playwright test tests/paused.spec.ts:3');
+      expect(commented.command).toBe(`npx playwright test "^${dir}/tests/paused.spec.ts:3"`);
       expect(commented.pauses).toBeUndefined();
     } finally {
       fs.rmSync(path.join(dir, 'tests/paused.spec.ts'));
@@ -2148,6 +2572,7 @@ describe('the command line of a run', () => {
   afterAll(async () => {
     hostileMaterialization = null;
     hostileSelectionCommand = null;
+    previewTests = null;
     await client.sendRequest('piwi/refresh');
   });
 
@@ -2162,6 +2587,31 @@ describe('the command line of a run', () => {
 
     hostileMaterialization = { args: ['--config=evil.config.ts'], command: 'npx playwright test' };
     expect(await runArgs()).toBeNull();
+  });
+
+  test('takes each test by its whole path when the instance names its spec, never a spec whose path ends as its own', async () => {
+    hostileMaterialization = null;
+    const own = `npx playwright test "^${dir}/tests/checkout.spec.ts:3"`;
+    previewTests = [
+      { filePath: 'tests/checkout.spec.ts', line: 3 },
+      { filePath: 'tests/missing.spec.ts', line: 1 },
+      { filePath: '../outside.spec.ts', line: 2 },
+      { filePath: 42, line: 4 },
+    ];
+    expect(((await runArgs()) as RunCommand).command).toBe(own);
+    // A saved selection's tests too.
+    const selection = await client.sendRequest('piwi/runSelection', {
+      uri: uri('tests/checkout.spec.ts'),
+      key: 'smoke',
+    });
+    expect((selection as RunCommand).command).toBe(own);
+    // Too many lines for one command: each spec whole.
+    previewTests = Array.from({ length: 400 }, (_, i) => ({ filePath: 'tests/checkout.spec.ts', line: i + 1 }));
+    expect(((await runArgs()) as RunCommand).command).toBe(`npx playwright test "^${dir}/tests/checkout.spec.ts"`);
+    // No spec the checkout holds: the instance's own filters.
+    previewTests = [{ filePath: 'tests/missing.spec.ts', line: 1 }];
+    expect(((await runArgs()) as RunCommand).command).toBe('npx playwright test tests/checkout.spec.ts:3');
+    previewTests = null;
   });
 
   test('is refused for a selection whose command is anything but npx playwright test and its arguments', async () => {
@@ -2248,7 +2698,17 @@ describe('local runs over the latest CI run', () => {
         textDocument: { uri: uri('tests/pages/checkout.page.ts') },
         position: { line: 3, character: 30 },
       })) as { contents: { value: string } };
-      expect(hover.contents.value).toContain(`**Local failure** · [pays](${url}/test-run-cases/950) · local run #42`);
+      expect(hover.contents.value).toMatch(/^```text\nError: /);
+      expect(hover.contents.value).not.toContain('**Local failure**');
+      expect(hover.contents.value).not.toContain("getByRole('button', { name: 'Pay now' }) was not visible\n\n");
+      expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/950)`);
+      // The client may spell the file's URI otherwise (`file:///c%3A/…` on Windows): the diagnostic is still this line's.
+      const spelled = uri('tests/pages/checkout.page.ts').replace('/checkout.page.ts', '/%63heckout.page.ts');
+      const otherwise = (await client.sendRequest('textDocument/hover', {
+        textDocument: { uri: spelled },
+        position: { line: 3, character: 30 },
+      })) as { contents: { value: string } };
+      expect(otherwise.contents.value).toBe(hover.contents.value);
 
       const rows = (await client.sendRequest('piwi/fileSummary', { uri: uri('tests/rows.spec.ts') })) as FileSummary;
       const fixed = rows.lines.find((l) => l.status !== undefined)!;
@@ -2370,9 +2830,7 @@ describe('failures follow the edits', () => {
     expect(spec.lines.map((l) => [l.line, l.title.split(' · ')[0]])).toEqual([
       [5, 'failing in run #41'],
       [8, '✗ Failed here'],
-      [8, 'Run this test'],
-      [8, 'Screenshot'],
-      [8, 'Trace'],
+      [8, 'Run with Piwi'],
     ]);
     expect(spec.lines[0]).toMatchObject({ status: 'failed', failure: { line: 8, state: 'failing' } });
     const hover = (await client.sendRequest('textDocument/hover', {
@@ -2384,7 +2842,7 @@ describe('failures follow the edits', () => {
     );
   });
 
-  test('rewriting the failing line turns its error into an information, with Run this test first', async () => {
+  test('rewriting the failing line turns its error into an information, Run with Piwi first among its fixes', async () => {
     const seen = failuresChanges.length;
     const rewritten = PAGE_OBJECT.replace("this.page.locator('.cart-row').nth(2)", "this.page.getByRole('row').nth(2)");
     await change(page, rewritten, ++version);
@@ -2400,7 +2858,7 @@ describe('failures follow the edits', () => {
       context: { diagnostics: [edited] },
     })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
     expect(actions[0]).toMatchObject({
-      title: 'Piwi: run this test',
+      title: 'Run with Piwi',
       command: { command: 'piwi.runTests', arguments: [{ uri: uri(page), testIds: [3] }] },
     });
     // The healing replaces a line the buffer does not hold.
@@ -2419,7 +2877,13 @@ describe('failures follow the edits', () => {
       textDocument: { uri: uri(page) },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(
+    expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/900)`);
+    // The spec's line calling the page object has no diagnostic: its hover says the failing line changed since the run.
+    const calling = (await client.sendRequest('textDocument/hover', {
+      textDocument: { uri: uri(rows) },
+      position: { line: 8, character: 10 },
+    })) as { contents: { value: string } };
+    expect(calling.contents.value).toContain(
       `**CI failure** · [removes a row](${url}/test-run-cases/900) · run #41 · edited since run #41`,
     );
     // The diagnostic shows the headline: the hover gives the error's detail alone.
@@ -2932,6 +3396,65 @@ describe('runs as they happen', () => {
     expect((await testLine())?.status).not.toBe('flaky');
   });
 
+  test('a test of the run the instance says may be stuck says so while it runs, never while it stands stopped', async () => {
+    const command = await runTests();
+    runDetails.set(67, editorRun(67, command.ref, 'running', '2026-09-27T15:00:00.000Z'));
+    refRuns.set(command.ref!, { id: 67, status: 'running' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 67));
+    await waitFor(() => (runStreams.get(67)?.size ? true : undefined));
+    const testLine = async () => {
+      const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+        uri: uri('tests/checkout.spec.ts'),
+      })) as FileSummary;
+      return summary.lines.find((l) => l.status !== undefined);
+    };
+    const latest = () => statuses[statuses.length - 1]?.contexts[0];
+    const attempt = { title: 'pays', location: 'tests/checkout.spec.ts:3:5', browser: 'chromium', repeatEachIndex: 0 };
+
+    pushRunEvent(67, 'test-begin', { ...attempt, filePath: 'tests/checkout.spec.ts' });
+    await waitFor(() => (latest()?.liveTests?.length ? true : undefined));
+    pushRunEvent(67, 'test-stuck', { ...attempt, elapsedMs: 150_000, usualMs: 40_000 });
+    const stuck = await waitFor(() => (latest()?.live?.stuck === 1 ? latest() : undefined));
+    expect(stuck.liveTests).toEqual([
+      { testCaseId: 1, status: 'running', stuck: 'Stuck? running over 2 min, usually 40 s' },
+    ]);
+    expect((await testLine())?.title).toMatch(/^Stuck\? running over 2 min, usually 40 s, in your run #67 · /);
+
+    // A stop of the attempt hides it, and its going on shows it again.
+    pushRunEvent(67, 'test-stopped', { ...attempt, stop: { kind: 'pause' } });
+    await waitFor(() => (latest()?.live && latest()?.live?.stuck === undefined ? true : undefined));
+    expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'running' }]);
+    pushRunEvent(67, 'test-resumed', attempt);
+    await waitFor(() => (latest()?.live?.stuck === 1 ? true : undefined));
+
+    // The stream's catch-up replays the begin with what the instance said since: the attempt stays stuck.
+    pushRunEvent(67, 'test-begin', {
+      ...attempt,
+      filePath: 'tests/checkout.spec.ts',
+      stuck: { elapsedMs: 150_000, usualMs: 40_000 },
+      stop: null,
+    });
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(latest()?.live?.stuck).toBe(1);
+
+    // Its end ends it.
+    pushRunEvent(67, 'test-completed', {
+      ...attempt,
+      filePath: 'tests/checkout.spec.ts',
+      testCaseId: 1,
+      status: 'passed',
+    });
+    await waitFor(() => (latest()?.liveTests?.[0]?.status === 'passed' ? true : undefined));
+    expect(latest()?.live?.stuck).toBeUndefined();
+    expect(latest()?.liveTests).toEqual([{ testCaseId: 1, status: 'passed' }]);
+
+    // The run ends and is read.
+    runDetails.set(67, { ...runDetails.get(67), status: 'passed', passedTests: 2 });
+    const seen = statuses.length;
+    pushRunEvent(67, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => statuses.slice(seen).find((s) => s.contexts[0]?.live === null));
+  });
+
   test('a CI run of the branch in progress is a read-only session, each running test’s call a CI position', async () => {
     const startTime = '2026-09-27T12:00:00.000Z';
     runDetails.set(66, {
@@ -3032,6 +3555,41 @@ describe('runs as they happen', () => {
       failed: 0,
       verdict: { title: 'CI run #66 on main', text: '3 passed, 0 failed', failing: false },
     });
+  });
+
+  test('a teammate’s run of the branch in progress is named beside a test’s result, never drawn as running', async () => {
+    const run = {
+      id: 69,
+      status: 'running',
+      branch: 'main',
+      startTime: '2026-09-27T12:20:00.000Z',
+      metadata: {},
+      totalTests: 2,
+      passedTests: 0,
+      failedTests: 0,
+      skippedTests: 0,
+      didNotRunTests: 0,
+    };
+    runDetails.set(69, run);
+    pushInstanceEvent({ type: 'run-started', runId: 69, projectId: 7 });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.live?.runId === 69));
+    expect(statuses[statuses.length - 1]!.contexts[0]!.live).toMatchObject({ own: false });
+    await waitFor(() => (runStreams.get(69)?.size === 1 ? true : undefined));
+
+    pushRunEvent(69, 'test-begin', { title: 'pays', filePath: 'tests/checkout.spec.ts', browser: 'chromium' });
+    await waitFor(() => statuses.find((s) => s.contexts[0]?.liveTests?.some((t) => t.status === 'running')));
+    const summary = (await runsClient.sendRequest('piwi/fileSummary', {
+      uri: uri('tests/checkout.spec.ts'),
+    })) as FileSummary;
+    const line = summary.lines.find((l) => l.line === 2 && l.status !== undefined);
+    expect(line?.status).not.toBe('running');
+    expect(line?.title).toMatch(/ · running in run #69 · /);
+    expect(line?.title).not.toMatch(/your run #69/);
+
+    runDetails.set(69, { ...run, status: 'passed', passedTests: 2 });
+    pushRunEvent(69, 'run-finished', { status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 });
+    await waitFor(() => (statuses[statuses.length - 1]?.contexts[0]?.live === null ? true : undefined));
+    runDetails.delete(69);
   });
 
   test('an initializing run of the branch has its stream opened once it runs, not while it initializes', async () => {
@@ -3229,7 +3787,7 @@ describe('runs as they happen', () => {
 
   test('a run of a test three times says how many of its runs passed, counted from its stream', async () => {
     const command = await verifyPays();
-    expect(command.command).toBe('npx playwright test tests/checkout.spec.ts:3 --repeat-each=3 --retries=0');
+    expect(command.command).toBe(`npx playwright test "^${dir}/tests/checkout.spec.ts:3" --repeat-each=3 --retries=0`);
     expect(command.env).toEqual({
       PIWI_ORIGIN: 'editor',
       PIWI_ORIGIN_REF: command.ref,
@@ -3528,6 +4086,172 @@ describe('the desktop app’s MCP server for the agent', () => {
   });
 });
 
+describe('an agent’s run against a protected environment', () => {
+  test('is refused, with a notice where the person watches', async () => {
+    const production = {
+      id: 5,
+      key: 'production',
+      name: 'Production',
+      protected: true,
+      requiredTags: ['@smoke'],
+      envFile: null,
+    };
+    environmentRunVariables.set(5, { runVariables: [], environment: production });
+    const other = await runService(
+      dir,
+      false,
+      { env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' } },
+      {
+        agents: { enabled: true },
+        startsRuns: true,
+        credentials: { environments: { [dir]: { id: 5, name: 'Production', serverUrl: url, projectId: 7 } } },
+      },
+    );
+    const started: unknown[] = [];
+    other.client.onRequest('piwi/startRun', (params: unknown) => {
+      started.push(params);
+      return { ok: true, message: 'Test Editor runs it.' };
+    });
+    try {
+      const named = await waitFor(() => other.published.find((file) => file?.agents) ?? undefined);
+      await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.connected ? true : undefined;
+      });
+      const answer = await fetch(named.agents!.url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', authorization: `Bearer ${named.agents!.token}` },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: { name: 'run_start', arguments: { file: 'tests/checkout.spec.ts', agent: 'Claude Code' } },
+        }),
+      });
+      const body = (await answer.json()) as { result: { content: Array<{ text: string }> } };
+      expect(JSON.parse(body.result.content[0]!.text)).toEqual({
+        ok: false,
+        message:
+          'The runs of this folder are for Production, a protected environment: Piwi starts none there for an agent. Ask the developer to run it, or to choose another environment.',
+      });
+      expect(started).toEqual([]);
+      await waitFor(() =>
+        other.notices.find((notice) =>
+          notice.message.startsWith('Claude Code asked for a run of tests/checkout.spec.ts.'),
+        ),
+      );
+    } finally {
+      other.stop();
+      environmentRunVariables.clear();
+    }
+  });
+});
+
+describe('a chosen environment', () => {
+  const kept = (id: number, name: string, serverUrl = url) => ({ id, name, serverUrl, projectId: 7 });
+
+  test('on Windows, starts a protected run with the project’s Playwright CLI and node, never through a .cmd', async () => {
+    const production = environmentRecord(5, 'production', 'Production', { protected: true, requiredTags: ['@smoke'] });
+    environmentRunVariables.set(5, { runVariables: [], environment: environmentForRun(production) });
+    const playwright = path.join(dir, 'node_modules', '@playwright', 'test');
+    fs.mkdirSync(playwright, { recursive: true });
+    fs.writeFileSync(path.join(playwright, 'package.json'), '{"name":"@playwright/test"}');
+    fs.writeFileSync(path.join(playwright, 'cli.js'), '');
+    const other = await runService(
+      dir,
+      false,
+      {
+        env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+        platform: 'win32',
+      },
+      { credentials: { environments: { [dir]: kept(5, 'Production') } } },
+    );
+    other.client.onRequest('window/showMessageRequest', () => ({ title: 'Run against Production' }));
+    try {
+      await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.connected ? true : undefined;
+      });
+      const command = (await other.client.sendRequest('piwi/runArgs', {
+        uri: pathToFileURL(path.join(dir, 'tests/checkout.spec.ts')).href,
+        testIds: [1],
+      })) as RunCommand;
+      const cli = fs.realpathSync.native(path.join(playwright, 'cli.js')).replaceAll('\\', '/');
+      expect(command.command).toBe(
+        `node "${cli}" test tests/checkout.spec.ts:3 --grep-invert "${requiredTagsGrepInvert(['@smoke'])}"`,
+      );
+      expect(command).toMatchObject({ protected: true, env: { PIWI_ENVIRONMENT: 'production' } });
+    } finally {
+      other.stop();
+      fs.rmSync(path.join(dir, 'node_modules'), { recursive: true, force: true });
+      environmentRunVariables.clear();
+    }
+  });
+
+  test('of an instance that cannot be read runs nothing, says so, and can be set to None', async () => {
+    const other = await runService(
+      dir,
+      false,
+      {
+        env: {
+          PIWI_DASHBOARD_URL: 'http://127.0.0.1:9',
+          PIWI_PROJECT_NAME: 'Acme Mugs',
+          PIWI_DESKTOP_CONFIG: '/nonexistent',
+        },
+      },
+      { credentials: { environments: { [dir]: kept(4, 'Staging', 'http://127.0.0.1:9') } } },
+    );
+    try {
+      const environment = await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.problemKind === 'unreachable' ? status.contexts[0].environment : undefined;
+      });
+      expect(environment).toMatchObject({ id: 4, text: 'Staging' });
+      expect(environment!.tooltip).toMatch(/^Piwi cannot read the instance or the project \(Could not reach /);
+      const runArgs = () =>
+        other.client.sendRequest('piwi/runArgs', {
+          uri: pathToFileURL(path.join(dir, 'tests/checkout.spec.ts')).href,
+          testIds: [],
+          locations: ['tests/checkout.spec.ts:3'],
+        }) as Promise<RunCommand | null>;
+      expect(await runArgs()).toBeNull();
+      expect(other.notices[other.notices.length - 1]?.message).toMatch(
+        /^Piwi runs nothing for Staging while it cannot read the instance or the project \(.*\): Piwi: Choose environment… can choose None, to run without one\.$/,
+      );
+      // None is offered and taken, whatever the instance answers.
+      const choices = (await other.client.sendRequest('piwi/environments', { root: dir })) as EnvironmentsResult;
+      expect(choices.items.map((item) => item.label)).toEqual(['None']);
+      expect(await other.client.sendRequest('piwi/setEnvironment', { root: dir })).toEqual({ kept: null });
+      expect(await runArgs()).not.toBeNull();
+    } finally {
+      other.stop();
+    }
+  });
+
+  test('of another instance does not apply to this one', async () => {
+    const other = await runService(
+      dir,
+      false,
+      { env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' } },
+      { credentials: { environments: { [dir]: kept(5, 'Production', 'http://127.0.0.1:9') } } },
+    );
+    try {
+      await waitFor(async () => {
+        const status = (await other.client.sendRequest('piwi/status')) as StatusResult;
+        return status.contexts[0]?.connected ? true : undefined;
+      });
+      const command = (await other.client.sendRequest('piwi/runArgs', {
+        uri: pathToFileURL(path.join(dir, 'tests/checkout.spec.ts')).href,
+        testIds: [1],
+      })) as RunCommand;
+      expect(command.env?.PIWI_ENVIRONMENT).toBeUndefined();
+      expect(command.protected).toBeUndefined();
+    } finally {
+      other.stop();
+    }
+  });
+});
+
 describe('Piwi’s MCP server for the agent', () => {
   test('carries the connection’s key, or none for the agent to sign in through the instance', async () => {
     const toServer = new PassThrough();
@@ -3725,9 +4449,7 @@ describe('the baseline chosen in the editor', () => {
       textDocument: { uri: uri('tests/pages/checkout.page.ts') },
       position: { line: 4, character: 30 },
     })) as { contents: { value: string } };
-    expect(hover.contents.value).toContain(
-      `**Local failure** · [removes a row](${url}/test-run-cases/1190) · local run #119`,
-    );
+    expect(hover.contents.value).toContain(`[Open in dashboard](${url}/test-run-cases/1190)`);
   });
 
   test('the ladder reads the checked-out branch, as without a choice', async () => {
@@ -3992,9 +4714,7 @@ describe('the severity of a failure', () => {
       expect(problems.file).toBeNull();
       expect(problems.lines.filter((l) => l.status === undefined).map((l) => l.title)).toEqual([
         "✗ Failed here · locator('.cart-row').nth(2) was not found",
-        'Run this test',
-        'Screenshot',
-        'Trace',
+        'Run with Piwi',
       ]);
       expect(problems.lines.filter((l) => l.status === 'failed')).toHaveLength(1);
       await severityClient.sendNotification('piwi/setCredentials', { codeLens: 'off' });
@@ -4003,6 +4723,62 @@ describe('the severity of a failure', () => {
     } finally {
       stopSeverity();
       severityClient.dispose();
+    }
+  });
+});
+
+describe('a file whose URI the client spells otherwise', () => {
+  test('gets its analysis and its failures in one set, under the URI the client sent while it is open', async () => {
+    const toServer = new PassThrough();
+    const toClient = new PassThrough();
+    const stopSpelled = startServer(createConnection(toServer, toClient), {
+      env: { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: 'Acme Mugs', PIWI_DESKTOP_CONFIG: '/nonexistent' },
+      debounceMs: 10,
+    });
+    const spelledClient = createMessageConnection(new StreamMessageReader(toClient), new StreamMessageWriter(toServer));
+    // An editor keeps one set per file, whichever form of its URI the set came under, as VS Code and JetBrains do.
+    const held = new Map<string, Array<{ code?: string; severity?: number }>>();
+    const sent = new Map<string, Array<{ code?: string }>>();
+    spelledClient.onNotification('textDocument/publishDiagnostics', (p: { uri: string; diagnostics: [] }) => {
+      held.set(fileURLToPath(p.uri), p.diagnostics);
+      sent.set(p.uri, p.diagnostics);
+    });
+    spelledClient.listen();
+    const page = uri('tests/pages/checkout.page.ts');
+    // As VS Code spells a Windows path (`file:///c%3A/…`): another form of the same file.
+    const spelled = page.replace('/checkout.page.ts', '/%63heckout.page.ts');
+    const onPage = () => held.get(fileURLToPath(page)) ?? [];
+    const has = (code: string) => onPage().some((d) => d.code === code);
+    try {
+      await spelledClient.sendRequest('initialize', {
+        processId: null,
+        rootUri: null,
+        capabilities: {},
+        workspaceFolders: [{ uri: pathToFileURL(dir).href, name: 'shop' }],
+      });
+      await spelledClient.sendNotification('initialized', {});
+      await waitFor(() => (has('ci-failure') ? true : undefined));
+
+      await spelledClient.sendNotification('textDocument/didOpen', {
+        textDocument: { uri: spelled, languageId: 'typescript', version: 1, text: PAGE_OBJECT },
+      });
+      await waitFor(() => (has('brittle') && has('ci-failure') ? true : undefined));
+      expect(sent.get(page)).toEqual([]);
+      expect(sent.get(spelled)?.map((d) => d.code)).toEqual(expect.arrayContaining(['brittle', 'ci-failure']));
+
+      // The failures sent again keep the analysis beside them.
+      await spelledClient.sendNotification('piwi/setCredentials', { failureSeverity: 'warning' });
+      await waitFor(() => (onPage().find((d) => d.code === 'ci-failure')?.severity === 2 ? true : undefined));
+      expect(has('brittle')).toBe(true);
+
+      // Closed, the file keeps its failures under the form the service writes.
+      await spelledClient.sendNotification('textDocument/didClose', { textDocument: { uri: spelled } });
+      await waitFor(() => (!has('brittle') && has('ci-failure') ? true : undefined));
+      expect(sent.get(spelled)).toEqual([]);
+      expect(sent.get(page)?.map((d) => d.code)).toEqual(['ci-failure']);
+    } finally {
+      stopSpelled();
+      spelledClient.dispose();
     }
   });
 });
@@ -4589,7 +5365,7 @@ describe('a change pushed to the client', () => {
 });
 
 describe('jobs for the desktop app running beside a team instance', () => {
-  test('offer Flake Lab on a flaky test and on a failure whose test has an untested suspect', async () => {
+  test('offer Flake Lab on a flaky test, and say on a failure whose test has an untested suspect', async () => {
     const desktopFile = path.join(dir, '.desktop-beside.json');
     // The app runs, but the environment names the team instance, which the context reads.
     fs.writeFileSync(desktopFile, JSON.stringify({ url: 'http://127.0.0.1:9', token: 'pd_desktop', projects: [] }));
@@ -4638,6 +5414,10 @@ describe('jobs for the desktop app running beside a team instance', () => {
         arguments: [{ root: dir, testCaseId: 1, kind: 'flake-lab' }],
       });
 
+      // The failure's node offers the desktop app's jobs, Flake Lab on its untested suspects among them; its light bulb
+      // holds edits.
+      const failures = (await beside.sendRequest('piwi/failures')) as FailuresResult;
+      expect(failures.items.find((f) => f.executionId === 900)).toMatchObject({ untestedSuspects: true, source: 'ci' });
       const failure = await waitFor(() =>
         published.get(uri('tests/pages/checkout.page.ts'))?.find((d) => d.code === 'ci-failure'),
       );
@@ -4646,15 +5426,7 @@ describe('jobs for the desktop app running beside a team instance', () => {
         range: failure.range,
         context: { diagnostics: [failure] },
       })) as Array<{ title: string; command?: { command: string; arguments: unknown[] } }>;
-      const jobs = actions.filter((a) => a.command?.command === 'piwi.desktopJob');
-      expect(jobs.map((a) => [a.title, a.command!.arguments[0]])).toEqual([
-        ['Piwi: reproduce in the desktop app', { root: dir, executionId: 900, kind: 'reproduce' }],
-        ['Piwi: find the breaking commit in the desktop app', { root: dir, executionId: 900, kind: 'bisect' }],
-        [
-          'Piwi: run Flake Lab on its untested suspects in the desktop app',
-          { root: dir, executionId: 900, testCaseId: 3, kind: 'flake-lab' },
-        ],
-      ]);
+      expect(actions.filter((a) => a.command?.command === 'piwi.desktopJob')).toEqual([]);
     } finally {
       fs.rmSync(desktopFile, { force: true });
       stopBeside();
@@ -5135,8 +5907,8 @@ describe('a test the instance does not know yet', () => {
     const run = await runArgs({ locations: ['tests/checkout.spec.ts:5'] });
     expect(run).toEqual({
       cwd: repo,
-      args: ['tests/checkout.spec.ts:5'],
-      command: 'npx playwright test tests/checkout.spec.ts:5',
+      args: [`^${repo}/tests/checkout.spec.ts:5`],
+      command: `npx playwright test "^${repo}/tests/checkout.spec.ts:5"`,
       env: {
         PIWI_ORIGIN: 'editor',
         PIWI_ORIGIN_REF: run?.ref,
@@ -5162,8 +5934,8 @@ describe('a test the instance does not know yet', () => {
     });
     expect(verify).toEqual({
       cwd: repo,
-      args: ['tests/checkout.spec.ts:5', '--repeat-each=3', '--retries=0'],
-      command: 'npx playwright test tests/checkout.spec.ts:5 --repeat-each=3 --retries=0',
+      args: [`^${repo}/tests/checkout.spec.ts:5`, '--repeat-each=3', '--retries=0'],
+      command: `npx playwright test "^${repo}/tests/checkout.spec.ts:5" --repeat-each=3 --retries=0`,
       // On the run channel, nobody attending it: no breakpoint, no record channel.
       env: { PIWI_ORIGIN: 'editor', PIWI_ORIGIN_REF: verify?.ref, PIWI_RUN_CHANNEL: RECORD_CHANNEL },
       ref: expect.stringMatching(/^ed-[0-9a-f]{8}$/),

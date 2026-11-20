@@ -227,6 +227,11 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
         project.service<PiwiProjectService>().failuresChanged(failures)
     }
 
+    @JsonNotification("piwi/testItemsChanged")
+    fun testItemsChanged(result: TestItemsResult) {
+        project.service<PiwiProjectService>().testItemsChanged(result)
+    }
+
     /** A file's coverage marks moved with an edit, or its coverage was read again: the marks, and its Code Vision lines. */
     @JsonNotification("piwi/coverageChanged")
     fun coverageChanged(result: CoverageResult) {
@@ -260,6 +265,12 @@ class PiwiLsp4jClient(handler: LspServerNotificationsHandler, private val projec
     @JsonNotification("piwi/runSessionChanged")
     fun runSessionChanged(session: RunSession) {
         project.service<PiwiRunSessions>().heard(session)
+    }
+
+    /** A worker of a run began or ended a test: the run's test tree in its Run tab. */
+    @JsonNotification("piwi/runTest")
+    fun runTest(event: RunTestEvent) {
+        project.service<PiwiRunTestTrees>().heard(event)
     }
 
     /** A CI run of the branch moved, read-only: the CI Runs tab and the CI positions. */

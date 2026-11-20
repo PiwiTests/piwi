@@ -10,6 +10,7 @@ import {
 } from '#shared/handlers/failure-cluster-recluster';
 import { applyMigrations } from './migration-history';
 import { postgresMigrationTarget, sqliteMigrationTarget } from './migration-targets';
+import { openPostgresPool, postgresPoolMax } from './postgres-pool';
 import { configureSqliteConnections, sqliteClientConfig } from './sqlite-connections';
 import { isOtelTracingEnabled, traceSqlStatements } from '../utils/otel';
 import { existsSync, mkdirSync } from 'fs';
@@ -102,6 +103,38 @@ function backfillAnalyticsRollups(): void {
       if (cells > 0) console.log(`[Database] Analytics rollup backfill computed ${cells} cell(s)`);
     } catch (err) {
       console.error('[Database] Analytics rollup backfill failed:', err);
+    }
+  })();
+}
+
+/**
+ * Give the runs stored before environments existed theirs (`backfillRunEnvironments`), discovering an environment
+ * for each label nothing takes, then the markers, URL patterns and CI actions that named one by its label
+ * (`backfillEnvironmentReferences`), each pass once per instance, without blocking startup; an interrupted pass runs
+ * again at the next start. Once they have run, what named a deleted environment keeps its label and no environment.
+ */
+function backfillRunEnvironmentIds(): void {
+  void (async () => {
+    try {
+      const { getAppSetting, setAppSetting } = await import('../utils/app-settings');
+      const {
+        backfillEnvironmentReferences,
+        backfillRunEnvironments,
+        ENVIRONMENT_REFERENCES_BACKFILLED_SETTING,
+        RUN_ENVIRONMENTS_BACKFILLED_SETTING,
+      } = await import('#shared/handlers/environments');
+      if (!(await getAppSetting(db as any, RUN_ENVIRONMENTS_BACKFILLED_SETTING))) {
+        const given = await backfillRunEnvironments(db as any);
+        await setAppSetting(db as any, RUN_ENVIRONMENTS_BACKFILLED_SETTING, new Date().toISOString());
+        if (given > 0) console.log(`[Database] Environment backfill gave ${given} run(s) their environment`);
+      }
+      if (!(await getAppSetting(db as any, ENVIRONMENT_REFERENCES_BACKFILLED_SETTING))) {
+        const given = await backfillEnvironmentReferences(db as any);
+        await setAppSetting(db as any, ENVIRONMENT_REFERENCES_BACKFILLED_SETTING, new Date().toISOString());
+        if (given > 0) console.log(`[Database] Environment backfill gave ${given} setting(s) their environment`);
+      }
+    } catch (err) {
+      console.error('[Database] Environment backfill failed:', err);
     }
   })();
 }
@@ -226,6 +259,59 @@ async function redactStoredShareTokens(target: DB): Promise<void> {
 }
 
 /**
+ * Move the project CI server tokens (`projects.ci_server_token`), the AI keys,
+ * the Jira and Zephyr Scale tokens (`integration_connections.credentials`),
+ * the bot tokens of the instance's Slack channels and the SCM tokens
+ * (`projects.scm_token`, the `scm_token` app setting) into credentials
+ * (`importProjectCiServerTokens`, `importAiKeys`, `importConnectionCredentials`,
+ * `importSlackChannelTokens`, `importScmTokens`). Startup waits for it, so
+ * no dispatch or repository call runs while it still waits for its credential.
+ * A token that cannot be opened, or waits for a repository, is left for later,
+ * and a failure is logged.
+ */
+async function importProjectCiServerTokens(target: DB): Promise<void> {
+  try {
+    const { importProjectCiServerTokens: importTokens } = await import('../utils/credentials');
+    const moved = await importTokens(target as any);
+    if (moved) console.log(`[Database] CI server tokens of ${moved} project(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the CI server tokens to credentials failed:', err);
+  }
+  try {
+    const { importAiKeys, removeUnmanagedEnvAiCredentials } = await import('../utils/ai-credentials');
+    const moved = await importAiKeys(target as any);
+    if (moved) console.log(`[Database] ${moved} AI key(s) moved to credentials`);
+    await removeUnmanagedEnvAiCredentials(
+      target as any,
+      process.env.PIWI_AI_PROVIDER?.trim() || process.env.NUXT_AI_PROVIDER?.trim(),
+    );
+  } catch (err) {
+    console.error('[Database] Moving the AI keys to credentials failed:', err);
+  }
+  try {
+    const { importConnectionCredentials } = await import('../utils/integrations/connection-credentials');
+    const moved = await importConnectionCredentials(target as any);
+    if (moved) console.log(`[Database] ${moved} Jira or Zephyr Scale token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the Jira and Zephyr Scale tokens to credentials failed:', err);
+  }
+  try {
+    const { importSlackChannelTokens } = await import('../utils/notifications/slack-credentials');
+    const moved = await importSlackChannelTokens(target as any);
+    if (moved) console.log(`[Database] ${moved} Slack channel token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the Slack channel tokens to credentials failed:', err);
+  }
+  try {
+    const { importScmTokens } = await import('../utils/credentials');
+    const moved = await importScmTokens(target as any);
+    if (moved) console.log(`[Database] ${moved} SCM token(s) moved to credentials`);
+  } catch (err) {
+    console.error('[Database] Moving the SCM tokens to credentials failed:', err);
+  }
+}
+
+/**
  * Open the database and bring its schema up to date, once per process: the
  * callers that arrive while it is still opening (the startup plugins, the first
  * requests) share the same connection and the same migration run.
@@ -243,7 +329,7 @@ async function openDatabase(): Promise<DB> {
       const { migrate } = await import('drizzle-orm/postgres-js/migrator');
       const { default: postgres } = await import('postgres');
 
-      const client = postgres(databaseUrl);
+      const client = await openPostgresPool(postgres, databaseUrl, { max: postgresPoolMax(databaseUrl) });
       const pgDb = drizzle(client);
       if (isOtelTracingEnabled()) await traceSqlStatements('postgres', pgDb, client);
       // Cast to the canonical SQLite DB type so callers retain typed query results
@@ -260,10 +346,12 @@ async function openDatabase(): Promise<DB> {
           await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
+          await importProjectCiServerTokens(db);
           rewriteRouteKeys(db as any);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          backfillRunEnvironmentIds();
           hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);
@@ -317,10 +405,12 @@ async function openDatabase(): Promise<DB> {
           await rekeyResourceFindings(db);
           await releaseUnannouncedClusterClaims(db);
           await redactStoredShareTokens(db);
+          await importProjectCiServerTokens(db);
           rewriteRouteKeys(db);
           backfillTraceResourceLinks();
           backfillAnalyticsRollups();
           backfillAttemptHistories();
+          backfillRunEnvironmentIds();
           hideSecretsInStoredErrors();
         } catch (error) {
           console.error('[Database] Migration error:', error);

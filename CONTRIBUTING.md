@@ -58,7 +58,7 @@ The repository is licensed in two parts (see [LICENSE](LICENSE)): `packages/repo
 
 This repo uses [Conventional Commits](https://www.conventionalcommits.org/), enforced by commitlint (locally and in CI) and a PR-title check. [release-please](https://github.com/googleapis/release-please) reads commit history to compute version bumps and generate the changelog, so following this format isn't just style — it's what makes releases work.
 
-Because PRs are squash-merged, **the PR title becomes the commit message on `main`** — that's what release-please actually reads. Give the PR itself a Conventional Commit title. Every commit within the PR must follow the format too: the `commitlint` check lints each one, so a single bad message turns the PR red.
+PRs are merged with a merge commit, and release-please reads **every commit that lands on `main`**: each commit of the PR, and the merge commit, whose message carries the PR title under `Merge pull request #N`. So each commit is a changelog entry, and so is the PR title: give both a Conventional Commit message. The `commitlint` check lints each commit, so a single bad message turns the PR red. A title that repeats one of its commits' subjects lists that change twice; the release-notes tooling merges such repeats into one entry.
 
 ### Format
 
@@ -105,7 +105,7 @@ BREAKING CHANGE: unverified accounts can no longer sign in.
 
 1. **Local `commit-msg` hook** (husky + commitlint) — runs on every `git commit` after `npm install`. Bypassable with `--no-verify`; treat it as convenience, not a gate.
 2. **`commitlint` check** (the `PR lint` workflow) — lints every commit in a PR's range on push.
-3. **`title` check** (the `PR lint` workflow) — lints the PR title itself with the same `commitlint.config.js`, since that's what becomes the squash-merge commit subject. commitlint's default ignores do not apply to it: a `Merge …`, `Revert "…"` or `fixup! …` title fails, although such a commit passes. This is the check that actually gates `main`.
+3. **`title` check** (the `PR lint` workflow): lints the PR title itself with the same `commitlint.config.js`, since the merge commit's message carries it and release-please reads it. commitlint's default ignores do not apply to it: a `Merge …`, `Revert "…"` or `fixup! …` title fails, although such a commit passes.
 
 Dependabot's commits and pull requests (opened by Dependabot or labelled `dependencies`) are exempt from both checks: it writes its own messages and capitalises "Bump" in some of them.
 

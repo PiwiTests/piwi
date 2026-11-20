@@ -24,7 +24,9 @@ import { getAutoHealSettings, resolveHealSiteUrl } from './settings';
 import { refreshOpenHealActions } from './pr-state';
 import { listOutcomes } from '../outcomes';
 import { recordHealBranchRun } from './branch-runs';
-import { buildRetryCommand, buildTitleGrepFlag } from '#shared/retry-command';
+import { buildRerunPlan } from '#shared/retry-command';
+import { commandWithRunVariables, type RunVariable } from '#shared/run-variables';
+import { readProjectRunVariables } from '#shared/handlers/run-variables';
 import {
   healBranchName,
   healDedupeKey,
@@ -161,16 +163,28 @@ export async function rejectedHealEdits(db: DbClient, projectId: number): Promis
   return rejected;
 }
 
-/** Build the verify command shown in the PR body — exactly the affected tests. */
-function buildVerifyCommand(edits: HealEditPayload[], rows: HealCandidateRow[]): string {
+/**
+ * Build the verify command shown in the PR body — exactly the affected tests, started with the project's run
+ * variables in bash — and the titles of those it cannot name; the command is empty when they name neither a file nor
+ * a title, since it would run every test.
+ */
+function buildVerify(
+  edits: HealEditPayload[],
+  rows: HealCandidateRow[],
+  runVariables: readonly RunVariable[],
+): { verifyCommand: string; verifyLeftOut?: string[] } {
   const byExecution = new Map(rows.map((r) => [r.executionId, r] as const));
   const cases = edits
     .map((e) => byExecution.get(e.executionId))
     .filter((r): r is HealCandidateRow => !!r)
     .map((r) => ({ filePath: r.filePath, title: r.title }));
-  const fileCmd = buildRetryCommand(cases, { mode: 'file' });
-  const grep = buildTitleGrepFlag([...new Set(cases.map((c) => c.title))].slice(0, 5));
-  return `${fileCmd || 'npx playwright test'}${grep}`;
+  if (cases.length === 0) return { verifyCommand: '' };
+  const plan = buildRerunPlan(cases);
+  const command = commandWithRunVariables(plan.command, runVariables, 'bash');
+  const { leftOut } = plan;
+  return command && leftOut.length
+    ? { verifyCommand: command, verifyLeftOut: [...new Set(leftOut.map((c) => c.title || c.filePath))] }
+    : { verifyCommand: command };
 }
 
 async function countOpenHealActions(db: DbClient, projectId: number): Promise<number> {
@@ -298,7 +312,7 @@ export async function maybeEnqueueHealAction(db: DbClient, runId: number): Promi
     commitMessage: settings.commitMessage,
     title: settings.commitMessage,
     draft: settings.draft,
-    verifyCommand: buildVerifyCommand(edits, rows),
+    ...buildVerify(edits, rows, (await readProjectRunVariables(db as never, run.projectId)) ?? []),
     edits,
   };
 

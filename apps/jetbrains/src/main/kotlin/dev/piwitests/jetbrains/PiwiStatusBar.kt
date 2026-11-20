@@ -125,15 +125,17 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private val tick = Alarm(Alarm.ThreadToUse.SWING_THREAD, this)
 
     /**
-     * Draws the item again: the recording in progress, else the service's line of the runs started here
+     * Draws the item again: the recording in progress, unless a test waits for the person, else the service's line of
+     * the runs started here
      * (`piwi/runLineChanged`: where a test is stopped or the call a pausing one waits in, the share, how far the runs
      * are), its icon badged while a stop waits for the person, `Piwi: refreshing…` while the latest run is read again,
      * else the view of the selected file's context, with its icon and, while its tests fail, the error color. A run's
      * tooltip says what each worker runs now (`Glue.workersNowText`) and who else has it open. On the event thread.
      */
     fun update() {
-        val recording = recording()
         val line = runs()?.line
+        // A test that waits for the person keeps the item over a recording, as in VS Code.
+        val recording = recording()?.takeIf { line == null || line.calls == 0 }
         val sharedLive = runs()?.let { Glue.sharedLive(it.sessions) }
         // What each worker runs now and who else has the runs open, said in the tooltip of a run's state.
         val workers = runs()?.let { Glue.workersNowText(it.sessions) }?.let { "\n$it" }.orEmpty()
@@ -183,7 +185,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
     private fun icon(icon: Glue.StatusIcon): Icon = when (icon) {
         Glue.StatusIcon.PIWI -> PiwiIcons.PIWI
         Glue.StatusIcon.CONNECT -> PiwiIcons.CONNECT
-        Glue.StatusIcon.UNREACHABLE -> AllIcons.Actions.OfflineMode
+        Glue.StatusIcon.UNREACHABLE -> PiwiIcons.UNREACHABLE
         Glue.StatusIcon.RUNNING -> AnimatedIcon.Default.INSTANCE
         Glue.StatusIcon.FAILING -> PiwiIcons.FAILED
         Glue.StatusIcon.PASSED -> AllIcons.RunConfigurations.TestPassed
@@ -263,7 +265,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             addSeparator()
             addAll(registered("Piwi.RunTestAtCursor", "Piwi.RecordHere"))
             addSeparator()
-            addAll(registered("Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings"))
+            addAll(registered("Piwi.Refresh", "Piwi.Connect", "Piwi.PairPicker", "Piwi.OpenSettings"))
         }
     }
 
@@ -357,6 +359,10 @@ internal class StatusLabel : JBLabel() {
 /** **Open the failures**: the Piwi tool window, as a run's notification opens it. */
 class OpenFailuresAction : DumbAwareAction() {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        e.presentation.isEnabled = chordActsHere(e)
+    }
 
     override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
@@ -452,5 +458,75 @@ class ShowStopAction : RunControlAction() {
     override fun actionPerformed(e: AnActionEvent) {
         val sessions = sessions(e) ?: return
         sessions.atCaret(e.getData(CommonDataKeys.EDITOR), clicked = e.getData(PiwiRunSessions.STOP)) { sessions.goTo(it) }
+    }
+}
+
+/**
+ * The environment the runs Piwi starts for the selected file's Playwright config are for, beside the status item
+ * (`Glue.environmentContext`): its name, a lock for a protected one, hidden while no project lists an environment. A
+ * click chooses another (`ChooseEnvironmentAction`).
+ */
+class PiwiEnvironmentWidgetFactory : StatusBarWidgetFactory {
+    override fun getId() = ID
+
+    override fun getDisplayName() = "Piwi environment"
+
+    override fun isAvailable(project: Project) = project.service<PiwiProjectService>().hasPlaywrightConfig()
+
+    override fun createWidget(project: Project): StatusBarWidget = PiwiEnvironmentWidget(project)
+
+    override fun disposeWidget(widget: StatusBarWidget) = Disposer.dispose(widget)
+
+    override fun canBeEnabledOn(statusBar: StatusBar) = true
+
+    companion object {
+        const val ID = "piwi.environment"
+    }
+}
+
+/** The environment widget: a label drawn again when the service's status or the selected editor change. */
+class PiwiEnvironmentWidget(private val project: Project) : CustomStatusBarWidget {
+    private val label = StatusLabel()
+
+    /** The Playwright config folder the label speaks for, which a click chooses the environment of. */
+    private var root: String? = null
+
+    init {
+        object : ClickListener() {
+            override fun onClick(event: MouseEvent, clickCount: Int): Boolean {
+                ChooseEnvironmentAction.choose(project, root)
+                return true
+            }
+        }.installOn(label, true)
+    }
+
+    override fun ID() = PiwiEnvironmentWidgetFactory.ID
+
+    override fun getComponent(): JComponent = label
+
+    override fun install(statusBar: StatusBar) {
+        project.service<PiwiProjectService>().onChange(this) { update() }
+        project.messageBus.connect(this).subscribe(
+            FileEditorManagerListener.FILE_EDITOR_MANAGER,
+            object : FileEditorManagerListener {
+                override fun selectionChanged(event: FileEditorManagerEvent) = update()
+            },
+        )
+        update()
+    }
+
+    /** Draws the label again from the selected file's context, or hides it. On the event thread. */
+    fun update() {
+        val context = Glue.environmentContext(
+            project.service<PiwiProjectService>().status,
+            PiwiStatusBarWidget.shownFile(project),
+        )
+        val environment = context?.environment
+        root = context?.root
+        label.isVisible = environment != null
+        if (environment == null) return
+        label.text = environment.text
+        label.icon = if (environment.protected) AllIcons.Ide.Readonly else AllIcons.Webreferences.Server
+        label.toolTipText = Glue.htmlTooltip("${environment.tooltip}\nClick to choose another.")
     }
 }

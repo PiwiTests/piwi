@@ -51,9 +51,10 @@ elements in same-origin frames.
 DevTools also gets a **Piwi** panel of its own, with the tabs below. It shows what runs on the page and stays up while the
 page navigates; the recording and replay panels on the page stay too, for when DevTools is closed.
 
-- **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. **Stop
-  recording** stops it as the popup does; then **Copy as TypeScript**, **Download steps** and **Discard** do what the
-  review panel does. A bug report is finished from its panel on the page, which collects the evidence.
+- **Record** lists a recording's steps as they are captured, each with the locator it was recorded with. A recording
+  is finished from its bar on the page or from the popup, which collect the last evidence; once it is, **Copy test**
+  copies its test, the failing one when a step is marked wrong, and **Discard** drops it, as the
+  [finish panel](./record-actions#the-finish-panel) does.
 - **Replay** lists a replay's steps with their results and the verdict once it ends. **Pause**, **Continue**, **Next
   step** and **Stop** act on the replay running in the page.
 - **Network** lists the page's `fetch` and XHR requests, from DevTools' own log while it is open; **Other sites too**

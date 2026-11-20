@@ -1,4 +1,4 @@
-import type { Page } from '@playwright/test';
+import type { APIRequestContext, Page } from '@playwright/test';
 import { test, expect } from './fixtures';
 import { waitForHydration, retryPost } from './utils';
 import { PROJECT } from '#shared/test-project-names';
@@ -76,6 +76,24 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
                 return null;
               case 'desktop_check_local_specs':
                 return { folder: '/home/dev/acme', missing: opts.missingSpecs ?? [] };
+              case 'desktop_suggest_project_folders':
+                return [];
+              // The project sets no run variables, and a run for no environment gets none.
+              case 'desktop_environment_run_settings':
+                return { runVariables: [], environment: null };
+              case 'desktop_check_project_folder':
+                return {
+                  path: args?.path,
+                  exists: true,
+                  playwrightConfig: 'playwright.config.ts',
+                  specsChecked: 1,
+                  specsFound: 1,
+                  missingSpecs: [],
+                  repository: null,
+                  sameRepository: null,
+                  fits: true,
+                  alternatives: [],
+                };
               case 'desktop_check_local_env': {
                 if (!state.link) throw new Error('no folder is linked to this project');
                 return {
@@ -143,6 +161,42 @@ async function processStarted(page: Page) {
   await expect.poll(async () => (await runInvocations(page)).length, { timeout: 15_000 }).toBeGreaterThan(0);
 }
 
+/** A failed chromium result at `location`, as the reporter sends it. */
+function failedAt(title: string, location: string) {
+  return {
+    title,
+    status: 'failed',
+    duration: 1000,
+    location,
+    browser: { name: 'chromium', projectName: 'chromium' },
+    error: 'Error: boom',
+    retries: 0,
+    workerIndex: 0,
+    startedAt: Date.now(),
+  };
+}
+
+/** Reports a failed run of these results to its own project, and returns the run's id. */
+async function submitFailedRun(request: APIRequestContext, testCases: ReturnType<typeof failedAt>[]): Promise<number> {
+  const res = await retryPost(request, '/api/test-runs/submit', {
+    data: {
+      projectName: PROJECT.DESKTOP_LOCAL_RUN_UNNAMED,
+      status: 'failed',
+      startTime: new Date().toISOString(),
+      duration: 2000,
+      totalTests: testCases.length,
+      passedTests: 0,
+      failedTests: testCases.length,
+      skippedTests: 0,
+      testCases,
+    },
+  });
+  expect(res.ok()).toBeTruthy();
+  const data = await res.json();
+  const proj = await (await request.get(`/api/projects/${data.projectId}`)).json();
+  return proj.testRuns[0].id as number;
+}
+
 test.describe('Desktop local run', () => {
   let runId: number;
   let projectId: number;
@@ -195,6 +249,29 @@ test.describe('Desktop local run', () => {
     const run = await (await request.get(`/api/test-runs/${runId}`)).json();
     type Case = { title: string; executionId: number };
     executionId = (run.testCases as Case[]).find((c) => c.title === 'checkout completes')!.executionId;
+  });
+
+  test('a test with no file path Playwright takes is left out, and the button says so', async ({ page, request }) => {
+    await installFakeBridge(page, { linked: true });
+    const runId = await submitFailedRun(request, [failedAt('pays', 'tests/pay.spec.ts:7:1'), failedAt('odd', '.:3:1')]);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: 'Run options' }).first().click();
+    await expect(page.getByText('Leaves out 1 of the 2 tests: Playwright cannot take their file paths')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await page.getByRole('button', { name: 'Re-run 2 failed tests · 1 left out', exact: true }).click();
+    await processStarted(page);
+    expect((await runInvocations(page))[0]!.args!.args).toEqual(['tests/pay.spec.ts:7', '--project=chromium']);
+  });
+
+  test('with no test it can name, the button runs nothing and its menu says why', async ({ page, request }) => {
+    await installFakeBridge(page, { linked: true });
+    const runId = await submitFailedRun(request, [failedAt('odd', '.:3:1')]);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(page.getByRole('menu').getByText('Runs nothing')).toBeVisible();
+    expect(await runInvocations(page)).toHaveLength(0);
   });
 
   test('without the bridge the button does not exist', async ({ page }) => {
@@ -341,6 +418,94 @@ test.describe('Desktop local run', () => {
       () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').length,
     );
     expect(stops).toBe(1);
+  });
+
+  test('a double-click on Stop only stops: Force stop waits a moment, beside how long the wind-down can take', async ({
+    page,
+  }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    await tray(page).getByRole('button', { name: 'Stop', exact: true }).dblclick();
+    await expect(tray(page).getByText(/^Ends within (10|9) s$/)).toBeVisible();
+    const stops = () =>
+      page.evaluate(
+        () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_stop_local_tests').length,
+      );
+    expect(await stops()).toBe(1);
+    await expect(tray(page).getByRole('button', { name: 'Force stop' })).toBeEnabled();
+    expect(await stops()).toBe(1);
+  });
+
+  test('the sidebar’s Local runs opens and closes the tray, and marks a run that failed while it was closed', async ({
+    page,
+  }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    const entry = page.getByTestId('local-runs-entry');
+    await expect(entry).toHaveAccessibleName('Local runs');
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+    await page.evaluate(() => window.__piwiFakeTauri.finish(1));
+    await expect(entry).toHaveAccessibleName('Local runs: a run failed since you looked');
+    await expect(page.getByTestId('local-runs-unseen')).toHaveClass(/bg-error/);
+
+    await entry.click();
+    await expect(tray(page).getByText('Failed', { exact: true })).toBeVisible();
+    await expect(entry).toHaveAccessibleName('Local runs');
+    await expect(page.getByTestId('local-runs-unseen')).toHaveCount(0);
+    await entry.click();
+    await expect(tray(page)).toBeHidden();
+
+    // Remove takes one run that ended away.
+    await page.keyboard.press('g');
+    await page.keyboard.press('t');
+    await tray(page).getByRole('button', { name: 'More actions' }).click();
+    await page.getByRole('menuitem', { name: 'Remove from the list' }).click();
+    await expect(tray(page).getByText('No local runs yet')).toBeVisible();
+  });
+
+  test('an ended run lists the tests it failed on, from its output, each to run again', async ({ page }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await processStarted(page);
+    for (const line of [
+      '  ✘  1 [chromium] › tests/checkout.spec.ts:42:18 › checkout completes (1.2s)',
+      '',
+      '  1) [chromium] › tests/checkout.spec.ts:42:18 › checkout completes ───────────',
+      '',
+      '    Error: locator.click: Timeout 30000ms exceeded.',
+      '',
+      '      41 | test(…)',
+      '  1 failed',
+      '    [chromium] › tests/checkout.spec.ts:42:18 › checkout completes ────────────',
+    ]) {
+      await page.evaluate((text) => window.__piwiFakeTauri.emitLine(text), line);
+    }
+    await page.evaluate(() => window.__piwiFakeTauri.finish(1));
+
+    const result = tray(page).getByTestId('run-result');
+    await expect(result).toHaveCount(1);
+    await expect(result).toHaveAttribute('data-status', 'failed');
+    await expect(result.getByText('checkout completes', { exact: true })).toBeVisible();
+    await expect(result.getByText('Error: locator.click: Timeout 30000ms exceeded.')).toBeVisible();
+    await expect(result.getByRole('img', { name: 'Failed' })).toBeVisible();
+
+    await expect(result.getByText('chromium', { exact: true })).toBeVisible();
+    await result.getByRole('button', { name: 'Run checkout completes in chromium again', exact: true }).click();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
+    expect((await runInvocations(page))[1]!.args!.args).toEqual(['tests/checkout.spec.ts:42', '--project=chromium']);
+    // The run it came from stays open on its list, so another test runs again from there.
+    await expect(tray(page).getByTestId('run-result').first()).toBeVisible();
   });
 
   test('a second stop forces the run to end', async ({ page }) => {
@@ -527,7 +692,7 @@ test.describe('Desktop local run', () => {
 
     await expect(dialog.getByText('None of these tests are in the linked folder')).toBeVisible();
     await expect(dialog.getByText('tests/checkout.spec.ts', { exact: true })).toBeVisible();
-    await expect(dialog.getByText('linked to a different checkout')).toBeVisible();
+    await expect(dialog.getByText('linked to another folder than the one these tests come from')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Choose the right folder…' })).toBeVisible();
 
     // A warning, never a block: the config may put specs elsewhere.
@@ -644,8 +809,7 @@ test.describe('Desktop local run', () => {
     const invocations = await runInvocations(page);
     expect(invocations).toHaveLength(1);
     expect(invocations[0]!.args!.args).toEqual([
-      '--grep',
-      'checkout completes',
+      '--grep=checkout completes',
       '--trace=on',
       '--repeat-each=20',
       '--retries=0',
@@ -696,8 +860,7 @@ test.describe('Desktop local run', () => {
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
     let invocations = await runInvocations(page);
     expect(invocations[0]!.args!.args).toEqual([
-      '--grep',
-      'checkout completes',
+      '--grep=checkout completes',
       '--repeat-each=20',
       '--retries=0',
       '--max-failures=1',
@@ -710,7 +873,7 @@ test.describe('Desktop local run', () => {
     await page.getByRole('button', { name: 'Run this test · by title · ×20', exact: true }).click();
     await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
     invocations = await runInvocations(page);
-    expect(invocations[1]!.args!.args).toEqual(['--grep', 'checkout completes', '--repeat-each=20', '--retries=0']);
+    expect(invocations[1]!.args!.args).toEqual(['--grep=checkout completes', '--repeat-each=20', '--retries=0']);
   });
 
   test('raises an OS notification when a run finishes while the window is unfocused', async ({ page }) => {
@@ -770,14 +933,19 @@ test.describe('Desktop local run', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog.getByRole('button', { name: 'Choose folder…' })).toBeVisible();
 
+    // The link dialog opens on top, and checks the folder picked against the tests this run would run.
     await dialog.getByRole('button', { name: 'Choose folder…' }).click();
+    const linkDialog = page.getByRole('dialog', { name: /to its folder$/ });
+    await linkDialog.getByRole('button', { name: 'Choose folder…' }).click();
+    await expect(linkDialog).toBeHidden();
 
     await expect(dialog.getByText('/home/dev/acme')).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
 
-    const setInvocation = await page.evaluate(() =>
-      window.__piwiFakeTauri.invocations.find((i) => i.cmd === 'desktop_set_project_link'),
-    );
+    const invocations = await page.evaluate(() => window.__piwiFakeTauri.invocations);
+    const checked = invocations.find((i) => i.cmd === 'desktop_check_project_folder');
+    expect(checked!.args!.specs).toEqual(['tests/checkout.spec.ts']);
+    const setInvocation = invocations.find((i) => i.cmd === 'desktop_set_project_link');
     expect(setInvocation!.args!.path).toBe('/home/dev/acme');
   });
 });

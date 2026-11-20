@@ -5,6 +5,8 @@
  * Workflows template, a generated webhook secret — checks a pasted URL against
  * the type (offering the right type when it belongs to another), and sends a
  * test before saving: a channel whose test went through is saved verified.
+ * A channel of the instance keeps its bot token as a credential (Settings →
+ * Credentials), or picks a saved one; a personal channel keeps its own.
  */
 import {
   SLACK_INCOMING_WEBHOOKS_GUIDE_URL,
@@ -18,6 +20,7 @@ import {
   type ChannelType,
   type SlackDelivery,
 } from '#shared/notifications/channel-setup';
+import { SLACK_POST_MESSAGE_URL } from '#shared/credentials';
 
 const props = defineProps<{
   authEnabled: boolean;
@@ -65,11 +68,20 @@ const slackDeliveryItems = [
 ];
 const slackAppUrl = computed(() => slackCreateAppUrl(undefined, form.slackDelivery));
 const slackApi = computed(() => form.type === 'slack' && form.slackDelivery === 'api');
+/** A channel of the instance: global, or any channel without authentication. */
+const instanceChannel = computed(() => !props.authEnabled || form.global);
+/** A saved Slack credential picked for a channel of the instance in place of a typed token, or null. */
+const pickedCredential = ref<number | null>(null);
+watch(instanceChannel, (instance) => {
+  if (!instance) pickedCredential.value = null;
+});
+const usesSavedCredential = computed(() => slackApi.value && instanceChannel.value && pickedCredential.value !== null);
 /** A bot token is stored encrypted, which needs `PIWI_SECRET_KEY` on the server. */
-const tokenNotStorable = computed(() => slackApi.value && !props.canStoreSecrets);
+const tokenNotStorable = computed(() => slackApi.value && !props.canStoreSecrets && !usesSavedCredential.value);
 
 const config = computed<Record<string, unknown>>(() => {
   if (form.type === 'email') return { address: form.address.trim() };
+  if (usesSavedCredential.value) return { credentialId: pickedCredential.value, channelId: form.channelId.trim() };
   if (slackApi.value) return { token: form.token.trim(), channelId: form.channelId.trim() };
   if (form.type === 'slack' || form.type === 'teams') return { webhookUrl: form.webhookUrl.trim() };
   if (form.type === 'webhook') {
@@ -241,8 +253,18 @@ async function requestPermission() {
           Piwi posts with <OutboundLink :href="SLACK_POST_MESSAGE_GUIDE_URL">chat.postMessage</OutboundLink>, the same
           message the webhook sends.
         </p>
+        <SavedCredentialPicker
+          v-if="instanceChannel"
+          v-model="pickedCredential"
+          service="slack"
+          :endpoint="SLACK_POST_MESSAGE_URL"
+        />
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <UFormField label="Bot token">
+          <UFormField
+            v-if="!usesSavedCredential"
+            label="Bot token"
+            :description="instanceChannel ? 'Saved as a credential (Settings → Credentials).' : undefined"
+          >
             <UInput
               v-model="form.token"
               type="password"

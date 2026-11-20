@@ -5,6 +5,7 @@
  */
 import { z } from 'zod';
 import type { PatchValidation } from '#shared/patch';
+import { streamHeaders } from '#shared/stream-headers';
 import type { AssistantActionId } from '#shared/assistant-actions';
 
 /** The longest question the assistant accepts, in characters. */
@@ -296,12 +297,7 @@ export function assistantFrame(event: AssistantEvent): string {
 }
 
 /** The headers of a turn's event stream. */
-export const ASSISTANT_STREAM_HEADERS = {
-  'Content-Type': 'text/event-stream',
-  'Cache-Control': 'no-cache',
-  Connection: 'keep-alive',
-  'X-Accel-Buffering': 'no',
-} as const;
+export const ASSISTANT_STREAM_HEADERS = streamHeaders('text/event-stream');
 
 export interface AssistantConversationSummary {
   id: number;

@@ -1,6 +1,7 @@
 import { describe, test, expect } from 'vitest';
 import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, resolve } from 'node:path';
+import { CREDENTIAL_SECRET_ENV_PREFIX } from '#shared/credentials';
 import {
   PIWI_ENV_VARS,
   PIWI_ENV_CATEGORIES,
@@ -14,6 +15,7 @@ import {
 import { CONTEXT_LIMIT_FIELDS, DEFAULT_CONTEXT_LIMITS } from '#shared/ai-context-limits';
 import { DEFAULT_INGEST_LIMITS, INGEST_LIMIT_FIELDS } from '#shared/ingest-limits';
 import { DEFAULT_WASTED_WAIT_PATTERNS } from '#shared/utils/wasted-waits';
+import { DEFAULT_DATABASE_POOL_MAX, MAX_DATABASE_POOL_MAX } from '../../server/database/postgres-pool';
 import {
   DEFAULT_MAX_SUBMIT_BYTES,
   DEFAULT_MAX_UPLOAD_BYTES,
@@ -171,6 +173,14 @@ function referencedEnvVars(): Set<string> {
 }
 
 describe('PIWI_ENV_VARS registry', () => {
+  test('no variable is named under the prefix a credential reads its secret from', () => {
+    const named = Object.keys(PIWI_ENV_VARS).filter((name) => name.startsWith(CREDENTIAL_SECRET_ENV_PREFIX));
+    expect(
+      named,
+      `a credential can send a ${CREDENTIAL_SECRET_ENV_PREFIX}* variable anywhere: name it otherwise`,
+    ).toEqual([]);
+  });
+
   test('every entry has a non-empty description and valid category', () => {
     for (const [name, meta] of allEntries) {
       expect(meta.description.length, `${name} description`).toBeGreaterThan(0);
@@ -211,6 +221,9 @@ describe('PIWI_ENV_VARS registry', () => {
       // which stamps them on the run as `piwiOrigin`; the app reads the stamp.
       'PIWI_ORIGIN',
       'PIWI_ORIGIN_REF',
+      // Set to an environment's key on the runs Piwi starts for it and read by the reporter as the run's label; the app
+      // names it in the environment settings, the copied commands and the run variables routes.
+      'PIWI_ENVIRONMENT',
       // Set by the desktop shell on the Playwright runs it starts and read by the reporter's workers: the desktop
       // server answers the channel's address and where the runs' picks go (`server/utils/desktop-runs.ts`) but reads
       // none of them.
@@ -284,6 +297,14 @@ describe('PIWI_ENV_VARS registry', () => {
     expect(meta.min).toBe(MIN_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
     expect(meta.max).toBe(MAX_TEST_MANAGEMENT_REQUESTS_PER_MINUTE);
     expect(meta.since).toBe('0.68.0');
+  });
+
+  test('registry default and bounds for the PostgreSQL pool size match the code', () => {
+    const meta = PIWI_ENV_VARS.PIWI_DATABASE_POOL_MAX;
+    expect(meta.type).toBe('number');
+    expect(meta.default).toBe(String(DEFAULT_DATABASE_POOL_MAX));
+    expect(meta.min).toBe(1);
+    expect(meta.max).toBe(MAX_DATABASE_POOL_MAX);
   });
 
   test('relevantWhen/requiredWhen only reference registered vars, never themselves', () => {

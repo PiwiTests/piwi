@@ -27,8 +27,12 @@ function htmlText(html: string): string {
     .replace(/\s+/g, ' ');
 }
 
+/** The Markdown's text as a reader sees it: its escapes read, its zero-width spaces unseen. */
 function markdownText(md: string): string {
-  return md.replace(/\\([\\`*_[\]|<>#+\-.])/g, '$1').replace(/\s+/g, ' ');
+  return md
+    .replace(/\\([\\`*_[\]|<>#+\-.])/g, '$1')
+    .replace(/\u200B/g, '')
+    .replace(/\s+/g, ' ');
 }
 
 const norm = (s: string) => s.replace(/\s+/g, ' ');
@@ -54,6 +58,8 @@ describe('quality report parity', () => {
     const md = renderReportMarkdown(bundle);
     expect(md).toContain('\\| \\<script\\>');
     expect(md).not.toMatch(/^# h/m);
+    expect(md).toContain('@\u200Bsmoke logs in');
+    expect(md).toContain('run #\u200B12');
   });
 
   test("a chart's last day on the right edge ends there instead of being cut", () => {

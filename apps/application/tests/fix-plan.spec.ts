@@ -113,7 +113,7 @@ test.describe.serial('Fix plan', () => {
 
     // One command naming each affected test by file and title, so it still matches once the fix moves lines.
     expect(plan.verify.command).toBe(
-      'npx playwright test "tests/checkout.spec.ts" -g "checkout applies a coupon|checkout shows the total"',
+      'npx playwright test "/tests/checkout.spec.ts" -g "checkout applies a coupon|checkout shows the total"',
     );
     expect(plan.verify.cases.map((c) => `${c.filePath}:${c.line}`)).toEqual([
       'tests/checkout.spec.ts:30',

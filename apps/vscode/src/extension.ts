@@ -28,6 +28,7 @@ import {
   COMMAND_STARTED_NOTIFICATION,
   COVERAGE_NOTIFICATION,
   COVERAGE_REQUEST,
+  TEST_CARD_REQUEST,
   DESKTOP_JOB_NOTIFICATION,
   DESKTOP_JOB_REQUEST,
   FAILURES_NOTIFICATION,
@@ -36,6 +37,8 @@ import {
   PAGE_CANDIDATES_REQUEST,
   RUN_ENDED_NOTIFICATION,
   RUN_SESSION_NOTIFICATION,
+  RUN_TEST_NOTIFICATION,
+  TEST_ITEMS_CHANGED_NOTIFICATION,
   RUN_LINE_NOTIFICATION,
   type RunLine,
   type RunLineParams,
@@ -52,6 +55,8 @@ import {
   type CommandStartedParams,
   type CoverageParams,
   type CoverageResult,
+  type TestCard,
+  type TestCardParams,
   type DesktopJobParams,
   type DesktopJobResult,
   type DesktopJobUpdate,
@@ -61,11 +66,14 @@ import {
   type HubResult,
   type InitializationOptions,
   type Notice,
+  type NoticeKey,
   type PageCandidatesParams,
   type PageCandidatesResult,
   type RenderStepsParams,
   type RunEnded,
   type RunSession,
+  type RunTestEvent,
+  type TestItemsResult,
   type ShareDesktopJobResult,
   type StopCode,
 } from '@piwitests/editor/protocol';
@@ -85,6 +93,8 @@ import {
   RUN_SELECTION_REQUEST,
   SELECTIONS_REQUEST,
   SET_BASELINE_NOTIFICATION,
+  SET_ENVIRONMENT_REQUEST,
+  ENVIRONMENTS_REQUEST,
   SET_CREDENTIALS_NOTIFICATION,
   SET_RUN_PAIRING_NOTIFICATION,
   START_RUN_REQUEST,
@@ -93,6 +103,9 @@ import {
   TESTS_FOR_FILE_REQUEST,
   TEST_AT_REQUEST,
   SCREENSHOT_REQUEST,
+  FILE_ISSUE_REQUEST,
+  type FileIssueParams,
+  type FileIssueResult,
   TRACE_REQUEST,
   type DesktopResult,
   type BaselineChoice,
@@ -103,7 +116,13 @@ import {
   type FailureSeverity,
   type StatusBarAlert,
   type McpAuthorization,
+  type RunningLinesChoice,
   type SetBaselineParams,
+  type SetEnvironmentParams,
+  type SetEnvironmentResult,
+  type KeptEnvironment,
+  type EnvironmentsParams,
+  type EnvironmentsResult,
   type SetRunPairingParams,
   type StartRunParams,
   type StartRunResult,
@@ -153,6 +172,7 @@ import {
   hasCoverageMarks,
   desktopJobNotice,
   testDecorations,
+  lensLines,
   testHoverMarkdown,
   TEST_HOVER_COMMANDS,
   type TestDecoration,
@@ -198,6 +218,8 @@ import {
   statusBarView,
   baselinePicks,
   withBaseline,
+  environmentItem,
+  withEnvironment,
   serviceEnvironment,
   openLink,
   openLinkMissing,
@@ -208,12 +230,15 @@ import {
   runTaskName,
   type FailureNode,
   type ProxySettings,
+  NOT_CONNECTED,
   notConnectedNotice,
   RESTART_SERVICE,
   SERVICE_NOT_ANSWERING,
   SPEC_FILE,
   statusMenu,
   type StatusBarView,
+  breakpointsMode,
+  runTakesBreakpoints,
 } from './glue';
 import { isUnder, placesOf, runBreakpoints } from './breakpoints';
 import { openDebugLink, type DebugAsk } from './debug-from-link';
@@ -225,6 +250,7 @@ import { escapedMarkdown, progressItem, STOP_ACTIONS, stopRunAnswer } from './ru
 import { registerRunControl } from './run-view';
 import { registerCiRuns } from './ci-view';
 import {
+  holdsToken,
   liveHubsHere,
   loopbackPort,
   onLoopback,
@@ -236,6 +262,23 @@ import {
   type SendListener,
   type SendResult,
 } from './send-listener';
+import {
+  EditorPairingRequests,
+  VSCODE_PAIRING_PORTS,
+  allowEditorPairing,
+  editorHello,
+  normalizeEditorPairingCode,
+} from '@piwitests/core/editor-pairing';
+import {
+  PICKER_HEARD_KEY,
+  PICKER_PAIRED_KEY,
+  heardAgain,
+  NOT_A_CODE,
+  pairingPrompt,
+  readPickerPaired,
+  type PickerPaired,
+} from './picker-pairing';
+import { registerPickerView, type PickerView } from './picker-view';
 import { TestExplorer, type ShownTest } from './test-explorer';
 
 /** How often the status bar item's tooltip is written again, for the time since the latest run was read. */
@@ -253,6 +296,13 @@ const SERVICE_DOWN_MS = 3_000;
 const PROXY_WAIT_MS = 250;
 /** Pause after a notification before the CodeLens and the gutter are drawn again: those of a burst draw once. */
 const FILES_DRAW_WAIT_MS = 50;
+/** How long a test's hover waits for its card before it shows the test's result in one line. */
+const CARD_WAIT_MS = 1_500;
+
+/** What `read` gives within `ms`, else null. */
+function within<T>(read: Promise<T>, ms: number): Promise<T | null> {
+  return Promise.race([read, new Promise<null>((resolve) => setTimeout(() => resolve(null), ms))]);
+}
 /** The editor's settings the service's environment follows (`serviceEnvironment`); a change starts it again. */
 const PROXY_SETTINGS = ['http.proxy', 'http.proxyStrictSSL', 'http.proxyAuthorization', 'http.noProxy'];
 /** The type of a test run's task (`taskDefinitions` in `package.json`), told apart by its ref. */
@@ -281,6 +331,11 @@ const DESKTOP_PROJECT = 'piwi.desktopProject';
 const DESKTOP_OFFERED = 'piwi.desktopOffered';
 /** The baseline chosen with Compare with… for each context, by its root: workspace state, on this machine only. */
 const BASELINES = 'piwi.baseline';
+/**
+ * The environment chosen with Choose environment… for each context, by its root (an environment's id): workspace
+ * state, on this machine only.
+ */
+const ENVIRONMENTS = 'piwi.environments';
 
 /** The MCP provider API (VS Code 1.101 and later), read at runtime so older editors still load the extension. */
 interface McpApi {
@@ -365,11 +420,13 @@ async function credentials(context: vscode.ExtensionContext): Promise<EditorCred
     desktop: context.workspaceState.get<boolean>(DESKTOP_CHOSEN) ?? false,
     desktopProject: context.workspaceState.get<string>(DESKTOP_PROJECT) ?? null,
     baselines: context.workspaceState.get<Record<string, BaselineChoice>>(BASELINES) ?? {},
+    environments: context.workspaceState.get<Record<string, KeptEnvironment>>(ENVIRONMENTS) ?? {},
     failureSeverity: settings.get<FailureSeverity>('failureSeverity') ?? 'error',
     codeLens: settings.get<CodeLensChoice>('codeLens') ?? 'all',
     locatorWarnings: settings.get<boolean>('locatorWarnings') ?? true,
     statusBarAlert: settings.get<StatusBarAlert>('statusBarAlert') ?? 'new',
     mcpAuthorization: settings.get<McpAuthorization>('mcpAuthorization') ?? 'key',
+    runningLines: settings.get<RunningLinesChoice>('runningLines') ?? 'all',
   };
 }
 
@@ -533,7 +590,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   // Each test's latest result on the test: a gutter icon with a hover (a dashed ring for a test with no recent result),
   // and a background while it fails, stronger on the line it failed at (the service's hover there says why).
   const gutterIcons = new Map(
-    (['failed', 'flaky', 'passed', 'skipped', 'running', 'unknown'] as const).map((status) => [
+    (['failed', 'flaky', 'passed', 'skipped', 'running', 'paused', 'unknown'] as const).map((status) => [
       status,
       vscode.window.createTextEditorDecorationType({
         gutterIconPath: vscode.Uri.joinPath(context.extensionUri, 'media', `test-${status}.svg`),
@@ -548,8 +605,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
   // While the Testing view lists Piwi's tests, its gutter shows their results; with it or with `piwi.gutterIcons` off,
-  // the test's line keeps the hover alone, and a flaky test, which no Piwi icon marks, says so after its line.
-  const testHover = vscode.window.createTextEditorDecorationType({});
+  // a flaky test, which no Piwi icon marks, says so after its line.
   const flakyMark = vscode.window.createTextEditorDecorationType({
     after: {
       contentText: '  flaky',
@@ -563,29 +619,54 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     overviewRulerColor: new vscode.ThemeColor('piwi.failingLineOverviewRuler'),
     overviewRulerLane: vscode.OverviewRulerLane.Left,
   });
-  context.subscriptions.push(failingBackground, failingLine, testHover, flakyMark, ...gutterIcons.values());
+  context.subscriptions.push(failingBackground, failingLine, flakyMark, ...gutterIcons.values());
   const gutter = new Map<string, TestDecoration[]>();
+  // A test's hover on its line, the gutter's icons shown or not: its card from the service, else its result in one
+  // line, with its links.
+  context.subscriptions.push(
+    vscode.languages.registerHoverProvider(
+      ['typescript', 'javascript', 'typescriptreact', 'javascriptreact'].map((language) => ({
+        scheme: 'file',
+        language,
+      })),
+      {
+        provideHover: async (document, position, token) => {
+          const test = gutter.get(document.uri.toString())?.find((t) => t.line === position.line);
+          if (!test) return null;
+          const params: TestCardParams | null =
+            test.testCaseId !== null ? { uri: document.uri.toString(), testCaseId: test.testCaseId } : null;
+          const card = params
+            ? await within(
+                lc.sendRequest<TestCard | null>(TEST_CARD_REQUEST, params, token).catch(() => null),
+                CARD_WAIT_MS,
+              )
+            : null;
+          if (token.isCancellationRequested) return null;
+          const hover = new vscode.MarkdownString(
+            testHoverMarkdown(test, document.uri.toString(), card?.markdown ?? null),
+          );
+          hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
+          // The card's strip and failure are colored spans; the service escapes the words of a run in it.
+          hover.supportHtml = true;
+          return new vscode.Hover(hover, document.lineAt(test.line).range);
+        },
+      },
+    ),
+  );
   let explorer: TestExplorer | null = null;
   const decorateTests = (document: vscode.TextDocument, lines: SummaryLine[]) => {
     const tests = testDecorations(lines);
     // `piwi.failingTestTint` off leaves a failing test and its failing line untinted; the gutter still marks them.
     const tinted = vscode.workspace.getConfiguration('piwi').get<boolean>('failingTestTint') ?? true;
-    // With `piwi.gutterIcons` off, or the Testing view's gutter showing the results, the test's line keeps the hover.
+    // With `piwi.gutterIcons` off, or the Testing view's gutter showing the results, Piwi draws no icon.
     const icons = !explorer && (vscode.workspace.getConfiguration('piwi').get<boolean>('gutterIcons') ?? true);
     gutter.set(document.uri.toString(), tests);
-    const hovered = (shown: TestDecoration[]) =>
-      shown
-        .filter((t) => t.line < document.lineCount)
-        .map((t) => {
-          const hover = new vscode.MarkdownString(testHoverMarkdown(t, document.uri.toString()));
-          hover.isTrusted = { enabledCommands: TEST_HOVER_COMMANDS };
-          return { range: document.lineAt(t.line).range, hoverMessage: hover };
-        });
+    const rangesOf = (shown: TestDecoration[]) =>
+      shown.filter((t) => t.line < document.lineCount).map((t) => document.lineAt(t.line).range);
     for (const editor of vscode.window.visibleTextEditors.filter((e) => e.document === document)) {
       for (const [status, type] of gutterIcons) {
-        editor.setDecorations(type, icons ? hovered(tests.filter((t) => t.status === status)) : []);
+        editor.setDecorations(type, icons ? rangesOf(tests.filter((t) => t.status === status)) : []);
       }
-      editor.setDecorations(testHover, icons ? [] : hovered(tests));
       editor.setDecorations(
         flakyMark,
         !icons
@@ -750,17 +831,24 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   const mcpChanged = new vscode.EventEmitter<void>();
   const statusItem = vscode.window.createStatusBarItem('piwi.status', vscode.StatusBarAlignment.Left, 50);
   statusItem.name = 'Piwi';
+  // The environment the runs of the active file's config are for, beside the status item; a click chooses another.
+  const environmentStatusItem = vscode.window.createStatusBarItem(
+    'piwi.environment',
+    vscode.StatusBarAlignment.Left,
+    49,
+  );
+  environmentStatusItem.name = 'Piwi environment';
   let statusUrl: string | null = null;
   /** The page of the run in progress the status bar item counts, which `piwi.openLiveRun` opens. */
   let liveUrl: string | null = null;
   let lastServers = '';
-  context.subscriptions.push(lensesChanged, mcpChanged, statusItem);
+  context.subscriptions.push(lensesChanged, mcpChanged, statusItem, environmentStatusItem);
 
   /** The service's last answers the status bar item renders, and whether a click is reading the run again. */
   let status: StatusResult | null = null;
   /** The writes of `piwi.hiddenMessages`, one after the other, each adding its key to what the last one wrote. */
   let hiding: Promise<void> = Promise.resolve();
-  const hideMessage = (key: string) => {
+  const hideMessage = (key: NoticeKey) => {
     hiding = hiding.then(async () => {
       const piwi = vscode.workspace.getConfiguration('piwi');
       const hidden = withHiddenMessage(piwi.get('hiddenMessages'), key);
@@ -776,6 +864,13 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
   /** Whether a context reads an instance; otherwise says to connect first, with Connect, and is false. */
   const connectedOrSay = (): boolean => {
+    // A service that is down answers nothing: it is restarted, not connected.
+    if (menuDown) {
+      void vscode.window
+        .showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE)
+        .then((answer) => answer && vscode.commands.executeCommand('piwi.restartService'));
+      return false;
+    }
     const notice = notConnectedNotice(status);
     if (!notice) return true;
     const button = notice.action === 'retry' ? 'Retry' : notice.action === 'connect' ? 'Connect' : null;
@@ -883,13 +978,41 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     menuFlakyRoot = view.flakyRoot ?? null;
     menuDown = serviceDown;
     statusItem.command = 'piwi.statusMenu';
+    // A recording in progress takes the item, its controls in the status menu, as the JetBrains plugin's item shows it.
+    // A test that waits for the person keeps the item, its warning and its words, over a recording.
+    const recorded = line?.calls ? null : recording?.status();
+    if (recorded) {
+      statusItem.text = recorded.text;
+      statusItem.tooltip = recorded.tooltip;
+      statusItem.accessibilityInformation = undefined;
+    }
     // A stop that waits for the person marks the item until it is answered; a run the item counts is never the alarm.
-    statusItem.backgroundColor = line?.calls
-      ? new vscode.ThemeColor('statusBarItem.warningBackground')
-      : view.error && !line
-        ? new vscode.ThemeColor('statusBarItem.errorBackground')
-        : undefined;
+    statusItem.backgroundColor = recorded
+      ? undefined
+      : line?.calls
+        ? new vscode.ThemeColor('statusBarItem.warningBackground')
+        : view.error && !line
+          ? new vscode.ThemeColor('statusBarItem.errorBackground')
+          : undefined;
     statusItem.show();
+    const environment = serviceDown ? null : environmentItem(status, activeFile());
+    // The palette offers Choose environment… while the item shows, whatever the connection.
+    setContextKey('piwi.environmentShown', !!environment);
+    if (environment) {
+      environmentStatusItem.text = environment.text;
+      environmentStatusItem.tooltip = environment.tooltip;
+      environmentStatusItem.command = {
+        title: 'Choose environment…',
+        command: 'piwi.chooseEnvironment',
+        arguments: [environment.root],
+      };
+      environmentStatusItem.backgroundColor = environment.protected
+        ? new vscode.ThemeColor('statusBarItem.warningBackground')
+        : undefined;
+      environmentStatusItem.show();
+    } else {
+      environmentStatusItem.hide();
+    }
   };
   // The item speaks for the active file's Playwright config: drawn again from the answers it holds.
   context.subscriptions.push(vscode.window.onDidChangeActiveTextEditor(() => render()));
@@ -976,7 +1099,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   ): Promise<boolean> => {
     const folder = vscode.workspace.getWorkspaceFolder(vscode.Uri.file(command.cwd));
     const task = new vscode.Task(
-      { type: RUN_TASK_TYPE, ref: command.ref },
+      { type: RUN_TASK_TYPE, ref: command.ref, ...(command.protected ? { protected: true } : {}) },
       folder ?? vscode.TaskScope.Workspace,
       // The run's name (`RunCommand.name`), as its other places say it; a command the service did not register, its line.
       command.label
@@ -1017,6 +1140,16 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     return definition.type === RUN_TASK_TYPE && typeof definition.ref === 'string' ? definition.ref : null;
   };
   context.subscriptions.push(
+    // A run for a protected environment is confirmed for that run alone: Tasks: Rerun Last Task starting it again is
+    // ended as it starts, and the person starts it from Piwi, which asks again.
+    vscode.tasks.onDidStartTask((e) => {
+      const ref = taskRef(e.execution);
+      if (!ref || e.execution.task.definition.protected !== true || pendingStarts.has(ref)) return;
+      e.execution.terminate();
+      void vscode.window.showWarningMessage(
+        'Piwi: a run against a protected environment is confirmed each time. Start it again from Piwi to be asked.',
+      );
+    }),
     vscode.tasks.onDidStartTaskProcess((e) => {
       const ref = taskRef(e.execution);
       if (!ref || pendingStarts.delete(ref)) return;
@@ -1119,11 +1252,49 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         .catch(() => undefined);
     }
   };
+  // Piwi Picker's pairing by code: the requests this window's listener takes, answered in a notification or the view.
+  const TYPE_THE_CODE = 'Type the code…';
+  let pickerView: PickerView | null = null;
+  /** The pairing port another window of this editor holds, which answers Piwi Picker while this one listens on none. */
+  let heldPort: number | null = null;
+  const prompted = new Set<string>();
+  const pickerRequests = new EditorPairingRequests({
+    changed: () => {
+      pickerView?.changed();
+      for (const request of pickerRequests.waiting()) {
+        if (prompted.has(request.id)) continue;
+        prompted.add(request.id);
+        void pickerView?.reveal();
+        void vscode.window.showInformationMessage(pairingPrompt(request), TYPE_THE_CODE, 'Deny').then((choice) => {
+          if (choice === TYPE_THE_CODE) void allowPickerPairing(request.id);
+          else if (choice === 'Deny') denyPickerPairing(request.id);
+        });
+      }
+    },
+  });
+  const expireRequests = setInterval(() => pickerRequests.expire(), 5_000);
+  context.subscriptions.push({ dispose: () => clearInterval(expireRequests) });
+  /** Piwi Picker reached the pairing: the time is kept, once a minute at most, for the view. */
+  const pickerHeard = () => {
+    const now = Date.now();
+    if (!heardAgain(context.globalState.get<number>(PICKER_HEARD_KEY), now)) return;
+    void Promise.resolve(context.globalState.update(PICKER_HEARD_KEY, now)).then(() => pickerView?.changed());
+  };
   const startListener = async (port: number) => {
     const started = await startSendListener({
       port,
       token: () => sendStore.token,
-      onPayload: (payload) => insertFromPicker(lc, payload),
+      pairing: {
+        hello: () =>
+          editorHello(
+            'vscode',
+            vscode.env.appName,
+            (vscode.workspace.workspaceFolders ?? []).map((folder) => folder.name),
+          ),
+        requests: pickerRequests,
+      },
+      heard: pickerHeard,
+      onPayload: (payload) => insertFromPicker(lc, payload, hideMessage),
       // A remote window's services listen on the remote machine's loopback interface: its own hub is forwarded.
       live: () =>
         liveHubsHere(vscode.env.remoteName, () => readLiveHubs(editorsDir()), {
@@ -1150,8 +1321,23 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     },
     listener: () => sendListener,
     listen,
+    // A window of this editor, sharing this token, holds the pairing port: it answers Piwi Picker.
+    held: async (port) => {
+      if (!sendStore.token) {
+        sendStore.token = randomBytes(24).toString('base64url');
+        await sendStore.saveToken(sendStore.token);
+      }
+      const sibling = await holdsToken(port, sendStore.token);
+      if (sibling && heldPort !== port) {
+        heldPort = port;
+        pickerView?.changed();
+      }
+      return sibling;
+    },
     started: (started) => {
       if (vscode.env.remoteName) void forwardListener(started.url).catch(() => undefined);
+      heldPort = null;
+      pickerView?.changed();
     },
   });
   context.subscriptions.push(savedPort);
@@ -1178,6 +1364,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * next start.
    */
   const pickerPairing = async (): Promise<string> => {
+    // Another window may have saved another port since: the one given now is the one saved.
+    sendStore.port = context.globalState.get<number>(SEND_PORT);
     const { url, token } = await pairing(true);
     return formatPairing({ url: await forwardListener(url), token });
   };
@@ -1187,11 +1375,70 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    */
   const runPairing = async (): Promise<string> => formatPairing(await pairing(false));
 
-  /** The enabled breakpoints a run pauses at, as `piwi.breakpoints` allows; none outside the Playwright configs. */
-  const breakpointsForRun = () =>
-    vscode.workspace.getConfiguration('piwi').get<boolean>('breakpoints', true)
-      ? runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? [])
-      : [];
+  /** Keeps the pairing Piwi Picker was given by code, its browser named. */
+  const keepPickerPaired = async (client: string) => {
+    await context.globalState.update(PICKER_PAIRED_KEY, { at: Date.now(), client } satisfies PickerPaired);
+    pickerView?.changed();
+  };
+  const gone = () =>
+    void vscode.window.showWarningMessage(
+      "Piwi: this pairing request no longer waits. Click Pair in Piwi Picker's settings again.",
+    );
+  /**
+   * Allow: the person types the code Piwi Picker shows (`typed`, else asked in an input box), and the token goes to
+   * the Piwi Picker that asked, on its next poll, with the proof of that code; the port it reached is saved. Piwi
+   * Picker keeps the pairing only when the code is its own.
+   */
+  const allowPickerPairing = async (id: string, typed?: string) => {
+    const request = pickerRequests.waiting().find((r) => r.id === id);
+    if (!request) return gone();
+    const code =
+      typed ??
+      (await vscode.window.showInputBox({
+        title: `Pair Piwi Picker in ${request.client}`,
+        prompt: 'The code Piwi Picker shows, under Editor in its settings',
+        placeHolder: 'BCDF-GHJK',
+        ignoreFocusOut: true,
+        validateInput: (value) => (normalizeEditorPairingCode(value) ? null : NOT_A_CODE),
+      }));
+    if (code === undefined) return;
+    // Another window may have saved another port since: the one Piwi Picker reached is the one saved.
+    sendStore.port = context.globalState.get<number>(SEND_PORT);
+    const { token } = await pairing(true);
+    const answered = await allowEditorPairing(pickerRequests, id, token, code);
+    if (answered === 'not-a-code') {
+      void vscode.window.showWarningMessage(`Piwi: ${NOT_A_CODE}`);
+      return;
+    }
+    if (answered === 'gone') return gone();
+    await keepPickerPaired(request.client);
+    announceRunPairing();
+    void vscode.window.showInformationMessage(
+      `Piwi: the pairing went to Piwi Picker in ${request.client}. It keeps it if the code you typed is the one it shows.`,
+    );
+  };
+  const denyPickerPairing = (id: string) => {
+    pickerRequests.answer(id, null);
+  };
+  /** The id of the request a command names: a row of the view, or the id itself. */
+  const requestIdOf = (arg: unknown): string | null =>
+    typeof arg === 'string' ? arg : (((arg as { requestId?: unknown } | undefined)?.requestId as string) ?? null);
+  pickerView = registerPickerView(() => ({
+    waiting: pickerRequests.waiting(),
+    paired: readPickerPaired(context.globalState.get(PICKER_PAIRED_KEY)),
+    heard: context.globalState.get<number>(PICKER_HEARD_KEY) ?? null,
+    port: sendListener?.port ?? null,
+    heldPort: heldPort ?? context.globalState.get<number>(SEND_PORT) ?? null,
+  }));
+  context.subscriptions.push(pickerView);
+
+  /** Which runs pause at the editor's breakpoints (`piwi.breakpoints`). */
+  const breakpointsModeNow = () => breakpointsMode(vscode.workspace.getConfiguration('piwi').get('breakpoints'));
+  /** The enabled breakpoints a run that takes them pauses at; none outside the Playwright configs, or with `never`. */
+  const enabledBreakpoints = () =>
+    breakpointsModeNow() === 'never'
+      ? []
+      : runBreakpoints(vscode.debug.breakpoints, status?.contexts.map((c) => c.root) ?? []);
 
   /** Ends the task of the run `ref` started in this window: whether there was one. */
   const terminateRun = (ref: string): boolean => {
@@ -1215,7 +1462,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   /** Where the runs started here stop, and their controls. */
   const runControl = registerRunControl(context, lc, {
-    breakpoints: breakpointsForRun,
+    breakpoints: enabledBreakpoints,
+    breakpointsMode: breakpointsModeNow,
     terminate: terminateRun,
     // Once the status is read: before, the item shows the service starting.
     changed: () => {
@@ -1235,7 +1483,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * (breakpoints, `PIWI_PAUSE_AT`, a `page.pause()`, `RunCommand.pauses`, or a Pause on its run channel,
    * `PIWI_RUN_CHANNEL`), the Send to editor pairing the picker posts a pick to (`PIWI_EDITOR_SEND`). Whether it started.
    */
-  const startRun = async (command: RunCommand, breakpoints: readonly RunBreakpoint[]): Promise<boolean> => {
+  const startRun = async (
+    command: RunCommand,
+    breakpoints: readonly RunBreakpoint[],
+    takes = breakpointsModeNow() === 'always',
+  ): Promise<boolean> => {
     if (command.notice && !noticesShown.has(command.notice)) {
       noticesShown.add(command.notice);
       void vscode.window.showWarningMessage(`Piwi: ${command.notice}`);
@@ -1247,7 +1499,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }
     lastRun = { ...command, env };
     if (command.ref) {
-      runControl.started(command.ref, breakpoints);
+      runControl.started(command.ref, breakpoints, takes);
       return runAsTask({ ...command, ref: command.ref }, env);
     }
     runInTerminal(command.cwd, command.command, env);
@@ -1270,7 +1522,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * (`withRunStart`); the command started, or null when there is none, said unless `quiet`.
    */
   const runTests = async (args: RunTestsArgs, quiet = false): Promise<RunCommand | null> => {
-    const breakpoints = breakpointsForRun();
+    // A plain Run pauses at the breakpoints with `always` alone; a Debug with Piwi run with `debug` too.
+    const takes = runTakesBreakpoints(breakpointsModeNow(), args);
+    const breakpoints = takes ? enabledBreakpoints() : [];
     const started = withRunStart(args, runChoices());
     const command = await lc.sendRequest<RunCommand | null>(
       RUN_ARGS_REQUEST,
@@ -1280,7 +1534,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (!quiet) void vscode.window.showWarningMessage('Piwi: no command to run these tests (not connected?).');
       return null;
     }
-    await startRun(command, breakpoints);
+    await startRun(command, breakpoints, takes);
     return command;
   };
 
@@ -1333,7 +1587,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
    * notification after a recording names the line its block ends on), else the cursor's. By its id when Piwi knows it,
    * else by its location; with `repeat`, by its location, that many times.
    */
-  const runTestAt = async (at: unknown, repeat?: number) => {
+  const runTestAt = async (at: unknown, repeat?: number, debug = false) => {
     const editor = cursorEditor();
     const target =
       testLineArg(at) ?? (editor && { uri: editor.document.uri.toString(), line: editor.selection.active.line });
@@ -1344,7 +1598,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     const found = await lc
       .sendRequest<TestAtResult>(TEST_AT_REQUEST, { uri: target.uri, line: target.line, character: 0 })
       .catch(() => null);
-    const args = testAtRun(target.uri, found, repeat);
+    const run = testAtRun(target.uri, found, repeat);
+    // Debug with Piwi: headed, each failure held at its line, the editor's breakpoints taken.
+    const args = run && debug ? { ...run, headed: true, holdFailures: true, debugging: true } : run;
     if (!args) {
       void vscode.window.showInformationMessage('Piwi: the cursor is in no test.');
       return;
@@ -1359,7 +1615,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   };
 
   /** Pass a failure of the failures view to the desktop app. */
-  const desktopJobOf = async (target: FailureNode, kind: 'reproduce' | 'bisect') => {
+  const desktopJobOf = async (target: FailureNode, kind: 'reproduce' | 'bisect' | 'flake-lab') => {
     const failure = failureOf(target);
     const inside = (root: string) => !!failure && failure.uri.startsWith(`${vscode.Uri.file(root).toString()}/`);
     const root =
@@ -1370,6 +1626,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     await vscode.commands.executeCommand('piwi.desktopJob', {
       root: root.root,
       executionId: failure.executionId,
+      ...(kind === 'flake-lab' && failure.testCaseId !== undefined ? { testCaseId: failure.testCaseId } : {}),
       kind,
     } satisfies DesktopJobParams);
   };
@@ -1385,6 +1642,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       vscode.commands.executeCommand('workbench.action.openSettings', '@ext:piwitests.piwi'),
     ),
     vscode.commands.registerCommand('piwi.openLog', () => lc.outputChannel.show()),
+    // The Failures view of the Piwi panel, as JetBrains' Open the failures opens its tool window's.
+    vscode.commands.registerCommand('piwi.openFailures', () => vscode.commands.executeCommand('piwi.failures.focus')),
     vscode.commands.registerCommand('piwi.getStarted', () =>
       vscode.commands.executeCommand('workbench.action.openWalkthrough', WALKTHROUGH, false),
     ),
@@ -1484,7 +1743,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     vscode.commands.registerCommand('piwi.runTests', async (args: RunTestsArgs) => {
       await runTests(args);
     }),
-    // Debug this failure: the run the service built for it (`WorkspaceFailure.debug`), once every file is saved.
+    // Debug with Piwi: the run the service built for it (`WorkspaceFailure.debug`), once every file is saved.
     vscode.commands.registerCommand('piwi.debugFailure', async (target: FailureNode) => {
       const debug = failureOf(target)?.debug;
       if (!debug) {
@@ -1494,7 +1753,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       // Every file as saved, a page object's stop included; the service says why it refuses.
       if (await vscode.workspace.saveAll(false)) await runTests(debug, true);
     }),
-    // Verify the test ×3: the failure's test by its location, three times (`WorkspaceFailure.verify`), every file saved.
+    // Verify ×3 with Piwi: the failure's test by its location, three times (`WorkspaceFailure.verify`), every file saved.
     vscode.commands.registerCommand('piwi.verifyFailure', async (target: FailureNode) => {
       const verify = failureOf(target)?.verify;
       if (!verify) {
@@ -1552,7 +1811,11 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
               .then((p) => p?.c)
           : contexts[0]);
       if (!target) {
-        if (!contexts.length) void vscode.window.showInformationMessage('Piwi: connect to an instance first.');
+        if (!contexts.length) {
+          void vscode.window
+            .showInformationMessage(NOT_CONNECTED, 'Connect')
+            .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
+        }
         return;
       }
       const picked = await vscode.window.showQuickPick(baselinePicks(target), {
@@ -1582,6 +1845,59 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       if (handed) handed = { ...handed, baselines };
       await lc.sendNotification(SET_BASELINE_NOTIFICATION, { root: target.root, choice } satisfies SetBaselineParams);
     }),
+    // From the environment item, its config; else the active file's, else the one picked among those with a project
+    // or an environment chosen, which can always be set to None, whatever the connection.
+    vscode.commands.registerCommand('piwi.chooseEnvironment', async (root?: string) => {
+      const contexts = (status?.contexts ?? []).filter((c) => c.projectId !== null || c.environment?.id != null);
+      if (menuDown || !contexts.length) {
+        connectedOrSay();
+        return;
+      }
+      const file = activeFile();
+      const inFile = file
+        ? contexts.filter((c) => isUnder(c.root, file)).sort((a, b) => b.root.length - a.root.length)
+        : [];
+      const target =
+        (typeof root === 'string' ? contexts.find((c) => c.root === root) : undefined) ??
+        inFile[0] ??
+        (contexts.length > 1
+          ? await vscode.window
+              .showQuickPick(
+                contexts.map((c) => ({ label: c.label ?? c.root, description: c.projectName ?? '', c })),
+                { placeHolder: 'Choose the environment of which Playwright config?' },
+              )
+              .then((p) => p?.c)
+          : contexts[0]);
+      if (!target) return;
+      const choices = await lc
+        .sendRequest<EnvironmentsResult | null>(ENVIRONMENTS_REQUEST, {
+          root: target.root,
+        } satisfies EnvironmentsParams)
+        .catch(() => null);
+      if (!choices) return;
+      const picked = await vscode.window.showQuickPick(
+        choices.items.map((item) => ({
+          label: `${item.protected ? '$(lock) ' : ''}${item.label}`,
+          description: item.picked ? `${item.description} · current` : item.description,
+          detail: item.detail ?? undefined,
+          id: item.id,
+        })),
+        { placeHolder: choices.title, matchOnDescription: true, matchOnDetail: true },
+      );
+      if (!picked) return;
+      // The service answers the choice the config holds, with the instance and the project it belongs to.
+      const answer = await lc
+        .sendRequest<SetEnvironmentResult | null>(SET_ENVIRONMENT_REQUEST, {
+          root: target.root,
+          environmentId: picked.id,
+        } satisfies SetEnvironmentParams)
+        .catch(() => null);
+      if (!answer) return;
+      const kept = context.workspaceState.get<Record<string, KeptEnvironment>>(ENVIRONMENTS);
+      const environments = withEnvironment(kept, target.root, answer.kept);
+      await context.workspaceState.update(ENVIRONMENTS, environments);
+      if (handed) handed = { ...handed, environments };
+    }),
     vscode.commands.registerCommand('piwi.toggleFollowEditor', () => failuresView.toggleFollow()),
     vscode.commands.registerCommand('piwi.toggleCoverage', async () => {
       await vscode.workspace
@@ -1609,6 +1925,26 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       desktopJobOf(target, 'reproduce'),
     ),
     vscode.commands.registerCommand('piwi.bisectInDesktop', (target: FailureNode) => desktopJobOf(target, 'bisect')),
+    vscode.commands.registerCommand('piwi.flakeLabInDesktop', (target: FailureNode) =>
+      desktopJobOf(target, 'flake-lab'),
+    ),
+    // File an issue: the failure's cluster in the dashboard, or which ticket is linked already.
+    vscode.commands.registerCommand('piwi.fileIssue', async (target: FailureNode) => {
+      const failure = failureOf(target);
+      if (!failure || !connectedOrSay()) return;
+      const params: FileIssueParams = { uri: failure.uri, executionId: failure.executionId };
+      const result = await lc.sendRequest<FileIssueResult>(FILE_ISSUE_REQUEST, params).catch(() => null);
+      if (result?.url) {
+        await vscode.env.openExternal(vscode.Uri.parse(result.url));
+        return;
+      }
+      const open = 'Open the issue';
+      const picked = await vscode.window.showInformationMessage(
+        result?.message ?? 'Piwi: the editor service did not answer.',
+        ...(result?.issueUrl ? [open] : []),
+      );
+      if (picked === open && result?.issueUrl) await vscode.env.openExternal(vscode.Uri.parse(result.issueUrl));
+    }),
     // A flaky test's Flakiness tab and the Flake Lab commands it can run, as the service lists them.
     vscode.commands.registerCommand('piwi.lookIntoFlake', async (node?: FailureNode) => {
       const actions = node?.actions ?? [];
@@ -1630,6 +1966,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       await runTests({ uri, testIds: found.tests.map((t) => t.id) });
     }),
     vscode.commands.registerCommand('piwi.runTestAtCursor', (at?: unknown) => runTestAt(at)),
+    vscode.commands.registerCommand('piwi.debugTestAtCursor', (at?: unknown) => runTestAt(at, undefined, true)),
     vscode.commands.registerCommand('piwi.verifyTestAtCursor', (at?: unknown) => runTestAt(at, VERIFY_REPEAT)),
     // A test's actions from its gutter (the Testing view's, or the line number's with the view off), in the service's
     // order: Run and Verify ×3 as the commands at the cursor run them, at the test's line; every other its command.
@@ -1726,7 +2063,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         { placeHolder: 'Run which selection?' },
       );
       if (!picked) return;
-      const breakpoints = breakpointsForRun();
+      const breakpoints = breakpointsModeNow() === 'always' ? enabledBreakpoints() : [];
       const command = await lc.sendRequest<RunCommand | null>(
         RUN_SELECTION_REQUEST,
         withRunStart(
@@ -1801,9 +2138,18 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     }),
     // The format the configuration is copied in: chosen, or named by the command's argument.
     vscode.commands.registerCommand('piwi.copyMcpConfiguration', async (asked?: unknown) => {
+      // Refused only while the service is down: it lists a context's servers whether the instance answers or not.
+      if (menuDown) {
+        void vscode.window
+          .showWarningMessage(SERVICE_NOT_ANSWERING, RESTART_SERVICE)
+          .then((answer) => answer && vscode.commands.executeCommand('piwi.restartService'));
+        return;
+      }
       const servers = await lc.sendRequest<McpServersResult>(MCP_REQUEST);
       if (!servers.servers.length) {
-        void vscode.window.showWarningMessage('Piwi: connect to an instance first.');
+        void vscode.window
+          .showWarningMessage(NOT_CONNECTED, 'Connect')
+          .then((answer) => answer && vscode.commands.executeCommand('piwi.connect'));
         return;
       }
       const format: RunsMcpFormat | undefined = MCP_FORMATS.some((f) => f.format === asked)
@@ -1827,10 +2173,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         async provideCodeLenses(document) {
           const summary = await summaryOf(document);
           if (!summary) return [];
-          // A test's line is drawn in the gutter and its hover, not as a lens above it; a stopped line, by its stop's row.
           const stopped = new Set(runControl.executionPoints(document.uri.toString()));
-          const lines = summary.lines.filter((l) => !l.status && !stopped.has(l.line));
-          return [...(summary.file ? [summary.file] : []), ...lines].map((line) => {
+          return lensLines(summary, document.lineCount, stopped).map((line) => {
             const range = new vscode.Range(line.line, 0, line.line, 0);
             // The command's title says what a click does, as the lens's tooltip.
             return new vscode.CodeLens(range, {
@@ -1853,7 +2197,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
         e.affectsConfiguration('piwi.codeLens') ||
         e.affectsConfiguration('piwi.locatorWarnings') ||
         e.affectsConfiguration('piwi.statusBarAlert') ||
-        e.affectsConfiguration('piwi.mcpAuthorization')
+        e.affectsConfiguration('piwi.mcpAuthorization') ||
+        e.affectsConfiguration('piwi.runningLines')
       )
         credentialsChanged();
       if (PROXY_SETTINGS.some((setting) => e.affectsConfiguration(setting))) proxyChanged();
@@ -2012,10 +2357,68 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
 
   context.subscriptions.push(
     vscode.commands.registerCommand('piwi.pairPicker', async () => {
+      await pickerView?.reveal();
+      // Piwi Picker finds this window's listener on a pairing port, or another window's of this editor; never a
+      // forwarded one.
+      const port = sendListener?.port ?? heldPort;
+      const found = !vscode.env.remoteName && port !== null && VSCODE_PAIRING_PORTS.includes(port);
+      const copy = 'Copy the pairing address';
+      void vscode.window
+        .showInformationMessage(
+          found
+            ? "Piwi: in Piwi Picker's settings, under Editor, click Pair, then type here the code it shows."
+            : "Piwi: Piwi Picker does not find this window on its own. Copy the pairing address, and paste it in Piwi Picker's settings under Editor, Pair with an address.",
+          copy,
+        )
+        .then((choice) => {
+          if (choice === copy) void vscode.commands.executeCommand('piwi.copyPickerAddress');
+        });
+    }),
+    vscode.commands.registerCommand('piwi.copyPickerAddress', async () => {
       await vscode.env.clipboard.writeText(await pickerPairing());
       void vscode.window.showInformationMessage(
-        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor.",
+        "Piwi: the pairing address is on the clipboard. Paste it in Piwi Picker's settings, under Editor, Pair with an address.",
       );
+    }),
+    vscode.commands.registerCommand('piwi.allowPickerPairing', async (arg?: unknown) => {
+      const id = requestIdOf(arg) ?? pickerRequests.waiting()[0]?.id;
+      const code = (arg as { code?: unknown } | undefined)?.code;
+      if (id) await allowPickerPairing(id, typeof code === 'string' ? code : undefined);
+    }),
+    vscode.commands.registerCommand('piwi.denyPickerPairing', (arg?: unknown) => {
+      const id = requestIdOf(arg) ?? pickerRequests.waiting()[0]?.id;
+      if (id) denyPickerPairing(id);
+    }),
+    vscode.commands.registerCommand('piwi.unpairPicker', async () => {
+      const unpair = 'Unpair';
+      const choice = await vscode.window.showWarningMessage(
+        'Unpair Piwi Picker?',
+        {
+          modal: true,
+          detail:
+            'This editor takes a new token: Piwi Picker reaches it again only once you pair again, and so do the runs started before. The connections to the runs Piwi Picker holds already last until the editor service restarts.',
+        },
+        unpair,
+      );
+      if (choice !== unpair) return;
+      sendStore.token = randomBytes(24).toString('base64url');
+      await sendStore.saveToken(sendStore.token);
+      pickerRequests.forgetTokens();
+      sendStore.port = context.globalState.get<number>(SEND_PORT);
+      await context.globalState.update(PICKER_PAIRED_KEY, undefined);
+      await context.globalState.update(PICKER_HEARD_KEY, undefined);
+      // A port of an earlier pairing that Piwi Picker does not look at is let go, for the first pairing port free.
+      if (sendStore.port && !VSCODE_PAIRING_PORTS.includes(sendStore.port)) {
+        sendStore.port = undefined;
+        await context.globalState.update(SEND_PORT, undefined);
+        const listening = sendListener;
+        sendListener = null;
+        await listening?.close();
+        await savedPort.tryNow();
+      }
+      announceRunPairing();
+      pickerView?.changed();
+      void vscode.window.showInformationMessage('Piwi: Piwi Picker is unpaired from this editor.');
     }),
     { dispose: () => void sendListener?.close() },
   );
@@ -2085,6 +2488,9 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       runControl.heard(session);
       explorer?.sessionChanged(session);
     }),
+    // A worker of a run began or ended a test: the Testing view shows its result from the run's own events.
+    lc.onNotification(RUN_TEST_NOTIFICATION, (event: RunTestEvent) => explorer?.testEvent(event)),
+    lc.onNotification(TEST_ITEMS_CHANGED_NOTIFICATION, (answer: TestItemsResult) => explorer?.itemsChanged(answer)),
     // A CI run of the branch moved: the CI Runs view and the CI positions.
     lc.onNotification(CI_SESSION_NOTIFICATION, (session: CiSession) => {
       ciRuns.heard(session);
@@ -2120,7 +2526,10 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
   );
   context.subscriptions.push(...registerDesktopJobs(lc));
   recording = registerRecording(context, lc);
-  context.subscriptions.push(recording);
+  context.subscriptions.push(
+    recording,
+    recording.onDidChangeStatus(() => render()),
+  );
   await lc.start();
   announceRunPairing();
   showTestExplorer();
@@ -2205,7 +2614,11 @@ function registerDesktopJobs(lc: LanguageClient): vscode.Disposable[] {
  * flow is rendered for the cursor's place, and the import lines it needs that the file lacks go after the file's
  * imports, in the same edit.
  */
-async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload): Promise<SendResult> {
+async function insertFromPicker(
+  lc: LanguageClient,
+  payload: EditorSendPayload,
+  hideMessage: (key: NoticeKey) => void,
+): Promise<SendResult> {
   let notice: string | null = null;
   if (payload.kind === 'locator' && payload.at) {
     const at = payload.at;
@@ -2265,13 +2678,24 @@ async function insertFromPicker(lc: LanguageClient, payload: EditorSendPayload):
     }
     edit.replace(selection, text);
   });
-  if (inserted) {
-    void vscode.window.showInformationMessage(
-      notice ??
-        (payload.kind === 'locator'
-          ? 'Piwi: inserted the locator from Piwi Picker.'
-          : 'Piwi: inserted the recorded steps from Piwi Picker.'),
+  if (inserted && notice) void vscode.window.showInformationMessage(notice);
+  else if (inserted) {
+    // The plain confirmation of each pick, which the edit itself shows, may be hidden.
+    const shown = noticeShown(
+      {
+        message:
+          payload.kind === 'locator'
+            ? 'inserted the locator from Piwi Picker.'
+            : 'inserted the recorded steps from Piwi Picker.',
+        key: 'picker-inserted',
+      },
+      vscode.workspace.getConfiguration('piwi').get('hiddenMessages'),
     );
+    if (shown) {
+      void vscode.window
+        .showInformationMessage(shown.text, ...shown.actions)
+        .then((picked) => picked === DONT_SHOW_AGAIN && hideMessage('picker-inserted'));
+    }
   }
   return { inserted, file: active.document.uri.scheme === 'file' ? active.document.uri.fsPath : null };
 }

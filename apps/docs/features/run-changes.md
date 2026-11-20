@@ -70,6 +70,8 @@ Two ways to compare against something else:
   its first attempt in the baseline is also [newly flaky](#what-newly-flaky-says-about-your-change).
 - **Slower / faster** — the ten largest duration changes each way.
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
+- **Deployed to Staging**, for a run of a [deployed environment](./deployed-environments) — the application's commit
+  each run tested, the application's commits between them, and the environment's deploy markers between the two runs.
 - **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
 
 <figure>

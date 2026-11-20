@@ -9,7 +9,7 @@ lang: en-US
 <Needs reporter fixtures backend editor />
 
 With [coverage](/guide/concepts#coverage) recorded, the [editor extensions](./editors) mark the lines of an
-application file your tests ran, the executable lines no test runs, and the lines you changed since, in VS Code and in
+application file your tests ran, the executable lines no test runs, and the lines you changed since, in VS Code and
 the JetBrains IDEs, Rider included. A lens above each function names the tests that ran it and runs them; the hover on
 a line lists them.
 
@@ -24,32 +24,31 @@ The marks show what the reporter records, per test:
   top lens, with no line marks; with `coverage.browser: 'functions'`, every line of a function that ran is marked run,
   with its lens above it, and no line is marked as not run; with `'lines'`, its lines are marked as a server file's.
 
-Nothing else is needed in the editor. A test file, a file no recorded coverage names lines of, and a project without
-coverage show nothing of it: no mark, no lens line, no command, no hover text.
+Nothing else is needed in the editor; test files and files without recorded coverage show no marks.
 
-The editor asks the instance for a file's coverage when you open it, and, when the project's code reach can tell, only
-for a file it says coverage recorded. It asks again on a refresh and when a run ends, naming the answer it holds, which
-the instance confirms unchanged without sending it again. Typing asks nothing: the marks are placed on your edits
-locally.
+The editor asks the instance for a file's coverage when you open it (only a file code reach says coverage
+recorded, when it can tell), on a refresh and when a run ends; the instance answers again only when it changed. Typing
+asks nothing: the marks follow your edits locally.
 
 ## The marks
 
-| Mark | Meaning |
-|---|---|
-| Solid, teal | A test ran the line. The hover names the tests. |
-| Solid, slate | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
-| Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again. |
-| Solid, orange | In a file no test reaches, the line changed since the default branch: an [uncovered change](#uncovered-changes). |
+| Mark          | Meaning                                                                                                                  |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------ |
+| Solid, teal   | A test ran the line. The hover names the tests.                                                                          |
+| Solid, slate  | The line is executable and no test runs it. Shown when the run recorded the file's executable lines, which `lines` does. |
+| Dashed, amber | The line changed since the coverage run: what runs it is not known until a run records it again.                         |
+| Solid, orange | In a file no test reaches, the line changed since the default branch: an [uncovered change](#uncovered-changes).         |
 
 Teal and slate are the colors the dashboard marks a file's source in. The hover on a marked line ends by saying what
 the marks mean.
 
 In VS Code the marks are a bar at the left edge of each line, in `piwi.coverageRunBorder`, `piwi.coverageNotRunBorder`,
 `piwi.coverageChangedBorder` and `piwi.uncoveredChangeBorder`, which a theme or `workbench.colorCustomizations` can
-restyle; all but the lines run also show in the overview ruler. In a JetBrains IDE they are at the left of the gutter
-and, all but the lines run, in the scroll bar, and hovering either shows what the lines are and what the marks mean. Restyle them under **Settings →
-Editor → Color Scheme → Piwi → Coverage**, where the error stripe color is the mark's, and a background, none by
-default, tints the lines too.
+restyle; all but the lines run also show in the overview ruler. In a JetBrains IDE they are in the gutter, beside the
+IDE's own coverage, and, all but the lines run, in the scroll bar; hovering either shows what the lines are and what
+the marks mean; a click on a run mark runs the tests that ran its line, and on any mark goes to the next line no test
+runs, hides the marks or edits their colors (**Settings → Editor → Color Scheme → Piwi → Coverage**: the error stripe color is the
+mark's, and a background tints the lines).
 
 ## Changed since the coverage run
 
@@ -116,7 +115,7 @@ options.
 **Piwi: Show or hide the coverage marks**, under **Tools → Piwi** in a JetBrains IDE, where a check mark says the
 marks show.
 
-The command shows up once a file showed marks. The marks are shown by default; the choice is yours in every project,
+The command shows up once a file showed marks. Shown by default, the choice is yours in every project,
 the [setting](/reference/editor-settings#in-the-editor) `piwi.coverageMarks` in VS Code's user settings and the IDE's
 own settings in a JetBrains IDE. The lenses and the hover stay.
 

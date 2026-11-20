@@ -94,7 +94,10 @@ What the package does to a user's run, process by process.
   call a test makes to know when and from which line it last used each page, context,
   browser and API request context, a wait on the client until it ends; a page of a
   connection it does not follow has the page methods that count as using it wrapped
-  instead (`internal/capture/resource-ledger.ts`).
+  instead (`internal/capture/resource-ledger.ts`). In a worker that can show a view, it
+  also tells the lane the page each call or wait on the client lands on (`onTestCallPage`),
+  outside that call's async context (`outsideCalls`), so a read the view makes then is an
+  internal call of its own, never a part of the test's.
 - On Linux, `5` written to `/proc/<pid>/clear_refs` of the processes the worker started,
   at each test's start, which resets their peak RSS for the test
   (`internal/capture/worker-metrics.ts`). In Chromium, a DevTools session on each page
@@ -262,11 +265,26 @@ What the package does to a user's run, process by process.
   The latest alone waits while the connection is backed up; the latest sent is kept in
   memory until the view ends, and sent again as the view is asked again (a viewer that
   comes later, which a still page paints no other frame for); none is stored nor attached. Where the screencast cannot start (the test
-  runs its own), an image of the page goes twice a second.
+  runs its own), an image of the page goes twice a second. A still page, its test waiting on a locator, paints no frame
+  to try again with: when the screencast gives a view none within half a second (one that sends a frame only as the
+  page changes, or one a test's video started first, with none to give yet), or the mask sent none for the latest frame
+  (or said why none goes) and the page paints no other within the view's image interval, an image of the page goes in
+  its place. Three are tried at most until a frame the page painted goes; none goes when the page painted a frame
+  while it was taken, and the frame the screencast paints again, the same, as a screenshot is taken goes nowhere. A
+  timed image the same as one the mask did not send goes to it again, three times at most too
+  (`tests/page-view-still.spec.ts`). Every image a view takes itself (on a timer, the lighter one, a still page's) is
+  a screenshot through an internal call, which leaves the page's emulation as the test set it, and goes at the size
+  the view asks: one larger names that size (`PageFrame.fit`), and the mask scales it down in the pass that paints it,
+  one decode and one encode with Playwright's `jpeg-js` (40 to 260 ms of the worker's time an image); the lighter one
+  is scaled before it, as its length is told before the mask. An image the same as the one before goes no further.
 - **The lane** (`lane-feed.ts`): the test the worker runs, the page it shows (its `page`
-  fixture's, else the first page the browser opened during it, else the next one still
-  open once that one closes), and the stop it stands at, whose page shows while it stands
-  there. Every view outside the page is a sink of one live view of the page shown: the
+  fixture's once it opens, else the page its latest call or wait landed on, which the
+  resource ledger tells as it follows each call (`onTestCallPage`, `laneCalled`), else the
+  page the browser opened last that is still open, a `beforeAll`'s included; only a page
+  the capture fixtures instrumented shows), and the stop it stands at, whose page shows
+  while it stands there. Its views open, and its listeners hear the page change, outside
+  the Playwright call that changed it (`outsideCalls`); a frame of a page it left goes to
+  no sink again. Every view outside the page is a sink of one live view of the page shown: the
   editor's view of a stop (`view`), its view of the lane (`view-lane`) and the instance's
   live view, each at its own pace (`LatestPacer`), each frame masked once with the masks
   every sink names. That view asks the page for the largest size and quality and the
@@ -368,7 +386,8 @@ What the package does to a user's run, process by process.
   presses its buttons, and Escape, which an inert bar leaves to the page, closes the page's
   own dialog and resumes nothing. A draw the page did not answer the hold for within 10
   seconds takes none of the message's presses. The message lets go of its own hold as it
-  ends while its stop holds; once the stop ended, it sends neither.
+  ends while its stop holds; once the stop ended, it sends neither. An agent's action holds
+  the bar inert by its own token the same way, and lets go as it ends (`actOnRef`).
 - At a stop no bar shows, Pick a locator, Record, Assert and Assert a region run in
   the page while its view is watched (`viewHere` in `pause-at.ts`), driven through that
   input. They end with the view or the stop, leaving nothing of theirs in the page (the
@@ -412,6 +431,9 @@ What the package does to a user's run, process by process.
   console error or warning, uncaught error and failed request (a failure, or a status of
   400 or more), at most 50 a second, the others counted (`dropped`), their texts' and
   URLs' credentials hidden.
+- `positions` (in `features`): while the editor asks, the worker says where each call of the running test begins
+  in the user's code, its title through `hideTypedText` and `hideSecretsInText`, `POSITIONS_PER_SECOND` at most,
+  from the same listener.
 - `bind` shares the stopped context's browser with Playwright's own tools
   (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`, feature-checked), until the
   test ends (`unbind` on `test-end`), or stops sharing it.
@@ -453,6 +475,22 @@ What the package does to a user's run, process by process.
   locator (which replaces the failing locator, and is folded into its snapshot) and
   Record. Any answer lets the test end as it failed, and the editor service lets
   one go at once in a run nobody watches.
+- **The run's own connection** (`internal/streaming/run-hub-link.ts`), open from `onBegin` to `onEnd` beside the
+  workers': it tells the hub how many tests the run has, each that ended for good, the run's page on the instance
+  once known (`tests/run-hub-page.spec.ts`), how many were ended at a stop, how the run ended and its first failure,
+  through `hideSecretsInText` (`tests/run-hub-link.spec.ts`).
+- `waiting` says the call a Pause waits in, and `give-up` (in `features`) ends the test there as asked: the call is
+  given up through its `signal` where it carries one, else the attempt is skipped at its next locator call
+  (`tests/run-channel-give-up.spec.ts`).
+- `front` (in `features`) brings a stop's window to the front, at a stop its pause bar shows, as asked:
+  `page.bringToFront` through `internalCall` (`tests/run-channel-code.spec.ts`).
+- `trace` (in `features`) answers the hub, and the hub alone, with the path of the running attempt's own trace file,
+  or why there is none, from the runner's `_tracing.traceOptions()` (feature-checked: `runnerTraces`,
+  `attemptTraceFile`, `tests/run-channel-trace.spec.ts`).
+- **Its other tests.** `tests/run-channel-view.spec.ts` and `tests/run-channel-lane.spec.ts` drive the views, their
+  masks and their input, `tests/page-view-bar.spec.ts` the pause bar under a view, `tests/run-channel-layers.spec.ts`
+  and `tests/run-channel-filmstrip.spec.ts` the lane's layers, and `tests/run-channel-agent.spec.ts` an agent's
+  requests.
 - While each test runs, the capture fixtures take `PIWI_RUN_CHANNEL` and
   `PIWI_EDITOR_SEND` out of the worker's `process.env` (`hideRunChannel`), whether a run
   connection is open or not, so a process the test starts does not connect to the run
@@ -511,7 +549,8 @@ What the package does to a user's run, process by process.
   second for a full view or one for tiles alone, and whether one shows it in full, `full`, true
   from an instance that does not say it), and asks for the latest frame and call log again as a
   watch that showed it as a tile shows it in full (`resend`). While anyone watches,
-  the test's `page` goes out as its screencast (the lane's one view, `lane-feed.ts`, which
+  the page the lane shows for the test goes out as its screencast, the view's call log,
+  text and Inspect moving with it as it changes (`onLanePage`) (the lane's one view, `lane-feed.ts`, which
   the editor's views share, its subscription told as `view` changes, `asked`), through internal calls:
   at the size `view` asks at quality 50, else at most 640 by 400 from an instance that never says it, unless the
   test's trace or video came first (their size and quality, 800 wide at 90), or an editor's
@@ -522,11 +561,11 @@ What the package does to a user's run, process by process.
   JPEG's bytes behind a JSON header, `LIVE_FRAME_TYPE`) to an instance that says `view`, in base64 inside
   JSON to an older one. One post is in flight at a time,
   the latest frame alone waiting; each frame carries the call the runner's steps say the
-  test is on (`callInProgress`, its title through `hideSecretsInText`) and the test's
-  title, a headed stop's pause bar painted over as in the editor's view. Nobody watching,
-  no screencast runs and no frame goes.
+  test is on (`callInProgress`, its title through `hideSecretsInText`), the test's
+  title and when its page looked so (`at`), a headed stop's pause bar painted over as in the
+  editor's view. Nobody watching, no screencast runs and no frame goes.
 - While a viewer shows the worker in full (`full`), the worker also follows the call its test is in
-  (`live-call-log.ts`). In a run Piwi may pause (outside CI, or with `PIWI_PAUSE_AT`, `PWDEBUG` or
+  (`live-call-log.ts`). In a run Piwi may pause (outside CI, or `mayPause`: with `PIWI_PAUSE_AT`, `PWDEBUG` or
   `--debug`), from Playwright's in-process instrumentation: a listener added to the context's server
   object (`context._connection.toImpl(context).instrumentation`, each member checked first) with
   that context as its scope, hearing each call begin (`onBeforeCall`, its selector in its params),
@@ -605,7 +644,8 @@ What the package does to a user's run, process by process.
   read, that cannot be read whole, or past 4 MB does not go, and stops its frame's chain until
   its next full snapshot, the viewers told why for the main frame. Its title is the runner's
   step's. Before it, each resource it and its stylesheets name that the `.network` file
-  recorded with a content type `inspectResourceType` allows, read from the trace folder's
+  recorded with a content type `inspectResourceType` allows (a stylesheet, a font or an image: never a script, a
+  document or an SVG), read from the trace folder's
   `resources/` (a regular file, 2 MB at most), its bytes of that kind
   (`isInspectResourceBytes`), once per run; the header names each by its address hidden as
   the snapshot's are (`hideResourceUrl`). A project with masks (or masks this reporter cannot
@@ -624,6 +664,15 @@ What the package does to a user's run, process by process.
   watches, and the stop held is posted again on each stream the worker opens, so a run
   shared during a stop shows it; a CI run never stops, so this is for the run a person
   shares.
+- **Each frame is masked before it goes** (`live-mask.ts`): the page's secret fields (`SECRET_FIELD_SELECTOR`) and the
+  project's `masks` are read through `internalCall` before and after the frame and painted over with the `jpeg-js` of
+  `playwright-core/lib/utilsBundle`, feature-checked. Without it, a frame that shows one does not go, nor does one of
+  a page zoomed in.
+- **Its tests.** `tests/live-view.spec.ts`, `tests/live-view-share.spec.ts` and `tests/live-view-worker.spec.ts` drive
+  the stream, who it posts for and when, `tests/live-view-binary.spec.ts` the two frame encodings,
+  `tests/live-view-call-log.spec.ts` the call a full view follows, `tests/live-view-layers.spec.ts` its layers,
+  `tests/live-view-mask.spec.ts` the masks, and `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts`
+  Inspect (`internal/capture/live-inspect.ts`).
 
 **In the reporter process**
 
@@ -678,7 +727,8 @@ What the package does to a user's run, process by process.
   channel is this user's socket in such a folder, deleting none. It follows the editor one of whose
   workspace folders holds the config's folder or the working directory, real paths
   compared (`editorForRun`: the most specific, then the latest started), and sets
-  `PIWI_RUN_CHANNEL` to its run channel, `PIWI_RECORD_CHANNEL` to the same socket and
+  `PIWI_RUN_CHANNEL` to its run channel, `PIWI_RECORD_CHANNEL` to the same socket,
+  `PIWI_EDITOR_SEND` to the pairing its file names, unless the run names its own, and
   `PIWI_RUN_REF` to `terminal-<pid>-<time>` for the workers, which connect as an editor's
   run's do; a run nobody attends follows only an editor whose file says `unattended`, and
   else runs alone. With no editor's workspace holding it, it attaches to the desktop app

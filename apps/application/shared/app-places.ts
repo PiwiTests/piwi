@@ -118,6 +118,8 @@ export const PROJECT_SETTINGS_SECTIONS = [
   { id: 'source-control', label: 'Source control', icon: 'i-lucide-git-branch', group: 'project' },
   { id: 'ai', label: 'AI diagnosis', icon: 'i-lucide-sparkles', group: 'project' },
   { id: 'live-view', label: 'Live view', icon: 'i-lucide-monitor-play', group: 'project' },
+  { id: 'run-variables', label: 'Run variables', icon: 'i-lucide-variable', group: 'project' },
+  { id: 'environments', label: 'Environments', icon: 'i-lucide-server', group: 'project' },
   { id: 'capabilities', label: 'Capabilities', icon: 'i-lucide-toggle-right', group: 'analysis' },
   { id: 'coverage', label: 'Coverage', icon: 'i-lucide-scan-line', group: 'analysis' },
   { id: 'targets', label: 'Targets', icon: 'i-lucide-target', group: 'analysis' },

@@ -137,7 +137,7 @@ async function resetToDefaults() {
         <template #footer>
           <div class="flex items-center justify-between gap-2">
             <p class="text-xs text-muted">
-              Needs an SCM token with write access to the repository — set it in
+              Needs an SCM credential with write access to the repository — pick it in
               <NuxtLink to="/settings/source-control" :class="SENTENCE_LINK_CLASS">Source control</NuxtLink>, or per
               project in the project’s Source control settings.
             </p>

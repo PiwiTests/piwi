@@ -36,14 +36,18 @@ export async function setDesktopProjectLink(projectId: string | number, path: st
 
 export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | number | null | undefined>) {
   const toast = useToast();
+  const { chooseProjectFolder } = useDesktopLinkFolder();
 
   /** The IPC bridge exists — resolved on mount so SSR renders nothing. */
   const available = ref(false);
   const link = ref<DesktopProjectLink | null>(null);
+  /** The link was read once: until then, `link` being null does not mean the project has none. */
+  const loaded = ref(false);
   const busy = ref(false);
 
   async function refresh() {
     link.value = await getDesktopProjectLink(toValue(projectId));
+    loaded.value = true;
   }
 
   onMounted(() => {
@@ -53,28 +57,22 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
   watch(
     () => toValue(projectId),
     () => {
+      loaded.value = false;
       if (available.value) void refresh();
     },
   );
 
-  /** Open the native folder picker and link the chosen folder. False on cancel. */
-  async function pickAndLink(): Promise<boolean> {
-    const core = tauriCore();
+  /**
+   * Open the dialog that links the project to its folder (`useDesktopLinkFolder`), checking a folder against `specs`
+   * (the tests at hand) or the latest run's. False when it closes without linking one.
+   */
+  async function pickAndLink(options: { projectLabel?: string | null; specs?: string[] } = {}): Promise<boolean> {
     const id = toValue(projectId);
-    if (!core || id == null || id === '') return false;
-    busy.value = true;
-    try {
-      const path = await pickDesktopFolder();
-      if (!path) return false;
-      await core.invoke('desktop_set_project_link', { projectId: String(id), path });
-      await refresh();
-      return true;
-    } catch (error) {
-      toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
-      return false;
-    } finally {
-      busy.value = false;
-    }
+    if (!tauriCore() || id == null || id === '') return false;
+    const path = await chooseProjectFolder({ projectId: id, ...options });
+    if (!path) return false;
+    await refresh();
+    return true;
   }
 
   async function unlink() {
@@ -92,5 +90,5 @@ export function useDesktopProjectLink(projectId: MaybeRefOrGetter<string | numbe
     }
   }
 
-  return { available, link, busy, refresh, pickAndLink, unlink };
+  return { available, link, loaded, busy, refresh, pickAndLink, unlink };
 }

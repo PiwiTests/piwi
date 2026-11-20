@@ -1,4 +1,9 @@
-import { BUG_REPORT_EXTENSION, BUG_REPORT_MEDIA_TYPE, describeStepInParts } from '@piwitests/core/bug-report';
+import {
+  BUG_REPORT_EXTENSION,
+  BUG_REPORT_MEDIA_TYPE,
+  describeStepInParts,
+  isWrongStep,
+} from '@piwitests/core/bug-report';
 import { highlightLocator, LOCATOR_SYNTAX_CSS } from '@piwitests/picker-dom';
 import { conditionText } from '../shared/condition-words.js';
 import { interfacePhrases } from '../shared/core-words.js';
@@ -16,7 +21,7 @@ import { formatNumber, initI18n, t, tn, tNodes, tnNodes, uiLanguage } from '../s
 import { BUTTON_CSS } from '../shared/buttons.js';
 import { icon } from '../shared/icons.js';
 import { richText, STEP_CSS, stepView, urlView } from '../shared/step-view.js';
-import { getRecordingState, recordingMode } from '../shared/recording-storage.js';
+import { getRecordingState } from '../shared/recording-storage.js';
 import {
   appendReplayEvidence,
   getReplayEvidence,
@@ -51,13 +56,13 @@ import {
   replayVerdict,
   stepStatus,
   stepTimeout,
-  VERDICT_ICONS,
+  verdictIcon,
   verdictText,
   wait,
   type ReplayVerdict,
 } from './replay-core.js';
 import { relayEvidence } from '../shared/bug-relay.js';
-import { getBugEvidence, storeAsPageLeaves } from '../shared/bug-storage.js';
+import { storeAsPageLeaves } from '../shared/bug-storage.js';
 import { recordingTitle } from '../shared/recording-title.js';
 import { createCursor, type FakeCursor } from './replay-cursor.js';
 import {
@@ -149,6 +154,7 @@ const STYLE = `
   @media (prefers-color-scheme: light) { .found { color: #b45309; } }
   .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
   .row .end { margin-inline-start: auto; }
+  .row .piwi-btn { white-space: nowrap; }
   label.check { display: inline-flex; align-items: center; gap: 4px; font-size: 11.5px; }
   .verdict { --verdict: #94a3b8; border-radius: 8px; padding: 8px 10px; margin-top: 8px;
     background: color-mix(in srgb, var(--verdict) 15%, transparent); border-inline-start: 3px solid var(--verdict); }
@@ -533,6 +539,9 @@ function renderHud(
   const notices: HTMLElement[] = [];
   const controls = document.createElement('div');
   controls.className = 'row';
+  /** Under the buttons, so they keep one line: Step by step. */
+  const options = document.createElement('div');
+  options.className = 'row';
   if (!done) {
     const paused = state.status === 'paused';
     controls.appendChild(
@@ -565,7 +574,7 @@ function renderHud(
       });
     });
     stepLabel.append(stepBox, t('replay_stepByStep'));
-    controls.appendChild(stepLabel);
+    options.appendChild(stepLabel);
     controls.appendChild(
       keyed(
         button(
@@ -586,7 +595,7 @@ function renderHud(
       box2.setAttribute('role', 'status');
       const titleEl = document.createElement('div');
       titleEl.className = 'title';
-      titleEl.append(icon(VERDICT_ICONS[verdict.kind]), verdictTitle);
+      titleEl.append(icon(verdictIcon(verdict, steps)), verdictTitle);
       const d = document.createElement('div');
       d.append(...richText(detail));
       box2.append(titleEl, d);
@@ -677,13 +686,17 @@ function renderHud(
       keyed(
         button(t('common_close'), () => document.getElementById(REPLAY_HUD_HOST_ID)?.remove(), {
           icon: 'close',
+          iconOnly: true,
+          tone: 'ghost',
           className: 'end',
         }),
         'close',
       ),
     );
   }
-  box.append(controls, ...notices);
+  box.append(controls);
+  if (options.childElementCount > 0) box.appendChild(options);
+  box.append(...notices);
   root.append(style, box);
   if (focused) root.querySelector<HTMLElement>(`[${CONTROL_KEY}="${focused}"]`)?.focus({ preventScroll: true });
 }
@@ -1350,7 +1363,7 @@ async function stopEvidence(): Promise<void> {
  * script while a replay runs) with the replay's token, and keeps its entries in
  * batches (`relayEvidence`), handing them to the worker as the page is left.
  * Only what the page showed from `since`, the replay's start, is the replay's:
- * the script in a page a bug recording ran on still holds what the recording's
+ * the script in a page a recording ran on still holds what the recording's
  * debugging session collected. Returns the disposer, which stores what is still
  * pending and stops listening.
  */
@@ -1597,8 +1610,8 @@ interface ChosenReport {
 }
 
 /**
- * The recording made in this browser and not discarded yet, a bug report or a
- * plain recording, as steps, with its step screenshots and which of the two it is.
+ * The recording made in this browser and not discarded yet, as steps, with its
+ * step screenshots and whether it is a bug report (a step says the page was wrong).
  */
 async function lastRecordedReport(): Promise<(ChosenReport & { bug: boolean }) | null> {
   try {
@@ -1607,10 +1620,8 @@ async function lastRecordedReport(): Promise<(ChosenReport & { bug: boolean }) |
     const steps = normalizeSteps(recording.events);
     if (steps.length === 0) return null;
     const session = sessionFromEvents(recording.events, recording.startedAt ?? steps[0]!.timestamp);
-    const bug = recordingMode(recording) === 'bug';
-    const title = bug
-      ? ((await getBugEvidence().catch(() => null))?.title?.trim() ?? null)
-      : recordingTitle(recording, steps);
+    const bug = steps.some(isWrongStep);
+    const title = recordingTitle(recording, steps);
     return {
       steps: toStepsDocument(session, { title: title || null }),
       views: { recordingViews: stepViews(session.steps) },

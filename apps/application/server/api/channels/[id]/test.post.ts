@@ -3,7 +3,9 @@ import { getDatabase } from '../../../database';
 import { notificationChannels, users } from '../../../database/schema';
 import { getRequestAccess, requireAuth } from '../../../utils/auth';
 import { decryptSecret, getEncryptionKey } from '../../../utils/crypto';
-import { deliverChannelTest } from '../../../utils/notifications/channel-test';
+import { CHANNEL_TEST_TEXT, deliverChannelTest } from '../../../utils/notifications/channel-test';
+import { channelCredentialId, postSlackWithCredential } from '../../../utils/notifications/slack-credentials';
+import { requestCredentialActor } from '../../../utils/credentials';
 import { checkRateLimit, rateLimitClientIp, rateLimitedError } from '../../../utils/rate-limit';
 import {
   channelDeliveryHint,
@@ -75,6 +77,13 @@ export default eventHandler(async (event) => {
       const [owner] = await db.select({ email: users.email }).from(users).where(eq(users.id, channel.userId));
       if (!owner?.email) throw new Error('Account has no email address');
       await deliverChannelTest({ type: 'email', config: { address: owner.email } });
+    } else if (type === 'slack' && channelCredentialId(config) != null) {
+      await postSlackWithCredential(db, {
+        credentialId: channelCredentialId(config)!,
+        channel: { id: channel.id, slackChannelId: String(config.channelId ?? '').trim() },
+        message: { text: CHANNEL_TEST_TEXT },
+        actor: requestCredentialActor(event, user),
+      });
     } else if (isDeliverableChannelType(type)) {
       // The stored credential: a webhook's signing secret, or a Slack bot token.
       const key = type === 'webhook' ? 'secret' : type === 'slack' && slackDelivery(config) === 'api' ? 'token' : null;

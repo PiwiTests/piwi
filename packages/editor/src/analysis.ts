@@ -344,6 +344,27 @@ export function testsReaching(codeIndex: CodeIndex | null, repoRelativePath: str
   return [...out.values()];
 }
 
+/**
+ * The routes a file handles that tests called, each at the 1-based line its handler's body starts at, with the tests
+ * that called it (`CodeIndex.routes`), once each: the index names the file by its whole repository path, never by a
+ * suffix two files share. None from an instance that sends no routes.
+ */
+export function routesHandledIn(
+  codeIndex: CodeIndex | null,
+  repoRelativePath: string,
+): Array<{ route: string; line: number; tests: LocatorIndexTest[] }> {
+  if (!codeIndex?.routes) return [];
+  const path = repoRelativePath.replace(/\\/g, '/');
+  const seen = new Set<string>();
+  return codeIndex.routes.flatMap((r) => {
+    const key = `${r.route}\n${r.line}`;
+    if ((codeIndex.files[r.file] ?? '').replace(/\\/g, '/') !== path || seen.has(key)) return [];
+    seen.add(key);
+    const tests = r.tests.flatMap((t) => codeIndex.tests[t] ?? []);
+    return tests.length ? [{ route: r.route, line: r.line, tests }] : [];
+  });
+}
+
 /** The breaks an application file's unsaved changes cause, from its diff against the committed version. */
 export function breaksOfChange(
   diff: DiffFile,
@@ -640,22 +661,17 @@ export function timeoutMessage(advice: TimeoutAdvice): string {
 
 /**
  * The edit a timeout advice suggests in the body of the test declared at
- * `testLine` (0-based): remove its `test.slow()`, or set its timeout, replacing
- * a `test.setTimeout(…)` there or adding one as the body's first statement.
- * Null when the body cannot be told apart.
+ * `testLine` (0-based), up to the next test `testCalls` reads: remove its
+ * `test.slow()`, or set its timeout, replacing a `test.setTimeout(…)` there or
+ * adding one as the first statement of its function, which opens on a line
+ * ending in `=> {` or `) {`. Null when the body cannot be told apart.
  */
 export function timeoutEdit(
   lines: string[],
   testLine: number,
   advice: TimeoutAdvice,
 ): { line: number; replace: boolean; text: string } | null {
-  let end = lines.length;
-  for (let i = testLine + 1; i < lines.length; i++) {
-    if (/(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*['"`]/.test(lines[i]!)) {
-      end = i;
-      break;
-    }
-  }
+  const end = testCalls(lines).find((call) => call.line > testLine)?.line ?? lines.length;
   const body = lines.slice(testLine + 1, end);
   if (advice.kind === 'stale-slow') {
     const at = body.findIndex((l) => /^\s*test\.slow\(\s*\)\s*;?\s*$/.test(l));
@@ -671,10 +687,15 @@ export function timeoutEdit(
       text: current.replace(/\(\s*[\d_]+\s*\)/, `(${advice.recommendedTimeout})`),
     };
   }
-  const first = body.find((l) => l.trim());
-  if (!first || !/\{\s*$/.test(lines[testLine]!)) return null;
+  const opens = lines.slice(testLine, Math.min(end, testLine + 4)).findIndex((l) => /(?:=>|\))\s*\{\s*$/.test(l));
+  const first = opens < 0 ? undefined : lines.slice(testLine + opens + 1, end).find((l) => l.trim());
+  if (!first) return null;
   const indent = first.slice(0, first.length - first.trimStart().length);
-  return { line: testLine + 1, replace: false, text: `${indent}test.setTimeout(${advice.recommendedTimeout});` };
+  return {
+    line: testLine + opens + 1,
+    replace: false,
+    text: `${indent}test.setTimeout(${advice.recommendedTimeout});`,
+  };
 }
 
 /** The page keys this file's tests visit: the tests it defines, or whose steps call locators from it. */
@@ -777,7 +798,7 @@ function regexEnd(text: string, from: number): number {
 }
 
 /** A `test(…)` call on a line (`test.only(…)`, `test.skip(…)` and the other modifiers too), its title in group 2. */
-export const TEST_CALL =
+const TEST_CALL =
   /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
 /** A `test.describe(…)` call with a title (`test.describe.serial(…)` and the other modifiers too), its title in group 2. */
 const DESCRIBE_CALL =
@@ -801,6 +822,30 @@ export interface TestCall {
   suiteUnread: boolean;
 }
 
+/**
+ * Whether two texts of one file hold the same lines, whatever their line endings: an editor may hold a file with `\n`
+ * that the disk holds with `\r\n`.
+ */
+export function sameText(a: string, b: string): boolean {
+  return a === b || a.replace(/\r\n/g, '\n') === b.replace(/\r\n/g, '\n');
+}
+
+/** A `test(…)` or `test.describe(…)` call whose `(` ends its line, its first argument on a line below. */
+const TEST_CALL_OPEN_AT_END = /(?<![\w$.])test(?:\.\w+)*\s*\(\s*$/;
+
+/**
+ * A line of code, and when it ends on a test or describe call's `(`, the next line that holds code after it: the
+ * call's first argument (`test.describe(\n  'checkout',`) is read where it is written.
+ */
+function withNextArgument(code: string[], i: number): string {
+  const text = code[i]!;
+  if (!TEST_CALL_OPEN_AT_END.test(text)) return text;
+  for (let next = i + 1; next < code.length && next <= i + 3; next++) {
+    if (code[next]!.trim()) return `${text} ${code[next]!.trim()}`;
+  }
+  return text;
+}
+
 /** A title as a string literal spells it, with its escaped quotes, backticks and backslashes read as those characters. */
 function unescapedTitle(title: string): string {
   return title.replace(/\\(['"`\\])/g, '$1');
@@ -815,8 +860,9 @@ export function testCalls(lines: string[]): TestCall[] {
   const code = lines.map((text) => (/^\s*\/\//.test(text) ? '' : text));
   const blocks: Array<{ title: string; unread: boolean; endLine: number }> = [];
   const calls: TestCall[] = [];
-  code.forEach((text, i) => {
+  code.forEach((_, i) => {
     while (blocks.length && blocks[blocks.length - 1]!.endLine < i) blocks.pop();
+    const text = withNextArgument(code, i);
     const describe = DESCRIBE_CALL.exec(text);
     const unread = describe ? null : DESCRIBE_CALL_UNREAD.exec(text);
     let from = 0;
@@ -833,7 +879,8 @@ export function testCalls(lines: string[]): TestCall[] {
       }
     }
     const test = TEST_CALL.exec(text.slice(from));
-    if (!test) return;
+    // A call in the line below, joined for its title, is read on its own line.
+    if (!test || from + test.index >= code[i]!.length) return;
     const open = text.indexOf('(', from + test.index);
     const endLine = (open >= 0 ? callEndLine(code, i, open) : null) ?? i;
     calls.push({
@@ -845,6 +892,22 @@ export function testCalls(lines: string[]): TestCall[] {
     });
   });
   return calls;
+}
+
+/**
+ * The 0-based line each `test.describe(…)` call of a spec's lines ends on, by the line it starts on; a line whose code
+ * starts with `//` is read as blank.
+ */
+export function describeEnds(lines: string[]): Map<number, number> {
+  const code = lines.map((text) => (/^\s*\/\//.test(text) ? '' : text));
+  const ends = new Map<number, number>();
+  code.forEach((text, i) => {
+    const match = DESCRIBE_CALL.exec(text) ?? DESCRIBE_CALL_UNREAD.exec(text);
+    if (!match) return;
+    const end = callEndLine(code, i, text.indexOf('(', match.index));
+    if (end !== null) ends.set(i, end);
+  });
+  return ends;
 }
 
 /**
@@ -969,8 +1032,9 @@ export function flakeLabLens(testCaseId: number, entry: FlakeLabEntry): FlakeLab
 
 /**
  * What a test's gutter mark offers (`SummaryLine.actions`), in its groups: Run, Debug with Piwi and Verify ×3 at the
- * test's line; the failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context
- * for an agent; the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
+ * test's line; Record steps in this test at `recordAt`, the line of its body Record here writes steps after (none when
+ * null); the failure's trace and screenshot when it failed, then the test in the dashboard; the failure's context for
+ * an agent; the Flake Lab commands its line lists (`lab`, the lines after the first, which opens the Flakiness tab).
  * Debug with Piwi runs `debugRun`, a failed test's run as the dashboard's Debug in my editor does (`debugRunOf`), else
  * the test headed, holding its failures.
  */
@@ -983,8 +1047,15 @@ export function testActions(
   failed: { executionId: number; screenshot: unknown; traces: unknown[] } | null,
   lab: SummaryLine[],
   debugRun: RunTestsArgs | null = null,
+  recordAt: number | null = null,
 ): TestAction[] {
-  const debug: RunTestsArgs = debugRun ?? { uri, testIds: [testCaseId], headed: true, holdFailures: true };
+  const debug: RunTestsArgs = debugRun ?? {
+    uri,
+    testIds: [testCaseId],
+    headed: true,
+    holdFailures: true,
+    debugging: true,
+  };
   const evidence = failed ? ({ uri, executionId: failed.executionId } satisfies TraceParams) : null;
   const actions: Array<Omit<TestAction, 'section'>> = [
     {
@@ -1013,6 +1084,19 @@ export function testActions(
         arguments: [{ uri, testIds: [], locations: [`${relative}:${line + 1}`], repeat: 3 } satisfies RunTestsArgs],
       },
     },
+    ...(recordAt !== null
+      ? [
+          {
+            group: 'record' as const,
+            title: 'Record steps in this test…',
+            command: {
+              title: 'Record steps in this test…',
+              command: 'piwi.record' as const,
+              arguments: [uri, recordAt],
+            },
+          },
+        ]
+      : []),
     ...(evidence && failed?.traces.length
       ? [
           {
@@ -1053,6 +1137,7 @@ export function testActions(
 /** The words of each group of a test's actions, on the separator before it (`TestAction.section`). */
 const TEST_ACTION_SECTIONS: Record<TestAction['group'], string> = {
   run: '',
+  record: 'Record',
   evidence: 'Evidence',
   agent: 'Agent',
   lab: 'Flake Lab',
@@ -1060,10 +1145,10 @@ const TEST_ACTION_SECTIONS: Record<TestAction['group'], string> = {
 
 /**
  * A code action's title as the light bulb lists it among the editor's own: under Piwi's name, its words after it
- * starting lower-case (`Piwi: use getByRole(…)`, `Piwi: run this test`); Heal's `Heal: use …` as `Piwi: heal with …`.
+ * starting lower-case (`Piwi: use getByRole(…)`), a title ending `with Piwi` as it is (`Run with Piwi`); Heal's `Heal: use …` as `Piwi: heal with …`.
  */
 export function piwiActionTitle(title: string): string {
-  if (title.startsWith('Piwi: ')) return title;
+  if (title.startsWith('Piwi: ') || title.endsWith(' with Piwi')) return title;
   const heal = /^Heal: use (.+)$/.exec(title);
   if (heal) return `Piwi: heal with ${heal[1]}`;
   return `Piwi: ${title.charAt(0).toLowerCase()}${title.slice(1)}`;

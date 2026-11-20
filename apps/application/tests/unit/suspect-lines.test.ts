@@ -31,7 +31,7 @@ let providerAvailable = true;
 const fetched: Array<[string, string]> = [];
 vi.mock('../../server/utils/scm', () => ({
   detectScmProvider: () => 'github',
-  resolveScmToken: async () => null,
+  hasScmCredential: async () => false,
   createScmProvider: async () =>
     providerAvailable
       ? {
@@ -394,6 +394,73 @@ describe('suspectLinesForCluster', () => {
   });
 });
 
+describe('a run of a deployed environment', () => {
+  const DEPLOYED_GREEN = 'e'.repeat(40);
+  const DEPLOYED_HEAD = 'f'.repeat(40);
+
+  async function deployedRun(id: number, environmentId: number, status: 'passed' | 'failed', at: number) {
+    await db.insert(schema.testRuns).values({
+      id,
+      projectId: 1,
+      status,
+      startTime: new Date(at),
+      branch: 'main',
+      isFullRun: 1,
+      environmentId,
+      environment: environmentId === 1 ? 'staging' : 'production',
+      metadata: { scm: { commit: status === 'passed' ? GREEN : HEAD, remoteUrl: REMOTE, branch: 'main' } },
+      totalTests: 1,
+    });
+    await persistRunCases(db as never, 1, id, [
+      execution('updates the quantity', status, [basketCoverage([[54, 62]])]),
+    ]);
+  }
+
+  beforeAll(async () => {
+    await db.insert(schema.environments).values([
+      { id: 1, projectId: 1, key: 'staging', keyFold: 'staging', name: 'Staging', appFromCheckout: false },
+      { id: 2, projectId: 1, key: 'production', keyFold: 'production', name: 'Production', appFromCheckout: false },
+    ]);
+    const deploy = (commit: string, at: number) => ({
+      projectId: 1,
+      occurredAt: new Date(at),
+      label: `Deploy ${commit.slice(0, 7)}`,
+      category: 'deploy',
+      environment: 'staging',
+      environmentId: 1,
+      commit,
+    });
+    await db
+      .insert(schema.markers)
+      .values([deploy(DEPLOYED_GREEN, T0 + 9 * HOUR), deploy(DEPLOYED_HEAD, T0 + 10.5 * HOUR)]);
+    await deployedRun(110, 1, 'passed', T0 + 10 * HOUR);
+    await deployedRun(111, 1, 'failed', T0 + 11 * HOUR);
+    await deployedRun(120, 2, 'passed', T0 + 20 * HOUR);
+    await deployedRun(121, 2, 'failed', T0 + 21 * HOUR);
+  });
+
+  test('reads the application’s range, between the deployed commits of the last green run and the failing run', async () => {
+    const answer = await suspectLinesForExecution(db as never, await executionId(111, 'updates the quantity'));
+    expect(fetched).toEqual([[DEPLOYED_GREEN, DEPLOYED_HEAD]]);
+    expect(answer).toMatchObject({
+      available: true,
+      range: { from: DEPLOYED_GREEN, to: DEPLOYED_HEAD },
+      baselineRunId: 110,
+      deployed: { environment: 'Staging', commit: DEPLOYED_HEAD },
+    });
+  });
+
+  test('reads the tests’ range, and says so, when the deployed commit is unknown', async () => {
+    const answer = await suspectLinesForExecution(db as never, await executionId(121, 'updates the quantity'));
+    expect(fetched).toEqual([[GREEN, HEAD]]);
+    expect(answer).toMatchObject({
+      available: true,
+      range: { from: GREEN, to: HEAD },
+      deployed: { environment: 'Production', commit: null },
+    });
+  });
+});
+
 describe('getExecutionsCoverage', () => {
   test('reads several executions at once, with ranges only for the files asked for', async () => {
     const ids = [await executionId(2, 'checks out'), await executionId(2, 'signs in')];
@@ -429,7 +496,7 @@ describe('the fix plan', () => {
       edits: [],
       failingTests: [],
       ownership: { owner: null, source: null },
-      verify: { command: 'npx playwright test', expectation: '', commitTrailer: '' },
+      verify: { command: 'npx playwright test', leftOut: [], expectation: '', commitTrailer: '' },
       reproduce: { steps: [], env: [], notes: [] },
       bisect: { available: false, reason: 'no range' },
       bisectedCommit: null,

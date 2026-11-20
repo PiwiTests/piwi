@@ -171,7 +171,7 @@ Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the ro
 ```json
 {
   "routes": [
-    { "method": "GET", "pattern": "/api/orders/{id:int}", "handler": "src/Shop/Controllers/OrdersController.cs" },
+    { "method": "GET", "pattern": "/api/orders/{id:int}", "handler": "src/Shop/Controllers/OrdersController.cs", "line": 24 },
     { "method": "POST", "pattern": "/hubs/chat/negotiate", "handler": "src/Shop/Hubs/ChatHub.cs" }
   ],
   "pages": [
@@ -180,6 +180,8 @@ Wherever the middleware is active, it also serves `GET /__piwi/manifest`: the ro
   ]
 }
 ```
+
+A route's `handler` is the source file of its action, minimal API delegate or hub, read from the assembly's portable PDB, and `line` the 1-based first line of the action's or delegate's body the PDB records: an expression body's own line, a block's opening brace in a Debug build, its first statement in an optimized one. A hub has many methods, so its route has no line; a handler the PDB cannot place has neither.
 
 | Endpoint                                              | Declared as                                                                                                              |
 |-------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------|
@@ -212,11 +214,20 @@ Wherever the middleware is active, it also serves `GET /__piwi/environment`: the
 | `globalization` | `invariant`, `icu` or `nls` |
 | `environmentName` | `IHostEnvironment.EnvironmentName` |
 | `appVersion` | The entry assembly's informational version |
+| `appCommit` | The commit the application was built from (below) |
 | `hostname` | `Environment.MachineName` |
 | `instance` | A random id of the process, the one the coverage endpoints name |
 | `startedAt`, `now` | When the process started (ISO 8601, UTC) and the server's clock (epoch ms) |
 
 It is served under the same rule as the route manifest: never enable the middleware on a public production server, where this endpoint would describe the host to anyone who asks.
+
+`appCommit` tells the dashboard which version of the application a run tested, for an environment deployed apart from the tests' checkout. It is the first of these that holds 7 to 40 hexadecimal characters, lower-cased, else null:
+
+1. `PiwiTestLogsOptions.AppCommit`: `builder.AddPiwiTestLogs(o => o.AppCommit = builder.Configuration["GitCommit"])`;
+2. the `PIWI_APP_COMMIT` environment variable, set by the deploy;
+3. the source revision the .NET SDK writes into the entry assembly's informational version (`1.4.0+4e6f5164b…`): the .NET 8 SDK and later do it for a build made in a git checkout.
+
+Where the middleware is not active (production, by default), nothing serves it: post a deploy marker with the commit from the deploy pipeline instead ([Timeline markers](https://piwitests.dev/features/timeline-markers)).
 
 ## Server coverage
 

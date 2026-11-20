@@ -6,23 +6,31 @@
  * opens the setup dialog while configuration is broken. It doubles as the
  * status of a run of these same tests: while one is active (or just finished)
  * clicking it opens the runs tray and never stops anything. The chevron menu
- * shows the exact command and holds one-off runs, the other test sets of the
- * page, option toggles and fix-it entries. The options start from the
+ * shows the command (at most three test filters, the dialog has it whole) and
+ * holds one-off runs, the other test sets of the page, option toggles and
+ * fix-it entries. The options start from the
  * project's defaults (its Local folder settings) and the button's preset; a
- * choice here applies to this button only. Renders nothing without the IPC
- * bridge (plain browsers, web deployments), so pages can mount it
- * unconditionally next to the copyable retry command.
+ * choice here applies to this button only. A run from here is for the
+ * environment of the run its tests come from (`environmentId`, else read from
+ * `sourceRunId`), unless that one is protected: it then runs for none, and Run
+ * with options picks another. Renders nothing without the IPC bridge (plain
+ * browsers, web deployments), so pages can mount it unconditionally next to
+ * the copyable retry command.
  */
 import type { DropdownMenuItem } from '@nuxt/ui';
+import { commandWithEnvironment } from '#shared/run-variables';
+import { pickOf, runEnvironmentChoice } from '#shared/desktop-environments';
 import type { RetryCase } from '~/utils/retry-command';
 import {
   buildLocalRunPlan,
   localRunCopyOptions,
   localRunHoldRefusal,
   localRunHoldsFailures,
+  localRunNamedCases,
   type LocalRunOptions,
 } from '~/utils/local-run-args';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
+import type { DesktopRunSettings } from '~/composables/useDesktopEnvironments';
 
 const props = defineProps<{
   projectId?: string | number | null;
@@ -40,6 +48,8 @@ const props = defineProps<{
   sourceRunId?: number | null;
   /** Other sets of tests of the page the menu runs instead ("Re-run all 12 tests"), each once. */
   otherSets?: LocalRunSet[];
+  /** The environment of the run the tests come from; read from `sourceRunId` when not given. */
+  environmentId?: number | null;
 }>();
 
 const available = ref(false);
@@ -48,8 +58,8 @@ onMounted(() => {
 });
 
 const store = useDesktopLocalRuns();
-const { link, busy, pickAndLink, refresh } = useDesktopProjectLink(() => props.projectId);
-const { missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
+const { link, loaded: linkLoaded, busy, pickAndLink, refresh } = useDesktopProjectLink(() => props.projectId);
+const { specFiles, missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
   () => props.projectId,
   () => props.cases,
 );
@@ -62,6 +72,11 @@ const modalOpen = ref(false);
 watch(modalOpen, (isOpen) => {
   if (!isOpen) void refresh();
 });
+
+/** Link the project's folder, checked against the tests this button runs. */
+function chooseFolder() {
+  void pickAndLink({ projectLabel: props.projectLabel, specs: specFiles.value });
+}
 
 const canRun = computed(() => available.value && props.projectId != null && props.cases.length > 0);
 const linked = computed(() => !!link.value?.exists);
@@ -91,7 +106,58 @@ watch(
 );
 
 const options = computed(() => ({ ...store.getProjectOptions(props.projectId ?? ''), ...overrides.value }));
+
+/** The environment of the run the tests come from, as the page names it or the run reported it. */
+const sourceEnvironmentId = ref<number | null>(null);
+watch(
+  [available, () => props.environmentId, () => props.sourceRunId],
+  async () => {
+    if (props.environmentId !== undefined) {
+      sourceEnvironmentId.value = props.environmentId;
+      return;
+    }
+    sourceEnvironmentId.value = null;
+    const runId = props.sourceRunId;
+    if (!available.value || runId == null) return;
+    try {
+      const reported = await $fetch<{ label: string | null; environmentId: number | null }>(
+        `/api/desktop/test-runs/${runId}/environment`,
+      );
+      if (props.sourceRunId === runId) sourceEnvironmentId.value = reported.environmentId;
+    } catch {
+      // The run is gone or not readable: a run from here is for no environment.
+    }
+  },
+  { immediate: true },
+);
+/**
+ * The team project's environments are read only when the source run's environment is one the runs of a team
+ * environment discovered in the project, with no run variables of its own: the run then starts on the team one.
+ */
+const projectEnvironments = useProjectEnvironments(() => (available.value ? props.projectId : null));
+const sourceIsDiscovered = computed(() => {
+  const own = projectEnvironments.byId(sourceEnvironmentId.value);
+  return !!own?.discovered && own.runVariables.length === 0;
+});
+const { choices: environmentChoices, loaded: environmentsLoaded } = useDesktopEnvironments(
+  () => (available.value ? props.projectId : null),
+  { withTeam: sourceIsDiscovered },
+);
+/** A run from here waits for the team project's environments it may start on. */
+const environmentsReady = computed(() => !sourceIsDiscovered.value || environmentsLoaded.value);
+/** The environment a run from here is for: the source run's, unless protected. */
+const runEnvironment = computed(() => runEnvironmentChoice(environmentChoices.value, sourceEnvironmentId.value));
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
+/** The cases the plan names; the others have no file path, or no title, Playwright can select them by. */
+const namedCases = computed(() => localRunNamedCases(props.cases, options.value.mode));
+const leftOut = computed(() => props.cases.length - namedCases.value.length);
+/** No case has a filter Playwright can take. */
+const noPlan = computed(() => plan.value.length === 0);
+const noPlanHint = computed(() =>
+  options.value.mode === 'grep'
+    ? 'These tests have no title to select them by: select them by file'
+    : "Playwright cannot take these tests' file paths: select them by title",
+);
 const contextRun = computed(() => store.latestForCases(props.projectId, props.cases));
 const running = computed(() => contextRun.value?.status === 'running');
 
@@ -105,13 +171,19 @@ const flashRun = computed(() => {
   return now.value - run.finishedAt < FLASH_MS ? run : null;
 });
 
-const testsLabel = computed(() => `${props.cases.length} test${props.cases.length === 1 ? '' : 's'}`);
+/** What the face adds when the plan leaves tests out: a page's own label counts every test it was given. */
+const leftOutSuffix = computed(() => (leftOut.value > 0 && !noPlan.value ? `${leftOut.value} left out` : ''));
+/** The tests a run from here runs: the cases its plan names, or all of them while it names none. */
+const testCount = computed(() => (noPlan.value ? props.cases.length : namedCases.value.length));
+const testsLabel = computed(() => `${testCount.value} test${testCount.value === 1 ? '' : 's'}`);
 const idleLabel = computed(() => props.label ?? `Run ${testsLabel.value} locally`);
 const runModeLabel = computed(
   () => LOCAL_RUN_MODE_ITEMS.find((i) => i.value === options.value.runMode)?.label ?? 'Headless',
 );
-/** The options a run from here takes that are not the defaults, as the face appends them. */
-const optionsSuffix = computed(() => localRunOptionsSummary(options.value));
+/** The options a run from here takes that are not the defaults, and its environment, as the face appends them. */
+const optionsSuffix = computed(() =>
+  [localRunOptionsSummary(options.value), runEnvironment.value?.name].filter(Boolean).join(' · '),
+);
 
 const face = computed(() => {
   const run = contextRun.value;
@@ -129,7 +201,7 @@ const face = computed(() => {
     return {
       label: passed
         ? 'Passed'
-        : flashRun.value.exitCode != null
+        : flashRun.value.exitCode != null && flashRun.value.exitCode !== 1
           ? `Failed (exit ${flashRun.value.exitCode})`
           : 'Failed',
       color: passed ? ('success' as const) : ('error' as const),
@@ -139,15 +211,20 @@ const face = computed(() => {
     };
   }
   const idle = {
-    label: optionsSuffix.value ? `${idleLabel.value} · ${optionsSuffix.value}` : idleLabel.value,
+    label: [idleLabel.value, leftOutSuffix.value, optionsSuffix.value].filter(Boolean).join(' · '),
     color: props.primary ? ('primary' as const) : ('neutral' as const),
     variant: props.primary ? ('solid' as const) : ('outline' as const),
     icon: 'i-lucide-play',
   };
+  if (!linkLoaded.value) return { ...idle, tooltip: 'Reading the linked folder…' };
   if (!linked.value) {
-    return { ...idle, tooltip: 'Link this project to its local checkout to run tests here' };
+    return { ...idle, tooltip: 'Link the folder that holds this project’s Playwright config to run tests here' };
   }
-  const command = plan.value.length === 1 ? plan.value[0]!.display : `${plan.value.length} commands, one per project`;
+  if (noPlan.value) return { ...idle, tooltip: noPlanHint.value };
+  const command =
+    plan.value.length === 1
+      ? (plan.value[0]!.summary ?? plan.value[0]!.display)
+      : `${plan.value.length} commands, one per project`;
   return {
     ...idle,
     tooltip: `${command} · ${runModeLabel.value} · in ${link.value?.path}`,
@@ -155,7 +232,7 @@ const face = computed(() => {
 });
 
 function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
-  if (props.projectId == null) return;
+  if (props.projectId == null || !environmentsReady.value) return;
   store.startRun({
     projectId: props.projectId,
     projectLabel: props.projectLabel,
@@ -163,8 +240,11 @@ function runNow(patch?: LocalRunOptions, set?: LocalRunSet) {
     title: set ? set.runTitle : props.runTitle,
     sourceRunId: props.sourceRunId,
     options: { ...overrides.value, ...set?.options, ...patch },
+    environment: runEnvironment.value,
   });
 }
+
+const menuOpen = ref(false);
 
 function onPrimaryClick() {
   if (running.value || flashRun.value) {
@@ -173,6 +253,11 @@ function onPrimaryClick() {
   }
   if (attention.value) {
     modalOpen.value = true;
+    return;
+  }
+  // The menu says why nothing runs.
+  if (noPlan.value) {
+    menuOpen.value = true;
     return;
   }
   runNow();
@@ -184,10 +269,51 @@ function setOption(patch: LocalRunOptions) {
 
 const REPEAT_CHOICES = [1, 5, 10, 20, 50, 100];
 
-/** The commands a run from here spawns, at most four, as the menu shows them. */
+/**
+ * What the commands of a run from here start with: the project's run variables, or for an environment what the shell
+ * reads for it (`readDesktopRunSettings`), its team project's for a team one.
+ */
+const runVariables = useProjectRunVariables(() => props.projectId);
+const environmentSettings = ref<DesktopRunSettings | null>(null);
+watch(
+  () => JSON.stringify(pickOf(runEnvironment.value)),
+  async () => {
+    const environment = runEnvironment.value;
+    environmentSettings.value = null;
+    if (!environment || !available.value || props.projectId == null) return;
+    try {
+      const read = await readDesktopRunSettings(props.projectId, pickOf(environment));
+      if (runEnvironment.value === environment) environmentSettings.value = read;
+    } catch {
+      // The commands start with the project's run variables; the shell says why when the run starts.
+    }
+  },
+  { immediate: true },
+);
+const commandVariables = computed(() => environmentSettings.value?.runVariables ?? runVariables.variables.value);
+const commandEnvironment = computed(() => environmentSettings.value?.environment ?? null);
+
+/** What Copy as command copies: the shell form of the run, empty when no case has a filter a command can name. */
+const copyCommand = computed(() => {
+  const command = buildRetryCommand(props.cases, {
+    mode: options.value.mode,
+    options: localRunCopyOptions(options.value),
+  });
+  return command
+    ? commandWithEnvironment(command, commandVariables.value, commandEnvironment.value, runVariables.shell.value)
+    : command;
+});
+/** The tests the run names that the copied command leaves out: a shell would misread their title or path. */
+const copyLeavesOut = computed(() => namedCases.value.filter((c) => !retryCommandNames(c, options.value.mode)).length);
+
+/** The commands a run from here spawns, at most four and each cut short, as the menu shows them. */
 const MAX_PREVIEW_STEPS = 4;
 const commandPreview = computed(() => {
-  const shown = plan.value.slice(0, MAX_PREVIEW_STEPS).map((step) => step.display);
+  const shown = plan.value
+    .slice(0, MAX_PREVIEW_STEPS)
+    .map((step) =>
+      commandWithEnvironment(step.summary ?? step.display, commandVariables.value, commandEnvironment.value, 'bash'),
+    );
   const more = plan.value.length - shown.length;
   return more > 0 ? [...shown, `… and ${more} more`].join('\n') : shown.join('\n');
 });
@@ -198,13 +324,13 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
   if (!linked.value) {
     groups.push([
       { type: 'label', label: link.value ? 'The linked folder is missing' : 'No folder linked yet' },
-      { label: 'Choose folder…', icon: 'i-lucide-folder-plus', onSelect: () => void pickAndLink() },
+      { label: 'Choose folder…', icon: 'i-lucide-folder-plus', onSelect: chooseFolder },
     ]);
   } else if (wrongFolder.value) {
     groups.push([
       { type: 'label', label: 'Tests not found in the linked folder' },
-      { label: 'Choose the right folder…', icon: 'i-lucide-folder-search', onSelect: () => void pickAndLink() },
-      { label: 'Run anyway', icon: 'i-lucide-play', onSelect: () => runNow() },
+      { label: 'Choose the right folder…', icon: 'i-lucide-folder-search', onSelect: chooseFolder },
+      { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   } else if (playwrightMissing.value) {
     groups.push([
@@ -217,19 +343,37 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           void checkEnv();
         },
       },
-      { label: 'Run anyway', icon: 'i-lucide-play', onSelect: () => runNow() },
+      { label: 'Run anyway', icon: 'i-lucide-play', disabled: noPlan.value, onSelect: () => runNow() },
     ]);
   }
 
   if (linked.value) {
     groups.push([
-      { type: 'label', label: plan.value.length === 1 ? 'Runs this command' : 'Runs these commands, one by one' },
       {
         type: 'label',
-        label: commandPreview.value,
-        class: 'font-mono text-[11px] font-normal',
-        ui: { itemLabel: 'whitespace-pre-wrap! break-all' },
+        label: noPlan.value
+          ? 'Runs nothing'
+          : plan.value.length === 1
+            ? 'Runs this command'
+            : 'Runs these commands, one by one',
       },
+      {
+        type: 'label',
+        label: noPlan.value ? noPlanHint.value : commandPreview.value,
+        class: 'font-mono text-[11px] font-normal',
+        ui: { itemLabel: 'whitespace-pre-wrap! wrap-anywhere' },
+      },
+      ...(leftOut.value > 0 && !noPlan.value
+        ? [
+            {
+              type: 'label' as const,
+              label: `Leaves out ${leftOut.value} of the ${props.cases.length} tests: ${
+                options.value.mode === 'grep' ? 'they have no title' : 'Playwright cannot take their file paths'
+              }`,
+              class: 'font-normal text-muted',
+            },
+          ]
+        : []),
     ]);
 
     groups.push([
@@ -239,7 +383,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
         icon: mode.icon,
         type: 'checkbox' as const,
         checked: options.value.runMode === mode.value,
-        disabled: running.value,
+        disabled: running.value || noPlan.value,
         onSelect: () => runNow({ runMode: mode.value }),
       })),
     ]);
@@ -327,14 +471,12 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
       {
         label: 'Copy as command',
         icon: 'i-lucide-clipboard',
-        onSelect: () =>
-          void copy(
-            buildRetryCommand(props.cases, {
-              mode: options.value.mode,
-              options: localRunCopyOptions(options.value),
-            }),
-            { toast: 'Command copied' },
-          ),
+        description:
+          copyLeavesOut.value > 0
+            ? `Names ${copyLeavesOut.value} test${copyLeavesOut.value === 1 ? '' : 's'} fewer than the run: a shell would misread ${copyLeavesOut.value === 1 ? 'its title or path' : 'their titles or paths'}`
+            : undefined,
+        disabled: !copyCommand.value,
+        onSelect: () => void runVariables.ready().then(() => copy(copyCommand.value, { toast: 'Command copied' })),
       },
       {
         label: 'Project defaults…',
@@ -362,7 +504,7 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
   if (linked.value) {
     groups.push([
       { type: 'label', label: link.value!.path, class: 'font-mono text-[11px] break-all font-normal' },
-      { label: 'Change linked folder…', icon: 'i-lucide-folder-search', onSelect: () => void pickAndLink() },
+      { label: 'Change linked folder…', icon: 'i-lucide-folder-search', onSelect: chooseFolder },
     ]);
   }
 
@@ -380,22 +522,28 @@ const menuItems = computed<DropdownMenuItem[][]>(() => {
           :variant="face.variant"
           :icon="face.icon"
           :loading="running"
-          :disabled="busy"
+          :disabled="busy || !linkLoaded || !environmentsReady"
           @click="onPrimaryClick"
         >
           {{ face.label }}
         </UButton>
       </UTooltip>
-      <UDropdownMenu :items="menuItems" :content="{ align: 'end' }" :ui="{ content: 'min-w-56 max-w-md' }">
+      <UDropdownMenu
+        v-model:open="menuOpen"
+        :items="menuItems"
+        :content="{ align: 'end' }"
+        :ui="{ content: 'min-w-56 max-w-md' }"
+      >
         <UButton
           size="xs"
           :color="face.color"
           :variant="face.variant"
           icon="i-lucide-chevron-down"
           aria-label="Run options"
+          :disabled="!linkLoaded"
           class="relative"
         >
-          <span v-if="attention" class="absolute -top-1 -right-1 size-2 rounded-full bg-warning" />
+          <span v-if="attention && linkLoaded" class="absolute -top-1 -right-1 size-2 rounded-full bg-warning" />
         </UButton>
       </UDropdownMenu>
     </UFieldGroup>

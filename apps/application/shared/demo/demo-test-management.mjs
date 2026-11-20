@@ -18,6 +18,9 @@ export const DEMO_TEST_MANAGEMENT_CONNECTION = {
   config: { region: 'us' },
 };
 
+/** The credential the canned connection's token is kept in (Settings → Credentials): the seed stores it. */
+export const DEMO_TEST_MANAGEMENT_CREDENTIAL = { id: 5, name: 'Zephyr Scale · SHOP' };
+
 /** The project the checkout project is bound to, and the project the demo's pickers list first. */
 export const DEMO_TEST_MANAGEMENT_PROJECT_KEY = 'SHOP';
 

@@ -23,10 +23,12 @@ import { resolveProjectStates } from '#shared/handlers/capabilities';
 import { durationStats } from '#shared/utils/stats';
 import { eligibleRunSql, notPrivateRun } from '#shared/run-eligibility';
 import { computeRegressionContext } from './regression-context';
+import { environmentContextSection } from '#shared/handlers/environment-context';
 import { clusterSuspectLinesForChanges } from './suspect-lines';
 import { normalizeGitUrl } from './scm/git-url';
 import { inlineCasePayloads } from './case-payloads';
-import { createScmProvider, detectScmProvider, resolveScmToken } from './scm';
+import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
+import { readProjectRepositoryUrl } from './scm/project-repository';
 import { LocalGitProvider } from './scm/local-git';
 import { compareUrl, isPlainRevision } from '#shared/scm-urls';
 import { PATCH_TRUNCATED_NOTE } from '#shared/patch';
@@ -174,6 +176,7 @@ const SECTION_ORDER: SectionId[] = [
   'retryProgression',
   'baselineComparison',
   'environmentDiff',
+  'environmentUnderTest',
   'coverageDivergence',
   'recurrenceFlakiness',
   'browserDistribution',
@@ -481,6 +484,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
     db
       .select({
         environment: testRuns.environment,
+        environmentId: testRuns.environmentId,
         metadata: testRuns.metadata,
         isFullRun: testRuns.isFullRun,
         filterDetails: testRuns.filterDetails,
@@ -498,6 +502,7 @@ async function loadExecutionRow(db: DbClient, where: SQL) {
     ...rep,
     nrItems: nrRows,
     runEnvironment: run?.environment ?? null,
+    runEnvironmentId: run?.environmentId ?? null,
     runMetadata: (run?.metadata as RunMetadata | null) ?? null,
     runIsFullRun: run?.isFullRun ?? null,
     runFilterDetails: (run?.filterDetails as { grep?: string; grepInvert?: string } | null) ?? null,
@@ -521,7 +526,6 @@ type RepresentativeRow = NonNullable<Awaited<ReturnType<typeof loadExecutionRow>
 function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   const lines: string[] = [];
   const meta = rep.runMetadata as RunMetadata | null;
-  const env = rep.runEnvironment as Record<string, string> | null;
 
   if (meta?.scm?.commit) {
     const short = meta.scm.commit.slice(0, 7);
@@ -529,8 +533,7 @@ function ciRunHeaderLines(rep: RepresentativeRow): string[] {
   }
   if (meta?.scm?.branch) lines.push(`- Branch: ${meta.scm.branch}`);
   if (meta?.ci?.provider) lines.push(`- CI: ${meta.ci.provider}`);
-  if (env?.os) lines.push(`- OS: ${env.os}`);
-  if (env?.hostname) lines.push(`- Hostname: ${env.hostname}`);
+  if (rep.runEnvironment) lines.push(`- Environment: ${rep.runEnvironment}`);
   return lines;
 }
 
@@ -2491,7 +2494,9 @@ async function scmInvestigationSections(
     scmCov.compareUrl = usable && repositoryUrl ? compareUrl(repositoryUrl, fromSha, toSha) : null;
     scmCov.gitCommand = usable ? `git log --oneline ${fromSha}..${toSha}` : null;
   };
-  scmCov.hasToken = (await resolveScmToken(db, cluster.projectId).catch(() => null)) != null;
+  scmCov.hasToken = await readProjectRepositoryUrl(db, cluster.projectId)
+    .then((repository) => hasScmCredential(db, cluster.projectId, repository))
+    .catch(() => false);
 
   /**
    * Fetch the changes of `fromSha..toSha` and add them: the changed lines the
@@ -2562,6 +2567,7 @@ async function scmInvestigationSections(
       status: testRuns.status,
       startTime: testRuns.startTime,
       environment: testRuns.environment,
+      environmentId: testRuns.environmentId,
       metadata: testRuns.metadata,
     })
     .from(testRuns)
@@ -2944,6 +2950,13 @@ export async function buildDiagnosisContext(
     push(section('environmentDiff', 'Environment Diff vs Last Pass', envDiffResult.section));
     coverage = { ...coverage, environmentDiff: envDiffResult.coverage };
 
+    // The environment the run tested: built from the checkout, or deployed with its deployed commit and deploys
+    if (rep.runEnvironmentId != null) {
+      const environment = await environmentContextSection(db, { runId: rep.testRunId, cluster }).catch(() => null);
+      push(section('environmentUnderTest', 'Environment Under Test', environment?.markdown));
+      coverage = { ...coverage, environmentUnderTest: environment?.coverage ?? null };
+    }
+
     // The code paths this execution took that the last passing one did not (coverage)
     const divergenceResult = await coverageDivergenceContext(db, rep.id);
     push(section('coverageDivergence', 'Code Paths vs the Last Passing Run', divergenceResult.section));
@@ -3114,7 +3127,7 @@ export async function buildDiagnosisContext(
     const scmError = coverage.scm?.error;
     absentReasons.scmInvestigation = scmError
       ? `SCM diff fetch failed: ${scmError}`
-      : 'no SCM diff available — check repository URL in project settings or configure a SCM token';
+      : 'no SCM diff available — check repository URL in project settings or pick an SCM credential';
   }
   // The capture fixtures were active for this execution when any fixture-produced
   // field is present that was not itself recovered from the trace. The humans'
@@ -3170,11 +3183,15 @@ export async function buildDiagnosisContext(
       capability: fixturesState,
     })!;
   }
+  // A request carries `serverLogs` or `serverTraces`, an empty list included, only when the backend's
+  // instrumentation answered it.
+  const backendAnswered = (rep?.nrItems ?? []).some((r) => r.serverLogs != null || r.serverTraces != null);
   if (!sectionIds.has('serverTraces')) {
     absentReasons.serverTraces = evidenceAbsenceReason('backendLogs', {
       hasData: false,
       fixturesActive,
       capability: backendLogsState,
+      backendAnswered,
     })!;
   }
   if (!sectionIds.has('serverLogs')) {
@@ -3182,6 +3199,7 @@ export async function buildDiagnosisContext(
       hasData: false,
       fixturesActive,
       capability: backendLogsState,
+      backendAnswered,
     })!;
   }
   if (!sectionIds.has('webVitals')) {
@@ -3193,6 +3211,9 @@ export async function buildDiagnosisContext(
   }
   if (!sectionIds.has('environmentDiff')) {
     absentReasons.environmentDiff = 'no passing baseline execution recorded for this test to compare against';
+  }
+  if (!sectionIds.has('environmentUnderTest')) {
+    absentReasons.environmentUnderTest = 'the run reported no environment';
   }
   if (!sectionIds.has('visualDiff')) {
     absentReasons.visualDiff =

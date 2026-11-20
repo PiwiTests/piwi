@@ -69,7 +69,7 @@ async function removeConnection(request: import('@playwright/test').APIRequestCo
   const list = await request.get('/api/integrations/connections');
   const { connections } = (await list.json()) as { connections: Array<{ id: number; name: string }> };
   for (const c of connections.filter((c) => c.name === NAME)) {
-    await request.delete(`/api/integrations/connections/${c.id}`);
+    await request.delete(`/api/integrations/connections/${c.id}?deleteCredential=true`);
   }
 }
 
@@ -118,7 +118,8 @@ test.describe.serial('Integrations — the Jira connect form', () => {
 
     await form.getByLabel('Name').fill(NAME);
     await form.getByRole('button', { name: 'Connect', exact: true }).click();
-    await expect(page.getByText(NAME)).toBeVisible();
+    await expect(page.getByText(NAME, { exact: true }).first()).toBeVisible();
+    await expect(page.getByTestId('connection-credential').filter({ hasText: NAME })).toBeVisible();
 
     const list = await request.get('/api/integrations/connections');
     const { connections } = (await list.json()) as {

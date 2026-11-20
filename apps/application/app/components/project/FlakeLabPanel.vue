@@ -34,8 +34,18 @@ const loading = computed(() => status.value === 'idle' || status.value === 'pend
 
 const { copy, copied } = useCopy();
 const copiedCommand = ref<string | null>(null);
+// `piwi flake` takes no test filter, so it cannot keep to a protected environment's required tags.
+const { environmentId: flakeEnvironmentId } = useCommandEnvironment(() => props.projectId, null, {
+  protectedAllowed: false,
+});
+const flakeRunVariables = useProjectRunVariables(
+  () => props.projectId,
+  () => flakeEnvironmentId.value,
+);
+/** Copies a test's next command once the project's run variables are read, so it starts with them. */
 async function copyCommand(command: string) {
-  await copy(command, { toast: 'Command copied' });
+  await flakeRunVariables.ready();
+  await copy(flakeRunVariables.command(command), { toast: 'Command copied' });
   copiedCommand.value = command;
 }
 
@@ -65,6 +75,14 @@ function stateLine(t: FlakeLabTest): string {
       help="project.flake-lab"
       :count="lab ? lab.tests.length : null"
     >
+      <template #actions>
+        <CommandEnvironmentPicker
+          v-model="flakeEnvironmentId"
+          :project-id="projectId"
+          protected-refused="protected, Flake Lab takes no tag filter"
+          class="w-48"
+        />
+      </template>
       <LoadingState v-if="loading && !lab" text="Reading the project’s flaky tests…" />
       <EmptyState
         v-else-if="lab && lab.tests.length === 0"
@@ -113,7 +131,7 @@ function stateLine(t: FlakeLabTest): string {
             >
               {{ flakeLabNextStep(t.state) === 'verify' ? 'Copy verify command' : 'Copy command' }}
             </UButton>
-            <code class="text-xs text-muted font-mono break-all">{{ t.nextCommand }}</code>
+            <code class="text-xs text-muted font-mono break-all">{{ flakeRunVariables.command(t.nextCommand) }}</code>
           </div>
         </li>
       </ol>

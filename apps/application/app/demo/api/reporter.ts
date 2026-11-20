@@ -144,6 +144,7 @@ import {
 import { updateRunMetadata } from '~~/server/utils/run-metadata';
 import { recordTagsTruncated } from '~~/server/utils/tags-truncated';
 import { publicRunUrl } from '#shared/run-url';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 
 type DemoDb = Awaited<ReturnType<typeof getDemoDb>>;
 
@@ -340,7 +341,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
         passedTests: 0,
         failedTests: 0,
         skippedTests: 0,
-        environment: body.environment || null,
+        ...(await resolveRunEnvironment(db, project.id, body.environment)),
         branch: resolveRunBranch(body.metadata),
         label: body.label || null,
         metadata,
@@ -380,7 +381,7 @@ export async function apiSetupTestRun(body: TestRunStartPayload, scope: 'all' | 
       passedTests: 0,
       failedTests: 0,
       skippedTests: 0,
-      environment: body.environment || null,
+      ...(await resolveRunEnvironment(db, project.id, body.environment)),
       branch: resolveRunBranch(body.metadata),
       label: body.label || null,
       metadata: null,

@@ -15,12 +15,13 @@
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Mutex;
 use std::time::Duration;
 
 use serde_json::{json, Value};
 use tauri::{AppHandle, Manager as _};
+use tauri_plugin_dialog::{DialogExt as _, MessageDialogButtons, MessageDialogKind};
 use tauri_plugin_store::StoreExt as _;
 
 use crate::mcp_clients::ServerInfo;
@@ -502,29 +503,16 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
     let Some(server) = server_info(app) else {
         return;
     };
-    let cached = app
-        .try_state::<KeptKey>()
-        .and_then(|kept| kept.0.lock().unwrap().clone())
-        .filter(|(url, _)| *url == instance)
-        .map(|(_, key)| key);
-    let key = match cached {
-        Some(key) => key,
-        None => match keychain::read(&instance) {
-            Ok(Some(key)) => {
-                if let Some(kept) = app.try_state::<KeptKey>() {
-                    *kept.0.lock().unwrap() = Some((instance.clone(), key.clone()));
-                }
-                key
-            }
-            Ok(None) => {
-                log(app, "no key in the keychain for the connected instance");
-                return;
-            }
-            Err(e) => {
-                log(app, &format!("could not read the key from the keychain: {e}"));
-                return;
-            }
-        },
+    let key = match kept_key(app, &instance) {
+        Ok(Some(key)) => key,
+        Ok(None) => {
+            log(app, "no key in the keychain for the connected instance");
+            return;
+        }
+        Err(e) => {
+            log(app, &format!("could not read the key from the keychain: {e}"));
+            return;
+        }
     };
     let runs = app.try_state::<RequestedRuns>();
     let body = json!({
@@ -543,6 +531,43 @@ pub(crate) fn hand_kept_key(app: &AppHandle) {
         }
         Err(e) => log(app, &format!("could not hand the key to the server: {e}")),
     }
+}
+
+/// The key this app keeps for `instance`: the one read last, else the keychain's, which is read once a launch. None
+/// when the keychain holds none.
+pub(crate) fn kept_key(app: &AppHandle, instance: &str) -> Result<Option<String>, String> {
+    let cached = app
+        .try_state::<KeptKey>()
+        .and_then(|kept| kept.0.lock().unwrap().clone())
+        .filter(|(url, _)| url == instance)
+        .map(|(_, key)| key);
+    if cached.is_some() {
+        return Ok(cached);
+    }
+    let read = keychain::read(instance)?;
+    if let (Some(key), Some(kept)) = (&read, app.try_state::<KeptKey>()) {
+        *kept.0.lock().unwrap() = Some((instance.to_string(), key.clone()));
+    }
+    Ok(read)
+}
+
+/// The team project the folder `folder` is also linked to on the connected instance, as the instance and the project's
+/// id ([`team_project_in`]). None without a connected instance or such a link.
+pub(crate) fn team_project_of_folder(app: &AppHandle, folder: &Path) -> Option<(String, u64)> {
+    let instance = connected_instance(app)?;
+    let project = team_project_in(&links_of(app, &instance), folder)?;
+    Some((instance, project))
+}
+
+/// The project of `links` (`{ project id → folder }`) linked to `folder`, compared by real path, the lowest id when
+/// several are.
+fn team_project_in(links: &HashMap<String, String>, folder: &Path) -> Option<u64> {
+    let own = crate::runner::real_path(folder);
+    links
+        .iter()
+        .filter(|(_, linked)| crate::runner::real_path(Path::new(linked.as_str())) == own)
+        .filter_map(|(id, _)| id.parse::<u64>().ok().filter(|id| *id > 0))
+        .min()
 }
 
 /// The linked folders the local runs are going in, requested runs among them.
@@ -573,9 +598,11 @@ pub(crate) fn hand_local_runs(app: &AppHandle) {
     });
 }
 
+/// Hand the server the folders linked for `instance`'s projects, naming the
+/// instance: the server leaves them aside when it connected to another since.
 fn hand_links(app: &AppHandle, instance: &str) -> Result<(), String> {
     let server = server_info(app).ok_or("the local server is not running")?;
-    let body = json!({ "links": links_of(app, instance) });
+    let body = json!({ "instance": instance, "links": links_of(app, instance) });
     local_call(&server, "PUT", "/api/desktop/run-target/links", Some(&body)).map(|_| ())
 }
 
@@ -657,20 +684,248 @@ pub fn desktop_request_folders(app: AppHandle) -> HashMap<String, String> {
         .unwrap_or_default()
 }
 
-/// Pick the folder of one of the connected instance's projects. `None` when the
-/// person cancels.
-#[tauri::command]
-pub async fn desktop_link_request_folder(app: AppHandle, project_id: String) -> Result<Option<String>, String> {
-    if !crate::runner::valid_project_id(&project_id) {
-        return Err("invalid project id".into());
+
+/// The folders `desktop_find_request_folders` found, by instance and project
+/// id, with the number of the search that found them: `desktop_link_request_folder`
+/// links one by that number and its place in the list, so the window names a
+/// place, never a path, and a list a later search replaced links nothing.
+#[derive(Default)]
+pub struct FoundFolders {
+    searches: AtomicU64,
+    found: Mutex<HashMap<(String, String), (u64, Vec<PathBuf>)>>,
+}
+
+/// What `desktop_find_request_folders` answers.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestFolderSearch {
+    /// The search's number, which `desktop_link_request_folder` takes back.
+    search: u64,
+    folders: Vec<crate::folder_search::FolderCandidate>,
+    /// Every place was searched whole: an empty list then means nothing is there.
+    complete: bool,
+    /// The project's repository as the instance names it, without its scheme (`github.com/acme/shop`).
+    repository: Option<String>,
+}
+
+/// What the shell looks for a request's folder with, read from its own server
+/// by the request's id (`POST /api/desktop/run-target/requests/:id/folder-search`),
+/// never from the window.
+struct FolderSearchInput {
+    project_id: String,
+    specs: Vec<String>,
+    repository_url: Option<String>,
+    run_folders: Vec<String>,
+}
+
+/// Read what to look for a request's folder with, and with `hints` what the
+/// instance says helps find it, from the bundled server.
+fn folder_search_of(server: &ServerInfo, request_id: &str, hints: bool) -> Result<FolderSearchInput, String> {
+    let answer = local_call(
+        server,
+        "POST",
+        &format!("/api/desktop/run-target/requests/{request_id}/folder-search"),
+        Some(&json!({ "hints": hints })),
+    )?;
+    let project_id = answer
+        .get("projectId")
+        .and_then(|v| v.as_u64())
+        .map(|id| id.to_string())
+        .filter(|id| crate::runner::valid_project_id(id))
+        .ok_or("no project")?;
+    let texts = |name: &str, max: usize| -> Vec<String> {
+        answer
+            .get(name)
+            .and_then(|v| v.as_array())
+            .map(|list| list.iter().filter_map(|v| v.as_str()).take(max).map(str::to_string).collect())
+            .unwrap_or_default()
+    };
+    let repository_url = answer
+        .get("repositoryUrl")
+        .and_then(|v| v.as_str())
+        .filter(|url| url.len() <= 500 && (url.starts_with("https://") || url.starts_with("http://")))
+        .map(str::to_string);
+    let run_folders = texts("runFolders", 5)
+        .into_iter()
+        .filter(|folder| folder.len() <= 500 && crate::folder_search::is_local_absolute(folder))
+        .collect();
+    Ok(FolderSearchInput { project_id, specs: texts("specs", 200), repository_url, run_folders })
+}
+
+/// `folder_search_of` on a blocking thread, for a request id the window names.
+async fn request_folder_search(app: &AppHandle, request_id: &str, hints: bool) -> Result<FolderSearchInput, String> {
+    if !valid_request_id(request_id) {
+        return Err("invalid request id".into());
     }
+    let server = server_info(app).ok_or("the local server is not running")?;
+    let asked = request_id.to_string();
+    tauri::async_runtime::spawn_blocking(move || folder_search_of(&server, &asked, hints))
+        .await
+        .map_err(|e| e.to_string())?
+}
+
+/// Look for the folders on this machine that hold the Playwright config and
+/// some of the spec paths of a request the window asks about, for its
+/// project, other than the folder linked to it: the folders the person's own
+/// runs of it came from and the clones of its repository, as the instance
+/// tells them, then next to the folders linked to any project and in the usual
+/// code folders of the home folder; never a folder under the app's data folder
+/// or the temp folder. The window names the request alone: the shell reads
+/// the rest from its own server, and keeps what it found for
+/// `desktop_link_request_folder`.
+#[tauri::command]
+pub async fn desktop_find_request_folders(
+    app: AppHandle,
+    request_id: String,
+) -> Result<RequestFolderSearch, String> {
+    let FolderSearchInput { project_id, specs, repository_url, run_folders } =
+        request_folder_search(&app, &request_id, true).await?;
     let instance = connected_instance(&app).ok_or("no team instance is connected")?;
-    let Some(folder) = crate::runner::desktop_pick_folder(app.clone()).await else {
-        return Ok(None);
+    let links = links_of(&app, &instance);
+    let skipped: Vec<PathBuf> = links.get(&project_id).map(PathBuf::from).into_iter().collect();
+    let mut linked: Vec<PathBuf> = links.into_values().map(PathBuf::from).collect();
+    linked.extend(crate::runner::read_links(&app).into_values().map(|r| PathBuf::from(r.path)));
+    let excluded: Vec<PathBuf> = app
+        .path()
+        .app_data_dir()
+        .into_iter()
+        .chain(std::iter::once(std::env::temp_dir()))
+        .collect();
+    let repository = repository_url
+        .as_deref()
+        .map(|url| url.trim_start_matches("https://").trim_start_matches("http://").to_string());
+    let (folders, complete) = tauri::async_runtime::spawn_blocking(move || {
+        let home = crate::folder_search::home_folder();
+        crate::folder_search::find_request_folders(
+            &run_folders,
+            &linked,
+            &specs,
+            repository_url.as_deref(),
+            &excluded,
+            &skipped,
+            home.as_deref(),
+        )
+    })
+    .await
+    .map_err(|e| e.to_string())?;
+    let state = app.state::<FoundFolders>();
+    let search = state.searches.fetch_add(1, Ordering::SeqCst) + 1;
+    let paths = folders.iter().map(|folder| PathBuf::from(&folder.path)).collect();
+    state.found.lock().unwrap().insert((instance, project_id), (search, paths));
+    Ok(RequestFolderSearch { search, folders, complete, repository })
+}
+
+/// Whether the person, in a native dialog the window cannot answer, says to
+/// use `folder` for the project a request named.
+async fn confirmed_found_folder(app: &AppHandle, folder: &Path) -> bool {
+    let asking = app.clone();
+    let shown = folder.to_string_lossy().into_owned();
+    let words = crate::shell_words::shell_words(app);
+    tauri::async_runtime::spawn_blocking(move || {
+        asking
+            .dialog()
+            .message(format!("{shown}\n\n{}", words.say("shell_useFolderBody", &[])))
+            .title(words.say("shell_useFolderTitle", &[]))
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                words.say("shell_useFolderButton", &[]),
+                words.say("shell_cancel", &[]),
+            ))
+            .blocking_show()
+    })
+    .await
+    .unwrap_or(false)
+}
+
+/// The folder to link once the person picked `picked` for a request whose
+/// tests are `specs`: a folder above or below it that holds them when the
+/// picked one does not (`folder_search::better_folder`) and the person says
+/// so in a native dialog the window cannot answer, else `picked`.
+async fn confirmed_request_folder(app: &AppHandle, picked: String, specs: Vec<String>) -> String {
+    let asking = app.clone();
+    let kept = picked.clone();
+    let words = crate::shell_words::shell_words(app);
+    tauri::async_runtime::spawn_blocking(move || {
+        let Some(better) = crate::folder_search::better_folder(Path::new(&picked), &specs) else {
+            return picked;
+        };
+        let better = better.to_string_lossy().into_owned();
+        let use_better = asking
+            .dialog()
+            .message(format!(
+                "{}\n\n{}",
+                words.say("shell_betterFolderNotIn", &[("folder", &picked)]),
+                words.say("shell_betterFolderIn", &[("folder", &better)])
+            ))
+            .title(words.say("shell_betterFolderTitle", &[]))
+            .kind(MessageDialogKind::Info)
+            .buttons(MessageDialogButtons::OkCancelCustom(
+                words.say("shell_betterFolderLink", &[]),
+                words.say("shell_betterFolderKeep", &[]),
+            ))
+            .blocking_show();
+        if use_better { better } else { picked }
+    })
+    .await
+    .unwrap_or(kept)
+}
+
+/// Link the folder of the project of a request the window asks about: with
+/// `found`, the folder at that place of what search number `search` of
+/// `desktop_find_request_folders` found for it, once the person says so in a
+/// native dialog; else the one the person picks in the shell's own picker,
+/// where a folder above or below the one picked is offered when only it holds
+/// the request's tests. The window names the request alone: the shell reads its
+/// project and spec paths from its own server. `None` when the person cancels.
+#[tauri::command]
+pub async fn desktop_link_request_folder(
+    app: AppHandle,
+    request_id: String,
+    found: Option<usize>,
+    search: Option<u64>,
+) -> Result<Option<String>, String> {
+    let FolderSearchInput { project_id, specs, .. } = request_folder_search(&app, &request_id, false).await?;
+    let instance = connected_instance(&app).ok_or("no team instance is connected")?;
+    let key = (instance.clone(), project_id.clone());
+    let folder = match found {
+        Some(place) => {
+            let path = app
+                .state::<FoundFolders>()
+                .found
+                .lock()
+                .unwrap()
+                .get(&key)
+                .filter(|(number, _)| Some(*number) == search)
+                .and_then(|(_, paths)| paths.get(place).cloned())
+                .ok_or("that folder is no longer offered: look for it again")?;
+            if !path.is_dir() || crate::folder_search::find_config(&path).is_none() {
+                return Err("that folder no longer holds the Playwright config: look for it again".into());
+            }
+            if !confirmed_found_folder(&app, &path).await {
+                return Ok(None);
+            }
+            path.to_string_lossy().into_owned()
+        }
+        None => {
+            let linked: Vec<PathBuf> = links_of(&app, &instance).into_values().map(PathBuf::from).collect();
+            let start = tauri::async_runtime::spawn_blocking(move || crate::runner::pick_start_near(linked))
+                .await
+                .ok()
+                .flatten()
+                .map(|p| p.to_string_lossy().into_owned());
+            // The shell's own words: nothing the window or the instance says reaches the picker's title.
+            let title = crate::shell_words::shell_words(&app).say("shell_pickFolderTitle", &[]);
+            let Some(picked) = crate::runner::desktop_pick_folder(app.clone(), Some(title), start).await
+            else {
+                return Ok(None);
+            };
+            confirmed_request_folder(&app, picked, specs).await
+        }
     };
     let mut links = links_of(&app, &instance);
     links.insert(project_id, folder.clone());
     write_links(&app, &instance, links)?;
+    app.state::<FoundFolders>().found.lock().unwrap().remove(&key);
     let handed = app.clone();
     tauri::async_runtime::spawn_blocking(move || hand_links(&handed, &instance))
         .await
@@ -702,6 +957,8 @@ struct Launch {
     /// The folder **Run** approved, which the run's folder must still be.
     folder: String,
     args: Vec<String>,
+    /// The run variables and the environment the confirmation showed, checked again here, or why they cannot be set.
+    settings: Result<crate::environments::RunSettings, String>,
 }
 
 fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
@@ -733,12 +990,14 @@ fn launch_of(server: &ServerInfo, request_id: &str) -> Result<Launch, String> {
                 .collect::<Vec<_>>()
         })
         .ok_or("no command")?;
+    let settings = crate::environments::checked_settings(&answer);
     Ok(Launch {
         instance,
         token,
         project_id,
         folder,
         args,
+        settings,
     })
 }
 
@@ -786,10 +1045,19 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
         Ok(launch) => launch,
         Err(e) => {
             forget(&app, &request_id);
+            tell_started(&server, &request_id, Some(&e));
             return Err(e);
         }
     };
 
+    let settings = match launch.settings.clone() {
+        Ok(settings) => settings,
+        Err(e) => {
+            forget(&app, &request_id);
+            tell_started(&server, &request_id, Some(&e));
+            return Err(e);
+        }
+    };
     let prepared = prepare(&app, &launch);
     let (folder, cli, dir, token_file) = match prepared {
         Ok(prepared) => prepared,
@@ -834,9 +1102,13 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_app = app.clone();
     let ended_request = request_id.clone();
     let ended_dir = dir.clone();
+    // A protected environment's run is limited here to the tests carrying one of its required tags, beside the setup
+    // and teardown projects they depend on, whatever the command approved.
+    let mut args = launch.args;
+    args.extend(settings.args());
     // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and
     // only the quit sends an end once it began.
-    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, launch.args, envs, move |code, stopped| {
+    let spawned = crate::runner::spawn_tests(&app, &folder, &cli, args, settings.envs(), envs, move |code, stopped| {
         let _ = std::fs::remove_dir_all(&ended_dir);
         let Some(runs) = ended_app.try_state::<RequestedRuns>() else {
             return;
@@ -1361,6 +1633,7 @@ mod tests {
             project_id: "3".into(),
             folder: folder.to_string_lossy().to_string(),
             args: args.iter().map(|a| a.to_string()).collect(),
+            settings: Ok(Default::default()),
         }
     }
 
@@ -1401,6 +1674,44 @@ mod tests {
             refused(&launch(&gone, &["tests/cart.spec.ts:3"]), connected, &linked_gone),
             "the linked folder no longer exists: pick it again"
         );
+    }
+
+    #[test]
+    fn a_folder_s_team_project_is_the_lowest_linked_to_it() {
+        let root = TempRoot::new("team");
+        let shop = root.0.join("shop");
+        let admin = root.0.join("admin");
+        std::fs::create_dir_all(&shop).unwrap();
+        std::fs::create_dir_all(&admin).unwrap();
+        let path = |p: &Path| p.to_string_lossy().to_string();
+        let links = HashMap::from([
+            ("12".to_string(), path(&shop)),
+            ("4".to_string(), path(&shop.join("."))),
+            ("2".to_string(), path(&admin)),
+            ("x".to_string(), path(&shop)),
+        ]);
+        assert_eq!(team_project_in(&links, &shop), Some(4));
+        assert_eq!(team_project_in(&links, &admin), Some(2));
+        assert_eq!(team_project_in(&links, &root.0.join("blog")), None);
+        assert_eq!(team_project_in(&HashMap::new(), &shop), None);
+    }
+
+    #[test]
+    fn a_launch_applies_the_environment_it_names() {
+        let settings = crate::environments::checked_settings(&json!({
+            "runVariables": [{ "name": "TEST_ENV", "value": "production" }],
+            "environment": { "id": 4, "key": "production", "name": "Production", "protected": true, "requiredTags": ["@smoke"], "envFile": null },
+        }))
+        .unwrap();
+        assert_eq!(
+            settings.envs().last().unwrap(),
+            &("PIWI_ENVIRONMENT".to_string(), "production".to_string())
+        );
+        assert_eq!(settings.args().len(), 1);
+        let none = crate::environments::checked_settings(&json!({ "runVariables": [] })).unwrap();
+        assert!(none.envs().is_empty() && none.args().is_empty());
+        let refused = json!({ "runVariables": [], "environment": { "id": 4, "key": "production", "name": "Production", "protected": true, "requiredTags": [] } });
+        assert!(crate::environments::checked_settings(&refused).is_err());
     }
 
     #[test]

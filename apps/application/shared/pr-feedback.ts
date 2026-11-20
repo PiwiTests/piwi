@@ -13,6 +13,7 @@ import { lineRangesText, unreachedLinesText, type ChangedLines, type PatchCovera
 import type { ChangeReach, NotCountedChanges } from '#shared/handlers/change-coverage';
 import { coveragePercent } from '#shared/coverage-combine';
 import { durationShort } from '#shared/relative-time';
+import { literalMarkdown, markdownLinkTarget } from '#shared/markdown-text';
 
 /** `app_settings` key holding the resolved `PrFeedbackSettings`. */
 export const PR_FEEDBACK_KEY = 'pr_feedback';
@@ -208,7 +209,7 @@ export function renderNewLeaks(nl: PrNewLeaks): string | null {
     const facts = view.facts.join(' · ');
     const lastUse = view.lastUse ? ` · last used at ${codeSpan(view.lastUse)}` : '';
     const where = view.where ? ` · ${codeSpan(view.where)}` : '';
-    return `- **${view.label}**${where}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
+    return `- **${escapeInline(view.label)}**${where}${facts ? ` · ${escapeInline(facts)}` : ''}${lastUse} · ${leakFix(finding)}`;
   });
   const leakCheck = nl.leaks.some(isTestLeak)
     ? " Set `leakCheck: 'fail'` to catch the next one a test leaves open, locally."
@@ -232,7 +233,7 @@ export function renderClosedLeaks(nl: PrNewLeaks): string | null {
   if (closed.length === 0) return null;
   const lines = closed.slice(0, MAX_LEAKS_LISTED).map((finding) => {
     const view = findingView(finding);
-    return `- **${view.label}**${view.where ? ` · ${codeSpan(view.where)}` : ''}`;
+    return `- **${escapeInline(view.label)}**${view.where ? ` · ${codeSpan(view.where)}` : ''}`;
   });
   const blocks = [
     `#### 🟢 Closed by this change (${closed.length})`,
@@ -289,6 +290,8 @@ export interface PrChangeCoverage {
   prNumber?: number | null;
   /** The gaps the change-time detectors raised on the change: new error paths, new controls, an intent no test names. */
   changeTimeGaps?: number;
+  /** For a run of a deployed environment not at the head: what its reach of the application is of. */
+  deployedNote?: string | null;
 }
 
 /**
@@ -372,6 +375,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null
       ? `Changed files no test reached, in this run or the last ${cc.windowRuns} runs, and changed lines no suite ran, in the head commit's coverage.`
       : `Changed files no test reached, in this run or the last ${cc.windowRuns} runs. Observed reach, not instrumented coverage.`;
   const blocks: string[] = [`${header}\n${preface}`];
+  if (cc.deployedNote) blocks.push(cc.deployedNote);
   if (patch) blocks.push(renderPatchCoverage(patch));
 
   // The files no test reached, by ticket: the uncovered changes.
@@ -390,7 +394,7 @@ export function renderChangeCoverage(cc: PrChangeCoverage, origin: string | null
         lines.push(line);
       }
       if (lines.length === 0) continue;
-      const label = group.ticket ? `**${escapeCell(group.ticket)}**` : '**No ticket**';
+      const label = group.ticket ? `**${escapeInline(group.ticket)}**` : '**No ticket**';
       blocks.push([label, ...lines].join('\n'));
     }
     const hidden = cc.uncoveredFiles - listed;
@@ -502,9 +506,9 @@ const MAX_LISTED = 5;
 /** Max characters of an error excerpt quoted in the pull-request comment. */
 export const PR_EXCERPT_MAX = 200;
 
-/** Escape the characters that would break out of a markdown table cell. */
-function escapeCell(text: string): string {
-  return text.replace(/\|/g, '\\|').replace(/\r?\n/g, ' ').trim();
+/** Text on one line, trimmed: a line break would end the list item or the cell it sits in. */
+function oneLine(text: string): string {
+  return text.replace(/\r?\n|\r/g, ' ').trim();
 }
 
 /**
@@ -515,16 +519,24 @@ function escapeCell(text: string): string {
  * space so a leading/trailing backtick is not eaten.
  */
 function codeSpan(text: string): string {
-  const clean = escapeCell(text);
+  const clean = oneLine(text);
   const longest = Math.max(0, ...(clean.match(/`+/g) ?? []).map((run) => run.length));
   const fence = '`'.repeat(longest + 1);
   const pad = longest > 0 ? ' ' : '';
   return `${fence}${pad}${clean}${pad}${fence}`;
 }
 
-/** Escape inline markdown so a headline's locator quotes and underscores render literally. */
+/** Text a run or a repository wrote (a test title, an error headline, a cluster signature, a project or ticket name), trimmed and rendered as written. */
 function escapeInline(text: string): string {
-  return escapeCell(text).replace(/([\\`*_[\]<>])/g, '\\$1');
+  return literalMarkdown(oneLine(text));
+}
+
+/** A one-line code block that no backtick run in the text can close. */
+function codeBlock(text: string, indent: string): string {
+  const clean = oneLine(text);
+  const longest = Math.max(2, ...(clean.match(/`+/g) ?? []).map((run) => run.length));
+  const fence = '`'.repeat(longest + 1);
+  return `${indent}${fence}\n${indent}${clean}\n${indent}${fence}`;
 }
 
 /** Coarse age for a cluster's lifetime — days, hours, or minutes. */
@@ -546,16 +558,18 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
   const origin = originOf(runUrl);
   const lines = entries.slice(0, MAX_LISTED).map((entry) => {
     const link = origin
-      ? `[${escapeCell(entry.title)}](${origin}/test-run-cases/${entry.executionId})`
-      : escapeCell(entry.title);
+      ? `[${escapeInline(entry.title)}](${origin}/test-run-cases/${entry.executionId})`
+      : escapeInline(entry.title);
     const parts = [`- ${link} — ${codeSpan(entry.filePath)}`];
-    if (entry.owner) parts.push(`_owner: ${escapeCell(entry.owner)}_`);
+    if (entry.owner) parts.push(`owner ${codeSpan(entry.owner)}`);
     if (entry.tags?.length) parts.push(entry.tags.map((tag) => codeSpan(`@${tag}`)).join(' '));
     let line = parts.join(' · ');
     if (entry.headline) line += `\n  **${escapeInline(entry.headline)}**`;
-    if (entry.errorExcerpt) line += `\n  \`\`\`\n  ${escapeCell(entry.errorExcerpt)}\n  \`\`\``;
+    if (entry.errorExcerpt) line += `\n${codeBlock(entry.errorExcerpt, '  ')}`;
     if (entry.healPrNumber) {
-      const pr = entry.healPrUrl ? `[#${entry.healPrNumber}](${entry.healPrUrl})` : `#${entry.healPrNumber}`;
+      const pr = entry.healPrUrl
+        ? `[#${entry.healPrNumber}](${markdownLinkTarget(entry.healPrUrl)})`
+        : `#${entry.healPrNumber}`;
       line += `\n  🩹 Piwi opened ${pr} to heal this locator.`;
     } else if (entry.suggestedLocator) {
       line += `\n  💡 Try ${codeSpan(entry.suggestedLocator)} instead.`;
@@ -565,7 +579,7 @@ function renderFailureList(entries: PrFailureEntry[], runUrl: string): string {
       line += `\n  🎲 Also flaky on ${codeSpan(branch)} (flakiness score ${flakinessScore}/100) — likely not yours.`;
     }
     if (entry.issue) {
-      line += `\n  🎫 Tracked in [${escapeCell(entry.issue.key)}](${entry.issue.url}).`;
+      line += `\n  🎫 Tracked in [${escapeInline(entry.issue.key)}](${markdownLinkTarget(entry.issue.url)}).`;
     }
     return line;
   });
@@ -595,7 +609,7 @@ export function buildPrComment(input: PrSummaryInput): string {
   const emoji = statusEmoji(input.status, input.failedTests);
   const sections: string[] = [PR_COMMENT_MARKER];
 
-  sections.push(`### ${emoji} Piwi — ${input.projectName}`);
+  sections.push(`### ${emoji} Piwi — ${escapeInline(input.projectName)}`);
 
   const counters = [
     `**${input.passedTests}** passed`,
@@ -610,7 +624,7 @@ export function buildPrComment(input: PrSummaryInput): string {
 
   if (input.selection) {
     const n = input.selection.testCount;
-    sections.push(`🎯 Selection **\`${input.selection.key}\`** — ${n} ${n === 1 ? 'test' : 'tests'}`);
+    sections.push(`🎯 Selection **${codeSpan(input.selection.key)}** — ${n} ${n === 1 ? 'test' : 'tests'}`);
   }
 
   if (input.splitLocks && input.splitLocks.length > 0) {
@@ -664,7 +678,7 @@ export function buildPrComment(input: PrSummaryInput): string {
     const list = input.newClusters
       .slice(0, MAX_LISTED)
       .map((cluster) => {
-        const label = escapeCell(cluster.signature);
+        const label = escapeInline(cluster.signature);
         const link = origin ? `[${label}](${origin}/failure-clusters/${cluster.id})` : label;
         return `- ${link} — ${cluster.caseCount} ${cluster.caseCount === 1 ? 'test' : 'tests'}`;
       })
@@ -678,13 +692,13 @@ export function buildPrComment(input: PrSummaryInput): string {
     const list = fixedClusters
       .slice(0, MAX_LISTED)
       .map((cluster) => {
-        const label = escapeCell(cluster.label);
+        const label = escapeInline(cluster.label);
         const link = origin ? `[${label}](${origin}/failure-clusters/${cluster.id})` : label;
         const tests = `${cluster.testCount} ${cluster.testCount === 1 ? 'test' : 'tests'}`;
         const age = cluster.timeToResolutionMs != null ? `, open ${formatAge(cluster.timeToResolutionMs)}` : '';
         const verified = cluster.verification === 'diagnosis-verified' ? ' — matches the diagnosed change' : '';
         const healed = cluster.healPr
-          ? ` — landed by auto-heal [#${cluster.healPr.number}](${cluster.healPr.url})`
+          ? ` — landed by auto-heal [#${cluster.healPr.number}](${markdownLinkTarget(cluster.healPr.url)})`
           : '';
         return `- ${link} — ${tests}${age}${verified}${healed}`;
       })

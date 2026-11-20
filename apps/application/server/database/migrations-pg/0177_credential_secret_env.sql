@@ -1,0 +1,1 @@
+ALTER TABLE "credentials" ADD COLUMN "secret_env" text;

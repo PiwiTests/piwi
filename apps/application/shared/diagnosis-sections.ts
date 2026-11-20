@@ -43,6 +43,11 @@ export const DIAGNOSIS_SECTIONS: DiagnosisSectionMeta[] = [
   { id: 'recurrenceFlakiness', label: 'Recurrence & flakiness', short: 'Flakiness' },
   { id: 'baselineComparison', label: 'Compared to last pass (duration/vitals/steps)', short: 'Baseline' },
   { id: 'environmentDiff', label: 'Environment diff vs last pass', short: 'Env diff' },
+  {
+    id: 'environmentUnderTest',
+    label: 'Environment under test (built from the checkout, or its deployed commit and deploys)',
+    short: 'Environment',
+  },
   { id: 'coverageDivergence', label: 'Code paths vs last pass (coverage)', short: 'Code paths' },
   { id: 'retryProgression', label: 'Retry progression (per-attempt errors)', short: 'Retries' },
   { id: 'passedPeers', label: 'Passing peers in same file', short: 'Peers' },

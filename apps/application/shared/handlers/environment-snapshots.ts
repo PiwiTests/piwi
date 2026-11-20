@@ -84,6 +84,8 @@ export async function loadRunEnvironments(db: DrizzleDB, runId: number): Promise
   return groupEnvironments(await loadRunSnapshots(db, runId));
 }
 
+const RUN_IDS_PER_READ = 500;
+
 /** The snapshots of several runs, by run id; a run without any is absent. */
 export async function loadRunsSnapshots(
   db: DrizzleDB,
@@ -92,14 +94,19 @@ export async function loadRunsSnapshots(
 ): Promise<Map<number, WireEnvironmentSnapshot[]>> {
   const out = new Map<number, WireEnvironmentSnapshot[]>();
   const ids = [...new Set(runIds)];
-  if (ids.length === 0) return out;
-  const conds = [inArray(testRunEnvironmentSnapshots.runId, ids)];
-  if (kinds?.length) conds.push(inArray(testRunEnvironmentSnapshots.kind, [...kinds]));
-  const rows = await db
-    .select({ runId: testRunEnvironmentSnapshots.runId, snapshot: testRunEnvironmentSnapshots.snapshot })
-    .from(testRunEnvironmentSnapshots)
-    .where(and(...conds))
-    .orderBy(desc(testRunEnvironmentSnapshots.runId), asc(testRunEnvironmentSnapshots.scope));
+  const rows: Array<{ runId: number; snapshot: unknown }> = [];
+  // Chunked, so a long list stays under the bound parameters each database takes.
+  for (let at = 0; at < ids.length; at += RUN_IDS_PER_READ) {
+    const conds = [inArray(testRunEnvironmentSnapshots.runId, ids.slice(at, at + RUN_IDS_PER_READ))];
+    if (kinds?.length) conds.push(inArray(testRunEnvironmentSnapshots.kind, [...kinds]));
+    rows.push(
+      ...(await db
+        .select({ runId: testRunEnvironmentSnapshots.runId, snapshot: testRunEnvironmentSnapshots.snapshot })
+        .from(testRunEnvironmentSnapshots)
+        .where(and(...conds))
+        .orderBy(desc(testRunEnvironmentSnapshots.runId), asc(testRunEnvironmentSnapshots.scope))),
+    );
+  }
   for (const row of rows) {
     const snapshot = sanitizeEnvironmentSnapshot(row.snapshot);
     if (!snapshot) continue;

@@ -398,6 +398,8 @@ export interface ManifestRoute {
   pattern: string;
   /** Handler source file, when the instrumentation knows it. */
   handler?: string | null;
+  /** The 1-based line the handler's body starts at in that file, when the instrumentation knows it. */
+  line?: number | null;
   /** Documented response status codes (from OpenAPI), used to strengthen success-only. */
   responses?: number[];
 }

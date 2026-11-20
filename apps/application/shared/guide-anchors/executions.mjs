@@ -179,7 +179,7 @@ export const EXECUTIONS_ANCHORS = [
     pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],
     reveal: [{ query: { evidence: 'timeline' } }],
     describes:
-      'The Timeline tab: the test’s steps, requests, console entries and backend logs on one time axis, the failure marked, over a table of each.',
+      'The Timeline tab: the page, the test’s steps, requests, console entries and backend logs on one time axis, the failure marked, over a table of each.',
     help: 'case.timeline',
     doc: 'features/evidence#one-execution-diagnosis-first',
     sample: { route: '/test-run-cases/37?evidence=timeline', expect: CHECKOUT_FAILURE },

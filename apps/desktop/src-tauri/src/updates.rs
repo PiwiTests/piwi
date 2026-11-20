@@ -69,12 +69,9 @@ const NOTES_TIMEOUT: Duration = Duration::from_secs(15);
 /// The name the app goes by in the update notification and dialogs.
 const APP: &str = if cfg!(feature = "runner") { "Piwi Runner" } else { crate::APP_NAME };
 
-/// Where the startup notification sends the person to install the update.
-const INSTALL_FROM: &str = if cfg!(feature = "runner") {
-    "Install it from Check for updates in the tray icon's menu, or download it from the latest release."
-} else {
-    "Install it from Settings → About → Updates."
-};
+/// Where the desktop app's startup notification sends the person to install the update; Piwi Runner's is
+/// `shell_updateInstallFrom`, in its language.
+const DESKTOP_INSTALL_FROM: &str = "Install it from Settings → About → Updates.";
 
 /// The releases page, for what is new in a version the tray offers.
 const RELEASES_PAGE: &str = "https://github.com/PiwiTests/piwi/releases";
@@ -355,11 +352,17 @@ pub async fn notify_if_update_available(app: AppHandle) {
             version: Some(version),
             ..
         }) => {
+            let words = crate::shell_words::shell_words(&app);
+            let install_from = if cfg!(feature = "runner") {
+                words.say("shell_updateInstallFrom", &[("menu", &words.say("shell_checkUpdates", &[]))])
+            } else {
+                DESKTOP_INSTALL_FROM.to_string()
+            };
             let _ = app
                 .notification()
                 .builder()
-                .title(format!("{APP} {version} is available"))
-                .body(INSTALL_FROM)
+                .title(words.say("shell_updateNotification", &[("app", APP), ("version", &version)]))
+                .body(install_from)
                 .show();
         }
         Ok(_) => {}
@@ -444,6 +447,13 @@ pub async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
 #[derive(Default)]
 pub struct TrayUpdateBusy(AtomicBool);
 
+impl TrayUpdateBusy {
+    /// Whether an update the tray started is being checked or installed: its tooltip says so meanwhile.
+    pub(crate) fn is_busy(&self) -> bool {
+        self.0.load(Ordering::SeqCst)
+    }
+}
+
 /// What the tray's Check for updates says once the check answers.
 #[derive(Debug, PartialEq)]
 enum TrayAnswer {
@@ -468,8 +478,9 @@ fn tray_answer(status: &UpdateStatus, installed: &str) -> TrayAnswer {
 
 /// The tray's Check for updates: check, say what was found, and on the
 /// person's yes install the update and restart. Progress shows in the tray
-/// icon's tooltip; `idle_tooltip` is put back when the install fails.
-pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
+/// icon's tooltip; `restore_tooltip` puts the app's own back when the install
+/// fails.
+pub fn check_from_tray(app: &AppHandle, restore_tooltip: fn(&AppHandle)) {
     let Some(busy) = app.try_state::<TrayUpdateBusy>() else {
         return;
     };
@@ -481,35 +492,43 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
         let installed = app.package_info().version.to_string();
         let answer = check(&app).await.map(|status| tray_answer(&status, &installed));
         let done = || app.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
+        let words = crate::shell_words::shell_words(&app);
         match answer {
             Err(error) => {
                 done();
-                tell(&app, MessageDialogKind::Error, &format!("Could not check for updates: {error}"));
+                let error = error.to_string();
+                tell(&app, MessageDialogKind::Error, &words.say("shell_updateCheckFailed", &[("error", &error)]));
             }
             Ok(TrayAnswer::Unsupported) => {
                 done();
                 tell(
                     &app,
                     MessageDialogKind::Info,
-                    &format!("This build of {APP} cannot update itself. Get new versions from {RELEASES_PAGE}."),
+                    &words.say("shell_updateUnsupported", &[("app", APP), ("page", RELEASES_PAGE)]),
                 );
             }
             Ok(TrayAnswer::UpToDate(version)) => {
                 done();
-                tell(&app, MessageDialogKind::Info, &format!("{APP} {version} is the latest version."));
+                tell(
+                    &app,
+                    MessageDialogKind::Info,
+                    &words.say("shell_updateLatest", &[("app", APP), ("version", &version)]),
+                );
             }
             Ok(TrayAnswer::Available { installed, offered }) => {
                 let handle = app.clone();
+                let available = words.say(
+                    "shell_updateAvailable",
+                    &[("app", APP), ("installed", &installed), ("offered", &offered)],
+                );
+                let whats_new = words.say("shell_updateWhatsNew", &[("page", RELEASES_PAGE)]);
                 app.dialog()
-                    .message(format!(
-                        "{APP} {offered} is available (you have {installed}). It installs now, then {APP} \
-                         restarts.\n\nWhat's new: {RELEASES_PAGE}"
-                    ))
-                    .title(format!("Update {APP}"))
+                    .message(format!("{available}\n\n{whats_new}"))
+                    .title(words.say("shell_updateTitle", &[("app", APP)]))
                     .kind(MessageDialogKind::Info)
                     .buttons(MessageDialogButtons::OkCancelCustom(
-                        "Install and restart".into(),
-                        "Not now".into(),
+                        words.say("shell_updateInstall", &[]),
+                        words.say("shell_updateNotNow", &[]),
                     ))
                     .show(move |install| {
                         if !install {
@@ -517,14 +536,15 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
                             return;
                         }
                         let after = handle.clone();
+                        let words = crate::shell_words::shell_words(&handle);
                         crate::ask_stopping_local_runs(
                             &handle,
-                            &format!("Update {APP}?"),
-                            "updating",
-                            "Update",
+                            &words.say("shell_updateQuestion", &[("app", APP)]),
+                            crate::StopRunsFor::Update,
+                            &words.say("shell_updateButton", &[]),
                             move |go| {
                                 if go {
-                                    tauri::async_runtime::spawn(install_and_restart(after, idle_tooltip));
+                                    tauri::async_runtime::spawn(install_and_restart(after, restore_tooltip));
                                 } else {
                                     after.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
                                 }
@@ -539,13 +559,17 @@ pub fn check_from_tray(app: &AppHandle, idle_tooltip: &'static str) {
 /// Download and install the update the last check found, its progress in the
 /// tray's tooltip, then restart. On Windows the install never returns: the
 /// plugin hands over to the installer, which starts the app again.
-async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
+async fn install_and_restart(app: AppHandle, restore_tooltip: fn(&AppHandle)) {
     let tooltip = |text: &str| {
         if let Some(tray) = app.tray_by_id("main") {
             let _ = tray.set_tooltip(Some(text));
         }
     };
-    tooltip(&format!("{APP}: downloading the update"));
+    let words = crate::shell_words::shell_words(&app);
+    tooltip(&words.say("shell_updateDownloading", &[("app", APP)]));
+    let downloading = move |percent: u64| {
+        words.say("shell_updateDownloadingPercent", &[("app", APP), ("percent", &percent.to_string())])
+    };
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
     let pending = app.state::<PendingUpdate>().0.lock().unwrap().take();
@@ -557,7 +581,7 @@ async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
                         downloaded += chunk as u64;
                         if let (Some(total), Some(tray)) = (total, progress_app.tray_by_id("main")) {
                             let percent = (downloaded * 100 / total.max(1)).min(100);
-                            let _ = tray.set_tooltip(Some(format!("{APP}: downloading the update, {percent}%")));
+                            let _ = tray.set_tooltip(Some(downloading(percent)));
                         }
                     },
                     || {},
@@ -569,9 +593,11 @@ async fn install_and_restart(app: AppHandle, idle_tooltip: &'static str) {
     match installed {
         Ok(()) => app.restart(),
         Err(error) => {
-            tooltip(idle_tooltip);
+            restore_tooltip(&app);
             app.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
-            tell(&app, MessageDialogKind::Error, &format!("The update failed: {error}"));
+            let error = error.to_string();
+            let words = crate::shell_words::shell_words(&app);
+            tell(&app, MessageDialogKind::Error, &words.say("shell_updateFailed", &[("error", &error)]));
         }
     }
 }
@@ -584,9 +610,16 @@ fn tell(app: &AppHandle, kind: MessageDialogKind, message: &str) {
 #[tauri::command]
 pub fn desktop_restart_app(app: AppHandle) {
     let handle = app.clone();
-    crate::confirm_stopping_local_runs(&app, "Restart Piwi?", "restarting", "Restart", move || {
-        handle.restart();
-    });
+    let words = crate::shell_words::shell_words(&app);
+    crate::confirm_stopping_local_runs(
+        &app,
+        &words.say("shell_restartQuestion", &[]),
+        crate::StopRunsFor::Restart,
+        &words.say("shell_restartButton", &[]),
+        move || {
+            handle.restart();
+        },
+    );
 }
 
 #[cfg(test)]

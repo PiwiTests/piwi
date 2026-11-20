@@ -11,9 +11,10 @@
 //   section <tag>                  Print a version's raw CHANGELOG.md section body.
 //   apply <tag> --notes <file>     Publish notes to the GitHub release and/or CHANGELOG.md.
 //
-// A commit link is `[<hash>](<url>)`. release-please emits one entry per commit, so squash
-// and cherry-pick land the same subject several times; de-duplication keeps the first entry
-// and merges the other commits' links into it.
+// A commit link is `[<hash>](<url>)`. release-please emits one entry per commit, so a merge
+// commit's pull request title that repeats one of its commits, a squash or a cherry-pick lands
+// the same subject several times; de-duplication keeps the first entry and merges the other
+// commits' links into it.
 
 import fs from 'node:fs';
 import os from 'node:os';

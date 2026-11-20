@@ -53,8 +53,9 @@ export class DeveloperBrowser {
     try {
       await page.goto(this.url('options.html#editor-card'));
       await page.locator('html[data-ready]').waitFor({ state: 'attached' });
+      await page.locator('#editor-manual > summary').click();
       await page.locator('#editor-address').fill(address);
-      await page.locator('#editor-pair').click();
+      await page.locator('#editor-address-pair').click();
       await page.locator('#editor-pill', { hasText: 'Paired' }).waitFor({ timeout: 15_000 });
     } finally {
       await page.close();

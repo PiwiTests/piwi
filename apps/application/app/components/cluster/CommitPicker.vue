@@ -188,7 +188,7 @@ function clear(e: Event) {
 
         <!-- Error (network or API) -->
         <div v-else-if="fetchError" class="py-4 text-center text-sm text-red-500">
-          Failed to load commits — check your SCM token in Settings → Source control
+          Failed to load commits — check the SCM credential in the project’s Source control settings
         </div>
 
         <!-- API diagnostic warning (empty list due to rate limit, auth, etc.) -->

@@ -22,8 +22,8 @@ it folds to a one-line summary.
 - **Period**, with the comparison and the buckets (below). The line under it states the resolved dates,
   the comparison and any note (a project without the chosen selection, a deleted marker).
 - **Runs**: the projects (intersected with the ones you can see), environments and branches (optional
-  multi-select, see [Environment](/guide/concepts#environment)), the branch policy (*Default branch* or
-  *All branches*, below) and *Full runs only*, which excludes partial runs. All but the projects are the
+  multi-select, see [Environment](/guide/concepts#environment)), the environment and branch policies (below)
+  and *Full runs only*, which excludes partial runs. All but the projects are the
   **Filters** block a project page opens with, so a drill-down lands on the same runs.
 - **Tests**: optional; a selection, test tags or browsers (below).
 
@@ -64,6 +64,12 @@ move the trends. A run whose branch is unknown (a trace import, a run outside gi
 project that never reported a branch. The default branch is the project's setting, else
 the one its latest run reported, else `main`. *All branches* counts every run; branches picked in the
 Filters block override both.
+
+### Environment policy
+
+With no environment picked, a project with a [default environment](./environments#default-environment) counts only
+its runs, and a project without one counts every environment. *All environments* counts every run; environments
+picked in the Filters block override both. **Environment comparison** compares every environment unless you pick some.
 
 ### Test filter
 
@@ -160,12 +166,6 @@ Each one is optional. Over the period an analytics dashboard shows, a target is 
 
 A weekly target (wasted CI minutes) is scaled to the length of the period, so a 30-day period is checked
 against about four weeks of it.
-
-## Marking what you changed
-
-[Timeline markers](./timeline-markers) record a deploy, a CI-runner migration or a dependency bump
-against a project, drawn as a vertical line across the trend charts; which markers a chart draws across
-projects is under [Where markers show up](./timeline-markers#where-markers-show-up).
 
 ## Related
 

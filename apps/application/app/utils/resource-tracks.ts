@@ -19,6 +19,20 @@ export const RESOURCE_TRACK_KINDS: ReadonlyArray<{ kind: ResourceTrackKind; labe
   { kind: 'pages', label: 'Pages', menuLabel: 'Open pages' },
 ];
 
+/**
+ * Each track's color, a text color its marks paint with `currentColor`: one hue per track, none of them a red, an
+ * orange or a green, an outcome's or the accent, so a track never reads as a test's status or as a duration that
+ * stands out. The area under a track deepens toward its top, so a high value stands out (`RESOURCE_FILL_STOPS`).
+ */
+export const RESOURCE_TRACK_COLOR: Record<ResourceTrackKind, string> = {
+  cpu: 'text-teal-700 dark:text-teal-600',
+  memory: 'text-sky-500 dark:text-sky-400',
+  pages: 'text-indigo-500',
+};
+
+/** The opacity of a track's color in the area under it: at its baseline, then at its top. */
+export const RESOURCE_FILL_STOPS = { bottom: 0.06, top: 0.4 } as const;
+
 /** Which tracks are shown: all of them until the viewer turns one off. */
 export type ResourceTrackVisibility = Record<ResourceTrackKind, boolean>;
 export const ALL_RESOURCE_TRACKS: ResourceTrackVisibility = { cpu: true, memory: true, pages: true };
@@ -46,8 +60,13 @@ export interface ResourceBand {
   /** The first lane of the band's shard: the band sits above it. */
   firstLane: number;
   tracks: Record<ResourceTrackKind, ResourceTrack | null>;
-  /** Each lane's open pages, named as its row is, with the row's first lane when the lane has a row. */
-  workers: Array<{ name: string; lane: number | null; points: SeriesPoint[] }>;
+  /**
+   * Each lane's open pages, named as its row is, with the row's first lane when the lane has a row, and how many of
+   * them were left open past their scope (`leftOpen`), null when the reporter sent no such series.
+   */
+  workers: Array<{ name: string; lane: number | null; points: SeriesPoint[]; leftOpen: SeriesPoint[] | null }>;
+  /** The pages left open across the band's workers, null when the reporter sent no such series. */
+  leftOpen: SeriesPoint[] | null;
   /** Each lane's worker processes with the browsers they started, as the run sampler read them. */
   sampled: Array<{ lane: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>;
   memoryKind: 'pss' | 'rss' | null;
@@ -124,16 +143,26 @@ export function buildResourceBands(
     const capacity = part.memoryCapacityBytes;
     const atCapacity = capacity !== null && capacity > 0 && capacity <= memoryPeak * CAPACITY_SCALE_RATIO;
 
-    // A lane's processes run one after another, so its pages are their sum.
-    const byLane = new Map<string, { name: string; lane: number | null; series: SeriesPoint[][] }>();
-    for (const { worker, points } of part.timeline.pages) {
+    // A lane's processes run one after another, so its pages, and the ones left open, are their sum.
+    const byLane = new Map<
+      string,
+      { name: string; lane: number | null; series: SeriesPoint[][]; left: SeriesPoint[][] }
+    >();
+    for (const { worker, points, leftOpen } of part.timeline.pages) {
       const row = shardRows.find((r) => r.processes.includes(worker));
       const name = row ? rowName(row, sharded) : `Process ${worker}`;
-      const entry = byLane.get(name) ?? { name, lane: row?.baseLane ?? null, series: [] };
+      const entry = byLane.get(name) ?? { name, lane: row?.baseLane ?? null, series: [], left: [] };
       entry.series.push(onClock(points));
+      if (leftOpen) entry.left.push(onClock(leftOpen));
       byLane.set(name, entry);
     }
-    const workers = [...byLane.values()].map(({ name, lane, series }) => ({ name, lane, points: sumSteps(series) }));
+    const sentLeftOpen = part.timeline.pages.some((entry) => entry.leftOpen);
+    const workers = [...byLane.values()].map(({ name, lane, series, left }) => ({
+      name,
+      lane,
+      points: sumSteps(series),
+      leftOpen: sentLeftOpen ? sumSteps(left) : null,
+    }));
 
     // A lane's processes ran one after another: their readings join in time order.
     const sampledByLane = new Map<number, { lane: number; cpuCores: SeriesPoint[]; memoryBytes: SeriesPoint[] }>();
@@ -182,6 +211,7 @@ export function buildResourceBands(
             : null,
       },
       workers,
+      leftOpen: sentLeftOpen ? sumSteps(workers.map((w) => w.leftOpen ?? [])) : null,
       sampled: [...sampledByLane.values()],
       memoryKind: part.memoryKind,
     });
@@ -196,7 +226,7 @@ export function shownTracks(band: ResourceBand, visibility: ResourceTrackVisibil
   );
 }
 
-/** How far from a reading the readout still shows it. */
+/** How far from a reading the label beside the pointer's line still shows it. */
 const READING_REACH_MS = 6000;
 
 /**
@@ -255,11 +285,63 @@ export function seriesPaths(
   return { line: line.join(''), area: `M${first},${height}${line.join('').replace(/^M/, 'L')}L${last},${height}Z` };
 }
 
-/** A track's value as the readout prints it. */
+/** A track's value as the label beside the pointer's line prints it. */
 export function formatTrackValue(kind: ResourceTrackKind, value: number): string {
   if (kind === 'cpu') return `${Math.round(value)}%`;
   if (kind === 'memory') return formatSize(value);
   return `${value} open`;
+}
+
+/** What one track reads at a moment, as the label beside the pointer's line prints it. */
+export interface TrackReading {
+  kind: ResourceTrackKind;
+  /** Null where no reading is near. */
+  value: number | null;
+  text: string;
+}
+
+/**
+ * Each track's reading at `t`: the CPU, the memory with how it was measured
+ * (PSS or RSS), and the open pages with how many of them earlier tests left
+ * open (`leftOpen`, a step series).
+ */
+export function trackReadings(
+  band: ResourceBand,
+  tracks: ResourceTrack[],
+  t: number,
+  leftOpen?: SeriesPoint[] | null,
+): TrackReading[] {
+  return tracks.map((track) => {
+    const value = valueAt(track.points, t, track.step);
+    if (value === null) return { kind: track.kind, value, text: 'not read' };
+    let text = formatTrackValue(track.kind, value);
+    if (track.kind === 'memory' && band.memoryKind) text += ` ${band.memoryKind.toUpperCase()}`;
+    if (track.kind === 'pages' && leftOpen?.length) {
+      const left = Math.min(value, valueAt(leftOpen, t, true) ?? 0);
+      if (left > 0) text += `, ${left} left open`;
+    }
+    return { kind: track.kind, value, text };
+  });
+}
+
+/** The room the labels beside the pointer's line take, in px. */
+export const CURSOR_LABEL_ROOM = 130;
+
+/**
+ * Which side of the pointer's line (at `x`, between `bounds`) its labels go:
+ * the side an open tooltip leaves free when it has room, else the right, or
+ * the left when the right lacks room and the left has it.
+ */
+export function cursorLabelSide(
+  x: number,
+  bounds: { left: number; right: number },
+  tooltipSide: 'left' | 'right' | null = null,
+): 'left' | 'right' {
+  const roomRight = bounds.right - x >= CURSOR_LABEL_ROOM;
+  const roomLeft = x - bounds.left >= CURSOR_LABEL_ROOM;
+  if (tooltipSide === 'right' && roomLeft) return 'left';
+  if (tooltipSide === 'left' && roomRight) return 'right';
+  return roomRight || !roomLeft ? 'right' : 'left';
 }
 
 // ── Under each worker ─────────────────────────────────────────────────────────
@@ -273,6 +355,11 @@ export const WORKER_METRICS: ReadonlyArray<{ kind: WorkerMetricKind; menuLabel: 
   { kind: 'wait', menuLabel: 'Waiting for a CPU' },
   { kind: 'memory', menuLabel: 'Memory' },
 ];
+
+/** A strip's color: its track's, and the CPU's for the wait for a CPU. */
+export function workerMetricColor(kind: WorkerMetricKind): string {
+  return RESOURCE_TRACK_COLOR[kind === 'wait' ? 'cpu' : kind];
+}
 
 /** One test's value, drawn across its bar. */
 export interface StripSpan {

@@ -43,6 +43,8 @@ the spec at hand in a test folder, else in the config's test folder as Playwrigh
 with the suite's suffix), for both editors (P3, W5), leaving P4. Built in part: 1 and the larger item 3, JetBrains'
 gutter running a test with Piwi (**Run with Piwi** and **Verify ×3 with Piwi** in the menu of a test's result icon,
 P1), leaving a test with no result yet to the caret's actions, until a run line marker joins the IDE's own run icon;
+the JetBrains plugin asks for the test items since its **Tests** tab, which runs any test or group with Piwi
+([ide-test-tree.md](../adr/ide-test-tree.md));
 the recording's page expression
 chosen last selected again (P11), and VS Code's MCP configuration copied in Cursor's `mcpServers` shape too (P10),
 leaving P5 to P9 and P12 to P14; 2, a pick and a recording at a stop placed by the line the run's edits moved

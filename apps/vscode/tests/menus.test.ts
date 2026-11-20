@@ -36,6 +36,7 @@ describe("the editor's context menu", () => {
     const entries = menus['piwi.editorContext']!.map((e) => [e.group!.split('@')[0], e.command]);
     expect(entries).toEqual([
       ['1_run', 'piwi.runTestAtCursor'],
+      ['1_run', 'piwi.debugTestAtCursor'],
       ['1_run', 'piwi.verifyTestAtCursor'],
       ['1_run', 'piwi.runSpec'],
       ['1_run', 'piwi.runTestsForFile'],
@@ -170,6 +171,9 @@ describe("the commands' glyphs", () => {
       'piwi-stop-live',
       'piwi-reload',
       'piwi-run-to-cursor',
+      'piwi-region',
+      'piwi-mock',
+      'piwi-unreachable',
     ]);
     for (const id of Object.keys(icons)) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)+$/);
     for (const icon of Object.values(icons)) {
@@ -197,10 +201,10 @@ describe("the commands' glyphs", () => {
       ['piwi.shareRunLive', 'piwi.shareWindowLive', 'piwi.liveMenu'],
       ['piwi.stopSharingRun', 'piwi.stopSharingWindowLive'],
       ['piwi.verifyTestAtCursor', 'piwi.verifyFailure'],
+      ['piwi.debugTestAtCursor', 'piwi.debugFailure'],
       ['piwi.showFlakyTests', 'piwi.lookIntoFlake'],
       ['piwi.holdFailures', 'piwi.setRunHoldFailures'],
-      // Follow the active editor and Watch a worker's test, still to settle.
-      ['piwi.stopFollowingEditor', 'piwi.watchWorker'],
+      ['piwi.toggleFollowEditor', 'piwi.stopFollowingEditor'],
     ];
     const byIcon = new Map<string, string[]>();
     for (const c of commands.filter((c) => c.icon)) byIcon.set(c.icon!, [...(byIcon.get(c.icon!) ?? []), c.command]);
@@ -239,7 +243,7 @@ describe("a test's actions", () => {
   });
 });
 
-describe('Debug this failure', () => {
+describe('Debug with Piwi', () => {
   test('is offered on a failure the service built a debug run for, never in the palette', () => {
     const entry = menus['view/item/context']!.find((e) => e.command === 'piwi.debugFailure')!;
     const offered = (contextValue: string) =>
@@ -252,7 +256,7 @@ describe('Debug this failure', () => {
   });
 });
 
-describe('Verify the test ×3 and Go to the test', () => {
+describe('Verify ×3 with Piwi and Go to the test', () => {
   test.each([
     ['piwi.verifyFailure', 'verify'],
     ['piwi.goToFailureTest', 'test'],

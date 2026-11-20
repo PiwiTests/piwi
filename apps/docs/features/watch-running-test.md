@@ -18,15 +18,21 @@ machine: [what is sent](#what-is-sent-and-kept).
 
 ## Where to watch
 
-| Where | Open it | At a stop |
-|---|---|---|
-| VS Code | **Piwi: Watch a worker's test**, or the status bar's menu during a run: `Piwi: worker 2` beside the editor | A headless stop shows there, with **Interact** and the pick on a click, instead of the paused page |
-| JetBrains IDEs | **Tools → Piwi → Watch a worker's test**: the Piwi tool window's **Worker 2** tab | The tab only watches: a headless stop opens the **Paused page** beside it, for **Interact**, unless that tab holds another stop |
-| Piwi Picker | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live) | Its controls above the view; the stopped worker scrolls into view |
-| Desktop app | **Watch** on a running row of its own runs opens the [Local runs](./desktop-runs#watch) tray on it | The tray shows the stopped worker, behind its tab in a run of several |
+| Where          | Open it                                                                                                                                                                 | At a stop                                                                                                                               |
+| -------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| VS Code        | **Piwi: Watch a worker's test**, the eye on a worker's row of the Piwi panel's **Runs** view, or the status bar's menu during a run: `Piwi: worker 2` beside the editor | While it watches in sight, a headless stop shows there, not on the paused page, with its controls, **Interact** and the pick on a click |
+| JetBrains IDEs | **Tools → Piwi → Watch a worker's test**, or a worker's row's right-click in the Piwi tool window's **Runs** tab: its **Worker 2** tab                                  | While it watches in sight, a headless stop shows there, not on the **Worker 2** page tab, with its controls and **Interact**            |
+| Piwi Picker    | **Watch** on a worker's row of the [Runs window](./runs-window#watch-live)                                                                                              | Its controls above the view; the stopped worker scrolls into view                                                                       |
+| Desktop app    | **Watch** on a running row of its own runs opens the [Local runs](./desktop-runs#watch) tray on it                                                                      | The tray shows the stopped worker, behind its tab in a run of several                                                                   |
 
 **Pause and watch**, which also stops the test before its next call, is **Piwi: Pause and watch a worker's test**
 (**Tools → Piwi → …**), and a button beside **Watch** in the Runs window and the desktop app. With several workers, the editor asks which.
+
+While a run is in progress, VS Code's **Runs** view and the JetBrains **Runs** tab list each run with how far it is,
+each worker by its lane with its test and whether it stands stopped, and the run's page on the dashboard. A row opens
+the stopped line or the test, and its buttons (VS Code) or its right-click (JetBrains) offer **Watch**, **Pause and
+watch** on a test that can pause, **Resume**, **Step** except at a failure, and, for a run the editor started, **Stop
+the run**. A run that can hold its failures says when it does (`Hold failures on`) and turns it over from its row.
 
 ## A CI run of your branch
 
@@ -46,11 +52,18 @@ ends.
 
 Under the image, the editor's view, a CI run's lane included, the Runs window and the desktop app's tray show what the
 pixels cannot: why the test waits, the page's events, its text and a filmstrip of its calls
-([in your own tools](./live-view-layers#in-your-own-tools)). While an editor watches a worker of your run, the line
-of the call its test is in is marked until the test ends or stops, the call named after it (VS Code dims the line,
-`Worker 2 · Click getByRole('button')`; a JetBrains IDE adds an inlay), and the page's events go to VS Code's
-`Piwi: Page` output, its console and uncaught errors to the JetBrains Piwi tool window's **Page** tab, each test named
-as it begins.
+([in your own tools](./live-view-layers#in-your-own-tools)). While an editor watches a worker of your run, the page's
+events go to VS Code's `Piwi: Page` output, its console and uncaught errors to the JetBrains Piwi tool window's **Page**
+tab, each test named as it begins.
+
+## The running line
+
+While your run goes, the editor marks the line of the call each running test is in until the test ends or stops,
+naming the worker and the call: VS Code dims the line (`Worker 2 · Click getByRole('button')`), a JetBrains IDE adds an
+inlay. Workers on one line share its mark (`Worker 2, Worker 4 · Click`). The watched worker's line follows its call
+log; each other worker's comes from its reporter, four times a second at most, with a reporter newer than 0.71.0 (an
+older one's is marked only while watched). `piwi.runningLines` marks every running test's line, the watched worker's
+alone, or none ([settings](/reference/editor-settings#in-the-editor)).
 
 ## Open the trace so far
 

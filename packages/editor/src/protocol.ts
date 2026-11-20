@@ -16,7 +16,8 @@ export interface PiwiCommand {
    * `piwi.openInDashboard` (arguments: `[url]`), `piwi.runTests` (arguments: `[RunTestsArgs]`),
    * `piwi.openTrace` (arguments: `[TraceParams]`), `piwi.openScreenshot` (arguments: `[ScreenshotParams]`),
    * `piwi.runCommand` (arguments: `[RunCommandArgs]`), `piwi.copyText` (arguments: `[text]`),
-   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`) or `piwi.desktopJob` (arguments: `[DesktopJobParams]`).
+   * `piwi.copyAgentContext` (arguments: `[AgentContextParams]`), `piwi.desktopJob` (arguments: `[DesktopJobParams]`) or
+   * `piwi.record` (arguments: `[uri, line]`, Record here at that 0-based line).
    */
   command:
     | 'piwi.openInDashboard'
@@ -26,7 +27,8 @@ export interface PiwiCommand {
     | 'piwi.runCommand'
     | 'piwi.copyText'
     | 'piwi.copyAgentContext'
-    | 'piwi.desktopJob';
+    | 'piwi.desktopJob'
+    | 'piwi.record';
   arguments: unknown[];
 }
 
@@ -58,25 +60,27 @@ export interface SummaryLine {
   /** On a test's line: the test's id, for a client's own **Run** (`RunTestsArgs.testIds`). Absent on other lines. */
   testCaseId?: number;
   /**
-   * A line about a problem: a failure's reason and evidence above its failing line, a file's uncovered changes. The
+   * A line about a problem: a failure's reason and Run with Piwi above its failing line, a file's uncovered changes. The
    * lines `EditorCredentials.codeLens` `problems` keeps.
    */
   problem?: boolean;
   /**
    * On a test's line: what both clients' gutters offer for the test, in order (`TestAction.group` separates them): run
-   * it and verify it, its evidence, its context for an agent, then its Flake Lab commands. Absent on other lines.
+   * it and verify it, record steps in it, its evidence, its context for an agent, then its Flake Lab commands. Absent
+   * on other lines.
    */
   actions?: TestAction[];
 }
 
 /**
  * An action on a test from its gutter mark. `section` names its group (`group`), which the clients write on the
- * separator before it: none for the first group (`run`), `Evidence`, `Agent`, `Flake Lab`. `kind` names the client's own
- * action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor; `verify`:
- * Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`.
+ * separator before it: none for the first group (`run`), `Record`, `Evidence`, `Agent`, `Flake Lab`. `kind` names the
+ * client's own action that does it, which the client runs at the test's line instead (`run`: Run the test at the cursor;
+ * `verify`: Verify ×3); `debug` runs `command` once the spec is saved; every other action runs `command`, `piwi.record`
+ * as the client's Record here.
  */
 export interface TestAction {
-  group: 'run' | 'evidence' | 'agent' | 'lab';
+  group: 'run' | 'record' | 'evidence' | 'agent' | 'lab';
   section: string;
   kind?: 'run' | 'verify' | 'debug';
   title: string;
@@ -85,9 +89,10 @@ export interface TestAction {
 
 /**
  * A test's latest result: `failed` when it failed in the latest run the service reads; `running` while the run in
- * progress the service follows runs it, and that run's result as soon as it ends the test.
+ * progress the service follows runs it, and that run's result as soon as it ends the test; `paused` while it stands at
+ * a stop of a run the editor follows, `failed` while its failure is held there.
  */
-export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'running' | 'unknown';
+export type TestLineStatus = 'passed' | 'failed' | 'flaky' | 'skipped' | 'running' | 'paused' | 'unknown';
 
 /**
  * Where and why a test failed. The lines above `line` (the reason, the screenshot, the trace) are
@@ -188,14 +193,20 @@ export interface TestAtResult {
 export const TEST_AT_REQUEST = 'piwi/testAt';
 
 /**
- * `piwi/testItems`: the tests of the workspace's specs as they stand, each with its latest result, for a client's own
- * test tree (VS Code's Testing view): the specs of each connected context's catalog that the workspace holds, each
- * under the context whose folder holds it, and the specs `uris` names under a context's folder, known to the catalog
- * or not.
+ * `piwi/testItems`: the tests of the workspace as a tree, for a client's own test tree (VS Code's Testing view). Under
+ * each Playwright config, the specs Playwright lists for it (the listing, `playwright test --list`), each test as the
+ * listing gives it, or as the spec's text reads while the spec has changes the listing has not seen; and the
+ * catalog's tests none of them is, in a group of their own. Before a config's first listing, and for a config
+ * Playwright cannot list, the catalog's specs the workspace holds and the specs `uris` names, read from their text.
+ * Asking for it starts the listing of each config not listed yet; `piwi/testItemsChanged` brings the tree a listing
+ * changes.
  */
 export interface TestItemsParams {
   uris?: string[];
-  /** Whether the catalog's specs are answered; true when absent. False answers the specs `uris` names alone. */
+  /**
+   * Whether the whole tree is answered; true when absent. False answers the specs `uris` names alone, each with the
+   * folders above it, and lists nothing.
+   */
   catalog?: boolean;
 }
 
@@ -234,26 +245,95 @@ export interface SpecTest {
   resultDurationMs: number | null;
 }
 
-/** The tests of one spec. */
-export interface SpecTests {
+/** A test of the tree: a test of a spec as it stands, and where it runs from. */
+export interface TreeTest extends SpecTest {
+  /** The Playwright config's folder it runs from, as `RunTestsArgs.root` names it. */
+  root: string;
+  /** Its spec; empty for a test of the catalog that the checkout does not hold. */
   uri: string;
-  /** The spec relative to its Playwright config's folder. */
-  file: string;
-  tests: SpecTest[];
+  /** Playwright's id of the test in each project it runs in, from the listing; empty for a test read from the text. */
+  playwright: Array<{ project: string; id: string }>;
+}
+
+/**
+ * A node of the test tree. `notInCheckout` is the group of the catalog's tests that no test of the checkout is (a test
+ * deleted or renamed here, or one of another branch), each under its spec's path and describe blocks.
+ */
+export type TestTreeNodeKind = 'folder' | 'spec' | 'describe' | 'test' | 'project' | 'notInCheckout';
+
+export interface TestTreeNode {
+  /**
+   * Unique in the tree, and the same whichever source gave it: a spec's is its config's folder and its path, a test's
+   * its spec's, its describe blocks and its title, joined by `\x1f` (VS Code refuses `\0` in an id). No id holds a
+   * URI, which each editor spells its own way.
+   */
+  id: string;
+  label: string;
+  kind: TestTreeNodeKind;
+  /** Its spec's URI, on a spec, a describe block, a test and a project; null elsewhere. */
+  uri: string | null;
+  /** 0-based lines, from where its call starts to where it ends: a test's, a project's (its test's), a describe block's. */
+  range: { start: number; end: number } | null;
+  /** How it is ordered among its siblings: folders before specs, by name; a spec's content as in the file. */
+  sortText: string;
+  /** Whether a run takes it: false in the `notInCheckout` group. */
+  runnable: boolean;
+  /** On a test, what the service says of it. */
+  test: TreeTest | null;
+  /** On a project node (a test that runs in several), the project's name. */
+  project: string | null;
+  children: TestTreeNode[];
+}
+
+/** What the tree says of a config's listing. */
+export interface TestListing {
+  /** When Playwright last listed the whole config (ms since the epoch); null before it did. */
+  at: number | null;
+  /** Why the last listing failed, in a sentence; null when it did not. */
+  error: string | null;
+  /** Whether a listing runs now. */
+  running: boolean;
 }
 
 export interface TestItemsResult {
-  /** One per context holding one of the specs, in the contexts' order. */
+  /** One per context holding a test, in the contexts' order. */
   contexts: Array<{
     /** The Playwright config's folder, as `RunTestsArgs.root` names it. */
     root: string;
     /** The config as `piwi/status` names it (`StatusResult.contexts[].label`). */
     label: string;
-    specs: SpecTests[];
+    /** Its listing; null before one was asked for. */
+    listing: TestListing | null;
+    /** Its folders and specs, and the `notInCheckout` group last. */
+    nodes: TestTreeNode[];
   }>;
 }
 
 export const TEST_ITEMS_REQUEST = 'piwi/testItems';
+
+/** The whole tree (`piwi/testItems` with no specs named), pushed when a listing changes it. */
+export const TEST_ITEMS_CHANGED_NOTIFICATION = 'piwi/testItemsChanged';
+
+/** The id of a config's node, which a client adds above the service's nodes: this, then the config's folder. */
+export const CONFIG_NODE = 'config\x1f';
+
+/**
+ * `piwi/testRuns`: the runs of the nodes of the test tree a client picked (`TestTreeNode.id`, or a config's node,
+ * `CONFIG_NODE`), without the nodes `exclude` names under them: each node by the narrowest filter Playwright takes for
+ * it (a config whole, a folder or a spec by its path, a describe block or a test by `file:line`, a project with
+ * `--project`, a test that shares its line with others by its title too), one run per config and set of projects, so
+ * that a run needs no instance. A node that is not `runnable` runs nothing.
+ */
+export interface TestRunsParams {
+  nodes: string[];
+  exclude?: string[];
+  /** Runs each test this many times, as `RunTestsArgs.repeat`. */
+  repeat?: number;
+  /** Debug with Piwi: headed, holding the failures, at the editor's breakpoints. */
+  debug?: boolean;
+}
+
+export const TEST_RUNS_REQUEST = 'piwi/testRuns';
 
 /** `piwi/coverage`: the lines of an application file the project's tests ran, placed on the file as it stands. */
 export interface CoverageParams {
@@ -315,6 +395,101 @@ export interface CoverageResult {
 export const COVERAGE_REQUEST = 'piwi/coverage';
 
 /**
+ * `piwi/testCard`: a test's card, laid out as the dashboard's test row: its latest results as a strip, each to its run,
+ * how they went, its last failure, its owner, tags and quarantine; null for a test the instance does not know.
+ */
+export interface TestCardParams {
+  uri: string;
+  testCaseId: number;
+}
+
+/** One of a test's latest results: its outcome, the run's page, when the run started and how long the test took. */
+export interface TestCardResult {
+  status: 'passed' | 'failed' | 'flaky' | 'skipped';
+  runId: number;
+  url: string;
+  at: string | null;
+  durationMs: number | null;
+  /** The result in words, as its mark's tooltip says it: `run #3 · failed · 1.2 s`. */
+  label: string;
+}
+
+/** The latest failure of a test's history: its run, when, and why in one line. */
+export interface TestCardFailure {
+  runId: number;
+  /** The run's page. */
+  url: string;
+  /** `Last failed in run #3, 2 d ago`. */
+  where: string;
+  /** Why it failed, in one line: its error's headline (`Expected true, got false — toBe`); null without an error. */
+  why: string | null;
+}
+
+export interface TestCard {
+  testCaseId: number;
+  /** Its `describe` blocks and its own title, joined by ` › `. */
+  title: string;
+  /** Its page in the dashboard. */
+  url: string;
+  /** Its latest results, newest first, the most `TEST_CARD_RESULTS`. */
+  results: TestCardResult[];
+  /** How those results went: `Passed 1 of the last 3 runs · 1 flaky · median 1.2 s`, `No result yet`. */
+  summary: string;
+  /** Its latest failure; null when no run of its history failed. */
+  failure: TestCardFailure | null;
+  /** Its owner, its tags and its quarantine, each in words (`owner alice`, `@smoke @slow`, `quarantined 3 d · …`). */
+  about: string[];
+  /**
+   * The card in words, newest result on the right as the dashboard's strip, as Markdown for VS Code's hover, with the
+   * inline HTML it renders with `supportHtml`: a `span` of a background color for each result, and why it failed in
+   * the theme's error color.
+   */
+  markdown: string;
+}
+
+export const TEST_CARD_REQUEST = 'piwi/testCard';
+
+/** The most results a test's card shows. */
+export const TEST_CARD_RESULTS = 20;
+
+/**
+ * `piwi/coverageFiles`: the application files under a Playwright config's folder (`root`) that the project's recorded
+ * coverage names lines of, each with its marks as `piwi/coverage` places them (`exact` or `mapped`); with `testIds`,
+ * those the tests of these catalog ids reach alone. The code index and the coverage are read again first, so a client
+ * asks it once a run's results were read. At most `MAX_COVERAGE_FILES` files are read (`truncated` past them).
+ */
+export interface CoverageFilesParams {
+  root: string;
+  testIds?: number[];
+}
+
+export interface CoverageFilesResult {
+  files: CoverageResult[];
+  truncated: boolean;
+}
+
+export const COVERAGE_FILES_REQUEST = 'piwi/coverageFiles';
+
+/** The most files `piwi/coverageFiles` reads. */
+export const MAX_COVERAGE_FILES = 200;
+
+/**
+ * `piwi/coverageTests`: the tests the coverage says ran a line (0-based) of an application file, as the arguments of a
+ * run of them (`RunTestsArgs`), and how many; `args` null when none did.
+ */
+export interface CoverageTestsParams {
+  uri: string;
+  line: number;
+}
+
+export interface CoverageTestsResult {
+  args: RunTestsArgs | null;
+  count: number;
+}
+
+export const COVERAGE_TESTS_REQUEST = 'piwi/coverageTests';
+
+/**
  * `piwi/coverageChanged` (notification, server to client): the marks of a file the client asked `piwi/coverage` about
  * changed: an edit moved them, the coverage was read again (a refresh, a run that ended), or it arrived after the
  * request was answered. Carries `CoverageResult`, which replaces what the client holds for its `uri`.
@@ -346,6 +521,11 @@ export interface RunTestsArgs extends RunStartOptions {
   root?: string;
   testIds: number[];
   /**
+   * A Debug with Piwi run, which pauses at the editor's breakpoints while `piwi.breakpoints` is `debug` (its default),
+   * where a plain Run pauses at none; a failure's debug run (`debug`) is one too. The clients pass `breakpoints` by it.
+   */
+  debugging?: boolean;
+  /**
    * The editor's enabled line breakpoints. Those in files under the Playwright config's folder pause the run before a
    * call on their line that Playwright's debugger stops at (a navigation, an action, a read, an assertion)
    * (`PIWI_PAUSE_AT` in `RunCommand.env`). A breakpoint runs a test headed only when the project's reporter stops at
@@ -362,11 +542,22 @@ export interface RunTestsArgs extends RunStartOptions {
   coverage?: 'server' | 'browser';
   /**
    * Tests by where their `test(…)` call starts (`TestAtResult.location`, relative to the folder of the Playwright
-   * config `uri` or `root` names), or a whole spec by its path alone (`TestAtResult.spec.location`), run in place of
+   * config `uri` or `root` names), a describe block by the line it starts on, a whole spec by its path alone
+   * (`TestAtResult.spec.location`), or a folder of specs by its path and a slash (`tests/cart/`), run in place of
    * `testIds`: a test the instance does not know yet, such as one just recorded, runs too, and the command needs no
    * instance. The spec runs as saved.
    */
   locations?: string[];
+  /** Every test of the config, in place of `locations` and `testIds`. */
+  all?: boolean;
+  /** Runs the tests in these Playwright projects alone (`--project`); in every project when absent. */
+  projects?: string[];
+  /**
+   * Runs only the tests whose title path matches `grep` (`--grep`), and none that `grepInvert` matches
+   * (`--grep-invert`): one test of a line that holds several, as a loop builds them.
+   */
+  grep?: string;
+  grepInvert?: string;
   /**
    * Runs each test this many times (1 to 100) without retries (`--repeat-each=3 --retries=0`), headless unless
    * `headed`: the breakpoints are not passed, and it holds no failure. Once it ended, `RunEnded.repeat` says how many of those runs passed, or, when its run
@@ -441,6 +632,12 @@ export interface RunCommand {
    * register on the run channel.
    */
   name?: string;
+  /**
+   * The run is for a protected environment, which the person confirmed for this run alone: the client offers no way
+   * to start it again (a Rerun, a run configuration it keeps), so each run against it is asked through the service.
+   * Absent otherwise.
+   */
+  protected?: boolean;
 }
 
 export const RUN_ARGS_REQUEST = 'piwi/runArgs';
@@ -500,10 +697,19 @@ export type FailuresViewState =
   | 'loading'
   | 'disconnected';
 
-/** A failures view's state and the sentence it shows for it; null beside failures. */
+/** A failures view's state, the sentence it shows for it (null beside failures), and the actions it links. */
 export interface FailuresView {
   state: FailuresViewState;
   message: string | null;
+  /** The actions the state's text links, in order, each by its label and its command or action id in each editor. */
+  links: FailuresViewLink[];
+}
+
+/** An action a failures view's state links: its label, and the command or action that runs it in each editor. */
+export interface FailuresViewLink {
+  label: string;
+  vscode: string;
+  jetbrains: string;
 }
 
 /**
@@ -533,6 +739,12 @@ export interface StatusResult {
     source: ConnectionSource | null;
     projectId: number | null;
     projectName: string | null;
+    /**
+     * The environment the runs Piwi starts for this config's tests are for (`piwi/setEnvironment`), as the clients'
+     * environment item shows it; null while the project lists no environment and none is chosen, where the clients
+     * show no item.
+     */
+    environment?: StatusEnvironment | null;
     branch: string | null;
     locators: number;
     reachedFiles: number;
@@ -549,6 +761,18 @@ export interface StatusResult {
   }>;
   /** The address of the desktop app running on this machine; null when it does not run. */
   desktopUrl?: string | null;
+}
+
+/** A context's environment as the clients' environment item shows it (`StatusResult.contexts[].environment`). */
+export interface StatusEnvironment {
+  /** The environment chosen; null for none, where the Playwright config decides. */
+  id: number | null;
+  /** What the item says: the environment's name, `No environment` for none. */
+  text: string;
+  /** What hovering the item says: the project, the environment's key and what choosing another does. */
+  tooltip: string;
+  /** A protected environment: every run against it is confirmed, and keeps to the tests carrying its required tags. */
+  protected: boolean;
 }
 
 export const STATUS_REQUEST = 'piwi/status';
@@ -608,6 +832,13 @@ export interface EditorCredentials {
    */
   baselines?: Record<string, BaselineChoice> | null;
   /**
+   * The environment chosen for each context, by its root, as `piwi/setEnvironment` answered it. Kept on this machine by
+   * the client and sent again with every `piwi/setCredentials` and in the initialization options, so a restarted
+   * service has it. When present, it replaces every choice the service holds: a context it does not name runs with
+   * none. Absent, the choices stay.
+   */
+  environments?: Record<string, KeptEnvironment> | null;
+  /**
    * The severity of a `ci-failure` diagnostic: a failure of a run on the checked-out branch gets it, one of a run on
    * another branch is a warning at most, one whose line changed since its run an information; `off` publishes none,
    * while `piwi/failures` and `piwi/fileSummary` still give the failures. `error` when absent.
@@ -629,7 +860,16 @@ export interface EditorCredentials {
    * can revoke. The desktop app's connection keeps its token either way. `key` when absent.
    */
   mcpAuthorization?: McpAuthorization | null;
+  /**
+   * The running lines the client marks (`piwi/runningLine`), to a client that marks them
+   * (`InitializationOptions.runningLine`): `all`, each lane's of the runs the editor follows; `watched`, the lane's it
+   * watches alone; `off`, none. `all` when absent.
+   */
+  runningLines?: RunningLinesChoice | null;
 }
+
+/** The running lines the editor's setting marks (`EditorCredentials.runningLines`). */
+export type RunningLinesChoice = 'all' | 'watched' | 'off';
 
 /** The lines above the code the editor's setting shows (`EditorCredentials.codeLens`). */
 export type CodeLensChoice = 'all' | 'problems' | 'off';
@@ -686,8 +926,8 @@ export interface InitializationOptions {
    */
   shareWindow?: boolean;
   /**
-   * The client marks the line of the call the test of the lane it watches is in (`piwi/runningLine`). Without it, the
-   * service sends none.
+   * The client marks the line of the call each lane's running test is in (`piwi/runningLine`), as
+   * `EditorCredentials.runningLines` chooses. Without it, the service sends none.
    */
   runningLine?: boolean;
 }
@@ -735,6 +975,70 @@ export interface SetBaselineParams {
 
 export const SET_BASELINE_NOTIFICATION = 'piwi/setBaseline';
 
+/**
+ * `piwi/environments`: the environments the runs of the context at `root` can be for, as **Choose environment…**
+ * offers them, **None** first (the Playwright config decides). Null for a root that is no context's.
+ */
+export interface EnvironmentsParams {
+  root: string;
+}
+
+export interface EnvironmentsResult {
+  root: string;
+  /** What the picker asks, naming the project: `Run the tests of Acme Mugs for…`. */
+  title: string;
+  /** **None**, then the project's environments in its order. */
+  items: EnvironmentItem[];
+}
+
+/** One choice of **Choose environment…**. */
+export interface EnvironmentItem {
+  /** The environment's id; null for **None**. */
+  id: number | null;
+  /** Its name, or `None`. */
+  label: string;
+  /** Its key, the label its runs report (`PIWI_ENVIRONMENT`), or what **None** does. */
+  description: string;
+  /** Its description, and for a protected one what its runs keep to; null for none. */
+  detail: string | null;
+  /** The choice in force. */
+  picked: boolean;
+  protected: boolean;
+}
+
+export const ENVIRONMENTS_REQUEST = 'piwi/environments';
+
+/**
+ * An environment chosen for a context's runs: its id and name, and the instance (`serverUrl`) and the project whose
+ * environment it is. It applies to the context only while the context reads that instance and that project, or one
+ * not known yet, where nothing runs until it is: an id names another environment, or none, anywhere else.
+ */
+export interface KeptEnvironment {
+  id: number;
+  name: string;
+  serverUrl: string;
+  projectId: number;
+}
+
+/**
+ * `piwi/setEnvironment`: choose the environment of the runs of the context at `root`, its id or null for none, which
+ * every run the service builds for it reads from then on. An id the project does not list, or a context with no
+ * project read, keeps the choice it holds. The answer is the choice the context holds after it (`kept`, null for
+ * none), which the client keeps for the root and sends again in `EditorCredentials.environments`; null for a root that
+ * is no context's.
+ */
+export interface SetEnvironmentParams {
+  root: string;
+  /** The environment's id; null, or left out, for none. */
+  environmentId?: number | null;
+}
+
+export interface SetEnvironmentResult {
+  kept: KeptEnvironment | null;
+}
+
+export const SET_ENVIRONMENT_REQUEST = 'piwi/setEnvironment';
+
 /** `piwi/trace`: download an execution's trace and return the command that opens it in Playwright's trace viewer. */
 export interface TraceParams {
   /** Any file of the workspace the execution belongs to, to pick the Playwright config. */
@@ -760,6 +1064,22 @@ export interface ScreenshotResult {
 }
 
 export const SCREENSHOT_REQUEST = 'piwi/screenshot';
+
+/** `piwi/fileIssue`: File an issue for a failure of `piwi/failures` (`WorkspaceFailure.fileIssue`). */
+export type FileIssueParams = TraceParams;
+
+/**
+ * `url`: the page of the failure's cluster, where the dashboard files its issue, while no ticket is linked to the
+ * cluster or the test; otherwise null, and `message` says why, `issueUrl` being the ticket already filed when there is
+ * one.
+ */
+export interface FileIssueResult {
+  url: string | null;
+  message: string | null;
+  issueUrl: string | null;
+}
+
+export const FILE_ISSUE_REQUEST = 'piwi/fileIssue';
 
 /**
  * The latest run on the checked-out branch of one workspace context: its latest complete run, and the later runs of
@@ -823,6 +1143,12 @@ export interface RunStatus {
    */
   liveTests?: LiveTest[];
   /**
+   * The tests of this config's runs the editor follows (`piwi/runSessionChanged`), as their workers tell them, which
+   * their lines show: each one running or standing at a stop, then each one's result in a run that names no page on an
+   * instance, until another run of the config begins; absent while none.
+   */
+  runTests?: RunLineTest[];
+  /**
    * The version of `@piwitests/reporter` the project installs, read from `node_modules` at each refresh; null when
    * none is found.
    */
@@ -836,12 +1162,34 @@ export interface RunStatus {
   branches?: string[];
 }
 
+/**
+ * A test of a run the editor follows, as its line shows it: `running`, `paused` while it stands at a stop, `failed`
+ * while its failure is held too, then its result.
+ */
+export type RunLineStatus = 'running' | 'paused' | 'failed' | 'passed' | 'skipped';
+
+/**
+ * A test of a run the editor follows: its spec, its titles (`RunTest.title`), its state and the words its line says of
+ * it (`paused, line 14,`), which change with the stop it stands at though the state stays.
+ */
+export interface RunLineTest {
+  uri: string;
+  title: string[];
+  status: RunLineStatus;
+  words: string;
+}
+
 /** A test of the run in progress: `running` once it began, then its result. */
 export type LiveTestStatus = 'running' | 'passed' | 'failed' | 'flaky' | 'skipped';
 
 export interface LiveTest {
   testCaseId: number;
   status: LiveTestStatus;
+  /**
+   * While it runs, what the instance said of an attempt that runs much longer than it passes (`Stuck? running over 4
+   * min, usually 40 s`); absent while that attempt stands stopped.
+   */
+  stuck?: string;
 }
 
 /** A run in progress, as its events count it. */
@@ -865,6 +1213,13 @@ export interface LiveRun {
   ci?: boolean;
   /** The branch it runs on, as it reported it; absent for a run that names none. */
   branch?: string;
+  /**
+   * Who started an own run when a person did not (`Started by Claude Code`, as `RunSession.label` says): the clients
+   * say it where they would say the run is the person's. Absent for a person's run.
+   */
+  label?: string;
+  /** How many of its tests run much longer than they pass (`LiveTest.stuck`); absent for none. */
+  stuck?: number;
 }
 
 /** Which failures turn the status item to its alarm: `new`, `any` or `never`. */
@@ -873,6 +1228,11 @@ export type StatusBarAlert = 'new' | 'any' | 'never';
 /** `piwi/runStatus`: the latest run of each context, for the status bar. */
 export interface RunStatusResult {
   contexts: RunStatus[];
+  /**
+   * For each config no instance reads, which `contexts` leaves out, the tests of the runs the editor follows that its
+   * lines show (as `RunStatus.runTests`); absent while none has any.
+   */
+  runTests?: Array<{ root: string; tests: RunLineTest[] }>;
 }
 
 export const RUN_STATUS_REQUEST = 'piwi/runStatus';
@@ -1072,10 +1432,12 @@ export interface RunEnded {
   root: string;
   runId: number;
   /**
-   * Who started it: `editor`, a command the service built for this editor; `ci`, a CI run of the branch the editor
-   * followed (`LiveRun.ci`), which a client may leave unsaid (its run notifications' scope).
+   * Who started it: `editor`, a command the service built for this editor; `terminal` or `runner`, a run the developer
+   * started in a terminal or in the IDE's own test runner, which followed the editor (`RunSession.terminal`,
+   * `RunSession.runner`) and named its page on the instance; `ci`, a CI run of the branch the editor followed
+   * (`LiveRun.ci`), which a client may leave unsaid (its run notifications' scope).
    */
-  origin: 'editor' | 'ci';
+  origin: 'editor' | 'terminal' | 'runner' | 'ci';
   /** The branch a CI run ran on, which its verdict names. */
   branch?: string;
   /** The ref of the command that started it (`RunCommand.ref`); absent when the service no longer keeps the command. */
@@ -1150,9 +1512,16 @@ export interface Notice {
  * The notices an editor client may hide, kept by these values in the developer's settings: `agent-let-go`, a stop an
  * agent held let go once it went idle; `window-shared`, a run shared live as the window's runs are;
  * `unattended-resumed`, a stop nobody attends let go on; `reporter-missing`, a run that did not reach the instance
- * from a config without the Piwi reporter.
+ * from a config without the Piwi reporter; `picker-inserted`, the client's own confirmation of what Piwi Picker
+ * inserted at the cursor.
  */
-export const NOTICE_KEYS = ['agent-let-go', 'window-shared', 'unattended-resumed', 'reporter-missing'] as const;
+export const NOTICE_KEYS = [
+  'agent-let-go',
+  'window-shared',
+  'unattended-resumed',
+  'reporter-missing',
+  'picker-inserted',
+] as const;
 
 export type NoticeKey = (typeof NOTICE_KEYS)[number];
 
@@ -1263,12 +1632,19 @@ export interface WorkspaceFailure {
   /** In milliseconds; null when not recorded. */
   duration?: number | null;
   hasScreenshot?: boolean;
+  /** File an issue (`piwi/fileIssue`): on a failure with a cluster, of a team instance. */
+  fileIssue?: true;
+  /**
+   * The test has a flake suspect no experiment tested yet, and the failure is not the desktop app's own: the failure's
+   * node offers Run Flake Lab on its untested suspects in the desktop app while it runs.
+   */
+  untestedSuspects?: true;
   /** Go to the test: its `test(…)` line in its spec, as the spec stands; absent where `debug` explains. */
   test?: { uri: string; line: number };
-  /** Verify the test ×3: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
+  /** Verify ×3 with Piwi: its run by its location, three times (`RunTestsArgs.repeat`); absent where `test` is. */
   verify?: RunTestsArgs;
   /**
-   * Debug this failure: the run that stops once at the line it failed through, on its project, as the dashboard's
+   * Debug with Piwi: the run that stops once at the line it failed through, on its project, as the dashboard's
    * Debug in my editor does (`RunTestsArgs.debug`), its test named by its describe blocks' titles and its own as the
    * spec spells them, for `piwi/runArgs`. Absent for a failure fixed since, where its spec holds no one test of its
    * title (as are `test` and `verify`), and where the run would be refused: the title or project is not one Piwi takes,
@@ -2185,6 +2561,30 @@ export interface RunLive {
 export const RUN_SESSION_NOTIFICATION = 'piwi/runSessionChanged';
 
 /**
+ * `piwi/runTest` (notification, server to client): a worker of a run began a test (`test-begin`, with the test), or
+ * ended the test it began last (`test-end`, with Playwright's status of it: `passed`, `failed`, `timedOut`, `skipped`,
+ * `interrupted`, the last too for a worker that left before it said), as its run connection says it. Each comes once, as it happens, for a client that draws a test tree of
+ * the run; the session (`piwi/runSessionChanged`) holds only what each worker runs now.
+ */
+export interface RunTestEvent {
+  ref: string;
+  /** The folder of the run's Playwright config, as `piwi/status` names it; null when no context holds it. */
+  root: string | null;
+  worker: number;
+  type: 'test-begin' | 'test-end';
+  test?: RunTest;
+  status?: string;
+  /**
+   * Of a `test-end` a worker said: whether `status` is the one the test was expected to end with (Playwright's
+   * `expectedStatus`, `passed` from a reporter that does not say): a `test.fail()` test that failed is ok, one that
+   * passed is not. Absent for a worker that left, whose test ends `interrupted`.
+   */
+  ok?: boolean;
+}
+
+export const RUN_TEST_NOTIFICATION = 'piwi/runTest';
+
+/**
  * What `piwi/runControl` asks: `pause` stops before the next call (of every running worker without `worker`); the
  * others answer a stop: `step` goes on and stops before the next call, `resume` goes on to the next breakpoint,
  * `finish` goes on with no breakpoint more in this attempt, `run-to` goes on and stops at the first call on `place`'s
@@ -2472,11 +2872,14 @@ export const LANE_LAYER_NOTIFICATION = 'piwi/laneLayer';
 
 /**
  * `piwi/runningLine` (notification, server to client), to a client that takes it (`InitializationOptions.runningLine`):
- * the call the running test of the lane the editor watches (`piwi/laneView`) is in, from the lane's call log, its
- * title (`Click getByRole('button', { name: 'Pay' })`) and its place in the run's code (`uri` and the 0-based `line`,
- * as a stop's: a client maps it through the edits since the run started); or null once the line goes: the test
- * ended or stopped (a stop has a mark of its own), the call names no place, the watch ended or the run did. Sent only
- * when it differs from the last one sent for the lane, of the worker `worker` and its test `test` (Playwright's id).
+ * the call the running test of a lane is in, its title (`Click getByRole('button', { name: 'Pay' })`) and its place in
+ * the run's code (`uri` and the 0-based `line`, as a stop's: a client maps it through the edits since the run
+ * started); or null once the line goes: the test ended or stopped (a stop has a mark of its own), the worker left, the
+ * run ended, or the setting no longer marks the lane. A call that names no place leaves the line where it was. Each
+ * lane of a run the editor follows (a desktop app's checkout left out) as `EditorCredentials.runningLines` chooses: the
+ * lane the editor watches (`piwi/laneView`) from its call log, every other one from its worker's positions, which an
+ * older reporter does not send. Sent only when it differs from the last one sent for the lane, of the worker `worker` and its test `test`
+ * (Playwright's id); the lines that changed go together, at most four times a second.
  */
 export interface RunningLine {
   ref: string;

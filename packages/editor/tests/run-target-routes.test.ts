@@ -5,6 +5,7 @@ import type { AddressInfo } from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import { requiredTagsGrepInvert } from '@piwitests/core/environments';
 import type { RunRequestOffer } from '@piwitests/core/run-request';
 import { cookiesOf, isBrowserRequest, presentsToken, TOKEN_COOKIE } from '../src/host-guard';
 import type * as RunTargetStream from '../src/run-target-stream';
@@ -87,12 +88,18 @@ function offer(id = REQUEST_ID): RunRequestOffer {
 }
 
 /** A team instance that offers one request, gives its key and its request token. */
+/** What the fake instance answers a request's run variables with, and with which status. */
+let runVariables: unknown = { runVariables: [] };
+let runVariablesStatus = 200;
+
 async function fakeInstance() {
   const streams: http.ServerResponse[] = [];
+  const paths: string[] = [];
   const server = http.createServer((req, res) => {
     req.resume();
     req.on('end', () => {
       const url = req.url ?? '';
+      paths.push(url);
       if (url === '/api/run-targets/stream') {
         res.writeHead(200, { 'Content-Type': 'text/event-stream' });
         res.write(
@@ -101,18 +108,27 @@ async function fakeInstance() {
         streams.push(res);
         return;
       }
+      if (url.endsWith('/run-variables')) {
+        res.writeHead(runVariablesStatus, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(runVariablesStatus === 200 ? runVariables : { message: 'Bad gateway' }));
+        return;
+      }
       res.writeHead(200, { 'Content-Type': 'application/json' });
       if (url === '/api/run-targets/requests') res.end(JSON.stringify({ requests: [], stops: [] }));
       else if (url.endsWith('/claim')) {
         const { expiresAt: _expiresAt, ...request } = offer(url.split('/').slice(-2)[0]);
         res.end(JSON.stringify(request));
       } else if (url.endsWith('/answer')) res.end(JSON.stringify({ state: 'starting', requestToken: REQUEST_TOKEN }));
+      else if (url.endsWith('/folder-hints'))
+        res.end(JSON.stringify({ repositoryUrl: 'https://github.com/acme/shop', folders: ['/home/robin/shop/e2e'] }));
       else res.end('{}');
     });
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   return {
     url: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
+    /** The paths the app called, in order. */
+    paths,
     /** The instance asks the app to stop the requests `stops`. */
     stop: (...stops: string[]) => {
       for (const res of streams) res.write(`data: ${JSON.stringify({ type: 'snapshot', requests: [], stops })}\n\n`);
@@ -331,6 +347,9 @@ describe('every host of the run-target routes', () => {
       expect((await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, running })).status).toBe(400);
     }
     expect((await host.call('PUT', '/links', SHELL, { links: { x: folder } })).status).toBe(400);
+    expect(
+      (await host.call('PUT', '/links', SHELL, { instance: 'ftp://piwi.example.com', links: { 3: folder } })).status,
+    ).toBe(400);
     expect((await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, { decision: 'yes' })).status).toBe(400);
     for (const call of ROUTE_CALLS.filter((c) => c.route.includes(REQUEST_ID))) {
       expect((await host.call(call.method, call.route.replace(REQUEST_ID, 'x'), SHELL, {})).status, call.name).toBe(
@@ -423,6 +442,141 @@ describe('every host of the run-target routes', () => {
     });
     expect((await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL)).status).toBe(404);
   });
+
+  test('runs with the project’s run variables the confirmation showed, and asks again when they change', async () => {
+    runVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        command: string;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.command).toMatch(
+        process.platform === 'win32'
+          ? /^\$env:TENANT='acme'; npx playwright test /
+          : /^TENANT=acme npx playwright test /,
+      );
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'variables', level: 'ok' }));
+
+      // A variable changed since the window showed the command: Run shows it again rather than run another.
+      runVariables = { runVariables: [{ name: 'TENANT', value: 'globex' }] };
+      const changed = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+      });
+      expect(changed.status).toBe(409);
+      const [again] = (await host.call('GET', '', SHELL)).body!.requests as { command: string }[];
+      expect(again!.command).toContain('globex');
+
+      const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: again!.command,
+      });
+      expect(answered).toMatchObject({ status: 200, body: { launch: true } });
+      const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
+      expect(launch.body).toMatchObject({ runVariables: [{ name: 'TENANT', value: 'globex' }] });
+    } finally {
+      runVariables = { runVariables: [] };
+    }
+  });
+
+  test('runs for the environment the request names, and for a protected one only once the person confirmed it', async () => {
+    const production = {
+      id: 5,
+      key: 'production',
+      name: 'Production',
+      protected: true,
+      requiredTags: ['@smoke'],
+      envFile: null,
+    };
+    runVariables = { runVariables: [{ name: 'TEST_ENV', value: 'production' }], environment: production };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        command: string;
+        environment: unknown;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.environment).toEqual({
+        key: 'production',
+        name: 'Production',
+        protected: true,
+        requiredTags: ['@smoke'],
+      });
+      expect(asked!.command).toMatch(
+        process.platform === 'win32'
+          ? /^\$env:TEST_ENV='production'; \$env:PIWI_ENVIRONMENT='production'; npx playwright test .* '--grep-invert=/
+          : /^TEST_ENV=production PIWI_ENVIRONMENT=production npx playwright test .* '--grep-invert=/,
+      );
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'environment', level: 'warn' }));
+
+      // Run without the person's confirmation naming the environment shows the request again.
+      const unconfirmed = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+      });
+      expect(unconfirmed).toMatchObject({ status: 409, body: { message: 'Confirm the run for Production first' } });
+      const wrong = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+        environment: 'staging',
+      });
+      expect(wrong.status).toBe(409);
+
+      const answered = await host.call('POST', `/requests/${REQUEST_ID}/answer`, SHELL, {
+        decision: 'run',
+        command: asked!.command,
+        environment: 'production',
+      });
+      expect(answered).toMatchObject({ status: 200, body: { launch: true } });
+      const launch = await host.call('POST', `/requests/${REQUEST_ID}/launch`, SHELL);
+      expect(launch.body).toMatchObject({
+        runVariables: [{ name: 'TEST_ENV', value: 'production' }],
+        environment: production,
+      });
+      // The command showed the filter that keeps the run to the required tags, which the shell adds from the
+      // environment it is handed.
+      const filter = `--grep-invert=${requiredTagsGrepInvert(['@smoke'])}`;
+      expect(asked!.command).toContain(filter);
+      expect((launch.body!.args as string[]).some((arg) => arg.startsWith('--grep-invert'))).toBe(false);
+      expect((launch.body!.args as string[]).slice(-2)).toEqual(['--project=chromium', '--headed']);
+    } finally {
+      runVariables = { runVariables: [] };
+    }
+  });
+
+  test('a read of the run variables the instance did not answer fails the check, and the next check reads again', async () => {
+    runVariablesStatus = 502;
+    runVariables = { runVariables: [{ name: 'TENANT', value: 'acme' }] };
+    try {
+      await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: { 3: folder } });
+      await until(async () => {
+        const status = await host.call('GET', '', SHELL);
+        return ((status.body?.requests ?? []) as unknown[]).length === 1;
+      });
+      const [asked] = (await host.call('GET', '', SHELL)).body!.requests as {
+        runnable: boolean;
+        checks: { id: string; level: string }[];
+      }[];
+      expect(asked!.runnable).toBe(false);
+      expect(asked!.checks).toContainEqual(expect.objectContaining({ id: 'variables', level: 'fail' }));
+
+      runVariablesStatus = 200;
+      const again = await host.call('POST', `/requests/${REQUEST_ID}/plan`, SHELL);
+      expect(again.body).toMatchObject({ runnable: true, command: expect.stringContaining('acme') });
+    } finally {
+      runVariablesStatus = 200;
+      runVariables = { runVariables: [] };
+    }
+  });
 });
 
 describe('the end of a requested run', () => {
@@ -457,6 +611,41 @@ describe('the end of a requested run', () => {
       const used = await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {}, ended });
       expect(used.status, JSON.stringify(ended).slice(0, 80)).toBe(400);
     }
+  });
+});
+
+describe('the search for a request’s folder', () => {
+  const asked = async () => ((await host.call('GET', '', SHELL)).body?.requests ?? []) as { id: string }[];
+
+  test('gives the shell the request’s project and specs, and the instance’s hints when asked', async () => {
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {} });
+    await until(async () => (await asked()).length === 1);
+
+    const plain = await host.call('POST', `/requests/${REQUEST_ID}/folder-search`, SHELL, {});
+    expect(plain.body).toEqual({
+      projectId: 3,
+      specs: ['tests/checkout.spec.ts'],
+      repositoryUrl: null,
+      runFolders: [],
+    });
+    expect(instance.paths.some((p) => p.endsWith('/folder-hints'))).toBe(false);
+
+    const hinted = await host.call('POST', `/requests/${REQUEST_ID}/folder-search`, SHELL, { hints: true });
+    expect(hinted).toMatchObject({
+      status: 200,
+      noStore: true,
+      body: {
+        projectId: 3,
+        specs: ['tests/checkout.spec.ts'],
+        repositoryUrl: 'https://github.com/acme/shop',
+        runFolders: ['/home/robin/shop/e2e'],
+      },
+    });
+  });
+
+  test('answers 404 for a request the window no longer asks about', async () => {
+    await host.call('PUT', '/key', SHELL, { instance: instance.url, key: KEY, links: {} });
+    expect((await host.call('POST', `/requests/${'f'.repeat(32)}/folder-search`, SHELL, {})).status).toBe(404);
   });
 });
 

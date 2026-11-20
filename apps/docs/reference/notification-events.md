@@ -146,8 +146,10 @@ numbered lines instead.
 ## Payload fields by event
 
 Every event that comes from a run carries that run's `branch` and `environment` when the run reported them: the
-`run.*` events, `flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. A subscription's
-[branch and environment filters](/features/notifications#branches-and-environments) match on these two fields.
+`run.*` events, `flakiness.spike`, `perf.regression`, the `cluster.*` events, `bug.looks_fixed` and `test.stuck`. When
+the run's environment label resolves to one of the project's [environments](/features/environments), the event also
+carries its `environmentName`, `environmentKey` and `environmentAliases`. A subscription's
+[branch and environment filters](/features/notifications#branches-and-environments) match on these fields.
 
 - **Run events** (`run.*`, `flakiness.spike`, `perf.regression`): the run, its counts, `topFailures`, and the `owners`
   of the failing tests. `perf.regression` adds `durationMs`, `baselineDurationMs` and `regressionPct`.
@@ -155,7 +157,7 @@ Every event that comes from a run carries that run's `branch` and `environment` 
   `affectedCases`, the `owners` of the tests that failed into it in that run, and `firstSeenRunId` when it first
   appeared in an earlier run, which sent no notification of it.
 - **`cluster.fixed`** and **`cluster.regressed`**: the cluster's `signature`, `title` and the `runId` that decided the
-  verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM token](/guide/source-control), a `fixAuthor`
+  verdict; for a fix, the `commit` and `timeToResolutionMs`. With an [SCM credential](/guide/source-control), a `fixAuthor`
   object (`{ name, email }`) names the author of the fixing commit (for a regression, of the fix that did not hold).
   A fix landed by an [auto-heal PR](/features/auto-heal#after-the-pr-opens) carries `healPr` (`{ number, url, actionId }`).
 - **`diagnosis.completed`**: the cluster, and the diagnosis's `summary`, `rootCause`, `category` and `confidence`. A

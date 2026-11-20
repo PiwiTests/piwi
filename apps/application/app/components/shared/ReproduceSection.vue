@@ -4,17 +4,23 @@
  * failure locally (checkout, pinned install, browser, exact test command) and,
  * when the regression window is known, a generated `git bisect` that finds the
  * breaking commit. Both are shown in Linux/macOS and Windows forms; a missing
- * bisect window degrades to a one-line muted note with the reason.
+ * bisect window degrades to a one-line muted note with the reason. Against a
+ * deployed environment the bisect lists the deploys between the two runs.
  *
  * Inside the desktop shell (and only there — everything below feature-detects
  * the Tauri bridge, never a user agent) the same section drives the recipe and
  * the bisect for real against the linked folder, in a throwaway worktree that
  * never touches the user's checkout. The webview asks the shell to act; it never
  * passes a command to run, so the shell's stored settings stay the only source
- * of truth.
+ * of truth. Each of the two names the environment it runs for (`DesktopEnvironmentField`): the failing run's for a
+ * reproduction, unless protected, and one built from the checkout for a bisect; a protected one waits for the person
+ * to confirm it.
  */
 import { reproScript, type ReproRecipe, type BisectResult, type ReproduceDesktopContext } from '#shared/reproduce';
+import { deployText } from '#shared/deployed-words';
+import { environmentReady, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 import type { DesktopProjectLink } from '~/composables/useDesktopProjectLink';
+import { buildReproduceArgs, canBisect } from '~/utils/local-run-args';
 import type { DesktopFolderInspection } from '~/composables/useDesktopFolderInspect';
 
 const props = defineProps<{
@@ -26,14 +32,14 @@ const props = defineProps<{
   projectLabel?: string | null;
 }>();
 
+const shellKey = COMMAND_SHELL_KEY;
 const recipeBash = computed(() => reproScript(props.reproduce, 'bash'));
 const recipePowershell = computed(() => reproScript(props.reproduce, 'powershell'));
 
 // The one command a reader most wants — the exact test invocation — leads; the
-// full checkout/install/bisect recipe folds behind a disclosure.
-const runStep = computed(
-  () => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? props.reproduce.steps.at(-1) ?? null,
-);
+// full checkout/install/bisect recipe folds behind a disclosure. A recipe with no
+// run step leads with its notes, which say why.
+const runStep = computed(() => props.reproduce.steps.find((s) => /run the failing test/i.test(s.step)) ?? null);
 const showFull = ref(false);
 
 const toast = useToast();
@@ -44,7 +50,6 @@ const projectId = computed(() => props.context?.projectId ?? null);
 const desktop = ref(false);
 const link = ref<DesktopProjectLink | null>(null);
 const inspection = ref<DesktopFolderInspection | null>(null);
-const linking = ref(false);
 
 async function refreshLink() {
   const id = projectId.value;
@@ -65,31 +70,37 @@ const linked = computed(() => desktop.value && !!link.value?.exists);
 
 /** The failing commit a reproduction would check out. */
 const commit = computed(() => props.context?.commit ?? props.reproduce.commit ?? null);
-const canReproduceHere = computed(() => linked.value && !!commit.value && (props.context?.cases.length ?? 0) > 0);
+const canReproduceHere = computed(
+  () => linked.value && !!commit.value && buildReproduceArgs(props.context?.cases ?? []).length > 0,
+);
 const canBisectHere = computed(
-  () => linked.value && props.bisect.available && !!props.context?.good && !!props.context?.bad,
+  () =>
+    linked.value &&
+    props.bisect.available &&
+    !!props.context?.good &&
+    !!props.context?.bad &&
+    canBisect(props.context.cases, props.context.flakeArm?.testCaseId),
 );
 
+const { chooseProjectFolder } = useDesktopLinkFolder();
+
+/** Link the project's folder, checked against the failing tests. */
 async function linkFolder() {
   const id = projectId.value;
-  const core = tauriCore();
-  if (!core || id == null) return;
-  linking.value = true;
-  try {
-    const path = await pickDesktopFolder();
-    if (!path) return;
-    await core.invoke('desktop_set_project_link', { projectId: String(id), path });
-    await refreshLink();
-  } catch (error) {
-    toast.add({ title: 'Could not link the folder', description: errorMessage(error), color: 'error' });
-  } finally {
-    linking.value = false;
-  }
+  if (!tauriCore() || id == null) return;
+  const specs = [...new Set((props.context?.cases ?? []).map((c) => c.filePath).filter(Boolean))];
+  if (await chooseProjectFolder({ projectId: id, projectLabel: props.projectLabel, specs })) await refreshLink();
 }
+
+// The environment each runs for, and whether the person confirmed a protected one for the next run.
+const reproduceEnvironment = ref<DesktopEnvironmentChoice | null>(null);
+const reproduceConfirmed = ref(false);
+const bisectEnvironment = ref<DesktopEnvironmentChoice | null>(null);
+const bisectConfirmed = ref(false);
 
 function reproduceHere() {
   const ctx = props.context;
-  if (!ctx || !commit.value) return;
+  if (!ctx || !commit.value || !environmentReady(reproduceEnvironment.value, reproduceConfirmed.value)) return;
   store.startReproduce({
     projectId: ctx.projectId,
     projectLabel: props.projectLabel,
@@ -97,12 +108,15 @@ function reproduceHere() {
     commit: commit.value,
     browserName: ctx.browserName,
     clusterId: ctx.clusterId,
+    environment: reproduceEnvironment.value,
+    confirmed: reproduceConfirmed.value,
   });
+  reproduceConfirmed.value = false;
 }
 
 function bisectHere() {
   const ctx = props.context;
-  if (!ctx || !ctx.good || !ctx.bad) return;
+  if (!ctx || !ctx.good || !ctx.bad || !environmentReady(bisectEnvironment.value, bisectConfirmed.value)) return;
   store.startBisect({
     projectId: ctx.projectId,
     projectLabel: props.projectLabel,
@@ -112,7 +126,9 @@ function bisectHere() {
     browserName: ctx.browserName,
     target: { clusterId: ctx.clusterId, repositoryUrl: ctx.repositoryUrl },
     flakeTestCaseId: ctx.flakeArm?.testCaseId ?? null,
+    environment: bisectEnvironment.value,
   });
+  bisectConfirmed.value = false;
 }
 
 // ── The bisected commit: the live result of a bisect of this cluster just run,
@@ -146,12 +162,10 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
   <div class="space-y-3" data-shot="fix-reproduce-body" data-copies="copy-recipe">
     <div class="space-y-1.5">
       <!-- The run line first — the exact test invocation. -->
-      <PlatformCodeBlock
-        v-if="runStep"
-        :bash="runStep.bash"
-        :powershell="runStep.powershell"
-        storage-key="piwi-repro-shell"
-      />
+      <PlatformCodeBlock v-if="runStep" :bash="runStep.bash" :powershell="runStep.powershell" :storage-key="shellKey" />
+      <template v-else>
+        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-muted">{{ note }}</p>
+      </template>
 
       <!-- The full recipe (checkout, install, pin, browser) folds behind here. -->
       <UButton
@@ -169,17 +183,28 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
           Reproduce the failure on your machine — check out the failing commit, install the run's Playwright version and
           browser, then run exactly the failing test.
         </p>
-        <PlatformCodeBlock :bash="recipeBash" :powershell="recipePowershell" storage-key="piwi-repro-shell" />
+        <PlatformCodeBlock :bash="recipeBash" :powershell="recipePowershell" :storage-key="shellKey" />
         <div v-if="reproduce.env.length" class="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted">
           <span v-for="e in reproduce.env" :key="e.label">
             <span class="font-medium">{{ e.label }}:</span> <span class="font-mono">{{ e.value }}</span>
           </span>
         </div>
-        <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
+        <template v-if="runStep">
+          <p v-for="note in reproduce.notes" :key="note" class="text-xs text-dimmed">{{ note }}</p>
+        </template>
       </div>
 
       <!-- Desktop: run the recipe for real, in a throwaway worktree. -->
       <ClientOnly>
+        <DesktopEnvironmentField
+          v-if="desktop && canReproduceHere"
+          v-model="reproduceEnvironment"
+          v-model:confirmed="reproduceConfirmed"
+          :project-id="context?.projectId"
+          purpose="reproduce"
+          :run-environment-id="context?.environmentId ?? null"
+          class="pt-0.5"
+        />
         <div v-if="desktop" class="flex flex-wrap items-center gap-2 pt-0.5">
           <UButton
             v-if="canReproduceHere"
@@ -187,6 +212,7 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             color="primary"
             variant="solid"
             icon="i-lucide-monitor"
+            :disabled="!environmentReady(reproduceEnvironment, reproduceConfirmed)"
             @click="reproduceHere"
           >
             Reproduce here
@@ -197,12 +223,11 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
             color="neutral"
             variant="soft"
             icon="i-lucide-folder-plus"
-            :loading="linking"
             @click="linkFolder"
           >
             Link a folder to reproduce here
           </UButton>
-          <span v-if="linked" class="text-xs text-dimmed">
+          <span v-if="canReproduceHere" class="text-xs text-dimmed">
             Runs in a worktree of the failing commit — your checkout is never touched.
           </span>
         </div>
@@ -215,16 +240,23 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         <h4 class="text-xs font-medium uppercase tracking-wide text-muted">Find the breaking commit</h4>
       </div>
       <template v-if="bisect.available">
-        <PlatformCodeBlock :bash="bisect.bash" :powershell="bisect.powershell" storage-key="piwi-repro-shell" />
+        <PlatformCodeBlock :bash="bisect.bash" :powershell="bisect.powershell" :storage-key="shellKey" />
         <p class="text-xs text-muted">{{ bisect.explanation }}</p>
         <ClientOnly>
           <div v-if="desktop && canBisectHere" class="pt-0.5 space-y-1">
+            <DesktopEnvironmentField
+              v-model="bisectEnvironment"
+              v-model:confirmed="bisectConfirmed"
+              :project-id="context?.projectId"
+              purpose="bisect"
+            />
             <UButton
               size="xs"
               color="primary"
               variant="soft"
               icon="i-lucide-git-branch"
               data-testid="bisect-here"
+              :disabled="!environmentReady(bisectEnvironment, bisectConfirmed)"
               @click="bisectHere"
             >
               Find the breaking commit here
@@ -237,6 +269,15 @@ const hasWebServer = computed(() => inspection.value?.webServer ?? false);
         </ClientOnly>
       </template>
       <p v-else class="text-xs text-dimmed">{{ bisect.reason }}</p>
+      <div v-if="bisect.deployed?.deploys.length" class="space-y-0.5 text-xs text-muted" data-testid="bisect-deploys">
+        <p>Deploys of {{ bisect.deployed.environment }} between the two runs:</p>
+        <ul class="space-y-0.5">
+          <li v-if="bisect.deployed.more">Earlier deploys left out</li>
+          <li v-for="deploy in bisect.deployed.deploys" :key="`${deploy.label}-${deploy.deployedAt}`">
+            {{ deployText(deploy) }} · {{ formatRelativeTime(deploy.deployedAt) }}
+          </li>
+        </ul>
+      </div>
 
       <!-- The bisected first bad commit — live, or persisted on the cluster. -->
       <ClientOnly>

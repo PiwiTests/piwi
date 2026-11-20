@@ -21,6 +21,7 @@ run control, coverage, the recorder, the build, and the reads and the connection
   - [Failures that follow the edits](#failures-that-follow-the-edits)
   - [File summary and the test at a position](#file-summary-and-the-test-at-a-position)
   - [Test items](#test-items)
+  - [Test runs](#test-runs)
   - [Failure lines and Flake Lab lines](#failure-lines-and-flake-lab-lines)
   - [Run streams and polling](#run-streams-and-polling)
   - [Runs in progress and the run verdict](#runs-in-progress-and-the-run-verdict)
@@ -61,6 +62,8 @@ run control, coverage, the recorder, the build, and the reads and the connection
 - [Build output](#build-output)
 - [Commands](#commands)
   - [How a command is built](#how-a-command-is-built)
+  - [Run variables](#run-variables)
+  - [Environments](#environments)
   - [The folder a command runs in](#the-folder-a-command-runs-in)
 - [Reads and caching](#reads-and-caching)
   - [Background reads](#background-reads)
@@ -142,6 +145,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/analysis.ts`: the pure half: locators per line, stability findings, failure placement, breakpoints, completion.
 - `src/commands.ts`: every command line a client runs.
 - `src/failure-tree.ts`: the failures tree both clients draw (`failuresAnswer`).
+- `src/test-listing.ts`: the listing, the tests Playwright lists for each config (`TestListings`); `src/test-tree.ts`:
+  the test tree both clients draw (`configTree`).
 - `src/coverage.ts`: coverage marks and uncovered changes.
 - `src/piwi-client.ts`, `src/http.ts`: the requests to an instance, the shared response cache and the proxy.
 - `src/run-stream.ts`, `src/run-watch.ts`: the instance's event streams, the poll, runs in progress and run verdicts.
@@ -149,6 +154,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/ci-watch.ts`: the client's watch of a CI run's lane through the instance (`piwi/ciWatch`, `piwi/ciFrame`).
 - `src/desktop-jobs.ts`: the jobs passed to the desktop app.
 - `src/run-sessions.ts`: the run sessions, and the controls the client and the hub send their workers.
+- `src/running-lines.ts`: the running line of each lane, from the watched lane's call log and the workers' positions.
+- `src/own-run-tests.ts`: the tests of the runs the service follows, as their test lines show them.
 - `src/run-hub.ts`: the hub's WebSocket, for Piwi Picker.
 - `src/trace-viewer.ts`: **Open the trace so far**: the checks a trace file a worker names passes, and Playwright's trace
   viewer started on it from the project's own Playwright.
@@ -218,9 +225,10 @@ What does cross versions is what the service talks to, since each is installed o
 the custom messages of `src/protocol.ts`:
 
 - **Requests**, from the client:
-  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/coverage`;
+  - files and tests: `piwi/fileSummary`, `piwi/testsForFile`, `piwi/testAt`, `piwi/testItems`, `piwi/testRuns`, `piwi/testCard` (a test's card from its history, `src/test-card.ts`), `piwi/coverage`,
+    `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
-    `piwi/refreshRun`, `piwi/runId`;
+    `piwi/refreshRun`, `piwi/runId`, `piwi/environments`, `piwi/setEnvironment`;
   - CI runs: `piwi/ciWatch`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
@@ -233,12 +241,15 @@ the custom messages of `src/protocol.ts`:
 - **Notifications from the client**: `piwi/setCredentials`, `piwi/setBaseline`, `piwi/commandStarted`,
   `piwi/commandEnded`, `piwi/declineRecord`, `piwi/setRunBreakpoints`, `piwi/setBreakpoints`, `piwi/setRunPairing`.
 - **Notifications from the service**: `piwi/statusChanged`, `piwi/runStatusChanged`, `piwi/failuresChanged`,
-  `piwi/coverageChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
-  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
+  `piwi/coverageChanged`, `piwi/testItemsChanged`, `piwi/runEnded`, `piwi/notice`, `piwi/desktopJobChanged`, `piwi/recordingChanged`,
+  `piwi/recordRequested`, `piwi/runSessionChanged`, `piwi/runTest` (each test as a worker begins and ends it, with
+  whether it ended with the status it was expected to end with, `ok`, a worker that left mid-test ending it
+  `interrupted`, which the JetBrains plugin draws as a test tree), `piwi/ciSessionChanged`, `piwi/ciFrame`, `piwi/ciLayer`,
   `piwi/stopCode`, `piwi/pageFrame`, `piwi/laneFrame`, `piwi/laneLayer`, `piwi/runningLine`, `piwi/shareWindowChanged`,
   `piwi/askToWatch`. A `piwi/notice` an editor client may hide carries a `key` (`NOTICE_KEYS`): one that comes unasked,
   may come again and hides nothing the developer must hear, so never an agent's action or a run that was lost. The
-  desktop app and Piwi Runner hear no key.
+  desktop app and Piwi Runner hear no key. `NOTICE_KEYS` also holds the VS Code extension's own `picker-inserted`, its
+  confirmation of what Piwi Picker inserted, which the service never sends.
 - **The status item's alarm** is the service's (`RunStatus.alarm`, `statusAlarm`), as the credentials'
   `statusBarAlert` chooses: with `new`, the default, a test a run of this editor failed (an overlay of `ownRuns`) that
   did not fail on that project in the baseline (`isNew`) and that the baseline failed on no other project (listed from
@@ -249,7 +260,7 @@ The initialization options (`InitializationOptions`) carry the credentials, `run
 answers the stops of the runs it starts ([Stops no pause bar shows](#stops-no-pause-bar-shows)), and `stopCode` when it
 writes the code from a stop ([Code from a stop](#code-from-a-stop)), `stopsRuns` when it stops a run it started as
 another tool asks (`piwi/stopRun`), as both clients do, `startsRuns` when it runs a command the service built for an
-agent (`piwi/startRun`), `runningLine` when it marks the line of the call the lane it watches is in
+agent (`piwi/startRun`), `runningLine` when it marks the line of the call each lane's running test is in
 (`piwi/runningLine`, [Controls, breakpoints and the paused page](#controls-breakpoints-and-the-paused-page)), and
 `agents` for the agents' MCP server ([Agents](#agents)). The service sends a client two
 requests: `piwi/stopRun`, for which VS Code ends the run's task, the JetBrains plugin its process, and the answer
@@ -269,7 +280,7 @@ A summary line or a quick fix names a client command to run. The summary lines u
 
 `piwi/runId` reads a run id typed for **A run by id…** (`118`, `#118`): 1 to 2147483647, the range of an instance's run
 ids. `piwi/agentContext` answers the block that **Copy context for agent** copies: for a failure the view names, or that
-the quick fix (`piwi.copyAgentContext`) names once picked.
+a test's action list (`piwi.copyAgentContext`) names once picked.
 
 ### The failures answer
 
@@ -372,7 +383,9 @@ ladder.
 ### Failure diagnostics and runs laid over
 
 The failures of the latest run are published as `ci-failure` diagnostics in every file they point to, merged with the
-analysis of the open documents. Their severity is the one `EditorCredentials.failureSeverity` chooses (`error` when
+analysis of the open documents: `publish` sends a file's two sets as one, under the URI the client opened the file with
+(`file:///c%3A/…` on Windows), else `pathToFileURL`'s, and an empty set under the form it was sent under before, since
+a client keeps one set per file. Their severity is the one `EditorCredentials.failureSeverity` chooses (`error` when
 absent; `failureSeverity` in `src/server.ts`), except that:
 
 - a failure of a run on another branch than the checked-out one is a warning at most;
@@ -396,7 +409,7 @@ A failure follows the edits made since its run (`placeLine` in `src/analysis.ts`
 lines, as the run reported them, are placed on the files as they stand, saved or not. That covers:
 
 - its diagnostic and `TestFailure.line`;
-- the reason, **Screenshot** and **Trace** lines above it;
+- the reason and **Run with Piwi** lines above it;
 - the hover's call chain;
 - its `piwi/failures` item.
 
@@ -410,20 +423,24 @@ The diff starts from the files as the run saw them:
   repository lacks, and a CI run until its commit's file is read.
 
 Every failure has the code `ci-failure`, which D25 freezes; a failure of a developer's own run says so first in its
-message (`Local failure: …`, `Local failure, edited since your run #42: …`), as its hover does.
+message (`Local failure: …`, `Local failure, edited since your run #42: …`), as its hover does on a line no
+diagnostic of the failure is on.
 
 A failure whose line changed since its run:
 
 - is an information, `Edited since run #120: …`, with `data.edited`;
-- has **Run this test** (`piwi.runTests`) first among its quick fixes (every failure has it);
+- has **Run with Piwi** (`piwi.runTests`) first among its quick fixes, the only failure that has it there;
 - has `state: 'edited'` in `TestFailure` and in `piwi/failures`;
 - shows `✎ edited since run #120` above the line.
 
 The line above a failing line says `✗ Failed here`, and the headline after it only where no diagnostic on that line
 gives it (`TestFailure.diagnosed`: the diagnostic of the test's failure on any project is on that line, and
-`failureSeverity` is not `off`). The hover leaves out the headline of a failure whose diagnostic is on the hovered line,
-and gives it for every other failure of the call chain; VS Code's Testing view leaves it out of the failure's message
-the same way. VS Code asks for the lenses again as it hands new credentials.
+`failureSeverity` is not `off`). The hover of a failure whose diagnostic is under the pointer (within its range, where
+an editor shows it) gives its error, call chain and known issues, the failure's page (`Open in dashboard`, with the test
+and the run when several failures share the line), then its screenshot: the diagnostic beside it says what failed, in
+which run and why. It finds that diagnostic whichever form of the file's URI the client sent. Every other failure of the
+call chain, and one hovered outside its diagnostic's range, leads with what failed, the run and the headline. VS Code's Testing view leaves the headline out of the failure's
+message the same way. VS Code asks for the lenses again as it hands new credentials.
 
 A failure whose test left its spec publishes nothing: its `test(…)` call was in the spec the run saw, and is not in the
 spec as it stands.
@@ -434,7 +451,7 @@ The failures are placed again on the timer that analyzes an edited document, and
 ### File summary and the test at a position
 
 The summary's lines are filtered once for both clients by the person's choice (`EditorCredentials.codeLens`,
-`lensesShown`): every line; with `problems`, a failure's reason and evidence and a file's uncovered changes alone
+`lensesShown`): every line; with `problems`, a failure's reason and Run with Piwi and a file's uncovered changes alone
 (`SummaryLine.problem`); with `off`, none. A test's line, its gutter mark, always stays. A spec's locator line whose only
 test is the one whose call holds it is left out (`locatorLineTellsMore`), and `EditorCredentials.locatorWarnings` false
 leaves out the brittle locators' diagnostics.
@@ -457,13 +474,13 @@ On a spec, `piwi/fileSummary` gives each test's line:
   spec spells them, stopping once at the line of the spec it failed through, offered only where `checkedDebugRun` and
   `debugTest` take it), else a headed run holding its failures; then the failure's trace and screenshot when it failed and
   the test in the dashboard, the failure's context for an agent, then the line's Flake Lab commands. A failure of
-  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug this
-  failure**, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
+  `piwi/failures` carries the same debug run (`WorkspaceFailure.debug`), stopping at its own line, for **Debug with
+  Piwi** on its node, with its test's `test(…)` line (`test`) and its Verify ×3 run (`verify`), all from the one test of its
   spec titled as it failed (`failureTestActions`).
 
 Every code action the service answers carries Piwi's name, its words after it starting lower-case (`piwiActionTitle`:
-`Piwi: heal with getByRole(…)`, `Piwi: run this test`); the clients' recorded-locator fixes read the same
-(`Piwi: use getByTestId('pay')`).
+`Piwi: heal with getByRole(…)`), or names Piwi itself and stays as it is (`Run with Piwi`); the clients'
+recorded-locator fixes read the same (`Piwi: use getByTestId('pay')`).
 
 `piwi/testAt` answers, for a position of a spec:
 
@@ -483,25 +500,97 @@ a spec under a context's folder answers nulls, and a test Piwi does not know ans
 
 ### Test items
 
-`piwi/testItems` answers the tests of the workspace's specs, for a client's own test tree (VS Code's Testing view). It
-lists:
+`piwi/testItems` answers the test tree, for a client's own test tree (VS Code's Testing view): per Playwright config,
+its nodes (`configTree` in `src/test-tree.ts`), folders, specs, describe blocks, tests, and a node per project under a
+test that runs in several, then the **Not in this checkout** group. A node's id holds no URI: a spec's is its config's
+folder and its path, so an id stays whichever source gave the node, and in both editors' spellings of a URI.
 
-- unless `catalog` is false, the catalog's specs the workspace holds (`PiwiContext.allCases`: the whole catalog, a
-  thousand cases a request and ten requests at most, read once per refresh). Each stored path is found as a run's path
-  is (`resolveReportedFile`), under the context whose folder holds it.
-- the specs `uris` names (`casesOf`), known to the catalog or not.
+**The listing** (`src/test-listing.ts`) is where the tests come from: `playwright test --list` with the project's own
+Playwright and Node, run with `piwi-use-reporter.cjs` and `PIWI_LIST_TESTS=1`, which prints the tests Playwright lists
+(`PIWI_TESTS`: each test once per project, with Playwright's id, its location, its titled describe blocks with their
+lines, and its tags) and each error it reports while it loads the specs (`PIWI_ERROR`). `TestListings` keeps each
+config's last listing:
 
-Each test is given as the spec stands (`testCalls` in `src/analysis.ts`: each `test(…)` call, one a line, a line
-starting with `//` read as blank, with the titled `test.describe(…)` blocks around it, a test on the line opening its
-block included). It comes
-with the catalog's case of its title in those blocks (`caseOfCall`), its location, its latest result and its failure,
-as `piwi/fileSummary` gives them: both read them from `specTests` in `src/server.ts`.
+- the first `piwi/testItems` of the whole tree lists every config not listed yet; a config nobody asked the tree of is
+  never listed;
+- a listed config is listed whole again when a file it reads changed (`configFingerprint`, checked on every change the
+  client watches) and on `piwi/refresh`; a spec saved, created or deleted is listed alone, a burst of them together
+  (`WATCHED_FILES_MS`), past `MAX_SPECS` the config whole. The service asks the client to watch the scripts
+  (`workspace/didChangeWatchedFiles`, registered when the client takes dynamic registrations);
+- one listing runs per config at a time, and what is asked meanwhile runs after it, merged;
+- a spec is named by its whole path and by its `file:` URL, which Playwright also tests on Windows (`specFilter`), with
+  the file system's case (between slashes, which Playwright reads as written, except on Windows and macOS), so no
+  other spec loads with it;
+- Playwright lists nothing once one spec does not load, so the listing runs again without the specs that failed
+  (`excludingFilter`, by the same two spellings), and keeps why each failed (`broken`); an error the retry cannot place
+  on a spec (in a module a spec imports) leaves no test listed, and fails the listing as a whole. A listing that fails as a whole (Playwright missing, a config that throws, `LIST_TIMEOUT_MS`) keeps the last listing and
+  says why (`TestListing.error`);
+- a listing of some specs keeps their tests alone; a test of a spec outside the config's folder is left out, as everywhere in the service;
+- once a listing ends, the whole tree is pushed (`piwi/testItemsChanged`) when it differs from the last one sent or
+  answered.
+
+**Each spec** takes its tests from the listing while the listing has seen it as it stands: saved (no open document
+whose text differs from the file's, line endings aside: `sameText`), listed since it last changed on disk, and loading. Its tests are then one per
+title in its describe blocks, with each project's Playwright id, at the line their call starts on, ending where the
+spec's text says the call there ends (`listedTests`). Otherwise its tests are read from its text (`textTests`:
+`testCalls` in `src/analysis.ts`, each `test(…)` call, one a line, a line starting with `//` read as blank, a title
+written on the call's line or on the first line of code below it, with the titled `test.describe(…)` blocks around it), each with the projects of the listed test of its titles: a loop's tests
+are one test until the listing sees the spec again. Each test comes with the catalog's case of its title in those blocks
+(`caseOfCall`), its location, its latest result and its failure, as `piwi/fileSummary` gives them: both read them from
+`specTests` in `src/server.ts`.
+
+**The specs answered**:
+
+- with a listing, the specs it holds, a spec of the catalog created since it ran (one Playwright has not listed yet),
+  and the open specs `uris` names;
+- before a config's first listing, or for one never listed, the catalog's specs the workspace holds
+  (`PiwiContext.allCases`: the whole catalog, a thousand cases a request and ten requests at most, read once per
+  refresh, each stored path found as a run's path is, `resolveReportedFile`, under the context whose folder holds it)
+  and the specs `uris` names (`casesOf`), known to the catalog or not;
+- with `catalog` false, the specs `uris` names alone, each with the folders above it, which the client puts in place in
+  the tree it holds.
+
+**The Not in this checkout group** holds, once a config is listed, the catalog's tests that no test of the checkout
+is: those of a spec the checkout does not hold (placed once, under the first config reading the project), and those of
+a spec the listing gives as it stands that none of its tests is (deleted or renamed here, or another branch's). Its
+nodes are not `runnable`.
+
+### Test runs
+
+`piwi/testRuns` turns the nodes a client picked in the tree (and a config's node, `CONFIG_NODE` and its folder) into
+`RunTestsArgs`, read from the tree as it stands (`nodeRuns` in `src/test-tree.ts`). Each node runs by the narrowest
+filter Playwright takes for it, so a run needs no instance and a group is one argument, not its tests':
+
+| Node | Filter |
+| --- | --- |
+| A config | none (`RunTestsArgs.all`): `npx playwright test` |
+| A folder | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax |
+| A spec | its whole path (`^/repo/e2e/tests/cart.spec.ts`) |
+| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
+| A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
+| A project's node | its test's, in that project alone (`--project`) |
+
+A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
+Every location is written by `locationArg`, from the config's folder as the file system spells it: its whole path,
+anchored at its start (`^/repo/tests/cart.spec.ts:3`), as Playwright matches a file filter, a regular expression,
+anywhere in a spec's whole path (`tests/cart.spec.ts` alone would also take `e2e/tests/cart.spec.ts`, and `tests/cart/`
+`e2e-tests/cart/`). On Windows its `file:` URL's spelling is an alternative
+(`^(?:C:/repo/my cart.spec.ts|file:///C:/repo/my.20cart.spec.ts):3`), which Playwright tests up to 1.62. The end of a
+spec's path is not anchored, as `$` is a character a shell expands: `cart.spec.ts` also takes a `cart.spec.tsx` beside
+it. The filters of one config, set of projects and titles make one run, split where its locations, as
+written, would pass 8,000 characters (`cmd.exe` stops at 8,191), never widened to tests that were not picked.
+`--grep` matches a test's project, spec and its tags, each describe block and its tags, title and tags joined by
+spaces, case-insensitive: a title is matched within that line's tests alone, after its spec's name and describe blocks,
+each followed by any tags (`TAG_GAP`), so neither matches it, and `titlePattern` writes it as `specPattern`
+writes a path, a backslash and a control character as `.` too. `piwi/runArgs` takes the new fields: `all`, `projects`, `grep`,
+`grepInvert`, and a folder or a spec the listing holds in `locations`, whatever its name.
 
 ### Failure lines and Flake Lab lines
 
 A failing test's line also carries `failure`: the line of the test that its error's stack goes through. The instance
-sends the stack's frames and the message in `branch-failures`. Above that line, the failure's mark, **Run this test**
-(`piwi.runTests` with the test's id), **Screenshot** and **Trace** are ordinary summary lines. The hover on any line of
+sends the stack's frames and the message in `branch-failures`. Above that line, the failure's mark, **Run with Piwi**
+(`piwi.runTests` with the test's id) are ordinary summary lines; its screenshot and trace are among the test's actions
+(`testActions`). The hover on any line of
 that stack shows the message and the call chain.
 
 A flaky test's line also carries the Flake Lab lines (`flakeLabLines`, from `GET /api/projects/:id/flake-lab`):
@@ -566,11 +655,31 @@ result:
 clients draw the files again. A CI run's (`LiveRun.ci`) is never a test line's `status` (`lineLiveState`): the line keeps
 its own result, and its title names the CI run after it (`passed in its latest run · running in CI run #130`).
 
+The runs the service follows tell a test's line more (`src/own-run-tests.ts`, `OwnRunTests`), by the test's spec and
+titles, so an edit since the run started moves nothing. A test running or standing at a stop of one of them, from the
+run sessions, takes its line before the instance's stream does: `running`, `paused` at a stop (`paused, line 14, in
+your run`), `failed` while its failure is held. Its results, as each worker's `test-end` says them and read against
+the status the test was expected to end with (a `test.fail()` test passes by failing and fails by passing), show only
+for a run that names no page on an instance (`RunSession.page`), whose results no stream brings: while it runs, then until
+another run of its config begins or the context reads a newer latest run (`forget`), the newest run's result first. Such
+a result in place of a failure the instance read drops that failure from the line. A test the catalog does not know
+gets a line of that state alone. `piwi/runStatus` gives these tests in `runTests`, each with its line's words so a new
+stop counts, at most every 300 ms, which the
+clients compare as they compare `liveTests`; the JetBrains plugin draws again the specs they name, whether or not
+their tests showed a result before. A config no instance reads gets its specs' test lines from these states alone
+(`ownRunSummary`), and `piwi/runStatus` names its tests in the result's own `runTests`, by config folder, as its
+`contexts` leave it out.
+
+The stream's `test-stuck` (once per attempt, `elapsedMs` and `usualMs`), `test-stopped` and `test-resumed` name an
+attempt as its `test-begin` did (`attemptKey`: title, place, browser, repetition). A running attempt the instance said
+may be stuck, while it does not stand stopped, makes `PiwiContext.liveStuck`: its test's `LiveTest.stuck` and line say
+`Stuck? running over 4 min, usually 40 s`, and `LiveRun.stuck` counts them.
+
 Once a run of the editor's own, or a CI run of the branch the context followed (`LiveRun.ci`, kept in
 `RunWatch.ciFollowed` from its start), ended and its context read the latest run, `piwi/runEnded` says once what the
 run changed (`runVerdict` in `src/run-watch.ts`, from the failures read before and after). It carries who started it
-(`origin`: `editor` or `ci`, with the CI run's `branch`), the ref of the command that started the run while the service
-keeps that command (`RefWatch.carried`), the run's counts, and:
+(`origin`: `editor`, `terminal`, `runner` or `ci`, with the CI run's `branch`), the ref of the command that started
+the run while the service keeps that command (`RefWatch.carried`), the run's counts, and:
 
 - `fixed`: the tests failing before that it passed; for a CI run, those the baseline it replaced failed, once it is the
   baseline;
@@ -578,8 +687,8 @@ keeps that command (`RefWatch.carried`), the run's counts, and:
 - `newFailures`: the tests it failed that were not failing before;
 - `endedAtStop`: how many of the skipped were ended at a stop (End the test), as the run's own process counted them
   (`RunSessions.endedAtStopOf`, which keeps the count of the latest runs that ended), absent for none;
-- `verdict`: what both clients show, in words (`verdictWords`): the run it names (`run #124`, `CI run #130 on
-  feature-x`), what it changed (`1 of 3 CI failures fixed, 2 still failing (…) · 1 new failure (…)`, for a CI run
+- `verdict`: what both clients show, in words (`verdictWords`): the run it names (`run #124`, `run #125 in a
+  terminal`, `run #126 in the IDE's test runner`, `CI run #130 on feature-x`), what it changed (`1 of 3 CI failures fixed, 2 still failing (…) · 1 new failure (…)`, for a CI run
   `2 fixed · …`), else its counts, or how a run of each test several times went; whether something fails, whether it
   is said whatever the client's run notifications setting (a repeated run), and its actions' ids (`failures`,
   `dashboard`, `rerun`). The clients add their own setting's actions, and leave a CI run's unsaid while their run
@@ -691,7 +800,11 @@ said once per run; a Pause, a Step or a Run to someone asked for waits.
 
 `piwi/runArgs` runs tests either way:
 
-- by id, with the instance's arguments;
+- by id: the instance resolves the ids to tests (`selections/preview`), and the service writes each test's spec and
+  line itself, from its whole path (`ownTestFilters`, `locationArg`), each spec whole when the lines would pass 8,000
+  characters, a spec the checkout does not hold left out. Without a spec it holds, it runs by the instance's own
+  arguments, relative paths that also take a spec whose path ends as theirs. `piwi/runSelection` takes a saved
+  selection's tests the same way, else its stored command;
 - by location (`RunTestsArgs.locations`): a spec under the context's folder and the line of its `test(…)` call
   (`isTestLocation`, `specLocation`). This needs no instance, so it runs a test just recorded.
 - to debug a failure (`RunTestsArgs.debug`): the test of a spec its title names, headed with one worker, stopping once
@@ -714,6 +827,13 @@ The service looks for the run carrying the ref in two ways:
 
 It keeps the run found in `PiwiContext.ownRuns` for its lifetime: its failures read `your run #N` and are
 `source: 'own'` in `piwi/failures`.
+
+A run the developer started in a terminal or in the IDE's test runner (`RunSession.terminal`, `RunSession.runner`) is
+the developer's own too, once its own process names its page on the context's instance (`RunSession.page`): the run
+watch adopts it under its run channel's ref (`RunWatch.adopt`, from the sessions' `notify`): it asks the instance for
+the run once, takes it only from the context's instance (by origin and path) and project, follows it, and tells its
+verdict as it ends with its origin (`RefWatch.origin`), a run that ended during that read with the failures read before
+it ended. A run nobody attends (`isUnattendedRef`) is not adopted.
 
 A client says when the command ended (`piwi/commandEnded`, with its exit code). The service then reads the run once
 more, and when no run carries the ref 5 s later, it sends `piwi/notice`. The instance is not asked for the ref again.
@@ -913,16 +1033,21 @@ was: the worker hears no request of it. `layers` that list `text` anew count as 
 hears them, so a change of the layers with `text: true` takes the text once. `RunWorker.layers` says which workers
 send them.
 
-**The running line.** For a client that says it marks it (`InitializationOptions.runningLine`), the lane view asks the
-lane's call log (`calls`) beside the layers the client names, and tells the call the lane's running test is in as
-`piwi/runningLine` (`RunningLine`: the run, the lane, the worker, and `call` with the test's id, the call's title and
-its place as a file URI and the 0-based line of the run's code, as a stop's, which the client maps through the edits
-since the run started). It goes (`call: null`) as the test ends or stops (a stop has a mark of its own), for a call
-that names no place in the user's code, as the watch ends and as the run does; a call log of a test the lane no
-longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, one lane at a
-time: the line of the lane watched before goes first. The call log reaches the client as `piwi/laneLayer` only when
-its layers name it. A client without the option hears none, and a service that predates it sends none: the client
-then marks nothing. The page's own lines (its console errors, errors nothing caught, failed and slow requests) are the
+**The running line.** For a client that says it marks it (`InitializationOptions.runningLine`), `RunningLines`
+(`src/running-lines.ts`) keeps the call each lane's running test is in and tells it as `piwi/runningLine`
+(`RunningLine`: the run, the lane, the worker, and `call` with the test's id, the call's title and its place as a file
+URI and the 0-based line of the run's code, as a stop's, which the client maps through the edits since the run
+started), as the credentials' `runningLines` chooses: `all` (the default), `watched` or `off`. The lane the client
+watches takes it from its call log: the lane view asks `calls` beside the layers the client names. Every other lane
+takes it from its worker's `position` messages, which `RunSessions` asks a worker whose `run-attach` lists `positions`
+for (`{ type: 'positions', on }`) while the choice is `all`, a desktop app's checkout left out; a lane whose watch ends
+keeps its line only while its worker sends positions. A line goes (`call: null`) as the test ends or stops (a stop has
+a mark of its own), as the worker leaves or the run ends (`changed`, on every session change), and as the choice stops
+marking it (`switched`); a call that names no place in the user's code leaves it where the last placed call was; a call log or a position of a test the
+lane no longer runs, or of one stopped, changes nothing (`RunSessions.laneRunning`). Only a change is told, the lines
+that changed going together at most every 250 ms (`RUNNING_LINES_PACE_MS`). The call log reaches the client as
+`piwi/laneLayer` only when its layers name it. A client without the option hears none, and a service that predates
+it sends none: the client then marks nothing. The page's own lines (its console errors, errors nothing caught, failed and slow requests) are the
 `events` layer of the same lane.
 
 `piwi/pickAt { ref, worker?, since, x, y }` (`RunSessions.pickAt`, the hub's `pick-at` too) has the stopped worker pick
@@ -1302,7 +1427,8 @@ to editor, whose `piwi/applyPick` would write in the workspace's file of the sam
 It follows every `didChange` since (read before the documents apply it; a whole new text by its line diff,
 `diffLines`), the code of an earlier action included. A file no editor held since is taken from disk while its
 modification time is older than the run, its text without the byte order mark it may start with, as a document's
-(`diskFile`). A file it cannot follow is refused with why: written on disk since, opened since with a text other than
+(`diskFile`). A text compares with its disk's line endings aside (`sameText`), as an editor may hold `\n` where the
+file has `\r\n`. A file it cannot follow is refused with why: written on disk since, opened since with a text other than
 its disk's, held with changes not saved as the run started, more than 2,000 edits since, or a stopped line an edit
 removed or rewrote from its start.
 
@@ -1577,6 +1703,10 @@ each says; the host only carries it:
 `tests/run-target-routes.test.ts` calls all three on the bare `node:http` host; the desktop app's Nitro routes answer
 the same (`apps/application/tests/unit/desktop-session-routes.test.ts`, `desktop-events-stream.test.ts`).
 
+The shell names the folders its local runs are going in (`PUT /local-runs`, and `PUT /key`'s `localRuns`): a request
+whose folder one of them or another approved request runs in fails its `busy` check (`planRequestedRun`), and is
+checked again as such a run starts or ends (`planWaiting`).
+
 ### The discovery file
 
 `src/discovery.ts` writes and reads `~/.piwi/editors/<pid>.json` (`@piwitests/core/editor-discovery`;
@@ -1660,6 +1790,13 @@ The marks of the second and third are placed through `diffLines` and `placeLine`
 `piwi/coverageChanged` pushes the marks of a document the client asked about, against the answer the client holds, when
 an edit, a read or a late answer changes them.
 
+`piwi/coverageFiles` answers the same for every application file of a config that the code index says the coverage
+recorded (`coveredFiles`), or that the given tests reach, after reading the code index and the coverage again; with
+tests, its marks are theirs alone (`coverageOfTests`). It reads each file once, outside the open files' caches
+(`PiwiContext.coverageOnce`, `coverageOfRun`), `MAX_COVERAGE_FILES` at most, `COVERAGE_FILES_AT_ONCE` at a time: VS
+Code's Coverage profile shows it. `piwi/coverageTests` names the tests the marks say ran a line, as a run of them that
+records the file's runtime's coverage (`recordedRuntime`, as the lens's run does): a JetBrains mark's menu runs it.
+
 On an application file, `piwi/fileSummary` adds the coverage's tests to the file's `Reached by N tests` line, with
 `41 of 63 lines run` when the executable lines are known, and gives each function that ran a line at its first line.
 The `piwi.runTests` of those lines makes the run record the coverage again:
@@ -1706,9 +1843,10 @@ spec or a file the locator index calls locators from.
   unsaved change, compared with `HEAD`, breaks locators the suite uses (`breaksOfChange`). Quick fix: update every call
   site.
 - `ci-failure`: a failure of the latest run ([Failure diagnostics](#failure-diagnostics-and-runs-laid-over)). Quick
-  fixes: heal the locator, **Run this test**, open the trace, the desktop jobs, apply the fix plan (then run its
-  verification), file an issue when the failure has no linked ticket, **Copy context for agent**, open the failure in
-  the dashboard.
+  fixes, which edit but for the first: **Run with Piwi** once the line was edited, heal the locator, apply the fix plan
+  (then run its verification); its trace, its context, its page, the desktop jobs and File an issue are the failure
+  node's. File an issue (`WorkspaceFailure.fileIssue`) asks `piwi/fileIssue` when chosen, which answers the cluster's
+  page while no ticket is linked to the cluster or the test (`issuesOf`), else names the ticket.
 
 ### Completion
 
@@ -1754,6 +1892,21 @@ holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project nam
 requests and in its describe answer (`projects`) reach the window through `onProjectNames`; a request object never
 carries one, as the parser refuses fields it does not know.
 
+The request host tells the shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the
+instance's 401 for a key it no longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance
+that sends no code). The instance's stream sends `revoked` as the key or its owner is deleted, and when its own check of
+the key, as it subscribes and every minute after, is refused with a 401; any other refusal there closes the stream.
+The window then has the shell forget the key too, which disconnects (`disconnectRunTarget`): a connection the instance
+revoked keeps its state and its reason through that, until the next connect, but no instance, so the runs' hub takes no
+page under it.
+
+The shell keeps each instance's folders apart, so the folders the target holds are for one instance (`linksFor`): the
+key it hands (`PUT /key`) names its instance, and so does `PUT /links`, whose folders are left aside while another
+instance is connected. What an instance hears of them (`describe`) and where its requests run read them only for the
+instance they were handed for (`linksHere`): none between connecting to another instance and the shell keeping its
+key, which hands that instance's folders, and the requests still asked about are checked again as they change.
+`linkedFolders`, which the runs' hub reads, holds the folders handed last, whichever instance they are for.
+
 Its requests go through `src/http.ts`. When the service's environment names a proxy (`HTTPS_PROXY`, `HTTP_PROXY`,
 `NO_PROXY`, upper or lower case, which both clients set from the editor's proxy settings):
 
@@ -1767,10 +1920,11 @@ Its requests go through `src/http.ts`. When the service's environment names a pr
 It posts the job with the token of the app's discovery file: the app never receives the editor's key. Jobs are offered
 only while the app runs and the context reads another instance than the app (`DesktopJobs.available`):
 
-- on a failure, the quick fixes **Reproduce in the desktop app** and **Find the breaking commit in the desktop app** (a
-  bisect);
-- on a flaky test's line, and on a failure whose test has an untested suspect (`hasUntestedSuspect`), a `flake-lab`
-  job.
+- on a CI failure's node, **Reproduce in the desktop app** and **Find the breaking commit in the desktop app** (a
+  bisect), which the clients offer while `piwi/status` names the app (`desktopUrl`);
+- on a flaky test's line, and on the node of a failure whose test has an untested suspect
+  (`WorkspaceFailure.untestedSuspects`, `hasUntestedSuspect`, set only on a context that reads another instance than
+  the app), a `flake-lab` job.
 
 A `flake-lab` job carries the test's reproduce plan, which the service reads from the instance with recording on
 (`source=desktop`, and this machine's name). The app runs it with `piwi flake --plan <file> --json` against itself.
@@ -1919,7 +2073,7 @@ JetBrains plugin in its `server/`. The service finds the other files next to its
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
 | `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
 | `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
-| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options (`src/recorder/use-reporter.ts`).                  |
+| `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options, and its tests for the listing (`src/recorder/use-reporter.ts`). |
 | `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
 | `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
 
@@ -1949,6 +2103,65 @@ Each argument is checked, then quoted (`shellWord`: bare when no shell changes i
 test filter, or an option of `PLAYWRIGHT_OPTIONS`, none of which names a file Playwright loads or a folder it writes to.
 An argument that is anything else, or that a shell would expand, refuses the whole command, and the clients run only
 what the service built.
+
+### Run variables
+
+A project's run variables (`@piwitests/core/run-variables`, `adr/run-variables.md`) are environment variables, never
+words of a command. A context reads them once per refresh (`readRunVariables`, `GET /api/projects/:id/run-variables`;
+a 404 from an older instance reads as none) and every run the service builds gets them, before its own variables:
+runs by location or test, a selection, a debug run, an agent's `run_start`, the Flake Lab lines and the fix plan's
+verification. The first run of a set asks the person (`window/showMessageRequest`: **Allow** or **Not now**), once
+while the service runs, except on the desktop app's own server; until they allow it, nothing runs with it, and the
+Flake Lab lines and the verification offer no run. A list `parseRunVariables` refuses, or one the instance did not
+answer, runs nothing and says why (`piwi/notice`); a read that failed is asked again by the next run. With no project
+known (the instance unreachable), a run gets none and the person hears it once. A requested run reads them at its
+claim, again at **Run** (a change shows the new command) and again at the next check after a failed read; the claim
+says the app applies them (`features`), and the launch hands them to the shell, which checks them once more.
+
+### Environments
+
+A project's environments (`@piwitests/core/environments`, `adr/environments.md`) are the deployments its tests
+run against. A context reads them once per refresh (`PiwiContext.environments`, `GET /api/projects/:id/environments`,
+archived ones left out; a 404 from an older instance reads as none) and runs for the one chosen for it: **None** by
+default, where the Playwright config decides, else what the client chose with `piwi/setEnvironment`. The choice
+(`KeptEnvironment`) names the environment's id and name with the instance and the project it belongs to, and the client
+keeps it per config folder (`EditorCredentials.environments`); it applies only while the context reads that instance
+and that project (`PiwiContext.environmentId`), so an id never names another instance's or project's environment. Only
+an environment the project lists can be chosen; **None** always can, also while the instance or the project cannot be
+read. `piwi/environments` answers the choices, and the status says the one in force
+(`StatusResult.contexts[].environment`), which both clients show in an item of their status bar with **Choose
+environment…**, for the active file's config alone.
+
+With one chosen, `readRunVariables` reads `GET /api/projects/:id/run-variables?environment=<id>`: the project's and the
+environment's run variables merged (`parseRunVariables` with `RUN_VARIABLE_LIMITS.merged`) and the environment
+(`parseEnvironmentForRun`), which must be the one asked for; a 404 (an environment the project no longer has) or a 403
+(a protected one, for someone who does not manage the project) refuses every run. Every run the service builds
+(`runSettingsFor`) gets the merged variables and `PIWI_ENVIRONMENT` set to the key (`runVariablesEnv`), and the
+**Allow** question covers each new set: the merged variables with the environment's key. A protected environment asks
+before every run instead (`confirmProtected`), and its arguments keep to the tests carrying one of its required tags:
+the run's own `--grep-invert` merged into one with `requiredTagsGrepInvert` (`withRequiredTags`), which `shellWord`
+double-quotes as the one value holding `!`, `\s` and `$` it accepts (`isRequiredTagsFilter`). Playwright applies a
+CLI filter before it adds the projects a run's projects depend on, so their setup and teardown tests run whole: every
+sentence that states the rule says so (`requiredTagsWords`). On Windows such a run starts the project's Playwright CLI
+with `node` (`playwrightNodeCommand`), since PowerShell hands `npx.cmd` the filter bare and cmd would read its `^` and
+`|`; without the CLI in the folder it runs nothing and says why. Its `RunCommand` says it is protected (`protected`):
+the clients offer no Rerun of it and keep no run configuration of it, so each run against it is asked here; VS Code
+cannot keep **Tasks: Rerun Last Task** from starting its task again, and ends it as it starts. An
+agent's `run_start` against a protected environment is refused, with a `piwi/notice`. The Flake Lab lines and the fix
+plan's verification, which the client runs on its own, carry the environment once its set is allowed, and are offered
+no run for a protected one (`ownCommandEnv`). While the environment chosen cannot be read (no client, no project
+known, the instance unreachable), nothing runs, and the notice and the status item say the instance or the project
+cannot be read.
+
+A requested run reads the environment with its run variables (`GET /api/run-targets/requests/:id/run-variables`,
+`RequestHost.runVariables`), and its claim says the app applies environments (`RUN_TARGET_FEATURES`). The plan
+(`planRequestedRun`) checks it (an `environment` check, a warning for a protected one), the command the confirmation
+shows sets `PIWI_ENVIRONMENT` after the run variables (`requestedRunDisplay`, PowerShell's form on Windows) and a
+protected one's run keeps to its required tags, beside the setup and teardown projects they depend on
+(`requestedRunArgs`). **Run** for a protected environment needs the person's confirmation naming its key (the
+answer's `environment`), and the launch hands the shell the environment (`launchOf`), whose key it sets as
+`PIWI_ENVIRONMENT`, and whose required tags it keeps the run to itself: the arguments it hands leave out the filter the
+confirmation showed (`requiredTagsFilterArg`).
 
 ### The folder a command runs in
 
@@ -2003,6 +2216,8 @@ A change is pushed against what the client holds:
   last one sent, or answered to `piwi/status`, `piwi/runStatus` or `piwi/failures`;
 - `piwi/coverageChanged` is sent when a document's marks differ from the last ones sent, or answered to `piwi/coverage`
   for it;
+- `piwi/testItemsChanged` is sent once a listing ends, when the whole tree differs from the last one sent, or answered
+  to a `piwi/testItems` of the whole tree ([Test items](#test-items));
 - `piwi/ciSessionChanged` is sent when a CI run's session differs from the last one sent for it, at most every
   500 ms ([CI runs of the branch](#ci-runs-of-the-branch));
 - `piwi/runSessionChanged` is sent when a run's session differs from the last one sent for it, at the pace

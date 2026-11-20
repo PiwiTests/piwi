@@ -23,10 +23,14 @@ extra port forwarding. The steps below are for using Piwi Picker's separate Runs
 
 In a remote window (Remote SSH, WSL, Dev Containers, or a codespace opened in VS Code desktop):
 
-1. Run **Piwi: Pair with Piwi Picker** in that window. VS Code forwards the window's Send to editor port to your
-   computer, on the same number when it is free there, and copies the local end on `127.0.0.1`, whatever name VS
-   Code gives it: `http://127.0.0.1:<port>/piwi/send#<token>`.
-2. Paste it in Piwi Picker's settings under **Editor** and click **Pair**.
+1. Run **Piwi: Copy the pairing address for Piwi Picker** in that window. VS Code forwards the window's Send to
+   editor port to your computer, on the same number when it is free there, and copies the local end on `127.0.0.1`,
+   whatever name VS Code gives it: `http://127.0.0.1:<port>/piwi/send#<token>`.
+2. In Piwi Picker's settings, under **Editor**, open Piwi Picker's **Pair with an address**, paste it and click
+   Piwi Picker's **Use this address**.
+
+Piwi Picker's **Pair**, which finds the editors on your computer and asks one for a code, does not look at a forwarded
+port.
 
 Piwi Picker then sends locators and recordings to the remote window, and its
 [Runs window](/features/runs-window) lists the runs that window starts, and shows a headless test's page live: when
@@ -49,14 +53,14 @@ nor the Runs window reaches a codespace in the browser: open it in VS Code deskt
 A JetBrains Gateway backend runs the IDE, its built-in server and the editor service on the remote machine. The
 platform offers plugins no supported way to forward a port to your computer, so you forward the ports yourself:
 
-1. Run **Tools → Piwi → Pair with Piwi Picker** in the remote IDE. Besides copying the pairing address, its
-   notification names the IDE's port (63342 by default) and the ports of the open projects' runs.
+1. Run **Tools → Piwi → Copy the pairing address for Piwi Picker** in the remote IDE. Besides copying the pairing
+   address, its notification names the IDE's port (63342 by default) and the ports of the open projects' runs.
 2. In the JetBrains Client, forward each of them under **Ports**, with the local port the same as the host port.
-3. Paste the pairing address in Piwi Picker's settings under **Editor**.
+3. Paste the pairing address in Piwi Picker's settings under Piwi Picker's **Pair with an address**.
 
 The numbers must match: Piwi Picker checks the IDE's proof for the port it asked on, and a run's hub accepts its own
 port alone. A project's run port changes when its editor service starts again (the IDE restarted, the project was
-reopened): pair again, and forward the port the notification names.
+reopened): copy the address again, and forward the port the notification names.
 
 ## Related
 

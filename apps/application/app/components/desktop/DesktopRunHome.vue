@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: a run of this window's Local runs on its own run page, the run's home while it goes on: its
- * **Stop**, its **Hold failures**, each worker with its controls and its page live (`DesktopRunSession`, as the tray
+ * **Stop** (`DesktopRunStopButton`), its **Hold failures**, each worker with its controls and its page live (`DesktopRunSession`, as the tray
  * shows them), and its output. Shown for the tray's running run whose Piwi run is the page's (`piwiRunId`), with the
- * hub's runs that report to it (`sessions`, the page's `useDesktopRunSessions`); the tray keeps showing the run too.
+ * hub's runs that report to it (`sessions`, the page's `useDesktopRunSessions`). While the Local runs tray is open
+ * under the page, which shows the run's workers and output, the card keeps its Stop and **Show in Local runs** alone,
+ * so the page keeps its height.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
 import { localRunTitle, type LocalRun } from '~/composables/useDesktopLocalRuns';
@@ -17,6 +19,9 @@ const props = defineProps<{
 
 const store = useDesktopLocalRuns();
 const { runs } = store;
+
+/** The tray is open under the page: it shows the run, which the card only names. */
+const trayShows = computed(() => store.trayOpen.value && store.trayMounts.value > 0);
 
 /** The tray's run of this page's run, while it goes on. */
 const run = computed<LocalRun | undefined>(() =>
@@ -46,19 +51,25 @@ function announce(text: string) {
   >
     <template #actions>
       <UButton
-        v-if="run.stopRequested"
+        v-if="trayShows"
         size="xs"
         color="neutral"
-        variant="outline"
-        title="Kill the process without waiting"
-        @click="store.stopRun(run)"
+        variant="ghost"
+        icon="i-lucide-panel-bottom-open"
+        @click="store.showRun(run.key)"
       >
-        Force stop
+        Show in Local runs
       </UButton>
-      <UButton v-else size="xs" color="neutral" variant="outline" @click="store.stopRun(run)">Stop</UButton>
+      <DesktopRunStopButton
+        :stopping="run.stopRequested"
+        :since="run.stopRequestedAt"
+        @stop="store.stopRun(run)"
+        @force="store.stopRun(run)"
+      />
     </template>
+    <p v-if="trayShows" class="text-sm text-muted">Its workers and its output are in Local runs, under the page.</p>
     <!-- From lg the page's summary does not scroll: the card scrolls inside, so the tabs below keep their room. -->
-    <div class="flex flex-col gap-3 lg:max-h-[40dvh] lg:overflow-y-auto">
+    <div v-else class="flex flex-col gap-3 lg:max-h-[40dvh] lg:overflow-y-auto">
       <DesktopRunHoldSwitch :run="run" :described-id="`desktop-run-home-hold-${run.key}`" />
       <DesktopRunSession
         v-for="session in sessions"
@@ -78,7 +89,7 @@ function announce(text: string) {
         >
           Output
         </UButton>
-        <DesktopLocalRunConsole v-if="outputShown" :lines="run.lines" class="mt-1" />
+        <DesktopRunOutputPane v-if="outputShown" :lines="run.lines" class="mt-1" />
       </div>
     </div>
     <p role="status" aria-live="polite" class="sr-only">{{ announcement }}</p>

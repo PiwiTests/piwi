@@ -15,7 +15,8 @@
 //   --version <v>  The version, with or without its `v`; the latest version by default.
 //
 // The scope prefix is dropped, since every entry is the extensions'. An entry release-please
-// wrote once per commit (squash, cherry-pick) is kept once, with every commit's link.
+// wrote once per commit (a merge commit's pull request title, a squash, a cherry-pick) is kept
+// once, with every commit's link.
 
 import fs from 'node:fs';
 import path from 'node:path';

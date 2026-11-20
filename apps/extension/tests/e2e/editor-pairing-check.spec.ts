@@ -68,7 +68,7 @@ test.describe('the paired editor’s proof, checked where the pairing shows', ()
       const page = await context.newPage();
       await page.goto(`chrome-extension://${paired.extensionId}/options.html`);
       await expect(page.locator('#editor-status')).toHaveText(
-        /but the program on that port does not prove it is your editor, so nothing goes to it: run “Piwi: Pair with Piwi Picker” in your editor again/,
+        /but the program on that port does not prove it is your editor, so nothing goes to it: click Pair to pair again/,
       );
       await expect(page.locator('#editor-status')).toHaveClass('error');
       await expect(page.locator('#editor-pill')).toHaveText('Paired');

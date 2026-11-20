@@ -4,6 +4,8 @@ import {
   availableWorkerMetrics,
   buildResourceBands,
   buildWorkerStrips,
+  CURSOR_LABEL_ROOM,
+  cursorLabelSide,
   formatTrackValue,
   layOutTimelineRows,
   shownTracks,
@@ -11,7 +13,9 @@ import {
   stripReading,
   sumSteps,
   trackPaths,
+  trackReadings,
   valueAt,
+  workerMetricColor,
 } from '../../app/utils/resource-tracks';
 import type { TimelineItem, WorkerRow } from '../../app/composables/useTimelineModel';
 import type { RunExecutionCost, RunResourceTimelinePart } from '../../shared/handlers/run-resources';
@@ -111,6 +115,7 @@ describe('buildResourceBands', () => {
           [6000, 1],
           [7000, 0],
         ],
+        leftOpen: null,
       },
       {
         name: 'Worker 2',
@@ -119,14 +124,62 @@ describe('buildResourceBands', () => {
           [500, 1],
           [2000, 0],
         ],
+        leftOpen: null,
       },
     ]);
+    expect(band!.leftOpen).toBeNull();
     expect(band!.tracks.pages).toMatchObject({ yMax: 3, step: true, scaleLabel: 'peak 3' });
     expect(band!.tracks.pages!.points).toEqual([
       [0, 1],
       [500, 2],
       [1000, 3],
       [2000, 2],
+      [5000, 0],
+      [6000, 1],
+      [7000, 0],
+    ]);
+  });
+
+  test('sums the pages left open of a lane’s processes, and of the band’s, when the reporter sent them', () => {
+    const base = part(null);
+    const [worker0, worker2, worker1] = base.timeline.pages;
+    const pages = [
+      {
+        ...worker0!,
+        leftOpen: [
+          [2000, 1],
+          [6000, 0],
+        ] as Array<[number, number]>,
+      },
+      {
+        ...worker2!,
+        leftOpen: [
+          [7000, 1],
+          [8000, 0],
+        ] as Array<[number, number]>,
+      },
+      worker1!,
+    ];
+    const [band] = buildResourceBands(
+      [{ ...base, timeline: { ...base.timeline, pages } }],
+      [row(null, 0, [0, 2], 0), row(null, 1, [1], 1)],
+      10_000,
+      false,
+    );
+    expect(band!.workers.map((w) => [w.name, w.leftOpen])).toEqual([
+      [
+        'Worker 1',
+        [
+          [1000, 1],
+          [5000, 0],
+          [6000, 1],
+          [7000, 0],
+        ],
+      ],
+      ['Worker 2', []],
+    ]);
+    expect(band!.leftOpen).toEqual([
+      [1000, 1],
       [5000, 0],
       [6000, 1],
       [7000, 0],
@@ -229,6 +282,53 @@ describe('formatTrackValue', () => {
     expect(formatTrackValue('cpu', 63.4)).toBe('63%');
     expect(formatTrackValue('memory', 2.5 * GB)).toBe('2.5 GB');
     expect(formatTrackValue('pages', 4)).toBe('4 open');
+  });
+});
+
+describe('trackReadings', () => {
+  const [band] = buildResourceBands([part(null)], [row(null, 0, [0, 2], 0), row(null, 1, [1], 1)], 10_000, false);
+  const tracks = shownTracks(band!, ALL_RESOURCE_TRACKS);
+
+  test('reads every track at a moment, the memory with how it was measured', () => {
+    expect(trackReadings(band!, tracks, 1000).map((reading) => reading.text)).toEqual(['40%', '2.0 GB PSS', '3 open']);
+  });
+
+  test('says how many open pages earlier tests left open, and where no reading is near', () => {
+    const leftOpen: Array<[number, number]> = [
+      [0, 1],
+      [1500, 0],
+    ];
+    expect(trackReadings(band!, tracks, 1000, leftOpen)[2]!.text).toBe('3 open, 1 left open');
+    expect(trackReadings(band!, tracks, 20_000)[0]).toEqual({ kind: 'cpu', value: null, text: 'not read' });
+  });
+});
+
+describe('workerMetricColor', () => {
+  test('colors a strip as its track, the wait for a CPU as the CPU', () => {
+    expect(workerMetricColor('wait')).toBe(workerMetricColor('cpu'));
+    expect(new Set((['cpu', 'memory', 'pages'] as const).map(workerMetricColor)).size).toBe(3);
+  });
+});
+
+describe('cursorLabelSide', () => {
+  const bounds = { left: 0, right: 1000 };
+
+  test('puts the labels right of the line, left of it near the right edge', () => {
+    expect(cursorLabelSide(500, bounds)).toBe('right');
+    expect(cursorLabelSide(1000 - CURSOR_LABEL_ROOM + 1, bounds)).toBe('left');
+  });
+
+  test('puts them on the side an open tooltip leaves free, when it has room', () => {
+    expect(cursorLabelSide(500, bounds, 'right')).toBe('left');
+    expect(cursorLabelSide(500, bounds, 'left')).toBe('right');
+    // Too near the left edge to go left of the line: under the tooltip rather than over the row names.
+    expect(cursorLabelSide(CURSOR_LABEL_ROOM - 1, bounds, 'right')).toBe('right');
+    // Too near the right edge to go right of it: under the tooltip rather than past the chart.
+    expect(cursorLabelSide(1000 - CURSOR_LABEL_ROOM + 1, bounds, 'left')).toBe('left');
+  });
+
+  test('keeps them right of the line when neither side has room', () => {
+    expect(cursorLabelSide(50, { left: 0, right: 100 })).toBe('right');
   });
 });
 

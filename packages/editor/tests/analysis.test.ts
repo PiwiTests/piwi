@@ -17,6 +17,7 @@ import {
   pickEditOnLine,
   piwiActionTitle,
   placeLine,
+  sameText,
   testCalls,
 } from '../src/analysis';
 import type { FlakeLabEntry } from '../src/piwi-client';
@@ -437,6 +438,34 @@ describe('testCalls', () => {
     ]);
   });
 
+  test('reads a title written on the line after the call opens', () => {
+    const lines = [
+      'test.describe(',
+      "  'Création d’une configuration',",
+      '  () => {',
+      '    test(',
+      '      `Portail ${portail}`,',
+      '      async () => {},',
+      '    );',
+      '  },',
+      ');',
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 3, endLine: 6, title: 'Portail ${portail}', suite: ['Création d’une configuration'], suiteUnread: false },
+    ]);
+    // A test in the line joined for a title is read on its own line, once.
+    expect(testCalls(['test.describe(', "  'cart', () => { test('pays', async () => {}); });"])).toEqual([
+      { line: 1, endLine: 1, title: 'pays', suite: ['cart'], suiteUnread: false },
+    ]);
+    expect(testCalls(['test.describe(', "  () => { test('pays', async () => {}); });"])).toEqual([
+      { line: 1, endLine: 1, title: 'pays', suite: [], suiteUnread: false },
+    ]);
+    // Another call's `(` ending a line leaves the test below on its own line.
+    expect(
+      testCalls(['portails.forEach(', '  (portail) => test(`Portail ${portail}`, async () => {}),', ');']),
+    ).toEqual([{ line: 1, endLine: 1, title: 'Portail ${portail}', suite: [], suiteUnread: false }]);
+  });
+
   test('reads a test on the line that opens its describe block', () => {
     const lines = ["test.describe('cart', () => { test('pays', async () => {}); });", "test('after', async () => {});"];
     expect(testCalls(lines)).toEqual([
@@ -563,8 +592,13 @@ describe('withoutComments', () => {
 
 describe('piwiActionTitle', () => {
   test('names a quick fix Piwi, its words after the colon in lower case', () => {
-    expect(piwiActionTitle('Run this test')).toBe('Piwi: run this test');
     expect(piwiActionTitle('Open the trace')).toBe('Piwi: open the trace');
+  });
+
+  test('keeps a title that names Piwi as it is', () => {
+    expect(piwiActionTitle('Run with Piwi')).toBe('Run with Piwi');
+    expect(piwiActionTitle('Piwi: record steps here…')).toBe('Piwi: record steps here…');
+    expect(piwiActionTitle("Use getByText('Welcome to Piwi')")).toBe("Piwi: use getByText('Welcome to Piwi')");
   });
 
   test('reads a heal as heal with its locator', () => {
@@ -592,5 +626,37 @@ describe('locatorLineTellsMore', () => {
     expect(locatorLineTellsMore(4, null, spans)).toBe(true);
     expect(locatorLineTellsMore(14, 7, spans)).toBe(true);
     expect(locatorLineTellsMore(10, 7, spans)).toBe(true);
+  });
+});
+
+describe('the routes a file handles', () => {
+  test('names a file by its whole repository path, each route and line once', async () => {
+    const { routesHandledIn } = await import('../src/analysis');
+    const test = { id: 1, title: 'pays', filePath: 'tests/pay.spec.ts', suitePath: null, status: 'passed' };
+    const index = {
+      files: ['src/Api/Program.cs', 'Program.cs'],
+      tests: [test],
+      reach: [],
+      routes: [
+        { file: 0, route: 'GET /api/orders/:id', line: 24, tests: [0] },
+        { file: 0, route: 'GET /api/orders/:id', line: 24, tests: [0] },
+        { file: 1, route: 'GET /admin', line: 8, tests: [0] },
+      ],
+      builtAt: null,
+      truncated: false,
+    } as never;
+    expect(routesHandledIn(index, 'src/Api/Program.cs').map((r) => [r.route, r.line])).toEqual([
+      ['GET /api/orders/:id', 24],
+    ]);
+    // A file named by its content root's path alone matches no other file of the same name.
+    expect(routesHandledIn(index, 'src/Admin/Program.cs')).toEqual([]);
+  });
+});
+
+describe('sameText', () => {
+  test('holds two texts the same whatever their line endings', () => {
+    expect(sameText('a\r\nb\r\n', 'a\nb\n')).toBe(true);
+    expect(sameText('a\nb', 'a\nb')).toBe(true);
+    expect(sameText('a\r\nb', 'a\nc')).toBe(false);
   });
 });

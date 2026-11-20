@@ -3,6 +3,7 @@
  * its scope (one stored row per run, kind and scope) and its digest. Pure, shared by the server, the demo and the UI.
  */
 import { fnv1a32 } from '@piwitests/core/hash';
+import { deployedCommitOf } from '@piwitests/core/deployed-commit';
 import {
   ENVIRONMENT_SNAPSHOTS_MAX,
   ENVIRONMENT_STRING_MAX,
@@ -74,6 +75,7 @@ export const SERVER_FIELDS: readonly EnvironmentField[] = [
   { key: 'globalization', label: 'Globalization', type: 'string' },
   { key: 'environmentName', label: 'Environment name', type: 'string' },
   { key: 'appVersion', label: 'App version', type: 'string' },
+  { key: 'appCommit', label: 'App commit', type: 'string', informational: true },
   { key: 'utcOffsetMinutes', label: 'UTC offset (minutes)', type: 'number', informational: true },
   { key: 'hostname', label: 'Host name', type: 'string', informational: true },
   { key: 'instance', label: 'Process', type: 'string', informational: true },
@@ -130,6 +132,7 @@ export function sanitizeEnvironmentSnapshot(value: unknown): WireEnvironmentSnap
     const origin = readField(raw.origin, 'string');
     if (typeof origin !== 'string') return null;
     out.origin = origin;
+    out.appCommit = deployedCommitOf(raw.appCommit);
   }
   return out as unknown as WireEnvironmentSnapshot;
 }

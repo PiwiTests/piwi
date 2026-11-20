@@ -63,6 +63,7 @@ export function knownApiPaths({ projectId, runId, executionId }) {
     `/api/test-run-cases/${executionId}`,
     execution('timeline'),
     execution('trace-snapshots'),
+    execution('trace-frames'),
     execution('trace-stacks'),
     execution('trace-network'),
     execution('dom-snapshot'),

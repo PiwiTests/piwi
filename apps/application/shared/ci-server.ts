@@ -41,9 +41,11 @@ export interface CiRequestTemplate {
 /** The CI server a project's dispatches go to. */
 export interface CiServerTarget {
   preset: CiServerPreset;
-  /** The project's base URL; absent, the instance's `PIWI_CI_SERVER_URL`. */
+  /** The action's base URL; absent, its credential's destination, else the instance's `PIWI_CI_SERVER_URL`. */
   baseUrl?: string;
-  /** The user name a Basic credential pairs with the project's token. */
+  /** The credential the requests carry (`credentials.id`); absent, the instance's, under its URL. */
+  credentialId?: number;
+  /** The user name a project's CI server token pairs with; the startup import moves it to the credential. */
   user?: string;
   /** The preset's fields for the re-run (Jenkins: `job`, `argsParameter`, `dispatchParameter`, `ref`). */
   rerun: Record<string, string>;
@@ -359,9 +361,13 @@ export function resolveCiServerTarget(input: unknown): CiServerTarget | null {
     ? (input.preset as CiServerPreset)
     : null;
   if (!preset || unusableBaseUrl(input.baseUrl)) return null;
-  const base: Pick<CiServerTarget, 'baseUrl' | 'user'> = {};
+  const base: Pick<CiServerTarget, 'baseUrl' | 'credentialId' | 'user'> = {};
   const baseUrl = normalizeCiServerBaseUrl(input.baseUrl);
   if (baseUrl) base.baseUrl = baseUrl;
+  const credentialId = input.credentialId;
+  if (typeof credentialId === 'number' && Number.isSafeInteger(credentialId) && credentialId > 0) {
+    base.credentialId = credentialId;
+  }
   const user = str(input.user);
   if (user) base.user = user;
 
@@ -445,6 +451,7 @@ export function customizeCiServerTarget(target: CiServerTarget): CiServerTarget 
   return {
     preset: 'custom',
     ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
+    ...(target.credentialId ? { credentialId: target.credentialId } : {}),
     ...(target.user ? { user: target.user } : {}),
     rerun: target.rerun.ref ? { ref: target.rerun.ref } : {},
     ...(rerun

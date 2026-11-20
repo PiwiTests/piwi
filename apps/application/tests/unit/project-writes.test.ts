@@ -87,12 +87,15 @@ describe('updateProject', () => {
     expect((await projectRow(7))?.diagnosisInstructions).toBeNull();
   });
 
-  test('an omitted SCM token keeps the stored one; null removes it', async () => {
+  test('an omitted SCM credential keeps the stored one; null removes it', async () => {
+    await updateProject(db as never, 7, { scmCredentialId: 3 });
     await updateProject(db as never, 7, { label: 'Web app', tagIds: [] });
-    expect((await projectRow(7))?.scmToken).toBe('enc:stored');
+    expect((await projectRow(7))?.scmCredentialId).toBe(3);
 
-    await updateProject(db as never, 7, { scmToken: null });
-    expect((await projectRow(7))?.scmToken).toBeNull();
+    const answer = await updateProject(db as never, 7, { scmCredentialId: null });
+    expect((await projectRow(7))?.scmCredentialId).toBeNull();
+    expect(answer.project).toMatchObject({ hasScmToken: false, scmCredentialId: null });
+    expect(answer.project).not.toHaveProperty('scmToken');
   });
 });
 

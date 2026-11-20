@@ -105,8 +105,22 @@
       "jetbrains": "breakpoints",
       "group": "runs",
       "scope": "user",
-      "type": "boolean",
-      "default": true
+      "type": "string",
+      "default": "debug",
+      "choices": [
+        {
+          "value": "debug",
+          "label": "Debug with Piwi"
+        },
+        {
+          "value": "always",
+          "label": "Every run"
+        },
+        {
+          "value": "never",
+          "label": "Never"
+        }
+      ]
     },
     {
       "key": "piwi.runHeaded",
@@ -247,6 +261,28 @@
       "scope": "user",
       "type": "boolean",
       "default": true
+    },
+    {
+      "key": "piwi.runningLines",
+      "jetbrains": "runningLines",
+      "group": "editor",
+      "scope": "user",
+      "type": "string",
+      "default": "all",
+      "choices": [
+        {
+          "value": "all",
+          "label": "Every running test's"
+        },
+        {
+          "value": "watched",
+          "label": "The watched worker's alone"
+        },
+        {
+          "value": "off",
+          "label": "None"
+        }
+      ]
     },
     {
       "key": "piwi.mcpAuthorization",

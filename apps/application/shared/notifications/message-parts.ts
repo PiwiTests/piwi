@@ -62,14 +62,18 @@ export function headlineText(h: Pick<EventHeadline, 'lead' | 'figure' | 'rest'>)
   return `${h.lead}${h.figure}${h.rest}`;
 }
 
-/** Where a run comes from: `Run #12`, its branch, its environment and, unless left out, its duration. */
+/**
+ * Where a run comes from: `Run #12`, its branch, its environment (the name of the one its label resolves to, else the
+ * label) and, unless left out, its duration.
+ */
 export function runParts(
-  p: { runId: number; branch?: string; environment?: string; durationMs?: number },
+  p: { runId: number; branch?: string; environment?: string; environmentName?: string; durationMs?: number },
   withDuration = true,
 ): string[] {
   const parts = [`Run #${p.runId}`];
   if (p.branch) parts.push(p.branch);
-  if (p.environment) parts.push(p.environment);
+  const environment = p.environmentName ?? p.environment;
+  if (environment) parts.push(environment);
   if (withDuration && p.durationMs) parts.push(durationShort(p.durationMs));
   return parts;
 }
@@ -400,8 +404,12 @@ function streak<T>(items: T[], match: (item: T) => boolean): number {
 }
 
 /** `Last 10 runs on main in staging`: what a history covers. */
-export function historyLabel(history: RunHistoryEntry[], scope: { branch?: string; environment?: string }): string {
-  return `Last ${runs(history.length)}${scope.branch ? ` on ${scope.branch}` : ''}${scope.environment ? ` in ${scope.environment}` : ''}`;
+export function historyLabel(
+  history: RunHistoryEntry[],
+  scope: { branch?: string; environment?: string; environmentName?: string },
+): string {
+  const environment = scope.environmentName ?? scope.environment;
+  return `Last ${runs(history.length)}${scope.branch ? ` on ${scope.branch}` : ''}${environment ? ` in ${environment}` : ''}`;
 }
 
 /**
@@ -693,8 +701,10 @@ export function eventFacts(event: NotificationEvent, payload: NotificationPayloa
     }
     case 'environment.incident': {
       const p = payload as EnvironmentIncidentPayload;
+      const environment = p.environmentName ?? p.environment;
       return [
         runFact(links, p),
+        ...(environment ? [{ label: 'Environment', value: environment }] : []),
         ...(p.host ? [{ label: 'Host', value: p.host, code: true }] : []),
         { label: 'Failed', value: `${p.failedTests} of ${plural(p.totalTests, 'test')}` },
       ];

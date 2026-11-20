@@ -93,12 +93,18 @@ function load(moment: InspectMoment | null): void {
   if (!sameMoment(moment, loading.value)) loading.value = moment;
 }
 
-/** The page loaded: its address and viewport, or why it does not show. */
+/** The page loaded: its address and viewport, or why it does not show; in the demo, its document too (`doc`). */
 const page = shallowRef<{
   moment: InspectMoment;
   src: string;
+  doc: string | undefined;
   viewport: { width: number; height: number } | null;
 } | null>(null);
+/**
+ * The demo's frames take their page as a document of their own (`srcdoc`): its service worker does not serve a
+ * sandboxed frame's address, so the page is read first, as the picker's is.
+ */
+const inline = !!useRuntimeConfig().public.demoMode;
 const pageError = ref<string | null>(null);
 let asked = 0;
 
@@ -147,12 +153,10 @@ watch(
     const token = ++asked;
     try {
       const meta = await $fetch<{ viewport: { width: number; height: number } | null }>(pageUrl(moment, 'json'));
+      const src = pageUrl(moment, 'readonly');
+      const doc = inline ? await $fetch<string>(src, { responseType: 'text' }) : undefined;
       if (token !== asked) return;
-      page.value = {
-        moment,
-        src: pageUrl(moment, 'readonly'),
-        viewport: meta.viewport,
-      };
+      page.value = { moment, src, doc, viewport: meta.viewport };
       pageError.value = null;
     } catch (error) {
       if (token !== asked) return;
@@ -269,7 +273,8 @@ const waiting = computed(() => {
       <DomSnapshotFrame
         v-else-if="page"
         :key="page.src"
-        :frame-src="page.src"
+        :frame-src="page.doc === undefined ? page.src : undefined"
+        :src-doc="page.doc"
         :viewport="page.viewport"
         :title="`The page ${phaseWords}: ${page.moment.title}`"
         stage-class="h-64 sm:h-80 @3xl:h-[30rem]"

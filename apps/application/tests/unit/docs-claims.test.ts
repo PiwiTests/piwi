@@ -445,8 +445,8 @@ describe("Piwi Picker's quoted labels", () => {
     ].map((m) => normalizeLabel(m[1]!));
 
   test('the messages and the quoted labels are read', () => {
-    expect(messages).toContain('Record actions');
-    expect(quotedLabels("Open Piwi Picker's **Record actions**, then **Stop**.")).toEqual(['Record actions']);
+    expect(messages).toContain('Check an element');
+    expect(quotedLabels("Open Piwi Picker's **Check an element**, then **Finish**.")).toEqual(['Check an element']);
   });
 
   test.each(handWrittenPages)('%s quotes only labels Piwi Picker shows', (page) => {

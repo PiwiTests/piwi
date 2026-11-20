@@ -1,13 +1,18 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: the "run with options" dialog — first-time folder setup,
- * the full options form, the spec check and the exact command preview. The
- * form starts from the run button's options and applies to the run it starts
- * alone: neither the button nor the project's defaults (those are in the
- * project's Local folder settings) change. Running hands the plan to the
- * app-wide local runs store and closes; progress streams in the runs tray, so
- * this dialog never holds a process hostage.
+ * the full options form, the environment, the spec check and the exact command
+ * preview. The form starts from the run button's options and applies to the
+ * run it starts alone: neither the button nor the project's defaults (those
+ * are in the project's Local folder settings) change. The environment starts on
+ * the last one picked for the folder, and a protected one is confirmed for
+ * each run (`DesktopEnvironmentField`). Running hands the plan to the app-wide
+ * local runs store and closes; progress streams in the runs tray, so this
+ * dialog never holds a process hostage.
  */
+import { commandWithEnvironment, type RunVariable } from '#shared/run-variables';
+import type { EnvironmentForRun } from '@piwitests/core/environments';
+import { environmentReady, pickOf, type DesktopEnvironmentChoice } from '#shared/desktop-environments';
 import type { RetryCase } from '~/utils/retry-command';
 import { buildLocalRunPlan, type LocalRunOptions } from '~/utils/local-run-args';
 import type { SavedLocalRunOptions } from '~/composables/useDesktopLocalRuns';
@@ -32,13 +37,18 @@ const open = defineModel<boolean>('open', { default: false });
 
 const store = useDesktopLocalRuns();
 const { link, busy, pickAndLink } = useDesktopProjectLink(() => props.projectId);
-const { missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
+const { specFiles, missingSpecs, wrongFolder, checkSpecs } = useDesktopSpecCheck(
   () => props.projectId,
   () => props.cases,
 );
 const { playwrightMissing, checkEnv } = useDesktopEnvCheck(() => props.projectId);
 
 const linked = computed(() => !!link.value?.exists);
+
+/** Link the project's folder, checked against the tests this dialog runs. */
+function chooseFolder() {
+  void pickAndLink({ projectLabel: props.projectLabel, specs: specFiles.value });
+}
 
 /** This run's options: the button's, each time the dialog opens, then whatever the form changes. */
 const options = ref<SavedLocalRunOptions>({ ...DEFAULT_LOCAL_RUN_OPTIONS });
@@ -57,7 +67,43 @@ watch([open, () => link.value?.path, linked], () => {
 });
 
 const plan = computed(() => buildLocalRunPlan(props.cases, options.value));
-const preview = computed(() => plan.value.map((s) => s.display).join('\n'));
+
+/** The environment this run is for, and whether its protection was confirmed for this run. */
+const environment = ref<DesktopEnvironmentChoice | null>(null);
+const confirmed = ref(false);
+const ready = computed(() => environmentReady(environment.value, confirmed.value));
+
+/** What the shell sets for the environment picked, as it reads it; why it cannot, when it cannot. */
+const settings = ref<{ runVariables: RunVariable[]; environment: EnvironmentForRun | null }>({
+  runVariables: [],
+  environment: null,
+});
+const settingsProblem = ref<string | null>(null);
+let settingsAsked = 0;
+watch(
+  [open, () => props.projectId, () => pickOf(environment.value)?.id, () => environment.value?.team],
+  async () => {
+    if (!open.value) return;
+    const ask = ++settingsAsked;
+    try {
+      const answer = await readDesktopRunSettings(props.projectId, pickOf(environment.value));
+      if (ask !== settingsAsked) return;
+      settings.value = answer;
+      settingsProblem.value = null;
+    } catch (error) {
+      if (ask !== settingsAsked) return;
+      settings.value = { runVariables: [], environment: null };
+      settingsProblem.value = errorMessage(error);
+    }
+  },
+  { immediate: true },
+);
+
+const preview = computed(() =>
+  plan.value
+    .map((s) => commandWithEnvironment(s.display, settings.value.runVariables, settings.value.environment, 'bash'))
+    .join('\n'),
+);
 
 function run() {
   store.startRun({
@@ -67,7 +113,10 @@ function run() {
     title: props.runTitle,
     sourceRunId: props.sourceRunId,
     options: options.value,
+    environment: environment.value,
+    confirmed: confirmed.value,
   });
+  confirmed.value = false;
   open.value = false;
 }
 </script>
@@ -88,8 +137,9 @@ function run() {
       <div class="space-y-4">
         <div v-if="!linked" class="space-y-3">
           <p class="text-sm text-muted">
-            Link {{ projectLabel || 'this project' }} to its local checkout — the folder that contains these tests. Piwi
-            runs that folder's own Playwright with the app's bundled Node, so nothing else needs to be installed.
+            Link {{ projectLabel || 'this project' }} to its folder on this machine: the one that holds its Playwright
+            config and these tests. Piwi runs that folder's own Playwright with the app's bundled Node, so nothing else
+            needs to be installed.
           </p>
           <UAlert
             v-if="link && !link.exists"
@@ -99,7 +149,7 @@ function run() {
             title="The linked folder no longer exists"
             :description="link.path"
           />
-          <UButton icon="i-lucide-folder-plus" :loading="busy" @click="pickAndLink">Choose folder…</UButton>
+          <UButton icon="i-lucide-folder-plus" :loading="busy" @click="chooseFolder">Choose folder…</UButton>
         </div>
 
         <template v-else>
@@ -114,13 +164,19 @@ function run() {
               variant="ghost"
               icon="i-lucide-folder-search"
               :loading="busy"
-              @click="pickAndLink"
+              @click="chooseFolder"
             >
               Change
             </UButton>
           </div>
 
           <DesktopRunOptionsFields v-model="options" />
+          <DesktopEnvironmentField
+            v-model="environment"
+            v-model:confirmed="confirmed"
+            :project-id="projectId"
+            purpose="run"
+          />
           <p class="text-xs text-muted">
             For this run only. The project's defaults are in
             <NuxtLink
@@ -162,7 +218,8 @@ function run() {
               </p>
               <p class="mt-1">
                 <template v-if="wrongFolder">
-                  This project is probably linked to a different checkout than the one these tests come from.
+                  This project is probably linked to another folder than the one these tests come from: the folder to
+                  link holds the Playwright config.
                 </template>
                 <template v-else> Running anyway is fine when your Playwright config puts them elsewhere. </template>
               </p>
@@ -174,7 +231,7 @@ function run() {
                 icon="i-lucide-folder-search"
                 class="mt-2"
                 :loading="busy"
-                @click="pickAndLink"
+                @click="chooseFolder"
               >
                 Choose the right folder…
               </UButton>
@@ -184,6 +241,9 @@ function run() {
           <div class="space-y-1">
             <div class="text-xs text-muted">Runs in the linked folder</div>
             <CodeBlock :code="preview" lang="sh" />
+            <p v-if="settingsProblem" class="text-xs text-warning">
+              The run would not start: <ErrorText :text="settingsProblem" />
+            </p>
           </div>
 
           <p class="text-xs text-muted">
@@ -198,7 +258,12 @@ function run() {
     <template #footer>
       <div class="flex items-center justify-end w-full gap-2">
         <UButton color="neutral" variant="ghost" @click="open = false">Close</UButton>
-        <UButton icon="i-lucide-play" :disabled="!linked || plan.length === 0 || busy" @click="run()">Run</UButton>
+        <UButton
+          icon="i-lucide-play"
+          :disabled="!linked || plan.length === 0 || busy || !ready || !!settingsProblem"
+          @click="run()"
+          >Run</UButton
+        >
       </div>
     </template>
   </UModal>

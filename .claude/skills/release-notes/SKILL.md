@@ -124,7 +124,8 @@ A cloud session cannot write a release body, so tidying is not done at `CHANGELO
 - **CHANGELOG.md is release-please-managed.** Editing a *past* version's section is safe:
   release-please prepends new sections and never rewrites historical ones. Do not touch the header
   line or the manifest.
-- **Duplicates** come from squash + cherry-pick landing the same subject on several commits; the
+- **Duplicates** come from a merge commit, whose pull request title often repeats one of its
+  commits' subjects, and from squash + cherry-pick landing the same subject on several commits; the
   `raw` command already merges them. If you spot a semantic near-duplicate the tool did not catch
   (different wording, same change), merge it by hand when drafting and keep both links.
 - **Voice:** informative, specific, honest, never promotional (see the positioning rules in the

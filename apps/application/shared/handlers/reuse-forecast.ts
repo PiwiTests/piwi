@@ -5,7 +5,7 @@
  * `get_reuse_forecast` MCP tool.
  */
 import { and, desc, eq, gte, inArray, lte, max } from 'drizzle-orm';
-import { coverageFragments, testCases, testRuns, testRunsCases } from '../../server/database/schema';
+import { coverageFragments, environments, testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import { resolveCasePayloadContents } from '../../server/utils/case-payloads';
 import { parseCoveragePayload } from '../../server/utils/coverage';
 import { projectDefaultBranch } from '../../server/utils/scm/stored-default-branch';
@@ -22,6 +22,7 @@ import {
   type ReuseScopeForecast,
 } from '../reuse-forecast';
 import { attemptKey, finalAttempts, isFailedStatus } from '../utils/test-counts';
+import { runsDeployedVersions } from './deployed-version';
 import type { DrizzleDB } from './db';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -82,6 +83,7 @@ interface AttemptRow {
   branch: string | null;
   commit: string | null;
   origin: string;
+  environmentId: number | null;
 }
 
 function outcomeOf(row: AttemptRow): ReuseOutcome | null {
@@ -152,6 +154,41 @@ async function loadPayloadVersions(
 }
 
 /**
+ * Each run's target (`ForecastResult.target`): its environment and, for a deployed one, the version of the application
+ * it ran against (`runsDeployedVersions`); null for a run of a deployed environment whose version nothing names.
+ */
+async function runTargets(
+  db: DrizzleDB,
+  runs: ReadonlyArray<{ id: number; environmentId: number | null; startTime: Date }>,
+): Promise<Map<number, string | null>> {
+  const out = new Map<number, string | null>();
+  const environmentIds = [...new Set(runs.flatMap((run) => (run.environmentId === null ? [] : [run.environmentId])))];
+  const deployed = new Set<number>();
+  for (let i = 0; i < environmentIds.length; i += ID_CHUNK) {
+    const rows = await db
+      .select({ id: environments.id })
+      .from(environments)
+      .where(
+        and(inArray(environments.id, environmentIds.slice(i, i + ID_CHUNK)), eq(environments.appFromCheckout, false)),
+      );
+    for (const row of rows) deployed.add(row.id);
+  }
+  const versions = await runsDeployedVersions(
+    db,
+    runs.filter((run) => run.environmentId !== null && deployed.has(run.environmentId)),
+  );
+  for (const run of runs) {
+    if (run.environmentId === null) out.set(run.id, 'none');
+    else if (!deployed.has(run.environmentId)) out.set(run.id, `environment ${run.environmentId}`);
+    else {
+      const version = versions.get(run.id);
+      out.set(run.id, version ? `environment ${run.environmentId} ${version}` : null);
+    }
+  }
+  return out;
+}
+
+/**
  * How much of a project's recent test time ran code identical to an earlier
  * pass, on its default branch and on the others, and the tests that failed
  * with their code unchanged.
@@ -194,6 +231,7 @@ export async function getReuseForecast(
       branch: testRuns.branch,
       commit: testRuns.commit,
       origin: testRuns.origin,
+      environmentId: testRuns.environmentId,
     })
     .from(testRuns)
     .innerJoin(testRunsCases, eq(testRunsCases.testRunId, testRuns.id))
@@ -223,6 +261,11 @@ export async function getReuseForecast(
     }
   }
 
+  const runs = new Map<number, { id: number; environmentId: number | null; startTime: Date }>();
+  for (const { final } of results) {
+    runs.set(final.runId, { id: final.runId, environmentId: final.environmentId, startTime: final.startTime });
+  }
+  const targets = await runTargets(db, [...runs.values()]);
   const defaultBranch = await projectDefaultBranch(db, projectId);
   const payloadIds = [...new Set(results.flatMap((r) => (r.final.payloadId == null ? [] : [r.final.payloadId])))];
   const versions = await loadPayloadVersions(db, payloadIds);
@@ -238,6 +281,7 @@ export async function getReuseForecast(
     durationMs,
     versions: final.payloadId == null ? null : (versions.get(final.payloadId) ?? null),
     ciCommit: final.commit && CI_ORIGINS.has(final.origin) ? final.commit : null,
+    target: targets.get(final.runId) ?? null,
   }));
 
   // A truncated read counts the results with a full source window read behind them; when the read is shorter than a

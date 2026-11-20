@@ -52,6 +52,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'PATCH /api/desktop/repro-requests/:id', // desktop build only; the window records what it did with a request
   'GET /api/desktop/repro-requests/:id/spec', // desktop build only; the shell reads the spec it writes and runs
   'POST /api/desktop/picker-pairings', // desktop build only; Piwi Picker asks to pair with the app, 404 everywhere else
+  'GET /api/projects/:id/folder-hints', // read only by the desktop app's folder dialog; the demo has no folder to link
   'GET /api/desktop/picker-pairings/:id', // desktop build only; Piwi Picker polls for the answer
   'PATCH /api/desktop/picker-pairings/:id', // desktop build only; the window allows or denies a pairing
   'GET /api/desktop/run-channel', // desktop build only; the shell reads the run channel it names in each run it starts
@@ -63,6 +64,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/desktop/runs/started', // desktop build only; the shell says what it started a run with
   'POST /api/desktop/runs/agent-started', // desktop build only; the window started a run an agent asked for
   'POST /api/desktop/runs/ended', // desktop build only; the window says a run's process ended
+  'GET /api/desktop/test-runs/:id/environment', // desktop build only; the tray compares a run's label with the environment the shell started it for
   'GET /api/desktop/runs/inspect/calls', // desktop build only; the calls Inspect read of a lane's test trace
   'GET /api/desktop/runs/inspect/page', // desktop build only; a page of that trace rendered, for the window's Inspect
   'GET /api/desktop/run-target', // desktop build only; the app's connection to a team instance it takes run requests from
@@ -74,6 +76,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'PUT /api/desktop/run-target/local-runs', // desktop build only; the folders the shell's own local runs are going in
   'POST /api/desktop/run-target/requests/:id/answer', // desktop build only; the person's answer in the window
   'POST /api/desktop/run-target/requests/:id/plan', // desktop build only; the checks again once a folder is linked
+  'POST /api/desktop/run-target/requests/:id/folder-search', // desktop build only; the shell reads what to look for a folder with
   'POST /api/desktop/run-target/requests/:id/launch', // desktop build only; the shell takes the request token and command
   'POST /api/desktop/run-target/requests/:id/started', // desktop build only; the shell started the requested run
   'POST /api/desktop/run-target/requests/:id/ended', // desktop build only; the requested run's Playwright exited
@@ -102,14 +105,14 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // server in the browser demo for a scraper to reach.
   'GET /api/metrics',
   // The run page's live view: a live run's test workers hold its streams and post its frames, and a page watches
-  // them; the demo runs no test worker, so its simulated runs have no worker in the live view to watch, and Watch all
-  // shows each running lane's step in place of its image.
+  // them. The demo runs no test worker and no browser: its simulator plays the workers' call logs to the page over the
+  // demo's event channel, which the page's own watch reads (`app/demo/live-watch.ts`), so only the page Inspect shows
+  // at a call has a demo route.
   'GET /api/test-runs/:id/live-view',
   'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
   'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
-  'GET /api/test-runs/:id/live-view/watch/:watch/snapshot',
   // Ask to watch: an ask reaches a run's reporter in the answers of its stream, and the demo signs nobody in and runs
   // no reporter, so its simulated runs are never a run nobody shares.
   'POST /api/test-runs/:id/live-view/ask',
@@ -133,6 +136,10 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/run-targets/requests/:id/claim',
   'POST /api/run-targets/requests/:id/answer',
   'POST /api/run-targets/requests/:id/state',
+  'GET /api/run-targets/requests/:id/run-variables',
+  'GET /api/run-targets/requests/:id/folder-hints',
+  'GET /api/run-targets/projects/:id/environments',
+  'GET /api/run-targets/projects/:id/run-variables',
   'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the
   // authorize endpoint stored, and the client redeems a code for tokens. The

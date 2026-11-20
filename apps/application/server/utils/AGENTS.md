@@ -5,16 +5,17 @@ rules a reasonable change would otherwise break. Read [`../../AGENTS.md`](../../
 guide of their own: [`mcp/AGENTS.md`](mcp/AGENTS.md) (MCP tools) and [`assistant/AGENTS.md`](assistant/AGENTS.md) (the
 in-app assistant).
 
-| Touching                                                                         | Section                                             |
-| -------------------------------------------------------------------------------- | --------------------------------------------------- |
-| `server/utils/scm/`, `shared/scm-urls.ts`, any link to a commit or a repository  | [SCM providers](#scm-providers)                     |
-| `shared/error-fingerprint.ts`, failure clusters                                  | [Failure fingerprints](#failure-fingerprints)       |
-| locator snapshots, `locator-healing.ts`, `LocatorHealingPanel.vue`               | [Locator healing](#locator-healing)                 |
-| trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`          | [Trace storage](#trace-storage)                     |
-| `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                     | [DOM snapshot live state](#dom-snapshot-live-state) |
-| `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts` | [AI CLI providers](#ai-cli-providers)               |
-| `ai-context*.ts`, `integrations/automation.ts`                                   | [Wiring rules](#wiring-rules)                       |
-| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes      | [Desktop runs](#desktop-runs)                       |
+| Touching                                                                                                                                                                              | Section                                             |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- |
+| `server/utils/scm/`, `shared/scm-urls.ts`, any link to a commit or a repository                                                                                                       | [SCM providers](#scm-providers)                     |
+| `shared/error-fingerprint.ts`, failure clusters                                                                                                                                       | [Failure fingerprints](#failure-fingerprints)       |
+| locator snapshots, `locator-healing.ts`, `LocatorHealingPanel.vue`                                                                                                                    | [Locator healing](#locator-healing)                 |
+| trace blobs, the resource pool, `trace-*.ts`, `resource-compression.ts`                                                                                                               | [Trace storage](#trace-storage)                     |
+| `dom-snapshot-render.ts`, `shared/snapshot-picker-extras.ts`                                                                                                                          | [DOM snapshot live state](#dom-snapshot-live-state) |
+| `ai-claude-cli.ts`, `ai-codex-cli.ts`, `ai-deepseek-cli.ts`, `ai-cli-process.ts`                                                                                                      | [AI CLI providers](#ai-cli-providers)               |
+| `ai-context*.ts`, `integrations/automation.ts`                                                                                                                                        | [Wiring rules](#wiring-rules)                       |
+| `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes                                                                                                           | [Desktop runs](#desktop-runs)                       |
+| `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token, `ai-credentials.ts`, `integrations/connection-credentials.ts`, `notifications/slack-credentials.ts` | [Credentials](#credentials)                         |
 
 ## SCM providers
 
@@ -176,7 +177,9 @@ attributes; `template` nodes for shadow roots and adopted stylesheets), the same
 - **No rendered snapshot keeps a script**: a script's body and source, an inline handler and a `javascript:` or
   `vbscript:` URL in an attribute that holds a URL (`holdsScriptUrl`; any other attribute is text) are dropped by
   `renderedAttributes`, for a stored trace and a live snapshot alike, and both serve the page through
-  `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`).
+  `snapshotFrameDocument` (`tests/unit/dom-snapshot.test.ts`, `tests/unit/live-view-routes.test.ts`). A document a
+  frame takes inline (`srcdoc`, as the demo's), which no header reaches, carries the same policy through
+  `snapshotFrameInlineHtml` (`tests/unit/snapshot-frame-html.test.ts`).
 - **Nothing the snapshot holds is written where the browser would read it as markup**: a style's text is raw only in
   HTML (escaped inside `svg`/`math`), an element whose content is text (`TEXT_ELEMENTS`) keeps its escaped text alone,
   attribute values escape `<` and `>`, and a doctype is a plain name. `stripNetworkReferences` also leaves no
@@ -236,13 +239,12 @@ The desktop build's server is the hub of the Playwright runs its shell starts (`
 runs (`@piwitests/editor/run-host`), plus these:
 
 - **Never a copy of the run control.** The run channel, the sessions, the hub, the code from a stop and the run's lines
-  are `RecordChannel`, `RunSessions`, `RunHub`, `StopActions` and `RunLines`, wired by the editor's `ShellRuns`, which
-  Piwi Runner's host runs too; `DesktopRuns` gives it the app's words and adds the editors' runs, the agents' tools and
-  Inspect, through `ShellRuns`' hooks (`sessionChanged`, `relaying`, `windowCommand`, `windowLeft`, `sendToWindow`),
-  and the `/api/desktop/run-channel` and `/api/desktop/runs/*` routes call `@piwitests/editor/shell-runs-routes`.
-  What the desktop needs that they lack is an option or a hook of theirs that names no app feature (`declines`,
-  `host`, `token`, `words`, `RunHub.join`), added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and `desktop-runs-run.test.ts`
-  (a real run through the built reporter) drive the wiring.
+  are the editor service's classes, wired by its `ShellRuns`, which Piwi Runner's host runs too: `DesktopRuns` gives
+  it the app's words and adds what the app alone does (the editors' runs, the agents' tools, Inspect) through its
+  hooks, and what the desktop needs that the classes lack is an option or a hook of theirs that names no app feature,
+  added in `packages/editor` with its tests there. `tests/unit/desktop-runs.test.ts` and
+  `desktop-runs-run.test.ts` (a real run through the built reporter) drive the wiring
+  ([the classes and hooks](../../ARCHITECTURE.md#server-utilities)).
 - **The hub takes the desktop token in `hello`, and nothing else opens without it.** Its WebSocket keeps the editor's
   `Host` and `Origin` rules (an extension's, or none from a process of this machine), limits and closed command set;
   the window reaches the same hub as a joined peer through `/api/desktop/runs/*`, behind the desktop guard. None of the
@@ -287,3 +289,28 @@ runs (`@piwitests/editor/run-host`), plus these:
   which the shell gives each run as `PIWI_EDITOR_SEND`: the pause bar's pick and a pick on the image reach the window to
   copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).
+
+## Credentials
+
+- **A credential's secret is opened only by `withCredential`** (`credentials.ts`), which checks the credential's rules
+  (`credentialRefusal`), logs the use and masks the secret in what it keeps: never read `credentials.secret` or select a
+  whole credential row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
+  without the secret and builds it again inside `withCredential`'s `send`, as `ci-server-dispatch.ts` does.
+- **An SCM provider gets a token only from `openScmProvider`** (`scm/index.ts`), which picks the credential
+  (`scmCredentialFor`) and opens it through `withCredential` as one counted read. Every write of `ScmProvider` is a
+  public wrapper of the base class that runs a `do…` hook through `write`, so it is logged and checked again: a new
+  write is a hook behind such a wrapper. Only `LocalGitProvider` overrides a wrapper, to call the hosted provider's
+  (`tests/unit/scm-credentials.test.ts`).
+- **A caller that calls an AI model resolves its configuration with `resolveAiConfig(db, { open: true, actor })`**,
+  which opens each role's key through `openAiKeys` as one counted read; without `open`, a role holds no key and the
+  call goes out with none (`tests/unit/ai-credentials.test.ts`).
+- **A Jira or Zephyr Scale client gets its token only from `openTracker` or `openTestManagement`**
+  (`integrations/connections.ts`), which open the connection's credential as one counted read; each of the clients'
+  writes goes through the credential's `writeGate`, and a POST that only reads is listed in the Jira client's
+  `READ_POSTS` (`tests/unit/connection-credentials.test.ts`).
+- **A Slack channel of the instance sends only with the credential its config names** (`config.credentialId`,
+  `postSlackWithCredential` in `notifications/slack-credentials.ts`), one log row per message; a personal channel keeps
+  its own token, since its owner holds no right on the instance's credentials (`tests/unit/slack-credentials.test.ts`).
+- **A Project admin changes only a credential they created** (`canManageCredential`): an administrator's credential
+  shared with their project is picked, never loosened, since allowing a Custom request would reach a CI server's script
+  console with it.

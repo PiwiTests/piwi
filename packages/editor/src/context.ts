@@ -10,6 +10,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { parseDotEnv, resolvePiwiConnection, type PiwiConnection } from '@piwitests/core/dotenv';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
+import type { RunVariable } from '@piwitests/core/run-variables';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorHealingResult } from '@piwitests/core/locator-healing-types';
 import {
@@ -31,10 +32,12 @@ import {
 import type { TimeoutAdvice } from './analysis.js';
 import { shellWord } from './commands.js';
 import { DesktopNotProvenError, holdDesktopToken } from './http.js';
+import type { EnvironmentOption, RunVariablesRead } from './piwi-client.js';
 import type {
   BaselineChoice,
   ConnectionSource,
   EditorCredentials,
+  KeptEnvironment,
   LiveRun,
   LiveTestStatus,
   ProblemKind,
@@ -401,6 +404,20 @@ export async function pruneEvidence(root = EVIDENCE_ROOT, now = Date.now()): Pro
   }
 }
 
+/**
+ * An environment choice a client kept (`EditorCredentials.environments`), checked field by field: a positive id and
+ * project id, a name of 1 to 80 characters and an instance's URL; null for anything else.
+ */
+export function keptEnvironmentOf(value: unknown): KeptEnvironment | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const { id, name, serverUrl, projectId } = value as Record<string, unknown>;
+  const positive = (n: unknown): n is number => typeof n === 'number' && Number.isSafeInteger(n) && n > 0;
+  if (!positive(id) || !positive(projectId)) return null;
+  if (typeof name !== 'string' || !name.trim() || name.length > 80) return null;
+  if (typeof serverUrl !== 'string' || !/^https?:\/\//.test(serverUrl) || serverUrl.length > 500) return null;
+  return { id, name, serverUrl, projectId };
+}
+
 export class PiwiContext {
   repoRoot: string;
   client: PiwiClient | null = null;
@@ -409,6 +426,31 @@ export class PiwiContext {
   /** The instance the environment, the `.env` or the editor's settings name, in use or not. */
   instance: { serverUrl: string; source: ConnectionSource } | null = null;
   project: { id: number; name: string } | null = null;
+  /**
+   * The project's run variables as `parseRunVariables` read them from the instance, for the commands the service
+   * builds: null until a refresh read them, none without a project.
+   */
+  runVariables: RunVariablesRead | null = null;
+  private runVariablesRead: Promise<RunVariablesRead> | null = null;
+  /** The project's name being resolved by a refresh now: a run waits for it before it reads the run variables. */
+  private resolving: Promise<unknown> | null = null;
+  /** The sets of run variables the person allowed for this context's project, while the service runs. */
+  private allowedRunVariables = new Set<string>();
+  /**
+   * The project's environments to choose from, read once per refresh (`GET /api/projects/:id/environments`): none
+   * before the first read, from an instance that lists none, and without a project.
+   */
+  environments: EnvironmentOption[] = [];
+  /** Whether `environments` were read for the project the context reads now. */
+  environmentsRead = false;
+  /**
+   * The environment chosen for the runs of this context's tests (`piwi/setEnvironment`), with the instance and the
+   * project it belongs to, kept while the service runs and by the client; null for none, where the Playwright config
+   * decides (`environmentId`).
+   */
+  environmentChoice: KeptEnvironment | null = null;
+  /** The environment the run variables being read are for: a read for another one is not used. */
+  private runVariablesEnvironment: number | null = null;
   /** The branch the indexes describe; null for the default branch. */
   branch: string | null = null;
   index: LocatorIndex | null = null;
@@ -455,6 +497,8 @@ export class PiwiContext {
    * gutter shows over the latest run's results meanwhile.
    */
   liveTests = new Map<number, LiveTestStatus>();
+  /** The tests of `live` the instance said may be stuck, in the words `LiveTest.stuck` carries, while they run. */
+  liveStuck = new Map<number, string>();
   /** The runs the editor started on this instance (`piwi/runArgs`, `piwi/runSelection`), for the service's life. */
   readonly ownRuns = new Set<number>();
   /**
@@ -555,12 +599,27 @@ export class PiwiContext {
         return;
       }
       if (!this.project || this.project.name !== connection.project) {
-        this.project = await this.client.resolveProject(connection.project);
+        // Another project's run variables and environments, and the person's answer about them, are not this one's.
+        this.runVariables = null;
+        this.runVariablesRead = null;
+        this.allowedRunVariables.clear();
+        this.environments = [];
+        this.environmentsRead = false;
+        const resolving = this.client.resolveProject(connection.project);
+        this.resolving = resolving;
+        try {
+          this.project = await resolving;
+        } finally {
+          this.resolving = null;
+        }
         if (!this.project) {
           this.fail('no-project', `No project named "${connection.project}" on ${connection.serverUrl}.`);
           return;
         }
       }
+      // Read again on each refresh: a run started meanwhile waits for this read (`readRunVariables`).
+      this.runVariablesRead = null;
+      void this.readRunVariables();
       const index = await this.client.locatorIndex(this.project.id, null);
       this.branches = [
         ...new Set([index.defaultBranch, ...index.branches.map((b) => b.name)].filter((b): b is string => !!b)),
@@ -620,6 +679,13 @@ export class PiwiContext {
           .timeoutOpportunities(projectId)
           .then((timeouts) => (this.timeouts = new Map(timeouts.map((t) => [t.testCaseId, t]))))
           .catch(() => {}),
+        client
+          .environments(projectId)
+          .then((environments) => {
+            this.environments = environments;
+            this.environmentsRead = true;
+          })
+          .catch(() => {}),
         // Completion reads these: fetched here, so no keystroke waits on them.
         this.functionCatalog(),
         this.vocabulary(),
@@ -641,6 +707,100 @@ export class PiwiContext {
     }
   }
 
+  /**
+   * The project's run variables, read from the instance once per refresh, for a run about to start: with an
+   * environment chosen, the project's and the environment's merged, and the environment (`PiwiClient.runVariables`).
+   * None without a client: the run reports nowhere this service knows. A run waits for a project a refresh is
+   * resolving; with none known, the read says why (`unknown`). A read the instance did not answer is not kept: the
+   * next run asks again.
+   */
+  async readRunVariables(): Promise<RunVariablesRead> {
+    if (this.client && !this.project && this.resolving) await this.resolving.catch(() => {});
+    const client = this.client;
+    const project = this.project;
+    if (!client) return { ok: true, value: [] };
+    if (!project) return { ok: true, value: [], unknown: this.problem ?? 'its project is not known yet' };
+    const environmentId = this.environmentId;
+    if (this.runVariablesRead && this.runVariablesEnvironment !== environmentId) {
+      this.runVariables = null;
+      this.runVariablesRead = null;
+    }
+    if (!this.runVariablesRead) {
+      this.runVariablesEnvironment = environmentId;
+      const read: Promise<RunVariablesRead> = client.runVariables(project.id, environmentId).then((parsed) => {
+        if (this.runVariablesRead !== read) return parsed;
+        this.runVariables = parsed;
+        if (!parsed.ok && parsed.unreadable) this.runVariablesRead = null;
+        return parsed;
+      });
+      this.runVariablesRead = read;
+    }
+    return this.runVariablesRead;
+  }
+
+  /**
+   * Whether the person allowed `variables` for this context's project, with the environment of key `environment`
+   * (`PIWI_ENVIRONMENT`), while the service runs: always for none, and for the desktop app's own server, whose
+   * projects are theirs.
+   */
+  runVariablesAllowed(variables: readonly RunVariable[], environment: string | null = null): boolean {
+    return (
+      variables.length === 0 ||
+      this.source === 'desktop' ||
+      this.allowedRunVariables.has(JSON.stringify([environment, variables]))
+    );
+  }
+
+  /** Keeps the person's answer that runs of this context's project may get `variables`, with that environment. */
+  allowRunVariables(variables: readonly RunVariable[], environment: string | null = null): void {
+    this.allowedRunVariables.add(JSON.stringify([environment, variables]));
+  }
+
+  /**
+   * The id of the environment chosen for this context's runs: the choice's while the context reads its instance and
+   * its project, or one not known yet (no client, a project not resolved), where nothing runs until it is; null for
+   * none, and for a choice of another instance or project.
+   */
+  get environmentId(): number | null {
+    const choice = this.environmentChoice;
+    if (!choice) return null;
+    if (this.client && this.client.connection.serverUrl !== choice.serverUrl) return null;
+    if (this.project && this.project.id !== choice.projectId) return null;
+    return choice.id;
+  }
+
+  /**
+   * Choose the environment of this context's runs: one its project lists, by id, or none (null). An id the project
+   * does not list, or no project read, keeps the choice. A run started meanwhile waits for the run variables of the
+   * new choice. Answers whether the choice changed.
+   */
+  chooseEnvironment(environmentId: number | null): boolean {
+    if (environmentId === null) return this.keepEnvironment(null);
+    const listed = this.environments.find((environment) => environment.id === environmentId);
+    if (!listed || !this.client || !this.project || !this.environmentsRead) return false;
+    return this.keepEnvironment({
+      id: listed.id,
+      name: listed.name,
+      serverUrl: this.client.connection.serverUrl,
+      projectId: this.project.id,
+    });
+  }
+
+  /** Take `choice` as this context's environment, as the client kept it. Answers whether the choice changed. */
+  keepEnvironment(choice: KeptEnvironment | null): boolean {
+    if (JSON.stringify(choice) === JSON.stringify(this.environmentChoice)) return false;
+    this.environmentChoice = choice;
+    if (this.client && this.project) void this.readRunVariables();
+    return true;
+  }
+
+  /** The environment chosen, as the project lists it; null for none, and for one it does not list (any more). */
+  chosenEnvironment(): EnvironmentOption | null {
+    return this.environmentId === null
+      ? null
+      : (this.environments.find((environment) => environment.id === this.environmentId) ?? null);
+  }
+
   private fail(kind: ProblemKind, problem: string): void {
     this.problemKind = kind;
     this.problem = problem;
@@ -652,6 +812,11 @@ export class PiwiContext {
    */
   private forget(): void {
     this.project = null;
+    this.runVariables = null;
+    this.runVariablesRead = null;
+    this.allowedRunVariables.clear();
+    this.environments = [];
+    this.environmentsRead = false;
     this.branch = null;
     this.index = null;
     this.codeIndex = null;
@@ -665,6 +830,7 @@ export class PiwiContext {
     this.runReadAt = null;
     this.live = null;
     this.liveTests = new Map();
+    this.liveStuck = new Map();
     this.ownRuns.clear();
     this.failureAnchors.clear();
     this.commitTexts.clear();
@@ -818,6 +984,19 @@ export class PiwiContext {
       entry.read = null;
     });
     return entry.read;
+  }
+
+  /**
+   * A file's coverage, read for a list of many files: the answer held when it is not stale, else read once and kept out
+   * of the files' cache, whose open files' answers the list would push out.
+   */
+  async coverageOnce(repoRelative: string): Promise<FileCoverage | null> {
+    const kept = this.coverages.get(`${this.coverageBranch() ?? ''}\n${repoRelative}`);
+    if (kept?.read) return kept.read;
+    if (kept && !kept.stale) return kept.value;
+    const entry: CoverageEntry = { value: null, etag: null, read: null, stale: false, again: false };
+    await this.readCoverage(entry, repoRelative, this.coverageBranch());
+    return entry.value;
   }
 
   /**

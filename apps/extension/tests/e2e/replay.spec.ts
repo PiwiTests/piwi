@@ -199,8 +199,8 @@ test.describe('replay-panel.js', () => {
     await stubChrome(context, {});
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/login`);
-    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
-    const file = dialog.getByLabel('The bug report’s .piwibug, or its steps.json');
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a recording' });
+    const file = dialog.getByLabel('A .piwibug, or a steps.json');
     const stepByStep = dialog.getByRole('checkbox', { name: 'Step by step: click Next step before each step' });
     await expect(stepByStep).toBeVisible();
     await expect(dialog.getByRole('checkbox')).toHaveCount(1);
@@ -1106,13 +1106,13 @@ function sentOf(page: Page, type: string): Promise<Array<Record<string, unknown>
 
 /** The replay dialog, once a steps file holding `steps` is chosen in it. */
 async function chooseFile(page: Page, steps: PiwiSteps = REPORT) {
-  const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+  const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a recording' });
   await dialog.getByLabel(/steps\.json/).setInputFiles({
     name: 'steps.json',
     mimeType: 'application/json',
     buffer: Buffer.from(JSON.stringify(steps)),
   });
-  await expect(dialog).toContainText(steps.title ?? 'Untitled report');
+  await expect(dialog).toContainText(steps.title ?? 'Untitled recording');
   return dialog;
 }
 
@@ -1384,7 +1384,7 @@ test.describe('the replay dialog', () => {
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/login`);
 
-    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a recording' });
     const reports = dialog.getByRole('combobox', { name: 'Choose a bug report' });
     await reports.selectOption('1');
     await reports.selectOption('2');
@@ -1411,7 +1411,7 @@ test.describe('the replay dialog', () => {
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/login`);
 
-    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a recording' });
     await dialog.getByText('Or paste the text of a steps.json').click();
     const field = dialog.getByRole('textbox', { name: 'Steps to paste' });
     await field.fill('{"v":1,"steps":[{"action":"eval"}]}');
@@ -1427,8 +1427,8 @@ test.describe('the replay dialog', () => {
     expect((await sentOf(page, 'piwi-start-replay'))[0]!.steps).toEqual(REPORT);
   });
 
-  for (const mode of ['actions', 'bug'] as const) {
-    test(`offers the ${mode === 'bug' ? 'bug report' : 'plain recording'} recorded in this browser, under its own name`, async ({
+  for (const kind of ['scenario', 'bug'] as const) {
+    test(`offers the ${kind === 'bug' ? 'bug report' : 'recording'} made in this browser, under its own name`, async ({
       context,
     }) => {
       const events = [
@@ -1452,31 +1452,48 @@ test.describe('the replay dialog', () => {
           pageUrl: `${ORIGIN}/login`,
           timestamp: 2,
         },
+        // A bug report is a recording with a step that says the page was wrong.
+        ...(kind === 'bug'
+          ? [
+              {
+                kind: 'assert',
+                target: target('login-submit', 'button', 'Log in'),
+                value: null,
+                checked: null,
+                inputType: null,
+                isPasswordField: false,
+                pageUrl: `${ORIGIN}/login`,
+                timestamp: 3,
+                assertion: { matcher: 'toBeDisabled', expected: null, actual: 'enabled', negated: false, note: null },
+              },
+            ]
+          : []),
       ];
       await openShadowRoots(context);
       await routePages(context, 'buggy');
       await stubChrome(context, {
-        piwiRecording: { active: false, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*`, mode },
+        piwiRecording: { active: false, events, startedAt: 1, grantedOriginPattern: `${ORIGIN}/*` },
       });
       await stubWorker(context, {});
       const page = await context.newPage();
       await page.goto(`${ORIGIN}/login`);
 
-      const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+      const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a recording' });
       const own =
-        mode === 'bug' ? 'Use the bug report recorded in this browser' : 'Use the actions recorded in this browser';
+        kind === 'bug' ? 'Use the bug report recorded in this browser' : 'Use the recording made in this browser';
       const other =
-        mode === 'bug' ? 'Use the actions recorded in this browser' : 'Use the bug report recorded in this browser';
+        kind === 'bug' ? 'Use the recording made in this browser' : 'Use the bug report recorded in this browser';
       await expect(dialog.getByRole('button', { name: other })).toHaveCount(0);
       await dialog.getByRole('button', { name: own }).click();
-      await expect(dialog).toContainText('2 steps');
-      // A recording of actions goes by its first action when it has no title of its own.
-      if (mode === 'actions') await expect(dialog).toContainText('Click');
-      else await expect(dialog).toContainText('Untitled report');
+      await expect(dialog).toContainText(kind === 'bug' ? '3 steps' : '2 steps');
+      // A recording goes by its first action when it has no title of its own.
+      await expect(dialog).toContainText('Click');
       await dialog.getByRole('button', { name: 'Replay', exact: true }).click();
       await expect.poll(() => sentOf(page, 'piwi-start-replay')).toHaveLength(1);
       const [start] = await sentOf(page, 'piwi-start-replay');
-      expect((start!.steps as PiwiSteps).steps.map((s) => s.action)).toEqual(['goto', 'click']);
+      expect((start!.steps as PiwiSteps).steps.map((s) => s.action)).toEqual(
+        kind === 'bug' ? ['goto', 'click', 'assert'] : ['goto', 'click'],
+      );
     });
   }
 
@@ -1487,7 +1504,7 @@ test.describe('the replay dialog', () => {
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/login`);
 
-    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a bug report' });
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Replay a recording' });
     await expect(dialog).toHaveAttribute('aria-modal', 'true');
     await expect(dialog).toBeFocused();
     await page.keyboard.press('Escape');
@@ -1506,7 +1523,7 @@ test.describe('replay-panel.js in French', () => {
 
     const hud = page.locator('#piwi-replay-hud-host').getByRole('region');
     await expect(hud).toHaveAttribute('lang', 'fr');
-    await expect(hud).toHaveAttribute('aria-label', 'Piwi Picker\u00a0: rapport de bug rejoué');
+    await expect(hud).toHaveAttribute('aria-label', 'Piwi Picker\u00a0: enregistrement rejoué');
     await expect(hud).toContainText('En cours : Coupon not applied');
     await expect(hud).toContainText('étape 2 sur 5');
     await expect(hud.getByRole('button', { name: 'Étape suivante' })).toBeVisible();
@@ -1560,20 +1577,20 @@ test.describe('replay-panel.js in French', () => {
     expect(await clippedInShadows(page)).toEqual([]);
   });
 
-  test('asks for the report to replay in French, and says what is wrong with a file', async ({ context }) => {
+  test('asks for the recording to replay in French, and says what is wrong with a file', async ({ context }) => {
     await openShadowRoots(context);
     await routePages(context, 'buggy');
     await stubChrome(context, {}, 'fr');
     const page = await context.newPage();
     await page.goto(`${ORIGIN}/login`);
 
-    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Rejouer un rapport de bug' });
+    const dialog = page.locator('#piwi-replay-dialog-host').getByRole('dialog', { name: 'Rejouer un enregistrement' });
     await expect(dialog).toHaveAttribute('lang', 'fr');
     await expect(dialog).toContainText(`Rejoue ses étapes sur ${ORIGIN}`);
     await dialog.getByRole('button', { name: 'Rejouer' }).click();
-    await expect(dialog.getByRole('alert')).toHaveText('Choisissez d’abord un rapport.');
+    await expect(dialog.getByRole('alert')).toHaveText('Choisissez d’abord un enregistrement.');
 
-    const file = dialog.getByLabel('Le .piwibug du rapport de bug, ou son steps.json');
+    const file = dialog.getByLabel('Un .piwibug, ou un steps.json');
     await file.setInputFiles({ name: 'notes.json', mimeType: 'application/json', buffer: Buffer.from('{"a":1}') });
     await expect(dialog.getByRole('alert')).toContainText('notes.json n’est pas un fichier d’étapes\u00a0:');
 

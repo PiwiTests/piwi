@@ -213,11 +213,37 @@ async function syncNow() {
 }
 
 const deleting = ref<number | null>(null);
-async function removeConnection(conn: ConnectionSummary) {
+/** The connection whose removal asks first what becomes of its credential. */
+const removing = ref<ConnectionSummary | null>(null);
+const removingOpen = computed({
+  get: () => removing.value !== null,
+  set: (open: boolean) => {
+    if (!open) removing.value = null;
+  },
+});
+
+/** Remove a connection; one that names a credential asks first whether to delete it too. */
+function removeConnection(conn: ConnectionSummary) {
+  if (conn.credentialId != null) removing.value = conn;
+  else void deleteConnection(conn, false);
+}
+
+async function deleteConnection(conn: ConnectionSummary, deleteCredential: boolean) {
   deleting.value = conn.id;
   try {
-    await $fetch(`/api/integrations/connections/${conn.id}`, { method: 'DELETE' });
-    toast.add({ title: 'Connection removed', color: 'success' });
+    const answer = await $fetch<
+      ApiResponse<typeof import('~~/server/api/integrations/connections/[id].delete').default>
+    >(`/api/integrations/connections/${conn.id}`, {
+      method: 'DELETE',
+      query: deleteCredential ? { deleteCredential: 'true' } : undefined,
+    });
+    toast.add({
+      title: 'Connection removed',
+      description:
+        deleteCredential && !answer.credentialDeleted ? 'Its credential is kept: something else names it.' : undefined,
+      color: 'success',
+    });
+    removing.value = null;
     await refresh();
   } catch (err) {
     toast.add({ title: 'Delete failed', description: errorMessage(err), color: 'error' });
@@ -302,6 +328,14 @@ function errorMessage(err: unknown): string {
               </p>
               <p v-if="conn.credentialValues.email || tokenKindLine(conn)" class="text-xs text-muted break-all">
                 {{ [conn.credentialValues.email, tokenKindLine(conn)].filter(Boolean).join(' · ') }}
+              </p>
+              <p v-if="conn.credentialName" class="text-xs text-muted break-all" data-testid="connection-credential">
+                Token kept in
+                <NuxtLink
+                  to="/settings/credentials"
+                  class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
+                  >{{ conn.credentialName }}</NuxtLink
+                >
               </p>
               <p
                 v-if="expiryLine(conn)"
@@ -473,6 +507,15 @@ function errorMessage(err: unknown): string {
           </div>
         </template>
       </UModal>
+      <CredentialDeletionModal
+        v-model:open="removingOpen"
+        title="Remove the connection"
+        verb="Remove"
+        :name="removing?.name ?? ''"
+        :credential-name="removing?.credentialName"
+        :loading="removing !== null && deleting === removing.id"
+        @confirm="(deleteCredential) => removing && deleteConnection(removing, deleteCredential)"
+      />
     </ClientOnly>
   </CapabilityDeclinedGuard>
 </template>

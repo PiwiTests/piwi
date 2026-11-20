@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ApiResponse } from '~~/types/api';
 import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 import type { PiwiEnvVarName } from '#shared/piwi-env-vars';
 import { slackDelivery } from '#shared/notifications/channel-setup';
@@ -100,13 +101,41 @@ async function onChannelSaved() {
   await refreshChannels();
 }
 
-async function deleteChannel(id: number) {
+/** The channel whose deletion asks first what becomes of its credential. */
+const deletingChannel = ref<Channel | null>(null);
+const deletingChannelOpen = computed({
+  get: () => deletingChannel.value !== null,
+  set: (open: boolean) => {
+    if (!open) deletingChannel.value = null;
+  },
+});
+const deletingChannelBusy = ref(false);
+
+/** Delete a channel; one that sends with a credential asks first whether to delete it too. */
+function deleteChannel(channel: Channel) {
+  if (typeof channel.config.credentialId === 'number') deletingChannel.value = channel;
+  else void removeChannel(channel.id, false);
+}
+
+async function removeChannel(id: number, deleteCredential: boolean) {
+  deletingChannelBusy.value = true;
   try {
-    await $fetch(`/api/channels/${id}`, { method: 'DELETE' });
+    const answer = await $fetch<ApiResponse<typeof import('~~/server/api/channels/[id].delete').default>>(
+      `/api/channels/${id}`,
+      { method: 'DELETE', query: deleteCredential ? { deleteCredential: 'true' } : undefined },
+    );
+    deletingChannel.value = null;
     await refreshChannels();
-    toast.add({ title: 'Channel deleted', color: 'success' });
+    toast.add({
+      title: 'Channel deleted',
+      description:
+        deleteCredential && !answer.credentialDeleted ? 'Its credential is kept: something else names it.' : undefined,
+      color: 'success',
+    });
   } catch (e) {
     toast.add({ title: 'Failed to delete channel', description: errorMessage(e), color: 'error' });
+  } finally {
+    deletingChannelBusy.value = false;
   }
 }
 
@@ -401,7 +430,7 @@ PIWI_SMTP_PASS=secret"
                 variant="ghost"
                 size="sm"
                 title="Delete channel"
-                @click="deleteChannel(ch.id)"
+                @click="deleteChannel(ch)"
               />
             </div>
           </div>
@@ -476,5 +505,13 @@ PIWI_SMTP_PASS=secret"
         </div>
       </SectionCard>
     </div>
+    <CredentialDeletionModal
+      v-model:open="deletingChannelOpen"
+      title="Delete the channel"
+      verb="Delete"
+      :name="deletingChannel?.name ?? ''"
+      :loading="deletingChannelBusy"
+      @confirm="(deleteCredential) => deletingChannel && removeChannel(deletingChannel.id, deleteCredential)"
+    />
   </CapabilityDeclinedGuard>
 </template>

@@ -122,6 +122,9 @@ async function refusal(promise: Promise<unknown>): Promise<{ statusCode: number;
   throw new Error('expected a refusal');
 }
 
+/** The time of each case of the first group, whose first case runs the sync's code for the first time in its worker. */
+const COLD_GROUP_TIMEOUT_MS = 15_000;
+
 /** The run the tests sync; `findRun` looks for `Piwi #12`, the name the cycle fixture carries. */
 const RUN_ID = 12;
 const OLD = new Date('2026-11-10T09:00:00Z');
@@ -134,6 +137,8 @@ let logged: string[];
 beforeAll(async () => {
   ({ db, close } = await openTempDb());
   state.db = db;
+  // The administrator the routes act as owns the credentials a typed token makes.
+  await db.insert(schema.users).values({ id: 1, username: 'admin', password: '', role: InstanceRole.ADMINISTRATOR });
   await db.insert(schema.projects).values({ id: 10, name: 'web' });
   state.caller = admin;
   zephyrId = (
@@ -223,6 +228,8 @@ beforeEach(async () => {
   state.caller = maintainer;
   reset();
   resetLimitersForTests();
+  // Every request goes at once.
+  vi.spyOn(limiterForConnection(zephyrId), 'wait').mockResolvedValue(undefined);
   logged = [];
   for (const level of ['warn', 'info', 'error', 'log'] as const) {
     vi.spyOn(console, level).mockImplementation((...args: unknown[]) => void logged.push(args.join(' ')));
@@ -240,7 +247,7 @@ beforeEach(async () => {
 });
 afterEach(() => vi.restoreAllMocks());
 
-describe('what a finished run queues', () => {
+describe('what a finished run queues', { timeout: COLD_GROUP_TIMEOUT_MS }, () => {
   test('sends one result per key the catalog holds, links the test cycle and the run, and records both', async () => {
     await seedRun();
     await fillCatalog();

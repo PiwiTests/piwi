@@ -255,15 +255,43 @@ function demoTimeline({ wallMs, workers, leaky, peakBytes, peakAtMs, sites, host
     0,
   );
   memoryBytes[nearest] = [memoryBytes[nearest][0], Math.round(peakBytes)];
-  const pages = workers.map((w) => ({ worker: w.worker, points: pagesOfWorker(w.spans, origin, leaky) }));
+  const spans = leaky ? leakySpans(workers, origin, sites, host) : [];
+  const pages = workers.map((w) => {
+    const leftOpen = leftOpenOf(spans, w.worker);
+    return {
+      worker: w.worker,
+      points: pagesOfWorker(w.spans, origin, leaky),
+      ...(leftOpen.length ? { leftOpen } : {}),
+    };
+  });
   return {
     startedAt: origin,
     cpuPct,
     memoryBytes,
     pages,
     workers: workers.map((w, i) => workerTree(w.worker, w.spans, origin, pages[i].points, leaky)),
-    ...(leaky ? { spans: leakySpans(workers, origin, sites, host) } : {}),
+    ...(spans.length ? { spans } : {}),
   };
+}
+
+/** A worker's pages left open over time, from its leaks' spans: each holds its pages from its start to its end. */
+function leftOpenOf(spans, worker) {
+  const changes = spans
+    .filter((s) => s.worker === worker && s.verdict === 'leaked' && s.pages > 0)
+    .flatMap((s) => [
+      [s.from, s.pages],
+      [s.to, -s.pages],
+    ])
+    .sort((a, b) => a[0] - b[0] || b[1] - a[1]);
+  const out = [];
+  let open = 0;
+  for (const [at, delta] of changes) {
+    open += delta;
+    const last = out[out.length - 1];
+    if (last && last[0] === at) last[1] = open;
+    else out.push([at, open]);
+  }
+  return out;
 }
 
 /**

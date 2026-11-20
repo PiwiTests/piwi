@@ -65,4 +65,4 @@ verdict.
 
 - [Developer tools](./devtools): the Piwi panel and its other tabs
 - [Browser extension](./extension): the permissions these use
-- [Replay a bug report](./replay-a-bug-report): a replay under the conditions on
+- [Replay a recording](./replay-a-bug-report): a replay under the conditions on

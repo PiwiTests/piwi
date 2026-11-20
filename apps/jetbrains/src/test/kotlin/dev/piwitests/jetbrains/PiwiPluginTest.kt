@@ -105,7 +105,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
         assertEquals(
             listOf(
-                "Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
+                "Piwi.RunTestAtCursor", "Piwi.DebugTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RunSpec", "Piwi.RunTestsForFile", null,
                 "Piwi.RecordHere", "Piwi.RecordNewFile", null, "Piwi.StopRecording", "Piwi.PauseRecording", "Piwi.ResumeRecording",
             ),
             ids("Piwi.EditorPopup"),
@@ -137,6 +137,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(listOf(record), strokes("Piwi.RecordHere"))
         assertEquals("the same chord stops the recording", listOf(record), strokes("Piwi.StopRecording"))
         assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift F")), strokes("Piwi.RerunFailing"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift K")), strokes("Piwi.RunTestAtCursor"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift B")), strokes("Piwi.OpenFailures"))
+        // A keymap where a chord is another action's takes its own letter alone, and those descending from it too
+        // (`packages/editor/src/keys.ts`, checked against every bundled keymap by `keys.test.ts`); a macOS keymap Cmd.
+        val manager = com.intellij.openapi.keymap.KeymapManager.getInstance()
+        fun strokesIn(keymap: String, id: String) =
+            manager.getKeymap(keymap)?.getShortcuts(id)?.filterIsInstance<com.intellij.openapi.actionSystem.KeyboardShortcut>()?.map { it.firstKeyStroke }
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift Z")), strokesIn("Mac OS X 10.5+", "Piwi.RecordHere"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift R")), strokesIn("Mac OS X", "Piwi.RecordHere"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("meta alt shift K")), strokesIn("Mac OS X 10.5+", "Piwi.RunTestAtCursor"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift G")), strokesIn("Visual Studio", "Piwi.RecordHere"))
+        assertEquals(listOf(javax.swing.KeyStroke.getKeyStroke("ctrl alt shift G")), strokesIn("Default for XWin", "Piwi.OpenFailures"))
         // A run's controls use the debugger's shortcuts, in this keymap as in every other.
         for ((control, debugger) in listOf(
             "Piwi.PauseRun" to "Pause", "Piwi.ResumeRun" to "Resume", "Piwi.StepRun" to "StepOver",
@@ -153,6 +165,31 @@ class PiwiPluginTest : BasePlatformTestCase() {
         // The status popup lists the run's actions as the one Piwi.RunControl group does, Tools → Piwi too.
         val runControl = ActionManager.getInstance().getAction("Piwi.RunControl") as com.intellij.openapi.actionSystem.ActionGroup
         assertEquals(PiwiStatusBarWidget.RUN_ACTIONS.toList(), runControl.getChildren(null).map { ActionManager.getInstance().getId(it) })
+    }
+
+    /**
+     * A running test's ring turns, an eighth of a turn a frame, and is drawn again at an editor's scale; a list draws it
+     * still, and the other outcomes stand still.
+     */
+    fun testTheRunningRingTurns() {
+        val running = PiwiIcons.outcome("running")
+        assertTrue(running is com.intellij.ui.AnimatedIcon)
+        // The ring's own size, however the test's IDE loads icons.
+        val ring = com.intellij.openapi.util.IconLoader.getIcon("/icons/testRunning.svg", PiwiIcons::class.java)
+        assertEquals(ring.iconWidth to ring.iconHeight, running.iconWidth to running.iconHeight)
+        assertFalse(PiwiIcons.outcome("passed") is com.intellij.ui.AnimatedIcon)
+        assertFalse(PiwiIcons.outcome("running", turning = false) is com.intellij.ui.AnimatedIcon)
+        val zoomed = (running as com.intellij.openapi.util.ScalableIcon).scale(2f)
+        assertTrue(zoomed is com.intellij.ui.AnimatedIcon)
+        assertEquals(2f, (zoomed as com.intellij.openapi.util.ScalableIcon).scale)
+        // It paints.
+        val image = java.awt.image.BufferedImage(16, 16, java.awt.image.BufferedImage.TYPE_INT_ARGB)
+        val g = image.createGraphics()
+        try {
+            running.paintIcon(null, g, 0, 0)
+        } finally {
+            g.dispose()
+        }
     }
 
     /**
@@ -186,8 +223,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val concepts = setOf(
             setOf("Piwi.RunHoldFailures", "Piwi.HoldFailures"),
             setOf("Piwi.OpenLatestRun", "Piwi.OpenRunPage"),
-            setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest"),
-            setOf("Piwi.VerifyTestAtCursor", "Piwi.Failure.Verify"),
+            setOf("Piwi.RunTestAtCursor", "Piwi.Failure.RunTest", "Piwi.Tests.Run"),
+            setOf("Piwi.VerifyTestAtCursor", "Piwi.Failure.Verify", "Piwi.Tests.Verify"),
+            setOf("Piwi.DebugTestAtCursor", "Piwi.Failure.Debug", "Piwi.Tests.Debug"),
             setOf("Piwi.Failure.OpenTrace", "Piwi.OpenTraceSoFar"),
             setOf(
                 "Piwi.CopyMcpConfiguration", "Piwi.CopyRunsMcpConfiguration", "Piwi.CopyRunsMcpHttpConfiguration",
@@ -196,7 +234,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             setOf("Piwi.RecordHere", "Piwi.RecordNewFile", "Piwi.NewRecordedTest", "Piwi.RecordAtStop", "Piwi.RecordHereGenerate", "Piwi.ResumeRecording"),
             setOf("Piwi.ShareRunLive", "Piwi.ShareWindowLive"),
             setOf("Piwi.StopSharingRun", "Piwi.StopSharingWindowLive"),
-            setOf("Piwi.OpenSettings", "Piwi.NodeSettings"),
+            setOf("Piwi.OpenSettings", "Piwi.NodeSettings", "Piwi.RunOptions"),
         )
         val shared = ids.filter { it !in toggles }.groupBy { glyph(actions.getAction(it).templatePresentation.icon) }
             .values.filter { it.size > 1 }.map { it.toSet() }.toSet()
@@ -364,7 +402,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
             waitUntil { service.serviceStopped }
             assertNull(service.status)
             assertEquals(
-                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES),
+                Glue.EmptyText(Glue.SERVICE_STOPPED, Glue.SERVICE_FIXES.map { it.link }),
                 Glue.serviceDownText(service.trusted(), service.startProblem, service.serviceStopped),
             )
         } finally {
@@ -422,25 +460,25 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val service = project.getService(PiwiProjectService::class.java)
         try {
             service.saveCredentials("https://a.example/", "Shop", "pd_a")
-            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
+            assertEquals(EditorCredentials("https://a.example", "pd_a", "Shop", baselines = emptyMap(), environments = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true, runningLines = "all"), service.credentials())
             service.settings().serverUrl = "https://b.example"
             assertEquals(null, service.credentials().apiKey)
             service.saveCredentials("https://b.example", "Shop", "pd_b")
             service.settings().serverUrl = "https://a.example"
             assertEquals("pd_a", service.credentials().apiKey)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), environments = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true, runningLines = "all"), service.credentials())
             // A project only, no address and no key.
             service.saveCredentials("", "Shop", "pd_ignored")
-            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", baselines = emptyMap(), environments = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true, runningLines = "all"), service.credentials())
             // The desktop app, chosen on this machine: what is saved for the instance stays.
             service.useDesktop("Mugs")
-            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktop = true, desktopProject = "Mugs", baselines = emptyMap(), environments = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true, runningLines = "all"), service.credentials())
             service.useInstance()
-            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
+            assertEquals(EditorCredentials(null, null, "Shop", desktopProject = "Mugs", baselines = emptyMap(), environments = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true, runningLines = "all"), service.credentials())
             service.useDesktop(null)
             service.disconnect()
-            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true), service.credentials())
+            assertEquals(EditorCredentials(null, null, null, baselines = emptyMap(), environments = emptyMap(), failureSeverity = "error", mcpAuthorization = "key", statusBarAlert = "new", codeLens = "all", locatorWarnings = true, runningLines = "all"), service.credentials())
             assertFalse(service.hasApiKey("https://a.example"))
             assertTrue(service.hasApiKey("https://b.example"))
             // The agent signing in to Piwi's MCP server through the instance, the person's own choice in every project.
@@ -651,6 +689,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             com.intellij.execution.RunManager.getInstance(project).removeConfiguration(settings)
         }
+        // Named after the service's run name, whatever its arguments spell.
+        val anchored = listOf("^(?:C:/w/my shop/tests/a.spec.ts|file:///C:/w/my.20shop/tests/a.spec.ts):3")
+        val named = PlaywrightRunnerLauncher.configure(project, "C:\\w\\my shop", anchored, env, name = "a.spec.ts:3")!!
+        try {
+            assertEquals("Piwi: a.spec.ts:3", named.name)
+        } finally {
+            com.intellij.execution.RunManager.getInstance(project).removeConfiguration(named)
+        }
     }
 
     fun testFindsThePlaywrightConfigsAndHandsTheirFoldersToTheService() {
@@ -741,6 +787,104 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(PiwiTestResultsGutter.shown())
     }
 
+    /**
+     * A spec's tests drawn in the gutter, and the rows above its lines drawn by Code Vision, from the service's answer,
+     * as the golden fixture of `packages/editor/tests/golden/` holds them: each test's line, its result's icon and its
+     * tooltip, its backgrounds, and each line's entries, the words VS Code's `tests/golden.test.ts` holds its test
+     * decorations and lenses to. A line with no result draws no icon.
+     */
+    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() {
+        val golden = com.google.gson.JsonParser.parseString(
+            File("../../packages/editor/tests/golden/test-lines.json").readText(),
+        ).asJsonObject
+        val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
+        val spec = golden.getAsJsonObject("spec")
+        val service = project.getService(PiwiProjectService::class.java)
+        val base = File(project.basePath!!)
+        val e2e = File(base, "golden").apply { mkdirs() }
+        val asked = mutableListOf<String>()
+        service.summaryOf = { uri ->
+            asked += uri
+            CompletableFuture.completedFuture(summary)
+        }
+        try {
+            File(e2e, "playwright.config.ts").writeText("export default {};\n")
+            val file = File(e2e, spec.get("file").asString).apply { parentFile.mkdirs() }
+            file.writeText(spec.get("text").asString)
+            service.searchPlaywright()
+            val virtual = com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(file)!!
+            myFixture.configureFromExistingVirtualFile(virtual)
+            val document = myFixture.editor.document
+            // The annotator's three steps, as the highlighting's external tool pass runs them, into the platform's holder:
+            // the 2024.1 test platform's `AnnotationHolderImpl`, whose call a newer platform takes without the annotator.
+            val psiFile = com.intellij.openapi.application.runReadAction { com.intellij.psi.PsiManager.getInstance(project).findFile(virtual)!! }
+            val annotator = PiwiTestAnnotator()
+            val lines = annotator.doAnnotate(annotator.collectInformation(psiFile, myFixture.editor, false))
+            val holder = com.intellij.codeInsight.daemon.impl.AnnotationHolderImpl(com.intellij.lang.annotation.AnnotationSession(psiFile), false)
+            com.intellij.openapi.application.runReadAction { holder.applyExternalAnnotatorWithContext(psiFile, annotator, lines) }
+            // The tooltip as the IDE shows it: a tag nobody escaped gone, then an escaped character as itself.
+            val shown = { html: String ->
+                html.removeSurrounding("<html>", "</html>").replace(Regex("<[^>]*>"), "")
+                    .replace("&lt;", "<").replace("&gt;", ">").replace("&amp;", "&")
+            }
+            val drawn = holder
+                .mapNotNull { annotation ->
+                    val gutter = annotation.gutterIconRenderer as? PiwiTestAnnotator.TestResultGutter ?: return@mapNotNull null
+                    Triple(document.getLineNumber(annotation.startOffset), gutter.icon, shown(gutter.tooltipText))
+                }
+                .sortedBy { it.first }
+            val marks = golden.getAsJsonArray("marks").map { it.asJsonArray }
+            assertEquals(marks.map { listOf(it[0].asInt, it[2].asString) }, drawn.map { listOf(it.first, it.third) })
+            // Each result's own icon, the concept table's.
+            val icons = mapOf(
+                "failed" to PiwiIcons.FAILED,
+                "flaky" to PiwiIcons.FLAKY,
+                "running" to PiwiIcons.RUNNING,
+                "paused" to PiwiIcons.PAUSED,
+                "passed" to AllIcons.RunConfigurations.TestPassed,
+            )
+            for ((mark, at) in marks.zip(drawn)) assertSame(mark[1].asString, icons.getValue(mark[1].asString), at.second)
+            // The failing test's background around the line it failed at, and that line's own.
+            val linesOf = { key: com.intellij.openapi.editor.colors.TextAttributesKey ->
+                holder.filter { it.textAttributes == key }
+                    .flatMap { (document.getLineNumber(it.startOffset)..document.getLineNumber(it.endOffset - 1)).toList() }
+                    .sorted()
+            }
+            val failing = golden.getAsJsonObject("failing")
+            val test = failing.getAsJsonArray("test").map { it.asInt }
+            val failedAt = failing.get("line").asInt
+            assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
+            assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            // The rows above the lines, as the registered Code Vision providers draw them, each slot after the one before.
+            val providers = DaemonBoundCodeVisionProvider.extensionPoint.extensionList.filterIsInstance<PiwiCodeVisionProvider>()
+            assertEquals((0 until Glue.CODE_VISION_SLOTS).map(PiwiCodeVisionProvider::providerId), providers.map { it.id })
+            for ((slot, provider) in providers.withIndex().drop(1)) {
+                val after = provider.relativeOrderings.single() as com.intellij.codeInsight.codeVision.CodeVisionRelativeOrdering.CodeVisionRelativeOrderingAfter
+                assertEquals(PiwiCodeVisionProvider.providerId(slot - 1), after.id)
+            }
+            val rows = sortedMapOf<Int, MutableList<String>>()
+            for (provider in providers) {
+                val entries = com.intellij.openapi.application.runReadAction { provider.computeForEditor(myFixture.editor, psiFile) }
+                for ((range, entry) in entries) {
+                    rows.getOrPut(document.getLineNumber(range.startOffset)) { mutableListOf() } +=
+                        (entry as com.intellij.codeInsight.codeVision.ui.model.ClickableTextCodeVisionEntry).text
+                }
+            }
+            val lenses = golden.getAsJsonArray("lenses").map { row ->
+                row.asJsonArray.let { it[0].asInt to it[1].asJsonArray.map { title -> title.asString } }
+            }
+            assertEquals(lenses, rows.map { (line, titles) -> line to titles })
+            assertEquals(listOf(virtual.toNioPath().toUri().toString()), asked.distinct())
+        } finally {
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().findFileByIoFile(File(e2e, spec.get("file").asString))
+                ?.let { service.showsTests(it, false) }
+            service.summaryOf = null
+            FileUtil.delete(e2e)
+            com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshIoFiles(listOf(e2e))
+            service.searchPlaywright()
+        }
+    }
+
     /** New offers a recorded Playwright test on a folder of a Playwright config, and on no other folder. */
     fun testNewOffersARecordedTestOnAPlaywrightConfigsFoldersAlone() {
         val actions = ActionManager.getInstance()
@@ -808,6 +952,48 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(Glue.SERVICE_FIXES.map { it.label }, unanswered.actions.map { it.templateText })
         assertEquals(com.intellij.notification.NotificationType.INFORMATION, answered.type)
         assertEquals(emptyList<String>(), answered.actions.map { it.templateText })
+    }
+
+    /**
+     * Each kind of balloon goes to its group, which the IDE's notification settings name: a run's verdict to the
+     * results, ending with Settings…; a confirmation to the confirmations; a picked locator the service did not place
+     * to the problems, with Restart and the log; a recording the service did not start to the problems too.
+     */
+    fun testEachKindOfBalloonGoesToItsGroup() {
+        val shown = mutableListOf<com.intellij.notification.Notification>()
+        project.messageBus.connect(testRootDisposable).subscribe(
+            com.intellij.notification.Notifications.TOPIC,
+            object : com.intellij.notification.Notifications {
+                override fun notify(notification: com.intellij.notification.Notification) {
+                    shown += notification
+                }
+            },
+        )
+        val user = PiwiUserSettings.state()
+        val before = user.runNotifications
+        try {
+            user.runNotifications = "always"
+            PiwiCommands.runEnded(
+                project,
+                RunEnded(root = "/w", runId = 124, verdict = VerdictWords("run #124", "Passed 3 of 3", actions = listOf("failures"))),
+            )
+        } finally {
+            user.runNotifications = before
+        }
+        PiwiNotifier.confirm(project, "The MCP configuration is on the clipboard.")
+        PiwiCommands.notify(project, Glue.pickNotice(Glue.SendPlace("tests/a.spec.ts", 3), Glue.PickOutcome.NO_ANSWER))
+        PiwiCommands.notify(project, PiwiRecordFlow.startFailure(java.util.concurrent.CompletableFuture<PageCandidatesResult>()), com.intellij.notification.NotificationType.ERROR)
+        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        assertEquals(4, shown.size)
+        val (verdict, confirmed, pick, recording) = shown
+        assertEquals(PiwiNotice.RESULT.group, verdict.groupId)
+        assertEquals(listOf(Glue.OPEN_FAILURES, Glue.ONLY_ON_FAILURE, "Settings…"), verdict.actions.map { it.templateText })
+        assertEquals(PiwiNotice.CONFIRMATION.group, confirmed.groupId)
+        for (problem in listOf(pick, recording)) {
+            assertEquals(PiwiNotice.PROBLEM.group, problem.groupId)
+            assertEquals(Glue.SERVICE_FIXES.map { it.label }, problem.actions.map { it.templateText })
+        }
+        assertEquals(com.intellij.notification.NotificationType.WARNING, pick.type)
     }
 
     /**
@@ -1088,7 +1274,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
                     "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.ShowFlakyTests", "Piwi.OpenLatestRun", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
-                    "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
+                    "Piwi.Refresh", "Piwi.Connect", "Piwi.PairPicker", "Piwi.OpenSettings",
                 ),
                 entries,
             )
@@ -1151,6 +1337,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 .first { coverageKey(it) == "PIWI_COVERAGE_RUN" }
             val tooltip = Glue.coverageMarkTooltip(Glue.CoverageMark(Glue.CoverageKind.RUN, 0, 1, "Piwi: run by 2 tests"))
             assertEquals(tooltip, (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.ActiveGutterRenderer).tooltipText)
+            // At the right of the marker area: the IDE's own coverage paints at its left.
+            assertEquals(
+                com.intellij.openapi.editor.markup.LineMarkerRendererEx.Position.RIGHT,
+                (run.lineMarkerRenderer as com.intellij.openapi.editor.markup.LineMarkerRendererEx).position,
+            )
             // Every mark carries its key, for a background the scheme sets; the lines run draw no mark in the scroll bar.
             val scheme = com.intellij.openapi.editor.colors.EditorColorsManager.getInstance().globalScheme
             assertEquals("PIWI_COVERAGE_RUN", run.textAttributesKey?.externalName)
@@ -1396,6 +1587,87 @@ class PiwiPluginTest : BasePlatformTestCase() {
         }
     }
 
+    /** Unpair renews this IDE's own token: the entry every JetBrains IDE shared before, which others may read, stays. */
+    fun testUnpairRenewsThisIdesTokenAloneNotTheOneJetBrainsIdesShared() {
+        val shared = PiwiCredentials.attributes(com.intellij.credentialStore.generateServiceName("Piwi", "sendToken"))
+        com.intellij.ide.passwordSafe.PasswordSafe.instance.setPassword(shared, "shared-token-0123456789")
+        val before = PiwiSendToken.ensure()
+        val after = PiwiSendToken.renew()
+        assertFalse(before == after)
+        assertEquals(after, PiwiSendToken.current())
+        assertEquals("shared-token-0123456789", com.intellij.ide.passwordSafe.PasswordSafe.instance.getPassword(shared))
+    }
+
+    /** A request of Piwi Picker's pairing by code to the built-in server, the event queue run while it waits. */
+    private fun pickerRequest(
+        method: String,
+        path: String,
+        origin: String,
+        body: String? = null,
+        secret: String? = null,
+    ): java.net.http.HttpResponse<String> {
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port$path"))
+            .header("Origin", origin)
+            .method(
+                method,
+                if (body == null) java.net.http.HttpRequest.BodyPublishers.noBody() else java.net.http.HttpRequest.BodyPublishers.ofString(body),
+            )
+        if (body != null) request.header("Content-Type", "application/json")
+        if (secret != null) request.header(Glue.EDITOR_PAIRING_SECRET_HEADER, secret)
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(request.build(), java.net.http.HttpResponse.BodyHandlers.ofString())
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
+        }
+        return future.get(1, TimeUnit.SECONDS)
+    }
+
+    /** Piwi Picker's Pair: the hello, the code the person types, and the token with its proof to the next poll, once. */
+    fun testPiwiPickerPairsByCodeOnceThePersonAllowsIt() {
+        val origin = "chrome-extension://" + "a".repeat(32)
+        val hello = pickerRequest("GET", PiwiSendHandler.HELLO_PATH, origin)
+        assertEquals(hello.body(), 200, hello.statusCode())
+        assertEquals(origin, hello.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+        val said = com.google.gson.JsonParser.parseString(hello.body()).asJsonObject
+        assertEquals("jetbrains", said.get("editor").asString)
+        assertTrue(said.getAsJsonArray("windows").map { it.asString }.contains(project.name))
+        try {
+            // Another origin is asked nothing: no request waits for it.
+            assertFalse(pickerRequest("POST", PiwiSendHandler.PAIRINGS_PATH, "https://evil.test", "{}").statusCode() == 201)
+            assertEquals(emptyList<Glue.PairingRequestView>(), PiwiPickerPairing.requests.waiting())
+            val started = pickerRequest("POST", PiwiSendHandler.PAIRINGS_PATH, origin, """{"browser":"Chrome","os":"Linux"}""")
+            assertEquals(started.body(), 201, started.statusCode())
+            val answer = com.google.gson.JsonParser.parseString(started.body()).asJsonObject
+            val id = answer.get("id").asString
+            val secret = answer.get("secret").asString
+            assertEquals(listOf("Chrome on Linux"), PiwiPickerPairing.requests.waiting().map { it.client })
+            val poll = { pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = secret).body() }
+            assertEquals("""{"status":"waiting"}""", poll())
+            assertEquals(404, pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = "nope").statusCode())
+
+            // The code typed: Piwi Picker's own, which it checks the proof against.
+            PiwiPickerPairing.allow(project, id, "bcdf ghjk")
+            val deadline = System.currentTimeMillis() + 10_000
+            var allowed = poll()
+            while (allowed.contains("waiting") && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+                allowed = poll()
+            }
+            val token = com.google.gson.JsonParser.parseString(allowed).asJsonObject
+            assertEquals(allowed, "allowed", token.get("status").asString)
+            assertEquals(PiwiSendToken.current(), token.get("token").asString)
+            assertEquals(Glue.editorPairingProof("BCDF-GHJK", id, token.get("token").asString), token.get("proof").asString)
+            assertEquals("""{"status":"claimed"}""", poll())
+            assertEquals("Chrome on Linux", PiwiPickerPairing.paired()?.client)
+        } finally {
+            PiwiPickerPairing.unpair()
+        }
+        assertNull(PiwiPickerPairing.paired())
+    }
+
     /** Every answer to Piwi Picker's challenge proves this IDE holds the pairing's token, paired or not, for its port. */
     fun testTheEndpointProvesItHoldsTheTokenBeforePiwiPickerSendsIt() {
         val token = PiwiSendToken.ensure()
@@ -1562,7 +1834,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertEquals(com.intellij.openapi.editor.LogicalPosition(3, 8), editor?.caretModel?.logicalPosition)
     }
 
-    /** **Debug this failure**, **Verify the test ×3** and **Go to the test** are offered where the service built them. */
+    /** **Debug with Piwi**, **Verify ×3 with Piwi** and **Go to the test** are offered where the service built them. */
     fun testAFailuresTestActionsApplyWhereTheServiceBuiltThem() {
         val failure = WorkspaceFailure(uri = "file:///w/tests/a.spec.ts", line = 3, title = "pays", executionId = 9)
         val debug = RunTestsArgs("file:///w/tests/a.spec.ts", emptyList())
@@ -1570,7 +1842,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertTrue(action.applies(project, failure.copy(debug = debug)))
         assertFalse(action.applies(project, failure))
         assertNotNull(action.templatePresentation.icon)
-        // Verify the test ×3 and Go to the test, where the service found the failure's test.
+        // Verify ×3 with Piwi and Go to the test, where the service found the failure's test.
         val manager = ActionManager.getInstance()
         val verify = manager.getAction("Piwi.Failure.Verify") as VerifyFailureAction
         val goTo = manager.getAction("Piwi.Failure.GoToTest") as GoToFailureTestAction
@@ -1581,9 +1853,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
         assertFalse(goTo.applies(project, failure))
     }
 
+    /** A `file:` URI of the service names its file however it escapes the path (`fileOfUri`). */
+    fun testAServiceUriFindsItsFileWithItsEscapesRead() {
+        val dir = File(FileUtil.createTempDirectory("piwi-uris", null), "Jean Dupont/tests").apply { mkdirs() }
+        val spec = File(dir, "a.spec.ts").apply { writeText("test('a', async () => {});\n") }
+        com.intellij.openapi.vfs.LocalFileSystem.getInstance().refreshAndFindFileByIoFile(spec)
+        // As the service writes it (`pathToFileURL`): the space escaped.
+        val uri = spec.toPath().toUri().toASCIIString()
+        assertTrue(uri, "Jean%20Dupont" in uri)
+        assertEquals(FileUtil.toSystemIndependentName(spec.path), fileOfUri(uri)?.path)
+        assertNull(fileOfUri("https://example.com/a.spec.ts"))
+        assertNull(fileOfUri(null))
+    }
+
     /**
      * A test's result icon offers what the service lists for it, in its groups: Run and Verify ×3 as the registered
-     * actions, then its evidence and its context for an agent, a separator between groups; either click opens them.
+     * actions, Record steps in this test as Record here, then its evidence and its context for an agent, a separator
+     * between groups; either click opens them.
      */
     fun testATestsResultIconOffersTheServicesActionsInTheirGroups() {
         myFixture.configureByText("cart.spec.ts", "test('adds', async () => {});\n")
@@ -1599,6 +1885,13 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 TestAction("run", "", "run", "Run with Piwi", command("Run with Piwi", "piwi.runTests")),
                 TestAction("run", "", "debug", "Debug with Piwi", command("Debug with Piwi", "piwi.runTests")),
                 TestAction("run", "", "verify", "Verify ×3 with Piwi", command("Verify ×3 with Piwi", "piwi.runTests")),
+                TestAction(
+                    "record",
+                    "Record",
+                    null,
+                    "Record steps in this test…",
+                    PiwiCommand("Record steps in this test…", "piwi.record", listOf("file:///w/cart.spec.ts", 3)),
+                ),
                 TestAction("evidence", "Evidence", null, "Open the trace", command("Open the trace", "piwi.openTrace")),
                 TestAction(
                     "evidence",
@@ -1621,6 +1914,8 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 "Run with Piwi",
                 "Debug with Piwi",
                 "Verify ×3 with Piwi",
+                "— Record",
+                "Record steps in this test…",
                 "— Evidence",
                 "Open the trace",
                 "Open in dashboard",
@@ -1629,10 +1924,14 @@ class PiwiPluginTest : BasePlatformTestCase() {
             ),
             entries,
         )
-        // Run, Verify ×3 and Open in dashboard are the registered actions, their keys shown.
+        // Run, Verify ×3, Record here and Open in dashboard are the registered actions, their keys shown.
         val manager = ActionManager.getInstance()
         fun registered(i: Int) = manager.getId((children[i] as com.intellij.openapi.actionSystem.AnActionWrapper).delegate)
-        assertEquals(listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.OpenInDashboard"), listOf(registered(0), registered(2), registered(5)))
+        assertEquals(
+            listOf("Piwi.RunTestAtCursor", "Piwi.VerifyTestAtCursor", "Piwi.RecordHere", "Piwi.OpenInDashboard"),
+            listOf(registered(0), registered(2), registered(4), registered(7)),
+        )
+        assertEquals(3, PiwiTestAnnotator.recordLine(PiwiCommand(null, "piwi.record", listOf("file:///w/a.spec.ts", com.google.gson.JsonPrimitive(3)))))
         assertEquals(AllIcons.Actions.StartDebugger, children[1].templatePresentation.icon)
         // A left click opens the same list, never the browser, while the IDE indexes too.
         assertTrue(gutter.isNavigateAction)
@@ -1700,6 +1999,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(41, runs?.contexts?.single()?.run?.id)
                 assertEquals("Piwi: 1 failing", Glue.statusView(status, runs).text)
 
+                // The test tree, in the protocol's classes: the fixture has no Playwright, so its config's node says
+                // why, and the spec named is read from its text; its run, by the spec's own filter.
+                val checkoutSpec = File(dir, "tests/checkout.spec.ts").toURI().toString()
+                var items: TestItemsResult? = null
+                while (System.currentTimeMillis() < deadline) {
+                    items = server.testItems(TestItemsParams(uris = listOf(checkoutSpec))).get(5, TimeUnit.SECONDS)
+                    if (items?.contexts?.firstOrNull()?.listing?.error != null) break
+                    Thread.sleep(100)
+                }
+                val config = Glue.testsTree(items).single()
+                assertEquals("config", config.kind)
+                assertTrue(config.error.orEmpty(), config.error.orEmpty().startsWith("Playwright is not installed in "))
+                val specNode = config.children.flatMap { listOf(it) + it.children }
+                    .first { it.kind == "spec" && it.label == "checkout.spec.ts" }
+                val specRuns = server.testRuns(TestRunsParams(listOf(specNode.id))).get(5, TimeUnit.SECONDS)
+                assertEquals(listOf("tests/checkout.spec.ts"), specRuns?.single()?.locations)
+
                 // No desktop app runs here: Connect offers none.
                 assertEquals(null, server.desktop().get(5, TimeUnit.SECONDS)?.url)
 
@@ -1717,7 +2033,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(listOf(4 to "1 test · click · 1 failing"), summary?.lines?.map { it.line to it.title })
                 assertEquals("piwi.runTests", summary?.lines?.single()?.command?.command)
 
-                // In the spec: the line the failure went through, why, and the evidence above it.
+                // In the spec: the line the failure went through and why; its evidence is among the test's actions.
                 val spec = File(dir, "tests/checkout.spec.ts").toURI().toString().replace("file:/", "file:///")
                 val specLines = server.fileSummary(UriParams(spec)).get(5, TimeUnit.SECONDS)?.lines.orEmpty()
                 val test = specLines.single { it.status != null }
@@ -1726,12 +2042,11 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 assertEquals(
                     listOf(
                         Triple(4, "✗ Failed here · not found", "piwi.openInDashboard"),
-                        Triple(4, "Run this test", "piwi.runTests"),
-                        Triple(4, "Screenshot", "piwi.openScreenshot"),
-                        Triple(4, "Trace", "piwi.openTrace"),
+                        Triple(4, "Run with Piwi", "piwi.runTests"),
                     ),
                     specLines.filter { it.status == null }.map { Triple(it.line, it.title, it.command?.command) },
                 )
+                assertTrue(test.actions.orEmpty().map { it.title }.containsAll(listOf("Open the trace", "Open the screenshot")))
                 // Record here in Alt+Enter: steps in the test's body, nothing on the imports.
                 assertEquals(RecordPlaceResult("steps", "Piwi: record steps here…"), server.recordPlace(RecordPlaceParams(spec, 4)).get(5, TimeUnit.SECONDS))
                 assertEquals(RecordPlaceResult(null, null), server.recordPlace(RecordPlaceParams(spec, 0)).get(5, TimeUnit.SECONDS))
@@ -1971,6 +2286,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     class TestClient : LanguageClient {
         @Volatile var runStatusChanges = 0
+
+        @JsonNotification("piwi/testItemsChanged")
+        fun testItemsChanged(result: TestItemsResult) {}
 
         val sessions = java.util.concurrent.CopyOnWriteArrayList<RunSession>()
 

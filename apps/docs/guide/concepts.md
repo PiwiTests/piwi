@@ -79,10 +79,38 @@ change between two runs, not its cause: a newly flaky test can be your change or
 
 ### Environment
 
-A free-text label on a run (`production`, `staging`, a preview URL, whatever you use), set with the reporter's
-`environment` option or `PIWI_ENVIRONMENT`. It is a **scoping** dimension, not a configuration one: flaky analysis,
-analytics and timeline markers can be narrowed to one environment, so a staging suite's noise doesn't blend into
-production's numbers.
+A deployment of the application a project's tests run against (Local, Staging, Production), kept as a record of the
+project. A run reports a **label**, the reporter's `environment` option or `PIWI_ENVIRONMENT`, which resolves to an
+environment by its key or an alias, ignoring case; a label nothing takes adds a **discovered** one. Filters and
+analytics narrow to one, and a run Piwi starts for one gets its run variables: [Environments](/features/environments).
+
+### Default environment
+
+The [environment](#environment) a project's views read when none is picked, as they read its default branch: the
+project page and its tabs, Analytics, quarantine candidates and pull-request feedback. A run with no environment counts
+only under **All environments**. Unset, every environment counts:
+[Default environment](/features/environments#default-environment).
+
+### Deployed environment
+
+An [environment](#environment) a project admin marks as not built from the run's checkout, such as Staging (every
+environment is built from the checkout until then): it runs whatever was last deployed there. A run of one tested a **deployed commit**, which its server under test reports or
+the environment's latest deploy marker carries. Suspect lines, the Changes tab and the AI diagnosis read the
+application's changes between deployed commits: [Deployed environments](/features/deployed-environments).
+
+### Protected environment
+
+An [environment](#environment), Production as a rule, that Piwi starts a run against only for a project admin, after
+a confirmation, and only for the tests carrying one of its **required tags** (`@smoke`). It is never picked by default
+and never an agent's. A command typed in a terminal stays the person's own:
+[Protected environments](/features/environments#protected-environments).
+
+### Run variable
+
+One `NAME=value` environment variable of a **project**, such as the tenant one app serves it as (`TENANT=acme`),
+that every run Piwi starts for the project gets and every command it gives to copy starts with. An
+[environment](#environment) has run variables of its own, set over the project's on the runs Piwi starts for it. The
+names it may set and where it applies: [Run variables](/features/run-variables).
 
 ### Environment incident
 
@@ -397,6 +425,13 @@ With [authentication](/operate/authentication) on, every account holds an **inst
 on all of them. A **group** is a named set of users that receives project roles the way a user does. See
 [Access, roles and groups](/operate/project-access).
 
+### Credential
+
+**A secret Piwi sends to another service, saved once and named by id wherever it is needed**: a user, the secret, the
+destination (the base URL it may be sent under) and the projects that may use it. A CI server action, source control,
+an AI role, a Jira or Zephyr Scale connection and a Slack channel of the instance name one; every use is checked against
+it and logged. See [Credentials](/operate/credentials).
+
 ## Words kept to one meaning
 
 Some words name two things across the docs, the dashboard and the tools. Each keeps the meaning in the middle column
@@ -408,10 +443,10 @@ on these pages; the others take the name on the right, or are told apart by the 
 | share | **Share live**: a teammate watches a run on your machine | **Share with Playwright tools** binds a stopped test's browser for Playwright's tools; a [share link](/features/share-links) is a signed read-only link |
 | On your machine | A run on a developer's machine: the run page's card for a desktop run and the mark of a [requested run](#test-run) | none |
 | run | A [test run](#test-run) | A test's result in a run is a *run of a test* ([How a result counts](/reference/test-metadata#how-a-result-counts)); one of the times Flake Lab or a verification runs a test is a *repetition* |
-| environment | The label a run carries ([Environment](#environment)) | The app a run tests is the *environment under test* ([incident](#environment-incident)); the machine a run executed on is its [run environment](/features/run-environment); the flaky class `environment` means one browser, or one runner time zone or locale, fails |
+| environment | A deployment a project's tests run against, a record of the project, which a run's *label* names ([Environment](#environment)) | The variables of a process are its *environment variables*, and the ones Piwi sets are [run variables](#run-variable); an *environment incident* is a run whose environment under test was down ([incident](#environment-incident)); the machine a run executed on is its [run environment](/features/run-environment); the flaky class `environment` means one browser, or one runner time zone or locale, fails |
 | wasted | [Wasted time](/features/slow-tests#wasted-time): waits plus failed attempts, as Analytics counts it | The flaky list's *wasted CI minutes* of one test are its retry passes times its average failed attempt |
 | coverage, reach | [Coverage](#coverage): the code a test ran; [reach](#reach): what a run observed a test touch | [Code reach](#code-reach) is coverage at file level; *Uncovered changes* and the **Coverage** tab keep their names |
-| diverged | The dashboard's verdict for a replay that could not play a step | Piwi Picker says *Could not reach the bug* ([Replay a bug report](/features/replay-a-bug-report)) |
+| diverged | The dashboard's verdict for a replay that could not play a step | Piwi Picker says *Could not reach the bug*, or *Stopped at step N: the page went another way* for a recording that marks nothing wrong ([Replay a recording](/features/replay-a-bug-report)) |
 | picker | **Piwi Picker**, always with its name, is the browser extension | A tool that turns a click into locators is named by where it works: the dashboard's *snapshot picker* (**Pick from snapshot**, **Open in picker**), the trace viewer's *Pick locator*, the *failure-time picker* in a local run's browser |
 | dashboard | The web app a Piwi instance serves | A saved set of Analytics widgets is an [analytics dashboard](/features/dashboards); a hosting provider's web console is its *console* |
 | report | Always with its kind | *quality report*, *HTML report* of a run, *offline export*, *bug report*, Playwright's *blob report* |

@@ -3,7 +3,8 @@ import { files, testRunsCases } from '../../../database/schema';
 import { resolveCaseDomSnapshot } from '../../../utils/dom-snapshot';
 import { snapshotMomentFromQuery } from '../../../utils/dom-snapshot-render';
 import { resolveCasePayloadContents } from '../../../utils/case-payloads';
-import { snapshotFrameDocument, snapshotFrameMode } from '../../../utils/dom-snapshot-frame';
+import { snapshotFrameDocument } from '../../../utils/dom-snapshot-frame';
+import { snapshotFrameMode } from '../../../utils/snapshot-frame-html';
 import {
   requireResolvedProjectAccess,
   requireRouteId,

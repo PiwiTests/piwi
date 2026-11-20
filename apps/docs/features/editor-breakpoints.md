@@ -1,6 +1,6 @@
 ---
 title: Breakpoints in the browser
-description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test run Piwi starts pauses there, before a navigation, an action, a key press or an assertion: headless, its page shown in the editor; with Run headed, under a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
+description: "Set a breakpoint in VS Code or a JetBrains IDE and the next test you debug with Piwi pauses there, before a navigation, an action, a key press or an assertion: headless, its page shown in the editor; with Run headed, under a bar to resume, step, pick a locator that replaces the one on that line, or record the steps that come next."
 lang: en-US
 ---
 
@@ -8,8 +8,8 @@ lang: en-US
 
 <Needs reporter fixtures editor />
 
-A breakpoint you set with the editor's own gutter click pauses the next test run the [editor extensions](./editors)
-start, in the browser, right before the call on its line that acts on, reads or checks the page: a navigation, a
+A breakpoint you set with the editor's own gutter click pauses the next test you debug with the [editor
+extensions](./editors) (**Debug the test at the cursor**), in the browser, right before the call on its line that acts on, reads or checks the page: a navigation, a
 click, a key press, an assertion. Piwi's bar at the top of the page lets you look at the page, step through the calls,
 or pick a better locator, which lands back on that line in the editor. The stop is Playwright's own debugger
 (`context.debugger`) without its Inspector: Piwi's bar answers it, and no JavaScript debugger attaches.
@@ -19,7 +19,8 @@ or pick a better locator, which lands back on that line in the editor. The stop 
 1. Set a line breakpoint on a line with a Playwright call, in a spec, a page object or a fixture:
    `await page.getByText('Pay now').click();`, `await page.goto('/checkout');`, `await page.keyboard.press('Tab');`
    or `await expect(page).toHaveURL(/cart/);`. On a statement broken over lines, any of its lines will do.
-2. Run the test from Piwi: **Run this test**, or any command of [Runs from the editor](./editor-runs#run-tests).
+2. Debug the test: **Debug with Piwi** in its actions, on its failure or in VS Code's Testing view. A plain Run stops
+   only as [the setting](#the-setting) says.
 3. The test stops before the call on your line runs. A run Piwi starts follows your config, headless unless it sets
    `headless: false` or you chose **Run headed** ([How a run starts](./editor-runs#how-a-run-starts)): the editor
    marks the line and shows the stopped page ([A headless run](./editor-run-control#a-headless-run)). In a headed run,
@@ -89,8 +90,8 @@ the test goes on.
 
 ## The setting
 
-Breakpoints are on by default. Turn them off with the `piwi.breakpoints` setting in VS Code, or **Pause the runs Piwi
-starts at the editor's breakpoints** under **Settings → Tools → Piwi** in a JetBrains IDE, your choice in every project.
+`piwi.breakpoints` (VS Code), or **The runs that pause at the editor's breakpoints** (**Settings → Tools → Piwi**),
+says which runs stop: **Debug with Piwi** (the default), **Every run** (terminal runs too), or **Never**.
 
 ## What it needs
 

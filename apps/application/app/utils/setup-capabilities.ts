@@ -90,7 +90,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Backend logs',
     summary:
       'Server-side warnings, errors and spans captured during each test and shown next to the network request that triggered them.',
-    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core.',
+    how: 'Needs a backend package in the app under test; available today for Nitro and ASP.NET Core. Installed and still not active? The package writes its logs only in the environments it is active in (Development and Test by default), and the reporter reads them through the capture fixtures.',
     icon: 'i-lucide-server',
     doc: 'guide/backend-logs',
   },
@@ -155,7 +155,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     id: 'pr-feedback',
     title: 'Pull requests',
     summary: 'When a run finishes on a branch with an open pull request, the result posted back to it.',
-    how: 'Configure it in Settings — needs an SCM token with write access.',
+    how: 'Configure it in Settings — needs an SCM credential with write access.',
     icon: 'i-lucide-git-pull-request',
     doc: 'features/pr-feedback',
     to: '/settings/pr-feedback',
@@ -187,7 +187,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Source control',
     summary:
       'The commits behind a failure, CODEOWNERS-derived ownership, and pull-request feedback on the branch that broke.',
-    how: 'Add an SCM token in Settings → Source control, or on the project in its Source control settings.',
+    how: 'Pick an SCM credential in Settings → Source control, or on the project in its Source control settings.',
     icon: 'i-lucide-git-branch',
     doc: 'guide/source-control',
     to: '/settings/source-control',
@@ -247,7 +247,7 @@ export const SETUP_CAPABILITIES: SetupCapabilityCopy[] = [
     title: 'Bug reports',
     summary:
       'Bugs reported from Piwi Picker with their steps, the expected result and evidence, each turned into a failing test and followed until it passes.',
-    how: 'Connect Piwi Picker to this instance, then use Report a bug and Send to Piwi on the page that shows the bug.',
+    how: 'Connect Piwi Picker to this instance, then Record the bug on the page that shows it, mark what is wrong with Check an element, and Send to Piwi.',
     icon: 'i-lucide-bug',
     doc: 'features/bug-reports',
   },

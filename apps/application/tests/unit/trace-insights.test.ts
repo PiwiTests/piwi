@@ -29,6 +29,7 @@ function makeParsed(overrides: Partial<ParsedTraceData> = {}): ParsedTraceData {
     consoleEntries: [],
     networkRequests: [],
     frameSnapshots: [],
+    screencastFrames: [],
     failingAction,
     failingActionIndex: failingAction ? 0 : -1,
     contexts: [],

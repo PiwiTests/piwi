@@ -18,6 +18,9 @@ import type { AnalyticsTagInfo } from '../../analytics/types';
 import { branchPolicyCondition, defaultBranchPolicy, type BranchPolicy } from './branch-policy';
 import { resolveStoredDefaultBranches } from '../../../server/utils/scm/stored-default-branch';
 import { memoizedTestFilter } from './test-filter-memo';
+import { projectDefaultEnvironmentLabels } from '../default-environment';
+import { namedEnvironmentRunLabels } from '../environment-scope';
+import { defaultEnvironmentPolicy, environmentPolicyRunCondition, type EnvironmentPolicy } from './environment-policy';
 
 export type ProjectAccess = 'all' | Set<number>;
 
@@ -51,7 +54,7 @@ export interface ResolvedTestFilter {
 /**
  * Everything a widget needs to answer a scope, resolved once per request: the
  * projects it may read, the period and comparison as instants, the buckets,
- * the branch policy and the test filter.
+ * the branch and environment policies and the test filter.
  */
 export interface AnalyticsContext {
   scope: AnalyticsScope;
@@ -63,6 +66,7 @@ export interface AnalyticsContext {
   comparison: ResolvedPeriod | null;
   buckets: TimeBuckets;
   branchPolicy: BranchPolicy;
+  environmentPolicy: EnvironmentPolicy;
   testFilter: ResolvedTestFilter | null;
   /** Things the reader should know about how the scope resolved ("checkout has no selection smoke"). */
   notes: string[];
@@ -111,13 +115,16 @@ async function resolveAnalyticsContext(
     allowed = await filterByProjectTags(db, allowed, scope.projectTags);
 
   const timeZone = scope.timeZone || 'UTC';
-  const periodMarkers = await loadPeriodMarkers(db, scope, allowed);
+  const [periodMarkers, branchPolicy, environmentPolicy] = await Promise.all([
+    loadPeriodMarkers(db, scope, allowed),
+    resolveBranchPolicy(db, scope, allowed),
+    resolveEnvironmentPolicy(db, scope, allowed),
+  ]);
   const resolveCtx = { now, timeZone, locale: scope.locale, markers: periodMarkers };
   const period = resolvePeriod(scope.period, resolveCtx);
   if (period.fallback) notes.push(`${period.fallback} Showing the last 30 days instead.`);
   const comparison = resolveComparison(scope.comparison, scope.period, period, resolveCtx);
 
-  const branchPolicy = await resolveBranchPolicy(db, scope, allowed);
   const memoized = hasTestFilter(scope)
     ? await memoizedTestFilter(db, scope, allowed, async () => {
         const filterNotes: string[] = [];
@@ -138,6 +145,7 @@ async function resolveAnalyticsContext(
     comparison,
     buckets: makeTimeBuckets(period.from.getTime(), period.to.getTime(), scope.granularity),
     branchPolicy,
+    environmentPolicy,
     testFilter,
     notes,
   };
@@ -215,6 +223,26 @@ export async function resolveBranchPolicy(
     defaults,
     rows.map((row) => row.id).filter((id) => !withBranch.has(id)),
   );
+}
+
+/**
+ * The environment policy of a scope: the environments picked by hand, every environment, or each project's default
+ * environment (`projectDefaultEnvironmentLabels`), as the project tabs read it, a project without one reading every
+ * environment. The labels the rollups read for the environments it names are resolved here, in one query.
+ */
+export async function resolveEnvironmentPolicy(
+  db: DrizzleDB,
+  scope: AnalyticsScope,
+  allowed: 'all' | number[],
+): Promise<EnvironmentPolicy> {
+  if (scope.environments && scope.environments.length > 0) {
+    const labels = await namedEnvironmentRunLabels(db, scope.environments, allowed);
+    return { kind: 'list', environments: scope.environments, labels };
+  }
+  if (scope.allEnvironments) return { kind: 'any' };
+  if (allowed !== 'all' && allowed.length === 0) return { kind: 'any' };
+  const { defaults, labels } = await projectDefaultEnvironmentLabels(db, allowed);
+  return defaultEnvironmentPolicy(defaults, labels);
 }
 
 /** The projects among `projectIds` holding at least one run with a known branch. */
@@ -300,17 +328,15 @@ async function resolveTestFilter(
 /**
  * The `test_runs` conditions every live query shares: terminal runs starting
  * inside `[fromMs, toMs)` (open-ended when the range ends now), in the allowed projects, matching the scope's run
- * filters and branch policy, and never a lab run (probe or flake experiment).
+ * filters and its branch and environment policies, and never a lab run (probe or flake experiment).
  */
 export function contextRunConditions(ctx: AnalyticsContext, fromMs: number, toMs: number): SQL[] {
   // A range that ends now has no upper bound: a run stamped this very second counts.
-  return runConditions(ctx.scope, ctx.allowed, ctx.branchPolicy, fromMs, toMs >= ctx.now ? null : toMs);
+  return runConditions(ctx, fromMs, toMs >= ctx.now ? null : toMs);
 }
 
 function runConditions(
-  scope: AnalyticsScope,
-  allowed: 'all' | number[],
-  branchPolicy: BranchPolicy,
+  { scope, allowed, branchPolicy, environmentPolicy }: AnalyticsContext,
   fromMs: number,
   toMs: number | null,
 ): SQL[] {
@@ -322,8 +348,8 @@ function runConditions(
   if (toMs != null) conditions.push(lt(testRuns.startTime, new Date(toMs)));
   if (allowed !== 'all') conditions.push(inArray(testRuns.projectId, allowed));
   if (scope.fullRunsOnly) conditions.push(eq(testRuns.isFullRun, 1));
-  if (scope.environments && scope.environments.length > 0)
-    conditions.push(inArray(testRuns.environment, scope.environments));
+  const environment = environmentPolicyRunCondition(environmentPolicy);
+  if (environment) conditions.push(environment);
   const branch = branchPolicyCondition(
     branchPolicy,
     { branch: testRuns.branch, projectId: testRuns.projectId },

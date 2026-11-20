@@ -3,7 +3,7 @@ import { LocalStorageAdapter } from '../server/storage/local';
 import { S3StorageAdapter } from '../server/storage/s3';
 import { getStorage, resetStorage } from '../server/storage';
 import { existsSync, mkdirSync, rmSync } from 'fs';
-import { join } from 'path';
+import { join, resolve } from 'path';
 import { PROJECT } from '#shared/test-project-names';
 
 test.describe('Storage Abstraction Tests', () => {
@@ -73,8 +73,7 @@ test.describe('Storage Abstraction Tests', () => {
 
       await storage.mkdir(dirPath);
 
-      const fullPath = storage.getFullPath(dirPath);
-      expect(existsSync(fullPath)).toBe(true);
+      expect(existsSync(join(testStorageDir, dirPath))).toBe(true);
     });
 
     test('should handle nested file paths', async () => {
@@ -88,12 +87,10 @@ test.describe('Storage Abstraction Tests', () => {
       expect(readData.toString()).toBe('<html>Test Report</html>');
     });
 
-    test('should return full path correctly', () => {
+    test('should name its folder as an absolute path', () => {
       const storage = new LocalStorageAdapter(testStorageDir);
-      const relativePath = 'test/path.txt';
-      const fullPath = storage.getFullPath(relativePath);
 
-      expect(fullPath).toBe(join(testStorageDir, relativePath));
+      expect(storage.localRoot()).toBe(resolve(testStorageDir));
     });
   });
 

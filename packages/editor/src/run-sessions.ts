@@ -86,6 +86,7 @@ import type {
   RunStop,
   RunWaiting,
   RunTest,
+  RunningCall,
   SetBreakpointsParams,
   SetRunBreakpointsParams,
   ShareRunParams,
@@ -144,7 +145,11 @@ export type RunHeard =
   | { type: 'joined' }
   | { type: 'left' }
   | { type: 'test-begin'; test: RunTest }
-  | { type: 'test-end'; status: string; pausedMs: number }
+  /**
+   * The test ended, with Playwright's status, and whether that is the status it was expected to end with (`ok`: a
+   * `test.fail()` test that failed is ok, one that passed is not; `passed` from a reporter that does not say).
+   */
+  | { type: 'test-end'; status: string; pausedMs: number; ok: boolean }
   | { type: 'stopped'; stop: RunStop }
   | { type: 'running'; since: string }
   | { type: 'event'; event: RunEvent }
@@ -523,6 +528,13 @@ export interface RunSessionsOptions {
    * the line of its call (`runToLine`). Null, or no such option, keeps the line as it is.
    */
   runText?(ref: string, file: string): string | null;
+  /**
+   * Whether the client marks every lane's running line: a worker whose reporter sends positions is asked for them
+   * (`positions`), but in a desktop app's checkout.
+   */
+  wantsPositions?(): boolean;
+  /** A worker said where its lane's running test is: the call, and its place in the run's code. */
+  position?(at: { ref: string; lane: number; worker: number }, call: RunningCall): void;
   paceMs?: number;
   burstMs?: number;
   lingerMs?: number;
@@ -588,6 +600,8 @@ interface Worker {
   asksHolds: readonly RunHold[] | null;
   /** How its run stands on the team instance's live view, as it last said (`live`); null before it said. */
   live: RunLiveState | null;
+  /** Whether it was last asked to say where its running test is (`positions`). */
+  positionsOn: boolean;
   /**
    * The live view of its stop while viewers watch it: the stop, its viewers, the worker's answer to starting it, and
    * whether it started. Null when nobody watches, and as the stop ends.
@@ -1021,6 +1035,7 @@ export class RunSessions {
       carried: null,
       asksHolds: attach.holds ?? null,
       live: null,
+      positionsOn: false,
     };
     session.workers.set(worker.index, worker);
     this.hear(session, worker, { type: 'joined', worker: worker.index });
@@ -1034,6 +1049,7 @@ export class RunSessions {
       this.send(worker, { type: 'events', on: true });
     // A worker that comes later follows the sharing as a person left it.
     if (session.share !== null && worker.takes.has('share')) this.send(worker, this.shareMessage(session));
+    this.askPositions(session, worker);
     // A worker Playwright starts in a lane someone watches shows it from its first test.
     if (session.lanes.get(worker.parallelIndex)?.size && worker.features.has('view-lane')) {
       void this.startLane(worker);
@@ -1729,6 +1745,22 @@ export class RunSessions {
     return started;
   }
 
+  /** Every worker that says where its running test is is asked to, or no longer, as the client marks the lanes now. */
+  positionsChanged(): void {
+    for (const session of this.sessions.values()) {
+      for (const worker of session.workers.values()) this.askPositions(session, worker);
+    }
+  }
+
+  /** Ask a worker whose reporter sends positions for them, but in a desktop app's checkout, when that changed. */
+  private askPositions(session: Session, worker: Worker): void {
+    if (!worker.features.has('positions') || worker.socket.destroyed) return;
+    const on = !session.ended && !checkoutCommitOf(session.ref) && (this.options.wantsPositions?.() ?? false);
+    if (on === worker.positionsOn) return;
+    worker.positionsOn = on;
+    this.send(worker, { type: 'positions', on });
+  }
+
   /** Have a worker stop its lane view and its layers, whatever it answers. */
   private stopLane(worker: Worker): void {
     if (worker.socket.destroyed) return;
@@ -1917,6 +1949,15 @@ export class RunSessions {
     return session.workers.get(state.worker)?.parallelIndex === lane
       ? { worker: state.worker, test: state.test.id }
       : null;
+  }
+
+  /** Whether the worker of the lane `lane` of the run `ref` was asked to say where its running test is (`positions`). */
+  lanePositions(ref: string, lane: number): boolean {
+    const session = this.sessions.get(ref);
+    const state = session?.laneStates.get(lane);
+    if (!session || session.ended || state?.worker == null) return false;
+    const worker = session.workers.get(state.worker);
+    return worker?.parallelIndex === lane && worker.positionsOn;
   }
 
   /**
@@ -2522,19 +2563,44 @@ export class RunSessions {
         this.changed(session, true);
         return this.options.heard?.(session.ref, worker.index, { type: 'running', since }, session.root);
       }
-      case 'test-end':
-        this.hear(session, worker, { type: 'test-end', test: message.testId, status: message.status });
+      case 'test-end': {
+        const expected = message.expectedStatus;
+        this.hear(session, worker, {
+          type: 'test-end',
+          test: message.testId,
+          status: message.status,
+          ...(expected === undefined ? {} : { expected }),
+        });
         worker.view = null;
         worker.askedBy = null;
         this.changed(session);
         return this.options.heard?.(
           session.ref,
           worker.index,
-          { type: 'test-end', status: message.status, pausedMs: message.pausedMs },
+          {
+            type: 'test-end',
+            status: message.status,
+            pausedMs: message.pausedMs,
+            ok: message.status === (expected ?? 'passed'),
+          },
           session.root,
         );
+      }
       case 'event':
         return this.options.heard?.(session.ref, worker.index, { type: 'event', event: message.event }, session.root);
+      case 'position': {
+        // Where the lane's running test is, while it runs that test and the client marks every lane.
+        if (!worker.positionsOn) return;
+        const running = this.laneRunning(session.ref, worker.parallelIndex);
+        if (running?.worker !== worker.index || running.test !== message.testId) return;
+        const call: RunningCall = {
+          test: message.testId,
+          title: message.title,
+          uri: this.uri(worker, message.place.file, session.root),
+          line: message.place.line - 1,
+        };
+        return this.options.position?.({ ref: session.ref, lane: worker.parallelIndex, worker: worker.index }, call);
+      }
       case 'lane-frame': {
         // A frame of the worker's lane, for its lane's viewers alone, or why none comes.
         const viewers = session.lanes.get(worker.parallelIndex);

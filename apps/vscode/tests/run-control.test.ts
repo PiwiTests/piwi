@@ -37,6 +37,9 @@ import {
   waitsView,
   withLaneLayer,
   ciNodes,
+  attemptOutcome,
+  combinedOutcome,
+  runNodes,
   ciPositionFiles,
   ciPositionsIn,
   withCiSession,
@@ -89,6 +92,7 @@ import {
   workersNow,
   frameIsCurrent,
   waitedFor,
+  waitingMarks,
   waitingWorkers,
   endChoice,
   laneShown,
@@ -97,6 +101,7 @@ import {
   liveTarget,
   liveText,
   OPEN_TRACE_TITLE,
+  INPUT_RULE,
   openTraceOffered,
   openTraceParams,
   TraceAsks,
@@ -195,7 +200,7 @@ const sessionsOf = (...list: RunSession[]) => list.reduce((map, s) => withSessio
 describe('the tests a run begins, as the Testing view shows them running', () => {
   test('each test a worker begins, each attempt once, from the run’s own events', () => {
     const begun = session('ed-1', [worker(0, 'running'), worker(1, 'between')]);
-    expect(testsBegun(undefined, begun)).toEqual([{ uri: spec, line: 2 }]);
+    expect(testsBegun(undefined, begun)).toEqual([{ id: 't1', uri: spec, line: 2 }]);
     expect(testsBegun(begun, begun)).toEqual([]);
     // A stop of the same test begins nothing; its retry, or another worker's test, does.
     const stopped = session('ed-1', [worker(0, 'stopped', { stop: stopAt(spec, 5) }), worker(1, 'between')]);
@@ -205,8 +210,8 @@ describe('the tests a run begins, as the Testing view shows them running', () =>
       worker(1, 'running', { test: { ...runTest(), id: 't2', line: 9 } }),
     ]);
     expect(testsBegun(stopped, retried)).toEqual([
-      { uri: spec, line: 2 },
-      { uri: spec, line: 9 },
+      { id: 't1', uri: spec, line: 2 },
+      { id: 't2', uri: spec, line: 9 },
     ]);
   });
 });
@@ -296,7 +301,7 @@ describe('the sessions kept', () => {
     let kept: Map<string, RunSession> = new Map();
     ({ sessions: kept } = heardSession(kept, runs, session('ed-1', [worker(0, 'running')]), log.now()));
     ({ sessions: kept } = heardSession(kept, runs, session('ed-1', [], true), log.now()));
-    expect(runs.has('ed-1')).toBe(false);
+    expect(runs.get('ed-1')?.ended).toBe(true);
     // Three lines written above the stopped line between the runs, and saved: the rerun runs them.
     log.add(spec, lineEditOf(change([1, 0], [1, 0], '  // one\n  // two\n  // three\n'))!);
     const rerun = heardSession(
@@ -320,6 +325,11 @@ describe('the sessions kept', () => {
     );
     expect(spelled.workers[0]!.stop!.uri).toBe('file:///c%3A/shop/a.spec.ts');
     expect(spelled.workers[0]!.test!.uri).toBe(spec);
+    const waiting = { title: 'Click', uri: 'file:///C:/shop/a.spec.ts', line: 1, since: null, endable: true };
+    const pausing = spelledSession(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), (uri) =>
+      uri.replace('file:///C:', 'file:///c%3A'),
+    );
+    expect(pausing.workers[0]!.waiting!.uri).toBe('file:///c%3A/shop/a.spec.ts');
   });
 });
 
@@ -450,11 +460,26 @@ describe('what the controls offer', () => {
     const restarted = sessionsOf(session('ed-1', [worker(2, 'running', { pausing: true, waiting, parallelIndex: 0 })]));
     expect(waitingWorkers(restarted)).toEqual([{ ref: 'ed-1', worker: 2, slot: 0, waiting }]);
     expect(waitingWorkers(waitingSessions, { ref: 'ed-2' })).toEqual([]);
+    // Its line is marked in the code, with End the test for its worker, at the line it is at now.
+    expect(waitingMarks(restarted, spec, 10, (_uri, line) => line + 1)).toEqual([
+      {
+        line: 5,
+        text: "Worker 1 · Pausing · waits in Click getByRole('button', { name: 'Pay' })",
+        target: { ref: 'ed-1', worker: 2 },
+      },
+    ]);
+    expect(waitingMarks(restarted, 'file:///elsewhere.spec.ts', 10, (_uri, line) => line)).toEqual([]);
+    expect(waitingMarks(restarted, spec, 4, (_uri, line) => line)).toEqual([]);
     // End the test answers a stop a lens or a hover names, even one that went on, and never a waiting test then.
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1, since: 's1' })).toBe('stop');
     expect(endChoice(waitingSessions, true, null)).toBe('stop');
     expect(endChoice(waitingSessions, false, null)).toEqual([{ ref: 'ed-1', worker: 0, slot: 0, waiting }]);
     expect(endChoice(waitingSessions, false, { ref: 'ed-1', worker: 1 })).toEqual([]);
+    // The waiting line names its worker: that one ends, though another worker's stop could end too.
+    expect(endChoice(waitingSessions, true, { ref: 'ed-1', worker: 0 })).toEqual([
+      { ref: 'ed-1', worker: 0, slot: 0, waiting },
+    ]);
+    expect(endChoice(waitingSessions, true, { ref: 'ed-1', worker: 1 })).toBe('stop');
     expect(waitedFor(null, 0)).toBeNull();
     expect(waitedFor('2026-10-25T10:00:00.000Z', Date.parse('2026-10-25T10:00:12.900Z'))).toBe('12 s');
     expect(laneShown(session('ed-1', [worker(0, 'running', { pausing: true, waiting })]), 0, []).caption).toBe(
@@ -585,6 +610,10 @@ describe('Hold failures', () => {
     expect([runLabel(named), runTitle(named)]).toEqual(['checkout.spec.ts:12', 'checkout.spec.ts:12']);
     const numbered = { ...named, page: { id: 78, url: 'http://piwi/runs/78' } };
     expect([runLabel(numbered), runTitle(numbered)]).toEqual(['Run #78', 'Run #78 · checkout.spec.ts:12']);
+    // An agent's run says who started it.
+    expect(runTitle({ ...numbered, label: 'Started by Claude Code' })).toBe(
+      'Run #78 · checkout.spec.ts:12 · Started by Claude Code',
+    );
   });
 
   test('says in the run’s tooltip whether its failures wait, who set it when an agent did, with the link to turn it over', () => {
@@ -656,7 +685,7 @@ describe('Share live', () => {
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9)))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: 3 of 9',
+      text: '$(loading~spin) Piwi: 3 of 9',
       // What each worker runs now, under the counts.
       tooltip: 'Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays',
       markdown: true,
@@ -664,7 +693,7 @@ describe('Share live', () => {
     });
     expect(progressItem(sessionsOf(counted('ed-1', 3, 9, 1), counted('ed-2', 1, 1, 0, 1)))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: 4 of 10 · 1 failed · 1 flaky',
+      text: '$(loading~spin) Piwi: 4 of 10 · 1 failed · 1 flaky',
       tooltip:
         'Piwi: 2 runs ran 4 of 10 tests: 1 failed, 1 flaky.\n\n' +
         'Run in shop (ed-1) · Worker 1 · checkout › pays\n\nRun in shop (ed-2) · Worker 1 · checkout › pays',
@@ -697,16 +726,16 @@ describe('Share live', () => {
       ...session('ed-2', [worker(0, 'running')]),
       page: { id: 78, url: 'https://piwi.example.com/test-runs/78' },
     };
-    expect(progressItem(sessionsOf(counted('ed-1', 3, 9), paged))?.text).toBe('$(sync~spin) Piwi: 3 of 9');
+    expect(progressItem(sessionsOf(counted('ed-1', 3, 9), paged))?.text).toBe('$(loading~spin) Piwi: 3 of 9');
     // An agent's run says who started it, never reading as the person's own.
     const agents = progressItem(sessionsOf({ ...counted('ed-1', 3, 9), label: 'Started by Claude Code' }))!;
-    expect(agents.text).toBe('$(sync~spin) Piwi: 3 of 9 · Started by Claude Code');
+    expect(agents.text).toBe('$(loading~spin) Piwi: 3 of 9 · Started by Claude Code');
     expect(agents.tooltip).toMatch(/^Piwi: the run ran 3 of 9 tests\. Started by Claude Code\./);
     // A worker whose reporter shows its running test: a click watches it, and the tooltip says so.
     const watched = { ...counted('ed-1', 3, 9), workers: [worker(0, 'running', { watchable: true })] };
     expect(progressItem(sessionsOf(watched))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: 3 of 9',
+      text: '$(loading~spin) Piwi: 3 of 9',
       tooltip:
         "Piwi: the run ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n[Watch a worker's test](command:piwi.watchWorker)",
       markdown: true,
@@ -717,7 +746,7 @@ describe('Share live', () => {
     const link = `[Open run #78](command:piwi.openRunPage?${encodeURIComponent(JSON.stringify([{ ref: 'ed-1' }]))})`;
     expect(progressItem(sessionsOf(named))).toEqual({
       name: 'Piwi: Run progress',
-      text: '$(sync~spin) Piwi: run #78 · 3 of 9',
+      text: '$(loading~spin) Piwi: run #78 · 3 of 9',
       tooltip: `Piwi: run #78 ran 3 of 9 tests.\n\nWorker 1 · checkout › pays\n\n${link}`,
       markdown: true,
       command: RUN_COMMANDS.openPage,
@@ -838,7 +867,7 @@ describe('the running line', () => {
   });
   const same = (_uri: string, line: number) => line;
 
-  test('marks the call each watched lane runs at its line now, with the call after it', () => {
+  test('marks the call each lane runs at its line now, with the call after it', () => {
     const lines = new RunningLines();
     expect(lines.heard(told('ed-1', 0, 4))).toBe(true);
     expect(lines.heard(told('ed-1', 0, 4))).toBe(false);
@@ -861,12 +890,23 @@ describe('the running line', () => {
     ]);
   });
 
+  test('marks a line several lanes are at once, naming each worker beside its call', () => {
+    const lines = new RunningLines();
+    lines.heard(told('ed-1', 3, 4));
+    lines.heard(told('ed-1', 1, 4));
+    expect(lines.marks(spec, 20, same)).toEqual([{ line: 4, text: "Worker 2, Worker 4 · Click getByRole('button')" }]);
+    lines.heard(told('ed-1', 2, 4, "Fill getByLabel('Name')"));
+    expect(lines.marks(spec, 20, same)).toEqual([
+      { line: 4, text: "Worker 2, Worker 4 · Click getByRole('button'); Worker 3 · Fill getByLabel('Name')" },
+    ]);
+  });
+
   test('clears a lane’s line as the service says it goes, and every line of a run that ended or is gone', () => {
     const lines = new RunningLines();
     lines.heard(told('ed-1', 0, 4));
     lines.heard(told('ed-1', 1, 5));
     lines.heard(told('ed-2', 0, 6));
-    // The test ended or stopped, the watch or the call's place went: the service says so.
+    // The test ended or stopped, or the call's place went: the service says so.
     expect(lines.heard(told('ed-1', 1, null))).toBe(true);
     expect(lines.heard(told('ed-1', 1, null))).toBe(false);
     expect(lines.marks(spec, 20, same).map((m) => m.line)).toEqual([4, 6]);
@@ -1769,6 +1809,42 @@ describe('the breakpoints sent to a run', () => {
     ]);
   });
 
+  test('go to a run that takes them alone: a plain Run gets none, one started elsewhere gets them with always', () => {
+    const edits = new EditLog();
+    const runs = new Map<string, RunBreakpoints>();
+    const live = sessionsOf(
+      session('ed-debug', [worker(0, 'running')]),
+      session('ed-plain', [worker(0, 'running')]),
+      session('terminal-1', [worker(0, 'running')]),
+    );
+    remember(runs, 'ed-debug', runStarted(edits.now(), [], true));
+    remember(runs, 'ed-plain', runStarted(edits.now(), [], false));
+    // With `debug`: the Debug with Piwi run alone.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([{ ref: 'ed-debug', places }]);
+    // With `always`: the run started elsewhere too, the plain Run still as it started.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, true)).toEqual([{ ref: 'terminal-1', places }]);
+    // Back to `debug`: the run started elsewhere loses them.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([{ ref: 'terminal-1', places: [] }]);
+  });
+
+  test('a rerun under the ref of a run that ended takes the breakpoints as that run did', () => {
+    const edits = new EditLog();
+    const runs = new Map<string, RunBreakpoints>();
+    remember(runs, 'ed-debug', runStarted(edits.now(), [], true));
+    remember(runs, 'ed-plain', runStarted(edits.now(), [], false));
+    let live = sessionsOf(session('ed-debug', [worker(0, 'running')]), session('ed-plain', [worker(0, 'running')]));
+    for (const ref of ['ed-debug', 'ed-plain']) {
+      live = heardSession(live, runs, { ...session(ref, []), ended: true }, edits.now()).sessions;
+    }
+    for (const ref of ['ed-debug', 'ed-plain']) {
+      const heard = heardSession(live, runs, session(ref, [worker(0, 'running')]), edits.now());
+      expect(heard.fresh).toBe(true);
+      live = heard.sessions;
+    }
+    // With `debug`: the rerun of the Debug with Piwi run gets them; the plain one's keeps its command's, none.
+    expect(breakpointUpdates(live, [at('b1', 4)], runs, edits, false)).toEqual([{ ref: 'ed-debug', places }]);
+  });
+
   test('keep the line a run has for a breakpoint that moved with an edit, and map a new one back', () => {
     const edits = new EditLog();
     const runs = new Map<string, RunBreakpoints>();
@@ -2272,6 +2348,86 @@ describe("this window's runs shared live, and a teammate's ask", () => {
     expect(askToWatchText({ by: 'Dana', run: 77 })).toBe('Dana asks to watch run #77 live.');
     expect(askToWatchText({ by: 'Dana', run: null })).toBe('Dana asks to watch this run live.');
   });
+
+  test('each attempt’s result from the run’s own events, a failure at its test’s line; none for one cut short', () => {
+    expect(attemptOutcome('passed', runTest(), true)).toEqual({ state: 'passed' });
+    expect(attemptOutcome('skipped', runTest(), false)).toEqual({ state: 'skipped' });
+    expect(attemptOutcome('failed', runTest(), false)).toEqual({
+      state: 'failed',
+      message: 'Failed in this run.',
+      line: 2,
+    });
+    expect(attemptOutcome('timedOut', runTest(1), false)).toEqual({
+      state: 'failed',
+      message: 'Timed out in this run (attempt 2).',
+      line: 2,
+    });
+    // A worker that left: its test ended `interrupted`, with no `ok`, and leaves the result to the run's end.
+    expect(attemptOutcome('interrupted', runTest(), undefined)).toBeNull();
+    // A `test.fail()` test passes by failing and fails by passing, as the service reads it (`ok`).
+    expect(attemptOutcome('failed', runTest(), true)).toEqual({ state: 'passed' });
+    expect(attemptOutcome('passed', runTest(1), false)).toEqual({
+      state: 'failed',
+      message: 'Expected to fail, but passed in this run (attempt 2).',
+      line: 2,
+    });
+    // A skip and an interruption are what they are, whatever `ok` says.
+    expect(attemptOutcome('skipped', runTest(), true)).toEqual({ state: 'skipped' });
+    expect(attemptOutcome('interrupted', runTest(), true)).toBeNull();
+    // A test run in several projects fails when one of them failed it.
+    const failed = attemptOutcome('failed', runTest(), false)!;
+    expect(combinedOutcome([failed, { state: 'passed' }])).toBe(failed);
+    expect(combinedOutcome([{ state: 'skipped' }, { state: 'passed' }])).toEqual({ state: 'passed' });
+    expect(combinedOutcome([{ state: 'skipped' }])).toEqual({ state: 'skipped' });
+    expect(attemptOutcome(undefined, runTest(), undefined)).toBeNull();
+  });
+});
+
+describe('the Runs view', () => {
+  test('lists each run in progress, its workers by lane with their tests, and its page, each row naming its target', () => {
+    const stopped = worker(1, 'stopped', { stop: stopAt(spec, 4) });
+    const run = {
+      ...session('ed-1', [stopped, worker(0, 'running', { watchable: true }), worker(2, 'between')]),
+      page: { id: 124, url: 'https://piwi.test/test-runs/124' },
+      progress: { total: 9, done: 4, failed: 1, flaky: 0, skipped: 0, status: 'running' as const, failure: null },
+    };
+    const terminal = { ...session('terminal-1', []), terminal: true, hold: { on: true, by: 'start' as const } };
+    const [first, second, ...rest] = runNodes(sessionsOf(run, terminal, session('ended', [], true)));
+    expect(rest).toEqual([]);
+    expect(first).toMatchObject({
+      label: 'Run in shop (terminal-1)',
+      description: 'Hold failures on',
+      kind: 'run-elsewhere',
+      ref: 'terminal-1',
+      hold: true,
+    });
+    expect(second).toMatchObject({ label: 'Run #124', description: '4 of 9 · 1 failed', kind: 'run', ref: 'ed-1' });
+    expect(second!.children.map((n) => [n.label, n.description, n.kind, n.worker, n.since])).toEqual([
+      ['Worker 1', 'checkout › pays', 'worker-watchable', 0, undefined],
+      ['Worker 2', 'checkout › pays · stopped', 'worker-stopped', 1, stopAt(spec, 4).since],
+      ['Worker 3', 'between tests', 'worker-between', 2, undefined],
+      ['Open run #124', 'on the dashboard', 'page', undefined, undefined],
+    ]);
+    // A stopped worker opens its stop, a running one its test, the page the dashboard.
+    expect(second!.children.map((n) => n.open)).toEqual([
+      { uri: spec, line: 2, character: 0 },
+      { uri: spec, line: 4, character: 0 },
+      null,
+      { url: 'https://piwi.test/test-runs/124' },
+    ]);
+    expect(runTargetArg(second!.children[1])).toEqual({ ref: 'ed-1', worker: 1, since: stopAt(spec, 4).since });
+  });
+
+  test('offers Resume alone at a failure, Watch alone on a test that cannot pause, and Stop on the editor’s own runs', () => {
+    const held = worker(0, 'stopped', { stop: { ...stopAt(spec, 4), reason: 'failure' } });
+    const pausing = worker(1, 'running', { watchable: true, pausing: true });
+    const [checkout, own] = runNodes(
+      sessionsOf(session('ed-1', [held, pausing]), { ...session('desktop-1', []), checkout: { commit: 'abc1234' } }),
+    );
+    expect(checkout!.kind).toBe('run-elsewhere');
+    expect(own!.kind).toBe('run');
+    expect(own!.children.map((n) => n.kind)).toEqual(['worker-held', 'worker-watch-only']);
+  });
 });
 
 describe('the CI runs of the branch', () => {
@@ -2367,7 +2523,7 @@ describe('the CI runs of the branch', () => {
     expect(running).toMatchObject({
       label: 'checkout › pays',
       description: "chromium · worker 2 · Click getByRole('button')",
-      icon: 'sync~spin',
+      icon: 'loading~spin',
       open: { uri: page, line: 8, character: 21 },
     });
     // Watch opens the lane in the worker panel; the dashboard's view is the second choice.
@@ -2476,11 +2632,71 @@ describe('the CI runs of the branch', () => {
       'n0nce',
       'vscode-webview://x/paused-page.js',
     );
-    expect(html).toContain('<input id="live" type="checkbox"> Watch</label>');
-    expect(html).toContain('<label hidden><input id="interact" type="checkbox" disabled> Interact</label>');
+    expect(html).toMatch(
+      /<label class="toggle"><input id="live" type="checkbox" aria-label="Watch"><svg[^]*?<span>Watch<\/span><\/label>/,
+    );
+    expect(html).toContain(
+      '<label class="toggle" hidden><input id="interact" type="checkbox" disabled aria-label="Interact">',
+    );
     expect(html).toContain('read-only');
     expect(html).toContain('alt="The page of the CI worker\'s test"');
     expect(html).not.toContain('Shift+click');
+  });
+});
+
+describe('a worker’s page', () => {
+  test('holds the stop’s controls as a toolbar, the paused page’s and the worker panel’s alike, and none away from a stop', () => {
+    const items = [
+      { title: 'Resume', command: RUN_COMMANDS.resume },
+      { title: 'Step', command: RUN_COMMANDS.step },
+    ];
+    const still = pausedPageHtml({ image: null, caption: 'Paused', controls: { shown: 3, items } }, 'n');
+    expect(still).toContain(
+      `<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls"><button type="button" data-command="${RUN_COMMANDS.resume}">Resume</button><button type="button" data-command="${RUN_COMMANDS.step}">Step</button></div>`,
+    );
+    // A page with no live view nor pick still runs the one script a press needs, naming the view it was drawn for.
+    expect(still).toContain("script-src 'nonce-n'");
+    expect(still).toContain("vscode.postMessage({type:'control',command:b.dataset.command,shown:3})");
+    const lane = pausedPageHtml(
+      {
+        image: null,
+        caption: 'Worker 1 · running',
+        lane: true,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: true },
+      },
+      'n',
+      'https://webview/paused-page.js',
+    );
+    expect(lane).toContain(
+      '<div id="controls" class="controls" role="toolbar" aria-label="The stop’s controls" hidden></div>',
+    );
+    // At a stop of its slot, the worker panel's page holds the same row, which the script draws again from each state.
+    const laneAtStop = pausedPageHtml(
+      {
+        image: null,
+        caption: 'Worker 1 · Paused',
+        lane: true,
+        live: { shown: 2, on: true, input: false, interacting: false, clickCounts: true },
+        controls: { shown: 2, items },
+      },
+      'n',
+      'https://webview/paused-page.js',
+    );
+    expect(laneAtStop).toContain(`<button type="button" data-command="${RUN_COMMANDS.resume}">Resume</button>`);
+    expect(laneAtStop).not.toContain("type:'control'");
+    expect(pausedPageHtml({ image: null, caption: 'The test went on.' }, 'n')).not.toContain('script-src');
+  });
+
+  test('says one input rule on every page that takes input', () => {
+    const live = { shown: 1, on: false, input: true, interacting: false, clickCounts: true };
+    const stop = pausedPageHtml({ image: null, caption: 'Paused', live }, 'n', 'https://webview/paused-page.js');
+    const lane = pausedPageHtml(
+      { image: null, caption: 'Worker 1', lane: true, live },
+      'n',
+      'https://webview/paused-page.js',
+    );
+    expect(stop).toContain(INPUT_RULE);
+    expect(lane).toContain(INPUT_RULE);
   });
 });
 
@@ -2496,7 +2712,7 @@ describe('the worker panel’s Open the trace so far', () => {
   test('draw the button beside Watch and Interact while the slot’s worker can open its trace, off while it is asked', () => {
     const shown = pausedPageHtml({ ...view, trace: { asking: false } }, 'n', script);
     expect(shown).toContain(
-      `Interact</label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
+      `<span>Interact</span></label><button id="trace" type="button" title="${OPEN_TRACE_TITLE}">Open the trace so far</button></div>`,
     );
     expect(pausedPageHtml({ ...view, trace: { asking: true } }, 'n', script)).toContain(
       '>Open the trace so far</button>',

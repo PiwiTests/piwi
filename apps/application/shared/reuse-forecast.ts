@@ -4,8 +4,8 @@
  *
  * A **source** is a result that passed on its first attempt and whose coverage
  * names its file versions (runtime, path, git blob). A later result of the
- * same test, in the same Playwright project and another run, is
- * **reusable** when a source at most `maxSourceAgeMs` older:
+ * same test, in the same Playwright project and environment and another run,
+ * is **reusable** when a source at most `maxSourceAgeMs` older:
  *  - recorded file versions that are all among the versions the result ran,
  *    so the code that pass ran had not changed; or
  *  - ran at the same commit, both on CI, where the commit is the code. This
@@ -52,6 +52,12 @@ export interface ForecastResult {
   versions: ReadonlySet<string | number> | null;
   /** The commit of its run when the run came from CI, where the commit is the code it ran; null otherwise. */
   ciCommit: string | null;
+  /**
+   * What its source must share with it beyond the test and the Playwright project: its run's environment and, for a
+   * deployed one, the version of the application it ran against. Null for a run of a deployed environment whose
+   * version nothing names: no pass stands in for it, and it stands in for none.
+   */
+  target: string | null;
 }
 
 /** The forecast of one scope, or of all of them. */
@@ -106,9 +112,9 @@ function isSubset(source: ReadonlySet<string | number>, result: ReadonlySet<stri
   return true;
 }
 
-/** Whether a result may stand in for a later one: a first-attempt pass whose coverage can be compared. */
+/** Whether a result may stand in for a later one: a first-attempt pass whose coverage can be compared, of a known target. */
 function isSource(result: ForecastResult): boolean {
-  return result.outcome === 'passed' && result.versions != null && result.versions.size > 0;
+  return result.outcome === 'passed' && result.versions != null && result.versions.size > 0 && result.target !== null;
 }
 
 /** The newest source of one kind (one set of versions, or one commit), and the newest of another run than it. */
@@ -226,13 +232,15 @@ export function forecastReuse(
 
   const groups = new Map<string, ForecastResult[]>();
   for (const result of results) {
-    const key = `${result.testCaseId}\x00${result.browserName}`;
+    const key = `${result.testCaseId}\x00${result.browserName}\x00${result.target ?? ''}`;
     const group = groups.get(key);
     if (group) group.push(result);
     else groups.set(key, [result]);
   }
 
-  for (const [key, group] of groups) {
+  // A test's identical-code failures, over its targets: the time of the latest one each entry names.
+  const latestFailure = new Map<string, number>();
+  for (const group of groups.values()) {
     group.sort((a, b) => a.at - b.at || a.executionId - b.executionId);
     const byVersions = new VersionSources(rank);
     const byCommit = new Map<string, Newest>();
@@ -251,6 +259,7 @@ export function forecastReuse(
           if (result.outcome === 'flaky') tally.flaky++;
         }
         if (source && result.outcome !== 'passed') {
+          const key = `${result.testCaseId}\x00${result.browserName}`;
           const entry = tests.get(key) ?? {
             testCaseId: result.testCaseId,
             browserName: result.browserName,
@@ -261,8 +270,11 @@ export function forecastReuse(
           };
           if (result.outcome === 'failed') entry.failed++;
           else entry.flaky++;
-          entry.lastExecutionId = result.executionId;
-          entry.sourceExecutionId = source.executionId;
+          if (result.at >= (latestFailure.get(key) ?? -Infinity)) {
+            entry.lastExecutionId = result.executionId;
+            entry.sourceExecutionId = source.executionId;
+            latestFailure.set(key, result.at);
+          }
           tests.set(key, entry);
         }
       }

@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['Selections'],
     summary: 'A stored pass reuse plan: the selection to run and the tests to skip',
     description:
-      'What `piwi run --plan <id>` reads: the plan’s counts and reasons, the commit it was made at, `args` (the selection’s `playwright test` arguments; none for the whole suite), and `skip`, the Playwright test list lines of the reused tests, each `[project] › file › describe › title`, which the client passes to `--test-list-invert`. A test is skipped only in the Playwright projects its reused pass ran it in, and a test the plan does not name runs. A sharded job adds Playwright’s own `--shard`, so every shard of a matrix filters the same plan. A plan expires 24 hours after it was made. Needs the experimental pass reuse capability. Read-only.',
+      'What `piwi run --plan <id>` reads: the plan’s counts and reasons, the commit it was made at, `environment` (the label it was made for, null for none: the client sets it as `PIWI_ENVIRONMENT` when the run names none, and refuses a run that names another), `args` (the selection’s `playwright test` arguments; none for the whole suite), and `skip`, the Playwright test list lines of the reused tests, each `[project] › file › describe › title`, which the client passes to `--test-list-invert`. A test is skipped only in the Playwright projects its reused pass ran it in, and a test the plan does not name runs. A sharded job adds Playwright’s own `--shard`, so every shard of a matrix filters the same plan. A plan expires 24 hours after it was made. Needs the experimental pass reuse capability. Read-only.',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'planId', in: 'path', required: true, schema: { type: 'integer' } },
@@ -32,6 +32,7 @@ export default eventHandler(async (event) => {
     id: stored.id,
     commit: stored.commit,
     worktree: stored.plan.worktree ?? null,
+    environment: stored.plan.fingerprint?.environment ?? null,
     expiresAt: stored.expiresAt.toISOString(),
     ...planSummary(stored.plan),
     args: stored.plan.args,

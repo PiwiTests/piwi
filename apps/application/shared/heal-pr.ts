@@ -4,6 +4,7 @@
  * live in `server/utils/scm/`.
  */
 import type { HealActionPayload, HealEditPayload } from '#shared/auto-heal';
+import { markdownCode } from '#shared/utils/markdown-code';
 
 /** Marks the PR auto-heal owns, so a later run can find and adopt it. */
 export const HEAL_PR_MARKER = '<!-- piwi-dashboard:auto-heal -->';
@@ -85,11 +86,18 @@ export function buildHealPrBody(payload: HealActionPayload, siteUrl: string | nu
     lines.push('');
   }
 
-  lines.push('### Verify');
-  lines.push('```bash');
-  lines.push(payload.verifyCommand);
-  lines.push('```');
-  lines.push('');
+  if (payload.verifyCommand) {
+    lines.push('### Verify');
+    lines.push('```bash');
+    lines.push(payload.verifyCommand);
+    lines.push('```');
+    lines.push('');
+    if (payload.verifyLeftOut?.length) {
+      const them = payload.verifyLeftOut.length === 1 ? 'it' : 'them';
+      lines.push(`The command leaves out ${payload.verifyLeftOut.map(markdownCode).join(', ')}: run ${them} yourself.`);
+      lines.push('');
+    }
+  }
   lines.push(
     '_Opened automatically by Piwi. Review the diff as you would any change — the evidence points at these ' +
       'locators, but only your suite proves the fix._',

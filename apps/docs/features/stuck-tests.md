@@ -1,6 +1,6 @@
 ---
 title: Stuck tests
-description: 'A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, with no viewer and no live view needed.'
+description: "A running test that has run far longer than its passing runs took is marked Stuck? on its run page, and a test.stuck notification goes out once per attempt, with no viewer and no live view needed."
 lang: en-US
 ---
 
@@ -55,6 +55,13 @@ a sharded run's says which of its shards have started: `shards 1 and 3 of 4 star
 On the **Tests** tab, `is:stuck` lists the stuck tests, and `worker:` and `shard:` narrow the list to one worker or one
 shard ([Test search](/reference/test-search)).
 
+## In your editor
+
+In VS Code and a JetBrains IDE, the [editor extensions](./editors) say it of the run they follow: the test's line
+reads `Stuck? running over 7 min, usually 41 s, in your run #130`, VS Code's Testing view writes that line in the output of
+a run you started, once, and the [status bar item](./editor-status-bar) counts them (`Piwi: run #130 · 4 of 9 · 1 stuck?`). A test
+that stands stopped is not counted until it goes on.
+
 ## The notification
 
 `test.stuck` fires once per attempt, through the channels of the project's
@@ -81,8 +88,10 @@ runs as `local`: set `PIWI_ORIGIN=ci` on it ([run origin](/reference/test-metada
 ## Try it in the demo
 
 In the [live demo](https://piwitests.dev/demo/), pick **Stuck test** in **Simulate a test run**: the PayPal checkout
-waits on a payment that never answers, and its row carries the **Stuck?** badge once it runs past its usual time; on
-the **Timeline** tab its bar turns amber past the pale bar of that time.
+waits on a **Pay** button that stays disabled, and its row carries the **Stuck?** badge once it runs past its usual time; on
+the **Timeline** tab its bar turns amber past the pale bar of that time. Its row's **Watch** shows the click it waits
+on, its call log retrying a disabled **Pay** button, and [Inspect](./live-inspect) the checkout page at that click, as
+a recorded trace holds it, with the locator picker.
 **Stopped at a breakpoint** plays a run from VS Code whose PayPal test stands at a breakpoint for five minutes: its row
 says where, and never reads **Stuck?**.
 

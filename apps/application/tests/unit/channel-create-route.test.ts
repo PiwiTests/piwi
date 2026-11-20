@@ -2,9 +2,10 @@ import { describe, test, expect, vi, beforeEach } from 'vitest';
 import { apiError } from '../../server/utils/api-error';
 
 /**
- * Creating a Slack channel stores only its delivery's fields: a bot token
- * encrypted with `PIWI_SECRET_KEY` (refused with 409 without it), or the
- * webhook URL alone, so no token is ever kept in clear.
+ * Creating a personal Slack channel stores only its delivery's fields: a bot
+ * token encrypted with `PIWI_SECRET_KEY` (refused with 409 without it), or the
+ * webhook URL alone, so no token is ever kept in clear. A channel of the
+ * instance keeps its token as a credential (`slack-credentials.test.ts`).
  */
 
 const stored = vi.hoisted(() => ({ configs: [] as Record<string, unknown>[] }));
@@ -12,7 +13,7 @@ const stored = vi.hoisted(() => ({ configs: [] as Record<string, unknown>[] }));
 vi.mock('../../server/utils/auth', () => ({
   requireAuth: async () => ({ id: 3 }),
   getRequestAccess: async () => ({}),
-  isAuthEnabled: () => false,
+  isAuthEnabled: () => true,
 }));
 vi.mock('../../server/database', () => ({
   getDatabase: async () => ({

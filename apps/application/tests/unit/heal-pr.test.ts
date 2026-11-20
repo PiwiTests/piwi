@@ -57,6 +57,16 @@ describe('buildHealPrBody', () => {
     expect(body).toContain('npx playwright test "tests/checkout.spec.ts" -g "checkout pays"');
   });
 
+  test('lists the tests the verify command leaves out', () => {
+    const body = buildHealPrBody({ ...payload([edit()]), verifyLeftOut: ['refunds'] }, 'https://piwi.example.com');
+    expect(body).toContain('The command leaves out `refunds`: run it yourself.');
+  });
+
+  test('leaves out the Verify section without a verify command', () => {
+    const body = buildHealPrBody({ ...payload([edit()]), verifyCommand: '' }, 'https://piwi.example.com');
+    expect(body).not.toContain('### Verify');
+  });
+
   test('labels a user pick and omits cluster links without a site URL', () => {
     const body = buildHealPrBody(payload([edit({ pickedByUser: true, clusterId: null })]), null);
     expect(body).toContain('your confirmed pick');

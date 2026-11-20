@@ -15,7 +15,7 @@ bundles the Docker image's server in a native window and adds what only a local 
 ## What it does
 
 - **Receives your local runs** with no URL or token in your Playwright config.
-- **Links a project to its checkout**, so a run page can re-run the failed tests here.
+- **Links a project to its folder**, so a run page can re-run the failed tests here.
 - **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, also for your editor.
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config.
@@ -39,10 +39,9 @@ once, then **Open Anyway** in **Privacy & Security**; on Windows, **More info** 
 
 Its data, and how to back it up: [the desktop app's data](/operate/backup-restore#the-desktop-app).
 
-The system tray menu holds **Open Piwi Desktop**, each test running from the app with **Stop** (the machine kept
-awake meanwhile), **Open data folder**, **Show logs**, **Run in background** (off, closing the window quits), **Start
-on login** (hidden in the tray), **Quit Piwi Desktop**, and first **Show the stopped test**, opening the window on one
-waiting for you. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
+The tray menu, in the editors' order: **Show the stopped test** if one waits, **Open Piwi Desktop**, **Stop** per
+running test (machine kept awake), **MCP server…**, **Desktop app settings…**, **Run in background** (off, closing
+the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit Piwi Desktop**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
 and macOS menu items. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
@@ -82,12 +81,13 @@ page there, starting the app if needed (macOS: from Applications; Linux: after o
 
 ## Projects from local folders
 
-**Projects → New project → Choose folder…** creates a project from a checkout on this machine, named as it would
-report, and checks the setup (a Playwright config, Playwright, the reporter): `npx @piwitests/reporter init` there
-fixes what is missing. The link stays on this machine, under **Project → Settings → Local folder**, with
-the same checks and **Change** and **Unlink**. Linking a folder offers to import the runs already in its `blob-report/` and `test-results/`;
-[Open in editor](/features/ide-integration) resolves source links against it when no workspace root is set; and a clone
-serves its git history without an [SCM token](/guide/source-control#on-the-desktop-app).
+A project's folder holds its Playwright config (a monorepo's subfolder, not its root).
+**Projects → New project → Choose folder…** creates a project from one, named as it would report, and checks its
+setup: `npx @piwitests/reporter init` there fixes what is missing. The link stays local, under
+**Project → Settings → Local folder**, with its checks, **Unlink** and **Change**, which suggests folders and checks
+your pick. Linking it offers to import its earlier runs; [Open in editor](/features/ide-integration) resolves source
+links against it when no workspace root is set; and a clone serves its git history without an
+[SCM credential](/guide/source-control#on-the-desktop-app).
 
 ## Running tests from the app
 
@@ -123,7 +123,7 @@ folder, **without touching your checkout**:
 
 ### Jobs from your editor
 
-On a team instance's failure, the [editor extensions](/features/editor-failures#ci-failures-in-the-problems-panel) offer
+On a team instance's failure, the [editor extensions](/features/editor-failures#the-failures-view) offer
 **Reproduce in the desktop app** and **Find the breaking commit in the desktop app**; on a flaky test, or a failure
 whose test has an untested suspect, a [Flake Lab](/features/flake-lab#from-the-editor-and-the-failure-pages) run of
 the team instance's plan. The window shows the commits, tests or arms and runs nothing until you start it. The editor
@@ -148,8 +148,8 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 ## Updates
 
 **Settings → About → Updates** checks for a newer release (also at startup), lists what changed since your version,
-breaking changes first, and installs it on restart. The `.exe` needs no admin rights; the `.msi` does. Downloads are
-signature-checked.
+breaking changes first, and installs it on restart; the tray's **Check for updates…** installs and restarts.
+The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-checked.
 
 ## Limits
 

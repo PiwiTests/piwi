@@ -23,7 +23,6 @@ import com.intellij.openapi.fileEditor.OpenFileDescriptor
 import com.intellij.openapi.project.Project
 import com.intellij.openapi.util.Condition
 import com.intellij.openapi.util.Disposer
-import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import com.intellij.ui.ColoredListCellRenderer
 import com.intellij.ui.SimpleTextAttributes
@@ -37,8 +36,6 @@ import java.awt.event.KeyAdapter
 import java.awt.event.KeyEvent
 import java.awt.event.MouseAdapter
 import java.awt.event.MouseEvent
-import java.net.URI
-import java.nio.file.Path
 import javax.swing.DefaultListModel
 import javax.swing.JList
 
@@ -186,11 +183,9 @@ class PiwiCiRuns(private val project: Project) : Disposable {
     private fun open(row: Glue.CiRow) {
         row.lane?.let { return project.service<PiwiRunSessions>().showCiWorker(it) }
         row.url?.let { return BrowserUtil.browse(it) }
-        val file = row.uri?.let { fileOf(it) } ?: return
+        val file = fileOfUri(row.uri) ?: return
         OpenFileDescriptor(project, file, row.line, row.character).navigate(true)
     }
-
-    private fun fileOf(uri: String) = runCatching { LocalFileSystem.getInstance().findFileByNioFile(Path.of(URI(uri))) }.getOrNull()
 
     /**
      * Each editor of a file a CI position is in shows its marks; the others' go. On the event thread: the editors open now
@@ -258,8 +253,8 @@ private class CiRowRenderer : ColoredListCellRenderer<Glue.CiRow>() {
                 append(value.text, SimpleTextAttributes.LINK_ATTRIBUTES)
             }
             else -> {
-                // The test's outcome as its line's result icon draws it.
-                icon = PiwiIcons.outcome(value.status ?: "passed")
+                // The test's outcome as its line's result icon draws it, the running ring still in the list.
+                icon = PiwiIcons.outcome(value.status ?: "passed", turning = false)
                 append(value.text)
             }
         }

@@ -237,6 +237,9 @@ test.describe.serial('Streaming API Tests', () => {
 
     expect(response.ok).toBeTruthy();
     expect(response.headers.get('content-type')).toContain('text/event-stream');
+    // A proxy in front passes the stream on as it comes, unbuffered and untouched.
+    expect(response.headers.get('x-accel-buffering')).toBe('no');
+    expect(response.headers.get('cache-control')).toBe('no-cache, no-transform');
 
     // Read chunks until we have at least one complete data line
     const reader = response.body!.getReader();

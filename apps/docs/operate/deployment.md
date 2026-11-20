@@ -184,7 +184,7 @@ spec:
         fsGroup: 1001   # the image's non-root user, so it can write the volume
       containers:
       - name: piwi-dashboard
-        image: phenx/piwitests-server:0.70.0 # x-release-please-version
+        image: phenx/piwitests-server:0.74.0 # x-release-please-version
         ports:
         - containerPort: 3000
         envFrom:
@@ -285,10 +285,10 @@ isolates the environment.
 
 ## Reverse proxy (HTTPS)
 
-Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost: with authentication on, browser sign-in needs HTTPS, since the session cookie is `Secure` and plain `http://` works only on `localhost`. A proxy gets two things wrong by default, which both examples below set:
+Always put a TLS-terminating reverse proxy in front of the dashboard for anything beyond localhost: with authentication on, browser sign-in needs HTTPS, since the session cookie is `Secure` and plain `http://` works only on `localhost`. A proxy gets two things wrong by default, which the nginx examples below set:
 
 - **Upload size.** Trace and report uploads reach hundreds of MB: one upload (a report, or one test's files) is accepted up to [`PIWI_IMPORT_MAX_BYTES`](/reference/configuration#ingest-limits), 500 MB by default, and a run's results sent as one JSON document up to `PIWI_SUBMIT_MAX_BYTES`, 256 MB by default. Raise the proxy's body limit to match (`client_max_body_size` in nginx), or lower those limits to the proxy's.
-- **Event-stream buffering.** Live runs and browser notifications use long-lived `text/event-stream` responses: the proxy must pass them through unbuffered and keep them open (`proxy_buffering off` and a long `proxy_read_timeout` in nginx).
+- **Stream buffering.** Live runs, browser notifications and the [live view](/features/live-view) hold long-lived responses open, the CI workers' included: the proxy must pass them through unbuffered and keep them open (`proxy_buffering off` and a long `proxy_read_timeout` in nginx). Behind a buffering proxy the run page stops updating, and the live view's **Watch** shows no image.
 
 **Caddy** (automatic HTTPS):
 
@@ -318,16 +318,28 @@ server {
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;
 
-        # Live streaming + notifications use Server-Sent Events:
+        # Live runs, notifications and the live view are long-lived streams:
         proxy_buffering off;
         proxy_read_timeout 1h;
     }
 }
 ```
 
+Each stream also carries `X-Accel-Buffering: no`, which nginx obeys even with `proxy_buffering on` and keeps from the browser. With two proxies in a row (a front nginx before ingress-nginx, say) the inner one keeps it from the outer one, which buffers: turn `proxy_buffering off` on the outer one too. A proxy not built on nginx ignores the header.
+
+**ingress-nginx** leaves responses unbuffered unless its ConfigMap turns `proxy-buffering` on; the same settings as annotations on the Ingress:
+
+```yaml
+metadata:
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-body-size: "500m"
+    nginx.ingress.kubernetes.io/proxy-buffering: "off"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+```
+
 Serve the dashboard over HTTP/2 when people keep several tabs open. Over HTTP/1.1, plain HTTP or HTTPS without HTTP/2, a browser opens at most six connections to one address, and each Piwi page that follows a running run holds one: a run page that finds none left says **Live updates stalled**. Caddy speaks HTTP/2 by default; nginx needs `http2 on`, as above.
 
-Set `PIWI_SITE_URL` to the public HTTPS URL, so email links and OAuth callbacks point at the right origin, and `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). Have the proxy forward the browser's `Host` header, as both examples do: with authentication off, the [host allowlist](./authentication#disabling-authentication) reads it.
+Set `PIWI_SITE_URL` to the public HTTPS URL, so email links and OAuth callbacks point at the right origin, and `PIWI_TRUST_PROXY=true` (step 4 of the [production checklist](./production-checklist#before-you-expose-it)). Have the proxy forward the browser's `Host` header, as the examples do: with authentication off, the [host allowlist](./authentication#disabling-authentication) reads it.
 
 ## Resource requirements
 
@@ -338,7 +350,7 @@ Piwi is a single Node.js process and runs comfortably on small machines:
 | RAM | ~300 MB idle; 1 GB is comfortable headroom for large uploads and AI diagnosis |
 | CPU | 1 vCPU is enough for a team; ingest is I/O-bound |
 | Disk | The real variable — traces and HTML reports dominate. Budget by retention: e.g. ~50–200 MB per run with traces enabled. Prune old runs from **Settings → Storage** |
-| Scaling | Run a single replica. SQLite requires it; with PostgreSQL the SSE event bus is still in-process, so keep one instance |
+| Scaling | Run a single replica. SQLite requires it; with PostgreSQL the SSE event bus is still in-process, and so is whether a [Run on my machine](/features/run-on-my-machine) app is online, so keep one instance |
 
 ## Security
 

@@ -25,15 +25,8 @@ import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
 import { isViewFrameData } from '@piwitests/core/run-view';
 import { driverOf, givesBack } from '@piwitests/run-model/presence';
 import { canOpenTrace, laneFrameNow, stopIntents } from '@piwitests/run-model/stop';
-import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { DesktopLaneFrame, DesktopRunAnswer } from '../composables/useDesktopRunHub';
-import {
-  desktopLaneKey,
-  desktopRunStop,
-  desktopSay,
-  type DesktopLaneAt,
-  type DesktopLiveImageHandle,
-} from '../utils/run-view';
+import { desktopLaneKey, desktopRunStop, type DesktopLaneAt, type DesktopLiveImageHandle } from '../utils/run-view';
 import { PLAIN_RUN_VIEW_HOST, RUN_VIEW_HOST } from '../utils/run-view-host';
 
 const props = defineProps<{
@@ -69,6 +62,8 @@ onBeforeUnmount(() => {
 });
 
 const hub = useDesktopRunHub();
+const words = useRunUiWords();
+const { t } = words;
 /** Interact, as the person left it for the worker's lane, kept by the window. */
 const interact = defineModel<boolean>('interact', { default: false });
 
@@ -234,7 +229,7 @@ async function interactOff(): Promise<void> {
     await drained;
     const now = stop.value;
     if (!since || interact.value || now?.since !== since) return;
-    if (!givesBack(driverOf(now, englishRunSpeaker), playedAt.value === since)) return;
+    if (!givesBack(driverOf(now, words.run), playedAt.value === since)) return;
     playedAt.value = null;
     await props.giveBack(since);
   } finally {
@@ -296,8 +291,8 @@ async function leave(): Promise<void> {
 
 /** What the image is: live while frames of the page as it is now come, and whether it takes the clicks and keys. */
 const alt = computed(() => {
-  if (!live.value) return desktopSay('runs_laneAltLast');
-  return desktopSay(inputTarget.value ? 'runs_liveAltInput' : 'runs_liveAlt');
+  if (!live.value) return words.say('runs_laneAltLast');
+  return words.say(inputTarget.value ? 'runs_liveAltInput' : 'runs_liveAlt');
 });
 
 /** An image of the lane shows: a frame came in this watch. */
@@ -307,9 +302,9 @@ const note = computed((): { icon?: string; text: string } | null => {
   if (!watched.value) return refusedLane.value ? { icon: 'i-lucide-triangle-alert', text: refusedLane.value } : null;
   if (refusedNow.value) return { icon: 'i-lucide-triangle-alert', text: refusedNow.value };
   if (current.value) return null;
-  if (stop.value) return { icon: 'i-lucide-clock', text: desktopSay('runs_imageLoading') };
-  if (props.worker.state === 'between') return shown.value ? null : { text: 'The page shows as the next test starts.' };
-  return shown.value ? null : { icon: 'i-lucide-clock', text: desktopSay('runs_liveStarting') };
+  if (stop.value) return { icon: 'i-lucide-clock', text: words.say('runs_imageLoading') };
+  if (props.worker.state === 'between') return shown.value ? null : { text: t('runui_laneNextTest') };
+  return shown.value ? null : { icon: 'i-lucide-clock', text: words.say('runs_liveStarting') };
 });
 </script>
 
@@ -332,10 +327,10 @@ const note = computed((): { icon?: string; text: string } | null => {
           :aria-pressed="watched"
           :aria-disabled="busy || undefined"
           :class="watched ? PRESSED_TOGGLE_CLASS : ''"
-          :title="desktopSay('runs_watchTitle')"
+          :title="words.say('runs_watchTitle')"
           @click="toggle"
         >
-          {{ desktopSay('runs_watch') }}
+          {{ words.say('runs_watch') }}
         </UButton>
         <UButton
           v-if="canInteract"
@@ -347,11 +342,11 @@ const note = computed((): { icon?: string; text: string } | null => {
           icon="i-lucide-hand"
           :aria-pressed="interact"
           :class="interact ? PRESSED_TOGGLE_CLASS : ''"
-          :title="desktopSay('runs_interactTitle')"
+          :title="words.say('runs_interactTitle')"
           :aria-disabled="busy || undefined"
           @click="!busy && (interact ? interactOff() : (interact = true))"
         >
-          {{ desktopSay('runs_interact') }}
+          {{ words.say('runs_interact') }}
         </UButton>
         <UButton
           v-if="pickable"
@@ -362,10 +357,10 @@ const note = computed((): { icon?: string; text: string } | null => {
           :aria-pressed="picking"
           :aria-disabled="busy || undefined"
           :class="picking ? PRESSED_TOGGLE_CLASS : ''"
-          title="Click the image to name the element under the pointer (or Shift+click it); Escape stops"
+          :title="t('runui_imagePickTitle')"
           @click="!busy && (picking = !picking)"
         >
-          {{ desktopSay('runs_pickAt') }}
+          {{ words.say('runs_pickAt') }}
         </UButton>
       </template>
       <UButton
@@ -376,10 +371,10 @@ const note = computed((): { icon?: string; text: string } | null => {
         variant="outline"
         icon="i-lucide-file-archive"
         :aria-disabled="tracing || undefined"
-        :title="desktopSay('runs_openTraceTitle')"
+        :title="words.say('runs_openTraceTitle')"
         @click="openTrace"
       >
-        {{ desktopSay('runs_openTrace') }}
+        {{ words.say('runs_openTrace') }}
       </UButton>
       <UButton
         v-if="inspect && (traceable || inspecting)"
@@ -393,7 +388,7 @@ const note = computed((): { icon?: string; text: string } | null => {
         :title="inspect?.title"
         @click="toggleInspect"
       >
-        Inspect
+        {{ t('runui_laneInspect') }}
       </UButton>
     </template>
     <DesktopRunLiveImage

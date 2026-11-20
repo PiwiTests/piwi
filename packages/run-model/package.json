@@ -1,6 +1,6 @@
 {
   "name": "@piwitests/run-model",
-  "version": "0.70.0",
+  "version": "0.74.0",
   "description": "The run model Piwi Picker's Runs window and the desktop app's Local runs tray share: what the runs ask of the person, what a worker's stop takes, says and offers, who drives it, and the input played on its live view",
   "private": true,
   "license": "FSL-1.1-MIT",
@@ -12,6 +12,7 @@
     "./layers": "./src/layers.ts",
     "./outcome": "./src/outcome.ts",
     "./presence": "./src/presence.ts",
+    "./speakers": "./src/speakers.ts",
     "./status": "./src/status.ts",
     "./stop": "./src/stop.ts",
     "./tabs": "./src/tabs.ts",
@@ -26,6 +27,7 @@
     "run-model:lint:fix": "oxlint --config oxlint.config.mts . --fix",
     "run-model:format": "oxfmt --config oxfmt.config.mts --write \"src/\" \"tests/\"",
     "run-model:format:check": "oxfmt --config oxfmt.config.mts --check \"src/\" \"tests/\"",
+    "run-model:words": "node scripts/words.mjs",
     "test": "npm run run-model:test"
   },
   "dependencies": {

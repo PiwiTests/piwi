@@ -1,6 +1,12 @@
 <script setup lang="ts">
 import type { Lane } from '#shared/live-lanes';
-import { LIVE_VIEW_END_TEXT, liveWorkerKey, liveWorkerName, type LiveWorkerState } from '#shared/live-view';
+import {
+  LIVE_VIEW_END_TEXT,
+  LIVE_WATCH_QUIET_TEXT,
+  liveWorkerKey,
+  liveWorkerName,
+  type LiveWorkerState,
+} from '#shared/live-view';
 import { stepLabel } from '@piwitests/core/step-analysis';
 import type { LiveTile } from '~/composables/useLiveWatch';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
@@ -15,7 +21,7 @@ import type { TestCaseResult } from '~~/types/api';
  * lane runs (as the run's stream sends the lane ready), the step it is on and what its test needs attention for (a
  * stop, a **Stuck?** mark). A click shows the worker
  * in the lane panel, from its running row when the page holds one. In the demo, which runs no browser, each running
- * lane's tile names its step alone.
+ * lane's tile names its step in place of its image, and a click shows its call log in the lane panel.
  */
 const props = defineProps<{
   /** The workers in the run's live view; in the demo, a stand-in of each running lane. */
@@ -30,6 +36,8 @@ const props = defineProps<{
   /** The worker the lane panel shows. */
   focused: { shard: number | null; worker: number; slot?: number } | null;
   state: LiveWatchState;
+  /** The watch's streams bring nothing, not even the instance's heartbeat. */
+  quiet: boolean;
   demo: boolean;
 }>();
 const emit = defineEmits<{ focus: [worker: LiveWorkerState, row: TestCaseResult | null]; retry: [] }>();
@@ -110,8 +118,9 @@ const views = computed<TileView[]>(() =>
 const stateText = computed(() => {
   const state = props.state;
   if (props.demo) {
-    return 'The demo runs no browser: each tile names the step its worker is on. Its image, page events, text, filmstrip and Inspect need a running test.';
+    return 'The demo runs no browser: each tile names its worker’s step, and a click shows the call its test is in, with the checkout page from a recorded trace in Inspect.';
   }
+  if (props.quiet && !(state.kind === 'closed' && state.reason)) return LIVE_WATCH_QUIET_TEXT;
   if (state.kind === 'connecting' && state.again) return 'Opening the watch again…';
   if (state.kind !== 'closed') return null;
   if (state.reason) return LIVE_VIEW_END_TEXT[state.reason];
@@ -140,6 +149,9 @@ function tileLabel(view: TileView): string {
   >
     <p v-if="stateText" class="flex flex-wrap items-center gap-2 text-xs text-muted" role="status">
       {{ stateText }}
+      <DocLink v-if="quiet && !demo" to="operate/deployment#reverse-proxy-https" no-icon
+        >Reverse proxy settings</DocLink
+      >
       <UButton
         v-if="canRetry"
         size="xs"
@@ -154,19 +166,15 @@ function tileLabel(view: TileView): string {
     <!-- Its padding leaves room for the shown worker's ring inside the scrolling block. -->
     <ul class="grid grid-cols-2 gap-2 p-1 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-6">
       <li v-for="view in views" :key="view.key" class="min-w-0">
-        <component
-          :is="demo ? 'div' : 'button'"
-          :type="demo ? undefined : 'button'"
-          class="group block w-full min-w-0 rounded-md border border-default bg-default p-1.5 text-left"
-          :class="[
-            view.focused ? CURRENT_ITEM_RING_CLASS : '',
-            demo ? '' : 'hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary',
-          ]"
-          :aria-pressed="demo ? undefined : view.focused"
-          :aria-label="demo ? undefined : tileLabel(view)"
+        <button
+          type="button"
+          class="group block w-full min-w-0 rounded-md border border-default bg-default p-1.5 text-left hover:bg-elevated focus-visible:outline-2 focus-visible:outline-primary"
+          :class="view.focused ? CURRENT_ITEM_RING_CLASS : ''"
+          :aria-pressed="view.focused"
+          :aria-label="tileLabel(view)"
           :data-worker="view.key"
           data-testid="watch-all-tile"
-          @click="!demo && emit('focus', view.worker, view.row)"
+          @click="emit('focus', view.worker, view.row)"
         >
           <div class="relative aspect-[16/10] w-full overflow-hidden rounded bg-elevated">
             <img
@@ -179,7 +187,7 @@ function tileLabel(view: TileView): string {
             />
             <p
               v-if="!view.tile?.url || view.tile.refused"
-              class="absolute inset-0 flex items-center justify-center p-2 text-center text-xs text-muted"
+              class="absolute inset-0 flex items-center justify-center p-2 text-center text-xs text-muted wrap-anywhere"
             >
               {{ view.tile?.refused ?? (demo ? (view.step ?? 'Between two steps') : 'Waiting for its first image…') }}
             </p>
@@ -196,7 +204,7 @@ function tileLabel(view: TileView): string {
           <p v-if="view.step && !demo" class="truncate font-mono text-xs text-muted" :title="view.step">
             {{ view.step }}
           </p>
-        </component>
+        </button>
       </li>
     </ul>
   </section>

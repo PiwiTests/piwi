@@ -3,7 +3,7 @@ import { getProject } from '#shared/handlers/projects';
 import { parseProjectRunScope } from '#shared/project-run-scope';
 import { optionalIntQuery } from '../../utils/query-params';
 import { holdsProjectPermission, requireProjectAccess, requireRouteId } from '../../utils/project-access';
-import { instanceCiServer, openCiServerToken } from '../../utils/ci-server-dispatch';
+import { instanceCiServerUrl } from '../../utils/ci-server-dispatch';
 import { runViewerOf } from '../../utils/run-viewer';
 
 defineRouteMeta({
@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Get project details',
     description:
-      'Returns the project with its most recent runs (`testRuns`). With a run scope (any of `environments`, `branches` or `allBranches`), `testRuns` holds the most recent runs within it, `unscopedRuns` the most recent runs of any scope with their environment, branch and run kind, and `ownRuns` the caller’s own most recent runs in the scope’s environments that `testRuns` does not hold, which the project page lists whatever its filters say. A run that is the caller’s own says `mine: true` (any other says nothing): a run outside CI they reported, or, with sign-in off, any such run; lab runs and imports are nobody’s. No token is returned: `hasScmToken` and `hasCiServerToken` say whether one is stored, and, for a caller with `project:manage` on the project (null for anyone else), `ciServerTokenUrl` names the base URL the CI server token may be sent under and `ciServerInstanceUrl` the instance’s CI server.',
+      'Returns the project with its most recent runs (`testRuns`). With a run scope (any of `environments`, `branches` or `allBranches`), `testRuns` holds the most recent runs within it, `unscopedRuns` the most recent runs of any scope with their environment, branch and run kind, and `ownRuns` the caller’s own most recent runs in the scope’s environments that `testRuns` does not hold, which the project page lists whatever its filters say. Each run carries `environmentKey`, the key of the environment its label resolves to (null for none). A run that is the caller’s own says `mine: true` (any other says nothing): a run outside CI they reported, or, with sign-in off, any such run; lab runs and imports are nobody’s. No token is returned: `hasScmToken` says whether one is stored, and, for a caller with `project:manage` on the project (null for anyone else), `ciServerInstanceUrl` names the instance’s CI server. The CI server credentials an action may name are listed by `GET /api/credentials?projectId=`. `runVariables` lists the project’s run variables, `{ name, value }`, the environment variables every run Piwi starts for it gets (an empty list for none).',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -27,7 +27,14 @@ defineRouteMeta({
         required: false,
         schema: { type: 'string' },
         description:
-          'Run scope: comma-separated environments; only their runs are listed. Any of `environments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+          'Run scope: comma-separated environments; only their runs are listed. Without it, the project’s default environment when it has one, unless `allEnvironments`. Any of `environments`, `allEnvironments`, `branches` or `allBranches` makes the request read the project page’s run scope.',
+      },
+      {
+        name: 'allEnvironments',
+        in: 'query',
+        required: false,
+        schema: { type: 'boolean', default: false },
+        description: 'Run scope: with no `environments`, count every environment instead of the default environment.',
       },
       {
         name: 'branches',
@@ -70,13 +77,12 @@ export default eventHandler(async (event) => {
       scope: parseProjectRunScope(getQuery(event)),
       viewer: runViewerOf(event, user),
     });
-    const { scmToken: _scm, ciServerToken, ...rest } = result;
-    // The CI server URLs are the settings form's, which only a project admin opens.
+    const { scmToken: _scm, ciServerToken: _ciServerToken, ...rest } = result;
+    // The instance's CI server URL is the settings form's, which only a project admin opens.
     const managesProject = await holdsProjectPermission(event, id, ['project:manage']);
     return {
       ...rest,
-      ciServerTokenUrl: managesProject ? (openCiServerToken(ciServerToken)?.url ?? null) : null,
-      ciServerInstanceUrl: managesProject ? instanceCiServer().url : null,
+      ciServerInstanceUrl: managesProject ? instanceCiServerUrl() : null,
     };
   } catch (e: any) {
     if (e?.message === 'Project not found') {

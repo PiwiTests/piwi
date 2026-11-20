@@ -30,7 +30,7 @@ defineRouteMeta({
                 description:
                   '`steps` (the default) runs a steps document; `reproduce`, `bisect` and `flake-lab` are an editor’s jobs.',
               },
-              steps: { type: 'object', description: 'A steps document (`v: 1`), as Download steps writes it.' },
+              steps: { type: 'object', description: 'A steps document (`v: 1`), as Piwi Picker sends it.' },
               options: {
                 type: 'object',
                 properties: {

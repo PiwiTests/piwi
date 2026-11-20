@@ -6,6 +6,7 @@ import {
 } from '../../../utils/project-access';
 import type { AiAttachedImage } from '../../../utils/ai-provider';
 import { diagnoseExecution, loadExecutionForDiagnosis } from '../../../utils/execution-diagnosis';
+import { requestCredentialActor } from '../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -46,6 +47,7 @@ export default eventHandler(async (event) => {
     images: body?.images,
     baseCommit: body?.baseCommit,
     selectedCommitShas: body?.selectedCommitShas,
+    actor: requestCredentialActor(event, user),
   });
   if (outcome.ok) return outcome.diagnosis;
   if (outcome.error === 'not-failed') throw apiError({ statusCode: 400, message: 'This test run case did not fail' });

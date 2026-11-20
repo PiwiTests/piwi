@@ -1,7 +1,11 @@
 import { INVALID_EXTERNAL_ID_URL, normalizeExternalIdUrl } from '#shared/external-id-link';
-import { resolveCiActionsSettings } from '#shared/ci-actions';
+import { hasCiActions, resolveCiActionsSettings } from '#shared/ci-actions';
+import { settleCiActionEnvironments } from './environments';
+import { parseRunVariables } from '@piwitests/core/run-variables';
+import { storedRunVariables, type RunVariable } from '#shared/run-variables';
 import {
   projects,
+  environments,
   testRuns,
   testRunsCases,
   testCases,
@@ -62,6 +66,13 @@ import {
   scopedExecutionInProjectJoin,
 } from './project-run-scope';
 import { parseProjectRunScope, resolveProjectRunScope, type ProjectRunScope } from '../project-run-scope';
+import {
+  defaultEnvironmentJoin,
+  defaultEnvironmentProblem,
+  namedProjectEnvironment,
+  type DefaultEnvironment,
+} from './default-environment';
+import { environmentScopeSql, runEnvironmentKeySql } from './environment-scope';
 import { eligibleRunSql, notPrivateRun } from '../run-eligibility';
 import { mineFlag, ownRunColumn, ownRunSql, type RunViewer } from '../own-runs';
 import { finalAttemptsOfRuns, isPassedOrFailedStatus, isFailedStatus, ranTest } from '../utils/test-counts';
@@ -355,6 +366,7 @@ const RUN_SUMMARY_COLUMNS = {
   shardTotal: testRuns.shardTotal,
   shardsFinished: testRuns.shardsFinished,
   environment: testRuns.environment,
+  environmentKey: runEnvironmentKeySql(),
   branch: testRuns.branch,
   label: testRuns.label,
   instanceId: testRuns.instanceId,
@@ -458,18 +470,28 @@ export async function getProject(
   // unboundedly, so an uncapped select scales with total history.
   const runLimit = clampRunLimit(options?.runLimit);
 
-  const projectResults: any[] = await db.select().from(projects).where(eq(projects.id, id));
-  const project = projectResults[0];
+  // The project's row, and its default environment (`projectDefaultEnvironment`) read in the same query.
+  const projectResults: any[] = await db
+    .select({
+      project: projects,
+      defaultEnvironment: { id: environments.id, key: environments.key, name: environments.name },
+    })
+    .from(projects)
+    .leftJoin(environments, defaultEnvironmentJoin())
+    .where(eq(projects.id, id));
+  const project = projectResults[0]?.project;
 
   if (!project) throw new Error('Project not found');
 
-  // The branch a project run scope reads when no branch is picked.
+  // The branch and the environment a project run scope reads when none is picked.
   const effectiveDefaultBranch = await resolveStoredDefaultBranch(db, project);
+  const effectiveDefaultEnvironment: DefaultEnvironment | null = projectResults[0].defaultEnvironment ?? null;
+  const defaultEnvironmentKey = effectiveDefaultEnvironment?.key ?? null;
   const scope = options?.scope ?? null;
   const viewer = options?.viewer ?? null;
   const own = ownRunColumn(viewer);
   // The scope's own conditions: none when it reads every run, which leaves no own run out.
-  const inScope = scope ? and(...runScopeConditions(scope, effectiveDefaultBranch)) : undefined;
+  const inScope = scope ? and(...runScopeConditions(scope, effectiveDefaultBranch, defaultEnvironmentKey)) : undefined;
 
   // Select only the columns needed for the run list — omit wide JSON columns
   const runs: any[] = await db
@@ -484,6 +506,7 @@ export async function getProject(
           id: testRuns.id,
           startTime: testRuns.startTime,
           environment: testRuns.environment,
+          environmentKey: runEnvironmentKeySql(),
           branch: testRuns.branch,
           isFullRun: testRuns.isFullRun,
           own,
@@ -507,7 +530,7 @@ export async function getProject(
               eq(testRuns.projectId, id),
               notPrivateRun(),
               ownRunSql(viewer),
-              ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch),
+              ...runScopeConditions(environmentsOnly(scope), effectiveDefaultBranch, defaultEnvironmentKey),
               listedIds.length > 0 ? notInArray(testRuns.id, listedIds) : undefined,
               oldestListed ? or(sql`(${inScope}) IS NOT TRUE`, gt(testRuns.startTime, oldestListed)) : undefined,
             ),
@@ -526,10 +549,11 @@ export async function getProject(
   return {
     ...project,
     effectiveDefaultBranch,
-    hasScmToken: !!project.scmToken,
-    hasCiServerToken: !!project.ciServerToken,
+    effectiveDefaultEnvironment,
+    hasScmToken: project.scmCredentialId != null,
     ciRerun: project.ciRerun == null ? null : resolveCiActionsSettings(project.ciRerun),
     tagKeys: project.tagKeys ? resolveTagKeyPatterns(project.tagKeys) : null,
+    runVariables: storedRunVariables(project.runVariables),
     // Validated per-project capability decisions, so the edit form preselects a
     // stored "declined"/"enabled" rather than always reading "instance default".
     capabilities: parseProjectDecisions(project.capabilities ?? null),
@@ -541,6 +565,7 @@ export async function getProject(
             id: r.id as number,
             startTime: r.startTime as Date,
             environment: (r.environment as string | null) ?? null,
+            environmentKey: (r.environmentKey as string | null) ?? null,
             branch: (r.branch as string | null) ?? null,
             isFullRun: r.isFullRun === 1,
             ...mineFlag(r.own),
@@ -553,7 +578,13 @@ export async function getProject(
 
 /** A scope's environments alone: what an own run must match to be listed despite the partial-run and branch filters. */
 function environmentsOnly(scope: ProjectRunScope): ProjectRunScope {
-  return { environments: scope.environments, branches: [], allBranches: true, fullRunsOnly: false };
+  return {
+    environments: scope.environments,
+    allEnvironments: scope.allEnvironments,
+    branches: [],
+    allBranches: true,
+    fullRunsOnly: false,
+  };
 }
 
 // ─── listKeptRuns ────────────────────────────────────────────────
@@ -640,6 +671,30 @@ export class InvalidTagKeysError extends Error {
   }
 }
 
+/** The error `updateProject` throws for run variables `parseRunVariables` refuses; the message names each problem. */
+export class InvalidRunVariablesError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidRunVariablesError';
+  }
+}
+
+/** The error `updateProject` throws for a default environment `defaultEnvironmentProblem` refuses; the message says why. */
+export class InvalidDefaultEnvironmentError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidDefaultEnvironmentError';
+  }
+}
+
+/** The error `updateProject` throws for a CI action naming an environment it may not (`settleCiActionEnvironments`). */
+export class InvalidCiActionsError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'InvalidCiActionsError';
+  }
+}
+
 /**
  * The status filter `updateProject` stores: null for none, and for a filter
  * every non-lab run passes (every branch, every environment, partial runs too).
@@ -660,9 +715,8 @@ export async function updateProject(
     description?: string | null;
     diagnosisInstructions?: string | null;
     aiLanguage?: string | null;
-    scmToken?: string | null;
-    /** The CI server token, already sealed with its base URL; null removes it. */
-    ciServerToken?: string | null;
+    /** The SCM credential the project's repository calls carry (checked by the caller); null for the instance's. */
+    scmCredentialId?: number | null;
     /** The repository the project's SCM calls read; null or '' clears it, and the next run that names one pins it. */
     repositoryUrl?: string | null;
     defaultBranch?: string | null;
@@ -693,6 +747,10 @@ export async function updateProject(
     statusFilter?: unknown;
     /** The patterns that read the issue key and the test case key out of a test's tags (`TagKeyPatterns`); null turns both off. */
     tagKeys?: unknown;
+    /** The run variables (`RunVariable[]`), checked by `parseRunVariables`; null or [] removes them. */
+    runVariables?: unknown;
+    /** The environment the project's views read by default: one of its environments, not archived; null clears it. */
+    defaultEnvironmentId?: unknown;
     tagIds?: number[];
   },
 ) {
@@ -704,8 +762,7 @@ export async function updateProject(
     description,
     diagnosisInstructions,
     aiLanguage,
-    scmToken,
-    ciServerToken,
+    scmCredentialId,
     repositoryUrl,
     defaultBranch,
     openApiUrl,
@@ -723,6 +780,8 @@ export async function updateProject(
     coverageAreas,
     statusFilter,
     tagKeys,
+    runVariables,
+    defaultEnvironmentId,
     tagIds: dataTagIds,
   } = data;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
@@ -751,7 +810,24 @@ export async function updateProject(
     if (!parsed.ok) throw new InvalidTagKeysError(parsed.message);
     storedTagKeys = parsed.tagKeys;
   }
+  let storedVariables: RunVariable[] | null | undefined;
+  if (runVariables !== undefined) {
+    const parsed = parseRunVariables(runVariables);
+    if (!parsed.ok) throw new InvalidRunVariablesError(parsed.problems.join(' '));
+    storedVariables = parsed.value.length > 0 ? parsed.value : null;
+  }
+  if (defaultEnvironmentId !== undefined) {
+    const problem = await defaultEnvironmentProblem(db, id, defaultEnvironmentId);
+    if (problem) throw new InvalidDefaultEnvironmentError(problem);
+  }
   const resolvedTargets = targets === undefined ? undefined : normalizeProjectTargets(targets);
+  let storedCiRerun = ciRerun;
+  if (hasCiActions(ciRerun)) {
+    const settings = resolveCiActionsSettings(ciRerun);
+    const settled = await settleCiActionEnvironments(db, id, settings.actions, projectResults[0].ciRerun);
+    if (!settled.ok) throw new InvalidCiActionsError(settled.problem);
+    storedCiRerun = { ...settings, actions: settled.actions };
+  }
   const uniqueTagIds = dataTagIds === undefined ? undefined : await validTagIds(db, dataTagIds);
 
   await db.transaction(async (tx) => {
@@ -762,14 +838,13 @@ export async function updateProject(
         description,
         diagnosisInstructions: diagnosisInstructions !== undefined ? diagnosisInstructions || null : undefined,
         aiLanguage: aiLanguage !== undefined ? aiLanguage?.trim() || null : undefined,
-        scmToken: scmToken !== undefined ? scmToken : undefined,
-        ciServerToken,
+        scmCredentialId,
         repositoryUrl: repository,
         defaultBranch: defaultBranch !== undefined ? defaultBranch : undefined,
         openApiUrl: openApiUrl !== undefined ? openApiUrl : undefined,
         externalIdUrl: linkTemplate,
         serverProbes: serverProbes !== undefined ? (serverProbes as any) : undefined,
-        ciRerun: ciRerun !== undefined ? (ciRerun as any) : undefined,
+        ciRerun: storedCiRerun !== undefined ? (storedCiRerun as any) : undefined,
         quarantineFailsStatus,
         gateStatus,
         liveView,
@@ -779,6 +854,8 @@ export async function updateProject(
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),
         tagKeys: storedTagKeys,
+        runVariables: storedVariables,
+        defaultEnvironmentId: defaultEnvironmentId as number | null | undefined,
         ...(scopeChanged ? { coverageScope: scope } : {}),
         // Totals counted under another scope or other areas read as stale.
         ...(scopeChanged || areasChanged ? { coverageScopeVersion: sql`${projects.coverageScopeVersion} + 1` } : {}),
@@ -825,7 +902,9 @@ export async function updateProject(
     success: true,
     project: {
       ...updatedProjectPublic,
+      hasScmToken: updatedProjectPublic.scmCredentialId != null,
       ciRerun: updatedProjectPublic.ciRerun == null ? null : resolveCiActionsSettings(updatedProjectPublic.ciRerun),
+      runVariables: storedRunVariables(updatedProjectPublic.runVariables),
       tags: projectTagRows.map((r: any) => r.tag),
     },
   };
@@ -1994,13 +2073,15 @@ export interface FlakyTestsFilter {
  * explicit branch filter scopes to exactly that branch. Otherwise the leaderboard reads the runs of the project's
  * default branch (`resolveStoredDefaultBranch`, as the project tabs do) plus runs with no branch (local or
  * pre-migration), so a work-in-progress branch stops contaminating the project's health signal. Environment scopes
- * independently. A project run scope replaces all three with the project page's filters, and a filter's run
- * conditions replace them all. Only runs the `flakiness` use reads count: lab runs inject faults and conditions,
- * bisect and reproduction runs replay an older commit, and an environment incident fails every test at once.
+ * independently: an explicit environment matches as a filter's does (its key, an alias or its label, ignoring case),
+ * else the project's default environment (`defaultEnvironmentKey`) when it has one, else every environment. A
+ * project run scope replaces all three with the project page's filters, and a filter's run conditions replace them
+ * all. Only runs the `flakiness` use reads count: lab runs inject faults and conditions, bisect and reproduction runs
+ * replay an older commit, and an environment incident fails every test at once.
  */
 async function flakyRunConditions(
   db: DrizzleDB,
-  project: { id: number; defaultBranch?: string | null },
+  project: FlakyProject,
   opts: {
     environment?: string | null;
     filter?: FlakyTestsFilter;
@@ -2016,17 +2097,41 @@ async function flakyRunConditions(
   if (opts.filter?.runConditions) {
     conditions.push(...opts.filter.runConditions);
   } else if (opts.scope) {
-    conditions.push(...(await projectRunScopeConditions(db, project.id, opts.scope)));
+    const defaultBranch = scopeReadsDefaultBranch(opts.scope) ? await resolveStoredDefaultBranch(db, project) : '';
+    conditions.push(...runScopeConditions(opts.scope, defaultBranch, project.defaultEnvironmentKey));
   } else {
-    if (opts.environment) conditions.push(eq(testRuns.environment, opts.environment));
+    const [named, defaultBranch] = await Promise.all([
+      opts.environment ? namedProjectEnvironment(db, project.id, opts.environment) : null,
+      opts.branch ? null : resolveStoredDefaultBranch(db, project),
+    ]);
+    const environment = opts.environment ? (named?.key ?? opts.environment) : project.defaultEnvironmentKey;
+    const inEnvironment = environment ? environmentScopeSql([environment]) : null;
+    if (inEnvironment) conditions.push(inEnvironment);
     if (opts.branch) {
       conditions.push(eq(testRuns.branch, opts.branch));
     } else {
-      const defaultBranch = await resolveStoredDefaultBranch(db, project);
-      conditions.push(or(eq(testRuns.branch, defaultBranch), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
+      conditions.push(or(eq(testRuns.branch, defaultBranch!), isNull(testRuns.branch), eq(testRuns.branch, ''))!);
     }
   }
   return conditions;
+}
+
+/** What `flakyRunConditions` reads of a project: its stored default branch and its default environment's key. */
+interface FlakyProject {
+  id: number;
+  defaultBranch: string | null;
+  /** Null when the project has no default environment, or an archived one. */
+  defaultEnvironmentKey: string | null;
+}
+
+/** A project as `flakyRunConditions` reads it, in one query; null when it does not exist. */
+async function flakyProject(db: DrizzleDB, projectId: number): Promise<FlakyProject | null> {
+  const [row] = await db
+    .select({ id: projects.id, defaultBranch: projects.defaultBranch, defaultEnvironmentKey: environments.key })
+    .from(projects)
+    .leftJoin(environments, defaultEnvironmentJoin())
+    .where(eq(projects.id, projectId));
+  return row ?? null;
 }
 
 /**
@@ -2034,10 +2139,7 @@ async function flakyRunConditions(
  * the quarantine candidates come from. Null when the project has none.
  */
 export async function newestFlakyRunId(db: DrizzleDB, projectId: number): Promise<number | null> {
-  const [project] = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
-    .from(projects)
-    .where(eq(projects.id, projectId));
+  const project = await flakyProject(db, projectId);
   if (!project) return null;
   const [run] = await db
     .select({ id: testRuns.id })
@@ -2077,11 +2179,7 @@ export async function getProjectFlakyTestsWithVerified(
   /** The project page's run scope; replaces `environment`, `branch` and the default-branch reading. */
   scope?: ProjectRunScope | null,
 ) {
-  const projectResults: any[] = await db
-    .select({ id: projects.id, defaultBranch: projects.defaultBranch })
-    .from(projects)
-    .where(eq(projects.id, projectId));
-  const project = projectResults[0];
+  const project = await flakyProject(db, projectId);
   if (!project) throw new Error('Project not found');
 
   const effectiveLimit = Math.min(200, Math.max(1, runsLimit));

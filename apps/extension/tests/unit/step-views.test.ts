@@ -58,7 +58,7 @@ describe('clearStaleViews', () => {
   it('keeps them while the recording and the replay are kept', async () => {
     const { startRecording, stopRecording } = await import('../../src/shared/recording-storage');
     const { newReplayState, setReplayState } = await import('../../src/shared/replay-storage');
-    await startRecording('https://shop.test/*', 'bug');
+    await startRecording('https://shop.test/*');
     await stopRecording();
     await setReplayState(newReplayState({ version: 1, steps: [] } as unknown as PiwiSteps, 'https://shop.test', false));
     const { clearStaleViews } = await import('../../src/background/step-views');

@@ -138,8 +138,8 @@ test.describe('S3 storage', () => {
       await expect(adapter.mkdir(`${keyPrefix}/some/directory`)).resolves.toBeUndefined();
     });
 
-    test('getFullPath should return the key as-is', () => {
-      expect(adapter.getFullPath('some/relative/path.txt')).toBe('some/relative/path.txt');
+    test("localRoot should be null (nothing is kept on the server's disk)", () => {
+      expect(adapter.localRoot()).toBeNull();
     });
 
     test('should delete all objects under a directory prefix', async () => {

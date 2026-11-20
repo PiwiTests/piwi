@@ -11,6 +11,8 @@ import type { DesktopKept } from '../composables/useDesktopRunHub';
 import { desktopCodeItem, desktopPickItem, type DesktopCopyItem } from '../utils/run-view';
 
 const props = defineProps<{ kept: readonly DesktopKept[]; roots: Readonly<Record<string, string | null>> }>();
+const words = useRunUiWords();
+const { t } = words;
 
 /** How many the list shows before Show all. */
 const SHOWN = 3;
@@ -21,8 +23,8 @@ const items = computed((): DesktopCopyItem[] =>
     .reverse()
     .map((kept) =>
       kept.type === 'stop-code'
-        ? desktopCodeItem(kept.code, props.roots[kept.code.ref] ?? null, `code-${kept.serial}`)
-        : desktopPickItem(kept.pick, `pick-${kept.serial}`),
+        ? desktopCodeItem(kept.code, props.roots[kept.code.ref] ?? null, `code-${kept.serial}`, words)
+        : desktopPickItem(kept.pick, `pick-${kept.serial}`, words),
     ),
 );
 const visible = computed(() => (all.value ? items.value : items.value.slice(0, SHOWN)));
@@ -37,7 +39,7 @@ const { copy } = useCopy();
     class="px-3 py-2 space-y-2"
     data-shot="desktop-run-copy"
   >
-    <h3 id="desktop-run-copy-title" class="text-sm font-semibold text-highlighted">Code from the runs</h3>
+    <h3 id="desktop-run-copy-title" class="text-sm font-semibold text-highlighted">{{ t('runui_copyHeading') }}</h3>
     <article v-for="item in visible" :key="item.key" class="space-y-1.5">
       <p class="flex flex-wrap items-baseline gap-x-2 text-sm">
         <span class="font-semibold text-highlighted">{{ item.title }}</span>
@@ -48,40 +50,54 @@ const { copy } = useCopy();
       <template v-if="item.kind === 'locator'">
         <div class="flex items-center gap-1.5 min-w-0">
           <LocatorCode :locator="item.text" truncate class="min-w-0" />
-          <UButton size="xs" color="neutral" variant="outline" @click="copy(item.text, { toast: 'Locator copied' })">
-            Copy
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            @click="copy(item.text, { toast: t('runui_copyLocatorCopied') })"
+          >
+            {{ t('runui_commonCopy') }}
           </UButton>
         </div>
       </template>
       <template v-else>
-        <CodeBlock :code="item.text" lang="typescript" :filename="item.place ? `Above ${item.place}` : undefined" />
+        <CodeBlock
+          :code="item.text"
+          lang="typescript"
+          :filename="item.place ? t('runui_copyAbove', { place: item.place }) : undefined"
+        />
         <div class="flex flex-wrap gap-1.5">
-          <UButton size="xs" color="neutral" variant="outline" @click="copy(item.text, { toast: 'Code copied' })">
-            Copy
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            @click="copy(item.text, { toast: t('runui_copyCodeCopied') })"
+          >
+            {{ t('runui_commonCopy') }}
           </UButton>
           <UButton
             v-if="item.imports.length"
             size="xs"
             color="neutral"
             variant="outline"
-            @click="copy(item.imports.join('\n'), { toast: 'Imports copied' })"
+            @click="copy(item.imports.join('\n'), { toast: t('runui_copyImportsCopied') })"
           >
-            Copy the imports
+            {{ t('runui_copyImports') }}
           </UButton>
         </div>
         <CodeBlock
           v-if="item.imports.length"
           :code="item.imports.join('\n')"
           lang="typescript"
-          filename="Imports, at the top of the file"
+          :filename="t('runui_copyImportsPlace')"
         />
-        <ul v-if="item.warnings.length" aria-label="What to check in the code" class="space-y-0.5">
+        <ul v-if="item.warnings.length" :aria-label="t('runui_copyWarnings')" class="space-y-0.5">
           <li v-for="warning in item.warnings" :key="warning" class="text-xs text-muted">{{ warning }}</li>
         </ul>
       </template>
     </article>
     <UButton v-if="items.length > SHOWN" size="xs" color="neutral" variant="ghost" @click="all = !all">
-      {{ all ? 'Show fewer' : `Show all ${items.length}` }}
+      {{ all ? t('runui_copyShowFewer') : t('runui_copyShowAll', { total: words.number(items.length) }) }}
     </UButton>
   </section>
 </template>

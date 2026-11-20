@@ -2,7 +2,7 @@ import type { Page } from '@playwright/test';
 import { clickInShadow, expect, finished, nodeText, tabIdOf, test, type DomNode } from './trusted-site.js';
 
 /**
- * What the page showed during a replay of the bug report recorded in this
+ * What the page showed during a replay of the recording made in this
  * browser, on the real extension: the recording's own console errors and
  * failed requests, which the page's evidence script still holds in the tab
  * the debugging session collected them from, are not the replay's.
@@ -50,7 +50,7 @@ async function seenLines(page: Page): Promise<string[]> {
   }
 }
 
-test('a replay of the bug report recorded in this browser lists each request and console error it caused once', async ({
+test('a replay of the recording made in this browser lists each request and console error it caused once', async ({
   context,
   control,
   site,
@@ -60,8 +60,7 @@ test('a replay of the bug report recorded in this browser lists each request and
   await page.goto(`${site}/cart`);
   const tabId = await tabIdOf(worker, `${site}/cart`);
   const started = await control.evaluate(
-    ({ tabId, pattern }) =>
-      chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode: 'bug' }),
+    ({ tabId, pattern }) => chrome.runtime.sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId }),
     { tabId, pattern: `${site}/*` },
   );
   expect(started).toEqual({ ok: true });
@@ -83,12 +82,12 @@ test('a replay of the bug report recorded in this browser lists each request and
   await page.keyboard.press('Escape');
   await expect.poll(() => page.evaluate(() => !!document.getElementById('piwi-record-review-host'))).toBe(false);
 
-  // The popup's Replay a bug report opens the chooser in the same page, which offers the report just recorded.
+  // The popup's Replay opens the chooser in the same page, which offers the recording just made.
   await worker.evaluate(
     (id) => chrome.scripting.executeScript({ target: { tabId: id }, files: ['replay-panel.js'] }),
     tabId,
   );
-  await clickInShadow(page, 'Use the bug report recorded in this browser');
+  await clickInShadow(page, 'Use the recording made in this browser');
   await clickInShadow(page, 'Replay');
 
   const state = await finished(worker);

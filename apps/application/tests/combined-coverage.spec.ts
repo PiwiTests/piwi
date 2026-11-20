@@ -260,6 +260,12 @@ test('keeps only the totals of a branch push a newer one superseded, and says wh
   expect(await late.json()).toMatchObject({ superseded: { by: SECOND } });
   expect((await firstSummary()).totals.executedLines).toBe(7);
 
+  // A commit is superseded only once the newer one's totals are stored, so the branch already answers with it.
+  const branchSummary = await request.get(
+    `/api/projects/${projectId}/coverage-summary?branch=${encodeURIComponent(BRANCH)}`,
+  );
+  expect(((await branchSummary.json()) as { commit: string }).commit).toBe(SECOND);
+
   // The branch's newest push carries the front end's suite from the first.
   await page.goto(`/projects/${projectId}?tab=coverage&view=code&branch=${encodeURIComponent(BRANCH)}`);
   const notes = page.getByTestId('coverage-notes');

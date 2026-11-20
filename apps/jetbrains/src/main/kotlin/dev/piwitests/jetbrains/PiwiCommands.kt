@@ -10,6 +10,7 @@ import com.intellij.execution.process.KillableColoredProcessHandler
 import com.intellij.execution.process.ProcessEvent
 import com.intellij.execution.process.ProcessListener
 import com.intellij.ide.BrowserUtil
+import com.intellij.notification.Notification
 import com.intellij.notification.NotificationAction
 import com.intellij.notification.NotificationType
 import com.intellij.openapi.application.ApplicationManager
@@ -18,6 +19,7 @@ import com.intellij.openapi.components.service
 import com.intellij.openapi.fileEditor.FileDocumentManager
 import com.intellij.openapi.fileEditor.FileEditorManager
 import com.intellij.openapi.ide.CopyPasteManager
+import com.intellij.openapi.options.ShowSettingsUtil
 import com.intellij.openapi.progress.ProgressIndicator
 import com.intellij.openapi.progress.ProgressManager
 import com.intellij.openapi.progress.Task
@@ -28,7 +30,6 @@ import com.intellij.openapi.util.text.StringUtil
 import com.intellij.openapi.vfs.LocalFileSystem
 import com.intellij.openapi.wm.ToolWindowManager
 import java.awt.datatransfer.StringSelection
-import java.net.URI
 import java.nio.file.Path
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.ConcurrentHashMap
@@ -36,7 +37,8 @@ import java.util.concurrent.ConcurrentHashMap
 /**
  * The client commands the editor service names in summary lines and code
  * actions (`piwi.openInDashboard`, `piwi.runTests`, `piwi.openTrace`,
- * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`).
+ * `piwi.openScreenshot`, `piwi.runCommand`, `piwi.copyAgentContext`, `piwi.copyText`, `piwi.desktopJob`,
+ * `piwi.record`).
  */
 object PiwiCommands {
     private val gson = Gson()
@@ -74,7 +76,19 @@ object PiwiCommands {
                 PiwiNotifier.confirm(project, "Copied. Paste it to your agent.")
             }
             "piwi.desktopJob" -> arg<DesktopJobParams>(arguments.firstOrNull())?.let { desktopJob(project, it) }
+            "piwi.record" -> {
+                val file = fileOfUri(arg<String>(arguments.getOrNull(0)))
+                val line = arg<Int>(arguments.getOrNull(1))
+                if (file != null && line != null) recordAt(project, file, line)
+            }
         }
+    }
+
+    /** Record here at the start of the 0-based `line` of `file`, opened in an editor first. */
+    private fun recordAt(project: Project, file: com.intellij.openapi.vfs.VirtualFile, line: Int) {
+        val editor = FileEditorManager.getInstance(project)
+            .openTextEditor(com.intellij.openapi.fileEditor.OpenFileDescriptor(project, file, line, 0), true) ?: return
+        PiwiRecordFlow.recordHere(project, editor, file, line)
     }
 
     /**
@@ -173,6 +187,7 @@ object PiwiCommands {
                             PiwiUserSettings.state().runNotifications = "failures"
                             PiwiNotifier.confirm(project, Glue.ONLY_ON_FAILURE_SET)
                         }
+                        Glue.EmptyLink.SETTINGS.label -> ShowSettingsUtil.getInstance().showSettingsDialog(project, PiwiConfigurable::class.java)
                     }
                 },
             )
@@ -189,8 +204,10 @@ object PiwiCommands {
     fun runTests(project: Project, args: RunTestsArgs, quiet: Boolean = false) {
         background(project, "Piwi: resolving the tests") {
             val service = project.service<PiwiProjectService>()
-            val breakpoints = service.breakpoints()
             val user = service.user()
+            // A plain Run pauses at the breakpoints with `always` alone; a Debug with Piwi run with `debug` too.
+            val takes = Glue.takesBreakpoints(Glue.breakpointsMode(user.breakpoints), args)
+            val breakpoints = if (takes) service.breakpoints() else emptyList()
             val started = Glue.withRunStart(args, user.runHeaded, user.runHoldFailures)
             val withBreakpoints = if (breakpoints.isEmpty()) started else started.copy(breakpoints = breakpoints.map { it.place })
             val server = service.server()
@@ -202,7 +219,27 @@ object PiwiCommands {
                     "Piwi has no command for these tests: the instance knows none of them, or no instance is connected."
                 else -> null
             }
-            if (refusal == null) startRun(project, command!!, breakpoints) else if (!quiet) notify(project, refusal, NotificationType.WARNING)
+            if (refusal == null) startRun(project, command!!, breakpoints, takes) else if (!quiet) notify(project, refusal, NotificationType.WARNING)
+        }
+    }
+
+    /**
+     * Run the nodes of the Tests tab, as the service builds their runs (`piwi/testRuns`): each node by the narrowest filter
+     * Playwright takes for it, one run per config and set of projects, each started as [runTests] starts a run. The
+     * files are saved first: a run reads the specs as saved.
+     */
+    fun runTestNodes(project: Project, nodes: List<String>, repeat: Int?, debug: Boolean) {
+        FileDocumentManager.getInstance().saveAllDocuments()
+        background(project, "Piwi: resolving the tests") {
+            val server = project.service<PiwiProjectService>().server()
+            val params = TestRunsParams(nodes, repeat = repeat, debug = debug.takeIf { it })
+            val runs = server?.testRuns(params)?.orNull()
+            when {
+                server == null -> notify(project, NOT_RUNNING, NotificationType.WARNING)
+                runs == null -> notify(project, Glue.SERVICE_NO_ANSWER, NotificationType.WARNING)
+                runs.isEmpty() -> notify(project, "None of the selected tests can run from this checkout.", NotificationType.WARNING)
+                else -> runs.forEach { runTests(project, it) }
+            }
         }
     }
 
@@ -233,17 +270,18 @@ object PiwiCommands {
     /**
      * Run the test whose `test(…)` call holds the 0-based position of the spec at `uri` (`piwi/testAt`), as [runTests]
      * does: by its id when Piwi knows it, else by its location, and with `repeat` by its location, that many times; or
-     * with `wholeSpec` every test of the spec as saved, by its path. The spec is saved first, since a run reads it from
-     * the disk; a balloon says when there is nothing to run.
+     * with `wholeSpec` every test of the spec as saved, by its path; with `debug`, as Debug with Piwi. The spec is saved
+     * first, since a run reads it from the disk; a balloon says when there is nothing to run.
      */
-    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null) {
+    fun runTestAt(project: Project, uri: String, line: Int, character: Int, wholeSpec: Boolean, repeat: Int? = null, debug: Boolean = false) {
         background(project, "Piwi: finding the test") {
             val found = project.service<PiwiProjectService>().server()?.testAt(TestAtParams(uri, line, character))?.orNull()
             val args = if (wholeSpec) {
                 // Every test of the spec as saved, by its path, known to the instance or not.
                 found?.spec?.location?.let { RunTestsArgs(uri, emptyList(), locations = listOf(it)) }
             } else {
-                Glue.testAtRun(uri, found, repeat)
+                // Debug with Piwi: headed, each failure held at its line, the IDE's breakpoints taken.
+                Glue.testAtRun(uri, found, repeat)?.let { if (debug) it.copy(headed = true, holdFailures = true, debugging = true) else it }
             }
             if (args != null) {
                 saveSpec(project, uri)
@@ -256,7 +294,7 @@ object PiwiCommands {
 
     /** Save the spec at `uri` when its document has unsaved changes, on the event thread, waiting for it. */
     private fun saveSpec(project: Project, uri: String) {
-        val path = runCatching { Path.of(URI(uri)) }.getOrNull() ?: return
+        val path = Glue.pathOfUri(uri) ?: return
         ApplicationManager.getApplication().invokeAndWait({
             if (project.isDisposed) return@invokeAndWait
             val file = LocalFileSystem.getInstance().findFileByNioFile(path) ?: return@invokeAndWait
@@ -273,7 +311,12 @@ object PiwiCommands {
      * (`PIWI_EDITOR_SEND`). Call it off the event thread. Whether it starts: false for a command with nothing to run, and
      * in an untrusted project.
      */
-    fun startRun(project: Project, command: RunCommand, breakpoints: List<Glue.RunBreakpoint>): Boolean {
+    fun startRun(
+        project: Project,
+        command: RunCommand,
+        breakpoints: List<Glue.RunBreakpoint>,
+        takes: Boolean = Glue.breakpointsMode(project.service<PiwiProjectService>().user().breakpoints) == "always",
+    ): Boolean {
         val cwd = command.cwd ?: return false
         val line = command.command?.takeIf { it.isNotBlank() } ?: return false
         if (!project.service<PiwiProjectService>().trusted()) {
@@ -282,25 +325,54 @@ object PiwiCommands {
         }
         command.notice?.let { if (noticesShown.add(it)) notify(project, it, NotificationType.WARNING) }
         PiwiGetStarted.done("run")
-        command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints) }
+        command.ref?.let { project.service<PiwiRunSessions>().started(it, breakpoints, takes) }
         val base = command.env
         val pauses = base != null && (base.containsKey("PIWI_PAUSE_AT") || base.containsKey("PIWI_RUN_CHANNEL") || command.pauses == true)
         val address = if (pauses) PiwiSendHandler.runPairing() else null
         val env = if (base != null && address != null) base + ("PIWI_EDITOR_SEND" to address) else base
+        // A run for a protected environment is confirmed for that run alone: the console runs it, with no Rerun, and no
+        // run configuration of the IDE's runner keeps it.
+        if (command.protected == true) {
+            run(project, cwd, line, env, command.ref, command.label, command.name, rerunnable = false)
+            return true
+        }
         val args = Glue.playwrightTestArgs(line)
         if (args != null && PiwiUserSettings.state().playwrightRunner && PlaywrightRunnerGate.available()) {
             val ref = command.ref
             ApplicationManager.getApplication().invokeLater({
                 // The console runs what the IDE's runner does not take. The runner's runs of the configuration, its
                 // reruns and debug runs included, are followed by their ref (`PiwiRunSessions.followRunner`).
-                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label) }
+                val started = runCatching { PlaywrightRunnerLauncher.start(project, cwd, args, env.orEmpty(), ref, command.label, command.name) }
                     .getOrDefault(false)
                 if (!started) run(project, cwd, line, env, ref, command.label, command.name)
             }, project.disposed)
             return true
         }
+        if (args != null && PlaywrightRunnerGate.available()) offerRunner(project)
         run(project, cwd, line, env, command.ref, command.label, command.name)
         return true
+    }
+
+    /** The key under which the IDE's Playwright runner was offered, once per installation. */
+    private const val RUNNER_OFFERED = "piwi.playwrightRunnerOffered"
+
+    /**
+     * Once per installation, at a run the IDE's Playwright runner could take while the plugin's console runs it: offer
+     * the runner, which **Settings → Tools → Piwi** switches on too.
+     */
+    private fun offerRunner(project: Project) {
+        val properties = com.intellij.ide.util.PropertiesComponent.getInstance()
+        if (properties.getBoolean(RUNNER_OFFERED)) return
+        properties.setValue(RUNNER_OFFERED, true)
+        PiwiNotifier.create(PiwiNotice.OFFER, Glue.RUNNER_OFFER)
+            .addAction(
+                NotificationAction.createSimpleExpiring("Use the IDE's Playwright runner") {
+                    val before = PiwiUserSettings.state().copy()
+                    PiwiUserSettings.state().playwrightRunner = true
+                    PiwiUserSettings.changed(before)
+                },
+            )
+            .notify(project)
     }
 
     /** Tell the service a command it gave ended (`piwi/commandEnded`), off the event thread, then run `then`. */
@@ -330,6 +402,29 @@ object PiwiCommands {
     }
 
     /** Download a failure's screenshot and open it in an editor tab. */
+    /** File an issue: the failure's cluster in the dashboard, or, when a ticket is linked already, which one. */
+    fun fileIssue(project: Project, params: TraceParams) {
+        background(project, "Piwi: looking for the failure's issue") {
+            val server = project.service<PiwiProjectService>().server()
+            val result = server?.fileIssue(params)?.orNull()
+            val url = result?.url
+            if (url != null) {
+                BrowserUtil.browse(url)
+                return@background
+            }
+            val type = if (result?.message != null && server != null) NotificationType.INFORMATION else NotificationType.WARNING
+            val notification = PiwiNotifier.create(
+                PiwiNotifier.kindOf(type),
+                StringUtil.escapeXmlEntities(result?.message ?: if (server == null) NOT_RUNNING else Glue.SERVICE_NO_ANSWER),
+                type,
+            )
+            result?.issueUrl?.let { issue ->
+                notification.addAction(NotificationAction.createSimpleExpiring("Open the issue") { BrowserUtil.browse(issue) })
+            }
+            notification.notify(project)
+        }
+    }
+
     fun openScreenshot(project: Project, params: TraceParams) {
         background(project, "Piwi: downloading the screenshot") {
             val request = project.service<PiwiProjectService>().server()?.screenshot(params)
@@ -350,8 +445,9 @@ object PiwiCommands {
      * Run a command line in the Run tool window, in `cwd`, with `env` added to its environment: the process starts off
      * the event thread. With `ref`, the ref of the run it starts, the service hears when it ends
      * (`piwi/commandEnded`). The tool window's Rerun stops it if it runs, and starts the same command, ref included,
-     * once the process ended and the service heard so: the rerun's workers start a session of their own. Its tab says
-     * who started it when a person did not (`label`).
+     * once the process ended and the service heard so: the rerun's workers start a session of their own; a command
+     * not `rerunnable` (a protected environment's run) has no Rerun. Its tab says who started it when a person did not
+     * (`label`).
      */
     fun run(
         project: Project,
@@ -361,6 +457,7 @@ object PiwiCommands {
         ref: String? = null,
         label: String? = null,
         name: String? = null,
+        rerunnable: Boolean = true,
     ) {
         val parts = Glue.splitCommand(command).toMutableList()
         if (parts.isEmpty()) return
@@ -390,6 +487,12 @@ object PiwiCommands {
                     if (ref == null) ended.complete(Unit) else commandEnded(project, CommandEndedParams(ref, event.exitCode)) { ended.complete(Unit) }
                 }
             })
+            // A test run's tree takes its tests' events from now on, kept until its tab shows it.
+            val relay = if (ref != null && !project.isDisposed) {
+                TestTreeRelay(handler).also { project.service<PiwiRunTestTrees>().follow(ref, it) }
+            } else {
+                null
+            }
             // Stop, among the run's controls, ends it; the service lists the run as starting until it reports.
             if (ref != null && !project.isDisposed) {
                 project.service<PiwiRunSessions>().track(ref, handler)
@@ -399,16 +502,21 @@ object PiwiCommands {
                 if (project.isDisposed) {
                     handler.destroyProcess()
                 } else {
+                    val rerun: (() -> Unit)? = if (!rerunnable) null else {
+                        {
+                            ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label, name) }
+                            handler.destroyProcess()
+                        }
+                    }
                     PiwiRunTab.show(
                         project,
                         handler,
+                        relay,
                         Glue.labeledRunName(name?.let { "Piwi: $it" } ?: Glue.runTabName(command), label),
                         RunOutputLinks(project, cwd),
                         ref,
-                    ) {
-                        ended.thenRun { if (!project.isDisposed) run(project, cwd, command, env, ref, label, name) }
-                        handler.destroyProcess()
-                    }
+                        rerun,
+                    )
                 }
             }
         }
@@ -424,16 +532,18 @@ object PiwiCommands {
         val fixes = Glue.offersServiceFixes(message)
         val shown = if (fixes && type == NotificationType.INFORMATION) NotificationType.WARNING else type
         val notification = PiwiNotifier.create(PiwiNotifier.kindOf(shown), StringUtil.escapeXmlEntities(message), shown)
-        if (fixes) {
-            notification.addAction(
-                NotificationAction.createSimpleExpiring(Glue.EmptyLink.RESTART_SERVICE.label) {
-                    project.service<PiwiProjectService>().restartService()
-                },
-            )
-            notification.addAction(NotificationAction.createSimple(Glue.EmptyLink.OPEN_LOG.label) { project.service<PiwiLog>().show() })
-        }
+        if (fixes) withServiceFixes(project, notification)
         notification.notify(project)
     }
+
+    /** `notification` with Restart the editor service and Open the log, for a message that the service does not run or did not answer. */
+    fun withServiceFixes(project: Project, notification: Notification): Notification = notification
+        .addAction(
+            NotificationAction.createSimpleExpiring(Glue.EmptyLink.RESTART_SERVICE.label) {
+                project.service<PiwiProjectService>().restartService()
+            },
+        )
+        .addAction(NotificationAction.createSimple(Glue.EmptyLink.OPEN_LOG.label) { project.service<PiwiLog>().show() })
 
     private fun background(project: Project, title: String, body: () -> Unit) {
         ProgressManager.getInstance().run(object : Task.Backgroundable(project, title, true) {

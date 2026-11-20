@@ -8,10 +8,33 @@ lang: en-US
 
 Every command the two editors offer, by what it acts on. VS Code lists them in the command palette under **Piwi:**;
 a JetBrains IDE lists them under **Tools → Piwi** and in **Find Action**, says caret for cursor and project for window,
-and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Both editors give
-`Ctrl+Shift+Alt+K` to Run the test at the cursor, `Ctrl+Shift+Alt+F` to Re-run the failing tests and
-`Ctrl+Shift+Alt+R` to Record here… and Stop recording (`Cmd` on macOS); a run's controls take the debugger's keys
+and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Some commands have a
+shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's keys
 ([The controls](/features/editor-run-control#the-controls)).
+
+### Keys
+
+`Ctrl+Shift+Alt` with a letter, `Cmd` for `Ctrl` on macOS. Record here… and Run the test at the cursor act in an editor
+of a JavaScript or TypeScript file, the others there and in Piwi's views (the Piwi tool window in a JetBrains IDE), and
+nowhere else. A JetBrains keymap where that chord is another action's in those places takes the letter of its row, as do
+the keymaps descending from it. **Settings → Keymap** shows `$default` as Windows, `Mac OS X 10.5+` as macOS, `Mac OS X`
+as IntelliJ IDEA Classic, and `Default for XWin`, `Default for GNOME` and `Default for KDE` as XWin, GNOME and KDE; it
+drops ` OSX` and ` (Mac OS X)` from the other names, adding (macOS) on Windows and Linux.
+
+| Keymap | Record here…, Stop recording | Re-run the failing tests | Run the test at the cursor | Open the failures |
+|---|---|---|---|---|
+| VS Code, and `$default` and every JetBrains keymap not below | `R` | `F` | `K` | `B` |
+| `Default for XWin`, `Default for GNOME`, `Default for KDE` | `R` | `F` | `K` | `G` |
+| `Mac OS X 10.5+`, `Eclipse (Mac OS X)`, `Sublime Text (Mac OS X)`, `VSCode OSX`, `macOS System Shortcuts` | `Z` | `F` | `K` | `B` |
+| `Visual Studio`, `Visual Studio 2022`, `Visual Assist` | `G` | `F` | `J` | `B` |
+| `ReSharper` | none | `T` | `J` | none |
+| `Visual Studio OSX`, `Visual Assist OSX` | `Z` | `F` | `J` | `B` |
+| `ReSharper OSX` | `Z` | `T` | `J` | `S` |
+| `TextMate` | `R` | `J` | `K` | `B` |
+
+They share a key only with an action of the Database tool window or a database console's results, or of a Java, Kotlin
+script, Go or Terraform file. **Preferences: Open Keyboard Shortcuts** changes them in VS Code (search `piwi`),
+**Settings → Keymap** in a JetBrains IDE (search `Piwi`).
 
 ## Connection
 
@@ -32,6 +55,7 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | Command | What it does |
 |---|---|
 | **Piwi: Run the test at the cursor** | Run the test whose `test(…)` call holds the cursor: [Run tests](/features/editor-runs#run-tests) |
+| **Piwi: Debug the test at the cursor** | Run it headed, at your [breakpoints](/features/editor-breakpoints), holding each failure at its line |
 | **Piwi: Verify the test at the cursor ×3** | Run it three times without retries and say how many runs passed |
 | **Piwi: Run this spec** | Run every test of the spec as it stands |
 | **Piwi: Run the tests that reach this file** | Run the tests that reach the active file through [code reach](/features/code-reach) |
@@ -40,7 +64,7 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | **Piwi: Re-run the failing tests** | Run every test that still fails: [Re-run the failing tests](/features/editor-runs#re-run-the-failing-tests) |
 | **Piwi: Turn headed runs on or off** | Run every test Piwi starts in this window headed, or headless: [How a run starts](/features/editor-runs#how-a-run-starts) |
 | **Piwi: Hold failures from each run's start…** | Auto, On or Off: whether a failed test of each run waits at its line for an answer |
-| **Piwi: Run options…** | VS Code: choose between the two above |
+| **Piwi: Run options…** | Both options above in one list, with their choices now: a pick turns Run headed on or off, or opens Hold failures |
 
 ## The failures and the dashboard
 
@@ -50,15 +74,17 @@ and shows a toggle's state with a check mark. A row that names one editor is tha
 | **Piwi: Open in dashboard** | Open the selected failure, run or test in the dashboard; from the palette, this file's test, else the latest run |
 | **Piwi: Open the latest run** | Open the run the status bar shows |
 | **Piwi: Compare with…** | Choose the run the failures are read against: [Compare with another run](/features/editor-status-bar#compare-with-another-run) |
+| **Piwi: Choose environment…** | Choose the environment the folder's runs are for, or None: [Environments](/features/environments) |
 | **Piwi: Group the failures by…** | File, cluster or owner, or a flat list: [The failures view](/features/editor-failures#the-failures-view) |
 | **Piwi: Follow the active editor**, **Piwi: Stop following the active editor** | VS Code: select the active file's first failure in the failures view, or stop |
-| **Piwi: Open the failures** | JetBrains: open the Piwi tool window's failures |
+| **Piwi: Open the failures** | Open the failures view, the Piwi tool window's in a JetBrains IDE |
 | **Piwi: Show the run's flaky tests** | Open the failures view on the run's [flaky tests](/features/flaky-tests) |
 | **Piwi: Show or hide the coverage marks** | The [coverage marks](/features/editor-coverage) of the lines the tests ran |
 
-A failure's menu in the failures view adds **Run this test**, **Debug this failure**, **Verify the test ×3**, **Go to
+A failure's menu in the failures view adds **Run with Piwi**, **Debug with Piwi**, **Verify ×3 with Piwi**, **Go to
 the test**, **Open the trace**, **Open the screenshot**, **Copy context for agent**, **Reproduce in the desktop app**,
-**Find the breaking commit in the desktop app** and, on a flaky test in VS Code, **Look into this flake…**:
+**Find the breaking commit in the desktop app**, **Run Flake Lab on its untested suspects in the desktop app**, **File
+an issue** and, on a flaky test in VS Code, **Look into this flake…**:
 [Failures in the editor](/features/editor-failures).
 
 ## Recording
@@ -69,7 +95,10 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 | **Piwi: Record a new test file…** | Create a spec and record into it; in a JetBrains IDE, the **New** menu's **Playwright test (recorded)…** too |
 | **Piwi: Stop recording**, **Piwi: Pause recording**, **Piwi: Resume recording** | Control the recording in progress |
 | **Piwi: Go to the recorded lines** | JetBrains: open the lines the recording in progress writes |
-| **Piwi: Pair with Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker) |
+| **Piwi: Pair with Piwi Picker** | Open the [pairing panel](/features/editor-pairing#the-pairing-panel), where you allow Piwi Picker's request |
+| **Piwi: Copy the pairing address for Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker), to pair a remote window |
+| **Piwi: Allow Piwi Picker to pair…**, **Piwi: Deny Piwi Picker's pairing request** | VS Code: answer a request of the pairing panel, also in its notification: Allow asks for the code Piwi Picker shows |
+| **Piwi: Unpair Piwi Picker** | Give the editor a new pairing token: Piwi Picker reaches it again once paired again |
 
 ## Run control
 
@@ -88,10 +117,11 @@ the test**, **Open the trace**, **Open the screenshot**, **Copy context for agen
 
 - **In VS Code**: the Piwi item's menu while they apply, after **Go to the stopped line**; the command palette; the
   editor title, Pause or Resume, Step, Finish and Stop (on a run this window started) in the debug toolbar's order, the
-  others under `…`; and, while a test is stopped, in the editor's context menu, right after its Go to entries.
+  others under `…`; and, while a test is stopped, in the editor's context menu, right after its Go to entries, and on
+  its worker's page (Resume, Step, Finish and Write code…).
 - **In a JetBrains IDE**: **Tools → Piwi** and the **Run** menu, enabled while they apply; the toolbar of the run's
   Run tab, acting on that run; the status bar item's menu; and, while a test is stopped, first in the editor's context
-  menu.
+  menu, and on its worker's tab (Resume, Step, Finish and Write code…).
 
 A run is named after what it runs (`checkout.spec.ts:12`, `a.spec.ts and 2 more`, the title it greps, `×3` after a
 Verify ×3, a Flake Lab line's command), in its terminal or Run tab and wherever you pick it, where it also has its

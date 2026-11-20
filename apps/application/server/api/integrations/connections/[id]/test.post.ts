@@ -2,6 +2,7 @@ import { getDatabase } from '../../../../database';
 import { requireAuth } from '../../../../utils/auth';
 import { testConnection } from '../../../../utils/integrations/connections';
 import { requireRouteId } from '../../../../utils/project-access';
+import { requestCredentialActor } from '../../../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -15,11 +16,11 @@ defineRouteMeta({
 });
 
 export default eventHandler(async (event) => {
-  await requireAuth(event);
+  const user = await requireAuth(event);
   const id = requireRouteId(event, 'id', 'connection ID');
 
   const db = await getDatabase();
-  const result = await testConnection(db, id);
+  const result = await testConnection(db, id, requestCredentialActor(event, user));
   if (!result) throw apiError({ statusCode: 404, message: 'Connection not found' });
   return result;
 });

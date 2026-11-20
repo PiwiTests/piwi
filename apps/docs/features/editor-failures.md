@@ -22,25 +22,24 @@ The failures of the latest complete [CI run](/reference/test-metadata#run-origin
 default branch, are in the Problems panel, at the line that failed: the call in the error's stack when that file
 is in your workspace (often a page object), else the `test(…)` line, with the failure's headline. In the spec, the
 line a failing test failed at is tinted darker, with **✗ Failed here**, the
-reason unless a Piwi problem says it, **Run this test**, **Screenshot** and **Trace** above it.
+reason unless a Piwi problem says it, and **Run with Piwi** above it; the failure's screenshot and trace are among the
+test's actions.
 
-On a failure, the light bulb lists Piwi's quick fixes, each titled `Piwi:` and its words:
+On a failure, the light bulb lists Piwi's quick fixes, each under Piwi's name. They edit the code; running
+the test, its trace, the context for an agent, its page in the dashboard, the desktop app's jobs and **File an issue**
+are on the failure's node in the [failures view](#the-failures-view), and running it above the line a spec failed at:
 
 - **heal with …** makes the edit an [auto-heal pull request](/features/auto-heal) would, when
   [locator healing](/features/locator-healing) has a recommendation for the failing locator.
-- **run this test** runs the failing test; it comes first once you rewrote the line it failed at.
-- **open the trace** opens it in `npx playwright show-trace`.
-- **reproduce in the desktop app**, **find the breaking commit in the desktop app** and **run Flake Lab on its
-  untested suspects in the desktop app**, for a test with an untested [flake suspect](./flake-lab), while the
-  [desktop app](/features/desktop#jobs-from-your-editor) runs; **share on …** records the result.
+- **Run with Piwi** comes first once you rewrote the line it failed at, to check the edit.
 - **apply the fix plan, then run its verification**, when the failure's [cluster](/features/failure-clusters) has a
   [fix plan](/features/fix-plans) whose patch applies to your files: the edit is previewed, then the plan's verify
   command runs in a terminal.
-- **copy context for agent** copies the failure, its healing and fix plan.
-- **open the failure in the dashboard** opens the execution page, with its [evidence](/features/evidence).
 
-Hover for the error message, its call chain, the failure screenshot, and the tickets linked to its cluster or
-test. Without one, **File an issue** opens the cluster in the dashboard.
+Hover for the error message, its call chain, the failure screenshot, the tickets linked to its cluster or test, and a
+link to the failure in the dashboard. Over the error's marker, the marker's own text above them says what failed and in
+which run; elsewhere on the line, or with no marker, the hover says it first. **File an issue**, on the failure's node,
+opens its cluster in the dashboard to file one, or names the ticket already linked.
 
 <figure>
   <img src="/screenshots/vscode-hover.png" alt="VS Code: the hover on a failing line, dragged taller: the CI failure with its error, its call log and the chain of calls that reached the line, then the failure screenshot of the checkout page">
@@ -102,11 +101,14 @@ above. Its row in VS Code, and its context menu in both
 editors, re-run that config's failing tests (**Re-run the failing tests**) and open its run in the dashboard; the
 context menu adds **Compare with…** for that config. With one config, the run is the first node.
 
-Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run this test**,
+Click a failure (double-click, Enter or **Next Occurrence** in a JetBrains IDE) to open its line. **Run with Piwi**,
 **Open the trace** and **Open in dashboard** sit on its row in VS Code; the context menu adds **Go to the test**,
-**Debug this failure**, **Verify the test ×3**, **Open the screenshot**, **Copy context for agent**, and, on a CI
-failure while the [desktop app](/features/desktop#jobs-from-your-editor) runs, **Reproduce in the desktop app** and
-**Find the breaking commit in the desktop app**. **Heal** stays a quick fix on the line.
+**Debug with Piwi**, **Verify ×3 with Piwi**, **Open the screenshot**, **Copy context for agent**, and **File an
+issue** on a failure with a [cluster](/features/failure-clusters). While the
+[desktop app](/features/desktop#jobs-from-your-editor) runs, it adds **Reproduce in the desktop app** and **Find the
+breaking commit in the desktop app** on a CI failure, and **Run Flake Lab on its untested suspects in the desktop app**
+on a failure whose test has an untested [flake suspect](./flake-lab); **Share on …** in a job's notification records
+its result. **Heal** stays a quick fix on the line.
 
 The title bar, or the toolbar, holds Refresh the latest run, **Re-run the failing tests** (every config's), **Open the
 latest run** (the run the status bar shows; **Open in dashboard** in a JetBrains IDE, the page of the selected failure

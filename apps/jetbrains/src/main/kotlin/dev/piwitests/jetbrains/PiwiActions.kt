@@ -10,6 +10,7 @@ import com.intellij.openapi.actionSystem.AnAction
 import com.intellij.openapi.actionSystem.AnActionEvent
 import com.intellij.openapi.actionSystem.CommonDataKeys
 import com.intellij.openapi.actionSystem.DataKey
+import com.intellij.openapi.actionSystem.PlatformDataKeys
 import com.intellij.openapi.actionSystem.ToggleAction
 import com.intellij.openapi.application.ApplicationManager
 import com.intellij.openapi.components.service
@@ -91,10 +92,13 @@ class RefreshAction : AnAction(), DumbAware {
         val project = e.project ?: return
         ApplicationManager.getApplication().executeOnPooledThread {
             val service = project.service<PiwiProjectService>()
-            // A service that could not start, such as without Node.js, is started again.
-            val server = service.server() ?: return@executeOnPooledThread service.restartServer()
+            // A service that could not start, such as without Node.js, is started again, said in a balloon when no file
+            // is open to start it for; an untrusted project asks for trust instead.
+            val server = service.server()
+                ?: return@executeOnPooledThread if (service.trusted()) service.restartService() else service.restartServer()
             server.refresh().orNull()
             service.refreshStatus()
+            service.refreshTestItems()
         }
         // A Playwright config added since the project opened shows the tool window and starts the service.
         project.service<PiwiProjectService>().findPlaywright()
@@ -172,11 +176,15 @@ class RunTestsForFileAction : AnAction(), DumbAware {
 }
 
 /**
- * Piwi: Run the test at the caret (`wholeSpec` false), Verify the test at the caret ×3 (`repeat`) or Run this spec,
- * through `piwi/testAt`, in the Run tool window with the IDE's breakpoints, which a verification leaves out. Offered in
- * a spec file of a project with a Playwright config.
+ * Piwi: Run the test at the caret (`wholeSpec` false), Debug it (`debug`: headed, holding its failures, at the IDE's
+ * breakpoints), Verify the test at the caret ×3 (`repeat`) or Run this spec, through `piwi/testAt`, in the Run tool
+ * window. Offered in a spec file of a project with a Playwright config.
  */
-abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repeat: Int? = null) : AnAction(), DumbAware {
+abstract class RunInSpecAction(
+    private val wholeSpec: Boolean,
+    private val repeat: Int? = null,
+    private val debug: Boolean = false,
+) : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun update(e: AnActionEvent) {
@@ -194,11 +202,13 @@ abstract class RunInSpecAction(private val wholeSpec: Boolean, private val repea
         val line = e.getData(TEST_LINE)
         // A popup's test whose text was deleted has no line left: nothing runs.
         if (line != null && line < 0) return
-        PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat)
+        PiwiCommands.runTestAt(project, uri, line ?: caret?.line ?: 0, if (line != null) 0 else caret?.column ?: 0, wholeSpec, repeat, debug)
     }
 }
 
 class RunTestAtCursorAction : RunInSpecAction(wholeSpec = false)
+
+class DebugTestAtCursorAction : RunInSpecAction(wholeSpec = false, debug = true)
 
 /** The 0-based line of the test a popup's run acts on (the result icon's), which the run reads before the caret's. */
 val TEST_LINE: DataKey<Int> = DataKey.create("piwi.testLine")
@@ -411,6 +421,54 @@ class CompareWithAction : AnAction(), DumbAware {
     }
 }
 
+/**
+ * Piwi: Choose environment… — the environment the runs Piwi starts for a Playwright config's tests are for: **None**
+ * (the config decides), or one of its project's, as the service offers them (`piwi/environments`). The choice is kept
+ * on this machine and sent to the service (`PiwiProjectService.setEnvironment`).
+ */
+class ChooseEnvironmentAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun update(e: AnActionEvent) {
+        val service = e.project?.service<PiwiProjectService>()
+        e.presentation.isEnabled = Glue.environmentContexts(service?.status).isNotEmpty()
+    }
+
+    override fun actionPerformed(e: AnActionEvent) {
+        val project = e.project ?: return
+        val uri = e.getData(CommonDataKeys.VIRTUAL_FILE)?.let { fileUri(it) }
+        choose(project, Glue.contextRootOf(project.service<PiwiProjectService>().status, uri))
+    }
+
+    companion object {
+        /**
+         * Offer the environments of the context at `root` (the first one offered when no context offered is there), from
+         * the action or the environment widget, and keep the one chosen. **None** is offered whatever the connection.
+         */
+        fun choose(project: Project, root: String?) {
+            val service = project.service<PiwiProjectService>()
+            val contexts = Glue.environmentContexts(service.status)
+            val target = (contexts.firstOrNull { it.root == root } ?: contexts.firstOrNull())?.root ?: return
+            ApplicationManager.getApplication().executeOnPooledThread {
+                val choices = service.server()?.environments(EnvironmentsParams(target))?.orNull()
+                val items = choices?.items.orEmpty()
+                if (choices == null || items.isEmpty()) return@executeOnPooledThread
+                ApplicationManager.getApplication().invokeLater({
+                    JBPopupFactory.getInstance()
+                        .createPopupChooserBuilder(items)
+                        .setRenderer(textRenderer<EnvironmentItem> { Glue.environmentEntryText(it) })
+                        .setTitle(choices.title)
+                        .setItemChosenCallback { item ->
+                            ApplicationManager.getApplication().executeOnPooledThread { service.setEnvironment(target, item.id) }
+                        }
+                        .createPopup()
+                        .showCenteredInCurrentWindow(project)
+                }, project.disposed)
+            }
+        }
+    }
+}
+
 /** Piwi: Re-run the failing tests — every test still failing, or edited since its run, in the Run tool window. */
 class RerunFailingAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
@@ -420,7 +478,7 @@ class RerunFailingAction : AnAction(), DumbAware {
      * run read before the instance stopped answering too.
      */
     override fun update(e: AnActionEvent) {
-        e.presentation.isEnabled =
+        e.presentation.isEnabled = chordActsHere(e) &&
             (e.project?.getServiceIfCreated(PiwiProjectService::class.java)?.failuresResult?.failing ?: 0) > 0
     }
 
@@ -428,6 +486,16 @@ class RerunFailingAction : AnAction(), DumbAware {
         PiwiCommands.rerunFailing(e.project ?: return)
     }
 }
+
+/**
+ * Whether one of Piwi's chords acts here: from a menu anywhere, from the keyboard only in an editor of a JavaScript or
+ * TypeScript file or in the Piwi tool window (`Glue.chordActsIn`), where the actions sharing its chord act not.
+ */
+internal fun chordActsHere(e: AnActionEvent): Boolean =
+    e.place != ActionPlaces.KEYBOARD_SHORTCUT || Glue.chordActsIn(
+        e.getData(CommonDataKeys.EDITOR)?.let { e.getData(CommonDataKeys.VIRTUAL_FILE)?.name },
+        e.getData(PlatformDataKeys.TOOL_WINDOW)?.id == PiwiFailuresToolWindowFactory.ID,
+    )
 
 /** Piwi: Run a saved selection… — one of the project's saved selections, in the Run tool window. */
 class RunSelectionAction : AnAction(), DumbAware {
@@ -461,9 +529,9 @@ class RunSelectionAction : AnAction(), DumbAware {
                     .setItemChosenCallback { picked ->
                         ApplicationManager.getApplication().executeOnPooledThread {
                             val service = project.service<PiwiProjectService>()
-                            val breakpoints = service.breakpoints()
-                            val places = breakpoints.map { it.place }.ifEmpty { null }
                             val user = service.user()
+                            val breakpoints = if (Glue.breakpointsMode(user.breakpoints) == "always") service.breakpoints() else emptyList()
+                            val places = breakpoints.map { it.place }.ifEmpty { null }
                             val params = Glue.withRunStart(
                                 RunSelectionParams(uri, picked.key, places),
                                 user.runHeaded,
@@ -503,15 +571,57 @@ class RunHoldFailuresAction : AnAction(), DumbAware {
     override fun getActionUpdateThread() = ActionUpdateThread.BGT
 
     override fun actionPerformed(e: AnActionEvent) {
+        choose(e.project ?: return)
+    }
+
+    companion object {
+        /** The choices of Hold failures from each run's start, the current one selected, in the project's window. */
+        fun choose(project: Project) {
+            val user = PiwiUserSettings.state()
+            val current = user.runHoldFailures
+            JBPopupFactory.getInstance()
+                .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
+                .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
+                .setSelectedValue(current, true)
+                .setTitle("Hold failures from each run's start")
+                .setItemChosenCallback { user.runHoldFailures = it }
+                .createPopup()
+                .showCenteredInCurrentWindow(project)
+        }
+    }
+}
+
+/**
+ * Piwi: Run options… — how every run Piwi starts in every project starts, as VS Code's: Run headed, which a pick turns
+ * on or off, and Hold failures, which a pick opens the choices of.
+ */
+class RunOptionsAction : AnAction(), DumbAware {
+    override fun getActionUpdateThread() = ActionUpdateThread.BGT
+
+    override fun actionPerformed(e: AnActionEvent) {
         val project = e.project ?: return
         val user = PiwiUserSettings.state()
-        val current = user.runHoldFailures
         JBPopupFactory.getInstance()
-            .createPopupChooserBuilder(Glue.HOLD_FAILURES_CHOICES)
-            .setRenderer(textRenderer<String> { Glue.holdFailuresLabel(it) + if (it == current) " · current" else "" })
-            .setSelectedValue(current, true)
-            .setTitle("Hold failures from each run's start")
-            .setItemChosenCallback { user.runHoldFailures = it }
+            .createPopupChooserBuilder(Glue.runOptionRows(user.runHeaded, user.runHoldFailures))
+            .setRenderer(
+                object : com.intellij.ui.ColoredListCellRenderer<Glue.RunOptionRow>() {
+                    override fun customizeCellRenderer(
+                        list: javax.swing.JList<out Glue.RunOptionRow>,
+                        value: Glue.RunOptionRow?,
+                        index: Int,
+                        selected: Boolean,
+                        hasFocus: Boolean,
+                    ) {
+                        value ?: return
+                        append("${value.label} · ${value.value}")
+                        append("   ${value.detail}", com.intellij.ui.SimpleTextAttributes.GRAYED_ATTRIBUTES)
+                    }
+                },
+            )
+            .setTitle(EditorWords.words("run-options.title"))
+            .setItemChosenCallback { row ->
+                if (row.option == "headed") user.runHeaded = !user.runHeaded else RunHoldFailuresAction.choose(project)
+            }
             .createPopup()
             .showCenteredInCurrentWindow(project)
     }
@@ -659,7 +769,7 @@ class ResetRunsMcpTokenAction : AnAction(), DumbAware {
         if (!yes) return
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = project.service<PiwiProjectService>().agentsChanged(newToken = true)
-            PiwiCommands.notify(
+            PiwiNotifier.confirm(
                 project,
                 if (answer?.token != null) {
                     "The runs' MCP server has a new token: copy the runs' MCP server configuration again for each agent."

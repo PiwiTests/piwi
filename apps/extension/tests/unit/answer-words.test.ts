@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { HUB_ANSWER_CODES } from '@piwitests/core/run-hub';
 import { LANGUAGES } from '../../src/shared/i18n.js';
-import { ANSWER_KEYS } from '../../src/shared/runs.js';
+import { RUN_ANSWER_KEYS as ANSWER_KEYS } from '@piwitests/run-model/words';
 import { readCatalog } from './setup-i18n.js';
 
 /**
- * The Runs window says a hub's answer that carries a code in its own words (`ANSWER_KEYS`), under a key every catalog
+ * The Runs window says a hub's answer that carries a code in its own words (`RUN_ANSWER_KEYS`), under a key every catalog
  * holds. The editor service's tests hold its sentences to the English catalog.
  */
 describe('the words of a hub’s answers', () => {

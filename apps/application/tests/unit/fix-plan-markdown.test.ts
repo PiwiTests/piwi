@@ -20,6 +20,8 @@ function makePlan(overrides: Partial<FixPlan> = {}): FixPlan {
     verify: {
       command: 'npx playwright test tests/checkout.spec.ts',
       cases: [{ filePath: 'tests/checkout.spec.ts', title: 'checkout completes' }],
+      leftOut: [],
+      runVariables: [],
       expectation: 'When these pass, Piwi records the fix.',
       commitTrailer: 'Piwi-Cluster: 7',
     },
@@ -108,6 +110,12 @@ describe('fixPlanToMarkdown', () => {
     expect(md).not.toContain('## Owner');
   });
 
+  it('starts the verify command with the project’s run variables, in bash', () => {
+    const plan = makePlan();
+    plan.verify.runVariables = [{ name: 'TENANT', value: 'acme' }];
+    expect(fixPlanToMarkdown(plan)).toContain('TENANT=acme npx playwright test tests/checkout.spec.ts');
+  });
+
   it('renders the suspect lines first among the evidence when the tests recorded coverage', () => {
     const basket = {
       path: 'src/Basket.cs',
@@ -141,6 +149,21 @@ describe('fixPlanToMarkdown', () => {
       makePlan({ suspectLines: { ...suspectLines([]), available: false, reason: 'no-coverage' } }),
     );
     expect(unavailable).not.toContain('## Suspect lines');
+  });
+
+  it('lists the tests the verify command leaves out', () => {
+    const plan = makePlan();
+    const md = fixPlanToMarkdown({
+      ...plan,
+      verify: { ...plan.verify, leftOut: [{ filePath: '.', title: 'refunds' }] },
+    });
+    expect(md).toContain('The command leaves out these tests: run them yourself.\n\n- refunds — `.`');
+  });
+
+  it('leaves out the Verify section when no command can name the tests', () => {
+    const plan = makePlan();
+    const md = fixPlanToMarkdown({ ...plan, verify: { ...plan.verify, command: '' } });
+    expect(md).not.toContain('## Verify');
   });
 
   it('renders the reproduce recipe and the bisect', () => {

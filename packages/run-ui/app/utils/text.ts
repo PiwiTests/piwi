@@ -1,6 +1,8 @@
 /**
  * Extract a human-readable message from an unknown error, unwrapping the
- * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws.
+ * `{ data: { message } }` / `{ message }` shapes that `$fetch` throws. Without
+ * either, `fallback`: English unless the caller gives it in its own words, as
+ * the layer's components do (`runui_commonUnknownError`).
  */
 export function errorMessage(err: unknown, fallback = 'Unknown error'): string {
   if (err && typeof err === 'object') {

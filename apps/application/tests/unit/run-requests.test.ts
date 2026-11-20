@@ -31,11 +31,13 @@ const {
   effectiveState,
   endStaleRequests,
   findOwnRequest,
+  folderHintsForTarget,
   moveRequestState,
   pruneRunRequests,
   requestsForTarget,
   requireRunTarget,
   resolveRequestTests,
+  runVariablesForTarget,
   stopOwnRequest,
 } = await import('../../server/utils/run-requests');
 const { listOwnRequests } = await import('#shared/handlers/run-requests');
@@ -332,6 +334,48 @@ describe('the life of a request', () => {
     expect((await stored(id)).targetId).toBe(first.target.id);
   });
 
+  test('folder hints answer the app that claimed the request, from its owner’s own runs of the project', async () => {
+    const c = await caller();
+    const other = await caller();
+    const id = await request();
+    await db
+      .update(schema.projects)
+      .set({ repositoryUrl: 'https://github.com/acme/shop' })
+      .where(eq(schema.projects.id, allowed));
+    const at = (minutes: number) => new Date(Date.now() - 60 * 60_000 + minutes * 60_000);
+    const run = (minutes: number, values: Partial<typeof schema.testRuns.$inferInsert>, workingDir: string) => ({
+      projectId: allowed,
+      status: 'passed',
+      startTime: at(minutes),
+      metadata: { workingDir },
+      ...values,
+    });
+    await db.insert(schema.testRuns).values([
+      run(1, { reporterId: userId, origin: 'local' }, '/home/robin/old'),
+      run(3, { requesterId: userId, origin: 'request' }, '/home/robin/shop/e2e'),
+      run(2, { reporterId: userId, origin: 'editor' }, 'relative/e2e'),
+      run(4, { reporterId: otherUserId, origin: 'local' }, '/home/sam/shop'),
+      run(5, { reporterId: userId, origin: 'ci' }, '/home/runner/work/shop'),
+      run(6, { reporterId: userId, origin: 'flake-lab' }, '/home/robin/.piwi/worktrees/7'),
+      run(7, { projectId: viewOnly, reporterId: userId, origin: 'local' }, '/home/robin/docs'),
+      {
+        ...run(8, { reporterId: userId, origin: 'local' }, '/home/robin/long-ago'),
+        startTime: new Date('2020-01-01'),
+      },
+    ]);
+
+    expect(await folderHintsForTarget(c, id)).toMatchObject({ ok: false, statusCode: 404 });
+    expect(await claimRequest(c, id)).toMatchObject({ ok: true });
+    expect(await folderHintsForTarget(other, id)).toMatchObject({ ok: false, statusCode: 404 });
+    expect(await folderHintsForTarget(c, id)).toEqual({
+      ok: true,
+      hints: { repositoryUrl: 'https://github.com/acme/shop', folders: ['/home/robin/shop/e2e', '/home/robin/old'] },
+    });
+
+    state.machineRuns.delete(allowed);
+    expect(await folderHintsForTarget(c, id)).toMatchObject({ ok: false, statusCode: 403 });
+  });
+
   test('another person’s request, or an unknown one, is missing', async () => {
     const c = await caller();
     const theirs = await request({ requesterId: otherUserId });
@@ -579,6 +623,131 @@ describe('the life of a request', () => {
     state.machineRuns.delete(allowed);
     expect(await answerRequest(c, id, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 403 });
     expect(await answerRequest(c, id, { decision: 'not-now' })).toMatchObject({ ok: true, row: { state: 'declined' } });
+  });
+
+  test('a claim that does not apply run variables leaves a request of a project that sets some waiting, with words why', async () => {
+    await db
+      .update(schema.projects)
+      .set({ runVariables: [{ name: 'TENANT', value: 'acme' }] })
+      .where(eq(schema.projects.id, allowed));
+    const older = await caller();
+    const id = await request();
+    const refused = await claimRequest(older, id);
+    expect(refused).toMatchObject({ ok: false, statusCode: 409, message: expect.stringMatching(/update/) });
+    expect(await stored(id)).toMatchObject({
+      state: 'waiting',
+      targetId: null,
+      detail: refused.ok ? null : refused.message,
+    });
+
+    // An app that declares it applies them takes the same request, and reads them.
+    const newer = await caller();
+    expect(await claimRequest(newer, id, ['run-variables', 'a-later-feature'])).toMatchObject({ ok: true });
+    expect((await stored(id)).claimFeatures).toEqual(['run-variables']);
+    expect(await runVariablesForTarget(newer, id)).toEqual({
+      ok: true,
+      runVariables: [{ name: 'TENANT', value: 'acme' }],
+      environment: null,
+    });
+    // Another target, or a request it did not claim, reads none of them.
+    expect(await runVariablesForTarget(older, id)).toMatchObject({ ok: false, statusCode: 404 });
+    expect(await runVariablesForTarget(newer, await request())).toMatchObject({ ok: false, statusCode: 404 });
+  });
+
+  test('an expired request keeps its words, and a claim without the feature sets none on it', async () => {
+    await db
+      .update(schema.projects)
+      .set({ runVariables: [{ name: 'TENANT', value: 'acme' }] })
+      .where(eq(schema.projects.id, allowed));
+    const c = await caller();
+    const id = await request({ expiresAt: new Date(Date.now() - 1000) });
+    expect(await claimRequest(c, id)).toMatchObject({
+      ok: false,
+      statusCode: 409,
+      message: expect.stringMatching(/expired/),
+    });
+    expect((await stored(id)).detail).toBeNull();
+  });
+
+  test('Run refuses a claim that did not apply run variables once the project sets some', async () => {
+    const c = await caller();
+    const id = await request();
+    expect(await claimRequest(c, id)).toMatchObject({ ok: true });
+    await db
+      .update(schema.projects)
+      .set({ runVariables: [{ name: 'TENANT', value: 'acme' }] })
+      .where(eq(schema.projects.id, allowed));
+    expect(await answerRequest(c, id, { decision: 'run' })).toMatchObject({ ok: false, statusCode: 409 });
+    expect(await stored(id)).toMatchObject({ state: 'refused', requestTokenDigest: null });
+
+    // A claim that applies them runs.
+    const next = await request();
+    expect(await claimRequest(c, next, ['run-variables'])).toMatchObject({ ok: true });
+    expect(await answerRequest(c, next, { decision: 'run' })).toMatchObject({ ok: true, row: { state: 'starting' } });
+  });
+
+  test('a request for an environment waits for an app that applies environments, which reads its variables', async () => {
+    await db
+      .update(schema.projects)
+      .set({
+        runVariables: [
+          { name: 'TENANT', value: 'acme' },
+          { name: 'TEST_ENV', value: 'local' },
+        ],
+      })
+      .where(eq(schema.projects.id, allowed));
+    const [staging] = await db
+      .insert(schema.environments)
+      .values({
+        projectId: allowed,
+        key: 'staging',
+        keyFold: 'staging',
+        name: 'Staging',
+        runVariables: [{ name: 'TEST_ENV', value: 'staging' }],
+        envFile: '.env.staging',
+      })
+      .returning();
+    const id = await request({ environmentId: staging!.id });
+
+    const older = await caller();
+    const refused = await claimRequest(older, id, ['run-variables']);
+    expect(refused).toMatchObject({ ok: false, statusCode: 409 });
+    expect(refused.ok ? '' : refused.message).toMatch(/cannot apply environments/);
+    expect((await stored(id)).state).toBe('waiting');
+
+    const newer = await caller();
+    expect(await claimRequest(newer, id, ['run-variables', 'environments'])).toMatchObject({ ok: true });
+    expect(await runVariablesForTarget(newer, id)).toEqual({
+      ok: true,
+      runVariables: [
+        { name: 'TENANT', value: 'acme' },
+        { name: 'TEST_ENV', value: 'staging' },
+      ],
+      environment: {
+        id: staging!.id,
+        key: 'staging',
+        name: 'Staging',
+        protected: false,
+        requiredTags: [],
+        envFile: '.env.staging',
+      },
+    });
+
+    // Once protected, only a manager of the project reads it: this owner contributes.
+    await db
+      .update(schema.environments)
+      .set({ protected: true, requiredTags: ['@smoke'] })
+      .where(eq(schema.environments.id, staging!.id));
+    expect(await runVariablesForTarget(newer, id)).toMatchObject({ ok: false, statusCode: 403 });
+  });
+
+  test('a project with no run variables runs on any target, and reads none', async () => {
+    const c = await caller();
+    const id = await request();
+    expect(await claimRequest(c, id)).toMatchObject({ ok: true });
+    expect(await runVariablesForTarget(c, id)).toEqual({ ok: true, runVariables: [], environment: null });
+    state.machineRuns.delete(allowed);
+    expect(await runVariablesForTarget(c, id)).toMatchObject({ ok: false, statusCode: 403 });
   });
 
   test('two tests of one title in two describe blocks stay two', async () => {

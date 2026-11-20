@@ -12,6 +12,7 @@ const schema: typeof sqliteSchema = (process.env.PIWI_DATABASE_URL ? pgSchema : 
 
 export const {
   projects,
+  environments,
   testRuns,
   testSuites,
   testCases,
@@ -102,6 +103,9 @@ export const {
   projectStars,
   runTargets,
   runRequests,
+  credentials,
+  credentialProjects,
+  credentialUses,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -143,6 +147,8 @@ export type {
   OAuthGrant,
   OAuthAuthorizationRequest,
   ProjectUrlPattern,
+  Environment,
+  NewEnvironment,
   Tag,
   NewTag,
   ProjectTag,
@@ -201,4 +207,6 @@ export type {
   ReportSnapshot,
   RunTarget,
   RunRequestRow,
+  CredentialRow,
+  CredentialUseRow,
 } from './schema.sqlite';

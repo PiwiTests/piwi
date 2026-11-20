@@ -290,7 +290,7 @@ onMounted(load);
 
           <div>
             <p class="text-sm font-semibold text-highlighted mb-2">Runs in scope</p>
-            <TrackerRunScopeFields v-model="form.scope" />
+            <TrackerRunScopeFields v-model="form.scope" :project-id="projectId" />
           </div>
 
           <div class="space-y-4" data-tour="test-management-run-name">

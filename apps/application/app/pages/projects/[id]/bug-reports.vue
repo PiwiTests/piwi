@@ -89,7 +89,7 @@ useHead(
               icon="i-lucide-bug"
               :text="
                 status === 'all'
-                  ? 'No bug report yet: report one from Piwi Picker’s Report a bug, then Send to Piwi.'
+                  ? 'No bug report yet: record one with Piwi Picker’s Record, mark what is wrong, then Send to Piwi.'
                   : 'No bug report with this status.'
               "
             >

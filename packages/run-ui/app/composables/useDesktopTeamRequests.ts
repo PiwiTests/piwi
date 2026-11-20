@@ -11,6 +11,8 @@ const NO_CONNECTION: RunTargetConnectionView = {
   userCode: null,
   verificationUrl: null,
   error: null,
+  errorCode: null,
+  errorArgs: {},
   keyToKeep: false,
   linkedProjectIds: [],
   projectNames: {},

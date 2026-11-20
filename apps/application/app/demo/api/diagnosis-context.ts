@@ -59,6 +59,7 @@ import { suspectLinesContext } from '#shared/suspect-lines';
 import { storyByClusterId } from '#shared/demo/failure-stories.mjs';
 import { demoClusterSuspectLines } from './suspect-lines';
 import { coverageDivergenceContext } from '#shared/handlers/coverage-insights';
+import { environmentContextSection } from '#shared/handlers/environment-context';
 
 // ── Section plumbing ────────────────────────────────────────────────────────
 
@@ -99,6 +100,7 @@ const SECTION_ORDER = [
   'webVitals',
   'appState',
   'environmentDiff',
+  'environmentUnderTest',
   'coverageDivergence',
   'recurrenceFlakiness',
   'browserDistribution',
@@ -682,6 +684,11 @@ async function assemble(
         },
       };
     }
+
+    // The environment the run tested and, for a deployed one, its deployed commit and deploys — the server's builder
+    const environment = await environmentContextSection(db, { runId: rep.runId, cluster });
+    push(section('environmentUnderTest', 'Environment Under Test', environment?.markdown ?? null));
+    if (environment) coverage = { ...coverage, environmentUnderTest: environment.coverage };
 
     // The code paths this execution took that the last passing one did not — the server's shared builder
     const divergence = await coverageDivergenceContext(db, rep.id);

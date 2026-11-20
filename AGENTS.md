@@ -58,7 +58,7 @@ packages/server/      @piwitests/server: the published npm run option (`npx @piw
 packages/turbo/       @piwitests/turbo: faster Playwright suites without a fork, and the benchmark that measures it
 integrations/         Instrumentation adapters: nitro/ (npm), aspnetcore/ and serilog/ (NuGet, .NET tests, .slnx)
 examples/sample-app/  One web app and its Playwright suite, served by each supported backend
-shared/               Base oxlint/oxfmt configs extended by every workspace
+shared/               Base lint/format configs and the catalog checks
 plans/                The maintainer's local planning folder: gitignored, absent in a fresh clone
 ```
 
@@ -78,7 +78,7 @@ plans/                The maintainer's local planning folder: gitignored, absent
 ## Setup and repository-wide commands
 
 Prerequisites: **Node.js 24+**, npm, Git. `npm ci` at the repository root installs every workspace (a Claude Code web
-session runs it, builds the reporter and installs Chromium in `.claude/hooks/session-start.sh`). Each area guide lists
+session does it, with the reporter build and Chromium, in `.claude/hooks/session-start.sh`). Each area guide lists
 its own commands; the dashboard's run from `apps/application/` (`npm run app:dev`, http://localhost:7494, with no
 configuration: the SQLite database and `.data/` are created when the server starts).
 
@@ -89,8 +89,9 @@ configuration: the SQLite database and `.data/` are created when the server star
   a new project and reports a run through them (the script header shows how to pack them); CI's `package-smoke` job.
 - From `integrations/aspnetcore/`: `dotnet test PiwiTests.Instrumentation.slnx` (needs the .NET 10 SDK).
 
-Run typecheck, lint, format check and the tests that cover your change **once at the end**, before the final commit, not
-after every edit. Never run a whole unit suite or a full end-to-end suite locally: they take long, and CI runs them.
+**Run checks once, at the end**: typecheck, lint, format check and the tests covering your change, before the final
+commit, then again only what a fix of theirs touched. Never after each edit, never a whole unit or end-to-end suite:
+they take long, and CI runs them.
 
 ## Conventions that apply everywhere
 
@@ -131,7 +132,7 @@ package or integration gets its own `LICENSE` file and a `license` field that ma
 ### Commits & PR titles (MUST follow: CI lints every commit)
 
 `commitlint.config.js` is the source of truth; [`CONTRIBUTING.md`](CONTRIBUTING.md) has the full guide and the type →
-release-bump table. release-please reads PR titles (squash-merge subjects) to compute version bumps.
+release-bump table. PRs land as merge commits; release-please reads each commit and the merge commit's PR title.
 
 Format `type(scope): subject`:
 
@@ -237,8 +238,8 @@ Every guide is read by agents before they edit, so its size is paid on every tas
   code when none fits (with a `CLAUDE.md` holding `@AGENTS.md` next to it, and a link from the guide of the nearest
   directory above it), this root file only when it applies everywhere.
 - **Size limits**, checked by `apps/application/tests/unit/agent-guides.test.ts`: 20,000 characters for this file and
-  30,000 for any other guide (Claude Code keeps only the first 40,000 characters of a guide it loads on its own). Over
-  the limit, move detail to `ARCHITECTURE.md` or a topic guide; never raise the limit.
+  30,000 for any other guide (with a 200K context window, Claude Code cuts a guide it loads on its own at 40,000).
+  Over the limit, move detail to `ARCHITECTURE.md` or a topic guide; never raise the limit.
 
 ## Troubleshooting
 

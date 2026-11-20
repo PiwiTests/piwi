@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'vitest';
-import type { LocalRunLine } from '../../app/composables/useDesktopLocalRuns';
+import type { RunOutputLine } from '@piwitests/run-ui/run-output';
 import {
   mergeRunOutputLines,
   outputWindowNameOf,
@@ -7,9 +7,9 @@ import {
   type RunOutputState,
 } from '../../app/utils/run-output-channel';
 
-const line = (id: number): LocalRunLine => ({ id, text: `line ${id}`, error: false });
+const line = (id: number): RunOutputLine => ({ id, text: `line ${id}`, error: false });
 const lines = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => line(from + i));
-const state = (sent: LocalRunLine[]): RunOutputState => ({
+const state = (sent: RunOutputLine[]): RunOutputState => ({
   type: 'state',
   name: 'piwi-run-output-1',
   title: 'checkout completes',
@@ -19,6 +19,7 @@ const state = (sent: LocalRunLine[]): RunOutputState => ({
   finishedAt: null,
   running: true,
   stopRequested: false,
+  stopRequestedAt: null,
   lines: sent,
 });
 

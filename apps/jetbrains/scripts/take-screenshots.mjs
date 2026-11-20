@@ -32,7 +32,7 @@ import {
   startStub,
   writeWorkspace,
 } from '../../vscode/scripts/lib/editor-fixture.mjs';
-import { cutWindow, hasSolidSquare, imageSize, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
+import { cutWindow, hasSolidSquare, imageSize, pixelsMatching, writeAtWidth } from '../../vscode/scripts/lib/image.mjs';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const pluginRoot = path.resolve(here, '..');
@@ -395,6 +395,33 @@ async function shoot(name, { dir = outDir, failing = false } = {}) {
   console.log(`wrote ${path.relative(process.cwd(), file)}`);
 }
 
+/**
+ * Where the first failing test's result icon is on the screen: the dark theme's `TestError` disc (#DB5C5C), the topmost
+ * one of an icon's size in the gutter, which the editor's scroll moves from one launch to the next.
+ */
+async function failingIcon() {
+  const raw = path.join(os.tmpdir(), `piwi-jetbrains-gutter-${process.pid}.png`);
+  execFileSync('import', ['-display', DISPLAY, '-window', 'root', raw]);
+  const near = (value, target) => Math.abs(value - target) <= 24;
+  const hits = await pixelsMatching(
+    raw,
+    { left: 75 * SCALE, top: 125 * SCALE, width: 90 * SCALE, height: 650 * SCALE },
+    (r, g, b) => near(r, 219) && near(g, 92) && near(b, 92),
+  );
+  fs.rmSync(raw, { force: true });
+  const rows = new Map();
+  for (const [x, y] of hits) {
+    const row = Math.floor(y / (20 * SCALE));
+    rows.set(row, [...(rows.get(row) ?? []), [x, y]]);
+  }
+  const disc = [...rows.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .find(([, pixels]) => pixels.length >= 20 * SCALE * SCALE)?.[1];
+  if (!disc) throw new Error('No failing result icon in the gutter.');
+  const mean = (values) => Math.round(values.reduce((sum, v) => sum + v, 0) / values.length);
+  return { x: mean(disc.map(([x]) => x)), y: mean(disc.map(([, y]) => y)) };
+}
+
 /** Whether the config directory holds a license or a trial: the IDE writes it as `<product>.key`. */
 function licensed(config) {
   return fs.readdirSync(config).some((name) => name.endsWith('.key'));
@@ -543,6 +570,26 @@ const SCENES = {
   },
 
   /**
+   * A failing test's card: a click on its result icon, the first failing one in the gutter, opens its latest runs, its
+   * last failure and its links.
+   */
+  'test-card': {
+    file: SPEC_FILE,
+    line: 5,
+    column: 5,
+    async run() {
+      xinput('key', KEYS.hideToolWindows.xinput);
+      await sleep(1500);
+      const { x, y } = await failingIcon();
+      xinput('move', x, y, 'sleep', 0.5, 'click', 1);
+      await sleep(4000);
+      await shoot('test-card', { failing: true });
+      xinput('key', 'Escape');
+      await sleep(500);
+    },
+  },
+
+  /**
    * The page object at its failing line, Alt+Enter: the replacement locator among the quick fixes, with the edit's
    * preview beside the popup, which the editor alone leaves room for.
    */
@@ -558,6 +605,64 @@ const SCENES = {
       await shoot('heal', { failing: true });
       xinput('key', 'Escape');
       await sleep(500);
+    },
+  },
+
+  /**
+   * The Tests tab: the tests Playwright lists for the fixture, run last since it changes the project: a second
+   * Playwright project, so each test has a node per project, a spec whose tests a loop builds, listed one by one, and a
+   * spec of the instance's catalog deleted here, which the tab puts in Not in this checkout.
+   */
+  tests: {
+    file: SPEC_FILE,
+    line: 1,
+    column: 1,
+    async run({ workspace }) {
+      const config = path.join(workspace, 'playwright.config.ts');
+      fs.writeFileSync(
+        config,
+        fs
+          .readFileSync(config, 'utf-8')
+          .replace(
+            "projects: [{ name: 'chromium', use: { browserName: 'chromium' } }],",
+            "projects: [\n      { name: 'chromium', use: { browserName: 'chromium' } },\n      { name: 'firefox', use: { browserName: 'firefox' } },\n    ],",
+          ),
+      );
+      fs.writeFileSync(
+        path.join(workspace, 'tests', 'mugs.spec.ts'),
+        [
+          "import { test } from './fixtures';",
+          '',
+          "for (const size of ['small', 'large']) {",
+          '  test(`adds a ${size} mug`, async ({ page }) => {',
+          "    await page.goto('/mugs');",
+          '  });',
+          '}',
+          '',
+        ].join('\n'),
+      );
+      fs.rmSync(path.join(workspace, 'tests', 'privacy.spec.ts'));
+      xinput('key', KEYS.hideToolWindows.xinput);
+      await sleep(1500);
+      xinput('key', KEYS.piwiToolWindow.xinput);
+      await sleep(3000);
+      // The tab beside Failures, at its place in the tool window's header at 2×: shown, it asks for the tests, which the
+      // editor service lists with Playwright.
+      xinput('move', 448, 1171, 'sleep', 0.3, 'click', 1);
+      await sleep(25_000);
+      // The tool window over the editor, then from its first node, which has the focus: a test's projects, the loop's
+      // tests, and the test only the instance knows.
+      xinput('key', 'ctrl+shift+apostrophe');
+      await sleep(1500);
+      const keys = (...names) => names.flatMap((name) => ['key', name, 'sleep', 0.25]);
+      xinput(
+        ...keys('Home', 'Down', 'Down', 'Right', 'Down', 'Right', 'Down', 'Right'),
+        ...keys('Down', 'Down', 'Down', 'Down', 'Down', 'Right'),
+        ...keys('Down', 'Down', 'Down', 'Down', 'Right', 'Down', 'Right'),
+        ...keys('Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up', 'Up'),
+      );
+      await sleep(1500);
+      await shoot('tests', { failing: true });
     },
   },
 };
@@ -611,7 +716,7 @@ async function main() {
     if (unknown.length)
       throw new Error(`Unknown scene: ${unknown.join(', ')} (the scenes: ${Object.keys(SCENES).join(', ')})`);
     const names = Object.keys(SCENES).filter((name) => only.length === 0 || only.includes(name));
-    for (const name of names) await withIde(run, SCENES[name], SCENES[name].run);
+    for (const name of names) await withIde(run, SCENES[name], () => SCENES[name].run(run));
   } finally {
     xvfb.kill('SIGTERM');
     server.close();

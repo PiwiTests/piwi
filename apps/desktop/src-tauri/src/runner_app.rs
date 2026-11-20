@@ -16,7 +16,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use serde_json::json;
-use tauri::menu::{MenuBuilder, MenuItemBuilder};
+use tauri::menu::MenuBuilder;
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::{AppHandle, Manager, RunEvent, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
@@ -27,14 +27,16 @@ use tauri_plugin_window_state::StateFlags;
 
 use crate::mcp_clients::ServerInfo;
 use crate::{
-    app_menu_action, append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray,
-    hold_close_for_local_runs, live_sidecar_port, main_window_may_navigate, node_path, private_fs,
-    quit_after_confirming, random_hex_32, reapply_splash_status, reveal_log, run_app_menu_action, show_splash_status,
-    shut_down, supervise_server, toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed,
-    RunInBackground, ServerGaveUp, ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID,
-    TRAY_START_ON_LOGIN_ID,
+    append_log, background_menu_items, bring_to_front, follow_notifications, hide_to_tray, hold_close_for_local_runs,
+    live_sidecar_port, main_window_may_navigate, node_path, private_fs, tray_item, MenuIcon, quit_after_confirming,
+    random_hex_32, reapply_splash_status, reveal_log, show_splash_status, shut_down, supervise_server,
+    toggle_run_in_background, toggle_start_on_login, LogFile, QuitConfirmed, RunInBackground, ServerGaveUp,
+    ServerProcess, ShuttingDown, NODE_SIDECAR, READY_TIMEOUT_SECS, TRAY_RUN_BG_ID, TRAY_START_ON_LOGIN_ID,
 };
+#[cfg(target_os = "macos")]
+use crate::{app_menu_action, run_app_menu_action};
 use crate::session::{self, ProofPace, ServerSession, Session, SplashTexts};
+use crate::shell_words::{self, shell_words, ShellLanguage};
 use crate::{
     desktop_bring_to_front, desktop_get_service_settings, desktop_open_external, desktop_set_run_in_background,
     desktop_set_start_on_login, run_target, runner, updates,
@@ -43,8 +45,6 @@ use crate::{
 /// The app's name, in its menu and in the questions it asks.
 const APP_NAME: &str = "Piwi Runner";
 
-/// The tray icon's tooltip.
-const TRAY_TOOLTIP: &str = "Piwi Runner (click to open)";
 /// The argument Start on login launches the app with: it starts in the tray, its window hidden.
 const HIDDEN_ARG: &str = "--hidden";
 
@@ -56,20 +56,23 @@ fn launched_hidden(args: &[String]) -> bool {
 
 /// The log of the shell and of the host's output, in the app's data folder.
 const LOG_FILE: &str = "runner.log";
-/// The splash's status line once the host takes longer than `READY_TIMEOUT_SECS`.
-const SPLASH_SLOW: &str =
-    "The local host is taking longer than usual to start. Still waiting: the window opens once it is up.";
-/// The splash's status line while the host restarts.
-const SPLASH_RESTARTING: &str = "The local host stopped. Restarting it: the window opens again once it is up.";
 /// How the wait for the host's proof paces itself.
 const PROOF_PACE: ProofPace = ProofPace {
     slow_after: Duration::from_secs(READY_TIMEOUT_SECS),
     poll: Duration::from_millis(250),
     slow_poll: Duration::from_millis(1000),
 };
-/// The splash's status line once the supervisor stopped restarting the host.
-const SPLASH_STOPPED: &str =
-    "The local host stopped and could not be restarted. Quit and relaunch Piwi Runner.";
+/// The splash's status lines, in the language Runner starts in: once the host takes longer than
+/// `READY_TIMEOUT_SECS`, while it restarts, and once the supervisor stopped restarting it. Made once per launch.
+fn splash_texts(app: &AppHandle) -> SplashTexts {
+    let words = shell_words(app);
+    let keep = |text: String| -> &'static str { Box::leak(text.into_boxed_str()) };
+    SplashTexts {
+        slow: keep(words.say("shell_splashSlow", &[])),
+        restarting: keep(words.say("shell_splashRestarting", &[])),
+        stopped: keep(words.say("shell_splashStopped", &[("app", APP_NAME)])),
+    }
+}
 
 /// What the Runner host needs to be spawned again on the same port and token.
 struct HostConfig {
@@ -204,17 +207,78 @@ fn menu<R: tauri::Runtime>(app: &AppHandle<R>) -> tauri::Result<tauri::menu::Men
     Ok(menu)
 }
 
-/// The tray icon: a click opens the window, and its menu holds Open, Show logs, Run in background, Start on login and
-/// Quit, and Check for updates in a build that can update itself.
+/// The tray icon's tooltip.
+fn tray_tooltip(app: &AppHandle) -> String {
+    shell_words(app).say("shell_trayTooltip", &[("app", APP_NAME)])
+}
+
+/// Put the tray's tooltip back, once an update the tray started failed.
+fn idle_tooltip(app: &AppHandle) {
+    if let Some(tray) = app.tray_by_id("main") {
+        let _ = tray.set_tooltip(Some(tray_tooltip(app)));
+    }
+}
+
+/// The tray's own rows, kept to say them again in another language.
+struct RunnerTray {
+    open: tauri::menu::IconMenuItem<tauri::Wry>,
+    logs: tauri::menu::IconMenuItem<tauri::Wry>,
+    update: tauri::menu::IconMenuItem<tauri::Wry>,
+    quit: tauri::menu::IconMenuItem<tauri::Wry>,
+}
+
+/// Says the tray's rows and tooltip, and the app menu's Quit, again in the shell's language now
+/// (`desktop_set_language`). An update the tray started keeps its own tooltip while it runs.
+pub(crate) fn relabel_tray(app: &AppHandle) {
+    let words = shell_words(app);
+    let quit = words.say("shell_quit", &[("app", APP_NAME)]);
+    if let Some(tray) = app.try_state::<RunnerTray>() {
+        let _ = tray.open.set_text(words.say("shell_open", &[("app", APP_NAME)]));
+        let _ = tray.logs.set_text(words.say("shell_showLogs", &[]));
+        let _ = tray.update.set_text(words.say("shell_checkUpdates", &[]));
+        let _ = tray.quit.set_text(&quit);
+    }
+    if !app.try_state::<updates::TrayUpdateBusy>().is_some_and(|busy| busy.is_busy()) {
+        idle_tooltip(app);
+    }
+    crate::relabel_background_menu(app);
+    if let Some(menu) = app.menu() {
+        for entry in menu.items().unwrap_or_default() {
+            if let tauri::menu::MenuItemKind::Submenu(submenu) = entry {
+                if let Some(tauri::menu::MenuItemKind::MenuItem(item)) = submenu.get(crate::APP_MENU_QUIT_ID) {
+                    let _ = item.set_text(&quit);
+                }
+            }
+        }
+    }
+}
+
+/// The start screen's first line, in the shell's language, while no other status stands; a page without the line
+/// (the host's) is left as it is.
+fn say_starting(webview: &tauri::Webview) {
+    if webview.try_state::<Session>().and_then(|s| s.status()).is_none() {
+        let text = shell_words(webview.app_handle()).say("shell_splashStarting", &[]);
+        let _ = webview.eval(&crate::splash_status_script(&text));
+    }
+}
+
+/// The tray icon: a click opens the window, and its menu holds, in the desktop app's order and with its glyphs, Open,
+/// Run in background and Start on login, Check for updates in a build that can update itself, Show logs and Quit.
 fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
-    let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
-    let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
+    let words = shell_words(app.handle());
+    let open_i = tray_item(app, "open", &words.say("shell_open", &[("app", APP_NAME)]), MenuIcon::App)?;
+    let logs_i = tray_item(app, "show_logs", &words.say("shell_showLogs", &[]), MenuIcon::Logs)?;
     let (bg_i, login_i) = background_menu_items(app)?;
-    let update_i = MenuItemBuilder::with_id("check_update", "Check for updates…").build(app)?;
-    let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
+    let update_i = tray_item(app, "check_update", &words.say("shell_checkUpdates", &[]), MenuIcon::Update)?;
+    let quit_i = tray_item(app, "quit", &words.say("shell_quit", &[("app", APP_NAME)]), MenuIcon::Quit)?;
+    app.manage(RunnerTray {
+        open: open_i.clone(),
+        logs: logs_i.clone(),
+        update: update_i.clone(),
+        quit: quit_i.clone(),
+    });
     let mut menu = MenuBuilder::new(app)
         .item(&open_i)
-        .item(&logs_i)
         .separator()
         .item(&bg_i)
         .item(&login_i)
@@ -222,9 +286,9 @@ fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
     if can_update {
         menu = menu.item(&update_i);
     }
-    let menu = menu.item(&quit_i).build()?;
+    let menu = menu.item(&logs_i).separator().item(&quit_i).build()?;
     let mut tray = TrayIconBuilder::with_id("main")
-        .tooltip(TRAY_TOOLTIP)
+        .tooltip(tray_tooltip(app.handle()))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_tray_icon_event(|tray, event| {
@@ -248,7 +312,7 @@ fn tray(app: &tauri::App, can_update: bool) -> tauri::Result<()> {
             "show_logs" => reveal_log(app),
             TRAY_RUN_BG_ID => toggle_run_in_background(app),
             TRAY_START_ON_LOGIN_ID => toggle_start_on_login(app),
-            "check_update" => updates::check_from_tray(app, TRAY_TOOLTIP),
+            "check_update" => updates::check_from_tray(app, idle_tooltip),
             "quit" => quit_after_confirming(app, APP_NAME),
             _ => {}
         });
@@ -307,6 +371,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 })
                 .on_page_load(|webview, payload| {
                     if webview.label() == "main" && payload.event() == tauri::webview::PageLoadEvent::Finished {
+                        say_starting(webview);
                         reapply_splash_status(webview);
                     }
                 })
@@ -331,21 +396,28 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             run_target::desktop_keep_run_target_key,
             run_target::desktop_forget_run_target,
             run_target::desktop_request_folders,
+            run_target::desktop_find_request_folders,
             run_target::desktop_link_request_folder,
             run_target::desktop_unlink_request_folder,
-            run_target::desktop_run_requested_tests
+            run_target::desktop_run_requested_tests,
+            shell_words::desktop_get_language,
+            shell_words::desktop_set_language
         ])
         .manage(ServerProcess::default())
         .manage(ServerGaveUp::default())
         .manage(runner::LocalRuns::default())
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
+        .manage(run_target::FoundFolders::default())
         .manage(QuitConfirmed::default())
         .manage(updates::UpdaterSupport(can_update))
         .manage(updates::PendingUpdate::default())
         .manage(updates::ReleaseNotesState::default())
         .manage(updates::TrayUpdateBusy::default())
         .setup(move |app| {
+            // The language first: the tray, the menu and the start screen speak it.
+            app.manage(ShellLanguage::from_saved(app.handle()));
+            let splash = splash_texts(app.handle());
             let app_data_dir = app.path().app_data_dir()?;
             private_fs::create_private_dir(&app_data_dir)?;
             let log_dir = app_data_dir.join("logs");
@@ -404,11 +476,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     ServerSession {
                         port,
                         token: token.clone(),
-                        texts: SplashTexts {
-                            restarting: SPLASH_RESTARTING,
-                            slow: SPLASH_SLOW,
-                            stopped: SPLASH_STOPPED,
-                        },
+                        texts: splash,
                         pace: &PROOF_PACE,
                     },
                 );
@@ -435,7 +503,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                     || nav_handle.state::<ServerGaveUp>().0.load(Ordering::SeqCst) || quitting.load(Ordering::SeqCst),
                     || {
                         append_log(&log_path, "host not ready yet, still waiting");
-                        show_splash_status(&nav_handle, SPLASH_SLOW, true);
+                        show_splash_status(&nav_handle, splash.slow, true);
                     },
                 );
                 let ready = proved.is_some();
@@ -449,7 +517,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 );
                 if !ready {
                     if !quitting.load(Ordering::SeqCst) {
-                        show_splash_status(&nav_handle, SPLASH_STOPPED, true);
+                        show_splash_status(&nav_handle, splash.stopped, true);
                     }
                     return;
                 }
@@ -459,11 +527,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
                 let server = ServerSession {
                     port,
                     token: token.clone(),
-                    texts: SplashTexts {
-                        restarting: SPLASH_RESTARTING,
-                        slow: SPLASH_SLOW,
-                        stopped: SPLASH_STOPPED,
-                    },
+                    texts: splash,
                     pace: &PROOF_PACE,
                 };
                 if let Err(error) = session::open_first_session(&nav_handle, &server, None, holds) {
@@ -622,8 +686,9 @@ mod tests {
 
     #[test]
     fn the_quit_question_names_the_app() {
-        assert_eq!(crate::quit_question(APP_NAME), "Quit Piwi Runner?");
-        assert_eq!(crate::quit_question(crate::DESKTOP_APP_NAME), "Quit Piwi Desktop?");
+        let english = crate::shell_words::ShellWords::english();
+        assert_eq!(crate::quit_question(&english, APP_NAME), "Quit Piwi Runner?");
+        assert_eq!(crate::quit_question(&english, crate::DESKTOP_APP_NAME), "Quit Piwi Desktop?");
     }
 
     #[test]

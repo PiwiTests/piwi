@@ -2,9 +2,9 @@ import {
   getRecordingState,
   stopRecording,
   setRecordIntent,
+  getRecordIntent,
   clearRecordIntent,
-  recordingMode,
-  type RecordingMode,
+  takeRecordStartError,
 } from '../shared/recording-storage.js';
 import { CONNECTION_KEY, getConnectionSettings, isConnected, mappedProjects } from '../shared/connection-settings.js';
 import { CONNECTION_HEALTH_KEY, getConnectionHealth, healthSentence } from '../shared/connection-health.js';
@@ -36,10 +36,8 @@ const addSiteRow = document.getElementById('add-site-row') as HTMLElement;
 const addSiteButton = document.getElementById('add-site') as HTMLButtonElement;
 const coverageButton = document.getElementById('coverage-overlay') as HTMLButtonElement;
 const coverageHint = document.getElementById('coverage-hint')!;
-const bugBtn = document.getElementById('report-bug') as HTMLButtonElement;
-const bugLabel = document.getElementById('report-bug-label')!;
-const bugHint = document.getElementById('report-bug-hint')!;
-const replayBtn = document.getElementById('replay-bug') as HTMLButtonElement;
+const screenshotBtn = document.getElementById('screenshot') as HTMLButtonElement;
+const replayBtn = document.getElementById('replay') as HTMLButtonElement;
 const healthLine = document.getElementById('connection-health') as HTMLElement;
 const runsButton = document.getElementById('runs') as HTMLButtonElement;
 const runsHint = document.getElementById('runs-hint')!;
@@ -100,11 +98,11 @@ const KEY_TO_ACTION_ID: Record<string, string> = {
   '3': 'multi-pick',
   '4': 'assertion-panel',
   '5': 'lint-overlay',
-  '6': 'agent-context-panel',
-  '7': 'test-function-panel',
+  '6': 'test-function-panel',
+  '7': 'agent-context-panel',
   t: 'coverage-overlay',
-  b: 'report-bug',
-  r: 'replay-bug',
+  r: 'replay',
+  s: 'screenshot',
   u: 'runs',
 };
 
@@ -199,7 +197,7 @@ async function refreshActiveProjectSelect(): Promise<void> {
   const override = await getActiveProjectOverride(tabUrl);
 
   connected = isConnected(connection);
-  coverageHint.textContent = connected ? t('popup_testedElementsHint') : t('popup_testedElementsConnect');
+  coverageHint.textContent = connected ? t('popup_testedElementsShort') : t('popup_testedElementsConnectShort');
   if (!connected) {
     // Connected to an instance that has no pattern yet: only the offer to add this site.
     const reachable = connection.instanceUrl.trim() !== '' && connection.serverSyncedAt > 0;
@@ -308,47 +306,47 @@ type RecordUiState = 'idle' | 'recording' | 'stopped';
  * never act on a state that hasn't loaded.
  */
 let uiState: RecordUiState = 'idle';
-let uiMode: RecordingMode = 'actions';
 let recordTab: chrome.tabs.Tab | null = null;
-/** Reads the popup's tab into `recordTab`, once: Record actions, Report a bug and Replay act on it. */
+/** Whether the tab's site is granted already: Record then shows no prompt, and the popup stays to start it. */
+let siteGranted = false;
+/** Reads the popup's tab into `recordTab`, once, and whether its site is granted: Record and Replay act on it. */
 const tabRead = activeTab()
   .catch(() => null)
-  .then((tab) => {
+  .then(async (tab) => {
     recordTab = tab;
+    const pattern = originPattern(tab?.url);
+    siteGranted = pattern != null && (await chrome.permissions.contains({ origins: [pattern] }).catch(() => false));
   });
 
-async function recordUiState(): Promise<{ state: RecordUiState; mode: RecordingMode; steps: number }> {
+async function recordUiState(): Promise<{ state: RecordUiState; steps: number }> {
   const rec = await getRecordingState();
-  const mode = recordingMode(rec);
-  if (rec.active) return { state: 'recording', mode, steps: rec.events.length };
-  if (rec.events.length > 0) return { state: 'stopped', mode, steps: rec.events.length };
-  return { state: 'idle', mode: 'actions', steps: 0 };
+  if (rec.active) return { state: 'recording', steps: rec.events.length };
+  if (rec.events.length > 0) return { state: 'stopped', steps: rec.events.length };
+  return { state: 'idle', steps: 0 };
 }
 
-/**
- * What a tile does now, by its icon and its color: stop what runs, finish a bug report, or review what was recorded.
- * Report a bug also takes `waiting`, muted, while another recording runs.
- */
-type TileState = 'stop' | 'finish' | 'review';
+/** What the Record tile does now, by its icon and its color: finish what runs, or review what was recorded. */
+type TileState = 'finish' | 'review';
 
 /** Gives `tile` the icon and the color of what it does now. */
-function setTileState(tile: HTMLButtonElement, state: TileState | null, glyph: IconName): void {
-  if (state) tile.dataset.state = state;
+function setTileState(tile: HTMLButtonElement, state: TileState, glyph: IconName): void {
+  tile.dataset.state = state;
   tile.querySelector(':scope > svg')?.replaceWith(icon(glyph));
 }
 
 async function refreshRecordButton(): Promise<void> {
-  const [{ state, mode, steps }] = await Promise.all([recordUiState(), tabRead]);
+  const [{ state, steps }] = await Promise.all([recordUiState(), tabRead]);
   uiState = state;
-  uiMode = mode;
-  const bug = mode === 'bug';
   const count = formatNumber(steps);
   if (state === 'recording') {
-    recordLabel.textContent = bug ? t('popup_finishBugReport', { count }) : t('popup_stopRecording', { count });
+    recordLabel.textContent = t('popup_finishRecording', { count });
     recordHint.textContent = t('popup_stepsSoFar');
-    setTileState(recordBtn, bug ? 'finish' : 'stop', bug ? 'check' : 'stop-circle');
+    setTileState(recordBtn, 'finish', 'check');
+    // Replay plays its steps with trusted input, which a recording would capture: Take a screenshot takes its place.
+    replayBtn.hidden = true;
+    screenshotBtn.hidden = false;
   } else if (state === 'stopped') {
-    recordLabel.textContent = bug ? t('popup_reviewBugReport') : t('popup_reviewRecording', { count });
+    recordLabel.textContent = t('popup_reviewRecording', { count });
     recordHint.textContent = t('popup_notExported');
     setTileState(recordBtn, 'review', 'list');
   } else {
@@ -356,42 +354,16 @@ async function refreshRecordButton(): Promise<void> {
     recordHint.textContent = t('popup_recordHint');
   }
   recordBtn.disabled = false;
-
-  if (state === 'recording' && bug) {
-    bugLabel.textContent = t('popup_takeScreenshot');
-    bugHint.textContent = tn('popup_screenshotHint', steps);
-    setTileState(bugBtn, null, 'camera');
-  } else if (state === 'stopped' && bug) {
-    bugLabel.textContent = t('popup_reviewBugReport');
-    bugHint.textContent = t('popup_reviewBugReportHint');
-    setTileState(bugBtn, 'review', 'list');
-  } else if (state !== 'idle') {
-    bugLabel.textContent = t('popup_reportBug');
-    bugHint.textContent = t('popup_finishFirst');
-    bugBtn.dataset.state = 'waiting';
-  } else {
-    bugLabel.textContent = t('popup_reportBug');
-    bugHint.textContent = t('popup_reportBugHint');
-  }
-  bugBtn.disabled = false;
 }
 
-async function startRecordingFlow(
-  pattern: string,
-  tabId: number,
-  mode: RecordingMode,
-  granted: Promise<boolean>,
-): Promise<void> {
+async function startRecordingFlow(pattern: string, tabId: number, granted: Promise<boolean>): Promise<void> {
   if (!(await granted.catch(() => false))) {
-    // Drop the intent the click parked for the worker, so a later unrelated
-    // grant for this same origin can't revive a recording the user declined.
-    await clearRecordIntent().catch(() => undefined);
     showStatus(t('popup_permissionNeeded'));
     return;
   }
 
   const response = (await chrome.runtime
-    .sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId, mode })
+    .sendMessage({ type: 'piwi-start-recording', originPattern: pattern, tabId })
     .catch(() => undefined)) as { ok: boolean; error?: string } | undefined;
   if (!response?.ok) {
     showStatus(response?.error ?? t('common_recordingStartFailed'));
@@ -401,11 +373,11 @@ async function startRecordingFlow(
 }
 
 /**
- * Finishes a bug report as the page's own Finish does (a screenshot, the
+ * Finishes the recording as the page's own Finish does (a screenshot, the
  * outline, the evidence still on its way): answers false when no recorder of
  * this tab takes it.
  */
-async function finishBugInPage(): Promise<boolean> {
+async function finishInPage(): Promise<boolean> {
   const tab = await activeTab();
   if (tab?.id == null) return false;
   try {
@@ -416,8 +388,8 @@ async function finishBugInPage(): Promise<boolean> {
   }
 }
 
-async function stopRecordingFlow(): Promise<void> {
-  if (uiMode === 'bug' && (await finishBugInPage())) {
+async function finishRecordingFlow(): Promise<void> {
+  if (await finishInPage()) {
     window.close();
     return;
   }
@@ -429,9 +401,9 @@ async function stopRecordingFlow(): Promise<void> {
   } catch {
     // Background may already be asleep between messages — the storage write above already stuck.
   }
-  // Injecting rather than relying on that fan-out for the review panel itself:
+  // Injecting rather than relying on that fan-out for the finish panel itself:
   // this tab may never have had the recorder attached, and the panel is what
-  // the user clicked Stop to get.
+  // the user clicked Finish to get.
   await inject('record-panel.js');
 }
 
@@ -440,10 +412,18 @@ async function reviewRecordingFlow(): Promise<void> {
 }
 
 /**
- * Starts a recording of `mode` on the popup's tab. Synchronous up to the
- * permission request, which must run inside the click's user gesture.
+ * How long the popup stays after asking for the site, so the browser shows its
+ * prompt first: Chrome drops a prompt whose popup closed before it showed.
  */
-function requestRecording(mode: RecordingMode): void {
+const PROMPT_SHOWN_MS = 400;
+
+/**
+ * Starts a recording on the popup's tab. Synchronous up to the permission
+ * request, which must run inside the click's user gesture. When the site is
+ * not granted yet, the popup parks the intent and closes once the prompt
+ * shows, out of its way; the worker starts the recording when the grant lands.
+ */
+function requestRecording(): void {
   // Only a web page's site can be granted: never a browser page, a file or another extension.
   const pattern = originPattern(recordTab?.url);
   if (pattern == null || recordTab?.id == null) {
@@ -459,33 +439,52 @@ function requestRecording(mode: RecordingMode): void {
     showStatus(t('popup_permissionNeeded'));
     return;
   }
-  // Park the intent so the background can still start the recording if this
-  // popup is torn down when the prompt takes focus on a first-time grant, so
-  // the recorder does not need a second click. Fire-and-forget: it must
-  // not delay the request above, and `startRecordingFlow` still starts things
-  // directly whenever the popup does survive.
-  void setRecordIntent({ originPattern: pattern, tabId, mode });
-  void startRecordingFlow(pattern, tabId, mode, granted);
+  if (siteGranted) {
+    void startRecordingFlow(pattern, tabId, granted);
+    return;
+  }
+  const parked = setRecordIntent({ originPattern: pattern, tabId }).catch(() => undefined);
+  // Answered while the popup is still open (a policy, a prompt dismissed at once): the popup starts or says why.
+  let answered = false;
+  void granted.then(
+    (ok) => {
+      answered = true;
+      if (ok) {
+        void startRecordingFlow(pattern, tabId, granted);
+        return;
+      }
+      void clearRecordIntent().catch(() => undefined);
+      showStatus(t('popup_permissionNeeded'));
+    },
+    () => {
+      answered = true;
+      void clearRecordIntent().catch(() => undefined);
+      showStatus(t('popup_permissionNeeded'));
+    },
+  );
+  void Promise.all([parked, new Promise((resolve) => setTimeout(resolve, PROMPT_SHOWN_MS))]).then(() => {
+    if (!answered) window.close();
+  });
 }
 
 recordBtn.addEventListener('click', () => {
   if (uiState === 'recording') {
-    void stopRecordingFlow();
+    void finishRecordingFlow();
     return;
   }
   if (uiState === 'stopped') {
     void reviewRecordingFlow();
     return;
   }
-  requestRecording('actions');
+  requestRecording();
 });
 
 /**
- * Report a bug: starts a bug recording, or during one asks the page for a
- * screenshot. Opening this popup is what grants `activeTab`, the only grant
- * under which Chrome allows one.
+ * Take a screenshot, during a recording: asks the page for one. Opening this
+ * popup is what grants `activeTab`, the only grant under which the browser
+ * allows one without the debugging protocol.
  */
-async function bugScreenshotFlow(): Promise<void> {
+async function screenshotFlow(): Promise<void> {
   const tab = await activeTab();
   if (tab?.id == null) return;
   try {
@@ -496,24 +495,10 @@ async function bugScreenshotFlow(): Promise<void> {
   }
 }
 
-bugBtn.addEventListener('click', () => {
-  if (uiState === 'recording' && uiMode === 'bug') {
-    void bugScreenshotFlow();
-    return;
-  }
-  if (uiState === 'stopped' && uiMode === 'bug') {
-    void reviewRecordingFlow();
-    return;
-  }
-  if (uiState !== 'idle') {
-    showStatus(t('popup_finishBeforeBug'));
-    return;
-  }
-  requestRecording('bug');
-});
+screenshotBtn.addEventListener('click', () => void screenshotFlow());
 
 /**
- * Replay a bug report: asks for this site's permission (inside the click, the
+ * Replay a recording: asks for this site's permission (inside the click, the
  * only place the request counts as the user's), which the replay needs to
  * continue across pages, and opens the replay's chooser in the tab under the
  * `activeTab` grant opening the popup gave.
@@ -589,13 +574,30 @@ async function showOutdatedWorkerNotice(): Promise<void> {
   document.getElementById('worker-reload')!.addEventListener('click', () => chrome.runtime.reload());
 }
 
-// A "Record actions" prompt that closed the last popup has been answered by the time this one opens: an intent
-// still parked would start a recording when another flow's grant for the site lands.
-void clearRecordIntent().catch(() => undefined);
-// Each tile acts on what it needs read first: Record and Bug the recording's state, Replay the tab, Tested elements
-// the connection.
+// A Record prompt that closed the last popup has been answered by the time this one opens: an intent still parked
+// would start a recording when another flow's grant for the site lands. One whose site is still not granted was
+// refused, which reaches no code: this popup says so.
+void Promise.all([getRecordIntent().catch(() => null), tabRead, getRecordingState().catch(() => null)]).then(
+  async ([intent, , recording]) => {
+    if (!intent) return;
+    await clearRecordIntent().catch(() => undefined);
+    const refused =
+      intent.tabId === recordTab?.id &&
+      intent.originPattern === originPattern(recordTab?.url) &&
+      !recording?.active &&
+      !(await chrome.permissions.contains({ origins: [intent.originPattern] }).catch(() => true));
+    if (refused) showStatus(t('popup_recordNotAllowed'));
+  },
+);
+// A recording the grant should have started and could not: the worker kept why for this tab.
+void tabRead.then(async () => {
+  if (recordTab?.id == null) return;
+  const error = await takeRecordStartError(recordTab.id).catch(() => null);
+  if (error) showStatus(error);
+});
+// Each tile acts on what it needs read first: Record the recording's state, Replay the tab, Tested elements the
+// connection.
 recordBtn.disabled = true;
-bugBtn.disabled = true;
 replayBtn.disabled = true;
 coverageButton.disabled = true;
 void tabRead.then(() => {

@@ -15,6 +15,7 @@ import {
   isRequestId,
   keyToKeep,
   localRunsOf,
+  folderSearchOf,
   launchOf,
   linksOf,
   planAgain,
@@ -155,15 +156,17 @@ export const RUN_TARGET_ROUTES = {
       return ok({ ok: true });
     },
   },
-  /** The folders linked to the instance's projects. */
+  /** The folders linked to the projects of the instance the shell names. */
   links: {
     method: 'PUT',
     path: '/links',
     shellOnly: true,
     handle: (request) => {
-      const links = linksOf(bodyOf(request).links);
-      if (!links) return refused(400, 'Invalid links');
-      useLinks(links);
+      const body = bodyOf(request);
+      const links = linksOf(body.links);
+      const instance = body.instance === undefined ? undefined : instanceUrlOf(body.instance);
+      if (!links || instance === null) return refused(400, 'Invalid instance or links');
+      useLinks(links, instance);
       return ok({ ok: true });
     },
   },
@@ -189,16 +192,37 @@ export const RUN_TARGET_ROUTES = {
       return prompt ? ok(prompt) : refused(404, 'This request is no longer asked about');
     },
   },
-  /** The person's answer in the window. */
+  /**
+   * The person's answer in the window: the command it showed, and for a protected environment the key of the one the
+   * person confirmed (`environment`).
+   */
   answer: {
     method: 'POST',
     path: '/requests/:id/answer',
     shellOnly: false,
     handle: async (request) => {
-      const { decision, command } = bodyOf(request);
+      const { decision, command, environment } = bodyOf(request);
       if (decision !== 'run' && decision !== 'not-now') return refused(400, 'The decision is run or not-now');
-      const answered = await answerRunRequest(request.id!, decision, typeof command === 'string' ? command : null);
+      const answered = await answerRunRequest(
+        request.id!,
+        decision,
+        typeof command === 'string' ? command : null,
+        typeof environment === 'string' ? environment : null,
+      );
       return answered.ok ? ok({ launch: answered.launch }) : refused(answered.statusCode, answered.message);
+    },
+  },
+  /**
+   * What the shell looks for a request's folder with: its project and spec paths, and with `{ hints: true }` what the
+   * instance says helps find it. The shell asks by the request's id, so nothing the window says reaches the search.
+   */
+  folderSearch: {
+    method: 'POST',
+    path: '/requests/:id/folder-search',
+    shellOnly: true,
+    handle: async (request) => {
+      const found = await folderSearchOf(request.id!, bodyOf(request).hints === true);
+      return found ? ok(found) : refused(404, 'This request is no longer asked about');
     },
   },
   /** What the shell starts after **Run**, once. */

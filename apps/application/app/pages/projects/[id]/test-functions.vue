@@ -605,9 +605,9 @@ function describeSteps(entry: TestFunctionInfo): string {
             <UInput v-model="form.urlPattern" placeholder="**/cart" class="w-full" />
           </UFormField>
 
-          <UFormField
+          <FormFieldGroup
             label="Parameters"
-            help="Use “object” for an options bag (e.g. { label }) and list its keys — generated calls then pass an object literal instead of a bare string."
+            note="Use “object” for an options bag (e.g. { label }) and list its keys — generated calls then pass an object literal instead of a bare string."
           >
             <div class="space-y-2">
               <div v-for="(param, i) in form.params" :key="i" class="flex items-center gap-2 flex-wrap">
@@ -630,12 +630,12 @@ function describeSteps(entry: TestFunctionInfo): string {
                 @click="addParam"
               />
             </div>
-          </UFormField>
+          </FormFieldGroup>
 
-          <UFormField
+          <FormFieldGroup
             label="DOM pattern"
             required
-            help="The ordered steps this function drives — matched against a recording."
+            note="The ordered steps this function drives — matched against a recording."
           >
             <div class="space-y-2">
               <div v-for="(step, i) in form.steps" :key="i" class="flex items-center gap-2 flex-wrap">
@@ -662,12 +662,12 @@ function describeSteps(entry: TestFunctionInfo): string {
                 @click="addStep"
               />
             </div>
-          </UFormField>
+          </FormFieldGroup>
 
-          <UFormField
+          <FormFieldGroup
             v-if="form.params.length > 0"
             label="Parameter sources"
-            help="Where each argument's value comes from, at match time."
+            note="Where each argument's value comes from, at match time."
           >
             <div class="space-y-2">
               <div v-for="(src, i) in form.paramSources" :key="i" class="flex items-center gap-2 flex-wrap">
@@ -700,7 +700,7 @@ function describeSteps(entry: TestFunctionInfo): string {
                 @click="addParamSource"
               />
             </div>
-          </UFormField>
+          </FormFieldGroup>
         </div>
       </template>
 

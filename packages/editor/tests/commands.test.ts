@@ -1,6 +1,9 @@
 import { describe, expect, test } from 'vitest';
+import { requiredTagsGrepInvert } from '@piwitests/core/environments';
 import {
   commandWords,
+  isRequiredTagsFilter,
+  playwrightNodeCommand,
   flakeCommand,
   isTestLocation,
   locationSpec,
@@ -11,6 +14,7 @@ import {
   commandName,
   shellWord,
   verificationCommand,
+  withRequiredTags,
 } from '../src/commands';
 
 describe('shellWord', () => {
@@ -31,6 +35,69 @@ describe('shellWord', () => {
       expect(shellWord(`--project=chromium${quote} ; calc.exe ; #`), quote).toBeNull();
     }
     expect(shellWord('--project=Chrome ‘mobile’')).toBe('"--project=Chrome ‘mobile’"');
+  });
+});
+
+describe('a protected environment’s required tags', () => {
+  test('keep a run to the tests carrying one of them, merged with the run’s own --grep-invert, last', () => {
+    const only = requiredTagsGrepInvert(['@smoke', '@readonly']);
+    expect(withRequiredTags(['tests/a.spec.ts:3', '--headed'], ['@smoke', '@readonly'])).toEqual([
+      'tests/a.spec.ts:3',
+      '--headed',
+      '--grep-invert',
+      only,
+    ]);
+    const merged = requiredTagsGrepInvert(['@smoke'], 'slow');
+    expect(withRequiredTags(['--grep-invert', 'slow', 'tests/a.spec.ts'], ['@smoke'])).toEqual([
+      'tests/a.spec.ts',
+      '--grep-invert',
+      merged,
+    ]);
+    expect(withRequiredTags(['--grep-invert=slow', '--repeat-each=3'], ['@smoke'])).toEqual([
+      '--repeat-each=3',
+      '--grep-invert',
+      merged,
+    ]);
+    expect(withRequiredTags(['--config', 'other.config.ts'], ['@smoke'])).toBeNull();
+  });
+
+  test('write a filter every shell reads as it is in double quotes, and nothing else past the usual checks', () => {
+    const filter = requiredTagsGrepInvert(['@smoke'], 'slow|wip');
+    expect(isRequiredTagsFilter(filter)).toBe(true);
+    expect(playwrightTestCommand(['tests/a.spec.ts', '--grep-invert', filter])).toBe(
+      `npx playwright test tests/a.spec.ts --grep-invert "${filter}"`,
+    );
+    // A run's own pattern a shell would expand, or a filter changed by a character, stays refused.
+    for (const word of [
+      requiredTagsGrepInvert(['@smoke'], '$(id)'),
+      requiredTagsGrepInvert(['@smoke'], 'a"b'),
+      `${requiredTagsGrepInvert(['@smoke'])}$(id)`,
+      requiredTagsGrepInvert(['@smoke']).replace('(?!', '(?!$(id)'),
+    ]) {
+      expect(isRequiredTagsFilter(word), word).toBe(false);
+      expect(shellWord(word), word).toBeNull();
+    }
+  });
+});
+
+describe('playwrightNodeCommand', () => {
+  test('starts the project’s Playwright CLI with node, its path written with /', () => {
+    const filter = requiredTagsGrepInvert(['@smoke']);
+    expect(
+      playwrightNodeCommand('C:\\Users\\Dana Lee\\shop\\node_modules\\@playwright\\test\\cli.js', [
+        'tests/a.spec.ts:3',
+        '--grep-invert',
+        filter,
+      ]),
+    ).toBe(
+      `node "C:/Users/Dana Lee/shop/node_modules/@playwright/test/cli.js" test tests/a.spec.ts:3 --grep-invert "${filter}"`,
+    );
+  });
+
+  test('writes nothing without the CLI, or for arguments it would not run', () => {
+    expect(playwrightNodeCommand(null, ['tests/a.spec.ts'])).toBeNull();
+    expect(playwrightNodeCommand('/w/cli.js', ['--config', 'x.ts'])).toBeNull();
+    expect(playwrightNodeCommand('/w/$(id)/cli.js', ['tests/a.spec.ts'])).toBeNull();
   });
 });
 
@@ -174,6 +241,10 @@ describe('flakeCommand', () => {
 describe('runName', () => {
   test('names a run by its first test file and how many more, else the title it greps, else every test', () => {
     expect(runName(['tests/checkout.spec.ts:12'])).toBe('checkout.spec.ts:12');
+    // A dashboard's copied filter, each character its `file:` URL may encode written both ways.
+    expect(runName(['/tests/(?:[[]|.5B)id(?:]|.5D).spec.ts:3'])).toBe('[id].spec.ts:3');
+    expect(runName(['/tests/caf(?:é|.C3.A9)(?: |.20)a.spec.ts'])).toBe('café a.spec.ts');
+    expect(runName(['/my(?: |.20)tests/(?:😀|.F0.9F.98.80).spec.ts'])).toBe('😀.spec.ts');
     expect(runName(['tests/a.spec.ts', 'tests/b.spec.ts', 'tests/c.spec.ts', '--headed'])).toBe('a.spec.ts and 2 more');
     expect(runName(['-g', 'pays by card', '--workers=1'])).toBe('pays by card');
     expect(runName(['--project=chromium'])).toBe('every test');
@@ -188,6 +259,12 @@ describe('runName', () => {
     expect(runName(['tests/checkout.spec.ts:12', '--repeat-each', '3'])).toBe('checkout.spec.ts:12 ×3');
     expect(runName(['tests/checkout.spec.ts:12', '--repeat-each=1'])).toBe('checkout.spec.ts:12');
     expect(runName(['checkout', 'tests/e2e/'])).toBe('checkout and 1 more');
+    expect(runName(['/w/tests/e2e/.'])).toBe('e2e');
+    expect(runName(['^/w/tests/e2e/.', '^/w/tests/a.spec.ts:3'])).toBe('e2e and 1 more');
+    expect(runName(['^(?:C:/w/my cart.spec.ts|file:///C:/w/my.20cart.spec.ts):3'])).toBe('my cart.spec.ts:3');
+    expect(runName(['(?:/w/my tests [(]1[)]|/w/my.20tests.20[(]1[)])/.'])).toBe('my tests (1)');
+    expect(runName(['(?:tests/my cart.spec.ts|tests/my.20cart.spec.ts):3'])).toBe('my cart.spec.ts:3');
+    expect(runName(['(?:/w/a[|]b c|/w/a[|]b.20c)/.'])).toBe('a|b c');
     expect(runName(['--grep=(?:^| )(?:pays|refunds)$'])).toBe('tests by title');
   });
 

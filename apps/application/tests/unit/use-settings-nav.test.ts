@@ -13,7 +13,15 @@ import type { SettingsPageId } from '../../app/utils/settings-metadata';
  * Nuxt auto-imports are globals at runtime, so they are stubbed rather than
  * imported. `computed` is the real Vue one, so the returned ref behaves.
  */
-function stubNuxt(opts: { authEnabled?: boolean; isAdmin?: boolean; desktop?: boolean; declined?: Set<string> } = {}) {
+function stubNuxt(
+  opts: {
+    authEnabled?: boolean;
+    isAdmin?: boolean;
+    projectAdmin?: boolean;
+    desktop?: boolean;
+    declined?: Set<string>;
+  } = {},
+) {
   const authEnabled = opts.authEnabled ?? false;
   const isAdmin = ref(opts.isAdmin ?? false);
   const declined = opts.declined ?? new Set<string>();
@@ -26,6 +34,9 @@ function stubNuxt(opts: { authEnabled?: boolean; isAdmin?: boolean; desktop?: bo
   vi.stubGlobal('useAuth', () => ({
     isAdmin,
     canSeeAdmin: computed(() => !authEnabled || isAdmin.value),
+    // A Project admin somewhere holds project:manage there; an administrator, and everyone without sign-in, everywhere.
+    canAnywhere: (permission: string) =>
+      !authEnabled || isAdmin.value || (permission === 'project:manage' && (opts.projectAdmin ?? false)),
   }));
   vi.stubGlobal('useInstanceCapabilities', () => ({ isHidden: (id: string) => declined.has(id) }));
 }
@@ -61,6 +72,15 @@ describe('useSettingsNav', () => {
     const visible = pathsOf(await useSettingsNav());
     expect(visible).not.toContain('/settings/users');
     expect(visible).not.toContain('/settings/permissions');
+  });
+
+  test('shows a Project admin the pages a project permission opens, and no other admin page', async () => {
+    stubNuxt({ authEnabled: true, isAdmin: false, projectAdmin: true });
+
+    const visible = pathsOf(await useSettingsNav());
+    expect(visible).toContain('/settings/credentials');
+    expect(visible).not.toContain('/settings/storage');
+    expect(visible).not.toContain('/settings/users');
   });
 
   test('shows admin pages to an admin when auth is enabled', async () => {

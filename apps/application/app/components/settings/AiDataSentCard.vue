@@ -115,7 +115,7 @@ function unused(key: keyof ContextLimits): boolean {
       </div>
 
       <p class="text-sm text-highlighted" data-tour="ai-repository-access">
-        Diagnosis reads the commits and diffs of a private repository with the SCM token of
+        Diagnosis reads the commits and diffs of a private repository with the SCM credential of
         <NuxtLink to="/settings/source-control" :class="SENTENCE_LINK_CLASS">Settings → Source control</NuxtLink>, or
         the one of the project's Source control settings. A public repository needs none.
       </p>

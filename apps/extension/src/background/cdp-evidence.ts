@@ -18,7 +18,7 @@ import {
 } from './debugger.js';
 
 /**
- * A bug recording's evidence through the debugging protocol, in the tab the
+ * A recording's evidence through the debugging protocol, in the tab the
  * report started in: the console and uncaught errors from the page's first
  * script (`Runtime`, `Log`), every request that failed or answered 400 or more,
  * documents, scripts and images included (`Network`), and screenshots at any
@@ -252,7 +252,7 @@ async function setDebugging(debugging: DebuggingState): Promise<void> {
 }
 
 /**
- * Starts collecting in the tab a bug recording started in, for the origin
+ * Starts collecting in the tab a recording started in, for the origin
  * `originPattern` grants (`https://app.example.com/*`). Answers whether the
  * session attached: when it did not, the page's own script collects instead.
  */
@@ -327,7 +327,7 @@ export async function captureThroughDebugger(tabId: number, format: 'png' | 'jpe
 }
 
 /**
- * Called when a bug recording's session ends without being released (the
+ * Called when a recording's session ends without being released (the
  * person cancelled the bar): the page's own script takes over from the time
  * kept as `endedAt`, and the HUD says so.
  */

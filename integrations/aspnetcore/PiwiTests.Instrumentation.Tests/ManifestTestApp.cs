@@ -97,7 +97,8 @@ internal sealed record WireManifest(List<WireRoute> Routes, List<WirePage> Pages
         [.. root.GetProperty("routes").EnumerateArray().Select(r => new WireRoute(
             r.GetProperty("method").GetString()!,
             r.GetProperty("pattern").GetString()!,
-            r.TryGetProperty("handler", out var handler) ? handler.GetString() : null))],
+            r.TryGetProperty("handler", out var handler) ? handler.GetString() : null,
+            r.TryGetProperty("line", out var line) ? line.GetInt32() : null))],
         [.. root.GetProperty("pages").EnumerateArray().Select(p => new WirePage(
             p.GetProperty("pattern").GetString()!,
             p.TryGetProperty("name", out var name) ? name.GetString() : null))]);
@@ -109,7 +110,7 @@ internal sealed record WireManifest(List<WireRoute> Routes, List<WirePage> Pages
         Assert.Single(Routes, r => r.Method == method && r.Pattern == pattern);
 }
 
-internal sealed record WireRoute(string Method, string Pattern, string? Handler);
+internal sealed record WireRoute(string Method, string Pattern, string? Handler, int? Line = null);
 
 internal sealed record WirePage(string Pattern, string? Name);
 

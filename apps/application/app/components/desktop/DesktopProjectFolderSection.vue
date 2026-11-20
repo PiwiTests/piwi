@@ -2,7 +2,8 @@
 /**
  * Desktop shell only: the project's linked local folder, managed in the
  * project's Settings tab alongside the other project settings, with the
- * default options every run button of the project starts from. Changes apply
+ * default options every run button of the project starts from, and whether
+ * the folder holds the env files its environments load. Changes apply
  * immediately — the link lives in the shell's own store and the defaults in
  * the app's storage, both on this machine, never in the server database.
  * Renders nothing without the IPC bridge.
@@ -24,10 +25,44 @@ const { propose: proposePrevRuns } = useDesktopImportPrevRuns();
 
 const inspection = ref<DesktopFolderInspection | null>(null);
 
+/** The environments of the project, and of the team project its folder is also linked to, that load an env file. */
+const { choices: environmentChoices } = useDesktopEnvironments(() => (available.value ? props.projectId : null));
+const envFileEnvironments = computed(() =>
+  environmentChoices.value.flatMap((environment) =>
+    environment.envFile ? [{ name: environment.name, envFile: environment.envFile }] : [],
+  ),
+);
+
 watch(
   () => link.value?.path,
   async (path) => {
     inspection.value = path && link.value?.exists ? await inspectDesktopFolder(path) : null;
+  },
+  { immediate: true },
+);
+
+/**
+ * The other projects linked to the same folder, by name: one app that several projects run from (a project per
+ * tenant), each with its own run variables.
+ */
+const otherProjects = ref<string[]>([]);
+watch(
+  () => link.value?.path,
+  async (path) => {
+    otherProjects.value = [];
+    const core = tauriCore();
+    if (!path || !core) return;
+    try {
+      const ids = await core.invoke<string[]>('desktop_folder_projects', { projectId: String(props.projectId) });
+      if (ids.length === 0) return;
+      const menu = await $fetch<{ items: Array<{ id: number; name: string; label: string | null }> }>(
+        '/api/projects/menu',
+      );
+      const names = new Map(menu.items.map((project) => [String(project.id), project.label || project.name]));
+      otherProjects.value = ids.map((id) => names.get(id) ?? `Project ${id}`);
+    } catch {
+      // Nothing to name.
+    }
   },
   { immediate: true },
 );
@@ -62,7 +97,7 @@ watch(
 
 /** Link (or re-link) the folder, then offer to import the runs already in it. */
 async function chooseAndPropose() {
-  const linked = await pickAndLink();
+  const linked = await pickAndLink({ projectLabel: props.projectName });
   if (linked) void proposePrevRuns(props.projectName, link.value?.path);
 }
 </script>
@@ -77,7 +112,8 @@ async function chooseAndPropose() {
     help="project.local-folder"
   >
     <template #subtitle>
-      The checkout of this project on this machine — used to run tests locally and open files in your IDE.
+      The folder on this machine that holds this project's Playwright config, where its tests run locally and its files
+      open in your IDE.
     </template>
     <template #actions>
       <UBadge v-if="link && !link.exists" color="warning" variant="subtle" size="sm">missing</UBadge>
@@ -114,11 +150,18 @@ async function chooseAndPropose() {
         </div>
       </div>
 
-      <p v-if="!link.exists" class="text-sm text-warning">
-        The folder is gone from this machine — pick the checkout again.
+      <p v-if="!link.exists" class="text-sm text-warning">The folder is gone from this machine: choose it again.</p>
+
+      <p
+        v-if="otherProjects.length"
+        class="text-sm text-highlighted leading-relaxed"
+        data-testid="folder-other-projects"
+      >
+        Also linked to this folder: {{ otherProjects.join(', ') }}. Each project's runs get its own run variables (in
+        its Settings), so one app's folder can run the tests of each tenant it serves.
       </p>
 
-      <DesktopFolderChecklist v-if="inspection" :inspection="inspection" />
+      <DesktopFolderChecklist v-if="inspection" :inspection="inspection" :environments="envFileEnvironments" />
 
       <div class="space-y-2 pt-1" data-shot="local-folder-run-defaults">
         <h3 class="text-sm font-semibold text-highlighted">Default run options</h3>

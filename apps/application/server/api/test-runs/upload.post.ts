@@ -49,6 +49,7 @@ import { saveEnvironmentSnapshots } from '#shared/handlers/environment-snapshots
 import type { TestCasePayload, TestRunSubmitPayload } from '#shared/types';
 import { storableRunErrors } from '../../utils/storable-values';
 import { publicRunUrl } from '#shared/run-url';
+import { resolveRunEnvironment } from '#shared/handlers/environments';
 
 defineRouteMeta({
   openAPI: {
@@ -354,7 +355,7 @@ async function handleUpload(
           failedTests: sumFailedAndTimedOut(testRunData.failedTests, testRunData.timedOutTests),
           skippedTests: testRunData.skippedTests || 0,
           didNotRunTests: testRunData.didNotRunTests || 0,
-          environment: testRunData.environment || null,
+          ...(await resolveRunEnvironment(db as never, project.id, testRunData.environment)),
           branch: resolveRunBranch(testRunData.metadata),
           label: testRunData.label || null,
           metadata,

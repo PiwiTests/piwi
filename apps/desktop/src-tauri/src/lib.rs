@@ -10,6 +10,8 @@
 // and "start on login". Everything binds 127.0.0.1 — nothing is exposed to the
 // network.
 
+mod environments;
+mod folder_search;
 mod hub_env;
 mod ide_launcher;
 mod inspect;
@@ -20,13 +22,17 @@ mod mcp_stdio;
 mod private_fs;
 mod repro;
 mod run_target;
+mod run_variables;
 mod runner;
 mod session;
+mod shell_words;
+mod spec_filter;
 #[cfg(windows)]
 mod taskbar_win;
 mod updates;
 mod worktree;
 
+use shell_words::{desktop_get_language, desktop_set_language};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
@@ -34,7 +40,9 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use serde_json::json;
-use tauri::menu::{CheckMenuItemBuilder, MenuBuilder, MenuItemBuilder};
+use tauri::menu::{
+    CheckMenuItemBuilder, IconMenuItem, IconMenuItemBuilder, MenuBuilder, MenuItemBuilder,
+};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
 use tauri::async_runtime::Receiver;
 use tauri::window::{ProgressBarState, ProgressBarStatus};
@@ -51,6 +59,7 @@ use tauri_plugin_shell::ShellExt as _;
 use tauri_plugin_store::StoreExt as _;
 use tauri_plugin_window_state::{AppHandleExt as _, StateFlags};
 
+use environments::{desktop_environment_run_settings, desktop_team_environments};
 use inspect::{desktop_find_importable_runs, desktop_inspect_folder};
 use mcp_clients::{
     desktop_mcp_clients, desktop_mcp_connect, desktop_mcp_disconnect, desktop_mcp_reveal, desktop_skills_read,
@@ -61,14 +70,14 @@ use updates::{
     desktop_restart_app, desktop_set_update_notification,
 };
 use runner::{
-    desktop_check_local_env, desktop_check_local_specs, desktop_get_project_link, desktop_local_runs,
-    desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
-    desktop_set_project_link, desktop_stop_local_tests,
+    desktop_check_local_env, desktop_check_local_specs, desktop_check_project_folder, desktop_folder_projects,
+    desktop_get_project_link, desktop_local_runs, desktop_pick_folder, desktop_pick_import_files, desktop_run_local_tests,
+    desktop_set_project_link, desktop_stop_local_tests, desktop_suggest_project_folders,
 };
 use repro::desktop_run_repro;
 use run_target::{
-    desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder, desktop_request_folders,
-    desktop_run_requested_tests, desktop_unlink_request_folder,
+    desktop_find_request_folders, desktop_forget_run_target, desktop_keep_run_target_key, desktop_link_request_folder,
+    desktop_request_folders, desktop_run_requested_tests, desktop_unlink_request_folder,
 };
 use worktree::{
     desktop_bisect_here, desktop_flake_lab_here, desktop_flake_lab_job, desktop_reproduce_here,
@@ -244,10 +253,11 @@ pub(crate) fn background_menu_items(
     app: &tauri::App,
 ) -> tauri::Result<(tauri::menu::CheckMenuItem<tauri::Wry>, tauri::menu::CheckMenuItem<tauri::Wry>)> {
     let run_bg = app.try_state::<RunInBackground>().is_some_and(|s| s.is_on());
-    let run_bg_item = CheckMenuItemBuilder::with_id(TRAY_RUN_BG_ID, "Run in background")
+    let words = shell_words::shell_words(app.handle());
+    let run_bg_item = CheckMenuItemBuilder::with_id(TRAY_RUN_BG_ID, words.say("runner_runInBackground", &[]))
         .checked(run_bg)
         .build(app)?;
-    let login_item = CheckMenuItemBuilder::with_id(TRAY_START_ON_LOGIN_ID, "Start on login")
+    let login_item = CheckMenuItemBuilder::with_id(TRAY_START_ON_LOGIN_ID, words.say("runner_startOnLogin", &[]))
         .checked(app.autolaunch().is_enabled().unwrap_or(false))
         .build(app)?;
     app.manage(BackgroundMenu {
@@ -255,6 +265,61 @@ pub(crate) fn background_menu_items(
         login: login_item.clone(),
     });
     Ok((run_bg_item, login_item))
+}
+
+/// Says the tray's Run in background and Start on login again, in the shell's language now.
+pub(crate) fn relabel_background_menu(app: &AppHandle) {
+    if let Some(menu) = app.try_state::<BackgroundMenu>() {
+        let words = shell_words::shell_words(app);
+        let _ = menu.run_bg.set_text(words.say("runner_runInBackground", &[]));
+        let _ = menu.login.set_text(words.say("runner_startOnLogin", &[]));
+    }
+}
+
+/// The glyph of a row of the tray's menu, the same in Piwi Desktop and Piwi Runner: the Piwi mark for the app, else
+/// the dashboard's icon for the row's concept, drawn by the brand asset generator (`menu-icons/`).
+#[derive(Clone, Copy)]
+pub(crate) enum MenuIcon {
+    App,
+    ShowStop,
+    StopRun,
+    Agents,
+    Connection,
+    Update,
+    Folder,
+    Logs,
+    Quit,
+}
+
+impl MenuIcon {
+    fn png(self) -> &'static [u8] {
+        match self {
+            MenuIcon::App => include_bytes!("../menu-icons/piwi.png"),
+            MenuIcon::ShowStop => include_bytes!("../menu-icons/show-stop.png"),
+            MenuIcon::StopRun => include_bytes!("../menu-icons/stop-run.png"),
+            MenuIcon::Agents => include_bytes!("../menu-icons/agents.png"),
+            MenuIcon::Connection => include_bytes!("../menu-icons/connection.png"),
+            MenuIcon::Update => include_bytes!("../menu-icons/update.png"),
+            MenuIcon::Folder => include_bytes!("../menu-icons/folder.png"),
+            MenuIcon::Logs => include_bytes!("../menu-icons/logs.png"),
+            MenuIcon::Quit => include_bytes!("../menu-icons/quit.png"),
+        }
+    }
+}
+
+/// A row of the tray's menu with its glyph; a glyph that cannot be read leaves the row without one.
+pub(crate) fn tray_item<R: tauri::Runtime, M: Manager<R>>(
+    app: &M,
+    id: &str,
+    text: &str,
+    icon: MenuIcon,
+) -> tauri::Result<IconMenuItem<R>> {
+    let builder = IconMenuItemBuilder::with_id(id, text);
+    match tauri::image::Image::from_bytes(icon.png()) {
+        Ok(image) => builder.icon(image),
+        Err(_) => builder,
+    }
+    .build(app)
 }
 
 /// Ids of the tray's Run in background and Start on login (`background_menu_items`).
@@ -487,13 +552,19 @@ fn open_links(app: &AppHandle, urls: &[tauri::Url]) {
         }
         return;
     };
-    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(&page, || session_is_live(app)));
+    open_page(app, &page);
+}
+
+/// Show the dashboard window at `page`, an app-relative page: now, or as the dashboard loads while its session is not
+/// live (`LinkedPage`).
+fn open_page(app: &AppHandle, page: &str) {
+    let held = app.try_state::<LinkedPage>().is_some_and(|linked| linked.hold(page, || session_is_live(app)));
     if held {
         if let Some(w) = app.get_webview_window("main") {
             bring_to_front(&w);
         }
     } else {
-        show_page(app, &page);
+        show_page(app, page);
     }
 }
 
@@ -1794,10 +1865,10 @@ struct TrayRunItems(Mutex<TrayRunItemsInner>);
 
 #[derive(Default)]
 struct TrayRunItemsInner {
-    stops: Vec<(String, String, tauri::menu::MenuItem<tauri::Wry>)>,
+    stops: Vec<(String, String, IconMenuItem<tauri::Wry>)>,
     separator: Option<tauri::menu::PredefinedMenuItem<tauri::Wry>>,
     /// Show the stopped test, first in the menu while a test waits, with its text.
-    show: Option<(String, tauri::menu::MenuItem<tauri::Wry>)>,
+    show: Option<(String, IconMenuItem<tauri::Wry>)>,
 }
 
 impl TrayRunItemsInner {
@@ -1806,6 +1877,10 @@ impl TrayRunItemsInner {
         usize::from(self.show.is_some())
     }
 }
+
+/// Ids of the tray's MCP server… and Desktop app settings…, which open those settings pages.
+const TRAY_AGENTS_ID: &str = "agents";
+const TRAY_CONNECTION_ID: &str = "connection";
 
 /// Id of the tray's Show the stopped test.
 const TRAY_SHOW_STOP_ID: &str = "show-stop";
@@ -1850,7 +1925,7 @@ pub(crate) fn refresh_tray_stop(app: &AppHandle, waiting: u32) {
             items.show = Some((text, item));
         }
         (Some(text), None) => {
-            if let Ok(item) = MenuItemBuilder::with_id(TRAY_SHOW_STOP_ID, text.as_str()).build(app) {
+            if let Ok(item) = tray_item(app, TRAY_SHOW_STOP_ID, text.as_str(), MenuIcon::ShowStop) {
                 if menu.0.insert(&item, 0).is_ok() {
                     items.show = Some((text, item));
                 }
@@ -1882,7 +1957,7 @@ fn refresh_tray_runs(app: &AppHandle, runs: &[(u32, String)]) {
         if present {
             continue;
         }
-        if let Ok(item) = MenuItemBuilder::with_id(id.as_str(), text.as_str()).build(app) {
+        if let Ok(item) = tray_item(app, id.as_str(), text.as_str(), MenuIcon::StopRun) {
             let _ = menu.0.insert(&item, first + index);
             items.stops.insert(index, (id.clone(), text.clone(), item));
         }
@@ -1911,7 +1986,7 @@ fn give_up_server(app: &AppHandle) {
 
 /// The script writing `text` in the splash page's status line: a no-op on any
 /// other page, such as the dashboard once the window loaded it.
-fn splash_status_script(text: &str) -> String {
+pub(crate) fn splash_status_script(text: &str) -> String {
     format!(
         "var s=document.getElementById('splash-status');if(s){{s.textContent={};}}",
         serde_json::to_string(text).unwrap_or_else(|_| "''".into())
@@ -3006,22 +3081,41 @@ fn stream_download(port: u16, token: &str, target: &str, dir: &Path, name: &str)
 
 // ── Leaving the app while local test runs are in flight ───────────────────────
 
-/// Every way out of the app kills the local test runs (see
+/// What stopping the local runs is for, which the question about them says: quitting, updating or restarting.
+#[derive(Clone, Copy)]
+pub(crate) enum StopRunsFor {
+    Quit,
+    Update,
+    Restart,
+}
+
+impl StopRunsFor {
+    /// The counted message of the question's body.
+    fn message(self) -> &'static str {
+        match self {
+            StopRunsFor::Quit => "shell_runsGoingQuit",
+            StopRunsFor::Update => "shell_runsGoingUpdate",
+            StopRunsFor::Restart => "shell_runsGoingRestart",
+        }
+    }
+}
+
+/// Every way out of the app stops the local runs going (their processes die with it,
 /// `LocalRuns::kill_all`), so each exit path asks first while any is going:
 /// `proceed` runs at once when nothing is active, and only on confirmation
-/// otherwise. `verb` fills the question ("quitting" / "restarting"), and
-/// `confirm_label` names its confirm button.
+/// otherwise. `title` and `confirm_label` name the question and its confirm button,
+/// and `what` says what stops the runs, in the shell's language.
 ///
 /// The callback form keeps the event loop free — a blocking dialog here would
 /// freeze the very window the question is about.
 pub(crate) fn confirm_stopping_local_runs(
     app: &AppHandle,
     title: &str,
-    verb: &str,
+    what: StopRunsFor,
     confirm_label: &str,
     proceed: impl FnOnce() + Send + 'static,
 ) {
-    ask_stopping_local_runs(app, title, verb, confirm_label, move |go| {
+    ask_stopping_local_runs(app, title, what, confirm_label, move |go| {
         if go {
             proceed();
         }
@@ -3033,7 +3127,7 @@ pub(crate) fn confirm_stopping_local_runs(
 pub(crate) fn ask_stopping_local_runs(
     app: &AppHandle,
     title: &str,
-    verb: &str,
+    what: StopRunsFor,
     confirm_label: &str,
     answer: impl FnOnce(bool) + Send + 'static,
 ) {
@@ -3045,33 +3139,33 @@ pub(crate) fn ask_stopping_local_runs(
         answer(true);
         return;
     }
+    let words = shell_words::shell_words(app);
     app.dialog()
-        .message(format!(
-            "{active} local test run(s) are still running — {verb} stops them."
-        ))
+        .message(words.count(what.message(), active, &[]))
         .title(title)
         .kind(MessageDialogKind::Warning)
         .buttons(MessageDialogButtons::OkCancelCustom(
             confirm_label.into(),
-            "Cancel".into(),
+            words.say("shell_cancel", &[]),
         ))
         .show(answer);
 }
 
 /// The question asked before quitting stops local runs, titled with the app's name.
-fn quit_question(app_name: &str) -> String {
-    format!("Quit {app_name}?")
+fn quit_question(words: &shell_words::ShellWords, app_name: &str) -> String {
+    words.say("shell_quitQuestion", &[("app", app_name)])
 }
 
 /// Quit the app called `app_name`, asking first while local test runs are going:
 /// the tray's Quit and, on macOS, the app menu's.
 pub(crate) fn quit_after_confirming(app: &AppHandle, app_name: &str) {
     let handle = app.clone();
+    let words = shell_words::shell_words(app);
     confirm_stopping_local_runs(
         app,
-        &quit_question(app_name),
-        "quitting",
-        "Quit",
+        &quit_question(&words, app_name),
+        StopRunsFor::Quit,
+        &words.say("shell_quitButton", &[]),
         move || {
             handle.exit(0);
         },
@@ -3082,7 +3176,7 @@ pub(crate) fn quit_after_confirming(app: &AppHandle, app_name: &str) {
 const DESKTOP_APP_NAME: &str = APP_NAME;
 
 /// Ids of the app menu's own items (see `app_menu`).
-const APP_MENU_QUIT_ID: &str = "app-menu-quit";
+pub(crate) const APP_MENU_QUIT_ID: &str = "app-menu-quit";
 const APP_MENU_SETTINGS_ID: &str = "app-menu-settings";
 const APP_MENU_IMPORT_ID: &str = "app-menu-import";
 const APP_MENU_BACK_ID: &str = "app-menu-back";
@@ -3211,7 +3305,7 @@ fn quit_menu_item<R: tauri::Runtime>(
     app: &AppHandle<R>,
     app_name: &str,
 ) -> tauri::Result<tauri::menu::MenuItem<R>> {
-    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, format!("Quit {app_name}"))
+    MenuItemBuilder::with_id(APP_MENU_QUIT_ID, shell_words::shell_words(app).say("shell_quit", &[("app", app_name)]))
         .accelerator("CmdOrCtrl+Q")
         .build(app)
 }
@@ -3305,11 +3399,12 @@ fn hold_close_for_local_runs(window: &tauri::Window, app_name: &str) -> bool {
     }
 
     let target = window.clone();
+    let words = shell_words::shell_words(window.app_handle());
     confirm_stopping_local_runs(
         window.app_handle(),
-        &quit_question(app_name),
-        "quitting",
-        "Quit",
+        &quit_question(&words, app_name),
+        StopRunsFor::Quit,
+        &words.say("shell_quitButton", &[]),
         move || {
             if let Some(state) = target.try_state::<QuitConfirmed>() {
                 state.0.store(true, Ordering::SeqCst);
@@ -3462,6 +3557,8 @@ pub fn run() {
     builder
         .invoke_handler(tauri::generate_handler![
             desktop_get_service_settings,
+            desktop_get_language,
+            desktop_set_language,
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             desktop_set_server_port,
@@ -3483,14 +3580,20 @@ pub fn run() {
             desktop_pick_files_to_open,
             desktop_inspect_folder,
             desktop_find_importable_runs,
+            desktop_check_project_folder,
+            desktop_suggest_project_folders,
             desktop_get_project_link,
+            desktop_folder_projects,
             desktop_set_project_link,
             desktop_run_local_tests,
             desktop_stop_local_tests,
             desktop_local_runs,
+            desktop_team_environments,
+            desktop_environment_run_settings,
             desktop_keep_run_target_key,
             desktop_forget_run_target,
             desktop_request_folders,
+            desktop_find_request_folders,
             desktop_link_request_folder,
             desktop_unlink_request_folder,
             desktop_run_requested_tests,
@@ -3523,11 +3626,13 @@ pub fn run() {
         .manage(runner::LocalRuns::default())
         .manage(run_target::KeptKey::default())
         .manage(run_target::RequestedRuns::default())
+        .manage(run_target::FoundFolders::default())
         .manage(TrayStatus::default())
         .manage(QuitConfirmed::default())
         .manage(PendingOpenFiles::default())
         .manage(LinkedPage::default())
         .manage(updates::UpdaterSupport(updater_supported))
+        .manage(updates::TrayUpdateBusy::default())
         .manage(updates::PendingUpdate::default())
         .manage(updates::ReleaseNotesState::default())
         .setup(move |app| {
@@ -3752,22 +3857,30 @@ pub fn run() {
             });
 
             // --- tray ---
-            let open_i = MenuItemBuilder::with_id("open", format!("Open {APP_NAME}")).build(app)?;
-            let folder_i = MenuItemBuilder::with_id("open_folder", "Open data folder").build(app)?;
-            let logs_i = MenuItemBuilder::with_id("show_logs", "Show logs").build(app)?;
+            // In the sections of Piwi's menu, as Piwi Runner's tray: the run control (Show the stopped test, the
+            // Stop items under Open, `refresh_tray_stop`, `refresh_tray_runs`), the app, Agents and Connection, then
+            // the app's own options, Check for updates, its files and Quit.
+            let open_i = tray_item(app, "open", &format!("Open {APP_NAME}"), MenuIcon::App)?;
+            let agents_i = tray_item(app, TRAY_AGENTS_ID, "MCP server…", MenuIcon::Agents)?;
+            let connection_i = tray_item(app, TRAY_CONNECTION_ID, "Desktop app settings…", MenuIcon::Connection)?;
+            let folder_i = tray_item(app, "open_folder", "Open data folder", MenuIcon::Folder)?;
+            let logs_i = tray_item(app, "show_logs", "Show logs", MenuIcon::Logs)?;
+            let update_i = tray_item(app, "check_update", "Check for updates…", MenuIcon::Update)?;
             let (bg_i, login_i) = background_menu_items(app)?;
-            let quit_i = MenuItemBuilder::with_id("quit", format!("Quit {APP_NAME}")).build(app)?;
+            let quit_i = tray_item(app, "quit", &format!("Quit {APP_NAME}"), MenuIcon::Quit)?;
 
-            let menu = MenuBuilder::new(app)
+            let mut menu = MenuBuilder::new(app)
                 .item(&open_i)
-                .item(&folder_i)
-                .item(&logs_i)
+                .item(&agents_i)
+                .item(&connection_i)
                 .separator()
                 .item(&bg_i)
                 .item(&login_i)
-                .separator()
-                .item(&quit_i)
-                .build()?;
+                .separator();
+            if app.state::<updates::UpdaterSupport>().0 {
+                menu = menu.item(&update_i);
+            }
+            let menu = menu.item(&folder_i).item(&logs_i).separator().item(&quit_i).build()?;
             app.manage(TrayMenu(menu.clone()));
             app.manage(TrayRunItems::default());
 
@@ -3796,6 +3909,9 @@ pub fn run() {
                         }
                     }
                     "show_logs" => reveal_log(app),
+                    TRAY_AGENTS_ID => open_page(app, "/settings/mcp"),
+                    TRAY_CONNECTION_ID => open_page(app, "/settings/desktop"),
+                    "check_update" => updates::check_from_tray(app, refresh_tray_tooltip),
                     "open_folder" => {
                         let dir = app.state::<DataDir>().0.clone();
                         let _ = app
@@ -4613,6 +4729,24 @@ mod tests {
         let long = "x".repeat(65);
         for bad in ["", "a/b", "a b", "a?worker=1", "x\u{0}", long.as_str()] {
             assert!(!is_run_ref(bad), "{bad}");
+        }
+    }
+
+    #[test]
+    fn every_glyph_of_the_trays_menus_is_a_png_the_menu_reads() {
+        for icon in [
+            crate::MenuIcon::App,
+            crate::MenuIcon::ShowStop,
+            crate::MenuIcon::StopRun,
+            crate::MenuIcon::Agents,
+            crate::MenuIcon::Connection,
+            crate::MenuIcon::Update,
+            crate::MenuIcon::Folder,
+            crate::MenuIcon::Logs,
+            crate::MenuIcon::Quit,
+        ] {
+            let image = tauri::image::Image::from_bytes(icon.png()).expect("a PNG");
+            assert_eq!((image.width(), image.height()), (32, 32));
         }
     }
 
