@@ -564,6 +564,8 @@ const PROGRESS_RESULT_RE = /^\s{1,6}(?:✓|✘|✗|x|ok|-)\s+\d+\s/;
 export function useDesktopLocalRuns() {
   const runs = useState<LocalRun[]>('desktop-local-runs', () => []);
   const trayOpen = useState<boolean>('desktop-local-runs-tray', () => false);
+  /** The run the tray shows on its right: a run's key, or the ref of a run another window started; null for its default. */
+  const chosen = useState<number | string | null>('desktop-local-runs-chosen', () => null);
   /** A worker of a hub's run the tray is asked to show (`showWorker`), until the tray has shown it. */
   const shownWorker = useState<{ ref: string; worker: number } | null>('desktop-local-runs-shown-worker', () => null);
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
@@ -2083,7 +2085,13 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  /** Opens the tray on a worker of a hub's run: its run expands, and the focus moves to the worker. */
+  /** Opens the tray on a run of it, shown on its right. */
+  function showRun(key: number) {
+    trayOpen.value = true;
+    chosen.value = key;
+  }
+
+  /** Opens the tray on a worker of a hub's run: its run shows, and the focus moves to the worker. */
   function showWorker(ref: string, worker: number) {
     trayOpen.value = true;
     shownWorker.value = { ref, worker };
@@ -2133,6 +2141,7 @@ export function useDesktopLocalRuns() {
   return {
     runs,
     trayOpen,
+    chosen,
     shownWorker,
     holds,
     separate,
@@ -2147,6 +2156,7 @@ export function useDesktopLocalRuns() {
       return () => endListeners.delete(listener);
     },
     showWorker,
+    showRun,
     failurePage,
     activeCount,
     startRun,

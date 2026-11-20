@@ -617,7 +617,12 @@ onMounted(async () => {
     <!-- The real main landmark the skip link targets. Fills the group's content
          area so the page panel keeps its full width/height. -->
     <main id="main-content" tabindex="-1" class="flex-1 min-w-0 flex flex-col outline-none">
-      <slot />
+      <!-- The page in a column of its own, so its panel stays a last child, with no edge for the tray beside it. -->
+      <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+        <slot />
+      </div>
+      <!-- Desktop shell: the Local runs tray, docked under the page — local test runs keep streaming here across navigation -->
+      <DesktopLocalRunsTray />
     </main>
 
     <!-- Global "Open in editor" settings modal, toggled from file-path choosers and the user menu -->
@@ -643,9 +648,6 @@ onMounted(async () => {
 
     <!-- Desktop shell: a team instance asks to run tests here, waiting for the person's Run -->
     <DesktopTeamRunRequestModal @start="localRuns.startTeamRequest" />
-
-    <!-- Desktop shell: the Local runs tray — local test runs keep streaming here across navigation -->
-    <DesktopLocalRunsTray />
 
     <!-- The assistant's panel: opened from the sidebar's Ask Piwi and the command palette, kept across navigation -->
     <AssistantPanel />

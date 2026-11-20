@@ -287,7 +287,9 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
+  (`DesktopLocalRunsTray`), docked under the page in the default layout's main column (the pages' panels take its
+  height off theirs, `--desktop-runs-height` in `app.config.ts`), its runs listed on its left and the one chosen on its
+  right: `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
   lane's Interact (turned off on the page, its input finished first by `DesktopRunLiveImage.release`, the stop is
   given back by `DesktopRunWorker`), and
   a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
@@ -332,7 +334,7 @@ Each entry names folders under `server/api/`.
     runs whose **Hold failures** switch is on (off by default; on for a reproduction and for a run started with it on,
     `desktopHoldsByDefault`; **Run again** keeps this window's choice; never for a run nobody attends,
     `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`).
-    Expanding a run or closing the tray changes none of it (`tests/desktop-run-view.spec.ts`,
+    Choosing a run in the tray or closing it changes none of it (`tests/desktop-run-view.spec.ts`,
     `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
