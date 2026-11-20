@@ -27,6 +27,9 @@ const exitUnlessHandedOff = () => {
   process.exit(0);
 };
 process.on('disconnect', exitUnlessHandedOff);
+// Until the handoff a signal ends the spare, whose exit closes the early browser and removes its profile.
+process.on('SIGTERM', exitUnlessHandedOff);
+process.on('SIGINT', exitUnlessHandedOff);
 
 const handoff = new Promise<NodeJS.ProcessEnv>((resolve) => {
   const onMessage = (message: SpareHandoff) => {
@@ -47,6 +50,8 @@ process.send({ method: '__piwi_turbo_spare_loaded__', envRead: [...reads.env] } 
 void handoff.then((workerEnv) => {
   handedOff = true;
   process.off('disconnect', exitUnlessHandedOff);
+  process.off('SIGTERM', exitUnlessHandedOff);
+  process.off('SIGINT', exitUnlessHandedOff);
   for (const key of Object.keys(process.env)) if (workerEnv[key] === undefined) delete process.env[key];
   for (const [key, value] of Object.entries(workerEnv)) if (value !== undefined) process.env[key] = value;
   if (earlyBrowsers) {

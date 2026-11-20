@@ -30,8 +30,9 @@ tsup to `dist/`, and its benchmark in `bench/` (repository only: plain `.mjs` sc
   variable Node reads at start, or one Playwright read while the spare loaded, refuses it. `tests/e2e/cli.spec.ts` runs
   a project through the built command.
 - **The spare's early browser is taken only by a launch with the recorded options and the same browser environment**
-  (`earlyBrowserRefusal` in `src/early-browser.ts`); options that can hold a credential are never recorded
-  (`launchableOptions`). `tests/early-browser.test.ts` and `tests/e2e/cli.spec.ts` check both.
+  (`earlyBrowserRefusal` in `src/early-browser.ts`); options made to hold a credential are never recorded
+  (`launchableOptions`), and the record is read only from a cache folder no other user can write to.
+  `tests/early-browser.test.ts` and `tests/e2e/cli.spec.ts` check them.
 - **The warm daemon (`--warm`) answers only requests that carry its token**, kept with its address in a file only its
   user can read; a runner takes a command only when what it read as it loaded, its terminal included, is the caller's
   (`refusal` in `src/warm-daemon.ts`), else the command runs cold. `tests/e2e/cli.spec.ts` checks both.

@@ -24,14 +24,18 @@ describe('launchableOptions', () => {
 });
 
 describe('browserEnv', () => {
-  test('keeps the variables the browser or its launch reads, and leaves out the others', () => {
+  test("keeps the variables the browser or its launch reads, and leaves out the runner's and the others", () => {
     const env = browserEnv({
       TZ: 'UTC',
       LANG: 'en_US.UTF-8',
       LC_ALL: 'C',
       PLAYWRIGHT_BROWSERS_PATH: '/browsers',
       https_proxy: 'http://proxy',
+      PLAYWRIGHT_LEGACY_SCREENSHOT: '1',
+      SELENIUM_REMOTE_URL: 'http://grid',
+      SSLKEYLOGFILE: '/keys',
       PLAYWRIGHT_FORCE_TTY: '0',
+      PW_TEST_REUSE_CONTEXT: '1',
       TEST_WORKER_INDEX: '0',
       CI: '1',
       APP_SECRET: 'kept out',
@@ -42,6 +46,9 @@ describe('browserEnv', () => {
       LC_ALL: 'C',
       PLAYWRIGHT_BROWSERS_PATH: '/browsers',
       https_proxy: 'http://proxy',
+      PLAYWRIGHT_LEGACY_SCREENSHOT: '1',
+      SELENIUM_REMOTE_URL: 'http://grid',
+      SSLKEYLOGFILE: '/keys',
     });
   });
 });

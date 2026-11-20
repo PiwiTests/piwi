@@ -1,5 +1,5 @@
-import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawn, spawnSync } from 'node:child_process';
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { connect } from 'node:net';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -11,29 +11,44 @@ const cli = join(__dirname, '..', '..', 'dist', 'cli.js');
 const project = join(__dirname, 'cli-project');
 
 /**
- * Runs `piwi-turbo` in the CLI project, with a cache in the test's output folder, and without this run's Playwright
- * variables (but where the browsers are installed) or a compile cache or coverage set by the caller.
+ * The environment of `piwi-turbo` in the CLI project: a cache in the test's output folder, and none of this run's
+ * Playwright variables (but where the browsers are installed) or a compile cache or coverage set by the caller.
  */
-function run(args: string[], cacheDir: string, env: NodeJS.ProcessEnv = {}) {
+function runEnv(cacheDir: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const inherited = Object.entries(process.env).filter(
     ([key]) =>
       !/^(TEST_|PW_|PWTEST|PLAYWRIGHT(?!_BROWSERS_PATH$)|PIWI_|NODE_COMPILE_CACHE$|NODE_DISABLE_COMPILE_CACHE$|NODE_V8_COVERAGE$)/.test(
         key,
       ),
   );
+  return {
+    ...Object.fromEntries(inherited),
+    PIWI_TURBO_DEBUG: '1',
+    PIWI_TURBO_CACHE_DIR: cacheDir,
+    CLI_PROJECT_OUTPUT: join(cacheDir, '..', 'results'),
+    ...env,
+  };
+}
+
+/** Runs `piwi-turbo` in the CLI project. */
+function run(args: string[], cacheDir: string, env: NodeJS.ProcessEnv = {}) {
   const result = spawnSync(process.execPath, [cli, ...args], {
     cwd: project,
     encoding: 'utf8',
     timeout: 60_000,
-    env: {
-      ...Object.fromEntries(inherited),
-      PIWI_TURBO_DEBUG: '1',
-      PIWI_TURBO_CACHE_DIR: cacheDir,
-      CLI_PROJECT_OUTPUT: join(cacheDir, '..', 'results'),
-      ...env,
-    },
+    env: runEnv(cacheDir, env),
   });
   return { status: result.status, output: `${result.stdout}${result.stderr}` };
+}
+
+/** Whether a process with this id runs. */
+function running(pid: number): boolean {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 test.beforeAll(() => {
@@ -62,7 +77,7 @@ test('forks a worker as usual when the config changes a variable the spare read 
   run(['test'], cache);
   const result = run(['test'], cache, { CLI_PROJECT_CHANGE: 'CI' });
   expect(result.status, result.output).toBe(0);
-  expect(result.output).toContain('spare worker not used: CI changed');
+  expect(result.output).toMatch(/spare worker \d+ not used: CI changed/);
   expect(result.output).toContain('2 passed');
 });
 
@@ -79,14 +94,74 @@ test("the first worker takes the browser the last run's first worker launched", 
   expect(off.output).toContain('early browser: false');
 });
 
-test('launches its own browser when the config gives its workers a time zone the early browser lacks', () => {
+test('launches its own browser when the config sets a variable the launch reads', () => {
   const cache = test.info().outputPath('cache');
   run(['test', '--config', 'browser.config.ts'], cache);
-  const result = run(['test', '--config', 'browser.config.ts'], cache, { CLI_PROJECT_TZ: 'Asia/Tokyo' });
+  const zoned = run(['test', '--config', 'browser.config.ts'], cache, { CLI_PROJECT_SET: 'TZ=Asia/Tokyo' });
+  expect(zoned.status, zoned.output).toBe(0);
+  expect(zoned.output).toContain('early browser not used: TZ changed');
+  expect(zoned.output).toContain('early browser: false');
+  expect(zoned.output).toContain('page time zone: Asia/Tokyo');
+  const legacy = run(['test', '--config', 'browser.config.ts'], cache, {
+    CLI_PROJECT_SET: 'PLAYWRIGHT_LEGACY_SCREENSHOT=1',
+  });
+  expect(legacy.status, legacy.output).toBe(0);
+  expect(legacy.output).toContain('early browser not used: PLAYWRIGHT_LEGACY_SCREENSHOT changed');
+});
+
+test('records no launch whose options an early browser does not take, and forgets the last one', () => {
+  const cache = test.info().outputPath('cache');
+  const records = () => readdirSync(join(cache, 'early-browser')).filter((file) => file.endsWith('.json'));
+  run(['test', '--config', 'browser.config.ts'], cache);
+  expect(records()).toHaveLength(1);
+  const secret = 'a value only the launch options hold';
+  const own = run(['test', '--config', 'browser.config.ts'], cache, { CLI_PROJECT_LAUNCH_ENV: secret });
+  expect(own.status, own.output).toBe(0);
+  expect(own.output).toContain(
+    'early browser not used: the worker launches with options an early browser does not take',
+  );
+  expect(records()).toHaveLength(0);
+  const next = run(['test', '--config', 'browser.config.ts'], cache, { CLI_PROJECT_LAUNCH_ENV: secret });
+  expect(next.status, next.output).toBe(0);
+  expect(next.output).toContain('early browser: false');
+  expect(next.output).not.toContain('early browser not used');
+  expect(records()).toHaveLength(0);
+});
+
+test('reads no record from a cache folder other users can write to', () => {
+  test.skip(process.platform === 'win32', 'folders carry no such modes on Windows');
+  const cache = test.info().outputPath('cache');
+  run(['test', '--config', 'browser.config.ts'], cache);
+  chmodSync(cache, 0o777);
+  const result = run(['test', '--config', 'browser.config.ts'], cache);
   expect(result.status, result.output).toBe(0);
-  expect(result.output).toContain('early browser not used: TZ changed');
+  expect(result.output).toContain('no caches: other users can write to');
   expect(result.output).toContain('early browser: false');
-  expect(result.output).toContain('page time zone: Asia/Tokyo');
+  expect(result.output).not.toContain('early browser not used');
+});
+
+test('a spare the runner does not use exits at once, with its early browser', async () => {
+  const cache = test.info().outputPath('cache');
+  run(['test', '--config', 'browser.config.ts'], cache);
+  const child = spawn(process.execPath, [cli, 'test', '--config', 'browser.config.ts'], {
+    cwd: project,
+    env: runEnv(cache, { CLI_PROJECT_SET: 'CI=changed by the config', CLI_PROJECT_SLEEP: '10000' }),
+  });
+  let output = '';
+  child.stdout.on('data', (chunk) => (output += chunk));
+  child.stderr.on('data', (chunk) => (output += chunk));
+  const exited = new Promise((resolve) => child.on('exit', resolve));
+  try {
+    await expect
+      .poll(() => output.match(/spare worker (\d+) not used: CI changed/)?.[1], { timeout: 30_000 })
+      .toBeTruthy();
+    const spare = Number(output.match(/spare worker (\d+) not used/)![1]);
+    await expect.poll(() => running(spare), { timeout: 5_000 }).toBe(false);
+    expect(child.exitCode, output).toBeNull();
+  } finally {
+    child.kill();
+    await exited;
+  }
 });
 
 test('starts no spare for other commands', () => {

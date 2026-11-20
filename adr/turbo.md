@@ -240,9 +240,12 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
   --version` 770 to 932 ms against 564 to 690 ms with `node`, 3 runs each).
 - **An early browser is used only when nothing it was launched with has changed**: the launch options, and the
   variables the browser reads (time zone, locale, home and temporary folders, display, fonts, proxies, certificates,
-  paths, and the Playwright variables that change how it finds or launches the browser). Variables outside that list
-  are not compared, since the browser does not read them. Its launch is not a step of the `browser` fixture, and a
-  worker that never launches closes it after a minute.
+  paths) with every Playwright and Selenium variable but the runner's own (`PLAYWRIGHT_FORCE_TTY`, `PW_TEST_*`).
+  Other variables are not compared, so a config that loads a `.env` file keeps the early browser; a variable the
+  browser reads that the list misses reaches it with the value the spare started with. Its launch is not a step of the
+  `browser` fixture, and a worker that never launches closes it after a minute. The record is read only from a cache
+  folder no other user can write to, and removed when the first launch is one an early browser cannot stand in for or
+  the worker launches nothing.
 - **`piwi-turbo` helps only the runs that go through it**: IDE extensions and tools that start `playwright`
   themselves do not. The spare worker relies on Playwright's worker entry (`lib/worker/workerProcessEntry.js`), the
   options of its worker fork and the variables it adds (`PLAYWRIGHT_TEST`, `FORCE_COLOR`, `DEBUG_COLORS`); when one of

@@ -129,8 +129,8 @@ npx piwi-turbo test tests/checkout.spec.ts
 - **An early browser**: the spare launches the headless Chromium the last run's first worker launched from the same
   folder, with the same options, recorded in the cache folder when they can hold no credential (no proxy, `env` or
   logger). The worker's first launch takes it when it asks for the same options and the variables the browser reads
-  (time zone, locale, home and temporary folders, display, fonts, proxies, certificates, paths, and the Playwright
-  variables that change how it finds or launches the browser) have not changed, as when the config sets `TZ`;
+  (time zone, locale, home and temporary folders, display, fonts, proxies, certificates, paths, and Playwright's and
+  Selenium's own) have not changed, as when the config sets `TZ`;
   otherwise the early browser is closed and the worker launches its own. One no launch takes is closed after a minute.
   A run of one test that opens a page took 542 ms in place of 600 ms.
 

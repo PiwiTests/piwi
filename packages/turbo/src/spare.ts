@@ -121,7 +121,7 @@ export function startSpareWorker(playwrightDir: string, coreDir: string, log?: (
     if (refusal) {
       state = 'gone';
       spare.kill();
-      log?.(`spare worker not used: ${refusal}`);
+      log?.(`spare worker ${spare.pid} not used: ${refusal}`);
       return Reflect.apply(fork, this, [modulePath, ...rest]);
     }
     state = 'handed off';
