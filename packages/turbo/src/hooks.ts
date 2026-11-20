@@ -56,6 +56,8 @@ export const state = {
   screenshotMatches: false,
   earlyInjection: false,
   fastTraces: false,
+  /** fastStackTraces' server part: an evaluation's race against its context's destruction captures no stack. */
+  lightRaces: false,
   /** source-map-support's formatter, which fastStackTraces calls for the frames that may have a source map. */
   sourceMappedStackTrace: undefined as ((error: Error, stack: NodeJS.CallSite[]) => string) | undefined,
   /** Server pages seen in this process: zero after a page was created means the browser runs elsewhere. */
@@ -66,6 +68,7 @@ export const state = {
   sessionHooked: false,
   tracerHooked: false,
   injectedScriptHooked: false,
+  raceHooked: false,
   counters: {
     optimizedScreenshots: 0,
     shortenedRetries: 0,
@@ -80,6 +83,7 @@ export const state = {
     earlyInjections: 0,
     skippedScriptBodies: 0,
     deferredSnapshots: 0,
+    lightRaces: 0,
   },
   elementHooked: false,
 };
@@ -611,6 +615,64 @@ function hookEarlyInjection(proto: ServerPage): void {
   };
 }
 
+/**
+ * fastStackTraces, with the browser in the worker: every evaluation in a page races its context's destruction, and the
+ * race captures and formats a stack (up to the test worker's 200 frames) in case it must clone the destruction's error
+ * with it. That server-side stack never reaches the test: the client replaces an error's stack with the test's own
+ * frames, unless `PWDEBUGIMPL` shows internal frames. The race captures no stack instead; the error reads the same.
+ */
+function hookContextRaces(proto: ServerPage): void {
+  const contextCreated = proto.contextCreated as ((world: string, context: ServerPage) => void) | undefined;
+  if (typeof contextCreated !== 'function') throw new IncompatibleError("Playwright's frame has no contextCreated()");
+  proto.contextCreated = function (this: ServerPage, world: string, context: ServerPage) {
+    if (!state.raceHooked) {
+      try {
+        hookContextRace(context);
+      } catch (error) {
+        state.error ??= error as Error;
+      }
+    }
+    return contextCreated.call(this, world, context);
+  };
+}
+
+function hookContextRace(context: ServerPage): void {
+  let owner = context && Object.getPrototypeOf(context);
+  while (owner && !Object.prototype.hasOwnProperty.call(owner, 'raceAgainstContextDestroyed'))
+    owner = Object.getPrototypeOf(owner);
+  const race = owner?.raceAgainstContextDestroyed as ((promise: Promise<unknown>) => Promise<unknown>) | undefined;
+  const scope = context?._contextDestroyedScope;
+  const scopeRace = scope && Object.getPrototypeOf(scope)._race;
+  const scopeSource = String(scopeRace);
+  const capture = scopeSource.indexOf('new Error().stack');
+  if (
+    typeof race !== 'function' ||
+    !String(race).includes('this._contextDestroyedScope.race(promise)') ||
+    !String(Object.getPrototypeOf(scope).race).includes('return this._race(') ||
+    typeof scopeRace !== 'function' ||
+    capture < 0
+  ) {
+    throw new IncompatibleError(
+      "Playwright's race against a destroyed context no longer captures its stack as it starts",
+    );
+  }
+  // The stack is captured before the race's first await, so the limit covers that capture alone.
+  if (scopeSource.slice(0, capture).includes('await '))
+    throw new IncompatibleError("Playwright's race against a destroyed context awaits before it captures its stack");
+  owner.raceAgainstContextDestroyed = function (this: ServerPage, promise: Promise<unknown>) {
+    if (!state.lightRaces) return race.call(this, promise);
+    state.counters.lightRaces++;
+    const limit = Error.stackTraceLimit;
+    Error.stackTraceLimit = 0;
+    try {
+      return race.call(this, promise);
+    } finally {
+      Error.stackTraceLimit = limit;
+    }
+  };
+  state.raceHooked = true;
+}
+
 const NO_BODY = Buffer.alloc(0);
 
 /**
@@ -875,6 +937,7 @@ function hookFrame(frame: ServerPage): void {
   };
   hookFailFast(proto);
   hookEarlyInjection(proto);
+  hookContextRaces(proto);
   const retryIfNotConnected = proto._retryWithProgressIfNotConnected as
     | ((progress: Progress, target: unknown, options: unknown, action: RetryAction) => Promise<unknown>)
     | undefined;

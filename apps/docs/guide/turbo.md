@@ -152,16 +152,17 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
   assertion whose capture is known to match without decoding the images.
 - `retryIntervals` shortens the waits of Playwright's retry loop, and `skipStabilityWait` stops pointer actions waiting
   for the element to keep still. Leave the latter off for apps that ignore input while they animate.
-- `failFast` ends a failing assertion once nothing can change the page. It must stay off for a test that changes the
-  page from its own Node code while an assertion waits.
+- `failFast` ends a failing assertion once nothing can change the page. Keep it off for a test that changes the page
+  from its Node code while an assertion waits.
 - `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, the tab's
-  second reset left out when the test changed nothing it resets, and the HTTP cache kept while it holds only static
+  second reset skipped when the test changed nothing it resets, and the HTTP cache kept while it holds only static
   assets. An app that changes a file at the same URL between tests, served with no lifetime of its own, needs
   `keepStaticCache` off.
 - `earlyInjection` (Chromium) creates the script Playwright's actions run through while each page loads, rather than
   at its first action, and `fastTraces` makes traces cheaper: no request for the script bodies they leave out, and on
   Chromium fewer waits for DOM snapshots.
-- `fastStackTraces` skips the source map lookup for the frames of Node and `node_modules`.
+- `fastStackTraces` skips source map lookups for Node and `node_modules` frames, and the server's stack per
+  evaluation.
 
 ```ts
 withOptimizations(config, {

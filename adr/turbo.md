@@ -98,7 +98,7 @@ out.
 | `failFast` | Reference workload, red run of six failing assertions: −22% (25.2 s to 19.6 s), with the same failures and no false one. |
 | `skipStabilityWait` | One worker: TodoMVC 1.11× vs 1.03×, Shop 1.20× vs 1.10×, Inventory 1.06× vs 0.99×. |
 | `fastReset` | noop 0.93× vs 0.83×, TodoMVC 1.41× vs 1.21×, Shop 1.28× vs 1.27×. |
-| `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. |
+| `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. The server's stack at each evaluation left out, on top: TodoMVC 5,082 to 4,761 ms, SVGOMG 2,128 to 2,044 ms (5 runs each). |
 | `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither, left no fake clock or WebAuthn credentials installed (their scripts leave the context only after its reset loaded `about:blank`, so that document still runs them), and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
 | `earlyInjection` | Same app, one tab: the first fill after a navigation took 25 ms and the next 6 ms, the difference being Playwright creating its injected script in the document's utility world. Created as soon as the document's utility context exists: 9 to 11 ms, with the navigation 2 to 8 ms longer. TodoMVC (as above) 4,148 to 3,860 ms. |
 | `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). The DOM snapshot after each call, and before most, left in flight, on top: 5,000 to 4,617 ms, and SVGOMG traced the same way 2,240 to 2,104 ms (5 runs each). |
@@ -111,7 +111,11 @@ receiving every animation event. The rate is now set once per tab, with the doma
 attached for the tab's life (a detach resets the rate). `fastReset` skips Playwright's mouse move away from a tab no
 pointer acted in, a move that waits for the next frame.
 `fastStackTraces` came from the same profiles: Playwright captures a 50-frame stack on every API call, and
-source-map-support cloned and looked up a source map for every frame, those of Node and `node_modules` included.
+source-map-support cloned and looked up a source map for every frame, those of Node and `node_modules` included. A
+later profile of the test worker on TodoMVC found it waiting on the browser 63% of the time, and most stacks formatted
+coming from the server: each evaluation in a page races its context's destruction, and the race formats a stack of up
+to the worker's 200 frames as it starts, five per API call. The client gives an error that reaches the test the test's
+own frames, so that stack is left out.
 
 As merged, after the review's fixes, each against stock on Flashwright's suites (5 runs):
 
@@ -152,6 +156,11 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
 - **Chromium's protocol pipe in CBOR** (`--remote-debugging-pipe=cbor`), with a codec of its own: five fills and
   presses on TodoMVC took 77 ms in place of 80.5, navigations and evaluations no measurable time less. Not worth a
   protocol codec to maintain.
+- **Cheaper errors for each protocol message**: Playwright creates an error with a 200-frame stack for every message
+  it sends to the browser, in case the answer is an error. About 2 µs each, under 1% of a TodoMVC run. Not done.
+- **Native code** (Rust, Go, or TypeScript compiled ahead of time) for Playwright's Node side: the test worker waited
+  on the browser 63% of a profiled TodoMVC run, and what it ran was protocol dispatch, JSON and stack formatting,
+  which the hooks above already cut where a test cannot tell. Not pursued.
 - **Loading the next test's page before it starts**, as Flashwright's `preloadPages` does, prototyped outside the
   package: two kept contexts take turns, the idle one reset with Playwright's own reset while the other runs a test,
   then sent to the URL the previous test opened first, and the next test's first `goto` to that URL takes the loaded

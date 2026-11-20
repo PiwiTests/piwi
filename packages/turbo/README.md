@@ -235,7 +235,10 @@ withOptimizations(config, {
   Flashwright's TodoMVC suite 3% less time.
 - **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up
   a source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
-  lookup; stack traces read the same.
+  lookup; stack traces read the same. With the browser in the worker, Playwright's server also captures and formats a
+  stack, up to the test worker's 200 frames, at every evaluation in a page, for an error the test never sees: the
+  client gives a failed call the test's own frames. It captures none (unless `PWDEBUGIMPL` shows internal frames);
+  TodoMVC took 6% less time, SVGOMG 4%.
 - **`screenshotMatches`**: Playwright decodes the capture and the baseline of every screenshot assertion to compare
   them, about 40 ms for a 1280×720 page. A capture whose bytes are the baseline's, or those of a capture that matched
   the same baseline with the same options before, passes without that; any other is compared as Playwright compares

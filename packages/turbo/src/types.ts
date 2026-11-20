@@ -28,7 +28,8 @@ export interface TurboOptions {
   keepStaticCache: boolean;
   /**
    * Experimental worker option: the worker's stack traces map only the frames that may have a source map, leaving out
-   * those of Node and of `node_modules`. They read the same.
+   * those of Node and of `node_modules`, and Playwright's server captures no stack as an evaluation starts. They read
+   * the same.
    */
   fastStackTraces: boolean;
   /**

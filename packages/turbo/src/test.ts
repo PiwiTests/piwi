@@ -277,6 +277,7 @@ export const test: TurboTest = base.extend<
       skipStabilityWait,
       earlyInjection,
       fastTraces,
+      fastStackTraces,
       connectOptions,
       browserName,
       _turboReused: reused,
@@ -298,10 +299,21 @@ export const test: TurboTest = base.extend<
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
     const matches = screenshotMatches && !updating;
     const early = earlyInjection && browserName === 'chromium';
+    // fastStackTraces' server part needs the browser in the worker, and is left out where internal frames are shown.
+    const connected = !!(connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT);
+    const lightRaces = fastStackTraces && !connected && !process.env.PWDEBUGIMPL;
     const hooks =
-      fast || matches || !!intervals || failFast || skipStabilityWait || early || fastTraces || (reused && fastReset);
+      fast ||
+      matches ||
+      !!intervals ||
+      failFast ||
+      skipStabilityWait ||
+      early ||
+      fastTraces ||
+      lightRaces ||
+      (reused && fastReset);
     if (hooks) {
-      if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
+      if (connected) {
         throw new Error(
           '@piwitests/turbo: the experimental hooks need a browser launched by the test worker, not a connected one',
         );
@@ -319,6 +331,7 @@ export const test: TurboTest = base.extend<
     state.skipStabilityWait = skipStabilityWait;
     state.earlyInjection = early;
     state.fastTraces = fastTraces;
+    state.lightRaces = lightRaces;
     try {
       if (failFast) await context.addInitScript(IDLE_TRACKER);
       for (const rule of blockRequests)
@@ -400,6 +413,7 @@ export const test: TurboTest = base.extend<
       state.skipStabilityWait = false;
       state.earlyInjection = false;
       state.fastTraces = false;
+      state.lightRaces = false;
     }
   },
 });
