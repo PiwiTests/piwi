@@ -12,12 +12,12 @@ const project = join(__dirname, 'cli-project');
 
 /**
  * Runs `piwi-turbo` in the CLI project, with a cache in the test's output folder, and without this run's Playwright
- * variables or a compile cache or coverage set by the caller.
+ * variables (but where the browsers are installed) or a compile cache or coverage set by the caller.
  */
 function run(args: string[], cacheDir: string, env: NodeJS.ProcessEnv = {}) {
   const inherited = Object.entries(process.env).filter(
     ([key]) =>
-      !/^(TEST_|PW_|PWTEST|PLAYWRIGHT|PIWI_|NODE_COMPILE_CACHE$|NODE_DISABLE_COMPILE_CACHE$|NODE_V8_COVERAGE$)/.test(
+      !/^(TEST_|PW_|PWTEST|PLAYWRIGHT(?!_BROWSERS_PATH$)|PIWI_|NODE_COMPILE_CACHE$|NODE_DISABLE_COMPILE_CACHE$|NODE_V8_COVERAGE$)/.test(
         key,
       ),
   );
@@ -64,6 +64,29 @@ test('forks a worker as usual when the config changes a variable the spare read 
   expect(result.status, result.output).toBe(0);
   expect(result.output).toContain('spare worker not used: CI changed');
   expect(result.output).toContain('2 passed');
+});
+
+test("the first worker takes the browser the last run's first worker launched", () => {
+  const cache = test.info().outputPath('cache');
+  const first = run(['test', '--config', 'browser.config.ts'], cache);
+  expect(first.status, first.output).toBe(0);
+  expect(first.output).toContain('early browser: false');
+  const next = run(['test', '--config', 'browser.config.ts'], cache);
+  expect(next.status, next.output).toBe(0);
+  expect(next.output).toContain('early browser: true');
+  const off = run(['test', '--config', 'browser.config.ts'], cache, { PIWI_TURBO_EARLY_BROWSER: '0' });
+  expect(off.status, off.output).toBe(0);
+  expect(off.output).toContain('early browser: false');
+});
+
+test('launches its own browser when the config gives its workers a time zone the early browser lacks', () => {
+  const cache = test.info().outputPath('cache');
+  run(['test', '--config', 'browser.config.ts'], cache);
+  const result = run(['test', '--config', 'browser.config.ts'], cache, { CLI_PROJECT_TZ: 'Asia/Tokyo' });
+  expect(result.status, result.output).toBe(0);
+  expect(result.output).toContain('early browser not used: TZ changed');
+  expect(result.output).toContain('early browser: false');
+  expect(result.output).toContain('page time zone: Asia/Tokyo');
 });
 
 test('starts no spare for other commands', () => {

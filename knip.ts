@@ -116,6 +116,7 @@ const config: KnipConfig = {
           'bench/workload/playwright.config.ts',
           'tests/e2e/cli-project/playwright.config.ts',
           'tests/e2e/cli-project/esm.config.mts',
+          'tests/e2e/cli-project/browser.config.ts',
         ],
       },
     },

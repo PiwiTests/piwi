@@ -126,13 +126,21 @@ npx piwi-turbo test tests/checkout.spec.ts
   the runner reads the config and the tests, and becomes the first test worker. Playwright forks that worker as usual
   when the fork differs from what the spare was started with: other Node options or folder, or a change to a variable
   Node reads at start or Playwright read as it loaded, such as a config that sets `CI` or `NODE_OPTIONS`.
+- **An early browser**: the spare launches the headless Chromium the last run's first worker launched from the same
+  folder, with the same options, recorded in the cache folder when they can hold no credential (no proxy, `env` or
+  logger). The worker's first launch takes it when it asks for the same options and the variables the browser reads
+  (time zone, locale, home and temporary folders, display, fonts, proxies, certificates, paths, and the Playwright
+  variables that change how it finds or launches the browser) have not changed, as when the config sets `TZ`;
+  otherwise the early browser is closed and the worker launches its own. One no launch takes is closed after a minute.
+  A run of one test that opens a page took 542 ms in place of 600 ms.
 
 The saving is per command, so it shows on short runs: an edit-and-run loop, or an agent that runs one test at a time.
 IDE extensions and tools that start `playwright` themselves don't go through it. A test can see two differences
 from `playwright test`: the worker's `process.execArgv` loads the code cache, and the processes of the run have
-`NODE_COMPILE_CACHE` and `PIWI_TURBO_*` variables. `PIWI_TURBO_CACHE=0` turns the caches
-off, `PIWI_TURBO_SPARE_WORKER=0` the spare worker, and `PIWI_TURBO_DEBUG=1` says whether the spare was used and why
-not. Wall time of whole commands with `max`, on the same suites as above (median of 5 runs, 6 for one test, the first
+`NODE_COMPILE_CACHE` and `PIWI_TURBO_*` variables, and an early browser's launch is not a step of the
+`browser` fixture. `PIWI_TURBO_CACHE=0` turns the caches off, `PIWI_TURBO_SPARE_WORKER=0` the spare worker,
+`PIWI_TURBO_EARLY_BROWSER=0` the early browser, and `PIWI_TURBO_DEBUG=1` says whether the spare and its browser were
+used and why not. Wall time of whole commands with `max`, on the same suites as above (median of 5 runs, 6 for one test, the first
 with an empty cache):
 
 | Run                                 | `playwright test` | `piwi-turbo test`, caches only | `piwi-turbo test` |
@@ -164,7 +172,8 @@ A request carries a token that the process writes, with its address, to a file o
 can write to; on Windows it listens on a pipe with a name no one can guess, and relies on the temporary folder being
 yours alone, as it is by default. On a run of one test, after a pause as when you edit between runs (median of 8, run
 with `node` rather than `npx`): 539 ms without `--warm` and 212 ms with it, and 773 ms and 431 ms for a test that
-opens a page.
+opens a page. The runner's spare launches its early browser while the runner waits for a command: on another machine,
+the test that opens a page took 307 ms in place of 352 ms.
 
 ## Advanced: the levers one by one
 

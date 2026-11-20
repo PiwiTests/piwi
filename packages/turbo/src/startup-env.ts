@@ -11,6 +11,8 @@ export const DISCARD_CODE_CACHE = Symbol.for('piwi-turbo.discard-code-cache');
 export const SPARE_ENTRY = 'PIWI_TURBO_SPARE_ENTRY';
 /** The modules the spare worker loads while it waits, as a JSON array of paths. */
 export const SPARE_PRELOAD = 'PIWI_TURBO_SPARE_PRELOAD';
+/** The `playwright-core` package the spare worker launches its early browser with. */
+export const SPARE_CORE = 'PIWI_TURBO_SPARE_CORE';
 
 /** The message the spare worker sends once it has loaded, with the environment variables its modules read. */
 export interface SpareLoaded {

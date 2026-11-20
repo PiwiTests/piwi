@@ -41,7 +41,10 @@ tell a real gain from noise.
    the run compiled, for the runner and the Node processes it forks. For `test`, it also starts a spare worker that
    loads Playwright's bundles while the runner starts and stands in for the first worker fork, unless the fork's
    options, the Node options, the folder, or a variable Node reads at start or Playwright read while the spare loaded
-   have changed by then. It changes the command, not the config, so it sits outside the presets. With `--warm`
+   have changed by then. The spare also launches the headless Chromium the last run's first worker launched from the
+   folder, with the options it recorded when they hold no credential, and the worker's first launch takes it when it
+   asks for the same options and the variables the browser reads are unchanged. It changes the command, not the
+   config, so it sits outside the presets. With `--warm`
    first, a daemon keeps one such runner loaded between commands, prepared for the caller's terminal, and gives a
    `test` command to it only when the variables the runner read as it loaded, the folder it read and Node's start-up
    variables are the caller's, its terminal included; requests carry a token from a file only the user can read.
@@ -86,6 +89,7 @@ out.
 | `compileCache` | A single-test run started about 55 ms sooner with the cache set from the config, and 143 ms with `NODE_COMPILE_CACHE` set in the environment, which also reaches the runner. |
 | `piwi-turbo`, caches | Flashwright's suites with `max`, one worker, median of 5 runs (6 for one test) whose first starts with an empty cache: one trivial test 1,179 to 902 ms, 15 trivial tests 1,792 to 1,470, TodoMVC 4,458 to 4,296, Shop 6,431 to 6,086, Inventory 12,180 to 11,798. |
 | `piwi-turbo`, spare worker | The same runs, against the caches alone: 902 to 722 ms, 1,470 to 1,307, 4,296 to 4,128, 6,086 to 5,865; Inventory unchanged (11,798 and 11,805). On a one-test run with a page, outside the harness (10 rounds): 1,295 ms stock, 907 with the caches, 651 with the spare. |
+| `piwi-turbo`, early browser | One test that opens a page, `max`, 8 alternating runs: 600 to 542 ms; with `--warm` after a 1.5 s pause, 352 to 307 ms. A fresh process launches the headless shell in 40 to 48 ms, and creates its first context and page in 35 to 126 ms, which the early browser leaves to the test. |
 | `screenshotMatches` | A passing `toHaveScreenshot` of a 1280×720 page spent about 40 ms of its 81 ms decoding the capture and the baseline. Median of 15 assertions: 81 ms stock, 88 ms with `fastScreenshots`, 39.5 ms with `screenshotMatches` (the stock capture has the baseline's bytes), 33.5 ms with both once the store knows the capture; on a page of gradients, 132, 101.5, 82 and 35 ms. Flashwright's screenshot suite, 15 tests against one baseline: `max` 3,658 ms without it and 3,019 ms with it (stock 4,611, 5 runs). |
 | `keepStaticCache` | Piwi's own dashboard, built for production (a 490 KB entry script, 283 static responses on its home page, two public logos with a `Last-Modified` date only, requested with its cookie), 11 tests that each load its home page with a reused context: median page load 404–450 ms with Playwright's reset and 328–342 ms with the hook, over four rounds. A rule that took a cookie on the request as a sign of content tied to the user kept nothing there: the logos cleared the cache every time. |
 | `piwi-turbo --warm` | The prototype, on Flashwright's suites with `max` after an untimed pause of 1.5 s before each run (5 runs, 6 for one test): one test 776 ms without it and 485 ms with it (stock 1,333, Flashwright 438); 15 trivial tests 1,460 and 1,119; on the app suites the saving, about 200 to 300 ms per command, was within run-to-run noise. As shipped, one test after the same pause (median of 8): 539 and 212 ms, and 773 and 431 ms for a test that opens a page. |
@@ -234,6 +238,11 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
   stock on the 15 tests and from 0.98× to 1.59× on one, where Flashwright measured 2.3× and 3.1×. Its saving is per
   command, so a long suite gains a few percent. Starting it through `npx` adds about 200 ms (`npx playwright
   --version` 770 to 932 ms against 564 to 690 ms with `node`, 3 runs each).
+- **An early browser is used only when nothing it was launched with has changed**: the launch options, and the
+  variables the browser reads (time zone, locale, home and temporary folders, display, fonts, proxies, certificates,
+  paths, and the Playwright variables that change how it finds or launches the browser). Variables outside that list
+  are not compared, since the browser does not read them. Its launch is not a step of the `browser` fixture, and a
+  worker that never launches closes it after a minute.
 - **`piwi-turbo` helps only the runs that go through it**: IDE extensions and tools that start `playwright`
   themselves do not. The spare worker relies on Playwright's worker entry (`lib/worker/workerProcessEntry.js`), the
   options of its worker fork and the variables it adds (`PLAYWRIGHT_TEST`, `FORCE_COLOR`, `DEBUG_COLORS`); when one of

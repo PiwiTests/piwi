@@ -4,7 +4,7 @@
 import childProcess, { type ChildProcess, type ForkOptions, type StdioOptions } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
-import { SPARE_ENTRY, SPARE_PRELOAD, type SpareHandoff, type SpareLoaded } from './startup-env';
+import { SPARE_CORE, SPARE_ENTRY, SPARE_PRELOAD, type SpareHandoff, type SpareLoaded } from './startup-env';
 
 /**
  * Variables Node reads as a process starts, the ones it reads for `os.homedir()` and `os.tmpdir()` without going through
@@ -90,7 +90,7 @@ export function startSpareWorker(playwrightDir: string, coreDir: string, log?: (
   };
   const spare = childProcess.fork(join(__dirname, 'spare-worker.js'), [], {
     detached: false,
-    env: { ...start.env, [SPARE_ENTRY]: entry, [SPARE_PRELOAD]: JSON.stringify(preload) },
+    env: { ...start.env, [SPARE_ENTRY]: entry, [SPARE_PRELOAD]: JSON.stringify(preload), [SPARE_CORE]: coreDir },
     stdio: start.stdio,
     execArgv: start.execArgv,
   });
