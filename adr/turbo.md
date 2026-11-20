@@ -152,6 +152,16 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
 - **Chromium's protocol pipe in CBOR** (`--remote-debugging-pipe=cbor`), with a codec of its own: five fills and
   presses on TodoMVC took 77 ms in place of 80.5, navigations and evaluations no measurable time less. Not worth a
   protocol codec to maintain.
+- **Loading the next test's page before it starts**, as Flashwright's `preloadPages` does, prototyped outside the
+  package: two kept contexts take turns, the idle one reset with Playwright's own reset while the other runs a test,
+  then sent to the URL the previous test opened first, and the next test's first `goto` to that URL takes the loaded
+  page. TodoMVC at one worker (5 interleaved runs): 4,538 ms with reuse, 4,302 ms with the preload, 22 of 24 tests
+  taking it; Flashwright's preload, on the same runs, 3,636 to 3,022 ms. The reset and first navigation went from
+  1,819 to 742 ms over the suite, but the test bodies from 1,645 to 2,973 ms, the background reset and load
+  competing with the running test for the CPU; one context per test, created while the test before ran, took
+  longer still (a new context loads the app in a cold renderer). A version that keeps a test's semantics would also
+  have to discard the page when the test calls anything before its first navigation, undo what the early load
+  stored, and hide its network and console events. Not shipped.
 
 - **Differential DOM snapshots in traces**, from a fork of Playwright, shipped for a while as a vendored Apache-2.0
   script: no clear difference on the reference workload (+0.8%) or on Piwi's suite (−2.5% wall, interval −8.5% to
