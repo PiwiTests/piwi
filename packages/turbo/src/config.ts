@@ -123,8 +123,9 @@ export interface Optimizations {
      * With `reuseContext`: the reset between tests leaves the browser's HTTP cache while it holds only static assets:
      * responses `immutable`; images, fonts, stylesheets, scripts and media with no lifetime of their own or one of a
      * week; other responses fresh for a week requested without a cookie. Anything else the browser could reuse clears
-     * it. A file the app changes at the same URL between tests, with no lifetime of its own, reaches the next test as it
-     * was.
+     * it, and so does a request still in flight at the reset. A file the app changes at the same URL between tests, with
+     * no lifetime of its own, reaches the next test as it was. Chromium only: other browsers do not report the requests
+     * a document makes while the reset replaces it, so their cache is always cleared.
      */
     keepStaticCache?: boolean;
   };

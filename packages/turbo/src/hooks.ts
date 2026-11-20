@@ -52,8 +52,8 @@ export const state = {
   skipStabilityWait: false,
   fastReset: false,
   keepStaticCache: false,
-  /** The responses each reused context received since its last reset, which keepStaticCache judges at the next. */
-  staticCacheResponses: new WeakMap<object, ServerPage[]>(),
+  /** What each reused context received since its last reset, which keepStaticCache judges at the next. */
+  staticCacheResponses: new WeakMap<object, CacheWatch>(),
   screenshotMatches: false,
   earlyInjection: false,
   fastTraces: false,
@@ -88,6 +88,18 @@ export const state = {
   },
   elementHooked: false,
 };
+
+/** What a reused context received since its last reset, as keepStaticCache judges it. */
+interface CacheWatch {
+  responses: ServerPage[];
+  /** Its requests that have not finished, or that failed once their response had arrived. */
+  unfinished: Set<ServerPage>;
+  /** On Chromium, by protocol id: the requests a tab's renderer announced, and those answered over the network. */
+  announced: Set<string>;
+  answered: Set<string>;
+  /** A tab whose protocol session it cannot watch, where a response may come unannounced. */
+  blind: boolean;
+}
 
 class IncompatibleError extends Error {
   constructor(message: string) {
@@ -366,14 +378,53 @@ const withinASecond = <T>(promise: Promise<T>) =>
   Promise.race([promise, new Promise<null>((resolve) => setTimeout(() => resolve(null), 1000))]);
 
 /**
- * keepStaticCache: records the responses a reused context receives in Playwright's server, from now until each reset
- * judges them, so a response that arrives once its test has ended counts too.
+ * keepStaticCache: records the requests and responses of a reused context in Playwright's server, from now until each
+ * reset judges them, so a response that arrives once its test has ended counts too, and a request still in flight at
+ * the reset clears the cache.
  */
 export function watchStaticCache(serverContext: ServerPage): void {
   if (state.staticCacheResponses.has(serverContext)) return;
-  const responses: ServerPage[] = [];
-  state.staticCacheResponses.set(serverContext, responses);
-  serverContext.on('response', (response: ServerPage) => responses.push(response));
+  const received: CacheWatch = {
+    responses: [],
+    unfinished: new Set(),
+    announced: new Set(),
+    answered: new Set(),
+    blind: false,
+  };
+  state.staticCacheResponses.set(serverContext, received);
+  serverContext.on('request', (request: ServerPage) => received.unfinished.add(request));
+  serverContext.on('response', (response: ServerPage) => received.responses.push(response));
+  serverContext.on('requestfinished', (finished: { request?: ServerPage } | undefined) => {
+    if (finished?.request) received.unfinished.delete(finished.request);
+    else state.error ??= new IncompatibleError("Playwright's requestfinished event no longer carries its request");
+  });
+  // A request that failed with no response left nothing in the cache; one with a response may have.
+  serverContext.on('requestfailed', (request: ServerPage) => {
+    if (typeof request?._existingResponse !== 'function')
+      state.error ??= new IncompatibleError("Playwright's server requests no longer have _existingResponse()");
+    else if (!request._existingResponse()) received.unfinished.delete(request);
+  });
+  for (const page of serverContext.pages?.() ?? []) watchTabNetwork(page, received);
+  serverContext.on('page', (page: ServerPage) => watchTabNetwork(page, received));
+}
+
+/**
+ * A request a document makes while it is being replaced, as by the reset's navigation, is answered and cached by the
+ * browser, but its renderer never announces it, so Playwright never reports it. On Chromium, a tab's protocol session
+ * still carries the browser's own events of it; a tab without one leaves the context blind to such requests.
+ */
+function watchTabNetwork(page: ServerPage, received: CacheWatch): void {
+  const session = page?.delegate?._mainFrameSession?._client;
+  if (typeof session?.on !== 'function') {
+    received.blind = true;
+    return;
+  }
+  session.on('Network.requestWillBeSent', (event: { requestId?: string }) => {
+    if (event?.requestId) received.announced.add(event.requestId);
+  });
+  session.on('Network.responseReceivedExtraInfo', (event: { requestId?: string }) => {
+    if (event?.requestId) received.answered.add(event.requestId);
+  });
 }
 
 /**
@@ -437,11 +488,21 @@ function hookContextReset(core: ServerPage): void {
   proto.setStorageState = async function (this: ServerPage, progress: unknown, storageState: unknown, mode: string) {
     restoringStorage++;
     try {
-      const responses = state.staticCacheResponses.get(this);
-      if (mode !== 'resetForReuse' || !state.keepStaticCache || !responses)
+      const received = state.staticCacheResponses.get(this);
+      if (mode !== 'resetForReuse' || !state.keepStaticCache || !received)
         return await resetStorage.call(this, progress, storageState, mode);
-      const keep = await onlyStaticAssets(responses);
-      responses.length = 0;
+      // A request still in flight, one that failed after its response arrived, or one the browser answered without its
+      // renderer announcing it, may have left anything in the cache.
+      const unannounced = [...received.answered].some((id) => !received.announced.has(id));
+      const keep =
+        !received.blind &&
+        !unannounced &&
+        received.unfinished.size === 0 &&
+        (await onlyStaticAssets(received.responses));
+      received.responses.length = 0;
+      received.unfinished.clear();
+      received.announced.clear();
+      received.answered.clear();
       if (!keep) return await resetStorage.call(this, progress, storageState, mode);
       this.clearCache = async () => {
         state.counters.keptCaches++;

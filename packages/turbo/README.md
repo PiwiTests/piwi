@@ -255,8 +255,11 @@ withOptimizations(config, {
   private, setting a cookie or varying with one. Anything else the browser could reuse clears the whole cache, as
   stock: an API response or a stylesheet with a short lifetime, a permanent redirect, a page with an `Expires` date.
   A file the app changes at the same URL between tests, served with a `Last-Modified` date and no lifetime (an avatar,
-  a stylesheet for each user), reaches the next test as it was: leave the hook off for such a suite. On Piwi's own
-  dashboard, a page load took 328–342 ms in place of 404–450 ms.
+  a stylesheet for each user), reaches the next test as it was: leave the hook off for such a suite. A request still in
+  flight at the reset clears the cache too, and so does one the browser answered while the reset replaced the page's
+  document, which only Chromium's own network events show: on other browsers the cache is always cleared. A request
+  the page sends as it unloads (a `keepalive` fetch in `pagehide`) shows in none of them: leave the hook off for a page
+  that fetches a cacheable response then. On Piwi's own dashboard, a page load took 328–342 ms in place of 404–450 ms.
 - **`earlyInjection`** (Chromium): Playwright's actions and assertions run through an injected script of about 180 KB,
   which it creates in each new document at the first call. The script and its utility script are created in the
   tab's new document as soon as it has a context, while the document loads: the first fill after a navigation took 9
