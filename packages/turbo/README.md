@@ -235,10 +235,12 @@ withOptimizations(config, {
   Flashwright's TodoMVC suite 3% less time.
 - **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up
   a source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
-  lookup; stack traces read the same. With the browser in the worker, Playwright's server also captures and formats a
-  stack, up to the test worker's 200 frames, at every evaluation in a page, for an error the test never sees: the
-  client gives a failed call the test's own frames. It captures none (unless `PWDEBUGIMPL` shows internal frames);
-  TodoMVC took 6% less time, SVGOMG 4%.
+  lookup; stack traces read the same. With another experimental hook on, which puts Playwright's server classes
+  within reach, the server's race of every evaluation in a page against its context's destruction captures no stack:
+  it formats one through source-map-support in case it must clone that error, but the client gives a failed call the
+  test's own frames, so the test's errors read the same, and a trace records the server's error without Playwright's
+  internal frames. Where Playwright shows them (`PWDEBUGIMPL`), the race keeps its stack. TodoMVC took 6% less time,
+  SVGOMG 4%.
 - **`screenshotMatches`**: Playwright decodes the capture and the baseline of every screenshot assertion to compare
   them, about 40 ms for a 1280×720 page. A capture whose bytes are the baseline's, or those of a capture that matched
   the same baseline with the same options before, passes without that; any other is compared as Playwright compares
@@ -277,7 +279,8 @@ withOptimizations(config, {
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
 `Page.prototype.expectScreenshot`, `Page.prototype.resetForReuse`, `BrowserContext.prototype.setStorageState` and
 `BrowserContext.prototype.resetForReuse`, a context's `response` events, from the first page the frame class, the
-element handle class, Chromium's CDP session and the trace recorder, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
+element handle class, Chromium's CDP session and the trace recorder, from the first document the execution context
+class, and the worker's `Error.prepareStackTrace`. They refuse to run, with an error that names the reason, on a `playwright-core` version they
 were not tested with (`TESTED_VERSIONS`, currently 1.64.1), on an internal with another shape, or when the browser runs
 outside the worker. `PIWI_TURBO_ALLOW_UNTESTED=1` runs them on another version, at your own risk. What each lever was
 measured to save is in the

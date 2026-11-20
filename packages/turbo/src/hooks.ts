@@ -16,7 +16,8 @@
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
-//                     source map
+//                     source map, and with other hooks on, an evaluation's race against its context's destruction
+//                     captures no stack
 //   keep static cache when Playwright resets a reused context, leaves its HTTP cache when the last test loaded
 //                     nothing the browser could reuse without asking the server but static assets
 //   screenshot matches  a screenshot assertion passes without decoding its first capture when that capture's bytes
@@ -616,11 +617,21 @@ function hookEarlyInjection(proto: ServerPage): void {
 }
 
 /**
- * fastStackTraces, with the browser in the worker: every evaluation in a page races its context's destruction, and the
- * race captures and formats a stack (up to the test worker's 200 frames) in case it must clone the destruction's error
- * with it. That server-side stack never reaches the test: the client replaces an error's stack with the test's own
- * frames, unless `PWDEBUGIMPL` shows internal frames. The race captures no stack instead; the error reads the same.
+ * fastStackTraces, with other hooks on: every evaluation in a page races its context's destruction, and the race
+ * captures and formats a stack of the server's frames as it starts, in case it must clone the destruction's error with
+ * it. The client gives a failed call the test's own frames, so the test's error reads the same without it; a trace
+ * records the server's error with no internal frames. The race captures no stack instead.
  */
+/** Whether Playwright shows its internal stack frames in the errors it gives (`PWDEBUGIMPL`, its own tests). */
+export function internalFramesShown(): boolean {
+  const utils = playwrightCore().load('playwright-core/lib/coreBundle').utils as
+    | { showInternalStackFrames?: () => boolean; isUnderTest?: () => boolean }
+    | undefined;
+  if (typeof utils?.showInternalStackFrames !== 'function' || typeof utils.isUnderTest !== 'function')
+    throw new IncompatibleError('playwright-core has no showInternalStackFrames()/isUnderTest()');
+  return utils.showInternalStackFrames() || utils.isUnderTest();
+}
+
 function hookContextRaces(proto: ServerPage): void {
   const contextCreated = proto.contextCreated as ((world: string, context: ServerPage) => void) | undefined;
   if (typeof contextCreated !== 'function') throw new IncompatibleError("Playwright's frame has no contextCreated()");
@@ -656,7 +667,8 @@ function hookContextRace(context: ServerPage): void {
       "Playwright's race against a destroyed context no longer captures its stack as it starts",
     );
   }
-  // The stack is captured before the race's first await, so the limit covers that capture alone.
+  // The stack is captured before the race's first await: everything the race runs until then runs at a limit of 0,
+  // its stack capture and the promises it creates.
   if (scopeSource.slice(0, capture).includes('await '))
     throw new IncompatibleError("Playwright's race against a destroyed context awaits before it captures its stack");
   owner.raceAgainstContextDestroyed = function (this: ServerPage, promise: Promise<unknown>) {

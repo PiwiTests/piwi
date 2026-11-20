@@ -240,13 +240,16 @@ test.describe('without options', () => {
     await page.setContent(STATIC_PAGE);
     const screenshots = state.counters.optimizedScreenshots;
     const retries = state.counters.shortenedRetries;
+    const races = state.counters.lightRaces;
     await page.screenshot();
     await page.evaluate(() => setTimeout(() => (document.body.innerHTML = '<i>later</i>'), 100));
     await expect(page.locator('i')).toBeVisible();
     expect(state.counters.optimizedScreenshots).toBe(screenshots);
     expect(state.counters.shortenedRetries).toBe(retries);
+    expect(state.counters.lightRaces).toBe(races);
     expect(state.fastScreenshots).toBe(false);
     expect(state.retryIntervals).toBeUndefined();
+    expect(state.lightRaces).toBe(false);
   });
 });
 

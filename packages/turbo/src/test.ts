@@ -17,6 +17,7 @@ import {
 import {
   assertHooksWork,
   hookExistingPage,
+  internalFramesShown,
   installFastStackTraces,
   installHooks,
   state,
@@ -299,21 +300,13 @@ export const test: TurboTest = base.extend<
     const fast = fastScreenshots && browserName === 'chromium' && !updating;
     const matches = screenshotMatches && !updating;
     const early = earlyInjection && browserName === 'chromium';
-    // fastStackTraces' server part needs the browser in the worker, and is left out where internal frames are shown.
-    const connected = !!(connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT);
-    const lightRaces = fastStackTraces && !connected && !process.env.PWDEBUGIMPL;
     const hooks =
-      fast ||
-      matches ||
-      !!intervals ||
-      failFast ||
-      skipStabilityWait ||
-      early ||
-      fastTraces ||
-      lightRaces ||
-      (reused && fastReset);
+      fast || matches || !!intervals || failFast || skipStabilityWait || early || fastTraces || (reused && fastReset);
+    // fastStackTraces' server part rides on the other hooks, which need the browser in the worker, and is left out
+    // where Playwright shows its internal frames.
+    const lightRaces = fastStackTraces && hooks && !internalFramesShown();
     if (hooks) {
-      if (connected) {
+      if (connectOptions || process.env.PW_TEST_CONNECT_WS_ENDPOINT) {
         throw new Error(
           '@piwitests/turbo: the experimental hooks need a browser launched by the test worker, not a connected one',
         );

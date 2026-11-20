@@ -151,8 +151,8 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
 - `fastScreenshots` (Chromium) encodes PNG screenshots for speed, and `screenshotMatches` passes a screenshot
   assertion whose capture is known to match without decoding the images.
 - `retryIntervals` shortens the waits of Playwright's retry loop, and `skipStabilityWait` stops pointer actions waiting
-  for the element to keep still. Leave the latter off for apps that ignore input while they animate.
-- `failFast` ends a failing assertion once nothing can change the page. Keep it off for a test that changes the page
+  for the element to keep still: keep it off for apps that ignore input while animating.
+- `failFast` ends a failing assertion once nothing can change the page; keep it off for a test changing the page
   from its Node code while an assertion waits.
 - `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, the tab's
   second reset skipped when the test changed nothing it resets, and the HTTP cache kept while it holds only static
@@ -161,8 +161,8 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
 - `earlyInjection` (Chromium) creates the script Playwright's actions run through while each page loads, rather than
   at its first action, and `fastTraces` makes traces cheaper: no request for the script bodies they leave out, and on
   Chromium fewer waits for DOM snapshots.
-- `fastStackTraces` skips source map lookups for Node and `node_modules` frames, and the server's stack per
-  evaluation.
+- `fastStackTraces` skips source map lookups for Node and `node_modules` frames and, with other hooks, the server's
+  stack per evaluation.
 
 ```ts
 withOptimizations(config, {

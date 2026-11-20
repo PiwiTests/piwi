@@ -40,22 +40,32 @@ test('keeps the location of a failed assertion in the test file', () => {
   expect(error?.stack).toContain(`stack-traces.spec.ts:${line}:`);
 });
 
-test.describe('with the browser in the worker', () => {
-  /** The stacks formatted while `run` runs whose top frame is the race of an evaluation against its context. */
-  async function raceStacks(run: () => Promise<unknown>): Promise<number> {
-    const prepare = Error.prepareStackTrace!;
-    let count = 0;
-    Error.prepareStackTrace = (error, stack) => {
-      if (stack[0]?.getFunctionName() === '_race') count++;
-      return prepare(error, stack);
-    };
-    try {
-      await run();
-    } finally {
-      Error.prepareStackTrace = prepare;
-    }
-    return count;
+/** The stacks formatted while `run` runs whose top frame is the race of an evaluation against its context. */
+async function raceStacks(run: () => Promise<unknown>): Promise<number> {
+  const prepare = Error.prepareStackTrace!;
+  let count = 0;
+  Error.prepareStackTrace = (error, stack) => {
+    if (stack[0]?.getFunctionName() === '_race') count++;
+    return prepare(error, stack);
+  };
+  try {
+    await run();
+  } finally {
+    Error.prepareStackTrace = prepare;
   }
+  return count;
+}
+
+test('alone, leaves the race of an evaluation against its context to Playwright', async ({ page }) => {
+  await page.setContent('<p>race</p>');
+  const before = state.counters.lightRaces;
+  expect(state.lightRaces).toBe(false);
+  expect(await raceStacks(() => page.evaluate(() => document.title))).toBeGreaterThan(0);
+  expect(state.counters.lightRaces).toBe(before);
+});
+
+test.describe('with another hook on', () => {
+  test.use({ skipStabilityWait: true });
 
   test("an evaluation's race against its context's destruction formats no stack", async ({ page }) => {
     await page.setContent('<p>race</p>');
@@ -73,30 +83,35 @@ test.describe('with the browser in the worker', () => {
     }
   });
 
-  test('an evaluation a navigation interrupts fails with the same error', async ({ page }) => {
+  test('an evaluation in a document that is gone fails with the same error', async ({ page }) => {
     await page.route('http://turbo.test/**', (route) =>
       route.fulfill({ contentType: 'text/html', body: '<p>page</p>' }),
     );
-    const interrupted = async () => {
-      await page.goto('http://turbo.test/first');
-      const error = await page
-        .evaluate(() => {
-          setTimeout(() => (location.href = 'http://turbo.test/second'), 0);
-          return new Promise(() => {});
-        })
-        .then(
-          () => undefined,
-          (caught: Error) => caught,
-        );
-      await page.waitForURL('http://turbo.test/second');
-      return error;
-    };
     const errors: Array<Error | undefined> = [];
+    const raced: number[] = [];
     for (const lightRaces of [true, false]) {
+      await page.goto('http://turbo.test/first');
+      const body = await page.evaluateHandle(() => document.body);
+      await page.goto('http://turbo.test/second');
       state.lightRaces = lightRaces;
-      errors.push(await interrupted().finally(() => (state.lightRaces = true)));
+      const before = state.counters.lightRaces;
+      try {
+        errors.push(
+          await body
+            .evaluate((element) => element.tagName)
+            .then(
+              () => undefined,
+              (error: Error) => error,
+            ),
+        );
+      } finally {
+        state.lightRaces = true;
+      }
+      raced.push(state.counters.lightRaces - before);
     }
     const [light, stock] = errors;
+    expect(raced[0]).toBeGreaterThan(0);
+    expect(raced[1]).toBe(0);
     expect(light?.message).toContain('Execution context was destroyed');
     expect(light?.message).toBe(stock?.message);
     expect(light?.stack).toBe(stock?.stack);

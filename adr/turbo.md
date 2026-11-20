@@ -113,9 +113,10 @@ pointer acted in, a move that waits for the next frame.
 `fastStackTraces` came from the same profiles: Playwright captures a 50-frame stack on every API call, and
 source-map-support cloned and looked up a source map for every frame, those of Node and `node_modules` included. A
 later profile of the test worker on TodoMVC found it waiting on the browser 63% of the time, and most stacks formatted
-coming from the server: each evaluation in a page races its context's destruction, and the race formats a stack of up
-to the worker's 200 frames as it starts, five per API call. The client gives an error that reaches the test the test's
-own frames, so that stack is left out.
+coming from the server: each evaluation in a page races its context's destruction, and the race formats a stack of the
+server's frames (7 to 20 of them) through source-map-support as it starts, about five per API call. The client gives
+an error that reaches the test the test's own frames, so that stack is left out where the other hooks already reach
+Playwright's server classes.
 
 As merged, after the review's fixes, each against stock on Flashwright's suites (5 runs):
 
@@ -285,6 +286,10 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
   reaches its page before the next call's on the same protocol session, and the calls that reach a page another way
   wait for it. A call on another page of the trace, such as a popup that changes its opener, is not ordered with it.
   A snapshot still in flight after 3 s, the time Playwright gives one, no longer holds any call.
+- **`fastStackTraces` leaves Playwright's internal frames out of a race's error**: the test's error reads the same,
+  but a trace records the server's error without them, and code that captures stacks while the race starts (an
+  `async_hooks` init callback, a promise library with long stack traces) gets none for that moment. Where Playwright
+  shows its internal frames (`PWDEBUGIMPL`, its own tests), the race keeps its stack.
 - **`fastTraces`' script bodies part retires at Playwright 1.66**: Playwright itself stops fetching the bodies of
   the scripts a trace omits from 1.66 (microsoft/playwright#44078). When 1.66 joins the tested versions, the hook's
   shape check fails on the changed recorder, and that part is removed rather than adapted.
