@@ -285,6 +285,9 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
   reaches its page before the next call's on the same protocol session, and the calls that reach a page another way
   wait for it. A call on another page of the trace, such as a popup that changes its opener, is not ordered with it.
   A snapshot still in flight after 3 s, the time Playwright gives one, no longer holds any call.
+- **`fastTraces`' script bodies part retires at Playwright 1.66**: Playwright itself stops fetching the bodies of
+  the scripts a trace omits from 1.66 (microsoft/playwright#44078). When 1.66 joins the tested versions, the hook's
+  shape check fails on the changed recorder, and that part is removed rather than adapted.
 - **`failureScreenshots` applies to the tests on turbo's `test`**: a spec on `@playwright/test`'s keeps Playwright's
   capture, and Piwi's capture fixtures over turbo's `test` lose their screenshot of the page a failed test last acted
   on unless it is off.
