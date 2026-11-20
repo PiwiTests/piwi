@@ -12,7 +12,7 @@ export function defineIsolationTests(test: typeof turboTest): void {
   let server: Server;
   let origin: string;
   // Requests the server answered, by route: the HTTP cache answers the others.
-  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0 };
+  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0, unloaded: 0 };
 
   test.beforeAll(async () => {
     server = createServer((request, response) => {
@@ -38,6 +38,33 @@ export function defineIsolationTests(test: typeof turboTest): void {
             await (await caches.open('runtime')).put(event.request, fetched.clone());
             return fetched;
           })));`);
+        return;
+      }
+      // A stream that stays open, and a worker that fetches a response no cache keeps.
+      if (request.url === '/stream') {
+        response.writeHead(200, { 'content-type': 'text/event-stream', 'cache-control': 'no-store' });
+        response.write('data: open\n\n');
+        return;
+      }
+      if (request.url === '/worker.js') {
+        response.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' });
+        response.end("fetch('/worker-data').then((response) => response.text()).then((text) => postMessage(text));");
+        return;
+      }
+      if (request.url === '/worker-data') {
+        response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'no-store' });
+        response.end('data');
+        return;
+      }
+      // A page that fetches a response the browser may serve again for ten minutes as it unloads.
+      if (request.url === '/unloading') {
+        response.writeHead(200, { 'content-type': 'text/html', 'cache-control': 'no-store' });
+        response.end("<script>addEventListener('beforeunload', () => fetch('/unloaded'))</script><p>unloading</p>");
+        return;
+      }
+      if (request.url === '/unloaded') {
+        response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
+        response.end(String(++hits.unloaded));
         return;
       }
       // A response the browser may serve again for ten minutes, and a static asset it may keep for a year.
@@ -89,6 +116,7 @@ export function defineIsolationTests(test: typeof turboTest): void {
   });
 
   test.afterAll(async () => {
+    server.closeAllConnections();
     await new Promise((resolve) => server.close(resolve));
   });
 
@@ -408,6 +436,34 @@ export function defineIsolationTests(test: typeof turboTest): void {
     keepStaticCache,
   }) => {
     expect(await loadStaticAsset(page)).toBe(staticBefore + (keepStaticCache ? 0 : 1));
+  });
+
+  test('loads a static asset beside an open stream and a request of a worker', async ({ page }) => {
+    staticBefore = await loadStaticAsset(page);
+    await page.evaluate(async () => {
+      const stream = new EventSource('/stream');
+      await new Promise((resolve) => stream.addEventListener('message', resolve, { once: true }));
+      const worker = new Worker('/worker.js');
+      await new Promise((resolve) => worker.addEventListener('message', resolve, { once: true }));
+    });
+  });
+
+  test('gets that static asset from the cache only when the reset keeps static assets, there too', async ({
+    page,
+    keepStaticCache,
+  }) => {
+    expect(await loadStaticAsset(page)).toBe(staticBefore + (keepStaticCache ? 0 : 1));
+  });
+
+  test('leaves a page that fetches a reusable response as it unloads', async ({ page }) => {
+    await page.goto(`${origin}/unloading`);
+  });
+
+  test('gets the response fetched as the page unloaded from the server', async ({ page }) => {
+    await page.goto(origin);
+    const before = hits.unloaded;
+    await page.evaluate(() => fetch('/unloaded').then((response) => response.text()));
+    expect(hits.unloaded).toBe(before + 1);
   });
 
   test('leaves a response the browser could serve again without asking, beside a static asset', async ({ page }) => {

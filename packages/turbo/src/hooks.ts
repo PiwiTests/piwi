@@ -92,12 +92,17 @@ export const state = {
 /** What a reused context received since its last reset, as keepStaticCache judges it. */
 interface CacheWatch {
   responses: ServerPage[];
-  /** Its requests that have not finished, or that failed once their response had arrived. */
-  unfinished: Set<ServerPage>;
-  /** On Chromium, by protocol id: the requests a tab's renderer announced, and those answered over the network. */
-  announced: Set<string>;
+  /** Its requests that have no response yet. */
+  waiting: Set<ServerPage>;
+  /**
+   * On Chromium, by protocol id, from every session of its tabs: the responses the browser received over the network,
+   * and those a page or worker received.
+   */
   answered: Set<string>;
-  /** A tab whose protocol session it cannot watch, where a response may come unannounced. */
+  delivered: Set<string>;
+  /** A favicon the browser received over the network, which Playwright reports no event for. */
+  favicon: boolean;
+  /** Not Chromium: no events show a response the browser cached without a page receiving it. */
   blind: boolean;
 }
 
@@ -379,51 +384,89 @@ const withinASecond = <T>(promise: Promise<T>) =>
 
 /**
  * keepStaticCache: records the requests and responses of a reused context in Playwright's server, from now until each
- * reset judges them, so a response that arrives once its test has ended counts too, and a request still in flight at
- * the reset clears the cache.
+ * reset judges them, so a response that arrives once its test has ended counts too, and a request still waiting for
+ * its response at the reset clears the cache.
  */
 export function watchStaticCache(serverContext: ServerPage): void {
   if (state.staticCacheResponses.has(serverContext)) return;
+  const browserName = serverContext._browser?.options?.name;
+  if (typeof browserName !== 'string')
+    throw new IncompatibleError("Playwright's server context no longer names its browser");
   const received: CacheWatch = {
     responses: [],
-    unfinished: new Set(),
-    announced: new Set(),
+    waiting: new Set(),
     answered: new Set(),
-    blind: false,
+    delivered: new Set(),
+    favicon: false,
+    blind: browserName !== 'chromium',
   };
   state.staticCacheResponses.set(serverContext, received);
-  serverContext.on('request', (request: ServerPage) => received.unfinished.add(request));
-  serverContext.on('response', (response: ServerPage) => received.responses.push(response));
-  serverContext.on('requestfinished', (finished: { request?: ServerPage } | undefined) => {
-    if (finished?.request) received.unfinished.delete(finished.request);
-    else state.error ??= new IncompatibleError("Playwright's requestfinished event no longer carries its request");
+  serverContext.on('request', (request: ServerPage) => received.waiting.add(request));
+  serverContext.on('response', (response: ServerPage) => {
+    received.responses.push(response);
+    received.waiting.delete(response.request?.());
   });
-  // A request that failed with no response left nothing in the cache; one with a response may have.
-  serverContext.on('requestfailed', (request: ServerPage) => {
-    if (typeof request?._existingResponse !== 'function')
-      state.error ??= new IncompatibleError("Playwright's server requests no longer have _existingResponse()");
-    else if (!request._existingResponse()) received.unfinished.delete(request);
+  serverContext.on('requestfailed', (request: ServerPage) => received.waiting.delete(request));
+  if (received.blind) return;
+  for (const page of serverContext.pages()) watchTabNetwork(page);
+  serverContext.on('page', (page: ServerPage) => {
+    try {
+      watchTabNetwork(page);
+    } catch (error) {
+      state.error ??= error as Error;
+    }
   });
-  for (const page of serverContext.pages?.() ?? []) watchTabNetwork(page, received);
-  serverContext.on('page', (page: ServerPage) => watchTabNetwork(page, received));
 }
 
+/** The protocol sessions keepStaticCache listens to. */
+const watchedSessions = new WeakSet<object>();
+
 /**
- * A request a document makes while it is being replaced, as by the reset's navigation, is answered and cached by the
- * browser, but its renderer never announces it, so Playwright never reports it. On Chromium, a tab's protocol session
- * still carries the browser's own events of it; a tab without one leaves the context blind to such requests.
+ * A response the browser receives over the network can enter its cache although no page receives it: a request the
+ * page aborts as its headers arrive, or one a document makes while the reset replaces it. Chromium's own events show
+ * it on the session the request went through, the tab's, a worker's or an out-of-process frame's, all of which
+ * Playwright's network manager of the tab holds. A request a document starts in `pagehide`, `unload` or
+ * `visibilitychange` as it is replaced shows in none of them.
  */
-function watchTabNetwork(page: ServerPage, received: CacheWatch): void {
-  const session = page?.delegate?._mainFrameSession?._client;
-  if (typeof session?.on !== 'function') {
-    received.blind = true;
-    return;
-  }
-  session.on('Network.requestWillBeSent', (event: { requestId?: string }) => {
-    if (event?.requestId) received.announced.add(event.requestId);
-  });
+function watchTabNetwork(page: ServerPage): void {
+  const manager = page?.delegate?._networkManager;
+  const sessions = manager?._sessions as Map<ServerPage, unknown> | undefined;
+  if (!(sessions instanceof Map) || typeof manager.addSession !== 'function')
+    throw new IncompatibleError("Playwright's Chromium network manager no longer holds its sessions");
+  hookNetworkSessions(Object.getPrototypeOf(manager));
+  for (const session of sessions.keys()) watchSession(session, page.browserContext);
+}
+
+let networkSessionsHooked = false;
+
+/** Watches the sessions a tab's network manager adds later: workers, out-of-process frames. */
+function hookNetworkSessions(proto: ServerPage): void {
+  if (networkSessionsHooked) return;
+  const addSession = proto.addSession as ((session: ServerPage, ...rest: unknown[]) => Promise<unknown>) | undefined;
+  if (typeof addSession !== 'function')
+    throw new IncompatibleError("Playwright's Chromium network manager no longer adds its sessions");
+  proto.addSession = function (this: ServerPage, session: ServerPage, ...rest: unknown[]) {
+    const context = this._page?.browserContext;
+    if (context && state.staticCacheResponses.has(context)) watchSession(session, context);
+    return addSession.call(this, session, ...rest);
+  };
+  networkSessionsHooked = true;
+}
+
+function watchSession(session: ServerPage, context: ServerPage): void {
+  if (watchedSessions.has(session)) return;
+  if (typeof session?.on !== 'function')
+    throw new IncompatibleError("Playwright's Chromium sessions no longer emit the protocol's events");
+  watchedSessions.add(session);
+  const watch = () => state.staticCacheResponses.get(context);
   session.on('Network.responseReceivedExtraInfo', (event: { requestId?: string }) => {
-    if (event?.requestId) received.answered.add(event.requestId);
+    if (event?.requestId) watch()?.answered.add(event.requestId);
+  });
+  session.on('Network.responseReceived', (event: { requestId?: string; response?: { url?: string } }) => {
+    const received = watch();
+    if (!received || !event?.requestId) return;
+    received.delivered.add(event.requestId);
+    if (event.response?.url?.split(/[?#]/)[0]?.endsWith('/favicon.ico')) received.favicon = true;
   });
 }
 
@@ -491,18 +534,22 @@ function hookContextReset(core: ServerPage): void {
       const received = state.staticCacheResponses.get(this);
       if (mode !== 'resetForReuse' || !state.keepStaticCache || !received)
         return await resetStorage.call(this, progress, storageState, mode);
-      // A request still in flight, one that failed after its response arrived, or one the browser answered without its
-      // renderer announcing it, may have left anything in the cache.
-      const unannounced = [...received.answered].some((id) => !received.announced.has(id));
+      if (state.error) throw state.error;
+      // What arrives from here on counts at the next reset.
+      const judged = { ...received, waiting: [...received.waiting] };
+      received.responses = [];
+      received.waiting = new Set();
+      received.answered = new Set();
+      received.delivered = new Set();
+      received.favicon = false;
+      // A request still waiting for its response, a response the browser received that no page received, or a
+      // favicon, which Playwright reports no event for, may have left anything in the cache.
       const keep =
-        !received.blind &&
-        !unannounced &&
-        received.unfinished.size === 0 &&
-        (await onlyStaticAssets(received.responses));
-      received.responses.length = 0;
-      received.unfinished.clear();
-      received.announced.clear();
-      received.answered.clear();
+        !judged.blind &&
+        !judged.favicon &&
+        judged.waiting.length === 0 &&
+        [...judged.answered].every((id) => judged.delivered.has(id)) &&
+        (await onlyStaticAssets(judged.responses));
       if (!keep) return await resetStorage.call(this, progress, storageState, mode);
       this.clearCache = async () => {
         state.counters.keptCaches++;
