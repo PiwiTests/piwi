@@ -95,7 +95,7 @@ out.
 | `skipStabilityWait` | One worker: TodoMVC 1.11× vs 1.03×, Shop 1.20× vs 1.10×, Inventory 1.06× vs 0.99×. |
 | `fastReset` | noop 0.93× vs 0.83×, TodoMVC 1.41× vs 1.21×, Shop 1.28× vs 1.27×. |
 | `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. |
-| `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
+| `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither, left no fake clock or WebAuthn credentials installed (their scripts leave the context only after its reset loaded `about:blank`, so that document still runs them), and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
 | `earlyInjection` | Same app, one tab: the first fill after a navigation took 25 ms and the next 6 ms, the difference being Playwright creating its injected script in the document's utility world. Created as soon as the document's utility context exists: 9 to 11 ms, with the navigation 2 to 8 ms longer. TodoMVC (as above) 4,148 to 3,860 ms. |
 | `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). |
 | Per-test calls on a reused context (below) | `max`: noop 1.20× vs 1.01×, TodoMVC 1.44× vs 1.38×, Shop 1.32× vs 1.29×. |
@@ -243,6 +243,10 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
   media, and pending crypto, storage, decoding and WebAssembly work in every page of the context. It must stay off for
   a test that changes the page from its own Node code while an assertion waits, or a page that waits on another
   browser context or a prompt. The hooks gain little on a suite whose time is mostly waiting on its API.
+- **`earlyInjection` creates the injected script before the page's own scripts run**: its listeners on the window come
+  before the page's, which a page sees only when an action's hit-target check stops an event, and a document no call
+  reaches pays for the script. A selector engine or test id attribute registered after the navigation and before the
+  first call gets a new script at that call, as Playwright creates it then.
 - **`failureScreenshots` applies to the tests on turbo's `test`**: a spec on `@playwright/test`'s keeps Playwright's
   capture, and Piwi's capture fixtures over turbo's `test` lose their screenshot of the page a failed test last acted
   on unless it is off.

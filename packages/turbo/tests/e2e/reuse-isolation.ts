@@ -219,6 +219,23 @@ export function defineIsolationTests(test: typeof turboTest): void {
     expect(state.dark).toBe(false);
   });
 
+  test('leaves a fake clock and WebAuthn credentials installed', async ({ page, context }) => {
+    await page.clock.install({ time: new Date('2001-02-03T04:05:06Z') });
+    await context.credentials.install();
+    await page.goto(origin);
+  });
+
+  test('starts on a document with the real clock and no WebAuthn stand-in, before any navigation', async ({ page }) => {
+    const state = await page.evaluate(() => ({
+      year: new Date().getFullYear(),
+      realTimers: String(setTimeout).includes('[native code]'),
+      realCredentials: !navigator.credentials || String(navigator.credentials.create).includes('[native code]'),
+    }));
+    expect(state.year).toBeGreaterThan(2020);
+    expect(state.realTimers).toBe(true);
+    expect(state.realCredentials).toBe(true);
+  });
+
   test.describe('with a viewport and color scheme of its own', () => {
     test.use({ viewport: { width: 500, height: 400 }, colorScheme: 'dark' });
 

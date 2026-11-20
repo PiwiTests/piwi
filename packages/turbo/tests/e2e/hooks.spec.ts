@@ -1,6 +1,6 @@
 import { captureFailure, test, expect } from '../../src/test';
-import { chmodSync, mkdirSync } from 'node:fs';
-import { createServer } from 'node:http';
+import { chmodSync, mkdirSync, readFileSync } from 'node:fs';
+import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { screenshotMatchStore, state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
@@ -521,6 +521,22 @@ test.describe('early injection', () => {
     await expect(page.getByPlaceholder('name')).toHaveValue('typed');
   });
 
+  test('sees a selector engine registered after the navigation', async ({ page, playwright }, testInfo) => {
+    const before = state.counters.earlyInjections;
+    await page.goto('data:text/html,<div>hello</div>');
+    expect(state.counters.earlyInjections).toBe(before + 1);
+    const name = `turbo_early_${testInfo.repeatEachIndex}_${testInfo.retry}`;
+    await playwright.selectors.register(
+      name,
+      () => ({
+        query: (root: Element, selector: string) => root.querySelector(selector),
+        queryAll: (root: Element, selector: string) => [...root.querySelectorAll(selector)],
+      }),
+      { contentScript: true },
+    );
+    await expect(page.locator(`${name}=div`)).toHaveText('hello');
+  });
+
   test('leaves about:blank alone', async ({ page }) => {
     const before = state.counters.earlyInjections;
     await page.goto('about:blank');
@@ -540,8 +556,10 @@ test.describe('without early injection', () => {
 test.describe('fast traces', () => {
   test.use({ fastTraces: true });
 
-  test('a trace requests no script body, and response.body() still reads it', async ({ context, page }, testInfo) => {
-    const server = createServer((request, response) => {
+  let server: Server;
+  let url: string;
+  test.beforeAll(async () => {
+    server = createServer((request, response) => {
       if (request.url === '/app.js') {
         response.writeHead(200, { 'content-type': 'text/javascript' });
         response.end('window.loaded = true;');
@@ -551,26 +569,35 @@ test.describe('fast traces', () => {
       response.end('<script src="/app.js"></script><p>traced</p>');
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    const url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
-    try {
-      await context.tracing.start({ snapshots: true });
-      const before = state.counters.skippedScriptBodies;
-      const [script] = await Promise.all([page.waitForResponse('**/app.js'), page.goto(url)]);
-      expect(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded)).toBe(true);
-      expect(await script.text()).toBe('window.loaded = true;');
-      await context.tracing.stop({ path: testInfo.outputPath('trace.zip') });
-      expect(state.counters.skippedScriptBodies).toBe(before + 1);
-    } finally {
-      server.close();
-    }
+    url = `http://127.0.0.1:${(server.address() as AddressInfo).port}/`;
+  });
+  test.afterAll(() => server.close());
+
+  test('a trace requests no script body, and response.body() still reads it', async ({ context, page }, testInfo) => {
+    await context.tracing.start({ snapshots: true });
+    const before = state.counters.skippedScriptBodies;
+    const [script] = await Promise.all([page.waitForResponse('**/app.js'), page.goto(url)]);
+    expect(await page.evaluate(() => (window as unknown as { loaded?: boolean }).loaded)).toBe(true);
+    expect(await script.text()).toBe('window.loaded = true;');
+    await context.tracing.stop({ path: testInfo.outputPath('trace.zip') });
+    expect(state.counters.skippedScriptBodies).toBe(before + 1);
   });
 
-  test('leaves a trace without DOM snapshots alone', async ({ context, page }) => {
-    // Such a trace records no response bodies.
-    await context.tracing.start({ snapshots: false });
+  test('a HAR recording keeps the bodies of scripts', async ({ browser, context }, testInfo) => {
+    // The test's own context is what turns the hooks on for the test.
+    void context;
+    const har = testInfo.outputPath('scripts.har');
+    const recorded = await browser.newContext({ recordHar: { path: har, content: 'embed' } });
     const before = state.counters.skippedScriptBodies;
-    await page.goto('data:text/html,<script>window.inline = true</script>');
-    await context.tracing.stop();
+    await (await recorded.newPage()).goto(url);
+    await recorded.close();
+    const entries = (JSON.parse(readFileSync(har, 'utf8')) as HarFile).log.entries;
+    const script = entries.find((entry) => entry.request.url.endsWith('/app.js'));
+    expect(script?.response.content.text).toBe('window.loaded = true;');
     expect(state.counters.skippedScriptBodies).toBe(before);
   });
 });
+
+type HarFile = {
+  log: { entries: Array<{ request: { url: string }; response: { content: { text?: string } } }> };
+};

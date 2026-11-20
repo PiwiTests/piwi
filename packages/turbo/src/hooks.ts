@@ -7,10 +7,11 @@
 //   fast reset        when Playwright resets a reused context, clears the storage of the origins the test visited
 //                     through CDP, so the reset has no origin to load, moves the mouse away only from a tab a
 //                     pointer acted in, and leaves out the tab's second load of about:blank and its emulation
-//                     updates when the test changed neither and the next test asks for the same context options
+//                     updates when the test changed neither, left no clock or WebAuthn script, and the next test asks
+//                     for the same context options
 //   early injection   creates Playwright's injected script and utility script in the utility world of a tab's new
 //                     document as soon as its context exists, while the document loads, instead of at its first call
-//   fast traces       a trace that leaves out script bodies no longer fetches them from the browser first
+//   fast traces       a trace that leaves out script bodies does not request them from the browser
 //   skip stability wait  pointer actions stop waiting for the element to keep still for two animation frames; the
 //                     visible, enabled and hit-target checks stay
 //   fast stack traces the worker's stack traces format the frames of Node and of node_modules without looking up a
@@ -63,6 +64,7 @@ export const state = {
   frameHooked: false,
   sessionHooked: false,
   tracerHooked: false,
+  injectedScriptHooked: false,
   counters: {
     optimizedScreenshots: 0,
     shortenedRetries: 0,
@@ -413,11 +415,15 @@ function hookContextReset(core: ServerPage): void {
   if (blank < 0 || storage < blank || !String(setStorageState).includes('this._origins'))
     throw new IncompatibleError("Playwright's context reset no longer runs the steps fastReset expects");
   // fastReset: whether the next test asks for the context options the last one had, which the tab's own reset applies
-  // again otherwise (hookPageReset).
+  // again otherwise, and whether the test left the clock's or WebAuthn's page scripts, which leave the context only after
+  // its reset loaded about:blank, so that document still runs them (hookPageReset).
   proto.resetForReuse = function (this: ServerPage, progress: unknown, params: unknown) {
-    const options = JSON.stringify(params ?? null);
-    sameOptions.set(this, lastOptions.get(this) === options);
-    lastOptions.set(this, options);
+    if (state.fastReset) {
+      const options = JSON.stringify(params ?? null);
+      sameOptions.set(this, lastOptions.get(this) === options);
+      lastOptions.set(this, options);
+      pageScriptsLeft.set(this, pageScriptsInstalled(this));
+    }
     return resetForReuse.call(this, progress, params);
   };
   // keepStaticCache: the reset leaves the HTTP cache of a context whose last test loaded static assets only.
@@ -473,6 +479,20 @@ function hookContextReset(core: ServerPage): void {
 const lastOptions = new WeakMap<object, string>();
 /** Whether each reused context's last reset asked for the options of the reset before it. */
 const sameOptions = new WeakMap<object, boolean>();
+/** Whether each reused context had the clock's or WebAuthn's page scripts when its last reset began. */
+const pageScriptsLeft = new WeakMap<object, boolean>();
+
+/** Whether the clock or the WebAuthn credentials of a server context have scripts installed in its pages. */
+function pageScriptsInstalled(context: ServerPage): boolean {
+  const clockScripts = context.clock?._initScripts;
+  const credentials = context.credentials;
+  const dispose = String(credentials?.dispose);
+  if (!Array.isArray(clockScripts) || !dispose.includes('this._initScript') || !dispose.includes('this._binding'))
+    throw new IncompatibleError(
+      "Playwright's clock and WebAuthn credentials no longer keep their page scripts as read",
+    );
+  return clockScripts.length > 0 || !!credentials._initScript || !!credentials._binding;
+}
 /** Storage restores in progress: they load documents that run no action. */
 let restoringStorage = 0;
 
@@ -488,8 +508,8 @@ function untouchedEmulation(page: ServerPage): boolean {
 
 /**
  * fastReset: the context's reset has just loaded about:blank in the tab, so the tab's own reset loads it again and
- * applies the context's viewport and media to it again only when the test changed them or the next test asks for other
- * context options. Its mouse reset always runs.
+ * applies the context's viewport and media to it again only when the test changed them, left the clock's or WebAuthn's
+ * scripts in that document, or the next test asks for other context options. Its mouse reset always runs.
  */
 function hookPageReset(Page: ServerPage): void {
   const reset = Page.prototype.resetForReuse as ((progress: unknown) => Promise<void>) | undefined;
@@ -507,6 +527,7 @@ function hookPageReset(Page: ServerPage): void {
       state.fastReset &&
       isChromium(this) &&
       sameOptions.get(this.browserContext) &&
+      pageScriptsLeft.get(this.browserContext) === false &&
       untouchedEmulation(this) &&
       this.mainFrame().url() === 'about:blank'
     ) {
@@ -515,6 +536,46 @@ function hookPageReset(Page: ServerPage): void {
     }
     return reset.call(this, progress);
   };
+}
+
+/** The selector registry each injected script created early was built with, until its first call. */
+const earlyScripts = new WeakMap<object, string>();
+
+/** The custom selector engines and test id attribute an injected script built in `context` now holds. */
+function registryOf(context: ServerPage): string {
+  const registry = context.frame._page.browserContext.selectors();
+  return `${[...registry._engines.keys()].join(',')}\0${registry.testIdAttributeName()}`;
+}
+
+/**
+ * Playwright builds the selector engines and test id attribute registered at that moment into an injected script, and
+ * never updates it. An injected script created early whose registry changed before its first call is created again at
+ * that call, as Playwright creates it.
+ */
+function hookInjectedScript(proto: ServerPage): void {
+  const injectedScript = proto.injectedScript as (() => Promise<ServerPage>) | undefined;
+  const source = String(injectedScript);
+  if (
+    typeof injectedScript !== 'function' ||
+    !source.includes('selectorsRegistry._engines') ||
+    !source.includes('selectorsRegistry.testIdAttributeName()') ||
+    !source.includes('this._injectedScriptPromise')
+  ) {
+    throw new IncompatibleError("Playwright's injected script no longer reads the selector registry as it is created");
+  }
+  proto.injectedScript = function (this: ServerPage) {
+    const built = earlyScripts.get(this);
+    if (built !== undefined) {
+      earlyScripts.delete(this);
+      if (built !== registryOf(this)) {
+        const stale = this._injectedScriptPromise as Promise<ServerPage> | undefined;
+        this._injectedScriptPromise = undefined;
+        stale?.then((handle) => handle.dispose()).catch(() => {});
+      }
+    }
+    return injectedScript.call(this);
+  };
+  state.injectedScriptHooked = true;
 }
 
 /**
@@ -532,12 +593,19 @@ function hookEarlyInjection(proto: ServerPage): void {
       state.error ??= new IncompatibleError("Playwright's execution context has no injectedScript()/_utilityScript()");
       return;
     }
+    try {
+      if (!state.injectedScriptHooked) hookInjectedScript(Object.getPrototypeOf(context));
+    } catch (error) {
+      state.error ??= error as Error;
+      return;
+    }
     state.counters.earlyInjections++;
     // A document replaced before they are created rejects them: its context is gone with it.
     context
       .injectedScript()
       .then(() => context._utilityScript())
       .catch(() => {});
+    earlyScripts.set(context, registryOf(context));
   };
 }
 
@@ -545,8 +613,8 @@ const NO_BODY = Buffer.alloc(0);
 
 /**
  * fastTraces: Playwright's trace recorder requests the body of every response, then leaves out those of scripts unless
- * the trace is live. A script's body is not requested at all: the request held up the page's load and the snapshot
- * after it. The override covers the recorder's own request alone, so `response.body()` still reads the body.
+ * the trace is live. A script's body is not requested. The override covers the recorder's own request alone, so
+ * `response.body()` still reads the body.
  */
 function hookTracer(page: ServerPage): void {
   const tracer = page.browserContext?.tracing?._harTracer;

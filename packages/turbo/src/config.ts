@@ -94,13 +94,13 @@ export interface Optimizations {
     fastReset?: boolean;
     /**
      * Chromium: Playwright's injected script, which its actions and assertions run in, is created in each new document
-     * of a tab while the document loads, instead of at its first call. The first call after a navigation no longer
-     * waits for it; a document that gets no call pays for it anyway.
+     * of a tab while the document loads, instead of at its first call, so the first call after a navigation finds it
+     * ready. A document that gets no call pays for it anyway.
      */
     earlyInjection?: boolean;
     /**
-     * A trace that records DOM snapshots leaves out the bodies of scripts unless it is live; Playwright still requests
-     * each one from the browser first, which holds up the page's load. With this, it does not.
+     * A trace that records DOM snapshots and leaves out the bodies of scripts, as every trace but a live one does, does
+     * not request them from the browser.
      */
     fastTraces?: boolean;
     /**

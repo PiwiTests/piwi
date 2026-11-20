@@ -221,8 +221,9 @@ withOptimizations(config, {
   where Playwright's reset loads each origin again to clear it. The mouse is moved away from the tab only after a test
   that used Playwright's mouse or touchscreen: input a test sends through its own CDP session is not seen. The tab's
   own reset, which loads `about:blank` a second time and applies the viewport and media again, is left out when the test
-  changed neither and the next test asks for the context options the last one had (a file's own `viewport` or
-  `colorScheme` brings it back): a reset took 14 ms in place of 31 ms, and Flashwright's TodoMVC suite 3% less time.
+  changed neither, left no fake clock or WebAuthn credentials installed, and the next test asks for the context options
+  the last one had (a file's own `viewport` or `colorScheme` brings it back): a reset took 14 ms in place of 31 ms, and
+  Flashwright's TodoMVC suite 3% less time.
 - **`fastStackTraces`**: Playwright captures a stack of 50 frames for every API call, and source-map-support looks up
   a source map for each frame. The frames of Node and of `node_modules`, which have none, are formatted without the
   lookup; stack traces read the same.
@@ -246,11 +247,14 @@ withOptimizations(config, {
   which it creates in each new document at the first call. The script and its utility script are created in the
   tab's new document as soon as it has a context, while the document loads: the first fill after a navigation took 9
   to 11 ms in place of 25 ms, the navigation a few milliseconds longer, and Flashwright's TodoMVC suite, whose tests
-  each start on a new document, 7% less time. A document that gets no call pays for the script anyway.
+  each start on a new document, 7% less time. A document that gets no call pays for the script anyway. A selector
+  engine or test id attribute registered after the navigation is seen, as without the hook; the script's listeners on
+  the window are added before the page's own, which a page can tell apart only when an action's hit-target check
+  stops an event.
 - **`fastTraces`**: a trace that records DOM snapshots leaves out the bodies of scripts unless it is live, and Playwright
-  requests each one from the browser before leaving it out, which holds up the page's load. Those bodies are no
-  longer requested; the trace is the same, and `response.body()` still reads them. TodoMVC with a trace of every test
-  (`retain-on-failure` without retries) took 12% less time.
+  requests each one from the browser before leaving it out, which holds up the page's load. Those bodies are not
+  requested; the trace is the same, `response.body()` still reads them, and a HAR recording keeps them. TodoMVC with a
+  trace of every test (`retain-on-failure` without retries) took 12% less time.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
 `Page.prototype.expectScreenshot`, `Page.prototype.resetForReuse`, `BrowserContext.prototype.setStorageState` and
@@ -281,8 +285,9 @@ own suite. The benchmark lives in the repository and is not part of the npm pack
 Several levers follow techniques from [Flashwright](https://github.com/xcodebeast/flashwright), a fork of Playwright
 that makes them its defaults: faster PNG encoding, less waiting between checks, failure screenshots taken only on
 failure, instant animations, assertions that fail once the page is idle, pointer actions that skip the wait for a
-still element, a reused, reset browser context, a code cache of Playwright's modules and a worker started before the
-runner needs it. @piwitests/turbo applies them to stock Playwright at runtime instead of forking it. It contains no
+still element, a reused, reset browser context, a lighter reset of its tab, Playwright's injected script created while
+a page loads, traces that skip the script bodies they leave out, a code cache of Playwright's modules and a worker
+started before the runner needs it. @piwitests/turbo applies them to stock Playwright at runtime instead of forking it. It contains no
 Flashwright or Playwright code; both are Apache-2.0.
 
 @piwitests/turbo is part of [Piwi](https://github.com/PiwiTests/piwi), and neither is affiliated with or endorsed by
