@@ -47,6 +47,9 @@ export interface TurboOptions {
    * loads, instead of at the first action or assertion after the navigation.
    */
   earlyInjection: boolean;
-  /** Experimental: a trace that leaves out script bodies does not request them from the browser. */
+  /**
+   * Experimental: a trace that leaves out script bodies does not request them from the browser, and on Chromium leaves
+   * the DOM snapshots before and after each call in flight rather than awaiting them.
+   */
   fastTraces: boolean;
 }

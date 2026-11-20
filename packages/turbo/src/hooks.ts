@@ -78,6 +78,7 @@ export const state = {
     lightPageResets: 0,
     earlyInjections: 0,
     skippedScriptBodies: 0,
+    deferredSnapshots: 0,
   },
   elementHooked: false,
 };
@@ -617,6 +618,7 @@ const NO_BODY = Buffer.alloc(0);
  * `response.body()` still reads the body.
  */
 function hookTracer(page: ServerPage): void {
+  hookSnapshots(page.browserContext?.tracing);
   const tracer = page.browserContext?.tracing?._harTracer;
   const proto = tracer && Object.getPrototypeOf(tracer);
   const finished = proto?._onRequestFinished as ((request: ServerPage, response: ServerPage) => unknown) | undefined;
@@ -646,6 +648,135 @@ function hookTracer(page: ServerPage): void {
     }
   };
   state.tracerHooked = true;
+}
+
+/** At most this many DOM snapshots of a trace in flight: one more is taken the stock way, holding its call. */
+const MAX_PENDING_SNAPSHOTS = 20;
+/** How long a call waits for the snapshots in flight before it goes on. */
+const PENDING_SNAPSHOTS_MS = 3_000;
+/**
+ * The calls that may start while the DOM snapshots taken before them are in flight. Each reaches the page through the
+ * protocol session the snapshots use, after their requests, or sends input only after the snapshot Playwright takes
+ * right before input, or after a round trip to the page: the page takes the snapshots first.
+ */
+const SNAPSHOT_FREE_CALLS = new Set([
+  ...['Frame', 'ElementHandle'].flatMap((type) =>
+    [
+      'check',
+      'click',
+      'dblclick',
+      'dispatchEvent',
+      'evalOnSelector',
+      'evalOnSelectorAll',
+      'evaluateExpression',
+      'evaluateExpressionHandle',
+      'fill',
+      'focus',
+      'getAttribute',
+      'hover',
+      'innerHTML',
+      'innerText',
+      'inputValue',
+      'isChecked',
+      'isDisabled',
+      'isEditable',
+      'isEnabled',
+      'isHidden',
+      'isVisible',
+      'press',
+      'querySelector',
+      'querySelectorAll',
+      'selectOption',
+      'setInputFiles',
+      'tap',
+      'textContent',
+      'type',
+      'uncheck',
+      'waitForSelector',
+    ].map((method) => `${type}.${method}`),
+  ),
+  'Frame.blur',
+  'Frame.content',
+  'Frame.expect',
+  'Frame.queryCount',
+  'Frame.waitForFunction',
+  'Frame.waitForTimeout',
+  'ElementHandle.boundingBox',
+  'ElementHandle.scrollIntoViewIfNeeded',
+  'ElementHandle.waitForElementState',
+  'JSHandle.evaluateExpression',
+  'JSHandle.evaluateExpressionHandle',
+]);
+/** The DOM snapshots in flight, per trace recorder. */
+const pendingSnapshots = new WeakMap<object, Set<Promise<void>>>();
+
+/** Waits for the snapshots `tracing` has in flight, for `PENDING_SNAPSHOTS_MS` at most. */
+async function settleSnapshots(tracing: object): Promise<void> {
+  const pending = pendingSnapshots.get(tracing);
+  if (!pending?.size) return;
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<void>((resolve) => (timer = setTimeout(resolve, PENDING_SNAPSHOTS_MS)));
+  await Promise.race([Promise.all(pending), timeout]);
+  clearTimeout(timer);
+}
+
+/**
+ * fastTraces, on Chromium: the DOM snapshot a trace takes before and after a call is left in flight rather than
+ * awaited, when it is the only capture of that phase. A call outside `SNAPSHOT_FREE_CALLS`, such as a navigation, a
+ * close, keyboard input or the trace's own stop, waits for the snapshots in flight first. The snapshot taken right
+ * before an action's input is awaited as in stock.
+ */
+function hookSnapshots(tracing: ServerPage): void {
+  const proto = tracing && Object.getPrototypeOf(tracing);
+  const capture = proto?._captureSnapshot as
+    | ((progress: ServerPage, sdkObject: ServerPage, phase: string) => Promise<void>)
+    | undefined;
+  const onBeforeCall = proto?.onBeforeCall as ((...args: unknown[]) => Promise<void>) | undefined;
+  const captureSource = String(capture);
+  if (
+    typeof capture !== 'function' ||
+    typeof onBeforeCall !== 'function' ||
+    !String(onBeforeCall).includes('return this._captureSnapshot(progress2, sdkObject, "before")') ||
+    !String(proto.onAfterCall).includes('return this._captureSnapshot(progress2, sdkObject, "after")') ||
+    !String(proto.onBeforeInputAction).includes('return this._captureSnapshot(progress2, sdkObject, "action")') ||
+    !captureSource.includes('this._snapshotter.captureSnapshot(page, progress2.metadata.id, phase') ||
+    !captureSource.includes('options?.snapshotScreen') ||
+    !captureSource.includes('options?.snapshotAria') ||
+    !captureSource.includes('this._captureCoverage(')
+  ) {
+    throw new IncompatibleError(
+      "Playwright's trace recorder no longer takes its DOM snapshots the way fastTraces expects",
+    );
+  }
+  proto._captureSnapshot = function (this: ServerPage, progress: ServerPage, sdkObject: ServerPage, phase: string) {
+    const { type, method } = progress.metadata ?? {};
+    const options = this._state?.options;
+    let pending = pendingSnapshots.get(this);
+    if (
+      !state.fastTraces ||
+      (phase !== 'after' && !(phase === 'before' && SNAPSHOT_FREE_CALLS.has(`${type}.${method}`))) ||
+      !isChromium(sdkObject.attribution?.page ?? {}) ||
+      options?.snapshotScreen ||
+      options?.snapshotAria ||
+      this._coverageRecorder ||
+      (pending?.size ?? 0) >= MAX_PENDING_SNAPSHOTS
+    ) {
+      return capture.call(this, progress, sdkObject, phase);
+    }
+    if (!pending) pendingSnapshots.set(this, (pending = new Set()));
+    const snapshots = pending;
+    state.counters.deferredSnapshots++;
+    const snapshot = capture.call(this, progress, sdkObject, phase).catch(() => {});
+    snapshots.add(snapshot);
+    void snapshot.then(() => snapshots.delete(snapshot));
+    return Promise.resolve();
+  };
+  proto.onBeforeCall = function (this: ServerPage, progress: ServerPage, ...rest: unknown[]) {
+    const { type, method } = progress.metadata ?? {};
+    if (!pendingSnapshots.get(this)?.size || SNAPSHOT_FREE_CALLS.has(`${type}.${method}`))
+      return onBeforeCall.call(this, progress, ...rest);
+    return settleSnapshots(this).then(() => onBeforeCall.call(this, progress, ...rest));
+  };
 }
 
 /** The CDP session of a server context's first page, on Chromium. */

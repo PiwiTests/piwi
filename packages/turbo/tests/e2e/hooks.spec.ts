@@ -4,6 +4,14 @@ import { createServer, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { screenshotMatchStore, state } from '../../src/hooks';
 import type { Page } from '@playwright/test';
+import { createRequire } from 'node:module';
+
+/** Playwright's own zip reader, which reads the trace files. */
+const { ZipFile } = createRequire(__filename)('playwright-core/lib/coreBundle').utils as {
+  ZipFile: new (path: string) => { read(entry: string): Promise<Buffer>; close(): void };
+};
+type TraceEvent = { type: string; callId: string; class: string; method: string; snapshot: TraceSnapshot };
+type TraceSnapshot = { callId: string; phase: string; html: unknown };
 
 const STATIC_PAGE = `
   <style>body{margin:0;font:16px sans-serif}.grad{height:200px;background:linear-gradient(90deg,#123,#f80)}
@@ -596,7 +604,94 @@ test.describe('fast traces', () => {
     expect(script?.response.content.text).toBe('window.loaded = true;');
     expect(state.counters.skippedScriptBodies).toBe(before);
   });
+
+  test('takes the DOM snapshots of a trace in flight, and records the ones stock does', async ({
+    browser,
+    context,
+  }, testInfo) => {
+    // The test's own context is what turns the hooks on for the test.
+    void context;
+    const record = async (deferred: boolean) => {
+      state.fastTraces = deferred;
+      const traced = await browser.newContext();
+      const page = await traced.newPage();
+      const path = testInfo.outputPath(`${deferred ? 'deferred' : 'stock'}.zip`);
+      await traced.tracing.start({ snapshots: true });
+      await page.goto(url);
+      await page.setContent(
+        '<input><p id="n">0</p><button onclick="n.textContent = +n.textContent + 1; window.slowSnapshot = n.textContent === \'6\'">add</button>',
+      );
+      await page.evaluate(slowSnapshots);
+      await page.locator('input').fill('typed');
+      await page.locator('button').click();
+      await expect(page.locator('#n')).toHaveText('1');
+      await page.evaluate(() => (document.querySelector('#n')!.textContent = '5'));
+      await page.keyboard.press('Tab');
+      // The snapshot after this click is slow, and a navigation follows it.
+      await page.locator('button').click();
+      await page.goto(url);
+      await expect(page.locator('p')).toHaveText('traced');
+      // So is the one after this call, which the trace stops right after.
+      await page.evaluate(slowSnapshots);
+      await page.evaluate(() => ((window as unknown as SlowWindow).slowSnapshot = true));
+      await traced.tracing.stop({ path });
+      await traced.close();
+      return traceSnapshots(path);
+    };
+    const before = state.counters.deferredSnapshots;
+    const stock = await record(false);
+    expect(state.counters.deferredSnapshots).toBe(before);
+    const deferred = await record(true);
+    expect(state.counters.deferredSnapshots).toBeGreaterThan(before);
+    state.fastTraces = true;
+    const names = stock.map(([name]) => name);
+    expect(names).toContain('Frame.click #8 after');
+    expect(names).toContain('Frame.evaluateExpression #12 after');
+    expect(deferred).toEqual(stock);
+  });
 });
+
+type SlowWindow = Window & { slowSnapshot?: boolean } & Record<
+    string,
+    { captureSnapshot(...args: unknown[]): unknown }
+  >;
+
+/** Makes the DOM snapshot Playwright's trace takes next in this page take 300 ms, once `slowSnapshot` is set. */
+function slowSnapshots() {
+  const page = window as unknown as SlowWindow;
+  const name = Object.getOwnPropertyNames(window).find((key) => key.startsWith('__playwright_snapshot_streamer_'))!;
+  const streamer = page[name];
+  const capture = streamer.captureSnapshot.bind(streamer);
+  streamer.captureSnapshot = (...args: unknown[]) => {
+    if (page.slowSnapshot) {
+      page.slowSnapshot = false;
+      for (const end = Date.now() + 300; Date.now() < end;);
+    }
+    return capture(...args);
+  };
+}
+
+/** The DOM snapshots of a trace, named by call, numbered in order, and phase, with call ids numbered the same way. */
+async function traceSnapshots(path: string): Promise<Array<[string, string]>> {
+  const zip = new ZipFile(path);
+  const events = (await zip.read('trace.trace'))
+    .toString('utf8')
+    .split('\n')
+    .filter(Boolean)
+    .map((line) => JSON.parse(line) as TraceEvent);
+  zip.close();
+  const calls = new Map<string, string>();
+  for (const event of events)
+    if (event.type === 'before') calls.set(event.callId, `${event.class}.${event.method} #${calls.size}`);
+  const numbered = (text: string) => text.replace(/[\w-]+@\d+/g, (callId) => calls.get(callId) ?? callId);
+  return events
+    .filter((event) => event.type === 'frame-snapshot')
+    .map(({ snapshot }): [string, string] => [
+      `${numbered(snapshot.callId)} ${snapshot.phase}`,
+      numbered(JSON.stringify(snapshot.html)),
+    ])
+    .sort(([a], [b]) => a.localeCompare(b));
+}
 
 type HarFile = {
   log: { entries: Array<{ request: { url: string }; response: { content: { text?: string } } }> };

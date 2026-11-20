@@ -159,7 +159,8 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
   assets. An app that changes a file at the same URL between tests, served with no lifetime of its own, needs
   `keepStaticCache` off.
 - `earlyInjection` (Chromium) creates the script Playwright's actions run through while each page loads, rather than
-  at its first action, and `fastTraces` stops traces requesting the script bodies they leave out.
+  at its first action, and `fastTraces` stops traces requesting the script bodies they leave out and, on Chromium,
+  lets a call return before the DOM snapshots its trace takes are written.
 - `fastStackTraces` skips the source map lookup for the frames of Node and `node_modules`.
 
 ```ts

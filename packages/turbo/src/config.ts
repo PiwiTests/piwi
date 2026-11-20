@@ -100,7 +100,9 @@ export interface Optimizations {
     earlyInjection?: boolean;
     /**
      * A trace that records DOM snapshots and leaves out the bodies of scripts, as every trace but a live one does, does
-     * not request them from the browser.
+     * not request them from the browser. On Chromium, the DOM snapshots taken before and after a call are left in
+     * flight rather than awaited; a navigation, a close, keyboard or mouse input of the page, and the trace's end wait
+     * for them. The trace holds the same snapshots.
      */
     fastTraces?: boolean;
     /**

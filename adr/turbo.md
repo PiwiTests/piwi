@@ -101,7 +101,7 @@ out.
 | `fastStackTraces` | noop 1.04× vs 0.96×, TodoMVC 1.37× vs 1.30×, Shop 1.28× vs 1.29×. |
 | `fastReset`, the tab's second reset left out | On Flashwright's TodoMVC, Playwright's reset of a reused context took 31 ms, 17 of them in the tab's own reset: a second load of `about:blank`, then the viewport and media applied again, then the mouse moved away. Without the first two when the test changed neither, left no fake clock or WebAuthn credentials installed (their scripts leave the context only after its reset loaded `about:blank`, so that document still runs them), and the next test asks for the same context options: 14 ms, and the suite (one worker, 5 runs, `max`) 4,285 to 4,148 ms. |
 | `earlyInjection` | Same app, one tab: the first fill after a navigation took 25 ms and the next 6 ms, the difference being Playwright creating its injected script in the document's utility world. Created as soon as the document's utility context exists: 9 to 11 ms, with the navigation 2 to 8 ms longer. TodoMVC (as above) 4,148 to 3,860 ms. |
-| `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). |
+| `fastTraces` | TodoMVC with `trace: 'retain-on-failure'` and no retries, so every test records: 6,030 to 5,303 ms (5 runs, `max`). The DOM snapshots before and after each call left in flight, on top: 5,000 to 4,617 ms, and SVGOMG traced the same way 2,240 to 2,104 ms (5 runs each). |
 | Per-test calls on a reused context (below) | `max`: noop 1.20× vs 1.01×, TodoMVC 1.44× vs 1.38×, Shop 1.32× vs 1.29×. |
 | Context reuse in `fast` | TodoMVC 1.16× vs 0.99×, Shop 1.12× vs 1.07×, Inventory 1.02× vs 1.03×, trivial tests 0.91× vs 0.95×. |
 
@@ -149,6 +149,9 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
 - **The injected script created early in both worlds**: the navigation took 13 ms longer than with the utility world
   alone, for no shorter first call; the main world is not where actions and assertions run. Running one selector query
   as well, to compile the paths an action takes, changed nothing measurable.
+- **Chromium's protocol pipe in CBOR** (`--remote-debugging-pipe=cbor`), with a codec of its own: five fills and
+  presses on TodoMVC took 77 ms in place of 80.5, navigations and evaluations no measurable time less. Not worth a
+  protocol codec to maintain.
 
 - **Differential DOM snapshots in traces**, from a fork of Playwright, shipped for a while as a vendored Apache-2.0
   script: no clear difference on the reference workload (+0.8%) or on Piwi's suite (−2.5% wall, interval −8.5% to

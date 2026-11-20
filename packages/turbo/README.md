@@ -262,8 +262,12 @@ withOptimizations(config, {
   stops an event.
 - **`fastTraces`**: a trace that records DOM snapshots leaves out the bodies of scripts unless it is live, and Playwright
   requests each one from the browser before leaving it out, which holds up the page's load. Those bodies are not
-  requested; the trace is the same, `response.body()` still reads them, and a HAR recording keeps them. TodoMVC with a
-  trace of every test (`retain-on-failure` without retries) took 12% less time.
+  requested; the trace is the same, `response.body()` still reads them, and a HAR recording keeps them. On Chromium, the
+  DOM snapshots a trace takes before and after each call are left in flight rather than awaited: a navigation, a
+  close, keyboard or mouse input of the page, a screenshot and the trace's end wait for them, and the snapshot right
+  before an action's input is awaited as Playwright does. The trace holds the same snapshots. TodoMVC with a trace of
+  every test (`retain-on-failure` without retries) took 12% less time for the script bodies, and 8% less again for the
+  snapshots; SVGOMG 6% less for the snapshots.
 
 The hooks wrap Playwright's server inside each test worker: the server `Page.prototype.reportAsNew`,
 `Page.prototype.expectScreenshot`, `Page.prototype.resetForReuse`, `BrowserContext.prototype.setStorageState` and
