@@ -2189,6 +2189,6 @@ test.describe('Desktop run live view', () => {
     await expect(edge).toHaveAttribute('aria-valuenow', String(before + 40));
     await tray(page).getByRole('button', { name: 'Maximize local runs' }).click();
     await expect(tray(page).getByRole('button', { name: 'Restore local runs' })).toBeVisible();
-    await expect(edge).toHaveAttribute('aria-valuenow', await edge.getAttribute('aria-valuemax'));
+    await expect(edge).toHaveAttribute('aria-valuenow', String(await edge.getAttribute('aria-valuemax')));
   });
 });
