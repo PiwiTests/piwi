@@ -69,7 +69,7 @@
     "@piwitests/picker-dom": "*",
     "@piwitests/run-model": "*",
     "@piwitests/run-ui": "*",
-    "@tanstack/vue-table": "^8.21.3",
+    "@tanstack/vue-table": "^9.3.1",
     "@vite-pwa/nuxt": "^1.1.1",
     "@vueuse/core": "^15.0.0",
     "@vueuse/nuxt": "^15.0.0",
