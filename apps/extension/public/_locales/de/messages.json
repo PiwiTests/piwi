@@ -7524,7 +7524,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
+    "message": "Nur zum Ansehen: Diese Läufe laufen in der CI, nichts hier steuert sie, außer „Freigeben“ bei einem für Sie angehaltenen Fehlschlag. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
   },
   "runs_ciTests": {
     "message": "Jetzt laufende Tests"

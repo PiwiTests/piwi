@@ -23,7 +23,16 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
-import { CI_READ_ONLY, ciHoldWords, ciRunName, ciRunWhere, offersLetGo, type CiHold } from '@piwitests/run-model/ci';
+import {
+  CI_READ_ONLY,
+  LetGoAsks,
+  ciHoldKey,
+  ciHoldWords,
+  ciRunName,
+  ciRunWhere,
+  offersLetGo,
+  type CiHold,
+} from '@piwitests/run-model/ci';
 import {
   asksLaneTextAgain,
   callWait,
@@ -1297,8 +1306,6 @@ interface CiView extends RunsCiLane {
   call: string | null;
   /** The instance said this window's watch of the lane counts as a controller's: **Let it go** may be offered. */
   controller: boolean;
-  /** **Let it go** waits for its answer. */
-  lettingGo: boolean;
   /** What **Let it go** came to, until the lane's hold changes. */
   letGoNote: { ok: boolean; text: string } | null;
 }
@@ -1342,7 +1349,6 @@ function toggleCi(lane: RunsCiLane): void {
     test: null,
     call: null,
     controller: false,
-    lettingGo: false,
     letGoNote: null,
   };
   askCi(ciView);
@@ -1460,10 +1466,15 @@ function heardCiController(heard: RunsCiLane & { controller: boolean }): void {
   render();
 }
 
-/** **Let it go** on the held failure of the CI lane watched: the instance's sentence, or why not, under the hold. */
-async function letGoCi(view: CiView): Promise<void> {
-  if (view.lettingGo) return;
-  view.lettingGo = true;
+/** **Let it go** asked of each CI lane's hold: its button off from the ask until that hold ends or is refused. */
+const letGoAsks = new LetGoAsks();
+
+/**
+ * **Let it go** on the held failure of the CI lane watched, once per hold (`letGoAsks`): the instance's sentence, or
+ * why not, under the hold; a refusal lets it be asked again.
+ */
+async function letGoCi(view: CiView, hold: CiHold): Promise<void> {
+  if (!letGoAsks.ask(ciLaneKey(view), ciHoldKey(hold))) return;
   render();
   const lane = { runId: view.runId, shard: view.shard, lane: view.lane };
   const answer = await answered(
@@ -1471,8 +1482,8 @@ async function letGoCi(view: CiView): Promise<void> {
     { ok: false, message: '', ci: 'offline' },
     { ok: false, message: '', ci: 'late' },
   );
+  if (!answer.ok) letGoAsks.refused(ciLaneKey(view), ciHoldKey(hold));
   if (ciView !== view) return;
-  view.lettingGo = false;
   const text = answer.ok ? answer.message : letGoRefusalText(answer);
   view.letGoNote = text ? { ok: answer.ok, text } : null;
   if (text) announce(text);
@@ -2853,7 +2864,8 @@ function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
 function renderCiHeld(view: CiView, hold: CiHold): HTMLElement {
   const key = `ci|${ciLaneKey(view)}|held`;
   const offered = offersLetGo(hold, { shows: view.status === 'on', controller: view.controller });
-  return part(key, [hold, offered, view.lettingGo, view.letGoNote], () => {
+  const asked = letGoAsks.asked(ciLaneKey(view), ciHoldKey(hold));
+  return part(key, [hold, offered, asked, view.letGoNote], () => {
     const words = ciHoldWords(hold, runsSpeaker);
     const box = element('div', 'ci-held-box');
     box.setAttribute('role', 'status');
@@ -2866,12 +2878,12 @@ function renderCiHeld(view: CiView, hold: CiHold): HTMLElement {
       const letGo = makeButton(
         runsSpeaker.say('runs_letGo'),
         (event) => {
-          if (!pressedHeld(event)) void letGoCi(view);
+          if (!pressedHeld(event)) void letGoCi(view, hold);
         },
         { icon: 'play', small: true, title: runsSpeaker.say('runs_letGoTitle') },
       );
       letGo.dataset.focus = `ci|${ciLaneKey(view)}|let-go`;
-      if (view.lettingGo) letGo.setAttribute('aria-disabled', 'true');
+      if (asked) letGo.setAttribute('aria-disabled', 'true');
       box.append(element('div', 'piwi-actions', letGo));
     }
     if (view.letGoNote) {

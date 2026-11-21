@@ -1179,10 +1179,11 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   with **Watch on the dashboard**; a refusal (`RunsAnswer.ci`) is said there too, the instance's own sentence when it
   gave one. The view is read-only: no Interact, input, pick or control.
 - **Held**: a run's `live-worker` events say a worker's test held at its failure for the run's controllers
-  (`readCiHold`, kept by shard and worker), listed on its test (`RunsCiTest.held`, **Failed, held at its line**) and
+  (`readCiHold`, kept by shard and worker, forgotten as the run's stream opens again, and a test's only from its own
+  worker), listed on its test (`RunsCiTest.held`, **Failed, held at its line**) and
   shown above the lane watched in the run page's words (`ciHoldWords`). The watch's `hello` says whether it counts as
   a controller's, which its windows hear (`ci-controller`); only then, and only on the lane the window watches
-  (`offersLetGo`), **Let it go** sends `ci-let-go`, which the worker posts on that watch with the held worker
+  (`offersLetGo`), **Let it go** sends `ci-let-go` once per hold (`LetGoAsks`, its button off until the hold ends or is refused), which the worker posts on that watch with the held worker
   (`CiRunsWatch.held`, `letGoCiTest`), saying why not (`unwatched`, `uncontrolled`, `unheld`) or the instance's
   sentence.
 

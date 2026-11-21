@@ -7524,7 +7524,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Assistir mostra aqui a página de um teste em execução."
+    "message": "Só para assistir: elas rodam na CI, então nada aqui as conduz, exceto Deixar seguir numa falha retida para você. Assistir mostra aqui a página de um teste em execução."
   },
   "runs_ciTests": {
     "message": "Testes em execução agora"

@@ -5,6 +5,8 @@ import {
   ciRunName,
   ciRunWhere,
   ciRunsListed,
+  LetGoAsks,
+  ciHoldKey,
   ciHoldOf,
   ciHoldWords,
   ciTally,
@@ -87,7 +89,7 @@ describe('the CI runs of a project in progress', () => {
     expect(where(run(78), true)).toBe('Shop, on feature/pay');
     expect(where(run(78, { branch: null }), true)).toBe('Shop');
     expect(where(run(78, { branch: null }), false)).toBeNull();
-    expect(en.say(CI_READ_ONLY.key)).toContain('Read-only');
+    expect(en.say(CI_READ_ONLY.key)).toContain('nothing here steers them, except Let it go on a failure held for you');
   });
 });
 
@@ -161,5 +163,40 @@ describe('a CI test held at its failure for its controllers', () => {
     expect(offersLetGo(hold, { shows: true, controller: false })).toBe(false);
     expect(offersLetGo(hold, { shows: false, controller: true })).toBe(false);
     expect(offersLetGo(null, { shows: true, controller: true })).toBe(false);
+  });
+});
+
+describe('Let it go asked of a CI hold', () => {
+  const hold = (worker: number, until: number | null = 1_763_727_900_000) => ({
+    worker: { shard: null, worker, slot: 1 },
+    call: { title: 'boom', file: null, line: null },
+    until,
+    heldFor: [],
+  });
+
+  it('names each hold of each worker apart', () => {
+    expect(ciHoldKey(hold(4))).toBe(':4:1763727900000');
+    expect(ciHoldKey(hold(4, null))).toBe(':4:');
+    expect(ciHoldKey({ ...hold(4), worker: { shard: 2, worker: 4, slot: 1 } })).toBe('2:4:1763727900000');
+  });
+
+  it('is asked once per hold of each lane, again only after a refusal or for the lane’s next hold', () => {
+    const asks = new LetGoAsks();
+    expect(asks.ask('lane-2', 'a')).toBe(true);
+    expect(asks.asked('lane-2', 'a')).toBe(true);
+    // Asked again, the same hold waits or went through: no second ask.
+    expect(asks.ask('lane-2', 'a')).toBe(false);
+    // Another lane's ask is its own.
+    expect(asks.asked('lane-3', 'b')).toBe(false);
+    expect(asks.ask('lane-3', 'b')).toBe(true);
+    asks.refused('lane-3', 'b');
+    expect(asks.asked('lane-3', 'b')).toBe(false);
+    expect(asks.asked('lane-2', 'a')).toBe(true);
+    // The lane's next hold is asked anew.
+    expect(asks.asked('lane-2', 'c')).toBe(false);
+    expect(asks.ask('lane-2', 'c')).toBe(true);
+    // A refusal of a hold no longer asked changes nothing.
+    asks.refused('lane-2', 'a');
+    expect(asks.asked('lane-2', 'c')).toBe(true);
   });
 });

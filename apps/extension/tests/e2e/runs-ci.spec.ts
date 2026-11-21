@@ -166,18 +166,29 @@ test('a CI test held at its failure shows its hold, and Let it go on a controlle
   await expect(held).toContainText('Expected "Shipped", received "Pending"');
   await expect(held).toContainText('tests/checkout.spec.ts:42');
   await expect(held).toContainText('The CI job’s own timeout still runs.');
-  await held.getByRole('button', { name: 'Let it go' }).click();
+  // The instance's refusal, in its own words: Let it go may be asked again.
+  instance.letGoAnswer = { status: 409, body: { message: 'The instance refuses this let-go for now' } };
+  const letGo = held.getByRole('button', { name: 'Let it go' });
+  await letGo.click();
   await expect.poll(() => instance.letGos.length).toBe(1);
   expect(instance.letGos[0]).toEqual({
     key: instance.key,
     body: { watch: 'watch-0123456789ab', shard: null, worker: 5, slot: 1 },
   });
+  await expect(held).toContainText('The instance refuses this let-go for now.');
+  await expect(letGo).not.toHaveAttribute('aria-disabled', 'true');
+  instance.letGoAnswer = {
+    status: 200,
+    body: { success: true, message: 'The test goes on: it tears down as it would have, its result unchanged.' },
+  };
+  await letGo.click();
+  await expect.poll(() => instance.letGos.length).toBe(2);
   await expect(held).toContainText('The test goes on: it tears down as it would have, its result unchanged.');
-
-  // The instance's refusal, in its own words.
-  instance.letGoAnswer = { status: 409, body: { message: 'This worker holds no failing test now.' } };
-  await held.getByRole('button', { name: 'Let it go' }).click();
-  await expect(held).toContainText('This worker holds no failing test now.');
+  // Let go, the hold is asked no more until it ends: a press goes nowhere.
+  await expect(letGo).toHaveAttribute('aria-disabled', 'true');
+  await letGo.dispatchEvent('click');
+  await page.waitForTimeout(300);
+  expect(instance.letGos).toHaveLength(2);
 
   // The hold ends as the worker goes on.
   instance.worker({ ...HELD, paused: null });

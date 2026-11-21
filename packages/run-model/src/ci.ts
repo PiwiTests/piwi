@@ -100,7 +100,7 @@ export function ciRunWhere(run: Pick<CiRun, 'branch' | 'project'>, severalProjec
   return project ? { key: 'runs_ciProject', args: { project } } : null;
 }
 
-/** What a surface says of every CI run it lists: they run on CI, read-only, and are watched from their page. */
+/** What a surface says of every CI run it lists: they run on CI, watched only but for Let it go on a held failure. */
 export const CI_READ_ONLY: RunMessage = { key: 'runs_ciReadOnly' };
 
 /**
@@ -210,4 +210,34 @@ export function ciHoldWords(
  */
 export function offersLetGo(hold: CiHold | null, watch: { shows: boolean; controller: boolean }): boolean {
   return !!hold && watch.shows && watch.controller;
+}
+
+/** A hold's key: its worker and its end, another for each hold of each worker. */
+export function ciHoldKey(hold: Pick<CiHold, 'worker' | 'until'>): string {
+  return `${hold.worker.shard ?? ''}:${hold.worker.worker}:${hold.until ?? ''}`;
+}
+
+/**
+ * **Let it go** asked of each lane's hold (by a surface's own key of the lane, and `ciHoldKey`): once per hold, its
+ * button off from the ask until that hold ends, asked again only after a refusal. The lane's next hold is asked anew.
+ */
+export class LetGoAsks {
+  private readonly holds = new Map<string, string>();
+
+  /** Whether Let it go was asked of the hold `hold` of `lane`, and waits for its answer or went through. */
+  asked(lane: string, hold: string): boolean {
+    return this.holds.get(lane) === hold;
+  }
+
+  /** Ask of the hold `hold` of `lane`: false when it was asked already. */
+  ask(lane: string, hold: string): boolean {
+    if (this.asked(lane, hold)) return false;
+    this.holds.set(lane, hold);
+    return true;
+  }
+
+  /** The ask of `hold` was refused: it may be asked again. */
+  refused(lane: string, hold: string): void {
+    if (this.asked(lane, hold)) this.holds.delete(lane);
+  }
 }

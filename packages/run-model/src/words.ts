@@ -181,7 +181,7 @@ export const RUN_WORDS_EN = {
   runs_ciWhereProject: '$project$, on $branch$',
   runs_ciProject: '$project$',
   runs_ciReadOnly:
-    'Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.',
+    'Watched only: these run on CI, so nothing here steers them, except Let it go on a failure held for you. Watch shows a running test’s page here.',
   // A run on the team instance: its number and page there, and sharing it live.
   runs_runNumber: 'Run #$id$',
   runs_openRunPage: 'Open',

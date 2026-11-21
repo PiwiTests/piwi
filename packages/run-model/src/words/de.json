@@ -162,7 +162,7 @@
   "runs_ciWhere": "auf $branch$",
   "runs_ciWhereProject": "$project$, auf $branch$",
   "runs_ciProject": "$project$",
-  "runs_ciReadOnly": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. „Ansehen“ zeigt hier die Seite eines laufenden Tests.",
+  "runs_ciReadOnly": "Nur zum Ansehen: Diese Läufe laufen in der CI, nichts hier steuert sie, außer „Freigeben“ bei einem für Sie angehaltenen Fehlschlag. „Ansehen“ zeigt hier die Seite eines laufenden Tests.",
   "runs_answerPausing": "Hält beim nächsten Aufruf an.",
   "runs_answerStepping": "Geht zum nächsten Aufruf.",
   "runs_answerResuming": "Wird fortgesetzt.",
