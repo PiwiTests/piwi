@@ -8,10 +8,10 @@ import {
   PENDING_REQUEST_MS,
   type PageEvent,
 } from '@piwitests/core/live-layers';
-import { hideKnownValues, hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
+import { cutText, hideKnownValues, hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
 import { MAX_POSITION_TITLE, MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import type { ApiCall } from './api-requests.js';
-import { knownSecrets, layersTitleOf, pageEventsWanted, tellPageEvent } from './lane-layers.js';
+import { keptTitle, knownSecrets, layersTitleOf, pageEventsWanted, shownTitle, tellPageEvent } from './lane-layers.js';
 import { zoneStepId } from './live-call-log.js';
 import { callSitePath } from './locator-healing.js';
 import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run-channel.js';
@@ -28,8 +28,8 @@ import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run
  * (`X-Piwi-Logs`, read as the capture fixtures read it, `readServerLogs`), and each call the test makes through an API
  * request context (`tellApiCall`). To the editor while it asks (`positions`, which it asks to mark the running line),
  * where each call of the test begins in the user's code, from the same listener (`tellPosition`). A call is named as
- * the runner names its step, as a live view's call log names it (`callTitle`). Every text has its credentials hidden
- * (`@piwitests/core/mask`). Nothing is sent, nor a request followed, while nobody follows the run or
+ * the runner names its step, as a live view's call log names it (`keptCallTitle`). Every text has its credentials hidden
+ * (`@piwitests/core/mask`), and a call's title and error the values the attempt knows as they are sent. Nothing is sent, nor a request followed, while nobody follows the run or
  * asks for positions, nor between tests.
  */
 
@@ -84,25 +84,29 @@ export function callPlace(
 
 /**
  * A call's title: the one the runner gives its step (`Click getByRole('link', { name: 'Cart' })`, `layersTitleOf`),
- * else Playwright's own, else its name, as a live view's call log names a call; without the text a fill, a typing or an
- * insert types (`hideTypedText`), the values the attempt knows are secrets (`knownSecrets`) and its credentials hidden.
+ * else Playwright's own, else its name, as a live view's call log names a call; kept as `keptTitle` keeps it, cut to
+ * `MAX_POSITION_TITLE`.
  */
-export function callTitle(zone: ApiZone): string {
+function keptCallTitle(zone: ApiZone): string {
   const id = zoneStepId(zone);
   const title = (id ? layersTitleOf(id) : null) || zone.title || zone.apiName || 'call';
-  return hideKnownValues(hideSecretsInText(hideTypedText(title)), knownSecrets()).slice(0, MAX_POSITION_TITLE);
+  return keptTitle(title, MAX_POSITION_TITLE);
 }
 
-/** The first lines of a call's error, its credentials hidden. */
+/**
+ * The first lines of a call's error: its credentials hidden, cut to `MAX_RUN_EVENT_TEXT` (`cutText`), then the values
+ * the attempt knows now (`hideKnownValues`).
+ */
 function errorText(error: unknown): string {
   const message = error instanceof Error ? error.message : String(error);
-  return hideSecretsInText(message.split('\n').slice(0, 4).join('\n')).slice(0, MAX_RUN_EVENT_TEXT);
+  const cut = cutText(hideSecretsInText(message.split('\n').slice(0, 4).join('\n')), MAX_RUN_EVENT_TEXT);
+  return hideKnownValues(cut, knownSecrets());
 }
 
-/** Tell the editor where a call began, named by its title; a call's record never affects the test. */
+/** Tell the editor where a call began, named by its kept title; a call's record never affects the test. */
 function tellPositionOf(zone: ApiZone, place: Place): void {
   try {
-    tellPosition(callTitle(zone), place);
+    tellPosition(keptCallTitle(zone), place);
   } catch {
     /* a call's record never affects the test */
   }
@@ -136,7 +140,7 @@ export function watchCalls(playwright: unknown): boolean {
       try {
         tellEvent({
           kind: 'call',
-          title: callTitle(zone),
+          title: shownTitle(keptCallTitle(zone)),
           place: callPlace(zone.frames),
           ok: zone.error === undefined,
           error: zone.error === undefined ? null : errorText(zone.error),

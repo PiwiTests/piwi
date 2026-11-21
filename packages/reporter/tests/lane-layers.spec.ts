@@ -11,9 +11,12 @@ import {
   LaneFilmstrip,
   LaneTexts,
   attemptTraceFile,
+  knownSecrets,
   layersTestBegan,
   layersTestEnded,
   layersTitleOf,
+  shownThumb,
+  shownTitle,
   takeLaneText,
 } from '../src/internal/capture/lane-layers.js';
 import { followCallLog, listenCalls, trackCalls } from '../src/internal/capture/live-call-log.js';
@@ -371,6 +374,29 @@ describe('the call log a view is told', () => {
       expect(title.length, title).toBeLessThanOrEqual(300);
       if (start >= MIN_START) expect(title.endsWith(`${HIDDEN_VALUE}${CUT_MARK}`), title).toBe(true);
     }
+  });
+
+  it('hides each value the attempt knows once, as a call’s title is sent, one that holds a value known before too', async () => {
+    const typing: Array<Record<string, (...args: unknown[]) => void>> = [];
+    trackCalls({ _instrumentation: { addListener: (listener: (typeof typing)[number]) => typing.push(listener) } });
+    const type = (text: string) => typing[0]!.onApiCallBegin!({}, { method: 'keyboardType', params: { text } });
+    const titleOf = () => "Click getByText('12345678-abcdefgh')";
+    layersTestBegan({ id: 'known-title', began: Date.now(), titleOf, fixtureCall: () => false, trace: null });
+    type('12345678');
+    const meta = { id: 'call@9', method: 'click', params: { selector: '#out' } };
+    const { hooks, told, stop } = await follow(knownSecrets, layersTitleOf);
+    hooks.onBeforeCall!({ metadata: meta }, {}, undefined);
+    // As the filmstrip keeps an image's title when its call ends.
+    const thumb = { call: 'call@9', title: layersTitleOf('call@9')!, index: 1, width: 10, height: 10, at: 0 };
+    expect(told[told.length - 1]!.call.title).toBe(`Click getByText('${HIDDEN_VALUE}-abcdefgh')`);
+    expect(shownThumb(thumb).title).toBe(`Click getByText('${HIDDEN_VALUE}-abcdefgh')`);
+    type('12345678-abcdefgh');
+    hooks.onCallLog!({}, meta, 'api', '  - waiting for element to be visible');
+    stop?.();
+    const shown = `Click getByText('${HIDDEN_VALUE}')`;
+    expect(told[told.length - 1]!.call.title).toBe(shown);
+    expect(shownThumb(thumb).title).toBe(shown);
+    expect(shownTitle(titleOf())).toBe(shown);
   });
 
   it('tells a call log as it is while no value is known', async () => {

@@ -3,11 +3,11 @@ import type { BrowserContext, Page } from '@playwright/test';
 import { compressCallLog, MAX_LIVE_CALL_LOG_LINES, type LiveBox, type LiveCallLog } from '@piwitests/core/live-view';
 import {
   cutText,
-  hideKnownValues,
   hideSecretsInLog,
   hideSecretsInText,
   hideTypedText,
   isSecretLocator,
+  knownValuesHider,
   namesSecretField,
 } from '@piwitests/core/mask';
 import { internalCall } from './quiet-capture.js';
@@ -650,8 +650,7 @@ export async function followCallLog(
     settle(shown, calls.titleOf);
     const here = onThisPage();
     // What the attempt knows are secrets now, which a page may show in a line (`locator resolved to <div>…</div>`).
-    const known = secrets();
-    const hidden = (text: string): string => hideKnownValues(text, known);
+    const hidden = knownValuesHider(secrets());
     onLog({
       id: shown.id,
       call: { title: hidden(shown.title!), file: shown.file, line: shown.line },

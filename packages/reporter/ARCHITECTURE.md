@@ -195,7 +195,10 @@ What the package does to a user's run, process by process.
   none of another shape than the viewport's. The live view's frames are painted over as
   the instance's are (`maskSecretFields`). The titles of the stops and calls the run
   channel tells, and the call the pause bar and the terminal name, go through
-  `hideTypedText` and `hideSecretsInText`.
+  `shownTitle` (`hideTypedText`, `hideSecretsInText`, then `hideKnownValues` with the
+  attempt's known values as each is sent; each kept until then as `keptTitle` keeps it). A
+  stop's `locator` and a failure's `error`, and a call event's `error`, go with those values
+  hidden too.
 - At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
   here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
   `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own
@@ -319,7 +322,8 @@ What the package does to a user's run, process by process.
   until it is scaled down within 320 by 200 at quality 60 with `jpeg-js` (`thumbnailOf`;
   without it, a frame of 128 KB at most as it is), one every 500 ms at most, six frames
   waiting at most; kept for the test alone (40 images and 1 MB at most, the oldest let go,
-  all of them as the next test begins), sent eight a second at most, all of it again to a
+  all of them as the next test begins), sent eight a second at most, each image's title
+  through `shownTitle` as it is sent (`shownThumb`), all of it again to a
   viewer that comes later (`view-lane` asked on again, which sends the latest call log and
   takes the text again too; `layers` asking the same layers again sends nothing), those of
   a test no longer sent once the next one began. The trace's screencast images are never
@@ -646,7 +650,7 @@ What the package does to a user's run, process by process.
   `knownSecrets` once the page closed); a snapshot whose page's secret fields could not be
   read, that cannot be read whole, or past 4 MB does not go, and stops its frame's chain until
   its next full snapshot, the viewers told why for the main frame. Its title is the runner's
-  step's. Before it, each resource it and its stylesheets name that the `.network` file
+  step's, through `shownTitle` with the same secrets. Before it, each resource it and its stylesheets name that the `.network` file
   recorded with a content type `inspectResourceType` allows (a stylesheet, a font or an image: never a script, a
   document or an SVG), read from the trace folder's
   `resources/` (a regular file, 2 MB at most), its bytes of that kind

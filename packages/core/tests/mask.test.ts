@@ -4,6 +4,7 @@ import {
   HIDDEN_VALUE,
   cutText,
   hideKnownValues,
+  knownValuesHider,
   hideSecretsInText,
   hideSecretsInUrl,
   hideTypedText,
@@ -649,6 +650,29 @@ describe('hideKnownValues', () => {
 
   test('leaves a value under 8 characters, which would also match inside unrelated text', () => {
     expect(hideKnownValues('a <b>1234567</b> and abc', ['1234567', 'abc'])).toBe('a <b>1234567</b> and abc');
+  });
+
+  test('hides a text that is one of the values whole, spaces around it aside, whatever its length', () => {
+    expect(hideKnownValues('1234', ['1234'])).toBe(HIDDEN_VALUE);
+    expect(hideKnownValues(' 1234 ', [' 1234'])).toBe(HIDDEN_VALUE);
+    expect(hideKnownValues('1234 5678', ['1234'])).toBe('1234 5678');
+    expect(hideKnownValues('  ', ['  '])).toBe('  ');
+    expect(hideKnownValues('a        b', ['        '])).toBe('a        b');
+  });
+
+  test('hides as `knownValuesHider` of the same values does, text by text', () => {
+    const values = ['SAMPLE-SECRET-VALUE', 'say "hello" now', '12345678', '12345678-abcdefgh', '1234'];
+    const hide = knownValuesHider(values);
+    for (const text of [
+      'got SAMPLE-SECRET-VALUE and say \\"hello\\" now',
+      'tok 12345678-abcdefgh',
+      ` 1234 `,
+      cutText('waiting for SAMPLE-SECRET-VALUE', 18),
+      'nothing here',
+    ]) {
+      expect(hide(text), text).toBe(hideKnownValues(text, values));
+    }
+    expect(hide('tok 12345678-abcdefgh')).toBe(`tok ${HIDDEN_VALUE}`);
   });
 
   test('hides each of several values, and leaves the text as it is with none, or empty ones', () => {

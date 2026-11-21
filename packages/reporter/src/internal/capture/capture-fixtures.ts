@@ -90,7 +90,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { SECRET_AUTOCOMPLETE, hideSecretsInText, hideTypedText, maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, cutText, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -148,7 +148,7 @@ import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
 import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
 import { forgetWaitingRequests, readServerLogs, tellApiCall, watchCalls, watchPageEvents } from './run-events.js';
-import { layersTestBegan, layersTestEnded, layersTitleOf } from './lane-layers.js';
+import { keptTitle, layersTestBegan, layersTestEnded, layersTitleOf, shownTitle } from './lane-layers.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -1892,8 +1892,9 @@ async function showStop(
   of: StopPage,
   failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
-  // Every surface names the stopped call without the text it types: the terminal, the bar, the hub, `piwi-pauses`.
-  const title = hideSecretsInText(hideTypedText(calledAs));
+  // Every surface names the stopped call without the text it types, and without the values the attempt knows as it is
+  // told (`shownTitle`): the terminal, the bar, the hub, the live view, `piwi-pauses`.
+  const title = keptTitle(calledAs);
   const testInfo = sink.testInfo;
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
@@ -1956,7 +1957,7 @@ async function showStop(
     ...noted,
     stop: {
       reason,
-      title,
+      title: shownTitle(title),
       file: stoppedAt ? stopFile(stoppedAt.file, configDirFromConfig(testInfo.config)) : null,
       line: stoppedAt?.line ?? null,
       bar,
@@ -2060,7 +2061,7 @@ async function showStop(
       console.log(
         wait
           ? waitLine(failure ? 'failure' : 'pause', callSiteLine(location), wait.until)
-          : stopLine(failure ? 'failure' : reason, callSiteLine(location), title, runHost()),
+          : stopLine(failure ? 'failure' : reason, callSiteLine(location), shownTitle(title), runHost()),
       );
       if (page && intents && held) {
         const stop = held.stop;
@@ -2078,7 +2079,7 @@ async function showStop(
         page,
         {
           location,
-          call: title,
+          call: shownTitle(title),
           attempt: testInfo.retry > 0 ? testInfo.retry + 1 : null,
           target: stoppedOn
             ? {
@@ -2123,7 +2124,7 @@ async function showStop(
   if (!end.signal.aborted) {
     const chosen = fromEditor ?? answer;
     if (chosen === 'end' && livePause && wait) return endFromPiwi(sink, context, location, wait.by);
-    return chosen === 'end' ? endTest(sink, call, title, location, reason) : chosen;
+    return chosen === 'end' ? endTest(sink, call, shownTitle(title), location, reason) : chosen;
   }
   // The test ended under it: as on Finish, nothing stops after it.
   if (end.signal.reason === 'ended') return 'finish';
@@ -2461,9 +2462,9 @@ async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   sink.frozenAt = Date.now();
   await stopSinkCodeReach(sink, { context });
   // An error names what the test used: a URL's credentials stay in the worker.
-  const title = hideSecretsInText(`Failed: ${said.trim().slice(0, 300)}`).slice(0, 1000);
+  const title = cutText(hideSecretsInText(`Failed: ${cutText(said.trim(), 300)}`), 1000);
   const errorText = failureError(error?.message ?? error?.value);
-  const named = errorText === null ? null : hideSecretsInText(errorText).slice(0, MAX_STOP_ERROR);
+  const named = errorText === null ? null : cutText(hideSecretsInText(errorText), MAX_STOP_ERROR);
   // A CI test is held from here on, while its controllers still watch.
   const hold = local ? null : liveViewHold();
   if (!local && !hold) return;
@@ -2476,7 +2477,7 @@ const FAILURE_ERROR_LINES = 4;
 /**
  * A failure's error as its stop names it to the editor, as plain text: the failing error's message without its ANSI
  * codes and without the `Error: ` the runner writes before a plain error's message, its lines up to the first blank
- * one or its call log, four at most and `MAX_STOP_ERROR` characters; null for an error with no text.
+ * one or its call log, four at most, cut to `MAX_STOP_ERROR` characters (`cutText`); null for an error with no text.
  */
 export function failureError(message: string | undefined): string | null {
   const lines: string[] = [];
@@ -2488,7 +2489,7 @@ export function failureError(message: string | undefined): string | null {
     lines.push(line.trimEnd());
     if (lines.length === FAILURE_ERROR_LINES) break;
   }
-  const text = lines.join('\n').slice(0, MAX_STOP_ERROR);
+  const text = cutText(lines.join('\n'), MAX_STOP_ERROR);
   return text.trim() ? text : null;
 }
 
@@ -3742,11 +3743,11 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   await attachBrowserEnvironment(testInfo);
 
-  // The stops the pause bar showed.
+  // The stops the pause bar showed, each title with the values the attempt knows now hidden.
   if (sink.stops.length > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.pauses, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(sink.stops)),
+      body: Buffer.from(JSON.stringify(sink.stops.map((stop) => ({ ...stop, title: shownTitle(stop.title) })))),
     });
   }
 
@@ -4071,7 +4072,7 @@ const runControl: RunControl = {
     if (sink.pause) sink.pause.pause = false;
     skipAtFunctionEnd(sink);
     sink.end.abort(new Error(ENDED_AT_STOP_REASON));
-    const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
+    const title = waiting?.title ? shownTitle(waiting.title) : 'its call';
     const said = endable
       ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
       : `Ended the test while it waited in ${title}: the test is skipped as the call returns.`;
@@ -4149,7 +4150,7 @@ function watchWaiting(sink: CaptureSink): void {
         const locatorCall = [...sink.locatorCalls.values()].find((c) => callSiteLine(c.location) === line);
         tellHub({
           type: 'waiting',
-          title: hideSecretsInText(hideTypedText(call.title)).slice(0, MAX_WAITING_TITLE),
+          title: shownTitle(call.title, { max: MAX_WAITING_TITLE }),
           place: { file, line: call.place.line, ...(call.place.column > 0 ? { column: call.place.column } : {}) },
           ms: locatorCall ? Math.max(0, Date.now() - locatorCall.startedAt) : null,
           endable: !!locatorCall?.endable,

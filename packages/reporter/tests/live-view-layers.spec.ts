@@ -54,6 +54,7 @@ test('pay', async ({ page }) => {
   await new Promise((resolve) => setTimeout(resolve, 500));
   await fetch('${base}/watch');
   await paid;
+  await page.getByText('${SECRET}').isVisible();
   await page.evaluate(() => {
     console.error('cart broke');
     void fetch('/api/missing');
@@ -265,6 +266,9 @@ describe('the layers of the team’s live view', () => {
       .filter(({ at }) => at >= moments.resend && at < moments.remask)
       .map(({ message }) => message.thumb.call);
     expect(again).toEqual(expect.arrayContaining(first.map(({ message }) => message.thumb.call)));
+    // The password the test typed, in a call's title.
+    const titles = thumbs.map(({ message }) => message.thumb.title);
+    expect(titles, JSON.stringify(titles)).toContain("Is visible getByText('<hidden>')");
   });
 
   it('forgets the filmstrip kept as the project’s masks change, and posts none of it again', () => {
