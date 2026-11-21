@@ -1,5 +1,6 @@
-// The extension in the real VS Code, nightly (`.github/workflows/nightly-vscode.yml`): one window for the whole suite,
-// so the tests run in order, in one worker. Needs `npm run vscode:build`, and Xvfb on Linux without a display.
+// The extension in the real VS Code, nightly (`.github/workflows/nightly-vscode.yml`): `editor.spec.mjs` keeps one
+// window for its tests and `failures-states.spec.mjs` opens one per test, so the tests run in order, in one worker.
+// Needs `npm run vscode:build`, and Xvfb on Linux without a display.
 import { defineConfig } from '@playwright/test';
 
 export default defineConfig({
