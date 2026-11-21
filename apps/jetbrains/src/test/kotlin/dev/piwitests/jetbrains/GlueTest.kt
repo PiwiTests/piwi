@@ -2525,9 +2525,11 @@ class GlueTest {
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         val refresh = FailuresViewLink("Refresh the latest run", "piwi.refreshRun", "Piwi.RefreshRun")
         assertEquals(
-            Glue.EmptyText("No failure in run #41", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
-            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main.", listOf(refresh)), null, 41),
+            Glue.EmptyText("No failure in run #41 of main.", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
+            Glue.failuresEmpty(FailuresView("clear", "No failure in run #41 of main.", listOf(refresh)), null, 41),
         )
+        // A service that says no sentence: the run read.
+        assertEquals("No failure in run #41", Glue.failuresEmpty(FailuresView("clear"), null, 41).text)
     }
 
     @Test
