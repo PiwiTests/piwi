@@ -7,7 +7,13 @@
  * alone, never stored; so are a watched lane's layers (its call's log, its page's events, its text, its filmstrip).
  */
 import { readLaneLayers, type LaneLayer } from '@piwitests/core/live-layers';
-import { LIVE_SHARE_MISSING, LIVE_SHARE_UNKNOWN, type LiveViewMissing } from '@piwitests/core/live-view';
+import {
+  LIVE_SHARE_MISSING,
+  LIVE_SHARE_UNKNOWN,
+  isLiveControlCommand,
+  type LiveControlCommand,
+  type LiveViewMissing,
+} from '@piwitests/core/live-view';
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import {
   type HubAnswerCode,
@@ -135,6 +141,11 @@ export interface RunsCiTest {
   title: string;
   retry: number;
   held?: CiHold;
+  /**
+   * The latest `live-worker` event of the worker in its lane, as the instance sent it: its pause (`readCiPause`), its
+   * Pause asked or dropped (`readCiPauseAsk`), and the controls it takes (`ciControlsOffered`), each read field by field.
+   */
+  live?: Record<string, unknown>;
 }
 
 /**
@@ -174,7 +185,8 @@ export type CiWatchEnd = LiveViewEnd | 'silent' | 'closed' | 'broken' | 'moved';
  * (`no-test`), the instance did not answer (`offline`) or not in time (`late`), its live view is not one the extension
  * reads (`older`), or it refused (`refused`, its sentence the answer's `message`, else its `status`). Why **Let it go**
  * did not reach the instance: the worker's watch does not show the lane (`unwatched`), the instance did not say it
- * counts as a controller's (`uncontrolled`), or the lane holds nothing (`unheld`).
+ * counts as a controller's (`uncontrolled`), or the lane holds nothing (`unheld`); why a control did not, its lane naming
+ * no worker now (`no-worker`).
  */
 export type CiWatchFailure =
   | 'unlisted'
@@ -187,7 +199,8 @@ export type CiWatchFailure =
   | 'refused'
   | 'unwatched'
   | 'uncontrolled'
-  | 'unheld';
+  | 'unheld'
+  | 'no-worker';
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
@@ -271,6 +284,11 @@ export type RunsRequest =
    * `answer` of the same `id`, the instance's sentence or why not (`ci`).
    */
   | ({ type: 'ci-let-go'; id: number } & RunsCiLane)
+  /**
+   * **Pause**, **Resume** or **End the test** of the CI lane the window watches, through the worker's watch of it:
+   * answered with `answer` of the same `id`, the instance's sentence or why not (`ci`).
+   */
+  | ({ type: 'ci-control'; id: number; command: LiveControlCommand } & RunsCiLane)
   /** A command for a run, answered with `answer` of the same `id`. */
   | {
       type: 'command';
@@ -438,6 +456,12 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
       if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
       return typeof on === 'boolean' ? { type: 'ci-watch', id, runId, shard, lane, on } : null;
+    }
+    case 'ci-control': {
+      const { id, runId, shard, lane, command } = value;
+      if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
+      if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
+      return isLiveControlCommand(command) ? { type: 'ci-control', id, runId, shard, lane, command } : null;
     }
     case 'ci-let-go': {
       const { id, runId, shard, lane } = value;

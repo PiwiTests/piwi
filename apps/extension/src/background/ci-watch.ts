@@ -9,7 +9,8 @@
  * A window that joins a watch still opening, or still moving to its lane, gets the instance's answer to it; a window's
  * later ask wins over its earlier one still on its way. The watch ends as its last window leaves, as the run leaves the list or the instance ends it, once it brings nothing
  * for `IDLE_MS`, or on an error: its windows hear why (`ci-ended`) unless they asked. Nothing here reaches the run's
- * workers: no control, input or pick, but **Let it go** on a test of the lane held at its failure (`letGo`), which goes
+ * workers: no control, input or pick, but **Let it go** on a test of the lane held at its failure (`letGo`), and
+ * **Pause**, **Resume** and **End the test** of one whose project lets its controllers pause it (`control`), which go
  * to the instance on this watch, only once its `hello` said it counts as a controller's, as its windows hear
  * (`controller`).
  */
@@ -19,6 +20,7 @@ import {
   createLiveMessageReader,
   readLiveViewerMessage,
   type LiveViewerMessage,
+  type LiveControlCommand,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
 import { LatestPacer, MAX_VIEW_FPS } from '@piwitests/core/run-view';
@@ -57,6 +59,8 @@ export interface CiWatchOptions {
   change: (settings: ConnectionSettings, runId: number, body: Record<string, unknown>) => Promise<Response>;
   /** **Let it go** on a held test, on the watch `body` names (`POST /api/test-runs/:id/live-view/let-go`). */
   letGo?: (settings: ConnectionSettings, runId: number, body: Record<string, unknown>) => Promise<Response>;
+  /** **Pause**, **Resume** or **End the test** on the watch `body` names (`POST /api/test-runs/:id/live-view/control`). */
+  control?: (settings: ConnectionSettings, runId: number, body: Record<string, unknown>) => Promise<Response>;
   idleMs?: number;
   openMs?: number;
 }
@@ -161,14 +165,36 @@ export class CiLaneWatch {
    * **Let it go** on the lane the watch shows, whose held worker is `held` (`CiRunsWatch.held`): asked of the instance on
    * this watch, only once its `hello` said it counts as a controller's. The instance's sentence, or why not.
    */
-  async letGo(lane: RunsCiLane, held: LiveWorkerId | null): Promise<RunsAnswer> {
+  letGo(lane: RunsCiLane, held: LiveWorkerId | null): Promise<RunsAnswer> {
     const own = this.current;
-    if (!own?.id || !sameLane(own, lane) || !this.options.letGo) return refused('unwatched');
-    if (!own.controller) return refused('uncontrolled');
-    if (!held) return refused('unheld');
+    const send = this.options.letGo;
+    if (!own?.id || !sameLane(own, lane) || !send) return Promise.resolve(refused('unwatched'));
+    if (!own.controller) return Promise.resolve(refused('uncontrolled'));
+    if (!held) return Promise.resolve(refused('unheld'));
+    const watch = own.id;
+    return this.asked(() => send(own.settings, own.runId, { watch, ...held }));
+  }
+
+  /**
+   * **Pause**, **Resume** or **End the test** (`command`) of the lane the watch shows, whose worker is `worker`
+   * (`CiRunsWatch.laneWorker`): asked of the instance on this watch, only once its `hello` said it counts as a
+   * controller's. The instance's sentence, or why not.
+   */
+  control(lane: RunsCiLane, worker: LiveWorkerId | null, command: LiveControlCommand): Promise<RunsAnswer> {
+    const own = this.current;
+    const send = this.options.control;
+    if (!own?.id || !sameLane(own, lane) || !send) return Promise.resolve(refused('unwatched'));
+    if (!own.controller) return Promise.resolve(refused('uncontrolled'));
+    if (!worker) return Promise.resolve(refused('no-worker'));
+    const watch = own.id;
+    return this.asked(() => send(own.settings, own.runId, { watch, ...worker, command }));
+  }
+
+  /** A command asked of the instance: its sentence, or its refusal in its own words. */
+  private async asked(send: () => Promise<Response>): Promise<RunsAnswer> {
     let response: Response;
     try {
-      response = await this.options.letGo(own.settings, own.runId, { watch: own.id, ...held });
+      response = await send();
     } catch {
       return refused('offline');
     }
@@ -177,7 +203,7 @@ export class CiLaneWatch {
     try {
       said = ((await response.json()) as { message?: unknown } | null)?.message;
     } catch {
-      // No JSON: the test goes on all the same.
+      // No JSON: the instance took it all the same.
     }
     return { ok: true, message: typeof said === 'string' ? said.trim().slice(0, MAX_REFUSAL) : '' };
   }

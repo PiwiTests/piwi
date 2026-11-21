@@ -160,9 +160,9 @@ each rule below ends with the section to read there.
   copy it here. The window says its words through `runsSpeaker` (`src/shared/run-words.ts`), and `run-words.test.ts`
   holds the model's English words to the catalogs. (see "The Runs window")
 - **The Runs window's CI runs are read-only, read from the connected instance only while a window is open**
-  (`CiRunsWatch`, `src/background/ci-runs.ts`): only **Let it go** reaches them, on the worker's one CI watch
-  (`CiLaneWatch`) once its `hello` says controller; images stay in memory. Checked by `ci-runs.test.ts`,
-  `ci-watch.test.ts`, `runs-ci.spec.ts`. (see "The CI runs in progress")
+  (`CiRunsWatch`, `src/background/ci-runs.ts`): only a held or paused test's controls reach them, on the worker's
+  one CI watch (`CiLaneWatch`) once its `hello` says controller. Checked by `ci-runs.test.ts`, `ci-watch.test.ts`,
+  `runs-ci.spec.ts`. (see "The CI runs in progress")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
   window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
   it was written. (see "The Runs window")

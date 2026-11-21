@@ -15,9 +15,10 @@
  * reach the windows at most every `PUSH_MS`.
  */
 import { laneKey, readLane, type Lane } from '@piwitests/core/live-lane';
-import type { LiveWorkerId } from '@piwitests/core/live-view';
+import { readLiveWorkerId, type LiveWorkerId } from '@piwitests/core/live-view';
 import {
   ciHoldOf,
+  ciWorkerStateOf,
   ciRunsListed,
   ciTally,
   isCiMetadata,
@@ -85,20 +86,29 @@ interface Followed {
   lanes: Map<string, Lane>;
   /** The workers whose test is held at its failure for the run's controllers, by shard and worker. */
   holds: Map<string, CiHold>;
+  /** Each connected worker's latest `live-worker` event, by shard and worker: its pause, its Pause asked, its controls. */
+  states: Map<string, Record<string, unknown>>;
 }
 
 /**
  * The tests a run's lanes run now, by shard and lane, `MAX_CI_TESTS` at most, each with its hold while the worker in its
- * lane holds it at its failure (`holds`).
+ * lane holds it at its failure (`holds`), and the latest `live-worker` event of that worker (`states`), which says its
+ * pause, its Pause asked and the controls it takes.
  */
-export function ciTestsOf(lanes: Iterable<Lane>, holds: Iterable<CiHold> = []): RunsCiTest[] {
+export function ciTestsOf(
+  lanes: Iterable<Lane>,
+  holds: Iterable<CiHold> = [],
+  states: Iterable<Record<string, unknown>> = [],
+): RunsCiTest[] {
   const held = [...holds];
+  const live = [...states];
   return [...lanes]
     .filter((lane) => RUNNING.has(lane.state) && lane.test)
     .sort((a, b) => (a.id.shard ?? 0) - (b.id.shard ?? 0) || a.id.lane - b.id.lane)
     .slice(0, MAX_CI_TESTS)
     .map((lane) => {
       const hold = ciHoldOf(held, { shard: lane.id.shard, slot: lane.id.lane }, lane.worker);
+      const state = ciWorkerStateOf(live, { shard: lane.id.shard, slot: lane.id.lane }, lane.worker);
       return {
         shard: lane.id.shard,
         lane: lane.id.lane,
@@ -107,6 +117,7 @@ export function ciTestsOf(lanes: Iterable<Lane>, holds: Iterable<CiHold> = []): 
         title: lane.test!.title,
         retry: lane.test!.retry,
         ...(hold ? { held: hold } : {}),
+        ...(state ? { live: state } : {}),
       };
     });
 }
@@ -171,8 +182,21 @@ export class CiRunsWatch {
   state(): RunsCiRun[] {
     return this.runs.map((run) => {
       const f = this.followed.get(run.id);
-      return { ...run, tests: f ? ciTestsOf(f.lanes.values(), f.holds.values()) : [], watchable: !!f?.watchable };
+      const tests = f ? ciTestsOf(f.lanes.values(), f.holds.values(), f.states.values()) : [];
+      return { ...run, tests, watchable: !!f?.watchable };
     });
+  }
+
+  /**
+   * The worker in a lane as the run's live view names it, for its controls (**Pause**, **Resume**, **End the test**);
+   * null for none, or a run not followed.
+   */
+  laneWorker(runId: number, shard: number | null, lane: number): LiveWorkerId | null {
+    const f = this.followed.get(runId);
+    if (!f) return null;
+    const kept = [...f.lanes.values()].find((l) => l.id.shard === shard && l.id.lane === lane);
+    const state = ciWorkerStateOf(f.states.values(), { shard, slot: lane }, kept?.worker ?? null);
+    return state ? readLiveWorkerId(state.shard, state.worker, state.slot) : null;
   }
 
   /** The worker that holds a lane's test at its failure, for **Let it go**; null for none, or a run not followed. */
@@ -346,6 +370,7 @@ export class CiRunsWatch {
         watchable: false,
         lanes: new Map<string, Lane>(),
         holds: new Map<string, CiHold>(),
+        states: new Map<string, Record<string, unknown>>(),
       };
       this.followed.set(runId, f);
       if (!f.open) void this.readStream(f, settings);
@@ -389,8 +414,9 @@ export class CiRunsWatch {
         return;
       }
       // The stream opened again names only the workers connected now: a hold heard before goes with its connection.
-      if (f.holds.size) {
+      if (f.holds.size || f.states.size) {
         f.holds.clear();
+        f.states.clear();
         this.tellSoon();
       }
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
@@ -440,7 +466,10 @@ export class CiRunsWatch {
       const key = `${typeof data.shard === 'number' ? data.shard : ''}:${data.worker}`;
       const hold = readCiHold(event.data);
       if (hold) f.holds.set(key, hold);
-      else if (!f.holds.delete(key)) return;
+      else f.holds.delete(key);
+      if ((event.data as { connected?: unknown }).connected === true)
+        f.states.set(key, event.data as Record<string, unknown>);
+      else f.states.delete(key);
     } else return;
     this.tellSoon();
   }

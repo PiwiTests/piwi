@@ -1186,6 +1186,14 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   (`offersLetGo`), **Let it go** sends `ci-let-go` once per hold (`LetGoAsks`, its button off until the hold ends or is refused), which the worker posts on that watch with the held worker
   (`CiRunsWatch.held`, `letGoCiTest`), saying why not (`unwatched`, `uncontrolled`, `unheld`) or the instance's
   sentence.
+- **Paused**: each connected worker's latest `live-worker` event is kept too (forgotten as the stream opens again) and
+  listed on its lane's test (`RunsCiTest.live`, `ciWorkerStateOf`): a test paused for the run's controllers shows
+  above the lane in the run page's words (`readCiPause`, `ciPauseWords`, **Paused** in the list), a Pause waiting or
+  dropped under the controls (`ciPauseAskWords`). On a controller's watch of the lane the window offers what
+  `ciControlsOffered` decides (**Pause**, **Resume**, **End the test**), each sending `ci-control` with its command,
+  which the worker posts on that watch for the lane's worker (`CiRunsWatch.laneWorker`, `controlCiTest`), saying why
+  not (`unwatched`, `uncontrolled`, `no-worker`) or the instance's sentence. Let it go and the controls are asked once
+  in each state of the lane (`CiAsks`, `ciStateKey`), their buttons off until it changes or the ask is refused.
 
 ### Run-level controls, keys and the window's place
 

@@ -61,6 +61,20 @@ The test's own timeout stops while it waits, as at a breakpoint. **The CI job's 
 panel says so beside the pause. A paused test that resumes passes or fails as it would have, and its reported
 duration leaves the wait out.
 
+### Where it shows
+
+Every surface that watches the lane shows the pause and the Pause asked in the same words: the run page's lane panel,
+VS Code's worker panel, the JetBrains **Worker** tab and the Runs window's CI run, whose test lists mark the lane
+**Paused**. The controls show on a surface whose own watch of the lane counts as a controller's, as **Let it go** does
+([Where it shows](./hold-ci-failure#where-it-shows)): an editor or Piwi Picker connected with a Maintainer's key
+offers them, one connected with a Viewer's key shows the pause without them. Each is asked once in each state of the
+lane, a refusal said in the instance's words.
+
+<figure>
+  <img src="/screenshots/picker-runs-ci-paused.png" width="488" alt="The Runs window watching worker 2 of CI run #78: the test list marks it Paused, and above its live page a box says Paused by Ana until a time, the call it stopped before, tests/checkout.spec.ts:31, The CI job’s own timeout still runs, with Resume and End the test">
+  <figcaption>A CI test paused for you in the Runs window, with Resume and End the test.</figcaption>
+</figure>
+
 The run's log says that the test is paused, and until when, in UTC:
 
 ```text

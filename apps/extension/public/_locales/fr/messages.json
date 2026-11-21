@@ -7573,7 +7573,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Regarder seulement : elles tournent en CI, rien ici ne les pilote, sauf Le laisser partir sur un échec retenu pour vous. Regarder affiche ici la page d’un test en cours."
+    "message": "Regarder seulement : elles tournent en CI, rien ici ne les pilote, sauf les commandes d’un test de CI retenu ou mis en pause pour vous. Regarder affiche ici la page d’un test en cours."
   },
   "runs_ciTests": {
     "message": "Tests en cours"
@@ -7640,6 +7640,12 @@
   },
   "runs_ciNotHeld": {
     "message": "Ce worker ne retient aucun test en échec pour l’instant."
+  },
+  "runs_ciControlUnwatched": {
+    "message": "Les commandes passent par la vue de cette fenêtre sur le worker : regardez-le d’abord à nouveau."
+  },
+  "runs_ciNoWorker": {
+    "message": "Aucun worker ne tourne dans cette voie pour l’instant."
   },
   "runs_ciRefusedOffline": {
     "message": "L’instance n’a pas répondu."

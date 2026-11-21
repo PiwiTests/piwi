@@ -211,6 +211,92 @@ test('a held CI test offers no Let it go to a watch the instance did not say is 
   await expect(run.getByRole('button', { name: 'Let it go' })).toHaveCount(0);
 });
 
+/** The worker of the second lane, which can pause its test for the run's controllers, as the instance says it. */
+const PAUSING = { shard: null, worker: 5, slot: 1, connected: true, holds: true, pauses: true, paused: null };
+const PAUSED = {
+  ...PAUSING,
+  pausedBy: 'Ana',
+  paused: {
+    reason: 'pause',
+    call: { title: "Click getByRole('button', { name: 'Ship' })", file: 'tests/checkout.spec.ts', line: 31 },
+    test: 'checkout › ships abroad',
+    until: Date.UTC(2026, 10, 21, 12, 5),
+  },
+};
+
+test('a controller pauses a CI test on the watch of its lane, sees the Pause asked, then resumes or ends it', async ({
+  context,
+  extensionId,
+}) => {
+  instance.controller = true;
+  const page = await context.newPage();
+  await openRuns(page, extensionId);
+  const run = page.getByRole('region', { name: 'CI run #78' });
+  const second = run.getByRole('listitem').filter({ hasText: 'Worker 2' });
+  await second.getByRole('button', { name: 'Watch', exact: true }).click();
+  await expect.poll(() => instance.watches.length).toBe(1);
+  instance.worker(PAUSING);
+  const controls = run.locator('.ci-controls');
+  const pause = run.getByRole('button', { name: 'Pause', exact: true });
+  await pause.click();
+  await expect.poll(() => instance.controls.length).toBe(1);
+  expect(instance.controls[0]).toEqual({
+    key: instance.key,
+    body: { watch: 'watch-0123456789ab', shard: null, worker: 5, slot: 1, command: 'pause' },
+  });
+  await expect(controls).toContainText('The test pauses before its next call.');
+  // Asked once in this state: a second press goes nowhere.
+  await expect(pause).toHaveAttribute('aria-disabled', 'true');
+  // The worker took it: the Pause waits, and Resume takes it back.
+  instance.worker({ ...PAUSING, pauseAsked: { by: 'Ana' } });
+  await expect(controls).toContainText('Pause asked by Ana');
+  await expect(run.getByRole('button', { name: 'Pause', exact: true })).toHaveCount(0);
+  await expect(run.getByRole('button', { name: 'Resume', exact: true })).toBeVisible();
+  // Paused: by whom and until when, the call, its place, the job's timeout, Resume and End the test.
+  instance.worker(PAUSED);
+  await expect(second).toContainText('Paused');
+  const box = run.locator('.ci-paused-box');
+  await expect(box).toContainText('Paused by Ana · until');
+  await expect(box).not.toContainText('Paused · Paused');
+  await expect(box).toContainText('tests/checkout.spec.ts:31');
+  await expect(box).toContainText('The CI job’s own timeout still runs.');
+  // The instance's refusal, in its own words: End the test may be asked again.
+  instance.controlAnswer = { status: 409, body: { message: 'The instance refuses this end for now' } };
+  const end = box.getByRole('button', { name: 'End the test' });
+  await end.click();
+  await expect(box).toContainText('The instance refuses this end for now.');
+  await expect(end).not.toHaveAttribute('aria-disabled', 'true');
+  instance.controlAnswer = { status: 200, body: { success: true, message: 'The test goes on.' } };
+  await box.getByRole('button', { name: 'Resume' }).click();
+  await expect.poll(() => instance.controls.map((c) => c.body.command)).toEqual(['pause', 'end', 'resume']);
+  await expect(box).toContainText('The test goes on.');
+  await expect(end).toHaveAttribute('aria-disabled', 'true');
+  // The test goes on: the box goes, Pause comes back.
+  instance.worker(PAUSING);
+  await expect(box).toHaveCount(0);
+  await expect(run.getByRole('button', { name: 'Pause', exact: true })).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+test('a CI test paused offers no control to a watch the instance did not say is a controller’s', async ({
+  context,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await openRuns(page, extensionId);
+  const run = page.getByRole('region', { name: 'CI run #78' });
+  await run
+    .getByRole('listitem')
+    .filter({ hasText: 'Worker 2' })
+    .getByRole('button', { name: 'Watch', exact: true })
+    .click();
+  await expect.poll(() => instance.watches.length).toBe(1);
+  instance.worker(PAUSED);
+  await expect(run.locator('.ci-paused-box')).toContainText('Paused by Ana');
+  for (const name of ['Pause', 'Resume', 'End the test']) {
+    await expect(run.getByRole('button', { name, exact: true })).toHaveCount(0);
+  }
+});
+
 test('a CI run whose project’s live view is off lists its tests without Watch, saying why', async ({
   context,
   extensionId,

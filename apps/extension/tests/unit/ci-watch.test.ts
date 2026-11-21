@@ -53,6 +53,9 @@ function watcher() {
   }> = [];
   const posted: Array<{ runId: number; body: Record<string, unknown> }> = [];
   const letGos: Array<{ runId: number; body: Record<string, unknown> }> = [];
+  const controls: Array<{ runId: number; body: Record<string, unknown> }> = [];
+  let controlAnswer: () => Promise<Response> = async () =>
+    Response.json({ success: true, message: 'The test pauses before its next call.' });
   let letGoAnswer: () => Promise<Response> = async () =>
     Response.json({
       success: true,
@@ -76,6 +79,10 @@ function watcher() {
       letGos.push({ runId, body });
       return letGoAnswer();
     },
+    control: async (_settings, runId, body) => {
+      controls.push({ runId, body });
+      return controlAnswer();
+    },
     idleMs: 5_000,
   });
   return {
@@ -84,6 +91,8 @@ function watcher() {
     posted,
     letGos,
     setLetGo: (next: () => Promise<Response>) => (letGoAnswer = next),
+    controls,
+    setControl: (next: () => Promise<Response>) => (controlAnswer = next),
     setTarget: (next: typeof target) => (target = next),
     setAnswer: (next: () => Promise<Response>) => (answer = next),
   };
@@ -128,6 +137,51 @@ describe('the watch of a CI lane', () => {
     });
     setLetGo(async () => new Response(null, { status: 403 }));
     expect(await watch.letGo(LANE, held)).toEqual({ ok: false, message: '', ci: 'refused', status: 403 });
+  });
+
+  it('asks a control of the lane’s worker on its own watch, for a controller alone, in the instance’s words', async () => {
+    vi.useFakeTimers();
+    const { watch, opened, controls, setControl } = watcher();
+    const a = viewer();
+    const worker = { shard: null, worker: 3, slot: 1 };
+    expect(await watch.control(LANE, worker, 'pause')).toEqual({ ok: false, message: '', ci: 'unwatched' });
+    await watch.watch(a.it, LANE, true);
+    opened[0]!.stream.send({ type: 'hello', watch: 'watch-0123456789ab', controller: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await watch.control(LANE, null, 'pause')).toEqual({ ok: false, message: '', ci: 'no-worker' });
+    expect(await watch.control({ ...LANE, lane: 2 }, worker, 'pause')).toEqual({
+      ok: false,
+      message: '',
+      ci: 'unwatched',
+    });
+    expect(controls).toEqual([]);
+    expect(await watch.control(LANE, worker, 'pause')).toEqual({
+      ok: true,
+      message: 'The test pauses before its next call.',
+    });
+    expect(controls).toEqual([
+      { runId: 78, body: { watch: 'watch-0123456789ab', shard: null, worker: 3, slot: 1, command: 'pause' } },
+    ]);
+    setControl(async () => Response.json({ message: 'A Pause is already asked by Bo' }, { status: 409 }));
+    expect(await watch.control(LANE, worker, 'pause')).toEqual({
+      ok: false,
+      message: 'A Pause is already asked by Bo.',
+      ci: 'refused',
+    });
+  });
+
+  it('refuses the controls on a watch the instance did not say is a controller’s', async () => {
+    vi.useFakeTimers();
+    const { watch, opened, controls } = watcher();
+    await watch.watch(viewer().it, LANE, true);
+    opened[0]!.stream.send({ type: 'hello', watch: 'watch-0123456789ab' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await watch.control(LANE, { shard: null, worker: 3, slot: 1 }, 'end')).toEqual({
+      ok: false,
+      message: '',
+      ci: 'uncontrolled',
+    });
+    expect(controls).toEqual([]);
   });
 
   it('refuses Let it go on a watch the instance did not say is a controller’s', async () => {

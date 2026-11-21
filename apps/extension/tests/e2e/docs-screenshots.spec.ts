@@ -472,6 +472,57 @@ test('picker-runs-ci-held', async ({ context, extensionId }) => {
   }
 });
 
+// The Runs window watching a CI run's lane whose test a controller paused, with Resume and End the test, from a
+// stand-in instance that says the watch counts as a controller's.
+test('picker-runs-ci-paused', async ({ context, extensionId }) => {
+  const shop = await shopPage(context);
+  const frame = await shop.screenshot({ type: 'jpeg', quality: 60, scale: 'css' });
+  const instance = await startCiInstance();
+  instance.controller = true;
+  try {
+    const runs = await context.newPage();
+    await connectTo(runs, extensionId, instance);
+    await runs.setViewportSize({ width: 440, height: 1000 });
+    await runs.goto(`chrome-extension://${extensionId}/runs.html`);
+    const run = runs.getByRole('region', { name: 'CI run #78' });
+    const second = run.getByRole('listitem').filter({ hasText: CI_TESTS[1]! });
+    await second.getByRole('button', { name: 'Watch', exact: true }).click();
+    await expect.poll(() => instance.watches.length).toBe(1);
+    const until = new Date();
+    until.setMinutes(until.getMinutes() + 5, 0, 0);
+    instance.worker({
+      shard: null,
+      worker: 5,
+      slot: 1,
+      connected: true,
+      holds: true,
+      pauses: true,
+      pausedBy: 'Ana',
+      paused: {
+        reason: 'pause',
+        call: { title: "Click getByRole('button', { name: 'Checkout' })", file: 'tests/checkout.spec.ts', line: 31 },
+        test: CI_TESTS[1]!,
+        until: until.getTime(),
+      },
+    });
+    instance.live({
+      type: 'frame',
+      shard: null,
+      worker: 5,
+      slot: 1,
+      image: new Uint8Array(frame),
+      call: { title: "Click getByRole('button', { name: 'Checkout' })" } as never,
+      test: CI_TESTS[1]!,
+    });
+    await runsAtWidths(runs, 'picker-runs-ci-paused', 1000, async () => {
+      await expect(run.locator('.ci-view img')).toBeVisible();
+      await expect(run.getByRole('button', { name: 'End the test' })).toBeVisible();
+    });
+  } finally {
+    await instance.close();
+  }
+});
+
 // The Runs window while an editor window shares its runs until stopped: the line under the heading, and a run shared
 // as one of them, against the real editor service's hub.
 test('picker-runs-share-window', async () => {
