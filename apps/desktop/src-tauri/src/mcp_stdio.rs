@@ -18,6 +18,14 @@
 // The app must be running for the bridge to reach anything: the discovery file
 // exists only while it serves. When it is absent the bridge answers requests
 // with a JSON-RPC error saying so instead of hanging.
+//
+// A client of any MCP revision passes through: a `2026-07-28` request, which
+// names its version in `_meta`, goes out with the headers that mirror its body
+// (`MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name`), and the JSON-RPC error a
+// refusal of it carries (`UnsupportedProtocolVersion`, `HeaderMismatch`)
+// reaches the client as the server wrote it. A `subscriptions/listen` is
+// acknowledged here, since `/mcp` sends no change notification and its stream
+// would hold the bridge's one connection.
 
 use std::fmt::Display;
 use std::io::{BufRead, Read, Write};
@@ -41,6 +49,11 @@ const IO_TIMEOUT: Duration = Duration::from_secs(180);
 
 /// JSON-RPC internal error — what a failure to reach the app is reported as.
 const RPC_INTERNAL_ERROR: i32 = -32603;
+
+/// The `_meta` key a `2026-07-28` request names its protocol version in.
+const PROTOCOL_VERSION_META: &str = "io.modelcontextprotocol/protocolVersion";
+/// The `_meta` key every message of a subscription carries its id in.
+const SUBSCRIPTION_ID_META: &str = "io.modelcontextprotocol/subscriptionId";
 
 /// True when this process was launched as the bridge rather than the app.
 pub fn is_bridge_arg(arg: &str) -> bool {
@@ -127,7 +140,15 @@ fn pump(discovery: &Path, wait: Duration, input: impl BufRead, mut out: impl Wri
 /// The reply to write back, if any. Notifications carry no id and get no
 /// response — neither from the server nor from an error here.
 fn handle_message(discovery: &Path, wait: Duration, message: &str) -> Option<String> {
+    let parsed = serde_json::from_str::<Value>(message).ok();
+    if let Some(acknowledged) = parsed.as_ref().and_then(listen_acknowledgment) {
+        return Some(acknowledged);
+    }
+    let notification = parsed
+        .as_ref()
+        .is_some_and(|value| value.is_object() && matches!(value.get("id"), None | Some(Value::Null)));
     match forward(discovery, wait, message) {
+        Ok(_) if notification => None,
         Ok(body) => {
             let body = body.trim();
             // The endpoint answers a notification with an empty body (or a bare
@@ -172,6 +193,101 @@ fn forward(discovery: &Path, wait: Duration, message: &str) -> Result<String, St
             Err(err) => return Err(err.message),
         }
     }
+}
+
+/// The acknowledgment of a `2026-07-28` `subscriptions/listen` request, which the bridge answers itself: `/mcp` sends
+/// no change notification, so the subscription honors none and stays open until the client cancels it or quits. None
+/// for any other message.
+fn listen_acknowledgment(message: &Value) -> Option<String> {
+    if message.get("method").and_then(Value::as_str) != Some("subscriptions/listen") {
+        return None;
+    }
+    message.pointer(&meta_pointer(PROTOCOL_VERSION_META))?.as_str()?;
+    let id = message.get("id").filter(|id| id.is_string() || id.is_number())?;
+    Some(
+        json!({
+            "jsonrpc": "2.0",
+            "method": "notifications/subscriptions/acknowledged",
+            "params": { "_meta": { SUBSCRIPTION_ID_META: id }, "notifications": {} },
+        })
+        .to_string(),
+    )
+}
+
+/// The JSON pointer of a `_meta` key of a request's params (a `/` in the key escaped as `~1`).
+fn meta_pointer(key: &str) -> String {
+    format!("/params/_meta/{}", key.replace('~', "~0").replace('/', "~1"))
+}
+
+/// The header lines a `2026-07-28` request mirrors from its body, each ending in CRLF: `MCP-Protocol-Version` from its
+/// `_meta`, `Mcp-Method`, and `Mcp-Name` for a call that names a tool, a prompt or a resource. Empty for a request of an
+/// earlier revision, which names no version in `_meta`, and for a batch. A version or method a header cannot carry
+/// as it is goes out without its header, which the server refuses.
+fn mirrored_headers(body: &str) -> String {
+    let Ok(message) = serde_json::from_str::<Value>(body) else {
+        return String::new();
+    };
+    let Some(version) = message
+        .pointer(&meta_pointer(PROTOCOL_VERSION_META))
+        .and_then(Value::as_str)
+    else {
+        return String::new();
+    };
+    let method = message.get("method").and_then(Value::as_str);
+    let mut headers = String::new();
+    if is_plain_header_value(version) {
+        headers.push_str(&format!("MCP-Protocol-Version: {version}\r\n"));
+    }
+    if let Some(method) = method.filter(|method| is_plain_header_value(method)) {
+        headers.push_str(&format!("Mcp-Method: {method}\r\n"));
+    }
+    let named = match method {
+        Some("tools/call") | Some("prompts/get") => message.pointer("/params/name"),
+        Some("resources/read") => message.pointer("/params/uri"),
+        _ => None,
+    };
+    if let Some(name) = named.and_then(Value::as_str) {
+        headers.push_str(&format!("Mcp-Name: {}\r\n", header_value(name)));
+    }
+    headers
+}
+
+/// Whether a value goes in a header as it is: visible ASCII and spaces, no space at either end, and not the form of an
+/// encoded value.
+fn is_plain_header_value(value: &str) -> bool {
+    !value.is_empty()
+        && value.bytes().all(|byte| (0x20..=0x7e).contains(&byte))
+        && value.trim() == value
+        && !(value.starts_with("=?base64?") && value.ends_with("?="))
+}
+
+/// A value as a header carries it: as it is when it can be, else its UTF-8 in base64 between `=?base64?` and `?=`.
+fn header_value(value: &str) -> String {
+    if is_plain_header_value(value) {
+        value.to_string()
+    } else {
+        format!("=?base64?{}?=", base64(value.as_bytes()))
+    }
+}
+
+/// Standard base64, padded.
+fn base64(bytes: &[u8]) -> String {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+    for chunk in bytes.chunks(3) {
+        let triple = chunk
+            .iter()
+            .enumerate()
+            .fold(0u32, |acc, (i, byte)| acc | (u32::from(*byte) << (16 - 8 * i)));
+        for i in 0..4 {
+            if i <= chunk.len() {
+                out.push(ALPHABET[((triple >> (18 - 6 * i)) & 0x3f) as usize] as char);
+            } else {
+                out.push('=');
+            }
+        }
+    }
+    out
 }
 
 /// Whether the message is a JSON-RPC `tools/call`, which may act on a run.
@@ -250,11 +366,13 @@ fn post(endpoint: &Endpoint, body: &str) -> Result<String, PostError> {
          Authorization: Bearer {token}\r\n\
          Content-Type: application/json\r\n\
          Accept: application/json\r\n\
+         {mirrored}\
          Content-Length: {len}\r\n\
          Connection: close\r\n\r\n",
         host = endpoint.host,
         port = endpoint.port,
         token = endpoint.token,
+        mirrored = mirrored_headers(body),
         len = body.len(),
     );
     stream.write_all(head.as_bytes()).map_err(|e| unreachable(endpoint, e))?;
@@ -293,6 +411,9 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
             retryable: false,
             sent: true,
         }),
+        // A refusal that carries a JSON-RPC error (an unsupported protocol version, headers that do not match) is the
+        // server's answer to the client, which recovers from it.
+        Some(code) if (400..500).contains(&code) && is_rpc_error(body) => Ok(body.to_string()),
         Some(code) => Err(PostError {
             message: format!("Piwi Desktop replied {code}"),
             retryable: false,
@@ -304,6 +425,13 @@ fn split_response(raw: &[u8]) -> Result<String, PostError> {
             sent: true,
         }),
     }
+}
+
+/// Whether a body is a JSON-RPC error response.
+fn is_rpc_error(body: &str) -> bool {
+    serde_json::from_str::<Value>(body).is_ok_and(|value| {
+        value.get("jsonrpc").and_then(Value::as_str) == Some("2.0") && value.get("error").is_some_and(Value::is_object)
+    })
 }
 
 /// Collapse a body onto one line: the transport frames messages by newline, and
@@ -746,5 +874,146 @@ mod tests {
         assert!(truncated.retryable);
         // The app had the whole message: it may have acted on it.
         assert!(truncated.sent);
+    }
+
+    /// A `2026-07-28` request, its version and the client's capabilities in `_meta`.
+    fn modern(id: u32, method: &str, params: &str) -> String {
+        let meta = r#""_meta":{"io.modelcontextprotocol/protocolVersion":"2026-07-28","io.modelcontextprotocol/clientCapabilities":{}}"#;
+        let params = if params.is_empty() {
+            format!("{{{meta}}}")
+        } else {
+            format!("{{{params},{meta}}}")
+        };
+        format!(r#"{{"jsonrpc":"2.0","id":{id},"method":"{method}","params":{params}}}"#)
+    }
+
+    #[test]
+    fn base64_is_the_standard_padded_alphabet() {
+        assert_eq!(base64(b""), "");
+        assert_eq!(base64(b"f"), "Zg==");
+        assert_eq!(base64(b"fo"), "Zm8=");
+        assert_eq!(base64(b"foo"), "Zm9v");
+        assert_eq!(base64("Hello, 世界".as_bytes()), "SGVsbG8sIOS4lueVjA==");
+    }
+
+    #[test]
+    fn a_modern_request_mirrors_its_version_method_and_name_in_headers() {
+        assert_eq!(
+            mirrored_headers(&modern(1, "tools/call", r#""name":"run_list","arguments":{}"#)),
+            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/call\r\nMcp-Name: run_list\r\n"
+        );
+        assert_eq!(
+            mirrored_headers(&modern(2, "resources/read", r#""uri":"file:///a.json""#)),
+            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: resources/read\r\nMcp-Name: file:///a.json\r\n"
+        );
+        assert_eq!(
+            mirrored_headers(&modern(3, "tools/list", "")),
+            "MCP-Protocol-Version: 2026-07-28\r\nMcp-Method: tools/list\r\n"
+        );
+        // A name a header cannot carry as it is goes in base64, never as a raw line break.
+        for (name, encoded) in [
+            ("Hello, 世界", "=?base64?SGVsbG8sIOS4lueVjA==?="),
+            ("line1\nline2", "=?base64?bGluZTEKbGluZTI=?="),
+            (" padded ", "=?base64?IHBhZGRlZCA=?="),
+            ("=?base64?literal?=", "=?base64?PT9iYXNlNjQ/bGl0ZXJhbD89?="),
+        ] {
+            let body = modern(4, "prompts/get", &format!(r#""name":{}"#, json!(name)));
+            assert!(
+                mirrored_headers(&body).ends_with(&format!("Mcp-Name: {encoded}\r\n")),
+                "{name}"
+            );
+        }
+    }
+
+    #[test]
+    fn an_earlier_revision_and_a_batch_mirror_nothing() {
+        assert_eq!(
+            mirrored_headers(r#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#),
+            ""
+        );
+        assert_eq!(mirrored_headers(&format!("[{}]", modern(1, "tools/list", ""))), "");
+        assert_eq!(mirrored_headers("not json"), "");
+        // A method that would break the request's head goes out without its header.
+        let injected = modern(1, "tools/list", "").replace("tools/list", "tools/list\\r\\nX-Evil: 1");
+        assert!(!mirrored_headers(&injected).contains("X-Evil"));
+    }
+
+    #[test]
+    fn a_json_rpc_refusal_reaches_the_client_and_any_other_status_is_an_error() {
+        let refusal = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32022,"message":"Unsupported protocol version"}}"#;
+        let raw = format!("HTTP/1.1 400 Bad Request\r\n\r\n{refusal}");
+        assert_eq!(split_response(raw.as_bytes()).ok().as_deref(), Some(refusal));
+        let not_found = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32601,"message":"Method not found"}}"#;
+        assert!(split_response(format!("HTTP/1.1 404 Not Found\r\n\r\n{not_found}").as_bytes()).is_ok());
+        assert!(split_response(b"HTTP/1.1 400 Bad Request\r\n\r\n<html>").is_err());
+        assert!(split_response(b"HTTP/1.1 502 Bad Gateway\r\n\r\n{\"jsonrpc\":\"2.0\",\"error\":{}}").is_err());
+    }
+
+    #[test]
+    fn a_modern_request_goes_out_with_its_headers_and_its_refusal_comes_back() {
+        let (port, server) = stub_server(
+            "HTTP/1.1 400 Bad Request\r\nContent-Type: application/json\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":5,\"error\":{\"code\":-32020,\"message\":\"Header mismatch\"}}",
+        );
+        let discovery = discovery_for(port);
+
+        let out = run_pump(
+            &discovery.0,
+            &format!("{}\n", modern(5, "tools/call", r#""name":"run_list""#)),
+        );
+
+        let request = server.join().expect("stub server");
+        assert!(request.contains("MCP-Protocol-Version: 2026-07-28\r\n"), "{request}");
+        assert!(request.contains("Mcp-Method: tools/call\r\n"), "{request}");
+        assert!(request.contains("Mcp-Name: run_list\r\n"), "{request}");
+        let reply: Value = serde_json::from_str(out.trim()).expect("json reply");
+        assert_eq!(reply["id"], 5);
+        assert_eq!(reply["error"]["code"], -32020);
+    }
+
+    #[test]
+    fn a_refused_notification_is_still_never_answered() {
+        let (port, server) = stub_server(
+            "HTTP/1.1 400 Bad Request\r\n\r\n{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32022,\"message\":\"Unsupported protocol version\"}}",
+        );
+        let discovery = discovery_for(port);
+
+        let out = run_pump(
+            &discovery.0,
+            "{\"jsonrpc\":\"2.0\",\"method\":\"notifications/initialized\"}\n",
+        );
+
+        let _ = server.join();
+        assert_eq!(out, "");
+    }
+
+    #[test]
+    fn a_modern_subscription_is_acknowledged_without_reaching_the_app() {
+        let out = run_pump(
+            &DiscoveryFile::missing(),
+            &format!(
+                "{}\n",
+                modern(
+                    9,
+                    "subscriptions/listen",
+                    r#""notifications":{"toolsListChanged":true}"#
+                )
+            ),
+        );
+
+        let reply: Value = serde_json::from_str(out.trim()).expect("json reply");
+        assert_eq!(
+            reply,
+            json!({
+                "jsonrpc": "2.0",
+                "method": "notifications/subscriptions/acknowledged",
+                "params": { "_meta": { "io.modelcontextprotocol/subscriptionId": 9 }, "notifications": {} },
+            })
+        );
+        // An earlier revision has no subscriptions/listen: it is forwarded, here to an app that is not running.
+        let legacy = run_pump(
+            &DiscoveryFile::missing(),
+            "{\"jsonrpc\":\"2.0\",\"id\":10,\"method\":\"subscriptions/listen\"}\n",
+        );
+        assert!(legacy.contains("not running"), "{legacy}");
     }
 }

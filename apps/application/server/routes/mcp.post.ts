@@ -1,4 +1,4 @@
-import { getRequestURL, type H3Event } from 'h3';
+import { getRequestHeader, getRequestURL, type H3Event } from 'h3';
 import { isAuthEnabled } from '../utils/auth';
 import { requireMcpAuth } from '../utils/mcp-oauth';
 import { getDatabase, type DbClient } from '../database';
@@ -7,8 +7,23 @@ import type { McpContext, McpTool } from '../utils/mcp/tools';
 import { mcpCatalog, requestMcpContext, toolsForCaller } from '../utils/mcp/catalog';
 import { getPrompt, isKnownPrompt } from '../utils/mcp/prompts';
 import { publicBaseUrl } from '../utils/public-base-url';
-import { ok, rpcErr, RPC, mcpServerInfo, negotiateProtocolVersion } from '../utils/mcp/protocol';
-import type { JsonRpcRequest } from '../utils/mcp/protocol';
+import {
+  checkMcpRequest,
+  discoverResult,
+  emptyBatchAnswer,
+  isListenRequest,
+  isRefusal,
+  mcpServerInfo,
+  negotiateProtocolVersion,
+  ok,
+  openListenStream,
+  postAnswer,
+  readMcpHeaders,
+  rpcErr,
+  RPC,
+  servedResponse,
+} from '../utils/mcp/protocol';
+import type { JsonRpcRequest, McpAnswer, McpHeaders } from '../utils/mcp/protocol';
 import { MCP_PROMPT_DEFS } from '#shared/mcp-prompts';
 import { resolveInstanceStates, getInstanceDecisions } from '#shared/handlers/setup-status';
 import { CAPABILITY_MODULES, type CapabilityModule } from '#shared/capabilities';
@@ -60,8 +75,11 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // ── MCP Streamable HTTP endpoint ─────────────────────────────────────────────
 //
 // Implements the MCP Streamable HTTP transport for the protocol versions in
-// SUPPORTED_PROTOCOL_VERSIONS.
-// A single POST /mcp handles initialize, tools/list, tools/call, and ping.
+// SUPPORTED_PROTOCOL_VERSIONS, legacy (`initialize`) and modern (`_meta` on
+// each request) clients alike, with no session (`utils/mcp/protocol.ts`).
+// A single POST /mcp handles initialize, server/discover, tools/list,
+// tools/call, prompts, ping and subscriptions/listen; an MCP client's GET and
+// a DELETE answer 405 (`mcp.get.ts`, `mcp.delete.ts`).
 // Auth: an OAuth access token (the client signs in through this instance's
 // authorization server, see utils/mcp-oauth.ts), or the same pd_<key> Bearer
 // token and session as the REST API.
@@ -87,6 +105,10 @@ export default eventHandler(async (event) => {
   }
 
   const body = await readBody<JsonRpcRequest | JsonRpcRequest[]>(event);
+  if (Array.isArray(body) && body.length === 0) {
+    setResponseStatus(event, 400);
+    return emptyBatchAnswer().response;
+  }
   const requests = Array.isArray(body) ? body : [body];
   if (requests.length > MAX_BATCH_REQUESTS) {
     setResponseStatus(event, 400);
@@ -102,34 +124,87 @@ export default eventHandler(async (event) => {
   event.node.res.on('close', () => {
     if (!event.node.res.writableFinished) gone.abort();
   });
-  const responses = await Promise.all(requests.map((req) => handleRequest(ctx, req, event, db, gone.signal)));
+  const headers = readMcpHeaders((name) => getRequestHeader(event, name));
+  // A modern subscriptions/listen gets its stream, which acknowledges no notification: this server sends none.
+  if (!Array.isArray(body) && body?.jsonrpc === '2.0' && body.method === 'subscriptions/listen') {
+    const era = checkMcpRequest(body, headers);
+    if (!isRefusal(era) && isListenRequest(era, body)) {
+      openListenStream(event.node.res, body.id, {}, serverInfo(event));
+      return;
+    }
+  }
+  const post = postAnswer(
+    Array.isArray(body),
+    await Promise.all(requests.map((req) => handleRequest(ctx, req, headers, event, db, gone.signal))),
+  );
 
-  // Notifications (no id) have no response — filter them out.
-  const toSend = responses.filter((r) => r !== null);
-
+  // A body of notifications alone is accepted with no answer.
+  if (!post) {
+    setResponseStatus(event, 202);
+    return '';
+  }
+  setResponseStatus(event, post.status);
   setResponseHeader(event, 'Content-Type', 'application/json');
-  return Array.isArray(body) ? toSend : (toSend[0] ?? null);
+  return post.body;
 });
 
-async function handleRequest(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db: DbClient, signal: AbortSignal) {
+async function handleRequest(
+  ctx: McpContext,
+  req: JsonRpcRequest,
+  headers: McpHeaders,
+  event: H3Event,
+  db: DbClient,
+  signal: AbortSignal,
+): Promise<McpAnswer | null> {
   if (!req || req.jsonrpc !== '2.0' || !req.method) {
-    return rpcErr(req?.id, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request');
+    return { status: 200, response: rpcErr(req?.id, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request') };
   }
+
+  // An unsupported version, or headers that do not match the body, are refused before anything is served.
+  const era = checkMcpRequest(req, headers);
+  if (isRefusal(era)) return era;
 
   // Notifications (no id) — fire and forget
-  if (req.id === undefined || req.id === null) {
-    if (req.method === 'notifications/initialized') return null;
-    return null;
-  }
+  if (req.id === undefined || req.id === null) return null;
 
   try {
-    return await dispatch(ctx, req, event, db, signal);
+    return servedResponse(era, req.method, await dispatch(ctx, req, event, db, signal), serverInfo(event));
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     console.error('[MCP] error handling', req.method, message);
-    return rpcErr(req.id, RPC.INTERNAL_ERROR, message);
+    return { status: 200, response: rpcErr(req.id, RPC.INTERNAL_ERROR, message) };
   }
 }
+
+function serverInfo(event: H3Event) {
+  return mcpServerInfo(useRuntimeConfig(event).public.appVersion as string, { desktop: IS_DESKTOP });
+}
+
+/** What the server says it is for and how to use it, in `initialize` and `server/discover` alike. */
+function instructions(event: H3Event): string {
+  // `?runs=off` lists no run tool, so the instructions name none.
+  const runsOff = getRequestURL(event).searchParams.get('runs') === 'off';
+  return (
+    `${IS_DESKTOP ? 'Piwi desktop app' : 'Piwi Dashboard'} MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ` +
+    'Start with list_projects to discover project IDs. ' +
+    'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
+    'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
+    'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
+    'Write/triage tools (set_cluster_status, triage_cluster, move_tests_to_new_cluster, triage_gap, decide_merge_suggestion, set_test_quarantine, dismiss_quarantine_proposal, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, unlink_issue, run_cluster_diagnosis, run_execution_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) need, on the project they act on, the permission the same action needs in the dashboard (each description names it and the roles that hold it); tools/list leaves out the ones this key cannot use on any project, and each call is logged with the key that made it. ' +
+    'To set the diagnosis of a cluster or of one failure, write it and call record_diagnosis with clusterId or executionId. ' +
+    'After fixing a cluster, call report_fix_attempt with the commit or branch, and put the Piwi-Cluster trailer get_fix_plan suggests in the commit message, so Piwi can verify the fix. ' +
+    'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
+    'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
+    'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here; the other prompts are the Piwi workflow skills.' +
+    (IS_DESKTOP
+      ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file). ' +
+        (runsOff ? '' : DESKTOP_AGENT_WORDS.instructions)
+      : '')
+  );
+}
+
+/** The capabilities this server has, in `initialize` and `server/discover` alike. */
+const CAPABILITIES = { tools: {}, prompts: {} };
 
 // ── JSON-RPC dispatcher ───────────────────────────────────────────────────────
 
@@ -140,29 +215,16 @@ async function dispatch(ctx: McpContext, req: JsonRpcRequest, event: H3Event, db
     // ── Protocol handshake ──────────────────────────────────────────────────
     case 'initialize': {
       const requested = (params as { protocolVersion?: unknown } | undefined)?.protocolVersion;
-      // `?runs=off` lists no run tool, so the instructions name none.
-      const runsOff = getRequestURL(event).searchParams.get('runs') === 'off';
       return ok(id, {
         protocolVersion: negotiateProtocolVersion(requested),
-        capabilities: { tools: {}, prompts: {} },
-        serverInfo: mcpServerInfo(useRuntimeConfig(event).public.appVersion as string, { desktop: IS_DESKTOP }),
-        instructions:
-          `${IS_DESKTOP ? 'Piwi desktop app' : 'Piwi Dashboard'} MCP server — query Playwright test results, failure clusters, AI diagnoses, and SCM diffs. ` +
-          'Start with list_projects to discover project IDs. ' +
-          'Paginated list tools return {items, nextCursor}; pass nextCursor back (when non-null) to page. ' +
-          'IDs: testCaseId = stable test identity; executionId/testRunsCaseId = one per-run execution. ' +
-          'Errors are truncated; use get_test_run_case for full error text and explain_failure for a one-call evidence bundle. ' +
-          'Write/triage tools (set_cluster_status, triage_cluster, move_tests_to_new_cluster, triage_gap, decide_merge_suggestion, set_test_quarantine, dismiss_quarantine_proposal, set_bug_report_status, set_run_incident, rerun_cluster_in_ci, link_issue, unlink_issue, run_cluster_diagnosis, run_execution_diagnosis, record_diagnosis, report_fix_attempt, set_cluster_base_commit, submit_diagnosis_feedback) need, on the project they act on, the permission the same action needs in the dashboard (each description names it and the roles that hold it); tools/list leaves out the ones this key cannot use on any project, and each call is logged with the key that made it. ' +
-          'To set the diagnosis of a cluster or of one failure, write it and call record_diagnosis with clusterId or executionId. ' +
-          'After fixing a cluster, call report_fix_attempt with the commit or branch, and put the Piwi-Cluster trailer get_fix_plan suggests in the commit message, so Piwi can verify the fix. ' +
-          'Tools belong to four modules (core, workflow, healing, agents); declining a capability on this instance drops the tools that depend on it from this list, and appending ?modules=core (a comma-separated set) to the MCP URL narrows the list to those modules. ' +
-          'For questions about Piwi itself — what it is, its pieces, setup choices, configuration, its documentation, where to send feedback — call describe_piwi; get_release_notes says what changed in each release. ' +
-          'The setup_piwi prompt (prompts/get) generates a ready-to-run setup for a Playwright project not yet reporting here; the other prompts are the Piwi workflow skills.' +
-          (IS_DESKTOP
-            ? ' This is the local desktop app, running on your machine: it adds tools that reach the disk — import_local_report (pull a local blob/trace .zip into a project), read_local_source (read the current on-disk source) and apply_locator_fix (apply a recommended locator fix to the real file). ' +
-              (runsOff ? '' : DESKTOP_AGENT_WORDS.instructions)
-            : ''),
+        capabilities: CAPABILITIES,
+        serverInfo: serverInfo(event),
+        instructions: instructions(event),
       });
+    }
+
+    case 'server/discover': {
+      return ok(id, discoverResult(CAPABILITIES, instructions(event)));
     }
 
     case 'ping': {

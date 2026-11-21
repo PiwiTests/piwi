@@ -4,7 +4,8 @@
 // its id, or with the reason it refused the request. The auth middleware signs
 // the user in first and comes back here. Allowing sends the browser back to the
 // client with a code; the client name is whatever the client registered, so the
-// page also says where the answer goes.
+// page also says where the answer goes, and which host published the client's
+// metadata document when its client_id is one.
 import type { AuthorizationRequestView, AuthorizationStartError } from '~~/server/utils/mcp-oauth';
 
 definePageMeta({ layout: false });
@@ -14,6 +15,8 @@ useHead({ title: 'Connect an MCP client' });
 const START_ERRORS: Record<AuthorizationStartError, string> = {
   invalid_client:
     'This MCP client is not registered on this instance. Remove the server from your client and add it again: it registers on its own.',
+  invalid_client_metadata:
+    'The client is identified by a metadata document this instance could not use: it could not be fetched from a public address in time, or it does not describe the client fully. Nothing was sent to it; an administrator can turn client metadata documents off so the client registers instead, or connect it with an API key.',
   invalid_redirect_uri:
     'The client asked to return to an address it did not register, so nothing was sent to it. Remove the server from your client and add it again.',
   unsupported_response_type:
@@ -73,6 +76,9 @@ const returnsTo = computed(() => {
         <dd class="min-w-0">
           <span class="text-highlighted break-words" data-testid="oauth-client">{{ request.clientName }}</span>
           <span class="block text-xs text-muted">The name the client gave itself</span>
+          <span v-if="request.clientIdHost" class="block text-xs text-muted" data-testid="oauth-client-host">
+            In a document published on {{ request.clientIdHost }}
+          </span>
         </dd>
         <dt class="font-semibold text-highlighted">Returns to</dt>
         <dd class="text-highlighted break-words" data-testid="oauth-returns-to">{{ returnsTo }}</dd>
@@ -91,6 +97,14 @@ const returnsTo = computed(() => {
         <p class="text-sm text-highlighted leading-relaxed">
           If you have not just added this Piwi instance to an AI assistant or an editor, deny: someone may have sent you
           this link to get access in your name.
+        </p>
+        <p
+          v-if="request.clientIdHost && request.redirect.kind === 'loopback'"
+          class="text-sm text-highlighted leading-relaxed"
+          data-testid="oauth-loopback-warning"
+        >
+          The answer goes to a program on this computer, and any program can name this document: allow only if you
+          started this connection yourself, just now.
         </p>
         <ConnectRequestButtons
           :deciding="deciding"

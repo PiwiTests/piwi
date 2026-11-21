@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 
-function rpc(method: string, params?: Record<string, unknown>, id = 1) {
+function rpc(method: string, params?: Record<string, unknown>, id: number | string = 1) {
   return { jsonrpc: '2.0', id, method, params: params ?? {} };
 }
 
@@ -82,6 +82,115 @@ test.describe.serial('MCP server', () => {
     expect(body.result.serverInfo.name).toBe('piwi-dashboard');
     expect(body.result.capabilities.tools).toBeDefined();
     expect(body.result.capabilities.prompts).toBeDefined();
+  });
+
+  test('transport — 202 for notifications alone, 405 for GET and DELETE, 400 for a version it does not serve', async ({
+    request,
+  }) => {
+    const notified = await request.post('/mcp', { data: { jsonrpc: '2.0', method: 'notifications/initialized' } });
+    expect(notified.status()).toBe(202);
+    expect(await notified.text()).toBe('');
+    // An MCP client's GET asks for an event stream; a browser's goes to the settings page (settings-redirects.spec.ts).
+    for (const method of ['get', 'delete'] as const) {
+      const res = await request[method]('/mcp', { headers: { accept: 'text/event-stream' }, maxRedirects: 0 });
+      expect(res.status(), method).toBe(405);
+      expect(res.headers()['allow']).toBe('POST');
+    }
+    const old = await request.post('/mcp', {
+      data: rpc('tools/list'),
+      headers: { 'MCP-Protocol-Version': '1900-01-01' },
+    });
+    expect(old.status()).toBe(400);
+    expect((await old.json()).error).toMatchObject({ code: -32022, data: { requested: '1900-01-01' } });
+    const current = await request.post('/mcp', {
+      data: rpc('ping'),
+      headers: { 'MCP-Protocol-Version': '2025-06-18' },
+    });
+    expect(current.status()).toBe(200);
+  });
+
+  test('a 2026-07-28 client — server/discover, the headers checked, an unknown method as a 404', async ({
+    request,
+  }) => {
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    const modern = (method: string, params: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
+      request.post('/mcp', {
+        data: rpc(method, { ...params, _meta: meta }),
+        headers: { 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method, ...headers },
+      });
+    const discovered = await modern('server/discover');
+    expect(discovered.status()).toBe(200);
+    expect((await discovered.json()).result).toMatchObject({
+      resultType: 'complete',
+      supportedVersions: expect.arrayContaining(['2026-07-28', '2025-11-25']),
+      capabilities: { tools: {}, prompts: {} },
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-dashboard' } },
+    });
+    const listed = await modern('tools/list');
+    expect((await listed.json()).result).toMatchObject({ resultType: 'complete', ttlMs: 0, cacheScope: 'private' });
+    const called = await modern(
+      'tools/call',
+      { name: 'list_projects', arguments: {} },
+      { 'Mcp-Name': 'list_projects' },
+    );
+    expect((await called.json()).result).toMatchObject({ resultType: 'complete', content: [{ type: 'text' }] });
+    const mismatch = await modern('tools/call', { name: 'list_projects', arguments: {} }, { 'Mcp-Name': 'get_run' });
+    expect(mismatch.status()).toBe(400);
+    expect((await mismatch.json()).error.code).toBe(-32020);
+    const unknown = await modern('resources/templates/list');
+    expect(unknown.status()).toBe(404);
+    expect((await unknown.json()).error.code).toBe(-32601);
+  });
+
+  test('a 2026-07-28 client — subscriptions/listen opens a stream that acknowledges no notification', async ({
+    baseURL,
+  }) => {
+    const gone = new AbortController();
+    const res = await fetch(`${baseURL}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'MCP-Protocol-Version': '2026-07-28',
+        'Mcp-Method': 'subscriptions/listen',
+      },
+      body: JSON.stringify(
+        rpc(
+          'subscriptions/listen',
+          {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientCapabilities': {},
+            },
+            notifications: { toolsListChanged: true },
+          },
+          'listen-1',
+        ),
+      ),
+      signal: gone.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    const { value } = await res.body!.getReader().read();
+    const data = new TextDecoder()
+      .decode(value)
+      .split('\n')
+      .find((line) => line.startsWith('data: '))!;
+    expect(JSON.parse(data.slice('data: '.length))).toEqual({
+      jsonrpc: '2.0',
+      method: 'notifications/subscriptions/acknowledged',
+      params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 'listen-1' }, notifications: {} },
+    });
+    gone.abort();
+  });
+
+  test('an empty batch — one Invalid Request error', async ({ request }) => {
+    const res = await request.post('/mcp', { data: [] });
+    expect(res.status()).toBe(400);
+    expect(await res.json()).toMatchObject({ id: null, error: { code: -32600 } });
   });
 
   test('ping — returns empty result', async ({ request }) => {

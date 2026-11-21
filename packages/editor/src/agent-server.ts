@@ -1,6 +1,7 @@
 /**
  * The service's MCP server for the agents of this machine (Claude Code, Copilot, Cursor): the runs this editor window
- * started, as tools (`run-agent.ts`), over MCP's streamable HTTP transport, each request a POST answered with JSON. It
+ * started, as tools (`run-agent.ts`), over MCP's streamable HTTP transport to legacy and modern clients alike
+ * (`mcp-protocol.ts`), each request a POST answered with JSON. It
  * listens on `127.0.0.1` alone, at the port the client keeps when it is free, else a free one with a new token (an
  * agent's copied configuration then reaches whatever holds the kept port, which must not learn a token that works
  * here); it answers only a request whose `Host` is its own (`127.0.0.1` or `localhost` at its port: a page reached
@@ -17,12 +18,23 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { isHubHost } from '@piwitests/core/run-hub';
 import {
+  checkMcpRequest,
+  discoverResult,
+  isListenRequest,
+  isRefusal,
   negotiateProtocolVersion,
   ok,
+  openListenStream,
+  postAnswer,
+  readMcpHeaders,
   rpcErr,
   RPC,
+  servedResponse,
   type JsonRpcRequest,
   type JsonRpcResponse,
+  type McpAnswer,
+  type McpHeaders,
+  type McpListenStream,
 } from './mcp-protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import { AGENT_INSTRUCTIONS, AGENT_TOOLS, type ToolDefinition, type ToolResult } from './run-agent.js';
@@ -35,6 +47,8 @@ export const MAX_AGENT_BODY = 256 * 1024;
 export const MAX_AGENT_BATCH = 8;
 /** The most requests answered at once: one more is refused with a 503 until one is answered. */
 export const MAX_AGENT_REQUESTS = 8;
+/** The most `subscriptions/listen` streams open at once, apart from the requests answered: one more is refused with a 503. */
+export const MAX_AGENT_LISTENS = 4;
 
 /** Whether a token the client gives is one the server takes: 32 to 256 characters of base64url. */
 export function isAgentToken(token: unknown): token is string {
@@ -98,6 +112,8 @@ function newToken(): string {
 
 export class AgentServer {
   private busy = 0;
+  /** The `subscriptions/listen` streams open now: the server sends no change, so each only stays open until it ends. */
+  private readonly listens = new Set<McpListenStream>();
   /** A second token, this process's alone, never kept by the client: the one the discovery file names. */
   private local = newToken();
   /** The tool calls being answered, by their JSON-RPC id, each with what aborts it: a cancel names them by id. */
@@ -175,6 +191,7 @@ export class AgentServer {
   }
 
   close(): void {
+    for (const listen of this.listens) listen.end();
     this.server.close();
     this.server.closeAllConnections();
   }
@@ -233,16 +250,39 @@ export class AgentServer {
     if (!requests.length || requests.length > MAX_AGENT_BATCH) {
       return this.send(res, 400, rpcErr(null, RPC.INVALID_REQUEST, `A batch holds 1 to ${MAX_AGENT_BATCH} requests.`));
     }
-    const answers = (await Promise.all(requests.map((request) => this.dispatch(request, gone.signal)))).filter(
-      (a): a is JsonRpcResponse => a !== null,
+    const headers = readMcpHeaders((name) => req.headers[name]);
+    if (!batch && this.listen(parsed, headers, res)) return;
+    const post = postAnswer(
+      batch,
+      await Promise.all(requests.map((request) => this.dispatch(request, headers, gone.signal))),
     );
     // Notifications alone are accepted, with no body.
-    if (!answers.length) {
+    if (!post) {
       res.writeHead(202, { 'Content-Length': '0' });
       res.end();
       return;
     }
-    this.send(res, 200, batch ? answers : answers[0]!);
+    this.send(res, post.status, post.body);
+  }
+
+  /**
+   * A modern `subscriptions/listen` answered with its stream, which acknowledges no notification (this server sends
+   * none) and holds no request slot; false for any other message.
+   */
+  private listen(value: unknown, headers: McpHeaders, res: http.ServerResponse): boolean {
+    if (typeof value !== 'object' || value === null || (value as JsonRpcRequest).jsonrpc !== '2.0') return false;
+    const request = value as JsonRpcRequest;
+    if (request.method !== 'subscriptions/listen') return false;
+    const era = checkMcpRequest(request, headers);
+    if (isRefusal(era) || !isListenRequest(era, request)) return false;
+    if (this.listens.size >= MAX_AGENT_LISTENS) {
+      refuse(res, 503, `${MAX_AGENT_LISTENS} subscriptions are open at once at most.`, { 'Retry-After': '5' });
+      return true;
+    }
+    const stream = openListenStream(res, request.id, {}, this.serverInfo);
+    this.listens.add(stream);
+    stream.onClose(() => this.listens.delete(stream));
+    return true;
   }
 
   private send(res: http.ServerResponse, status: number, body: unknown): void {
@@ -252,35 +292,61 @@ export class AgentServer {
     res.end(text);
   }
 
-  /** One JSON-RPC request answered, `signal` aborting once nobody waits for it; null for a notification. */
-  async dispatch(value: unknown, signal: AbortSignal = new AbortController().signal): Promise<JsonRpcResponse | null> {
+  /**
+   * One JSON-RPC message answered in its era (`checkMcpRequest`), `signal` aborting once nobody waits for it; null for
+   * a notification it accepts. `headers` are the request's, null outside HTTP.
+   */
+  async dispatch(
+    value: unknown,
+    headers: McpHeaders | null = null,
+    signal: AbortSignal = new AbortController().signal,
+  ): Promise<McpAnswer | null> {
+    const invalid = (id: string | number | null, message: string): McpAnswer => ({
+      status: 200,
+      response: rpcErr(id, RPC.INVALID_REQUEST, message),
+    });
     if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-      return rpcErr(null, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request.');
+      return invalid(null, 'Invalid JSON-RPC request.');
     }
     const request = value as Partial<JsonRpcRequest>;
     const id = request.id;
     if (request.jsonrpc !== '2.0' || typeof request.method !== 'string') {
-      return rpcErr(
-        typeof id === 'string' || typeof id === 'number' ? id : null,
-        RPC.INVALID_REQUEST,
-        'Invalid JSON-RPC request.',
-      );
+      return invalid(typeof id === 'string' || typeof id === 'number' ? id : null, 'Invalid JSON-RPC request.');
     }
+    if (id !== undefined && id !== null && typeof id !== 'string' && typeof id !== 'number') {
+      return invalid(null, 'Invalid id.');
+    }
+    const era = checkMcpRequest(request as JsonRpcRequest, headers);
+    if (isRefusal(era)) return era;
     if (id === undefined || id === null) {
       // A cancel ends the wait of the request it names, which answers at once.
       if (request.method === 'notifications/cancelled') this.cancel(request.params);
       return null;
     }
-    if (typeof id !== 'string' && typeof id !== 'number') return rpcErr(null, RPC.INVALID_REQUEST, 'Invalid id.');
-    const params = (request.params ?? {}) as Record<string, unknown>;
-    switch (request.method) {
+    const response = await this.serve(id, request.method, (request.params ?? {}) as Record<string, unknown>, signal);
+    return servedResponse(era, request.method, response, this.serverInfo);
+  }
+
+  private get serverInfo() {
+    return { name: 'piwi-runs', version: this.options.version };
+  }
+
+  private async serve(
+    id: string | number,
+    method: string,
+    params: Record<string, unknown>,
+    signal: AbortSignal,
+  ): Promise<JsonRpcResponse> {
+    switch (method) {
       case 'initialize':
         return ok(id, {
           protocolVersion: negotiateProtocolVersion(params.protocolVersion),
           capabilities: { tools: {} },
-          serverInfo: { name: 'piwi-runs', version: this.options.version },
+          serverInfo: this.serverInfo,
           instructions: AGENT_INSTRUCTIONS,
         });
+      case 'server/discover':
+        return ok(id, discoverResult({ tools: {} }, AGENT_INSTRUCTIONS));
       case 'ping':
         return ok(id, {});
       case 'tools/list':
@@ -309,7 +375,7 @@ export class AgentServer {
       case 'prompts/list':
         return ok(id, { prompts: [] });
       default:
-        return rpcErr(id, RPC.METHOD_NOT_FOUND, `Method not found: ${request.method.slice(0, 100)}`);
+        return rpcErr(id, RPC.METHOD_NOT_FOUND, `Method not found: ${method.slice(0, 100)}`);
     }
   }
 }

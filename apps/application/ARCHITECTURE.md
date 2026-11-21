@@ -343,19 +343,23 @@ Each entry names folders under `server/api/`.
 
 ### Other routes
 
-- **`server/routes/mcp.post.ts`**: the MCP server endpoint. Tool definitions in `shared/mcp-tools.ts`, handlers in
-  `server/utils/mcp/`. In the desktop build it also serves the tools for the runs the shell starts
-  (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of those runs (`DesktopRuns.agent`),
-  its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
+- **`server/routes/mcp.post.ts`**: the MCP server endpoint, for legacy and `2026-07-28` clients alike through the
+  editor service's `mcp-protocol.ts` (`server/utils/mcp/protocol.ts`); `mcp.get.ts` answers an MCP client's GET
+  (`Accept: text/event-stream`) with 405 and sends any other to the MCP settings page, and `mcp.delete.ts` answers 405.
+  Tool definitions in `shared/mcp-tools.ts`, handlers in `server/utils/mcp/`. In the desktop build it also serves the
+  tools for the runs the shell starts (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of
+  those runs (`DesktopRuns.agent`), its answers passed on as they are, the code it makes sent to the window to copy.
+  `describe_piwi` and
   `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
   server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
   `shared/piwi-ecosystem.ts`. `server/utils/bundled-assets.ts` reads the bundled CHANGELOG for that tool and for
   `GET /api/changelog`, which pages it (`changelogPage`) for the Changelog window (`ChangelogModal`); the demo build
   copies the file beside its seed and pages it the same way.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
-  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
-  redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
-  rotation) and `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
+  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration or a client ID metadata document
+  (fetched at `authorize`, `mcp-oauth-client-metadata.ts`), `authorize` (stores the request and redirects to the
+  `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh rotation) and
+  `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
   `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`.
 - **`server/routes/share/`**: the public page of a share link (an execution or a cluster rendered as the offline
   export, a report snapshot, a live dashboard), with its badge and chart image.
