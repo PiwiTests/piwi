@@ -75,10 +75,7 @@ describe('buildErrorText', () => {
   it('places a timed-out test at the call the timeout interrupted', () => {
     const file = path.join(process.cwd(), 'tests', 'sign-in.spec.ts');
     const timeout = { message: 'Test timeout of 30000ms exceeded.' };
-    const click = {
-      message: 'Error: locator.click: Test timeout of 30000ms exceeded.',
-      location: { file, line: 7, column: 54 },
-    };
+    const click = { message: 'Error: locator.click: Test timeout of 30000ms exceeded.', location: { file, line: 7, column: 54 } };
     const text = buildErrorText(makeResult([timeout, click], timeout));
     expect(text).toBe(
       'Test timeout of 30000ms exceeded.\n---\nError: locator.click: Test timeout of 30000ms exceeded.\n    at tests/sign-in.spec.ts:7:54',

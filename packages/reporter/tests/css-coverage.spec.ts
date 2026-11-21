@@ -45,7 +45,7 @@ describe('resolveCssCoverage', () => {
     write('web/assets/app.css', APP);
     write(
       'src/App.vue',
-      '<template><p class="x">x</p></template>\n<script>const css = \'<style>\';</script>\n<style scoped>\n.x { color: red }\n.y { color: blue }\n</style>\n',
+      "<template><p class=\"x\">x</p></template>\n<script>const css = '<style>';</script>\n<style scoped>\n.x { color: red }\n.y { color: blue }\n</style>\n",
     );
     write('src/index.css', '@tailwind base;\n\n.btn {\n  color: red;\n}\n');
     write('src/theme.scss', '$c: red;\n\n.t {\n  color: $c;\n}\n');
@@ -94,11 +94,7 @@ describe('resolveCssCoverage', () => {
 
   it("maps a sheet's lines through its source map, and drops the sources under node_modules", async () => {
     // Line 1 `.t{color:red}` comes from theme.scss line 3, line 2 `.p-1{…}` from tailwind's own sheet.
-    const map = {
-      version: 3,
-      sources: ['src/theme.scss', 'node_modules/tailwindcss/index.css'],
-      mappings: 'AAEA;ACFA',
-    };
+    const map = { version: 3, sources: ['src/theme.scss', 'node_modules/tailwindcss/index.css'], mappings: 'AAEA;ACFA' };
     const text = `.t{color:red}\n.p-1{padding:1px}\n/*# sourceMappingURL=data:application/json;base64,${Buffer.from(JSON.stringify(map)).toString('base64')} */\n`;
     const compiled = sheet(text, ['.t{color:red}', '.p-1{padding:1px}'], { sourceURL: 'http://app.test/' });
     expect((await resolveCssCoverage([compiled], roots(), noMaps)).reached).toEqual(
@@ -109,12 +105,7 @@ describe('resolveCssCoverage', () => {
   it('counts nothing for build output, a sheet with no file, or one whose text was not read', async () => {
     const built = sheet('.z{color:red}\n', ['.z{color:red}'], { sourceURL: 'http://app.test/dist/bundle.css' });
     const inPage = sheet('.q { color: red }', ['.q { color: red }'], { isInline: true, sourceURL: 'http://app.test/' });
-    const unread: CapturedSheet = {
-      sourceURL: 'http://app.test/web/assets/app.css',
-      isInline: false,
-      startLine: 0,
-      used: new Map(),
-    };
+    const unread: CapturedSheet = { sourceURL: 'http://app.test/web/assets/app.css', isInline: false, startLine: 0, used: new Map() };
     expect(await resolveCssCoverage([built, inPage, unread], roots(), noMaps)).toEqual({
       reached: new Map(),
       known: new Map(),
@@ -133,10 +124,7 @@ describe('in Chromium', () => {
       'assets/app.css',
       '.home { color: red }\n.next { color: blue }\n@media (min-width: 1px) {\n  .wide { margin: 0 }\n}\n.hover:hover { color: green }\n.never { color: pink }\n',
     );
-    write(
-      'src/Card.vue',
-      '<template><div class="card">x</div></template>\n<style>\n.card { padding: 1px }\n.card-idle { padding: 2px }\n</style>\n',
-    );
+    write('src/Card.vue', '<template><div class="card">x</div></template>\n<style>\n.card { padding: 1px }\n.card-idle { padding: 2px }\n</style>\n');
     write(
       'index.html',
       '<link rel="stylesheet" href="/assets/app.css"><div class="home wide hover">Home</div><a id="go" href="/next.html">Next</a>' +

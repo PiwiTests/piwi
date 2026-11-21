@@ -60,10 +60,7 @@ describe('the location the reporter sends for a test, which the dashboard reads 
 
   it("is relative to the config's folder, whatever directory Playwright runs from", async () => {
     const project = path.join(path.parse(process.cwd()).root, 'elsewhere', 'e2e');
-    const sent = await submittedCase(
-      path.join(project, 'playwright.config.ts'),
-      path.join(project, 'tests', 'a.spec.ts'),
-    );
+    const sent = await submittedCase(path.join(project, 'playwright.config.ts'), path.join(project, 'tests', 'a.spec.ts'));
     expect(sent.location).toBe('tests/a.spec.ts:3:5');
   });
 });

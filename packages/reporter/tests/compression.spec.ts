@@ -92,9 +92,7 @@ describe('the report archive', () => {
   it('lists each file with its size', () => {
     fs.mkdirSync(path.join(tmpDir, 'data'));
     fs.writeFileSync(path.join(tmpDir, 'data', 'app.js'), 'APP');
-    expect(listArchiveFiles(tmpDir)).toEqual([
-      { path: path.join(tmpDir, 'data', 'app.js'), name: 'data/app.js', size: 3 },
-    ]);
+    expect(listArchiveFiles(tmpDir)).toEqual([{ path: path.join(tmpDir, 'data', 'app.js'), name: 'data/app.js', size: 3 }]);
   });
 
   it('fails when a file shrank after it was listed, rather than writing a broken archive', async () => {

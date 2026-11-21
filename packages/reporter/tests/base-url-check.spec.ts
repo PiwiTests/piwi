@@ -128,10 +128,7 @@ describe('baseUrlTargets', () => {
     const grid = { wsEndpoint: 'ws://grid.example.test:3000/' };
     const config = {
       projects: [
-        {
-          name: 'local',
-          use: { baseURL: 'http://localhost:3000', connectOptions: { ...grid, exposeNetwork: '<loopback>' } },
-        },
+        { name: 'local', use: { baseURL: 'http://localhost:3000', connectOptions: { ...grid, exposeNetwork: '<loopback>' } } },
         { name: 'staging', use: { baseURL: 'https://staging.example.test', connectOptions: grid } },
         { name: 'firefox', use: { baseURL: 'https://staging.example.test' } },
         { name: 'api', use: { baseURL: 'https://api.example.test' } },
@@ -150,10 +147,7 @@ describe('baseUrlTargets', () => {
       'https://api.example.test': true,
     });
     expect(
-      remote({
-        PW_TEST_CONNECT_WS_ENDPOINT: 'ws://other.example.test/',
-        PW_TEST_CONNECT_EXPOSE_NETWORK: '*.example.test',
-      }),
+      remote({ PW_TEST_CONNECT_WS_ENDPOINT: 'ws://other.example.test/', PW_TEST_CONNECT_EXPOSE_NETWORK: '*.example.test' }),
     ).toEqual({
       'http://localhost:3000': false,
       'https://staging.example.test': true,
@@ -203,10 +197,7 @@ describe('exposeNetworkCovers', () => {
   });
 
   it("compares a rule's port with the URL's, 80 or 443 when it names none", () => {
-    expect(covers('app.example.test:80', 'http://app.example.test/', 'https://app.example.test/')).toEqual([
-      true,
-      false,
-    ]);
+    expect(covers('app.example.test:80', 'http://app.example.test/', 'https://app.example.test/')).toEqual([true, false]);
     expect(covers('app.example.test:443', 'https://app.example.test/')).toEqual([true]);
   });
 
@@ -289,16 +280,11 @@ describe('checkBaseUrls', () => {
   it('says when a remote browser reaches a base URL from its own network', async () => {
     const remote = {
       projects: [
-        {
-          name: 'grid',
-          use: { baseURL: 'https://staging.example.test', connectOptions: { wsEndpoint: 'ws://grid/' } },
-        },
+        { name: 'grid', use: { baseURL: 'https://staging.example.test', connectOptions: { wsEndpoint: 'ws://grid/' } } },
       ],
     };
     const probe = scripted({ error: 'getaddrinfo ENOTFOUND staging.example.test' });
-    const error = await checkBaseUrls(remote, { ...fast, argv: PW, env: {}, attempts: 1, probe }).catch(
-      (e: Error) => e,
-    );
+    const error = await checkBaseUrls(remote, { ...fast, argv: PW, env: {}, attempts: 1, probe }).catch((e: Error) => e);
     expect((error as Error).message.split('\n').slice(1, 3)).toEqual([
       '  https://staging.example.test (grid): getaddrinfo ENOTFOUND staging.example.test (1 attempt)',
       "    The check ran from this machine's network, but a project's remote browser reaches staging.example.test from its own, since its exposeNetwork rule does not cover that address.",

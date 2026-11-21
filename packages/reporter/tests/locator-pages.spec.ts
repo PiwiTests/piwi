@@ -114,8 +114,7 @@ describe('capture fixtures record the page of each locator call', () => {
     });
     const rootLocator = { ariaSnapshot: async () => null };
     const fakePage = {
-      getByRole: (_role: string, opts: { name: string }) =>
-        makeLocator(`getByRole('button', { name: '${opts.name}' })`),
+      getByRole: (_role: string, opts: { name: string }) => makeLocator(`getByRole('button', { name: '${opts.name}' })`),
       getByTestId: () => makeLocator("getByTestId('x')"),
       getByText: () => makeLocator("getByText('x')"),
       getByLabel: () => makeLocator("getByLabel('x')"),
@@ -165,31 +164,11 @@ describe('capture fixtures record the page of each locator call', () => {
     expect(attached).toBeDefined();
     const entries = JSON.parse(attached![1].body.toString()) as LocatorPageUse[];
     expect(entries.map(({ locator, page, arrival, origin }) => ({ locator, page, arrival, origin }))).toEqual([
-      {
-        locator: "getByRole('button', { name: 'Your cart' })",
-        page: '/cart',
-        arrival: true,
-        origin: 'https://shop.test',
-      },
-      {
-        locator: "getByRole('button', { name: 'Checkout' })",
-        page: '/cart',
-        arrival: true,
-        origin: 'https://shop.test',
-      },
-      {
-        locator: "getByRole('button', { name: 'Remove' })",
-        page: '/cart',
-        arrival: false,
-        origin: 'https://shop.test',
-      },
+      { locator: "getByRole('button', { name: 'Your cart' })", page: '/cart', arrival: true, origin: 'https://shop.test' },
+      { locator: "getByRole('button', { name: 'Checkout' })", page: '/cart', arrival: true, origin: 'https://shop.test' },
+      { locator: "getByRole('button', { name: 'Remove' })", page: '/cart', arrival: false, origin: 'https://shop.test' },
       // A negated assertion records its page too.
-      {
-        locator: "getByRole('button', { name: 'Pay' })",
-        page: '/checkout',
-        arrival: true,
-        origin: 'https://shop.test',
-      },
+      { locator: "getByRole('button', { name: 'Pay' })", page: '/checkout', arrival: true, origin: 'https://shop.test' },
     ]);
     // Each call site is this spec file, as the step location reports it.
     for (const entry of entries) expect(entry.location).toMatch(/tests\/locator-pages\.spec\.ts:\d+:\d+$/);

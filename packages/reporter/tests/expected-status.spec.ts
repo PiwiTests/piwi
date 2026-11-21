@@ -1,15 +1,6 @@
 import { describe, it, afterEach, expect } from 'vitest';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import {
-  startServer,
-  jsonRes,
-  textRes,
-  fakeConfig,
-  fakeSuite,
-  fakeTestCase,
-  fakeResult,
-  type FakeServer,
-} from './_helpers.js';
+import { startServer, jsonRes, textRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
 
 describe('expectedStatus on the wire', () => {
   let server: FakeServer | undefined;
@@ -62,10 +53,7 @@ describe('expectedStatus on the wire', () => {
 
   it('sends a passing test that pushed a `fail` annotation itself as passed, as Playwright reports it', async () => {
     // `test.info().annotations.push({ type: 'fail' })` leaves Playwright's expected status at `passed`.
-    const sent = await submitOne(
-      { annotations: [{ type: 'fail', description: 'JIRA-12' }], expectedStatus: 'passed' },
-      'passed',
-    );
+    const sent = await submitOne({ annotations: [{ type: 'fail', description: 'JIRA-12' }], expectedStatus: 'passed' }, 'passed');
     expect(sent.status).toBe('passed');
     expect(sent.expectedStatus).toBe('passed');
     expect(sent.error ?? null).toBeNull();

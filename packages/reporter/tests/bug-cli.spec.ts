@@ -23,9 +23,7 @@ function dotEnvFolder(text: string): string {
 
 describe('parseBugArgs', () => {
   it('reads the id, the flags and the env fallbacks', () => {
-    expect(
-      parseBugArgs(['#37', '--write'], { PIWI_DASHBOARD_URL: 'https://dash.example/', PIWI_API_KEY: 'k' }),
-    ).toEqual({
+    expect(parseBugArgs(['#37', '--write'], { PIWI_DASHBOARD_URL: 'https://dash.example/', PIWI_API_KEY: 'k' })).toEqual({
       id: 37,
       write: true,
       out: null,
@@ -35,9 +33,9 @@ describe('parseBugArgs', () => {
       serverUrl: 'https://dash.example',
       apiKey: 'k',
     });
-    expect(
-      parseBugArgs(['37', '--out', 'a.spec.ts', '--no-run', '--run-mode'], { PIWI_DASHBOARD_URL: 'x' }),
-    ).toMatchObject({ write: true, out: 'a.spec.ts', run: false, mode: 'run' });
+    expect(parseBugArgs(['37', '--out', 'a.spec.ts', '--no-run', '--run-mode'], { PIWI_DASHBOARD_URL: 'x' })).toMatchObject(
+      { write: true, out: 'a.spec.ts', run: false, mode: 'run' },
+    );
   });
 
   it('needs an id and a dashboard', () => {
@@ -123,10 +121,7 @@ describe('runBug', () => {
   });
 
   it('writes it without running it, and keeps an existing file without --force', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })));
     vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const out = path.join(dir, 'tests', 'bugs', 'coupon.spec.ts');
     const env = { PIWI_DASHBOARD_URL: 'https://dash.example' };
@@ -137,48 +132,33 @@ describe('runBug', () => {
     expect(fs.readFileSync(out, 'utf-8')).toBe('mine');
   });
 
-  it.skipIf(process.platform === 'win32')(
-    'exits 2, not "the bug may be fixed", when a signal stops Playwright',
-    async () => {
-      vi.stubGlobal(
-        'fetch',
-        vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })),
-      );
-      const cli = path.join(dir, 'node_modules', 'playwright');
-      fs.mkdirSync(cli, { recursive: true });
-      fs.writeFileSync(
-        path.join(cli, 'package.json'),
-        JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }),
-      );
-      fs.writeFileSync(
-        path.join(cli, 'cli.js'),
-        "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n",
-      );
-      const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-      const out = path.join(dir, 'tests', 'bugs', 'coupon.spec.ts');
-      expect(await runBug(['37', '--out', out], { PIWI_DASHBOARD_URL: 'https://dash.example' }, dir)).toBe(2);
-      const said = errors.mock.calls.map((call) => String(call[0])).join('\n');
-      expect(said).toContain('piwi bug: Playwright was stopped by SIGTERM');
-      expect(said).not.toContain('may be fixed');
-    },
-  );
+  it.skipIf(process.platform === 'win32')('exits 2, not "the bug may be fixed", when a signal stops Playwright', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })));
+    const cli = path.join(dir, 'node_modules', 'playwright');
+    fs.mkdirSync(cli, { recursive: true });
+    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }));
+    fs.writeFileSync(path.join(cli, 'cli.js'), "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n");
+    const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    const out = path.join(dir, 'tests', 'bugs', 'coupon.spec.ts');
+    expect(await runBug(['37', '--out', out], { PIWI_DASHBOARD_URL: 'https://dash.example' }, dir)).toBe(2);
+    const said = errors.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(said).toContain('piwi bug: Playwright was stopped by SIGTERM');
+    expect(said).not.toContain('may be fixed');
+  });
 
   it('--write puts the spec in the bugs folder from the repository root, whatever the working directory', async () => {
     execFileSync('git', ['init', '-q'], { cwd: dir });
     const web = path.join(dir, 'apps', 'web');
     fs.mkdirSync(web, { recursive: true });
     const fetchMock = vi.fn(
-      async () =>
-        new Response(JSON.stringify({ ...SPEC, path: 'apps/web/tests/bugs/coupon.spec.ts' }), { status: 200 }),
+      async () => new Response(JSON.stringify({ ...SPEC, path: 'apps/web/tests/bugs/coupon.spec.ts' }), { status: 200 }),
     );
     vi.stubGlobal('fetch', fetchMock);
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(await runBug(['37', '--write', '--no-run'], { PIWI_DASHBOARD_URL: 'https://dash.example' }, web)).toBe(0);
     expect(fs.readFileSync(path.join(web, 'tests', 'bugs', 'coupon.spec.ts'), 'utf-8')).toBe(SPEC.code);
     expect(fs.existsSync(path.join(web, 'apps'))).toBe(false);
-    expect(String(error.mock.calls[error.mock.calls.length - 1]?.[0])).toBe(
-      'piwi bug: wrote tests/bugs/coupon.spec.ts',
-    );
+    expect(String(error.mock.calls[error.mock.calls.length - 1]?.[0])).toBe('piwi bug: wrote tests/bugs/coupon.spec.ts');
     expect((fetchMock.mock.calls[0] as unknown as [string])[0]).toBe(
       'https://dash.example/api/bug-reports/37/spec?mode=commit',
     );
@@ -200,10 +180,7 @@ describe('runBug', () => {
   });
 
   it('--write outside a repository reads the bugs folder from the working directory', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })));
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(await runBug(['37', '--write', '--no-run'], { PIWI_DASHBOARD_URL: 'https://dash.example' }, dir)).toBe(0);
     expect(fs.existsSync(path.join(dir, 'tests', 'bugs', 'coupon.spec.ts'))).toBe(true);
@@ -212,29 +189,20 @@ describe('runBug', () => {
 
   it('names a refused key on 401 and the reason the dashboard gives on 403', async () => {
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{"message":"Unauthorized"}', { status: 401 })),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{"message":"Unauthorized"}', { status: 401 })));
     expect(await runBug(['37'], { PIWI_DASHBOARD_URL: 'https://dash.example' })).toBe(2);
     expect(String(error.mock.calls[0]?.[0])).toContain('refused the API key (401)');
 
     const reason = 'With authentication off, this dashboard answers only on its local addresses';
     const plain = { status: 403, headers: { 'content-type': 'text/plain; charset=utf-8' } };
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response(reason, plain)),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(reason, plain)));
     expect(await runBug(['37'], { PIWI_DASHBOARD_URL: 'https://dash.example' })).toBe(2);
     expect(String(error.mock.calls[1]?.[0])).toContain(`refused the request (403): ${reason}`);
     expect(String(error.mock.calls[1]?.[0])).not.toContain('API key');
   });
 
   it('fails on a report the dashboard does not have', async () => {
-    vi.stubGlobal(
-      'fetch',
-      vi.fn(async () => new Response('{}', { status: 404 })),
-    );
+    vi.stubGlobal('fetch', vi.fn(async () => new Response('{}', { status: 404 })));
     const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     expect(await runBug(['99'], { PIWI_DASHBOARD_URL: 'https://dash.example' })).toBe(2);
     expect(String(error.mock.calls[0]?.[0])).toContain('no bug report #99');
@@ -270,10 +238,7 @@ describe('codegen bug:<id>', () => {
 
   it("reads the report from the dashboard the working directory's .env names, with its key", async () => {
     const folder = dotEnvFolder('PIWI_DASHBOARD_URL=https://dash.example\nPIWI_API_KEY=pd_workspace\n');
-    const report = {
-      title: 'Coupon not applied',
-      steps: { v: 1, title: null, origin: null, recordedAt: 0, steps: [] },
-    };
+    const report = { title: 'Coupon not applied', steps: { v: 1, title: null, origin: null, recordedAt: 0, steps: [] } };
     const fetchMock = vi.fn(async () => new Response(JSON.stringify(report), { status: 200 }));
     vi.stubGlobal('fetch', fetchMock);
     vi.spyOn(process.stdout, 'write').mockImplementation(() => true);

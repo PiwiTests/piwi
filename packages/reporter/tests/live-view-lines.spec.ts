@@ -34,10 +34,7 @@ const captured = [step('hook', 'Before Hooks', [step('fixture', 'Fixture "piwiCa
 /** The steps of a test that imports `test` from `@playwright/test`. */
 const uncaptured = [step('hook', 'Before Hooks', [step('fixture', 'Fixture "page"')]), ...calls];
 /** The steps of a test of an API alone, from `@playwright/test`: no page to watch. */
-const apiOnly = [
-  step('hook', 'Before Hooks', [step('fixture', 'Fixture "request"')]),
-  step('pw:api', 'GET "/api/cart"'),
-];
+const apiOnly = [step('hook', 'Before Hooks', [step('fixture', 'Fixture "request"')]), step('pw:api', 'GET "/api/cart"')];
 
 /** How the instance answers the global setup's `/setup`. */
 type Setup = 'key' | 'no-key' | 'down' | 'no-setup';
@@ -83,11 +80,7 @@ describe('the live view lines of a run', () => {
     server = await startServer((req, res) => {
       if (req.url === '/api/test-runs/setup') {
         if (setup === 'down') return textRes(res, 503, 'Service Unavailable');
-        return jsonRes(res, 200, {
-          runId: 1,
-          setupToken: 'setup',
-          ...(setup === 'key' ? { liveView: { key: KEY } } : {}),
-        });
+        return jsonRes(res, 200, { runId: 1, setupToken: 'setup', ...(setup === 'key' ? { liveView: { key: KEY } } : {}) });
       }
       if (req.url === '/api/test-runs/1/begin' || req.url === '/api/test-runs/start') {
         return jsonRes(res, 200, { runId: 1, streamToken: 'tok' });
@@ -120,11 +113,7 @@ describe('the live view lines of a run', () => {
     const liveView = process.env[LIVE_VIEW_ENV];
     for (const [i, test] of tests.entries()) {
       reporter.onTestBegin(test, fakeResult({}));
-      const steps = apiFiles.includes(names[i]!)
-        ? apiOnly
-        : uncapturedFiles.includes(names[i]!)
-          ? uncaptured
-          : captured;
+      const steps = apiFiles.includes(names[i]!) ? apiOnly : uncapturedFiles.includes(names[i]!) ? uncaptured : captured;
       reporter.onTestEnd(test, fakeResult({ steps }));
     }
     await reporter.onEnd({ status: 'passed' } as never);
@@ -159,14 +148,8 @@ describe('the live view lines of a run', () => {
 
     it.each([
       ['no-key', /^\[Piwi Dashboard\] Live view off: .*Project → Settings → Live view/],
-      [
-        'no-setup',
-        /^\[Piwi Dashboard\] Live view unavailable: the reporter's global setup did not register this run as it started \(wrapConfig adds it/,
-      ],
-      [
-        'down',
-        /^\[Piwi Dashboard\] Live view unavailable: the instance did not register this run as it started \(Request failed with status 503: Service Unavailable\)/,
-      ],
+      ['no-setup', /^\[Piwi Dashboard\] Live view unavailable: the reporter's global setup did not register this run as it started \(wrapConfig adds it/],
+      ['down', /^\[Piwi Dashboard\] Live view unavailable: the instance did not register this run as it started \(Request failed with status 503: Service Unavailable\)/],
     ] as const)('says why it has no live view when the global setup is %s, and names no spec', async (setup, line) => {
       const { lines, liveView } = await run(setup, { ci: true });
       expect(lines).toHaveLength(1);
@@ -189,14 +172,11 @@ describe('the live view lines of a run', () => {
       ['no-setup', true, 'none:unregistered'],
       ['down', true, 'none:setup-failed'],
       ['no-setup', false, 'none:streaming-off'],
-    ] as const)(
-      'names why it cannot be shared live when the global setup is %s (streaming %s)',
-      async (setup, streaming, why) => {
-        const { lines, liveView } = await run(setup, { ci: false, streaming });
-        expect(liveView).toBe(why);
-        expect(lines).toEqual([]);
-      },
-    );
+    ] as const)('names why it cannot be shared live when the global setup is %s (streaming %s)', async (setup, streaming, why) => {
+      const { lines, liveView } = await run(setup, { ci: false, streaming });
+      expect(liveView).toBe(why);
+      expect(lines).toEqual([]);
+    });
   });
 
   it('says nothing of the live view in a run that merges blob reports', async () => {

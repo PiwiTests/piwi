@@ -21,10 +21,7 @@ function write(file: string, text: string): void {
 }
 
 /** A process in a fake `/proc`: CPU in clock ticks (10 ms each), run-queue wait in ms, peak RSS in kB. */
-function proc(
-  pid: number,
-  p: { ppid: number; comm: string; cmdline: string; ticks: number; waitMs: number; hwmKb: number },
-) {
+function proc(pid: number, p: { ppid: number; comm: string; cmdline: string; ticks: number; waitMs: number; hwmKb: number }) {
   const fields = Array.from({ length: 22 }, () => '0');
   fields[1] = String(p.ppid);
   fields[11] = String(p.ticks);
@@ -49,14 +46,7 @@ describe('WorkerMetrics', () => {
     expect(fs.readFileSync(path.join(dir, '20', 'clear_refs'), 'utf8')).toBe('5');
     expect(fs.readFileSync(path.join(dir, '21', 'clear_refs'), 'utf8')).toBe('5');
     proc(20, { ppid: 10, comm: 'chrome', cmdline: '/pw/chrome --headless', ticks: 80, waitMs: 12, hwmKb: 160_000 });
-    proc(21, {
-      ppid: 20,
-      comm: 'chrome',
-      cmdline: '/pw/chrome --type=renderer',
-      ticks: 110,
-      waitMs: 41,
-      hwmKb: 120_000,
-    });
+    proc(21, { ppid: 20, comm: 'chrome', cmdline: '/pw/chrome --type=renderer', ticks: 110, waitMs: 41, hwmKb: 120_000 });
     proc(22, { ppid: 20, comm: 'chrome', cmdline: '/pw/chrome --type=renderer', ticks: 20, waitMs: 3, hwmKb: 70_000 });
     const result = metrics.end()!;
     metrics.dispose();

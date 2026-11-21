@@ -441,11 +441,7 @@ describe('ServerStepResolver', () => {
       });
       await new Promise<void>((resolve) => app.listen(0, '127.0.0.1', resolve));
       try {
-        const resolver = new ServerStepResolver(
-          `http://127.0.0.1:${(app.address() as AddressInfo).port}`,
-          TOKEN,
-          TOKEN,
-        );
+        const resolver = new ServerStepResolver(`http://127.0.0.1:${(app.address() as AddressInfo).port}`, TOKEN, TOKEN);
         await expect(resolver.resolveStep(request)).rejects.toThrow();
         expect(reached).toEqual([]);
       } finally {

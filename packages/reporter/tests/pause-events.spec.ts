@@ -4,16 +4,7 @@ import { pauseStepEvents, readPauses } from '../src/internal/collect/pause-event
 import type { PauseRecord } from '../src/internal/capture/pause-at.js';
 import { ATTACHMENT_NAMES } from '../src/internal/capture/attachments.js';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import {
-  fakeConfig,
-  fakeResult,
-  fakeSuite,
-  fakeTestCase,
-  jsonRes,
-  startServer,
-  textRes,
-  type FakeServer,
-} from './_helpers.js';
+import { fakeConfig, fakeResult, fakeSuite, fakeTestCase, jsonRes, startServer, textRes, type FakeServer } from './_helpers.js';
 
 function pause(line: number, startedAt: number, duration: number, reason: PauseRecord['reason'] = 'breakpoint') {
   return { title: 'Navigate', location: `tests/checkout.spec.ts:${line}:5`, reason, startedAt, duration };

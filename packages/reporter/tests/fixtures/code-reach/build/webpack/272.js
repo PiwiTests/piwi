@@ -1,17 +1,2 @@
-'use strict';
-(self.webpackChunk = self.webpackChunk || []).push([
-  [272],
-  {
-    272(e, n, t) {
-      t.d(n, { renderReports: () => c });
-      var u = t(823);
-      function c(e) {
-        const n = document.createElement('p');
-        ((n.id = 'revenue'),
-          (n.textContent = `Revenue ${(0, u.$)([3, 4, 5].reduce((e, n) => e + n, 0))}`),
-          e.append(n));
-      }
-    },
-  },
-]);
+"use strict";(self.webpackChunk=self.webpackChunk||[]).push([[272],{272(e,n,t){t.d(n,{renderReports:()=>c});var u=t(823);function c(e){const n=document.createElement("p");n.id="revenue",n.textContent=`Revenue ${(0,u.$)([3,4,5].reduce((e,n)=>e+n,0))}`,e.append(n)}}}]);
 //# sourceMappingURL=272.js.map

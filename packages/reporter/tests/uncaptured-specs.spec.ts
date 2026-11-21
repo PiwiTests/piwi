@@ -1,15 +1,6 @@
 import { describe, it, afterEach, expect, vi } from 'vitest';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
-import {
-  startServer,
-  jsonRes,
-  textRes,
-  fakeConfig,
-  fakeSuite,
-  fakeTestCase,
-  fakeResult,
-  type FakeServer,
-} from './_helpers.js';
+import { startServer, jsonRes, textRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
 
 /** A step of Playwright's reporter API, as the attempt lists it. */
 const step = (category: string, title: string, steps: unknown[] = []) => ({ category, title, steps });
@@ -74,9 +65,7 @@ describe('a spec that runs without the capture fixtures in a run that can stop',
   it('names the other specs in one line as the run ends, and reads no call of a hook that ran before the fixtures', async () => {
     process.env.PIWI_PAUSE_AT = 'tests/plain.spec.ts:4';
     const lines = await warnings((file) =>
-      file.endsWith('captured.spec.ts')
-        ? calls
-        : [step('hook', 'Before Hooks', [step('fixture', 'Fixture "page"')]), ...calls],
+      file.endsWith('captured.spec.ts') ? calls : [step('hook', 'Before Hooks', [step('fixture', 'Fixture "page"')]), ...calls],
     );
     expect(lines).toEqual([
       "[Piwi Dashboard] tests/plain.spec.ts ran without Piwi's capture fixtures, so its tests never stop at a " +
@@ -85,9 +74,7 @@ describe('a spec that runs without the capture fixtures in a run that can stop',
         'or at Pause either: tests/captured.spec.ts.',
     ]);
     // A beforeAll that called the page and failed: its test's own fixtures never ran.
-    const failedHook = [
-      step('hook', 'Before Hooks', [step('hook', 'beforeAll hook', [step('pw:api', 'GET "/health"')])]),
-    ];
+    const failedHook = [step('hook', 'Before Hooks', [step('hook', 'beforeAll hook', [step('pw:api', 'GET "/health"')])])];
     expect(await warnings(() => failedHook)).toEqual([]);
   });
 

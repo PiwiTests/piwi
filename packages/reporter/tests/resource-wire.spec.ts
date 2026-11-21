@@ -227,11 +227,7 @@ describe('resourceTimeline spans', () => {
   });
 
   it('puts each span on the timeline’s clock, and carries a run that measured nothing else', () => {
-    const timeline = resourceTimeline(
-      null,
-      [],
-      [span(1500, 4000), span(2000, 2600, { verdict: 'lingering', untilWorkerEnd: false, scope: null })],
-    )!;
+    const timeline = resourceTimeline(null, [], [span(1500, 4000), span(2000, 2600, { verdict: 'lingering', untilWorkerEnd: false, scope: null })])!;
     expect(timeline.startedAt).toBe(1500);
     expect(timeline.spans).toEqual([
       {

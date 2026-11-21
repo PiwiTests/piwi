@@ -67,15 +67,7 @@ describe('formatMachinePanel', () => {
   it('names what it could not measure, and the container that killed or throttled', () => {
     const lines = formatMachinePanel(
       profile({
-        cpu: {
-          busyPct: 50,
-          iowaitPct: null,
-          stealPct: null,
-          pressurePct: null,
-          series: [],
-          byRole: null,
-          throttledMs: 2100,
-        },
+        cpu: { busyPct: 50, iowaitPct: null, stealPct: null, pressurePct: null, series: [], byRole: null, throttledMs: 2100 },
         memory: {
           kind: null,
           peakBytes: null,
@@ -103,10 +95,7 @@ describe('formatMachinePanel', () => {
 });
 
 describe('workerHealthOf', () => {
-  const census = (
-    title: string | null,
-    worker?: { loopUtilization: number; loopDelayP99Ms: number; involuntarySwitches: number },
-  ) =>
+  const census = (title: string | null, worker?: { loopUtilization: number; loopDelayP99Ms: number; involuntarySwitches: number }) =>
     ({
       v: 1,
       worker: 0,
@@ -116,7 +105,9 @@ describe('workerHealthOf', () => {
       born: [],
       closed: [],
       open: [],
-      ...(worker ? { metrics: { worker: { cpuMs: 0, loopDelayMaxMs: 0, heapUsedMb: 0, fds: null, ...worker } } } : {}),
+      ...(worker
+        ? { metrics: { worker: { cpuMs: 0, loopDelayMaxMs: 0, heapUsedMb: 0, fds: null, ...worker } } }
+        : {}),
     }) as ResourceCensus;
 
   it('averages the event loop and switches over the tests that carried metrics, and keeps the worst delay', () => {
@@ -136,12 +127,7 @@ describe('panel helpers', () => {
   it('draws a sparkline of at most the given width', () => {
     expect(sparkline([0, 50, 100])).toBe('▁▅█');
     expect(sparkline([1, 2])).toBe('');
-    expect(
-      sparkline(
-        Array.from({ length: 100 }, (_, i) => i),
-        10,
-      ),
-    ).toHaveLength(10);
+    expect(sparkline(Array.from({ length: 100 }, (_, i) => i), 10)).toHaveLength(10);
   });
 
   it('formats bytes and sorts attachments into artifact kinds', () => {

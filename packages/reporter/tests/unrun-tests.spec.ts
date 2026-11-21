@@ -1,16 +1,7 @@
 import { describe, it, afterEach, expect, vi } from 'vitest';
 import { PiwiDashboardReporter } from '../src/public/reporter.js';
 import { RunSampler } from '../src/internal/collect/process-sampler.js';
-import {
-  startServer,
-  jsonRes,
-  textRes,
-  fakeConfig,
-  fakeSuite,
-  fakeTestCase,
-  fakeResult,
-  type FakeServer,
-} from './_helpers.js';
+import { startServer, jsonRes, textRes, fakeConfig, fakeSuite, fakeTestCase, fakeResult, type FakeServer } from './_helpers.js';
 
 /** One attempt of a test, as `onTestEnd` reports it. */
 type Attempt = { test: any; status: string; retry?: number };
@@ -59,8 +50,7 @@ describe('the tests a run never reached, on the wire', () => {
     return body;
   }
 
-  const sentCase = (body: any, title: string) =>
-    body.testCases.find((tc: any) => tc.title === title && tc.duration === 0);
+  const sentCase = (body: any, title: string) => body.testCases.find((tc: any) => tc.title === title && tc.duration === 0);
 
   it('counts failed tests, not failed attempts, against maxFailures', async () => {
     const suite = fakeSuite();
@@ -68,11 +58,7 @@ describe('the tests a run never reached, on the wire', () => {
       ...fakeTestCase({ id: title, title, line, parent: suite }),
       retries: 2,
     });
-    const tests = [
-      flaky('pays', 1),
-      flaky('refunds', 2),
-      fakeTestCase({ id: 'ships', title: 'ships', line: 3, parent: suite }),
-    ];
+    const tests = [flaky('pays', 1), flaky('refunds', 2), fakeTestCase({ id: 'ships', title: 'ships', line: 3, parent: suite })];
     // Two tests failed on all three of their attempts: six failed attempts, two failed tests.
     const attempts: Attempt[] = [0, 1, 2].flatMap((retry) => [
       { test: tests[0], status: 'failed', retry },
@@ -125,9 +111,7 @@ describe('the tests a run never reached, on the wire', () => {
       annotations: [{ type: 'skip' }],
     });
     const ships = fakeTestCase({ id: 'ships', title: 'ships', line: 3, parent: suite });
-    const body = await submitted([pays, refunds, ships], [{ test: pays, status: 'failed' }], 'failed', {
-      maxFailures: 1,
-    });
+    const body = await submitted([pays, refunds, ships], [{ test: pays, status: 'failed' }], 'failed', { maxFailures: 1 });
     expect(sentCase(body, 'refunds')).toMatchObject({ status: 'skipped', didNotRunReason: null });
     expect(sentCase(body, 'ships')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'max-failures' });
     expect(body).toMatchObject({ totalTests: 3, failedTests: 1, skippedTests: 1, didNotRunTests: 1 });
@@ -139,34 +123,10 @@ describe('the tests a run never reached, on the wire', () => {
       suite.project = () => ({ name, use: {} });
       return suite;
     };
-    const login = fakeTestCase({
-      id: 'login',
-      title: 'logs in',
-      file: '/repo/auth.setup.ts',
-      line: 3,
-      parent: inProject('setup'),
-    });
-    const cart = fakeTestCase({
-      id: 'cart',
-      title: 'adds to cart',
-      file: '/repo/cart.spec.ts',
-      line: 5,
-      parent: inProject('app'),
-    });
-    const report = fakeTestCase({
-      id: 'report',
-      title: 'reports',
-      file: '/repo/report.spec.ts',
-      line: 7,
-      parent: inProject('reports'),
-    });
-    const other = fakeTestCase({
-      id: 'other',
-      title: 'other',
-      file: '/repo/other.spec.ts',
-      line: 9,
-      parent: inProject('other'),
-    });
+    const login = fakeTestCase({ id: 'login', title: 'logs in', file: '/repo/auth.setup.ts', line: 3, parent: inProject('setup') });
+    const cart = fakeTestCase({ id: 'cart', title: 'adds to cart', file: '/repo/cart.spec.ts', line: 5, parent: inProject('app') });
+    const report = fakeTestCase({ id: 'report', title: 'reports', file: '/repo/report.spec.ts', line: 7, parent: inProject('reports') });
+    const other = fakeTestCase({ id: 'other', title: 'other', file: '/repo/other.spec.ts', line: 9, parent: inProject('other') });
     const projects = [
       { name: 'setup', dependencies: [] },
       { name: 'app', dependencies: ['setup'] },
@@ -188,11 +148,7 @@ describe('the tests a run never reached, on the wire', () => {
       });
     }
     // A test of a project that depends on no failed project keeps the run's reason.
-    expect(sentCase(body, 'other')).toMatchObject({
-      status: 'didnotrun',
-      didNotRunReason: 'interrupted',
-      blockedBy: null,
-    });
+    expect(sentCase(body, 'other')).toMatchObject({ status: 'didnotrun', didNotRunReason: 'interrupted', blockedBy: null });
   });
 
   it('links the tests of a project whose dependency failed to a failure whose retry did not run', async () => {

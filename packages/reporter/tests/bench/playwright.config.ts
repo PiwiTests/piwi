@@ -4,7 +4,9 @@ import { defineConfig } from '@playwright/test';
 // @playwright/test peer resolves to a browser revision the sandbox does not
 // pre-install, and downloading one mid-benchmark would skew the first
 // variant's numbers. `run.mjs` fills this in when the binary is present.
-const launchOptions = process.env.PIWI_BENCH_CHROMIUM ? { executablePath: process.env.PIWI_BENCH_CHROMIUM } : {};
+const launchOptions = process.env.PIWI_BENCH_CHROMIUM
+  ? { executablePath: process.env.PIWI_BENCH_CHROMIUM }
+  : {};
 
 /**
  * Standalone Playwright project for the capture-overhead benchmark. Driven by

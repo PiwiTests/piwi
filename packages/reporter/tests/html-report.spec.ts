@@ -28,9 +28,7 @@ describe("the html reporter's folder", () => {
 
   it('is PLAYWRIGHT_HTML_OUTPUT_DIR, or PLAYWRIGHT_HTML_REPORT, from the working directory, over the option', () => {
     const reporters = [['html', { outputFolder: 'from-option' }]];
-    expect(htmlReportFolder(reporters, root, { PLAYWRIGHT_HTML_OUTPUT_DIR: 'from-env' })).toBe(
-      path.resolve('from-env'),
-    );
+    expect(htmlReportFolder(reporters, root, { PLAYWRIGHT_HTML_OUTPUT_DIR: 'from-env' })).toBe(path.resolve('from-env'));
     expect(htmlReportFolder(reporters, root, { PLAYWRIGHT_HTML_REPORT: 'older-env' })).toBe(path.resolve('older-env'));
   });
 

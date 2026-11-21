@@ -63,22 +63,11 @@ describe('buildResourceReport', () => {
       censuses: [
         census(1000, test('t1'), {
           born: [birth(1, 'context'), birth(2, 'page', { parent: 1, site: `${SPEC}:5` })],
-          open: [
-            { id: 1, pages: 1 },
-            { id: 2, used: true },
-          ],
+          open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
         }),
-        census(4000, test('t2'), {
-          open: [
-            { id: 1, pages: 1 },
-            { id: 2, used: true },
-          ],
-        }),
+        census(4000, test('t2'), { open: [{ id: 1, pages: 1 }, { id: 2, used: true }] }),
         census(5000, null, {
-          closed: [
-            close(2, { at: 5000, phase: 'worker', test: null, used: true }),
-            close(1, { at: 5000, phase: 'worker', test: null }),
-          ],
+          closed: [close(2, { at: 5000, phase: 'worker', test: null, used: true }), close(1, { at: 5000, phase: 'worker', test: null })],
         }),
       ],
     });
@@ -100,17 +89,10 @@ describe('buildResourceReport', () => {
   it('does not judge what a failed test left open, nor the pages it never got to use', () => {
     const report = buildResourceReport({
       censuses: [
-        census(
-          1000,
-          { ...test('t1'), failed: true },
-          {
-            born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
-            open: [
-              { id: 1, pages: 1 },
-              { id: 2, used: false },
-            ],
-          },
-        ),
+        census(1000, { ...test('t1'), failed: true }, {
+          born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
+          open: [{ id: 1, pages: 1 }, { id: 2, used: false }],
+        }),
         census(1100, null, {
           closed: [close(2, { at: 1100, phase: 'worker', used: false }), close(1, { at: 1100, phase: 'worker' })],
         }),
@@ -124,28 +106,15 @@ describe('buildResourceReport', () => {
       censuses: [
         census(1000, test('t1'), {
           born: [birth(1, 'context'), birth(2, 'page', { parent: 1 })],
-          open: [
-            { id: 1, pages: 1 },
-            { id: 2, used: true, main: { cpuMs: 40, heapMb: 2, nodes: 10, listeners: 0 } },
-          ],
+          open: [{ id: 1, pages: 1 }, { id: 2, used: true, main: { cpuMs: 40, heapMb: 2, nodes: 10, listeners: 0 } }],
         }),
         census(3000, test('t2'), {
-          open: [
-            { id: 1, pages: 1 },
-            { id: 2, used: true, main: { cpuMs: 1540, heapMb: 2, nodes: 10, listeners: 0 } },
-          ],
+          open: [{ id: 1, pages: 1 }, { id: 2, used: true, main: { cpuMs: 1540, heapMb: 2, nodes: 10, listeners: 0 } }],
         }),
-        census(3100, null, {
-          closed: [
-            close(2, { at: 3100, phase: 'worker', test: null }),
-            close(1, { at: 3100, phase: 'worker', test: null }),
-          ],
-        }),
+        census(3100, null, { closed: [close(2, { at: 3100, phase: 'worker', test: null }), close(1, { at: 3100, phase: 'worker', test: null })] }),
       ],
     });
-    expect(leaks(report.findings)).toEqual([
-      expect.objectContaining({ kind: 'context', pages: 1, afterTestCpuMs: 1500 }),
-    ]);
+    expect(leaks(report.findings)).toEqual([expect.objectContaining({ kind: 'context', pages: 1, afterTestCpuMs: 1500 })]);
     expect(formatResourceSummary(report, 'report')[1]).toContain('· 1.5 s of page CPU after its test');
   });
 
@@ -311,23 +280,10 @@ describe('buildResourceReport', () => {
         census(1000, test('t2', OTHER_SPEC), {
           worker: 1,
           born: [
-            birth(1, 'context', {
-              site: `${OTHER_SPEC}:3`,
-              test: test('t2', OTHER_SPEC),
-              fixture: { title: 'ctx', location: null, worker: true },
-            }),
-            birth(2, 'page', {
-              parent: 1,
-              site: `${OTHER_SPEC}:7`,
-              test: test('t2', OTHER_SPEC),
-              opener: 9,
-              trigger: 'locator.click',
-            }),
+            birth(1, 'context', { site: `${OTHER_SPEC}:3`, test: test('t2', OTHER_SPEC), fixture: { title: 'ctx', location: null, worker: true } }),
+            birth(2, 'page', { parent: 1, site: `${OTHER_SPEC}:7`, test: test('t2', OTHER_SPEC), opener: 9, trigger: 'locator.click' }),
           ],
-          open: [
-            { id: 1, pages: 1 },
-            { id: 2, used: true },
-          ],
+          open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
         }),
         census(2000, null, { worker: 0 }),
         census(2000, null, { worker: 1 }),
@@ -345,10 +301,7 @@ describe('buildResourceReport', () => {
         census(1000, test('t1'), { born: [birth(1, 'context')], open: [{ id: 1, pages: 0 }] }),
         census(2000, test('t2'), {
           born: [birth(2, 'context', { test: test('t2') })],
-          open: [
-            { id: 1, pages: 0 },
-            { id: 2, pages: 0 },
-          ],
+          open: [{ id: 1, pages: 0 }, { id: 2, pages: 0 }],
         }),
         census(9000, null, {}),
       ],
@@ -408,33 +361,12 @@ describe('buildResourceReport', () => {
     const report = buildResourceReport({
       censuses: [
         census(1000, test('t1'), {
-          born: [
-            birth(1, 'context', { fixture: shared, site: 'tests/fixtures.ts:31' }),
-            birth(2, 'context', { fixture: shared }),
-          ],
-          open: [
-            { id: 1, pages: 1 },
-            { id: 2, pages: 1 },
-          ],
+          born: [birth(1, 'context', { fixture: shared, site: 'tests/fixtures.ts:31' }), birth(2, 'context', { fixture: shared })],
+          open: [{ id: 1, pages: 1 }, { id: 2, pages: 1 }],
         }),
-        census(2000, test('t2'), {
-          open: [
-            { id: 1, pages: 2 },
-            { id: 2, pages: 2 },
-          ],
-        }),
-        census(3000, test('t3'), {
-          open: [
-            { id: 1, pages: 3 },
-            { id: 2, pages: 1 },
-          ],
-        }),
-        census(4000, test('t4'), {
-          open: [
-            { id: 1, pages: 4 },
-            { id: 2, pages: 2 },
-          ],
-        }),
+        census(2000, test('t2'), { open: [{ id: 1, pages: 2 }, { id: 2, pages: 2 }] }),
+        census(3000, test('t3'), { open: [{ id: 1, pages: 3 }, { id: 2, pages: 1 }] }),
+        census(4000, test('t4'), { open: [{ id: 1, pages: 4 }, { id: 2, pages: 2 }] }),
       ],
     });
     expect(report.findings.filter((f) => f.verdict === 'piling')).toEqual([
@@ -459,48 +391,28 @@ describe('buildResourceReport', () => {
   });
 
   it('reports the servers and child processes a test left running at their lines, leaving servers out of the counts', () => {
-    const left = (
-      at: number,
-      ref: ResourceTestRef,
-      running: ResourceCensus['running'],
-      handles?: ResourceCensus['handles'],
-    ) => ({
+    const left = (at: number, ref: ResourceTestRef, running: ResourceCensus['running'], handles?: ResourceCensus['handles']) => ({
       ...census(at, ref, {}, handles),
       running,
     });
     const report = buildResourceReport({
       censuses: [
-        left(1000, test('t1'), [{ type: 'TCPServerWrap', site: `${SPEC}:9` }], {
-          start: {},
-          end: { TCPServerWrap: 1 },
-        }),
+        left(1000, test('t1'), [{ type: 'TCPServerWrap', site: `${SPEC}:9` }], { start: {}, end: { TCPServerWrap: 1 } }),
         left(2000, test('t2'), [], { start: { TCPServerWrap: 1 }, end: { TCPServerWrap: 1 } }),
         left(3000, test('t3'), [
           { type: 'ChildProcess', site: `${SPEC}:20`, command: 'docker' },
           { type: 'ChildProcess', site: `${SPEC}:20`, command: 'docker' },
         ]),
-        {
-          ...left(4000, test('t4'), [{ type: 'TCPServerWrap', site: `${SPEC}:30` }]),
-          test: { ...test('t4'), title: 't4', failed: true },
-        },
+        { ...left(4000, test('t4'), [{ type: 'TCPServerWrap', site: `${SPEC}:30` }]), test: { ...test('t4'), title: 't4', failed: true } },
       ],
     });
     expect(report.findings.filter((f) => f.verdict === 'handle')).toEqual([
-      expect.objectContaining({
-        where: 'TCPServerWrap',
-        site: `${SPEC}:9`,
-        count: 1,
-        detail: `"title of t1" (${SPEC})`,
-      }),
-      expect.objectContaining({
-        where: 'ChildProcess',
-        site: `${SPEC}:20`,
-        count: 2,
-        detail: `"title of t3" (${SPEC})`,
-      }),
+      expect.objectContaining({ where: 'TCPServerWrap', site: `${SPEC}:9`, count: 1, detail: `"title of t1" (${SPEC})` }),
+      expect.objectContaining({ where: 'ChildProcess', site: `${SPEC}:20`, count: 2, detail: `"title of t3" (${SPEC})` }),
     ]);
     expect(formatResourceSummary(report, 'report')[2]).toContain(`process     ${SPEC}:20 · 2 processes · left running`);
   });
+
 });
 
 describe('pileUp', () => {
@@ -531,12 +443,7 @@ describe('pileUp', () => {
 });
 
 describe('the worker process piling up', () => {
-  const measured = (
-    at: number,
-    ref: ResourceTestRef,
-    worker: { fds?: number | null; heapAfterGcMb?: number | null },
-    extra: Partial<ResourceCensus> = {},
-  ): ResourceCensus => ({
+  const measured = (at: number, ref: ResourceTestRef, worker: { fds?: number | null; heapAfterGcMb?: number | null }, extra: Partial<ResourceCensus> = {}): ResourceCensus => ({
     ...census(at, ref),
     metrics: {
       worker: {
@@ -599,12 +506,7 @@ function specFile(lines: string[]) {
   const source: SourceLines = (f) => (f === file ? lines : null);
   const at = (line: number, method: RegExp) => ({ file, line, column: lines[line - 1]!.search(method) + 1 });
   const call = (title: string, line: number): TestStep =>
-    ({
-      title,
-      category: 'pw:api',
-      steps: [],
-      location: at(line, title === 'Create page' ? /newPage/ : /\S/),
-    }) as unknown as TestStep;
+    ({ title, category: 'pw:api', steps: [], location: at(line, title === 'Create page' ? /newPage/ : /\S/) }) as unknown as TestStep;
   const hook = (title: string, line: number, steps: TestStep[]): TestStep =>
     ({ title, category: 'hook', steps, location: at(line, /(?:before|after)(?:All|Each)/) }) as unknown as TestStep;
   const hooks = (title: 'Before Hooks' | 'After Hooks', steps: TestStep[]): TestStep =>
@@ -635,25 +537,17 @@ describe('tallyLifecycleSteps', () => {
       "  await expect(chromium.launch({ executablePath: '/none' })).rejects.toThrow();",
       '});',
     ]);
-    const failed = {
-      ...call('Launch browser', 13),
-      error: { message: 'Executable does not exist' },
-    } as unknown as TestStep;
+    const failed = { ...call('Launch browser', 13), error: { message: 'Executable does not exist' } } as unknown as TestStep;
     const tally = attempt('t1', [
       hooks('Before Hooks', [
-        fixtureStep('Fixture "context"', [
-          { title: 'Create context', category: 'pw:api', steps: [] } as unknown as TestStep,
-        ]),
+        fixtureStep('Fixture "context"', [{ title: 'Create context', category: 'pw:api', steps: [] } as unknown as TestStep]),
         hook('beforeAll hook', 1, [call('Launch browser', 2)]),
         hook('beforeEach hook', 4, [call('Create context', 5)]),
       ]),
       call('Create context', 11),
       call('Close context', 12),
       failed,
-      hooks('After Hooks', [
-        fixtureStep('Fixture "context"', [call('Close context', 12)]),
-        hook('afterAll hook', 7, [call('Close browser', 8)]),
-      ]),
+      hooks('After Hooks', [fixtureStep('Fixture "context"', [call('Close context', 12)]), hook('afterAll hook', 7, [call('Close browser', 8)])]),
     ]);
     const at = (line: number) => `${SPEC}:${line}`;
     expect(tally).toEqual({
@@ -690,14 +584,7 @@ describe('tallyLifecycleSteps', () => {
     ]);
     const tally = attempt('t1', [
       hook('open the shop', 1, [call('Create context', 2)]),
-      hook('sign in', 4, [
-        call('Create page', 5),
-        call('Create page', 7),
-        call('Create page', 8),
-        call('Create page', 9),
-        call('Create context', 10),
-        call('Close context', 11),
-      ]),
+      hook('sign in', 4, [call('Create page', 5), call('Create page', 7), call('Create page', 8), call('Create page', 9), call('Create context', 10), call('Close context', 11)]),
     ]);
     expect(tally.calls.map(({ op, kind, block, on, name }) => ({ op, kind, block, on, name }))).toEqual([
       { op: 'open', kind: 'context', block: true, on: 'browser', name: 'shop' },
@@ -712,23 +599,15 @@ describe('tallyLifecycleSteps', () => {
 
   it('knows no names when the line cannot be read, or holds no call of the method at the step’s column', () => {
     const page = (file: string, column: number) =>
-      ({
-        title: 'Create page',
-        category: 'pw:api',
-        steps: [],
-        location: { file, line: 1, column },
-      }) as unknown as TestStep;
+      ({ title: 'Create page', category: 'pw:api', steps: [], location: { file, line: 1, column } }) as unknown as TestStep;
     // A page-object library outside the suite: the step points at the suite's call into it.
-    const source: SourceLines = (file) =>
-      file === path.resolve(SPEC) ? ['const page = await browserSession.open();'] : null;
+    const source: SourceLines = (file) => (file === path.resolve(SPEC) ? ['const page = await browserSession.open();'] : null);
     const attempt = { file: SPEC, test: 't1', worker: 0, failed: false };
     for (const step of [page(path.resolve(OTHER_SPEC), 1), page(path.resolve(SPEC), 34)]) {
       expect(tallyLifecycleSteps(attempt, [step], source).calls).toEqual([
         { op: 'open', kind: 'page', site: expect.any(String), block: false, fixture: false, on: null, name: null },
       ]);
-      expect(
-        buildResourceReport({ censuses: [], tallies: [tallyLifecycleSteps(attempt, [step], source)] }).findings,
-      ).toEqual([]);
+      expect(buildResourceReport({ censuses: [], tallies: [tallyLifecycleSteps(attempt, [step], source)] }).findings).toEqual([]);
     }
   });
 });
@@ -753,24 +632,11 @@ describe('probable leaks', () => {
       '});',
     ]);
     const forgets = attempt('t1', [call('Launch browser', 2)]);
-    const closesBrowser = attempt(
-      't2',
-      [5, 6, 7, 8].map((line, i) =>
-        call(['Launch browser', 'Create context', 'Create page', 'Close browser'][i]!, line),
-      ),
-    );
+    const closesBrowser = attempt('t2', [5, 6, 7, 8].map((line, i) => call(['Launch browser', 'Create context', 'Create page', 'Close browser'][i]!, line)));
     const closesContext = attempt('t3', [call('Create context', 11), call('Close context', 12)]);
     const findings = probable([forgets, closesBrowser, closesContext]);
     expect(findings).toEqual([
-      {
-        verdict: 'probable',
-        kind: 'browser',
-        where: `${SPEC}:2`,
-        site: `${SPEC}:2`,
-        tests: 1,
-        count: 1,
-        detail: 'left open by its test',
-      },
+      { verdict: 'probable', kind: 'browser', where: `${SPEC}:2`, site: `${SPEC}:2`, tests: 1, count: 1, detail: 'left open by its test' },
     ]);
     expect(probable([forgets])).toEqual(findings);
     const report = buildResourceReport({ censuses: [], tallies: [forgets, closesBrowser, closesContext] });
@@ -825,13 +691,8 @@ describe('probable leaks', () => {
       '});',
       'test("uses it", async () => {});',
     ]);
-    const first = attempt('t1', [
-      hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]),
-      call('Create page', 9),
-    ]);
-    const last = attempt('t2', [
-      hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5), call('Close context', 6)])]),
-    ]);
+    const first = attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]), call('Create page', 9)]);
+    const last = attempt('t2', [hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5), call('Close context', 6)])])]);
     expect(probable([first, last])).toEqual([]);
     // One close, of `shared`: the page the test handed on is the one left.
     const oneClose = attempt('t2', [hooks('After Hooks', [hook('tidy up', 4, [call('Close context', 5)])])]);
@@ -839,11 +700,7 @@ describe('probable leaks', () => {
       expect.objectContaining({ kind: 'page', where: `${SPEC}:9`, detail: 'left open by its test' }),
     ]);
     expect(probable([first])).toEqual([
-      expect.objectContaining({
-        kind: 'context',
-        where: `${SPEC}:2`,
-        detail: 'left open by a beforeAll or afterAll hook',
-      }),
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:2`, detail: 'left open by a beforeAll or afterAll hook' }),
       expect.objectContaining({ kind: 'page', where: `${SPEC}:9` }),
     ]);
   });
@@ -867,10 +724,7 @@ describe('probable leaks', () => {
       '  await other.close();',
       '});',
     ]);
-    const first = attempt('t1', [
-      hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Launch browser', 2)])]),
-      call('Create context', 8),
-    ]);
+    const first = attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Launch browser', 2)])]), call('Create context', 8)]);
     const second = attempt('t2', [
       call('Create context', 11),
       call('Launch browser', 12),
@@ -930,21 +784,12 @@ describe('probable leaks', () => {
       '  (await openTab(browser)).close();',
       '});',
     ]);
-    const fixtureContext = fixtureStep('Fixture "context"', [
-      { title: 'Create context', category: 'pw:api', steps: [] } as unknown as TestStep,
-    ]);
+    const fixtureContext = fixtureStep('Fixture "context"', [{ title: 'Create context', category: 'pw:api', steps: [] } as unknown as TestStep]);
     expect(
       probable([
         attempt('t1', [call('Launch browser', 2)]),
         // Playwright records a repeated close as a failed step.
-        attempt('t2', [
-          call('Launch browser', 5),
-          call('Close browser', 6),
-          {
-            ...call('Close browser', 7),
-            error: { message: 'Target page, context or browser has been closed' },
-          } as unknown as TestStep,
-        ]),
+        attempt('t2', [call('Launch browser', 5), call('Close browser', 6), { ...call('Close browser', 7), error: { message: 'Target page, context or browser has been closed' } } as unknown as TestStep]),
         attempt('t3', [
           hooks('Before Hooks', [fixtureContext]),
           call('Create context', 13),
@@ -967,16 +812,9 @@ describe('probable leaks', () => {
       '  await browser.close();',
       '});',
     ]);
-    const steps = [
-      call('Launch persistent context', 2),
-      call('Create page', 3),
-      call('Close page', 4),
-      call('Close context', 5),
-    ];
+    const steps = [call('Launch persistent context', 2), call('Create page', 3), call('Close page', 4), call('Close context', 5)];
     expect(probable([attempt('t1', steps)])).toEqual([]);
-    expect(probable([attempt('t1', steps.slice(0, 3))])).toEqual([
-      expect.objectContaining({ kind: 'context', where: `${SPEC}:2` }),
-    ]);
+    expect(probable([attempt('t1', steps.slice(0, 3))])).toEqual([expect.objectContaining({ kind: 'context', where: `${SPEC}:2` })]);
   });
 
   it('lets no fixture’s object take a close of the name it shares, and closes it by the end of its attempt', () => {
@@ -998,10 +836,7 @@ describe('probable leaks', () => {
       '});',
     ]);
     const unlocated = (title: string) => ({ title, category: 'pw:api', steps: [] }) as unknown as TestStep;
-    const pageFixtures = [
-      fixtureStep('Fixture "context"', [unlocated('Create context')]),
-      fixtureStep('Fixture "page"', [unlocated('Create page')]),
-    ];
+    const pageFixtures = [fixtureStep('Fixture "context"', [unlocated('Create context')]), fixtureStep('Fixture "page"', [unlocated('Create page')])];
     const test = (id: string, first: boolean, last: boolean) =>
       attempt(id, [
         hooks('Before Hooks', [
@@ -1038,13 +873,7 @@ describe('probable leaks', () => {
       probable([
         attempt('t1', [call('Create context', 2)]),
         attempt('t2', [call('Create context', 4), call('Close context', 7)]),
-        attempt('t3', [
-          call('Create context', 12),
-          call('Create context', 12),
-          hooks('After Hooks', [
-            fixtureStep('Fixture "newContext"', [call('Close context', 12), call('Close context', 12)]),
-          ]),
-        ]),
+        attempt('t3', [call('Create context', 12), call('Create context', 12), hooks('After Hooks', [fixtureStep('Fixture "newContext"', [call('Close context', 12), call('Close context', 12)])])]),
       ]).map(({ kind, where }) => [kind, where]),
     ).toEqual([['context', `${SPEC}:2`]]);
   });
@@ -1091,13 +920,7 @@ describe('probable leaks', () => {
     ]);
     expect(
       probable([
-        attempt('t1', [
-          call('Create context', 2),
-          call('Create context', 3),
-          call('Create context', 4),
-          call('Close context', 5),
-          call('Close context', 5),
-        ]),
+        attempt('t1', [call('Create context', 2), call('Create context', 3), call('Create context', 4), call('Close context', 5), call('Close context', 5)]),
         attempt('t2', [call('Launch browser', 8)]),
         attempt('t3', [call('Create page', 11), call('Close browser', 12)]),
       ]).map(({ kind, where }) => [kind, where]),
@@ -1114,14 +937,10 @@ describe('probable leaks', () => {
       '});',
       'export const open = (browser) => browser.newContext();',
     ]);
-    const leaks = (test: string, worker: number, failed = false) =>
-      attempt(test, [call('Create context', 7)], { worker, failed });
+    const leaks = (test: string, worker: number, failed = false) => attempt(test, [call('Create context', 7)], { worker, failed });
     expect(
       probable([
-        attempt('t1', [
-          hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]),
-          call('Create context', 7),
-        ]),
+        attempt('t1', [hooks('Before Hooks', [hook('beforeAll hook', 1, [call('Create context', 2)])]), call('Create context', 7)]),
         // An afterAll in another worker closes nothing worker 0 opened.
         attempt('t2', [hooks('After Hooks', [hook('afterAll hook', 4, [call('Close context', 5)])])], { worker: 1 }),
         leaks('t3', 1),
@@ -1129,20 +948,8 @@ describe('probable leaks', () => {
         leaks('t5', 0),
       ]),
     ).toEqual([
-      expect.objectContaining({
-        kind: 'context',
-        where: `${SPEC}:7`,
-        count: 3,
-        tests: 3,
-        detail: '3 contexts left open by 3 tests',
-      }),
-      expect.objectContaining({
-        kind: 'context',
-        where: `${SPEC}:2`,
-        count: 1,
-        tests: 1,
-        detail: 'left open by a beforeAll or afterAll hook',
-      }),
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:7`, count: 3, tests: 3, detail: '3 contexts left open by 3 tests' }),
+      expect.objectContaining({ kind: 'context', where: `${SPEC}:2`, count: 1, tests: 1, detail: 'left open by a beforeAll or afterAll hook' }),
     ]);
   });
 });
@@ -1150,12 +957,7 @@ describe('probable leaks', () => {
 describe('userFixturesOf', () => {
   it('lists the fixtures a test set up from its own files, not Playwright’s or Piwi’s', () => {
     const fixture = (title: string, file?: string) =>
-      ({
-        title,
-        category: 'fixture',
-        steps: [],
-        location: file ? { file: path.resolve(file), line: 12, column: 1 } : undefined,
-      }) as unknown as TestStep;
+      ({ title, category: 'fixture', steps: [], location: file ? { file: path.resolve(file), line: 12, column: 1 } : undefined }) as unknown as TestStep;
     expect(
       userFixturesOf([
         fixture('Fixture "page"'),
@@ -1170,12 +972,7 @@ describe('userFixturesOf', () => {
 describe('fixturesTornDownOf', () => {
   it('lists the fixtures the test’s After Hooks tore down, not a worker cleanup’s', () => {
     const step = (title: string, category: string, steps: TestStep[] = [], file?: string) =>
-      ({
-        title,
-        category,
-        steps,
-        location: file ? { file: path.resolve(file), line: 2, column: 1 } : undefined,
-      }) as unknown as TestStep;
+      ({ title, category, steps, location: file ? { file: path.resolve(file), line: 2, column: 1 } : undefined }) as unknown as TestStep;
     expect(
       fixturesTornDownOf([
         step('Before Hooks', 'hook', [step('Fixture "slowCtx"', 'fixture', [], SPEC)]),
@@ -1219,27 +1016,12 @@ describe('formatResourceSummary', () => {
   };
 
   it('says nothing when nothing was found', () => {
-    expect(
-      formatResourceSummary(
-        {
-          findings: [],
-          counts: { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
-          spans: [],
-          leftOpenPages: [],
-        },
-        'report',
-      ),
-    ).toEqual([]);
+    expect(formatResourceSummary({ findings: [], counts: { leaked: 0, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] }, 'report')).toEqual([]);
   });
 
   it('heads with the counts, lists each finding, and hints at the strict modes', () => {
     const lines = formatResourceSummary(
-      {
-        findings: [leak],
-        counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
-        spans: [],
-        leftOpenPages: [],
-      },
+      { findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] },
       'report',
     );
     expect(lines[0]).toBe('Resources: 1 leak');
@@ -1247,31 +1029,12 @@ describe('formatResourceSummary', () => {
       `  leaked    context     ${SPEC}:4 · 2 contexts · with 1 page · 2 tests · open until the worker shut down (4.8 s past its test)`,
     );
     expect(lines[2]).toMatch(/PIWI_LEAK_CHECK=fail/);
-    expect(
-      formatResourceSummary(
-        {
-          findings: [leak],
-          counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
-          spans: [],
-          leftOpenPages: [],
-        },
-        'fail',
-      ),
-    ).toHaveLength(2);
+    expect(formatResourceSummary({ findings: [leak], counts: { leaked: 1, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] }, 'fail')).toHaveLength(2);
   });
 
   it('lists at most the given number of findings and counts the rest', () => {
     const findings = Array.from({ length: 13 }, () => leak);
-    const lines = formatResourceSummary(
-      {
-        findings,
-        counts: { leaked: 13, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 },
-        spans: [],
-        leftOpenPages: [],
-      },
-      'fail',
-      10,
-    );
+    const lines = formatResourceSummary({ findings, counts: { leaked: 13, lingering: 0, idle: 0, piling: 0, handle: 0, probable: 0 }, spans: [], leftOpenPages: [] }, 'fail', 10);
     expect(lines).toHaveLength(12);
     expect(lines[11]).toBe('  … and 3 more findings');
   });
@@ -1304,13 +1067,7 @@ describe('fixture scope, implicit browsers and folded pages', () => {
         }),
         census(3000, null, {
           closed: [1, 2].map((id) =>
-            close(id, {
-              at: 3000,
-              phase: 'worker',
-              test: null,
-              fixture: { title: 'browser', location: null },
-              ...closed,
-            }),
+            close(id, { at: 3000, phase: 'worker', test: null, fixture: { title: 'browser', location: null }, ...closed }),
           ),
         }),
       ],
@@ -1348,14 +1105,8 @@ describe('fixture scope, implicit browsers and folded pages', () => {
       buildResourceReport({
         censuses: [
           census(1000, test('t1'), {
-            born: [
-              birth(1, 'context', { fixture, site: `${SPEC}:3` }),
-              birth(2, 'page', { parent: 1, site: `${SPEC}:9` }),
-            ],
-            open: [
-              { id: 1, pages: 1 },
-              { id: 2, used: true },
-            ],
+            born: [birth(1, 'context', { fixture, site: `${SPEC}:3` }), birth(2, 'page', { parent: 1, site: `${SPEC}:9` })],
+            open: [{ id: 1, pages: 1 }, { id: 2, used: true }],
           }),
           census(3000, null, { closed: [1, 2].map((id) => close(id, { at: 3000, phase: 'worker', test: null })) }),
         ],
@@ -1414,10 +1165,7 @@ describe('fixture scope, implicit browsers and folded pages', () => {
           ],
         }),
         census(5000, null, {
-          closed: [
-            close(2, { at: 5000, phase: 'worker', test: null }),
-            close(1, { at: 5000, phase: 'worker', test: null }),
-          ],
+          closed: [close(2, { at: 5000, phase: 'worker', test: null }), close(1, { at: 5000, phase: 'worker', test: null })],
         }),
       ],
     });
@@ -1516,9 +1264,7 @@ describe('lingering', () => {
           {
             ...census(30_000, test('t1'), {
               born: [popup(extra)],
-              closed: [
-                close(2, { at: closeAt, used: true, lastUse: { at: lastUseAt, site: `${SPEC}:7`, test: 't1' } }),
-              ],
+              closed: [close(2, { at: closeAt, used: true, lastUse: { at: lastUseAt, site: `${SPEC}:7`, test: 't1' } })],
             }),
             startedAt: 0,
           },
@@ -1527,9 +1273,7 @@ describe('lingering', () => {
     expect(lingeringOf(tail(1000, 2500).findings)).toEqual([]);
     expect(lingeringOf(tail(1000, 6000).findings)).toEqual([]);
     expect(lingeringOf(tail(1000, 20_000).findings)).toHaveLength(1);
-    expect(
-      lingeringOf(tail(1000, 20_000, { fixture: { title: 'page', location: null, worker: false } }).findings),
-    ).toEqual([]);
+    expect(lingeringOf(tail(1000, 20_000, { fixture: { title: 'page', location: null, worker: false } }).findings)).toEqual([]);
   });
 
   it('ends the tail where the close began, and leaves what a hook opened alone', () => {
@@ -1549,7 +1293,9 @@ describe('lingering', () => {
       });
     // Piwi's reads and the trace's export ran from 1.5 s to the close at 5.8 s: the test closed it right after its use.
     expect(lingeringOf(report({ closingAt: 1500 }).findings)).toEqual([]);
-    expect(lingeringOf(report({ closingAt: 4000 }).findings)).toEqual([expect.objectContaining({ heldMs: 3000 })]);
+    expect(lingeringOf(report({ closingAt: 4000 }).findings)).toEqual([
+      expect.objectContaining({ heldMs: 3000 }),
+    ]);
     expect(report({ closingAt: 4000 }).spans).toEqual([expect.objectContaining({ from: 1000, to: 4000 })]);
     expect(lingeringOf(report({}, { phase: 'beforeEach' }).findings)).toEqual([]);
   });
@@ -1561,7 +1307,10 @@ describe('lingering', () => {
         {
           ...census(6000, test('t1'), {
             born: [birth(1, 'context', { at: 200 }), birth(2, 'page', { parent: 1, at: 300 })],
-            closed: [close(2, { at: 5900, used: true, lastUse: use }), close(1, { at: 5900, lastUse: use })],
+            closed: [
+              close(2, { at: 5900, used: true, lastUse: use }),
+              close(1, { at: 5900, lastUse: use }),
+            ],
           }),
           startedAt: 0,
         },

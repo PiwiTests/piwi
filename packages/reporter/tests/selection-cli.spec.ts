@@ -50,9 +50,7 @@ describe('parseSelectArgs', () => {
   });
 
   it('requires a server URL and a key', () => {
-    expect(() => parseSelectArgs(['smoke'], { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' })).toThrow(
-      /dashboard URL/,
-    );
+    expect(() => parseSelectArgs(['smoke'], { PIWI_DESKTOP_CONFIG: '/nonexistent/desktop.json' })).toThrow(/dashboard URL/);
     expect(() => parseSelectArgs(['--format', 'grep'], env)).toThrow(/selection key/);
   });
 

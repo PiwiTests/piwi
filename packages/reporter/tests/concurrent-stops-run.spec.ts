@@ -314,7 +314,8 @@ module.exports = defineConfig({
 /** Run Playwright in a run's project, with `env` on top of this process's environment. */
 async function execute(run: Run, env: NodeJS.ProcessEnv): Promise<void> {
   const full: NodeJS.ProcessEnv = { ...process.env, PIWI_PAUSE_AT: pauseAt(run), ...env };
-  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND']) delete full[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
+    delete full[name];
   withoutCi(full);
   if (!env.PIWI_RUN_CHANNEL) delete full.PIWI_RUN_CHANNEL;
   await new Promise<void>((resolve) => {

@@ -67,16 +67,8 @@ describe('RunManifests', () => {
     const uploads = dashboard.requests.filter((r) => r.method === 'PUT');
     expect(uploads.map((r) => r.url)).toEqual(['/api/projects/7/surface/manifest', '/api/projects/7/surface/manifest']);
     expect(uploads.map((r) => JSON.parse(r.body))).toEqual([
-      {
-        source: 'instrumentation',
-        branch: 'feature/x',
-        manifest: { routes: [{ method: 'GET', pattern: '/Commande' }] },
-      },
-      {
-        source: 'instrumentation',
-        branch: 'feature/x',
-        manifest: { routes: [{ method: 'GET', pattern: '/Dossier' }] },
-      },
+      { source: 'instrumentation', branch: 'feature/x', manifest: { routes: [{ method: 'GET', pattern: '/Commande' }] } },
+      { source: 'instrumentation', branch: 'feature/x', manifest: { routes: [{ method: 'GET', pattern: '/Dossier' }] } },
     ]);
   });
 

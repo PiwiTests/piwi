@@ -311,8 +311,10 @@ function heardIn(title: string, retry = 0): RunToHub[] {
   throw new Error(`no worker ran "${title}":\n${output}`);
 }
 
-const stopsIn = (title: string, retry = 0) => heardIn(title, retry).filter((m): m is Stopped => m.type === 'stopped');
-const noticesIn = (title: string) => heardIn(title).flatMap((m) => (m.type === 'notice' ? [m.message] : []));
+const stopsIn = (title: string, retry = 0) =>
+  heardIn(title, retry).filter((m): m is Stopped => m.type === 'stopped');
+const noticesIn = (title: string) =>
+  heardIn(title).flatMap((m) => (m.type === 'notice' ? [m.message] : []));
 const skippedFromPiwi = (r: Result) =>
   r.status === 'skipped' && r.annotations.some((a) => a.type === 'skip' && a.description === 'Ended from Piwi');
 
@@ -384,14 +386,8 @@ describe('End the test', () => {
   it('lets a held failure end as it failed, and the next attempt run on its own', () => {
     for (const title of ['keeps a failure', 'retried']) {
       const stops = stopsIn(title);
-      expect(
-        stops.map((s) => s.reason),
-        title,
-      ).toEqual(['failure']);
-      expect(
-        result(title).annotations.some((a) => a.type === 'skip'),
-        title,
-      ).toBe(false);
+      expect(stops.map((s) => s.reason), title).toEqual(['failure']);
+      expect(result(title).annotations.some((a) => a.type === 'skip'), title).toBe(false);
       expect(result(title).errors.join('\n'), title).toMatch(/toHaveText/);
     }
     // The second attempt stops at its breakpoint, is resumed and clicks.
