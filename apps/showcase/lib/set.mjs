@@ -199,6 +199,7 @@ export async function buildSet(set, { say }) {
     env: { SAMPLE_BACKEND: 'nitro' },
     tile: TILES.vscode,
     scale: SCALE,
+    dir,
   }).catch((error) => {
     // A window that did not come up is kept for its screen and logs, and closes with the set.
     set.editor = error.editor;
@@ -211,9 +212,11 @@ export async function buildSet(set, { say }) {
     if (waited > 30_000) throw new Error(`the editor service wrote no discovery file in ${set.editorsDir}`);
     await new Promise((resolve) => setTimeout(resolve, 250));
   }
-  await set.editor.command('Notifications: Clear All Notifications');
   // The code takes the window's width: a stop's row of controls fits above its line, beside the worker's panel too.
   await set.editor.command('View: Close Primary Side Bar');
+  await set.editor.shrinkPanel();
+  // What the window said as it opened, the warning of a profile run as root included, is not the story's.
+  await set.editor.command('Notifications: Clear All Notifications');
 
   say('the developer’s browser with Piwi Picker, paired');
   set.browser = await launchDeveloperBrowser({

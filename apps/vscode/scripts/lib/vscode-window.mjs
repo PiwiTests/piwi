@@ -3,6 +3,7 @@
 // is the one `@vscode/test-electron` downloads into `.vscode-test/`, at `VSCODE_VERSION` unless `VSCODE_TEST_VERSION`
 // names another: the workbench's DOM (class names, the quick input's rows) moves between versions, so the version is
 // moved on purpose. On Linux without a display, run under Xvfb.
+import { execFileSync } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -61,6 +62,8 @@ const SETTINGS = {
  * another process (`code --user-data-dir … --open-url …`, as the system's handler of `vscode://` links runs it).
  * A window that does not come up is closed with its profile, unless `keepOnFailure`: the error then carries it as
  * `error.window` (`page` missing when no window opened), for the caller to keep its screen and logs, then close it.
+ * `vsix` installs the packaged extension in its place, as a person has it, and `storage` seeds the profile's own state
+ * (`key` to its JSON value) before the window opens, such as the status bar's hidden entries.
  */
 export async function launchVSCode({
   extensionPath,
@@ -70,6 +73,8 @@ export async function launchVSCode({
   cachePath,
   settings = {},
   keepOnFailure = false,
+  vsix = null,
+  storage = {},
 }) {
   const version = process.env.VSCODE_TEST_VERSION || VSCODE_VERSION;
   const codePath = await downloadAndUnzipVSCode(cachePath ? { version, cachePath } : version);
@@ -79,6 +84,7 @@ export async function launchVSCode({
     path.join(userDataDir, 'User', 'settings.json'),
     JSON.stringify({ ...SETTINGS, ...settings }, null, 2),
   );
+  if (Object.keys(storage).length) seedStorage(path.join(userDataDir, 'User', 'globalStorage'), storage);
   const extensionsDir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-vscode-ext-'));
   const removeProfile = () => {
     fs.rmSync(userDataDir, { recursive: true, force: true });
@@ -91,10 +97,17 @@ export async function launchVSCode({
     removeProfile();
   };
   try {
+    if (vsix) {
+      execFileSync(
+        path.join(path.dirname(codePath), 'bin', 'code'),
+        ['--no-sandbox', '--user-data-dir', userDataDir, '--extensions-dir', extensionsDir, '--install-extension', vsix],
+        { stdio: 'ignore', timeout: 120_000 },
+      );
+    }
     app = await electron.launch({
       executablePath: codePath,
       args: [
-        `--extensionDevelopmentPath=${extensionPath}`,
+        ...(vsix ? [] : [`--extensionDevelopmentPath=${extensionPath}`]),
         `--user-data-dir=${userDataDir}`,
         `--extensions-dir=${extensionsDir}`,
         '--disable-workspace-trust',
@@ -120,6 +133,20 @@ export async function launchVSCode({
     if (keepOnFailure && app) error.window = { app, page, codePath, userDataDir, close };
     else await close();
     throw error;
+  }
+}
+
+/** Writes `entries` into the state database VS Code keeps in `dir`, as the workbench writes its own. */
+function seedStorage(dir, entries) {
+  const { DatabaseSync } = require('node:sqlite');
+  fs.mkdirSync(dir, { recursive: true });
+  const db = new DatabaseSync(path.join(dir, 'state.vscdb'));
+  try {
+    db.exec('CREATE TABLE IF NOT EXISTS ItemTable (key TEXT UNIQUE ON CONFLICT REPLACE, value BLOB)');
+    const insert = db.prepare('INSERT INTO ItemTable (key, value) VALUES (?, ?)');
+    for (const [key, value] of Object.entries(entries)) insert.run(key, JSON.stringify(value));
+  } finally {
+    db.close();
   }
 }
 

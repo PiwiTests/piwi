@@ -63,8 +63,14 @@ async function goTo(vscode, gesture, file, line) {
   // Go to Line opens with its colon typed.
   await gesture.type('vscode', vscode.locator('.quick-input-widget input'), `${line}:1`);
   await gesture.press('vscode', 'Enter');
-  await vscode.locator('.statusbar-item', { hasText: `Ln ${line},` }).waitFor();
+  await cursorLine(vscode, line).waitFor();
 }
+
+/** The active editor's line number of the cursor, once it stands on `line`. */
+const cursorLine = (vscode, line) =>
+  vscode.locator('.editor-group-container.active .line-numbers.active-line-number', {
+    hasText: new RegExp(`^\\s*${line}\\s*$`),
+  });
 
 /** The spec's line where the test titled `title` starts, as the checkout's file stands now. */
 const testLine = (repo, title) =>
@@ -253,10 +259,7 @@ export const STORY = [
         () => vscode.locator('.tab.active', { hasText: 'checkout-page.ts' }).isVisible(),
         'the page object open in VS Code',
       );
-      await waitFor(
-        () => vscode.locator('.statusbar-item', { hasText: `Ln ${FAILING_LINE},` }).isVisible(),
-        `the cursor on line ${FAILING_LINE}`,
-      );
+      await waitFor(() => cursorLine(vscode, FAILING_LINE).isVisible(), `the cursor on line ${FAILING_LINE}`);
     },
   }),
 
