@@ -21,25 +21,6 @@ const websiteJsonLd: HeadConfig = [
   }),
 ]
 
-// Describes Piwi itself to search engines: a developer tool that costs nothing.
-const softwareJsonLd: HeadConfig = [
-  'script',
-  { type: 'application/ld+json' },
-  JSON.stringify({
-    '@context': 'https://schema.org',
-    '@type': 'SoftwareApplication',
-    name: 'Piwi Dashboard',
-    alternateName: 'Piwi',
-    url: `${siteUrl}/`,
-    image: ogImage,
-    applicationCategory: 'DeveloperApplication',
-    operatingSystem: 'Linux, macOS, Windows',
-    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
-    license: `${siteUrl}/guide/license.html`,
-    sameAs: ['https://github.com/PiwiTests/piwi', 'https://www.npmjs.com/package/@piwitests/server'],
-  }),
-]
-
 export default defineConfig({
   title: 'Piwi Dashboard',
   titleTemplate: TITLE_TEMPLATE,
@@ -63,7 +44,7 @@ export default defineConfig({
     if (pageData.relativePath === 'index.md') pageData.frontmatter.features = landingCards()
     const { description, head } = pageMeta(pageData, siteConfig, siteUrl)
     pageData.frontmatter.head = [...(pageData.frontmatter.head ?? []), ...head]
-    if (pageData.frontmatter.layout === 'home') pageData.frontmatter.head.push(websiteJsonLd, softwareJsonLd)
+    if (pageData.frontmatter.layout === 'home') pageData.frontmatter.head.push(websiteJsonLd)
     return description ? { description } : undefined
   },
   // VitePress writes the page description into the HTML unescaped; as a head

@@ -5,36 +5,21 @@
   <title>Piwi Dashboard</title>
   <script>
     // GitHub Pages serves this page for any URL with no file behind it, and
-    // offers no server-side redirects.
+    // offers no server-side redirects. A moved page answers at its old URL with
+    // a redirect page of its own (.vitepress/moved-pages.ts), never here.
     //
-    // 1. The demo SPA (client-side only): every deep link lands here, so the
-    //    intended path is saved in sessionStorage and the visitor bounced to
-    //    the SPA entry point for Vue Router to render.
-    // 2. The site's old address under /piwi/ goes to the same path at the root.
-    // 3. A URL with a trailing slash is tried once without it: a moved page
-    //    answers there with its redirect page (.vitepress/moved-pages.ts).
-    //
-    // Anything else falls back to the documentation root.
+    // The demo SPA (client-side only): every deep link lands here, so the
+    // intended path is saved in sessionStorage and the visitor bounced to the
+    // SPA entry point for Vue Router to render. Anything else goes to the
+    // documentation root.
     ;(function () {
       const demoBase = '/demo'
-      const oldBase = '/piwi'
       const path = window.location.pathname
-      const rest = window.location.search + window.location.hash
 
       if (path === demoBase || path.startsWith(demoBase + '/')) {
         const relativePath = path.slice(demoBase.length) || '/'
-        sessionStorage.setItem('spa:redirect', relativePath + rest)
+        sessionStorage.setItem('spa:redirect', relativePath + window.location.search + window.location.hash)
         window.location.replace(demoBase + '/')
-        return
-      }
-
-      if (path.startsWith(oldBase + '/')) {
-        window.location.replace(path.slice(oldBase.length) + rest)
-        return
-      }
-
-      if (path.length > 1 && path.endsWith('/')) {
-        window.location.replace(path.slice(0, -1) + rest)
         return
       }
 

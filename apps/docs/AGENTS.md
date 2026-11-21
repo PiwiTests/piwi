@@ -149,8 +149,9 @@ which the drift test also reads.
   group it serves.
 - **A rule several features share has one owning page**, listed in the owner table of `docs-claims.test.ts`; every
   other page states its effect in a sentence and links it.
-- **A page that moves** keeps its old URL with a row in `MOVED_PAGES` (`.vitepress/moved-pages.ts`): the build writes
-  a redirect page there, which search engines follow, unlike `public/404.html`'s script. `docs-drift.test.ts` checks it.
+- **A page that moves** keeps its old URL with a row in `MOVED_PAGES` (`.vitepress/moved-pages.ts`), from which the
+  build writes a redirect page, checked by `docs-drift.test.ts`. piwitests.dev's Cloudflare Bulk Redirect list answers
+  those URLs first with a 301, so the maintainer adds the row there too.
 
 ### Page types and word budgets
 
@@ -177,8 +178,9 @@ flags, events): link the reference page instead of copying it.
 - A `description` in its front matter: one sentence of at least 50 characters, used as the search snippet and the
   social card text. The home page is the exception: it uses the site description in `config.mts`.
 - A `<title>` of at most 60 characters that names Playwright: the site's `TITLE_TEMPLATE` (`.vitepress/page-meta.mts`)
-  adds `| Piwi for Playwright` to its front matter `title`. A recipe keeps its sidebar label as `title` and names the
-  search it answers in its own `titleTemplate` (`"Slow Playwright suite: :title | Piwi"`). `docs-page-meta.test.ts`
+  adds `| Piwi for Playwright` to its front matter `title`. A recipe, or a page whose label is not what readers
+  search for (`comparison.md`), keeps its sidebar label as `title` and names the search in its own `titleTemplate`
+  (`"Slow Playwright suite: :title | Piwi"`). `docs-page-meta.test.ts`
   checks every page on disk, the generated ones once `docs:gen` has written them.
 - Its H1 equals its sidebar label. Recipes are the exception: their H1 is the reader's question.
 - One footer heading, `## Related`.
@@ -299,8 +301,9 @@ and the eight surfaces that must carry it are in the
   platform". Name a number, a behavior, or a limit.
 - **State limits plainly.** Playwright-only, pre-1.0, and "not the right tool if…" belong in the README and on the
   landing page. Trust is the point, not a caveat to bury.
-- **Piwi is "free", never "open source".** FSL-1.1-MIT is fair source, not an OSI license: only the MIT parts
-  (the reporter, `core`, `picker-dom`, `integrations/`) may be called open source.
+- **Piwi is "free" (of charge), never "open source" or "free software".** FSL-1.1-MIT is fair source: only the MIT
+  parts (the reporter, `core`, `picker-dom`, `integrations/`, `examples/`) are open source; a dated blog post keeps its
+  words under its update note.
 
 ## The home hero's illustration
 

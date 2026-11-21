@@ -3,12 +3,12 @@ import { dirname, join } from 'node:path'
 
 /**
  * Old URL → the page that replaced it, for every page that moved or never had
- * a page of its own. GitHub Pages has no server-side redirects, so the build
- * writes a redirect page at each old URL (`writeRedirectPages`): a 200 with an
- * instant meta refresh and a canonical link, which search engines take as a
- * permanent redirect. A key ending in `/` is a directory URL (`old/index.html`);
- * any other key also answers with `.html` appended. A target is a page path
- * without `.html`, with an optional `#anchor`.
+ * a page of its own. The build writes a redirect page at each old URL
+ * (`writeRedirectPages`): an instant meta refresh and a canonical link, which
+ * search engines take as a permanent redirect. A key without a trailing slash
+ * answers as `old`, `old.html` and `old/`; a key ending in `/` as that directory
+ * only. A target is a page path without `.html` (or a directory ending in `/`),
+ * with an optional `#anchor`.
  */
 export const MOVED_PAGES: Record<string, string> = {
   '/deployment': '/operate/deployment',
@@ -60,37 +60,35 @@ export const MOVED_PAGES: Record<string, string> = {
   '/features/analytics-widgets': '/reference/analytics-widgets',
   '/reference/feature-map': '/reference/features',
   '/recipes': '/#something-is-red-right-now',
-  '/recipes/': '/#something-is-red-right-now',
   '/operate/': '/operate/deployment',
-  // The site's address on GitHub Pages before it had its own domain.
-  '/piwi/': '/',
 }
 
-/** The URL a target page is published at: `.html` pages, `/` for the home page. */
-export function movedTargetUrl(siteUrl: string, target: string): string {
+/** The path a target page is published at: `.html` pages, directories as they are. */
+export function movedTargetPath(target: string): string {
   const [path, anchor] = target.split('#')
-  const page = path === '/' ? '/' : `${path}.html`
-  return `${siteUrl}${page}${anchor ? `#${anchor}` : ''}`
+  const page = path!.endsWith('/') ? path! : `${path}.html`
+  return `${page}${anchor ? `#${anchor}` : ''}`
 }
 
 /** The files a moved key is answered from, relative to the site root. */
 export function redirectFiles(from: string): string[] {
-  return from.endsWith('/') ? [`${from.slice(1)}index.html`] : [`${from.slice(1)}.html`]
+  const path = from.slice(1)
+  return from.endsWith('/') ? [`${path}index.html`] : [`${path}.html`, `${path}/index.html`]
 }
 
-function redirectPage(url: string): string {
+function redirectPage(path: string, siteUrl: string): string {
   // A target with its own anchor keeps it; any other carries the visitor's query and hash.
-  const destination = url.includes('#') ? `'${url}'` : `'${url}' + location.search + location.hash`
+  const destination = path.includes('#') ? `'${path}'` : `'${path}' + location.search + location.hash`
   return `<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta http-equiv="refresh" content="0; url=${url}">
-<link rel="canonical" href="${url}">
+<meta http-equiv="refresh" content="0; url=${path}">
+<link rel="canonical" href="${siteUrl}${path}">
 <title>Moved</title>
 <script>location.replace(${destination})</script>
 </head>
-<body><p>This page has moved to <a href="${url}">${url}</a>.</p></body>
+<body><p>This page has moved to <a href="${path}">${siteUrl}${path}</a>.</p></body>
 </html>
 `
 }
@@ -98,7 +96,7 @@ function redirectPage(url: string): string {
 /** Writes a redirect page for every moved URL into the built site; a real page at a moved URL is an error. */
 export function writeRedirectPages(outDir: string, siteUrl: string): void {
   for (const [from, target] of Object.entries(MOVED_PAGES)) {
-    const html = redirectPage(movedTargetUrl(siteUrl, target))
+    const html = redirectPage(movedTargetPath(target), siteUrl)
     for (const file of redirectFiles(from)) {
       const path = join(outDir, file)
       if (existsSync(path)) throw new Error(`moved-pages: ${from} is a page of the site, not a moved URL`)

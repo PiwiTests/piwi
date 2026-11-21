@@ -226,7 +226,11 @@ describe('moved docs pages', () => {
     join(repoRoot, 'apps/docs', `${path.replace(/^\//, '').replace(/\/$/, '/index') || 'index'}.md`);
 
   test.each(Object.entries(MOVED_PAGES))('%s redirects to %s, a page and heading', (from, target) => {
-    expect(existsSync(pageOf(from)), `${from} is a docs page: remove it from MOVED_PAGES`).toBe(false);
+    expect(from, `${from}: a key names the URL without .html`).not.toMatch(/\.html$/);
+    // A key without a trailing slash also answers as a directory.
+    for (const old of from.endsWith('/') ? [from] : [from, `${from}/`]) {
+      expect(existsSync(pageOf(old)), `${old} is a docs page: remove ${from} from MOVED_PAGES`).toBe(false);
+    }
 
     const [page, anchor] = target.split('#');
     const path = pageOf(page!);
