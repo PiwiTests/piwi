@@ -1,6 +1,8 @@
 import { requireRouteId } from '../../../../utils/project-access';
 import { assistantTurnOfRequest } from '../../../../utils/assistant/turn-token';
-import { answerTurnMcp } from '../../../../utils/assistant/turn-mcp';
+import { answerTurnMcp, listenMessages, sseFrame } from '../../../../utils/assistant/turn-mcp';
+import { readMcpHeaders } from '../../../../utils/mcp/protocol';
+import { createSSEEndpoint } from '../../../../utils/sse';
 import { streamHeaders } from '#shared/stream-headers';
 
 defineRouteMeta({
@@ -8,7 +10,7 @@ defineRouteMeta({
     tags: ['Assistant'],
     summary: "An answer's MCP endpoint (Claude Code CLI)",
     description:
-      "The MCP server (Streamable HTTP, JSON-RPC over POST) of one answer the Claude Code CLI writes, which the CLI this server starts calls its tools on: `initialize`, `ping`, `tools/list` (the answer's tools: the read tools offered, `find_tools`, `get_instance_config`, `find_anchors` and the block tools) and `tools/call` (run with the asking user's access; a block tool's block is sent to the question's event stream). A call that changes the tools offered answers as an event stream announcing `notifications/tools/list_changed` first. Authenticated only by the bearer token minted for that answer, which is never a session or an API key: 401 without it, after the answer ends, for another conversation, and for a request that does not come from this machine (a host, an origin or a peer address that is not loopback). The desktop app's guard lets this route through on that token.",
+      "The MCP server (Streamable HTTP, JSON-RPC over POST) of one answer the Claude Code CLI writes, which the CLI this server starts calls its tools on, as a legacy client (`initialize`) or a modern one (`_meta` on each request, `server/discover`): `ping`, `tools/list` (the answer's tools: the read tools offered, `find_tools`, `get_instance_config`, `find_anchors` and the block tools) and `tools/call` (run with the asking user's access; a block tool's block is sent to the question's event stream). A call that changes the tools offered answers a legacy client as an event stream announcing `notifications/tools/list_changed` first; a modern client hears it on the stream it opened with `subscriptions/listen`, which ends with the answer. A body of notifications alone answers 202. Authenticated only by the bearer token minted for that answer, which is never a session or an API key: 401 without it, after the answer ends, for another conversation, and for a request that does not come from this machine (a host, an origin or a peer address that is not loopback). The desktop app's guard lets this route through on that token.",
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     security: [],
   },
@@ -23,13 +25,49 @@ export default eventHandler(async (event) => {
   const reply = await answerTurnMcp(turn, body, {
     version: String(useRuntimeConfig(event).public.appVersion ?? ''),
     acceptsStream: (getRequestHeader(event, 'accept') ?? '').includes('text/event-stream'),
+    headers: readMcpHeaders((name) => getRequestHeader(event, name)),
+    toolsChanged: () => turn.listeners.toolsChanged(),
   });
-  // Notifications have no answer: 204, as on /mcp, so the client opens no stream of its own.
-  if (reply.kind === 'none') return null;
+  // Notifications have no answer: 202 with no body.
+  if (reply.kind === 'none') {
+    setResponseStatus(event, 202);
+    return '';
+  }
+  if (reply.kind === 'listen') {
+    const messages = listenMessages(
+      reply.id,
+      reply.toolsListChanged,
+      String(useRuntimeConfig(event).public.appVersion ?? ''),
+    );
+    return createSSEEndpoint(event, (controller, encoder) => {
+      const write = (message: unknown) => {
+        try {
+          controller.enqueue(encoder.encode(sseFrame(message)));
+        } catch {
+          // The client closed the stream.
+        }
+      };
+      write(messages.acknowledged);
+      return turn.listeners.add({
+        toolsChanged: () => {
+          if (reply.toolsListChanged) write(messages.toolsChanged);
+        },
+        end: () => {
+          write(messages.ended);
+          try {
+            controller.close();
+          } catch {
+            // Closed already.
+          }
+        },
+      });
+    });
+  }
   if (reply.kind === 'stream') {
     setResponseHeaders(event, streamHeaders('text/event-stream'));
     return reply.body;
   }
+  setResponseStatus(event, reply.status);
   setResponseHeader(event, 'Content-Type', 'application/json');
   return reply.body;
 });

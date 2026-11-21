@@ -26,7 +26,7 @@ vi.stubGlobal('useRuntimeConfig', RUNTIME_CONFIG);
 vi.stubGlobal('getRequestHeader', getRequestHeader);
 
 const tokens = await import('../../server/utils/assistant/turn-token');
-const { answerTurnMcp } = await import('../../server/utils/assistant/turn-mcp');
+const { answerTurnMcp, listenMessages } = await import('../../server/utils/assistant/turn-mcp');
 const { createAssistantAnswer } = await import('../../server/utils/assistant/answer');
 const { claudeCodeMaxTurns, claudeCodePrompt, runClaudeCodeTurn } =
   await import('../../server/utils/assistant/claude-code');
@@ -65,6 +65,7 @@ function request(opts: {
     node: {
       req: {
         headers: { host: '127.0.0.1:3000', ...opts.headers },
+        on: () => {},
         socket: {
           remoteAddress: opts.peer ?? '127.0.0.1',
           localPort: opts.localPort,
@@ -296,6 +297,23 @@ async function send(turn: AssistantTurnTools, body: unknown, acceptsStream = fal
   return answerTurnMcp(turn, body, { version: '0.59.0', acceptsStream });
 }
 
+const MODERN_META = {
+  'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+  'io.modelcontextprotocol/clientCapabilities': {},
+};
+
+/** A request as a 2026-07-28 client sends it: its version in `_meta`, mirrored in the headers. */
+function modern(id: number, method: string, params: Record<string, unknown> = {}) {
+  return {
+    body: rpc(id, method, { ...params, _meta: MODERN_META }),
+    headers: {
+      protocolVersion: '2026-07-28',
+      method,
+      ...(typeof params.name === 'string' ? { name: params.name } : {}),
+    },
+  };
+}
+
 async function json(turn: AssistantTurnTools, body: unknown): Promise<RpcResult> {
   const reply = await send(turn, body);
   if (reply.kind !== 'json') throw new Error(`expected a JSON reply, got ${reply.kind}`);
@@ -424,6 +442,90 @@ describe("a turn's MCP endpoint", () => {
     expect((await send(turn, toolCall(7, 'list_projects'), true)).kind).toBe('json');
   });
 
+  test('serves a 2026-07-28 client: server/discover, results it can cache, an unknown method as a 404', async () => {
+    const { turn } = await turnOf(member);
+    const ask = async (id: number, method: string, params: Record<string, unknown> = {}) => {
+      const { body, headers } = modern(id, method, params);
+      return answerTurnMcp(turn, body, { version: '0.59.0', acceptsStream: true, headers });
+    };
+    const discovered = await ask(1, 'server/discover');
+    expect(discovered).toMatchObject({
+      kind: 'json',
+      status: 200,
+      body: {
+        result: {
+          resultType: 'complete',
+          supportedVersions: expect.arrayContaining(['2026-07-28']),
+          capabilities: { tools: { listChanged: true } },
+          ttlMs: 0,
+          cacheScope: 'private',
+          _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-assistant', version: '0.59.0' } },
+        },
+      },
+    });
+    expect(await ask(2, 'tools/list')).toMatchObject({ status: 200, body: { result: { resultType: 'complete' } } });
+    expect(await ask(3, 'resources/templates/list')).toMatchObject({ status: 404, body: { error: { code: -32601 } } });
+
+    const unsupported = await answerTurnMcp(turn, rpc(4, 'tools/list'), {
+      version: '0.59.0',
+      acceptsStream: false,
+      headers: { protocolVersion: '1900-01-01' },
+    });
+    expect(unsupported).toMatchObject({ kind: 'json', status: 400, body: { error: { code: -32022 } } });
+  });
+
+  test('tells a 2026-07-28 client of the tools find_tools added on its subscriptions/listen stream, not the call', async () => {
+    const { turn } = await turnOf(member);
+    const changes: string[] = [];
+    const { body, headers } = modern(5, 'tools/call', {
+      name: 'find_tools',
+      arguments: { query: 'coverage of a file' },
+    });
+    const reply = await answerTurnMcp(turn, body, {
+      version: '0.59.0',
+      acceptsStream: true,
+      headers,
+      toolsChanged: () => changes.push('tools'),
+    });
+    expect(reply).toMatchObject({ kind: 'json', status: 200, body: { id: 5, result: { resultType: 'complete' } } });
+    expect(changes).toEqual(['tools']);
+
+    const listen = modern(6, 'subscriptions/listen', {
+      notifications: { toolsListChanged: true, promptsListChanged: true },
+    });
+    expect(
+      await answerTurnMcp(turn, listen.body, { version: '0.59.0', acceptsStream: true, headers: listen.headers }),
+    ).toEqual({
+      kind: 'listen',
+      id: 6,
+      toolsListChanged: true,
+    });
+    // A legacy client has no subscriptions/listen.
+    expect(
+      (await json(turn, rpc(7, 'subscriptions/listen', { notifications: { toolsListChanged: true } }))).error?.code,
+    ).toBe(-32601);
+    expect(listenMessages(6, true, '0.59.0')).toEqual({
+      acknowledged: {
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 6 }, notifications: { toolsListChanged: true } },
+      },
+      toolsChanged: {
+        jsonrpc: '2.0',
+        method: 'notifications/tools/list_changed',
+        params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 6 } },
+      },
+      ended: {
+        jsonrpc: '2.0',
+        id: 6,
+        result: {
+          resultType: 'complete',
+          _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-assistant', version: '0.59.0' } },
+        },
+      },
+    });
+  });
+
   test('refuses arguments that are not an object, and a call without a name', async () => {
     const { turn, events } = await turnOf(member);
     const bad = await json(turn, toolCall(1, 'list_projects', [1, 2]));
@@ -449,12 +551,14 @@ describe("a turn's MCP endpoint", () => {
 describe('the route', () => {
   let route: (event: H3Event) => Promise<unknown>;
   const headers = new Map<string, string>();
+  const statuses: number[] = [];
 
   beforeAll(async () => {
     vi.stubGlobal('defineRouteMeta', () => {});
     vi.stubGlobal('eventHandler', (handler: unknown) => handler);
     vi.stubGlobal('readBody', async (event: { body?: unknown }) => event.body);
     vi.stubGlobal('setResponseHeader', (_event: unknown, name: string, value: string) => headers.set(name, value));
+    vi.stubGlobal('setResponseStatus', (_event: unknown, status: number) => statuses.push(status));
     vi.stubGlobal(
       'getRouterParam',
       (event: { context: { params: Record<string, string> } }, name: string) => event.context.params[name],
@@ -474,7 +578,8 @@ describe('the route', () => {
     const listed = (await call(ENDPOINT, '7')) as RpcResult;
     expect(listed.result.tools.map((t: { name: string }) => t.name)).toContain('list_projects');
     expect(headers.get('Content-Type')).toBe('application/json');
-    expect(await call(ENDPOINT, '7', {}, rpc(null, 'notifications/initialized'))).toBeNull();
+    expect(await call(ENDPOINT, '7', {}, rpc(null, 'notifications/initialized'))).toBe('');
+    expect(statuses.at(-1)).toBe(202);
 
     await expect(call('/api/assistant/conversations/8/mcp', '8')).rejects.toMatchObject({ statusCode: 401 });
     await expect(call(ENDPOINT, '7', { host: 'piwi.example.com' })).rejects.toMatchObject({ statusCode: 401 });
@@ -483,6 +588,48 @@ describe('the route', () => {
     ).rejects.toMatchObject({ statusCode: 401 });
     turn.revoke();
     await expect(call(ENDPOINT, '7')).rejects.toMatchObject({ statusCode: 401 });
+  });
+
+  test('holds a subscriptions/listen stream open, tells it of tool changes, and ends it with the answer', async () => {
+    const { turn: tools_ } = await turnOf(member);
+    const turn = tokens.mintAssistantTurnToken({ conversationId: 7, ownerId: 2, tools: tools_ }, 60_000);
+    const post = (id: number, method: string, params: Record<string, unknown> = {}) => {
+      const { body, headers: mirrored } = modern(id, method, params);
+      return route(
+        request({
+          path: ENDPOINT,
+          params: { id: '7' },
+          headers: {
+            authorization: `Bearer ${turn.token}`,
+            'mcp-protocol-version': mirrored.protocolVersion,
+            'mcp-method': mirrored.method,
+            ...(mirrored.name ? { 'mcp-name': mirrored.name } : {}),
+          },
+          body,
+        }),
+      );
+    };
+    const stream = (await post(1, 'subscriptions/listen', { notifications: { toolsListChanged: true } })) as Response;
+    expect(stream.headers.get('content-type')).toBe('text/event-stream');
+    const reader = stream.body!.getReader();
+    const decoder = new TextDecoder();
+    const next = async () => {
+      const { value } = await reader.read();
+      return JSON.parse(decoder.decode(value).replace(/^event: message\ndata: /, ''));
+    };
+    expect(await next()).toMatchObject({
+      method: 'notifications/subscriptions/acknowledged',
+      params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 1 }, notifications: { toolsListChanged: true } },
+    });
+    await post(2, 'tools/call', { name: 'find_tools', arguments: { query: 'coverage of a file' } });
+    expect(await next()).toEqual({
+      jsonrpc: '2.0',
+      method: 'notifications/tools/list_changed',
+      params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 1 } },
+    });
+    turn.revoke();
+    expect(await next()).toMatchObject({ id: 1, result: { resultType: 'complete' } });
+    expect((await reader.read()).done).toBe(true);
   });
 });
 

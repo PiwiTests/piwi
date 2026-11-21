@@ -84,6 +84,66 @@ test.describe.serial('MCP server', () => {
     expect(body.result.capabilities.prompts).toBeDefined();
   });
 
+  test('transport — 202 for notifications alone, 405 for GET and DELETE, 400 for a version it does not serve', async ({
+    request,
+  }) => {
+    const notified = await request.post('/mcp', { data: { jsonrpc: '2.0', method: 'notifications/initialized' } });
+    expect(notified.status()).toBe(202);
+    expect(await notified.text()).toBe('');
+    for (const method of ['get', 'delete'] as const) {
+      const res = await request[method]('/mcp');
+      expect(res.status(), method).toBe(405);
+      expect(res.headers()['allow']).toBe('POST');
+    }
+    const old = await request.post('/mcp', {
+      data: rpc('tools/list'),
+      headers: { 'MCP-Protocol-Version': '1900-01-01' },
+    });
+    expect(old.status()).toBe(400);
+    expect((await old.json()).error).toMatchObject({ code: -32022, data: { requested: '1900-01-01' } });
+    const current = await request.post('/mcp', {
+      data: rpc('ping'),
+      headers: { 'MCP-Protocol-Version': '2025-06-18' },
+    });
+    expect(current.status()).toBe(200);
+  });
+
+  test('a 2026-07-28 client — server/discover, the headers checked, an unknown method as a 404', async ({
+    request,
+  }) => {
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    const modern = (method: string, params: Record<string, unknown> = {}, headers: Record<string, string> = {}) =>
+      request.post('/mcp', {
+        data: rpc(method, { ...params, _meta: meta }),
+        headers: { 'MCP-Protocol-Version': '2026-07-28', 'Mcp-Method': method, ...headers },
+      });
+    const discovered = await modern('server/discover');
+    expect(discovered.status()).toBe(200);
+    expect((await discovered.json()).result).toMatchObject({
+      resultType: 'complete',
+      supportedVersions: expect.arrayContaining(['2026-07-28', '2025-11-25']),
+      capabilities: { tools: {}, prompts: {} },
+      _meta: { 'io.modelcontextprotocol/serverInfo': { name: 'piwi-dashboard' } },
+    });
+    const listed = await modern('tools/list');
+    expect((await listed.json()).result).toMatchObject({ resultType: 'complete', ttlMs: 0, cacheScope: 'private' });
+    const called = await modern(
+      'tools/call',
+      { name: 'list_projects', arguments: {} },
+      { 'Mcp-Name': 'list_projects' },
+    );
+    expect((await called.json()).result).toMatchObject({ resultType: 'complete', content: [{ type: 'text' }] });
+    const mismatch = await modern('tools/call', { name: 'list_projects', arguments: {} }, { 'Mcp-Name': 'get_run' });
+    expect(mismatch.status()).toBe(400);
+    expect((await mismatch.json()).error.code).toBe(-32020);
+    const unknown = await modern('resources/templates/list');
+    expect(unknown.status()).toBe(404);
+    expect((await unknown.json()).error.code).toBe(-32601);
+  });
+
   test('ping — returns empty result', async ({ request }) => {
     const body = await mcp(request, 'ping');
     expect(body.result).toEqual({});
