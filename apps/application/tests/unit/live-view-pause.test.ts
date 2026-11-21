@@ -256,7 +256,7 @@ describe('a Pause the worker has not taken yet', () => {
     const { live, published } = relay();
     connect(live, ON);
     const ana = watch(live, { focus: WORKER }, ANA);
-    const seq = () => (published.at(-1)?.state as { pauseSeq?: number }).pauseSeq;
+    const seq = () => published.at(-1)?.state.pauseSeq;
     const seen: Array<number | undefined> = [seq()];
     const step = (act: () => void) => {
       act();
