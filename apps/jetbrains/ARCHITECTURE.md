@@ -870,12 +870,14 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   offers **Watch on the dashboard** in a notification. Another CI lane takes the watch's place on the service's side
   without an `on: false`; a local slot, the tab closed or hidden, and a `piwi/ciWatch` the service did not answer
   within 20 s end it.
-- **A held CI failure** (`CiTest.held`, `Glue.ciLaneHeld`) shows under the caption in the service's words, one plain
-  line each (`Glue.ciHeldShown`, `PausedPagePanel.held`), its place a link that opens the failing line
-  (`openCiHeldPlace`), drawn again as the CI sessions change. **Let it go**, in the service's words, shows where the
-  service offers it (`held.letGo`) and sends `piwi/ciLetGo` through `RunRemote.ciLetGo` once per hold
-  (`Glue.LetGoAsks`), off until that hold ends or the ask is refused; the answer shows under the caption, a refusal in a
-  balloon too (`PiwiRunSessions.letGoCi`). The CI Runs tab marks a held test and its Watch (`Glue.ciRows`).
+- **A held or paused CI test** (`CiTest.held`, `CiTest.paused`, `Glue.ciLaneStop`) shows under the caption in the
+  service's words, one plain line each (`Glue.ciStopShown`, `PausedPagePanel.ciStop`), its place a link that opens its
+  line (`openCiPlace`), drawn again as the CI sessions change. The lane's buttons are the service's, in its words:
+  **Let it go** on a held failure (`piwi/ciLetGo`, `RunRemote.ciLetGo`), else `CiTest.controls` (**Pause**, **Resume**,
+  **End the test**: `piwi/ciControl`, `RunRemote.ciControl`), with a Pause waiting or dropped under them. One is asked
+  in each state of the lane (`Glue.CiAsks`, by the state's `id`), the buttons off until it changes or the ask is
+  refused; the answer shows under the caption, a refusal in a balloon too (`PiwiRunSessions.askCi`). The CI Runs tab
+  marks a held or paused test and its Watch (`Glue.ciRows`).
 - **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
   `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
   (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,
@@ -899,9 +901,9 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   the sessions change and as an editor opens. The editors open are read, never a file from disk. The tests of several
   runs on one line share one inlay.
 
-`GlueTest` checks the rows and their keys, the marks, the CI lane's title and caption, its held failure's lines, and
-that a session, a held failure and a CI frame read as the service sends them; `PausedPagePanelTest` the held failure's
-lines and **Let it go**.
+`GlueTest` checks the rows and their keys, the marks, the CI lane's title and caption, its held or paused test's lines and
+buttons, and that a session, a held failure, a paused test and a CI frame read as the service sends them;
+`PausedPagePanelTest` the held or paused test's lines and buttons.
 
 ## Finding Playwright configs
 

@@ -230,7 +230,7 @@ the custom messages of `src/protocol.ts`:
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`, `piwi/environments`, `piwi/setEnvironment`;
-  - CI runs: `piwi/ciWatch`, `piwi/ciLetGo`;
+  - CI runs: `piwi/ciWatch`, `piwi/ciLetGo`, `piwi/ciControl`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
@@ -752,6 +752,12 @@ its failure ([Watching a CI lane](#watching-a-ci-lane)): no control, share or ho
   (`watchChanged`). A hold is its own worker's test's alone, and its `id` (`ciHoldKey`) and the button's words
   (`letGoLabel`, `letGoTitle`) come with it, so neither client writes them. The holds heard go at each `init`: a stream
   opened again names only the workers connected now, never one that left meanwhile.
+- **Paused**: each connected worker's latest `live-worker` event (`states`, forgotten at each `init`, a test's only from
+  its own worker: `ciWorkerStateOf`) gives its running test `paused` (`readCiPause`, `ciPauseWords`: `Paused by Ana ·
+  until 12:05`, the call, its place, the job's timeout), `pauseAsk` (`ciPauseAskWords`: `Pause asked by Ana`, or why a
+  Pause was dropped), and, while the client's watch shows its lane as a controller's, `controls`: what
+  `ciControlsOffered` decides, each with its label and title in the run page's words, and the state they follow
+  (`ciControlStateKey`), which a client asks one of once.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
   place: the last notification says `ended`, and the run's stream is let go.
@@ -797,6 +803,10 @@ instance's bound of watches per person).
   (`PiwiClient.letGo`, `POST …/live-view/let-go` with the watch's id and the held worker, `CiSessions.heldWorker`), and
   only once its `hello` said it counts as a controller's: refused before asking the instance for another lane, a watch
   of someone who may not control the run, or a lane that holds nothing; then in the instance's own words.
+- **Pause, Resume, End the test** (`piwi/ciControl { root?, runId, shard, lane, command }`, `CiWatch.control`) go on
+  this watch the same way (`PiwiClient.liveControl`, `POST …/live-view/control` with the watch's id, the lane's worker,
+  `CiSessions.laneWorker`, and the command): refused before asking the instance for another lane, a watch of someone
+  who may not control the run, or a lane naming no worker; then in the instance's own words.
 
 Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POSTs, and
 `tests/ci-sessions.test.ts`.

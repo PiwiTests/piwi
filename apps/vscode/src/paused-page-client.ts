@@ -266,32 +266,49 @@ textAgain?.addEventListener('click', () => {
   textAgain.disabled = true;
   post({ type: 'text' });
 });
-/** Let it go, on a CI lane's held failure: off from the click until the extension says its ask was answered. */
-const letGo = byId<HTMLButtonElement>('let-go');
-letGo?.addEventListener('click', () => {
-  letGo.disabled = true;
-  post({ type: 'let-go' });
+/** A CI lane's buttons (Let it go, Pause, Resume, End the test): all off from a click until the extension answers. */
+const ciButtons = byId<HTMLDivElement>('ci-buttons');
+ciButtons?.addEventListener('click', (event) => {
+  const button = (event.target as HTMLElement).closest<HTMLButtonElement>('button[data-command]');
+  if (!button || button.disabled) return;
+  for (const each of ciButtons.querySelectorAll('button')) each.disabled = true;
+  post({ type: 'ci-command', command: button.dataset.command });
 });
-/** The held failure's place opens its line in the editor. */
-byId<HTMLButtonElement>('held-place')?.addEventListener('click', () => post({ type: 'held-open' }));
-/** A CI lane's held failure, as the extension says it: every text set as text. */
-function drawHeld(held: PausedPageView['held']) {
-  const box = byId('held');
+/** The held or paused test's place opens its line in the editor. */
+byId<HTMLButtonElement>('ci-stop-place')?.addEventListener('click', () => post({ type: 'ci-place' }));
+/** A CI lane's held or paused test, its buttons and its Pause asked, as the extension says them: every text as text. */
+function drawCiStop(stop: PausedPageView['ciStop']) {
+  const box = byId('ci-stop');
   if (!box) return;
-  box.hidden = !held;
-  byId('held-state')!.textContent = held?.state ?? '';
-  byId('held-for')!.textContent = held?.heldFor ? `· ${held.heldFor}` : '';
-  byId('held-error')!.textContent = held?.error ?? '';
-  const place = byId<HTMLButtonElement>('held-place')!;
-  place.textContent = held?.place ?? '';
-  place.hidden = !held?.place;
-  place.disabled = !held?.at;
-  byId('held-note')!.textContent = held?.note ?? '';
-  if (letGo) {
-    letGo.textContent = held?.letGoLabel ?? '';
-    letGo.title = held?.letGoTitle ?? '';
-    letGo.hidden = !held?.letGo;
-    letGo.disabled = !!held?.asking;
+  const shown = stop?.box ?? null;
+  box.hidden = !shown;
+  box.classList.toggle('held', shown?.kind === 'held');
+  byId('ci-stop-state')!.textContent = shown?.state ?? '';
+  byId('ci-stop-by')!.textContent = shown?.by ? `· ${shown.by}` : '';
+  byId('ci-stop-call')!.textContent = shown?.call ?? '';
+  const place = byId<HTMLButtonElement>('ci-stop-place')!;
+  place.textContent = shown?.place ?? '';
+  place.hidden = !shown?.place;
+  place.disabled = !shown?.at;
+  byId('ci-stop-note')!.textContent = shown?.note ?? '';
+  if (ciButtons) {
+    ciButtons.replaceChildren(
+      ...(stop?.buttons ?? []).map((b) => {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.command = b.command;
+        button.title = b.title;
+        button.textContent = b.label;
+        button.disabled = !!stop?.asking;
+        return button;
+      }),
+    );
+    ciButtons.hidden = !stop?.buttons.length;
+  }
+  const ask = byId('ci-ask');
+  if (ask) {
+    ask.textContent = stop?.ask ?? '';
+    ask.hidden = !stop?.ask;
   }
 }
 /** Open the trace so far, in the worker panel: off from the click until the extension says its ask was answered. */
@@ -397,7 +414,7 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     trace.hidden = !event.data.view.trace;
     trace.disabled = !!event.data.view.trace?.asking;
   }
-  if (event.data.view.ci) drawHeld(event.data.view.held ?? null);
+  if (event.data.view.ci) drawCiStop(event.data.view.ciStop ?? null);
 });
 // The extension ends the watch itself when the panel hides or closes, and keeps Watch for when it shows again.
 window.addEventListener('pagehide', () => input.dispose());

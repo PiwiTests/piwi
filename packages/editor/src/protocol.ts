@@ -1332,7 +1332,46 @@ export interface CiTest {
   watch: string | null;
   /** While it runs and waits at its failure, held for the people who may control its project's runs; absent otherwise. */
   held?: CiHeld;
+  /** While it runs and stands paused for the people who may control its project's runs; absent otherwise. */
+  paused?: CiPaused;
+  /**
+   * A Pause of its lane that waits for its next call (`Pause asked by Ana`), or why its worker dropped the last one; in
+   * the run page's words, absent for neither.
+   */
+  pauseAsk?: string;
+  /**
+   * The controls the client offers on its lane (`piwi/ciControl`), as the run page offers them (`ciControlsOffered`):
+   * **Pause** while it runs, **Resume** while a Pause waits or it is paused, **End the test** while it is paused; only
+   * while the client's watch shows its lane as a controller's, absent otherwise. `id` names the lane's state they
+   * follow: a client asks one control in each state, again only after a refusal.
+   */
+  controls?: { id: string; offered: CiControl[] };
 }
+
+/**
+ * A running CI test paused for the people who may control its project's runs (the project's setting, by one of them
+ * watching its lane), in the run page's words: where it stands (`state`, `Paused`), by whom and until when
+ * (`pausedBy`, `Paused by Ana · until 12:05`, null when its worker names no end), the call it stopped before, its place
+ * as the run names it (`place`) and in the workspace (`at`, the file and its 0-based line, which the clients open from
+ * the place; null when the workspace holds no such file), and that the CI job's own timeout still runs (`note`).
+ */
+export interface CiPaused {
+  state: string;
+  pausedBy: string | null;
+  call: string;
+  place: string | null;
+  at: { uri: string; line: number } | null;
+  note: string;
+}
+
+/** A control of a CI lane, in the run page's words: its command, the button's label and its tooltip. */
+export interface CiControl {
+  command: CiControlCommand;
+  label: string;
+  title: string;
+}
+
+export type CiControlCommand = 'pause' | 'resume' | 'end';
 
 /**
  * A running test of a CI run held at its failure for the people who may control its project's runs (the project's
@@ -1442,6 +1481,24 @@ export interface CiLetGoParams {
 }
 
 export const CI_LET_GO_REQUEST = 'piwi/ciLetGo';
+
+/**
+ * `piwi/ciControl`: **Pause**, **Resume** or **End the test** (`command`) on the CI lane the client watches (`lane` and
+ * `shard` as its `CiTest` names them), as its `CiTest.controls` offers them: the service asks the instance on its watch
+ * of the lane, which must count as a controller's, for the lane's worker. Answered with the instance's sentence, or why
+ * not (`ok: false`): no watch of the lane, a watch of someone who may not control the run, no worker in the lane, or
+ * the instance's refusal in its own words.
+ */
+export interface CiControlParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+  command: CiControlCommand;
+}
+
+export const CI_CONTROL_REQUEST = 'piwi/ciControl';
 export const CI_WATCH_REQUEST = 'piwi/ciWatch';
 export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
 export const CI_LAYER_NOTIFICATION = 'piwi/ciLayer';

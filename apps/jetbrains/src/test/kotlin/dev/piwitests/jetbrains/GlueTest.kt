@@ -4371,19 +4371,25 @@ class GlueTest {
         assertEquals(":4:1", held.id)
         val kept = Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test)))
         val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
-        assertEquals(held, Glue.ciLaneHeld(kept, lane))
-        assertEquals(null, Glue.ciLaneHeld(kept, lane.copy(lane = 1)))
+        val stop = Glue.ciLaneStop(kept, lane)!!
+        assertEquals(":4:1", stop.id)
+        assertEquals(listOf(Glue.CiButton("let-go", "Let it go", "End the hold")), stop.buttons)
+        assertEquals(null, Glue.ciLaneStop(kept, lane.copy(lane = 1)))
         assertEquals("CI run #78 · worker 2 · Failed, held at its line: checkout › pays", Glue.ciLaneCaption(kept, lane))
         // The place is a line of its own, which opens the failing line.
+        val shown = Glue.ciStopShown(stop, asking = false)
         assertEquals(
             listOf(
                 "Failed, held at its line · Held for Ana · until 12:05",
                 "Expected \"Paid\"",
                 "The CI job’s own timeout still runs.",
             ),
-            Glue.ciHeldLines(held),
+            shown.lines,
         )
-        assertEquals(listOf("Failed, held at its line", "Timed out"), Glue.ciHeldLines(held.copy(heldFor = null, error = "Timed out", note = "")))
+        assertEquals("tests/checkout.spec.ts:7", shown.place)
+        assertTrue(shown.placeOpens)
+        assertTrue(shown.held)
+        assertEquals(CiHeldAt(spec, 6), stop.at)
         assertEquals(CiLetGoParams("/work/shop", 78, null, 2), Glue.ciLetGoParams(lane))
         // The CI Runs tab marks the held test, and its Watch, where it lists them.
         val rows = Glue.ciRows(kept.values)
@@ -4392,8 +4398,40 @@ class GlueTest {
     }
 
     @Test
-    fun letItGoIsAskedOfEachLanesHoldOnceAgainOnlyAfterARefusalOrForTheLanesNextHold() {
-        val asks = Glue.LetGoAsks()
+    fun aPausedCiTestReadsAsTheServiceSendsItWithItsControlsAndAPauseAsked() {
+        val json = """{"title":["checkout","pays"],"uri":null,"line":null,"project":"","status":"running","retry":0,
+            "lane":2,"shard":null,"at":null,"watch":"https://piwi.example/test-runs/78?watch=2",
+            "paused":{"state":"Paused","pausedBy":"Paused by Ana · until 12:05","call":"Click","place":"tests/checkout.spec.ts:7",
+            "at":{"uri":"$spec","line":6},"note":"The CI job’s own timeout still runs."},
+            "controls":{"id":":4:paused:1","offered":[{"command":"resume","label":"Resume","title":"Go on"},
+            {"command":"end","label":"End the test","title":"End it"}]}}"""
+        val test = Gson().fromJson(json, CiTest::class.java)
+        val kept = Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test)))
+        val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
+        val stop = Glue.ciLaneStop(kept, lane)!!
+        assertEquals(":4:paused:1", stop.id)
+        assertEquals(listOf(Glue.CiButton("resume", "Resume", "Go on"), Glue.CiButton("end", "End the test", "End it")), stop.buttons)
+        val shown = Glue.ciStopShown(stop, asking = true)
+        assertEquals(listOf("Paused by Ana · until 12:05", "Click", "The CI job’s own timeout still runs."), shown.lines)
+        assertFalse(shown.held)
+        assertTrue(shown.asking)
+        assertEquals("CI run #78 · worker 2 · Paused: checkout › pays", Glue.ciLaneCaption(kept, lane))
+        assertEquals(CiControlParams("/work/shop", 78, null, 2, "end"), Glue.ciControlParams(lane, "end"))
+        val rows = Glue.ciRows(kept.values)
+        assertEquals("worker 2 · Paused", rows.single { it.kind == "test" }.detail)
+        // A Pause waiting: no box, Resume, and the words under the buttons.
+        val asked = test.copy(paused = null, pauseAsk = "Pause asked by Ana", controls = CiControls(":4:asked", listOf(CiControl("resume", "Resume", "Take it back"))))
+        val waiting = Glue.ciStopShown(Glue.ciLaneStop(Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(asked))), lane)!!, asking = false)
+        assertEquals(emptyList<String>(), waiting.lines)
+        assertEquals("Pause asked by Ana", waiting.ask)
+        assertEquals(listOf(Glue.CiButton("resume", "Resume", "Take it back")), waiting.buttons)
+        // Nothing held, paused, asked or offered: nothing to show.
+        assertEquals(null, Glue.ciLaneStop(Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test.copy(paused = null, controls = null)))), lane))
+    }
+
+    @Test
+    fun aCiLanesControlIsAskedOnceInEachStateAgainAfterARefusalOrAChange() {
+        val asks = Glue.CiAsks()
         val two = Glue.CiLane("/work/shop", 78, null, 2, null)
         val three = two.copy(lane = 3)
         assertTrue(asks.ask(two, "a"))
@@ -4407,6 +4445,10 @@ class GlueTest {
         assertTrue(asks.ask(two, "c"))
         asks.refused(two, "a")
         assertTrue(asks.asked(two, "c"))
+        // The lane's state changed, then came back: asked anew.
+        asks.seen(two, "d")
+        assertFalse(asks.asked(two, "c"))
+        assertTrue(asks.ask(two, "c"))
     }
 
     @Test

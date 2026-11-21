@@ -268,8 +268,10 @@ import {
   CI_SESSION_NOTIFICATION,
   CI_WATCH_REQUEST,
   CI_LET_GO_REQUEST,
+  CI_CONTROL_REQUEST,
   CI_FRAME_NOTIFICATION,
   CI_LAYER_NOTIFICATION,
+  type CiControlParams,
   type CiLetGoParams,
   type CiWatchParams,
   RUN_STATUS_REQUEST,
@@ -5568,6 +5570,18 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     if (!asked) return Promise.resolve({ ok: false, message: 'Let it go needs the CI run and the worker’s lane.' });
     const held = ciSessions.heldWorker(asked.root, asked.runId, asked.shard ?? null, asked.lane);
     return ciWatch.letGo(asked, held);
+  });
+  connection.onRequest(CI_CONTROL_REQUEST, (params: CiControlParams): Promise<RunControlResult> => {
+    const asked =
+      params &&
+      Number.isInteger(params.runId) &&
+      Number.isInteger(params.lane) &&
+      ['pause', 'resume', 'end'].includes(params.command)
+        ? params
+        : null;
+    if (!asked)
+      return Promise.resolve({ ok: false, message: 'A control needs the CI run, the worker’s lane and the command.' });
+    return ciWatch.control(asked, ciSessions.laneWorker(asked.root, asked.runId, asked.shard ?? null, asked.lane));
   });
 
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {

@@ -1,6 +1,6 @@
 ---
 title: CI runs in your editor
-description: "Follow a Playwright CI run of your branch from VS Code or a JetBrains IDE while it runs: its tests and progress, the line each running test is at, and its pages from the team instance's live view, watched only but for Let it go on a failure held for you."
+description: "Follow a Playwright CI run of your branch from VS Code or a JetBrains IDE while it runs: its tests and progress, the line each running test is at, and its pages from the team instance's live view, watched only but for the controls of a CI test held or paused for you."
 lang: en-US
 ---
 
@@ -10,9 +10,10 @@ lang: en-US
 
 While CI runs your branch, the [editor extensions](./editors) show that run beside your own: its progress, its tests
 as they end, the line each running test is at, and, when its project has the [live view](./live-view) on, its pages.
-It is read-only but for one thing: **Let it go** on a test the project
-[holds at its failure](./hold-ci-failure) for the people who may control its runs. Nothing else pauses, steps, holds
-or shares a CI run from the editor.
+It is watched only, but for the controls of a CI test held or paused for you: **Let it go** on a test the project
+[holds at its failure](./hold-ci-failure), and **Pause**, **Resume** and **End the test** when the project lets the
+people who may control its runs [pause a CI test](./pause-ci-test). Nothing else steps, holds or shares a CI run from
+the editor.
 
 ## Which runs
 
@@ -64,10 +65,18 @@ said your connection may control the run. The Runs window does the same with its
 ([Where it shows](./hold-ci-failure#where-it-shows)). Anyone else watching sees the hold without it. A refusal is said in the
 instance's words, under the caption.
 
+### A test paused for you
+
+When the project also lets its controllers [pause a CI test](./pause-ci-test), the same watch offers **Pause** while
+the lane's test runs. Until the test stops before its next call, the panel or tab says **Pause asked by Ana**, and
+**Resume** takes the Pause back; one the worker dropped says why. Paused, it says **Paused by Ana · until 12:05**, the
+call it stopped before and its place, and the job's timeout note, with **Resume** and **End the test**; the CI Runs
+list marks it **Paused**. Each button is asked once in each state of the lane, its refusal in the instance's words.
+
 ## Limits
 
-- **Read-only, but Let it go.** No control, share or hold reaches a CI run, but **Let it go** on a failure the project
-  holds for its controllers, and its position is never a stop.
+- **Watched only, but the controls of a test held or paused for you.** No other control, share or hold reaches a CI
+  run, and its position is never a stop.
 - **One worker per editor.** The worker panel or tab watches one lane, a local worker's or a CI run's: watching another
   moves it there.
 - **A run's steps.** The positions come from the steps the CI run's reporter streams, so a run whose reporter streams
