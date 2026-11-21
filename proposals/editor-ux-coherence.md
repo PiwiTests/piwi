@@ -79,11 +79,11 @@ answer for its fixture's spec with the marks and Piwi's lens rows VS Code comput
 (`packages/editor/tests/golden/vscode-spec.json`, on each pull request that changes the editor clients), which
 `PiwiPluginTest` draws from too; and the failures view's states (HM8): one golden file holds each state's answer and
 the sentence and links both editors show (`failures-view.json`), which the service's test, VS Code's golden test and
-`GlueTest` read, JetBrains' Failures tab drawn in each state by `PiwiPluginTest` and VS Code's window driven into the
-state of an instance that stops answering by its integration suite; a run with no failure reads alike in both
+`GlueTest` read, VS Code's welcome and message for each state read from its `package.json` and its view's pure half,
+and JetBrains' Failures tab drawn in each state by `PiwiPluginTest`; a run with no failure reads alike in both
 (`No failure in run #124 of main.`). Left: a snapshot of what VS Code draws on screen, which the nightly suite would
-take; a desktop app that fails its proof and no connection in a real VS Code window, which the integration suite's
-instance, named by the environment, cannot reach. NF10
+take, and VS Code's window in each state, which its integration suite cannot reach: its instance is named by the
+environment, and the view keeps the failures it read once the instance stops answering. NF10
 decided: the CI runs keep their own view and tab, apart from the developer's Runs view and tab. L4 in part since: the ASP.NET Core route manifest
 names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
 handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·

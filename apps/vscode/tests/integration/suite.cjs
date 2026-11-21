@@ -1838,27 +1838,6 @@ const tests = {
   },
 
   // Last: it stops the editor service, which the tests above need running.
-  async 'the failures view says an instance that stops answering does not answer, then its failures once it answers'() {
-    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
-    const stub = process.env.PIWI_DASHBOARD_URL;
-    await fetch(`${stub}/__stub/down`, { method: 'POST' });
-    try {
-      await vscode.commands.executeCommand('piwi.refresh');
-      const shown = await waitFor(() => {
-        const view = api.failuresShown();
-        return view?.state === 'unreachable' ? view : null;
-      }, 'the failures view of an instance that does not answer');
-      assert.match(shown.message, /^Could not reach http:\/\/127\.0\.0\.1:\d+: .+ Piwi tries again on its own\.$/);
-    } finally {
-      await fetch(`${stub}/__stub/up`, { method: 'POST' });
-    }
-    await vscode.commands.executeCommand('piwi.refresh');
-    await waitFor(() => {
-      const view = api.failuresShown();
-      return view && view.state !== 'unreachable' ? view : null;
-    }, 'the failures view once the instance answers again');
-  },
-
   async 'says the editor service is not running once it stops, and Restart the editor service starts it again'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     await api.stopService();

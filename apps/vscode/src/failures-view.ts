@@ -77,8 +77,6 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
   private readonly changed = new vscode.EventEmitter<FailureNode | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
   private result: FailuresResult | null = null;
-  /** The state last drawn, which the welcome shows (`piwi.failuresView`). */
-  private state: ViewState | null = null;
   private roots: FailureNode[] = [];
   private readonly parents = new Map<string, FailureNode | undefined>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -135,8 +133,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     } catch {
       this.result = null;
       this.render();
-      this.state = 'unavailable';
-      setContextKey('piwi.failuresView', this.state);
+      setContextKey('piwi.failuresView', 'unavailable' satisfies ViewState);
     }
     return this.result;
   }
@@ -146,13 +143,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     this.result = result;
     const state: ViewState = result.view?.state ?? (result.items.length ? 'failures' : 'disconnected');
     this.render();
-    this.state = state;
     setContextKey('piwi.failuresView', state);
-  }
-
-  /** The state the view's welcome shows (`piwi.failuresView`) and its message, as last drawn; null before. */
-  shown(): { state: ViewState; message: string | undefined } | null {
-    return this.state ? { state: this.state, message: this.view.message } : null;
   }
 
   /** Draw the failures as they were read last, for the run in progress. */

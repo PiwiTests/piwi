@@ -87,21 +87,10 @@ const BASKET_FILE = 'src/Web/Services/BasketService.cs';
 /** Its blob id, once the fixture repository is committed. */
 let basketBlob = '';
 
-/** Whether the stub instance answers every request with an error, as an instance that is down does. */
-let down = false;
 const server = http.createServer((req, res) => {
   res.setHeader('Content-Type', 'application/json');
   const u = req.url ?? '';
   const answer = (body) => res.end(JSON.stringify(body));
-  // The suite turns the instance off and on again (`/__stub/down`, `/__stub/up`).
-  if (u === '/__stub/down' || u === '/__stub/up') {
-    down = u === '/__stub/down';
-    return answer({});
-  }
-  if (down) {
-    res.statusCode = 503;
-    return res.end('{}');
-  }
   if (u === '/api/projects/menu') return answer({ items: [{ id: 7, name: 'Acme Mugs' }] });
   if (u.startsWith('/api/projects/7/locator-index')) return answer(INDEX);
   if (u.startsWith('/api/projects/7/code-index'))
