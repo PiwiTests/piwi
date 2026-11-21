@@ -340,17 +340,23 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 if (view.state == "failures") continue
                 val noRun = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
                     ?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.endsWith("(no run)") }
-                // Another read of the service, started elsewhere, writes no status over the pushed one: push again.
-                val drawn = (1..20).any {
+                val shown = case.getAsJsonObject("shown")
+                val expected = shown.get("text").asString
+                // The service's state moves under the test as the earlier tests' services stop and reads end: push the
+                // state again until the tab, drawn on the event thread, shows it, then hold it to the fixture.
+                (1..20).any {
                     readDone()
                     service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
                     service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
-                    com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
-                    service.status != null && service.failuresResult?.view == view
+                    val until = System.currentTimeMillis() + 2_000
+                    do {
+                        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                        if (tree.emptyText.text == expected) break
+                        Thread.sleep(20)
+                    } while (System.currentTimeMillis() < until)
+                    service.status != null && service.failuresResult?.view == view && tree.emptyText.text == expected
                 }
-                assertTrue("$name: drawn from the pushed state", drawn)
-                val shown = case.getAsJsonObject("shown")
-                assertEquals(name, shown.get("text").asString, tree.emptyText.text)
+                assertEquals(name, expected, tree.emptyText.text)
                 val fragments = buildList {
                     val each = tree.emptyText.secondaryComponent.iterator()
                     while (each.hasNext()) {

@@ -1,8 +1,10 @@
-// The failures view in a real VS Code, in four states without a failure to list: a run with no failure and no run yet,
-// served by the stub of `scripts/lib/editor-fixture.mjs`, an instance that does not answer, and none named. Each opens
-// a window of its own on the fixture project. What the view shows on screen is held to the sentence and links of
-// `packages/editor/tests/golden/failures-view.json`, which the JetBrains plugin's Failures tab is held to too.
+// The failures view in a real VS Code, in six states without a failure to list: a run with no failure, no run yet and
+// no project chosen, served by the stub of `scripts/lib/editor-fixture.mjs`, an instance that does not answer, one that
+// asks for a key, and none named. Each opens a window of its own on the fixture project. What the view shows on screen
+// is held to the sentence and links of `packages/editor/tests/golden/failures-view.json`, which the JetBrains plugin's
+// Failures tab is held to too.
 import * as fs from 'node:fs';
+import * as http from 'node:http';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -58,16 +60,18 @@ function fixtureIn(name) {
 }
 
 /**
- * A window on the fixture with the failures view in sight, the instance at `url`, or none named: the variables blank,
- * so the shell's own never reach it.
+ * A window on the fixture with the failures view in sight, the instance at `url` and its `project`, or none named, with
+ * no key: the variables blank, so the shell's own never reach it.
  */
-async function launch({ workspace, folder, url }) {
+async function launch({ workspace, folder, url, project = url ? PROJECT.name : '' }) {
   window = await launchVSCode({
     extensionPath,
     workspace,
     env: {
       PIWI_DASHBOARD_URL: url ?? '',
-      PIWI_PROJECT_NAME: url ? PROJECT.name : '',
+      PIWI_PROJECT_NAME: project,
+      PIWI_API_KEY: '',
+      PIWI_DESKTOP_KEY: '',
       PIWI_DESKTOP_CONFIG: path.join(folder, 'no-desktop.json'),
     },
   });
@@ -75,6 +79,9 @@ async function launch({ workspace, folder, url }) {
   await command(window.page, 'Piwi: Focus on Failures View');
   return window.page;
 }
+
+/** `text` as a regular expression that matches it alone. */
+const literal = (text) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 /** The Failures pane of the Piwi panel, by its heading. */
 const failuresPane = (page) =>
@@ -115,12 +122,36 @@ test('an instance that does not answer is named, with Retry and Open settings', 
   const page = await launch({ ...fixture, url });
   // The golden case names another address; the sentence around it and the links are the same.
   const { links } = shown('the instance does not answer');
-  const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await expectSentenceAndLinks(
     page,
-    new RegExp(`^Could not reach ${escaped}: .+ Piwi tries again on its own\\.$`),
+    new RegExp(`^Could not reach ${literal(url)}: .+ Piwi tries again on its own\\.$`),
     links,
   );
+});
+
+test('an instance that asks for a key says so, with Connect… and Open settings', async () => {
+  const fixture = fixtureIn('refused');
+  const refusing = http.createServer((req, res) => {
+    res.statusCode = 401;
+    res.setHeader('Content-Type', 'application/json');
+    res.end(JSON.stringify({ statusMessage: 'API key required' }));
+  });
+  await new Promise((resolve) => refusing.listen(0, '127.0.0.1', resolve));
+  servers.push(refusing);
+  const url = `http://127.0.0.1:${refusing.address().port}`;
+  const page = await launch({ ...fixture, url });
+  // The golden case is a key refused; with none sent, the service says one is needed, with the same links.
+  const { links } = shown('the instance refused the API key');
+  await expectSentenceAndLinks(page, new RegExp(`^${literal(url)} needs an API key \\(401\\): .+\\.$`), links);
+});
+
+test('an instance named with no project chosen says so, with Connect… and Open settings', async () => {
+  const fixture = fixtureIn('no-project');
+  const stub = await startStub(fixture.commit);
+  servers.push(stub.server);
+  const page = await launch({ ...fixture, url: stub.url, project: '' });
+  const { text, links } = shown('no project chosen');
+  await expectSentenceAndLinks(page, text, links);
 });
 
 test('no instance named shows the welcome, with Connect… and Record a new test file…', async () => {

@@ -268,7 +268,7 @@ service grouped (`FailuresResult.tree`), with each run's age. Its nodes are the 
 [The failures answer](../../packages/editor/ARCHITECTURE.md#the-failures-answer) in the editor service's reference.
 With no failure, the empty text is `Glue.failuresEmpty` of the state the service says (`FailuresResult.view`), with
 the actions the service links for that state (`FailuresView.links`, drawn as `Glue.Link`s by their action ids), as VS
-Code's welcomes, which a test of the service holds to the same links.
+Code's view shows them: the golden file `packages/editor/tests/golden/failures-view.json` holds both to the same words.
 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
   dashboard**, **Compare with…** and **Group the failures by…**, then the navigation (previous and next failure, expand

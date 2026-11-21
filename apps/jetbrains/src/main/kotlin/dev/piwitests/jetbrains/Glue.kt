@@ -897,6 +897,27 @@ object Glue {
         runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
 
     /**
+     * One call queued on the event thread for a burst of changes, run for every change made until it runs. A call still
+     * queued `staleMillis` after it was queued is queued again, so one the queue never runs holds no later change back.
+     */
+    class QueuedOnce(private val staleMillis: Long) {
+        /** When the call waiting was queued (a clock in milliseconds), 0 with none waiting. */
+        private val queuedAt = java.util.concurrent.atomic.AtomicLong()
+
+        /** Whether to queue a call `now`: none waits, or the one waiting was queued `staleMillis` ago or more. */
+        fun take(now: Long): Boolean {
+            while (true) {
+                val at = queuedAt.get()
+                if (at != 0L && now - at < staleMillis) return false
+                if (queuedAt.compareAndSet(at, now)) return true
+            }
+        }
+
+        /** The queued call runs: the next change queues another. */
+        fun ran() = queuedAt.set(0)
+    }
+
+    /**
      * `piwi/fileSummary` answers by file URI, each for one state of the file's text (`stamp`) and one count of the changes
      * the service pushed (`pushed`): the gutter and Code Vision of one highlighting pass share one request. An answer
      * older than `ttlMillis`, or one that failed, is asked for again; past `max` files, all are.
@@ -1351,9 +1372,10 @@ object Glue {
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
      * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
-     * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen, no
-     * connection, no failure in the run read; else, from a service that names no state or no sentence, the baseline
-     * that found no run (`baselineNoRun`) or no failure in the run read (`runId`).
+     * that did not prove its token, an instance that refused the key, no project chosen or found, an instance still
+     * being read, no run yet or none for the baseline chosen, no connection, no failure in the run read; else, from a
+     * service that names no state or no sentence, the baseline that found no run (`baselineNoRun`) or no failure in the
+     * run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
         val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
@@ -1362,6 +1384,8 @@ object Glue {
             "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…", links)
             "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
             "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
+            "refused" -> EmptyText(view.message ?: "The instance refused the API key.", links)
+            "no-project" -> EmptyText(view.message ?: "No project chosen.", links)
             "norun" -> EmptyText(view.message ?: baselineNoRun ?: "No run of this branch yet.", links)
             "clear" -> EmptyText(view.message ?: baselineNoRun ?: runId?.let { "No failure in run #$it" } ?: "No failure in the latest run", links)
             else -> EmptyText(

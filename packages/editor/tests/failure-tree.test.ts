@@ -567,6 +567,26 @@ describe('failuresView', () => {
     ).toMatchObject({ state: 'desktop-unproven', message: problem });
   });
 
+  test('says an instance that refused the key, or found no project, in its own words rather than not connected', () => {
+    const refused = 'https://piwi.corp refused the API key (401): run Piwi: Connect to sign in again.';
+    expect(
+      failuresView([ctx({ connected: false, hasRun: false, problemKind: 'refused', problem: refused })], 0),
+    ).toMatchObject({ state: 'refused', message: refused });
+    const noProject = 'No project named "Acme" on https://piwi.corp.';
+    expect(
+      failuresView([ctx({ connected: false, hasRun: false, problemKind: 'no-project', problem: noProject })], 0),
+    ).toMatchObject({ state: 'no-project', message: noProject });
+    expect(
+      failuresView(
+        [ctx({ connected: false, hasRun: false, problemKind: 'no-project', problem: 'No project chosen' })],
+        0,
+      ).message,
+    ).toBe('No project chosen.');
+    expect(failuresView([ctx({ connected: false, hasRun: false, problemKind: 'not-configured' })], 0).state).toBe(
+      'disconnected',
+    );
+  });
+
   test('tells a project with no run from one with no failure, and names a baseline that found none', () => {
     expect(failuresView([ctx({ hasRun: false })], 0)).toMatchObject({
       state: 'norun',
@@ -599,6 +619,12 @@ describe('failuresView', () => {
         ['Open the log', 'piwi.openLog', 'Piwi.OpenLog'],
       ],
     );
+    for (const problemKind of ['refused', 'no-project'] as const) {
+      expect(links(failuresView([ctx({ connected: false, hasRun: false, problemKind })], 0))).toEqual([
+        ['Connect…', 'piwi.connect', 'Piwi.Connect'],
+        ['Open settings', 'piwi.openSettings', 'Piwi.OpenSettings'],
+      ]);
+    }
     expect(links(failuresView([ctx({ hasRun: false })], 0))).toEqual([
       ['Compare with…', 'piwi.compareWith', 'Piwi.CompareWith'],
       ['Get started', 'piwi.getStarted', 'Piwi.GetStarted'],
@@ -613,6 +639,18 @@ describe('failuresView', () => {
     const down = ctx({ connected: false, hasRun: false, problemKind: 'unreachable', problem: 'down' });
     expect(failuresView([down, ctx()], 0).state).toBe('clear');
     expect(failuresView([down, ctx({ hasRun: false })], 0).state).toBe('unreachable');
+  });
+
+  test('a refused key comes after an instance that does not answer, no project after a read and a run to come', () => {
+    const of = (problemKind: 'unreachable' | 'refused' | 'no-project') =>
+      ctx({ connected: false, hasRun: false, problemKind, problem: problemKind });
+    const reading = ctx({ connected: false, loading: true, hasRun: false });
+    expect(failuresView([of('no-project'), of('refused'), of('unreachable')], 0).state).toBe('unreachable');
+    expect(failuresView([of('no-project'), of('refused')], 0).state).toBe('refused');
+    expect(failuresView([reading, of('refused')], 0).state).toBe('refused');
+    expect(failuresView([of('no-project'), reading], 0).state).toBe('loading');
+    expect(failuresView([of('no-project'), ctx({ hasRun: false })], 0).state).toBe('norun');
+    expect(failuresView([of('no-project'), ctx({ connected: false, hasRun: false })], 0).state).toBe('no-project');
   });
 });
 

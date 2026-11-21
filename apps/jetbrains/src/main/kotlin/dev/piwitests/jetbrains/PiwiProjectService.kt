@@ -268,8 +268,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
     internal val readingStatus: Boolean get() = reading.get()
     private val readAgain = AtomicBoolean()
 
-    /** Whether the listeners are told already: once on the event thread for the changes made meanwhile. */
-    private val changeQueued = AtomicBoolean()
+    /** The listeners' call: once on the event thread for the changes made meanwhile. */
+    private val changeQueued = Glue.QueuedOnce(STALE_CHANGE_MILLIS)
 
     /** The runs the open files were last drawn with (`Glue.redraw`); on the event thread. */
     private var drawn: RunStatusResult? = null
@@ -312,7 +312,7 @@ class PiwiProjectService(private val project: Project) : Disposable {
     }
 
     private val dialogListeners = CopyOnWriteArrayList<() -> Unit>()
-    private val dialogChangeQueued = java.util.concurrent.atomic.AtomicBoolean(false)
+    private val dialogChangeQueued = Glue.QueuedOnce(STALE_CHANGE_MILLIS)
 
     /**
      * Whether the project is trusted. In a project opened in safe mode Piwi starts no editor service, runs no command
@@ -1081,15 +1081,16 @@ class PiwiProjectService(private val project: Project) : Disposable {
      */
     private fun changed() {
         pushed.incrementAndGet()
-        if (dialogListeners.isNotEmpty() && dialogChangeQueued.compareAndSet(false, true)) {
+        val now = System.currentTimeMillis()
+        if (dialogListeners.isNotEmpty() && dialogChangeQueued.take(now)) {
             ApplicationManager.getApplication().invokeLater({
-                dialogChangeQueued.set(false)
+                dialogChangeQueued.ran()
                 dialogListeners.forEach { it() }
             }, com.intellij.openapi.application.ModalityState.any(), gone)
         }
-        if (!changeQueued.compareAndSet(false, true)) return
+        if (!changeQueued.take(now)) return
         ApplicationManager.getApplication().invokeLater({
-            changeQueued.set(false)
+            changeQueued.ran()
             listeners.forEach { it() }
             draw()
         }, gone)
@@ -1267,6 +1268,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
         /** How often, at most, the files are drawn again for the tests a run in progress begins and ends. */
         const val LIVE_TESTS_DRAW_MILLIS = 1_000L
+
+        /** How long a queued call to the listeners may wait before a change queues another. */
+        const val STALE_CHANGE_MILLIS = 1_000L
 
         private const val MAX_SUMMARIES = 64
 
