@@ -4,7 +4,8 @@
 // its id, or with the reason it refused the request. The auth middleware signs
 // the user in first and comes back here. Allowing sends the browser back to the
 // client with a code; the client name is whatever the client registered, so the
-// page also says where the answer goes.
+// page also says where the answer goes, and which host published the client's
+// metadata document when its client_id is one.
 import type { AuthorizationRequestView, AuthorizationStartError } from '~~/server/utils/mcp-oauth';
 
 definePageMeta({ layout: false });
@@ -14,6 +15,8 @@ useHead({ title: 'Connect an MCP client' });
 const START_ERRORS: Record<AuthorizationStartError, string> = {
   invalid_client:
     'This MCP client is not registered on this instance. Remove the server from your client and add it again: it registers on its own.',
+  invalid_client_metadata:
+    'The client is identified by a metadata document this instance could not use: it could not be fetched from a public address, or it does not describe the client fully. Nothing was sent to it; connect it with an API key instead.',
   invalid_redirect_uri:
     'The client asked to return to an address it did not register, so nothing was sent to it. Remove the server from your client and add it again.',
   unsupported_response_type:
@@ -72,7 +75,10 @@ const returnsTo = computed(() => {
         <dt class="font-semibold text-highlighted">Client</dt>
         <dd class="min-w-0">
           <span class="text-highlighted break-words" data-testid="oauth-client">{{ request.clientName }}</span>
-          <span class="block text-xs text-muted">The name the client gave itself</span>
+          <span v-if="request.clientIdHost" class="block text-xs text-muted" data-testid="oauth-client-host">
+            Described by a document published on {{ request.clientIdHost }}
+          </span>
+          <span v-else class="block text-xs text-muted">The name the client gave itself</span>
         </dd>
         <dt class="font-semibold text-highlighted">Returns to</dt>
         <dd class="text-highlighted break-words" data-testid="oauth-returns-to">{{ returnsTo }}</dd>

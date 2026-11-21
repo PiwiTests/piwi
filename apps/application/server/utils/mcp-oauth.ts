@@ -25,6 +25,7 @@ import {
   REFRESH_TOKEN_TTL_MS,
   cleanClientName,
   cleanClientUri,
+  clientTypesProblem,
   describeRedirectTarget,
   isCodeChallenge,
   mcpOAuthUrls,
@@ -40,11 +41,19 @@ import {
   type ClientCredentials,
   type RedirectTarget,
 } from './mcp-oauth-helpers';
+import {
+  clientMetadataDocumentsEnabled,
+  isClientMetadataUrl,
+  resolveClientMetadata,
+  type MetadataFetch,
+} from './mcp-oauth-client-metadata';
 
 /**
  * The OAuth 2.1 authorization server MCP clients sign in through, as the MCP
  * authorization specification describes it: dynamic client registration
- * (RFC 7591), the authorization code flow with PKCE, and short-lived access
+ * (RFC 7591) or a client ID metadata document (an HTTPS `client_id` naming the
+ * document that describes the client, `mcp-oauth-client-metadata.ts`, kept as a
+ * client row of that id), the authorization code flow with PKCE, and short-lived access
  * tokens renewed with rotating refresh tokens. The user answers on the consent
  * page of this instance, signed in as usual. Each grant owns an API key row
  * named after the client, which is what carries the user's access, what the
@@ -107,17 +116,8 @@ export async function registerClient(
 ): Promise<ClientRegistration | OAuthError> {
   const redirect = parseRedirectUris(metadata.redirect_uris);
   if ('problem' in redirect) return oauthError('invalid_redirect_uri', redirect.problem);
-  const grantTypes = metadata.grant_types ?? ['authorization_code'];
-  if (!Array.isArray(grantTypes) || !grantTypes.includes('authorization_code')) {
-    return oauthError('invalid_client_metadata', 'grant_types must include authorization_code');
-  }
-  if (grantTypes.some((g) => g !== 'authorization_code' && g !== 'refresh_token')) {
-    return oauthError('invalid_client_metadata', 'only authorization_code and refresh_token are supported');
-  }
-  const responseTypes = metadata.response_types ?? ['code'];
-  if (!Array.isArray(responseTypes) || responseTypes.some((r) => r !== 'code')) {
-    return oauthError('invalid_client_metadata', 'only the code response type is supported');
-  }
+  const types = clientTypesProblem(metadata);
+  if (types) return oauthError('invalid_client_metadata', types);
 
   await pruneMcpOAuth(db, now);
 
@@ -149,10 +149,49 @@ export async function registerClient(
   };
 }
 
+/**
+ * The client a `client_id` names: one this server registered, or, while client
+ * metadata documents are on, one whose document an authorization request
+ * fetched.
+ */
 async function findClient(db: DbClient, clientId: unknown): Promise<OAuthClient | null> {
-  if (typeof clientId !== 'string' || !clientId.startsWith(CLIENT_ID_PREFIX)) return null;
+  if (typeof clientId !== 'string') return null;
+  const known =
+    clientId.startsWith(CLIENT_ID_PREFIX) || (clientMetadataDocumentsEnabled() && isClientMetadataUrl(clientId));
+  if (!known) return null;
   const [client] = await db.select().from(oauthClients).where(eq(oauthClients.clientId, clientId));
   return client ?? null;
+}
+
+/**
+ * The client row of a client ID metadata document, written from the document
+ * the authorize endpoint just read: created on its first authorization, its
+ * name and redirect URIs following the document after; or why the document
+ * cannot be used.
+ */
+async function clientFromMetadataDocument(
+  db: DbClient,
+  url: string,
+  now: Date,
+  fetcher?: MetadataFetch,
+): Promise<OAuthClient | { problem: string }> {
+  const metadata = await resolveClientMetadata(url, now.getTime(), fetcher);
+  if ('problem' in metadata) return metadata;
+  const [existing] = await db.select({ id: oauthClients.id }).from(oauthClients).where(eq(oauthClients.clientId, url));
+  // Anyone may name a document, so a new row prunes first, as a registration does.
+  if (!existing) await pruneMcpOAuth(db, now);
+  const values = {
+    clientName: metadata.clientName,
+    clientUri: metadata.clientUri,
+    redirectUris: metadata.redirectUris,
+    lastUsedAt: now,
+  };
+  const [client] = await db
+    .insert(oauthClients)
+    .values({ clientId: url, clientSecretHash: null, createdAt: now, ...values })
+    .onConflictDoUpdate({ target: oauthClients.clientId, set: values })
+    .returning();
+  return client!;
 }
 
 /**
@@ -181,6 +220,7 @@ async function touchClient(db: DbClient, client: OAuthClient, now: Date): Promis
 /** Why the authorize endpoint refuses a request; the consent page explains each one. */
 export type AuthorizationStartError =
   | 'invalid_client'
+  | 'invalid_client_metadata'
   | 'invalid_redirect_uri'
   | 'unsupported_response_type'
   | 'invalid_request'
@@ -205,8 +245,19 @@ export async function startAuthorization(
   query: Record<string, unknown>,
   baseUrl: string,
   now = new Date(),
+  fetcher?: MetadataFetch,
 ): Promise<AuthorizationStart> {
-  const client = await findClient(db, query.client_id);
+  let client: OAuthClient | null;
+  if (clientMetadataDocumentsEnabled() && isClientMetadataUrl(query.client_id)) {
+    const resolved = await clientFromMetadataDocument(db, query.client_id, now, fetcher);
+    if ('problem' in resolved) {
+      console.warn(`[mcp-oauth] client metadata document ${query.client_id} refused: ${resolved.problem}`);
+      return { kind: 'refused', error: 'invalid_client_metadata' };
+    }
+    client = resolved;
+  } else {
+    client = await findClient(db, query.client_id);
+  }
   if (!client) return { kind: 'refused', error: 'invalid_client' };
   const requested = typeof query.redirect_uri === 'string' ? query.redirect_uri : null;
   const redirectUri = requested ?? (client.redirectUris.length === 1 ? client.redirectUris[0]! : null);
@@ -277,9 +328,11 @@ export async function pruneMcpOAuth(db: DbClient, now = new Date()): Promise<num
 export type AuthorizationStatus = 'pending' | 'approved' | 'denied' | 'consumed';
 
 export interface AuthorizationRequestView {
-  /** What the client calls itself: self-asserted at registration. */
+  /** What the client calls itself: self-asserted at registration, or in its metadata document. */
   clientName: string;
   clientUri: string | null;
+  /** The host serving the client's metadata document, when its `client_id` is one; null for a registered client. */
+  clientIdHost: string | null;
   /** Where the answer goes. */
   redirect: RedirectTarget;
   createdAt: string;
@@ -311,6 +364,7 @@ export async function describeAuthorization(
   return {
     clientName: row.client.clientName,
     clientUri: row.client.clientUri,
+    clientIdHost: isClientMetadataUrl(row.client.clientId) ? new URL(row.client.clientId).host : null,
     redirect: describeRedirectTarget(row.request.redirectUri),
     createdAt: row.request.createdAt.toISOString(),
     expiresAt: row.request.expiresAt.toISOString(),

@@ -354,9 +354,10 @@ Each entry names folders under `server/api/`.
   `GET /api/changelog`, which pages it (`changelogPage`) for the Changelog window (`ChangelogModal`); the demo build
   copies the file beside its seed and pages it the same way.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
-  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
-  redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
-  rotation) and `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
+  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration or a client ID metadata document
+  (fetched at `authorize`, `mcp-oauth-client-metadata.ts`), `authorize` (stores the request and redirects to the
+  `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh rotation) and
+  `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
   `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`.
 - **`server/routes/share/`**: the public page of a share link (an execution or a cluster rendered as the offline
   export, a report snapshot, a live dashboard), with its badge and chart image.

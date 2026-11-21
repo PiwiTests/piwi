@@ -65,9 +65,10 @@ role and project access, on the MCP server only: the REST API refuses them. Each
 the client, with your API keys in **Settings → Account → API keys**; revoking it there disconnects the client.
 
 Claude Code (`/mcp`, then **Authenticate**), Cursor, VS Code, Gemini CLI, Opencode and Claude Desktop through
-`mcp-remote` sign in this way. The instance is its own authorization server: clients register on their own (dynamic
-client registration), PKCE is required, and the API reference (`/settings/api` in your instance) lists the endpoints under
-**MCP OAuth**.
+`mcp-remote` sign in this way. The instance is its own authorization server; PKCE is required. A client registers on
+its own or names its metadata document's HTTPS address as its client ID
+([`PIWI_MCP_CLIENT_METADATA_DOCUMENTS`](/reference/configuration#authentication) turns the latter off). The API reference
+(`/settings/api` in your instance) lists the endpoints under **MCP OAuth**.
 
 A client that cannot sign in sends an API key instead, the same `pd_` keys as the REST API, created in **Settings →
 Account → API keys** (administrators manage anyone's keys from **Settings → Users**), as a Bearer token on every

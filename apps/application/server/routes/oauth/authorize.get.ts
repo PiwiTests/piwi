@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['MCP OAuth'],
     summary: 'Start an MCP client authorization',
     description:
-      'The authorization endpoint of the authorization code flow (RFC 6749 §4.1), opened by the MCP client in the browser. Query: `response_type=code`, `client_id`, `redirect_uri`, `code_challenge` with `code_challenge_method=S256` (required), `state`, and optionally `scope` and `resource` (RFC 8707, the `/mcp` URL). Redirects to the consent page, where the signed-in user allows or denies. An invalid request also lands on the consent page, with `error` naming the reason: it is never sent to the client’s redirect URI before the user answers, since anyone can register one. 404 when authentication is off.',
+      'The authorization endpoint of the authorization code flow (RFC 6749 §4.1), opened by the MCP client in the browser. Query: `response_type=code`, `client_id` (a registered client’s, or the HTTPS URL of the client’s metadata document, which is fetched and checked here), `redirect_uri`, `code_challenge` with `code_challenge_method=S256` (required), `state`, and optionally `scope` and `resource` (RFC 8707, the `/mcp` URL). Redirects to the consent page, where the signed-in user allows or denies. An invalid request also lands on the consent page, with `error` naming the reason: it is never sent to the client’s redirect URI before the user answers, since anyone can register one. 404 when authentication is off.',
     security: [],
   },
 });
