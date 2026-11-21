@@ -536,6 +536,11 @@ describe('statusBarView', () => {
       text: '$(loading~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
     });
+    // Another's run says where it comes from in the tooltip alone.
+    expect(statusBarView(connected, live({ own: false, failed: 0, from: 'from the desktop app' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9',
+      tooltip: expect.stringContaining('\n\nRun #124 (from the desktop app) is running: 4 of 9\n\n'),
+    });
     // Another's run names its branch, the developer's own the short form.
     expect(statusBarView(connected, live({ own: false, ci: true, failed: 0, branch: 'feature-x' }))).toMatchObject({
       text: '$(loading~spin) Piwi: CI run #124 on feature-x · 4 of 9',

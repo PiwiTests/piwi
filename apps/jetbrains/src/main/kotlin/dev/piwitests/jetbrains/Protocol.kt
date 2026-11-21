@@ -509,6 +509,8 @@ data class LiveRun(
     val ci: Boolean = false,
     /** The branch it runs on, as it reported it; null for a run that names none. */
     val branch: String? = null,
+    /** Where a run the IDE did not start comes from, for the tooltip (`from the desktop app`); null for the IDE's own and a CI run. */
+    val from: String? = null,
     /** Who started an own run when a person did not (`Started by Claude Code`); null for a person's run. */
     val label: String? = null,
     /** How many of its tests run much longer than they pass (`LiveTest.stuck`); null for none. */

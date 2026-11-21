@@ -427,14 +427,15 @@ object Glue {
     }
 
     /**
-     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
-     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, and another's where it comes from (`Run #131 on
+     * feature-x (from the desktop app) is running: …`), as VS Code's `liveLine`.
      */
     private fun liveLine(live: LiveRun): String {
         val run = when {
             live.own && live.label != null -> "Run #${live.runId} (${live.label})"
             live.own -> "Your run #${live.runId}"
-            else -> othersRun(live, "Run")
+            else -> othersRun(live, "Run") + (live.from?.let { " ($it)" } ?: "")
         }
         return "\n$run is running: ${liveCount(live)}"
     }

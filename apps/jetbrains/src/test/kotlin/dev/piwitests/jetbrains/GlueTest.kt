@@ -425,6 +425,10 @@ class GlueTest {
         val other = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0)))
         assertEquals("Piwi: run #124 · 4 of 9", other.text)
         assertEquals(true, other.tooltip.contains("\nRun #124 is running: 4 of 9\n"))
+        // Another's run says where it comes from in the tooltip alone.
+        val desktop = Glue.statusView(connected, live(failed, inProgress.copy(own = false, failed = 0, from = "from the desktop app")))
+        assertEquals("Piwi: run #124 · 4 of 9", desktop.text)
+        assertEquals(true, desktop.tooltip.contains("\nRun #124 (from the desktop app) is running: 4 of 9\n"))
         // Another's run names its branch, the developer's own the short form.
         val ci = Glue.statusView(connected, live(failed, inProgress.copy(own = false, ci = true, failed = 0, branch = "feature-x")))
         assertEquals("Piwi: CI run #124 on feature-x · 4 of 9", ci.text)
