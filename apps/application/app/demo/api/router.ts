@@ -148,7 +148,7 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
-import { apiDemoLetGo, apiGetDemoLiveSnapshot, apiPostDemoLiveStop } from './live-view';
+import { apiDemoControl, apiDemoLetGo, apiGetDemoLiveSnapshot, apiPostDemoLiveStop } from './live-view';
 import { findDemoUser } from '../demo-users';
 import {
   apiExecutionBugReport,
@@ -208,6 +208,8 @@ import {
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
   INVALID_LIVE_VIEW_MASKS,
+  INVALID_LIVE_VIEW_HOLD_MINUTES,
+  LIVE_VIEW_PAUSE_NEEDS_HOLD,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   InvalidRunVariablesError,
@@ -1121,6 +1123,8 @@ const routes: RouteEntry[] = [
           (e.message === INVALID_COVERAGE_SCOPE ||
             e.message === INVALID_COVERAGE_AREAS ||
             e.message === INVALID_LIVE_VIEW_MASKS ||
+            e.message === INVALID_LIVE_VIEW_HOLD_MINUTES ||
+            e.message === LIVE_VIEW_PAUSE_NEEDS_HOLD ||
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
@@ -1529,6 +1533,17 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _query, ctx) => {
       await assertDemoEntityScope(ctx, 'run', +m[1]!);
       return apiDemoLetGo(+m[1]!, body);
+    },
+  },
+  // **Pause**, **Resume** and **End the test** of a simulated CI worker's test, named by who asked.
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/control$/,
+    permission: 'run:control',
+    handler: async (m, body, _query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
+      return apiDemoControl(+m[1]!, body, acting?.name ?? '');
     },
   },
   // The page of a simulated worker at a call, for Inspect: a moment of the committed checkout trace, as the server

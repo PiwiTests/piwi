@@ -15,9 +15,10 @@
  * the pages Inspect shows, which the demo's watch of a run reads
  * (`app/demo/live-watch.ts`). **Let it go** of a simulated worker's held
  * failure goes the other way (`let-go`), from the service worker to the page
- * that runs the simulator.
+ * that runs the simulator, and so do **Pause**, **Resume** and **End the
+ * test** of its test (`control`).
  */
-import type { LiveViewerMessage, LiveWorkerId } from '@piwitests/core/live-view';
+import type { LiveControlCommand, LiveViewerMessage, LiveWorkerId } from '@piwitests/core/live-view';
 import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
 import type { RunProgressBroadcast } from '~~/server/utils/run-events';
 import { runProgressThrottle } from '~~/server/utils/run-progress-throttle';
@@ -68,7 +69,9 @@ export type DemoEventMessage =
   /** What a simulated worker of a run says to the views of it, as a watch's message carries it, with no data. */
   | { scope: 'live'; runId: number; message: LiveViewerMessage }
   /** **Let it go** of a simulated CI worker's held failure, which the simulator that holds it hears. */
-  | { scope: 'let-go'; runId: number; worker: LiveWorkerId };
+  | { scope: 'let-go'; runId: number; worker: LiveWorkerId }
+  /** **Pause**, **Resume** or **End the test** of a simulated CI worker's test, which the simulator that runs it hears. */
+  | { scope: 'control'; runId: number; worker: LiveWorkerId; command: LiveControlCommand };
 
 // ── Publishing (page side) ─────────────────────────────────────────────────
 
@@ -86,6 +89,11 @@ function getPublishChannel(): BroadcastChannel {
     publishChannel = new BroadcastChannel(CHANNEL_NAME);
   }
   return publishChannel;
+}
+
+/** Tell the simulator that runs run `runId`'s `worker` to pause its test, resume it or end it, from the service worker. */
+export function publishDemoControl(runId: number, worker: LiveWorkerId, command: LiveControlCommand): void {
+  getPublishChannel().postMessage({ scope: 'control', runId, worker, command } satisfies DemoEventMessage);
 }
 
 /** Tell the simulator that holds a failure of run `runId`'s `worker` to let it go, from the service worker. */

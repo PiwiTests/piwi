@@ -38,7 +38,13 @@ import { demoExecutionResources, demoResourceReport } from '#shared/demo/demo-re
 import { demoHtmlReport } from '#shared/demo/demo-run-projects.mjs';
 import { isFlakyResult } from '#shared/status-classify';
 import { parseLocation } from '#shared/parse-location';
-import type { LiveCallLog, LiveTestOutcome, LiveViewerMessage, LiveWorkerId } from '@piwitests/core/live-view';
+import type {
+  LiveCallLog,
+  LiveControlCommand,
+  LiveTestOutcome,
+  LiveViewerMessage,
+  LiveWorkerId,
+} from '@piwitests/core/live-view';
 import type { TestRunDetails } from '~~/types/api';
 import { simulatorInstanceId } from './simulator-instance';
 import { demoBrowser, demoCiRunner } from '#shared/demo/demo-environments.mjs';
@@ -211,6 +217,12 @@ export interface DemoScenario {
   resources?: 'leaky' | 'clean';
   /** The `use.baseURL` of the run's Playwright projects, as the HTML report metadata carries it. */
   baseURL?: string;
+  /**
+   * Its CI workers can pause their test for the people who may control the run, as a reporter that says it can pause
+   * does: a **Pause** the demo takes stops a worker's test before its next call, until **Resume**, **End the test**,
+   * `DEMO_HOLD_MS`, or the view leaving it.
+   */
+  pausable?: boolean;
   /** The run's metadata; the simulation adds the Playwright projects its tests run (`htmlReport`). */
   metadata: () => Record<string, unknown>;
   tests: () => SimTest[];
@@ -1393,6 +1405,28 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     },
   },
   {
+    id: 'paused-ci',
+    label: 'Paused CI test',
+    description:
+      'A CI run: watch a worker, Pause its test before its next call, look at its page, then Resume it or End the test',
+    icon: 'i-lucide-pause',
+    group: 'causes',
+    result: {
+      text: 'Paused by someone who may control the run, the test waited before its next call, then went on, or ended there skipped. Unpaused, the run ran as it would have.',
+    },
+    speed: 1,
+    workers: 3,
+    environment: 'staging',
+    pausable: true,
+    metadata: () =>
+      buildMetadata({
+        branch: 'feature/contact-method',
+        author: 'Carol White',
+        commitMessage: 'feat: replace the email field with a contact-method selector',
+      }),
+    tests: () => baseTests(),
+  },
+  {
     id: 'healing',
     label: 'Locator healing',
     description: 'A renamed field fails and joins the known cluster — watch the stale-aware recommendation',
@@ -1786,6 +1820,47 @@ async function runSingleSimulation(
     return answer?.held === true;
   }
 
+  /** Say that a CI worker can pause its test (`pauses`), as its stream opens, or forget it as it ends. */
+  async function postLivePauses(worker: LiveWorkerId, pauses: boolean): Promise<void> {
+    await $fetch(`/api/test-runs/${runId}/live-view`, {
+      method: 'POST',
+      body: { type: 'stop', ...worker, stop: null, pauses },
+    }).catch(() => null);
+  }
+
+  /** The Pause each worker of the run was asked and no call took yet, and how each worker's pause ends. */
+  const pauseAsked = new Set<number>();
+  const pauseEnds = new Map<number, (how: 'resume' | 'end') => void>();
+  const unhearControl = scenario.pausable
+    ? subscribeDemoEvents((message) => {
+        if (message.scope !== 'control' || message.runId !== runId) return;
+        const command: LiveControlCommand = message.command;
+        if (command === 'pause') pauseAsked.add(message.worker.worker);
+        else pauseEnds.get(message.worker.worker)?.(command === 'end' ? 'end' : 'resume');
+      })
+    : () => undefined;
+
+  /**
+   * Pause `worker`'s test before its next call at `stop`, as a CI worker pauses for a Pause the demo took: `ms` long at
+   * most, until **Resume** or **End the test** comes over the demo's channel, the view stops showing it, or the run
+   * stops; the worker then posts its end. Resolves how it ended: `end` for End the test.
+   */
+  async function pauseTest(worker: LiveWorkerId, stop: Record<string, unknown>, ms: number): Promise<'resume' | 'end'> {
+    let how: 'resume' | 'end' | null = null;
+    pauseEnds.set(worker.worker, (end) => (how = end));
+    try {
+      if (!(await postLiveStop(worker, stop))) return 'resume';
+      for (let waited = 0; waited < ms && !how && !ctl.stopped; waited += HOLD_TICK_MS) {
+        await sleep(HOLD_TICK_MS);
+        if (!demoWatchShows(runId, worker)) break;
+      }
+      await postLiveStop(worker, null);
+      return how ?? 'resume';
+    } finally {
+      pauseEnds.delete(worker.worker);
+    }
+  }
+
   /**
    * Hold a failure of `worker` at `stop`, as a CI worker holds one: only while a view of this page shows the worker in
    * full and the demo takes the hold (the project holds failing CI tests, and the person acting may control the run),
@@ -1838,6 +1913,8 @@ async function runSingleSimulation(
       slot: parallelIndex,
     };
 
+    // A CI worker that can pause says so as its stream opens.
+    if (scenario.pausable) await postLivePauses(liveWorker, true);
     while (!cutShort()) {
       const test = tests[queueIndex++];
       if (!test) return;
@@ -1894,11 +1971,33 @@ async function runSingleSimulation(
 
         let attemptRemaining = attemptDuration;
         let stepCursor = virtualNow;
+        // End the test at a pause: the rest of the attempt is skipped.
+        let endedAtStop = false;
         if (liveSteps.length === 0) {
           await sleep(attemptDuration / scenario.speed);
           virtualNow += attemptDuration;
         } else {
           for (const [n, s] of liveSteps.entries()) {
+            // A Pause a controller asked stops the test before this call, while a view shows its worker in full; else
+            // it is dropped.
+            if (pauseAsked.delete(workerIndex)) {
+              if (!demoWatchShows(runId, liveWorker) || cutShort()) {
+                await postLiveStop(liveWorker, null);
+              } else {
+                const at = parseLocation(s.location ?? test.location);
+                const call = s.subtitle ? `${s.title} ${s.subtitle}` : s.title;
+                const stop = {
+                  reason: 'pause',
+                  call: { title: call, file: at.filePath, line: at.line },
+                  test: test.title,
+                  until: Date.now() + DEMO_HOLD_MS,
+                };
+                if ((await pauseTest(liveWorker, stop, DEMO_HOLD_MS)) === 'end') {
+                  endedAtStop = true;
+                  break;
+                }
+              }
+            }
             const seg = Math.min(Math.max(s.duration, 1), attemptRemaining);
             const callId = demoCallId(s, n, attemptKey);
             const logCall = (status: LiveCallLog['status'], ms: number, error: string | null = null) =>
@@ -2002,14 +2101,17 @@ async function runSingleSimulation(
             stepCursor += seg;
             if (attemptRemaining <= 0) break;
           }
-          if (attemptRemaining > 0) {
+          if (attemptRemaining > 0 && !endedAtStop) {
             await sleep(attemptRemaining / scenario.speed);
             virtualNow += attemptRemaining;
           }
         }
 
+        // A Pause no call of the attempt took is dropped as it ends.
+        if (pauseAsked.delete(workerIndex)) await postLiveStop(liveWorker, null);
+
         // A CI test's failure held for the people who may control the run: its worker says so, then waits.
-        if (a.heldMs && a.status === 'failed' && !cutShort()) {
+        if (a.heldMs && a.status === 'failed' && !cutShort() && !endedAtStop) {
           const failedAt = parseLocation(liveSteps.find((s) => s.failed)?.location ?? test.location);
           const said = (a.error ?? 'failed').split('\n').find((line) => line.trim()) ?? 'failed';
           const stop = {
@@ -2030,9 +2132,10 @@ async function runSingleSimulation(
               networkRequests: test.networkRequests,
             };
 
-        // An attempt still running when the run was cut short ends interrupted, after the time it ran.
-        const status = cutShort() ? 'interrupted' : a.status;
-        const ranMs = status === 'interrupted' ? virtualNow - startedAt : attemptDuration;
+        // An attempt still running when the run was cut short ends interrupted, after the time it ran; one ended at a
+        // pause is skipped there.
+        const status = cutShort() ? 'interrupted' : endedAtStop ? 'skipped' : a.status;
+        const ranMs = status === 'interrupted' || endedAtStop ? virtualNow - startedAt : attemptDuration;
         ended.push(status);
 
         await postEvents([
@@ -2045,7 +2148,7 @@ async function runSingleSimulation(
             // The effective per-test timeout the real reporter always sends
             // (Playwright's default unless a test overrides it).
             timeout: 30000,
-            error: status === 'interrupted' ? null : (a.error ?? null),
+            error: status === 'interrupted' || endedAtStop ? null : (a.error ?? null),
             retries: attempt,
             repeatEachIndex: 0,
             attempts: test.attempts.slice(0, attempt + 1).map((att, i) => ({
@@ -2126,9 +2229,20 @@ async function runSingleSimulation(
     }
   }
 
-  await Promise.all(
-    Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0), i)),
-  );
+  try {
+    await Promise.all(
+      Array.from({ length: scenario.workers }, (_, i) => workerLoop(i + (shardOverride?.workerOffset ?? 0), i)),
+    );
+  } finally {
+    unhearControl();
+    // Each CI worker that could pause is forgotten as the run's workers end.
+    if (scenario.pausable) {
+      for (let i = 0; i < scenario.workers; i++) {
+        const worker = { shard: shardOverride?.shardIndex ?? null, worker: i + (shardOverride?.workerOffset ?? 0) };
+        await postLivePauses({ ...worker, slot: i }, false);
+      }
+    }
+  }
 
   const interrupted = ctl.stopped || completed < tests.length;
   const status = interrupted ? 'interrupted' : failedCount > 0 ? 'failed' : 'passed';
