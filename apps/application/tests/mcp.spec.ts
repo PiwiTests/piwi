@@ -90,8 +90,9 @@ test.describe.serial('MCP server', () => {
     const notified = await request.post('/mcp', { data: { jsonrpc: '2.0', method: 'notifications/initialized' } });
     expect(notified.status()).toBe(202);
     expect(await notified.text()).toBe('');
+    // An MCP client's GET asks for an event stream; a browser's goes to the settings page (settings-redirects.spec.ts).
     for (const method of ['get', 'delete'] as const) {
-      const res = await request[method]('/mcp');
+      const res = await request[method]('/mcp', { headers: { accept: 'text/event-stream' }, maxRedirects: 0 });
       expect(res.status(), method).toBe(405);
       expect(res.headers()['allow']).toBe('POST');
     }

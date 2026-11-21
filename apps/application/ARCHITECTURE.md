@@ -344,10 +344,12 @@ Each entry names folders under `server/api/`.
 ### Other routes
 
 - **`server/routes/mcp.post.ts`**: the MCP server endpoint, for legacy and `2026-07-28` clients alike through the
-  editor service's `mcp-protocol.ts` (`server/utils/mcp/protocol.ts`); `mcp.get.ts` and `mcp.delete.ts` answer 405.
+  editor service's `mcp-protocol.ts` (`server/utils/mcp/protocol.ts`); `mcp.get.ts` answers an MCP client's GET
+  (`Accept: text/event-stream`) with 405 and sends any other to the MCP settings page, and `mcp.delete.ts` answers 405.
   Tool definitions in `shared/mcp-tools.ts`, handlers in `server/utils/mcp/`. In the desktop build it also serves the
-  tools for the runs the shell starts (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of those runs (`DesktopRuns.agent`),
-  its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
+  tools for the runs the shell starts (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of
+  those runs (`DesktopRuns.agent`), its answers passed on as they are, the code it makes sent to the window to copy.
+  `describe_piwi` and
   `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
   server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
   `shared/piwi-ecosystem.ts`. `server/utils/bundled-assets.ts` reads the bundled CHANGELOG for that tool and for

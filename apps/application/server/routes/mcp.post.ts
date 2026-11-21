@@ -78,8 +78,8 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // SUPPORTED_PROTOCOL_VERSIONS, legacy (`initialize`) and modern (`_meta` on
 // each request) clients alike, with no session (`utils/mcp/protocol.ts`).
 // A single POST /mcp handles initialize, server/discover, tools/list,
-// tools/call, prompts, ping and subscriptions/listen; GET and DELETE answer 405
-// (`mcp.get.ts`, `mcp.delete.ts`).
+// tools/call, prompts, ping and subscriptions/listen; an MCP client's GET and
+// a DELETE answer 405 (`mcp.get.ts`, `mcp.delete.ts`).
 // Auth: an OAuth access token (the client signs in through this instance's
 // authorization server, see utils/mcp-oauth.ts), or the same pd_<key> Bearer
 // token and session as the REST API.
