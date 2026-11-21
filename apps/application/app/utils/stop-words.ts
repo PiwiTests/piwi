@@ -1,6 +1,8 @@
-import type { TestStopReason } from '@piwitests/core/wire';
-import type { Lane } from '#shared/live-lanes';
-import type { LiveWorkerState } from '#shared/live-view';
+import type { LiveCall, LiveStop } from '@piwitests/core/live-view';
+import type { TestStop, TestStopReason } from '@piwitests/core/wire';
+import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
+import type { TestCaseResult } from '~~/types/api';
+import { currentRows, rowLiveWorker } from './live-row-worker';
 
 /**
  * What a stopped test says of its stop, by its reason, on the run page and in the desktop app's tray: one sentence per
@@ -33,27 +35,38 @@ export function stopStoodMs(since: number | null | undefined, now: number): numb
   return Math.floor((now - since) / 60_000) * 60_000;
 }
 
-/** A stop as a watched worker's view shows it: its reason, for `stopWords`, and when it began (null when unknown). */
-export interface WatchedStop {
+/** A stop as a test's row and its worker's lane panel show it: why, at which call, and since when (null when unknown). */
+export interface ShownStop {
   reason: string;
+  call: LiveCall;
   since: number | null;
 }
 
 /**
- * The stop the test of a watched worker stands at: the stop of its lane as the run's stream sends it (`lane` events,
- * which reduce the reporter's told stops and the live view's alike), the lane of its `slot`, or, for a worker that says
- * none, the lane it ran in last; for a worker in no lane the page holds, the stop its live view says. Null for none.
+ * The stop a running test stands at, from the two sources that say it: the live view's (`live`, its worker's `paused`)
+ * and the one its reporter told (`told`, the row's `liveStop`). Where both stand, the reason and the call are the live
+ * view's and the time is the told stop's; either alone is the stop. Null for neither.
+ */
+export function testStop(live: LiveStop | null | undefined, told: TestStop | null | undefined): ShownStop | null {
+  if (live) return { reason: live.reason, call: live.call, since: told?.since ?? null };
+  if (told)
+    return { reason: told.reason, call: { title: told.title, file: told.file, line: told.line }, since: told.since };
+  return null;
+}
+
+/**
+ * The stop of the test a watched worker runs now (`testStop`), read as that test's row reads it: the worker's live
+ * view stop for its running row (`rowLiveWorker`) and the row's told stop; for a worker with no running row, its live
+ * view stop alone.
  */
 export function watchedStop(
-  lanes: readonly Lane[],
-  workers: readonly LiveWorkerState[],
-  watched: { shard: number | null; worker: number; slot?: number },
-): WatchedStop | null {
-  const lane = lanes.find(
-    ({ id, worker }) =>
-      id.shard === watched.shard && (watched.slot === undefined ? worker === watched.worker : id.lane === watched.slot),
-  );
-  if (lane) return lane.state === 'stopped' && lane.stop ? { reason: lane.stop.reason, since: lane.stop.since } : null;
-  const paused = workers.find(({ shard, worker }) => shard === watched.shard && worker === watched.worker)?.paused;
-  return paused ? { reason: paused.reason, since: null } : null;
+  rows: readonly TestCaseResult[],
+  workers: Readonly<Record<string, LiveWorkerState>>,
+  watched: { shard: number | null; worker: number },
+): ShownStop | null {
+  const key = liveWorkerKey(watched);
+  const current = currentRows(rows);
+  const row = current.get(key);
+  if (!row) return testStop(workers[key]?.paused, null);
+  return testStop(rowLiveWorker(current, workers, row)?.paused, row.liveStop);
 }

@@ -1,27 +1,34 @@
 import { describe, expect, test } from 'vitest';
-import { emptyLane, reduceLane, type LaneStop } from '@piwitests/core/live-lane';
-import type { Lane } from '#shared/live-lanes';
+import type { LiveStop } from '@piwitests/core/live-view';
+import type { TestStop } from '@piwitests/core/wire';
 import type { LiveWorkerState } from '#shared/live-view';
-import { STOOD_FOR_MS, stopStoodMs, stopWords, watchedStop } from '../../app/utils/stop-words';
+import type { TestCaseResult } from '../../types/api';
+import { STOOD_FOR_MS, stopStoodMs, testStop, watchedStop } from '../../app/utils/stop-words';
 
 /**
- * The stop a watched worker's test stands at, as the lane panel shows it in its row's words: the stop of the worker's
- * lane as the run's stream sends it, or, for a worker in no lane the page holds, the stop the live view says; and how
- * long it has stood, which the row and the panel both say once it stood a minute.
+ * The stop a running test stands at, as its row and its worker's lane panel both show it, from the two sources that say
+ * it: the live view's stop (`paused`, said by the worker at once) and the stop its reporter told (`test-stopped`, with
+ * when it began). Where both stand, the reason and the call are the live view's and the time the told stop's; either
+ * alone is the stop. The panel reads them for the test its worker runs now, as the row does.
  */
 
-/** Lane `slot` of the run, worker `worker` in it, running `title`, stopped at `stop` when given. */
-const runLane = (slot: number, worker: number, title: string, stop?: LaneStop): Lane => {
-  const running = reduceLane(emptyLane({ run: 1, shard: null, lane: slot }), {
-    type: 'test-begin',
-    worker,
-    test: { id: title, title, retry: 0 },
-  });
-  return stop ? reduceLane(running, { type: 'stopped', stop }) : running;
-};
+const CALL = { title: 'Click', file: 'tests/live.spec.ts', line: 4 };
+const VIEW: LiveStop = { reason: 'pause', call: CALL, test: 'pays' };
+const TOLD: TestStop = { ...CALL, reason: 'breakpoint', bar: true, since: 1_000, pausedMs: 0 };
 
-const PAUSE: LaneStop = { id: 'view:pause:Check', reason: 'pause', title: 'Check', since: null };
-const TOLD: LaneStop = { id: 'stop:1000', reason: 'breakpoint', title: 'Click', since: 1_000 };
+const row = (over: Partial<TestCaseResult>): TestCaseResult =>
+  ({
+    executionId: 1,
+    testCaseId: 0,
+    title: 'pays',
+    location: 'tests/live.spec.ts:3:1',
+    status: 'running',
+    workerIndex: 0,
+    shardIndex: null,
+    startedAt: 10,
+    liveStop: null,
+    ...over,
+  }) as TestCaseResult;
 
 const worker = (over: Partial<LiveWorkerState>): LiveWorkerState => ({
   shard: null,
@@ -30,53 +37,66 @@ const worker = (over: Partial<LiveWorkerState>): LiveWorkerState => ({
   paused: null,
   ...over,
 });
+const workers = (...list: LiveWorkerState[]) =>
+  Object.fromEntries(list.map((w) => [`${w.shard ?? ''}:${w.worker}`, w]));
+
+describe('testStop', () => {
+  test('takes the reason and the call from the live view and the time from the told stop when both stand', () => {
+    expect(testStop(VIEW, TOLD)).toEqual({ reason: 'pause', call: CALL, since: 1_000 });
+  });
+
+  test('is either stop alone', () => {
+    expect(testStop(VIEW, null)).toEqual({ reason: 'pause', call: CALL, since: null });
+    expect(testStop(null, TOLD)).toEqual({ reason: 'breakpoint', call: CALL, since: 1_000 });
+    expect(testStop(null, undefined)).toBeNull();
+  });
+});
 
 describe('watchedStop', () => {
-  test('is the stop of the lane the watched worker says, in the row’s words', () => {
-    const lanes = [runLane(0, 0, 'pays'), runLane(1, 1, 'checks out', PAUSE)];
-    const stop = watchedStop(lanes, [], { shard: null, worker: 1, slot: 1 });
-    expect(stop).toEqual({ reason: 'pause', since: null });
-    expect(stopWords(stop!.reason)).toBe('Paused');
-    expect(watchedStop(lanes, [], { shard: null, worker: 0, slot: 0 })).toBeNull();
-  });
-
-  test('keeps when the stop began, as its reporter told it', () => {
-    const lanes = [runLane(0, 0, 'pays', TOLD)];
-    expect(watchedStop(lanes, [], { shard: null, worker: 0, slot: 0 })).toEqual({ reason: 'breakpoint', since: 1_000 });
-  });
-
-  test('follows the lane through the worker Playwright starts in it again', () => {
-    const lanes = [runLane(0, 3, 'pays', PAUSE)];
-    expect(watchedStop(lanes, [], { shard: null, worker: 0, slot: 0 })).toEqual({ reason: 'pause', since: null });
-  });
-
-  test('reads a lane of the watched shard alone', () => {
-    const lanes = [runLane(0, 0, 'pays', PAUSE)];
-    expect(watchedStop(lanes, [], { shard: 2, worker: 0, slot: 0 })).toBeNull();
-  });
-
-  test('ends with the lane’s stop', () => {
-    const stopped = runLane(0, 0, 'pays', TOLD);
-    const resumed = reduceLane(stopped, { type: 'resumed', stop: TOLD.id });
-    expect(watchedStop([resumed], [], { shard: null, worker: 0, slot: 0 })).toBeNull();
-  });
-
-  test('is the live view’s stop for a worker in no lane the page holds', () => {
-    const paused = worker({
-      paused: { reason: 'page-pause', call: { title: 'Pause', file: 'a.spec.ts', line: 3 }, test: 'pays' },
+  test('is the stop of the test the worker runs now, from both sources', () => {
+    const rows = [row({ executionId: 1, title: 'checks out', startedAt: 1 }), row({ liveStop: TOLD })];
+    expect(watchedStop(rows, workers(worker({ paused: VIEW })), { shard: null, worker: 0 })).toEqual({
+      reason: 'pause',
+      call: CALL,
+      since: 1_000,
     });
-    expect(watchedStop([], [worker({ worker: 1 }), paused], { shard: null, worker: 0 })).toEqual({
-      reason: 'page-pause',
+  });
+
+  test('keeps the told stop once the live view’s ends, as the row does', () => {
+    const rows = [row({ liveStop: TOLD })];
+    expect(watchedStop(rows, workers(worker({})), { shard: null, worker: 0 })).toEqual({
+      reason: 'breakpoint',
+      call: CALL,
+      since: 1_000,
+    });
+  });
+
+  test('reads the live view’s stop of a worker that says no lane', () => {
+    expect(watchedStop([row({})], workers(worker({ paused: VIEW })), { shard: null, worker: 0 })).toEqual({
+      reason: 'pause',
+      call: CALL,
       since: null,
     });
-    expect(watchedStop([], [paused], { shard: null, worker: 1 })).toBeNull();
-    expect(watchedStop([], [], { shard: null, worker: 0 })).toBeNull();
   });
 
-  test('is the stop of the lane a worker that says no lane ran in last', () => {
-    const lanes = [runLane(0, 0, 'pays', TOLD)];
-    expect(watchedStop(lanes, [], { shard: null, worker: 0 })).toEqual({ reason: 'breakpoint', since: 1_000 });
-    expect(watchedStop(lanes, [], { shard: null, worker: 1 })).toBeNull();
+  test('leaves out a live view’s stop of the worker’s next test, whose row has not come yet', () => {
+    const next = { ...VIEW, test: 'refunds' };
+    expect(watchedStop([row({})], workers(worker({ paused: next })), { shard: null, worker: 0 })).toBeNull();
+  });
+
+  test('is the live view’s stop of a worker with no running row', () => {
+    expect(watchedStop([], workers(worker({ paused: VIEW })), { shard: null, worker: 0 })).toEqual({
+      reason: 'pause',
+      call: CALL,
+      since: null,
+    });
+    expect(watchedStop([row({ status: 'passed', liveStop: TOLD })], workers(), { shard: null, worker: 0 })).toBeNull();
+  });
+
+  test('reads the watched worker of the watched shard alone', () => {
+    const rows = [row({ liveStop: TOLD }), row({ executionId: 2, workerIndex: 1 })];
+    expect(watchedStop(rows, workers(), { shard: null, worker: 1 })).toBeNull();
+    expect(watchedStop(rows, workers(), { shard: 2, worker: 0 })).toBeNull();
   });
 });
 

@@ -18,7 +18,7 @@ const props = defineProps<{
 }>();
 
 const words = computed(() => stopWords(props.reason));
-const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 10_000) });
+const now = useStopClock();
 /** How long the stop has stood, once it stood a while. */
 const stoodFor = computed(() => {
   const ms = stopStoodMs(props.since, now.value);

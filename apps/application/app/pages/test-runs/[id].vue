@@ -415,6 +415,16 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 }
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
+/**
+ * The stop the watched worker's test stands at, read as its row reads it (`watchedStop`): of the worker now in the
+ * view's lane, or of the worker watched when it says no lane.
+ */
+const watchedTestStop = computed(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  const worker = (shown.slot === undefined ? null : laneWorker({ shard: shown.shard, slot: shown.slot })) ?? shown;
+  return watchedStop(dedupedDisplayCases.value, liveWorkers.value, worker);
+});
 
 // The page's one watch of the run: the lane panel's full view and Watch all's tiles, on one connection.
 const live = useLiveWatch(() => Number(runId));
@@ -436,10 +446,6 @@ if (isDemoMode) {
 /** The workers Watch all shows: those in the run's live view. */
 const watchAllWorkers = computed<LiveWorkerState[]>(() => Object.values(liveWorkers.value));
 const lanesNow = computed(() => Object.values(liveLanes.value));
-/** The stop the watched worker's test stands at, which its view says in its row's words. */
-const watchedLaneStop = computed(() =>
-  watching.value ? watchedStop(lanesNow.value, Object.values(liveWorkers.value), watching.value) : null,
-);
 /** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
 const offersWatchAll = computed(
   () => isLive.value && !liveRunEnded.value && (watchAllWorkers.value.length > 0 || watchAll.value),
@@ -1770,7 +1776,7 @@ const moreMenuItems = computed(() => {
         :project-name="testRun?.project?.name"
         :live="live"
         :moved-why="movedWhy"
-        :stop="watchedLaneStop"
+        :stop="watchedTestStop"
         v-model:attention="followAttention"
       />
     </ClientOnly>

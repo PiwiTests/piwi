@@ -7101,7 +7101,7 @@ const SCENES = [
   {
     name: 'run-live-view-paused',
     description:
-      'The live view of a shared run’s worker whose test a developer paused: its row and the lane panel both say Paused at the call it waits at, with no running time, at 1280 and 390 px',
+      'The live view of a shared run’s worker whose test a developer paused two minutes ago: its row and the lane panel both say Paused for 2 minutes at the call it waits at, with no running time, at 1280 and 390 px',
     route: '/projects',
     viewport: { width: 1280, height: 900 },
     outputs: ['run-live-view-paused.png', 'run-live-view-paused-narrow.png'],
@@ -7135,20 +7135,18 @@ const SCENES = [
         ).json();
         run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
         const test = 'places an order';
+        const attempt = {
+          title: test,
+          location: 'tests/checkout.spec.ts:12:3',
+          retries: 0,
+          workerIndex: 0,
+          parallelIndex: 0,
+          browser: { projectName: 'chromium', browserName: 'chromium' },
+        };
         await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
           data: {
             streamToken: run.streamToken,
-            testCases: [
-              {
-                type: 'begin',
-                title: test,
-                location: 'tests/checkout.spec.ts:12:3',
-                workerIndex: 0,
-                parallelIndex: 0,
-                startedAt: Date.now() - 9_000,
-                browser: { projectName: 'chromium', browserName: 'chromium' },
-              },
-            ],
+            testCases: [{ type: 'begin', ...attempt, startedAt: Date.now() - 9_000 }],
           },
         });
         closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 0);
@@ -7192,7 +7190,20 @@ const SCENES = [
             }),
           ]);
         sending = setInterval(send, 400);
+        // The stop as a reporter says it with the live view on: its worker at once, its run's stream since when.
         await post({ type: 'stop', stop: { reason: 'pause', call, test } });
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'test-stopped',
+                ...attempt,
+                stop: { ...call, reason: 'pause', bar: true, since: Date.now() - 2 * 60_000 - 15_000, pausedMs: 0 },
+              },
+            ],
+          },
+        });
         await goto(`/test-runs/${run.id}`);
         await page.getByTestId('live-paused').first().waitFor({ timeout: 60_000 });
         await page

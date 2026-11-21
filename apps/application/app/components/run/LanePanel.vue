@@ -6,8 +6,8 @@
  * watch of the run (`useLiveWatch`), which **Watch all** shares; it opens on the worker's latest tile when it came
  * within `TILE_OPEN_MS`. The worker also sends the call its test is in as Playwright logs it (in a CI run from its call
  * stream, in a shared run from its in-process instrumentation, the call alone for a browser it connected to): the
- * log's last lines beside the image, how long the call has run and the elements its locator matches (while the lane's
- * test stands at a stop, the stop in its row's words, `stop`, in their place), and over the image the first one
+ * log's last lines beside the image, how long the call has run and the elements its locator matches (while the test
+ * stands at a stop, the stop as its row says it, `stop`, in their place), and over the image the first one
  * outlined and the point an input action acts on; **Zoom to the element** crops the image around
  * that element, a click on the image zooms where it points.
  *
@@ -77,7 +77,7 @@ import {
   type InspectHeard,
 } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
-import { stopStoodMs, stopWords, type WatchedStop } from '~/utils/stop-words';
+import { stopStoodMs, stopWords, type ShownStop } from '~/utils/stop-words';
 
 const props = defineProps<{
   runId: number;
@@ -102,8 +102,8 @@ const props = defineProps<{
   live: LiveWatchHandle;
   /** Why **Follow what needs attention** moved the view here, while it shows that lane. */
   movedWhy?: string | null;
-  /** The stop the lane's test stands at (`watchedStop`), which the view says in its row's words; null for none. */
-  stop?: WatchedStop | null;
+  /** The stop the worker's test stands at (`watchedStop`), which the view says as its row does; null for none. */
+  stop?: ShownStop | null;
 }>();
 const open = defineModel<boolean>('open', { required: true });
 /** **Follow what needs attention**: the page moves the view to a lane whose test failed, got stuck or stopped. */
@@ -463,7 +463,7 @@ watch(
     if (isOpen) {
       connect();
       clock ??= setInterval(() => {
-        if ((log.value?.status === 'running' || props.stop?.since) && !ended.value) now.value = Date.now();
+        if (log.value?.status === 'running' && !ended.value) now.value = Date.now();
       }, 500);
     } else {
       disconnect();
@@ -539,10 +539,12 @@ const callMs = computed(() => {
   if (!shown) return 0;
   return shown.status === 'running' ? shown.ms + Math.max(0, now.value - logAt.value) : shown.ms;
 });
-/** The lane's stop, in its row's words, and for how long once it stood a while; null while its test goes on. */
+/** The clock the rows' stops read too, so the panel's time of a stop turns over with its row's. */
+const stopsNow = useStopClock();
+/** The test's stop, in its row's words, and for how long once it stood a while; null while the test goes on. */
 const stopLine = computed(() => {
   if (!props.stop) return null;
-  const stood = stopStoodMs(props.stop.since, now.value);
+  const stood = stopStoodMs(props.stop.since, stopsNow.value);
   return { words: stopWords(props.stop.reason), stood: stood === null ? null : formatLongDuration(stood) };
 });
 /** What the running call's locator matches, said when it explains a wait, and not while its test stands at a stop. */

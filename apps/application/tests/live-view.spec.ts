@@ -214,7 +214,7 @@ async function latestRunId(request: APIRequestContext, project: number): Promise
 
 type Workers = {
   enabled: boolean;
-  workers: Array<{ worker: number }>;
+  workers: Array<{ worker: number; paused?: unknown }>;
   viewers: number;
   received: Record<string, number>;
 };
@@ -941,27 +941,48 @@ test.describe('Live view of a run', () => {
       await expect(state).toContainText('Running for');
       await expect(state).not.toHaveAttribute('data-stop');
 
-      // A stop its reporter told, two minutes ago: the row and the panel say the same words and the same time.
-      const told = await request.post(`/api/test-runs/${run.runId}/events`, {
-        data: {
-          streamToken: run.streamToken,
-          testCases: [
-            {
-              type: 'test-stopped',
-              title,
-              location: 'tests/live.spec.ts:3:1',
-              workerIndex: 0,
-              parallelIndex: 0,
-              retries: 0,
-              stop: { ...call, reason: 'breakpoint', bar: true, since: Date.now() - 2 * 60_000, pausedMs: 0 },
-            },
-          ],
-        },
-      });
-      expect(told.ok(), await told.text()).toBeTruthy();
-      await expect(paused).toContainText('Stopped at a breakpoint');
-      await expect(paused).toContainText('for 2 minutes');
-      await expect(state).toHaveText('Stopped at a breakpoint · for 2 minutes');
+      // The reporter tells the same stop too, with when it began: the row and the panel say the same words and the
+      // same time, whichever of the two comes first.
+      const attempt = { title, location: 'tests/live.spec.ts:3:1', workerIndex: 0, parallelIndex: 0, retries: 0 };
+      const report = async (event: Record<string, unknown>) => {
+        const response = await request.post(`/api/test-runs/${run.runId}/events`, {
+          data: { streamToken: run.streamToken, testCases: [{ ...attempt, ...event }] },
+        });
+        expect(response.ok(), await response.text()).toBeTruthy();
+      };
+      // Past two minutes by more than the stop clock's tick, so both read 2 minutes on any tick of it.
+      const since = Date.now() - 2 * 60_000 - 15_000;
+      const tell = () =>
+        report({ type: 'test-stopped', stop: { ...call, reason: 'pause', bar: true, since, pausedMs: 0 } });
+      const resume = () => report({ type: 'test-resumed', pausedMs: 1_000 });
+      const both = async (what: string) => {
+        await expect(paused, what).toContainText('Paused');
+        await expect(paused, what).toContainText('for 2 minutes');
+        await expect(state, what).toHaveText('Paused · for 2 minutes');
+      };
+      const goneOn = async () => {
+        await expect(paused).toBeHidden({ timeout: 10_000 });
+        await expect(state).toContainText('Running for');
+      };
+
+      await post({ type: 'stop', stop });
+      await tell();
+      await both('the live view’s stop, then the told one');
+      await post({ type: 'stop', stop: null });
+      await resume();
+      await goneOn();
+
+      await tell();
+      await post({ type: 'stop', stop });
+      await both('the told stop, then the live view’s');
+      // The live view’s stop ends before the reporter tells the test went on: the told stop still stands.
+      await post({ type: 'stop', stop: null });
+      await expect.poll(async () => (await liveWorkers(request, run.runId)).workers[0]?.paused ?? null).toBeNull();
+      // The page hears it within a moment; nothing shows that it did, as the told stop still stands.
+      await page.waitForTimeout(2_000);
+      await both('the told stop, once the live view’s ended');
+      await resume();
+      await goneOn();
     } finally {
       await run.end();
     }
