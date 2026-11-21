@@ -34,6 +34,8 @@ const REF = 'ed-a9e47a9e';
 const TOKEN = 'run-agent-token-0123456789';
 const JWT = 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U';
 const requireHere = createRequire(import.meta.url);
+/** The title of the test's own click, as the runner names its step. */
+const PAY_CLICK = "Click getByRole('button', { name: 'Pay' })";
 
 const PAGE = `<!doctype html><meta charset="utf-8"><title>Shop</title>
 <h1>Shop</h1>
@@ -50,6 +52,7 @@ test('stopped for an agent', async ({ page }) => {
   await expect(page.locator('h1')).toBeVisible(); // bp
   await expect(page.locator('h1')).toHaveText('Clicked');
   await expect(page.locator('#coupon')).toHaveValue('WELCOME10');
+  await page.getByRole('button', { name: 'Pay' }).click();
 });
 `;
 
@@ -57,7 +60,7 @@ const RESULTS_REPORTER = `const fs = require('node:fs');
 module.exports = class {
   constructor(options) { this.file = options.outputFile; this.tests = []; }
   onTestEnd(test, result) {
-    const step = (s) => ({ title: s.title, steps: s.steps.map(step) });
+    const step = (s) => ({ title: s.title, line: s.location ? s.location.line : null, steps: s.steps.map(step) });
     this.tests.push({ title: test.title, status: result.status, errors: result.errors.map((e) => e.message), steps: result.steps.map(step) });
   }
   onStdOut(chunk) { process.stdout.write(chunk); }
@@ -82,7 +85,7 @@ let tests: Array<{
   title: string;
   status: string;
   errors: string[];
-  steps: Array<{ title: string; steps: unknown[] }>;
+  steps: Array<{ title: string; line: number | null; steps: unknown[] }>;
 }> = [];
 /** What the fake editor read at the stop, in order. */
 const read: {
@@ -335,7 +338,8 @@ describe('a stopped page, for an agent', () => {
     expect(read.stale).toMatchObject({ ok: false, element: null });
     expect(read.stale!.message).toContain('No element of the stopped page has the ref e999');
     expect(read.refused).toMatchObject({ ok: false, message: 'The test went on.' });
-    const steps = titles(tests[0]!.steps);
+    // The test's own click is its step; none of the agent's is.
+    const steps = titles(tests[0]!.steps.filter((s) => !(s.title.startsWith('Click') && s.line === 7)));
     expect(
       steps.some((t) => /^(Click|Fill|Aria snapshot|Bind|Get by ref|Piwi capture)/i.test(t)),
       steps.join('\n'),
@@ -378,6 +382,9 @@ describe('a stopped page, for an agent', () => {
       place: { file: 'tests/agent.spec.cjs', line: 3 },
     });
     expect(calls.some((c) => c.place?.line === 5)).toBe(true);
+    // A locator call is named as the runner names its step, never by Playwright's API name and internal selector.
+    expect(calls.find((c) => c.title === PAY_CLICK)).toMatchObject({ ok: true, place: { line: 7 } });
+    expect(calls.map((c) => c.title).join('\n')).not.toMatch(/locator\.click|internal:/);
     expect(calls.every((c) => !/Piwi capture/.test(c.title))).toBe(true);
     expect(told).toContainEqual({ kind: 'navigation', url: `${server.url}/shop` });
     expect(told).toContainEqual({ kind: 'console', level: 'error', text: 'the page logs an error' });
