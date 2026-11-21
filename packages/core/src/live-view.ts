@@ -10,7 +10,9 @@
  * posts too the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
  * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
  * view never steers the run, with one exception: a CI worker of a project that holds a failing CI test for its
- * controllers (`hold`) waits at a failure while a controller watches it, and ends that wait on **Let it go** (`let-go`).
+ * controllers (`hold`) waits at a failure while a controller watches it, and ends that wait on **Let it go** (`let-go`);
+ * one of a project that lets its controllers pause a CI test too (`hold`'s `pause`) pauses its test at its next call,
+ * resumes it and ends it as they ask (`pause`, `resume`, `end-test`).
  * Each message is JSON, checked field by field (`parseInstanceToWorker`, `readWorkerToInstance`).
  *
  * An instance that says on the stream what its viewers ask of the images (`view`: the largest size they show one at,
@@ -265,7 +267,8 @@ export function readLiveTestTitle(value: unknown): string | null {
 
 /**
  * A stop of a worker's test: why, the call it holds, and the test's title, which tells its row from the one before. A
- * failed CI test held for its controllers (`held`) says when its hold ends (`until`, epoch ms).
+ * failed CI test held for its controllers (`held`), and a CI test they paused (`pause`), say when the wait ends
+ * (`until`, epoch ms).
  */
 export interface LiveStop {
   reason: StopReason | 'held' | 'other';
@@ -276,10 +279,24 @@ export interface LiveStop {
 
 /**
  * The query parameter of a worker's stream that lists what its reporter can do on it, comma-separated: `hold`
- * (`LIVE_HOLD_FEATURE`), a CI worker that holds a failing test for its controllers and takes **Let it go**.
+ * (`LIVE_HOLD_FEATURE`), a CI worker that holds a failing test for its controllers and takes **Let it go**; `pause`
+ * (`LIVE_PAUSE_FEATURE`), one that pauses its test at its next call for them, and resumes and ends it.
  */
 export const LIVE_VIEW_FEATURES_PARAM = 'features';
 export const LIVE_HOLD_FEATURE = 'hold';
+export const LIVE_PAUSE_FEATURE = 'pause';
+
+/**
+ * What a controller asks of a CI test on the instance (`POST …/live-view/control`): **Pause** at its next call,
+ * **Resume** and **End the test** while it is paused. The worker hears them as `pause`, `resume` and `end-test`.
+ */
+export const LIVE_CONTROL_COMMANDS = ['pause', 'resume', 'end'] as const;
+export type LiveControlCommand = (typeof LIVE_CONTROL_COMMANDS)[number];
+
+/** Whether `value` is one of the commands a controller asks of a CI test. */
+export function isLiveControlCommand(value: unknown): value is LiveControlCommand {
+  return typeof value === 'string' && (LIVE_CONTROL_COMMANDS as readonly string[]).includes(value);
+}
 
 /** How long a failed CI test is held for its controllers, in minutes: a project's setting, within these bounds. */
 export const MIN_LIVE_HOLD_MINUTES = 1;
@@ -387,7 +404,9 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * (`run:control`), absent otherwise. To a worker that said it can hold (`LIVE_HOLD_FEATURE`), the instance says as the
  * stream opens, and as a project admin changes it, how long the project holds a failing CI test for its controllers
  * (`hold`, in ms, `MAX_LIVE_HOLD_MINUTES` at most, null while the setting is off), and asks it to end such a hold
- * (`let-go`, **Let it go**).
+ * (`let-go`, **Let it go**). To a worker that said it can pause too (`LIVE_PAUSE_FEATURE`), `hold` says whether the
+ * project lets its controllers pause a CI test (`pause`, absent while either setting is off), and the instance asks it
+ * to pause its test at its next call (`pause`), and, paused, to go on (`resume`) or end the test (`end-test`).
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
@@ -404,8 +423,11 @@ export type InstanceToWorker =
     }
   | { type: 'resend' }
   | { type: 'text' }
-  | { type: 'hold'; ms: number | null }
-  | { type: 'let-go' };
+  | { type: 'hold'; ms: number | null; pause?: true }
+  | { type: 'let-go' }
+  | { type: 'pause' }
+  | { type: 'resume' }
+  | { type: 'end-test' };
 
 /**
  * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
@@ -648,7 +670,9 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
         ? (value.stop.reason as LiveStop['reason'])
         : 'other';
       const stop: LiveStop = { reason, call, test: readLiveTestTitle(value.stop.test) };
-      if (reason === 'held' && isEpochMs(value.stop.until)) stop.until = Math.round(value.stop.until);
+      if ((reason === 'held' || reason === 'pause') && isEpochMs(value.stop.until)) {
+        stop.until = Math.round(value.stop.until);
+      }
       return { type: 'stop', ...id, stop };
     }
     case 'call-log': {
@@ -704,9 +728,12 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   if (value.type === 'resend') return { type: 'resend' };
   if (value.type === 'text') return { type: 'text' };
   if (value.type === 'let-go') return { type: 'let-go' };
+  if (value.type === 'pause') return { type: 'pause' };
+  if (value.type === 'resume') return { type: 'resume' };
+  if (value.type === 'end-test') return { type: 'end-test' };
   if (value.type === 'hold') {
     const ms = isInt(value.ms, 1, MAX_LIVE_HOLD_MINUTES * 60_000) ? value.ms : null;
-    return { type: 'hold', ms };
+    return ms !== null && value.pause === true ? { type: 'hold', ms, pause: true } : { type: 'hold', ms };
   }
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };

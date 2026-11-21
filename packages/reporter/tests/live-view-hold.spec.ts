@@ -250,9 +250,9 @@ afterAll(() => {
 });
 
 describe('holding a failing CI test for its controllers', () => {
-  it('says on each stream that the worker can hold', () => {
+  it('says on each stream that the worker can hold and pause', () => {
     expect(streamUrls.length, run.output).toBeGreaterThan(0);
-    for (const url of streamUrls) expect(new URL(url, 'http://x').searchParams.get('features')).toBe('hold');
+    for (const url of streamUrls) expect(new URL(url, 'http://x').searchParams.get('features')).toBe('hold,pause');
   });
 
   it('leaves each test’s result as it was: failed, with its own error', () => {

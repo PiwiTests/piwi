@@ -77,7 +77,9 @@ responsibilities.
      run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. In a CI run, a
      test that fails while its project holds failing tests (`hold` on the stream) and a controller watches its worker
      in full waits at its failure, its timeout held, until the hold's length, **Let it go** or no controller watching
-     (`tests/live-view-hold.spec.ts`). Four limits hold:
+     (`tests/live-view-hold.spec.ts`); with the project's pause setting on too (`hold`'s `pause`), a controller's
+     **Pause** on that stream stops the test at its next call through the local run's pause, until **Resume**, **End
+     the test** or a hold's ends (`tests/live-view-pause.spec.ts`). Four limits hold:
      never a frame while nobody watches, never stored, nothing from a run outside CI unless it is shared; each frame
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and
