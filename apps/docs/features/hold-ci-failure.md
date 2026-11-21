@@ -82,7 +82,7 @@ The hold ends at the first of:
 - the longest hold the project set. A new length set during a hold applies to it: the hold ends that long after it
   began, at once when that is past;
 - nobody with `run:control` watching the lane in full any more: the last one closed the panel or moved to another
-  lane;
+  lane. A Runs window hidden or minimized lets go of its watch, so it stops counting;
 - the project's setting turned off, or the run's live view ending (the run ended or interrupted, the project's live
   view turned off).
 
