@@ -12,9 +12,10 @@
  * test of it waits at a stop, and how long it ran. On its right, the run chosen there (`selected`, else a
  * run waiting at a stop, else the newest running, else the newest): its command, **Stop**, which gives way to **Force
  * stop** while it winds down (`DesktopRunStopButton`), or **Run again** and **More actions** (**Copy the command**,
- * **Remove from the list**) once it ended, its separate output window, its Hold failures, its links, its workers live
+ * **Remove from the list**) once it ended, its separate window, its Hold failures, its links, its workers live
  * (`DesktopRunSession`), what it failed on (`DesktopLocalRunResults`) and its output (`DesktopRunOutputPane`). A run
- * that starts is shown, but one a result's Run again starts, so the run it came from stays (`keep-open`).
+ * that starts is shown, but one a result's Run again starts, so the run it came from stays (`keep-open`). A run shown
+ * in a separate window keeps its command, its actions and its links here, and says where the rest is.
  *
  * The workers come live from the bundled server, the hub of the runs the shell starts (`useDesktopRunHub`): the test
  * each one runs and, at a stop, the page, the controls and the code a stop can make, to copy (`DesktopRunCopyList`).
@@ -29,7 +30,7 @@
  * run says where its tests wait, in that editor, read only (`DesktopEditorRunNote`), with no Hold failures switch. A
  * run started for an environment names it with the command the shell runs, and says when the label its Piwi run
  * reported resolves to another environment; its Run again reads the environment again and, for a protected one, asks
- * the person to confirm again (`DesktopEnvironmentQuestion`). A run's output can move to a separate window of the app
+ * the person to confirm again (`DesktopEnvironmentQuestion`, mounted with the app). A run can move to a separate window of the app, whole
  * (`separate`, `DesktopRunOutputWindows`). Opening the tray marks every run that ended as seen (`markSeen`), and `g`
  * then `t` opens or closes it.
  */
@@ -41,6 +42,7 @@ import {
   localRunDetail,
   localRunDuration,
   localRunEnvironmentNote,
+  localRunRerunnable,
   localRunTitle,
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
@@ -324,13 +326,13 @@ onMounted(() => void showAsked(shownWorker.value));
 
 // ── A run's actions ───────────────────────────────────────────────────────────────────────────────────────────────
 
-/** What the run's window button does: open its output in a separate window, or bring it back here. */
+/** What the run's window button does: show the run in a separate window, or bring it back here. */
 function separateLabel(run: LocalRun): string {
-  return separate.value[run.key] ? 'Show the output here' : 'Open the output in a separate window';
+  return separate.value[run.key] ? 'Show the run here' : 'Open the run in a separate window';
 }
 
 function toggleSeparate(run: LocalRun) {
-  separate.value = { ...separate.value, [run.key]: !separate.value[run.key] };
+  store.separateRun(run.key, !separate.value[run.key]);
 }
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
@@ -350,11 +352,6 @@ async function openFailure(run: LocalRun) {
 async function runAgain(run: LocalRun) {
   const next = await store.rerun(run);
   if (next) select(next.key);
-}
-
-/** Whether a run offers Run again: one it can start as it ran. */
-function rerunnable(run: LocalRun): boolean {
-  return (run.kind !== 'flake' || !!run.flake) && run.kind !== 'request';
 }
 
 const { copy } = useCopy();
@@ -408,7 +405,6 @@ const groups = computed(() => [
 
 <template>
   <Teleport to="body">
-    <DesktopEnvironmentQuestion v-if="available" />
     <!-- Outside the tray, so a stop that opens it is read out from a region already there. -->
     <p v-if="available" class="sr-only" aria-live="polite">{{ announcement }}</p>
   </Teleport>
@@ -496,7 +492,10 @@ const groups = computed(() => [
               @stop="store.stopRun(run)"
               @force="store.stopRun(run)"
             />
-            <UTooltip v-else-if="rerunnable(run)" :text="`Run again: ${localRunTitle(run)}, with the same options`">
+            <UTooltip
+              v-else-if="localRunRerunnable(run)"
+              :text="`Run again: ${localRunTitle(run)}, with the same options`"
+            >
               <UButton
                 size="xs"
                 color="neutral"
@@ -525,7 +524,7 @@ const groups = computed(() => [
           {{ localRunEnvironmentNote(run) }}
         </p>
         <DesktopRunHoldSwitch
-          v-if="run.status === 'running' && !editorRunsOf(run).length"
+          v-if="run.status === 'running' && !editorRunsOf(run).length && !separate[run.key]"
           :run="run"
           :described-id="`desktop-run-hold-${run.key}`"
           data-shot="desktop-run-hold"
@@ -566,14 +565,16 @@ const groups = computed(() => [
         </div>
         <DesktopEditorRunNote v-if="editorRunsOf(run).length" :runs="editorRunsOf(run)" />
         <DesktopRunSession
-          v-for="session in sessionsOf(run)"
+          v-for="session in separate[run.key] ? [] : sessionsOf(run)"
           :key="session.ref"
           :session="session"
           @announce="announce"
         />
-        <DesktopLocalRunResults :run="run" @keep-open="keepRunShown(run)" />
-        <p v-if="separate[run.key]" class="text-xs text-muted">The output is in a separate window.</p>
-        <DesktopRunOutputPane v-else :lines="run.lines" />
+        <p v-if="separate[run.key]" class="text-xs text-muted">The run is in a separate window.</p>
+        <template v-else>
+          <DesktopLocalRunResults :run="run" @keep-open="keepRunShown(run)" />
+          <DesktopRunOutputPane :lines="run.lines" />
+        </template>
       </article>
       <DesktopRunSession v-if="shownSession" :session="shownSession" named @announce="announce" />
     </DesktopRunsPanel>
