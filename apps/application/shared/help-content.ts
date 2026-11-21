@@ -328,7 +328,7 @@ export const HELP_TOPICS = {
   },
   'reports.share-link': {
     title: 'Share link per report',
-    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email, the Slack and Microsoft Teams messages and the webhook’s body carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack and Teams also show the trend as an image through it. Needs share links enabled on the instance.',
     doc: 'features/share-links#report-share-links',
     envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
   },
@@ -387,7 +387,7 @@ export const HELP_TOPICS = {
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
     text: 'Backend calls captured during tests, aggregated across all projects by route: p50/p90 latency, error rate, and how many projects hit each one — a shared endpoint regressing shows up here first.',
-    doc: 'reference/analytics-widgets#detail',
+    doc: 'features/slow-tests#network-and-web-vitals',
   },
 
   // ── Projects list ─────────────────────────────────────────────────────
@@ -895,7 +895,7 @@ export const HELP_TOPICS = {
     text: [
       'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
       '',
-      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core or Nitro), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
+      '- **Server** — files of a backend built for coverage with Piwi’s instrumentation (ASP.NET Core or Nitro), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
       '- **Browser** — the application files whose functions ran in Chromium, by path, or with the functions that ran when the reporter recorded them; such a file opens to its source too.',
       '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
       '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
@@ -1435,9 +1435,9 @@ export const HELP_TOPICS = {
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 of the failure clusters that failed in it and have no diagnosis yet are diagnosed automatically (`PIWI_AI_AUTO_DIAGNOSE_MAX` changes the cap) — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
+    text: 'When a run finishes, up to 3 of the failure clusters that failed in it and have no completed diagnosis yet are diagnosed automatically (`PIWI_AI_AUTO_DIAGNOSE_MAX` changes the cap) — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
-    envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
+    envVars: ['PIWI_AI_AUTO_DIAGNOSE', 'PIWI_AI_AUTO_DIAGNOSE_MAX'],
   },
   'settings.ai-notifications': {
     title: 'Diagnosis notifications',

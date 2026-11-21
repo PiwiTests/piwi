@@ -39,41 +39,41 @@ the Capabilities page's two strings (items 1 and 2 of [What the app could change
   - **#1423**: the editor listings (T8, #1410), one name per editor action (part of #1415), the editor commands, theme
     colors, hidden messages and desktop tray described (#1407), and CI runs in your editor on a page of its own (the
     second half of #1406).
-  - **#1425**: C3.16 and D17 settled (#1409), the failure inbox on a page of its own
-    (the first half of #1406), the glossary's *Words kept to one meaning* with the pages where a second sense misled
-    corrected (#1412), Piwi Picker's popup keys and its Replay a bug report row (the rest of #1407), G2, G3, G7 and G8
-    widened (#1417), the blog post, the integrations' READMEs and a catalog place corrected against the code, and the
-    dashboard's docs screenshots captured again (#1420).
+  - **#1425**: C3.16 and D17 settled (#1409), the failure inbox on a page of its own (the first half of #1406), the
+    glossary's *Words kept to one meaning* with the pages where a second sense misled corrected (#1412), Piwi Picker's
+    popup keys and its Replay a bug report row (the rest of #1407), G2, G3, G7 and G8 widened (#1417), the blog post,
+    the integrations' READMEs and a catalog place corrected against the code, and the dashboard's docs screenshots
+    captured again (#1420).
   - **#1424**: what the app could change, items 3 to 13 (#1414); the UI overview's missing pages and tabs, and S16
-    settled (#1408); "failure cause" read as "failure cluster" wherever a user reads it (the analytics part of
-    #1412); Settings paths in every form resolved by the docs check (G1 of #1417).
-  - **#1428**: the generated reference pages read against the code, their registry descriptions corrected, the
-    schedule copy's "Reports page" read as the Quality reports page, and `jetbrains-heal.png` captured again with the
-    quick fixes' current names (the rest of #1420).
+    settled (#1408); "failure cause" read as "failure cluster" wherever a user reads it (the analytics part of #1412);
+    Settings paths in every form resolved by the docs check (G1 of #1417).
+  - **#1428**: the generated reference pages read against the code, their registry descriptions corrected, the schedule
+    copy's "Reports page" read as the Quality reports page, and `jetbrains-heal.png` captured again with the quick
+    fixes' current names (the rest of #1420 but the in-app help, which the last item below reads in full).
 - **Beside the follow-ups**: #1427 made writing and debugging tests Piwi's fifth job, a decision of
   [`docs-layout-audit.md`](docs-layout-audit.md) (#1413) that `docs-claims.test.ts` now holds every "N jobs" to, and
-  #1429 stopped the pull-request performance report flagging server-render times on pages a change does not touch,
-  which these pull requests kept running into (#1426).
-- **The last item, the in-app help read in full**: the pull request that moves this record to `adr/` read every topic
-  of `shared/help-content.ts` against the code and corrected the eight that disagreed (auto-diagnose's clusters and
-  cap, report schedules on Microsoft Teams, the Flaky view's name, server coverage from Nitro, the inbox's Needs
-  ticket queue and `c` key, and the docs pages that the two capability hints and the Slow endpoints widget link to). The guide
-  anchors' sentences were searched for the places and numbers they name, and the authored guides' labels are held to
-  the source by `authored-guides.test.ts`.
+  #1429 stopped the pull-request performance report flagging server-render times on pages a change does not touch, which
+  these pull requests kept running into (#1426).
+- **The last item, the in-app help read in full**: the pull request that moves this record to `adr/` read every topic of
+  `shared/help-content.ts` against the code and corrected the nine that disagreed (auto-diagnose's clusters and cap,
+  report schedules and their share links on Microsoft Teams and webhooks, the Flaky view's name, server coverage from
+  Nitro, the inbox's Needs ticket queue and `c` key, and the docs pages that the two capability hints and the Slow
+  endpoints widget link to). The guide anchors' sentences were searched for the places and numbers they name, and the
+  authored guides' labels are held to the source by `authored-guides.test.ts`.
 
 What was left out is under [Left for later](#left-for-later).
 
-**Summary.** The pages are careful one by one and unreliable as a set. Five readers found 70 places where two
-passages disagree, about 60 where a page or the catalog disagrees with the app or its code, 58 explanations held in
-more than one place and 49 terms used two ways. Almost none is a wrong idea; nearly all are a second copy that stayed behind when the first
-moved. Four patterns produce them. Rules with no owning page (the CI gate, which runs are left out of pull-request
+**Summary.** The pages are careful one by one and unreliable as a set. Five readers found 70 places where two passages
+disagree, about 60 where a page or the catalog disagrees with the app or its code, 58 explanations held in more than one
+place and 49 terms used two ways. Almost none is a wrong idea; nearly all are a second copy that stayed behind when the
+first moved. Four patterns produce them. Rules with no owning page (the CI gate, which runs are left out of pull-request
 feedback, when a failure is held, why a test stopped) are restated on six to nine pages each. `concepts.md`, the
 vocabulary page, also carries the rules, so every rule has two homes and the fingerprint, the cluster states and the
-live-view limits have each drifted between them. Recipes re-explain the feature they should link. And the places of
-the app are written by hand in three registries of their own: the UI overview, the catalog's `where` hints and the
+live-view limits have each drifted between them. Recipes re-explain the feature they should link. And the places of the
+app are written by hand in three registries of their own: the UI overview, the catalog's `where` hints and the
 Capabilities page's own copy, all three naming tabs the app does not have. The app has matching seams: its command
-palette lists five of a project's seven tabs, four project pages sit behind one unlabeled menu, and the source
-control token is set on the AI page.
+palette lists five of a project's seven tabs, four project pages sit behind one unlabeled menu, and the source control
+token is set on the AI page.
 
 **Method.** Every hand-written page was read in full, in five clusters, each by a separate reader that kept a ledger
 of the claims that can conflict (numbers, versions, what needs what, names, defaults) and settled each disagreement
