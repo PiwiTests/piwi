@@ -155,6 +155,9 @@ responsibilities.
   (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
   `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
   `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A text cut before the attempt's known secrets are hidden in it is cut with `cutText`** (`@piwitests/core/mask`),
+  never `.slice`: its mark makes `hideKnownValues` hide the start of a value the cut left at its end (the call log's
+  title, lines and error, `layersTitleOf`; `tests/lane-layers.spec.ts`).
 - **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
   Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
   screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.
