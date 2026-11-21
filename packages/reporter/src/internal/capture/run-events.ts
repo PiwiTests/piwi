@@ -133,14 +133,18 @@ export function watchCalls(playwright: unknown): boolean {
       if (start === undefined) return;
       begun.delete(zone);
       if (!runEventsWanted()) return;
-      tellEvent({
-        kind: 'call',
-        title: callTitle(zone),
-        place: callPlace(zone.frames),
-        ok: zone.error === undefined,
-        error: zone.error === undefined ? null : errorText(zone.error),
-        ms: Date.now() - start,
-      });
+      try {
+        tellEvent({
+          kind: 'call',
+          title: callTitle(zone),
+          place: callPlace(zone.frames),
+          ok: zone.error === undefined,
+          error: zone.error === undefined ? null : errorText(zone.error),
+          ms: Date.now() - start,
+        });
+      } catch {
+        /* a call's record never affects the test */
+      }
     },
   });
   return true;
