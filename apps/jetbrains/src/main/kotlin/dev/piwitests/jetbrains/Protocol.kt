@@ -509,7 +509,10 @@ data class LiveRun(
     val ci: Boolean = false,
     /** The branch it runs on, as it reported it; null for a run that names none. */
     val branch: String? = null,
-    /** Where a run the IDE did not start comes from, for the tooltip (`from the desktop app`); null for the IDE's own and a CI run. */
+    /**
+     * Where a run the IDE did not start comes from, by its origin, for the tooltip (`from the desktop app`); null for the
+     * IDE's own, a CI run, an imported one and one that names no origin.
+     */
     val from: String? = null,
     /** Who started an own run when a person did not (`Started by Claude Code`); null for a person's run. */
     val label: String? = null,

@@ -134,7 +134,7 @@ const FROM_WORDS: Partial<Record<RunOriginKind, string>> = {
   desktop: 'from the desktop app',
   request: 'asked for from the dashboard',
   preflight: 'a preflight',
-  bug: 'a bug report',
+  bug: "a bug report's test",
   'flake-lab': 'a Flake Lab run',
   probe: 'a Flake Lab probe',
   bisect: 'a bisect step',

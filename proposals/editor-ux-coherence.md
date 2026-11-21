@@ -499,8 +499,6 @@ order, and a first `editor/context` group while stopped; in JetBrains a register
 `EditorPopupMenu`, `RunMenu` and the toolbar of a `RunContentDescriptor` the plugin builds. Built with M14; L3 decides
 the debug session. ([L3](#l3))
 
-### 8.5 What the study's model brings
-
 ### 8.7 Words deferred to the study
 
 ## 9. Rider
