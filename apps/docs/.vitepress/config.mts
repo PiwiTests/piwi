@@ -20,11 +20,30 @@ const websiteJsonLd: HeadConfig = [
   }),
 ]
 
+// Describes Piwi itself to search engines: a developer tool that costs nothing.
+const softwareJsonLd: HeadConfig = [
+  'script',
+  { type: 'application/ld+json' },
+  JSON.stringify({
+    '@context': 'https://schema.org',
+    '@type': 'SoftwareApplication',
+    name: 'Piwi Dashboard',
+    alternateName: 'Piwi',
+    url: `${siteUrl}/`,
+    image: ogImage,
+    applicationCategory: 'DeveloperApplication',
+    operatingSystem: 'Linux, macOS, Windows',
+    offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD' },
+    license: `${siteUrl}/guide/license.html`,
+    sameAs: ['https://github.com/PiwiTests/piwi', 'https://www.npmjs.com/package/@piwitests/server'],
+  }),
+]
+
 export default defineConfig({
   title: 'Piwi Dashboard',
   titleTemplate: TITLE_TEMPLATE,
   description:
-    'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+    'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Free, self-hosted, zero telemetry.',
   base: '/',
   // AGENTS.md is the agent guide for this directory, and CLAUDE.md the file
   // that loads it for Claude Code; neither is a page of the site: the guide
@@ -43,7 +62,7 @@ export default defineConfig({
     if (pageData.relativePath === 'index.md') pageData.frontmatter.features = landingCards()
     const { description, head } = pageMeta(pageData, siteConfig, siteUrl)
     pageData.frontmatter.head = [...(pageData.frontmatter.head ?? []), ...head]
-    if (pageData.frontmatter.layout === 'home') pageData.frontmatter.head.push(websiteJsonLd)
+    if (pageData.frontmatter.layout === 'home') pageData.frontmatter.head.push(websiteJsonLd, softwareJsonLd)
     return description ? { description } : undefined
   },
   // VitePress writes the page description into the HTML unescaped; as a head
@@ -81,7 +100,7 @@ export default defineConfig({
       {
         property: 'og:description',
         content:
-          'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+          'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Free, self-hosted, zero telemetry.',
       },
     ],
     ['meta', { property: 'og:image', content: ogImage }],

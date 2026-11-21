@@ -174,8 +174,8 @@ Piwi is not a product being sold. Copy is informative, specific and honest, neve
 [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md#voice)). The project describes itself the same way everywhere:
 
 > **Your Playwright results, kept and explained.** CI throws away every report it makes. Piwi keeps them, then groups
-> the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted,
-> zero telemetry.
+> the failures by root cause, scores the flaky tests, and finds the locator you should have used. Free,
+> self-hosted, zero telemetry.
 
 Eight surfaces carry it; update them **in the same commit**: `README.md` (subtitle), `apps/docs/index.md` (hero `text`
 and `tagline`), `apps/docs/.vitepress/config.mts` (`description` and the `og:` title and description), `DOCKER_HUB.md`

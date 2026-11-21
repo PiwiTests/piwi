@@ -299,6 +299,8 @@ and the eight surfaces that must carry it are in the
   platform". Name a number, a behavior, or a limit.
 - **State limits plainly.** Playwright-only, pre-1.0, and "not the right tool if…" belong in the README and on the
   landing page. Trust is the point, not a caveat to bury.
+- **Piwi is "free", never "open source".** FSL-1.1-MIT is fair source, not an OSI license: only the MIT parts
+  (the reporter, `core`, `picker-dom`, `integrations/`) may be called open source.
 
 ## The home hero's illustration
 

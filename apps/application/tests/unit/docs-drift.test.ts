@@ -95,7 +95,7 @@ const POSITIONING = [
   'groups the failures by root cause',
   'scores the flaky tests',
   'finds the locator you should have used',
-  'Self-hosted, zero telemetry',
+  'Free, self-hosted, zero telemetry',
 ];
 
 const POSITIONING_SURFACES = [
