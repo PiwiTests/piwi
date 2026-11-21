@@ -314,15 +314,16 @@ function liveCount(live: LiveRun): string {
 }
 
 /**
- * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
- * Claude Code) is running: …` for one a person did not start.
+ * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, `Run #124 (Started by Claude
+ * Code) is running: …` for one a person did not start, and another's where it comes from: `Run #131 on feature-x (from
+ * the desktop app) is running: …`.
  */
 function liveLine(live: LiveRun): string {
   const run = live.own
     ? live.label
       ? `Run #${live.runId} (${live.label})`
       : `Your run #${live.runId}`
-    : othersRun(live, 'Run');
+    : `${othersRun(live, 'Run')}${live.from ? ` (${live.from})` : ''}`;
   return `${run} is running: ${liveCount(live)}`;
 }
 

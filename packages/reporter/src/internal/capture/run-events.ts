@@ -8,10 +8,11 @@ import {
   PENDING_REQUEST_MS,
   type PageEvent,
 } from '@piwitests/core/live-layers';
-import { hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
+import { hideKnownValues, hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
 import { MAX_POSITION_TITLE, MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import type { ApiCall } from './api-requests.js';
-import { pageEventsWanted, tellPageEvent } from './lane-layers.js';
+import { knownSecrets, layersTitleOf, pageEventsWanted, tellPageEvent } from './lane-layers.js';
+import { zoneStepId } from './live-call-log.js';
 import { callSitePath } from './locator-healing.js';
 import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run-channel.js';
 
@@ -26,21 +27,23 @@ import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run
  * as long again passes, then once as it ends), the errors and warnings a backend logged on a response
  * (`X-Piwi-Logs`, read as the capture fixtures read it, `readServerLogs`), and each call the test makes through an API
  * request context (`tellApiCall`). To the editor while it asks (`positions`, which it asks to mark the running line),
- * where each call of the test begins in the user's code, from the same listener (`tellPosition`). Every text has its
- * credentials hidden (`@piwitests/core/mask`). Nothing is sent, nor a request followed, while nobody follows the run or
+ * where each call of the test begins in the user's code, from the same listener (`tellPosition`). A call is named as
+ * the runner names its step, as a live view's call log names it (`callTitle`). Every text has its credentials hidden
+ * (`@piwitests/core/mask`). Nothing is sent, nor a request followed, while nobody follows the run or
  * asks for positions, nor between tests.
  */
 
-/** The parts of Playwright's API-call zone read here (internal). */
+/**
+ * The parts of Playwright's API-call zone read here (internal): the runner writes the id of the call's step on it
+ * (`callId`, `stepId` before Playwright 1.64) as its own listener hears the call begin, after this module's.
+ */
 interface ApiZone {
   apiName?: string;
   title?: string;
   frames?: Array<{ file?: string; line?: number; column?: number }>;
   error?: unknown;
-}
-
-interface ApiChannel {
-  params?: { selector?: unknown };
+  callId?: unknown;
+  stepId?: unknown;
 }
 
 interface Instrumentation {
@@ -80,13 +83,14 @@ export function callPlace(
 }
 
 /**
- * A call's title: Playwright's own, else its name and the selector it acts on, without the text a fill, a typing or an
- * insert types (`hideTypedText`) and its credentials hidden.
+ * A call's title: the one the runner gives its step (`Click getByRole('link', { name: 'Cart' })`, `layersTitleOf`),
+ * else Playwright's own, else its name, as a live view's call log names a call; without the text a fill, a typing or an
+ * insert types (`hideTypedText`), the values the attempt knows are secrets (`knownSecrets`) and its credentials hidden.
  */
-export function callTitle(zone: ApiZone, channel: ApiChannel | undefined): string {
-  const selector = typeof channel?.params?.selector === 'string' ? ` ${channel.params.selector}` : '';
-  const title = zone.title || `${zone.apiName || 'call'}${selector}`;
-  return hideSecretsInText(hideTypedText(title)).slice(0, MAX_POSITION_TITLE);
+export function callTitle(zone: ApiZone): string {
+  const id = zoneStepId(zone);
+  const title = (id ? layersTitleOf(id) : null) || zone.title || zone.apiName || 'call';
+  return hideKnownValues(hideSecretsInText(hideTypedText(title)), knownSecrets()).slice(0, MAX_POSITION_TITLE);
 }
 
 /** The first lines of a call's error, its credentials hidden. */
@@ -95,39 +99,52 @@ function errorText(error: unknown): string {
   return hideSecretsInText(message.split('\n').slice(0, 4).join('\n')).slice(0, MAX_RUN_EVENT_TEXT);
 }
 
+/** Tell the editor where a call began, named by its title; a call's record never affects the test. */
+function tellPositionOf(zone: ApiZone, place: Place): void {
+  try {
+    tellPosition(callTitle(zone), place);
+  } catch {
+    /* a call's record never affects the test */
+  }
+}
+
 /**
  * Hear the calls of the worker's Playwright: where each begins in the user's code, told while the editor asks
- * (`positions`), and each told as it ends while an agent follows the run. False when the instrumentation is missing.
+ * (`positions`), and each told as it ends while an agent follows the run. A call's position is told once the listeners
+ * that heard it begin have run, the runner's among them, so its step names it. False when the instrumentation is
+ * missing.
  */
 export function watchCalls(playwright: unknown): boolean {
   const instrumentation = (playwright as { _instrumentation?: Instrumentation } | null)?._instrumentation;
   if (!playwright || heard.has(playwright as object)) return true;
   if (!instrumentation || typeof instrumentation.addListener !== 'function') return false;
   heard.add(playwright as object);
-  const titles = new WeakMap<object, string>();
   instrumentation.addListener({
-    onApiCallBegin: (zone: ApiZone, channel?: ApiChannel) => {
+    onApiCallBegin: (zone: ApiZone) => {
       if (positionsWanted()) {
         const place = callPlace(zone.frames);
-        if (place) tellPosition(callTitle(zone, channel), place);
+        if (place) queueMicrotask(() => tellPositionOf(zone, place));
       }
       if (!runEventsWanted()) return;
       begun.set(zone, Date.now());
-      titles.set(zone, callTitle(zone, channel));
     },
     onApiCallEnd: (zone: ApiZone) => {
       const start = begun.get(zone);
       if (start === undefined) return;
       begun.delete(zone);
       if (!runEventsWanted()) return;
-      tellEvent({
-        kind: 'call',
-        title: titles.get(zone) ?? callTitle(zone, undefined),
-        place: callPlace(zone.frames),
-        ok: zone.error === undefined,
-        error: zone.error === undefined ? null : errorText(zone.error),
-        ms: Date.now() - start,
-      });
+      try {
+        tellEvent({
+          kind: 'call',
+          title: callTitle(zone),
+          place: callPlace(zone.frames),
+          ok: zone.error === undefined,
+          error: zone.error === undefined ? null : errorText(zone.error),
+          ms: Date.now() - start,
+        });
+      } catch {
+        /* a call's record never affects the test */
+      }
     },
   });
   return true;

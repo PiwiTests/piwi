@@ -94,7 +94,7 @@ interface HeardCall {
 }
 
 /** The id of the runner's step a call's zone names; null before the runner gave it one. */
-function zoneStepId(zone: { callId?: unknown; stepId?: unknown } | null | undefined): string | null {
+export function zoneStepId(zone: { callId?: unknown; stepId?: unknown } | null | undefined): string | null {
   if (typeof zone?.callId === 'string' && zone.callId) return zone.callId;
   return typeof zone?.stepId === 'string' && zone.stepId ? zone.stepId : null;
 }

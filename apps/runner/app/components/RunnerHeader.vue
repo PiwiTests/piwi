@@ -52,7 +52,7 @@ const views = computed<TabsItem[]>(() => [
 
 <template>
   <header class="sticky top-0 z-10 border-b border-default bg-default/90 backdrop-blur" data-testid="runner-header">
-    <div class="mx-auto flex max-w-3xl flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
+    <div class="flex flex-wrap items-center gap-x-4 gap-y-2 px-4 py-3 sm:px-6">
       <RunnerLogo class="size-10 shrink-0 rounded-xl shadow-sm" />
       <div class="min-w-0 flex-1">
         <h1 class="text-base leading-tight font-semibold text-highlighted">Piwi Runner</h1>
