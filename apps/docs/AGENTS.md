@@ -149,8 +149,8 @@ which the drift test also reads.
   group it serves.
 - **A rule several features share has one owning page**, listed in the owner table of `docs-claims.test.ts`; every
   other page states its effect in a sentence and links it.
-- **A page that moves** keeps its old URL working with a row in `public/404.html`; GitHub Pages has no server-side
-  redirects.
+- **A page that moves** keeps its old URL with a row in `MOVED_PAGES` (`.vitepress/moved-pages.ts`): the build writes
+  a redirect page there, which search engines follow, unlike `public/404.html`'s script. `docs-drift.test.ts` checks it.
 
 ### Page types and word budgets
 

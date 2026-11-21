@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, type HeadConfig } from 'vitepress'
+import { writeRedirectPages } from './moved-pages'
 import { landingCards, nav, sidebars } from './navigation'
 import { pageMeta, TITLE_TEMPLATE } from './page-meta.mts'
 
@@ -68,6 +69,8 @@ export default defineConfig({
   // VitePress writes the page description into the HTML unescaped; as a head
   // tag it is escaped, so a quote in a description cannot break the markup.
   transformHead: ({ description }) => [['meta', { name: 'description', content: description }]],
+  // A page that moved answers at its old URL with a redirect page (moved-pages.ts).
+  buildEnd: ({ outDir }) => writeRedirectPages(outDir, siteUrl),
   vite: {
     // The #shared modules imported below live outside the docs root, and their
     // nearest tsconfig (application/tsconfig.json) references Nuxt-generated
