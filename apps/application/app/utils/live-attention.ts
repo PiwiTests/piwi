@@ -59,8 +59,8 @@ function attemptKey(row: TestCaseResult, lane: LiveLane): string {
 /**
  * What each lane needs attention for now, from the page's rows (every attempt, the earlier ones a retry followed
  * included), the run's lanes as its stream sends them, and its live workers: an attempt that failed, a running one
- * marked **Stuck?**, a lane stopped at a call, and a CI test held at its failure, a stop that lasts while it holds,
- * whether or not its lane told it yet.
+ * marked **Stuck?**, a lane stopped at a call, and a CI test held at its failure or paused for its controllers, a stop
+ * that lasts while it waits, whether or not its lane told it yet.
  */
 export function attentionSignals(
   rows: readonly TestCaseResult[],
@@ -88,12 +88,13 @@ export function attentionSignals(
       stop: stopWords(stop.reason),
     });
   }
-  for (const { shard, worker, slot, paused } of workers) {
-    if (slot === undefined || paused?.reason !== 'held') continue;
+  for (const { shard, worker, slot, paused, pauses } of workers) {
+    const waits = paused?.reason === 'held' || (paused?.reason === 'pause' && paused.until !== undefined && !!pauses);
+    if (slot === undefined || !paused || !waits) continue;
     const lane = { shard, slot };
     if (signals.some((signal) => signal.reason === 'stopped' && sameLane(signal.lane, lane))) continue;
     signals.push({
-      key: `stopped:${shard ?? ''}#${slot}|${worker}|held:${paused.test ?? ''}`,
+      key: `stopped:${shard ?? ''}#${slot}|${worker}|${paused.reason}:${paused.test ?? ''}`,
       lane,
       reason: 'stopped',
       test: paused.test ?? paused.call.title,

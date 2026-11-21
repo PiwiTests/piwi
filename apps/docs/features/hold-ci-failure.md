@@ -17,7 +17,8 @@ the locator it should have used. **Let it go** ends the wait; the test then ends
 
 A Project admin turns on **Hold a failing CI test for its controllers** in **Project → Settings → Live view**, with the
 project's live view on, and sets the **Longest hold**: 1 to 15 minutes, 5 by default. It is off in every project.
-It needs `@piwitests/reporter` 0.75.0 or later: an older one never holds, and gets no **Let it go**.
+It needs `@piwitests/reporter` 0.75.0 or later: an older one never holds, and gets no **Let it go**. With it on, the
+same people may also [pause a CI test](./pause-ci-test) they watch, once a Project admin turns that on too.
 
 The CI workers of the runs going on hear the change at once: turned off, a test that is held goes on.
 
@@ -103,6 +104,7 @@ The test then tears down as it would have: its result, its error and its trace a
 
 ## Related
 
+- [Pause a CI test](./pause-ci-test): pause, resume and end a CI test you watch
 - [Live view of a run](./live-view): watching a CI run's workers
 - [Inspect a worker's page](./live-inspect): the page at each call, with the locator picker
 - [Page events, text and filmstrip](./live-view-layers): what the page said beside the image

@@ -248,3 +248,44 @@ describe('a CI test held at its failure', () => {
     expect(follower.update(attentionSignals(failed, [], [held]), lane0, lanes, DWELL_MS + 1000)).toBeNull();
   });
 });
+
+describe('a CI test paused for its controllers', () => {
+  const paused = {
+    shard: null,
+    worker: 0,
+    slot: 0,
+    connected: true,
+    holds: true,
+    heldFor: [],
+    pauses: true,
+    pausedBy: 'Ana',
+    paused: {
+      reason: 'pause' as const,
+      call: { title: "Click getByRole('button')", file: 'tests/a.spec.ts', line: 9 },
+      test: 'paused one',
+      until: Date.now() + 60_000,
+    },
+  };
+
+  test('needs attention while its live worker is paused, its lane not told yet', () => {
+    const rows = [row({ title: 'paused one', status: 'running' })];
+    expect(attentionSignals(rows, [], [paused])).toEqual([
+      expect.objectContaining({
+        lane: { shard: null, slot: 0 },
+        reason: 'stopped',
+        test: 'paused one',
+        stop: 'Paused',
+      }),
+    ]);
+  });
+
+  test('keeps the view that follows what needs attention there while it is paused, another lane failing', () => {
+    const follower = new AttentionFollower();
+    const lane0 = { shard: null, slot: 0 };
+    const lanes = [lane0, { shard: null, slot: 1 }];
+    const running = [row({ title: 'paused one', status: 'running', executionId: 1 })];
+    follower.chose(attentionSignals(running, [], [paused]), 0);
+    const failed = [...running, row({ title: 'other', status: 'failed', parallelIndex: 1, executionId: 2 })];
+    expect(follower.update(attentionSignals(failed, [], [paused]), lane0, lanes, DWELL_MS + 1000)).toBeNull();
+  });
+});

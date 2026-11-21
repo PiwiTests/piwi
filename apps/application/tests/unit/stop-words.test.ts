@@ -4,15 +4,24 @@ import type { TestStop } from '@piwitests/core/wire';
 import { RUN_WORDS_EN } from '@piwitests/run-model/words';
 import type { LiveWorkerState } from '#shared/live-view';
 import type { TestCaseResult } from '../../types/api';
-import { STOOD_FOR_MS, heldStopWords, stopStoodMs, stopWords, testStop, watchedStop } from '../../app/utils/stop-words';
+import {
+  STOOD_FOR_MS,
+  heldStopWords,
+  pausedStopWords,
+  stopStoodMs,
+  stopWords,
+  testStop,
+  watchedStop,
+} from '../../app/utils/stop-words';
 
 /**
  * The stop a running test stands at, as its row and its worker's lane panel both show it, from the two sources that say
  * it: the live view's stop (`paused`, said by the worker at once) and the stop its reporter told (`test-stopped`, with
  * when it began). Where both stand, the reason and the call are the live view's and the time the told stop's; either
  * alone is the stop. The panel reads them for the test its worker runs now, as the row does, a failed CI test held for
- * its controllers included, with its hold. The words: its reason's, and for a held CI failure the run model's
- * (`Failed, held at its line`), for whom and until when.
+ * its controllers included, with its hold, and a CI test they paused, with who paused it. The words: its reason's,
+ * and for a held CI failure the run model's (`Failed, held at its line`), for whom and until when; for a paused CI test,
+ * by whom and until when.
  */
 
 const CALL = { title: 'Click', file: 'tests/live.spec.ts', line: 4 };
@@ -47,6 +56,7 @@ const UNTIL = 1_800_000_000_000;
 /** The page's clock, as a test reads it: the hold's end alone, at 12:05. */
 const clock = (time: number) => (time === UNTIL ? '12:05' : 'another time');
 const HELD: LiveStop = { reason: 'held', call: CALL, test: 'pays', until: UNTIL };
+const PAUSED: LiveStop = { reason: 'pause', call: CALL, test: 'pays', until: UNTIL };
 
 describe('the words of a stop', () => {
   test('read a held CI failure as a failure held at its line', () => {
@@ -64,6 +74,14 @@ describe('the words of a stop', () => {
   });
 });
 
+describe('the words of a CI test paused for its controllers', () => {
+  test('say who paused it, and until when', () => {
+    expect(pausedStopWords({ until: UNTIL }, 'Ana', clock)).toBe('Paused by Ana · until 12:05');
+    expect(pausedStopWords({ until: UNTIL }, null, clock)).toBe('Paused · until 12:05');
+    expect(pausedStopWords({}, 'Ana', clock)).toBeNull();
+  });
+});
+
 describe('testStop', () => {
   test('takes the reason and the call from the live view and the time from the told stop when both stand', () => {
     expect(testStop(VIEW, TOLD)).toEqual({ reason: 'pause', call: CALL, since: 1_000 });
@@ -78,6 +96,23 @@ describe('testStop', () => {
     });
     expect(testStop(HELD, null, null)?.held).toEqual({ until: UNTIL, heldFor: [], holds: false });
     expect(testStop(VIEW, null, { heldFor: ['Ana'], holds: true })).not.toHaveProperty('held');
+  });
+
+  test('carries a CI test’s pause for its controllers: its end, who paused it and whether its worker can pause', () => {
+    expect(testStop(PAUSED, null, { pauses: true, holds: true, pausedBy: 'Ana' })).toEqual({
+      reason: 'pause',
+      call: CALL,
+      since: null,
+      ciPause: { until: UNTIL, pausedBy: 'Ana', pauses: true },
+    });
+    expect(testStop(PAUSED, null, { pauses: true, holds: true })?.ciPause).toEqual({
+      until: UNTIL,
+      pausedBy: null,
+      pauses: true,
+    });
+    // A local run's pause, shared live, names no end: it is nobody's CI pause.
+    expect(testStop(VIEW, null, { pauses: true, holds: true })).not.toHaveProperty('ciPause');
+    expect(testStop(PAUSED, null, null)).not.toHaveProperty('ciPause');
   });
 
   test('is either stop alone', () => {
@@ -107,6 +142,15 @@ describe('watchedStop', () => {
       until: UNTIL,
       heldFor: ['Ana'],
       holds: true,
+    });
+  });
+
+  test('reads a paused CI test as the row reads it, who paused it included', () => {
+    const paused = worker({ paused: PAUSED, slot: 0, holds: true, pauses: true, pausedBy: 'Ana' });
+    expect(watchedStop([row({})], workers(paused), { shard: null, worker: 0 })?.ciPause).toEqual({
+      until: UNTIL,
+      pausedBy: 'Ana',
+      pauses: true,
     });
   });
 

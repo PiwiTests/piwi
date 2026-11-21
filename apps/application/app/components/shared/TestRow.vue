@@ -396,6 +396,7 @@ const clusterLabel = computed(() =>
             :since="shownStop.since"
             :until="shownStop.held?.until"
             :held-for="shownStop.held?.heldFor"
+            :ci-pause="shownStop.ciPause"
             :project-key="projectKey"
             :project-name="projectName"
           />

@@ -19,7 +19,8 @@
  * **Inspect** (`LaneInspect`): the page at each call as a document, the worker sending its snapshots while it is open.
  * Each is of the test the view shows, and let go with it; Inspect's of the lane's next test, sent before its first
  * image, wait for the view to move on to it. Watching only: nothing here reaches the test, but **Let it go** on a
- * failed CI test held for the people who may control the run (`LaneHeld`), which ends its hold.
+ * failed CI test held for the people who may control the run (`LaneHeld`), which ends its hold, and, while the
+ * project lets them, **Pause**, **Resume** and **End the test** of a CI test (`LanePaused`).
  *
  * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
  * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
@@ -80,6 +81,7 @@ import {
 } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
 import { stopStoodMs, stopWords, type ShownStop } from '~/utils/stop-words';
+import { ciControlsOffered } from '@piwitests/run-model/ci';
 
 const props = defineProps<{
   runId: number;
@@ -124,6 +126,8 @@ const canLetGo = computed(
     can('run:control', props.projectId),
 );
 const watchId = computed(() => props.live.watchId.value);
+/** The CI pause of the worker shown, while its test is paused for its controllers: its stop as its row reads it. */
+const pausedStop = computed(() => (props.stop?.ciPause ? props.stop : null));
 /** **Follow what needs attention**: the page moves the view to a lane whose test failed, got stuck or stopped. */
 const attention = defineModel<boolean>('attention', { default: false });
 
@@ -552,6 +556,20 @@ const shownCall = computed<LiveCall | null>(
     (laterStep.value ? { title: stepLabel(laterStep.value), file: null, line: null } : call.value),
 );
 /** How long the running call has run, counted on between two call logs, or how long the call that ended took. */
+/**
+ * The controls of the CI lane shown this person sees (`ciControlsOffered`): Pause while its test runs, Resume and End
+ * the test while it is paused; none for someone who may not control the run's project, or a worker that cannot pause.
+ */
+const ciControls = computed(() => {
+  if (!props.workerState || props.projectId == null || !can('run:control', props.projectId)) return [];
+  const runs = !ended.value && !outcome.value && !!watchedTest.value;
+  return ciControlsOffered(props.workerState, { shows: true, controller: true }, runs);
+});
+/** What reaches the test from here, for this person: Let it go, the CI lane's controls, or nothing. */
+const reaches = computed(() => {
+  if (canLetGo.value) return ' but Let it go';
+  return ciControls.value.length ? ' but Pause, Resume and End the test' : '';
+});
 const callMs = computed(() => {
   const shown = currentLog.value;
   if (!shown) return 0;
@@ -880,6 +898,20 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         :project-key="projectKey"
         :project-name="projectName"
       />
+      <LanePaused
+        v-else-if="(pausedStop || ciControls.length) && workerState && !ended"
+        :run-id="runId"
+        :worker="{
+          shard: workerState.shard,
+          worker: workerState.worker,
+          ...(workerState.slot === undefined ? {} : { slot: workerState.slot }),
+        }"
+        :stop="pausedStop"
+        :controls="ciControls"
+        :watch-id="watchId"
+        :project-key="projectKey"
+        :project-name="projectName"
+      />
       <div class="grid gap-3 @3xl:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)] @3xl:items-start">
         <figure class="min-w-0 space-y-2" data-testid="live-view">
           <div
@@ -975,7 +1007,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
             </template>
           </figcaption>
           <p
-            v-if="(currentLog || stopLine) && !ended && !(heldStop && workerState)"
+            v-if="(currentLog || stopLine) && !ended && !((heldStop || pausedStop) && workerState)"
             class="text-xs text-muted"
             data-testid="live-call-state"
             :data-stop="stop?.reason"
@@ -1213,8 +1245,8 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         </template>
       </UCollapsible>
       <p class="text-xs text-muted">
-        You watch the page; nothing you do here reaches the test{{ canLetGo ? ' but Let it go' : '' }}. Nothing of the
-        view is stored: the run’s trace keeps the record.
+        You watch the page; nothing you do here reaches the test{{ reaches }}. Nothing of the view is stored: the run’s
+        trace keeps the record.
       </p>
     </div>
   </DefineBody>

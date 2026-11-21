@@ -15,7 +15,11 @@ and the page [Hold a failing CI test](../apps/docs/features/hold-ci-failure.md);
 (D10). Step 1 is built on the editors' worker view and the Runs window too (Delivery PR 3): the instance tells a
 controller's watch it counts as one (`hello`'s `controller`), and VS Code's worker panel, the JetBrains **Worker** tab
 and the Runs window show the hold in the run page's words (`@piwitests/run-model/ci`) and offer **Let it go** on that
-watch. Next: step 2 (PR 4). Step 1 takes over Part 8 of
+watch. Step 2 is built on the run page (Delivery PR 4): the second setting, `pause` beside `hold` on the CI worker's
+stream and the call log through instrumentation while it is on, **Pause**, **Resume** and **End the test** in the lane
+panel of a CI lane (one route, `POST /api/test-runs/:id/live-view/control`), the paused stop read as
+`Paused by Ana · until 12:05`, the demo's paused CI lane and the page [Pause a CI test](../apps/docs/features/pause-ci-test.md).
+Next: step 2 on the editors' worker view and the Runs window. Step 1 takes over Part 8 of
 [`live-view-next.md`](live-view-next.md) (its D11 and open questions 3 and 4), which now points here.
 
 **Summary.**
