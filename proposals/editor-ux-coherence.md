@@ -57,10 +57,10 @@ terminal or in the IDE's test runner is followed as the developer's own once its
 instance, and its verdict says where it ran (`run #125 in a terminal`), from the service's words as every verdict
 (HM16). L5 built since: a test's card, `piwi/testCard`, in VS Code's hover and on a click of
 JetBrains' result icon: its latest runs as a strip, each to its run, how they went, its last failure, its
-owner, tags and quarantine, with Run, Open in dashboard and More… (TL21). L1 in part since: a test the instance says
+owner, tags and quarantine, with Run, Open in dashboard and More… (TL21). L1 since: a test the instance says
 may be stuck says so on its line (`Stuck? running over 4 min, usually 40 s, in your run #130`), in VS Code's Testing
 view's output and on both status lines (`· 1 stuck?`), never while it stands stopped (LR12); another's run in progress
-names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part); a Runs view in the Piwi panel
+names its branch on both status lines (`CI run #130 on feature-x`) and where it comes from in both tooltips, by the run's origin (`from the desktop app`, `on a developer's machine`, `LiveRun.from`): LR10; a Runs view in the Piwi panel
 (`piwi.liveRuns`, beside Failures and CI Runs) and a Runs tab in the Piwi tool window list each run in progress, its
 workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
 run acting on it, and a run's row says and turns over its Hold failures (LR7, its run control a **Run control** submenu of
@@ -499,15 +499,6 @@ order, and a first `editor/context` group while stopped; in JetBrains a register
 `EditorPopupMenu`, `RunMenu` and the toolbar of a `RunContentDescriptor` the plugin builds. Built with M14; L3 decides
 the debug session. ([L3](#l3))
 
-### 8.5 What the study's model brings
-
-<a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
-runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
-run reads `Piwi: run #131 · 4 of 9` in both status bars and `running in run #131` beside a test's result. **(read)**
-Fix: the run's origin in the tooltips (a teammate's machine, the desktop app), which the instance does not send yet,
-the CI runs keeping their own view and tab (§13, question 8); the status line and the tooltips name another's run's
-branch (`CI run #130 on feature-x`), the developer's own the short form. ([L1](#l1))
-
 ### 8.7 Words deferred to the study
 
 ## 9. Rider
@@ -694,8 +685,8 @@ and tab, filled by P4 (progress), P5 (Run #N, origin), P6 (each worker's test, H
 CI runs (P10, read-only) keep their own view and tab (NF10, decided). Page: one page per worker with its controls, built. **Lives in** both clients and `packages/editor` (FSL). **Replaces** up to nine icon-only status
 items, a clipped stop line, run controls missing from the debugger's places. **Depends on** [LI1](#li1), [LI6](#li6),
 the study's phases. **Revisits** [run-control.md](../adr/run-control.md) §3.2 and its Status, which gave up the Run
-tab's toolbar because `RunContentExecutor` fixes it: Piwi builds the descriptor itself. Steps M13 (built),
-[L1](#l1).
+tab's toolbar because `RunContentExecutor` fixes it: Piwi builds the descriptor itself. Steps M13 and
+L1 (built).
 
 <a id="li10"></a>
 
@@ -891,14 +882,13 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the CI list kept apart (decided)                                                                      | `ide` | LR7 (built), LR9 (built), [LR10](#lr10)               |
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)                                            |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)                                            |
 | <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19))                                   |
 
 ### Sequence
 
-On the action catalog, one Piwi menu (M3, built); M17 closes #1118; the CI list stays apart from L1's Runs home (NF10, decided); L3 decides before 1.0
+On the action catalog, one Piwi menu (M3, built); M17 closes #1118; the CI list stays apart from the Runs home (NF10, decided); L3 decides before 1.0
 whether M14's places are interim.
 
 ## 13. Open questions
