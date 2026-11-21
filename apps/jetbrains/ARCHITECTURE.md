@@ -464,7 +464,7 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
 
-A live run's section lists the `Piwi.RunControl` group, as **Tools → Piwi** does, in its order (`RUN_ACTIONS`, held to
+A live run's section lists the `Piwi.RunControl` group, as **Tools → Piwi → Run control** does, in its order (`RUN_ACTIONS`, held to
 the group by `PiwiPluginTest`): the controls, the page and the trace so far (`Piwi.OpenTraceSoFar`), the code actions,
 sharing, then Stop. Every row that a registered action does is that action, the stops as `Piwi.ShowStop` and the run
 pages as `Piwi.OpenRunPage`, each wrapped to act on its stop or page (`registeredWith`). Then come the registered
@@ -557,9 +557,9 @@ Three actions, under **Tools → Piwi** and in the **Piwi** submenu of the edito
 in a project with a Playwright config (`RunInSpecAction`). The submenu, `Piwi.EditorPopup` (`PiwiEditorPopupGroup`),
 holds the VS Code extension's sections in its order (run, record, a recording's controls); the project view's
 (`Piwi.ProjectViewPopup`) holds Run this spec, Run the tests that reach this file and Record a new test file… on a file
-or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is six compact groups in this order:
-`Piwi.Run`, `Piwi.Record`, `Piwi.RunControl` (while a run is live), `Piwi.Dashboard`, `Piwi.Agents` and
-`Piwi.Connection`. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
+or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is six groups in this order:
+`Piwi.Run`, `Piwi.Record`, `Piwi.RunControlMenu` (the **Run control** submenu holding `Piwi.RunControl`, shown while
+one of its entries applies), `Piwi.Dashboard`, `Piwi.Agents` and `Piwi.Connection`, each compact. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
 
 - **Run the test at the caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`);
 - **Debug the test at the caret** (`Piwi.DebugTestAtCursor`), as Debug with Piwi;
@@ -688,7 +688,7 @@ written since.
 the call a test runs, where it sends `give-up`, naming the worker and no stop), `Piwi.ShowPausedPage` and
 `Piwi.StopRun`.
 
-- They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists; the
+- They are under **Tools → Piwi → Run control**, and in the status bar item's menu while a run is live, after the stops it lists; the
   item reads the service's line, `Piwi: stopped at a breakpoint · checkout.page.ts:12` while one is stopped, with the
   pause's icon, or the error's while every stop held is a failure (`RunLine.state`).
 - They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until another
@@ -715,7 +715,7 @@ press starts no debug session. While a run is live, `PiwiRunActionPromoter` (an 
 the actions a key runs: a keymap that gives the key to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans'
 `F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
 
-**The Worker tab.** **Tools → Piwi → Watch a worker's test** (`WatchWorkerAction`) and **Pause and watch a worker's
+**The Worker tab.** **Tools → Piwi → Run control → Watch a worker's test** (`WatchWorkerAction`) and **Pause and watch a worker's
 test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
@@ -819,7 +819,7 @@ What the service does: [Code from a stop](../../packages/editor/ARCHITECTURE.md#
 service's reference.
 
 **The actions.** A stop also offers the code actions its worker takes (`RunWorker.takes`, `Glue.stopActions`): after
-the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
+the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi → Run control** while some stop
 offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`, `Piwi.AssertRegionAtStop`,
 `Piwi.MockAtStop`, no shortcut). They are **Pick a locator**, **Record**, **Assert** and **Assert a region** at a
 stop the pause bar shows, **Mock a request** at any; the inlay names them shorter (`StopLink.inlayLabel`). Each is a

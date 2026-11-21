@@ -3209,7 +3209,7 @@ object Glue {
     /**
      * The links of the inlay above a stop, after its paused text, as VS Code's row (`stopLensControls`): Resume, Step and
      * Finish (Resume alone at a failure), then Write code… while the stop offers a code action. Run to the caret, End the
-     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi.
+     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi → Run control.
      */
     fun stopInlayLinks(stop: ShownStop): List<StopLink> =
         stopControls(stop).filter { it != StopControl.RUN_TO_CARET && it != StopControl.END } +
@@ -3221,7 +3221,7 @@ object Glue {
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
      * Record, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
-     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
+     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi → Run control**;
      * the inlay names it shorter, beside the controls.
      */
     enum class StopAction(

@@ -98,9 +98,15 @@ class PiwiPluginTest : BasePlatformTestCase() {
         fun ids(group: String) = (actions.getAction(group) as com.intellij.openapi.actionSystem.DefaultActionGroup)
             .childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) }
         assertTrue(actions.getAction("Piwi.Actions") is com.intellij.openapi.actionSystem.CompactActionGroup)
-        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControl", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
+        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControlMenu", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
         assertEquals(sections.flatMap { listOf(it, null) }.dropLast(1), ids("Piwi.Actions"))
         for (section in sections) assertTrue(section, actions.getAction(section) is com.intellij.openapi.actionSystem.CompactActionGroup)
+        // The run's controls are a submenu, shown while one of them applies: sharing the project's runs from now on too.
+        val runControlMenu = actions.getAction("Piwi.RunControlMenu")
+        assertTrue(runControlMenu.templatePresentation.isPopupGroup)
+        assertEquals("Run control", runControlMenu.templatePresentation.text)
+        assertEquals(listOf("Piwi.RunControl"), ids("Piwi.RunControlMenu"))
+        assertTrue(actions.getAction("Piwi.RunControl") is com.intellij.openapi.actionSystem.CompactActionGroup)
         val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.DefaultActionGroup
         assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
         assertEquals(
