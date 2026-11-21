@@ -64,7 +64,7 @@ names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part)
 (`piwi.liveRuns`, beside Failures and CI Runs) and a Runs tab in the Piwi tool window list each run in progress, its
 workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
 run acting on it, and a run's row says and turns over its Hold failures (LR7, its run control a **Run control** submenu of
-Tools → Piwi since, shown while a run is live, `Piwi.RunControlMenu`); a run the Testing view started shows each test's result as its worker ends it, from the run's own
+Tools → Piwi since, `Piwi.RunControlMenu`); a run the Testing view started shows each test's result as its worker ends it, from the run's own
 events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
 running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
 failed while its failure is held, then its result in a run that reaches no instance, until the config's next run or a
@@ -147,7 +147,7 @@ ellipsis wherever it asks for something first and each platform's word for the c
 (Connect…, Open the log, Run a saved selection…, Turn hold failures on or off for the run, Show or hide the coverage
 marks, Finish the test, End the test, Record at the stop, Record here… for the caret alone), and a confirmation takes no
 ellipsis (Stop sharing the run live, in the share menus too) (X1, AC7, AC10, AC9 and NF3 in part). M3 in part:
-JetBrains' Tools → Piwi in six compact sections (run, record, run control, dashboard, agents, connection), its editor
+JetBrains' Tools → Piwi in six compact sections (run, record, run control as a submenu, dashboard, agents, connection), its editor
 submenu with Record a new test file… as VS Code's has, and a **Piwi** submenu in both editors' file trees that runs a
 spec or the tests that reach a file and records a new test file, and JetBrains' New offering **Playwright test
 (recorded)…** on a folder of a Playwright config alone (AC1, AC3 in part). M3's status menu: a click on VS Code's status
@@ -499,7 +499,7 @@ order, and a first `editor/context` group while stopped; in JetBrains a register
 `EditorPopupMenu`, `RunMenu` and the toolbar of a `RunContentDescriptor` the plugin builds. Built with M14; L3 decides
 the debug session. ([L3](#l3))
 
-### 8.4 The list
+### 8.5 What the study's model brings
 
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
@@ -958,7 +958,7 @@ The reviews at `b0ff6772` read the code that built the plan and the live-run stu
 Each finding they made is built or decided, the Status paragraph says which; the defects among them were filed as #1315
 and #1255, both closed. The last one:
 
-<a id="nf10"></a>**NF10. The CI list sits outside §8.4's places.** Decided: the CI runs keep their own view and tab
+<a id="nf10"></a>**NF10. The CI list sits outside the Runs view and tab.** Decided: the CI runs keep their own view and tab
 (`apps/vscode/src/ci-view.ts`, `PiwiCiRuns.kt`), apart from the developer's Runs view and tab (§13, question 8).
 
 ## Appendix A. The concept table, first draft
