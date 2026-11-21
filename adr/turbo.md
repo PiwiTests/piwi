@@ -239,16 +239,21 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
   unseen, while an open `EventSource`, an unread body and every request of a worker (announced on the worker's session)
   cleared the cache at each reset. A second review found three more gaps: a favicon was recognized by its last URL, so
   one that redirected to an icon elsewhere was kept unseen (Playwright reports no event for a favicon, whatever its
-  hops); a service worker's sessions went unwatched; and no isolation pair held the check for a request still waiting.
-  The reset now clears the cache for a request still waiting for its response; for a response the browser received over
-  the network that no page, worker or service worker received, read from every session of Playwright's network managers;
-  for a request any of whose URLs ends in `/favicon.ico` (Playwright reports no event from that hop on) when the browser
-  could serve one of its hops again; and while a service worker runs whose network goes unwatched. Those events are
-  Chromium's, so other browsers always clear. TodoMVC with `max` took 4,725 ms on the build without these checks and
-  4,622 ms with them (5 runs each). A request a document starts in `pagehide`, `unload` or `visibilitychange` as the
-  reset replaces it shows in none of those events, and its response, still being written when Playwright's reset clears
-  the cache, is dropped by that clear and kept without it. That case stays a documented limit of the hook, and the
-  reason `max` leaves it out.
+  hops); a service worker's sessions went unwatched; and no isolation pair held the check for a request still waiting. A
+  third found that a favicon still loading at the reset was judged by no rule, since Playwright reports no request for
+  it, and that a favicon's hops were judged with the method of the hop that named it, so a favicon posted to and
+  redirected to a reusable GET was kept. The reset now clears the cache for a request still waiting for its response;
+  for a response the browser received over the network that no page, worker or service worker received, read from every
+  session of Playwright's network managers; for a request any of whose URLs ends in `/favicon.ico` (Playwright reports
+  no event from that hop on) until Chromium reports it finished or failed, and after when the browser could serve one of
+  its hops again to any of the methods it used; and while a service worker runs whose network goes unwatched. Those
+  events are Chromium's, so other browsers always clear. The rules for a request still waiting, for favicons and for an
+  unwatched service worker each have an isolation pair that fails without them. TodoMVC, whose assets are small, gains
+  nothing from the hook: 3,968 ms with `max` alone and 4,042 ms with the hook named (5 interleaved runs, within their
+  spread of 3,968 to 4,400 ms). A request a document starts in `pagehide`, `unload` or `visibilitychange` as the reset
+  replaces it shows in none of those events, and its response, still being written when Playwright's reset clears the
+  cache, is dropped by that clear and kept without it. That case stays a documented limit of the hook, and the reason
+  `max` leaves it out.
 - **`keepStaticCache` reading each response in the test's process**: a `response` listener on the context makes
   Playwright send every response of the run to the worker's client, 291 for one load of the dashboard, and that cost
   as much as the kept cache saved (median page load 412–486 ms with it, 424–472 ms without). The hook records the

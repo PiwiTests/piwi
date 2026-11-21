@@ -102,8 +102,11 @@ interface CacheWatch {
   answered: Map<string, Array<{ status: number; headers: Record<string, string> }>>;
   requestHeaders: Map<string, Record<string, string>>;
   delivered: Set<string>;
-  /** The requests Playwright counts as favicons and reports no event for, with their method. */
-  favicons: Map<string, string>;
+  /**
+   * The requests Playwright counts as favicons and reports no event for: the method of each hop from the first whose URL
+   * ends in `/favicon.ico`, and whether the request has finished or failed.
+   */
+  favicons: Map<string, { methods: Set<string>; done: boolean }>;
   /** Not Chromium: no events show a response the browser cached without a page receiving it. */
   blind: boolean;
 }
@@ -488,9 +491,20 @@ function watchSession(session: ServerPage, context: ServerPage): void {
   const watch = () => state.staticCacheResponses.get(context);
   // Playwright's rule, carried across redirects: the request id stays the same from hop to hop.
   session.on('Network.requestWillBeSent', (event: ProtocolEvent) => {
-    if (event?.requestId && event.request?.url?.endsWith('/favicon.ico'))
-      watch()?.favicons.set(event.requestId, event.request?.method ?? 'GET');
+    const received = watch();
+    if (!received || !event?.requestId) return;
+    const method = event.request?.method ?? 'GET';
+    const favicon = received.favicons.get(event.requestId);
+    if (favicon) favicon.methods.add(method);
+    else if (event.request?.url?.endsWith('/favicon.ico'))
+      received.favicons.set(event.requestId, { methods: new Set([method]), done: false });
   });
+  const finished = (event: ProtocolEvent) => {
+    const favicon = event?.requestId ? watch()?.favicons.get(event.requestId) : undefined;
+    if (favicon) favicon.done = true;
+  };
+  session.on('Network.loadingFinished', finished);
+  session.on('Network.loadingFailed', finished);
   // Each hop's headers join those of the hops before it: a cookie sent on any hop marks the request credentialed.
   session.on('Network.requestWillBeSentExtraInfo', (event: ProtocolEvent) => {
     const received = watch();
@@ -587,12 +601,16 @@ function hookContextReset(core: ServerPage): void {
       received.delivered = new Set();
       received.favicons = new Map();
       // A request still waiting for its response, a response the browser received that no page received, a favicon
-      // the browser may serve again (Playwright reports no event for favicons), or a service worker whose network goes
-      // unwatched, may have left anything in the cache.
-      const reusableFavicon = [...judged.favicons].some(([id, method]) =>
-        (judged.answered.get(id) ?? []).some(
-          (hop) => cacheVerdict(method, hop.status, hop.headers, judged.requestHeaders.get(id)) === 'reusable',
-        ),
+      // still loading or one the browser may serve again (Playwright reports no event for favicons), or a service
+      // worker whose network goes unwatched, may have left anything in the cache.
+      const unsafeFavicon = [...judged.favicons].some(
+        ([id, favicon]) =>
+          !favicon.done ||
+          (judged.answered.get(id) ?? []).some((hop) =>
+            [...favicon.methods].some(
+              (method) => cacheVerdict(method, hop.status, hop.headers, judged.requestHeaders.get(id)) === 'reusable',
+            ),
+          ),
       );
       const unwatchedWorker =
         !judged.blind &&
@@ -604,7 +622,7 @@ function hookContextReset(core: ServerPage): void {
         );
       const keep =
         !judged.blind &&
-        !reusableFavicon &&
+        !unsafeFavicon &&
         !unwatchedWorker &&
         judged.waiting.length === 0 &&
         [...judged.answered.keys()].every((id) => judged.delivered.has(id)) &&

@@ -12,9 +12,12 @@ export function defineIsolationTests(test: typeof turboTest): void {
   let server: Server;
   let origin: string;
   // Requests the server answered, by route: the HTTP cache answers the others.
-  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0, unloaded: 0, favicon: 0, icon: 0 };
-  // The requests for a response the server sends a moment after each arrives, and the responses sent.
-  const slow = { asked: 0, sent: 0 };
+  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0, unloaded: 0, favicon: 0, icon: 0, postIcon: 0, sw: 0 };
+  // By path, the requests for a response the server sends a moment after each arrives, and the responses sent.
+  const slow: Record<string, { asked: number; sent: number }> = {
+    '/slow': { asked: 0, sent: 0 },
+    '/slow/favicon.ico': { asked: 0, sent: 0 },
+  };
 
   test.beforeAll(async () => {
     server = createServer((request, response) => {
@@ -70,12 +73,35 @@ export function defineIsolationTests(test: typeof turboTest): void {
         return;
       }
       // A response the browser may serve again for ten minutes, sent 300 ms after its request arrives.
-      if (request.url === '/slow') {
-        slow.asked++;
+      const delayed = slow[request.url ?? ''];
+      if (delayed) {
+        delayed.asked++;
         setTimeout(() => {
           response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
-          response.end(String(++slow.sent));
+          response.end(String(++delayed.sent));
         }, 300);
+        return;
+      }
+      // A favicon posted to, which redirects to an icon the browser may serve again to a GET.
+      if (request.url === '/post/favicon.ico') {
+        response.writeHead(302, { location: '/post-icon' });
+        response.end();
+        return;
+      }
+      if (request.url === '/post-icon') {
+        response.writeHead(200, { 'content-type': 'image/x-icon', 'cache-control': 'max-age=600' });
+        response.end(String(++hits.postIcon));
+        return;
+      }
+      // A service worker that fetches a response the browser may serve again for ten minutes as it activates.
+      if (request.url === '/fetching-sw.js') {
+        response.writeHead(200, { 'content-type': 'text/javascript', 'cache-control': 'no-store' });
+        response.end("self.addEventListener('activate', (event) => event.waitUntil(fetch('/sw-fresh')));");
+        return;
+      }
+      if (request.url === '/sw-fresh') {
+        response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
+        response.end(String(++hits.sw));
         return;
       }
       // A favicon that redirects to an icon, both of which the browser may serve again without asking.
@@ -489,20 +515,22 @@ export function defineIsolationTests(test: typeof turboTest): void {
     expect(hits.unloaded).toBe(before + 1);
   });
 
-  test('leaves a reusable response on its way as the test ends', async ({ page }) => {
-    await page.goto(origin);
-    const asked = slow.asked;
-    await page.evaluate(() => void fetch('/slow', { keepalive: true }));
-    await expect.poll(() => slow.asked).toBe(asked + 1);
-  });
+  for (const path of Object.keys(slow)) {
+    test(`leaves a reusable response on its way as the test ends (${path})`, async ({ page }) => {
+      await page.goto(origin);
+      const asked = slow[path].asked;
+      await page.evaluate((url) => void fetch(url, { keepalive: true }), path);
+      await expect.poll(() => slow[path].asked).toBe(asked + 1);
+    });
 
-  test('gets the response that was on its way from the server', async ({ page }) => {
-    await page.goto(origin);
-    await expect.poll(() => slow.sent).toBe(slow.asked);
-    const asked = slow.asked;
-    await page.evaluate(() => fetch('/slow').then((response) => response.text()));
-    expect(slow.asked).toBe(asked + 1);
-  });
+    test(`gets the response that was on its way from the server (${path})`, async ({ page }) => {
+      await page.goto(origin);
+      await expect.poll(() => slow[path].sent).toBe(slow[path].asked);
+      const asked = slow[path].asked;
+      await page.evaluate((url) => fetch(url).then((response) => response.text()), path);
+      expect(slow[path].asked).toBe(asked + 1);
+    });
+  }
 
   test('leaves a favicon that redirects to a reusable icon', async ({ page }) => {
     await page.goto(origin);
@@ -514,6 +542,44 @@ export function defineIsolationTests(test: typeof turboTest): void {
     const before = { ...hits };
     await page.evaluate(() => fetch('/sub/favicon.ico').then((response) => response.text()));
     expect([hits.favicon, hits.icon]).toEqual([before.favicon + 1, before.icon + 1]);
+  });
+
+  test('leaves an icon that a favicon posted to redirected to', async ({ page }) => {
+    await page.goto(origin);
+    await page.evaluate(() =>
+      fetch('/post/favicon.ico', { method: 'POST', body: 'icon' }).then((response) => response.text()),
+    );
+  });
+
+  test('gets that icon from the server', async ({ page }) => {
+    await page.goto(origin);
+    const before = hits.postIcon;
+    await page.evaluate(() => fetch('/post-icon').then((response) => response.text()));
+    expect(hits.postIcon).toBe(before + 1);
+  });
+
+  test('leaves a service worker whose network Playwright does not watch, after it fetched a reusable response', async ({
+    page,
+  }) => {
+    await page.goto(origin);
+    const before = hits.sw;
+    process.env.PLAYWRIGHT_DISABLE_SERVICE_WORKER_NETWORK = '1';
+    try {
+      await page.evaluate(async () => {
+        await navigator.serviceWorker.register('/fetching-sw.js');
+        await navigator.serviceWorker.ready;
+      });
+      await expect.poll(() => hits.sw).toBe(before + 1);
+    } finally {
+      delete process.env.PLAYWRIGHT_DISABLE_SERVICE_WORKER_NETWORK;
+    }
+  });
+
+  test('gets what that service worker fetched from the server', async ({ page }) => {
+    await page.goto(origin);
+    const before = hits.sw;
+    await page.evaluate(() => fetch('/sw-fresh').then((response) => response.text()));
+    expect(hits.sw).toBe(before + 1);
   });
 
   test('leaves a response the browser could serve again without asking, beside a static asset', async ({ page }) => {
