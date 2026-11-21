@@ -178,63 +178,58 @@ const tests = {
     }
   },
 
-  async 'the spec as VS Code draws it from the service’s answer, which the JetBrains plugin draws too'() {
+  async 'the spec’s marks and lenses from the service’s answer, which the JetBrains plugin draws from it too'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
     const document = await vscode.workspace.openTextDocument(spec);
     await vscode.window.showTextDocument(document);
-    const marks = await waitFor(() => {
-      const tests = api.gutter(spec.toString());
-      return tests.length ? tests : null;
-    }, 'the gutter of checkout.spec.ts');
-    const lenses = await waitFor(async () => {
-      const found = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', spec);
-      return found?.length ? found : null;
-    }, 'the CodeLens of checkout.spec.ts');
-    const summary = await api.fileSummary(spec.toString());
-    assert.ok(summary, 'the file summary of checkout.spec.ts');
-    const rows = new Map();
-    for (const lens of lenses) {
-      const line = lens.range.start.line;
-      rows.set(line, [...(rows.get(line) ?? []), lens.command?.title]);
+    let computed;
+    try {
+      const summary = await waitFor(() => api.fileSummary(spec.toString()), 'the file summary of checkout.spec.ts');
+      const marks = await waitFor(() => {
+        const tests = api.gutter(spec.toString());
+        return tests.length ? tests : null;
+      }, 'the gutter of checkout.spec.ts');
+      // Piwi's lenses alone, each title without its codicon, as the JetBrains plugin's Code Vision writes it.
+      const lenses = await waitFor(async () => {
+        const found = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', spec);
+        const piwi = (found ?? []).filter((l) => l.command?.command?.startsWith('piwi.'));
+        return piwi.length ? piwi : null;
+      }, 'the CodeLens of checkout.spec.ts');
+      const rows = new Map();
+      for (const lens of lenses) {
+        const line = lens.range.start.line;
+        rows.set(line, [...(rows.get(line) ?? []), lens.command.title.replace(/^\$\([^)]+\)\s*/, '')]);
+      }
+      // The places of this run's workspace and stub instance, as the golden file names them.
+      const portable = (value) =>
+        JSON.parse(
+          JSON.stringify(value)
+            .replaceAll(vscode.Uri.file(workspace).toString(), 'file:///workspace')
+            .replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://piwi.test'),
+        );
+      // A mark's hover as Markdown shows it, as `tests/golden.test.ts` reads it.
+      const hoverWords = (hover) => hover.replace(/\\(.)|<[^>]*>|[*_]/g, (whole, escaped) => escaped ?? '');
+      computed = portable({
+        spec: { file: 'tests/checkout.spec.ts', text: document.getText() },
+        summary,
+        marks: marks.map((t) => [t.line, t.status, hoverWords(t.hover)]),
+        failing:
+          marks
+            .filter((t) => t.failingUntil !== null)
+            .map((t) => ({ test: [t.line, t.failingUntil], line: t.failingLine }))[0] ?? null,
+        lenses: [...rows].sort(([a], [b]) => a - b),
+      });
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     }
-    // The places of this run's workspace and stub instance, as the golden file names them.
-    const portable = (value) =>
-      JSON.parse(
-        JSON.stringify(value)
-          .replaceAll(vscode.Uri.file(workspace).toString(), 'file:///workspace')
-          .replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://piwi.test'),
-      );
-    // A mark's hover as Markdown shows it, as `tests/golden.test.ts` reads it.
-    const hoverWords = (hover) => hover.replace(/\\(.)|<[^>]*>|[*_]/g, (whole, escaped) => escaped ?? '');
-    const drawn = portable({
-      spec: { file: 'tests/checkout.spec.ts', text: document.getText() },
-      summary,
-      marks: marks.map((t) => [t.line, t.status, hoverWords(t.hover)]),
-      failing:
-        marks
-          .filter((t) => t.failingUntil !== null)
-          .map((t) => ({ test: [t.line, t.failingUntil], line: t.failingLine }))[0] ?? null,
-      lenses: [...rows].sort(([a], [b]) => a - b),
-    });
-    const golden = path.resolve(
-      __dirname,
-      '..',
-      '..',
-      '..',
-      '..',
-      'packages',
-      'editor',
-      'tests',
-      'golden',
-      'vscode-spec.json',
-    );
-    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
-    if (process.env.PIWI_GOLDEN_WRITE === '1') {
-      fs.writeFileSync(golden, `${JSON.stringify(drawn, null, 2)}\n`);
+    const golden = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'editor', 'tests', 'golden');
+    const file = path.join(golden, 'vscode-spec.json');
+    if (process.env.PIWI_GOLDEN_WRITE) {
+      fs.writeFileSync(file, `${JSON.stringify(computed, null, 2)}\n`);
       return;
     }
-    assert.deepEqual(drawn, JSON.parse(fs.readFileSync(golden, 'utf8')));
+    assert.deepEqual(computed, JSON.parse(fs.readFileSync(file, 'utf8')));
   },
 
   async 'the Testing view lists the tests Piwi knows, with their latest result'() {

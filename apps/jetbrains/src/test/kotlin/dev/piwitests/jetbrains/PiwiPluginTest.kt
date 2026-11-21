@@ -803,10 +803,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     /**
      * The spec of VS Code's integration fixture, drawn from the answer the editor service gave VS Code there, as VS Code
-     * drew it: its integration suite records both in the golden fixture `vscode-spec.json`, and fails when what it draws
-     * changes.
+     * computes its marks and lens rows from it: its integration suite records both in the golden fixture
+     * `vscode-spec.json`, and fails when they change.
      */
-    fun testTheGutterDrawsTheSpecAsVsCodeDrewIt() = drawsAsGolden("vscode-spec.json")
+    fun testTheGutterDrawsTheSpecAsVsCodeComputesItFromTheServicesAnswer() = drawsAsGolden("vscode-spec.json")
 
     private fun drawsAsGolden(name: String) {
         val golden = com.google.gson.JsonParser.parseString(

@@ -365,7 +365,7 @@ export interface PiwiApi {
   lastRun(): RunCommand | null;
   /** The tests last drawn in the gutter of a file, by its URI. */
   gutter(uri: string): TestDecoration[];
-  /** The `piwi/fileSummary` answer the gutter and the lenses of an open file were last drawn from; null before one. */
+  /** The latest `piwi/fileSummary` answer asked for an open file, which its gutter and lenses draw from; null before one. */
   fileSummary(uri: string): Promise<FileSummary | null>;
   /** The `piwi/coverage` answer last held for a file, by its URI, and whether its marks are shown; null before one. */
   coverage(uri: string): { result: CoverageResult; shown: boolean } | null;

@@ -22,10 +22,10 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   `tests/golden.test.ts` here and `GlueTest` (the marks and rows: `PiwiPluginTest`, drawn by the gutter's annotator and
   the Code Vision providers) read the same file, so a change to either side's words changes the fixture and the other
   side.
-- **What VS Code draws on its integration fixture's spec is the golden file `vscode-spec.json`**, which
-  `PiwiPluginTest` draws too: the integration suite fails when it changes, and records it again with
-  `PIWI_GOLDEN_WRITE=1` (`xvfb-run -a npm run vscode:test:integration`, then `npm run editor:format` in
-  `packages/editor`).
+- **The service's answer for the integration fixture's spec, with the marks and Piwi's lens rows VS Code computes from
+  it, is the golden file `vscode-spec.json`**, which `PiwiPluginTest` draws from too: the integration suite fails when
+  it changes, and records it again with `PIWI_GOLDEN_WRITE=1` (`xvfb-run -a npm run vscode:test:integration`, then
+  `npm run editor:format` in `packages/editor`).
 - **A setting is registered in the editor service's settings registry first** (`packages/editor/src/settings.json`: its
   group, order, scope, type, default and choice labels); `package.json`'s groups follow it, a team's option
   window-scoped and a person's application-scoped, written to the user's settings. Checked by `tests/settings.test.ts`.
