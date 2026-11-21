@@ -24,6 +24,7 @@ import {
   LET_GO_NOT_HELD,
   LET_GO_SETTING_OFF,
   PAUSE_SETTING_OFF,
+  pauseAskedAlready,
   type LiveWorkerState,
 } from '#shared/live-view';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
@@ -96,7 +97,8 @@ async function demoLiveRun(runId: number): Promise<{ hold: boolean; pause: boole
  * acting may control the run (`controls`), as the instance holds one only for a controller; a paused stop only after a
  * Pause the demo took (`apiDemoControl`), named by who asked it; otherwise the worker goes on at once, and nothing
  * reaches the page. A worker that can pause says so with its first post (`pauses: true` beside a stop of none), which
- * the run page hears while the project lets its controllers pause (`pauses: false` forgets it).
+ * the run page hears while the project lets its controllers pause (`pauses: false` forgets it); a stop of none with
+ * `dropped` drops the Pause it was asked, saying why, as the instance hears a worker's `pause-asked`.
  */
 export async function apiPostDemoLiveStop(
   runId: number,
@@ -131,11 +133,12 @@ export async function apiPostDemoLiveStop(
     publishDemoRunEvent(runId, { type: 'live-worker', data: { ...paused.state } });
     return { success: true, held: true };
   }
-  // The worker went on, or dropped a Pause no call took.
+  // The worker went on, or dropped a Pause no call took, saying why.
   if (!stop && paused && (paused.state.paused || paused.asked !== undefined)) {
+    const dropped = (body as { dropped?: unknown }).dropped;
+    const why = !paused.state.paused && typeof dropped === 'string' && dropped ? { pauseDropped: dropped } : {};
     delete paused.asked;
-    if (!paused.state.paused) return { success: true, held: false };
-    paused.state = { ...id, connected: true, paused: null, holds: true, heldFor: [], pauses: true };
+    paused.state = { ...id, connected: true, paused: null, holds: true, heldFor: [], pauses: true, ...why };
     publishDemoRunEvent(runId, { type: 'live-worker', data: { ...paused.state } });
     return { success: true, held: false };
   }
@@ -163,7 +166,9 @@ export async function apiPostDemoLiveStop(
  * **Pause**, **Resume** or **End the test** of run `runId`'s simulated `worker`, asked by `by` (the person acting, empty
  * for nobody named), as the server's route answers it: 400 for a body that names no worker or another command; 409
  * while the project does not let its controllers pause, for a worker that cannot pause, Pause while its test stands at
- * a stop, and Resume or End the test while it is not paused. Each reaches the simulator over the demo's channel.
+ * a stop (a held failure's included) or while a Pause it has not taken waits, and Resume or End the test while it is
+ * not paused; Resume takes back a Pause that waits. Each reaches the simulator over the demo's channel, End the test
+ * with who asked it.
  */
 export async function apiDemoControl(runId: number, body: unknown, by: string): Promise<unknown> {
   const named = body && typeof body === 'object' ? (body as Record<string, unknown>) : null;
@@ -180,14 +185,21 @@ export async function apiDemoControl(runId: number, body: unknown, by: string): 
   if (!run.pause) throw demoHttpError(409, PAUSE_SETTING_OFF);
   const paused = pausingWorkers.get(runId)?.get(liveWorkerKey(worker));
   if (!paused) throw demoHttpError(409, CONTROL_CANNOT_PAUSE);
+  const held = heldWorkers.get(runId)?.has(liveWorkerKey(worker)) ?? false;
   if (command === 'pause') {
-    if (paused.state.paused || paused.asked !== undefined) throw demoHttpError(409, CONTROL_STOPPED);
+    if (paused.state.paused || held) throw demoHttpError(409, CONTROL_STOPPED);
+    if (paused.asked !== undefined) throw demoHttpError(409, pauseAskedAlready(paused.asked || null));
     paused.asked = by;
-  } else if (paused.state.paused?.reason !== 'pause') {
+    const { pauseDropped: _dropped, ...state } = paused.state;
+    paused.state = { ...state, pauseAsked: by ? { by } : {} };
+    publishDemoRunEvent(runId, { type: 'live-worker', data: { ...paused.state } });
+  } else if (paused.state.paused?.reason !== 'pause' && !(command === 'resume' && paused.asked !== undefined)) {
     throw demoHttpError(409, CONTROL_NOT_PAUSED);
   }
   const { shard, worker: index, slot } = paused.state;
-  publishDemoControl(runId, { shard, worker: index, ...(slot === undefined ? {} : { slot }) }, command);
+  const id = { shard, worker: index, ...(slot === undefined ? {} : { slot }) };
+  if (command === 'end') publishDemoControl(runId, id, command, by);
+  else publishDemoControl(runId, id, command);
   return { success: true, message: CONTROL_DONE[command] };
 }
 

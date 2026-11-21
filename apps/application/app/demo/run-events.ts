@@ -71,7 +71,7 @@ export type DemoEventMessage =
   /** **Let it go** of a simulated CI worker's held failure, which the simulator that holds it hears. */
   | { scope: 'let-go'; runId: number; worker: LiveWorkerId }
   /** **Pause**, **Resume** or **End the test** of a simulated CI worker's test, which the simulator that runs it hears. */
-  | { scope: 'control'; runId: number; worker: LiveWorkerId; command: LiveControlCommand };
+  | { scope: 'control'; runId: number; worker: LiveWorkerId; command: LiveControlCommand; by?: string };
 
 // ── Publishing (page side) ─────────────────────────────────────────────────
 
@@ -92,8 +92,14 @@ function getPublishChannel(): BroadcastChannel {
 }
 
 /** Tell the simulator that runs run `runId`'s `worker` to pause its test, resume it or end it, from the service worker. */
-export function publishDemoControl(runId: number, worker: LiveWorkerId, command: LiveControlCommand): void {
-  getPublishChannel().postMessage({ scope: 'control', runId, worker, command } satisfies DemoEventMessage);
+export function publishDemoControl(
+  runId: number,
+  worker: LiveWorkerId,
+  command: LiveControlCommand,
+  by?: string,
+): void {
+  const message: DemoEventMessage = { scope: 'control', runId, worker, command, ...(by ? { by } : {}) };
+  getPublishChannel().postMessage(message);
 }
 
 /** Tell the simulator that holds a failure of run `runId`'s `worker` to let it go, from the service worker. */

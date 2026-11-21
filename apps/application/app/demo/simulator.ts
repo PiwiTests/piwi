@@ -1828,34 +1828,65 @@ async function runSingleSimulation(
     }).catch(() => null);
   }
 
-  /** The Pause each worker of the run was asked and no call took yet, and how each worker's pause ends. */
+  /** Why a simulated CI worker drops a Pause, as a CI worker says it (`pause-asked`). */
+  const DROPPED = {
+    noTest: 'No test runs on this worker now.',
+    resumed: 'Resume came before the test paused.',
+    ended: 'The test ended before its next call.',
+    left: 'Nobody who may control the run watches this worker in full now.',
+  };
+  /** Drop `worker`'s Pause no call took, saying why. */
+  async function dropPause(worker: LiveWorkerId, why: string): Promise<void> {
+    await $fetch(`/api/test-runs/${runId}/live-view`, {
+      method: 'POST',
+      body: { type: 'stop', ...worker, stop: null, dropped: why },
+    }).catch(() => null);
+  }
+
+  /**
+   * The Pause each worker of the run was asked and no call took yet, the workers whose test runs now, and how each
+   * worker's pause ends: on Resume, or on End the test with who asked it.
+   */
   const pauseAsked = new Set<number>();
-  const pauseEnds = new Map<number, (how: 'resume' | 'end') => void>();
+  const testRunning = new Set<number>();
+  const pauseEnds = new Map<number, (how: 'resume' | 'end', by: string | null) => void>();
   const unhearControl = scenario.pausable
     ? subscribeDemoEvents((message) => {
         if (message.scope !== 'control' || message.runId !== runId) return;
         const command: LiveControlCommand = message.command;
-        if (command === 'pause') pauseAsked.add(message.worker.worker);
-        else pauseEnds.get(message.worker.worker)?.(command === 'end' ? 'end' : 'resume');
+        const { worker } = message;
+        if (command === 'pause') {
+          // As a CI worker refuses one with no test running.
+          if (testRunning.has(worker.worker)) pauseAsked.add(worker.worker);
+          else void dropPause(worker, DROPPED.noTest);
+        } else if (pauseEnds.has(worker.worker)) {
+          pauseEnds.get(worker.worker)!(command === 'end' ? 'end' : 'resume', message.by ?? null);
+        } else if (command === 'resume' && pauseAsked.delete(worker.worker)) {
+          void dropPause(worker, DROPPED.resumed);
+        }
       })
     : () => undefined;
 
   /**
    * Pause `worker`'s test before its next call at `stop`, as a CI worker pauses for a Pause the demo took: `ms` long at
    * most, until **Resume** or **End the test** comes over the demo's channel, the view stops showing it, or the run
-   * stops; the worker then posts its end. Resolves how it ended: `end` for End the test.
+   * stops; the worker then posts its end. Resolves how it ended (`end` for End the test, with who asked it).
    */
-  async function pauseTest(worker: LiveWorkerId, stop: Record<string, unknown>, ms: number): Promise<'resume' | 'end'> {
-    let how: 'resume' | 'end' | null = null;
-    pauseEnds.set(worker.worker, (end) => (how = end));
+  async function pauseTest(
+    worker: LiveWorkerId,
+    stop: Record<string, unknown>,
+    ms: number,
+  ): Promise<{ how: 'resume' | 'end'; by: string | null }> {
+    let ended: { how: 'resume' | 'end'; by: string | null } | null = null;
+    pauseEnds.set(worker.worker, (how, by) => (ended = { how, by }));
     try {
-      if (!(await postLiveStop(worker, stop))) return 'resume';
-      for (let waited = 0; waited < ms && !how && !ctl.stopped; waited += HOLD_TICK_MS) {
+      if (!(await postLiveStop(worker, stop))) return { how: 'resume', by: null };
+      for (let waited = 0; waited < ms && !ended && !ctl.stopped; waited += HOLD_TICK_MS) {
         await sleep(HOLD_TICK_MS);
         if (!demoWatchShows(runId, worker)) break;
       }
       await postLiveStop(worker, null);
-      return how ?? 'resume';
+      return ended ?? { how: 'resume', by: null };
     } finally {
       pauseEnds.delete(worker.worker);
     }
@@ -1928,6 +1959,7 @@ async function runSingleSimulation(
         const a = test.attempts[attempt]!;
         const attemptDuration = a.duration ?? test.duration;
         const startedAt = virtualNow;
+        testRunning.add(workerIndex);
 
         await postEvents([
           {
@@ -1971,8 +2003,8 @@ async function runSingleSimulation(
 
         let attemptRemaining = attemptDuration;
         let stepCursor = virtualNow;
-        // End the test at a pause: the rest of the attempt is skipped.
-        let endedAtStop = false;
+        // End the test at a pause: the attempt fails there, naming who ended it.
+        let endedAtStop: string | null = null;
         if (liveSteps.length === 0) {
           await sleep(attemptDuration / scenario.speed);
           virtualNow += attemptDuration;
@@ -1982,7 +2014,7 @@ async function runSingleSimulation(
             // it is dropped.
             if (pauseAsked.delete(workerIndex)) {
               if (!demoWatchShows(runId, liveWorker) || cutShort()) {
-                await postLiveStop(liveWorker, null);
+                await dropPause(liveWorker, DROPPED.left);
               } else {
                 const at = parseLocation(s.location ?? test.location);
                 const call = s.subtitle ? `${s.title} ${s.subtitle}` : s.title;
@@ -1992,8 +2024,9 @@ async function runSingleSimulation(
                   test: test.title,
                   until: Date.now() + DEMO_HOLD_MS,
                 };
-                if ((await pauseTest(liveWorker, stop, DEMO_HOLD_MS)) === 'end') {
-                  endedAtStop = true;
+                const ended = await pauseTest(liveWorker, stop, DEMO_HOLD_MS);
+                if (ended.how === 'end') {
+                  endedAtStop = ended.by ? `Ended from Piwi by ${ended.by}` : 'Ended from Piwi';
                   break;
                 }
               }
@@ -2107,9 +2140,6 @@ async function runSingleSimulation(
           }
         }
 
-        // A Pause no call of the attempt took is dropped as it ends.
-        if (pauseAsked.delete(workerIndex)) await postLiveStop(liveWorker, null);
-
         // A CI test's failure held for the people who may control the run: its worker says so, then waits.
         if (a.heldMs && a.status === 'failed' && !cutShort() && !endedAtStop) {
           const failedAt = parseLocation(liveSteps.find((s) => s.failed)?.location ?? test.location);
@@ -2123,6 +2153,10 @@ async function runSingleSimulation(
           await holdFailure(liveWorker, stop, a.heldMs);
         }
 
+        // A Pause no call of the attempt took is dropped as it ends, its hold included.
+        testRunning.delete(workerIndex);
+        if (pauseAsked.delete(workerIndex)) await dropPause(liveWorker, DROPPED.ended);
+
         const stamped = test.relativeTimes
           ? stampAttemptTimes(test, a, startedAt)
           : {
@@ -2133,8 +2167,8 @@ async function runSingleSimulation(
             };
 
         // An attempt still running when the run was cut short ends interrupted, after the time it ran; one ended at a
-        // pause is skipped there.
-        const status = cutShort() ? 'interrupted' : endedAtStop ? 'skipped' : a.status;
+        // pause fails there.
+        const status = cutShort() ? 'interrupted' : endedAtStop ? 'failed' : a.status;
         const ranMs = status === 'interrupted' || endedAtStop ? virtualNow - startedAt : attemptDuration;
         ended.push(status);
 
@@ -2148,7 +2182,7 @@ async function runSingleSimulation(
             // The effective per-test timeout the real reporter always sends
             // (Playwright's default unless a test overrides it).
             timeout: 30000,
-            error: status === 'interrupted' || endedAtStop ? null : (a.error ?? null),
+            error: status === 'interrupted' ? null : (endedAtStop ?? a.error ?? null),
             retries: attempt,
             repeatEachIndex: 0,
             attempts: test.attempts.slice(0, attempt + 1).map((att, i) => ({

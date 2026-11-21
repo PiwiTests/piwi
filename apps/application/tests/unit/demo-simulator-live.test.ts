@@ -184,15 +184,21 @@ describe("the 'paused-ci' scenario's workers", () => {
     const posts: Array<{ url: string; body?: Record<string, unknown>; at: number }> = [];
     const tell = (message: DemoEventMessage) => queueMicrotask(() => hearers.forEach((hear) => hear(message)));
     const worker = { shard: null, worker: 0, slot: 0 };
+    let asked = false;
     const run = await streamSimulation(simulator, 'paused-ci', {
       onRequest: (url, body) => {
         posts.push({ url, body, at: Date.now() });
-        if (url !== '/api/test-runs/1/live-view' || body?.worker !== 0) return;
-        const stop = body.stop as { reason?: string } | null;
-        if (body.pauses === true && posts.filter((p) => p.body?.pauses === true && p.body.worker === 0).length === 1) {
+        // Asked as worker 0's first test begins.
+        const begins = (body?.testCases as Array<{ type?: string; workerIndex?: number }> | undefined) ?? [];
+        if (!asked && begins.some((e) => e.type === 'begin' && e.workerIndex === 0)) {
+          asked = true;
           tell({ scope: 'control', runId: 1, worker, command: 'pause' });
         }
-        if (stop?.reason === 'pause') tell({ scope: 'control', runId: 1, worker, command: then });
+        if (url !== '/api/test-runs/1/live-view' || body?.worker !== 0) return;
+        const stop = body.stop as { reason?: string } | null;
+        if (stop?.reason === 'pause') {
+          tell({ scope: 'control', runId: 1, worker, command: then, ...(then === 'end' ? { by: 'Ana' } : {}) });
+        }
       },
     });
     const stops = posts.filter((p) => p.url === '/api/test-runs/1/live-view' && p.body?.worker === 0);
@@ -218,11 +224,28 @@ describe("the 'paused-ci' scenario's workers", () => {
     expect(complete.at(-1)?.status).not.toBe('skipped');
   });
 
-  test('end the paused test at End the test, skipped', async () => {
+  test('fail the paused test at End the test, naming who ended it', async () => {
     const { run, stops } = await paused('end');
     const pause = stops.find((p) => (p.body?.stop as { reason?: string } | null)?.reason === 'pause')!;
     const test = (pause.body!.stop as { test: string }).test;
     const complete = run.events.filter((e) => e.type === 'complete' && e.title === test);
-    expect(complete.at(-1)).toMatchObject({ status: 'skipped', error: null });
+    expect(complete[0]).toMatchObject({ status: 'failed', error: 'Ended from Piwi by Ana' });
+  });
+
+  test('drop a Pause asked while no test runs, saying why, and never stop a later test for it', async () => {
+    const posts: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    const worker = { shard: null, worker: 0, slot: 0 };
+    await streamSimulation(simulator, 'paused-ci', {
+      onRequest: (url, body) => {
+        posts.push({ url, body });
+        // Asked as the worker says it can pause, before its first test begins.
+        if (url === '/api/test-runs/1/live-view' && body?.worker === 0 && body.pauses === true) {
+          for (const hear of hearers) hear({ scope: 'control', runId: 1, worker, command: 'pause' });
+        }
+      },
+    });
+    const ofWorker = posts.filter((p) => p.url === '/api/test-runs/1/live-view' && p.body?.worker === 0);
+    expect(ofWorker.some((p) => (p.body?.stop as { reason?: string } | null)?.reason === 'pause')).toBe(false);
+    expect(ofWorker.find((p) => p.body?.dropped)?.body).toMatchObject({ dropped: 'No test runs on this worker now.' });
   });
 });

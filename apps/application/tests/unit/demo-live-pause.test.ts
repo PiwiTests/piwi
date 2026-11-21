@@ -16,8 +16,8 @@ const state = vi.hoisted(() => ({ db: null as unknown, control: [] as unknown[],
 vi.mock('../../app/demo/db.client', () => ({ getDemoDb: async () => state.db }));
 vi.mock('../../app/demo/run-events', () => ({
   publishDemoLetGo: () => undefined,
-  publishDemoControl: (runId: number, worker: unknown, command: string) =>
-    state.control.push({ runId, worker, command }),
+  publishDemoControl: (runId: number, worker: unknown, command: string, by?: string) =>
+    state.control.push(by === undefined ? { runId, worker, command } : { runId, worker, command, by }),
   publishDemoRunEvent: (runId: number, event: unknown) => state.published.push({ runId, event }),
 }));
 
@@ -94,8 +94,31 @@ describe('a simulated CI worker that can pause', () => {
     expect(state.control).toEqual([
       { runId: 10, worker: WORKER, command: 'pause' },
       { runId: 10, worker: WORKER, command: 'resume' },
-      { runId: 10, worker: WORKER, command: 'end' },
+      { runId: 10, worker: WORKER, command: 'end', by: 'Ana' },
     ]);
+  });
+
+  test('takes one Pause at a time, says who asked it, and Resume takes it back, the drop saying why', async () => {
+    await apiPostDemoLiveStop(10, { type: 'stop', ...WORKER, stop: null, pauses: true }, ANA);
+    expect(await control(10, 'pause')).toBeNull();
+    expect(lastState()).toMatchObject({ pauseAsked: { by: 'Ana' } });
+    const second = await apiDemoControl(10, { watch: 'w', ...WORKER, command: 'pause' }, 'Bo').catch((e) => e);
+    expect(second).toMatchObject({ statusCode: 409, message: 'A Pause is already asked by Ana.' });
+    expect(await control(10, 'resume')).toBeNull();
+    const why = 'Resume came before the test paused.';
+    await apiPostDemoLiveStop(10, { type: 'stop', ...WORKER, stop: null, dropped: why }, ANA);
+    expect(lastState()).toMatchObject({ pauseDropped: why });
+    expect(lastState()).not.toHaveProperty('pauseAsked');
+    expect(await control(10, 'pause')).toBeNull();
+  });
+
+  test('refuses a Pause while the test is held at its failure', async () => {
+    await apiPostDemoLiveStop(10, { type: 'stop', ...WORKER, stop: null, pauses: true }, ANA);
+    const held = { ...PAUSED, reason: 'held' };
+    expect(await apiPostDemoLiveStop(10, { type: 'stop', ...WORKER, stop: held }, ANA)).toMatchObject({ held: true });
+    expect(await control(10, 'pause')).toBe(409);
+    expect(state.control).toEqual([]);
+    await apiPostDemoLiveStop(10, { type: 'stop', ...WORKER, stop: null }, ANA);
   });
 
   test('is refused with the setting off, for a worker that cannot pause, and for a command it does not know', async () => {
