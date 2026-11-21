@@ -648,12 +648,14 @@ data class CiTest(
 
 /**
  * A running CI test held at its failure for the people who may control its project's runs, in the run page's words:
- * where it stands (`state`), for whom and until when (`heldFor`, null when its worker names no end), its error, its
- * place as the run names it (`place`) and in the project (`at`, null when the project holds no such file), that the CI
- * job's own timeout still runs (`note`), and whether the IDE offers **Let it go** (`letGo`: its watch shows the lane as a
- * controller's).
+ * which hold it is (`id`), where it stands (`state`), for whom and until when (`heldFor`, null when its worker names no
+ * end), its error, its place as the run names it (`place`) and in the project (`at`, which the place opens; null when
+ * the project holds no such file), that the CI job's own timeout still runs (`note`), and whether the IDE offers
+ * **Let it go** (`letGo`: its watch shows the lane as a controller's), in the service's words (`letGoLabel`, and
+ * `letGoTitle` its tooltip). The IDE asks it once per hold (`id`), again only after a refusal.
  */
 data class CiHeld(
+    val id: String = "",
     val state: String = "",
     val heldFor: String? = null,
     val error: String = "",
@@ -661,6 +663,8 @@ data class CiHeld(
     val at: CiHeldAt? = null,
     val note: String = "",
     val letGo: Boolean = false,
+    val letGoLabel: String = "",
+    val letGoTitle: String = "",
 )
 
 /** Where a held CI failure is in the project: its file and 0-based line. */

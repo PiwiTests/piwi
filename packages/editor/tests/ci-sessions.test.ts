@@ -345,6 +345,7 @@ describe('the CI sessions', () => {
     await settle();
     const last = () => heard[heard.length - 1]!.tests[0]!;
     expect(last().held).toEqual({
+      id: ':4:1763727900000',
       state: 'Failed, held at its line',
       heldFor: 'Held for Ana · until 12:05',
       error: 'Expected "Paid", received "Pending"',
@@ -352,6 +353,8 @@ describe('the CI sessions', () => {
       at: { uri: uri('tests/checkout.spec.ts'), line: 6 },
       note: 'The CI job’s own timeout still runs.',
       letGo: false,
+      letGoLabel: 'Let it go',
+      letGoTitle: 'End the hold: the test tears down as it would have, its result unchanged',
     });
     expect(sessions!.heldWorker(ROOT, 78, null, 2)).toEqual({ shard: null, worker: 4, slot: 1 });
     // The client's watch of the lane counts as a controller's: Let it go is offered there alone.
@@ -434,13 +437,13 @@ describe('the CI sessions', () => {
     send(78, 'test-completed', { ...test('pays', 4, 3), status: 'failed' });
     send(78, 'test-begin', test('refunds', 5, 9));
     await settle();
-    const refunds = heard[heard.length - 1]!.tests.find((t) => t.title.at(-1) === 'refunds')!;
+    const refunds = heard[heard.length - 1]!.tests.find((t) => t.title[t.title.length - 1] === 'refunds')!;
     expect(refunds.held).toBeUndefined();
     expect(sessions!.heldWorker(ROOT, 78, null, 2)).toBeNull();
     // Even unheard, a hold of the worker that left is none of the next worker's test.
     send(78, 'live-worker', { shard: null, worker: 4, slot: 1, connected: true, holds: true, paused: held });
     await settle();
-    expect(heard[heard.length - 1]!.tests.find((t) => t.title.at(-1) === 'refunds')!.held).toBeUndefined();
+    expect(heard[heard.length - 1]!.tests.find((t) => t.title[t.title.length - 1] === 'refunds')!.held).toBeUndefined();
   });
 
   test('follow only a CI run of the branch read or checked out, while it runs', async () => {

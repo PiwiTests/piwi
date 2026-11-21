@@ -4324,32 +4324,54 @@ class GlueTest {
     @Test
     fun aHeldCiFailureReadsAsTheServiceSendsItAndSaysItInTheRunPagesWordsWithLetItGoWhereOffered() {
         val json = """{"title":["checkout","pays"],"uri":null,"line":null,"project":"","status":"running","retry":0,
-            "lane":2,"shard":null,"at":null,"watch":null,"held":{"state":"Failed, held at its line",
+            "lane":2,"shard":null,"at":null,"watch":"https://piwi.example/test-runs/78?watch=2","held":{"id":":4:1","state":"Failed, held at its line",
             "heldFor":"Held for Ana · until 12:05","error":"Expected \"Paid\"","place":"tests/checkout.spec.ts:7",
-            "at":{"uri":"$spec","line":6},"note":"The CI job’s own timeout still runs.","letGo":true}}"""
+            "at":{"uri":"$spec","line":6},"note":"The CI job’s own timeout still runs.","letGo":true,
+            "letGoLabel":"Let it go","letGoTitle":"End the hold"}}"""
         val test = Gson().fromJson(json, CiTest::class.java)
         val held = test.held!!
         assertEquals(CiHeldAt(spec, 6), held.at)
+        assertEquals("Let it go", held.letGoLabel)
+        assertEquals("End the hold", held.letGoTitle)
+        assertEquals(":4:1", held.id)
         val kept = Glue.withCiSession(emptyMap(), ci(78).copy(tests = listOf(test)))
         val lane = Glue.CiLane("/work/shop", 78, null, 2, null)
         assertEquals(held, Glue.ciLaneHeld(kept, lane))
         assertEquals(null, Glue.ciLaneHeld(kept, lane.copy(lane = 1)))
         assertEquals("CI run #78 · worker 2 · Failed, held at its line: checkout › pays", Glue.ciLaneCaption(kept, lane))
+        // The place is a line of its own, which opens the failing line.
         assertEquals(
             listOf(
                 "Failed, held at its line · Held for Ana · until 12:05",
                 "Expected \"Paid\"",
-                "tests/checkout.spec.ts:7",
                 "The CI job’s own timeout still runs.",
             ),
             Glue.ciHeldLines(held),
         )
-        assertEquals(listOf("Failed, held at its line", "Timed out"), Glue.ciHeldLines(held.copy(heldFor = null, error = "Timed out", place = null, note = "")))
+        assertEquals(listOf("Failed, held at its line", "Timed out"), Glue.ciHeldLines(held.copy(heldFor = null, error = "Timed out", note = "")))
         assertEquals(CiLetGoParams("/work/shop", 78, null, 2), Glue.ciLetGoParams(lane))
-        // The words of Let it go are the run model's.
-        val words = java.io.File("../../packages/run-model/src/words.ts").readText()
-        assertTrue(words.contains("runs_letGo: '${Glue.LET_GO}'"))
-        assertTrue(words.contains("runs_letGoTitle: '${Glue.LET_GO_TITLE}'"))
+        // The CI Runs tab marks the held test, and its Watch, where it lists them.
+        val rows = Glue.ciRows(kept.values)
+        assertEquals("worker 2 · Failed, held at its line", rows.single { it.kind == "test" }.detail)
+        assertEquals("worker 2 · Failed, held at its line", rows.single { it.kind == "ci-watch" }.detail)
+    }
+
+    @Test
+    fun letItGoIsAskedOfEachLanesHoldOnceAgainOnlyAfterARefusalOrForTheLanesNextHold() {
+        val asks = Glue.LetGoAsks()
+        val two = Glue.CiLane("/work/shop", 78, null, 2, null)
+        val three = two.copy(lane = 3)
+        assertTrue(asks.ask(two, "a"))
+        assertFalse(asks.ask(two, "a"))
+        assertTrue(asks.asked(two, "a"))
+        assertFalse(asks.asked(three, "a"))
+        assertTrue(asks.ask(three, "b"))
+        asks.refused(three, "b")
+        assertFalse(asks.asked(three, "b"))
+        assertTrue(asks.asked(two, "a"))
+        assertTrue(asks.ask(two, "c"))
+        asks.refused(two, "a")
+        assertTrue(asks.asked(two, "c"))
     }
 
     @Test

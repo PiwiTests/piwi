@@ -871,9 +871,11 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   without an `on: false`; a local slot, the tab closed or hidden, and a `piwi/ciWatch` the service did not answer
   within 20 s end it.
 - **A held CI failure** (`CiTest.held`, `Glue.ciLaneHeld`) shows under the caption in the service's words, one plain
-  line each (`Glue.ciHeldLines`, `PausedPagePanel.held`), drawn again as the CI sessions change. **Let it go** shows
-  where the service offers it (`held.letGo`), sends `piwi/ciLetGo` through `RunRemote.ciLetGo`, off until its answer,
-  which shows under the caption, a refusal in a balloon too (`PiwiRunSessions.letGoCi`).
+  line each (`Glue.ciHeldShown`, `PausedPagePanel.held`), its place a link that opens the failing line
+  (`openCiHeldPlace`), drawn again as the CI sessions change. **Let it go**, in the service's words, shows where the
+  service offers it (`held.letGo`) and sends `piwi/ciLetGo` through `RunRemote.ciLetGo` once per hold
+  (`Glue.LetGoAsks`), off until that hold ends or the ask is refused; the answer shows under the caption, a refusal in a
+  balloon too (`PiwiRunSessions.letGoCi`). The CI Runs tab marks a held test and its Watch (`Glue.ciRows`).
 - **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
   `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
   (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,

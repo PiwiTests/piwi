@@ -27,6 +27,7 @@ import { randomBytes } from 'node:crypto';
 import * as vscode from 'vscode';
 import type { LanguageClient } from 'vscode-languageclient/node';
 import { isViewFrameData, readViewInput } from '@piwitests/core/run-view';
+import { LetGoAsks } from '@piwitests/run-model/ci';
 import { canOpenTrace } from '@piwitests/run-model/stop';
 import {
   CI_FRAME_NOTIFICATION,
@@ -58,7 +59,9 @@ import {
   actsOnPage,
   ciKey,
   ciLaneCaption,
+  ciHeldPlace,
   ciLaneHeld,
+  ciLaneKey,
   ciLaneRedraws,
   ciLaneLayersNote,
   ciLaneTakes,
@@ -174,8 +177,8 @@ export function createWorkerPanel(
   let accepted = false;
   /** The service opened the CI watch: a change of its layers goes on it only then. */
   let ciAccepted = false;
-  /** **Let it go** on the CI lane's held failure waits for the service's answer: the button is off meanwhile. */
-  let letGoAsking = false;
+  /** **Let it go** asked of each CI lane's hold: its button off from the ask until that hold ends or is refused. */
+  const letGoAsks = new LetGoAsks();
   /** Interact is on: kept through the slot's next stops while the watch goes on, off at a stop that takes no input. */
   let interacting = false;
   /** The stop Interact was last on for, which Interact going off gives back. */
@@ -234,17 +237,7 @@ export function createWorkerPanel(
         note: refused ?? note,
         lane: true,
         ci: true,
-        held: held
-          ? {
-              state: held.state,
-              heldFor: held.heldFor,
-              error: held.error,
-              place: held.place,
-              note: held.note,
-              letGo: held.letGo,
-              asking: letGoAsking,
-            }
-          : null,
+        held: held ? { ...held, asking: letGoAsks.asked(ciLaneKey(ciTarget), held.id) } : null,
         pick: null,
         live: { shown, on: !!ciWatching, input: false, interacting: false, clickCounts: false },
         layers: { ...sections, note: ciLaneLayersNote(layers), textAsking },
@@ -387,20 +380,35 @@ export function createWorkerPanel(
   };
 
   /**
-   * **Let it go** on the CI lane's held failure (`piwi/ciLetGo`), one ask at a time: the service's answer, or its
-   * refusal, said under the caption, a refusal as a warning too.
+   * **Let it go** on the CI lane's held failure (`piwi/ciLetGo`), once per hold (`LetGoAsks`): the button stays off
+   * until that hold ends, or comes back on after a refusal. The answer is said under the caption while the panel shows
+   * the lane, a refusal as a warning too.
    */
   const letGo = async (): Promise<void> => {
     const ci = ciTarget;
-    if (!ci || letGoAsking) return;
-    letGoAsking = true;
+    const held = ci ? ciLaneHeld(ciSessions, ci) : null;
+    if (!ci || !held || !letGoAsks.ask(ciLaneKey(ci), held.id)) return;
     draw();
     const answer = await lc.sendRequest<RunControlResult>(CI_LET_GO_REQUEST, ciLetGoParams(ci)).catch(() => null);
-    letGoAsking = false;
-    if (ciTarget !== ci) return;
-    note = answer?.message ?? NO_ANSWER;
-    draw();
-    if (!answer?.ok) void vscode.window.showWarningMessage(`Piwi: ${note}`);
+    if (!answer?.ok) letGoAsks.refused(ciLaneKey(ci), held.id);
+    const said = answer?.message ?? NO_ANSWER;
+    if (ciTarget === ci) {
+      note = said;
+      draw();
+    }
+    if (!answer?.ok) void vscode.window.showWarningMessage(`Piwi: ${said}`);
+  };
+
+  /** The held failure's place opened in the editor, at its line, beside the panel. */
+  const openHeld = () => {
+    const held = ciTarget ? ciLaneHeld(ciSessions, ciTarget) : null;
+    const place = held ? ciHeldPlace(held) : null;
+    if (!place) return;
+    const at = new vscode.Position(place.line, place.character);
+    void vscode.window.showTextDocument(vscode.Uri.parse(place.uri), {
+      selection: new vscode.Range(at, at),
+      viewColumn: vscode.ViewColumn.One,
+    });
   };
 
   const stopWatching = () => {
@@ -546,6 +554,7 @@ export function createWorkerPanel(
     }
     if (m.type === 'text') return void askText();
     if (m.type === 'let-go') return void letGo();
+    if (m.type === 'held-open') return openHeld();
     if (m.type === 'control') {
       const stop = lane.stop;
       const item = view.controls?.items.find((c) => c.command === m.command);
@@ -731,7 +740,6 @@ export function createWorkerPanel(
         stopWatching();
         target = null;
         ciTarget = ci;
-        letGoAsking = false;
         shown++;
         image = null;
         imageOf = null;

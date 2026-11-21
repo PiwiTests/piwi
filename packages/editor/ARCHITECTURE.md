@@ -749,7 +749,9 @@ its failure ([Watching a CI lane](#watching-a-ci-lane)): no control, share or ho
   carries `held`, in the run page's words (`ciHoldWords`: `Failed, held at its line`, `Held for Ana · until 12:05` in
   the person's clock, the error, its place, `The CI job’s own timeout still runs.`), and `letGo` while the client's
   watch shows its lane as a controller's (`watching`, `offersLetGo`); the session is pushed again as the watch changes
-  (`watchChanged`).
+  (`watchChanged`). A hold is its own worker's test's alone, and its `id` (`ciHoldKey`) and the button's words
+  (`letGoLabel`, `letGoTitle`) come with it, so neither client writes them. The holds heard go at each `init`: a stream
+  opened again names only the workers connected now, never one that left meanwhile.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
   place: the last notification says `ended`, and the run's stream is let go.

@@ -1,3 +1,5 @@
+import { LetGoAsks } from '@piwitests/run-model/ci';
+import type { CiHeld } from '@piwitests/editor/protocol';
 import { describe, expect, test, vi } from 'vitest';
 import type { PageEvent } from '@piwitests/core/live-layers';
 import type { LiveCallLog } from '@piwitests/core/live-view';
@@ -20,7 +22,9 @@ import {
   countWords,
   ciLaneArg,
   ciLaneCaption,
+  ciHeldPlace,
   ciLaneHeld,
+  ciLaneKey,
   ciLaneLayersNote,
   ciLaneRedraws,
   ciLaneTakes,
@@ -2514,7 +2518,7 @@ describe('the CI runs of the branch', () => {
       icon: 'cloud',
       open: null,
     });
-    expect(run!.tooltip).toContain('Read-only');
+    expect(run!.tooltip).toContain('Watched only');
     const [open, running, failed] = run!.children;
     // The run pages' globe, as Open the run page draws it.
     expect(open).toMatchObject({
@@ -2623,7 +2627,8 @@ describe('the CI runs of the branch', () => {
 
   test('say a failure held for the run’s controllers in the run page’s words, with Let it go where the service offers it', () => {
     const lane = { root: '/work/shop', runId: 78, shard: null, lane: 2, dashboard: null };
-    const held = {
+    const held: CiHeld = {
+      id: ':4:1763727900000',
       state: 'Failed, held at its line',
       heldFor: 'Held for Ana · until 12:05',
       error: 'Expected "Paid" <b>',
@@ -2631,6 +2636,8 @@ describe('the CI runs of the branch', () => {
       at: { uri: spec, line: 6 },
       note: 'The CI job’s own timeout still runs.',
       letGo: true,
+      letGoLabel: 'Let it go now',
+      letGoTitle: 'End the hold, as the service says it',
     };
     const base = ci(78);
     const kept = withCiSession(new Map(), ci(78, { tests: [{ ...base.tests[0]!, held }, base.tests[1]!] }));
@@ -2639,6 +2646,15 @@ describe('the CI runs of the branch', () => {
     expect(ciLaneHeld(withCiSession(new Map(), base), lane)).toBeNull();
     expect(ciLaneCaption(kept, lane)).toBe('CI run #78 · worker 2 · Failed, held at its line: checkout › pays');
     expect(ciLaneTakes({ type: 'let-go' })).toBe(true);
+    expect(ciLaneTakes({ type: 'held-open' })).toBe(true);
+    expect(ciHeldPlace(held)).toEqual({ uri: spec, line: 6, character: 0 });
+    expect(ciHeldPlace({ ...held, at: null })).toBeNull();
+    // The CI Runs view marks the held test where it lists it.
+    const [run] = ciNodes(kept);
+    const row = run!.children.find((n) => n.label === 'checkout › pays')!;
+    expect(row.description).toBe('chromium · worker 2 · Failed, held at its line');
+    expect(row.tooltip).toContain('Failed, held at its line · Held for Ana · until 12:05');
+    expect(row.tooltip).not.toContain('read-only');
     expect(ciLetGoParams(lane)).toEqual({ root: '/work/shop', runId: 78, shard: null, lane: 2 });
     // The hold coming, going, or Let it go offered or not draws the panel again.
     const view = {
@@ -2668,10 +2684,18 @@ describe('the CI runs of the branch', () => {
     expect(html).toContain('<strong id="held-state">Failed, held at its line</strong>');
     expect(html).toContain('<span id="held-for">· Held for Ana · until 12:05</span>');
     expect(html).toContain('<p id="held-error">Expected &#34;Paid&#34; &#60;b&#62;</p>');
-    expect(html).toContain('<p id="held-place" class="hint">tests/checkout.spec.ts:7</p>');
+    expect(html).toContain(
+      '<button id="held-place" class="place" type="button" title="Open the failing line">tests/checkout.spec.ts:7</button>',
+    );
     expect(html).toContain('<p id="held-note" class="hint">The CI job’s own timeout still runs.</p>');
-    expect(html).toMatch(/<button id="let-go" type="button" title="End the hold: [^"]*">Let it go<\/button>/);
+    expect(html).toContain(
+      '<button id="let-go" type="button" title="End the hold, as the service says it">Let it go now</button>',
+    );
     expect(draw({ ...held, letGo: false })).toMatch(/<button id="let-go" type="button"[^>]* hidden>/);
+    // A place the workspace does not hold opens nothing.
+    expect(draw({ ...held, at: null })).toContain(
+      '<button id="held-place" class="place" type="button" title="Open the failing line" disabled>',
+    );
     // No hold: the box is there, hidden, for the panel's script to fill.
     expect(
       pausedPageHtml(
@@ -2680,6 +2704,36 @@ describe('the CI runs of the branch', () => {
         'vscode-webview://x/paused-page.js',
       ),
     ).toContain('<div id="held" class="held" role="status" hidden>');
+  });
+
+  test('say what reaches a CI run from the editor: nothing but Let it go on a failure held for you', () => {
+    const html = pausedPageHtml(
+      {
+        image: null,
+        caption: 'CI',
+        lane: true,
+        ci: true,
+        pick: null,
+        live: { shown: 1, on: true, input: false, interacting: false, clickCounts: false },
+      },
+      'n',
+      'vscode-webview://x/paused-page.js',
+    );
+    expect(html).toContain('Watched only: nothing here steers a CI run, except Let it go on a failure held for you.');
+    expect(html).not.toContain('It is read-only');
+    const [run] = ciNodes(withCiSession(new Map(), ci(78)));
+    expect(run!.tooltip).toContain(
+      'Watched only: it runs on CI, so nothing here steers it, except Let it go on a failure held for you.',
+    );
+  });
+
+  test('ask Let it go of each lane’s hold once, its button off until that hold ends or the ask is refused', () => {
+    const asks = new LetGoAsks();
+    expect(asks.ask(ciLaneKey({ root: '/w', runId: 78, shard: null, lane: 2 }), 'a')).toBe(true);
+    expect(asks.asked(ciLaneKey({ root: '/w', runId: 78, shard: null, lane: 3 }), 'a')).toBe(false);
+    expect(ciLaneKey({ root: '/w', runId: 78, shard: 1, lane: 2 })).not.toBe(
+      ciLaneKey({ root: '/w', runId: 78, shard: null, lane: 2 }),
+    );
   });
 
   test('draw a CI lane’s panel with Watch alone: no Interact, no pick', () => {

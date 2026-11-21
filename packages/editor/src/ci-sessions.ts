@@ -14,7 +14,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { ciHoldOf, ciHoldWords, offersLetGo, readCiHold, type CiHold } from '@piwitests/run-model/ci';
+import { ciHoldKey, ciHoldOf, ciHoldWords, offersLetGo, readCiHold, type CiHold } from '@piwitests/run-model/ci';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import type { LiveWorkerId } from '@piwitests/core/live-view';
 import type { PiwiContext } from './context.js';
@@ -672,6 +672,7 @@ export class CiSessions {
     const words = ciHoldWords(hold, englishRunSpeaker, this.options.clock);
     const file = hold.call.file ? workspaceFile(root, hold.call.file, exists) : null;
     return {
+      id: ciHoldKey(hold),
       state: words.state,
       heldFor: words.heldFor,
       error: hold.call.title,
@@ -679,6 +680,8 @@ export class CiSessions {
       at: file ? { uri: pathToFileURL(file).href, line: Math.max(0, (hold.call.line ?? 1) - 1) } : null,
       note: words.note,
       letGo,
+      letGoLabel: englishRunSpeaker.say('runs_letGo'),
+      letGoTitle: englishRunSpeaker.say('runs_letGoTitle'),
     };
   }
 

@@ -692,8 +692,11 @@ until one says `ended`, or the service stops (`withCiSession`).
   watch ended (`ended`) or was refused shows under the caption, Watch then off.
 - **A held CI failure** (`CiTest.held`, `ciLaneHeld`) shows above the image in the service's words (`heldHtml`, filled
   again by the view's script on each state): where it stands and for whom, its error and place, and that the CI job's
-  own timeout still runs. **Let it go** shows where the service offers it (`held.letGo`), sends `piwi/ciLetGo`
-  (`ciLetGoParams`), off until its answer, which shows under the caption, a refusal as a warning too. Another CI lane takes the watch's place on the service's side without an
+  own timeout still runs; its place opens the failing line (`held-open`, `ciHeldPlace`). **Let it go**, in the service's
+  words, shows where the service offers it (`held.letGo`) and sends `piwi/ciLetGo` (`ciLetGoParams`) once per hold
+  (`LetGoAsks` of `@piwitests/run-model/ci`, by `ciLaneKey` and `held.id`), off until that hold ends or the ask is
+  refused; the answer shows under the caption, a refusal as a warning too. The **CI Runs** view marks a held test with
+  its state (`ciNodes`). Another CI lane takes the watch's place on the service's side without an
   `on: false`; a local slot ends it, and so does a `piwi/ciWatch` the service never answered.
 - **The lane's layers** show under the worker panel's image, a local slot's (`piwi/laneLayer`) and a CI lane's
   (`piwi/ciLayer`) alike: **Why it waits** (the call log's last lines, what the locator matches: `waitsView`), then

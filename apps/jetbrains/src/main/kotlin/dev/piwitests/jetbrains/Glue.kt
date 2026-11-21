@@ -4525,21 +4525,57 @@ object Glue {
 
     /**
      * A held CI failure as the Worker tab shows it above the image, one line each: where it stands and for whom, its
-     * error, its place, and that the CI job's own timeout still runs; a part the service left empty is left out.
+     * error, and that the CI job's own timeout still runs; a part the service left empty is left out. Its place is a
+     * link of its own (`HeldShown.place`).
      */
     fun ciHeldLines(held: CiHeld): List<String> = listOf(
         listOfNotNull(held.state, held.heldFor).joinToString(" · "),
         held.error,
-        held.place.orEmpty(),
         held.note,
     ).filter { it.isNotBlank() }
+
+    /**
+     * What the Worker tab shows of a held CI failure: its lines, its place (which opens the failing line when the project
+     * holds it: `placeOpens`), and **Let it go** in the service's words where the service offers it, off while it was
+     * asked of this hold (`asking`).
+     */
+    data class HeldShown(
+        val lines: List<String>,
+        val place: String?,
+        val placeOpens: Boolean,
+        val offered: Boolean,
+        val asking: Boolean,
+        val label: String,
+        val title: String,
+    )
+
+    fun ciHeldShown(held: CiHeld, asking: Boolean): HeldShown =
+        HeldShown(ciHeldLines(held), held.place, held.at != null, held.letGo, asking, held.letGoLabel, held.letGoTitle)
+
+    /**
+     * **Let it go** asked of each CI lane's hold (by its `CiHeld.id`), as `LetGoAsks` of `@piwitests/run-model/ci`
+     * keeps them for VS Code and the Runs window: once per hold, its button off from the ask until that hold ends, asked
+     * again only after a refusal. On the event thread.
+     */
+    class LetGoAsks {
+        private val holds = HashMap<CiLane, String>()
+
+        fun asked(lane: CiLane, hold: String): Boolean = holds[lane.copy(dashboard = null)] == hold
+
+        fun ask(lane: CiLane, hold: String): Boolean {
+            if (asked(lane, hold)) return false
+            holds[lane.copy(dashboard = null)] = hold
+            return true
+        }
+
+        fun refused(lane: CiLane, hold: String) {
+            if (asked(lane, hold)) holds.remove(lane.copy(dashboard = null))
+        }
+    }
 
     /** What **Let it go** asks of the service for the CI lane the Worker tab shows (`piwi/ciLetGo`). */
     fun ciLetGoParams(lane: CiLane): CiLetGoParams = CiLetGoParams(lane.root, lane.runId, lane.shard, lane.lane)
 
-    /** **Let it go**'s words and tooltip: the run model's (`runs_letGo`, `runs_letGoTitle`), which `GlueTest` holds. */
-    const val LET_GO = "Let it go"
-    const val LET_GO_TITLE = "End the hold: the test tears down as it would have, its result unchanged"
 
     /**
      * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its
@@ -4562,7 +4598,7 @@ object Glue {
                 test.project,
                 if (test.retry > 0) "retry ${test.retry}" else "",
                 if (running) ciLane(test) else test.status,
-                if (running) test.at?.title.orEmpty() else "",
+                if (running) test.held?.state ?: test.at?.title.orEmpty() else "",
             ).filter { it.isNotEmpty() }.joinToString(" · ")
             val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
             var testKey = "$key\n${test.uri.orEmpty()}\n${test.title.orEmpty().joinToString("\u001f")}\n${test.project}"
@@ -4578,7 +4614,7 @@ object Glue {
                     CiRow(
                         "ci-watch",
                         "Watch",
-                        "${ciLane(test)} · read-only",
+                        "${ciLane(test)} · ${test.held?.state ?: "read-only"}",
                         lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
                         key = "$testKey\nwatch-here",
                     )

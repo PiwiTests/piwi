@@ -1336,14 +1336,17 @@ export interface CiTest {
 
 /**
  * A running test of a CI run held at its failure for the people who may control its project's runs (the project's
- * setting, while one of them watches its lane), in the run page's words: where it stands (`state`, `Failed, held at
- * its line`), for whom and until when (`heldFor`, `Held for Ana · until 12:05`, null when its worker names no end), the
- * error (the failing call as its worker titled it), its place as the run names it (`place`, `tests/pay.spec.ts:12`,
- * null for none) and in the workspace (`at`, the file and its 0-based line, null when the workspace holds no such
- * file), and that the CI job's own timeout still runs (`note`). `letGo` says the client offers **Let it go**: the
- * client's watch (`piwi/ciWatch`) shows the lane, and the instance said it counts as a controller's.
+ * setting, while one of them watches its lane), in the run page's words: which hold it is (`id`, another for each hold
+ * of each worker), where it stands (`state`, `Failed, held at its line`), for whom and until when (`heldFor`,
+ * `Held for Ana · until 12:05`, null when its worker names no end), the error (the failing call as its worker titled
+ * it), its place as the run names it (`place`, `tests/pay.spec.ts:12`, null for none) and in the workspace (`at`, the
+ * file and its 0-based line, which the clients open from the place; null when the workspace holds no such file), and
+ * that the CI job's own timeout still runs (`note`). `letGo` says the client offers **Let it go**, in these words
+ * (`letGoLabel`, `letGoTitle` its tooltip): the client's watch (`piwi/ciWatch`) shows the lane, and the instance said it
+ * counts as a controller's. A client asks it once per hold (`id`), again only after a refusal.
  */
 export interface CiHeld {
+  id: string;
   state: string;
   heldFor: string | null;
   error: string;
@@ -1351,6 +1354,8 @@ export interface CiHeld {
   at: { uri: string; line: number } | null;
   note: string;
   letGo: boolean;
+  letGoLabel: string;
+  letGoTitle: string;
 }
 
 /** Where a running test of a CI run is: the call it runs, in a file of the workspace. */

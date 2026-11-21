@@ -272,6 +272,8 @@ letGo?.addEventListener('click', () => {
   letGo.disabled = true;
   post({ type: 'let-go' });
 });
+/** The held failure's place opens its line in the editor. */
+byId<HTMLButtonElement>('held-place')?.addEventListener('click', () => post({ type: 'held-open' }));
 /** A CI lane's held failure, as the extension says it: every text set as text. */
 function drawHeld(held: PausedPageView['held']) {
   const box = byId('held');
@@ -280,9 +282,14 @@ function drawHeld(held: PausedPageView['held']) {
   byId('held-state')!.textContent = held?.state ?? '';
   byId('held-for')!.textContent = held?.heldFor ? `· ${held.heldFor}` : '';
   byId('held-error')!.textContent = held?.error ?? '';
-  byId('held-place')!.textContent = held?.place ?? '';
+  const place = byId<HTMLButtonElement>('held-place')!;
+  place.textContent = held?.place ?? '';
+  place.hidden = !held?.place;
+  place.disabled = !held?.at;
   byId('held-note')!.textContent = held?.note ?? '';
   if (letGo) {
+    letGo.textContent = held?.letGoLabel ?? '';
+    letGo.title = held?.letGoTitle ?? '';
     letGo.hidden = !held?.letGo;
     letGo.disabled = !!held?.asking;
   }

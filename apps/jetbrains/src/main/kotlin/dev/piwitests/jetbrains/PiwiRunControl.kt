@@ -266,8 +266,8 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The CI run's lane the Worker tab shows in place of a slot (on the event thread), and its watch. */
     private var ciTarget: Glue.CiLane? = null
     @Volatile private var watchingCi: CiWatchParams? = null
-    /** **Let it go** on the CI lane's held failure waits for the service's answer (on the event thread). */
-    private var letGoAsking = false
+    /** **Let it go** asked of each CI lane's hold: its button off from the ask until that hold ends or is refused. */
+    private val letGoAsks = Glue.LetGoAsks()
     /** The Worker tab's watch the service accepted, of a slot or a CI lane: a change of its layers goes on it then. */
     @Volatile private var acceptedLane: Any? = null
     /** The layers the Worker tab's watch asked last: selecting Text or Filmstrip asks again when they differ. */
@@ -1282,7 +1282,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             ciTarget = null
             laneTarget = ref to lane
             panel.forWorker()
-            panel.held(emptyList(), offered = false, asking = false)
+            panel.held(null)
             val shown = Glue.laneShown(sessions[ref], lane, stops()).worker
             layersFor(panel).note(Glue.laneLayersNote(shown))
             panel.openTrace = { openTrace() }
@@ -1456,9 +1456,9 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             } else stopCiView()
             laneTarget = null
             ciTarget = lane
-            letGoAsking = false
             panel.forCiWorker()
-            panel.letGo = { letGoCi() }
+            panel.letCiHoldGo = { letGoCi() }
+            panel.openHeldPlace = { openCiHeldPlace() }
             panel.openTrace = null
             panel.traceable(false, false)
             layersFor(panel, ci = true)
@@ -1500,31 +1500,41 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     /** The CI lane's held failure as the service says it, with **Let it go** where it offers it. On the event thread. */
     private fun drawCiHeld(panel: PausedPagePanel, sessions: Map<String, CiSession>, lane: Glue.CiLane) {
         val held = Glue.ciLaneHeld(sessions, lane)
-        panel.held(held?.let { Glue.ciHeldLines(it) }.orEmpty(), held?.letGo == true, letGoAsking)
+        panel.held(held?.let { Glue.ciHeldShown(it, letGoAsks.asked(lane, it.id)) })
     }
 
     /**
-     * **Let it go** on the held failure of the CI lane the Worker tab shows (`piwi/ciLetGo`), one ask at a time: the
-     * service's answer, or its refusal, said under the caption, a refusal in a balloon too. On the event thread.
+     * **Let it go** on the held failure of the CI lane the Worker tab shows (`piwi/ciLetGo`), once per hold
+     * (`Glue.LetGoAsks`): the button stays off until that hold ends, or comes back on after a refusal. The answer is said
+     * under the caption while the tab shows the lane, a refusal in a balloon too. On the event thread.
      */
     private fun letGoCi() {
         val lane = ciTarget ?: return
-        if (letGoAsking) return
-        letGoAsking = true
+        val held = Glue.ciLaneHeld(ciSessions(), lane) ?: return
+        if (!letGoAsks.ask(lane, held.id)) return
         (liveWorkerTab()?.component as? PausedPagePanel)?.let { drawCiHeld(it, ciSessions(), lane) }
         ApplicationManager.getApplication().executeOnPooledThread {
             val answer = runCatching { remote.ciLetGo(Glue.ciLetGoParams(lane)) }.getOrNull()
             ApplicationManager.getApplication().invokeLater({
-                letGoAsking = false
-                if (ciTarget != lane) return@invokeLater
+                if (answer?.ok != true) letGoAsks.refused(lane, held.id)
                 val message = answer?.message ?: Glue.SERVICE_NO_ANSWER
-                (liveWorkerTab()?.component as? PausedPagePanel)?.let {
-                    drawCiHeld(it, ciSessions(), lane)
-                    it.note(message)
+                if (ciTarget == lane) {
+                    (liveWorkerTab()?.component as? PausedPagePanel)?.let {
+                        drawCiHeld(it, ciSessions(), lane)
+                        it.note(message)
+                    }
                 }
                 if (answer?.ok != true) PiwiCommands.notify(project, message, NotificationType.WARNING)
             }, gone)
         }
+    }
+
+    /** The held CI failure's place opened at its line, as a CI position is. On the event thread. */
+    private fun openCiHeldPlace() {
+        val lane = ciTarget ?: return
+        val at = Glue.ciLaneHeld(ciSessions(), lane)?.at ?: return
+        val file = fileOfUri(at.uri) ?: return
+        FileEditorManager.getInstance(project).openTextEditor(OpenFileDescriptor(project, file, at.line, 0), true)
     }
 
     /** Whether a new page selects the Paused page tab (`Glue.selectsPausedPage`). On the event thread. */
@@ -2729,12 +2739,18 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
         accessibleContext.accessibleName = "The held failure"
         isVisible = false
     }
-    private val letGoButton = JButton(Glue.LET_GO, AllIcons.Actions.Execute).apply {
-        toolTipText = Glue.LET_GO_TITLE
+    private val placeButton = JButton().apply {
+        isBorderPainted = false
+        isContentAreaFilled = false
+        foreground = JBUI.CurrentTheme.Link.Foreground.ENABLED
+        toolTipText = "Open the failing line"
         isVisible = false
     }
-    /** **Let it go** was pressed. */
-    var letGo: (() -> Unit)? = null
+    private val letGoButton = JButton("", AllIcons.Actions.Execute).apply { isVisible = false }
+    /** **Let it go** on a held CI failure was pressed. */
+    var letCiHoldGo: (() -> Unit)? = null
+    /** The held CI failure's place was pressed: its failing line opens. */
+    var openHeldPlace: (() -> Unit)? = null
     /** The held failure's lines shown: what the tests read. */
     internal var heldLines: List<String> = emptyList()
         private set
@@ -2831,14 +2847,16 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     fun forCiWorker() {
         picture.accessibleContext.accessibleName = Glue.CI_WORKER_PAGE_NAME
         live.text = EditorWords.words("page.watch")
-        live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Read-only: nothing here acts on CI. Nothing is stored."
+        live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Watched only: nothing here steers a CI run, except Let it go on a failure held for you. Nothing is stored."
     }
 
     /**
-     * A CI lane's held failure (`lines`, none while nothing is held) and **Let it go**, shown where the service offers
-     * it (`offered`), off while its ask waits for the service's answer (`asking`).
+     * A CI lane's held failure (`Glue.HeldShown`, null while nothing is held): its lines, its place, which opens the
+     * failing line where the project holds it, and **Let it go** in the service's words where it offers it, off once
+     * asked of this hold.
      */
-    fun held(lines: List<String>, offered: Boolean, asking: Boolean) {
+    fun held(shown: Glue.HeldShown?) {
+        val lines = shown?.lines.orEmpty()
         if (lines != heldLines) {
             heldLines = lines
             heldBox.removeAll()
@@ -2848,12 +2866,20 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
                     if (i == 0) foreground = JBColor.RED
                     if (i > 1) foreground = UIUtil.getContextHelpForeground()
                 })
+                if (i == 1) heldBox.add(placeButton)
             }
+            if (lines.size < 2) heldBox.add(placeButton)
             heldBox.add(letGoButton)
         }
-        heldBox.isVisible = lines.isNotEmpty()
-        letGoButton.isVisible = lines.isNotEmpty() && offered
-        letGoButton.isEnabled = !asking
+        heldBox.isVisible = shown != null
+        placeButton.putClientProperty("html.disable", true)
+        placeButton.text = shown?.place.orEmpty()
+        placeButton.isVisible = shown?.place != null
+        placeButton.isEnabled = shown?.placeOpens == true
+        letGoButton.text = shown?.label.orEmpty()
+        letGoButton.toolTipText = shown?.title
+        letGoButton.isVisible = shown?.offered == true
+        letGoButton.isEnabled = shown?.asking != true
         heldBox.revalidate()
         heldBox.repaint()
     }
@@ -3076,7 +3102,8 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
             changedLive?.invoke(liveWanted)
         }
         trace.addActionListener { openTrace?.invoke() }
-        letGoButton.addActionListener { letGo?.invoke() }
+        letGoButton.addActionListener { letCiHoldGo?.invoke() }
+        placeButton.addActionListener { openHeldPlace?.invoke() }
         interact.addActionListener {
             release()
             drawPick()
