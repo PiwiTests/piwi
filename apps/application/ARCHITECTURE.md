@@ -315,7 +315,11 @@ Each entry names folders under `server/api/`.
   with its filter, first error and Copy, `DesktopRunsPanel` the tray's list beside the run shown, as in Piwi Runner's
   window, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
   page or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
-  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). An ended run lists what
+  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`, and do what it asks).
+  That window shows the run whole: its workers live from the hub it reads itself, its Hold failures
+  (`useDesktopRunHold`), what it failed on (`useDesktopLocalRunRows`), and Run again, which moves the window to the run
+  it starts (`moveWindow`, `windowNames`). A worker's window (`pages/desktop/run-worker.vue`) says how its run came out
+  once it ended, and asks the dashboard window over the same channel to show the run in the tray. An ended run lists what
   it failed on (`DesktopLocalRunResults`: its Piwi runs, else its output's summary), each test to open or run again
   (`rerunTests`). A run's state and count
   come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs

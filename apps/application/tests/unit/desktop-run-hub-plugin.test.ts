@@ -63,6 +63,7 @@ async function plugin(label: string | null = 'main', trays = 1) {
   const runs = ref<TrayRun[]>([]);
   const holds = ref<Record<number, boolean>>({});
   const trayOpen = ref(false);
+  const separate = ref<Record<number, boolean>>({});
   const trayMounts = ref(trays);
   const state = reactive<{ sessions: Record<string, HubSession> }>({ sessions: {} });
   // The windows' claims are said again on an interval, which only a test that needs it moves on.
@@ -84,6 +85,7 @@ async function plugin(label: string | null = 'main', trays = 1) {
     runs,
     holds,
     trayOpen,
+    separate,
     trayMounts,
     activeCount: computed(() => runs.value.filter((run) => run.status === 'running').length),
     stopRun: async (run: TrayRun) => {
@@ -129,6 +131,7 @@ async function plugin(label: string | null = 'main', trays = 1) {
     runs,
     holds,
     trayOpen,
+    separate,
     trayMounts,
     state,
     useHub,
@@ -291,6 +294,17 @@ describe('the window’s hold on its runs’ hub', () => {
     stop(session('desktop-3'), stopped('failure'));
     expect(trayOpen.value).toBe(true);
     expect(notes).toEqual(['main: A test failed and waits | checkout › pays failed at tests/checkout.spec.ts:5.']);
+  });
+
+  test('leaves the tray as it is on a stop of a run shown in a separate window, which shows the stop', async () => {
+    const { runs, separate, trayOpen, stop } = await plugin();
+    runs.value = [running(1, 'tests', 'desktop-3')];
+    separate.value = { 1: true };
+    stop(session('desktop-3'), stopped('failure'));
+    expect(trayOpen.value).toBe(false);
+    separate.value = {};
+    stop(session('desktop-3'), stopped('failure'));
+    expect(trayOpen.value).toBe(true);
   });
 
   test('with no tray on the page, shows no run live and tells the system of every stop, whatever the focus', async () => {

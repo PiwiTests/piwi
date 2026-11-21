@@ -283,7 +283,7 @@ views are exempt only where a rule says so.
   `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **A reload of the desktop window keeps its Local runs** (`plugins/desktop-local-runs.client.ts`): a field added to
   `LocalRun` is plain JSON, since the store writes the runs to session storage and its finished ones to local storage
-  for the next start (`keepFinished`), and a separate output window is fed by
+  for the next start (`keepFinished`), and a run's separate window is fed by
   `DesktopRunOutputWindows` in `app.vue`, never by the tray, so it outlives the tray and the reload
   (`tests/unit/desktop-local-runs-reload.test.ts`, `tests/desktop-run-view.spec.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the
