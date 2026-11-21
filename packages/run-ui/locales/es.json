@@ -1093,5 +1093,14 @@
         "example": "3"
       }
     }
+  },
+  "runui_runsLabel": {
+    "message": "Ejecuciones"
+  },
+  "runui_runsShown": {
+    "message": "Ejecución mostrada"
+  },
+  "runui_runsWaiting": {
+    "message": "Una prueba espera en una parada"
   }
 }

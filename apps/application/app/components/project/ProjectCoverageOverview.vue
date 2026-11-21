@@ -22,8 +22,8 @@
  */
 import { coverageTabLink } from '~/utils/coverage-tab';
 import type { CoverageSummary } from '~~/server/utils/coverage-summary';
-import { SEGMENTED_SELECTED_CLASS, SELECTED_ROW_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
-import { CODE_CHIP_CLASS } from '@piwitests/run-ui/ui-classes';
+import { SEGMENTED_SELECTED_CLASS, SENTENCE_LINK_CLASS } from '~/utils';
+import { CODE_CHIP_CLASS, SELECTED_ROW_CLASS } from '@piwitests/run-ui/ui-classes';
 import { downloadBlob } from '~/utils/chart-export';
 import {
   carriedSentence,
