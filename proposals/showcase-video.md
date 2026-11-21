@@ -58,11 +58,13 @@ quiet stretch of a beat (no line, gesture or window coming up) longer than 3 s p
 does not have: a run the editor starts takes 7 to 13 s to open its browser. The stage names each window in a frame of
 its own, and VS Code keeps its own title bar, where its palette drops; it names the folder, `[Superuser]` after it on a
 take run as root, and the extension is the packaged one, installed, so no `[Extension Development Host]` precedes it.
-VS Code shows little but the code and Piwi's marks (`lib/editor.mjs`). The camera holds still during a line except where
-a gesture needs another window, zooms only into the dashboard (shown whole at half the master's pixels), and never zooms
+VS Code shows little but the code and Piwi's marks (`lib/editor.mjs`). The camera holds still during a line except where a
+gesture needs another window, zooms only into the dashboard (shown whole at half the master's pixels), and never zooms
 in a 4K cut, whose output pixels are the master's own. The subtitles are the stage's own plates, overlaid by ffmpeg, so
 one render gives the cut with and without them; the cards show their own lines, which the burned subtitles leave out.
-The teaser is 1280 × 720 to stay within 1 MB, and the clips carry no subtitles, as Part 4 burns them into the social cut
+The teaser is the story from the red run to the green test, no step the next one needs left out, about 45 s at the full
+cut's 1920 × 1080 and about its bitrate, within 7 MB: past D10's size for a committed file, so it is published as the
+full cut is until that decision is taken again. The clips carry no subtitles, as Part 4 burns them into the social cut
 only. After the first cut was watched, the camera moves only when the move earns it (64 moves of the first take's cut
 come down to 21, and 61 of the second's to 18): never to come closer by less than 1.35×, nor closer when the wide view
 already reads, and moves 2.5 s apart join into one. The dashboard, which read tiny at 2× across the whole screen, is
@@ -285,7 +287,7 @@ ffmpeg encodes H.264 for the MP4, VP9 or AV1 for the WebM, Opus or AAC for the v
 | --- | --- | --- |
 | The full cut, 1080p MP4 and WebM, subtitles burned in or not, with or without voice | ≈ 3 min | A release asset; the maintainers post it where they choose |
 | The 4K master cut | ≈ 3 min | A release asset |
-| The teaser: beats 1, 4, 5 and 8, muted, subtitled | ≈ 30 s, 1 MB at most | `apps/docs/public/`, the landing page and the README beside or in place of `demo-live-run.mp4` |
+| The teaser: the red run to the green test (`TEASER_BEATS`), muted, subtitled | ≈ 45 s, 7 MB at most | `apps/docs/public/`, the landing page and the README beside or in place of `demo-live-run.mp4` |
 | One clip per beat, muted | 10–20 s each | The docs page of its feature (`editor-run-control.md`, the Runs window's page, the failure timeline) |
 | Posters, the chapter list, the cue sheet, the subtitles | | Beside the cut; posters and subtitles committed |
 

@@ -505,6 +505,9 @@ export const STORY = [
         () => tree.getByRole('treeitem', { name: 'places an order (Passed)' }).isVisible(),
         "the test green in VS Code's Testing view",
       );
+      // The Testing view lists the tests through the checkout's own Playwright, linked from this repository.
+      const refused = await tree.getByText(/Playwright is not installed/).count();
+      expect(refused === 0, "the Testing view found the checkout's Playwright");
       const [latest] = await instance.runs();
       expect(latest.id !== state.redRun.id, 'the run from the editor reached the instance');
       const run = await instance.run(latest.id);

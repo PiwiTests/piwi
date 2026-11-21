@@ -10,8 +10,14 @@ export const LINE_PAUSE_S = 0.4;
 export const MASTER_FPS = 24;
 export const OUTPUT_FPS = 30;
 
-/** The beats the teaser is made of, in order. */
-export const TEASER_BEATS = ['red-run', 'paused', 'right-locator', 'green'];
+/**
+ * The beats the teaser is made of, in order: the story's first half, from the red run to the green test, with no step
+ * left out between two of them that the next one needs (the way from the failure page to the editor, the box ticked).
+ */
+export const TEASER_BEATS = ['red-run', 'to-the-editor', 'paused', 'right-locator', 'missing-step', 'green'];
+
+/** The teaser's length in seconds, about which its beats' parts grow or shrink. */
+export const TEASER_SECONDS = 45;
 
 /** How long a line holds: its reading time at `READING_CPS`, then `LINE_PAUSE_S`. In ms. */
 export function lineMs(text) {
@@ -155,7 +161,7 @@ export function chaptersVtt(chapters, end) {
  * `target` seconds grow, evenly, toward their beat's end; longer than `target` by more than `slack`, they shrink,
  * evenly, from their end. The parts keep the order of `ids`.
  */
-export function teaserParts(beats, { ids = TEASER_BEATS, target = 30, tail = 0.6, slack = 0.1 } = {}) {
+export function teaserParts(beats, { ids = TEASER_BEATS, target = TEASER_SECONDS, tail = 0.6, slack = 0.1 } = {}) {
   const parts = ids
     .map((id) => beats.find((b) => b.id === id))
     .filter(Boolean)

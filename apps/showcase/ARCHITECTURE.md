@@ -207,21 +207,22 @@ screenshotted (CDP, PNG), or the last screenshot sent again when neither the sta
 piped into ffmpeg (H.264, CRF 12). No frame is written to disk. The ranges' files, concatenated, are the render, from
 which ffmpeg makes the outputs; the subtitles are the stage's plates (PNG with transparency, one a cue), overlaid.
 
-| Output (in `cut/`)                                   | What it is                                                                                                  |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in                                      |
-| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34)                                                                                      |
-| `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                  |
-| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the chapters as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">` |
-| `teaser.mp4`, `teaser.webm`                          | beats 1, 4, 5 and 8, about 30 s, subtitled, 1280 × 720, within 1 MB                                         |
-| `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                                         |
-| `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                          |
-| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card, at the middle of its lines                                  |
-| `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                          |
+| Output (in `cut/`)                                   | What it is                                                                                                     |
+| ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------- |
+| `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in                                         |
+| `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34)                                                                                         |
+| `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                     |
+| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the chapters as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">`    |
+| `teaser.mp4`, `teaser.webm`                          | the story from the red run to the green test (`TEASER_BEATS`), about 45 s, subtitled, 1920 × 1080, within 7 MB |
+| `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                                            |
+| `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                             |
+| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card, at the middle of its lines                                     |
+| `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                             |
 
 The teaser takes each of its beats from its start through its lines and 0.6 s more, grown or shrunk evenly to about
-30 s (`teaserParts`), crossfades them, and is encoded in two passes at the bitrate that keeps it within 1 MB, lower
-until it does.
+45 s (`teaserParts`), crossfades them, and is encoded in two passes at about the full cut's bitrate (6 MB), lower until
+it stays within 7 MB. Its beats leave out no step the next one needs: the failure page's way to the editor, the box the
+recording ticks.
 
 ## The nightly job
 

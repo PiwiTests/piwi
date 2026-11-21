@@ -30,8 +30,11 @@ const LOGOS = path.join(REPO_ROOT, 'apps', 'docs', 'public');
 /** The outputs' names. */
 const NAME = 'piwi-showcase';
 
-/** The teaser's size limit, the size it aims at, its frame and the crossfade between its parts. */
-const TEASER = { limit: 1_000_000, aim: 930_000, width: 1280, height: 720, fade: 0.4 };
+/**
+ * The teaser's size limit, the size it aims at, its frame and the crossfade between its parts: the full cut's frame, at
+ * about the full cut's bitrate.
+ */
+const TEASER = { limit: 7_000_000, aim: 6_000_000, width: 1920, height: 1080, fade: 0.4 };
 
 /** The master's frames, as JPEG, are kept this many ahead of the frame a renderer draws. */
 const AHEAD = 8;
