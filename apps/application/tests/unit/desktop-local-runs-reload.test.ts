@@ -152,6 +152,30 @@ describe('the Local runs a reload of the window keeps', () => {
     expect(next.key).toBeGreaterThan(run.key);
   });
 
+  test('keeps the window a run took from the run it was started from again, through a reload', async () => {
+    const storage = new Map<string, string>();
+    const before = await pageWith(storage);
+    const first = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => first.shellId === 41);
+    before.shell(exit(41, 1));
+    await until(() => first.status === 'failed');
+    before.store.separate.value = { [first.key]: true };
+    const again = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => again.shellId === 42);
+
+    // A Run again in the first run's window: the run it starts shows in that window, the first one in the tray.
+    before.store.moveWindow(first, again);
+    expect(before.store.separate.value).toEqual({ [first.key]: false, [again.key]: true });
+    expect(before.store.windowNameOf(again.key)).toBe(before.store.windowNameOf(first.key));
+    const name = before.store.windowNameOf(again.key);
+    before.store.keepForReload();
+
+    const after = await pageWith(storage, { running: [42], ended: [{ id: 41, code: 1 }] });
+    await after.store.takeBackAfterReload();
+    expect(after.store.windowNameOf(again.key)).toBe(name);
+    expect(after.invoked).toContainEqual({ cmd: 'desktop_close_other_output_windows', args: { keep: [name] } });
+  });
+
   test('ends a step that ended during the reload with its code, then runs the run’s next step', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);

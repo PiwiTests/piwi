@@ -6,6 +6,18 @@ import { PROJECT } from '#shared/test-project-names';
 /** The run page's desktop re-run button, by what it says it runs. */
 const RERUN_FAILED = /^Re-run \d+ failed tests?/;
 
+/** What a run of one test that failed prints with the list reporter. */
+const FAILED_OUTPUT = [
+  '  ✘  1 [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays (1.0s)',
+  '',
+  '  1) [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays ──────────',
+  '',
+  '    Error: expect(locator).toBeVisible() failed',
+  '',
+  '  1 failed',
+  '    [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays ──────────',
+];
+
 /**
  * The desktop-only "Run locally" flow, driven against the regular web build
  * with a faked Tauri IPC bridge. The UI gates itself purely on the bridge's
@@ -117,6 +129,7 @@ async function installFakeBridge(page: Page, options: FakeBridgeOptions) {
               case 'desktop_open_output_window':
                 return `output-${String(args?.name)}_0`;
               case 'desktop_close_output_window':
+              case 'desktop_bring_to_front':
               case 'desktop_notify':
               case 'desktop_set_notification_choices':
                 return null;
@@ -579,22 +592,22 @@ test.describe('Desktop local run', () => {
     await expect(tray(page).getByText('[22m')).toHaveCount(0);
   });
 
-  test("a run's output moves to a separate window, and back when the window closes", async ({ page }) => {
+  test('a run moves to a separate window whole, and back when the window closes', async ({ page }) => {
     await installFakeBridge(page, { linked: true, autoExit: false });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page).getByText('Running 1 test using 1 worker')).toBeVisible();
-    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
-    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the run in a separate window' }).click();
+    await expect(tray(page).getByText('The run is in a separate window.')).toBeVisible();
     const name = await outputWindowName(page);
 
     // The shell opens the window on this page; the tray feeds it over their BroadcastChannel.
     const outputPage = await page.context().newPage();
     await outputPage.goto(`/desktop/run-output?name=${name}`);
     await waitForHydration(outputPage);
-    const output = outputPage.getByRole('region', { name: 'Run output' });
+    const output = outputPage.getByRole('main', { name: 'Local run' });
     await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
     await expect(output.getByRole('heading', { name: `1 failed test of run #${runId}` })).toBeVisible();
     await expect(outputPage).toHaveTitle(`1 failed test of run #${runId} · Piwi Desktop`);
@@ -616,28 +629,85 @@ test.describe('Desktop local run', () => {
       `output-${name}_0`,
     );
     await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
-    await expect(tray(page).getByText('The output is in a separate window.')).toHaveCount(0);
+    await expect(tray(page).getByText('The run is in a separate window.')).toHaveCount(0);
   });
 
-  test('Show the output here closes the separate window', async ({ page }) => {
+  test('Show the run here closes the separate window', async ({ page }) => {
     await installFakeBridge(page, { linked: true });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
     await page.getByRole('button', { name: RERUN_FAILED }).click();
     await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
-    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
-    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the run in a separate window' }).click();
+    await expect(tray(page).getByText('The run is in a separate window.')).toBeVisible();
     const name = await outputWindowName(page);
 
-    const toggle = tray(page).getByRole('button', { name: 'Show the output here' });
+    const toggle = tray(page).getByRole('button', { name: 'Show the run here' });
     await toggle.click();
     await expect(tray(page).getByText('1 passed (2.0s)')).toBeVisible();
-    await expect(tray(page).getByRole('button', { name: 'Open the output in a separate window' })).toBeFocused();
+    await expect(tray(page).getByRole('button', { name: 'Open the run in a separate window' })).toBeFocused();
     const closes = await page.evaluate(() =>
       window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_close_output_window').map((i) => i.args),
     );
     expect(closes).toEqual([{ name }]);
+  });
+
+  test("a run's window runs a failed test again, then the run, in that same window, and gives the run back", async ({
+    page,
+  }) => {
+    await installFakeBridge(page, { linked: true, autoExit: false });
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: RERUN_FAILED }).click();
+    await expect(tray(page).getByText('Running 1 test using 1 worker')).toBeVisible();
+    for (const line of FAILED_OUTPUT) await page.evaluate((l) => window.__piwiFakeTauri.emitLine(l), line);
+    await page.evaluate(() => window.__piwiFakeTauri.finish(1));
+    await expect(tray(page).getByText('Failed', { exact: true }).first()).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the run in a separate window' }).click();
+    const name = await outputWindowName(page);
+    const outputPage = await page.context().newPage();
+    await outputPage.goto(`/desktop/run-output?name=${name}`);
+    await waitForHydration(outputPage);
+    const runWindow = outputPage.getByRole('main', { name: 'Local run' });
+
+    // What the run failed on, with Run again on its test: the run it starts shows in this same window.
+    const results = runWindow.getByRole('list', { name: 'Results' });
+    await expect(results.getByText('checkout › pays', { exact: true })).toBeVisible();
+    await expect(results).toContainText('expect(locator).toBeVisible() failed');
+    await runWindow.getByRole('button', { name: 'Run checkout › pays in chromium again', exact: true }).click();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(2);
+    await expect(runWindow.getByText('Running 1 test using 1 worker')).toBeVisible();
+    await expect(runWindow.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect(runWindow.getByText('expect(locator).toBeVisible() failed')).toHaveCount(0);
+
+    // It passes; its Run again runs it again, here too, and the shell opened one window all along.
+    await page.evaluate(() => window.__piwiFakeTauri.emitLine('  1 passed (2.0s)'));
+    await page.evaluate(() => window.__piwiFakeTauri.finish(0));
+    await expect(runWindow.getByText('Passed', { exact: true })).toBeVisible();
+    await runWindow.getByRole('button', { name: 'Run again' }).click();
+    await expect.poll(async () => (await runInvocations(page)).length).toBe(3);
+    await expect(runWindow.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    const opened = await page.evaluate(
+      () => window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_open_output_window').length,
+    );
+    expect(opened).toBe(1);
+
+    // Show in the tray: the run comes back to the tray, which opens on it, and the window closes.
+    await runWindow.getByRole('button', { name: 'Show in the tray' }).click();
+    await expect(tray(page).getByText('The run is in a separate window.')).toHaveCount(0);
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          window.__piwiFakeTauri.invocations.filter((i) => i.cmd === 'desktop_close_output_window').map((i) => i.args),
+        ),
+      )
+      .toEqual([{ name }]);
+    expect(
+      await page.evaluate(() => window.__piwiFakeTauri.invocations.some((i) => i.cmd === 'desktop_bring_to_front')),
+    ).toBe(true);
   });
 
   test('a run from the menu runs once, and leaves the project defaults alone', async ({ page }) => {

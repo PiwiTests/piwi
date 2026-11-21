@@ -1,34 +1,41 @@
 <script setup lang="ts">
 /**
- * Desktop shell only: a local run's output in a window of its own, for as long as this component is mounted. It has
- * the shell open the window (`desktop_open_output_window`) on the dashboard's `/desktop/run-output` page and feeds
- * that page over `RUN_OUTPUT_CHANNEL`: the run's header, then the lines the page does not have yet. A window the page
- * before a reload had open (`kept`) is asked whether it is still there and fed again from its last line, never opened
- * again; one that does not answer within `KEPT_ANSWER_MS` is closed by its name, whatever shows in it. It renders
- * nothing here. Emits `stop`
- * when the window's Stop is pressed, and `closed` once the window is gone, with `opened` false when it could not
- * open; unmounting it closes the window.
+ * Desktop shell only: a local run in a window of its own, named `name`, for as long as this component is mounted. It
+ * has the shell open the window (`desktop_open_output_window`) on the dashboard's `/desktop/run-output` page and feeds
+ * that page over `RUN_OUTPUT_CHANNEL`: the run's header, what it offers (its Hold failures, Run again, its pages), what
+ * it failed on once it ended (`useDesktopLocalRunRows`), then the lines the page does not have yet. It does what the
+ * page asks, as the tray would: Stop, Hold failures, Run again of the run or of one of its tests, which moves the window
+ * to the run it starts (`moveWindow`), a page of the run opened here, and the run shown in the tray again. A window
+ * the page before a reload had open (`kept`) is asked whether it is still there and fed again from its last line, never
+ * opened again; one that does not answer within `KEPT_ANSWER_MS` is closed by its name, whatever shows in it. It
+ * renders nothing here. Emits `closed` once the window is gone, with `opened` false when it could not open; unmounting
+ * it closes the window.
  */
-import type { LocalRun } from '~/composables/useDesktopLocalRuns';
+import {
+  localRunCompareTo,
+  localRunDetail,
+  localRunEnvironmentNote,
+  localRunRerunnable,
+  localRunTitle,
+  type LocalRun,
+} from '~/composables/useDesktopLocalRuns';
 import type { RunOutputLine } from '@piwitests/run-ui/run-output';
-import type { BadgeColor } from '~/utils';
+import { desktopEditorRunsOf } from '~/utils/desktop-run-view';
 import {
   outputWindowNameOf,
   RUN_OUTPUT_CHANNEL,
-  runOutputWindowName,
   type RunOutputMessage,
   type RunOutputState,
+  type RunWindowPage,
 } from '~/utils/run-output-channel';
 
 const props = defineProps<{
   run: LocalRun;
-  title: string;
-  status: { label: string; color: BadgeColor };
-  detail: string;
+  name: string;
   /** The page before a reload had the window open: it is asked for, not opened again. */
   kept?: boolean;
 }>();
-const emit = defineEmits<{ stop: []; closed: [opened: boolean] }>();
+const emit = defineEmits<{ closed: [opened: boolean] }>();
 
 /** The event the shell emits with a run output window's label once it is gone. */
 const OUTPUT_WINDOW_CLOSED_EVENT = 'piwi:output-window-closed';
@@ -36,7 +43,13 @@ const OUTPUT_WINDOW_CLOSED_EVENT = 'piwi:output-window-closed';
 /** How long a window the page before had open has to answer before it counts as closed. */
 const KEPT_ANSWER_MS = 3000;
 
-const name = runOutputWindowName(props.run.key);
+const store = useDesktopLocalRuns();
+const { badge } = useDesktopRunBadge();
+const hold = useDesktopRunHold();
+const editorRuns = useDesktopEditorRuns();
+const { rows, rerunnable: rowsRerunnable, canHold } = useDesktopLocalRunRows(() => props.run);
+
+const name = props.name;
 /** The window is open: opened here, or a kept one that answered. */
 let open = false;
 let keptWait: ReturnType<typeof setTimeout> | null = null;
@@ -47,6 +60,47 @@ let stopListening: (() => void) | null = null;
 let sentThrough: number | null = null;
 let pending: ReturnType<typeof setTimeout> | null = null;
 
+/** Everything the page shows of the run but its lines. */
+const header = computed((): Omit<RunOutputState, 'type' | 'name' | 'lines'> => {
+  const run = props.run;
+  const running = run.status === 'running';
+  const status = badge(run);
+  return {
+    key: run.key,
+    title: localRunTitle(run),
+    status: { label: status.label, color: status.color },
+    detail: localRunDetail(run),
+    note: localRunEnvironmentNote(run),
+    startedAt: run.startedAt,
+    finishedAt: run.finishedAt,
+    running,
+    stopRequested: run.stopRequested,
+    stopRequestedAt: run.stopRequestedAt ?? null,
+    refs: [...run.hubRefs],
+    hold:
+      running && desktopEditorRunsOf(run, editorRuns.value).length === 0
+        ? { on: hold.holdsFailures(run), refusal: hold.refusal(run) }
+        : null,
+    rerunnable: !running && localRunRerunnable(run),
+    piwiRunId: run.piwiRunId,
+    failed: run.status === 'failed',
+    sourceRunId: run.sourceRunId != null && run.sourceRunId !== run.piwiRunId ? run.sourceRunId : null,
+    projectId: run.projectId,
+    projectLabel: run.projectLabel,
+    rows: rows.value.map(({ key, status: outcome, title, place, project, error, executionId, retry }) => ({
+      key,
+      status: outcome,
+      title,
+      place,
+      project,
+      error: [...error],
+      executionId,
+      rerunnable: rowsRerunnable.value && !!retry,
+    })),
+    rowsHold: rowsRerunnable.value && canHold.value,
+  };
+});
+
 function send() {
   pending = null;
   if (!channel || sentThrough === null) return;
@@ -54,19 +108,7 @@ function send() {
   const lines: RunOutputLine[] = props.run.lines
     .filter((line) => line.id > since)
     .map(({ id, text, error, ansi }) => (ansi === undefined ? { id, text, error } : { id, text, error, ansi }));
-  const state: RunOutputState = {
-    type: 'state',
-    name,
-    title: props.title,
-    status: { label: props.status.label, color: props.status.color },
-    detail: props.detail,
-    startedAt: props.run.startedAt,
-    finishedAt: props.run.finishedAt,
-    running: props.run.status === 'running',
-    stopRequested: props.run.stopRequested,
-    stopRequestedAt: props.run.stopRequestedAt ?? null,
-    lines,
-  };
+  const state: RunOutputState = { type: 'state', name, ...header.value, lines };
   channel.postMessage(state);
   sentThrough = lines.at(-1)?.id ?? since;
 }
@@ -75,33 +117,91 @@ function schedule() {
   pending ??= setTimeout(send, 100);
 }
 
+watch(() => [props.run.linesTotal, JSON.stringify(header.value)], schedule);
+// The window shows another run (a Run again from it): the page gets that run's lines from its first.
 watch(
-  () => [
-    props.run.linesTotal,
-    props.run.status,
-    props.run.finishedAt,
-    props.run.stopRequested,
-    props.title,
-    props.status.label,
-    props.status.color,
-    props.detail,
-  ],
-  schedule,
+  () => props.run.key,
+  () => {
+    if (sentThrough !== null) sentThrough = 0;
+    schedule();
+  },
 );
 
-onMounted(async () => {
-  channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL);
-  channel.onmessage = ({ data }: MessageEvent<RunOutputMessage>) => {
-    if (data?.name !== name) return;
-    if (data.type === 'ready') {
+/** Brings the dashboard window to the front, where what the window asked for shows. */
+function toFront() {
+  void tauriCore()
+    ?.invoke('desktop_bring_to_front')
+    .catch(() => {});
+}
+
+/**
+ * Runs `start` (a Run again), which may ask the person to confirm a protected environment in the dashboard window,
+ * brought to the front then; the run it starts shows in this window.
+ */
+async function runAgain(start: () => Promise<LocalRun | null>) {
+  const from = props.run;
+  const started = start();
+  await nextTick();
+  if (store.environmentQuestion.value) toFront();
+  const next = await started;
+  if (next) store.moveWindow(from, next);
+}
+
+/** Opens a page of the run in the dashboard window, brought to the front. */
+async function openPage(page: RunWindowPage) {
+  const run = props.run;
+  let path: string | null = null;
+  if (page === 'failure') path = await store.failurePage(run);
+  else if (page === 'run') path = run.piwiRunId != null ? `/test-runs/${run.piwiRunId}` : null;
+  else if (page === 'compare') path = localRunCompareTo(run);
+  else if (Number.isInteger(page.execution)) path = `/test-run-cases/${page.execution}`;
+  if (!path) return;
+  store.trayOpen.value = false;
+  await navigateTo(path);
+  toFront();
+}
+
+function hear(data: RunOutputMessage) {
+  const run = props.run;
+  switch (data.type) {
+    case 'ready':
       open = true;
       if (keptWait) clearTimeout(keptWait);
       keptWait = null;
       sentThrough = data.through ?? 0;
       send();
-    } else if (data.type === 'stop') {
-      emit('stop');
+      return;
+    case 'stop':
+      if (run.status === 'running') void store.stopRun(run);
+      return;
+    case 'hold':
+      if (run.status === 'running' && typeof data.on === 'boolean' && !hold.refusal(run)) hold.setHold(run, data.on);
+      return;
+    case 'rerun':
+      if (run.status !== 'running' && localRunRerunnable(run)) void runAgain(() => store.rerun(run));
+      return;
+    case 'rerun-test': {
+      const row = rows.value.find((each) => each.key === data.row);
+      if (!row?.retry || !rowsRerunnable.value || (data.hold && !canHold.value)) return;
+      const { retry, piwiRunId } = row;
+      void runAgain(() => store.rerunTests(run, [retry], data.hold ? { holdFailures: true } : {}, piwiRunId));
+      return;
     }
+    case 'open':
+      void openPage(data.page);
+      return;
+    case 'back':
+      store.separate.value = { ...store.separate.value, [run.key]: false };
+      store.showRun(run.key);
+      toFront();
+      return;
+  }
+}
+
+onMounted(async () => {
+  channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL);
+  channel.onmessage = ({ data }: MessageEvent<RunOutputMessage>) => {
+    if (data && 'name' in data && data.name === name) hear(data);
   };
   const unlisten = await tauriEvent()
     ?.listen<string>(OUTPUT_WINDOW_CLOSED_EVENT, ({ payload }) => {

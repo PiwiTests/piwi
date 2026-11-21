@@ -10794,14 +10794,14 @@ const SCENES = [
   {
     name: 'desktop-run-output',
     description:
-      "A local run's output in the desktop shell: Playwright's list output in its colors in the tray, then in a separate window",
+      "A local run in the desktop shell: Playwright's list output in its colors in the tray, then the whole run in a separate window, its worker live and its Hold failures, and once it failed, what it failed on with Run again",
     tags: ['desktop'],
     mode: 'desktop',
     route: '/test-runs/2',
     viewport: { width: 1280, height: 860 },
     link: { path: READY_INSPECTION.path, exists: true },
     localRunId: 61,
-    outputs: ['desktop-run-output-tray.png', 'desktop-run-output-window.png'],
+    outputs: ['desktop-run-output-tray.png', 'desktop-run-output-window.png', 'desktop-run-output-window-ended.png'],
     async run({ page, base, settle, shoot }) {
       const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ });
       await rerun.waitFor({ timeout: 60_000 });
@@ -10819,16 +10819,52 @@ const SCENES = [
       await shoot('tray', {
         clip: { x: box.x - 8, y: box.y - 8, width: box.width + 16, height: box.height + 16 },
       });
-      // The shell opens the window on the run output page, which the tray feeds over their BroadcastChannel.
-      await tray.getByRole('button', { name: 'Open the output in a separate window' }).click();
+      // The shell opens the window on the run's page, which the tray feeds over their BroadcastChannel; the window
+      // holds the hub's stream for the run's worker itself.
+      await tray.getByRole('button', { name: 'Open the run in a separate window' }).click();
       await page.waitForFunction(() => window.__outputWindowName);
       const name = await page.evaluate(() => window.__outputWindowName);
       const outputPage = await page.context().newPage();
+      await playDesktopRunHub(outputPage, () => ({}));
       await outputPage.setViewportSize({ width: 960, height: 640 });
       await outputPage.goto(`${base}/desktop/run-output?name=${name}`, { waitUntil: 'domcontentloaded' });
-      await outputPage.getByRole('region', { name: 'Run output' }).getByText('2 passed').waitFor({ timeout: 60_000 });
+      const runWindow = outputPage.getByRole('main', { name: 'Local run' });
+      await runWindow.getByText('2 passed').waitFor({ timeout: 60_000 });
+      await outputPage.waitForFunction(() => window.__hub?.open() === 1);
+      const test = {
+        id: 't1',
+        title: ['checkout', 'pays with a saved card'],
+        uri: 'file:///home/dev/code/acme-checkout/tests/checkout.spec.ts',
+        line: 11,
+        project: 'chromium',
+        retry: 0,
+        cannotPause: null,
+      };
+      await outputPage.evaluate(
+        (session) => {
+          window.__hub.send({ type: 'hello', viewer: 'f'.repeat(32) });
+          window.__hub.send({ type: 'session', session });
+        },
+        {
+          ref: 'desktop-61',
+          root: '/home/dev/code/acme-checkout',
+          label: 'acme-checkout',
+          command: null,
+          project: 'checkout-web',
+          ended: false,
+          workers: [
+            { worker: 0, parallelIndex: 0, state: 'running', pausing: false, intents: ['view'], test, stop: null },
+          ],
+        },
+      );
+      await runWindow.locator('[data-shot="desktop-run-worker"]').waitFor();
       await outputPage.evaluate(() => document.fonts.ready);
       await shoot('window', { page: outputPage });
+      // The run fails: the window lists what it failed on, each test to run again there, and Run again.
+      await page.evaluate(() => window.__emitTauri('piwi:local-run', { id: 61, kind: 'exit', line: null, code: 1 }));
+      await runWindow.getByRole('list', { name: 'Results' }).waitFor();
+      await runWindow.getByRole('button', { name: 'Run again', exact: true }).waitFor();
+      await shoot('window-ended', { page: outputPage });
     },
   },
   {

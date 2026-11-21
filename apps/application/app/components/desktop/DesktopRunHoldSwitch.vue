@@ -4,9 +4,7 @@
  * says what it does or why the run holds none (a run nobody attends, by its kind or as the hub names its steps). The
  * tray shows it under each running run, and the run page's **On your machine** card under its own.
  */
-import type { HubSession } from '@piwitests/core/run-hub';
 import type { LocalRun } from '~/composables/useDesktopLocalRuns';
-import { desktopHeldSessions, desktopRunHoldRefusal, desktopRunHolds } from '~/utils/desktop-run-view';
 
 const props = defineProps<{
   run: LocalRun;
@@ -14,19 +12,13 @@ const props = defineProps<{
   describedId: string;
 }>();
 
-const { holds } = useDesktopLocalRuns();
-const hub = useDesktopRunHub();
-const liveSessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
-
-const refusal = computed(() => desktopRunHoldRefusal(props.run, liveSessions.value));
-const holdsFailures = computed(() => desktopRunHolds(props.run, holds.value[props.run.key], liveSessions.value));
+const hold = useDesktopRunHold();
+const refusal = computed(() => hold.refusal(props.run));
+const holdsFailures = computed(() => hold.holdsFailures(props.run));
 
 /** The person turns the run's Hold failures over: its live steps at once, the steps to come as they start. */
 function setHold(on: boolean) {
-  for (const session of desktopHeldSessions(props.run, liveSessions.value)) {
-    void hub.command({ type: 'hold', ref: session.ref, on });
-  }
-  holds.value = { ...holds.value, [props.run.key]: on };
+  hold.setHold(props.run, on);
 }
 </script>
 

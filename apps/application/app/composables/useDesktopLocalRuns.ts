@@ -398,6 +398,11 @@ export function localRunEnvironmentNote(run: Pick<LocalRun, 'environment' | 'rep
   return environmentMismatch(run.environment, run.reported);
 }
 
+/** Whether a run offers **Run again**: one it can start as it ran, a Flake Lab with its plan, never a requested run. */
+export function localRunRerunnable(run: Pick<LocalRun, 'kind' | 'flake'>): boolean {
+  return (run.kind !== 'flake' || !!run.flake) && run.kind !== 'request';
+}
+
 /**
  * The Changes tab of the Piwi run a local run produced, against the run its tests come from, or null until it
  * reported or when it has no source run.
@@ -513,6 +518,8 @@ interface KeptForReload {
   runs: LocalRun[];
   holds: Record<number, boolean>;
   separate: Record<number, boolean>;
+  /** The name of each separate window a run took from the run it was started from again (`windowNames`). */
+  windowNames?: Record<number, string>;
   trayOpen: boolean;
   /** How far each step of the runs that ended came, by its name on the hub. */
   ended?: Record<string, KeptEnded>;
@@ -571,8 +578,14 @@ export function useDesktopLocalRuns() {
   const optionsByProject = useState<Record<string, SavedLocalRunOptions>>('desktop-local-run-options', () => ({}));
   /** Each run's Hold failures choice, by its key; unset falls back to how it started (`desktopHoldsByDefault`). */
   const holds = useState<Record<number, boolean>>('desktop-local-runs-holds', () => ({}));
-  /** The runs whose output shows in a separate window instead of the tray, by key (`DesktopRunOutputWindows`). */
+  /** The runs that show in a separate window instead of the tray, by key (`DesktopRunOutputWindows`). */
   const separate = useState<Record<number, boolean>>('desktop-local-runs-separate', () => ({}));
+  /**
+   * The name of the separate window of a run that took it from the run it was started from again, by key: a Run again
+   * in a run's window shows the run it starts in that same window (`moveWindow`). Any other run's is its own
+   * (`runOutputWindowName`).
+   */
+  const windowNames = useState<Record<number, string>>('desktop-local-runs-window-names', () => ({}));
   /** The runs whose separate output window the page before a reload had open: it is asked for, never opened again. */
   const keptWindows = useState<number[]>('desktop-local-runs-kept-windows', () => []);
   /** How many Local runs trays are mounted: none on a page without the default layout (TV mode, an error page). */
@@ -1852,6 +1865,7 @@ export function useDesktopLocalRuns() {
       runs: runs.value.map((run) => ({ ...run, lines: lines > 0 ? run.lines.slice(-lines) : [] })),
       holds: holds.value,
       separate: separate.value,
+      windowNames: windowNames.value,
       trayOpen: trayOpen.value,
       ended,
       unseen: unseen.value,
@@ -1986,6 +2000,7 @@ export function useDesktopLocalRuns() {
     runs.value = [...runs.value, ...back];
     holds.value = { ...kept.holds, ...holds.value };
     separate.value = { ...kept.separate, ...separate.value };
+    windowNames.value = { ...kept.windowNames, ...windowNames.value };
     keptWindows.value = Object.entries(kept.separate)
       .filter(([, on]) => on)
       .map(([key]) => Number(key));
@@ -2059,7 +2074,7 @@ export function useDesktopLocalRuns() {
 
   /** Closes every run output window the shell has open that no run of this page shows its output in. */
   async function closeUnownedOutputWindows() {
-    const keep = runs.value.filter((run) => separate.value[run.key]).map((run) => runOutputWindowName(run.key));
+    const keep = runs.value.filter((run) => separate.value[run.key]).map((run) => windowNameOf(run.key));
     try {
       await tauriCore()?.invoke('desktop_close_other_output_windows', { keep });
     } catch {
@@ -2083,6 +2098,22 @@ export function useDesktopLocalRuns() {
     } catch {
       return runPage;
     }
+  }
+
+  /** The name of a run's separate window: the one it took from the run it was started from again, else its own. */
+  function windowNameOf(key: number): string {
+    return windowNames.value[key] ?? runOutputWindowName(key);
+  }
+
+  /**
+   * Shows `to` in the separate window `from` shows in, and `from` in the tray again: a Run again in a run's window
+   * follows the run it starts there.
+   */
+  function moveWindow(from: LocalRun, to: LocalRun) {
+    const name = windowNameOf(from.key);
+    separate.value = { ...separate.value, [from.key]: false, [to.key]: true };
+    const { [from.key]: _moved, ...others } = windowNames.value;
+    windowNames.value = { ...others, [to.key]: name };
   }
 
   /** Opens the tray on a run of it, shown on its right. */
@@ -2114,6 +2145,7 @@ export function useDesktopLocalRuns() {
     runs.value = runs.value.filter((r) => !gone.has(r.key));
     holds.value = without(holds.value);
     separate.value = without(separate.value);
+    windowNames.value = without(windowNames.value);
     keptWindows.value = keptWindows.value.filter((key) => !gone.has(key));
     unseen.value = unseen.value.filter((key) => !gone.has(key));
     keepFinished();
@@ -2145,6 +2177,9 @@ export function useDesktopLocalRuns() {
     shownWorker,
     holds,
     separate,
+    windowNames,
+    windowNameOf,
+    moveWindow,
     keptWindows,
     trayMounts,
     unseen,
