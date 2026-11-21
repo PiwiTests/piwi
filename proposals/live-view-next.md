@@ -26,7 +26,7 @@ proposed, with every part, the decisions D1 to D12, spikes A to H and the defect
 is at commit `46c65e9fd`; the live-runs ADR cites its parts, PRs and open questions by those numbers. Parts and decisions keep their numbers here;
 the delivery steps and the open questions are numbered anew. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. Its
 contracts are entry D62 of [`1.0-stabilization.md`](1.0-stabilization.md); of them, the WebM stream, `get_live_test` and the
-share link to a running run are still to come; a held failure moved to [`ci-run-control.md`](ci-run-control.md).
+share link to a running run are still to come; a held failure moved to [`ci-run-control.md`](../adr/ci-run-control.md).
 
 **Summary.** What remains, in the order it should be built:
 
@@ -39,7 +39,7 @@ share link to a running run are still to come; a held failure moved to [`ci-run-
 - **`get_live_test`**, an MCP tool of the instance, for an agent to read a running CI test, and a **watch link** for
   someone without an account.
 - **Holding a failing CI test while someone watches it** moved to its own plan,
-  [`ci-run-control.md`](ci-run-control.md), with pausing a CI test.
+  [`ci-run-control.md`](../adr/ci-run-control.md), with pausing a CI test.
 
 Of the five jobs [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the second, **explain the failures**: a
 stuck test placed in its step. It feeds the third, **hand back a fix**.
@@ -110,7 +110,7 @@ in the plan as proposed.
 | | Decision | Why |
 | --- | --- | --- |
 | D9 | **Video is a form of the same view, not a second one**: VP9 in WebM from Playwright's ffmpeg, a keyframe every half second, each cluster opening on one (`-dash 1`), when the worker has ffmpeg 1013 and the viewer's browser shows a frame of it within two seconds; images otherwise. | [Spike C](#c-vp9-from-playwrights-ffmpeg): ten images a second as VP9 took a third fewer bytes than four a second as JPEG, at about 4 ms of CPU an image. [Spike G](#g-the-live-webm-in-three-browsers): Chromium and Firefox play it 0.7 to 1.4 s behind, a late viewer from the last keyframe; WebKit on Linux showed nothing in two runs of three. |
-| D11 | **Holding a failing CI test** moved to [`ci-run-control.md`](ci-run-control.md) (its D1 to D3). | It grew a second step, pausing a CI test, and a rule for who may do either. |
+| D11 | **Holding a failing CI test** moved to [`ci-run-control.md`](../adr/ci-run-control.md) (its D1 to D3). | It grew a second step, pausing a CI test, and a rule for who may do either. |
 | D12 | **One server still relays a run.** A relay shared between servers is a plan of its own, together with the run's live events. | The run page's live events have the same limit; lifting one without the other changes nothing for a viewer. |
 
 ## Part 1: Where a stuck test waits
@@ -164,7 +164,7 @@ frame shows within two seconds, as WebKit on Linux did ([spike G](#g-the-live-we
 
 ## Part 8: Holding a failing CI test
 
-Moved to [`ci-run-control.md`](ci-run-control.md), step 1.
+Moved to [`ci-run-control.md`](../adr/ci-run-control.md), step 1.
 
 ## Part 9: Documentation
 
@@ -190,7 +190,7 @@ Moved to [`ci-run-control.md`](ci-run-control.md), step 1.
 - **Who sees it**: who may open the run, as today. `get_live_test` gives an agent the page's text only between the
   page-content markers. A watch link carries the images and the calls' titles alone, and ends with the run.
 - **Nothing kept**: the relay holds the WebM since its last keyframe in memory, and drops it with the run.
-- **Steering**: none ([`ci-run-control.md`](ci-run-control.md) plans the hold and the pause).
+- **Steering**: none ([`ci-run-control.md`](../adr/ci-run-control.md) plans the hold and the pause).
 - **ffmpeg** reads the images of the test's own page from a pipe; it opens no file and no connection.
 
 ## Delivery
@@ -206,7 +206,7 @@ Each PR is usable on its own; sizes are relative (S, M).
 | 5 | The last passing run's image (Part 5). | S |
 | 6 | Video (Part 7), once Safari is checked. | M |
 | 7 | `get_live_test` and the watch link (Part 6), each its own PR if it runs long. | M |
-| 8 | Moved: [`ci-run-control.md`](ci-run-control.md). | |
+| 8 | Moved: [`ci-run-control.md`](../adr/ci-run-control.md). | |
 
 ## Verification
 
@@ -234,7 +234,7 @@ Each PR is usable on its own; sizes are relative (S, M).
 1. **Stuck?**: are two minutes and three times the longest passing duration right, and should a project change them?
    `STUCK_FLOOR_MS` and `STUCK_FACTOR` are fixed.
 2. **The watch link**: the images alone, or the call log too?
-3. **The hold**: moved to [`ci-run-control.md`](ci-run-control.md), which answers it (D2).
+3. **The hold**: moved to [`ci-run-control.md`](../adr/ci-run-control.md), which answers it (D2).
 4. **The record of a narrowed decision**: answered there too (D10).
 5. **Safari**: does it play the live WebM through `MediaSource`, and how far behind?
 6. **Video on the developer's machine**: the live-runs ADR applies Part 7 to the local lane view too; does a view on the
@@ -254,7 +254,7 @@ Each PR is usable on its own; sizes are relative (S, M).
 - **A recording script in the page's own world**, as rrweb records a session: the reporter's contract 6, nothing the
   capture does shows up as the test's own. The DOM between calls could come later from a `MutationObserver` in an
   isolated world, once Inspect has shown the DOM at each call is worth it.
-- **Input into a CI page from the dashboard**: run control's D8 stands ([`ci-run-control.md`](ci-run-control.md) D6).
+- **Input into a CI page from the dashboard**: run control's D8 stands ([`ci-run-control.md`](../adr/ci-run-control.md) D6).
 - **A relay shared between servers** (D12).
 - **Keeping the live view as the run's video**: the trace and video settings keep the record, and the live view keeps
   nothing.
