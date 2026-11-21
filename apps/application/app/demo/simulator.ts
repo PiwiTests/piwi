@@ -43,6 +43,7 @@ import type { TestRunDetails } from '~~/types/api';
 import { simulatorInstanceId } from './simulator-instance';
 import { demoBrowser, demoCiRunner } from '#shared/demo/demo-environments.mjs';
 import { publishDemoLiveMessage, subscribeDemoEvents } from './run-events';
+import { demoWatchShows } from './live-watch';
 import {
   DEMO_NO_PAGES,
   demoCallId,
@@ -104,9 +105,9 @@ interface SimAttempt {
    */
   stopMs?: number;
   /**
-   * How long the attempt's failure is held for the people who may control the run, in wall-clock ms, in a CI run: the
-   * simulator posts the held stop and its end as a CI worker does (`POST /api/test-runs/:id/live-view`), and the hold
-   * ends sooner on **Let it go**.
+   * How long at most the attempt's failure is held for the people who may control the run, in wall-clock ms, in a CI
+   * run, while a view of the page shows its worker in full: the simulator posts the held stop and its end as a CI worker
+   * does (`POST /api/test-runs/:id/live-view`), and the hold ends sooner on **Let it go** or as the view leaves it.
    */
   heldMs?: number;
   error?: string;
@@ -1358,11 +1359,11 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     id: 'held-failure',
     label: 'Held CI failure',
     description:
-      'A CI run: the Apple Pay test fails and waits at its failure for the people who may control the run, until Let it go',
+      'A CI run: watch the Apple Pay test’s worker as it fails, and it waits at its failure for you until Let it go',
     icon: 'i-lucide-hand',
     group: 'causes',
     result: {
-      text: 'The Apple Pay test waited at its failure, its page open for Inspect, then ended as it failed: Let it go, or the hold’s length, let it tear down.',
+      text: 'Watched as it failed by someone who may control the run, the Apple Pay test waited at its failure, then ended as it failed. Unwatched, it ended at once.',
     },
     speed: 2,
     workers: 3,
@@ -1776,18 +1777,23 @@ async function runSingleSimulation(
   }
 
   /** A CI worker's held failure, or its end (null), as it posts it to the run's live view. */
-  async function postLiveStop(worker: LiveWorkerId, stop: Record<string, unknown> | null): Promise<void> {
-    await $fetch(`/api/test-runs/${runId}/live-view`, {
+  /** A CI worker's held failure, or its end (null), as it posts it to the run's live view: whether it is held. */
+  async function postLiveStop(worker: LiveWorkerId, stop: Record<string, unknown> | null): Promise<boolean> {
+    const answer = await $fetch<{ held?: boolean }>(`/api/test-runs/${runId}/live-view`, {
       method: 'POST',
       body: { type: 'stop', ...worker, stop },
-    }).catch(() => {});
+    }).catch(() => null);
+    return answer?.held === true;
   }
 
   /**
-   * Hold a failure of `worker` at `stop`, `ms` long, until **Let it go** of it comes over the demo's channel, or the
-   * run stops: the worker posts the held stop, then its end.
+   * Hold a failure of `worker` at `stop`, as a CI worker holds one: only while a view of this page shows the worker in
+   * full and the demo takes the hold (the project holds failing CI tests, and the person acting may control the run),
+   * `ms` long at most, until **Let it go** of it comes over the demo's channel, the view stops showing it, or the run
+   * stops; the worker then posts its end.
    */
   async function holdFailure(worker: LiveWorkerId, stop: Record<string, unknown>, ms: number): Promise<void> {
+    if (!demoWatchShows(runId, worker)) return;
     let letGo = false;
     const unhear = subscribeDemoEvents((message) => {
       if (message.scope === 'let-go' && message.runId === runId && message.worker.worker === worker.worker) {
@@ -1795,11 +1801,14 @@ async function runSingleSimulation(
       }
     });
     try {
-      await postLiveStop(worker, stop);
-      for (let waited = 0; waited < ms && !letGo && !ctl.stopped; waited += HOLD_TICK_MS) await sleep(HOLD_TICK_MS);
+      if (!(await postLiveStop(worker, stop))) return;
+      for (let waited = 0; waited < ms && !letGo && !ctl.stopped; waited += HOLD_TICK_MS) {
+        await sleep(HOLD_TICK_MS);
+        if (!demoWatchShows(runId, worker)) break;
+      }
+      await postLiveStop(worker, null);
     } finally {
       unhear();
-      await postLiveStop(worker, null);
     }
   }
 

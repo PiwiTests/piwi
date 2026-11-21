@@ -14,6 +14,12 @@ import { streamSimulation } from './demo-simulator-harness';
 const said = vi.hoisted(() => [] as Array<{ runId: number; message: LiveViewerMessage }>);
 /** Who hears the demo's channel: the simulator's held failures, which a test tells **Let it go** at once. */
 const hearers = vi.hoisted(() => new Set<(message: DemoEventMessage) => void>());
+/** Whether the page's view shows the held worker in full, as the demo's watch says it. */
+const watched = vi.hoisted(() => ({ shows: true }));
+vi.mock('~~/app/demo/live-watch', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('~~/app/demo/live-watch')>()),
+  demoWatchShows: () => watched.shows,
+}));
 vi.mock('~~/app/demo/run-events', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~~/app/demo/run-events')>()),
   publishDemoLiveMessage: (runId: number, message: LiveViewerMessage) => said.push({ runId, message }),
@@ -33,6 +39,7 @@ afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
   said.length = 0;
+  watched.shows = true;
 });
 
 const TITLE = 'should complete checkout with PayPal';
@@ -141,6 +148,13 @@ describe("the 'held-failure' scenario's worker", () => {
     expect(endedAt! - heldAt!).toBeGreaterThanOrEqual(simulator.DEMO_HOLD_MS);
     const complete = run.events.filter((e) => e.type === 'complete' && e.title === held.stop.test);
     expect(complete.at(-1)).toMatchObject({ status: 'failed' });
+  });
+
+  test('holds nothing while no view of the page shows its worker in full', async () => {
+    watched.shows = false;
+    const posts: Array<{ url: string }> = [];
+    await streamSimulation(simulator, 'held-failure', { onRequest: (url) => posts.push({ url }) });
+    expect(stopsOf(posts)).toEqual([]);
   });
 
   test('ends the hold at Let it go', async () => {

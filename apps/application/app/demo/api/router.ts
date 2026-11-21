@@ -1518,8 +1518,8 @@ const routes: RouteEntry[] = [
     handler: async (m, body, _query, ctx) => {
       const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
       const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
-      const controls = !!acting && demoCan(ctx, 'run:control', projectId ?? undefined);
-      return apiPostDemoLiveStop(+m[1]!, body, controls && acting ? [acting.name] : []);
+      const controls = demoCan(ctx, 'run:control', projectId ?? undefined);
+      return apiPostDemoLiveStop(+m[1]!, body, { controls, heldFor: controls && acting ? [acting.name] : [] });
     },
   },
   {

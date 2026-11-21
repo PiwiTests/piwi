@@ -12,7 +12,7 @@
  */
 import { eq } from 'drizzle-orm';
 import { liveWorkerKey, readWorkerToInstance, type LiveWorkerId } from '@piwitests/core/live-view';
-import type { LiveWorkerState } from '#shared/live-view';
+import { LET_GO_DONE, LET_GO_NOT_HELD, LET_GO_SETTING_OFF, type LiveWorkerState } from '#shared/live-view';
 import { UNFINISHED_RUN_STATUSES } from '#shared/run-eligibility';
 import { projects, testRuns } from '~~/server/database/schema.sqlite';
 import {
@@ -58,33 +58,47 @@ export async function apiGetDemoLiveSnapshot(runId: number, query: URLSearchPara
 const heldWorkers = new Map<number, Map<string, LiveWorkerState>>();
 
 /**
- * A simulated CI worker of run `runId` posts its held failure or its end (a `stop`, with the run's stream token): the
- * run page hears it as the instance tells it, held for `heldFor`, the people watching it the demo names.
+ * A simulated CI worker of run `runId` posts its held failure or its end (a `stop`, with the run's stream token), the
+ * simulator having seen the demo's view show the worker in full: the run page hears it as the instance tells it, held
+ * for `heldFor`. A held failure is taken (`held: true`) only while the run's project holds failing CI tests and the
+ * person acting may control the run (`controls`), as the instance holds one only for a controller; otherwise the
+ * worker goes on at once, and nothing reaches the page.
  */
-export async function apiPostDemoLiveStop(runId: number, body: unknown, heldFor: string[]): Promise<unknown> {
+export async function apiPostDemoLiveStop(
+  runId: number,
+  body: unknown,
+  who: { controls: boolean; heldFor: string[] },
+): Promise<{ success: true; held: boolean }> {
   const message = readWorkerToInstance(body);
   if (typeof message === 'string') throw demoHttpError(400, message);
   if (message.type !== 'stop') throw demoHttpError(400, 'A simulated worker posts its stops alone.');
   const db = await getDemoDb();
-  const [run] = await db.select({ status: testRuns.status }).from(testRuns).where(eq(testRuns.id, runId));
+  const [run] = await db
+    .select({ status: testRuns.status, hold: projects.liveViewHold })
+    .from(testRuns)
+    .innerJoin(projects, eq(projects.id, testRuns.projectId))
+    .where(eq(testRuns.id, runId));
   if (!run || !(UNFINISHED_RUN_STATUSES as readonly string[]).includes(run.status)) {
     throw demoHttpError(410, 'The run is no longer live.');
   }
   const { type: _type, stop, ...id } = message;
+  const holding = heldWorkers.get(runId) ?? new Map<string, LiveWorkerState>();
+  if (stop?.reason === 'held' && (!run.hold || !who.controls)) return { success: true, held: false };
+  // The end of a hold the demo never took reaches nothing.
+  if (!stop && !holding.has(liveWorkerKey(id))) return { success: true, held: false };
   const state: LiveWorkerState = {
     ...id,
     connected: true,
     paused: stop,
     holds: true,
-    heldFor: stop?.reason === 'held' ? heldFor : [],
+    heldFor: stop?.reason === 'held' ? who.heldFor : [],
   };
-  const held = heldWorkers.get(runId) ?? new Map<string, LiveWorkerState>();
-  if (stop?.reason === 'held') held.set(liveWorkerKey(id), state);
-  else held.delete(liveWorkerKey(id));
-  if (held.size) heldWorkers.set(runId, held);
+  if (stop?.reason === 'held') holding.set(liveWorkerKey(id), state);
+  else holding.delete(liveWorkerKey(id));
+  if (holding.size) heldWorkers.set(runId, holding);
   else heldWorkers.delete(runId);
   publishDemoRunEvent(runId, { type: 'live-worker', data: { ...state } });
-  return { success: true };
+  return { success: true, held: stop?.reason === 'held' };
 }
 
 /**
@@ -105,18 +119,13 @@ export async function apiDemoLetGo(runId: number, body: unknown): Promise<unknow
     .innerJoin(projects, eq(projects.id, testRuns.projectId))
     .where(eq(testRuns.id, runId));
   if (!run) throw demoHttpError(404, 'Test run not found');
-  if (!run.hold) {
-    throw demoHttpError(
-      409,
-      "The project's setting is off: a Project admin turns on Hold a failing CI test in Project → Settings → Live view.",
-    );
-  }
+  if (!run.hold) throw demoHttpError(409, LET_GO_SETTING_OFF);
   const held = heldWorkers.get(runId)?.get(liveWorkerKey(worker));
-  if (!held) throw demoHttpError(409, 'This worker holds no failing test now.');
+  if (!held) throw demoHttpError(409, LET_GO_NOT_HELD);
   publishDemoLetGo(runId, {
     shard: held.shard,
     worker: held.worker,
     ...(held.slot === undefined ? {} : { slot: held.slot }),
   });
-  return { success: true, message: 'The test goes on: it tears down as it would have, its result unchanged.' };
+  return { success: true, message: LET_GO_DONE };
 }

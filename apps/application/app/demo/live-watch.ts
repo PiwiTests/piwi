@@ -148,6 +148,18 @@ function keptWorker(runId: number, id: LiveWorkerId): KeptWorker | null {
 
 let watchCount = 0;
 
+/** The page's watches that are open. */
+const openWatches = new Set<DemoLiveWatch>();
+
+/**
+ * Whether a watch of this page shows `worker` of run `runId` in full: the demo's simulated CI worker holds a failing
+ * test only then, as a worker holds one only while a controller watches it in full.
+ */
+export function demoWatchShows(runId: number, worker: LiveWorkerId): boolean {
+  for (const watch of openWatches) if (watch.shows(runId, worker)) return true;
+  return false;
+}
+
 export class DemoLiveWatch implements LiveWatchConnection {
   private ask: LiveWatchAsk = { focus: null, tiles: false, size: null, layers: [], inspect: false };
   private open = false;
@@ -167,6 +179,12 @@ export class DemoLiveWatch implements LiveWatchConnection {
     return this.open ? this.watchId : null;
   }
 
+  /** Whether this watch is open on run `runId` and shows `worker` in full. */
+  shows(runId: number, worker: LiveWorkerId): boolean {
+    const focus = this.ask.focus;
+    return this.open && this.runId === runId && !!focus && sameWorker(focus, worker);
+  }
+
   want(ask: LiveWatchAsk): void {
     this.ask = { ...ask, focus: ask.focus ? { ...ask.focus } : null, inspect: ask.inspect === true };
     if (!ask.tiles && !ask.focus) return this.close();
@@ -179,6 +197,7 @@ export class DemoLiveWatch implements LiveWatchConnection {
     if (!this.open) {
       this.open = true;
       watches.add(this.tell);
+      openWatches.add(this);
       this.events.state({ kind: 'open' });
     }
     this.tellKept();
@@ -204,6 +223,7 @@ export class DemoLiveWatch implements LiveWatchConnection {
   close(): void {
     this.open = false;
     watches.delete(this.tell);
+    openWatches.delete(this);
     this.told = { focus: null, inspect: false };
     this.events.state({ kind: 'idle' });
   }
@@ -235,6 +255,7 @@ export class DemoLiveWatch implements LiveWatchConnection {
       this.open = false;
       this.halted = true;
       watches.delete(this.tell);
+      openWatches.delete(this);
       this.told = { focus: null, inspect: false };
       this.events.state({ kind: 'closed', status: null, reason: message.reason });
       return;
