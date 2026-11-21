@@ -1044,8 +1044,12 @@ export const LIVE_WATCH_ENDS: readonly LiveViewEnd[] = ['run-ended', 'off', 'rep
  * of `MAX_LIVE_HEADER`, which no message's other fields reach.
  */
 export type LiveViewerMessage =
-  /** The watch opened: the id its viewer names it by to change what it shows. */
-  | { type: 'hello'; watch: string }
+  /**
+   * The watch opened: the id its viewer names it by to change what it shows, and whether it counts as a controller's
+   * (`controller`: its person may control the project's runs, so a failing CI test it shows in full may be held, and
+   * **Let it go** taken from it), absent otherwise.
+   */
+  | { type: 'hello'; watch: string; controller?: true }
   /**
    * A frame of a worker's test page, its JPEG's bytes, the call it was taken at, the title of its test and, from a
    * reporter that says it, when the page looked so, in epoch milliseconds (`at`): the browser's paint time, at most
@@ -1129,7 +1133,10 @@ function readSnapshotNotice(value: Record<string, unknown>): LiveSnapshotNotice 
 export function readLiveViewerMessage(message: LiveMessage): LiveViewerMessage | null {
   const value = message.header;
   if (value.type === 'hello') {
-    return typeof value.watch === 'string' && WATCH_ID.test(value.watch) ? { type: 'hello', watch: value.watch } : null;
+    if (typeof value.watch !== 'string' || !WATCH_ID.test(value.watch)) return null;
+    return value.controller === true
+      ? { type: 'hello', watch: value.watch, controller: true }
+      : { type: 'hello', watch: value.watch };
   }
   if (value.type === 'end') {
     if (!VIEW_ENDS.includes(value.reason as string)) return null;

@@ -27,8 +27,10 @@ A CI test is held only when all of these stand as it fails:
 
 - the project's setting is on;
 - someone with the `run:control` permission on the project (a Maintainer or a Project admin:
-  [roles](/operate/project-access#what-each-role-can-do)) watches that worker's lane in full, in its lane panel. A
-  tile of [Watch all](./watch-all) does not count, nor does a Viewer or a Contributor watching;
+  [roles](/operate/project-access#what-each-role-can-do)) watches that worker's lane in full: in the run page's lane
+  panel, in an [editor's worker view](./editor-ci-runs#a-failure-held-for-you), or in
+  [Piwi Picker's Runs window](./runs-window), each with that person's sign-in or key. A tile of [Watch all](./watch-all) does
+  not count, nor does a Viewer or a Contributor watching;
 - the test failed or timed out, and was not expected to.
 
 With authentication off, everyone who opens the run may control it, so anyone watching counts. Who may control the
@@ -53,6 +55,19 @@ The test's own timeout stops while it waits, as at a breakpoint, so Playwright d
 CI job's own timeout still runs**: the lane panel says so beside the hold. A job that reaches its timeout during a
 hold fails as it would have, later.
 
+### Where it shows
+
+Every surface that watches the lane shows the hold in the same words: the run page's lane panel, VS Code's worker
+panel, the JetBrains **Worker** tab and the Runs window's CI run, whose test list marks the lane **Failed, held at its
+line** too. **Let it go** shows on a surface whose own watch of the lane counts as a controller's: the instance says so
+to that watch as it opens, so an editor or Piwi Picker connected with a Maintainer's key offers it, and one connected
+with a Viewer's key shows the hold without it. A refusal is said in the instance's words.
+
+<figure>
+  <img src="/screenshots/picker-runs-ci-held.png" width="488" alt="The Runs window watching worker 2 of CI run #78: the test list marks it Failed, held at its line, and above its live page a box says Failed, held at its line, Held for Ana until a time, the expected and received text, tests/checkout.spec.ts:42, The CI job’s own timeout still runs, and a Let it go button">
+  <figcaption>A held CI failure in the Runs window, with Let it go.</figcaption>
+</figure>
+
 The run's log says that the test is held, and until when, in UTC:
 
 ```text
@@ -63,11 +78,11 @@ The run's log says that the test is held, and until when, in UTC:
 
 The hold ends at the first of:
 
-- **Let it go**, in the lane panel, which only someone with `run:control` sees;
+- **Let it go**, on a surface watching the lane, which only someone with `run:control` sees;
 - the longest hold the project set. A new length set during a hold applies to it: the hold ends that long after it
   began, at once when that is past;
 - nobody with `run:control` watching the lane in full any more: the last one closed the panel or moved to another
-  lane;
+  lane. A Runs window hidden or minimized lets go of its watch, so it stops counting;
 - the project's setting turned off, or the run's live view ending (the run ended or interrupted, the project's live
   view turned off).
 

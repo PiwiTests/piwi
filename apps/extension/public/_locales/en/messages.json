@@ -8933,8 +8933,8 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.",
-    "description": "Runs window, under the list of CI runs in progress: they are read-only, and Watch (runs_watch) on a running test shows its page in the window."
+    "message": "Watched only: these run on CI, so nothing here steers them, except Let it go on a failure held for you. Watch shows a running test’s page here.",
+    "description": "Runs window, under the list of CI runs in progress: they are only watched, but for Let it go (runs_letGo) on a failure held for the person, and Watch (runs_watch) on a running test shows its page in the window."
   },
   "runs_ciTests": {
     "message": "Tests running now",
@@ -9004,6 +9004,18 @@
   "runs_ciRefusedNoTest": {
     "message": "No test ran in this worker’s lane yet.",
     "description": "Runs window, why a CI run’s worker could not be watched: no test ran in its lane yet."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Let it go goes on this window’s watch of the worker: watch it again first.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the window no longer watches its worker."
+  },
+  "runs_ciNotController": {
+    "message": "You may watch this run, not control it.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the instance did not say this connection may control the project’s runs."
+  },
+  "runs_ciNotHeld": {
+    "message": "This worker holds no failing test now.",
+    "description": "Runs window, why Let it go did not reach a CI run’s worker: its test is no longer held."
   },
   "runs_ciRefusedOffline": {
     "message": "The instance did not answer.",

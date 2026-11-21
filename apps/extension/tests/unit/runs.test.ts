@@ -415,6 +415,20 @@ describe('Watch on a CI run, as the worker reads it', () => {
     }
   });
 
+  it('names the run, its shard and its lane for Let it go, and nothing more', () => {
+    const letGo = { type: 'ci-let-go', id: 5, runId: 78, shard: null, lane: 1 };
+    expect(parseRunsRequest(letGo)).toEqual(letGo);
+    expect(parseRunsRequest({ ...letGo, worker: 3, since: 'x' })).toEqual(letGo);
+    for (const bad of [
+      { ...letGo, id: 0 },
+      { ...letGo, runId: 0 },
+      { ...letGo, shard: 0 },
+      { ...letGo, lane: -1 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
   it('opens the lane’s view on the run’s page, the worker counted from 1', () => {
     const run = { url: 'https://piwi.example/test-runs/78' };
     expect(ciDashboardWatch(run, { shard: null, lane: 1 })).toBe('https://piwi.example/test-runs/78?watch=2');

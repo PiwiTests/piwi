@@ -162,7 +162,7 @@
   "runs_ciWhere": "em $branch$",
   "runs_ciWhereProject": "$project$, em $branch$",
   "runs_ciProject": "$project$",
-  "runs_ciReadOnly": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Assistir mostra aqui a página de um teste em execução.",
+  "runs_ciReadOnly": "Só para assistir: elas rodam na CI, então nada aqui as conduz, exceto Deixar seguir numa falha retida para você. Assistir mostra aqui a página de um teste em execução.",
   "runs_answerPausing": "Pausando na próxima chamada.",
   "runs_answerStepping": "Avançando para a próxima chamada.",
   "runs_answerResuming": "Retomando.",

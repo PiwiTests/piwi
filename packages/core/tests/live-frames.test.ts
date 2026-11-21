@@ -260,6 +260,15 @@ describe('a viewer’s watch', () => {
     ]);
   });
 
+  test('says in its hello whether the watch counts as a controller’s, and nothing else of it', () => {
+    const read = (header: Record<string, unknown>) =>
+      readLiveViewerMessage(readInChunks(encodeLiveViewerMessage(header as LiveViewerMessage), 64)[0]!);
+    const watch = 'abcdefghijklmnopqrstuv';
+    expect(read({ type: 'hello', watch, controller: true })).toEqual({ type: 'hello', watch, controller: true });
+    expect(read({ type: 'hello', watch, controller: false })).toEqual({ type: 'hello', watch });
+    expect(read({ type: 'hello', watch, controller: 'yes' })).toEqual({ type: 'hello', watch });
+  });
+
   test('carries the page’s text as its data: whole while it fits a reader’s data, else cut where a character ends', () => {
     /** A page's text of `MAX_LANE_TEXT` characters, of lines in one script. */
     const page = (line: (i: number) => string) => {
