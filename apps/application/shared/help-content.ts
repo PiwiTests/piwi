@@ -94,7 +94,7 @@ export const HELP_TOPICS = {
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
-    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
+    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, needing a ticket, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, c create issue, o open.",
     doc: 'features/failure-inbox',
   },
   'home.flake-lab': {
@@ -158,7 +158,7 @@ export const HELP_TOPICS = {
   },
   'analytics.flaky-leaderboard': {
     title: 'Flakiest tests',
-    text: 'The worst flaky tests across all projects, using the same scoring as each project’s Flaky tests tab, sorted by wasted-CI impact.',
+    text: 'The worst flaky tests across all projects, using the same scoring as the Flaky view of each project’s Failures tab, sorted by wasted-CI impact.',
     doc: 'features/flaky-tests#flaky-test-detection',
   },
   'analytics.cluster-landscape': {
@@ -317,7 +317,7 @@ export const HELP_TOPICS = {
   },
   'reports.schedule': {
     title: 'Report schedule',
-    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
+    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, Microsoft Teams, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
     doc: 'features/quality-reports#report-schedules',
     envVars: ['PIWI_TIME_ZONE'],
   },
@@ -387,7 +387,7 @@ export const HELP_TOPICS = {
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
     text: 'Backend calls captured during tests, aggregated across all projects by route: p50/p90 latency, error rate, and how many projects hit each one — a shared endpoint regressing shows up here first.',
-    doc: 'guide/capture-fixtures',
+    doc: 'reference/analytics-widgets#detail',
   },
 
   // ── Projects list ─────────────────────────────────────────────────────
@@ -868,12 +868,12 @@ export const HELP_TOPICS = {
   'setup.presets': {
     title: 'What you want Piwi for',
     text: 'The coarse choice of which capability groups this instance uses. Unchecking a group declines its capabilities everywhere — the pages, panels, settings and MCP tools they own stop showing until you reconsider on this page. Seeing why tests fail is always on.',
-    doc: 'guide/getting-started',
+    doc: 'operate/capabilities',
   },
   'project.capabilities': {
     title: 'Capabilities',
     text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
-    doc: 'guide/getting-started',
+    doc: 'operate/capabilities#declining-a-capability',
   },
   'cluster.activity': {
     title: 'Activity',
@@ -895,7 +895,7 @@ export const HELP_TOPICS = {
     text: [
       'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
       '',
-      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
+      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core or Nitro), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
       '- **Browser** — the application files whose functions ran in Chromium, by path, or with the functions that ran when the reporter recorded them; such a file opens to its source too.',
       '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
       '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
@@ -1435,7 +1435,7 @@ export const HELP_TOPICS = {
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
+    text: 'When a run finishes, up to 3 of the failure clusters that failed in it and have no diagnosis yet are diagnosed automatically (`PIWI_AI_AUTO_DIAGNOSE_MAX` changes the cap) — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
     envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
   },

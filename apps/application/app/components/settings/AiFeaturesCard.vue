@@ -68,8 +68,8 @@ const assistantCliLabel = computed(() => (assistantCli.value ? providerLabel(ass
               aria-label="Auto-diagnose"
             />
             <span class="text-xs text-muted">
-              When a run finishes, diagnose up to 3 of its new failure clusters and title them. Each diagnosis takes one
-              or two model calls.
+              When a run finishes, diagnose up to 3 of its failure clusters that have no diagnosis yet, and title the
+              new ones. Each diagnosis takes one or two model calls.
             </span>
           </div>
         </SettingsField>
