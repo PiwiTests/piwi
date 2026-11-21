@@ -26,7 +26,8 @@ Step 2 is built on the editors' worker view and the Runs window too (Delivery PR
 CI lane's paused test, its Pause asked or dropped and the controls its watch offers as a controller's in the run page's
 words, VS Code's worker panel and the JetBrains **Worker** tab show them and send `piwi/ciControl` with the command, and
 the Runs window does the same through its own connection, each asking one control in each state of the lane. Every
-surface says what reaches a CI run from it: nothing but the controls of a CI test held or paused for you. Nothing was
+surface says what reaches a CI run from it: nothing but Pause, Resume, End the test and Let it go, for those who may
+control it. Nothing was
 left out. Step 1 takes over Part 8 of
 [`live-view-next.md`](../proposals/live-view-next.md) (its D11 and open questions 3 and 4), which now points here.
 
