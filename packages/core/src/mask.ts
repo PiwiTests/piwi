@@ -883,21 +883,52 @@ export function withoutFieldSecrets(snapshot: string, secrets: readonly string[]
   return hideKnownValues(out, values);
 }
 
+/** The last character of a text {@link cutText} shortened: what tells {@link hideKnownValues} that the text was cut. */
+export const CUT_MARK = '…';
+
+/**
+ * `text` as it is when it is `max` characters or fewer, else its first `max - 1` characters and {@link CUT_MARK}: how a
+ * text is cut before {@link hideKnownValues} hides the values the attempt knows in it, which then also hides the start
+ * of one the cut left at its end. Pure.
+ */
+export function cutText(text: string, max: number): string {
+  return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}${CUT_MARK}`;
+}
+
 /**
  * `text` with each of `values` of 8 characters or more written as {@link HIDDEN_VALUE} wherever it appears, as written
  * and as a quoted value of an ARIA snapshot escapes it. A shorter value is left: it would also match inside words,
  * numbers and markup that have nothing to do with it (a three-letter value hides part of every word that holds it),
  * so a text shows it only where a rule reads where it stands (a field's value in a snapshot line, `withoutFieldSecrets`).
+ * A text that ends with {@link CUT_MARK} (one {@link cutText} shortened) also has the longest start of such a value,
+ * as written or escaped, that stands right before the mark written as {@link HIDDEN_VALUE}: a start of any length,
+ * from one character on, since it is looked for at the cut alone, where one that merely matches costs only the end of
+ * a text already cut. A text without the mark keeps an end that merely starts a value.
  * The one rule for the values the attempt knows are secrets (`withoutFieldSecrets`, `maskAriaSnapshot`, the live call
  * log), so what one path hides another cannot show. No values leave `text` as it is. Pure.
  */
 export function hideKnownValues(text: string, values: readonly string[]): string {
   let out = text;
+  const forms: string[] = [];
   for (const value of values) {
     if (value.length < 8) continue;
-    for (const written of new Set([value, escapedInQuotes(value)])) out = out.split(written).join(HIDDEN_VALUE);
+    for (const written of new Set([value, escapedInQuotes(value)])) {
+      out = out.split(written).join(HIDDEN_VALUE);
+      forms.push(written);
+    }
   }
-  return out;
+  if (!forms.length || !out.endsWith(CUT_MARK)) return out;
+  const kept = out.slice(0, -CUT_MARK.length);
+  let longest = 0;
+  for (const form of forms) {
+    for (let length = Math.min(form.length - 1, kept.length); length > longest; length--) {
+      if (kept.endsWith(form.slice(0, length))) {
+        longest = length;
+        break;
+      }
+    }
+  }
+  return longest ? `${kept.slice(0, -longest)}${HIDDEN_VALUE}${CUT_MARK}` : out;
 }
 
 /** The roles of an ARIA snapshot's nodes whose value is what a person typed or chose: a field's. */

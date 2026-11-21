@@ -5,6 +5,7 @@ import { gzipSync } from 'node:zlib';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import { chromium, type Browser, type BrowserContext, type Page } from '@playwright/test';
 import type { LaneText } from '@piwitests/core/live-layers';
+import { CUT_MARK, HIDDEN_VALUE } from '@piwitests/core/mask';
 import type { LiveCallLog } from '@piwitests/core/live-view';
 import {
   LaneFilmstrip,
@@ -12,6 +13,7 @@ import {
   attemptTraceFile,
   layersTestBegan,
   layersTestEnded,
+  layersTitleOf,
   takeLaneText,
 } from '../src/internal/capture/lane-layers.js';
 import { followCallLog, listenCalls, trackCalls } from '../src/internal/capture/live-call-log.js';
@@ -309,6 +311,49 @@ describe('the call log a view is told', () => {
     expect(last.lines.length).toBeGreaterThan(1);
     expect(JSON.stringify(last)).not.toContain(VALUE);
     expect(last.lines.join('\n')).toContain('<hidden>');
+  });
+
+  /** Whether `text` ends with a start of `VALUE`, one character of it or more, the cut mark after it or not. */
+  const endsWithStart = (text: string): boolean =>
+    Array.from({ length: VALUE.length - 1 }, (_, i) => VALUE.slice(0, i + 1)).some(
+      (start) => text.endsWith(start) || text.endsWith(`${start}${CUT_MARK}`),
+    );
+
+  it('hides the start of a known value that a line or the error cut at its bound ends with, known later too', async () => {
+    const known: string[] = [];
+    const meta = { id: 'call@4', method: 'click', params: { selector: '#out' }, error: undefined as unknown };
+    const { hooks, told, stop } = await follow(() => known);
+    hooks.onBeforeCall!({ metadata: meta }, {}, undefined);
+    // A line is kept 600 characters long at most: each of these is cut inside the value, one character of it on.
+    for (let start = 1; start < VALUE.length; start++) {
+      hooks.onCallLog!({}, meta, 'api', `${'x'.repeat(599 - start)}${VALUE} and after`);
+    }
+    expect(told[told.length - 1]!.lines.filter((line) => line.includes('x'))).toHaveLength(VALUE.length - 1);
+    known.push(VALUE);
+    meta.error = { error: { message: `${'y'.repeat(590)}${VALUE} and after\n  more` } };
+    hooks.onAfterCall!({ metadata: meta }, {}, undefined);
+    stop?.();
+    const last = told[told.length - 1]!;
+    expect(last.lines.filter((line) => line.includes('x'))).toHaveLength(VALUE.length - 1);
+    for (const text of [...last.lines, last.error!]) {
+      expect(endsWithStart(text), text).toBe(false);
+      expect(text.endsWith(`${HIDDEN_VALUE}${CUT_MARK}`), text).toBe(true);
+    }
+  });
+
+  it('hides the start of a known value that the runner’s title of a call, cut at its bound, ends with', async () => {
+    // The runner's title is kept 300 characters long at most: each of these is cut inside the value.
+    const titleOf = (id: string) => `Click getByText("${'x'.repeat(282 - Number(id.split('@')[1]))}${VALUE}")`;
+    layersTestBegan({ id: 'cut-title', began: Date.now(), titleOf, fixtureCall: () => false, trace: null });
+    for (let start = 1; start < VALUE.length; start++) {
+      const meta = { id: `call@${start}`, method: 'click', params: { selector: '#out' } };
+      const { hooks, told, stop } = await follow(() => [VALUE], layersTitleOf);
+      hooks.onBeforeCall!({ metadata: meta }, {}, undefined);
+      stop?.();
+      const { title } = told[told.length - 1]!.call;
+      expect(endsWithStart(title), title).toBe(false);
+      expect(title).toBe(`Click getByText("${'x'.repeat(282 - start)}${HIDDEN_VALUE}${CUT_MARK}`);
+    }
   });
 
   it('tells a call log as it is while no value is known', async () => {

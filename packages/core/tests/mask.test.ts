@@ -1,6 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import {
+  CUT_MARK,
   HIDDEN_VALUE,
+  cutText,
   hideKnownValues,
   hideSecretsInText,
   hideSecretsInUrl,
@@ -653,5 +655,38 @@ describe('hideKnownValues', () => {
     );
     expect(hideKnownValues('unchanged AAAAAAAA', [])).toBe('unchanged AAAAAAAA');
     expect(hideKnownValues('unchanged', [''])).toBe('unchanged');
+  });
+
+  test('hides every start of a value that a cut left at the end of a text, however short', () => {
+    const value = 'SAMPLE-SECRET-VALUE';
+    const text = `locator resolved to <div id="out">${value}</div>`;
+    for (let end = text.indexOf(value) + 1; end < text.indexOf(value) + value.length; end++) {
+      const cut = cutText(text, end + 1);
+      expect(cut.endsWith(CUT_MARK)).toBe(true);
+      expect(hideKnownValues(cut, [value])).toBe(`locator resolved to <div id="out">${HIDDEN_VALUE}${CUT_MARK}`);
+    }
+  });
+
+  test('hides the start of a value at a cut as a quoted value escapes it, and the longest start of several', () => {
+    const value = 'say "hello" now';
+    const escaped = cutText('- textbox: "say \\"hel', 19);
+    expect(hideKnownValues(escaped, [value])).toBe(`- textbox: "${HIDDEN_VALUE}${CUT_MARK}`);
+    const both = cutText('one xyzABCDEFG and more', 15);
+    expect(hideKnownValues(both, ['ABCDEFGHIJ', 'xyzABCDEFGH'])).toBe(`one ${HIDDEN_VALUE}${CUT_MARK}`);
+  });
+
+  test('leaves the end of a text that was not cut, and the start of a value under 8 characters at a cut', () => {
+    expect(hideKnownValues('waiting for SAMPLE-SEC', ['SAMPLE-SECRET-VALUE'])).toBe('waiting for SAMPLE-SEC');
+    const cut = cutText('waiting for 1234567', 15);
+    expect(hideKnownValues(cut, ['1234567'])).toBe(cut);
+    expect(hideKnownValues(cutText('no value here at all', 10), ['SAMPLE-SECRET-VALUE'])).toBe(`no value ${CUT_MARK}`);
+  });
+});
+
+describe('cutText', () => {
+  test('keeps a text that fits, and cuts a longer one to its bound with the cut mark last', () => {
+    expect(cutText('short', 5)).toBe('short');
+    expect(cutText('longer text', 6)).toBe(`longe${CUT_MARK}`);
+    expect(cutText('longer text', 6)).toHaveLength(6);
   });
 });
