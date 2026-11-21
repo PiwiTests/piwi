@@ -4503,18 +4503,43 @@ object Glue {
 
     /**
      * What the Worker tab says above a CI lane it watches, from the run's session (`sessions` by `ciKey`): the test
-     * running in the lane and the call it is at, else that the lane is between tests, else that the run ended; always
-     * read-only.
+     * running in the lane and the call it is at, or where it stands while held at its failure, else that the lane is
+     * between tests, else that the run ended; read-only but for a held failure.
      */
     fun ciLaneCaption(sessions: Map<String, CiSession>, lane: CiLane): String {
         val name = ciLaneTitle(lane)
         val session = sessions[ciKey(lane.root, lane.runId)] ?: return "$name · the run ended."
-        val test = session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
-            ?: return "$name · between tests · read-only"
+        val test = ciLaneTest(session, lane) ?: return "$name · between tests · read-only"
         val title = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+        test.held?.let { return "$name · ${it.state}: $title" }
         val at = test.at?.let { " · ${it.title}" }.orEmpty()
         return "$name · Running $title$at · read-only"
     }
+
+    private fun ciLaneTest(session: CiSession, lane: CiLane): CiTest? =
+        session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
+
+    /** The CI lane's running test held at its failure for the run's controllers, as the service says it; null for none. */
+    fun ciLaneHeld(sessions: Map<String, CiSession>, lane: CiLane): CiHeld? =
+        sessions[ciKey(lane.root, lane.runId)]?.let { ciLaneTest(it, lane) }?.held
+
+    /**
+     * A held CI failure as the Worker tab shows it above the image, one line each: where it stands and for whom, its
+     * error, its place, and that the CI job's own timeout still runs; a part the service left empty is left out.
+     */
+    fun ciHeldLines(held: CiHeld): List<String> = listOf(
+        listOfNotNull(held.state, held.heldFor).joinToString(" · "),
+        held.error,
+        held.place.orEmpty(),
+        held.note,
+    ).filter { it.isNotBlank() }
+
+    /** What **Let it go** asks of the service for the CI lane the Worker tab shows (`piwi/ciLetGo`). */
+    fun ciLetGoParams(lane: CiLane): CiLetGoParams = CiLetGoParams(lane.root, lane.runId, lane.shard, lane.lane)
+
+    /** **Let it go**'s words and tooltip: the run model's (`runs_letGo`, `runs_letGoTitle`), which `GlueTest` holds. */
+    const val LET_GO = "Let it go"
+    const val LET_GO_TITLE = "End the hold: the test tears down as it would have, its result unchanged"
 
     /**
      * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its

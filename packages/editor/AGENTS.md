@@ -91,9 +91,10 @@ Read [`../../AGENTS.md`](../../AGENTS.md) first for the repository-wide conventi
 - **An instance receives paths, branch names and commit metadata from the workspace, never a file's content.** A
   request names a spec, a test file or an application file by its path, the checked-out branch, the machine a Flake
   Lab plan is for (`flakePlan`), and for a shared bisect the commit's SHA, subject, author and date (`recordBisect`).
-- **A CI session is read-only.** No request acts on a `CiSession` (`piwi/ciWatch` only shows a lane), and its
-  position is never a stop and names a file of the context's folder alone (`workspaceFile`). Checked by
-  `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
+- **A CI session is read-only, but for Let it go.** No request acts on a `CiSession` (`piwi/ciWatch` only shows a
+  lane) but `piwi/ciLetGo`, which goes on the service's own watch of the held lane once its `hello` said it counts as
+  a controller's (`CiWatch.letGo`); its position is never a stop and names a file of the context's folder alone
+  (`workspaceFile`). Checked by `tests/ci-sessions.test.ts` and `tests/ci-watch.test.ts`.
 - **The API key leaves the process only in `X-API-Key` and in the MCP server definition.** `piwi/mcp` includes it only
   while the credentials' `mcpAuthorization` is `key`; with `sign-in`, the agent signs in through the instance's OAuth.
   Checked by `tests/lsp.test.ts` ("Piwi’s MCP server for the agent").

@@ -27,6 +27,30 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertEquals("The page of the CI worker's test", PausedPagePanel().apply { forCiWorker() }.pageName())
     }
 
+    fun testAHeldCiFailureShowsInPlainTextWithLetItGoWhereOfferedAndOffWhileItsAskWaits() {
+        val panel = PausedPagePanel().apply { forCiWorker() }
+        var pressed = 0
+        panel.letGo = { pressed++ }
+        val lines = listOf("Failed, held at its line · Held for Ana · until 12:05", "<b>Expected</b>", "The CI job’s own timeout still runs.")
+        panel.held(lines, offered = true, asking = false)
+        assertEquals(lines, panel.heldLines)
+        val shown = descendants(panel).filterIsInstance<JLabel>().filter { it.text in lines }
+        assertEquals(lines, shown.map { it.text })
+        assertTrue(shown.all { it.getClientProperty("html.disable") == true })
+        val letGo = descendants(panel).filterIsInstance<JButton>().single { it.text == "Let it go" }
+        assertTrue(panel.letGoOffered)
+        letGo.doClick()
+        assertEquals(1, pressed)
+        panel.held(lines, offered = true, asking = true)
+        assertFalse(panel.letGoOffered)
+        // Not offered to someone who may not control the run, and gone with the hold.
+        panel.held(lines, offered = false, asking = false)
+        assertFalse(letGo.isVisible)
+        panel.held(emptyList(), offered = true, asking = false)
+        assertFalse(letGo.isVisible)
+        assertTrue(descendants(panel).filterIsInstance<JLabel>().none { it.text in lines })
+    }
+
     fun testWatchingAndInteractionAreOptInAndAnOlderReporterShowsNeither() {
         val panel = PausedPagePanel()
         val asked = mutableListOf<Boolean>()

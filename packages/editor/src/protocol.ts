@@ -1249,7 +1249,8 @@ export const RUN_STATUS_NOTIFICATION = 'piwi/runStatusChanged';
 /**
  * `piwi/ciSessionChanged` (notification, server to client): a CI run of the branch a context reads, or of the
  * checked-out branch, while it runs, as the instance tells it: read-only, so no control, share or hold reaches it, and
- * its tests never stop. Sent when the service starts to follow it, when its progress, its tests or the calls they are
+ * its tests never stop, but for a test its project holds at its failure for its controllers (`CiTest.held`), which
+ * **Let it go** ends (`piwi/ciLetGo`). Sent when the service starts to follow it, when its progress, its tests or the calls they are
  * at change (a burst at most every 500 ms), and last with `ended`. A client keeps the latest of each `root` and
  * `runId` until one says `ended`.
  */
@@ -1329,6 +1330,27 @@ export interface CiTest {
    * it can be watched, as it can in the editor by its `lane` and `shard` (`piwi/ciWatch`); null otherwise.
    */
   watch: string | null;
+  /** While it runs and waits at its failure, held for the people who may control its project's runs; absent otherwise. */
+  held?: CiHeld;
+}
+
+/**
+ * A running test of a CI run held at its failure for the people who may control its project's runs (the project's
+ * setting, while one of them watches its lane), in the run page's words: where it stands (`state`, `Failed, held at
+ * its line`), for whom and until when (`heldFor`, `Held for Ana · until 12:05`, null when its worker names no end), the
+ * error (the failing call as its worker titled it), its place as the run names it (`place`, `tests/pay.spec.ts:12`,
+ * null for none) and in the workspace (`at`, the file and its 0-based line, null when the workspace holds no such
+ * file), and that the CI job's own timeout still runs (`note`). `letGo` says the client offers **Let it go**: the
+ * client's watch (`piwi/ciWatch`) shows the lane, and the instance said it counts as a controller's.
+ */
+export interface CiHeld {
+  state: string;
+  heldFor: string | null;
+  error: string;
+  place: string | null;
+  at: { uri: string; line: number } | null;
+  note: string;
+  letGo: boolean;
 }
 
 /** Where a running test of a CI run is: the call it runs, in a file of the workspace. */
@@ -1351,7 +1373,9 @@ export const CI_SESSION_NOTIFICATION = 'piwi/ciSessionChanged';
  * test the lane's worker runs, through its next tests and the worker Playwright starts in its place, until the client
  * stops (`on: false`), its session ends, or the instance ends the watch. One watch per client: another replaces it.
  * Answered once the instance opened the watch, or with why not (`ok: false`): a run the service does not follow, one
- * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick.
+ * that is not `watchable`, or the instance's refusal. Nothing sent here reaches the run: no control, input or pick. The
+ * instance counts the watch as a full view of the lane, a controller's when the key's person may control the
+ * project's runs: a test that fails in it then waits for them, when the project holds failing CI tests.
  */
 export interface CiWatchParams {
   /** The session's `root`; absent, the first session of the run. */
@@ -1397,6 +1421,22 @@ export type CiLayer = {
   test: string | null;
 } & LaneLayerData;
 
+/**
+ * `piwi/ciLetGo`: **Let it go** on the CI lane the client watches (`lane` and `shard` as its `CiTest` names them), whose
+ * test is held at its failure (`CiTest.held`): the service asks the instance on its watch of the lane, which must count
+ * as a controller's, and the test then tears down as it would have, its result unchanged. Answered with the instance's
+ * sentence, or why not (`ok: false`): no watch of the lane, a watch of someone who may not control the run, no hold,
+ * or the instance's refusal in its own words.
+ */
+export interface CiLetGoParams {
+  /** The session's `root`; absent, the first session of the run. */
+  root?: string;
+  runId: number;
+  shard: number | null;
+  lane: number;
+}
+
+export const CI_LET_GO_REQUEST = 'piwi/ciLetGo';
 export const CI_WATCH_REQUEST = 'piwi/ciWatch';
 export const CI_FRAME_NOTIFICATION = 'piwi/ciFrame';
 export const CI_LAYER_NOTIFICATION = 'piwi/ciLayer';

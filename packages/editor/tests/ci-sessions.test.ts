@@ -149,9 +149,16 @@ describe('the CI sessions', () => {
     skippedTests: 0,
   });
 
-  function start(contexts: PiwiContext[]) {
+  function start(contexts: PiwiContext[], more: Partial<ConstructorParameters<typeof CiSessions>[0]> = {}) {
     const heard: CiSession[] = [];
-    sessions = new CiSessions({ contexts: () => contexts, streams, changed: (s) => heard.push(s), exists, pushMs: 0 });
+    sessions = new CiSessions({
+      contexts: () => contexts,
+      streams,
+      changed: (s) => heard.push(s),
+      exists,
+      pushMs: 0,
+      ...more,
+    });
     return heard;
   }
 
@@ -304,6 +311,78 @@ describe('the CI sessions', () => {
     expect(sessions!.watchTarget(ROOT, 78, null, 3)).toMatchObject({ worker: null });
     expect(sessions!.watchTarget('/work/other', 78, null, 2)).toBeNull();
     expect(sessions!.watchTarget(ROOT, 79, null, 2)).toBeNull();
+  });
+
+  test('say a lane’s failure held for its controllers in the run page’s words, Let it go only on a controller’s watch of it', async () => {
+    const c = context();
+    /** The lane the client's watch shows, and whether it counts as a controller's, as the CI watch says it. */
+    let watching: { root: string; runId: number; shard: number | null; lane: number; controller: boolean } | null =
+      null;
+    const heard = start([c], {
+      clock: (time) => (time === 1_763_727_900_000 ? '12:05' : '?'),
+      watching: (root, runId) => (watching?.root === root && watching.runId === runId ? watching : null),
+    });
+    sessions!.offer(c, ciRun(78));
+    const begin = {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 4,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    };
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', begin);
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true };
+    const held = {
+      reason: 'held',
+      call: { title: 'Expected "Paid", received "Pending"', file: 'tests/checkout.spec.ts', line: 7 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    };
+    send(78, 'live-worker', { ...worker, paused: held, heldFor: ['Ana'] });
+    await settle();
+    const last = () => heard[heard.length - 1]!.tests[0]!;
+    expect(last().held).toEqual({
+      state: 'Failed, held at its line',
+      heldFor: 'Held for Ana · until 12:05',
+      error: 'Expected "Paid", received "Pending"',
+      place: 'tests/checkout.spec.ts:7',
+      at: { uri: uri('tests/checkout.spec.ts'), line: 6 },
+      note: 'The CI job’s own timeout still runs.',
+      letGo: false,
+    });
+    expect(sessions!.heldWorker(ROOT, 78, null, 2)).toEqual({ shard: null, worker: 4, slot: 1 });
+    // The client's watch of the lane counts as a controller's: Let it go is offered there alone.
+    watching = { root: ROOT, runId: 78, shard: null, lane: 2, controller: true };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().held).toMatchObject({ letGo: true });
+    watching = { root: ROOT, runId: 78, shard: null, lane: 2, controller: false };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().held).toMatchObject({ letGo: false });
+    watching = { root: ROOT, runId: 78, shard: null, lane: 1, controller: true };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().held).toMatchObject({ letGo: false });
+    // A hold of another lane, a stop of another kind and a worker that cannot hold say nothing of this one.
+    send(78, 'live-worker', { ...worker, slot: 0, worker: 3, paused: held });
+    send(78, 'live-worker', { ...worker, paused: { ...held, reason: 'pause' } });
+    await settle();
+    expect(last().held).toBeUndefined();
+    send(78, 'live-worker', { ...worker, holds: undefined, paused: held });
+    await settle();
+    expect(last().held).toBeUndefined();
+    // The hold ends as its worker goes on, or leaves.
+    send(78, 'live-worker', { ...worker, paused: held, heldFor: [] });
+    await settle();
+    expect(last().held).toMatchObject({ heldFor: 'Held · until 12:05' });
+    send(78, 'live-worker', { ...worker, connected: false, paused: null });
+    await settle();
+    expect(last().held).toBeUndefined();
+    expect(sessions!.heldWorker(ROOT, 78, null, 2)).toBeNull();
   });
 
   test('follow only a CI run of the branch read or checked out, while it runs', async () => {

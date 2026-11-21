@@ -10,7 +10,9 @@ lang: en-US
 
 While CI runs your branch, the [editor extensions](./editors) show that run beside your own: its progress, its tests
 as they end, the line each running test is at, and, when its project has the [live view](./live-view) on, its pages.
-It is read-only: nothing pauses, steps, holds or shares a CI run from the editor.
+It is read-only but for one thing: **Let it go** on a test the project
+[holds at its failure](./hold-ci-failure) for the people who may control its runs. Nothing else pauses, steps, holds
+or shares a CI run from the editor.
 
 ## Which runs
 
@@ -48,9 +50,22 @@ image, the same layers as a local lane ([Beside the image](./watch-running-test#
 **Watch on the dashboard** opens the lane on the run's page, offered where the editor cannot show it (an older
 instance, a refused **Watch**).
 
+### A failure held for you
+
+When the project [holds a failing CI test](./hold-ci-failure) for its controllers and your editor's connection may
+control the project's runs (its key is a Maintainer's or a Project admin's), your watch of a lane counts: a test that
+fails in it waits at its failure, as it would for the run page. The worker panel or the **Worker** tab then says
+**Failed, held at its line · Held for Ana · until 12:05**, the error and its place, and that the CI job's own timeout
+still runs. **Let it go** ends the wait; the test tears down as it would have, its result unchanged.
+
+**Let it go** goes on your watch of that lane, so it shows only while you watch it, and only once the instance has
+said your connection may control the run. Anyone else watching sees the hold without it. A refusal is said in the
+instance's words, under the caption.
+
 ## Limits
 
-- **Read-only.** No control, share or hold reaches a CI run, and its position is never a stop.
+- **Read-only, but Let it go.** No control, share or hold reaches a CI run, but **Let it go** on a failure the project
+  holds for its controllers, and its position is never a stop.
 - **One worker per editor.** The worker panel or tab watches one lane, a local worker's or a CI run's: watching another
   moves it there.
 - **A run's steps.** The positions come from the steps the CI run's reporter streams, so a run whose reporter streams

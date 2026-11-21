@@ -595,7 +595,8 @@ data class UnreadRunTests(val root: String = "", val tests: List<RunLineTest> = 
 
 /**
  * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
- * read-only: no control, share or hold reaches it, and its tests never stop. `name` (`CI run #78`) and `summary`
+ * read-only: no control, share or hold reaches it, and its tests never stop, but a test held at its failure for its
+ * project's controllers (`CiTest.held`), which **Let it go** ends (`piwi/ciLetGo`). `name` (`CI run #78`) and `summary`
  * (`12 of 40 tests · 1 failed`) are the words the IDE shows; `tests` lists the running ones, then the latest that
  * ended; `watchable` says a running test's lane can be watched in the IDE (`piwi/ciWatch`) or on the dashboard, from
  * its `watch` address. The last of a run says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
@@ -628,7 +629,8 @@ data class CiProgress(
  * A test of a CI run: its describe blocks' titles then its own, its spec in the project and the 0-based line of its
  * `test(…)` call (null when the project holds no such spec), its Playwright project, `running` or its result, its
  * attempt, its worker's lane from 1 and its shard (null when the run names none); while it runs, the call it is at (`at`,
- * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched).
+ * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched), and while
+ * it waits at its failure for the people who may control the run, its hold (`held`).
  */
 data class CiTest(
     val title: List<String>? = null,
@@ -641,7 +643,34 @@ data class CiTest(
     val shard: Int? = null,
     val at: CiPosition? = null,
     val watch: String? = null,
+    val held: CiHeld? = null,
 )
+
+/**
+ * A running CI test held at its failure for the people who may control its project's runs, in the run page's words:
+ * where it stands (`state`), for whom and until when (`heldFor`, null when its worker names no end), its error, its
+ * place as the run names it (`place`) and in the project (`at`, null when the project holds no such file), that the CI
+ * job's own timeout still runs (`note`), and whether the IDE offers **Let it go** (`letGo`: its watch shows the lane as a
+ * controller's).
+ */
+data class CiHeld(
+    val state: String = "",
+    val heldFor: String? = null,
+    val error: String = "",
+    val place: String? = null,
+    val at: CiHeldAt? = null,
+    val note: String = "",
+    val letGo: Boolean = false,
+)
+
+/** Where a held CI failure is in the project: its file and 0-based line. */
+data class CiHeldAt(val uri: String = "", val line: Int = 0)
+
+/**
+ * `piwi/ciLetGo`: **Let it go** on the CI lane the IDE watches, whose test is held at its failure; the service asks the
+ * instance on its watch of the lane, and answers with the instance's sentence or why not.
+ */
+data class CiLetGoParams(val root: String?, val runId: Int, val shard: Int?, val lane: Int)
 
 /** Where a running test of a CI run is: the call it runs (`title`), its file and 0-based line, and the words to show there. */
 data class CiPosition(
@@ -1889,6 +1918,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/ciWatch")
     fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciLetGo")
+    fun ciLetGo(params: CiLetGoParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/openTrace")
     fun openTrace(params: OpenTraceParams): CompletableFuture<RunControlResult?>

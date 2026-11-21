@@ -230,7 +230,7 @@ the custom messages of `src/protocol.ts`:
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`, `piwi/environments`, `piwi/setEnvironment`;
-  - CI runs: `piwi/ciWatch`;
+  - CI runs: `piwi/ciWatch`, `piwi/ciLetGo`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
@@ -716,7 +716,8 @@ once per stop while it is out of sight.
 
 A CI run of the branch a context reads, or of the checked-out branch, is a read-only session while it runs
 (`src/ci-sessions.ts`, `piwi/ciSessionChanged`): the clients list it beside their own runs, and mark the call each of
-its running tests is at as a CI position, never as a stop. No request acts on it: no control, share or hold.
+its running tests is at as a CI position, never as a stop. No request acts on it but **Let it go** on a test held at
+its failure ([Watching a CI lane](#watching-a-ci-lane)): no control, share or hold.
 
 - **Found** as the instance's stream announces it (`RunWatchOptions.runStarted`), and as the context reads it in
   progress: its latest run (`origin` `ci` or `ci-rerun`), its run in progress (`LiveRun.ci`). A run is a CI run's by its
@@ -733,7 +734,8 @@ its running tests is at as a CI position, never as a stop. No request acts on it
   500 ms, only when it differs from the last one sent.
 - **Read** from the run's stream, shared with the context's run in progress: `test-begin` and `test-completed` (a
   time-out as `timedOut` live and `timedout` from the catch-up), `live-view` (`watchable`: the project's live view is
-  on and the run holds a key), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
+  on and the run holds a key), `live-worker` (a worker's test held at its failure for the project's controllers,
+  `readCiHold` of `@piwitests/run-model/ci`), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
   the stream needs what opening the run needs (`project:read`, a run that is not another person's private one).
 - **Positions** come from the steps the run's reporter streams while someone has the run's stream open, the service
   among them (`step-begin`, `step-end`): each worker's innermost open step, a fixture's left out. A step names its file
@@ -743,6 +745,11 @@ its running tests is at as a CI position, never as a stop. No request acts on it
 - **Watch**: a running test of a `watchable` run can be watched in the client's worker panel, read-only
   ([Watching a CI lane](#watching-a-ci-lane)), and carries its lane's view on the run's page (`watch`,
   `?watch=<shard>.<lane>`), which the clients offer beside it.
+- **Held**: a running test whose lane's worker holds it at its failure (`ciHoldOf`: by its lane, else its worker)
+  carries `held`, in the run page's words (`ciHoldWords`: `Failed, held at its line`, `Held for Ana · until 12:05` in
+  the person's clock, the error, its place, `The CI job’s own timeout still runs.`), and `letGo` while the client's
+  watch shows its lane as a controller's (`watching`, `offersLetGo`); the session is pushed again as the watch changes
+  (`watchChanged`).
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
   place: the last notification says `ended`, and the run's stream is let go.
@@ -781,8 +788,16 @@ instance's bound of watches per person).
 - **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
   instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
   follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
+- **Counts** on the instance as a full view of the lane, a controller's when the key's owner may control the project's
+  runs (`run:control`), which its `hello` says (`controller`): a test that fails in the lane then waits for its
+  controllers when the project holds failing CI tests.
+- **Let it go** (`piwi/ciLetGo { root?, runId, shard, lane }`, `CiWatch.letGo`) goes on this watch alone
+  (`PiwiClient.letGo`, `POST …/live-view/let-go` with the watch's id and the held worker, `CiSessions.heldWorker`), and
+  only once its `hello` said it counts as a controller's: refused before asking the instance for another lane, a watch
+  of someone who may not control the run, or a lane that holds nothing; then in the instance's own words.
 
-Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POST.
+Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POSTs, and
+`tests/ci-sessions.test.ts`.
 
 ### The editor's own run
 

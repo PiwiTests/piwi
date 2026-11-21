@@ -11,7 +11,9 @@
  * press, a key, text, the wheel or a pick at a stop make its slot the person's, and the panel hidden or closed offers
  * its held stops to the paused page as new ones (`hooks`). It also watches a CI run's lane through the team instance
  * (`piwi/ciWatch`, `piwi/ciFrame`), read-only: Watch alone, no Interact, input or pick, its caption from the CI
- * sessions, and why the watch ended said under it. One slot, local or CI, at a time. Under the image, the lane's layers
+ * sessions, and why the watch ended said under it; a test of the lane held at its failure for the run's controllers
+ * shows above the image in the service's words (`CiTest.held`), with **Let it go** where the service offers it
+ * (`piwi/ciLetGo`), its answer said under the caption. One slot, local or CI, at a time. Under the image, the lane's layers
  * (`piwi/laneLayer`, `piwi/ciLayer`): Why it waits and Events, asked for while it watches, and Text and Filmstrip, asked
  * for while their section is open, kept for the slot it shows until the panel closes; the Events also go to the
  * **Piwi: Page** output, one line each, each test of the slot named as it begins (`PageLog`). **Open the trace so far**, beside
@@ -29,6 +31,7 @@ import { canOpenTrace } from '@piwitests/run-model/stop';
 import {
   CI_FRAME_NOTIFICATION,
   CI_LAYER_NOTIFICATION,
+  CI_LET_GO_REQUEST,
   CI_WATCH_REQUEST,
   DRIVE_STOP_REQUEST,
   LANE_FRAME_NOTIFICATION,
@@ -55,10 +58,12 @@ import {
   actsOnPage,
   ciKey,
   ciLaneCaption,
+  ciLaneHeld,
   ciLaneRedraws,
   ciLaneLayersNote,
   ciLaneTakes,
   ciLaneTitle,
+  ciLetGoParams,
   frameIsCurrent,
   giveBackParams,
   imageClickOf,
@@ -169,6 +174,8 @@ export function createWorkerPanel(
   let accepted = false;
   /** The service opened the CI watch: a change of its layers goes on it only then. */
   let ciAccepted = false;
+  /** **Let it go** on the CI lane's held failure waits for the service's answer: the button is off meanwhile. */
+  let letGoAsking = false;
   /** Interact is on: kept through the slot's next stops while the watch goes on, off at a stop that takes no input. */
   let interacting = false;
   /** The stop Interact was last on for, which Interact going off gives back. */
@@ -220,12 +227,24 @@ export function createWorkerPanel(
   /** The view as it stands, posted to the panel's script, or drawn anew for a new slot (`fresh`). */
   const draw = (fresh = false) => {
     if (ciTarget) {
+      const held = ciLaneHeld(ciSessions, ciTarget);
       view = {
         image,
         caption: ciLaneCaption(ciSessions, ciTarget),
         note: refused ?? note,
         lane: true,
         ci: true,
+        held: held
+          ? {
+              state: held.state,
+              heldFor: held.heldFor,
+              error: held.error,
+              place: held.place,
+              note: held.note,
+              letGo: held.letGo,
+              asking: letGoAsking,
+            }
+          : null,
         pick: null,
         live: { shown, on: !!ciWatching, input: false, interacting: false, clickCounts: false },
         layers: { ...sections, note: ciLaneLayersNote(layers), textAsking },
@@ -365,6 +384,23 @@ export function createWorkerPanel(
       else void vscode.window.showWarningMessage(text);
       return said;
     });
+  };
+
+  /**
+   * **Let it go** on the CI lane's held failure (`piwi/ciLetGo`), one ask at a time: the service's answer, or its
+   * refusal, said under the caption, a refusal as a warning too.
+   */
+  const letGo = async (): Promise<void> => {
+    const ci = ciTarget;
+    if (!ci || letGoAsking) return;
+    letGoAsking = true;
+    draw();
+    const answer = await lc.sendRequest<RunControlResult>(CI_LET_GO_REQUEST, ciLetGoParams(ci)).catch(() => null);
+    letGoAsking = false;
+    if (ciTarget !== ci) return;
+    note = answer?.message ?? NO_ANSWER;
+    draw();
+    if (!answer?.ok) void vscode.window.showWarningMessage(`Piwi: ${note}`);
   };
 
   const stopWatching = () => {
@@ -509,6 +545,7 @@ export function createWorkerPanel(
       return askLayers();
     }
     if (m.type === 'text') return void askText();
+    if (m.type === 'let-go') return void letGo();
     if (m.type === 'control') {
       const stop = lane.stop;
       const item = view.controls?.items.find((c) => c.command === m.command);
@@ -694,6 +731,7 @@ export function createWorkerPanel(
         stopWatching();
         target = null;
         ciTarget = ci;
+        letGoAsking = false;
         shown++;
         image = null;
         imageOf = null;
@@ -711,7 +749,7 @@ export function createWorkerPanel(
       if (!ciTarget) return;
       // The service ends the watch with the run's session, and Watch shows off.
       if (!now.has(ciKey(ciTarget))) ciWatching = null;
-      if (ciLaneRedraws(view, ciLaneCaption(now, ciTarget), !!ciWatching)) draw();
+      if (ciLaneRedraws(view, ciLaneCaption(now, ciTarget), !!ciWatching, ciLaneHeld(now, ciTarget))) draw();
     },
     view: () => (panel ? view : null),
     message,

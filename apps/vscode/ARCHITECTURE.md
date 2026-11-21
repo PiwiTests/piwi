@@ -686,10 +686,14 @@ until one says `ended`, or the service stops (`withCiSession`).
   the editor cannot show. No node pauses, steers, shares or holds.
 - **A CI lane in the worker panel** (`openCi`) is watched with `piwi/ciWatch` and drawn from `piwi/ciFrame`, titled
   `Piwi: CI run #78 · worker 2` (`ciLaneTitle`), captioned from the CI sessions (`ciLaneCaption`, which `ciChanged`
-  follows, drawing again only when the caption or the watch changed: `ciLaneRedraws`) and drawn by `pausedPageHtml`
-  with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready`, Watch and the layers' sections
-  dropped in the extension too (`ciLaneTakes`), input answered refused. Why the watch ended (`ended`) or was refused
-  shows under the caption, Watch then off. Another CI lane takes the watch's place on the service's side without an
+  follows, drawing again only when the caption, the watch or the held failure changed: `ciLaneRedraws`) and drawn by
+  `pausedPageHtml` with `ci`: **Watch** alone, Interact hidden, no pick, and every message but `ready`, Watch, the
+  layers' sections and **Let it go** dropped in the extension too (`ciLaneTakes`), input answered refused. Why the
+  watch ended (`ended`) or was refused shows under the caption, Watch then off.
+- **A held CI failure** (`CiTest.held`, `ciLaneHeld`) shows above the image in the service's words (`heldHtml`, filled
+  again by the view's script on each state): where it stands and for whom, its error and place, and that the CI job's
+  own timeout still runs. **Let it go** shows where the service offers it (`held.letGo`), sends `piwi/ciLetGo`
+  (`ciLetGoParams`), off until its answer, which shows under the caption, a refusal as a warning too. Another CI lane takes the watch's place on the service's side without an
   `on: false`; a local slot ends it, and so does a `piwi/ciWatch` the service never answered.
 - **The lane's layers** show under the worker panel's image, a local slot's (`piwi/laneLayer`) and a CI lane's
   (`piwi/ciLayer`) alike: **Why it waits** (the call log's last lines, what the locator matches: `waitsView`), then
