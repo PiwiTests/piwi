@@ -2061,9 +2061,23 @@ test.describe('Desktop run live view', () => {
     await expect(runWindow.getByText('Running 1 test using 1 worker')).toBeVisible();
     await expect.poll(() => runPage.evaluate(() => window.__hub.open())).toBe(1);
     await runPage.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
-    await runPage.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    // The run names a page of this app (its run's page, here another): its link opens in the dashboard window.
+    const named = session(RUNNING);
+    const named99 = { id: 99_999, url: new URL('/projects', page.url()).href };
+    await runPage.evaluate((event) => window.__hub.send(event), {
+      ...named,
+      session: { ...named.session, page: named99 },
+    });
     await expect(runWindow.locator('[data-shot="desktop-run-worker"]')).toBeVisible();
     await expect.poll(() => windowCommands.find((c) => c.type === 'follow')).toMatchObject({ on: true });
+    await runWindow.getByTestId('desktop-run-page').getByRole('link').click();
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(runPage).toHaveURL(/\/desktop\/run-output\?name=/);
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.some((i) => i.cmd === 'desktop_bring_to_front')))
+      .toBe(true);
+    await page.goBack();
+    await waitForHydration(page);
 
     // Its Hold failures turns over in the dashboard window, and the run's window shows the run so.
     const hold = runWindow.getByRole('switch', { name: 'Hold failures' });

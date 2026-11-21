@@ -2,15 +2,17 @@
  * The messages between the dashboard window and the windows of its runs, over a `BroadcastChannel` of the dashboard's
  * origin, so those windows hold no IPC grant.
  *
- * A run's own window (`pages/desktop/run-output.vue`) says it is `ready`, with the id of the last line it has
- * (`through`), and asks for what only the dashboard window does: `stop` the run, turn its Hold failures over (`hold`),
- * run it again (`rerun`) or one of its tests (`rerun-test`), `open` one of its pages there, or show the run in the tray
- * again (`back`). The dashboard window answers with the run's `state`: its header, what it offers, its results and the
- * lines the window does not have yet. A dashboard window that reloaded asks a window the page before had open whether
- * it is still there (`ask`), and the window answers `ready` again. A worker's window asks the dashboard window to show
- * the run of the hub's run it names in Local runs (`show-run`).
+ * A run's own window (`pages/desktop/run-output.vue`) says it is `ready`, with the run it shows (`key`) and the id of
+ * the last line it has (`through`), and asks for what only the dashboard window does, of the run it names by its `key`:
+ * `stop` it, turn its Hold failures over (`hold`), run it again (`rerun`) or one of its tests (`rerun-test`), `open`
+ * one of its pages there, or show it in the tray again (`back`). The dashboard window answers with the run's `state`:
+ * its header, what it offers, its results and the lines the window does not have yet. A dashboard window that reloaded
+ * asks a window the page before had open whether it is still there (`ask`), and the window answers `ready` again. A
+ * worker's window asks the dashboard window to show the run of the hub's run it names in Local runs (`show-run`), and
+ * either window to open a file in the editor (`open-in-ide`), which only the dashboard window's grant does.
  */
 import type { RunOutputLine, RunResultRow } from '@piwitests/run-ui/run-output';
+import type { OpenTarget } from '~/composables/useOpenInIde';
 import type { BadgeColor } from '~/utils';
 
 export const RUN_OUTPUT_CHANNEL = 'piwi:run-output';
@@ -25,13 +27,20 @@ export interface RunWindowRow extends RunResultRow {
 
 /** The Hold failures switch of a running run, as its window shows it. */
 export interface RunWindowHold {
+  /** Whether the run holds its failures now, as the hub says. */
   on: boolean;
+  /** Whether the person has it hold them: the window says `show` for the run while it does, as the tray does. */
+  chosen: boolean;
   /** Why the run holds no failure, in place of the switch's sentence; null when it can. */
   refusal: string | null;
 }
 
-/** What the window may ask the dashboard window to open, of the run it shows. */
-export type RunWindowPage = 'failure' | 'run' | 'compare' | { execution: number };
+/**
+ * What the window may ask the dashboard window to open, of the run it shows: its first failure, its Piwi run, the
+ * comparison with the run its tests come from, an execution of its results, or a page of this app a link of its live
+ * view names (a path of this origin).
+ */
+export type RunWindowPage = 'failure' | 'run' | 'compare' | { execution: number } | { path: string };
 
 /** The run's header, what it offers and its newest lines, as its window shows them. */
 export interface RunOutputState {
@@ -54,8 +63,9 @@ export interface RunOutputState {
   refs: string[];
   /** Its Hold failures, while it runs and holds its own; null otherwise. */
   hold: RunWindowHold | null;
-  /** Whether it offers **Run again**, once it ended. */
+  /** Whether it offers **Run again**, once it ended, and whether a Run again asked from the window is starting. */
   rerunnable: boolean;
+  startingAgain: boolean;
   /** Its Piwi run (**Open run #N**), whether it failed (**Open the failure**), and the one it compares with. */
   piwiRunId: number | null;
   failed: boolean;
@@ -72,12 +82,23 @@ export interface RunOutputState {
 
 export type RunOutputMessage =
   | RunOutputState
-  | { type: 'ready'; name: string; through?: number }
-  | { type: 'ask' | 'stop' | 'rerun' | 'back'; name: string }
-  | { type: 'hold'; name: string; on: boolean }
-  | { type: 'rerun-test'; name: string; row: string; hold: boolean }
-  | { type: 'open'; name: string; page: RunWindowPage }
-  | { type: 'show-run'; ref: string };
+  | { type: 'ready'; name: string; key?: number; through?: number }
+  | { type: 'ask'; name: string }
+  | { type: 'stop' | 'rerun' | 'back'; name: string; key: number }
+  | { type: 'hold'; name: string; key: number; on: boolean }
+  | { type: 'rerun-test'; name: string; key: number; row: string; hold: boolean }
+  | { type: 'open'; name: string; key: number; page: RunWindowPage }
+  | { type: 'show-run'; ref: string }
+  | { type: 'open-in-ide'; target: OpenTarget };
+
+/** Whether `path` is a path of this app's own origin, as a link of the run's live view names one. */
+export function isAppPath(path: string): boolean {
+  try {
+    return new URL(path, 'http://app.invalid').origin === 'http://app.invalid' && path.startsWith('/');
+  } catch {
+    return false;
+  }
+}
 
 /** The output window's name for the run of key `key`, as the shell takes one: lowercase letters, digits and dashes. */
 export function runOutputWindowName(key: number): string {

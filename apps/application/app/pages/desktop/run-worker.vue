@@ -92,7 +92,7 @@ onBeforeUnmount(letGo);
   <main class="min-h-dvh bg-default">
     <DesktopRunWorker v-if="session && worker" :session="session" :worker="worker" @announce="announce" />
     <div v-else-if="ended" class="space-y-3 p-4">
-      <p class="text-sm text-highlighted" data-testid="run-worker-outcome">
+      <p role="status" class="text-sm text-highlighted" data-testid="run-worker-outcome">
         {{ outcome ? `This run ended: ${outcome}.` : 'This run ended.' }}
       </p>
       <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-panel-bottom-open" @click="showInLocalRuns">

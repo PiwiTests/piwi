@@ -2100,9 +2100,32 @@ export function useDesktopLocalRuns() {
     }
   }
 
-  /** The name of a run's separate window: the one it took from the run it was started from again, else its own. */
+  /**
+   * The name of a run's separate window: the one it was given (`separateRun`) or took from the run it was started from
+   * again (`moveWindow`), else its own.
+   */
   function windowNameOf(key: number): string {
     return windowNames.value[key] ?? runOutputWindowName(key);
+  }
+
+  /**
+   * Shows a run in a separate window (`on`), under a name no other separate run's window has, or in the tray again,
+   * where it gives its window's name back.
+   */
+  function separateRun(key: number, on: boolean) {
+    const { [key]: _name, ...others } = windowNames.value;
+    if (!on) {
+      separate.value = { ...separate.value, [key]: false };
+      windowNames.value = others;
+      return;
+    }
+    const taken = new Set(
+      runs.value.filter((run) => run.key !== key && separate.value[run.key]).map((run) => windowNameOf(run.key)),
+    );
+    let name = runOutputWindowName(key);
+    for (let n = 2; taken.has(name); n++) name = `${runOutputWindowName(key)}-${n}`;
+    windowNames.value = name === runOutputWindowName(key) ? others : { ...others, [key]: name };
+    separate.value = { ...separate.value, [key]: true };
   }
 
   /**
@@ -2116,14 +2139,20 @@ export function useDesktopLocalRuns() {
     windowNames.value = { ...others, [to.key]: name };
   }
 
-  /** Opens the tray on a run of it, shown on its right. */
+  /** Opens the tray on a run of it, shown on its right: a run shown in a separate window comes back to the tray. */
   function showRun(key: number) {
+    if (separate.value[key]) separateRun(key, false);
     trayOpen.value = true;
     chosen.value = key;
   }
 
-  /** Opens the tray on a worker of a hub's run: its run shows, and the focus moves to the worker. */
+  /**
+   * Opens the tray on a worker of a hub's run: its run shows, back from a separate window, and the focus moves to the
+   * worker.
+   */
   function showWorker(ref: string, worker: number) {
+    const run = runs.value.find((each) => each.hubRefs.includes(desktopRunOf(ref)));
+    if (run && separate.value[run.key]) separateRun(run.key, false);
     trayOpen.value = true;
     shownWorker.value = { ref, worker };
   }
@@ -2179,6 +2208,7 @@ export function useDesktopLocalRuns() {
     separate,
     windowNames,
     windowNameOf,
+    separateRun,
     moveWindow,
     keptWindows,
     trayMounts,

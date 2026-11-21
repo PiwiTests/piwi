@@ -4,8 +4,10 @@
  * has the shell open the window (`desktop_open_output_window`) on the dashboard's `/desktop/run-output` page and feeds
  * that page over `RUN_OUTPUT_CHANNEL`: the run's header, what it offers (its Hold failures, Run again, its pages), what
  * it failed on once it ended (`useDesktopLocalRunRows`), then the lines the page does not have yet. It does what the
- * page asks, as the tray would: Stop, Hold failures, Run again of the run or of one of its tests, which moves the window
- * to the run it starts (`moveWindow`), a page of the run opened here, and the run shown in the tray again. A window
+ * page asks of the run it shows, as the tray would, and nothing it asks of another: Stop, Hold failures, Run again of
+ * the run or of one of its tests, one at a time, which moves the window to the run it starts (`moveWindow`) while the
+ * window is still wanted, a page of the run opened here, and the run shown in the tray again. A Run again that asks the
+ * person to confirm a protected environment brings this window to the front, where the question shows. A window
  * the page before a reload had open (`kept`) is asked whether it is still there and fed again from its last line, never
  * opened again; one that does not answer within `KEPT_ANSWER_MS` is closed by its name, whatever shows in it. It
  * renders nothing here. Emits `closed` once the window is gone, with `opened` false when it could not open; unmounting
@@ -22,6 +24,7 @@ import {
 import type { RunOutputLine } from '@piwitests/run-ui/run-output';
 import { desktopEditorRunsOf } from '~/utils/desktop-run-view';
 import {
+  isAppPath,
   outputWindowNameOf,
   RUN_OUTPUT_CHANNEL,
   type RunOutputMessage,
@@ -59,6 +62,8 @@ let stopListening: (() => void) | null = null;
 /** The id of the last line the page has; null until it says it is ready. */
 let sentThrough: number | null = null;
 let pending: ReturnType<typeof setTimeout> | null = null;
+/** A Run again the window asked for is starting: the window asks for no other until it started or did not. */
+const startingAgain = ref(false);
 
 /** Everything the page shows of the run but its lines. */
 const header = computed((): Omit<RunOutputState, 'type' | 'name' | 'lines'> => {
@@ -79,9 +84,10 @@ const header = computed((): Omit<RunOutputState, 'type' | 'name' | 'lines'> => {
     refs: [...run.hubRefs],
     hold:
       running && desktopEditorRunsOf(run, editorRuns.value).length === 0
-        ? { on: hold.holdsFailures(run), refusal: hold.refusal(run) }
+        ? { on: hold.holdsFailures(run), chosen: hold.chosen(run), refusal: hold.refusal(run) }
         : null,
     rerunnable: !running && localRunRerunnable(run),
+    startingAgain: startingAgain.value,
     piwiRunId: run.piwiRunId,
     failed: run.status === 'failed',
     sourceRunId: run.sourceRunId != null && run.sourceRunId !== run.piwiRunId ? run.sourceRunId : null,
@@ -136,25 +142,38 @@ function toFront() {
 
 /**
  * Runs `start` (a Run again), which may ask the person to confirm a protected environment in the dashboard window,
- * brought to the front then; the run it starts shows in this window.
+ * brought to the front as it asks; the run it starts shows in this window, while the window still shows the run it
+ * came from.
  */
 async function runAgain(start: () => Promise<LocalRun | null>) {
+  if (startingAgain.value) return;
+  startingAgain.value = true;
   const from = props.run;
-  const started = start();
-  await nextTick();
-  if (store.environmentQuestion.value) toFront();
-  const next = await started;
-  if (next) store.moveWindow(from, next);
+  const asking = watch(store.environmentQuestion, (question) => question && toFront(), { immediate: true });
+  try {
+    const next = await start();
+    const wanted = !unmounted && props.run === from && store.separate.value[from.key];
+    if (next && wanted) store.moveWindow(from, next);
+  } finally {
+    asking();
+    startingAgain.value = false;
+  }
+}
+
+/** The path of the page `page` names of the run, as the window may ask for it; null for none. */
+async function pathOf(run: LocalRun, page: RunWindowPage): Promise<string | null> {
+  if (page === 'failure') return run.status === 'failed' && run.piwiRunId != null ? store.failurePage(run) : null;
+  if (page === 'run') return run.piwiRunId != null ? `/test-runs/${run.piwiRunId}` : null;
+  if (page === 'compare') return localRunCompareTo(run);
+  if ('execution' in page) {
+    return rows.value.some((row) => row.executionId === page.execution) ? `/test-run-cases/${page.execution}` : null;
+  }
+  return typeof page.path === 'string' && isAppPath(page.path) ? page.path : null;
 }
 
 /** Opens a page of the run in the dashboard window, brought to the front. */
 async function openPage(page: RunWindowPage) {
-  const run = props.run;
-  let path: string | null = null;
-  if (page === 'failure') path = await store.failurePage(run);
-  else if (page === 'run') path = run.piwiRunId != null ? `/test-runs/${run.piwiRunId}` : null;
-  else if (page === 'compare') path = localRunCompareTo(run);
-  else if (Number.isInteger(page.execution)) path = `/test-run-cases/${page.execution}`;
+  const path = await pathOf(props.run, page);
   if (!path) return;
   store.trayOpen.value = false;
   await navigateTo(path);
@@ -163,19 +182,22 @@ async function openPage(page: RunWindowPage) {
 
 function hear(data: RunOutputMessage) {
   const run = props.run;
+  if (data.type === 'ready') {
+    open = true;
+    if (keptWait) clearTimeout(keptWait);
+    keptWait = null;
+    // A window that shows another run than this one has none of its lines.
+    sentThrough = data.key === undefined || data.key === run.key ? (data.through ?? 0) : 0;
+    send();
+    return;
+  }
+  if (!('key' in data) || data.key !== run.key) return;
   switch (data.type) {
-    case 'ready':
-      open = true;
-      if (keptWait) clearTimeout(keptWait);
-      keptWait = null;
-      sentThrough = data.through ?? 0;
-      send();
-      return;
     case 'stop':
       if (run.status === 'running') void store.stopRun(run);
       return;
     case 'hold':
-      if (run.status === 'running' && typeof data.on === 'boolean' && !hold.refusal(run)) hold.setHold(run, data.on);
+      if (header.value.hold && typeof data.on === 'boolean' && !header.value.hold.refusal) hold.setHold(run, data.on);
       return;
     case 'rerun':
       if (run.status !== 'running' && localRunRerunnable(run)) void runAgain(() => store.rerun(run));
@@ -191,7 +213,6 @@ function hear(data: RunOutputMessage) {
       void openPage(data.page);
       return;
     case 'back':
-      store.separate.value = { ...store.separate.value, [run.key]: false };
       store.showRun(run.key);
       toFront();
       return;

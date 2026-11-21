@@ -51,7 +51,7 @@ your terminal, as the run button's **Copy as command** writes it, and **Remove f
 runs** removes all of them. While the tray is
 closed, a run that ends marks the sidebar's **Local runs** with a dot, red when it failed, until you open the tray.
 
-**Open the run in a separate window**, the run's window button, moves the whole run to a window of its own:
+**Open the run in a separate window**, the run's window button, shows the whole run in a window of its own:
 its **Stop** or **Run again**, **Hold failures**, links, workers, failures and output. **Run again** there runs in
 that window; a link opens in the app's window. **Show in the tray**, closing the window, or that button, now **Show
 the run here**, brings it back. The window stays open whatever page the app shows and through a reload, and closes as

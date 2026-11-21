@@ -7,7 +7,7 @@
  * run, or, in the dashboard window, the hub says it has one (`hub-runs` on the desktop event stream, sent as that
  * stream opens, so a reload finds out at once whether its runs still go on). While it holds it, every headless stop
  * waits for the window, and each stop it hears opens the tray, once, but a stop of a run shown in a separate window,
- * which shows it there.
+ * which shows it there, and of which the system is told whatever the focus of this window.
  *
  * While a tray is mounted (`trayMounts`), the window says `show` for the running runs whose Hold failures is on
  * (`desktopShownRefs`), and a failure or a `page.pause()` is told to the system while the window is in the background.
@@ -137,7 +137,9 @@ export default defineNuxtPlugin(() => {
     const stop = worker.stop;
     if (!stop) return;
     const run = store.runs.value.find((r) => r.hubRefs.includes(desktopRunOf(session.ref)));
-    if (!run || !store.separate.value[run.key]) store.trayOpen.value = true;
+    // A run shown in a separate window shows its stop there, which this window's focus says nothing of.
+    const apart = !!run && !!store.separate.value[run.key];
+    if (!apart) store.trayOpen.value = true;
     if (Date.parse(stop.since) < loadedAt) return;
     const title = STOP_TITLES[stop.reason];
     // With a tray, a step, a pause or a line run to, which the person's own controls asked for here or in Piwi Picker,
@@ -145,7 +147,7 @@ export default defineNuxtPlugin(() => {
     if (trayShown.value && !title) return;
     if (!tellsSystem(session.ref)) return;
     if (typeof Notification === 'undefined' || Notification.permission !== 'granted') return;
-    if (trayShown.value && !document.hidden && document.hasFocus()) return;
+    if (trayShown.value && !apart && !document.hidden && document.hasFocus()) return;
     try {
       new Notification(title ?? 'A test stopped and waits', { body: desktopStopSaid(session, worker, stop) });
     } catch {

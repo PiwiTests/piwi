@@ -7,12 +7,12 @@ import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
  * (`DesktopRunStopButton`) or Run again, its Hold failures, its pages (Open the failure, Open run #N, Compare), its
  * workers live (`DesktopRunSession`), what it failed on once it ended, each test to open or run again
  * (`DesktopRunResults`), and its output (`DesktopRunOutputPane`). What only the dashboard window does, it asks over the
- * channel: a page opens there, a Run again's run shows here in its place, and **Show in the tray** brings the run back
- * there and closes this window.
+ * channel, of the run it shows by its key: a page opens there, a link of the live view to a page of this app included,
+ * a Run again's run shows here in its place, and **Show in the tray** brings the run back there and closes this window.
  *
  * The window holds the runs' hub stream itself (`useDesktopRunHub`) while its run goes on, present on the runs while it
- * is not hidden, and says `show` for its run while the run's Hold failures is on, as the tray does; it lets the stream
- * go once the run ended. It outlives a reload of the dashboard window, whose next page asks whether it is still there
+ * is not hidden, and says `show` for its run while the person has its Hold failures on, as the tray does, whether the
+ * window is hidden or not; it lets the stream go once the run ended. It outlives a reload of the dashboard window, whose next page asks whether it is still there
  * and feeds it again from the last line it has. A window of its own: no layout.
  */
 import type { HubSession } from '@piwitests/core/run-hub';
@@ -20,6 +20,7 @@ import { LOCAL_RUN_MAX_LINES, localRunDuration } from '~/composables/useDesktopL
 import type { RunOutputLine, RunResultRow } from '@piwitests/run-ui/run-output';
 import { desktopRunOf } from '~/utils/desktop-run-view';
 import {
+  isAppPath,
   mergeRunOutputLines,
   RUN_OUTPUT_CHANNEL,
   type RunOutputMessage,
@@ -40,10 +41,13 @@ function post(message: RunOutputMessage) {
   channel?.postMessage(message);
 }
 
-/** Says the window is ready for the run's state, from the line after the last one it has. */
+/** Says the window is ready for the run's state, from the line after the last one it has of the run it shows. */
 function ready() {
-  post({ type: 'ready', name, through: lines.value.at(-1)?.id ?? 0 });
+  post({ type: 'ready', name, key: header.value?.key, through: lines.value.at(-1)?.id ?? 0 });
 }
+
+/** The run the window shows, which every ask names: the dashboard window does nothing it asks of another run. */
+const key = computed(() => header.value?.key ?? -1);
 
 onMounted(() => {
   channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL);
@@ -87,7 +91,7 @@ onMounted(() => {
     { immediate: true },
   );
   watch(
-    () => (running.value && visible.value && header.value?.hold?.on ? (header.value?.refs ?? []) : []).join(' '),
+    () => (running.value && header.value?.hold?.chosen ? (header.value?.refs ?? []) : []).join(' '),
     (refs) => hub.show(refs ? refs.split(' ') : []),
     { immediate: true },
   );
@@ -110,22 +114,33 @@ function announce(text: string) {
 // ── What it asks the dashboard window ─────────────────────────────────────────────────────────────────────────────
 
 function stop() {
-  post({ type: 'stop', name });
+  post({ type: 'stop', name, key: key.value });
 }
 
 function setHold(on: boolean) {
-  post({ type: 'hold', name, on });
+  post({ type: 'hold', name, key: key.value, on });
 }
 
 function open(page: RunWindowPage) {
-  post({ type: 'open', name, page });
+  post({ type: 'open', name, key: key.value, page });
+}
+
+/** A link of the live view to a page of this app (its run's page) opens in the dashboard window, never in this one. */
+function openLinkThere(event: MouseEvent) {
+  const link = (event.target as Element | null)?.closest('a');
+  if (!link || link.target === '_blank') return;
+  const url = new URL(link.href, window.location.href);
+  if (url.origin !== window.location.origin) return;
+  event.preventDefault();
+  const path = `${url.pathname}${url.search}`;
+  if (isAppPath(path)) open({ path });
 }
 
 /** What a row's buttons say of its test: its title, and its project when it has one. */
 const named = (row: RunResultRow) => (row.project ? `${row.title} in ${row.project}` : row.title);
 
 function runTestAgain(row: RunResultRow, hold: boolean) {
-  post({ type: 'rerun-test', name, row: row.key, hold });
+  post({ type: 'rerun-test', name, key: key.value, row: row.key, hold });
 }
 </script>
 
@@ -158,7 +173,9 @@ function runTestAgain(row: RunResultRow, hold: boolean) {
                 variant="outline"
                 icon="i-lucide-rotate-ccw"
                 aria-label="Run again"
-                @click="post({ type: 'rerun', name })"
+                :loading="header.startingAgain"
+                :disabled="header.startingAgain"
+                @click="post({ type: 'rerun', name, key })"
               />
             </UTooltip>
             <UTooltip text="Show the run in the tray and close this window">
@@ -168,7 +185,7 @@ function runTestAgain(row: RunResultRow, hold: boolean) {
                 variant="ghost"
                 icon="i-lucide-panel-bottom-open"
                 aria-label="Show in the tray"
-                @click="post({ type: 'back', name })"
+                @click="post({ type: 'back', name, key })"
               />
             </UTooltip>
           </div>
@@ -181,7 +198,11 @@ function runTestAgain(row: RunResultRow, hold: boolean) {
       </template>
     </header>
 
-    <div v-if="header" class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-2">
+    <div
+      v-if="header"
+      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-2"
+      @click.capture="openLinkThere"
+    >
       <div v-if="header.hold" class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
         <USwitch
           :model-value="header.hold.on"
@@ -251,6 +272,7 @@ function runTestAgain(row: RunResultRow, hold: boolean) {
               variant="ghost"
               icon="i-lucide-rotate-ccw"
               :aria-label="`Run ${named(row)} again`"
+              :disabled="header.startingAgain"
               title="Run this test again, as the run ran it, in this window"
               @click="runTestAgain(row, false)"
             />
@@ -261,6 +283,7 @@ function runTestAgain(row: RunResultRow, hold: boolean) {
               variant="ghost"
               icon="i-lucide-circle-pause"
               :aria-label="`Run ${named(row)} again with Hold failures`"
+              :disabled="header.startingAgain"
               title="Run this test again, waiting at its failure for you to look"
               @click="runTestAgain(row, true)"
             />

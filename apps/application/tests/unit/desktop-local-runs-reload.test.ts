@@ -174,6 +174,27 @@ describe('the Local runs a reload of the window keeps', () => {
     await after.store.takeBackAfterReload();
     expect(after.store.windowNameOf(again.key)).toBe(name);
     expect(after.invoked).toContainEqual({ cmd: 'desktop_close_other_output_windows', args: { keep: [name] } });
+
+    // The first run shown apart again takes a name of its own; the second, back in the tray, gives its name back.
+    after.store.separateRun(first.key, true);
+    expect(after.store.windowNameOf(first.key)).not.toBe(name);
+    after.store.separateRun(again.key, false);
+    expect(after.store.windowNameOf(again.key)).not.toBe(name);
+    expect(after.store.separate.value).toMatchObject({ [first.key]: true, [again.key]: false });
+  });
+
+  test('brings a run shown in a separate window back to the tray as it is asked to show the run or its worker', async () => {
+    const page = await pageWith(new Map());
+    const run = page.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => run.shellId === 41);
+    page.store.separateRun(run.key, true);
+    page.store.showWorker('desktop-41', 0);
+    expect(page.store.separate.value[run.key]).toBe(false);
+    expect(page.store.trayOpen.value).toBe(true);
+    page.store.separateRun(run.key, true);
+    page.store.showRun(run.key);
+    expect(page.store.separate.value[run.key]).toBe(false);
+    expect(page.store.chosen.value).toBe(run.key);
   });
 
   test('ends a step that ended during the reload with its code, then runs the run’s next step', async () => {

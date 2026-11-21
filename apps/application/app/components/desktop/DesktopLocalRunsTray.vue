@@ -30,7 +30,7 @@
  * run says where its tests wait, in that editor, read only (`DesktopEditorRunNote`), with no Hold failures switch. A
  * run started for an environment names it with the command the shell runs, and says when the label its Piwi run
  * reported resolves to another environment; its Run again reads the environment again and, for a protected one, asks
- * the person to confirm again (`DesktopEnvironmentQuestion`). A run can move to a separate window of the app, whole
+ * the person to confirm again (`DesktopEnvironmentQuestion`, mounted with the app). A run can move to a separate window of the app, whole
  * (`separate`, `DesktopRunOutputWindows`). Opening the tray marks every run that ended as seen (`markSeen`), and `g`
  * then `t` opens or closes it.
  */
@@ -332,7 +332,7 @@ function separateLabel(run: LocalRun): string {
 }
 
 function toggleSeparate(run: LocalRun) {
-  separate.value = { ...separate.value, [run.key]: !separate.value[run.key] };
+  store.separateRun(run.key, !separate.value[run.key]);
 }
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
@@ -405,7 +405,6 @@ const groups = computed(() => [
 
 <template>
   <Teleport to="body">
-    <DesktopEnvironmentQuestion v-if="available" />
     <!-- Outside the tray, so a stop that opens it is read out from a region already there. -->
     <p v-if="available" class="sr-only" aria-live="polite">{{ announcement }}</p>
   </Teleport>
