@@ -226,6 +226,20 @@ export type AuthorizationStartError =
   | 'invalid_request'
   | 'invalid_target';
 
+/**
+ * Why an authorization request cannot be served whatever its client, or null:
+ * a `state` too long to send back unchanged (so it is refused rather than
+ * cut), another response type, no PKCE challenge with S256, or a `resource`
+ * other than the MCP endpoint.
+ */
+function requestProblem(query: Record<string, unknown>, resource: string): AuthorizationStartError | null {
+  if (typeof query.state === 'string' && query.state.length > MAX_STATE_LENGTH) return 'invalid_request';
+  if (query.response_type !== 'code') return 'unsupported_response_type';
+  if (query.code_challenge_method !== 'S256' || !isCodeChallenge(query.code_challenge)) return 'invalid_request';
+  if (query.resource !== undefined && !resourceMatches(query.resource, resource)) return 'invalid_target';
+  return null;
+}
+
 /** What the authorize endpoint does with a request. */
 export type AuthorizationStart =
   /** Ask the user: send the browser to the consent page with this request id. */
@@ -247,34 +261,31 @@ export async function startAuthorization(
   now = new Date(),
   fetcher?: MetadataFetch,
 ): Promise<AuthorizationStart> {
+  const urls = mcpOAuthUrls(baseUrl);
+  const refuse = (error: AuthorizationStartError): AuthorizationStart => ({ kind: 'refused', error });
   let client: OAuthClient | null;
   if (clientMetadataDocumentsEnabled() && isClientMetadataUrl(query.client_id)) {
+    // The document is fetched only for a request that is complete otherwise, its redirect URI named.
+    const problem = requestProblem(query, urls.resource);
+    if (problem) return refuse(problem);
+    if (typeof query.redirect_uri !== 'string') return refuse('invalid_redirect_uri');
     const resolved = await clientFromMetadataDocument(db, query.client_id, now, fetcher);
     if ('problem' in resolved) {
       console.warn(`[mcp-oauth] client metadata document ${query.client_id} refused: ${resolved.problem}`);
-      return { kind: 'refused', error: 'invalid_client_metadata' };
+      return refuse('invalid_client_metadata');
     }
     client = resolved;
   } else {
     client = await findClient(db, query.client_id);
   }
-  if (!client) return { kind: 'refused', error: 'invalid_client' };
+  if (!client) return refuse('invalid_client');
   const requested = typeof query.redirect_uri === 'string' ? query.redirect_uri : null;
   const redirectUri = requested ?? (client.redirectUris.length === 1 ? client.redirectUris[0]! : null);
-  if (!redirectUri || !redirectUriMatches(client.redirectUris, redirectUri)) {
-    return { kind: 'refused', error: 'invalid_redirect_uri' };
-  }
-
-  const urls = mcpOAuthUrls(baseUrl);
-  const refuse = (error: AuthorizationStartError): AuthorizationStart => ({ kind: 'refused', error });
-  // The state goes back unchanged, so one too long to store is refused rather than cut.
+  if (!redirectUri || !redirectUriMatches(client.redirectUris, redirectUri)) return refuse('invalid_redirect_uri');
+  const problem = requestProblem(query, urls.resource);
+  if (problem) return refuse(problem);
   const state = typeof query.state === 'string' ? query.state : null;
-  if (state !== null && state.length > MAX_STATE_LENGTH) return refuse('invalid_request');
-  if (query.response_type !== 'code') return refuse('unsupported_response_type');
-  if (query.code_challenge_method !== 'S256' || !isCodeChallenge(query.code_challenge)) {
-    return refuse('invalid_request');
-  }
-  if (query.resource !== undefined && !resourceMatches(query.resource, urls.resource)) return refuse('invalid_target');
+  const codeChallenge = query.code_challenge as string;
 
   const requestId = randomBytes(32).toString('hex');
   await db.insert(oauthAuthorizationRequests).values({
@@ -282,7 +293,7 @@ export async function startAuthorization(
     clientId: client.id,
     redirectUri,
     state,
-    codeChallenge: query.code_challenge,
+    codeChallenge,
     scope: MCP_OAUTH_SCOPE,
     resource: urls.resource,
     status: 'pending',
@@ -551,7 +562,10 @@ async function redeemCode(
     return invalid;
   }
 
-  // Signing in again replaces this client's earlier connection for the user.
+  // Signing in again replaces this client's earlier connection for the user. A
+  // client identified by its metadata document is every installation of it, so
+  // each sign-in is a connection of its own, which ends 30 days after its last use.
+  if (isClientMetadataUrl(client.clientId)) return tokens.body(request.scope);
   await db.delete(apiKeys).where(
     inArray(
       apiKeys.id,
@@ -660,7 +674,8 @@ export function isOAuthAccessToken(token: string | null | undefined): token is s
 
 /**
  * The user and the grant's API key behind an access token, or null when it is
- * unknown, expired or revoked. Writes the key's `last_used_at` at most hourly,
+ * unknown, expired, revoked, or a token of a client identified by its metadata
+ * document while those are off. Writes the key's `last_used_at` at most hourly,
  * as an API key's own use does.
  */
 export async function resolveOAuthAccessToken(
@@ -670,12 +685,20 @@ export async function resolveOAuthAccessToken(
 ): Promise<{ user: User; keyId: number } | null> {
   if (!isOAuthAccessToken(token)) return null;
   const [row] = await db
-    .select({ grant: oauthGrants, user: users, keyLastUsedAt: apiKeys.lastUsedAt })
+    .select({
+      grant: oauthGrants,
+      user: users,
+      keyLastUsedAt: apiKeys.lastUsedAt,
+      clientId: oauthClients.clientId,
+    })
     .from(oauthGrants)
     .innerJoin(users, eq(oauthGrants.userId, users.id))
     .innerJoin(apiKeys, eq(oauthGrants.apiKeyId, apiKeys.id))
+    .innerJoin(oauthClients, eq(oauthGrants.clientId, oauthClients.id))
     .where(eq(oauthGrants.accessTokenHash, hashToken(token)));
   if (!row || row.grant.accessExpiresAt.getTime() <= now.getTime()) return null;
+  // A client known by its metadata document is unknown while documents are off.
+  if (!clientMetadataDocumentsEnabled() && isClientMetadataUrl(row.clientId)) return null;
   if (!row.keyLastUsedAt || now.getTime() - row.keyLastUsedAt.getTime() > LAST_USED_WRITE_INTERVAL_MS) {
     await db.update(apiKeys).set({ lastUsedAt: now }).where(eq(apiKeys.id, row.grant.apiKeyId));
   }

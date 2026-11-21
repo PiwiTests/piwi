@@ -56,10 +56,11 @@ record is `proposals/roles-and-groups.md`.
   an `api_keys` row named after the client, whose value is never handed out: the row carries the access, the write log
   names it, and deleting it ends the grant (foreign-key cascade). Every 401 from `/mcp` carries the `WWW-Authenticate`
   challenge from which clients discover the authorization server.
-- **A client ID metadata document is fetched only at the authorize endpoint, through `safeFetch`, with no redirect**
-  (`server/utils/mcp-oauth-client-metadata.ts`, design record `adr/mcp-client-metadata-documents.md`): a public
-  address alone, a size cap and a timeout, and `PIWI_MCP_CLIENT_METADATA_DOCUMENTS=false` refuses every URL
-  `client_id` (`tests/unit/mcp-oauth-client-metadata.test.ts`).
+- **A client ID metadata document is fetched only at the authorize endpoint, once the rest of the request checked
+  out, through `safeFetch` with no redirect** (`server/utils/mcp-oauth-client-metadata.ts`, design record
+  `adr/mcp-client-metadata-documents.md`): a public address on the default port, a size cap, one deadline with DNS
+  included and `MAX_FETCHING` at once. Off unless `PIWI_MCP_CLIENT_METADATA_DOCUMENTS=true`; while off, a URL `client_id`
+  and its tokens are refused (`tests/unit/mcp-oauth-client-metadata.test.ts`).
 - **The authorize endpoint never redirects an error to the client's redirect URI.** Registration is open, so that would
   make the instance an open redirector: every refusal lands on the consent page, and only the user's Allow or Deny
   sends the browser to the client.

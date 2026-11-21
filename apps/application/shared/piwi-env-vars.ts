@@ -551,10 +551,10 @@ export const PIWI_ENV_VARS = {
   },
   PIWI_MCP_CLIENT_METADATA_DOCUMENTS: {
     description:
-      'Set to "false" to refuse MCP clients that sign in with a client ID metadata document: an HTTPS URL as their `client_id`, naming the JSON document that describes them, which the server fetches from a public address when the client asks for authorization. On by default and advertised in the authorization server metadata. Turn it off for an instance that cannot or should not reach the internet; clients then register on their own (dynamic client registration), which stays on either way.',
+      'Set to "true" to accept MCP clients that sign in with a client ID metadata document: an HTTPS URL as their `client_id`, naming the JSON document that describes them, which the server then fetches from a public address when the client asks for authorization, and advertises in the authorization server metadata. Off by default: the instance then makes no such request, and clients register on their own (dynamic client registration), which stays on either way. Turn it on only for an instance that can reach the internet: a client that sees it advertised signs in through it alone.',
     category: 'auth',
     type: 'boolean',
-    default: 'true',
+    default: 'false',
     relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
     since: '0.75.0',
     docs: 'features/mcp#authentication',

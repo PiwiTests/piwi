@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'vitest';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
 import { eq } from 'drizzle-orm';
@@ -8,9 +8,9 @@ import { migrateToLatest } from './temp-db';
 /**
  * Client ID metadata documents: an MCP client whose `client_id` is an HTTPS
  * URL is described by the document there, fetched through the SSRF guard with
- * no redirect, a size cap and a timeout, kept as long as its `Cache-Control`
- * allows within bounds, and checked before the client signs in. The switch
- * turns it off, and dynamic registration stays.
+ * no redirect, a size cap, one deadline and two fetches at once, kept as long
+ * as its `Cache-Control` allows within bounds, and checked before the client
+ * signs in. Off unless the switch turns it on; dynamic registration stays.
  */
 
 // The schema barrel picks the PostgreSQL schema when PIWI_DATABASE_URL is set.
@@ -41,7 +41,7 @@ const DOCUMENT = {
 
 beforeEach(async () => {
   metadata.clearClientMetadataCache();
-  delete process.env.PIWI_MCP_CLIENT_METADATA_DOCUMENTS;
+  process.env.PIWI_MCP_CLIENT_METADATA_DOCUMENTS = 'true';
   const client = createClient({ url: ':memory:' });
   await client.execute('PRAGMA foreign_keys=ON');
   db = drizzle(client, { schema });
@@ -103,8 +103,10 @@ function start(
 describe('the client_id that names a document', () => {
   test('is an https URL with a path, no credentials and no fragment, written as a URL parser writes it', () => {
     expect(metadata.isClientMetadataUrl(CLIENT_ID)).toBe(true);
-    expect(metadata.isClientMetadataUrl('https://client.example.com:8443/c?v=1')).toBe(true);
+    expect(metadata.isClientMetadataUrl('https://client.example.com:443/client.json')).toBe(false);
     for (const value of [
+      'https://client.example.com:8443/client.json',
+      'https://client.example.com/client.json?v=1',
       'http://client.example.com/client.json',
       'https://client.example.com',
       'https://client.example.com/',
@@ -138,6 +140,7 @@ describe('the document', () => {
       [[], 'not an object'],
       [{ ...DOCUMENT, client_id: 'https://other.example.com/client.json' }, 'another client_id'],
       [{ ...DOCUMENT, client_name: '' }, 'no name'],
+      [{ ...DOCUMENT, client_name: '!!!' }, 'no name left to show once cleaned'],
       [{ ...DOCUMENT, redirect_uris: ['javascript:alert(1)'] }, 'a redirect URI that cannot receive a code'],
       [{ ...DOCUMENT, redirect_uris: [] }, 'no redirect URI'],
       [{ ...DOCUMENT, grant_types: ['client_credentials'] }, 'another grant'],
@@ -154,6 +157,7 @@ describe('the document', () => {
     expect(metadata.cacheLifetimeMs(null)).toBe(standard);
     expect(metadata.cacheLifetimeMs('public, max-age=600')).toBe(600_000);
     expect(metadata.cacheLifetimeMs('max-age=1')).toBe(min);
+    expect(metadata.cacheLifetimeMs('max-age=0')).toBe(0);
     expect(metadata.cacheLifetimeMs('max-age=99999999')).toBe(max);
     expect(metadata.cacheLifetimeMs('no-store')).toBe(0);
     expect(metadata.cacheLifetimeMs('private, no-cache')).toBe(0);
@@ -178,6 +182,37 @@ describe('fetching the document', () => {
     await metadata.resolveClientMetadata(CLIENT_ID, T0.getTime(), fetch);
     await metadata.resolveClientMetadata(CLIENT_ID, T0.getTime(), fetch);
     expect(calls).toHaveLength(2);
+  });
+
+  test('gives up at the deadline, DNS included, and runs two fetches at once at most until they end', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending: Array<(res: Response) => void> = [];
+      const { fetch, calls } = fetcher(() => new Promise<Response>((resolve) => pending.push(resolve)));
+      const first = metadata.resolveClientMetadata('https://a.example.com/c.json', T0.getTime(), fetch);
+      const second = metadata.resolveClientMetadata('https://b.example.com/c.json', T0.getTime(), fetch);
+      expect(await metadata.resolveClientMetadata('https://c.example.com/c.json', T0.getTime(), fetch)).toEqual({
+        problem: 'other client metadata documents are being fetched',
+      });
+      await vi.advanceTimersByTimeAsync(metadata.CLIENT_METADATA_TIMEOUT_MS);
+      expect(await first).toEqual({ problem: 'the document did not arrive within 5 seconds' });
+      expect(await second).toHaveProperty('problem');
+      // A fetch the deadline gave up on holds its place until it ends.
+      expect(await metadata.resolveClientMetadata('https://c.example.com/c.json', T0.getTime(), fetch)).toEqual({
+        problem: 'other client metadata documents are being fetched',
+      });
+      for (const resolve of pending) resolve(new Response('nope', { status: 404 }));
+      await vi.advanceTimersByTimeAsync(0);
+      const third = metadata.resolveClientMetadata(
+        'https://client.example.com/oauth/client.json',
+        T0.getTime(),
+        fetcher(() => json(DOCUMENT)).fetch,
+      );
+      expect(await third).toMatchObject({ clientName: 'Example Agent' });
+      expect(calls).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test('refuses an address that does not answer 200, a long body, a body that is not JSON, and a failed fetch', async () => {
@@ -220,14 +255,15 @@ describe('fetching the document', () => {
 });
 
 describe('signing in with a metadata document', () => {
-  test('is advertised in the server metadata only when on', () => {
+  test('is off by default, and advertised in the server metadata only when on', () => {
     expect(helpers.authorizationServerMetadata(BASE, { clientMetadataDocuments: true })).toMatchObject({
       client_id_metadata_document_supported: true,
       registration_endpoint: `${BASE}/oauth/register`,
     });
     expect(helpers.authorizationServerMetadata(BASE)).not.toHaveProperty('client_id_metadata_document_supported');
-    expect(metadata.clientMetadataDocumentsEnabled({})).toBe(true);
+    expect(metadata.clientMetadataDocumentsEnabled({})).toBe(false);
     expect(metadata.clientMetadataDocumentsEnabled({ PIWI_MCP_CLIENT_METADATA_DOCUMENTS: 'false' })).toBe(false);
+    expect(metadata.clientMetadataDocumentsEnabled({ PIWI_MCP_CLIENT_METADATA_DOCUMENTS: 'true' })).toBe(true);
   });
 
   test('creates the client from its document, shows its host on the consent page, and redeems the code as a public client', async () => {
@@ -285,9 +321,90 @@ describe('signing in with a metadata document', () => {
     expect(await db.select().from(schema.oauthClients)).toEqual([]);
   });
 
-  test('turned off, a URL client_id is an unknown client, before and after it signed in', async () => {
-    await start({}, fetcher(() => json(DOCUMENT)).fetch);
-    process.env.PIWI_MCP_CLIENT_METADATA_DOCUMENTS = 'false';
+  test('fetches the document only for a request complete otherwise, its redirect URI named', async () => {
+    for (const [query, error] of [
+      [{ response_type: 'token' }, 'unsupported_response_type'],
+      [{ code_challenge: 'short' }, 'invalid_request'],
+      [{ code_challenge_method: 'plain' }, 'invalid_request'],
+      [{ state: 'x'.repeat(2001) }, 'invalid_request'],
+      [{ resource: 'https://elsewhere.example.com/mcp' }, 'invalid_target'],
+      [{ redirect_uri: undefined }, 'invalid_redirect_uri'],
+    ] as const) {
+      const { fetch, calls } = fetcher(() => json(DOCUMENT));
+      expect(await start(query, fetch), error).toEqual({ kind: 'refused', error });
+      expect(calls, error).toEqual([]);
+    }
+    expect(await db.select().from(schema.oauthClients)).toEqual([]);
+  });
+
+  test('keeps the connection of each machine that signs in', async () => {
+    const signIn = async () => {
+      metadata.clearClientMetadataCache();
+      const started = await start({}, fetcher(() => json(DOCUMENT)).fetch);
+      if (started.kind !== 'consent') throw new Error(JSON.stringify(started));
+      const decision = await oauth.decideAuthorization(
+        anyDb(),
+        { requestId: started.requestId, userId, allow: true },
+        BASE,
+        T0,
+      );
+      if (decision.status !== 'approved') throw new Error(decision.status);
+      const issued = await oauth.exchangeToken(
+        anyDb(),
+        {
+          grant_type: 'authorization_code',
+          code: new URL(decision.redirectTo).searchParams.get('code'),
+          redirect_uri: REDIRECT,
+          code_verifier: VERIFIER,
+        },
+        { clientId: CLIENT_ID, clientSecret: null, basic: false },
+        BASE,
+        T0,
+      );
+      if ('error' in issued) throw new Error(issued.description);
+      return issued;
+    };
+    const laptop = await signIn();
+    const desktop = await signIn();
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), laptop.access_token, T0)).not.toBeNull();
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), desktop.access_token, T0)).not.toBeNull();
+    const refreshed = await oauth.exchangeToken(
+      anyDb(),
+      { grant_type: 'refresh_token', refresh_token: laptop.refresh_token },
+      { clientId: CLIENT_ID, clientSecret: null, basic: false },
+      BASE,
+      T0,
+    );
+    expect(refreshed).toHaveProperty('access_token');
+    expect(await db.select().from(schema.oauthGrants)).toHaveLength(2);
+  });
+
+  test('turned off, a URL client_id is an unknown client, before and after it signed in, its tokens too', async () => {
+    const started = await start({}, fetcher(() => json(DOCUMENT)).fetch);
+    if (started.kind !== 'consent') throw new Error(JSON.stringify(started));
+    const decision = await oauth.decideAuthorization(
+      anyDb(),
+      { requestId: started.requestId, userId, allow: true },
+      BASE,
+      T0,
+    );
+    if (decision.status !== 'approved') throw new Error(decision.status);
+    const issued = await oauth.exchangeToken(
+      anyDb(),
+      {
+        grant_type: 'authorization_code',
+        code: new URL(decision.redirectTo).searchParams.get('code'),
+        redirect_uri: REDIRECT,
+        code_verifier: VERIFIER,
+      },
+      { clientId: CLIENT_ID, clientSecret: null, basic: false },
+      BASE,
+      T0,
+    );
+    if ('error' in issued) throw new Error(issued.description);
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), issued.access_token, T0)).not.toBeNull();
+    delete process.env.PIWI_MCP_CLIENT_METADATA_DOCUMENTS;
+    expect(await oauth.resolveOAuthAccessToken(anyDb(), issued.access_token, T0)).toBeNull();
     const { fetch, calls } = fetcher(() => json(DOCUMENT));
     expect(await start({}, fetch)).toEqual({ kind: 'refused', error: 'invalid_client' });
     expect(calls).toEqual([]);
