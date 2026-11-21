@@ -8,7 +8,8 @@ import { streamSimulation } from './demo-simulator-harness';
  * What the demo's simulated workers say to a view of them, as the 'stuck' scenario plays it: the PayPal test's call log
  * waits on the disabled Pay button through its hang, and Inspect has the checkout page at that click; a test that runs
  * no call of the demo's trace says the demo has no page of it. The 'held-failure' scenario's CI worker holds its failing
- * test as a CI worker does, until the hold's length or **Let it go**.
+ * test as a CI worker does, until the hold's length or **Let it go**. The 'paused-ci' scenario's CI workers say they can
+ * pause, and a **Pause** pauses a worker's test before its next call until **Resume**, or ends it at **End the test**.
  */
 
 const said = vi.hoisted(() => [] as Array<{ runId: number; message: LiveViewerMessage }>);
@@ -174,5 +175,77 @@ describe("the 'held-failure' scenario's worker", () => {
     });
     const [heldAt, endedAt] = posts.filter((p) => p.url === '/api/test-runs/1/live-view').map((p) => p.at);
     expect(endedAt! - heldAt!).toBeLessThan(simulator.DEMO_HOLD_MS);
+  });
+});
+
+describe("the 'paused-ci' scenario's workers", () => {
+  /** Run the scenario, asking a Pause of worker 0 as it says it can pause, and `then` once its test is paused. */
+  async function paused(then: 'resume' | 'end') {
+    const posts: Array<{ url: string; body?: Record<string, unknown>; at: number }> = [];
+    const tell = (message: DemoEventMessage) => queueMicrotask(() => hearers.forEach((hear) => hear(message)));
+    const worker = { shard: null, worker: 0, slot: 0 };
+    let asked = false;
+    const run = await streamSimulation(simulator, 'paused-ci', {
+      onRequest: (url, body) => {
+        posts.push({ url, body, at: Date.now() });
+        // Asked as worker 0's first test begins.
+        const begins = (body?.testCases as Array<{ type?: string; workerIndex?: number }> | undefined) ?? [];
+        if (!asked && begins.some((e) => e.type === 'begin' && e.workerIndex === 0)) {
+          asked = true;
+          tell({ scope: 'control', runId: 1, worker, command: 'pause' });
+        }
+        if (url !== '/api/test-runs/1/live-view' || body?.worker !== 0) return;
+        const stop = body.stop as { reason?: string } | null;
+        if (stop?.reason === 'pause') {
+          tell({ scope: 'control', runId: 1, worker, command: then, ...(then === 'end' ? { by: 'Ana' } : {}) });
+        }
+      },
+    });
+    const stops = posts.filter((p) => p.url === '/api/test-runs/1/live-view' && p.body?.worker === 0);
+    return { run, stops };
+  }
+
+  test('say they can pause as they start, and are forgotten as the run ends', async () => {
+    const { stops } = await paused('resume');
+    expect(stops[0]?.body).toMatchObject({ stop: null, pauses: true });
+    expect(stops.at(-1)?.body).toMatchObject({ stop: null, pauses: false });
+  });
+
+  test('pause a test before its next call at a Pause, saying until when, and let it go on at Resume', async () => {
+    const { run, stops } = await paused('resume');
+    const pause = stops.find((p) => (p.body?.stop as { reason?: string } | null)?.reason === 'pause')!;
+    const stop = pause.body!.stop as { test: string; until: number; call: { title: string } };
+    expect(stop.call.title).toBeTruthy();
+    expect(stop.until - pause.at).toBe(simulator.DEMO_HOLD_MS);
+    const ended = stops[stops.indexOf(pause) + 1]!;
+    expect(ended.body).toMatchObject({ stop: null });
+    expect(ended.at - pause.at).toBeLessThan(simulator.DEMO_HOLD_MS);
+    const complete = run.events.filter((e) => e.type === 'complete' && e.title === stop.test);
+    expect(complete.at(-1)?.status).not.toBe('skipped');
+  });
+
+  test('fail the paused test at End the test, naming who ended it', async () => {
+    const { run, stops } = await paused('end');
+    const pause = stops.find((p) => (p.body?.stop as { reason?: string } | null)?.reason === 'pause')!;
+    const test = (pause.body!.stop as { test: string }).test;
+    const complete = run.events.filter((e) => e.type === 'complete' && e.title === test);
+    expect(complete[0]).toMatchObject({ status: 'failed', error: 'Ended from Piwi by Ana' });
+  });
+
+  test('drop a Pause asked while no test runs, saying why, and never stop a later test for it', async () => {
+    const posts: Array<{ url: string; body?: Record<string, unknown> }> = [];
+    const worker = { shard: null, worker: 0, slot: 0 };
+    await streamSimulation(simulator, 'paused-ci', {
+      onRequest: (url, body) => {
+        posts.push({ url, body });
+        // Asked as the worker says it can pause, before its first test begins.
+        if (url === '/api/test-runs/1/live-view' && body?.worker === 0 && body.pauses === true) {
+          for (const hear of hearers) hear({ scope: 'control', runId: 1, worker, command: 'pause' });
+        }
+      },
+    });
+    const ofWorker = posts.filter((p) => p.url === '/api/test-runs/1/live-view' && p.body?.worker === 0);
+    expect(ofWorker.some((p) => (p.body?.stop as { reason?: string } | null)?.reason === 'pause')).toBe(false);
+    expect(ofWorker.find((p) => p.body?.dropped)?.body).toMatchObject({ dropped: 'No test runs on this worker now.' });
   });
 });

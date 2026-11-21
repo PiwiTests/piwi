@@ -30,6 +30,8 @@ import {
   parseLiveAskAnswer,
   isLiveHoldMinutes,
   MAX_LIVE_HOLD_MINUTES,
+  LIVE_CONTROL_COMMANDS,
+  isLiveControlCommand,
 } from '../src/live-view';
 import { LatestPacer, fitViewSize } from '../src/run-view';
 
@@ -371,6 +373,64 @@ describe('holding a failing CI test', () => {
   test('a project holds for 1 to 15 whole minutes', () => {
     expect([1, 5, 15].every(isLiveHoldMinutes)).toBe(true);
     expect([0, 16, 2.5, '5', null].some(isLiveHoldMinutes)).toBe(false);
+  });
+});
+
+describe('pausing a CI test', () => {
+  test('the hold says beside it whether controllers may pause, and only while it is on', () => {
+    expect(parseInstanceToWorker('{"type":"hold","ms":300000,"pause":true}')).toEqual({
+      type: 'hold',
+      ms: 300_000,
+      pause: true,
+    });
+    expect(parseInstanceToWorker('{"type":"hold","ms":300000}')).toEqual({ type: 'hold', ms: 300_000 });
+    expect(parseInstanceToWorker('{"type":"hold","ms":300000,"pause":"yes"}')).toEqual({ type: 'hold', ms: 300_000 });
+    // No hold, no pause: the setting needs the hold's.
+    expect(parseInstanceToWorker('{"type":"hold","ms":null,"pause":true}')).toEqual({ type: 'hold', ms: null });
+  });
+
+  test('the instance asks to pause, resume and end the test, and nothing more', () => {
+    expect(parseInstanceToWorker('{"type":"pause"}')).toEqual({ type: 'pause' });
+    expect(parseInstanceToWorker('{"type":"resume"}')).toEqual({ type: 'resume' });
+    expect(parseInstanceToWorker('{"type":"end-test"}')).toEqual({ type: 'end-test' });
+    expect(parseInstanceToWorker('{"type":"pause","by":"Ana"}')).toEqual({ type: 'pause' });
+    expect(parseInstanceToWorker('{"type":"step"}')).toBeNull();
+    expect(LIVE_CONTROL_COMMANDS).toEqual(['pause', 'resume', 'end']);
+    expect(LIVE_CONTROL_COMMANDS.every(isLiveControlCommand)).toBe(true);
+    expect(['let-go', 'step', '', null].some(isLiveControlCommand)).toBe(false);
+  });
+
+  test('End the test names who ended it, as plain text, and nobody when the instance knows no name', () => {
+    expect(parseInstanceToWorker('{"type":"end-test","by":"Ana"}')).toEqual({ type: 'end-test', by: 'Ana' });
+    expect(parseInstanceToWorker(JSON.stringify({ type: 'end-test', by: 'Ana [x](y)\u202e' }))).toEqual({
+      type: 'end-test',
+      by: 'Ana x y',
+    });
+    expect(parseInstanceToWorker('{"type":"end-test","by":""}')).toEqual({ type: 'end-test' });
+    expect(parseInstanceToWorker('{"type":"end-test","by":5}')).toEqual({ type: 'end-test' });
+  });
+
+  test('the worker says it took a Pause, or dropped it and why', () => {
+    expect(readWorkerToInstance({ type: 'pause-asked', worker: 0, slot: 1, waiting: true })).toEqual({
+      type: 'pause-asked',
+      shard: null,
+      worker: 0,
+      slot: 1,
+      waiting: true,
+    });
+    expect(
+      readWorkerToInstance({ type: 'pause-asked', worker: 0, waiting: false, why: 'No test runs on this worker now.' }),
+    ).toEqual({ type: 'pause-asked', shard: null, worker: 0, waiting: false, why: 'No test runs on this worker now.' });
+    const long = readWorkerToInstance({ type: 'pause-asked', worker: 0, waiting: false, why: 'x'.repeat(900) });
+    expect((long as { why: string }).why).toHaveLength(300);
+    expect(typeof readWorkerToInstance({ type: 'pause-asked', worker: 0, waiting: 'yes' })).toBe('string');
+  });
+
+  test('a paused stop says when its pause ends', () => {
+    const until = 1_800_000_000_000;
+    expect(
+      readWorkerToInstance({ type: 'stop', worker: 0, stop: { reason: 'pause', call: { title: 'Click' }, until } }),
+    ).toEqual(expect.objectContaining({ stop: { reason: 'pause', call: expect.anything(), test: null, until } }));
   });
 });
 

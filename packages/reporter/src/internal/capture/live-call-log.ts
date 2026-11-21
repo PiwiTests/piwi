@@ -293,6 +293,14 @@ interface ContextCalls {
 }
 
 const followed = new WeakMap<BrowserContext, Promise<ContextCalls | null>>();
+
+/**
+ * Whether a context's calls are followed through Playwright's call stream: once on, it stays on in that context, and
+ * its debugger stops a call before its input rather than before its wait.
+ */
+export function followsCallStream(context: BrowserContext): boolean {
+  return followed.has(context);
+}
 const listened = new WeakMap<BrowserContext, ContextCalls>();
 
 /** Take one update of the call stream into its call. */

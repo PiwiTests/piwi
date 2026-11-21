@@ -1,11 +1,19 @@
 /**
  * The CI runs of a project in progress, as a surface lists them beside the runs it follows: read-only, since they run
  * on CI and nothing a surface holds steers them, but for **Let it go** on a test held at its failure for its project's
- * controllers (`CiHold`), which the instance takes from a controller's watch of its lane. Their number on the instance
- * names them (`CI run #78`), their branch and project say where they run, their tally how far they are, and their page
- * is where to watch a running test.
+ * controllers (`CiHold`), and **Pause**, **Resume** and **End the test** of a test whose project lets its controllers
+ * pause one (`CiPause`, `ciControlsOffered`), which the instance takes from a controller's watch of its lane. Their
+ * number on the instance names them (`CI run #78`), their branch and project say where they run, their tally how far
+ * they are, and their page is where to watch a running test.
  */
-import { isEpochMs, readLiveCall, readLiveWorkerId, type LiveCall, type LiveWorkerId } from '@piwitests/core/live-view';
+import {
+  isEpochMs,
+  readLiveCall,
+  readLiveWorkerId,
+  type LiveCall,
+  type LiveControlCommand,
+  type LiveWorkerId,
+} from '@piwitests/core/live-view';
 import { RUN_ORIGIN_METADATA_KEY, parseRunOrigin } from '@piwitests/core/wire';
 import type { RunMessage, RunSpeaker } from './words';
 
@@ -241,3 +249,131 @@ export class LetGoAsks {
     if (this.asked(lane, hold)) this.holds.delete(lane);
   }
 }
+
+/**
+ * A CI worker's test paused for its project's controllers, as the run's stream says it (`live-worker`): the worker, the
+ * call it stopped before, when the pause ends (null when the worker names no end), and who paused it (null when the
+ * instance knows no name).
+ */
+export interface CiPause {
+  worker: LiveWorkerId;
+  call: LiveCall;
+  until: number | null;
+  pausedBy: string | null;
+}
+
+/** The fields of a run's `live-worker` event of a connected worker that can pause its test for its controllers. */
+function pausingWorker(data: unknown): Record<string, unknown> | null {
+  const fields = data && typeof data === 'object' ? (data as Record<string, unknown>) : null;
+  return fields?.connected === true && fields.holds === true && fields.pauses === true ? fields : null;
+}
+
+/**
+ * The paused test a run's `live-worker` event says, checked field by field: a connected worker that can pause
+ * (`pauses`) standing at a stop of reason `pause` that names its end, which a local run's pause, shared live, never
+ * names; null for anything else.
+ */
+export function readCiPause(data: unknown): CiPause | null {
+  const fields = pausingWorker(data);
+  const worker = fields ? readLiveWorkerId(fields.shard, fields.worker, fields.slot) : null;
+  const paused =
+    fields?.paused && typeof fields.paused === 'object' ? (fields.paused as Record<string, unknown>) : null;
+  if (!worker || paused?.reason !== 'pause' || !isEpochMs(paused.until)) return null;
+  const call = readLiveCall(paused.call);
+  if (!call) return null;
+  const by =
+    typeof fields!.pausedBy === 'string' && fields!.pausedBy.trim() ? fields!.pausedBy.slice(0, MAX_NAME) : null;
+  return { worker, call, until: Math.round(paused.until), pausedBy: by };
+}
+
+/**
+ * Who paused a CI test, and until when (`Paused by Ana · until 12:05`; `Paused · until 12:05` for no name); null for a
+ * pause that says no end.
+ */
+export function pausedByWords(
+  until: number | null | undefined,
+  pausedBy: string | null,
+  speaker: RunSpeaker,
+  clock: (time: number) => string = clockTime,
+): string | null {
+  if (until === null || until === undefined) return null;
+  const time = clock(until);
+  return pausedBy ? speaker.say('runs_pausedBy', { name: pausedBy, time }) : speaker.say('runs_pausedUntil', { time });
+}
+
+/**
+ * What a surface says of a CI test paused for its controllers, beside the call it stopped before: where it stands
+ * (`Paused`), by whom and until when, its place, and that the CI job's own timeout still runs.
+ */
+export function ciPauseWords(
+  pause: Pick<CiPause, 'call' | 'until' | 'pausedBy'>,
+  speaker: RunSpeaker,
+  clock: (time: number) => string = clockTime,
+): { state: string; pausedBy: string | null; place: string | null; note: string } {
+  const { file, line } = pause.call;
+  return {
+    state: speaker.say('runs_stoppedPause'),
+    pausedBy: pausedByWords(pause.until, pause.pausedBy, speaker, clock),
+    place: file ? (line !== null ? `${file}:${line}` : file) : null,
+    note: speaker.say('runs_heldJobTimeout'),
+  };
+}
+
+/**
+ * The controls a surface offers on a CI lane, from its worker's `live-worker` event (`state`): **Pause** while its test
+ * runs (`running`) and stands at no stop, **Resume** and **End the test** while it is paused for its controllers;
+ * none for a worker that cannot pause, nor unless the surface's own watch shows the lane and counts as a
+ * controller's. The instance takes each from that watch alone, and checks the project's setting.
+ */
+export function ciControlsOffered(
+  state: unknown,
+  watch: { shows: boolean; controller: boolean },
+  running: boolean,
+): LiveControlCommand[] {
+  const fields = pausingWorker(state);
+  if (!fields || !watch.shows || !watch.controller) return [];
+  if (readCiPause(state)) return ['resume', 'end'];
+  // A Pause that waits for the test's next call is taken back by Resume.
+  if (readCiPauseAsk(state).asked) return ['resume'];
+  return running && !fields.paused ? ['pause'] : [];
+}
+
+/**
+ * A CI worker's Pause it has not stopped for yet (`asked`, with who asked it, null for no name), and why it dropped the
+ * last one it was asked (`dropped`), from the run's `live-worker` event of a worker that can pause; both null for
+ * anything else.
+ */
+export function readCiPauseAsk(data: unknown): {
+  asked: { by: string | null } | null;
+  dropped: string | null;
+} {
+  const fields = pausingWorker(data);
+  const asked =
+    fields?.pauseAsked && typeof fields.pauseAsked === 'object' ? (fields.pauseAsked as Record<string, unknown>) : null;
+  const by = typeof asked?.by === 'string' && asked.by.trim() ? asked.by.slice(0, MAX_NAME) : null;
+  const dropped = typeof fields?.pauseDropped === 'string' && fields.pauseDropped ? fields.pauseDropped : null;
+  return { asked: asked ? { by } : null, dropped: dropped && dropped.slice(0, MAX_DROPPED) };
+}
+
+/** The longest reason a surface says for a dropped Pause. */
+const MAX_DROPPED = 300;
+
+/**
+ * What a surface says of a CI lane's Pause beside its controls: `Pause asked by Ana` while it waits for the test's next
+ * call, or why the worker dropped it; null for neither.
+ */
+export function ciPauseAskWords(ask: ReturnType<typeof readCiPauseAsk>, speaker: RunSpeaker): string | null {
+  if (ask.asked)
+    return ask.asked.by ? speaker.say('runs_pauseAskedBy', { name: ask.asked.by }) : speaker.say('runs_pauseAsked');
+  return ask.dropped ? speaker.say('runs_pauseDropped', { why: ask.dropped }) : null;
+}
+
+/** Resume's title on a CI lane while a Pause waits for the test's next call: it takes the Pause back. */
+export const CI_CANCEL_PAUSE_TITLE: RunMessage = { key: 'runs_ciCancelPauseTitle' };
+
+/** Each control of a CI lane, in a local run's words: its label and its title. */
+export const CI_CONTROL_WORDS: Record<LiveControlCommand, { label: RunMessage; title: RunMessage }> = {
+  pause: { label: { key: 'runs_pause' }, title: { key: 'runs_pauseTitle' } },
+  resume: { label: { key: 'runs_resume' }, title: { key: 'runs_ciResumeTitle' } },
+  end: { label: { key: 'runs_end' }, title: { key: 'runs_endTitle' } },
+};

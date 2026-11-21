@@ -552,6 +552,7 @@ export const HELP_TOPICS = {
       '- **Kept** — Inspect’s pages and what they name stay in the instance’s memory while their test runs, and go with the run at the latest. The rest is relayed and dropped. None of it reaches the database, the logs or an export.',
       '- **Ask to watch** — with sign-in on, a reader of a running local run nobody shares asks its developer to share it, once per 5 minutes; the developer sees who asks. On by default.',
       '- **Hold a failing CI test** — a CI test that fails while a Maintainer or Project admin watches its worker in full waits at its failure, for **Inspect**, until **Let it go**, the longest hold (1 to 15 minutes, 5 by default) or nobody who may control the run watches it. Its result is unchanged; the CI job’s own timeout still runs. Off by default; `@piwitests/reporter` 0.75.0 or later.',
+      '- **Let controllers pause a CI test** — with the hold on, the same people may pause a CI test they watch in full before its next call, then **Resume** it or **End the test**, from the run page, as long as a hold at most. Off by default; it goes off with the hold.',
       '',
       'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),

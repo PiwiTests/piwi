@@ -6934,6 +6934,55 @@
   "runs_heldJobTimeout": {
     "message": "Le délai du job de CI lui-même continue de courir."
   },
+  "runs_pausedBy": {
+    "message": "Mis en pause par $name$ · jusqu’à $time$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_pausedUntil": {
+    "message": "En pause · jusqu’à $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_ciResumeTitle": {
+    "message": "Laisser le test reprendre là où il est en pause"
+  },
+  "runs_pauseAsked": {
+    "message": "Pause demandée"
+  },
+  "runs_pauseAskedBy": {
+    "message": "Pause demandée par $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "La pause a été abandonnée : $why$",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Retirer la pause : le test continue sans s’arrêter"
+  },
   "runs_stateRunning": {
     "message": "En cours"
   },

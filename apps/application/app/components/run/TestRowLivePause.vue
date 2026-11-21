@@ -3,9 +3,10 @@
  * Where a running test is stopped, on its row: why, in words by its reason (`stopWords`), at which call and where, and,
  * for a stop its reporter told as text, for how long. The stop comes from the run's live view (a CI run, a run shared
  * live), or from a run outside CI while someone has the run open (`test-stopped`). A failed CI test held for its
- * controllers says for whom and until when (`heldStopWords`). The row's **Watch** opens the view of a live view's page.
+ * controllers says for whom and until when (`heldStopWords`), and a CI test they paused by whom and until when
+ * (`pausedStopWords`). The row's **Watch** opens the view of a live view's page.
  */
-import { heldStopWords, stopStoodMs, stopWords } from '~/utils/stop-words';
+import { heldStopWords, pausedStopWords, stopStoodMs, stopWords } from '~/utils/stop-words';
 
 const props = defineProps<{
   reason: string;
@@ -15,12 +16,19 @@ const props = defineProps<{
   /** When a held CI failure's hold ends (epoch ms), and the controllers it is held for. */
   until?: number;
   heldFor?: string[];
+  /** A CI test paused for its controllers: when its pause ends (epoch ms), and who paused it. */
+  ciPause?: { until: number; pausedBy: string | null };
   /** Piwi project id + name, for the IDE opener of the paused call's place. */
   projectKey?: string | number | null;
   projectName?: string | null;
 }>();
 
-const words = computed(() => stopWords(props.reason));
+/** Its reason's words; a paused CI test's by whom and until when in their place. */
+const words = computed(
+  () =>
+    (props.ciPause && pausedStopWords({ until: props.ciPause.until }, props.ciPause.pausedBy)) ||
+    stopWords(props.reason),
+);
 const held = computed(() =>
   props.reason === 'held' ? heldStopWords({ until: props.until }, props.heldFor ?? []) : null,
 );

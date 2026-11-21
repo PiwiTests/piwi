@@ -3,7 +3,7 @@
  * worker's state, which the run's event stream carries (`live-worker`). The page's watch of the run
  * (`/api/test-runs/:id/live-view/watch`) and the worker's side of the protocol are `@piwitests/core/live-view`'s.
  */
-import type { LiveStop, LiveViewEnd, LiveWorkerId } from '@piwitests/core/live-view';
+import type { LiveControlCommand, LiveStop, LiveViewEnd, LiveWorkerId } from '@piwitests/core/live-view';
 
 export {
   liveWorkerKey,
@@ -19,7 +19,8 @@ export {
  * A worker of a live run as the run page knows it: its lane (`slot`, from a reporter that says it), whether it is
  * connected, and its test's stop while it holds. A CI worker that can hold a failing test for its controllers says so
  * (`holds`), with the names of the controllers its held stop is held for (`heldFor`, none when the instance knows no
- * names).
+ * names); one that can pause its test for them too says so (`pauses`), with the name of who paused it (`pausedBy`,
+ * absent when the instance knows none).
  */
 export interface LiveWorkerState {
   shard: number | null;
@@ -29,6 +30,12 @@ export interface LiveWorkerState {
   paused: LiveStop | null;
   holds?: boolean;
   heldFor?: string[];
+  pauses?: boolean;
+  pausedBy?: string;
+  /** A Pause the worker was sent and has not stopped for yet, with who asked it when known. */
+  pauseAsked?: { by?: string };
+  /** Why the worker dropped the last Pause it was asked, until the next Pause or stop. */
+  pauseDropped?: string;
 }
 
 /**
@@ -127,3 +134,23 @@ export const LET_GO_SETTING_OFF =
   "The project's setting is off: a Project admin turns on Hold a failing CI test in Project → Settings → Live view.";
 export const LET_GO_NOT_HELD = 'This worker holds no failing test now.';
 export const LET_GO_DONE = 'The test goes on: it tears down as it would have, its result unchanged.';
+
+/**
+ * What **Pause**, **Resume** and **End the test** of a CI test answer, on the instance and in the demo: the project's
+ * setting off, a worker that cannot pause, a test at a stop or not paused, and each done.
+ */
+export const PAUSE_SETTING_OFF =
+  "The project's setting is off: a Project admin turns on Let controllers pause a CI test in Project → Settings → Live view.";
+export const CONTROL_CANNOT_PAUSE = "This worker's reporter cannot pause its test: update @piwitests/reporter.";
+export const CONTROL_STOPPED = "This worker's test stands at a stop already.";
+
+/** What a second Pause answers while the worker has not stopped for the first: who asked it, when known. */
+export function pauseAskedAlready(by: string | null): string {
+  return by ? `A Pause is already asked by ${by}.` : 'A Pause is already asked.';
+}
+export const CONTROL_NOT_PAUSED = "This worker's test is not paused now.";
+export const CONTROL_DONE: Record<LiveControlCommand, string> = {
+  pause: 'The test pauses before its next call.',
+  resume: 'The test goes on.',
+  end: 'The test fails here, ended from Piwi: its retries run as after any failure.',
+};

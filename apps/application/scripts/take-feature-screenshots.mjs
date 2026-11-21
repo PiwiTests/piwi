@@ -7213,6 +7213,121 @@ const SCENES = [
     },
   },
   {
+    name: 'run-live-view-ci-paused',
+    description:
+      'A CI test paused for the people who may control the run, in the lane panel: Pause asked from the panel, then Paused, until when, the call it stopped before, the CI job’s timeout, and Resume and End the test, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 1000 },
+    outputs: ['run-live-view-ci-paused.png', 'run-live-view-ci-paused-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId)
+        throw new Error('run-live-view-ci-paused needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, {
+            data: { liveView: true, liveViewHold: true, liveViewHoldMinutes: 5, liveViewPause: true },
+          }),
+          'pause on',
+        );
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'pays with a saved card';
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                parallelIndex: 0,
+                startedAt: Date.now() - 9_000,
+                browser: { projectName: 'chromium', browserName: 'chromium' },
+              },
+            ],
+          },
+        });
+        closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 0, 'hold,pause');
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await testPage.close();
+        const post = (message) =>
+          request.post(`${base}/api/test-runs/${run.id}/live-view`, {
+            headers: { Authorization: `Bearer ${run.key}` },
+            data: { shard: null, worker: 0, slot: 0, ...message },
+          });
+        const failure = {
+          title: "Click getByRole('button', { name: 'Pay' })",
+          file: 'tests/checkout.spec.ts',
+          line: 31,
+        };
+        await goto(`/test-runs/${run.id}`);
+        // The worker sends its page while someone watches it.
+        sending = setInterval(
+          () => void post({ type: 'frame', data, call: failure, test }).catch(() => undefined),
+          400,
+        );
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        // Docked beside the run page when wide, a sheet when narrow.
+        await page.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        // Pause, asked from the panel, then the worker's paused stop.
+        await page.getByTestId('live-control-pause').click({ timeout: 30_000 });
+        await ok(
+          await post({ type: 'stop', stop: { reason: 'pause', call: failure, test, until: Date.now() + 5 * 60_000 } }),
+          'paused stop',
+        );
+        await page.getByTestId('live-paused-panel').waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await settle();
+        await shoot(undefined, { of: '[data-testid="lane-panel"]', pad: 0 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.getByRole('dialog').getByTestId('live-paused-panel').waitFor({ timeout: 30_000 });
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, {
+          data: {
+            liveView: project.liveView === true,
+            liveViewHold: project.liveViewHold === true,
+            liveViewHoldMinutes: project.liveViewHoldMinutes ?? 5,
+            liveViewPause: project.liveViewPause === true,
+          },
+        });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 1 },
+          });
+        }
+      }
+    },
+  },
+  {
     name: 'run-live-view-paused',
     description:
       'The live view of a shared run’s worker whose test a developer paused two minutes ago: its row and the lane panel both say Paused for 2 minutes at the call it waits at, with no running time, at 1280 and 390 px',

@@ -323,6 +323,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         parent: 'Live view of a run',
       },
       {
+        title: 'Pause a CI test',
+        summary:
+          'Someone who may control the project’s runs pauses a CI test they watch before its next call, then resumes it or ends it, as a local run’s Pause does: off by default, beside Hold a failing CI test.',
+        needs: ['fixtures'],
+        where: 'Project → Settings → Live view; Test run → Tests → Watch → Pause',
+        doc: 'features/pause-ci-test',
+        parent: 'Live view of a run',
+      },
+      {
         title: 'Share a local run live',
         summary:
           'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',

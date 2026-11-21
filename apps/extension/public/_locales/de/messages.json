@@ -6934,6 +6934,55 @@
   "runs_heldJobTimeout": {
     "message": "Das eigene Zeitlimit des CI-Jobs läuft weiter."
   },
+  "runs_pausedBy": {
+    "message": "Angehalten von $name$ · bis $time$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_pausedUntil": {
+    "message": "Angehalten · bis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_ciResumeTitle": {
+    "message": "Den Test dort weiterlaufen lassen, wo er angehalten ist"
+  },
+  "runs_pauseAsked": {
+    "message": "Anhalten angefragt"
+  },
+  "runs_pauseAskedBy": {
+    "message": "Anhalten angefragt von $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "Das Anhalten wurde verworfen: $why$",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Das Anhalten zurücknehmen: Der Test läuft weiter, ohne anzuhalten"
+  },
   "runs_stateRunning": {
     "message": "Läuft"
   },

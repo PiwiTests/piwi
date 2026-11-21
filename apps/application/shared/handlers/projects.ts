@@ -669,6 +669,10 @@ export const INVALID_LIVE_VIEW_MASKS = `liveViewMasks must be a list of at most 
 /** The error `updateProject` throws for a hold's length `isLiveHoldMinutes` refuses. */
 export const INVALID_LIVE_VIEW_HOLD_MINUTES = `liveViewHoldMinutes must be a whole number of minutes from ${MIN_LIVE_HOLD_MINUTES} to ${MAX_LIVE_HOLD_MINUTES}`;
 
+/** The error `updateProject` throws for the pause setting turned on while the hold's is off. */
+export const LIVE_VIEW_PAUSE_NEEDS_HOLD =
+  'liveViewPause needs Hold a failing CI test (liveViewHold) on: turn both on, or the hold first';
+
 /** The error `updateProject` throws for coverage areas `parseCoverageAreas` refuses. */
 export const INVALID_COVERAGE_AREAS =
   'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
@@ -749,6 +753,11 @@ export async function updateProject(
     liveViewHold?: boolean;
     /** How long such a test waits, in whole minutes (`isLiveHoldMinutes`). */
     liveViewHoldMinutes?: number;
+    /**
+     * Whether a controller watching a CI worker in full may pause its test, resume it and end it (Let controllers pause
+     * a CI test): on only beside `liveViewHold`, and off as the hold turns off.
+     */
+    liveViewPause?: boolean;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -790,6 +799,7 @@ export async function updateProject(
     liveViewMasks,
     liveViewHold,
     liveViewHoldMinutes,
+    liveViewPause,
     generatedSpecs,
     targets,
     coverageScope,
@@ -803,6 +813,17 @@ export async function updateProject(
   if (liveViewHoldMinutes !== undefined && !isLiveHoldMinutes(liveViewHoldMinutes)) {
     throw new Error(INVALID_LIVE_VIEW_HOLD_MINUTES);
   }
+  // The pause needs the hold: it turns on beside it alone, and off with it.
+  const holdOn = liveViewHold ?? projectResults[0].liveViewHold === true;
+  if (liveViewPause === true && !holdOn) throw new Error(LIVE_VIEW_PAUSE_NEEDS_HOLD);
+  // Stored in the update itself as the pause asked and the hold as it stands then, so a concurrent change of the hold
+  // never leaves the pause on without it.
+  const holdNow = liveViewHold === undefined ? projects.liveViewHold : liveViewHold ? sql`TRUE` : sql`FALSE`;
+  const pauseNow = liveViewPause === undefined ? projects.liveViewPause : liveViewPause ? sql`TRUE` : sql`FALSE`;
+  const pause =
+    liveViewHold === undefined && liveViewPause === undefined
+      ? undefined
+      : sql`CASE WHEN ${holdNow} THEN ${pauseNow} ELSE FALSE END`;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
   if (masks === null && liveViewMasks !== null) throw new Error(INVALID_LIVE_VIEW_MASKS);
   const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);
@@ -871,6 +892,7 @@ export async function updateProject(
         liveViewMasks: masks === undefined ? undefined : masks?.length ? masks : null,
         liveViewHold,
         liveViewHoldMinutes,
+        liveViewPause: pause,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),

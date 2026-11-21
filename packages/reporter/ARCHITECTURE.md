@@ -666,7 +666,7 @@ What the package does to a user's run, process by process.
   (`stop`), with the test's title and the call's through `hideSecretsInText`, whoever
   watches, and the stop held is posted again on each stream the worker opens, so a run
   shared during a stop shows it.
-- **A failing CI test held for its controllers.** A CI worker names `features=hold` on its
+- **A failing CI test held for its controllers.** A CI worker names `features=hold,pause` on its
   stream (`LIVE_HOLD_FEATURE`), and hears how long its project holds a failing test (`hold`,
   in ms, null while the setting is off) and whether a person who may control the run shows
   it in full (`view`'s `controller`). A test that fails while both stand, a test running and
@@ -683,6 +683,27 @@ What the package does to a user's run, process by process.
   opens again keeps it. A new `hold` length applies to the hold that runs, its stop posted
   again with its new `until`. The test then tears down as it would have, its result
   unchanged (`tests/live-view-hold.spec.ts`, `tests/live-view-hold-worker.spec.ts`).
+- **A CI test paused for its controllers.** The worker names `features=hold,pause`, and hears
+  beside `hold` whether its project lets its controllers pause a CI test (`pause: true`);
+  while it does, its call log comes from the instrumentation (`liveViewMayPause`, as a run a
+  person may pause), and its contexts are listened to as they open. A **Pause** on its own
+  stream, while a controller watches it in full and a test runs, reaches the capture fixtures
+  (`onLiveViewPause`), which make the attempt's `PauseState` (`livePause`) and arm its
+  contexts as a local run's Pause does: the next stop of reason `pause` waits in `showStop`
+  for its controllers (`liveViewPause`, the hold's length), with no bar, its timeout held,
+  posted as a `pause` stop with its end (`until`). The worker says on its stream that it
+  took a Pause, or dropped it and why (`pause-asked`). **Resume** goes on; **End the test**
+  (`endFromPiwi`) fails the test at once with who ended it (`Ended from Piwi by Ana`), as a
+  timeout does: the runner's wait on the test function or a `beforeEach` hook is given up
+  (`_failWithError`, `_timeoutManager`, feature-checked), and the stopped call stays held by
+  its context's debugger until the context closes, its pages closed first, so it fails and
+  never runs, nor does anything after it; on a runner of another shape the test fails at its
+  next locator call or as its function ends. The pause ends at any of a hold's ends too. A
+  Pause no call took is dropped at them, at a Resume and as the test's function ends, its
+  failure then held as any other; and a test whose page was followed through Playwright's
+  call stream (`followsCallStream`: the setting turned on mid-run) takes none, since its
+  debugger would stop past the call's wait (`tests/live-view-pause.spec.ts`,
+  `tests/live-view-pause-end.spec.ts`, `tests/live-view-pause-worker.spec.ts`).
 - **Each frame is masked before it goes** (`live-mask.ts`): the page's secret fields (`SECRET_FIELD_SELECTOR`) and the
   project's `masks` are read through `internalCall` before and after the frame and painted over with the `jpeg-js` of
   `playwright-core/lib/utilsBundle`, feature-checked. Without it, a frame that shows one does not go, nor does one of
@@ -690,7 +711,8 @@ What the package does to a user's run, process by process.
 - **Its tests.** `tests/live-view.spec.ts`, `tests/live-view-share.spec.ts` and `tests/live-view-worker.spec.ts` drive
   the stream, who it posts for and when, `tests/live-view-binary.spec.ts` the two frame encodings,
   `tests/live-view-call-log.spec.ts` the call a full view follows, `tests/live-view-layers.spec.ts` its layers,
-  `tests/live-view-mask.spec.ts` the masks, `tests/live-view-hold.spec.ts` a failing CI test's hold, and
+  `tests/live-view-mask.spec.ts` the masks, `tests/live-view-hold.spec.ts` a failing CI test's hold,
+  `tests/live-view-pause.spec.ts` a CI test's pause, and
   `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts` Inspect (`internal/capture/live-inspect.ts`).
 
 **In the reporter process**

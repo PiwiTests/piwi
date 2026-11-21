@@ -1,6 +1,7 @@
 import { eq } from 'drizzle-orm';
 import {
   LIVE_HOLD_FEATURE,
+  LIVE_PAUSE_FEATURE,
   LIVE_VIEW_AFTER_PARAM,
   LIVE_VIEW_FEATURES_PARAM,
   parseLiveMasks,
@@ -20,7 +21,7 @@ defineRouteMeta({
     tags: ['Test Runs'],
     summary: "Hold a worker's live view stream",
     description:
-      "The event stream a test worker keeps open while its run executes, in a project with the live view on: each event says how many watches take the worker's images (`{ type: 'viewers', count }`), what they ask of them (`{ type: 'view', width, height, fps, full }`: the largest size one of them shows the image at, in device pixels, within 1280 by 800, 4 images a second for a full view or 1 for tiles alone, and whether one of them shows the worker in full, which alone takes its call log and its test's end; said before the count as it changes, 250 ms apart at most; an instance that says it takes frames as live messages), that a watch that showed the worker as a tile shows it in full now (`{ type: 'resend' }`: the latest image and call log go again), or which elements the project masks in each image beside the secret fields (`{ type: 'masks', locators }`, first as the stream opens and again when a project admin changes them); to a worker that says it can hold (`features=hold`, a CI worker), how long the project holds a failing CI test for its controllers (`{ type: 'hold', ms }`, null while `liveViewHold` is off, as the stream opens and as a project admin changes it), `controller: true` in `view` while one of the watches showing it in full is of someone with `run:control`, and **Let it go** (`{ type: 'let-go' }`); and the worker sends frames of its test's page only while someone does. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`), which the run's setup received and which opens nothing but this run's live view: the run keeps its digest, so an instance started again takes the key back while the run lasts; a second stream of the same worker replaces the first. 401 without a key of this run, 404 while the project has its live view off (a key that ended so included: it opens the stream again once the setting is back on, while the run lasts), 409 while the run is interrupted (its key opens the stream again if the run goes on), 410 once the run is no longer live (a key that ended with it included), 429 past 64 workers of one run. A worker that streams makes each teammate's ask to watch the run that waits answered as shared. `after` names the run this one continues, shared before it from the same editor window: that earlier run of the same project, with a lower id, run on a developer's machine as this one, from the same machine (the reporter's instance), keyed for the live view, ended, seen by the same people and continued by no run yet, is continued by this one from now on (its `continuedInId`), once, and its page follows; a run continues one run at most.",
+      "The event stream a test worker keeps open while its run executes, in a project with the live view on: each event says how many watches take the worker's images (`{ type: 'viewers', count }`), what they ask of them (`{ type: 'view', width, height, fps, full }`: the largest size one of them shows the image at, in device pixels, within 1280 by 800, 4 images a second for a full view or 1 for tiles alone, and whether one of them shows the worker in full, which alone takes its call log and its test's end; said before the count as it changes, 250 ms apart at most; an instance that says it takes frames as live messages), that a watch that showed the worker as a tile shows it in full now (`{ type: 'resend' }`: the latest image and call log go again), or which elements the project masks in each image beside the secret fields (`{ type: 'masks', locators }`, first as the stream opens and again when a project admin changes them); to a worker that says it can hold (`features=hold`, a CI worker), how long the project holds a failing CI test for its controllers (`{ type: 'hold', ms }`, null while `liveViewHold` is off, as the stream opens and as a project admin changes it), `controller: true` in `view` while one of the watches showing it in full is of someone with `run:control`, and **Let it go** (`{ type: 'let-go' }`); to one that says it can pause too (`features=hold,pause`), whether the project lets those people pause a CI test (`pause: true` in `hold`, while `liveViewPause` and `liveViewHold` are on), and **Pause**, **Resume** and **End the test** (`{ type: 'pause' }`, `{ type: 'resume' }`, `{ type: 'end-test' }`); and the worker sends frames of its test's page only while someone does. Authenticated by the run's live view key (`Authorization: Bearer pdl_…`), which the run's setup received and which opens nothing but this run's live view: the run keeps its digest, so an instance started again takes the key back while the run lasts; a second stream of the same worker replaces the first. 401 without a key of this run, 404 while the project has its live view off (a key that ended so included: it opens the stream again once the setting is back on, while the run lasts), 409 while the run is interrupted (its key opens the stream again if the run goes on), 410 once the run is no longer live (a key that ended with it included), 429 past 64 workers of one run. A worker that streams makes each teammate's ask to watch the run that waits answered as shared. `after` names the run this one continues, shared before it from the same editor window: that earlier run of the same project, with a lower id, run on a developer's machine as this one, from the same machine (the reporter's instance), keyed for the live view, ended, seen by the same people and continued by no run yet, is continued by this one from now on (its `continuedInId`), once, and its page follows; a run continues one run at most.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'worker', in: 'query', required: true, schema: { type: 'integer', minimum: 0 } },
@@ -32,7 +33,7 @@ defineRouteMeta({
         in: 'query',
         required: false,
         description:
-          'What the worker can do on the stream, comma-separated: `hold`, a CI worker that holds a failing test.',
+          'What the worker can do on the stream, comma-separated: `hold`, a CI worker that holds a failing test; `pause`, one that pauses its test for its controllers too.',
         schema: { type: 'string' },
       },
     ],
@@ -63,6 +64,7 @@ export default eventHandler(async (event) => {
       masks: projects.liveViewMasks,
       hold: projects.liveViewHold,
       holdMinutes: projects.liveViewHoldMinutes,
+      pause: projects.liveViewPause,
     })
     .from(testRuns)
     .innerJoin(projects, eq(projects.id, testRuns.projectId))
@@ -86,7 +88,10 @@ export default eventHandler(async (event) => {
     worker,
     () => openEventStream(event),
     run.masks == null ? [] : parseLiveMasks(run.masks),
-    features.includes(LIVE_HOLD_FEATURE) ? { ms: run.hold ? run.holdMinutes * 60_000 : null } : null,
+    features.includes(LIVE_HOLD_FEATURE)
+      ? { ms: run.hold ? run.holdMinutes * 60_000 : null, pause: run.hold && run.pause }
+      : null,
+    features.includes(LIVE_PAUSE_FEATURE),
   );
   if (refused) throw apiError({ statusCode: refused.status, message: refused.message });
   liveAsks.shareRun(id);

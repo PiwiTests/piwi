@@ -141,6 +141,8 @@ export const PROJECT = {
   LIVE_VIEW_HOLD: 'live-view-hold-test',
   LIVE_VIEW_OFF: 'live-view-off-test',
   LIVE_VIEW_ON: 'live-view-on-test',
+  LIVE_VIEW_PAUSE_OFF: 'live-view-pause-off-test',
+  LIVE_VIEW_PAUSE: 'live-view-pause-test',
   LIVE_VIEW_READINESS: 'live-view-readiness-test',
   LIVE_VIEW_STREAM: 'live-view-stream-test',
   LOCATOR_HEAL_NAVIGATION: 'locator-heal-navigation-test',
