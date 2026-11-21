@@ -23,6 +23,8 @@ import {
   ciLaneArg,
   ciLaneCaption,
   ciCommandParams,
+  ciNoteStands,
+  ciStopShown,
   ciLaneStop,
   ciStopPlace,
   ciLaneKey,
@@ -2805,7 +2807,7 @@ describe('the CI runs of the branch', () => {
     expect(ciLaneStop(at({}), lane)).toBeNull();
   });
 
-  test('say what reaches a CI run from the editor: nothing but the controls of a test held or paused for you', () => {
+  test('say what reaches a CI run from the editor: nothing but Pause, Resume, End the test and Let it go, for its controllers', () => {
     const html = pausedPageHtml(
       {
         image: null,
@@ -2819,12 +2821,23 @@ describe('the CI runs of the branch', () => {
       'vscode-webview://x/paused-page.js',
     );
     expect(html).toContain(
-      'Watched only: nothing here steers a CI run, except the controls of a CI test held or paused for you.',
+      'Watched only: nothing here steers a CI run, except Pause, Resume, End the test and Let it go, for those who may control it.',
     );
     const [run] = ciNodes(withCiSession(new Map(), ci(78)));
     expect(run!.tooltip).toContain(
-      'Watched only: it runs on CI, so nothing here steers it, except the controls of a CI test held or paused for you.',
+      'Watched only: it runs on CI, so nothing here steers it, except Pause, Resume, End the test and Let it go, for those who may control it.',
     );
+  });
+
+  test('keep what a CI lane’s button came to while the lane stands in the state it was asked in, and no longer', () => {
+    const stop = (id: string | null): CiStopView => ({ id, box: null, buttons: [], ask: null });
+    expect(ciNoteStands('a', stop('a'))).toBe(true);
+    expect(ciNoteStands('a', stop('b'))).toBe(false);
+    expect(ciNoteStands('a', null)).toBe(false);
+    expect(ciNoteStands(null, stop('a'))).toBe(true);
+    // What the lane shows, as text, which an ask the instance took goes with.
+    expect(ciStopShown(stop('a'))).toBe(ciStopShown(stop('a')));
+    expect(ciStopShown({ ...stop('a'), ask: 'Pause asked' })).not.toBe(ciStopShown(stop('a')));
   });
 
   test('ask a CI lane’s control once per state of the lane, its buttons off until it changes or the ask is refused', () => {

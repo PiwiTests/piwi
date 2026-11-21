@@ -1343,7 +1343,8 @@ export interface CiTest {
    * The controls the client offers on its lane (`piwi/ciControl`), as the run page offers them (`ciControlsOffered`):
    * **Pause** while it runs, **Resume** while a Pause waits or it is paused, **End the test** while it is paused; only
    * while the client's watch shows its lane as a controller's, absent otherwise. `id` names the lane's state they
-   * follow: a client asks one control in each state, again only after a refusal.
+   * follow (its worker, its test and the instance's count of its pause state's changes): a client asks one control in
+   * each state, again after a refusal or once the lane shows anything new after the instance took the ask.
    */
   controls?: { id: string; offered: CiControl[] };
 }

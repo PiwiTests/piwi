@@ -4449,6 +4449,18 @@ class GlueTest {
         asks.seen(two, "d")
         assertFalse(asks.asked(two, "c"))
         assertTrue(asks.ask(two, "c"))
+        // An ask the instance took goes once the lane shows anything new, whatever its state.
+        asks.seen(two, "c", "shown-1")
+        asks.took(two, "c", "shown-1")
+        asks.seen(two, "c", "shown-1")
+        assertTrue(asks.asked(two, "c"))
+        asks.seen(two, "c", "shown-2")
+        assertFalse(asks.asked(two, "c"))
+        // What a button came to stands in the state it was asked in alone.
+        assertTrue(Glue.ciNoteStands("c", "c"))
+        assertFalse(Glue.ciNoteStands("c", "d"))
+        assertFalse(Glue.ciNoteStands("c", null))
+        assertTrue(Glue.ciNoteStands(null, "d"))
     }
 
     @Test

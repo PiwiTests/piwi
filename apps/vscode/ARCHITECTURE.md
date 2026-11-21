@@ -697,8 +697,9 @@ until one says `ended`, or the service stops (`withCiSession`).
   lane's buttons are the service's, in its words: **Let it go** on a held failure (`piwi/ciLetGo`), else
   `CiTest.controls` (**Pause**, **Resume**, **End the test**: `piwi/ciControl`, `ciCommandParams`), with a Pause waiting
   or dropped said under them (`pauseAsk`). One is asked in each state of the lane (`CiAsks` of
-  `@piwitests/run-model/ci`, by `ciLaneKey` and the state's `id`), the buttons off until that state changes or the ask
-  is refused; the answer shows under the caption, a refusal as a warning too. The **CI Runs** view marks a held or
+  `@piwitests/run-model/ci`, by `ciLaneKey` and the state's `id`), the buttons off until that state changes, the lane
+  shows anything new after the instance took the ask (`ciStopShown`), or the ask is refused; the answer shows under the
+  caption while the lane stands in that state (`ciNoteStands`), a refusal as a warning too. The **CI Runs** view marks a held or
   paused test with its state (`ciNodes`). Another CI lane takes the watch's place on the service's side without an
   `on: false`; a local slot ends it, and so does a `piwi/ciWatch` the service never answered.
 - **The lane's layers** show under the worker panel's image, a local slot's (`piwi/laneLayer`) and a CI lane's

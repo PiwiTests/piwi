@@ -695,7 +695,9 @@ export class CiSessions {
       const offered = state
         ? ciControlsOffered(state, { shows, controller: !!watching?.controller }, t.status === 'running')
         : [];
-      const id = state ? ciControlStateKey(state) : null;
+      const id = state
+        ? ciControlStateKey(state, `${t.file}\x1f${t.title.join('\x1f')}\x1f${t.project}\x1f${t.retry}`)
+        : null;
       return {
         ...(held ? { held } : {}),
         ...(pause ? { paused: this.pausedOf(root, pause, exists) } : {}),

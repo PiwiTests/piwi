@@ -757,7 +757,8 @@ its failure ([Watching a CI lane](#watching-a-ci-lane)): no control, share or ho
   until 12:05`, the call, its place, the job's timeout), `pauseAsk` (`ciPauseAskWords`: `Pause asked by Ana`, or why a
   Pause was dropped), and, while the client's watch shows its lane as a controller's, `controls`: what
   `ciControlsOffered` decides, each with its label and title in the run page's words, and the state they follow
-  (`ciControlStateKey`), which a client asks one of once.
+  (`ciControlStateKey`: the worker, its test and the instance's `pauseSeq`, so a state that comes back reads as
+  another), which a client asks one of once.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
   place: the last notification says `ended`, and the run's stream is let go.

@@ -2341,7 +2341,7 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.ci
-        ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: true, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. Watched only: nothing here steers a CI run, except the controls of a CI test held or paused for you. Nothing here clicks, types or picks on CI. A test that fails while someone who may control the project's runs watches waits at its failure when the project holds failing CI tests, and Let it go, offered to them, ends the wait; when the project lets them, they pause, resume and end its test too. Nothing is stored.</p></details>${ciStopHtml(view.ciStop ?? null)}`
+        ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: true, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. Watched only: nothing here steers a CI run, except Pause, Resume, End the test and Let it go, for those who may control it. Nothing here clicks, types or picks on CI. A test that fails while someone who may control the project's runs watches waits at its failure when the project holds failing CI tests, and Let it go, offered to them, ends the wait; when the project lets them, they pause, resume and end its test too. Nothing is stored.</p></details>${ciStopHtml(view.ciStop ?? null)}`
         : view.lane
           ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { disabled: true })}<button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
           : `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: !live.input, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of this stopped test as it changes. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
@@ -2585,6 +2585,19 @@ export function ciLaneStop(sessions: CiSessions, lane: CiLane): CiStopView | nul
     buttons: test.controls?.offered ?? [],
     ask: test.pauseAsk ?? null,
   };
+}
+
+/**
+ * Whether what a button of a CI lane came to (said under the caption) still stands: while the lane stands in the state
+ * it was asked in (`noteState`, the stop's `id`; null for a note no button gave).
+ */
+export function ciNoteStands(noteState: string | null, stop: CiStopView | null): boolean {
+  return noteState === null || stop?.id === noteState;
+}
+
+/** What the worker panel shows of a CI lane's stop, as text: an ask the instance took goes once it changes (`CiAsks`). */
+export function ciStopShown(stop: CiStopView | null): string {
+  return JSON.stringify(stop);
 }
 
 /** A CI lane's key, which its controls' asks are kept by (`CiAsks`): its session's folder and run, shard and lane. */
@@ -2886,7 +2899,7 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
         description: `${session.branch ? `${session.branch} · ` : ''}${session.summary}`,
         tooltip:
           `${session.name}${session.branch ? ` on ${session.branch}` : ''}: ${session.summary}. ` +
-          'Watched only: it runs on CI, so nothing here steers it, except the controls of a CI test held or paused for you.' +
+          'Watched only: it runs on CI, so nothing here steers it, except Pause, Resume, End the test and Let it go, for those who may control it.' +
           (session.watchable ? ' Its running tests can be watched, here or on the dashboard.' : ''),
         icon: 'cloud',
         open: null,

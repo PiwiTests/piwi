@@ -875,8 +875,9 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   line (`openCiPlace`), drawn again as the CI sessions change. The lane's buttons are the service's, in its words:
   **Let it go** on a held failure (`piwi/ciLetGo`, `RunRemote.ciLetGo`), else `CiTest.controls` (**Pause**, **Resume**,
   **End the test**: `piwi/ciControl`, `RunRemote.ciControl`), with a Pause waiting or dropped under them. One is asked
-  in each state of the lane (`Glue.CiAsks`, by the state's `id`), the buttons off until it changes or the ask is
-  refused; the answer shows under the caption, a refusal in a balloon too (`PiwiRunSessions.askCi`). The CI Runs tab
+  in each state of the lane (`Glue.CiAsks`, by the state's `id`), the buttons off until it changes, the lane shows
+  anything new after the instance took the ask, or the ask is refused; the answer shows under the caption while the lane
+  stands in that state (`Glue.ciNoteStands`), a refusal in a balloon too (`PiwiRunSessions.askCi`). The CI Runs tab
   marks a held or paused test and its Watch (`Glue.ciRows`).
 - **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
   `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**

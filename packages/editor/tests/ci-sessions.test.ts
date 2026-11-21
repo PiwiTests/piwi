@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { CiAsks } from '@piwitests/run-model/ci';
 import {
   CiSessions,
   MAX_CI_RUNS,
@@ -115,6 +116,7 @@ describe('the CI sessions', () => {
   let sessions: CiSessions | null = null;
 
   afterEach(() => {
+    vi.useRealTimers();
     sessions?.dispose();
     followed.clear();
     follows.clear();
@@ -346,7 +348,7 @@ describe('the CI sessions', () => {
     sessions!.watchChanged();
     await settle();
     expect(last().controls).toEqual({
-      id: ':4:running:',
+      id: expect.stringMatching(/^:4:.+:0:running:$/),
       offered: [{ command: 'pause', label: 'Pause', title: 'Stop the test before its next call' }],
     });
     // A Pause waits for the test's next call: Resume takes it back.
@@ -354,7 +356,7 @@ describe('the CI sessions', () => {
     await settle();
     expect(last().pauseAsk).toBe('Pause asked by Ana');
     expect(last().controls).toEqual({
-      id: ':4:asked',
+      id: expect.stringMatching(/^:4:.+:0:asked$/),
       offered: [
         { command: 'resume', label: 'Resume', title: 'Take the Pause back: the test goes on without stopping' },
       ],
@@ -378,7 +380,7 @@ describe('the CI sessions', () => {
     });
     expect(last()).not.toHaveProperty('pauseAsk');
     expect(last().controls).toEqual({
-      id: ':4:paused:1763727900000',
+      id: expect.stringMatching(/^:4:.+:0:paused:1763727900000$/),
       offered: [
         { command: 'resume', label: 'Resume', title: 'Let the test go on from where it is paused' },
         { command: 'end', label: 'End the test', title: 'End the test here: the rest of it is skipped' },
@@ -397,6 +399,48 @@ describe('the CI sessions', () => {
     await settle();
     expect(last()).not.toHaveProperty('controls');
     expect(last()).not.toHaveProperty('pauseAsk');
+  });
+
+  test('name a lane’s state by its test and the instance’s pause sequence: a Pause dropped again within one push is another', async () => {
+    vi.useFakeTimers();
+    const c = context();
+    const heard = start([c], { pushMs: 500, watching: () => ({ shard: null, lane: 2, controller: true }) });
+    sessions!.offer(c, ciRun(78));
+    const begin = (title: string) => ({
+      title,
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 4,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    });
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', begin('pays'));
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true, pauses: true, paused: null };
+    const why = 'No test runs on this worker now.';
+    send(78, 'live-worker', { ...worker, pauseDropped: why, pauseSeq: 2 });
+    await vi.advanceTimersByTimeAsync(700);
+    const id = () => heard[heard.length - 1]!.tests[0]!.controls?.id ?? null;
+    const asked = id()!;
+    const asks = new CiAsks();
+    expect(asks.ask('lane', asked)).toBe(true);
+    const before = heard.length;
+    // The Pause is asked, then dropped again for the same reason, within one push.
+    send(78, 'live-worker', { ...worker, pauseAsked: { by: 'Ana' }, pauseSeq: 3 });
+    send(78, 'live-worker', { ...worker, pauseDropped: why, pauseSeq: 4 });
+    await vi.advanceTimersByTimeAsync(1_200);
+    expect(heard.length).toBeGreaterThan(before);
+    for (const session of heard.slice(before)) asks.seen('lane', session.tests[0]!.controls?.id ?? null);
+    expect(id()).not.toBe(asked);
+    expect(asks.asked('lane', asked)).toBe(false);
+    // The worker's next test, the pause state the same: another state too.
+    const dropped = id();
+    send(78, 'test-completed', { ...begin('pays'), status: 'passed' });
+    send(78, 'test-begin', { ...begin('refunds'), location: 'tests/checkout.spec.ts:9:1' });
+    await vi.advanceTimersByTimeAsync(700);
+    expect(id()).not.toBe(dropped);
+    vi.useRealTimers();
   });
 
   test('say a lane’s failure held for its controllers in the run page’s words, Let it go only on a controller’s watch of it', async () => {

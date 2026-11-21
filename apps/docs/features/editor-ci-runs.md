@@ -1,6 +1,6 @@
 ---
 title: CI runs in your editor
-description: "Follow a Playwright CI run of your branch from VS Code or a JetBrains IDE while it runs: its tests and progress, the line each running test is at, and its pages from the team instance's live view, watched only but for the controls of a CI test held or paused for you."
+description: "Follow a Playwright CI run of your branch from VS Code or a JetBrains IDE while it runs: its tests and progress, the line each running test is at, and its pages from the team instance's live view, watched only but for Pause, Resume, End the test and Let it go, for those who may control it."
 lang: en-US
 ---
 
@@ -10,10 +10,9 @@ lang: en-US
 
 While CI runs your branch, the [editor extensions](./editors) show that run beside your own: its progress, its tests
 as they end, the line each running test is at, and, when its project has the [live view](./live-view) on, its pages.
-It is watched only, but for the controls of a CI test held or paused for you: **Let it go** on a test the project
-[holds at its failure](./hold-ci-failure), and **Pause**, **Resume** and **End the test** when the project lets the
-people who may control its runs [pause a CI test](./pause-ci-test). Nothing else steps, holds or shares a CI run from
-the editor.
+It is watched only, but for the controls offered to the people who may control the run: **Let it go** on a test the
+project [holds at its failure](./hold-ci-failure), and **Pause**, **Resume** and **End the test** when the project lets
+them [pause a CI test](./pause-ci-test). Nothing else steps, holds or shares a CI run from the editor.
 
 ## Which runs
 
@@ -75,8 +74,8 @@ list marks it **Paused**. Each button is asked once in each state of the lane, i
 
 ## Limits
 
-- **Watched only, but the controls of a test held or paused for you.** No other control, share or hold reaches a CI
-  run, and its position is never a stop.
+- **Watched only, but Pause, Resume, End the test and Let it go, for those who may control it.** No other
+  control, share or hold reaches a CI run, and its position is never a stop.
 - **One worker per editor.** The worker panel or tab watches one lane, a local worker's or a CI run's: watching another
   moves it there.
 - **A run's steps.** The positions come from the steps the CI run's reporter streams, so a run whose reporter streams

@@ -267,6 +267,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
     private var ciTarget: Glue.CiLane? = null
     @Volatile private var watchingCi: CiWatchParams? = null
     /** **Let it go** asked of each CI lane's hold: its button off from the ask until that hold ends or is refused. */
+    /** The lane's state the note under the Worker tab's caption was said in, when a CI lane's button gave it. */
+    private var ciNoteState: String? = null
+    /**
+     * **Let it go**, **Pause**, **Resume** and **End the test** asked of each CI lane, one in each state of the lane: the
+     * buttons off until that state changes, the lane shows anything new after the instance took it, or it is refused.
+     */
     private val ciAsks = Glue.CiAsks()
     /** The Worker tab's watch the service accepted, of a slot or a CI lane: a change of its layers goes on it then. */
     @Volatile private var acceptedLane: Any? = null
@@ -1457,6 +1463,7 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             } else stopCiView()
             laneTarget = null
             ciTarget = lane
+            ciNoteState = null
             panel.forCiWorker()
             panel.ciCommand = { command -> askCi(command) }
             panel.openCiPlace = { openCiPlace() }
@@ -1504,7 +1511,12 @@ class PiwiRunSessions(private val project: Project) : Disposable {
      */
     private fun drawCiHeld(panel: PausedPagePanel, sessions: Map<String, CiSession>, lane: Glue.CiLane) {
         val stop = Glue.ciLaneStop(sessions, lane)
-        ciAsks.seen(lane, stop?.id)
+        ciAsks.seen(lane, stop?.id, stop?.toString())
+        // What a button came to stands in the lane's state it was asked in alone.
+        if (!Glue.ciNoteStands(ciNoteState, stop?.id)) {
+            ciNoteState = null
+            panel.note(null)
+        }
         panel.ciStop(stop?.let { Glue.ciStopShown(it, it.id != null && ciAsks.asked(lane, it.id)) })
     }
 
@@ -1526,11 +1538,13 @@ class PiwiRunSessions(private val project: Project) : Disposable {
             }.getOrNull()
             ApplicationManager.getApplication().invokeLater({
                 if (answer?.ok != true) ciAsks.refused(lane, state)
+                else ciAsks.took(lane, state, Glue.ciLaneStop(ciSessions(), lane).toString())
                 val message = answer?.message ?: Glue.SERVICE_NO_ANSWER
                 if (ciTarget == lane) {
                     (liveWorkerTab()?.component as? PausedPagePanel)?.let {
                         drawCiHeld(it, ciSessions(), lane)
                         it.note(message)
+                        ciNoteState = state
                     }
                 }
                 if (answer?.ok != true) PiwiCommands.notify(project, message, NotificationType.WARNING)
@@ -2878,7 +2892,7 @@ internal class PausedPagePanel : JPanel(BorderLayout()) {
     fun forCiWorker() {
         picture.accessibleContext.accessibleName = Glue.CI_WORKER_PAGE_NAME
         live.text = EditorWords.words("page.watch")
-        live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Watched only: nothing here steers a CI run, except the controls of a CI test held or paused for you. Nothing is stored."
+        live.toolTipText = "Show the page of the test this worker of the CI run runs, a few images a second, as the team instance relays it with the editor's key: the worker hid the secret fields first. Watched only: nothing here steers a CI run, except Pause, Resume, End the test and Let it go, for those who may control it. Nothing is stored."
     }
 
     /**

@@ -63,7 +63,9 @@ import {
   ciLaneCaption,
   ciCommandParams,
   ciLaneStop,
+  ciNoteStands,
   ciStopPlace,
+  ciStopShown,
   ciLaneKey,
   ciLaneRedraws,
   ciLaneLayersNote,
@@ -179,8 +181,14 @@ export function createWorkerPanel(
   let accepted = false;
   /** The service opened the CI watch: a change of its layers goes on it only then. */
   let ciAccepted = false;
-  /** **Let it go** asked of each CI lane's hold: its button off from the ask until that hold ends or is refused. */
+  /**
+   * **Let it go**, **Pause**, **Resume** and **End the test** asked of each CI lane, one in each state of the lane: its
+   * buttons off from the ask until that state changes, the lane shows anything new after the instance took it, or the
+   * ask is refused.
+   */
   const ciAsks = new CiAsks();
+  /** The lane's state the note under the caption was said in, when a CI lane's button gave it; null otherwise. */
+  let noteState: string | null = null;
   /** Interact is on: kept through the slot's next stops while the watch goes on, off at a stop that takes no input. */
   let interacting = false;
   /** The stop Interact was last on for, which Interact going off gives back. */
@@ -234,7 +242,7 @@ export function createWorkerPanel(
     if (ciTarget) {
       const stop = ciLaneStop(ciSessions, ciTarget);
       const laneKey = ciLaneKey(ciTarget);
-      ciAsks.seen(laneKey, stop?.id ?? null);
+      ciAsks.seen(laneKey, stop?.id ?? null, ciStopShown(stop));
       view = {
         image,
         caption: ciLaneCaption(ciSessions, ciTarget),
@@ -402,9 +410,11 @@ export function createWorkerPanel(
       )
       .catch(() => null);
     if (!answer?.ok) ciAsks.refused(ciLaneKey(ci), stop.id);
+    else ciAsks.took(ciLaneKey(ci), stop.id, ciStopShown(ciLaneStop(ciSessions, ci)));
     const said = answer?.message ?? NO_ANSWER;
     if (ciTarget === ci) {
       note = said;
+      noteState = stop.id;
       draw();
     }
     if (!answer?.ok) void vscode.window.showWarningMessage(`Piwi: ${said}`);
@@ -751,6 +761,7 @@ export function createWorkerPanel(
         stopWatching();
         target = null;
         ciTarget = ci;
+        noteState = null;
         shown++;
         image = null;
         imageOf = null;
@@ -766,6 +777,12 @@ export function createWorkerPanel(
     ciChanged(now) {
       ciSessions = now;
       if (!ciTarget) return;
+      // What a button came to stands in the lane's state it was asked in alone.
+      if (!ciNoteStands(noteState, ciLaneStop(now, ciTarget))) {
+        note = null;
+        noteState = null;
+        draw();
+      }
       // The service ends the watch with the run's session, and Watch shows off.
       if (!now.has(ciKey(ciTarget))) ciWatching = null;
       if (ciLaneRedraws(view, ciLaneCaption(now, ciTarget), !!ciWatching, ciLaneStop(now, ciTarget))) draw();

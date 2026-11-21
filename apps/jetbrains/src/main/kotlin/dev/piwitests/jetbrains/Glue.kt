@@ -4597,28 +4597,42 @@ object Glue {
     /**
      * A CI lane's buttons asked in each state of the lane (`CiStop.id`), as `CiAsks` of `@piwitests/run-model/ci` keeps
      * them for VS Code and the Runs window: one asked in a state, the buttons off until it changes (`seen`), asked again
-     * only after a refusal. On the event thread.
+     * after a refusal, and, once the instance took the ask (`took`), as soon as the lane shows anything new (`shown`,
+     * whatever its state). On the event thread.
      */
     class CiAsks {
-        private val states = HashMap<CiLane, String>()
+        private class Ask(val state: String, var shown: String? = null)
 
-        fun asked(lane: CiLane, state: String): Boolean = states[lane.copy(dashboard = null)] == state
+        private val asks = HashMap<CiLane, Ask>()
+
+        fun asked(lane: CiLane, state: String): Boolean = asks[lane.copy(dashboard = null)]?.state == state
 
         fun ask(lane: CiLane, state: String): Boolean {
             if (asked(lane, state)) return false
-            states[lane.copy(dashboard = null)] = state
+            asks[lane.copy(dashboard = null)] = Ask(state)
             return true
         }
 
         fun refused(lane: CiLane, state: String) {
-            if (asked(lane, state)) states.remove(lane.copy(dashboard = null))
+            if (asked(lane, state)) asks.remove(lane.copy(dashboard = null))
         }
 
-        fun seen(lane: CiLane, state: String?) {
+        fun took(lane: CiLane, state: String, shown: String) {
+            asks[lane.copy(dashboard = null)]?.takeIf { it.state == state }?.shown = shown
+        }
+
+        fun seen(lane: CiLane, state: String?, shown: String? = null) {
             val key = lane.copy(dashboard = null)
-            if (states.containsKey(key) && states[key] != state) states.remove(key)
+            val ask = asks[key] ?: return
+            if (ask.state != state || (ask.shown != null && shown != null && ask.shown != shown)) asks.remove(key)
         }
     }
+
+    /**
+     * Whether what a button of a CI lane came to (said under the caption) still stands: while the lane stands in the state
+     * it was asked in (`noteState`; null for a note no button gave).
+     */
+    fun ciNoteStands(noteState: String?, state: String?): Boolean = noteState == null || noteState == state
 
     /** What a control asks of the service for the CI lane the Worker tab shows (`piwi/ciControl`). */
     fun ciControlParams(lane: CiLane, command: String): CiControlParams =
