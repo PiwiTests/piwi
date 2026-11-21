@@ -121,3 +121,9 @@ export const LIVE_VIEW_END_TEXT: Record<LiveViewEnd, string> = {
 /** What a view says while its watch is quiet: its streams bring nothing, not even the instance's heartbeat. */
 export const LIVE_WATCH_QUIET_TEXT =
   'Nothing has come from the instance for 35 seconds, not even its heartbeat: a proxy in front of it is probably holding the stream back. Its buffering needs to be off (proxy_buffering off in nginx).';
+
+/** What **Let it go** answers, on the instance and in the demo: the project's setting off, nothing held, and done. */
+export const LET_GO_SETTING_OFF =
+  "The project's setting is off: a Project admin turns on Hold a failing CI test in Project → Settings → Live view.";
+export const LET_GO_NOT_HELD = 'This worker holds no failing test now.';
+export const LET_GO_DONE = 'The test goes on: it tears down as it would have, its result unchanged.';

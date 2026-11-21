@@ -119,6 +119,26 @@ describe('the project’s hold, on a worker’s stream', () => {
   });
 });
 
+describe('the run’s live view ending', () => {
+  for (const [why, end] of [
+    ['the project turns its live view off', (live: LiveViewRelay) => live.endProject(1)],
+    ['the run ends', (live: LiveViewRelay) => live.endRun(7)],
+    ['the run is interrupted', (live: LiveViewRelay) => live.interruptRun(7)],
+  ] as const) {
+    test(`tells a worker that can hold that nothing holds any more as ${why}, before its stream closes`, () => {
+      const { live } = relay();
+      const holds = connect(live, { ms: 300_000 });
+      const older = connect(live, null, { shard: null, worker: 1, slot: 1 });
+      watch(live, { focus: WORKER }, ANA);
+      live.receive(7, { type: 'stop', ...WORKER, stop: HELD });
+      end(live);
+      expect(holds.closed).toBe(true);
+      expect(holds.sent.at(-1)).toEqual({ type: 'hold', ms: null });
+      expect(of(older, 'hold')).toEqual([]);
+    });
+  }
+});
+
 describe('a controller watching', () => {
   test('is said while a controller’s watch shows the worker in full, never for tiles nor a Viewer', () => {
     const { live } = relay();
@@ -134,6 +154,19 @@ describe('a controller watching', () => {
     expect(views(sink).at(-1)).toMatchObject({ full: true, controller: true });
     live.changeWatch(7, ana, ANA.person, { focus: null });
     told();
+    expect(views(sink).at(-1)).not.toHaveProperty('controller');
+  });
+
+  test('counts no more once a change of the watch says its person may not control the run now', () => {
+    const { live } = relay();
+    const sink = connect(live, { ms: 300_000 });
+    const ana = watch(live, { focus: WORKER }, ANA);
+    watch(live, { focus: WORKER }, VIEWER);
+    told();
+    expect(views(sink).at(-1)).toMatchObject({ controller: true });
+    live.changeWatch(7, ana, ANA.person, { size: { width: 900, height: 600 }, controller: false });
+    told();
+    expect(views(sink).at(-1)).toMatchObject({ full: true });
     expect(views(sink).at(-1)).not.toHaveProperty('controller');
   });
 });

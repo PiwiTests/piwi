@@ -78,6 +78,10 @@ const streamRoute = underRoutePermission(
   state,
   (await import('../../server/api/test-runs/[id]/live-view.get')).default as unknown as Route,
 );
+const changeRoute = underRoutePermission(
+  state,
+  (await import('../../server/api/test-runs/[id]/live-view/watch.post')).default as unknown as Route,
+);
 const letGoRoute = underRoutePermission(
   state,
   (await import('../../server/api/test-runs/[id]/live-view/let-go.post')).default as unknown as Route,
@@ -169,6 +173,25 @@ describe('a watch', () => {
       await openWatch();
       vi.advanceTimersByTime(1000);
       expect(of(worker, 'view').at(-1)).toMatchObject({ full: true, controller: true });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+describe('a change of a watch', () => {
+  test('reads again whether its person may control the run', async () => {
+    vi.useFakeTimers();
+    try {
+      const worker = await openWorker();
+      const watch = await openWatch();
+      vi.advanceTimersByTime(1000);
+      expect(of(worker, 'view').at(-1)).toMatchObject({ controller: true });
+      // Ana is a Viewer of the project now: her watch's next change says so.
+      state.caller = caller(1, 'Ana', ProjectRole.VIEWER);
+      expect(await changeRoute(event({}, {}, { watch, width: 900, height: 600 }))).toMatchObject({ success: true });
+      vi.advanceTimersByTime(1000);
+      expect(of(worker, 'view').at(-1)).not.toHaveProperty('controller');
     } finally {
       vi.useRealTimers();
     }

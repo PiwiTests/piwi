@@ -1,6 +1,6 @@
 import { eq } from 'drizzle-orm';
 import { readLiveWorkerId } from '@piwitests/core/live-view';
-import { liveWorkerName } from '#shared/live-view';
+import { LET_GO_DONE, LET_GO_SETTING_OFF, liveWorkerName } from '#shared/live-view';
 import { projects } from '../../../../database/schema';
 import { isAuthEnabled } from '../../../../utils/auth';
 import { liveViewRelay } from '../../../../utils/live-view';
@@ -36,7 +36,13 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run ID');
-  const { db, projectId, user } = await requireResolvedProjectAccess(event, id, resolveRunProjectId, 'Test run');
+  const { db, projectId, user } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveRunProjectId,
+    'Test run',
+    'run:control',
+  );
   const body = (await readBody(event).catch(() => null)) as Record<string, unknown> | null;
   const worker = body && typeof body === 'object' ? readLiveWorkerId(body.shard, body.worker, body.slot) : null;
   if (!body || typeof body.watch !== 'string' || !worker) {
@@ -44,16 +50,12 @@ export default eventHandler(async (event) => {
   }
   const [project] = await db.select({ hold: projects.liveViewHold }).from(projects).where(eq(projects.id, projectId));
   if (!project?.hold) {
-    throw apiError({
-      statusCode: 409,
-      message:
-        "The project's setting is off: a Project admin turns on Hold a failing CI test in Project → Settings → Live view.",
-    });
+    throw apiError({ statusCode: 409, message: LET_GO_SETTING_OFF });
   }
   const auth = isAuthEnabled(event);
   const answer = liveViewRelay.letGo(id, body.watch, auth ? user.id : null, worker);
   if ('status' in answer) throw apiError({ statusCode: answer.status, message: answer.message });
   const who = auth ? `${user.name || user.username} (user #${user.id})` : 'a viewer (authentication off)';
   console.info(`[live-view] Let it go: run #${id}, ${liveWorkerName(answer.worker)}, by ${who}`);
-  return { success: true, message: 'The test goes on: it tears down as it would have, its result unchanged.' };
+  return { success: true, message: LET_GO_DONE };
 });

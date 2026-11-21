@@ -33,7 +33,7 @@ import {
   type LaneLayer,
 } from '@piwitests/core/live-layers';
 import { LatestPacer, RateWindow } from '@piwitests/core/run-view';
-import type { LiveWorkerState } from '#shared/live-view';
+import { LET_GO_NOT_HELD, type LiveWorkerState } from '#shared/live-view';
 import type { DbClient } from '../database';
 import { projects, testRuns } from '../database/schema';
 import { apiError } from './api-error';
@@ -200,6 +200,8 @@ export interface LiveWatchAsk {
   text?: true;
   /** Whether its full view has Inspect open: the worker shown in full sends its page's snapshots. */
   inspect?: boolean;
+  /** Whether its person may control the project's runs now, as the route read it again for this change. */
+  controller?: boolean;
 }
 
 /** A page's watch of the run: one stream, whatever it shows. */
@@ -912,6 +914,10 @@ export class LiveViewRelay {
         this.tellKept(run, viewer, viewer.link);
       }
     }
+    if (ask.controller !== undefined && ask.controller !== viewer.controller) {
+      viewer.controller = ask.controller;
+      if (viewer.link) told.add(viewer.link);
+    }
     for (const link of told) if (run.workers.get(liveWorkerKey(link.id)) === link) this.tell(link);
     // The text asked now: the worker shown in full takes its page's text, the full views that take text hear it.
     if (ask.text && viewer.link && viewer.layers.has('text')) {
@@ -994,7 +1000,7 @@ export class LiveViewRelay {
       return { status: 409, message: 'This watch does not show that worker now.' };
     }
     if (!link.holds || link.paused?.reason !== 'held') {
-      return { status: 409, message: 'This worker holds no failing test now.' };
+      return { status: 409, message: LET_GO_NOT_HELD };
     }
     link.sink.send({ type: 'let-go' } satisfies InstanceToWorker);
     return { ok: true, worker: idOf(link.id) };
@@ -1066,7 +1072,10 @@ export class LiveViewRelay {
     });
   }
 
-  /** Close the run's workers' and watches' streams, the watches hearing `reason` and the run page each worker leave. */
+  /**
+   * Close the run's workers' and watches' streams, the watches hearing `reason` and the run page each worker leave; a
+   * worker that can hold hears first that nothing holds (`hold` null).
+   */
   private closeRun(runId: number, reason: LiveViewEnd): void {
     const run = this.runs.get(runId);
     if (!run) return;
@@ -1077,6 +1086,8 @@ export class LiveViewRelay {
     for (const viewer of [...run.viewers.values()]) this.endWatch(run, viewer, reason);
     for (const link of run.workers.values()) {
       link.teller.close();
+      // A worker that holds a failing test lets it go: nobody can see the hold any more.
+      if (link.holds) link.sink.send({ type: 'hold', ms: null } satisfies InstanceToWorker);
       link.sink.close();
       this.publish(runId, { ...link.id, connected: false, paused: null });
     }

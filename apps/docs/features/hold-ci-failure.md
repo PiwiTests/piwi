@@ -31,7 +31,12 @@ A CI test is held only when all of these stand as it fails:
   tile of [Watch all](./watch-all) does not count, nor does a Viewer or a Contributor watching;
 - the test failed or timed out, and was not expected to.
 
-With authentication off, everyone who opens the run may control it, so anyone watching counts.
+With authentication off, everyone who opens the run may control it, so anyone watching counts. Who may control the
+run is read as a watch opens and again at each change of it (another worker, the panel's size, its layers): a role
+taken away counts from then.
+
+The page held is the one the test used last: the `page` fixture's, or one it opened itself (`browser.newPage()`, a
+page a `beforeAll` hook opened).
 
 A test that fails while nobody who may control the run watches goes on at once, as it always did: a wait nobody looks
 at only costs CI minutes.
@@ -59,13 +64,15 @@ The run's log says that the test is held, and until when, in UTC:
 The hold ends at the first of:
 
 - **Let it go**, in the lane panel, which only someone with `run:control` sees;
-- the longest hold the project set;
+- the longest hold the project set. A new length set during a hold applies to it: the hold ends that long after it
+  began, at once when that is past;
 - nobody with `run:control` watching the lane in full any more: the last one closed the panel or moved to another
   lane;
-- the project's setting turned off, or the run's live view ending for good (the run ended, the live view turned off).
+- the project's setting turned off, or the run's live view ending (the run ended or interrupted, the project's live
+  view turned off).
 
-The test then tears down as it would have: its result, its error, its trace and its attachments are those of the
-failure. Its reported duration leaves the wait out.
+The test then tears down as it would have: its result, its error and its trace are those of the failure, and its
+`piwi-pauses` attachment records the hold. Its reported duration leaves the wait out.
 
 **Let it go** is logged by the instance at info level, with the run, the worker and who asked. Nothing is stored.
 
