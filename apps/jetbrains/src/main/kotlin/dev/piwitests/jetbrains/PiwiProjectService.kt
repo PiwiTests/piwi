@@ -268,8 +268,8 @@ class PiwiProjectService(private val project: Project) : Disposable {
     internal val readingStatus: Boolean get() = reading.get()
     private val readAgain = AtomicBoolean()
 
-    /** Whether the listeners are told already: once on the event thread for the changes made meanwhile. */
-    private val changeQueued = AtomicBoolean()
+    /** Counts the changes the listeners hear of: of the calls queued meanwhile, the latest change's alone tells them. */
+    private val changes = AtomicLong()
 
     /** The runs the open files were last drawn with (`Glue.redraw`); on the event thread. */
     private var drawn: RunStatusResult? = null
@@ -1087,9 +1087,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
                 dialogListeners.forEach { it() }
             }, com.intellij.openapi.application.ModalityState.any(), gone)
         }
-        if (!changeQueued.compareAndSet(false, true)) return
+        val change = changes.incrementAndGet()
         ApplicationManager.getApplication().invokeLater({
-            changeQueued.set(false)
+            if (changes.get() != change) return@invokeLater
             listeners.forEach { it() }
             draw()
         }, gone)
