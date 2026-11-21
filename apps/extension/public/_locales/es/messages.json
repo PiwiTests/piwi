@@ -7583,6 +7583,15 @@
   "runs_ciRefusedNoTest": {
     "message": "Todavía no se ejecutó ninguna prueba en el carril de este worker."
   },
+  "runs_ciLetGoUnwatched": {
+    "message": "Soltarlo va por la vista de esta ventana sobre el worker: vuelve a verlo primero."
+  },
+  "runs_ciNotController": {
+    "message": "Puedes ver esta ejecución, no controlarla."
+  },
+  "runs_ciNotHeld": {
+    "message": "Este worker no retiene ahora ninguna prueba fallida."
+  },
   "runs_ciRefusedOffline": {
     "message": "La instancia no respondió."
   },

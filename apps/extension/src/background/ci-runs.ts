@@ -9,12 +9,23 @@
  *
  * `MAX_CI_STREAMS` runs listed are also followed through their own stream (`GET /api/test-runs/:id/stream`) while a
  * window that listens shows (`shown`): the run a window watches (`watched`), then the newest. Followed: whether their lanes can be watched (`live-view`: the project's live view on and the run
- * holding a key) and each lane as it stands (`lane`, read by `readLane`), whose running tests the window lists with
- * **Watch**. A stream that ends or brings nothing for `STREAM_IDLE_MS` is opened again at the next read; the changes
+ * holding a key), each lane as it stands (`lane`, read by `readLane`), whose running tests the window lists with
+ * **Watch**, and each worker's test held at its failure for the run's controllers (`live-worker`, read by `readCiHold`),
+ * which the window says with its test and **Let it go** asks the worker that holds it of (`held`). A stream that ends or brings nothing for `STREAM_IDLE_MS` is opened again at the next read; the changes
  * reach the windows at most every `PUSH_MS`.
  */
 import { laneKey, readLane, type Lane } from '@piwitests/core/live-lane';
-import { ciRunsListed, ciTally, isCiMetadata, isCiOrigin, type CiRun } from '@piwitests/run-model/ci';
+import type { LiveWorkerId } from '@piwitests/core/live-view';
+import {
+  ciHoldOf,
+  ciRunsListed,
+  ciTally,
+  isCiMetadata,
+  isCiOrigin,
+  readCiHold,
+  type CiHold,
+  type CiRun,
+} from '@piwitests/run-model/ci';
 import { isConnected, type ConnectionSettings } from '../shared/connection-settings.js';
 import type { ActiveRun } from '../shared/piwi-client.js';
 import type { RunsCiRun, RunsCiTest } from '../shared/runs.js';
@@ -72,22 +83,32 @@ interface Followed {
   close: () => void;
   watchable: boolean;
   lanes: Map<string, Lane>;
+  /** The workers whose test is held at its failure for the run's controllers, by shard and worker. */
+  holds: Map<string, CiHold>;
 }
 
-/** The tests a run's lanes run now, by shard and lane, `MAX_CI_TESTS` at most. */
-export function ciTestsOf(lanes: Iterable<Lane>): RunsCiTest[] {
+/**
+ * The tests a run's lanes run now, by shard and lane, `MAX_CI_TESTS` at most, each with its hold while the worker in its
+ * lane holds it at its failure (`holds`).
+ */
+export function ciTestsOf(lanes: Iterable<Lane>, holds: Iterable<CiHold> = []): RunsCiTest[] {
+  const held = [...holds];
   return [...lanes]
     .filter((lane) => RUNNING.has(lane.state) && lane.test)
     .sort((a, b) => (a.id.shard ?? 0) - (b.id.shard ?? 0) || a.id.lane - b.id.lane)
     .slice(0, MAX_CI_TESTS)
-    .map((lane) => ({
-      shard: lane.id.shard,
-      lane: lane.id.lane,
-      worker: lane.worker,
-      state: lane.state,
-      title: lane.test!.title,
-      retry: lane.test!.retry,
-    }));
+    .map((lane) => {
+      const hold = ciHoldOf(held, { shard: lane.id.shard, slot: lane.id.lane }, lane.worker);
+      return {
+        shard: lane.id.shard,
+        lane: lane.id.lane,
+        worker: lane.worker,
+        state: lane.state,
+        title: lane.test!.title,
+        retry: lane.test!.retry,
+        ...(hold ? { held: hold } : {}),
+      };
+    });
 }
 
 /** The projects a connection maps. */
@@ -150,8 +171,16 @@ export class CiRunsWatch {
   state(): RunsCiRun[] {
     return this.runs.map((run) => {
       const f = this.followed.get(run.id);
-      return { ...run, tests: f ? ciTestsOf(f.lanes.values()) : [], watchable: !!f?.watchable };
+      return { ...run, tests: f ? ciTestsOf(f.lanes.values(), f.holds.values()) : [], watchable: !!f?.watchable };
     });
+  }
+
+  /** The worker that holds a lane's test at its failure, for **Let it go**; null for none, or a run not followed. */
+  held(runId: number, shard: number | null, lane: number): LiveWorkerId | null {
+    const f = this.followed.get(runId);
+    if (!f) return null;
+    const kept = [...f.lanes.values()].find((l) => l.id.shard === shard && l.id.lane === lane);
+    return ciHoldOf(f.holds.values(), { shard, slot: lane }, kept?.worker ?? null)?.worker ?? null;
   }
 
   /**
@@ -316,6 +345,7 @@ export class CiRunsWatch {
         close: () => {},
         watchable: false,
         lanes: new Map<string, Lane>(),
+        holds: new Map<string, CiHold>(),
       };
       this.followed.set(runId, f);
       if (!f.open) void this.readStream(f, settings);
@@ -399,6 +429,13 @@ export class CiRunsWatch {
         if (f.lanes.size <= MAX_LANES) break;
         if (!RUNNING.has(kept.state)) f.lanes.delete(oldest);
       }
+    } else if (event.type === 'live-worker') {
+      const data = (event.data ?? {}) as { shard?: unknown; worker?: unknown };
+      if (typeof data.worker !== 'number') return;
+      const key = `${typeof data.shard === 'number' ? data.shard : ''}:${data.worker}`;
+      const hold = readCiHold(event.data);
+      if (hold) f.holds.set(key, hold);
+      else if (!f.holds.delete(key)) return;
     } else return;
     this.tellSoon();
   }

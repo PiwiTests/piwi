@@ -9005,6 +9005,18 @@
     "message": "No test ran in this worker’s lane yet.",
     "description": "Runs window, why a CI run’s worker could not be watched: no test ran in its lane yet."
   },
+  "runs_ciLetGoUnwatched": {
+    "message": "Let it go goes on this window’s watch of the worker: watch it again first.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the window no longer watches its worker."
+  },
+  "runs_ciNotController": {
+    "message": "You may watch this run, not control it.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the instance did not say this connection may control the project’s runs."
+  },
+  "runs_ciNotHeld": {
+    "message": "This worker holds no failing test now.",
+    "description": "Runs window, why Let it go did not reach a CI run’s worker: its test is no longer held."
+  },
   "runs_ciRefusedOffline": {
     "message": "The instance did not answer.",
     "description": "Runs window, why a CI run’s worker could not be watched: the Piwi instance did not answer."

@@ -352,6 +352,39 @@ describe('the lanes of the CI runs', () => {
     expect(ci.state()[0]!.watchable).toBe(false);
   });
 
+  it('says a lane’s test held at its failure for the run’s controllers, and the worker that holds it', async () => {
+    vi.useFakeTimers();
+    const { ci, streams } = watch([1]);
+    ci.listen(vi.fn());
+    await vi.advanceTimersByTimeAsync(0);
+    const s = streams.get(1)!;
+    s.send('live-view', { enabled: true, keyed: true });
+    s.send('lane', lane(1, { state: 'stopped', worker: 4 }));
+    const held = {
+      reason: 'held',
+      call: { title: 'Expected "Paid"', file: 'tests/pay.spec.ts', line: 12 },
+      test: 'cart › pays 1',
+      until: 1_763_727_900_000,
+    };
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true };
+    s.send('live-worker', { ...worker, paused: held, heldFor: ['Ana'] });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ci.state()[0]!.tests[0]!.held).toEqual({
+      worker: { shard: null, worker: 4, slot: 1 },
+      call: { title: 'Expected "Paid"', file: 'tests/pay.spec.ts', line: 12 },
+      until: 1_763_727_900_000,
+      heldFor: ['Ana'],
+    });
+    expect(ci.held(1, null, 1)).toEqual({ shard: null, worker: 4, slot: 1 });
+    expect(ci.held(1, null, 0)).toBeNull();
+    expect(ci.held(2, null, 1)).toBeNull();
+    // The hold ends as the worker goes on.
+    s.send('live-worker', { ...worker, paused: null });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ci.state()[0]!.tests[0]!.held).toBeUndefined();
+    expect(ci.held(1, null, 1)).toBeNull();
+  });
+
   it('opens a stream again at the next read once it ended or went silent, and tells a run that left', async () => {
     vi.useFakeTimers();
     const { ci, opened, streams, left, setRuns } = watch([1]);

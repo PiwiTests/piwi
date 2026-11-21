@@ -9,7 +9,9 @@
  * A window that joins a watch still opening, or still moving to its lane, gets the instance's answer to it; a window's
  * later ask wins over its earlier one still on its way. The watch ends as its last window leaves, as the run leaves the list or the instance ends it, once it brings nothing
  * for `IDLE_MS`, or on an error: its windows hear why (`ci-ended`) unless they asked. Nothing here reaches the run's
- * workers: no control, input or pick.
+ * workers: no control, input or pick, but **Let it go** on a test of the lane held at its failure (`letGo`), which goes
+ * to the instance on this watch, only once its `hello` said it counts as a controller's, as its windows hear
+ * (`controller`).
  */
 import {
   LIVE_STREAM_TYPE,
@@ -36,6 +38,8 @@ const MAX_REFUSAL = 300;
 export interface CiViewer {
   frame(frame: RunsCiFrame): void;
   ended(lane: RunsCiLane, why: CiWatchEnd): void;
+  /** The instance said the watch of `lane` counts as a controller's: **Let it go** may be offered on it. */
+  controller?(lane: RunsCiLane, on: boolean): void;
 }
 
 export interface CiWatchOptions {
@@ -51,6 +55,8 @@ export interface CiWatchOptions {
   ) => { followed?: boolean; watchable: boolean; worker: number | null } | null;
   open: (settings: ConnectionSettings, runId: number, query: URLSearchParams, signal: AbortSignal) => Promise<Response>;
   change: (settings: ConnectionSettings, runId: number, body: Record<string, unknown>) => Promise<Response>;
+  /** **Let it go** on a held test, on the watch `body` names (`POST /api/test-runs/:id/live-view/let-go`). */
+  letGo?: (settings: ConnectionSettings, runId: number, body: Record<string, unknown>) => Promise<Response>;
   idleMs?: number;
   openMs?: number;
 }
@@ -62,6 +68,8 @@ interface Watch extends RunsCiLane {
   abort: AbortController;
   /** The id the instance's stream opened with, which a change names; null until its `hello`. */
   id: string | null;
+  /** Its `hello` said it counts as a controller's: its person may control the project's runs. */
+  controller: boolean;
   /** The lanes asked of it, counted: an answer to an earlier one changes nothing. */
   asked: number;
   /** The windows that watch it, each with the pace of its images. */
@@ -149,6 +157,31 @@ export class CiLaneWatch {
     if (this.current?.runId === runId) this.stop('run-ended');
   }
 
+  /**
+   * **Let it go** on the lane the watch shows, whose held worker is `held` (`CiRunsWatch.held`): asked of the instance on
+   * this watch, only once its `hello` said it counts as a controller's. The instance's sentence, or why not.
+   */
+  async letGo(lane: RunsCiLane, held: LiveWorkerId | null): Promise<RunsAnswer> {
+    const own = this.current;
+    if (!own?.id || !sameLane(own, lane) || !this.options.letGo) return refused('unwatched');
+    if (!own.controller) return refused('uncontrolled');
+    if (!held) return refused('unheld');
+    let response: Response;
+    try {
+      response = await this.options.letGo(own.settings, own.runId, { watch: own.id, ...held });
+    } catch {
+      return refused('offline');
+    }
+    if (!response.ok) return refusal(response);
+    let said: unknown = null;
+    try {
+      said = ((await response.json()) as { message?: unknown } | null)?.message;
+    } catch {
+      // No JSON: the test goes on all the same.
+    }
+    return { ok: true, message: typeof said === 'string' ? said.trim().slice(0, MAX_REFUSAL) : '' };
+  }
+
   /** Whether a lane is watched now, for tests and the worker's state. */
   watching(): RunsCiLane | null {
     const own = this.current;
@@ -161,6 +194,7 @@ export class CiLaneWatch {
       viewer,
       new LatestPacer<RunsCiFrame>({ intervalMs: 1000 / MAX_VIEW_FPS, send: (frame) => viewer.frame(frame) }),
     );
+    if (watch.controller) viewer.controller?.(laneOf(watch), true);
   }
 
   /** The watch ends: its windows hear why (`why`), unless they asked (null). */
@@ -183,6 +217,7 @@ export class CiLaneWatch {
       worker,
       abort: new AbortController(),
       id: null,
+      controller: false,
       asked: 0,
       viewers: new Map(),
       answer: Promise.resolve(OK),
@@ -257,6 +292,7 @@ export class CiLaneWatch {
     }
     Object.assign(watch, { shard: lane.shard, lane: lane.lane, worker });
     this.join(watch, viewer);
+    if (watch.controller) viewer.controller?.(laneOf(watch), true);
     const asked = ++watch.asked;
     let response: Response;
     try {
@@ -330,6 +366,8 @@ export class CiLaneWatch {
     switch (message.type) {
       case 'hello':
         watch.id = message.watch;
+        watch.controller = message.controller === true;
+        if (watch.controller) for (const viewer of watch.viewers.keys()) viewer.controller?.(laneOf(watch), true);
         return null;
       case 'end':
         // An end naming no worker is the whole watch's; one naming the lane's is its view's, which is all it shows.

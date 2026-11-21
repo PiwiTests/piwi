@@ -23,7 +23,7 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
-import { CI_READ_ONLY, ciRunName, ciRunWhere } from '@piwitests/run-model/ci';
+import { CI_READ_ONLY, ciHoldWords, ciRunName, ciRunWhere, offersLetGo, type CiHold } from '@piwitests/run-model/ci';
 import {
   asksLaneTextAgain,
   callWait,
@@ -268,6 +268,8 @@ function connect(): void {
       heardCiFrame(event);
     } else if (event?.type === 'ci-ended') {
       heardCiEnded(event);
+    } else if (event?.type === 'ci-controller') {
+      heardCiController(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -1293,6 +1295,12 @@ interface CiView extends RunsCiLane {
   refused: string;
   test: string | null;
   call: string | null;
+  /** The instance said this window's watch of the lane counts as a controller's: **Let it go** may be offered. */
+  controller: boolean;
+  /** **Let it go** waits for its answer. */
+  lettingGo: boolean;
+  /** What **Let it go** came to, until the lane's hold changes. */
+  letGoNote: { ok: boolean; text: string } | null;
 }
 
 let ciView: CiView | null = null;
@@ -1333,6 +1341,9 @@ function toggleCi(lane: RunsCiLane): void {
     refused: '',
     test: null,
     call: null,
+    controller: false,
+    lettingGo: false,
+    letGoNote: null,
   };
   askCi(ciView);
   render();
@@ -1442,12 +1453,54 @@ function heardCiEnded(ended: RunsCiLane & { why: CiWatchEnd }): void {
   render();
 }
 
+function heardCiController(heard: RunsCiLane & { controller: boolean }): void {
+  const view = ciView;
+  if (!isCiLive(view) || ciLaneKey(view) !== ciLaneKey(heard) || view.controller === heard.controller) return;
+  view.controller = heard.controller;
+  render();
+}
+
+/** **Let it go** on the held failure of the CI lane watched: the instance's sentence, or why not, under the hold. */
+async function letGoCi(view: CiView): Promise<void> {
+  if (view.lettingGo) return;
+  view.lettingGo = true;
+  render();
+  const lane = { runId: view.runId, shard: view.shard, lane: view.lane };
+  const answer = await answered(
+    (id) => ({ type: 'ci-let-go', id, ...lane }),
+    { ok: false, message: '', ci: 'offline' },
+    { ok: false, message: '', ci: 'late' },
+  );
+  if (ciView !== view) return;
+  view.lettingGo = false;
+  const text = answer.ok ? answer.message : letGoRefusalText(answer);
+  view.letGoNote = text ? { ok: answer.ok, text } : null;
+  if (text) announce(text);
+  render();
+}
+
+/** Why **Let it go** did not end the hold, in the window's words, or the instance's own sentence. */
+function letGoRefusalText(answer: RunsAnswer): string {
+  if (answer.message) return answer.message;
+  switch (answer.ci) {
+    case 'unwatched':
+      return t('runs_ciLetGoUnwatched');
+    case 'uncontrolled':
+      return t('runs_ciNotController');
+    case 'unheld':
+      return t('runs_ciNotHeld');
+    default:
+      return ciRefusalText(answer);
+  }
+}
+
 /** The CI lane is let go while the window hides or its port is down, and asked again as it shows. */
 function idleCi(tell: boolean): void {
   if (!isCiLive(ciView)) return;
   const view = ciView;
   view.status = 'idle';
   view.asks++;
+  view.controller = false;
   if (tell) void ciCommand({ runId: view.runId, shard: view.shard, lane: view.lane }, false);
 }
 
@@ -2640,7 +2693,8 @@ function renderCi(current: RunsState): void {
 
 /**
  * A CI run in progress: its name, where it runs, its page, its tally, and the tests it runs now with **Watch** and
- * **Watch on the dashboard**; the lane watched under them. No control, since it runs on CI.
+ * **Watch on the dashboard**; the lane watched under them. No control, since it runs on CI, but **Let it go** on a
+ * test held at its failure (`renderCiHeld`).
  */
 function renderCiRun(run: RunsCiRun, several: boolean): HTMLElement {
   const key = `ci|${run.url}`;
@@ -2717,6 +2771,7 @@ function renderCiTest(run: RunsCiRun, test: RunsCiTest, lane: RunsCiLane, watche
     element('span', 'ci-lane', ciLaneName(test)),
     element('span', 'ci-title', test.title),
   );
+  if (test.held) item.append(element('span', 'ci-held', runsSpeaker.say('runs_stateFailed')));
   const actions = element('div', 'piwi-actions');
   const focus = `ci|${ciLaneKey(lane)}`;
   if (run.watchable) {
@@ -2751,6 +2806,9 @@ function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
     return made;
   });
   const children: HTMLElement[] = [caption];
+  const hold = run.tests.find((t) => t.shard === view.shard && t.lane === view.lane)?.held ?? null;
+  if (hold && view.status !== 'ended' && view.status !== 'refused') children.push(renderCiHeld(view, hold));
+  else view.letGoNote = null;
   const live = view.status === 'on' && !view.refused && view.shown;
   if (view.shown) {
     view.img.classList.toggle('stale', !live);
@@ -2785,6 +2843,42 @@ function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
   }
   place(figure, children);
   return figure;
+}
+
+/**
+ * The CI lane's test held at its failure for the run's controllers, in the run page's words (`ciHoldWords`): where it
+ * stands, for whom and until when, its error and place, and that the CI job's own timeout still runs; **Let it go**
+ * where this window's watch shows the lane as a controller's (`offersLetGo`), and what it came to.
+ */
+function renderCiHeld(view: CiView, hold: CiHold): HTMLElement {
+  const key = `ci|${ciLaneKey(view)}|held`;
+  const offered = offersLetGo(hold, { shows: view.status === 'on', controller: view.controller });
+  return part(key, [hold, offered, view.lettingGo, view.letGoNote], () => {
+    const words = ciHoldWords(hold, runsSpeaker);
+    const box = element('div', 'ci-held-box');
+    box.setAttribute('role', 'status');
+    const state = element('p', 'ci-held-state', element('strong', undefined, words.state));
+    if (words.heldFor) state.append(' · ', words.heldFor);
+    box.append(state, element('p', 'error', ...richText(hold.call.title)));
+    if (words.place) box.append(element('p', 'place', words.place));
+    box.append(element('p', 'note', words.note));
+    if (offered) {
+      const letGo = makeButton(
+        runsSpeaker.say('runs_letGo'),
+        (event) => {
+          if (!pressedHeld(event)) void letGoCi(view);
+        },
+        { icon: 'play', small: true, title: runsSpeaker.say('runs_letGoTitle') },
+      );
+      letGo.dataset.focus = `ci|${ciLaneKey(view)}|let-go`;
+      if (view.lettingGo) letGo.setAttribute('aria-disabled', 'true');
+      box.append(element('div', 'piwi-actions', letGo));
+    }
+    if (view.letGoNote) {
+      box.append(iconText(element('p', 'note'), view.letGoNote.ok ? 'check' : 'alert', view.letGoNote.text));
+    }
+    return box;
+  });
 }
 
 /** The run's page on the instance, as its own process named it: `Run #77`, **Open** and **Copy**, ended or not. */

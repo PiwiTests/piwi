@@ -7583,6 +7583,15 @@
   "runs_ciRefusedNoTest": {
     "message": "In der Spur dieses Workers lief noch kein Test."
   },
+  "runs_ciLetGoUnwatched": {
+    "message": "Freigeben wirkt über die Ansicht dieses Fensters auf den Worker: Sehen Sie ihn zuerst wieder an."
+  },
+  "runs_ciNotController": {
+    "message": "Sie dürfen diesen Lauf ansehen, nicht steuern."
+  },
+  "runs_ciNotHeld": {
+    "message": "Dieser Worker hält gerade keinen fehlgeschlagenen Test an."
+  },
   "runs_ciRefusedOffline": {
     "message": "Die Instanz hat nicht geantwortet."
   },

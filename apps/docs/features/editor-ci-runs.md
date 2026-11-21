@@ -59,7 +59,8 @@ fails in it waits at its failure, as it would for the run page. The worker panel
 still runs. **Let it go** ends the wait; the test tears down as it would have, its result unchanged.
 
 **Let it go** goes on your watch of that lane, so it shows only while you watch it, and only once the instance has
-said your connection may control the run. Anyone else watching sees the hold without it. A refusal is said in the
+said your connection may control the run. The Runs window does the same with its own connection
+([Where it shows](./hold-ci-failure#where-it-shows)). Anyone else watching sees the hold without it. A refusal is said in the
 instance's words, under the caption.
 
 ## Limits

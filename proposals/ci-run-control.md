@@ -12,7 +12,10 @@ far.
 **Status.** Proposed 2026-11-21. Step 1 is built on the run page (Delivery PR 2): the project setting, `hold` and
 `controller` on the CI worker's stream, the held stop and **Let it go** in the lane panel, the demo's Held CI failure
 and the page [Hold a failing CI test](../apps/docs/features/hold-ci-failure.md); the run control ADR's D8 links here
-(D10). Next: step 1 on the editors' worker view and the Runs window (PR 3). Step 1 takes over Part 8 of
+(D10). Step 1 is built on the editors' worker view and the Runs window too (Delivery PR 3): the instance tells a
+controller's watch it counts as one (`hello`'s `controller`), and VS Code's worker panel, the JetBrains **Worker** tab
+and the Runs window show the hold in the run page's words (`@piwitests/run-model/ci`) and offer **Let it go** on that
+watch. Next: step 2 (PR 4). Step 1 takes over Part 8 of
 [`live-view-next.md`](live-view-next.md) (its D11 and open questions 3 and 4), which now points here.
 
 **Summary.**
