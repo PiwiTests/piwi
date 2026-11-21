@@ -55,9 +55,9 @@ the gutter and the lines above the tests (unless `piwi.codeLens` hides them) sti
 ## Your local runs
 
 A later finished run on the branch, from the editor, `piwi run`, `npx playwright test` or the desktop app, overlays the
-latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying _fixed locally
-in run #124_; a test failing in it is an error that starts _Local failure:_ and names _local run #124_, or _your run
-#124_ when this editor started it. The editor reads a run within a second of its end: [After a
+latest CI run per test and Playwright project: a test it fixed leaves the Problems panel, its lens saying *fixed locally
+in run #124*; a test failing in it is an error that starts *Local failure:* and names *local run #124*, or *your run
+#124* when this editor started it. The editor reads a run within a second of its end: [After a
 run](./editor-runs#after-a-run).
 
 ## Failures follow your edits
@@ -67,8 +67,8 @@ follows each failing line through your changes, saved or not:
 
 - Add or remove lines above a failing line, and its error moves with it, in the Problems panel, the lines above the
   test and the failures view.
-- Rewrite the failing line, and the error turns into an information marker, _Edited since run #120: …_: the run said
-  nothing about the new line. The reason above the line reads _✎ edited since run #120_. The test keeps its failing mark
+- Rewrite the failing line, and the error turns into an information marker, *Edited since run #120: …*: the run said
+  nothing about the new line. The reason above the line reads *✎ edited since run #120*. The test keeps its failing mark
   until a run says otherwise.
 - Delete the test, and its failure leaves the editor.
 
@@ -120,8 +120,8 @@ settings and **Open the documentation**. The tree is read again when a run ends 
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
 baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (also retried on
-its own); a desktop app to restart or update; a refused API key, or no project, with **Connect…** and
-**Open settings**; an instance still being read; or no connection, with **Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
+its own); a desktop app to restart or update; an instance still being read; or no connection, with
+**Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
 
 ## Related
 

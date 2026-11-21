@@ -287,9 +287,8 @@ a test's action list (`piwi.copyAgentContext`) names once picked.
 
 `piwi/failures` says which state the view is in, with its sentence (`view`, `failuresView`): failures; none in a run
 read (`clear`); an instance that does not answer (`unreachable`); a desktop app that did not prove it holds the token
-(`desktop-unproven`); an instance that refused the key or asked for one (`refused`); no project chosen or found
-(`no-project`); an instance named and not read yet (`loading`); no run for a connected context, the project's or the
-baseline chosen (`norun`); no instance named (`disconnected`), in that order, so a workspace with one context down still
+(`desktop-unproven`); an instance named and not read yet (`loading`); no run for a connected context, the project's or
+the baseline chosen (`norun`); no connection (`disconnected`), in that order, so a workspace with one context down still
 reads clear when another read its run. Both clients show the sentence and link their actions for the state.
 
 Each item of `piwi/failures` carries:
@@ -563,14 +562,14 @@ nodes are not `runnable`.
 `RunTestsArgs`, read from the tree as it stands (`nodeRuns` in `src/test-tree.ts`). Each node runs by the narrowest
 filter Playwright takes for it, so a run needs no instance and a group is one argument, not its tests':
 
-| Node             | Filter                                                                                                                                                                                                                                                                                      |
-| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| A config         | none (`RunTestsArgs.all`): `npx playwright test`                                                                                                                                                                                                                                            |
-| A folder         | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax                                                                                                                                           |
-| A spec           | its whole path (`^/repo/e2e/tests/cart.spec.ts`)                                                                                                                                                                                                                                            |
-| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text)                                                                                                                                     |
-| A test           | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
-| A project's node | its test's, in that project alone (`--project`)                                                                                                                                                                                                                                             |
+| Node | Filter |
+| --- | --- |
+| A config | none (`RunTestsArgs.all`): `npx playwright test` |
+| A folder | its whole path, then `/.` (`folderFilter`: `^/repo/e2e/tests/cart/.`), as Playwright reads a filter that starts and ends with `/` as `/…/` syntax |
+| A spec | its whole path (`^/repo/e2e/tests/cart.spec.ts`) |
+| A describe block | `file:line` of where it starts, which Playwright reads as every test of the block; by its tests' when its line is not known (read from the spec's text) |
+| A test | `file:line`; when its line holds others, as a loop builds them, its spec's name, describe blocks and title too (`--grep`, `titlePattern`), without the others of the line that matches (`--grep-invert`), in a run of its own; with the others when two titles of the line match each other |
+| A project's node | its test's, in that project alone (`--project`) |
 
 A node holding one the client excludes runs by its children's filters; a node that is not `runnable` runs nothing.
 Every location is written by `locationArg`, from the config's folder as the file system spells it: its whole path,
@@ -2106,13 +2105,13 @@ The session (`attach` in `sessions.ts`):
 JetBrains plugin in its `server/`. The service finds the other files next to its own bundle, or in `PIWI_EDITOR_DIST`
 (the `distDir` option of `startServer` in tests).
 
-| File                         | What                                                                                                                             |
-| ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.                           |
-| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                                             |
+| File                         | What                                                                                                               |
+| ---------------------------- | ------------------------------------------------------------------------------------------------------------------ |
+| `piwi-language-server.cjs`   | The language server (`src/main.ts`), which logs a rejected promise nothing waits on and keeps serving.             |
+| `piwi-recorder-launcher.cjs` | The launcher a recording session forks (`src/recorder/launcher.ts`).                                               |
 | `piwi-use-reporter.cjs`      | The Playwright reporter that prints a config's resolved options, and its tests for the listing (`src/recorder/use-reporter.ts`). |
-| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens.               |
-| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                                        |
+| `record-ide.js`              | The recorder's IDE bundle: the browser extension's recorder, built a second time for a browser the launcher opens. |
+| `record-ide-messages.json`   | The extension's catalogs for the IDE bundle, by language.                                                          |
 
 The first three are bundled by esbuild, as CommonJS for Node 20 and later. `build.mjs` writes the service's version
 into the bundle (`SERVICE_VERSION` in `src/server.ts`, `0.0.0-dev` unbundled), which the discovery file and the hub's

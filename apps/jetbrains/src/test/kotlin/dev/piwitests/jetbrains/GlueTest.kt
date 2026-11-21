@@ -3933,6 +3933,18 @@ class GlueTest {
     }
 
     @Test
+    fun `a burst of changes queues one call to the listeners, and a call left waiting is queued again`() {
+        val queued = Glue.QueuedOnce(staleMillis = 1_000)
+        assertTrue(queued.take(10_000))
+        assertFalse(queued.take(10_500))
+        // The call waiting since 10 000 never ran: a change a second later queues another.
+        assertTrue(queued.take(11_000))
+        assertFalse(queued.take(11_200))
+        queued.ran()
+        assertTrue(queued.take(11_300))
+    }
+
+    @Test
     fun `a file summary is asked once per text, until the service pushes a change or it gets old`() {
         val cache = Glue.SummaryCache(ttlMillis = 5_000, max = 2)
         var asked = 0
