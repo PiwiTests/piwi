@@ -365,6 +365,8 @@ export interface PiwiApi {
   lastRun(): RunCommand | null;
   /** The tests last drawn in the gutter of a file, by its URI. */
   gutter(uri: string): TestDecoration[];
+  /** The `piwi/fileSummary` answer the gutter and the lenses of an open file were last drawn from; null before one. */
+  fileSummary(uri: string): Promise<FileSummary | null>;
   /** The `piwi/coverage` answer last held for a file, by its URI, and whether its marks are shown; null before one. */
   coverage(uri: string): { result: CoverageResult; shown: boolean } | null;
   /** The tests the Testing view lists with the result last shown for each; null while `piwi.testExplorer` is off. */
@@ -2545,6 +2547,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
     },
     lastRun: () => lastRun,
     gutter: (uri) => gutter.get(uri) ?? [],
+    fileSummary: async (uri) => (await summaries.get(uri)?.summary) ?? null,
     coverage: (uri) => {
       const result = coverage.get(uri);
       return result ? { result, shown: coverageShown() } : null;

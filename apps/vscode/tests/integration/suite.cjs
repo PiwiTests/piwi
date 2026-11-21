@@ -2,6 +2,7 @@
 // editor through its public commands, as a user's actions would.
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const vscode = require('vscode');
 
 const workspace = process.env.PIWI_TEST_WORKSPACE;
@@ -175,6 +176,64 @@ const tests = {
     } finally {
       await editorSettings.update('codeLens', undefined, vscode.ConfigurationTarget.Workspace);
     }
+  },
+
+  async 'the spec as VS Code draws it from the service’s answer, which the JetBrains plugin draws too'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const document = await vscode.workspace.openTextDocument(spec);
+    await vscode.window.showTextDocument(document);
+    const marks = await waitFor(() => {
+      const tests = api.gutter(spec.toString());
+      return tests.length ? tests : null;
+    }, 'the gutter of checkout.spec.ts');
+    const lenses = await waitFor(async () => {
+      const found = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', spec);
+      return found?.length ? found : null;
+    }, 'the CodeLens of checkout.spec.ts');
+    const summary = await api.fileSummary(spec.toString());
+    assert.ok(summary, 'the file summary of checkout.spec.ts');
+    const rows = new Map();
+    for (const lens of lenses) {
+      const line = lens.range.start.line;
+      rows.set(line, [...(rows.get(line) ?? []), lens.command?.title]);
+    }
+    // The places of this run's workspace and stub instance, as the golden file names them.
+    const portable = (value) =>
+      JSON.parse(
+        JSON.stringify(value)
+          .replaceAll(vscode.Uri.file(workspace).toString(), 'file:///workspace')
+          .replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://piwi.test'),
+      );
+    // A mark's hover as Markdown shows it, as `tests/golden.test.ts` reads it.
+    const hoverWords = (hover) => hover.replace(/\\(.)|<[^>]*>|[*_]/g, (whole, escaped) => escaped ?? '');
+    const drawn = portable({
+      spec: { file: 'tests/checkout.spec.ts', text: document.getText() },
+      summary,
+      marks: marks.map((t) => [t.line, t.status, hoverWords(t.hover)]),
+      failing:
+        marks
+          .filter((t) => t.failingUntil !== null)
+          .map((t) => ({ test: [t.line, t.failingUntil], line: t.failingLine }))[0] ?? null,
+      lenses: [...rows].sort(([a], [b]) => a - b),
+    });
+    const golden = path.resolve(
+      __dirname,
+      '..',
+      '..',
+      '..',
+      '..',
+      'packages',
+      'editor',
+      'tests',
+      'golden',
+      'vscode-spec.json',
+    );
+    if (process.env.PIWI_GOLDEN_WRITE === '1') {
+      fs.writeFileSync(golden, `${JSON.stringify(drawn, null, 2)}\n`);
+      return;
+    }
+    assert.deepEqual(drawn, JSON.parse(fs.readFileSync(golden, 'utf8')));
   },
 
   async 'the Testing view lists the tests Piwi knows, with their latest result'() {
@@ -384,7 +443,7 @@ const tests = {
     assert.match(hub.url, /^ws:\/\/127\.0\.0\.1:\d+\/piwi\/hub$/);
     // Its own discovery file, in the folder the run names, readable by this user alone.
     const file = path.join(process.env.PIWI_EDITORS_DIR, `${hub.pid}.json`);
-    if (process.platform !== 'win32') assert.equal(require('node:fs').statSync(file).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     // The hub takes an extension's handshake at that address, and refuses a page's.
     const handshake = (origin) =>
       new Promise((resolve, reject) => {

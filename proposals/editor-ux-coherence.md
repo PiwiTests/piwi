@@ -74,7 +74,9 @@ marks and lens rows), held to the same words by VS Code's `tests/golden.test.ts`
 drawn in JetBrains by `PiwiPluginTest` through the gutter's annotator and the Code Vision providers on the 2024.1 test
 platform, and VS Code's nightly suite checking the layout, at the window's width and in an editor half as wide: no
 row of lenses cut short, a failing line's row holding its reason and Run with Piwi (its screenshot and trace among the
-test's actions, #1474), a flaky test's mark. Left: VS Code's nightly snapshot for JetBrains to compare with. NF10
+test's actions, #1474), a flaky test's mark, and what VS Code draws: its integration suite records the service's answer
+for its fixture's spec with the marks and rows it drew (`packages/editor/tests/golden/vscode-spec.json`, on every pull
+request rather than nightly), which `PiwiPluginTest` draws too. Left: HM8's tool window states. NF10
 decided: the CI runs keep their own view and tab, apart from the developer's Runs view and tab. L4 in part since: the ASP.NET Core route manifest
 names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
 handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·
