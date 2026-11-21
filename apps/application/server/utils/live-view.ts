@@ -33,7 +33,7 @@ import {
   type LaneLayer,
 } from '@piwitests/core/live-layers';
 import { LatestPacer, RateWindow } from '@piwitests/core/run-view';
-import type { LiveWorkerState } from '#shared/live-view';
+import { LET_GO_NOT_HELD, type LiveWorkerState } from '#shared/live-view';
 import type { DbClient } from '../database';
 import { projects, testRuns } from '../database/schema';
 import { apiError } from './api-error';
@@ -85,6 +85,14 @@ import { timingSafeEqualStr } from './timing-safe';
  * person (the oldest replaced), frames, call logs and snapshots a second and bytes of resources a second per worker,
  * bytes of images a second per run and, apart, bytes of snapshots and resources, what Inspect keeps of a run and of
  * every run together, and each message's bytes (the route's).
+ *
+ * A CI worker that says it can hold (`LIVE_HOLD_FEATURE`) hears how long its project holds a failing test for its
+ * controllers (`hold`, null while the setting is off) as its stream opens and as a project admin changes it
+ * (`setHold`), and whether a watch of a controller (`run:control` on the project, as the watch's route read it) shows
+ * it in full (`view`'s `controller`); tiles never count. Its held stop reaches the run page with the names of the
+ * controllers watching it then (`heldFor`), and **Let it go** (`letGo`) reaches its stream alone, from a controller's
+ * watch that shows it in full while it holds. A controller's watch hears it counts as one as it opens (`hello`'s
+ * `controller`).
  */
 
 const MB = 1024 * 1024;
@@ -193,6 +201,8 @@ export interface LiveWatchAsk {
   text?: true;
   /** Whether its full view has Inspect open: the worker shown in full sends its page's snapshots. */
   inspect?: boolean;
+  /** Whether its person may control the project's runs now, as the route read it again for this change. */
+  controller?: boolean;
 }
 
 /** A page's watch of the run: one stream, whatever it shows. */
@@ -217,6 +227,9 @@ interface Viewer {
   dropped: { count: number; test: string | null; at: number } | null;
   /** The signed-in person watching, null when the instance knows nobody (authentication off). */
   person: number | null;
+  /** Whether that person may control the project's runs (`run:control`), and their name, null when none is known. */
+  controller: boolean;
+  name: string | null;
   /** When it came, in the order of all viewers. */
   since: number;
   /** What it shows in full, as its page asked it: a worker, or a lane's (with its `slot`); null for none. */
@@ -248,6 +261,10 @@ interface Viewer {
 interface WorkerLink {
   id: LiveWorkerId;
   sink: EventStreamSink;
+  /** It said it can hold a failing CI test for its controllers (`LIVE_HOLD_FEATURE`). */
+  holds: boolean;
+  /** Who its held stop is held for: the controllers that showed it in full as it came. */
+  heldFor: string[];
   /** The watches that show it in full. */
   viewers: Set<Viewer>;
   paused: LiveStop | null;
@@ -311,7 +328,7 @@ export interface LiveViewCounts {
 type PendingKind = 'image' | 'call-log' | 'text';
 
 /** Why a relay refused. */
-export type LiveViewRefusal = { status: 404 | 409 | 410 | 429 | 503; message: string };
+export type LiveViewRefusal = { status: 403 | 404 | 409 | 410 | 429 | 503; message: string };
 
 /**
  * What a watch shows, as its page hears it after a change: the full view as the page asked it (null for none, or once
@@ -395,6 +412,8 @@ export class LiveViewRelay {
   private viewersCame = 0;
   /** The elements each project masks, as a project admin last set them on this server: null for a list it cannot read. */
   private readonly projectMasks = new Map<number, string[] | null>();
+  /** How long each project holds a failing CI test, in ms, as a project admin last set it on this server: null for not. */
+  private readonly projectHold = new Map<number, number | null>();
 
   constructor(
     private readonly publish: (runId: number, state: LiveWorkerState) => void = (runId, state) =>
@@ -516,6 +535,7 @@ export class LiveViewRelay {
     id: LiveWorkerId,
     open: () => EventStreamSink,
     masks: readonly string[] | null = [],
+    hold: { ms: number | null } | null = null,
   ): LiveViewRefusal | null {
     const key = liveWorkerKey(id);
     const known = this.runs.get(entry.runId);
@@ -530,6 +550,8 @@ export class LiveViewRelay {
     const link: WorkerLink = {
       id,
       sink,
+      holds: hold !== null,
+      heldFor: before?.heldFor ?? [],
       viewers: new Set(),
       paused: before?.paused ?? null,
       rate: new RateWindow(MAX_RELAYED_FPS, this.now),
@@ -559,8 +581,13 @@ export class LiveViewRelay {
     // The elements to mask go before anyone watches: the latest a project admin set here, else the route's read.
     const locators = this.projectMasks.has(entry.projectId) ? this.projectMasks.get(entry.projectId)! : masks;
     sink.send({ type: 'masks', locators: locators === null ? null : [...locators] } satisfies InstanceToWorker);
+    // How long the project holds a failing test: the latest a project admin set here, else the route's read.
+    if (hold) {
+      const ms = this.projectHold.has(entry.projectId) ? this.projectHold.get(entry.projectId)! : hold.ms;
+      sink.send({ type: 'hold', ms } satisfies InstanceToWorker);
+    }
     this.tell(link);
-    this.publish(entry.runId, { ...id, connected: true, paused: link.paused });
+    this.publish(entry.runId, this.stateOf(link));
     return null;
   }
 
@@ -619,7 +646,8 @@ export class LiveViewRelay {
         return null;
       case 'stop':
         link.paused = message.stop;
-        this.publish(runId, { ...link.id, connected: true, paused: message.stop });
+        link.heldFor = message.stop?.reason === 'held' ? this.controllersOf(link) : [];
+        this.publish(runId, this.stateOf(link));
         return null;
       case 'ended':
         this.testEnded(run, link, message.outcome ?? null);
@@ -768,6 +796,7 @@ export class LiveViewRelay {
     ask: LiveWatchAsk,
     open: () => EventStreamSink,
     person: number | null = null,
+    who: { controller: boolean; name: string | null } = { controller: false, name: null },
   ): LiveViewRefusal | null {
     if (this.endedRuns.has(runId)) return { status: 410, message: 'The run is no longer live.' };
     const known = this.runs.get(runId);
@@ -790,6 +819,8 @@ export class LiveViewRelay {
       thumbs: [],
       dropped: null,
       person,
+      controller: who.controller,
+      name: who.name,
       since: this.viewersCame++,
       focus: null,
       lane: null,
@@ -806,7 +837,8 @@ export class LiveViewRelay {
       retry: null,
     };
     run.viewers.set(viewer.id, viewer);
-    this.send(viewer, { type: 'hello', watch: viewer.id });
+    // A controller's watch is told it counts as one, for its surface to offer **Let it go**.
+    this.send(viewer, { type: 'hello', watch: viewer.id, ...(who.controller ? { controller: true as const } : {}) });
     if (ask.focus && target) this.focusOn(run, viewer, ask.focus, target);
     sink.onDrain(() => {
       if (!sink.backedUp() && viewer.stall) {
@@ -884,6 +916,10 @@ export class LiveViewRelay {
         this.tellKept(run, viewer, viewer.link);
       }
     }
+    if (ask.controller !== undefined && ask.controller !== viewer.controller) {
+      viewer.controller = ask.controller;
+      if (viewer.link) told.add(viewer.link);
+    }
     for (const link of told) if (run.workers.get(liveWorkerKey(link.id)) === link) this.tell(link);
     // The text asked now: the worker shown in full takes its page's text, the full views that take text hear it.
     if (ask.text && viewer.link && viewer.layers.has('text')) {
@@ -916,7 +952,60 @@ export class LiveViewRelay {
   workersOf(runId: number): LiveWorkerState[] {
     const run = this.runs.get(runId);
     if (!run) return [];
-    return [...run.workers.values()].map((link) => ({ ...link.id, connected: true, paused: link.paused }));
+    return [...run.workers.values()].map((link) => this.stateOf(link));
+  }
+
+  /** A connected worker as the run page knows it: whether it can hold, and for whom its held stop is held. */
+  private stateOf(link: WorkerLink): LiveWorkerState {
+    const state: LiveWorkerState = { ...link.id, connected: true, paused: link.paused };
+    return link.holds ? { ...state, holds: true, heldFor: [...link.heldFor] } : state;
+  }
+
+  /** The names of the controllers whose watches show `link` in full, each once, in the order they came. */
+  private controllersOf(link: WorkerLink): string[] {
+    const watching = [...link.viewers].filter((viewer) => viewer.controller).sort((a, b) => a.since - b.since);
+    return [...new Set(watching.flatMap((viewer) => (viewer.name ? [viewer.name] : [])))];
+  }
+
+  /**
+   * The project holds a failing CI test for its controllers `ms` long from now on, or not (null): the workers of its
+   * live runs that can hold hear so, and a worker that connects later hears it, whatever its route read before.
+   */
+  setHold(projectId: number, ms: number | null): void {
+    this.projectHold.set(projectId, ms);
+    for (const run of this.runs.values()) {
+      if (run.projectId !== projectId) continue;
+      for (const link of run.workers.values()) {
+        if (link.holds) link.sink.send({ type: 'hold', ms } satisfies InstanceToWorker);
+      }
+    }
+  }
+
+  /**
+   * **Let it go**: the worker that the watch `watchId` of `person` shows in full (`worker`) ends its hold. Refused for
+   * a watch of another run or another person (404), one opened by someone who may not control the run (403), one
+   * that shows another worker, or a worker that cannot hold or holds nothing (409). The caller checks the project's
+   * setting.
+   */
+  letGo(
+    runId: number,
+    watchId: string,
+    person: number | null,
+    worker: LiveWorkerId,
+  ): LiveViewRefusal | { ok: true; worker: LiveWorkerId } {
+    const run = this.runs.get(runId);
+    const viewer = run?.viewers.get(watchId);
+    if (!run || !viewer || viewer.person !== person) return { status: 404, message: 'No such watch of this run.' };
+    if (!viewer.controller) return { status: 403, message: 'You may watch this run, not control it.' };
+    const link = viewer.link;
+    if (!link || liveWorkerKey(link.id) !== liveWorkerKey(worker)) {
+      return { status: 409, message: 'This watch does not show that worker now.' };
+    }
+    if (!link.holds || link.paused?.reason !== 'held') {
+      return { status: 409, message: LET_GO_NOT_HELD };
+    }
+    link.sink.send({ type: 'let-go' } satisfies InstanceToWorker);
+    return { ok: true, worker: idOf(link.id) };
   }
 
   /**
@@ -985,7 +1074,10 @@ export class LiveViewRelay {
     });
   }
 
-  /** Close the run's workers' and watches' streams, the watches hearing `reason` and the run page each worker leave. */
+  /**
+   * Close the run's workers' and watches' streams, the watches hearing `reason` and the run page each worker leave; a
+   * worker that can hold hears first that nothing holds (`hold` null).
+   */
   private closeRun(runId: number, reason: LiveViewEnd): void {
     const run = this.runs.get(runId);
     if (!run) return;
@@ -996,6 +1088,8 @@ export class LiveViewRelay {
     for (const viewer of [...run.viewers.values()]) this.endWatch(run, viewer, reason);
     for (const link of run.workers.values()) {
       link.teller.close();
+      // A worker that holds a failing test lets it go: nobody can see the hold any more.
+      if (link.holds) link.sink.send({ type: 'hold', ms: null } satisfies InstanceToWorker);
       link.sink.close();
       this.publish(runId, { ...link.id, connected: false, paused: null });
     }
@@ -1117,8 +1211,8 @@ export class LiveViewRelay {
 
   /**
    * Tell a worker how many watches take its images, as it changes, and before it what they ask of them, as it
-   * changes: the largest full view's size, `LIVE_FRAME_FPS` and `full`, else a tile's size and pace; what an older
-   * reporter ignores. A worker a further watch shows in full, the count the same, is asked for its latest image and
+   * changes: the largest full view's size, `LIVE_FRAME_FPS` and `full`, else a tile's size and pace, and `controller`
+   * while a controller's watch shows it in full; what an older reporter ignores. A worker a further watch shows in full, the count the same, is asked for its latest image and
    * call log again (`resend`). Nothing for a worker that left, or of a run that ended.
    */
   private tellNow(run: RunLive, link: WorkerLink): void {
@@ -1147,11 +1241,11 @@ export class LiveViewRelay {
       view.fps = Math.max(view.fps, LIVE_TILE_FPS);
     }
     const full = link.viewers.size > 0;
+    const controller = [...link.viewers].some((viewer) => viewer.controller);
     const listed = LANE_LAYERS.filter((layer) => layers.has(layer));
-    const asked = view.fps
-      ? { ...view, full, layers: listed, inspect }
-      : { ...DEFAULT_SIZE, fps: LIVE_FRAME_FPS, full, layers: listed, inspect };
-    const key = `${asked.width}x${asked.height}@${asked.fps}${full ? ' full' : ''} ${listed.join(',')}${inspect ? ' inspect' : ''}`;
+    const seen = view.fps ? view : { ...DEFAULT_SIZE, fps: LIVE_FRAME_FPS };
+    const asked = { ...seen, full, layers: listed, inspect, ...(controller ? { controller: true as const } : {}) };
+    const key = `${asked.width}x${asked.height}@${asked.fps}${full ? ' full' : ''} ${listed.join(',')}${inspect ? ' inspect' : ''}${controller ? ' controller' : ''}`;
     const resend = link.attached && full && link.told !== null && count <= link.told.count;
     link.attached = false;
     if (link.told?.view !== key) link.sink.send({ type: 'view', ...asked } satisfies InstanceToWorker);

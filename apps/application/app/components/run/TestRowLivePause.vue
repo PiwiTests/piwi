@@ -2,22 +2,28 @@
 /**
  * Where a running test is stopped, on its row: why, in words by its reason (`stopWords`), at which call and where, and,
  * for a stop its reporter told as text, for how long. The stop comes from the run's live view (a CI run, a run shared
- * live), or from a run outside CI while someone has the run open (`test-stopped`). The row's **Watch** opens the view
- * of a live view's page.
+ * live), or from a run outside CI while someone has the run open (`test-stopped`). A failed CI test held for its
+ * controllers says for whom and until when (`heldStopWords`). The row's **Watch** opens the view of a live view's page.
  */
-import { stopStoodMs, stopWords } from '~/utils/stop-words';
+import { heldStopWords, stopStoodMs, stopWords } from '~/utils/stop-words';
 
 const props = defineProps<{
   reason: string;
   call: { title: string; file: string | null; line: number | null };
   /** When the stop began (epoch ms), for how long it has stood; none from the live view. */
   since?: number | null;
+  /** When a held CI failure's hold ends (epoch ms), and the controllers it is held for. */
+  until?: number;
+  heldFor?: string[];
   /** Piwi project id + name, for the IDE opener of the paused call's place. */
   projectKey?: string | number | null;
   projectName?: string | null;
 }>();
 
 const words = computed(() => stopWords(props.reason));
+const held = computed(() =>
+  props.reason === 'held' ? heldStopWords({ until: props.until }, props.heldFor ?? []) : null,
+);
 const now = useStopClock();
 /** How long the stop has stood, once it stood a while. */
 const stoodFor = computed(() => {
@@ -36,8 +42,13 @@ const pausedText = computed(() =>
     :data-reason="reason"
     :title="`${words} · ${pausedText}`"
   >
-    <UIcon name="i-lucide-pause" class="size-3 shrink-0 text-warning" />
+    <UIcon
+      :name="reason === 'held' ? 'i-lucide-hand' : 'i-lucide-pause'"
+      class="size-3 shrink-0"
+      :class="reason === 'held' ? 'text-error' : 'text-warning'"
+    />
     <span class="font-semibold text-highlighted whitespace-nowrap">{{ words }}</span>
+    <span v-if="held" class="whitespace-nowrap text-muted" data-testid="live-held">· {{ held }}</span>
     <span v-if="call.title" class="truncate min-w-0 max-w-full text-muted">· {{ call.title }}</span>
     <span v-if="call.file" class="inline-flex items-center gap-1 min-w-0 max-w-full">
       <span class="text-muted">·</span>

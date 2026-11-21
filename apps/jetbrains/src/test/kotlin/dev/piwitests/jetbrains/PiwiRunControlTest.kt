@@ -154,6 +154,8 @@ class PiwiRunControlTest : BasePlatformTestCase() {
 
             override fun ciWatch(params: CiWatchParams): RunControlResult = RunControlResult(true, "Watching.")
 
+            override fun ciLetGo(params: CiLetGoParams): RunControlResult = RunControlResult(true, "The test goes on.")
+
             override fun openTrace(params: OpenTraceParams): RunControlResult {
                 traces += params
                 traceGates[params.lane]?.await(10, java.util.concurrent.TimeUnit.SECONDS)

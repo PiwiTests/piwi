@@ -6903,6 +6903,37 @@
   "runs_stateFailed": {
     "message": "Falló, retenido en su línea"
   },
+  "runs_heldFor": {
+    "message": "Retenido para $names$ · hasta las $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Retenido · hasta las $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Soltarlo"
+  },
+  "runs_letGoTitle": {
+    "message": "Terminar la retención: el test se desmonta como lo habría hecho, sin cambiar su resultado"
+  },
+  "runs_heldJobTimeout": {
+    "message": "El tiempo límite del propio job de CI sigue corriendo."
+  },
   "runs_stateRunning": {
     "message": "En curso"
   },
@@ -7493,7 +7524,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Solo lectura: se ejecutan en la CI, así que nada de aquí las pausa ni las dirige. Ver muestra aquí la página de una prueba en curso."
+    "message": "Solo para ver: se ejecutan en la CI, así que nada de aquí las dirige, salvo Soltarlo en un fallo retenido para ti. Ver muestra aquí la página de una prueba en curso."
   },
   "runs_ciTests": {
     "message": "Pruebas en curso"
@@ -7551,6 +7582,15 @@
   },
   "runs_ciRefusedNoTest": {
     "message": "Todavía no se ejecutó ninguna prueba en el carril de este worker."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Soltarlo va por la vista de esta ventana sobre el worker: vuelve a verlo primero."
+  },
+  "runs_ciNotController": {
+    "message": "Puedes ver esta ejecución, no controlarla."
+  },
+  "runs_ciNotHeld": {
+    "message": "Este worker no retiene ahora ninguna prueba fallida."
   },
   "runs_ciRefusedOffline": {
     "message": "La instancia no respondió."

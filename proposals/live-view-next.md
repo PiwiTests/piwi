@@ -25,8 +25,8 @@ plays without a browser. Left: the parts below. The plan as
 proposed, with every part, the decisions D1 to D12, spikes A to H and the defect it found (fixed before its first PR),
 is at commit `46c65e9fd`; the live-runs ADR cites its parts, PRs and open questions by those numbers. Parts and decisions keep their numbers here;
 the delivery steps and the open questions are numbered anew. Nothing here is on [`ROADMAP.md`](../ROADMAP.md) yet. Its
-contracts are entry D62 of [`1.0-stabilization.md`](1.0-stabilization.md); of them, the WebM stream, the messages of a
-held failure and its setting, `get_live_test` and the share link to a running run are still to come.
+contracts are entry D62 of [`1.0-stabilization.md`](1.0-stabilization.md); of them, the WebM stream, `get_live_test` and the
+share link to a running run are still to come; a held failure moved to [`ci-run-control.md`](ci-run-control.md).
 
 **Summary.** What remains, in the order it should be built:
 
@@ -38,12 +38,11 @@ held failure and its setting, `get_live_test` and the share link to a running ru
 - **VP9 video** from the ffmpeg that Playwright installs, where the worker and the viewer's browser can play it.
 - **`get_live_test`**, an MCP tool of the instance, for an agent to read a running CI test, and a **watch link** for
   someone without an account.
-- **Holding a failing CI test while someone watches it**, a project setting off by default. It narrows run control's
-  D8 for that one case and ships with an ADR that says so.
+- **Holding a failing CI test while someone watches it** moved to its own plan,
+  [`ci-run-control.md`](ci-run-control.md), with pausing a CI test.
 
 Of the five jobs [`ROADMAP.md`](../ROADMAP.md) says Piwi is for, this serves the second, **explain the failures**: a
-stuck test placed in its step, a failing CI test held where it failed. It feeds the third, **hand back a fix**:
-Inspect's picker on the held page.
+stuck test placed in its step. It feeds the third, **hand back a fix**.
 
 ## Terms
 
@@ -111,7 +110,7 @@ in the plan as proposed.
 | | Decision | Why |
 | --- | --- | --- |
 | D9 | **Video is a form of the same view, not a second one**: VP9 in WebM from Playwright's ffmpeg, a keyframe every half second, each cluster opening on one (`-dash 1`), when the worker has ffmpeg 1013 and the viewer's browser shows a frame of it within two seconds; images otherwise. | [Spike C](#c-vp9-from-playwrights-ffmpeg): ten images a second as VP9 took a third fewer bytes than four a second as JPEG, at about 4 ms of CPU an image. [Spike G](#g-the-live-webm-in-three-browsers): Chromium and Firefox play it 0.7 to 1.4 s behind, a late viewer from the last keyframe; WebKit on Linux showed nothing in two runs of three. |
-| D11 | **Holding a failing CI test is a project setting, off by default**: a viewer of the lane as its test fails may hold the failing page, for the length the project sets: five minutes by default, fifteen at most. It narrows run control's D8 for that one case, and ships with an ADR that says so. | Inspecting a CI failure where it happened is worth the CI minutes to some teams, not by default. A hold takes no input and runs no code, but it does steer the run. |
+| D11 | **Holding a failing CI test** moved to [`ci-run-control.md`](ci-run-control.md) (its D1 to D3). | It grew a second step, pausing a CI test, and a rule for who may do either. |
 | D12 | **One server still relays a run.** A relay shared between servers is a plan of its own, together with the run's live events. | The run page's live events have the same limit; lifting one without the other changes nothing for a viewer. |
 
 ## Part 1: Where a stuck test waits
@@ -165,29 +164,19 @@ frame shows within two seconds, as WebKit on Linux did ([spike G](#g-the-live-we
 
 ## Part 8: Holding a failing CI test
 
-- **The setting**: **Project → Settings → Live view → Hold a failing test for its viewers**, off by default, for a
-  Project admin, with a length from one to fifteen minutes (five by default).
-- **When**: a test of a CI run fails while at least one person watches its lane. The worker holds the failing page, as
-  a local run's **Hold failures** does, and the viewers get the failure, **Inspect** on the failing page, its page
-  events and **Let it go**. The hold ends at its length, at **Let it go**, or when the last viewer leaves.
-- **What it costs**: CI minutes, and the CI job's own timeout still runs. The run page says the test is held, by whom
-  and until when.
-- **What it is not**: input, or code run in the page. It is a wait, at a failure, that a person asked for.
-- **The record**: run control's D8 says the team instance never steers a run. This part narrows it for this case, and
-  the ADR this plan becomes says so, with a link from the run control ADR ([open question 4](#open-questions)).
+Moved to [`ci-run-control.md`](ci-run-control.md), step 1.
 
 ## Part 9: Documentation
 
 - Each new feature gets its own page and catalog entry, linked from the live view page, as Inspect and Watch all are
-  (Stuck tests is not linked from it yet): **Hold a failing CI test** (Part 8) is a page; the other pages (Part 3) and
-  video (Part 7) replace sentences of the live view page; the step a stuck test waits in goes on the Stuck tests page,
+  (Stuck tests is not linked from it yet): the other pages (Part 3) and video (Part 7) replace sentences of the live view page; the step a stuck test waits in goes on the Stuck tests page,
   the ARIA tree on the Inspect page.
 - `get_live_test` on the generated MCP tools page; the watch link on the
-  [share links](../apps/docs/features/share-links.md) page; the hold's setting in `shared/help-content.ts`.
+  [share links](../apps/docs/features/share-links.md) page.
 - The live view setting's text (`ProjectLiveViewSettings.vue`, and `project.live-view` in `shared/help-content.ts`)
   says what goes out, to whom and what is kept for what is built: the images, the call log, the page's events and its
   text, the filmstrip, and Inspect's DOM and resources, kept in the instance's memory while their test runs. It says it
-  again for the hold and the watch link.
+  again for the watch link.
 - The demo plays a stuck test with its call log and an Inspect page: its run simulator's workers send each running
   test's call log over the demo's event channel, the stuck PayPal test's retrying the disabled Pay button, and the
   page's own watch keeps them for a lane panel opened later; Inspect shows the checkout page from a committed trace,
@@ -201,7 +190,7 @@ frame shows within two seconds, as WebKit on Linux did ([spike G](#g-the-live-we
 - **Who sees it**: who may open the run, as today. `get_live_test` gives an agent the page's text only between the
   page-content markers. A watch link carries the images and the calls' titles alone, and ends with the run.
 - **Nothing kept**: the relay holds the WebM since its last keyframe in memory, and drops it with the run.
-- **Steering**: none, except the hold of Part 8, which takes no input, runs no code and is off by default.
+- **Steering**: none ([`ci-run-control.md`](ci-run-control.md) plans the hold and the pause).
 - **ffmpeg** reads the images of the test's own page from a pipe; it opens no file and no connection.
 
 ## Delivery
@@ -217,13 +206,13 @@ Each PR is usable on its own; sizes are relative (S, M).
 | 5 | The last passing run's image (Part 5). | S |
 | 6 | Video (Part 7), once Safari is checked. | M |
 | 7 | `get_live_test` and the watch link (Part 6), each its own PR if it runs long. | M |
-| 8 | Holding a failing CI test (Part 8), its page and the ADR. | M |
+| 8 | Moved: [`ci-run-control.md`](ci-run-control.md). | |
 
 ## Verification
 
 - **The reporter**, against a fake instance, as `tests/live-view*.spec.ts` do: a second page's images masked, and
   filmed only while its tab is watched; the WebM's clusters each opening on a keyframe, and the fallback to images
-  without ffmpeg 1013; a held failing page let go at its length, at **Let it go** and as the last viewer leaves.
+  without ffmpeg 1013.
 - **The app**: unit tests of the step's usual duration, of the watch link's anonymous route (images and titles alone)
   and of `get_live_test`; an E2E test of the run page with a simulated worker; the performance suite for the run page.
 - **Safari**, on a Mac, before the video PR: the one browser spike G could not reach.
@@ -237,7 +226,6 @@ Each PR is usable on its own; sizes are relative (S, M).
 - **The viewer's browser**: `MediaSource` with VP9 differs between browsers: WebKit on Linux buffered the stream and
   showed nothing in two runs of three, and Safari is untested (spike G). Images stay the fallback, chosen by the viewer
   when no frame shows.
-- **The hold**: CI minutes, while the CI job's own timeout still runs.
 - **The watch link**: a running test's images, to someone without an account, until the run ends.
 - **The one server's memory**: the WebM since the last keyframe of each watched worker.
 
@@ -246,9 +234,8 @@ Each PR is usable on its own; sizes are relative (S, M).
 1. **Stuck?**: are two minutes and three times the longest passing duration right, and should a project change them?
    `STUCK_FLOOR_MS` and `STUCK_FACTOR` are fixed.
 2. **The watch link**: the images alone, or the call log too?
-3. **The hold**: may any viewer hold, or only a project member, and is fifteen minutes the right ceiling?
-4. **The record of a narrowed decision**: `adr/` supersedes a whole ADR; how does it record one decision narrowed by a
-   later plan?
+3. **The hold**: moved to [`ci-run-control.md`](ci-run-control.md), which answers it (D2).
+4. **The record of a narrowed decision**: answered there too (D10).
 5. **Safari**: does it play the live WebM through `MediaSource`, and how far behind?
 6. **Video on the developer's machine**: the live-runs ADR applies Part 7 to the local lane view too; does a view on the
    same machine, where bytes cost little, gain anything from video?
@@ -267,7 +254,7 @@ Each PR is usable on its own; sizes are relative (S, M).
 - **A recording script in the page's own world**, as rrweb records a session: the reporter's contract 6, nothing the
   capture does shows up as the test's own. The DOM between calls could come later from a `MutationObserver` in an
   isolated world, once Inspect has shown the DOM at each call is worth it.
-- **Input into a CI page from the dashboard**: run control's D8 stands, and a hold takes none.
+- **Input into a CI page from the dashboard**: run control's D8 stands ([`ci-run-control.md`](ci-run-control.md) D6).
 - **A relay shared between servers** (D12).
 - **Keeping the live view as the run's video**: the trace and video settings keep the record, and the live view keeps
   nothing.

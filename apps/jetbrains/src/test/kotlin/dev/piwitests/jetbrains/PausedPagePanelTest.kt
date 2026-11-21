@@ -27,6 +27,40 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertEquals("The page of the CI worker's test", PausedPagePanel().apply { forCiWorker() }.pageName())
     }
 
+    fun testAHeldCiFailureShowsInPlainTextWithItsPlaceAndLetItGoInTheServicesWordsUntilAsked() {
+        val panel = PausedPagePanel().apply { forCiWorker() }
+        var pressed = 0
+        var opened = 0
+        panel.letCiHoldGo = { pressed++ }
+        panel.openHeldPlace = { opened++ }
+        val lines = listOf("Failed, held at its line · Held for Ana · until 12:05", "<b>Expected</b>", "The CI job’s own timeout still runs.")
+        val held = Glue.HeldShown(lines, "tests/checkout.spec.ts:7", placeOpens = true, offered = true, asking = false, label = "Let it go", title = "End the hold")
+        panel.held(held)
+        assertEquals(lines, panel.heldLines)
+        val shown = descendants(panel).filterIsInstance<JLabel>().filter { it.text in lines }
+        assertEquals(lines, shown.map { it.text })
+        assertTrue(shown.all { it.getClientProperty("html.disable") == true })
+        val place = descendants(panel).filterIsInstance<JButton>().single { it.text == "tests/checkout.spec.ts:7" }
+        place.doClick()
+        assertEquals(1, opened)
+        val letGo = descendants(panel).filterIsInstance<JButton>().single { it.text == "Let it go" }
+        assertEquals("End the hold", letGo.toolTipText)
+        assertTrue(panel.letGoOffered)
+        letGo.doClick()
+        assertEquals(1, pressed)
+        panel.held(held.copy(asking = true))
+        assertFalse(panel.letGoOffered)
+        // A place the project does not hold opens nothing.
+        panel.held(held.copy(placeOpens = false))
+        assertFalse(place.isEnabled)
+        // Not offered to someone who may not control the run, and gone with the hold.
+        panel.held(held.copy(offered = false))
+        assertFalse(letGo.isVisible)
+        panel.held(null)
+        assertFalse(letGo.isVisible)
+        assertTrue(descendants(panel).filterIsInstance<JLabel>().none { it.text in lines })
+    }
+
     fun testWatchingAndInteractionAreOptInAndAnOlderReporterShowsNeither() {
         val panel = PausedPagePanel()
         val asked = mutableListOf<Boolean>()

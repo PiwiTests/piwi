@@ -8171,6 +8171,42 @@
     "message": "Failed, held at its line",
     "description": "Runs window, the tooltip of a worker’s tab while its failed test is held at its line."
   },
+  "runs_heldFor": {
+    "message": "Held for $names$ · until $time$",
+    "description": "Run page and Runs window, beside a failed CI test held at its line for the people who may control the run. $names$ lists who watches it, $time$ is when the hold ends at the latest.",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Held · until $time$",
+    "description": "Run page and Runs window, beside a failed CI test held at its line, when nobody watching it is named. $time$ is when the hold ends at the latest.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Let it go",
+    "description": "Run page and Runs window, the button that ends the hold of a failed CI test held at its line."
+  },
+  "runs_letGoTitle": {
+    "message": "End the hold: the test tears down as it would have, its result unchanged",
+    "description": "Run page and Runs window, the tooltip of Let it go on a failed CI test held at its line."
+  },
+  "runs_heldJobTimeout": {
+    "message": "The CI job’s own timeout still runs.",
+    "description": "Run page and Runs window, beside a failed CI test held at its line: the hold stops the test’s timeout, not the CI job’s."
+  },
   "runs_stateRunning": {
     "message": "Running",
     "description": "Runs window, the state of a test that runs."
@@ -8897,8 +8933,8 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.",
-    "description": "Runs window, under the list of CI runs in progress: they are read-only, and Watch (runs_watch) on a running test shows its page in the window."
+    "message": "Watched only: these run on CI, so nothing here steers them, except Let it go on a failure held for you. Watch shows a running test’s page here.",
+    "description": "Runs window, under the list of CI runs in progress: they are only watched, but for Let it go (runs_letGo) on a failure held for the person, and Watch (runs_watch) on a running test shows its page in the window."
   },
   "runs_ciTests": {
     "message": "Tests running now",
@@ -8968,6 +9004,18 @@
   "runs_ciRefusedNoTest": {
     "message": "No test ran in this worker’s lane yet.",
     "description": "Runs window, why a CI run’s worker could not be watched: no test ran in its lane yet."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Let it go goes on this window’s watch of the worker: watch it again first.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the window no longer watches its worker."
+  },
+  "runs_ciNotController": {
+    "message": "You may watch this run, not control it.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the instance did not say this connection may control the project’s runs."
+  },
+  "runs_ciNotHeld": {
+    "message": "This worker holds no failing test now.",
+    "description": "Runs window, why Let it go did not reach a CI run’s worker: its test is no longer held."
   },
   "runs_ciRefusedOffline": {
     "message": "The instance did not answer.",

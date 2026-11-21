@@ -1,15 +1,18 @@
 import { describe, expect, test } from 'vitest';
 import type { LiveStop } from '@piwitests/core/live-view';
 import type { TestStop } from '@piwitests/core/wire';
+import { RUN_WORDS_EN } from '@piwitests/run-model/words';
 import type { LiveWorkerState } from '#shared/live-view';
 import type { TestCaseResult } from '../../types/api';
-import { STOOD_FOR_MS, stopStoodMs, testStop, watchedStop } from '../../app/utils/stop-words';
+import { STOOD_FOR_MS, heldStopWords, stopStoodMs, stopWords, testStop, watchedStop } from '../../app/utils/stop-words';
 
 /**
  * The stop a running test stands at, as its row and its worker's lane panel both show it, from the two sources that say
  * it: the live view's stop (`paused`, said by the worker at once) and the stop its reporter told (`test-stopped`, with
  * when it began). Where both stand, the reason and the call are the live view's and the time the told stop's; either
- * alone is the stop. The panel reads them for the test its worker runs now, as the row does.
+ * alone is the stop. The panel reads them for the test its worker runs now, as the row does, a failed CI test held for
+ * its controllers included, with its hold. The words: its reason's, and for a held CI failure the run model's
+ * (`Failed, held at its line`), for whom and until when.
  */
 
 const CALL = { title: 'Click', file: 'tests/live.spec.ts', line: 4 };
@@ -40,9 +43,41 @@ const worker = (over: Partial<LiveWorkerState>): LiveWorkerState => ({
 const workers = (...list: LiveWorkerState[]) =>
   Object.fromEntries(list.map((w) => [`${w.shard ?? ''}:${w.worker}`, w]));
 
+const UNTIL = 1_800_000_000_000;
+/** The page's clock, as a test reads it: the hold's end alone, at 12:05. */
+const clock = (time: number) => (time === UNTIL ? '12:05' : 'another time');
+const HELD: LiveStop = { reason: 'held', call: CALL, test: 'pays', until: UNTIL };
+
+describe('the words of a stop', () => {
+  test('read a held CI failure as a failure held at its line', () => {
+    expect(stopWords('held')).toBe(RUN_WORDS_EN.runs_stateFailed);
+    expect(stopWords('failure')).toBe('Held at its failure');
+    expect(stopWords('later')).toBe('Stopped');
+  });
+
+  test('say for whom a held CI failure is held, and until when', () => {
+    expect(heldStopWords({ until: UNTIL }, ['Ana'], clock)).toBe('Held for Ana · until 12:05');
+    expect(heldStopWords({ until: UNTIL }, ['Ana', 'Bo', 'Cy'], clock)).toBe('Held for Ana, Bo, and Cy · until 12:05');
+    expect(heldStopWords({ until: UNTIL }, [], clock)).toBe('Held · until 12:05');
+    // A held stop of a reporter that said no end names none.
+    expect(heldStopWords({}, ['Ana'], clock)).toBeNull();
+  });
+});
+
 describe('testStop', () => {
   test('takes the reason and the call from the live view and the time from the told stop when both stand', () => {
     expect(testStop(VIEW, TOLD)).toEqual({ reason: 'pause', call: CALL, since: 1_000 });
+  });
+
+  test('carries a held CI failure’s hold: its end, its controllers and whether its worker can be let go', () => {
+    expect(testStop(HELD, null, { heldFor: ['Ana'], holds: true })).toEqual({
+      reason: 'held',
+      call: CALL,
+      since: null,
+      held: { until: UNTIL, heldFor: ['Ana'], holds: true },
+    });
+    expect(testStop(HELD, null, null)?.held).toEqual({ until: UNTIL, heldFor: [], holds: false });
+    expect(testStop(VIEW, null, { heldFor: ['Ana'], holds: true })).not.toHaveProperty('held');
   });
 
   test('is either stop alone', () => {
@@ -59,6 +94,19 @@ describe('watchedStop', () => {
       reason: 'pause',
       call: CALL,
       since: 1_000,
+    });
+  });
+
+  test('reads a held CI failure as the row reads it, its hold included', () => {
+    const held = worker({ paused: HELD, slot: 0, holds: true, heldFor: ['Ana'] });
+    const rows = [row({})];
+    expect(watchedStop(rows, workers(held), { shard: null, worker: 0 })).toEqual(
+      testStop(held.paused, rows[0]!.liveStop, held),
+    );
+    expect(watchedStop(rows, workers(held), { shard: null, worker: 0 })?.held).toEqual({
+      until: UNTIL,
+      heldFor: ['Ana'],
+      holds: true,
     });
   });
 

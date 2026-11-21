@@ -74,7 +74,10 @@ responsibilities.
    - with `PIWI_LIVE_VIEW` (set in `onBegin`; outside CI, `none:<why>` for a run without one), each worker's event
      stream to the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): opened in the
      background in a CI run, and outside CI only while the run channel shares the run (**Share live**) or, for a run no
-     run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. Four limits hold:
+     run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. In a CI run, a
+     test that fails while its project holds failing tests (`hold` on the stream) and a controller watches its worker
+     in full waits at its failure, its timeout held, until the hold's length, **Let it go** or no controller watching
+     (`tests/live-view-hold.spec.ts`). Four limits hold:
      never a frame while nobody watches, never stored, nothing from a run outside CI unless it is shared; each frame
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and

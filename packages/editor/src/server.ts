@@ -267,8 +267,10 @@ import {
   RUN_STATUS_NOTIFICATION,
   CI_SESSION_NOTIFICATION,
   CI_WATCH_REQUEST,
+  CI_LET_GO_REQUEST,
   CI_FRAME_NOTIFICATION,
   CI_LAYER_NOTIFICATION,
+  type CiLetGoParams,
   type CiWatchParams,
   RUN_STATUS_REQUEST,
   RUN_SELECTION_REQUEST,
@@ -1209,15 +1211,17 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   /** The runs' streams: the contexts' runs in progress and the CI sessions read one connection per run. */
   const runStreams = new RunStreams();
   /** The client's one watch of a CI run's lane on the instance, read-only. */
-  const ciWatch = new CiWatch({
+  const ciWatch: CiWatch = new CiWatch({
     target: (root, runId, shard, lane) => ciSessions.watchTarget(root, runId, shard, lane),
     send: (frame) => connection.sendNotification(CI_FRAME_NOTIFICATION, frame),
     sendLayer: (layer) => connection.sendNotification(CI_LAYER_NOTIFICATION, layer),
+    changed: () => ciSessions.watchChanged(),
   });
-  /** The CI runs of the contexts' branches while they run, read-only. */
-  const ciSessions = new CiSessions({
+  /** The CI runs of the contexts' branches while they run, read-only but for Let it go on a held failure. */
+  const ciSessions: CiSessions = new CiSessions({
     contexts: () => contexts,
     streams: runStreams,
+    watching: (root, runId) => ciWatch.watching(root, runId),
     changed: (session) => {
       ciWatch.sessionChanged(session);
       void connection.sendNotification(CI_SESSION_NOTIFICATION, session);
@@ -5559,6 +5563,12 @@ export function startServer(connection: Connection, options: ServerOptions = {})
   );
   // A CI run's lane, read-only: nothing it sends reaches the run.
   connection.onRequest(CI_WATCH_REQUEST, (params: CiWatchParams): Promise<RunControlResult> => ciWatch.watch(params));
+  connection.onRequest(CI_LET_GO_REQUEST, (params: CiLetGoParams): Promise<RunControlResult> => {
+    const asked = params && Number.isInteger(params.runId) && Number.isInteger(params.lane) ? params : null;
+    if (!asked) return Promise.resolve({ ok: false, message: 'Let it go needs the CI run and the worker’s lane.' });
+    const held = ciSessions.heldWorker(asked.root, asked.runId, asked.shard ?? null, asked.lane);
+    return ciWatch.letGo(asked, held);
+  });
 
   connection.onRequest(HUB_REQUEST, (params: HubParams | null): HubResult => {
     if (params?.forwarded !== undefined) hubForwarded = forwardedPorts(params.forwarded);

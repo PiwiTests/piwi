@@ -5,9 +5,16 @@ import {
   ciRunName,
   ciRunWhere,
   ciRunsListed,
+  LetGoAsks,
+  ciHoldKey,
+  ciHoldOf,
+  ciHoldWords,
   ciTally,
+  heldForWords,
   isCiMetadata,
   isCiOrigin,
+  offersLetGo,
+  readCiHold,
   type CiRun,
 } from '../src/ci';
 import { englishRunSpeaker as en } from '../src/words';
@@ -82,6 +89,114 @@ describe('the CI runs of a project in progress', () => {
     expect(where(run(78), true)).toBe('Shop, on feature/pay');
     expect(where(run(78, { branch: null }), true)).toBe('Shop');
     expect(where(run(78, { branch: null }), false)).toBeNull();
-    expect(en.say(CI_READ_ONLY.key)).toContain('Read-only');
+    expect(en.say(CI_READ_ONLY.key)).toContain('nothing here steers them, except Let it go on a failure held for you');
+  });
+});
+
+describe('a CI test held at its failure for its controllers', () => {
+  const event = (over: Record<string, unknown> = {}) => ({
+    shard: null,
+    worker: 3,
+    slot: 1,
+    connected: true,
+    holds: true,
+    heldFor: ['Ana', 'Bo'],
+    paused: {
+      reason: 'held',
+      call: { title: 'Expected "Paid", received "Pending"', file: 'tests/pay.spec.ts', line: 12 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    },
+    ...over,
+  });
+
+  it('reads the held stop of a worker that can hold from the run’s live-worker event', () => {
+    expect(readCiHold(event())).toEqual({
+      worker: { shard: null, worker: 3, slot: 1 },
+      call: { title: 'Expected "Paid", received "Pending"', file: 'tests/pay.spec.ts', line: 12 },
+      until: 1_763_727_900_000,
+      heldFor: ['Ana', 'Bo'],
+    });
+    // A hold that names no end, and names the instance does not know.
+    const bare = event({ heldFor: undefined, paused: { ...event().paused, until: 'soon' } });
+    expect(readCiHold(bare)).toMatchObject({ until: null, heldFor: [] });
+  });
+
+  it('reads no hold of a worker that left, cannot hold, stands at no stop or at another', () => {
+    expect(readCiHold(event({ connected: false }))).toBeNull();
+    expect(readCiHold(event({ holds: undefined }))).toBeNull();
+    expect(readCiHold(event({ paused: null }))).toBeNull();
+    expect(readCiHold(event({ paused: { ...event().paused, reason: 'pause' } }))).toBeNull();
+    expect(readCiHold(event({ worker: -1 }))).toBeNull();
+    expect(readCiHold('held')).toBeNull();
+  });
+
+  it('finds a lane’s hold by its lane, else, from an older reporter, by its worker', () => {
+    const hold = readCiHold(event())!;
+    const older = readCiHold(event({ slot: undefined, worker: 5 }))!;
+    expect(ciHoldOf([hold, older], { shard: null, slot: 1 }, 3)).toBe(hold);
+    expect(ciHoldOf([hold, older], { shard: null, slot: 4 }, 5)).toBe(older);
+    expect(ciHoldOf([hold, older], { shard: 2, slot: 1 }, 3)).toBeNull();
+    expect(ciHoldOf([hold], { shard: null, slot: 0 }, 3)).toBeNull();
+    // A hold of a worker that left the lane is not the hold of the next worker's test there.
+    expect(ciHoldOf([hold], { shard: null, slot: 1 }, 5)).toBeNull();
+    expect(ciHoldOf([hold], { shard: null, slot: 1 }, null)).toBe(hold);
+  });
+
+  it('says where it stands, for whom and until when, its place, and that the CI job’s timeout still runs', () => {
+    const clock = (time: number) => (time === 1_763_727_900_000 ? '12:05' : '?');
+    expect(ciHoldWords(readCiHold(event())!, en, clock)).toEqual({
+      state: 'Failed, held at its line',
+      heldFor: 'Held for Ana and Bo · until 12:05',
+      place: 'tests/pay.spec.ts:12',
+      note: 'The CI job’s own timeout still runs.',
+    });
+    const nobody = readCiHold(event({ heldFor: [], paused: { ...event().paused, call: { title: 'Timed out' } } }))!;
+    expect(ciHoldWords(nobody, en, clock)).toMatchObject({ heldFor: 'Held · until 12:05', place: null });
+    expect(heldForWords(undefined, ['Ana'], en, clock)).toBeNull();
+    expect(heldForWords(1_763_727_900_000, ['Ana'], en, clock)).toBe('Held for Ana · until 12:05');
+  });
+
+  it('offers Let it go only on a held lane the surface’s own watch shows, as a controller’s', () => {
+    const hold = readCiHold(event());
+    expect(offersLetGo(hold, { shows: true, controller: true })).toBe(true);
+    expect(offersLetGo(hold, { shows: true, controller: false })).toBe(false);
+    expect(offersLetGo(hold, { shows: false, controller: true })).toBe(false);
+    expect(offersLetGo(null, { shows: true, controller: true })).toBe(false);
+  });
+});
+
+describe('Let it go asked of a CI hold', () => {
+  const hold = (worker: number, until: number | null = 1_763_727_900_000) => ({
+    worker: { shard: null, worker, slot: 1 },
+    call: { title: 'boom', file: null, line: null },
+    until,
+    heldFor: [],
+  });
+
+  it('names each hold of each worker apart', () => {
+    expect(ciHoldKey(hold(4))).toBe(':4:1763727900000');
+    expect(ciHoldKey(hold(4, null))).toBe(':4:');
+    expect(ciHoldKey({ ...hold(4), worker: { shard: 2, worker: 4, slot: 1 } })).toBe('2:4:1763727900000');
+  });
+
+  it('is asked once per hold of each lane, again only after a refusal or for the lane’s next hold', () => {
+    const asks = new LetGoAsks();
+    expect(asks.ask('lane-2', 'a')).toBe(true);
+    expect(asks.asked('lane-2', 'a')).toBe(true);
+    // Asked again, the same hold waits or went through: no second ask.
+    expect(asks.ask('lane-2', 'a')).toBe(false);
+    // Another lane's ask is its own.
+    expect(asks.asked('lane-3', 'b')).toBe(false);
+    expect(asks.ask('lane-3', 'b')).toBe(true);
+    asks.refused('lane-3', 'b');
+    expect(asks.asked('lane-3', 'b')).toBe(false);
+    expect(asks.asked('lane-2', 'a')).toBe(true);
+    // The lane's next hold is asked anew.
+    expect(asks.asked('lane-2', 'c')).toBe(false);
+    expect(asks.ask('lane-2', 'c')).toBe(true);
+    // A refusal of a hold no longer asked changes nothing.
+    asks.refused('lane-2', 'a');
+    expect(asks.asked('lane-2', 'c')).toBe(true);
   });
 });

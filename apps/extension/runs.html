@@ -383,6 +383,31 @@
       .ci-view {
         margin: 8px 12px 12px;
       }
+      .ci-held {
+        color: var(--error);
+        font-weight: 600;
+      }
+      /* A CI test held at its failure for the run's controllers: where it stands, its error and place, Let it go. */
+      .ci-held-box {
+        margin: 0 0 8px;
+        padding: 6px 10px;
+        font-size: 12px;
+        border: 1px solid var(--error);
+        border-radius: 6px;
+      }
+      .ci-held-box p {
+        margin: 0 0 4px;
+        overflow-wrap: anywhere;
+      }
+      .ci-held-box .ci-held-state strong {
+        color: var(--error);
+      }
+      .ci-held-box .error {
+        white-space: pre-line;
+      }
+      .ci-held-box .place {
+        font-family: var(--mono);
+      }
       .ci-view .page-head {
         font-size: 12px;
       }

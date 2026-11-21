@@ -6903,6 +6903,37 @@
   "runs_stateFailed": {
     "message": "Falhou, retido na sua linha"
   },
+  "runs_heldFor": {
+    "message": "Retido para $names$ · até $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Retido · até $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Deixar seguir"
+  },
+  "runs_letGoTitle": {
+    "message": "Encerrar a retenção: o teste é desmontado como seria, com o resultado inalterado"
+  },
+  "runs_heldJobTimeout": {
+    "message": "O tempo limite do próprio job de CI continua correndo."
+  },
   "runs_stateRunning": {
     "message": "Em execução"
   },
@@ -7493,7 +7524,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Somente leitura: elas rodam na CI, então nada aqui as pausa nem as conduz. Assistir mostra aqui a página de um teste em execução."
+    "message": "Só para assistir: elas rodam na CI, então nada aqui as conduz, exceto Deixar seguir numa falha retida para você. Assistir mostra aqui a página de um teste em execução."
   },
   "runs_ciTests": {
     "message": "Testes em execução agora"
@@ -7551,6 +7582,15 @@
   },
   "runs_ciRefusedNoTest": {
     "message": "Nenhum teste rodou ainda na raia deste worker."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Deixar seguir passa pela visualização desta janela sobre o worker: assista a ele de novo primeiro."
+  },
+  "runs_ciNotController": {
+    "message": "Você pode assistir a esta execução, não controlá-la."
+  },
+  "runs_ciNotHeld": {
+    "message": "Este worker não retém nenhum teste com falha agora."
   },
   "runs_ciRefusedOffline": {
     "message": "A instância não respondeu."

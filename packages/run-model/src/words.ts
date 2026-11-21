@@ -24,6 +24,11 @@ export const RUN_WORDS_EN = {
   // Where a worker stands.
   runs_failedAt: 'Failed at $place$',
   runs_stateFailed: 'Failed, held at its line',
+  runs_heldFor: 'Held for $names$ · until $time$',
+  runs_heldUntil: 'Held · until $time$',
+  runs_letGo: 'Let it go',
+  runs_letGoTitle: 'End the hold: the test tears down as it would have, its result unchanged',
+  runs_heldJobTimeout: 'The CI job’s own timeout still runs.',
   runs_stoppedBreakpoint: 'Stopped at a breakpoint',
   runs_stoppedStep: 'Stopped after a step',
   runs_stoppedPause: 'Paused',
@@ -176,7 +181,7 @@ export const RUN_WORDS_EN = {
   runs_ciWhereProject: '$project$, on $branch$',
   runs_ciProject: '$project$',
   runs_ciReadOnly:
-    'Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.',
+    'Watched only: these run on CI, so nothing here steers them, except Let it go on a failure held for you. Watch shows a running test’s page here.',
   // A run on the team instance: its number and page there, and sharing it live.
   runs_runNumber: 'Run #$id$',
   runs_openRunPage: 'Open',

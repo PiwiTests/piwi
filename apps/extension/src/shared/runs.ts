@@ -23,7 +23,7 @@ import {
 } from '@piwitests/core/run-hub';
 import { isViewPoint, readViewInput, type ViewInput } from '@piwitests/core/run-view';
 import { runsAttention, type RunAttention } from '@piwitests/run-model/attention';
-import type { CiRun } from '@piwitests/run-model/ci';
+import type { CiHold, CiRun } from '@piwitests/run-model/ci';
 import type { LaneState } from '@piwitests/core/live-lane';
 import type { LiveViewEnd } from '@piwitests/core/live-view';
 import { IN_WINDOW, laneWatchOf } from '@piwitests/run-model/stop';
@@ -124,7 +124,8 @@ export interface RunsState {
 
 /**
  * A test a CI run runs now, as its lane on the instance stands (`lane` of the run's stream): its shard (null for a run
- * not sharded), its lane (Playwright's `parallelIndex`), the worker in it, where it stands and the test's title.
+ * not sharded), its lane (Playwright's `parallelIndex`), the worker in it, where it stands and the test's title; while
+ * its worker holds it at its failure for the run's controllers, its hold (`held`, `live-worker` of the run's stream).
  */
 export interface RunsCiTest {
   shard: number | null;
@@ -133,6 +134,7 @@ export interface RunsCiTest {
   state: LaneState;
   title: string;
   retry: number;
+  held?: CiHold;
 }
 
 /**
@@ -170,7 +172,9 @@ export type CiWatchEnd = LiveViewEnd | 'silent' | 'closed' | 'broken' | 'moved';
  * Why a CI lane was not watched: the run is no longer listed (`unlisted`), it is listed but its lanes are not followed
  * now, newer runs' being (`unfollowed`), its lanes cannot be watched (`unwatchable`), no test ran in the lane yet
  * (`no-test`), the instance did not answer (`offline`) or not in time (`late`), its live view is not one the extension
- * reads (`older`), or it refused (`refused`, its sentence the answer's `message`, else its `status`).
+ * reads (`older`), or it refused (`refused`, its sentence the answer's `message`, else its `status`). Why **Let it go**
+ * did not reach the instance: the worker's watch does not show the lane (`unwatched`), the instance did not say it
+ * counts as a controller's (`uncontrolled`), or the lane holds nothing (`unheld`).
  */
 export type CiWatchFailure =
   | 'unlisted'
@@ -180,7 +184,10 @@ export type CiWatchFailure =
   | 'offline'
   | 'late'
   | 'older'
-  | 'refused';
+  | 'refused'
+  | 'unwatched'
+  | 'uncontrolled'
+  | 'unheld';
 
 /**
  * What a command of the window asks: a control; at a stop, an intent the test's window runs (the pause bar's Pick and
@@ -259,6 +266,11 @@ export type RunsRequest =
    * its images as `ci-frame` and its end as `ci-ended`.
    */
   | ({ type: 'ci-watch'; id: number; on: boolean } & RunsCiLane)
+  /**
+   * **Let it go** on the held failure of the CI lane the window watches, through the worker's watch of it: answered with
+   * `answer` of the same `id`, the instance's sentence or why not (`ci`).
+   */
+  | ({ type: 'ci-let-go'; id: number } & RunsCiLane)
   /** A command for a run, answered with `answer` of the same `id`. */
   | {
       type: 'command';
@@ -392,6 +404,8 @@ export type RunsEvent =
   | ({ type: 'ci-frame' } & RunsCiFrame)
   /** A CI lane the window watched ended without the window asking, and why. */
   | ({ type: 'ci-ended'; why: CiWatchEnd } & RunsCiLane)
+  /** The instance said the watch of the CI lane counts as a controller's: **Let it go** may be offered on it. */
+  | ({ type: 'ci-controller'; controller: boolean } & RunsCiLane)
   /** The hubs were asked for again, as the window's `find` asked: Look again has its answer. */
   | { type: 'found' };
 
@@ -424,6 +438,12 @@ export function parseRunsRequest(value: unknown): RunsRequest | null {
       if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
       if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
       return typeof on === 'boolean' ? { type: 'ci-watch', id, runId, shard, lane, on } : null;
+    }
+    case 'ci-let-go': {
+      const { id, runId, shard, lane } = value;
+      if (!isIndex(id) || id === 0 || !isIndex(runId) || runId === 0 || !isIndex(lane, 1024)) return null;
+      if (shard !== null && (!isIndex(shard, 1024) || shard === 0)) return null;
+      return { type: 'ci-let-go', id, runId, shard, lane };
     }
     case 'command': {
       const { id, hub, ref, worker, since, what } = value;

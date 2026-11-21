@@ -7,7 +7,7 @@ import { test, expect } from './fixtures.js';
  * The Runs window's CI runs against a stand-in Piwi instance: the run in progress it lists, the tests its lanes run
  * from the run's own stream, and **Watch** on one of them, read-only, through one watch of the run on the instance with
  * the extension's key, another lane shown by a POST on the same watch, its end said in the view with **Watch on the
- * dashboard**.
+ * dashboard**; and a test held at its failure for the run's controllers, with **Let it go** on a controller's watch.
  */
 
 let instance: CiInstance;
@@ -126,6 +126,89 @@ test('Watch on a CI run’s running test shows its lane read-only, through one w
   await page.close();
   await expect.poll(() => instance.watches[3]!.closed).toBe(true);
   await expect.poll(() => instance.runStreams.length).toBe(0);
+});
+
+/** The worker of the second lane holding its test at its failure for the run's controllers, as the instance says it. */
+const HELD = {
+  shard: null,
+  worker: 5,
+  slot: 1,
+  connected: true,
+  holds: true,
+  heldFor: ['Ana'],
+  paused: {
+    reason: 'held',
+    call: { title: 'Expected "Shipped", received "Pending"', file: 'tests/checkout.spec.ts', line: 42 },
+    test: 'checkout › ships abroad',
+    until: Date.UTC(2026, 10, 21, 12, 5),
+  },
+};
+
+test('a CI test held at its failure shows its hold, and Let it go on a controller’s watch of its lane alone', async ({
+  context,
+  extensionId,
+}) => {
+  instance.controller = true;
+  const page = await context.newPage();
+  await openRuns(page, extensionId);
+  const run = page.getByRole('region', { name: 'CI run #78' });
+  const second = run.getByRole('listitem').filter({ hasText: 'Worker 2' });
+  await expect(second).toBeVisible();
+  instance.worker(HELD);
+  await expect(second).toContainText('Failed, held at its line');
+  // Not watched: the hold shows in the list, with no Let it go.
+  await expect(run.getByRole('button', { name: 'Let it go' })).toHaveCount(0);
+
+  await second.getByRole('button', { name: 'Watch', exact: true }).click();
+  await expect.poll(() => instance.watches.length).toBe(1);
+  const held = run.locator('.ci-held-box');
+  await expect(held).toContainText('Failed, held at its line · Held for Ana · until');
+  await expect(held).toContainText('Expected "Shipped", received "Pending"');
+  await expect(held).toContainText('tests/checkout.spec.ts:42');
+  await expect(held).toContainText('The CI job’s own timeout still runs.');
+  // The instance's refusal, in its own words: Let it go may be asked again.
+  instance.letGoAnswer = { status: 409, body: { message: 'The instance refuses this let-go for now' } };
+  const letGo = held.getByRole('button', { name: 'Let it go' });
+  await letGo.click();
+  await expect.poll(() => instance.letGos.length).toBe(1);
+  expect(instance.letGos[0]).toEqual({
+    key: instance.key,
+    body: { watch: 'watch-0123456789ab', shard: null, worker: 5, slot: 1 },
+  });
+  await expect(held).toContainText('The instance refuses this let-go for now.');
+  await expect(letGo).not.toHaveAttribute('aria-disabled', 'true');
+  instance.letGoAnswer = {
+    status: 200,
+    body: { success: true, message: 'The test goes on: it tears down as it would have, its result unchanged.' },
+  };
+  await letGo.click();
+  await expect.poll(() => instance.letGos.length).toBe(2);
+  await expect(held).toContainText('The test goes on: it tears down as it would have, its result unchanged.');
+  // Let go, the hold is asked no more until it ends: a press goes nowhere.
+  await expect(letGo).toHaveAttribute('aria-disabled', 'true');
+  await letGo.dispatchEvent('click');
+  await page.waitForTimeout(300);
+  expect(instance.letGos).toHaveLength(2);
+
+  // The hold ends as the worker goes on.
+  instance.worker({ ...HELD, paused: null });
+  await expect(held).toHaveCount(0);
+  await expect(second).not.toContainText('Failed, held at its line');
+});
+
+test('a held CI test offers no Let it go to a watch the instance did not say is a controller’s', async ({
+  context,
+  extensionId,
+}) => {
+  const page = await context.newPage();
+  await openRuns(page, extensionId);
+  const run = page.getByRole('region', { name: 'CI run #78' });
+  const second = run.getByRole('listitem').filter({ hasText: 'Worker 2' });
+  await second.getByRole('button', { name: 'Watch', exact: true }).click();
+  await expect.poll(() => instance.watches.length).toBe(1);
+  instance.worker(HELD);
+  await expect(run.locator('.ci-held-box')).toContainText('Held for Ana');
+  await expect(run.getByRole('button', { name: 'Let it go' })).toHaveCount(0);
 });
 
 test('a CI run whose project’s live view is off lists its tests without Watch, saying why', async ({

@@ -6903,6 +6903,37 @@
   "runs_stateFailed": {
     "message": "Fehlgeschlagen, an seiner Zeile angehalten"
   },
+  "runs_heldFor": {
+    "message": "Gehalten für $names$ · bis $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Gehalten · bis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Freigeben"
+  },
+  "runs_letGoTitle": {
+    "message": "Das Halten beenden: Der Test wird wie vorgesehen abgebaut, sein Ergebnis bleibt unverändert"
+  },
+  "runs_heldJobTimeout": {
+    "message": "Das eigene Zeitlimit des CI-Jobs läuft weiter."
+  },
   "runs_stateRunning": {
     "message": "Läuft"
   },
@@ -7493,7 +7524,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Nur lesbar: Diese Läufe laufen in der CI, nichts hier hält sie an oder steuert sie. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
+    "message": "Nur zum Ansehen: Diese Läufe laufen in der CI, nichts hier steuert sie, außer „Freigeben“ bei einem für Sie angehaltenen Fehlschlag. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
   },
   "runs_ciTests": {
     "message": "Jetzt laufende Tests"
@@ -7551,6 +7582,15 @@
   },
   "runs_ciRefusedNoTest": {
     "message": "In der Spur dieses Workers lief noch kein Test."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Freigeben wirkt über die Ansicht dieses Fensters auf den Worker: Sehen Sie ihn zuerst wieder an."
+  },
+  "runs_ciNotController": {
+    "message": "Sie dürfen diesen Lauf ansehen, nicht steuern."
+  },
+  "runs_ciNotHeld": {
+    "message": "Dieser Worker hält gerade keinen fehlgeschlagenen Test an."
   },
   "runs_ciRefusedOffline": {
     "message": "Die Instanz hat nicht geantwortet."

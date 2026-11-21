@@ -13,9 +13,11 @@
  * The simulated workers' live messages go over the same channel (`live`),
  * published by the page that runs the simulator: the call each test is in and
  * the pages Inspect shows, which the demo's watch of a run reads
- * (`app/demo/live-watch.ts`).
+ * (`app/demo/live-watch.ts`). **Let it go** of a simulated worker's held
+ * failure goes the other way (`let-go`), from the service worker to the page
+ * that runs the simulator.
  */
-import type { LiveViewerMessage } from '@piwitests/core/live-view';
+import type { LiveViewerMessage, LiveWorkerId } from '@piwitests/core/live-view';
 import { dropProjectTestFilters } from '#shared/handlers/analytics/test-filter-memo';
 import type { RunProgressBroadcast } from '~~/server/utils/run-events';
 import { runProgressThrottle } from '~~/server/utils/run-progress-throttle';
@@ -37,7 +39,8 @@ export interface DemoRunEvent {
     | 'run-finalizing'
     | 'run-finished'
     | 'resources'
-    | 'lane';
+    | 'lane'
+    | 'live-worker';
   data: Record<string, unknown>;
 }
 
@@ -63,7 +66,9 @@ export type DemoEventMessage =
   | { scope: 'progress'; event: RunProgressBroadcast }
   | { scope: 'notification'; event: Record<string, unknown> }
   /** What a simulated worker of a run says to the views of it, as a watch's message carries it, with no data. */
-  | { scope: 'live'; runId: number; message: LiveViewerMessage };
+  | { scope: 'live'; runId: number; message: LiveViewerMessage }
+  /** **Let it go** of a simulated CI worker's held failure, which the simulator that holds it hears. */
+  | { scope: 'let-go'; runId: number; worker: LiveWorkerId };
 
 // ── Publishing (page side) ─────────────────────────────────────────────────
 
@@ -81,6 +86,11 @@ function getPublishChannel(): BroadcastChannel {
     publishChannel = new BroadcastChannel(CHANNEL_NAME);
   }
   return publishChannel;
+}
+
+/** Tell the simulator that holds a failure of run `runId`'s `worker` to let it go, from the service worker. */
+export function publishDemoLetGo(runId: number, worker: LiveWorkerId): void {
+  getPublishChannel().postMessage({ scope: 'let-go', runId, worker } satisfies DemoEventMessage);
 }
 
 /** Each live run's lanes, reduced from the events published for it, as the server's bus keeps them. */

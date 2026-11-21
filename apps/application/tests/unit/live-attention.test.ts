@@ -211,3 +211,40 @@ describe('the view that follows what needs attention', () => {
     expect(follower.update([signal(1, 'failed')], lane(0), LANES, now)).toBeNull();
   });
 });
+
+describe('a CI test held at its failure', () => {
+  const held = {
+    shard: null,
+    worker: 0,
+    slot: 0,
+    connected: true,
+    holds: true,
+    heldFor: ['Ana'],
+    paused: {
+      reason: 'held' as const,
+      call: { title: 'Failed: Timed out', file: 'tests/a.spec.ts', line: 9 },
+      test: 'held one',
+      until: Date.now() + 60_000,
+    },
+  };
+
+  test('needs attention while its live worker holds it, its row still running and its lane not told yet', () => {
+    const rows = [row({ title: 'held one', status: 'running' })];
+    expect(attentionSignals(rows, [], [held])).toEqual([
+      expect.objectContaining({ lane: { shard: null, slot: 0 }, reason: 'stopped', test: 'held one' }),
+    ]);
+    // Its lane told the stop: one signal of it.
+    const told = { id: 'view:held:Failed: Timed out', reason: 'held', title: 'Failed: Timed out', since: null };
+    expect(attentionSignals(rows, [runLane(0, 'held one', told)], [held])).toHaveLength(1);
+  });
+
+  test('keeps the view that follows what needs attention there while it holds, another lane failing', () => {
+    const follower = new AttentionFollower();
+    const lane0 = { shard: null, slot: 0 };
+    const lanes = [lane0, { shard: null, slot: 1 }];
+    const running = [row({ title: 'held one', status: 'running', executionId: 1 })];
+    follower.chose(attentionSignals(running, [], [held]), 0);
+    const failed = [...running, row({ title: 'other', status: 'failed', parallelIndex: 1, executionId: 2 })];
+    expect(follower.update(attentionSignals(failed, [], [held]), lane0, lanes, DWELL_MS + 1000)).toBeNull();
+  });
+});

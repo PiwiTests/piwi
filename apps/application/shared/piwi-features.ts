@@ -314,6 +314,15 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         parent: 'Live view of a run',
       },
       {
+        title: 'Hold a failing CI test',
+        summary:
+          'A CI test that fails while someone who may control the project’s runs watches its worker waits at its failure, its page open for Inspect, until Let it go or the project’s longest hold: off by default, its result unchanged.',
+        needs: ['fixtures'],
+        where: 'Project → Settings → Live view; Test run → Tests → Watch → Let it go',
+        doc: 'features/hold-ci-failure',
+        parent: 'Live view of a run',
+      },
+      {
         title: 'Share a local run live',
         summary:
           'Let a teammate watch a run on your machine from its page on the team instance: Share live from VS Code, a JetBrains IDE, the Runs window or the desktop app, and stop it the same way.',

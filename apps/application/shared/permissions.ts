@@ -136,7 +136,7 @@ export const PERMISSION_LABELS: Record<Permission, string> = {
   'triage:write': 'Triage clusters and gaps',
   'quarantine:write': 'Quarantine and release tests',
   'ai:run': 'Run AI diagnosis (spends tokens)',
-  'run:control': 'Re-run in CI, bisect, Flake Lab, fix attempts',
+  'run:control': 'Re-run in CI, bisect, Flake Lab, fix attempts, let a held CI test go',
   'test-assets:write': 'Edit selections and test functions',
   'run:submit': 'Upload runs',
   'project:manage': 'Edit project settings and Jira binding',

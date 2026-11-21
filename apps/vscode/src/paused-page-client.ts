@@ -266,6 +266,34 @@ textAgain?.addEventListener('click', () => {
   textAgain.disabled = true;
   post({ type: 'text' });
 });
+/** Let it go, on a CI lane's held failure: off from the click until the extension says its ask was answered. */
+const letGo = byId<HTMLButtonElement>('let-go');
+letGo?.addEventListener('click', () => {
+  letGo.disabled = true;
+  post({ type: 'let-go' });
+});
+/** The held failure's place opens its line in the editor. */
+byId<HTMLButtonElement>('held-place')?.addEventListener('click', () => post({ type: 'held-open' }));
+/** A CI lane's held failure, as the extension says it: every text set as text. */
+function drawHeld(held: PausedPageView['held']) {
+  const box = byId('held');
+  if (!box) return;
+  box.hidden = !held;
+  byId('held-state')!.textContent = held?.state ?? '';
+  byId('held-for')!.textContent = held?.heldFor ? `· ${held.heldFor}` : '';
+  byId('held-error')!.textContent = held?.error ?? '';
+  const place = byId<HTMLButtonElement>('held-place')!;
+  place.textContent = held?.place ?? '';
+  place.hidden = !held?.place;
+  place.disabled = !held?.at;
+  byId('held-note')!.textContent = held?.note ?? '';
+  if (letGo) {
+    letGo.textContent = held?.letGoLabel ?? '';
+    letGo.title = held?.letGoTitle ?? '';
+    letGo.hidden = !held?.letGo;
+    letGo.disabled = !!held?.asking;
+  }
+}
 /** Open the trace so far, in the worker panel: off from the click until the extension says its ask was answered. */
 const trace = byId<HTMLButtonElement>('trace');
 trace?.addEventListener('click', () => {
@@ -369,6 +397,7 @@ window.addEventListener('message', (event: MessageEvent<{ type: string; view: Pa
     trace.hidden = !event.data.view.trace;
     trace.disabled = !!event.data.view.trace?.asking;
   }
+  if (event.data.view.ci) drawHeld(event.data.view.held ?? null);
 });
 // The extension ends the watch itself when the panel hides or closes, and keeps Watch for when it shows again.
 window.addEventListener('pagehide', () => input.dispose());

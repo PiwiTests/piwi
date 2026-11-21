@@ -9,7 +9,8 @@
  * nothing for `IDLE_MS`, or on an error: the client hears why (`ended`) unless it asked. The layers the client asks
  * (`CiWatchParams.layers`) are the watch's (`layers`, changed in place), the call log being the full view's own: each
  * goes to the client as it comes (`piwi/ciLayer`), the lane's alone, none it did not ask for. Nothing here reaches the
- * run's workers: no control, input or pick.
+ * run's workers: no control, input or pick, but **Let it go** (`letGo`) on a test of the lane held at its failure, which
+ * goes to the instance on this watch, only once its `hello` said it counts as a controller's (`watching`).
  */
 import {
   LIVE_STREAM_TYPE,
@@ -25,7 +26,7 @@ import { LANE_TEXTS_PER_SECOND, readLaneLayers, type LaneLayer } from '@piwitest
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import { FrameSender } from './client-page-view.js';
 import type { PiwiClient } from './piwi-client.js';
-import type { CiFrame, CiLayer, CiSession, CiWatchParams, RunControlResult } from './protocol.js';
+import type { CiFrame, CiLayer, CiLetGoParams, CiSession, CiWatchParams, RunControlResult } from './protocol.js';
 
 /** The size the editors' panels show a CI lane at, in device pixels; the instance holds it within its bounds. */
 export const CI_WATCH_SIZE = { width: 960, height: 600 };
@@ -69,6 +70,8 @@ export interface CiWatchOptions {
   openMs?: number;
   /** How long after the page's text was asked another ask of it is merged with that one. */
   textMs?: number;
+  /** The lane the watch shows changed, or whether it counts as a controller's: **Let it go** follows (`watching`). */
+  changed?: () => void;
 }
 
 /** A lane of a CI run, as the client names it (`lane` from 1, as `CiTest.lane`), and the worker that ran there last. */
@@ -85,6 +88,8 @@ interface Watch extends Lane {
   abort: AbortController;
   /** The id the instance's stream opened with, which a change names; null until its `hello`. */
   id: string | null;
+  /** Its `hello` said it counts as a controller's: its person may control the project's runs. */
+  controller: boolean;
   /** The lanes asked of it, counted: an answer to an earlier one changes nothing. */
   asked: number;
   /** The layers the client shows, in `LANE_LAYERS`' order. */
@@ -241,12 +246,63 @@ export class CiWatch {
     this.stop();
   }
 
+  /**
+   * The lane of the run `runId` the watch shows for the session of `root` (`lane` from 1), and whether the instance said
+   * it counts as a controller's; null while it shows none of that run.
+   */
+  watching(root: string, runId: number): { shard: number | null; lane: number; controller: boolean } | null {
+    const own = this.current;
+    if (!own || own.root !== root || own.runId !== runId) return null;
+    return { shard: own.shard, lane: own.lane, controller: own.controller };
+  }
+
+  /**
+   * **Let it go** on the lane the watch shows, whose held worker is `held` (the CI sessions' `heldWorker`): asked of the
+   * instance on this watch, only once its `hello` said it counts as a controller's. The instance's sentence, or why not.
+   */
+  async letGo(params: CiLetGoParams, held: LiveWorkerId | null): Promise<RunControlResult> {
+    const own = this.current;
+    const shard = params.shard ?? null;
+    if (
+      !own?.id ||
+      own.runId !== params.runId ||
+      own.shard !== shard ||
+      own.lane !== params.lane ||
+      (params.root !== undefined && own.root !== params.root)
+    ) {
+      return { ok: false, message: 'Watch this worker first: Let it go goes on the watch that shows it.' };
+    }
+    if (!own.controller) return { ok: false, message: 'You may watch this run, not control it.' };
+    if (!held) return { ok: false, message: 'This worker holds no failing test now.' };
+    let response: Response;
+    try {
+      response = await own.client.letGo(own.runId, { watch: own.id, ...held });
+    } catch {
+      return { ok: false, message: 'The instance did not answer.' };
+    }
+    if (!response.ok) return { ok: false, message: await refusal(response) };
+    let said: unknown = null;
+    try {
+      said = ((await response.json()) as { message?: unknown } | null)?.message;
+    } catch {
+      // No JSON: the test goes on all the same.
+    }
+    return {
+      ok: true,
+      message:
+        typeof said === 'string' && said.trim()
+          ? said.trim().slice(0, MAX_REFUSAL)
+          : 'The test goes on: it tears down as it would have, its result unchanged.',
+    };
+  }
+
   /** The watch ends as the client asked, or as another takes its place: the client hears nothing of it. */
   private stop(): void {
     const own = this.current;
     this.current = null;
     this.sender.clear();
     own?.abort.abort();
+    if (own) this.options.changed?.();
   }
 
   /** The watch ends of itself: the client hears why, last. */
@@ -269,7 +325,16 @@ export class CiWatch {
 
   /** Open the instance's watch of the run on the lane's worker, and read it until it ends. */
   private async open(client: PiwiClient, lane: Lane, layers: LaneLayer[]): Promise<RunControlResult> {
-    const watch: Watch = { ...lane, client, abort: new AbortController(), id: null, asked: 0, layers, textAsk: null };
+    const watch: Watch = {
+      ...lane,
+      client,
+      abort: new AbortController(),
+      id: null,
+      controller: false,
+      asked: 0,
+      layers,
+      textAsk: null,
+    };
     this.current = watch;
     const query = new URLSearchParams({
       worker: String(lane.worker),
@@ -360,6 +425,7 @@ export class CiWatch {
   /** Show another lane of the run on the watch open: its images go from now on, the lane before's no more. */
   private async change(watch: Watch, lane: Lane, layers: LaneLayer[]): Promise<RunControlResult> {
     Object.assign(watch, lane);
+    this.options.changed?.();
     // An instance that predates the layers hears of none while none were asked.
     const named = watchLayers(layers).length || watchLayers(watch.layers).length;
     watch.layers = layers;
@@ -454,6 +520,8 @@ export class CiWatch {
     switch (message.type) {
       case 'hello':
         watch.id = message.watch;
+        watch.controller = message.controller === true;
+        if (watch.controller) this.options.changed?.();
         return;
       case 'end':
         // An end naming no worker is the whole watch's; one naming the lane's is its view's, which is all it shows.
