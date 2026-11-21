@@ -60,6 +60,17 @@ describe('the project’s Playwright', () => {
     expect(resolvePlaywrightCli(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'cli.js'));
   });
 
+  test('a package the project’s node_modules folder links from elsewhere is the project’s too', () => {
+    const store = project('package-store', ['@playwright/test', 'playwright'], ['@playwright/test', 'playwright']);
+    const linked = path.join(dir, 'package-linked');
+    fs.mkdirSync(path.join(linked, 'node_modules', '@playwright'), { recursive: true });
+    for (const id of ['@playwright/test', 'playwright']) {
+      fs.symlinkSync(path.join(store, 'node_modules', id), path.join(linked, 'node_modules', id), 'dir');
+    }
+    expect(resolvePlaywrightCli(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'cli.js'));
+    expect(resolvePlaywrightLibrary(linked)).toBe(path.join(store, 'node_modules', '@playwright', 'test', 'index.js'));
+  });
+
   test('the real path of a linked folder, and the path as given when it does not exist', () => {
     const root = project('canonical', ['@playwright/test'], ['@playwright/test']);
     const link = path.join(dir, 'canonical-link');
