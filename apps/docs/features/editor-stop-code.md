@@ -35,7 +35,7 @@ headless too.
   behind the status bar's `</>` item, **Piwi: Write code at the stop…**.
 - **In a JetBrains IDE**,
   they are links in the inlay above the stopped line (by the same short names), in the gutter icon's menu, in the status
-  bar item's menu, and under **Tools → Piwi** with the same titles as VS Code's palette.
+  bar item's menu, and under **Tools → Piwi → Run control** with the same titles as VS Code's palette.
 
 None has a default key: bind one in **Preferences: Open Keyboard Shortcuts** or **Settings → Keymap** (search
 `piwi`). A stop offers only the actions its reporter takes: with one that predates them, none.
@@ -110,7 +110,7 @@ counted, and a line without a locator says nothing.
 
 When its run [holds a failing test](./watch-a-run#hold-failures) (with breakpoints or a `page.pause()`, from its
 start unless [your run options](./editor-runs#how-a-run-starts) choose otherwise, or once you turn it on with **Piwi:
-Turn hold failures on or off for the run**, **Tools → Piwi → Turn hold failures on** or **off**, or Piwi Picker's
+Turn hold failures on or off for the run**, **Tools → Piwi → Run control → Turn hold failures on** or **off**, or Piwi Picker's
 [Runs window](./runs-window)), the editor shows the failure as a stop of its own, at the line where the error entered
 the test's code, or at the call a test timeout cut short:
 

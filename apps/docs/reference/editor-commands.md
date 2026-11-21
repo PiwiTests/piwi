@@ -7,7 +7,8 @@ lang: en-US
 # Editor commands
 
 Every command the two editors offer, by what it acts on. VS Code lists them in the command palette under **Piwi:**;
-a JetBrains IDE lists them under **Tools → Piwi** and in **Find Action**, says caret for cursor and project for window,
+a JetBrains IDE lists them under **Tools → Piwi**, a run's in its **Run control** submenu while a run is live, and in
+**Find Action**, says caret for cursor and project for window,
 and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Some commands have a
 shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's keys
 ([The controls](/features/editor-run-control#the-controls)).

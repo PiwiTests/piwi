@@ -80,14 +80,14 @@ line** on the debugger's Show Execution Point key:
   way. While a run is [shared live](./share-live), its menu opens the run's page,
   copies its link, and has **Stop sharing the run**, which asks first.
 - **The editor's and the project view's context menus** have a **Piwi** submenu, in the VS Code extension's order:
-  run, then record. **Tools → Piwi** has six sections: run, record, a paused run, dashboard, agents, connection. Each
-  menu leaves out what does not apply.
+  run, then record. **Tools → Piwi** has six sections: run, record, run control (a submenu), dashboard,
+  agents, connection. Each menu leaves out what does not apply.
 - **[Recording](./editor-recording)** starts from **Record here…**, Alt+Enter or Alt+Insert, and **New → Playwright test
   (recorded)…** on a folder of a Playwright config; its controls are in a banner above the editor.
 - **[A paused run](./editor-run-control)**: the line a run is stopped at, Piwi's or [one the IDE's own **Run**
   started](./terminal-runs), has an arrow in the gutter and an inlay above it with **Resume**, **Step**, **Finish** and **Write code…**, the
   other controls in its context menu; they are also in the status bar item's menu, after each stop to go to, and
-  under **Tools → Piwi**, with **Pause the run** and **Stop the run**. A headless test's page shows in its worker's tab of
+  under **Tools → Piwi → Run control**, with **Pause the run** and **Stop the run**. A headless test's page shows in its worker's tab of
   the Piwi tool window (**Worker 1**), with the same controls, where a click on the image picks the locator of the
   element under it (Playwright 1.60 or later). On a JetBrains
   Gateway backend, forward the ports **Copy the pairing address for Piwi Picker** names:

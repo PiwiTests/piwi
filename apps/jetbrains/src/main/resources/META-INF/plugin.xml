@@ -116,8 +116,8 @@
     <actions>
         <group id="Piwi.Actions" text="Piwi" icon="/icons/piwi.svg" popup="true" compact="true">
             <!--
-              Six sections in this order, each showing only what applies: Run, Record, Run control (while a run is
-              live), Dashboard, Agents, Connection.
+              Six sections in this order, each showing only what applies: Run, Record, Run control (a submenu, while a
+              run is live), Dashboard, Agents, Connection.
             -->
             <add-to-group group-id="ToolsMenu" anchor="last"/>
             <group id="Piwi.Run" text="Run" compact="true">
@@ -216,7 +216,11 @@
               not take the key (RunControlAction.givesWayTo). While a run is live they go first among the actions a
               keymap gives the same key (PiwiRunActionPromoter), and give way when they do not apply.
             -->
-            <!-- One group for a run's controls, page, code actions, sharing and Stop, in this order wherever they show. -->
+            <!--
+              A submenu while a run is live, holding the one group for a run's controls, page, code actions, sharing and
+              Stop, in this order wherever they show.
+            -->
+            <group id="Piwi.RunControlMenu" class="dev.piwitests.jetbrains.PiwiLiveRunGroup" text="Run control" popup="true">
             <group id="Piwi.RunControl" text="Run control" compact="true">
             <action id="Piwi.PauseRun" class="dev.piwitests.jetbrains.PauseRunAction" text="Pause the run"
                     icon="AllIcons.Actions.Pause" use-shortcut-of="Pause"
@@ -290,6 +294,7 @@
             <action id="Piwi.StopRun" class="dev.piwitests.jetbrains.StopRunAction" text="Stop the run"
                     icon="AllIcons.Actions.Suspend"
                     description="End the process of the run started from Piwi"/>
+            </group>
             </group>
             <separator/>
             <group id="Piwi.Dashboard" text="Dashboard" compact="true">

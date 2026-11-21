@@ -63,8 +63,8 @@ view's output and on both status lines (`· 1 stuck?`), never while it stands st
 names its branch on both status lines (`CI run #130 on feature-x`, LR10 in part); a Runs view in the Piwi panel
 (`piwi.liveRuns`, beside Failures and CI Runs) and a Runs tab in the Piwi tool window list each run in progress, its
 workers by lane with their tests and stops, and its page, each row's Watch, Pause and watch, Resume, Step and Stop the
-run acting on it, and a run's row says and turns over its Hold failures (LR7 in part: run control as a Tools → Piwi
-submenu remains); a run the Testing view started shows each test's result as its worker ends it, from the run's own
+run acting on it, and a run's row says and turns over its Hold failures (LR7, its run control a **Run control** submenu of
+Tools → Piwi since, shown while a run is live, `Piwi.RunControlMenu`); a run the Testing view started shows each test's result as its worker ends it, from the run's own
 events (`piwi/runTest`), an instance or not, and a test's line takes its state from the run the editor follows,
 running, paused at a stop (a new paused mark, two bars on the pause bar's violet, the same SVG in both editors) or
 failed while its failure is held, then its result in a run that reaches no instance, until the config's next run or a
@@ -501,22 +501,6 @@ the debug session. ([L3](#l3))
 
 ### 8.4 The list
 
-<a id="lr7"></a>**LR7. The developer's own live run has no home in either editor, and nothing lists its workers, tests
-or stops in a view.** The run's 22 entries sit in Tools → Piwi while they apply (`plugin.xml:214-290`), and 20 of them
-again in the status popup while a run is live (`PiwiStatusBar.kt:187-192, 264-268`); VS Code shows it in its status
-item. `RunSession` carries each worker's test and state
-(`packages/editor/src/protocol.ts:1798-1842, 1865-1915`), which Piwi Picker's Runs window and the desktop tray list;
-the editors list the workers only as lines of the status tooltips (`Glue.workersNowText` at `Glue.kt:2160`,
-`workersNow` at `apps/vscode/src/run-control.ts:956`) and in Watch a Worker's Test's chooser
-(`Worker 2 · running <test>`). **(read)** Fix: a Runs tab in the Piwi tool window and a Runs view in VS Code (a new
-id: `piwi.runs` names the MCP provider), shown while a run is live, with the Runs window's rows (the run, then Worker N
-with its test, its state, Watch and Pause and Watch, a stop with its place and controls), and run control as a Tools →
-Piwi submenu; until then Watch and Pause and Watch sit in the status menu's run section. Whether VS Code's view sits
-beside Failures or in the Run and Debug container is decided: the Piwi panel (§13); workers as a debug session's threads are
-[LI10](#li10)'s alternative. ([L1](#l1))
-
-### 8.5 What the study's model brings
-
 <a id="lr10"></a>**LR10. A teammate's run of the branch reads as a plain run, and CI runs sit apart from the developer's
 runs.** `LiveRun` tells only the developer's own run and a CI run (`packages/editor/src/protocol.ts`), so a teammate's
 run reads `Piwi: run #131 · 4 of 9` in both status bars and `running in run #131` beside a test's result. **(read)**
@@ -907,7 +891,7 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 | Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings                                               |
 | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
-| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the CI list kept apart (decided)                                                                      | `ide` | [LR7](#lr7), LR9 (built), [LR10](#lr10)               |
+| <a id="l1"></a>L1 | **A Runs home for the developer's own runs in both editors**, placed as [LI9](#li9) says, with the catalog's actions, keys and names, Hold failures on each run's row, and the CI list kept apart (decided)                                                                      | `ide` | LR7 (built), LR9 (built), [LR10](#lr10)               |
 | <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)                                            |
 | <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)                                            |
 | <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19))                                   |

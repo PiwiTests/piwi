@@ -79,8 +79,8 @@ the call's title, its file and line, the test's title and since when, as each st
 row saying for how long once it has stood a minute. A stopped test is never marked [**Stuck?**](./stuck-tests).
 
 At a stop of a headed run, every tool offers **Show the browser**, which brings the test's window to the front where
-your system allows: **Piwi: Show the stopped test's browser** in VS Code and the stop's hover, **Tools → Piwi →
-Show the stopped test's browser** in a JetBrains IDE, and a button in the Runs window and the desktop app's tray. A
+your system allows: **Piwi: Show the stopped test's browser** in VS Code and the stop's hover, **Tools → Piwi → Run
+control** in a JetBrains IDE, and a button in the Runs window and the desktop app's tray. A
 headless run has none to show, nor does an older reporter.
 
 ### Hold failures
@@ -99,7 +99,7 @@ Headed or headless, it is off unless turned on; off, a failure goes on at once, 
   after its last call), or one whose start options choose it ([editor](./editor-runs#how-a-run-starts),
   [desktop app](./desktop-runs#each-worker)).
 - **While it runs**, from any tool that follows it: the editors (**Piwi: Turn hold failures on or off for the run**,
-  **Tools → Piwi → Turn hold failures on** or **off**), the switch on each run of the Runs window, the desktop app's
+  **Tools → Piwi → Run control**), the switch on each run of the Runs window, the desktop app's
   tray and Piwi Runner, or an agent (`run_follow`). Each tool shows it as the last one set it. Turned off, a held
   failure no pause bar shows goes on.
 - **Never** in a run nobody attends: a Flake Lab run, a bisect, a lab job, **Verify ×3**, a fix plan's verification, a
