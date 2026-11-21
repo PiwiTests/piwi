@@ -651,6 +651,14 @@ describe('hideKnownValues', () => {
     expect(hideKnownValues('a <b>1234567</b> and abc', ['1234567', 'abc'])).toBe('a <b>1234567</b> and abc');
   });
 
+  test('hides a text that is one of the values whole, spaces around it aside, whatever its length', () => {
+    expect(hideKnownValues('1234', ['1234'])).toBe(HIDDEN_VALUE);
+    expect(hideKnownValues(' 1234 ', [' 1234'])).toBe(HIDDEN_VALUE);
+    expect(hideKnownValues('1234 5678', ['1234'])).toBe('1234 5678');
+    expect(hideKnownValues('  ', ['  '])).toBe('  ');
+    expect(hideKnownValues('a        b', ['        '])).toBe('a        b');
+  });
+
   test('hides each of several values, and leaves the text as it is with none, or empty ones', () => {
     expect(hideKnownValues('one-AAAAAAAA two-BBBBBBBB', ['AAAAAAAA', 'BBBBBBBB'])).toBe(
       `one-${HIDDEN_VALUE} two-${HIDDEN_VALUE}`,

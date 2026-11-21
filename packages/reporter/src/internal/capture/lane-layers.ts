@@ -21,6 +21,7 @@ import {
 import {
   ariaMaskProblem,
   cutText,
+  hideKnownValues,
   hideSecretsInText,
   hideTypedText,
   isSecretLocator,
@@ -129,13 +130,30 @@ export function layersTest(): LayersTest | null {
   return current;
 }
 
+/** The longest title of a call the layers send, as Inspect's and the filmstrip's readers keep it. */
+const MAX_TITLE = 300;
+
 /**
- * The title the runner gives the call `id` of the running test, the text it types and its credentials hidden, cut to
- * 300 characters (`cutText`).
+ * A call's title as it leaves the worker: the text it types (`hideTypedText`) and its credentials hidden, cut to `max`
+ * characters when given (`cutText`), then the values the attempt knows are secrets hidden (`hideKnownValues`):
+ * `secrets`, else those known now (`knownSecrets`). A title shown before is shown the same again, the values known
+ * since hidden too.
  */
+export function shownTitle(title: string, options: { max?: number; secrets?: readonly string[] } = {}): string {
+  const hidden = hideSecretsInText(hideTypedText(title));
+  const cut = options.max === undefined ? hidden : cutText(hidden, options.max);
+  return hideKnownValues(cut, options.secrets ?? knownSecrets());
+}
+
+/** The title the runner gives the call `id` of the running test, shown as `shownTitle` shows it, 300 characters at most. */
 export function layersTitleOf(id: string): string | null {
   const title = current?.titleOf(id) ?? null;
-  return title === null ? null : cutText(hideSecretsInText(hideTypedText(title)), 300);
+  return title === null ? null : shownTitle(title, { max: MAX_TITLE });
+}
+
+/** An image of the filmstrip as a wire is sent it: its title shown with the values the attempt knows now hidden. */
+export function shownThumb(thumb: LaneThumb): LaneThumb {
+  return { ...thumb, title: shownTitle(thumb.title, { max: MAX_TITLE }) };
 }
 
 /** A wire's subscription to the page events: its pace, and how many it did not send since it last sent one. */

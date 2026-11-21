@@ -65,6 +65,7 @@ test('checkout', async ({ page, request }) => {
   await page.locator('#f2').fill('${CODE}');
   await page.getByRole('button', { name: 'Check' }).click();
   await page.getByRole('button', { name: 'Pay' }).click();
+  await page.getByText('${SECRET}').isVisible();
   await page.evaluate(() => {
     console.error('cart broke');
     setTimeout(() => { throw new Error('boom in page'); });
@@ -415,6 +416,8 @@ describe('the layers of a worker’s lane view', () => {
     expect(first.length).toBeLessThanOrEqual(MAX_FILMSTRIP);
     expect(new Set(first.map(({ thumb }) => thumb.call)).size).toBe(first.length);
     expect(first.some(({ thumb }) => thumb.title.includes("'Check'"))).toBe(true);
+    // The password the test typed, in a call's title.
+    expect(first.map(({ thumb }) => thumb.title)).toContain("Is visible getByText('<hidden>')");
     expect(first.every(({ data }) => Buffer.from(data, 'base64')[0] === 0xff)).toBe(true);
     const again = thumbs.filter(({ at }) => at >= askedAgainAt).map(({ thumb }) => thumb.call);
     expect(again).toEqual(expect.arrayContaining(first.map(({ thumb }) => thumb.call)));

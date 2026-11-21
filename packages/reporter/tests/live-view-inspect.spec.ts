@@ -83,6 +83,7 @@ test('traced', async ({ page }) => {
   await page.locator('#pw').fill('${SECRET}');
   await page.locator('#cc').fill('${CARD}');
   await page.locator('#go').click();
+  await page.locator('#out').getByText('${SECRET}').click();
   await fetch('${base}/m/traced/watch');
   await page.waitForTimeout(1200);
   await fetch('${base}/m/traced/inspect');
@@ -408,6 +409,9 @@ describe('Inspect on the team’s live view, of a project the runner traces', ()
     expect(all.includes(LINK_TOKEN)).toBe(false);
     const out = snapshotsOf('traced').map(({ message }) => Buffer.from(message.data).toString('utf8'));
     expect(out.some((json) => json.includes('"id":"out"},"<hidden>"'))).toBe(true);
+    // The password the page's field holds, in a call's title.
+    const titles = snapshotsOf('traced').map(({ message }) => message.snapshot.title);
+    expect(titles, JSON.stringify(titles)).toContain("Click locator('#out').getByText('<hidden>')");
   });
 
   it('says why no snapshot goes while the project masks elements, and sends them again once it does not', () => {

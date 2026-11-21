@@ -905,19 +905,24 @@ export function cutText(text: string, max: number): string {
  * `text` with each of `values` of 8 characters or more written as {@link HIDDEN_VALUE} wherever it appears, as written
  * and as a quoted value of an ARIA snapshot escapes it. A shorter value is left: it would also match inside words,
  * numbers and markup that have nothing to do with it (a three-letter value hides part of every word that holds it),
- * so a text shows it only where a rule reads where it stands (a field's value in a snapshot line, `withoutFieldSecrets`).
+ * so a text shows it only where a rule reads where it stands (a field's value in a snapshot line, `withoutFieldSecrets`),
+ * or where it is the whole text: a text that is one of `values`, spaces around either aside, is {@link HIDDEN_VALUE}.
  * Right before each {@link CUT_MARK} (the end of a text {@link cutText} shortened, or a cut of Playwright's inside
  * it), the longest start of such a value, as written or escaped, is hidden too when it is 4 characters or more
  * (`MIN_CUT_START`): a shorter one tells little of a value of 8 or more, and the end of the word before a `…` matches
  * one by chance. A start hidden is written with the characters before it, 8 in all, so no text grows longer than it was
- * (one whose start stands in its first 8 characters aside), and a text keeps the bound it was cut to. Every place is
- * found in `text` as it is, then each is hidden, places that overlap as one: a value that holds another, or starts
- * with it, is hidden whole whichever is known first.
+ * (one whose start stands in its first 8 characters aside, and a whole text under 8), and a text keeps the bound it was
+ * cut to. Every place is found in `text` as it is, then each is hidden, places that overlap as one: a value that holds
+ * another, or starts with it, is hidden whole whichever is known first. A value of spaces alone hides nothing.
  * The one rule for the values the attempt knows are secrets (`withoutFieldSecrets`, `maskAriaSnapshot`, the live call
- * log), so what one path hides another cannot show. No values leave `text` as it is. Pure.
+ * log, Inspect's snapshots, every call's title a worker sends), so what one path hides another cannot show. No values
+ * leave `text` as it is. Pure.
  */
 export function hideKnownValues(text: string, values: readonly string[]): string {
-  const forms = [...new Set(values.filter((v) => v.length >= 8).flatMap((v) => [v, escapedInQuotes(v)]))];
+  const known = values.filter((v) => v.trim());
+  const whole = text.trim();
+  if (whole && known.some((v) => v.trim() === whole)) return HIDDEN_VALUE;
+  const forms = [...new Set(known.filter((v) => v.length >= 8).flatMap((v) => [v, escapedInQuotes(v)]))];
   if (!forms.length) return text;
   const places: Array<[number, number]> = [];
   for (const form of forms) {

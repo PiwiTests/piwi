@@ -22,8 +22,10 @@ const dist = path.join(pkgRoot, 'dist', 'index.js');
 const project = path.join(pkgRoot, 'tests', `.run-channel-give-up-${process.pid}`);
 const REF = 'ed-0e0d0e0e';
 const TOKEN = 'run-channel-give-up-token-012345';
+/** Typed into a password field: a value the attempt knows is a secret from then on. */
+const SECRET = 'S3cr3t!Pw';
 
-const PAGE = `<!doctype html><title>a</title><h1>A</h1><button>Go</button>
+const PAGE = `<!doctype html><title>a</title><h1>A</h1><button>Go</button><label>Password <input type="password"></label>
 <script>document.querySelector('button').addEventListener('click', () => fetch('/clicked'));</script>`;
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
@@ -43,6 +45,11 @@ test('moves between waits', async ({ page }) => {
   await page.waitForTimeout(1500); // second wait
   await expect(page.getByRole('heading', { name: 'A' })).toBeVisible(); // stops
 });
+test('waits on a secret', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.getByLabel('Password').fill('${SECRET}');
+  await page.getByText('${SECRET}').click({ timeout: 20000 }); // waits
+});
 `;
 
 let server: FakeServer;
@@ -60,7 +67,7 @@ const ended = new Set<string>();
 /** The test the hub lets go on through its waits, to hear each call it waits in. */
 const MOVES = 'moves between waits';
 /** The calls the tests wait in: the click on a button that never shows, and the timeout. */
-const LONG_CALL = /Never|wait/i;
+const LONG_CALL = /Never|wait|getByText/i;
 const clicked: string[] = [];
 const bodies: string[] = [];
 const waitsAt: number[] = [];
@@ -212,6 +219,23 @@ describe('End the test while a Pause waits for its call', () => {
     expect(endOf('waits in a timeout')).toMatchObject({ status: 'skipped' });
     expect(clicked).toEqual([]);
     expect(output).toContain('the test is skipped as the call returns');
+  });
+
+  it('names the call a Pause waits in, and the call it stops at, with each value the attempt knows hidden', () => {
+    const begin = heard.findIndex(
+      (m) => m.type === 'test-begin' && m.title[m.title.length - 1] === 'waits on a secret',
+    );
+    const ofTest = heard.slice(begin);
+    const titles = ofTest.flatMap((m) =>
+      m.type === 'waiting' || m.type === 'stopped' ? [m.title] : m.type === 'notice' ? [m.message] : [],
+    );
+    expect(titles, output).toContain("Click getByText('<hidden>')");
+    expect(
+      titles.some((title) => title?.includes("waited in Click getByText('<hidden>')")),
+      output,
+    ).toBe(true);
+    expect(JSON.stringify(titles)).not.toContain(SECRET);
+    expect(endOf('waits on a secret')).toMatchObject({ status: 'skipped' });
   });
 
   it('says each call a Pause waits in as the test moves on, and stops at its next call that can', () => {

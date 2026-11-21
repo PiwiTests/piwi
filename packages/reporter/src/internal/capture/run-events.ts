@@ -8,10 +8,10 @@ import {
   PENDING_REQUEST_MS,
   type PageEvent,
 } from '@piwitests/core/live-layers';
-import { hideKnownValues, hideSecretsInText, hideSecretsInUrl, hideTypedText } from '@piwitests/core/mask';
+import { hideSecretsInText, hideSecretsInUrl } from '@piwitests/core/mask';
 import { MAX_POSITION_TITLE, MAX_RUN_EVENT_TEXT, type Place } from '@piwitests/core/run-channel';
 import type { ApiCall } from './api-requests.js';
-import { knownSecrets, layersTitleOf, pageEventsWanted, tellPageEvent } from './lane-layers.js';
+import { layersTitleOf, pageEventsWanted, shownTitle, tellPageEvent } from './lane-layers.js';
 import { zoneStepId } from './live-call-log.js';
 import { callSitePath } from './locator-healing.js';
 import { positionsWanted, runEventsWanted, tellEvent, tellPosition } from './run-channel.js';
@@ -84,13 +84,13 @@ export function callPlace(
 
 /**
  * A call's title: the one the runner gives its step (`Click getByRole('link', { name: 'Cart' })`, `layersTitleOf`),
- * else Playwright's own, else its name, as a live view's call log names a call; without the text a fill, a typing or an
- * insert types (`hideTypedText`), the values the attempt knows are secrets (`knownSecrets`) and its credentials hidden.
+ * else Playwright's own, else its name, as a live view's call log names a call; shown as `shownTitle` shows it, cut to
+ * `MAX_POSITION_TITLE`.
  */
 export function callTitle(zone: ApiZone): string {
   const id = zoneStepId(zone);
   const title = (id ? layersTitleOf(id) : null) || zone.title || zone.apiName || 'call';
-  return hideKnownValues(hideSecretsInText(hideTypedText(title)), knownSecrets()).slice(0, MAX_POSITION_TITLE);
+  return shownTitle(title, { max: MAX_POSITION_TITLE });
 }
 
 /** The first lines of a call's error, its credentials hidden. */

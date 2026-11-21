@@ -69,8 +69,9 @@ responsibilities.
      worker answers what the editor asks (`takes` and `features` in its `run-attach`). Three limits hold: a frame
      goes to the editor service alone, never stored nor attached, its secret fields painted over, and a headed stop's
      pause bar where `page-view.ts` can paint it; trusted input plays only while that stop's view, or the lane view
-     showing it, is watched; and every call's and stop's title goes through `hideTypedText` and `hideSecretsInText`
-     ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
+     showing it, is watched; and every call's and stop's title a worker sends goes through `shownTitle`
+     (`lane-layers.ts`: `hideTypedText`, `hideSecretsInText`, then `hideKnownValues` with the values the attempt knows
+     as it is sent) ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
    - with `PIWI_LIVE_VIEW` (set in `onBegin`; outside CI, `none:<why>` for a run without one), each worker's event
      stream to the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): opened in the
      background in a CI run, and outside CI only while the run channel shares the run (**Share live**) or, for a run no
@@ -163,7 +164,7 @@ responsibilities.
   `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
 - **A text cut before the attempt's known secrets are hidden in it is cut with `cutText`** (`@piwitests/core/mask`),
   never `.slice`: its mark makes `hideKnownValues` hide the start of a value the cut left at its end (the call log's
-  title, lines and error, `layersTitleOf`; `tests/lane-layers.spec.ts`).
+  title, lines and error, `shownTitle`; `tests/lane-layers.spec.ts`).
 - **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
   Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
   screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.

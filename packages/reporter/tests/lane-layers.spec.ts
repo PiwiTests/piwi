@@ -14,6 +14,7 @@ import {
   layersTestBegan,
   layersTestEnded,
   layersTitleOf,
+  shownThumb,
   takeLaneText,
 } from '../src/internal/capture/lane-layers.js';
 import { followCallLog, listenCalls, trackCalls } from '../src/internal/capture/live-call-log.js';
@@ -371,6 +372,20 @@ describe('the call log a view is told', () => {
       expect(title.length, title).toBeLessThanOrEqual(300);
       if (start >= MIN_START) expect(title.endsWith(`${HIDDEN_VALUE}${CUT_MARK}`), title).toBe(true);
     }
+  });
+
+  it('hides in a call’s title, and an image’s of the filmstrip, each value the attempt knows as it is sent', () => {
+    const hooks: Array<Record<string, (...args: unknown[]) => void>> = [];
+    trackCalls({ _instrumentation: { addListener: (listener: (typeof hooks)[number]) => hooks.push(listener) } });
+    const titleOf = () => `Click getByText('${VALUE}')`;
+    layersTestBegan({ id: 'known-title', began: Date.now(), titleOf, fixtureCall: () => false, trace: null });
+    const thumb = { call: 'call@1', title: titleOf(), index: 1, width: 10, height: 10, at: 0 };
+    expect(layersTitleOf('call@1')).toBe(titleOf());
+    expect(shownThumb(thumb)).toEqual(thumb);
+    // The keyboard types it: a value the attempt knows from then on.
+    hooks[0]!.onApiCallBegin!({}, { method: 'keyboardType', params: { text: VALUE } });
+    expect(layersTitleOf('call@1')).toBe(`Click getByText('${HIDDEN_VALUE}')`);
+    expect(shownThumb(thumb)).toEqual({ ...thumb, title: `Click getByText('${HIDDEN_VALUE}')` });
   });
 
   it('tells a call log as it is while no value is known', async () => {

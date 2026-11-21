@@ -3,7 +3,7 @@ import type { Browser, Page, WorkerInfo } from '@playwright/test';
 import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
 import { LIVE_CALL_LOGS_PER_SECOND, type LiveCallLog } from '@piwitests/core/live-view';
-import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
+import { hideSecretsInText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
@@ -76,6 +76,8 @@ import {
   layersTest,
   knownSecrets,
   layersTitleOf,
+  shownThumb,
+  shownTitle,
   subscribePageEvents,
   takeLaneText,
   type KeptThumb,
@@ -666,8 +668,8 @@ export function holdStop(
     type: 'stopped',
     stop: id,
     reason: stop.reason,
-    // The text the stopped call types stays in the worker, as on every surface.
-    title: hideSecretsInText(hideTypedText(stop.title)),
+    // The text the stopped call types, and each value the attempt knows, stay in the worker, as on every surface.
+    title: shownTitle(stop.title),
     place: stop.place,
     locator: stop.locator,
     bar: stop.bar,
@@ -972,7 +974,7 @@ function startLaneStrip(): void {
     const next = strip.queue.shift();
     const now = laneAt().test;
     if (next && (now === null || next.test === now)) {
-      tellLayer({ layer: 'filmstrip', thumb: next.thumb, data: next.data.toString('base64') }, next.test);
+      tellLayer({ layer: 'filmstrip', thumb: shownThumb(next.thumb), data: next.data.toString('base64') }, next.test);
     }
   }, 1000 / LANE_THUMBS_PER_SECOND);
   send.unref?.();

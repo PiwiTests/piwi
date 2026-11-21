@@ -35,7 +35,6 @@ import {
   liveThumbHeader,
 } from '@piwitests/core/live-view';
 import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
-import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
@@ -50,6 +49,8 @@ import {
   followTraceText,
   knownSecrets,
   layersTitleOf,
+  shownThumb,
+  shownTitle,
   subscribePageEvents,
   takeLaneText,
   type KeptThumb,
@@ -629,7 +630,7 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
 export function liveViewStopped(stop: LiveStop): () => void {
   const own = link;
   if (!own || own.ended) return () => undefined;
-  const shown = { ...stop, call: hideCallSecrets(stop.call) };
+  const shown = shownStop(stop);
   own.stop = shown;
   postState(own, { type: 'stop', ...own.id, stop: shown });
   return () => {
@@ -638,12 +639,14 @@ export function liveViewStopped(stop: LiveStop): () => void {
   };
 }
 
-/**
- * A call as the run page shows it: its title without the text a fill, a typing or an insert types (`hideTypedText`),
- * and through `hideSecretsInText`, which a URL or a token may hold.
- */
+/** A call as the run page shows it: its title shown as `shownTitle` shows it, with the values the attempt knows now. */
 function hideCallSecrets(call: LiveCall): LiveCall {
-  return { ...call, title: hideSecretsInText(hideTypedText(call.title)) };
+  return { ...call, title: shownTitle(call.title) };
+}
+
+/** A stop as the run page shows it: its call's title hidden as `hideCallSecrets` hides it, each time it is posted. */
+function shownStop(stop: LiveStop): LiveStop {
+  return { ...stop, call: hideCallSecrets(stop.call) };
 }
 
 /** Post a stop's start or end after the ones before it, a few waiting at most, while the run is shared. */
@@ -723,7 +726,7 @@ function connect(own: Link): void {
       own.backTimer.unref?.();
     }
     // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
-    if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
+    if (own.stop) postState(own, { type: 'stop', ...own.id, stop: shownStop(own.stop) });
     response.setEncoding('utf8');
     let text = '';
     response.on('data', (chunk: string) => {
@@ -895,7 +898,7 @@ function setHold(own: Link, ms: number | null, pause: boolean): void {
   wait.timer = setTimeout(() => endWait(), until - Date.now());
   if (own.stop?.reason === wait.kind) {
     own.stop.until = until;
-    postState(own, { type: 'stop', ...own.id, stop: own.stop });
+    postState(own, { type: 'stop', ...own.id, stop: shownStop(own.stop) });
   }
 }
 
@@ -1209,7 +1212,11 @@ function startThumbPosts(own: Link): ReturnType<typeof setInterval> {
     if (thumbPosts.posting || !thumbPosts.queue.length || !own.asked || !layerAsked(own, 'filmstrip')) return;
     const next = thumbPosts.queue.shift()!;
     thumbPosts.posting = true;
-    void postBody(own, encodeLiveMessage(liveThumbHeader(own.id, next.thumb, next.test), next.data), LIVE_FRAME_TYPE)
+    void postBody(
+      own,
+      encodeLiveMessage(liveThumbHeader(own.id, shownThumb(next.thumb), next.test), next.data),
+      LIVE_FRAME_TYPE,
+    )
       .catch(() => undefined)
       .finally(() => {
         thumbPosts.posting = false;

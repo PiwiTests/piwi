@@ -90,7 +90,7 @@ import {
 import type { FlakePlan } from '@piwitests/core/flake-plan';
 import { joinErrorMessages } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
-import { SECRET_AUTOCOMPLETE, hideSecretsInText, hideTypedText, maskUrlFragment } from '@piwitests/core/mask';
+import { SECRET_AUTOCOMPLETE, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
 import {
   applyPickToSnapshots,
@@ -148,7 +148,7 @@ import { locatorOn } from './chain-locator.js';
 import { pickAtPoint } from './pick-at.js';
 import { actOnRef, readSnapshot, refLocators } from './agent-page.js';
 import { forgetWaitingRequests, readServerLogs, tellApiCall, watchCalls, watchPageEvents } from './run-events.js';
-import { layersTestBegan, layersTestEnded, layersTitleOf } from './lane-layers.js';
+import { layersTestBegan, layersTestEnded, layersTitleOf, shownTitle } from './lane-layers.js';
 import { errorMessage } from '../support/errors.js';
 import { regionSnapshotWithoutSecrets } from './region-snapshot.js';
 import { keepResponse, startKeeping, stopKeeping } from './kept-responses.js';
@@ -1892,8 +1892,9 @@ async function showStop(
   of: StopPage,
   failure: FailureStop | null = null,
 ): Promise<PauseAnswer | undefined> {
-  // Every surface names the stopped call without the text it types: the terminal, the bar, the hub, `piwi-pauses`.
-  const title = hideSecretsInText(hideTypedText(calledAs));
+  // Every surface names the stopped call without the text it types and the values the attempt knows: the terminal,
+  // the bar, the hub, `piwi-pauses`.
+  const title = shownTitle(calledAs);
   const testInfo = sink.testInfo;
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
@@ -3742,11 +3743,11 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
 
   await attachBrowserEnvironment(testInfo);
 
-  // The stops the pause bar showed.
+  // The stops the pause bar showed, each title with the values the attempt knows now hidden.
   if (sink.stops.length > 0) {
     await testInfo.attach(ATTACHMENT_NAMES.pauses, {
       contentType: 'application/json',
-      body: Buffer.from(JSON.stringify(sink.stops)),
+      body: Buffer.from(JSON.stringify(sink.stops.map((stop) => ({ ...stop, title: shownTitle(stop.title) })))),
     });
   }
 
@@ -4071,7 +4072,7 @@ const runControl: RunControl = {
     if (sink.pause) sink.pause.pause = false;
     skipAtFunctionEnd(sink);
     sink.end.abort(new Error(ENDED_AT_STOP_REASON));
-    const title = waiting?.title ? hideSecretsInText(hideTypedText(waiting.title)) : 'its call';
+    const title = waiting?.title ? shownTitle(waiting.title) : 'its call';
     const said = endable
       ? `Ended the test while it waited in ${title}: the call is given up, and the test is skipped.`
       : `Ended the test while it waited in ${title}: the test is skipped as the call returns.`;
@@ -4149,7 +4150,7 @@ function watchWaiting(sink: CaptureSink): void {
         const locatorCall = [...sink.locatorCalls.values()].find((c) => callSiteLine(c.location) === line);
         tellHub({
           type: 'waiting',
-          title: hideSecretsInText(hideTypedText(call.title)).slice(0, MAX_WAITING_TITLE),
+          title: shownTitle(call.title, { max: MAX_WAITING_TITLE }),
           place: { file, line: call.place.line, ...(call.place.column > 0 ? { column: call.place.column } : {}) },
           ms: locatorCall ? Math.max(0, Date.now() - locatorCall.startedAt) : null,
           endable: !!locatorCall?.endable,
