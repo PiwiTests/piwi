@@ -157,6 +157,18 @@ describe('a controller watching', () => {
     expect(views(sink).at(-1)).not.toHaveProperty('controller');
   });
 
+  test('is said to the watch itself as it opens, for its surface to offer Let it go', () => {
+    const { live } = relay();
+    connect(live, { ms: 300_000 });
+    const hello = (who: typeof ANA) => {
+      const sink = new FakeSink();
+      expect(live.openWatch(7, 1, { focus: WORKER, tiles: false }, () => sink, who.person, who)).toBeNull();
+      return sink.sent[0];
+    };
+    expect(hello(ANA)).toEqual({ type: 'hello', watch: expect.any(String), controller: true });
+    expect(hello(VIEWER)).toEqual({ type: 'hello', watch: expect.any(String) });
+  });
+
   test('counts no more once a change of the watch says its person may not control the run now', () => {
     const { live } = relay();
     const sink = connect(live, { ms: 300_000 });

@@ -91,7 +91,8 @@ import { timingSafeEqualStr } from './timing-safe';
  * (`setHold`), and whether a watch of a controller (`run:control` on the project, as the watch's route read it) shows
  * it in full (`view`'s `controller`); tiles never count. Its held stop reaches the run page with the names of the
  * controllers watching it then (`heldFor`), and **Let it go** (`letGo`) reaches its stream alone, from a controller's
- * watch that shows it in full while it holds.
+ * watch that shows it in full while it holds. A controller's watch hears it counts as one as it opens (`hello`'s
+ * `controller`).
  */
 
 const MB = 1024 * 1024;
@@ -836,7 +837,8 @@ export class LiveViewRelay {
       retry: null,
     };
     run.viewers.set(viewer.id, viewer);
-    this.send(viewer, { type: 'hello', watch: viewer.id });
+    // A controller's watch is told it counts as one, for its surface to offer **Let it go**.
+    this.send(viewer, { type: 'hello', watch: viewer.id, ...(who.controller ? { controller: true as const } : {}) });
     if (ask.focus && target) this.focusOn(run, viewer, ask.focus, target);
     sink.onDrain(() => {
       if (!sink.backedUp() && viewer.stall) {
