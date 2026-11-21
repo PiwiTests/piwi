@@ -51,7 +51,8 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   Picker tab's words): `GlueTest`
   (the marks and rows: `PiwiPluginTest`, drawn by `PiwiTestAnnotator` and `PiwiCodeVisionProvider`) and the VS Code
   extension's `tests/golden.test.ts` read the same file, so a change to either side's words changes the fixture and the
-  other side.
+  other side. `vscode-spec.json` is the service's answer for a spec with the marks and lens rows VS Code computes from
+  it, recorded by VS Code's integration suite: `PiwiPluginTest` draws the same from it.
 - **The settings page's group titles and choice labels are the editor service's settings registry**
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's

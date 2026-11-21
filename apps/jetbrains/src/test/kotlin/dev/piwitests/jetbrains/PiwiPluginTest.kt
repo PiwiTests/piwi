@@ -799,9 +799,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
      * tooltip, its backgrounds, and each line's entries, the words VS Code's `tests/golden.test.ts` holds its test
      * decorations and lenses to. A line with no result draws no icon.
      */
-    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() {
+    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() = drawsAsGolden("test-lines.json")
+
+    /**
+     * The spec of VS Code's integration fixture, drawn from the answer the editor service gave VS Code there, as VS Code
+     * computes its marks and lens rows from it: its integration suite records both in the golden fixture
+     * `vscode-spec.json`, and fails when they change.
+     */
+    fun testTheGutterDrawsTheSpecAsVsCodeComputesItFromTheServicesAnswer() = drawsAsGolden("vscode-spec.json")
+
+    private fun drawsAsGolden(name: String) {
         val golden = com.google.gson.JsonParser.parseString(
-            File("../../packages/editor/tests/golden/test-lines.json").readText(),
+            File("../../packages/editor/tests/golden/$name").readText(),
         ).asJsonObject
         val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
         val spec = golden.getAsJsonObject("spec")
@@ -856,11 +865,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     .flatMap { (document.getLineNumber(it.startOffset)..document.getLineNumber(it.endOffset - 1)).toList() }
                     .sorted()
             }
-            val failing = golden.getAsJsonObject("failing")
-            val test = failing.getAsJsonArray("test").map { it.asInt }
-            val failedAt = failing.get("line").asInt
-            assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
-            assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            val failing = golden.get("failing").takeIf { it.isJsonObject }?.asJsonObject
+            if (failing == null) {
+                assertEquals(emptyList<Int>(), linesOf(PiwiTestAnnotator.FAILING_LINE))
+                assertEquals(emptyList<Int>(), linesOf(PiwiTestAnnotator.FAILING_TEST))
+            } else {
+                val test = failing.getAsJsonArray("test").map { it.asInt }
+                val failedAt = failing.get("line").asInt
+                assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
+                assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            }
             // The rows above the lines, as the registered Code Vision providers draw them, each slot after the one before.
             val providers = DaemonBoundCodeVisionProvider.extensionPoint.extensionList.filterIsInstance<PiwiCodeVisionProvider>()
             assertEquals((0 until Glue.CODE_VISION_SLOTS).map(PiwiCodeVisionProvider::providerId), providers.map { it.id })
