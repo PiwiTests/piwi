@@ -160,9 +160,12 @@ Each PR is usable on its own; sizes are relative (S, M).
 
 ## Open questions
 
-1. **Several workers**: should a hold in one lane hold the others, as `--max-failures` stops them? This plan holds one
-   lane; the others go on.
-2. **The length**: is fifteen minutes the right ceiling, and should a controller extend a hold once?
+Both answered on 2026-11-21, after the five PRs shipped:
+
+1. **Several workers**: a hold or a pause waits in its own lane only; the run's other workers go on, so the CI job
+   ends as soon as it can.
+2. **The length**: fifteen minutes stays the ceiling, with no extension: a controller who needs longer runs the test
+   on their own machine, where Hold failures has no ceiling.
 
 ## Not in this plan
 
