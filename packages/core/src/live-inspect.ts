@@ -37,7 +37,7 @@
 import { isLayerCallId, isLayerTime } from './live-layers';
 import {
   HIDDEN_VALUE,
-  hideKnownValues,
+  knownValuesHider,
   hideSecretsInText,
   hideSecretsInUrl,
   hideTypedText,
@@ -517,18 +517,19 @@ interface StringHider {
 
 /**
  * The hider of a snapshot's strings with the attempt's `secrets`: a string that reads as a card's number is
- * `HIDDEN_VALUE`, the secrets are hidden as `hideKnownValues` hides them; then the credentials of what is left are
- * hidden, as an address (`hideSecretsInUrl`) or as a text (`hideSecretsInText`, each `url(…)` in it read as an address),
- * the images' and fonts' `data:` addresses kept. A blank string is left as it is.
+ * `HIDDEN_VALUE`, the secrets are hidden as `hideKnownValues` hides them (`knownValuesHider`, the secrets read once);
+ * then the credentials of what is left are hidden, as an address (`hideSecretsInUrl`) or as a text
+ * (`hideSecretsInText`, each `url(…)` in it read as an address), the images' and fonts' `data:` addresses kept. A blank
+ * string is left as it is.
  */
 function stringHider(secrets: readonly string[]): StringHider {
-  const values = [...new Set(secrets)];
+  const hideKnown = knownValuesHider(secrets);
   const by =
     (hide: (value: string) => string) =>
     (value: string): string => {
       if (!value.trim()) return value;
       if (looksLikeCardNumber(value.trim())) return HIDDEN_VALUE;
-      const out = hideKnownValues(value, values);
+      const out = hideKnown(value);
       return out === HIDDEN_VALUE ? out : hide(out);
     };
   return {

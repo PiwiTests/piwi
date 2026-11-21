@@ -4,6 +4,7 @@ import {
   HIDDEN_VALUE,
   cutText,
   hideKnownValues,
+  knownValuesHider,
   hideSecretsInText,
   hideSecretsInUrl,
   hideTypedText,
@@ -657,6 +658,21 @@ describe('hideKnownValues', () => {
     expect(hideKnownValues('1234 5678', ['1234'])).toBe('1234 5678');
     expect(hideKnownValues('  ', ['  '])).toBe('  ');
     expect(hideKnownValues('a        b', ['        '])).toBe('a        b');
+  });
+
+  test('hides as `knownValuesHider` of the same values does, text by text', () => {
+    const values = ['SAMPLE-SECRET-VALUE', 'say "hello" now', '12345678', '12345678-abcdefgh', '1234'];
+    const hide = knownValuesHider(values);
+    for (const text of [
+      'got SAMPLE-SECRET-VALUE and say \\"hello\\" now',
+      'tok 12345678-abcdefgh',
+      ` 1234 `,
+      cutText('waiting for SAMPLE-SECRET-VALUE', 18),
+      'nothing here',
+    ]) {
+      expect(hide(text), text).toBe(hideKnownValues(text, values));
+    }
+    expect(hide('tok 12345678-abcdefgh')).toBe(`tok ${HIDDEN_VALUE}`);
   });
 
   test('hides each of several values, and leaves the text as it is with none, or empty ones', () => {

@@ -525,6 +525,18 @@ describe('the secrets a snapshot shows', () => {
     }
   });
 
+  test('hide the values the attempt knows in a large snapshot without reading them again for each string', () => {
+    const secrets = Array.from({ length: 256 }, (_, i) => `secretvalue-${String(i).padStart(6, '0')}${'x'.repeat(40)}`);
+    const rows = Array.from({ length: 20_000 }, (_, i) => [
+      'SPAN',
+      { class: `c${i}`, title: `item ${i}` },
+      `Some text of the row number ${i}`,
+    ]);
+    const started = performance.now();
+    hideSnapshotSecrets(['DIV', {}, ...rows], { secrets });
+    expect(performance.now() - started).toBeLessThan(2000);
+  });
+
   test('are the values of the fields it hides, read from the snapshot alone, its labels followed', () => {
     const resolve: SnapshotResolver = (back, index) =>
       back === 1 && index === 0 ? { node: 'Verification code', resolve: () => null } : null;

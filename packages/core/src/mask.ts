@@ -919,10 +919,24 @@ export function cutText(text: string, max: number): string {
  * leave `text` as it is. Pure.
  */
 export function hideKnownValues(text: string, values: readonly string[]): string {
+  return knownValuesHider(values)(text);
+}
+
+/**
+ * {@link hideKnownValues} with `values` read once: the function that hides them in each text it is given, for many
+ * texts hidden with the same values (a snapshot's strings, a call log's lines). Pure.
+ */
+export function knownValuesHider(values: readonly string[]): (text: string) => string {
   const known = values.filter((v) => v.trim());
-  const whole = text.trim();
-  if (whole && known.some((v) => v.trim() === whole)) return HIDDEN_VALUE;
+  const wholes = new Set(known.map((v) => v.trim()));
   const forms = [...new Set(known.filter((v) => v.length >= 8).flatMap((v) => [v, escapedInQuotes(v)]))];
+  return (text) => hideForms(text, wholes, forms);
+}
+
+/** `text` with `forms` hidden as {@link hideKnownValues} hides them, and whole when it is one of `wholes`. */
+function hideForms(text: string, wholes: ReadonlySet<string>, forms: readonly string[]): string {
+  const whole = text.trim();
+  if (whole && wholes.has(whole)) return HIDDEN_VALUE;
   if (!forms.length) return text;
   const places: Array<[number, number]> = [];
   for (const form of forms) {
