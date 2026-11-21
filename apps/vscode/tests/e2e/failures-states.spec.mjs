@@ -60,8 +60,8 @@ function fixtureIn(name) {
 }
 
 /**
- * A window on the fixture with the failures view in sight, the instance at `url` and its `project`, or none named: the
- * variables blank, so the shell's own never reach it.
+ * A window on the fixture with the failures view in sight, the instance at `url` and its `project`, or none named, with
+ * no key: the variables blank, so the shell's own never reach it.
  */
 async function launch({ workspace, folder, url, project = url ? PROJECT.name : '' }) {
   window = await launchVSCode({
@@ -70,6 +70,8 @@ async function launch({ workspace, folder, url, project = url ? PROJECT.name : '
     env: {
       PIWI_DASHBOARD_URL: url ?? '',
       PIWI_PROJECT_NAME: project,
+      PIWI_API_KEY: '',
+      PIWI_DESKTOP_KEY: '',
       PIWI_DESKTOP_CONFIG: path.join(folder, 'no-desktop.json'),
     },
   });

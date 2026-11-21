@@ -287,8 +287,9 @@ a test's action list (`piwi.copyAgentContext`) names once picked.
 
 `piwi/failures` says which state the view is in, with its sentence (`view`, `failuresView`): failures; none in a run
 read (`clear`); an instance that does not answer (`unreachable`); a desktop app that did not prove it holds the token
-(`desktop-unproven`); an instance named and not read yet (`loading`); no run for a connected context, the project's or
-the baseline chosen (`norun`); no connection (`disconnected`), in that order, so a workspace with one context down still
+(`desktop-unproven`); an instance that refused the key or asked for one (`refused`); an instance named and not read yet
+(`loading`); no run for a connected context, the project's or the baseline chosen (`norun`); no project chosen or found
+(`no-project`); no connection (`disconnected`), in that order, so a workspace with one context down still
 reads clear when another read its run. Both clients show the sentence and link their actions for the state.
 
 Each item of `piwi/failures` carries:

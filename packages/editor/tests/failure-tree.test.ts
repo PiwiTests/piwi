@@ -641,13 +641,16 @@ describe('failuresView', () => {
     expect(failuresView([down, ctx({ hasRun: false })], 0).state).toBe('unreachable');
   });
 
-  test('an instance that does not answer comes before a refused key, which comes before no project and a read', () => {
+  test('a refused key comes after an instance that does not answer, no project after a read and a run to come', () => {
     const of = (problemKind: 'unreachable' | 'refused' | 'no-project') =>
       ctx({ connected: false, hasRun: false, problemKind, problem: problemKind });
     const reading = ctx({ connected: false, loading: true, hasRun: false });
     expect(failuresView([of('no-project'), of('refused'), of('unreachable')], 0).state).toBe('unreachable');
     expect(failuresView([of('no-project'), of('refused')], 0).state).toBe('refused');
-    expect(failuresView([reading, of('no-project')], 0).state).toBe('no-project');
+    expect(failuresView([reading, of('refused')], 0).state).toBe('refused');
+    expect(failuresView([of('no-project'), reading], 0).state).toBe('loading');
+    expect(failuresView([of('no-project'), ctx({ hasRun: false })], 0).state).toBe('norun');
+    expect(failuresView([of('no-project'), ctx({ connected: false, hasRun: false })], 0).state).toBe('no-project');
   });
 });
 

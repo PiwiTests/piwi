@@ -318,8 +318,8 @@ opening the cluster's page it answers or saying which ticket is linked already.
   tests shows while the view lists failures (`piwi.failuresView == failures`), the instance answering or not.
   `tests/menus.test.ts` holds the gates.
 - While the tree draws no node, the view says its state (`failuresViewEmpty`): for `clear`, `norun`, `unreachable`,
-  `desktop-unproven`, `refused`, `no-project` and `loading` the view's message is the service's sentence and the tree a node for each action
-  the state links (`FailuresView.links`), as VS Code hides the welcome under a message; for `disconnected` and
+  `desktop-unproven`, `refused`, `no-project` and `loading` the view's message is the service's sentence and the tree
+  a node for each action the state links (`FailuresView.links`), as VS Code hides the welcome under a message; for `disconnected` and
   `unavailable` (the service does not answer, read again when the client stops), the welcome content that follows the
   `piwi.failuresView` context key, with its buttons.
 - The view's `getChildren` is in the API `activate` returns (`failureChildren`).

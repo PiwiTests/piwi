@@ -83,8 +83,8 @@ the sentence and links both editors show (`failures-view.json`), which the servi
 welcome under a message, so a state with a sentence lists its links as the tree's nodes), and JetBrains' Failures tab
 drawn in each state by `PiwiPluginTest`; a run with no failure reads alike in both
 (`No failure in run #124 of main.`); VS Code's nightly suite opens a window in six of those states (a run with no
-failure, no run yet, no project chosen, an instance that does not answer, one that asks for a key, none named) and holds what the view shows on screen to the
-same golden file. L6 is built, two of its parts replaced: `PiwiPluginTest` draws the spec through the gutter's
+failure, no run yet, no project chosen, an instance that does not answer, one that asks for a key, none named) and
+holds what the view shows on screen to the same golden file. L6 is built, two of its parts replaced: `PiwiPluginTest` draws the spec through the gutter's
 annotator and the Code Vision providers rather than `CodeVisionTestCase` and `findAllGutters`, and the snapshot of VS
 Code it compares with is the integration suite's `vscode-spec.json` rather than one the nightly suite takes. NF10
 decided: the CI runs keep their own view and tab, apart from the developer's Runs view and tab. L4 in part since: the ASP.NET Core route manifest
