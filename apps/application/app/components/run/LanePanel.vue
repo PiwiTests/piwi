@@ -975,7 +975,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
             </template>
           </figcaption>
           <p
-            v-if="(currentLog || stopLine) && !ended"
+            v-if="(currentLog || stopLine) && !ended && !(heldStop && workerState)"
             class="text-xs text-muted"
             data-testid="live-call-state"
             :data-stop="stop?.reason"

@@ -118,6 +118,7 @@ test.describe('Hold a failing CI test', () => {
       await expect(held).toContainText('Failed, held at its line');
       await expect(held).toContainText(failure.title);
       await expect(held).toContainText('The CI job’s own timeout still runs.');
+      await expect(panel.getByText('Failed, held at its line')).toHaveCount(1);
       await page.screenshot({ path: testInfo.outputPath('live-view-held.png') });
       const wide = page.viewportSize()!;
       await page.setViewportSize({ width: 390, height: 844 });
