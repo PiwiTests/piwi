@@ -1,5 +1,6 @@
 import type { LiveCall, LiveStop } from '@piwitests/core/live-view';
 import type { TestStop, TestStopReason } from '@piwitests/core/wire';
+import { clockTime, heldForWords } from '@piwitests/run-model/ci';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
 import type { TestCaseResult } from '~~/types/api';
@@ -28,25 +29,17 @@ export function stopWords(reason: string): string {
   return reason in STOP_WORDS ? STOP_WORDS[reason as TestStopReason] : STOP_WORDS.other;
 }
 
-/** A time of day as this page's clock reads it: hours and minutes. */
-function clockTime(time: number): string {
-  return new Intl.DateTimeFormat(undefined, { hour: '2-digit', minute: '2-digit' }).format(time);
-}
-
 /**
  * For whom a failed CI test is held, and until when (`Held for Ana · until 12:05`), as the instance names the
- * controllers watching it (none when it knows no names); null for a held stop that says no end.
+ * controllers watching it (none when it knows no names), in the run model's words (`heldForWords`); null for a held
+ * stop that says no end.
  */
 export function heldStopWords(
   stop: { until?: number },
   heldFor: readonly string[],
   clock: (time: number) => string = clockTime,
 ): string | null {
-  if (stop.until === undefined) return null;
-  const time = clock(stop.until);
-  return heldFor.length
-    ? englishRunSpeaker.say('runs_heldFor', { names: englishRunSpeaker.list(heldFor), time })
-    : englishRunSpeaker.say('runs_heldUntil', { time });
+  return heldForWords(stop.until, heldFor, englishRunSpeaker, clock);
 }
 
 /** How long a stop stands before its row and its lane panel say for how long. */
