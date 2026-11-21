@@ -376,6 +376,28 @@ export function showFlakyTestsLabel(count: number): string {
   return count === 1 ? "Show the run's flaky test" : `Show the run's ${count} flaky tests`;
 }
 
+/** The states whose sentence, from the service, the failures view shows above its welcome's buttons or its run. */
+const FAILURES_MESSAGE_STATES: ReadonlySet<string> = new Set([
+  'clear',
+  'norun',
+  'unreachable',
+  'desktop-unproven',
+  'loading',
+]);
+
+/**
+ * The failures view's message (`TreeView.message`): the service's sentence for its state (`FailuresResult.view`),
+ * else, from a service that names no state, no failure in the run it read; none beside failures.
+ */
+export function failuresViewMessage(result: FailuresResult | null): string | undefined {
+  const view = result?.view;
+  if (view) return FAILURES_MESSAGE_STATES.has(view.state) ? (view.message ?? undefined) : undefined;
+  const run = result?.run;
+  return run && !result?.items.length
+    ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
+    : undefined;
+}
+
 /** The failures view's description: how it groups, and the baseline it compares with (`by file · Baseline: …`). */
 export function failuresViewDescription(grouping: FailuresGrouping, baseline: string | undefined): string {
   const by = `by ${FAILURES_GROUPINGS.find((g) => g.grouping === grouping)?.label.toLowerCase() ?? grouping}`;

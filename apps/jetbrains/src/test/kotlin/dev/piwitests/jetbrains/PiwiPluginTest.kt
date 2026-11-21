@@ -306,6 +306,51 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
+     * The Failures tab in each state of the failures view the golden fixture holds
+     * (`packages/editor/tests/golden/failures-view.json`): pushed as the service pushes it, its tree's empty text says the
+     * state's sentence and its links, each a registered action, as VS Code's view and welcome do.
+     */
+    fun testTheFailuresTabSaysEachStateOfTheViewAsTheGoldenFixtureHoldsIt() {
+        val service = project.service<PiwiProjectService>()
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        val golden = com.google.gson.JsonParser.parseString(
+            File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        val before = service.status
+        try {
+            PiwiFailuresToolWindowFactory().createToolWindowContent(project, window)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            val tab = window.contentManager.findContent(PiwiFailuresToolWindowFactory.TAB_NAME)!!
+            fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
+            val tree = all(tab.component).filterIsInstance<com.intellij.ui.treeStructure.Tree>().first()
+            val actions = ActionManager.getInstance()
+            for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+                val name = case.get("name").asString
+                val view = com.google.gson.Gson().fromJson(case.get("view"), FailuresView::class.java)
+                if (view.state == "failures") continue
+                service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
+                service.failuresChanged(FailuresResult(view = view))
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                val shown = case.getAsJsonObject("shown")
+                assertEquals(name, shown.get("text").asString, tree.emptyText.text)
+                val fragments = buildList {
+                    val each = tree.emptyText.secondaryComponent.iterator()
+                    while (each.hasNext()) {
+                        each.next()
+                        if (each.fragment.isNotBlank()) add(each.fragment)
+                    }
+                }
+                assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, fragments)
+                for (link in view.links) assertNotNull("$name: ${link.jetbrains}", actions.getAction(link.jetbrains))
+            }
+        } finally {
+            service.statusChanged(before ?: StatusResult(emptyList()))
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+        }
+    }
+
+    /**
      * The Log tab shows the lines written before it opened, then each line as it is written, a failed request under its
      * method once a minute; closed, it opens again with them all.
      */

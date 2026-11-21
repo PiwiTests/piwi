@@ -1,0 +1,273 @@
+{
+  "cases": [
+    {
+      "name": "a test fails",
+      "contexts": [
+        {
+          "connected": true,
+          "loading": false,
+          "hasRun": true,
+          "runId": 124,
+          "problemKind": null,
+          "problem": null,
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 2,
+      "view": {
+        "state": "failures",
+        "message": null,
+        "links": []
+      },
+      "shown": {
+        "text": null,
+        "links": []
+      }
+    },
+    {
+      "name": "no failure in the run read",
+      "contexts": [
+        {
+          "connected": true,
+          "loading": false,
+          "hasRun": true,
+          "runId": 124,
+          "problemKind": null,
+          "problem": null,
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "clear",
+        "message": "No failure in run #124 of main.",
+        "links": [
+          {
+            "label": "Refresh the latest run",
+            "vscode": "piwi.refreshRun",
+            "jetbrains": "Piwi.RefreshRun"
+          }
+        ]
+      },
+      "shown": {
+        "text": "No failure in run #124 of main.",
+        "links": ["Refresh the latest run"]
+      }
+    },
+    {
+      "name": "the instance does not answer",
+      "contexts": [
+        {
+          "connected": false,
+          "loading": false,
+          "hasRun": false,
+          "runId": null,
+          "problemKind": "unreachable",
+          "problem": "Could not reach https://piwi.example.com: timeout",
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "unreachable",
+        "message": "Could not reach https://piwi.example.com: timeout. Piwi tries again on its own.",
+        "links": [
+          {
+            "label": "Retry",
+            "vscode": "piwi.refresh",
+            "jetbrains": "Piwi.Refresh"
+          },
+          {
+            "label": "Open settings",
+            "vscode": "piwi.openSettings",
+            "jetbrains": "Piwi.OpenSettings"
+          }
+        ]
+      },
+      "shown": {
+        "text": "Could not reach https://piwi.example.com: timeout. Piwi tries again on its own.",
+        "links": ["Retry", "Open settings"]
+      }
+    },
+    {
+      "name": "the desktop app does not prove it holds its token",
+      "contexts": [
+        {
+          "connected": false,
+          "loading": false,
+          "hasRun": false,
+          "runId": null,
+          "problemKind": "desktop-unproven",
+          "problem": "The desktop app on port 3000 answered without proving it holds its token: restart or update it",
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "desktop-unproven",
+        "message": "The desktop app on port 3000 answered without proving it holds its token: restart or update it.",
+        "links": [
+          {
+            "label": "Retry",
+            "vscode": "piwi.refresh",
+            "jetbrains": "Piwi.Refresh"
+          },
+          {
+            "label": "Open the log",
+            "vscode": "piwi.openLog",
+            "jetbrains": "Piwi.OpenLog"
+          }
+        ]
+      },
+      "shown": {
+        "text": "The desktop app on port 3000 answered without proving it holds its token: restart or update it.",
+        "links": ["Retry", "Open the log"]
+      }
+    },
+    {
+      "name": "the instance is still being read",
+      "contexts": [
+        {
+          "connected": false,
+          "loading": true,
+          "hasRun": false,
+          "runId": null,
+          "problemKind": null,
+          "problem": null,
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "loading",
+        "message": "Piwi is reading the instance…",
+        "links": []
+      },
+      "shown": {
+        "text": "Piwi is reading the instance…",
+        "links": []
+      }
+    },
+    {
+      "name": "no run of the project yet",
+      "contexts": [
+        {
+          "connected": true,
+          "loading": false,
+          "hasRun": false,
+          "runId": null,
+          "problemKind": null,
+          "problem": null,
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "norun",
+        "message": "No run of Acme Mugs yet. Run the tests with the Piwi reporter.",
+        "links": [
+          {
+            "label": "Compare with…",
+            "vscode": "piwi.compareWith",
+            "jetbrains": "Piwi.CompareWith"
+          },
+          {
+            "label": "Get started",
+            "vscode": "piwi.getStarted",
+            "jetbrains": "Piwi.GetStarted"
+          }
+        ]
+      },
+      "shown": {
+        "text": "No run of Acme Mugs yet. Run the tests with the Piwi reporter.",
+        "links": ["Compare with…", "Get started"]
+      }
+    },
+    {
+      "name": "no run for the baseline chosen",
+      "contexts": [
+        {
+          "connected": true,
+          "loading": false,
+          "hasRun": false,
+          "runId": null,
+          "problemKind": null,
+          "problem": null,
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": "release (no run)"
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "norun",
+        "message": "Baseline: release (no run). Compare with another run.",
+        "links": [
+          {
+            "label": "Compare with…",
+            "vscode": "piwi.compareWith",
+            "jetbrains": "Piwi.CompareWith"
+          },
+          {
+            "label": "Get started",
+            "vscode": "piwi.getStarted",
+            "jetbrains": "Piwi.GetStarted"
+          }
+        ]
+      },
+      "shown": {
+        "text": "Baseline: release (no run). Compare with another run.",
+        "links": ["Compare with…", "Get started"]
+      }
+    },
+    {
+      "name": "no connection",
+      "contexts": [
+        {
+          "connected": false,
+          "loading": false,
+          "hasRun": false,
+          "runId": null,
+          "problemKind": null,
+          "problem": null,
+          "branch": "main",
+          "projectName": "Acme Mugs",
+          "baseline": null
+        }
+      ],
+      "failing": 0,
+      "view": {
+        "state": "disconnected",
+        "message": "Piwi is not connected to an instance, so it has no run to show. Recording works without one.",
+        "links": [
+          {
+            "label": "Connect…",
+            "vscode": "piwi.connect",
+            "jetbrains": "Piwi.Connect"
+          },
+          {
+            "label": "Record a new test file…",
+            "vscode": "piwi.recordFile",
+            "jetbrains": "Piwi.RecordNewFile"
+          }
+        ]
+      },
+      "shown": {
+        "text": "Piwi is not connected to an instance, so it has no run to show. Recording works without one.",
+        "links": ["Connect…", "Record a new test file…"]
+      }
+    }
+  ]
+}

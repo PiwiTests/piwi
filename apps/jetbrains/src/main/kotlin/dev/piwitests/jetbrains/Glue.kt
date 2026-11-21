@@ -1352,7 +1352,8 @@ object Glue {
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
      * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
      * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen
-     * (`baselineNoRun`), no connection; else no failure in the run read (`runId`).
+     * (`baselineNoRun`), no connection, no failure in the run read; else, from a service that names no state, no
+     * failure in the run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
         val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
@@ -1362,6 +1363,7 @@ object Glue {
             "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
             "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
             "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", links)
+            "clear" -> EmptyText(baselineNoRun ?: view.message ?: runId?.let { "No failure in run #$it" } ?: "No failure in the latest run", links)
             else -> EmptyText(
                 when {
                     baselineNoRun != null -> baselineNoRun

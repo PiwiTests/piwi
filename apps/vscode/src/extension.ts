@@ -367,6 +367,8 @@ export interface PiwiApi {
   gutter(uri: string): TestDecoration[];
   /** The latest `piwi/fileSummary` answer asked for an open file, which its gutter and lenses draw from; null before one. */
   fileSummary(uri: string): Promise<FileSummary | null>;
+  /** The failures view's state, which picks its welcome, and its message, as last drawn; null before. */
+  failuresShown(): { state: string; message: string | undefined } | null;
   /** The `piwi/coverage` answer last held for a file, by its URI, and whether its marks are shown; null before one. */
   coverage(uri: string): { result: CoverageResult; shown: boolean } | null;
   /** The tests the Testing view lists with the result last shown for each; null while `piwi.testExplorer` is off. */
@@ -2546,6 +2548,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<PiwiAp
       return failuresView.getChildren(node);
     },
     lastRun: () => lastRun,
+    failuresShown: () => failuresView.shown(),
     gutter: (uri) => gutter.get(uri) ?? [],
     fileSummary: async (uri) => (await summaries.get(uri)?.summary) ?? null,
     coverage: (uri) => {

@@ -23,6 +23,7 @@ import {
   failingRuns,
   failureNodes,
   failuresViewDescription,
+  failuresViewMessage,
   flakyTestsByRoot,
   isFlakyGroup,
   type FailureNode,
@@ -35,9 +36,6 @@ const DEBOUNCE_MS = 200;
 
 /** What the view's welcome says while the tree is empty: `piwi.failuresView` in `package.json`'s `viewsWelcome`. */
 type ViewState = FailuresViewState | 'unavailable';
-
-/** The states whose sentence, from the service, shows above the welcome's buttons. */
-const MESSAGE_STATES: ReadonlySet<ViewState> = new Set(['norun', 'unreachable', 'desktop-unproven', 'loading']);
 
 const ICON_COLORS: Record<string, string> = {
   error: 'problemsErrorIcon.foreground',
@@ -79,6 +77,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
   private readonly changed = new vscode.EventEmitter<FailureNode | undefined>();
   readonly onDidChangeTreeData = this.changed.event;
   private result: FailuresResult | null = null;
+  /** The state last drawn, which the welcome shows (`piwi.failuresView`). */
+  private state: ViewState | null = null;
   private roots: FailureNode[] = [];
   private readonly parents = new Map<string, FailureNode | undefined>();
   private timer: ReturnType<typeof setTimeout> | null = null;
@@ -135,7 +135,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     } catch {
       this.result = null;
       this.render();
-      setContextKey('piwi.failuresView', 'unavailable' satisfies ViewState);
+      this.state = 'unavailable';
+      setContextKey('piwi.failuresView', this.state);
     }
     return this.result;
   }
@@ -145,7 +146,13 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
     this.result = result;
     const state: ViewState = result.view?.state ?? (result.items.length ? 'failures' : 'disconnected');
     this.render();
+    this.state = state;
     setContextKey('piwi.failuresView', state);
+  }
+
+  /** The state the view's welcome shows (`piwi.failuresView`) and its message, as last drawn; null before. */
+  shown(): { state: ViewState; message: string | undefined } | null {
+    return this.state ? { state: this.state, message: this.view.message } : null;
   }
 
   /** Draw the failures as they were read last, for the run in progress. */
@@ -166,15 +173,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       : undefined;
     const grouping = this.result?.grouping ?? this.grouping;
     this.view.description = failuresViewDescription(grouping, this.result?.baseline?.label);
-    const run = this.result?.run;
-    // Without a run, the service's words name the instance or the branch above the welcome's buttons.
-    const view = this.result?.view;
-    this.view.message =
-      view && MESSAGE_STATES.has(view.state)
-        ? (view.message ?? undefined)
-        : run && !this.result?.items.length
-          ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
-          : undefined;
+    this.view.message = failuresViewMessage(this.result);
     this.changed.fire(undefined);
     this.drawn();
   }

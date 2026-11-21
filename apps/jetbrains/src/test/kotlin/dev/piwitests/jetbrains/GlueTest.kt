@@ -1091,6 +1091,29 @@ class GlueTest {
     }
 
     /**
+     * The tool window's empty text in each state of the failures view, as the golden fixture both editors read holds it
+     * (`packages/editor/tests/golden/failures-view.json`): the service's sentence and the actions it links, the words
+     * VS Code's view and welcome show. Beside failures, the tree shows them, and no empty text.
+     */
+    @Test
+    fun `the tool window says each state of the failures view as VS Code's view does`() {
+        val gson = com.google.gson.Gson()
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val name = case.get("name").asString
+            val view = gson.fromJson(case.get("view"), FailuresView::class.java)
+            if (view.state == "failures") continue
+            val shown = case.getAsJsonObject("shown")
+            val empty = Glue.failuresEmpty(view, null, null)
+            assertEquals(name, shown.get("text").asString, empty.text)
+            assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, empty.links.map { it.label })
+            assertEquals(name, view.links.map { it.jetbrains }, empty.links.map { it.actionId })
+        }
+    }
+
+    /**
      * The Piwi Picker tab's words, which the VS Code extension's Piwi Picker view says too: the golden fixture both read
      * (`packages/editor/tests/golden/picker-pairing.json`), in the JetBrains words.
      */
