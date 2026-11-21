@@ -25,6 +25,9 @@ const requireHere = createRequire(import.meta.url);
 /** A hold none of these tests reaches the end of, but the one held to its length. */
 const LONG_MS = 60_000;
 const SHORT_MS = 2_000;
+/** A test's timeout, and a hold past it. */
+const TIMEOUT_MS = 1_500;
+const OVER_TIMEOUT_MS = 3_000;
 
 /** What the fake instance says to the worker of each test, and what it does once that test is held. */
 interface Scenario {
@@ -43,19 +46,37 @@ const SCENARIOS: Record<string, Scenario> = {
   'the setting is off': { hold: null, full: true, controller: true, after: 'let-go' },
   'tiles alone': { hold: LONG_MS, full: false, controller: false },
   'a viewer watches': { hold: LONG_MS, full: true, controller: false },
+  // These two have bodies of their own (`SPEC`).
+  'held longer than its timeout': { hold: OVER_TIMEOUT_MS, full: true, controller: true },
+  'without the page fixture': { hold: LONG_MS, full: true, controller: true, after: 'let-go' },
 };
+/** The tests that fail on the `page` fixture's page, at once. */
+const PLAIN = Object.keys(SCENARIOS).slice(0, -2);
 
 const PAGE = '<!doctype html><title>a</title><h1>A</h1>';
 
 const SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
-for (const title of ${JSON.stringify(Object.keys(SCENARIOS))}) {
+const begin = async (page, title) => {
+  await page.goto('${base}/a');
+  await fetch('${base}/scenario?name=' + encodeURIComponent(title));
+  await new Promise((resolve) => setTimeout(resolve, 500));
+};
+for (const title of ${JSON.stringify(PLAIN)}) {
   test(title, async ({ page }) => {
-    await page.goto('${base}/a');
-    await fetch('${base}/scenario?name=' + encodeURIComponent(title));
-    await new Promise((resolve) => setTimeout(resolve, 500));
+    await begin(page, title);
     await expect(page.getByRole('heading')).toHaveText('Not A', { timeout: 300 });
   });
 }
+test('held longer than its timeout', async ({ page }) => {
+  test.setTimeout(${TIMEOUT_MS});
+  await begin(page, 'held longer than its timeout');
+  await expect(page.getByRole('heading')).toHaveText('Not A', { timeout: 300 });
+});
+test('without the page fixture', async ({ browser }) => {
+  const page = await browser.newPage();
+  await begin(page, 'without the page fixture');
+  await expect(page.getByRole('heading')).toHaveText('Not A', { timeout: 300 });
+});
 `;
 
 /** Each test's result, and when the runner heard it ended, as the run's own reporter writes them. */
@@ -63,7 +84,7 @@ const RESULTS_REPORTER = `const fs = require('node:fs');
 module.exports = class {
   constructor(options) { this.file = options.outputFile; this.tests = []; }
   onTestEnd(test, result) {
-    this.tests.push({ title: test.title, status: result.status, errors: result.errors.map((e) => e.message), endedAt: Date.now() });
+    this.tests.push({ title: test.title, status: result.status, errors: result.errors.map((e) => e.message), duration: result.duration, endedAt: Date.now() });
   }
   onEnd() { fs.writeFileSync(this.file, JSON.stringify(this.tests)); }
 };
@@ -79,7 +100,7 @@ let refuseNext = false;
 let run = {
   exitCode: null as number | null,
   output: '',
-  tests: [] as Array<{ title: string; status: string; errors: string[]; endedAt: number }>,
+  tests: [] as Array<{ title: string; status: string; errors: string[]; duration: number; endedAt: number }>,
 };
 
 function say(message: unknown): void {
@@ -277,6 +298,21 @@ describe('holding a failing CI test for its controllers', () => {
       'let go',
       'the last controller leaves',
       'its stream closes for good',
+      'held longer than its timeout',
+      'without the page fixture',
     ]);
+  });
+
+  it('holds past the test’s timeout without timing it out, its duration leaving the wait out', () => {
+    const test = run.tests.find((t) => t.title === 'held longer than its timeout')!;
+    expect(test.status).toBe('failed');
+    expect(test.errors.join('\n')).not.toMatch(/Test timeout/);
+    expect(heldFor('held longer than its timeout')).toBeGreaterThan(OVER_TIMEOUT_MS - 500);
+    expect(test.duration).toBeLessThan(TIMEOUT_MS);
+  });
+
+  it('holds a test that does not use the page fixture, on the page it opened', () => {
+    expect(stopsOf('without the page fixture')[0]?.stop?.reason).toBe('held');
+    expect(heldFor('without the page fixture')).toBeLessThan(5_000);
   });
 });

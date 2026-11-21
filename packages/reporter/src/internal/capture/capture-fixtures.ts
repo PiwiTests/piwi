@@ -4264,6 +4264,9 @@ export const piwiFixtures: Fixtures<
         sink.ending = true;
         await endShownStops(sink, 'ended');
         await awaitReleasedCalls(sink);
+        // A CI test that failed on a page of its own (`browser.newPage()`, a `beforeAll` page) is held here, while its
+        // live view still shows it: the `page` fixture's teardown holds the others.
+        if (liveViewMayHold() && sink.lastActivePage && !isPageClosed(sink.lastActivePage)) await holdFailure(sink);
         await liveViewTestEnded(liveOutcomeStatus(testInfo));
         showRunChannel();
         currentSink = null;
