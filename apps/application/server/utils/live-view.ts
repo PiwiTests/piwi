@@ -39,6 +39,7 @@ import {
   CONTROL_NOT_PAUSED,
   CONTROL_STOPPED,
   LET_GO_NOT_HELD,
+  PAUSE_SETTING_OFF,
   type LiveWorkerState,
 } from '#shared/live-view';
 import type { DbClient } from '../database';
@@ -278,6 +279,8 @@ interface WorkerLink {
   heldFor: string[];
   /** It said it can pause its test for its controllers too (`LIVE_PAUSE_FEATURE`). */
   pauses: boolean;
+  /** It was last told its project lets its controllers pause a CI test. */
+  pauseOn: boolean;
   /** Who asked its latest Pause, and who its paused stop was paused by: null when the instance knows no name. */
   pauseBy: string | null;
   pausedBy: string | null;
@@ -410,13 +413,6 @@ function laneOf(id: LiveWorkerId): string | null {
 }
 
 /** A worker's own fields, as each message about it names it. */
-/**
- * What a worker that can hold hears of its project's settings: how long a failing CI test is held (null for not), and,
- * to a worker that can pause, whether its controllers may pause one, which needs the hold.
- */
-function holdMessage(link: Pick<WorkerLink, 'pauses'>, ms: number | null, pause: boolean): InstanceToWorker {
-  return link.pauses && pause && ms !== null ? { type: 'hold', ms, pause: true } : { type: 'hold', ms };
-}
 
 function idOf(id: LiveWorkerId): LiveWorkerId {
   return id.slot === undefined
@@ -581,6 +577,7 @@ export class LiveViewRelay {
       holds: hold !== null,
       heldFor: before?.heldFor ?? [],
       pauses: hold !== null && pauses,
+      pauseOn: false,
       pauseBy: before?.pauseBy ?? null,
       pausedBy: before?.pausedBy ?? null,
       viewers: new Set(),
@@ -615,7 +612,7 @@ export class LiveViewRelay {
     // How long the project holds a failing test: the latest a project admin set here, else the route's read.
     if (hold) {
       const set = this.projectHold.get(entry.projectId) ?? { ms: hold.ms, pause: hold.pause === true };
-      sink.send(holdMessage(link, set.ms, set.pause));
+      sink.send(this.tellHold(link, set.ms, set.pause));
     }
     this.tell(link);
     this.publish(entry.runId, this.stateOf(link));
@@ -996,7 +993,7 @@ export class LiveViewRelay {
     const state: LiveWorkerState = { ...link.id, connected: true, paused: link.paused };
     if (!link.holds) return state;
     const held = { ...state, holds: true, heldFor: [...link.heldFor] };
-    if (!link.pauses) return held;
+    if (!link.pauses || !link.pauseOn) return held;
     return link.pausedBy ? { ...held, pauses: true, pausedBy: link.pausedBy } : { ...held, pauses: true };
   }
 
@@ -1015,7 +1012,10 @@ export class LiveViewRelay {
     for (const run of this.runs.values()) {
       if (run.projectId !== projectId) continue;
       for (const link of run.workers.values()) {
-        if (link.holds) link.sink.send(holdMessage(link, ms, pause));
+        if (!link.holds) continue;
+        link.sink.send(this.tellHold(link, ms, pause));
+        // The run page hears whether the worker takes a Pause now.
+        if (link.pauses) this.publish(run.id, this.stateOf(link));
       }
     }
   }
@@ -1048,6 +1048,16 @@ export class LiveViewRelay {
   }
 
   /**
+   * What a worker that can hold hears of its project's settings: how long a failing CI test is held (null for not),
+   * and, to a worker that can pause, whether its controllers may pause one, which needs the hold; the worker says it
+   * takes a Pause from then on, or not (`pauseOn`).
+   */
+  private tellHold(link: WorkerLink, ms: number | null, pause: boolean): InstanceToWorker {
+    link.pauseOn = link.pauses && pause && ms !== null;
+    return link.pauseOn ? { type: 'hold', ms: ms!, pause: true } : { type: 'hold', ms };
+  }
+
+  /**
    * **Pause**, **Resume** or **End the test** (`command`): the worker that the watch `watchId` of `person` shows in
    * full (`worker`) pauses its test at its next call, or, paused, goes on or ends the test. Refused for a watch of
    * another run or another person (404), one opened by someone who may not control the run (403), one that shows
@@ -1071,6 +1081,7 @@ export class LiveViewRelay {
       return { status: 409, message: 'This watch does not show that worker now.' };
     }
     if (!link.pauses) return { status: 409, message: CONTROL_CANNOT_PAUSE };
+    if (!link.pauseOn) return { status: 409, message: PAUSE_SETTING_OFF };
     if (command === 'pause') {
       if (link.paused) return { status: 409, message: CONTROL_STOPPED };
       link.pauseBy = viewer.name;

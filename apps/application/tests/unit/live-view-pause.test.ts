@@ -130,6 +130,19 @@ describe('the project’s pause setting, on a worker’s stream', () => {
   });
 });
 
+describe('the workers the run page hears of', () => {
+  test('say they can pause while their reporter can and the project lets its controllers, and as that changes', () => {
+    const { live, published } = relay();
+    connect(live, { ms: 300_000, pause: false });
+    expect(live.workersOf(7)[0]).not.toHaveProperty('pauses');
+    live.setHold(1, 300_000, true);
+    expect(published.at(-1)?.state).toMatchObject({ pauses: true });
+    expect(live.workersOf(7)[0]).toMatchObject({ pauses: true });
+    live.setHold(1, null, true);
+    expect(published.at(-1)?.state).not.toHaveProperty('pauses');
+  });
+});
+
 describe('Pause, Resume and End the test', () => {
   test('reach the watched worker’s stream alone, and its paused stop names who paused it', () => {
     const { live, published } = relay();
