@@ -1,0 +1,1 @@
+ALTER TABLE `projects` ADD `live_view_pause` integer DEFAULT false NOT NULL;

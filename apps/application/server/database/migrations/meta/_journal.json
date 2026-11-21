@@ -1303,6 +1303,13 @@
       "when": 1795264518244,
       "tag": "0185_live_view_hold",
       "breakpoints": true
+    },
+    {
+      "idx": 186,
+      "version": "6",
+      "when": 1795280987797,
+      "tag": "0186_live_view_pause",
+      "breakpoints": true
     }
   ]
 }

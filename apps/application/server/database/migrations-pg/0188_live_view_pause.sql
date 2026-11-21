@@ -1,0 +1,1 @@
+ALTER TABLE "projects" ADD COLUMN "live_view_pause" boolean DEFAULT false NOT NULL;

@@ -45,7 +45,7 @@ each endpoint's requirement (`x-required-permission`), so a script author can te
 | Triage clusters and gaps | `triage:write` | | | ✓ | ✓ | |
 | Quarantine and release tests | `quarantine:write` | | | ✓ | ✓ | |
 | Run AI diagnosis (spends tokens) | `ai:run` | | | ✓ | ✓ | |
-| Re-run in CI, bisect, Flake Lab, fix attempts, let a held CI test go | `run:control` | | | ✓ | ✓ | |
+| Re-run in CI, bisect, Flake Lab, fix attempts, let a held CI test go, pause a CI test | `run:control` | | | ✓ | ✓ | |
 | Edit selections and test functions | `test-assets:write` | | | ✓ | ✓ | |
 | Upload runs | `run:submit` | | | ✓ | ✓ | ✓ |
 | Edit project settings and Jira binding | `project:manage` | | | | ✓ | |

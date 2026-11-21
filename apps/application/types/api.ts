@@ -480,6 +480,8 @@ export interface ProjectWithTestRuns {
   liveViewHold?: boolean;
   /** How long such a test waits at most, in minutes: 1 to 15. */
   liveViewHoldMinutes?: number;
+  /** Whether someone with `run:control` watching a CI worker in full may pause its test, resume and end it. */
+  liveViewPause?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -531,6 +533,8 @@ export interface ProjectDetails {
   liveViewHold?: boolean;
   /** How long such a test waits at most, in minutes: 1 to 15. */
   liveViewHoldMinutes?: number;
+  /** Whether someone with `run:control` watching a CI worker in full may pause its test, resume and end it. */
+  liveViewPause?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
