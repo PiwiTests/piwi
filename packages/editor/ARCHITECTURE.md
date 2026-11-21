@@ -165,7 +165,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/debug-run.ts`: a run that debugs a failure (**Debug in my editor**): its test, its one-shot stop and the
   suggested locator outlined there.
 - `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
-- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
+- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces and each request's era (legacy or `2026-07-28`), shared with the
+  instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/shell-runs.ts`, `src/shell-run-events.ts`: the hub of the runs a desktop shell starts, built on it, which the
   desktop app's server and Piwi Runner's host run, and what its window reads and sends.
@@ -1501,7 +1502,10 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
 
 `src/agent-server.ts` (`AgentServer`) serves the runs the service built to the agents of this machine as an MCP
 server of its own, over MCP's streamable HTTP transport (one POST per request, answered with JSON; a notification
-alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`). It listens only once the
+alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`): a legacy client opens
+with `initialize` and names its version in the `MCP-Protocol-Version` header, a `2026-07-28` client names it in each
+request's `_meta` and its headers, and `checkMcpRequest` refuses with a 400 a version none serves or headers that do
+not match the body. It listens only once the
 client turns it on, as the service starts (`InitializationOptions.agents.enabled`) or later (`piwi/agents { enabled }`,
 answered with its address and token), and closes as the client turns it off or the service stops.
 
