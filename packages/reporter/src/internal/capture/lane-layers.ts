@@ -134,24 +134,31 @@ export function layersTest(): LayersTest | null {
 const MAX_TITLE = 300;
 
 /**
- * A call's title as it leaves the worker: the text it types (`hideTypedText`) and its credentials hidden, cut to `max`
- * characters when given (`cutText`), then the values the attempt knows are secrets hidden (`hideKnownValues`):
- * `secrets`, else those known now (`knownSecrets`). A title shown before is shown the same again, the values known
- * since hidden too.
+ * A call's title as the worker keeps it: the text it types (`hideTypedText`) and its credentials hidden, cut to `max`
+ * characters when given (`cutText`). The values the attempt knows are hidden as it is sent, once (`shownTitle`):
+ * hidden twice, a value that holds one hidden before shows the rest of it.
+ */
+export function keptTitle(title: string, max?: number): string {
+  const hidden = hideSecretsInText(hideTypedText(title));
+  return max === undefined ? hidden : cutText(hidden, max);
+}
+
+/**
+ * A call's title as it leaves the worker: kept as `keptTitle` keeps it, then the values the attempt knows are secrets
+ * hidden (`hideKnownValues`): `secrets`, else those known now (`knownSecrets`). Given a title it kept, never one it
+ * showed.
  */
 export function shownTitle(title: string, options: { max?: number; secrets?: readonly string[] } = {}): string {
-  const hidden = hideSecretsInText(hideTypedText(title));
-  const cut = options.max === undefined ? hidden : cutText(hidden, options.max);
-  return hideKnownValues(cut, options.secrets ?? knownSecrets());
+  return hideKnownValues(keptTitle(title, options.max), options.secrets ?? knownSecrets());
 }
 
-/** The title the runner gives the call `id` of the running test, shown as `shownTitle` shows it, 300 characters at most. */
+/** The title the runner gives the call `id` of the running test, kept as `keptTitle` keeps it, 300 characters at most. */
 export function layersTitleOf(id: string): string | null {
   const title = current?.titleOf(id) ?? null;
-  return title === null ? null : shownTitle(title, { max: MAX_TITLE });
+  return title === null ? null : keptTitle(title, MAX_TITLE);
 }
 
-/** An image of the filmstrip as a wire is sent it: its title shown with the values the attempt knows now hidden. */
+/** An image of the filmstrip as a wire is sent it: its kept title shown as `shownTitle` shows it. */
 export function shownThumb(thumb: LaneThumb): LaneThumb {
   return { ...thumb, title: shownTitle(thumb.title, { max: MAX_TITLE }) };
 }

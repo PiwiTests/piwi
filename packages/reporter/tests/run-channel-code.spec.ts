@@ -6,6 +6,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { formatRecordChannel, lineReader, parseHandoffToEditor } from '@piwitests/core/ide-recorder';
+import { CUT_MARK, HIDDEN_VALUE } from '@piwitests/core/mask';
 import { parseRunToHub, type HubToRun, type RunToHub } from '@piwitests/core/run-channel';
 import { jsonRes, playwrightAtLeast, startServer, type FakeServer, withoutCi } from './_helpers.js';
 
@@ -256,6 +257,9 @@ test('fails headed', async ({ page }) => {
 });
 `;
 
+/** A value the test types with the keyboard, which the attempt then knows is a secret, and no other rule finds. */
+const KNOWN = 'Tulip-Garden-Seven-Lanterns';
+
 const HEADLESS_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
 test('fails headless', async ({ page }) => {
   await page.goto('${base}/k');
@@ -270,6 +274,11 @@ test('fails, its page acting during the hold', async ({ page }) => {
 test('fails at an address with a credential', async ({ page }) => {
   await page.goto('${base}/a');
   await page.goto('http://127.0.0.1:1/reset?token=s3cr3t-reset-value&user=jane'); // fails
+});
+test('fails on a value the attempt knows', async ({ page }) => {
+  await page.goto('${base}/a');
+  await page.keyboard.type('${KNOWN}');
+  throw new Error('request failed for ${'x'.repeat(264)} ${KNOWN} was rejected');
 });
 `;
 
@@ -762,6 +771,7 @@ describe('code from a stop, the worker’s part', () => {
       ['fails headless', 'failed'],
       ['fails, its page acting during the hold', 'failed'],
       ['fails at an address with a credential', 'failed'],
+      ['fails on a value the attempt knows', 'failed'],
     ]);
     expect(connections[0]!.heard[0]).toMatchObject({
       type: 'run-attach',
@@ -1092,6 +1102,17 @@ describe('code from a stop, the worker’s part', () => {
       expect(text).toContain('/reset?token=<hidden>&user=jane');
       expect(text).not.toContain('s3cr3t-reset-value');
     }
+  });
+
+  it('hides each value the attempt knows in a failure’s title, cut across it, its error and `piwi-pauses`', () => {
+    const [stop] = stops['fails on a value the attempt knows']!;
+    expect(stop).toMatchObject({ reason: 'failure', bar: false });
+    expect(stop!.title.endsWith(`${HIDDEN_VALUE}${CUT_MARK}`), stop!.title).toBe(true);
+    expect(stop!.error).toContain(`${HIDDEN_VALUE} was rejected`);
+    const result = tests.find((t) => t.title === 'fails on a value the attempt knows')!;
+    const pauses = result.attachments.find((a) => a.name === 'piwi-pauses')!.body;
+    expect(pauses).toContain(`${HIDDEN_VALUE}${CUT_MARK}`);
+    for (const text of [stop!.title, stop!.error!, pauses]) expect(text).not.toContain(KNOWN.slice(0, 5));
   });
 
   it('keeps the evidence of a failure held as it was when the hold began', () => {

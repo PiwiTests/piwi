@@ -165,6 +165,10 @@ responsibilities.
 - **A text cut before the attempt's known secrets are hidden in it is cut with `cutText`** (`@piwitests/core/mask`),
   never `.slice`: its mark makes `hideKnownValues` hide the start of a value the cut left at its end (the call log's
   title, lines and error, `shownTitle`; `tests/lane-layers.spec.ts`).
+- **The attempt's known values are hidden in a text once, as it is sent, never in a text kept**: kept, a call's title
+  is `keptTitle`'s, shown with `shownTitle` (`lane-layers.ts`); hidden twice, a value that holds one hidden before
+  shows its rest (`tests/lane-layers.spec.ts`, `tests/live-view-worker.spec.ts`). A stop's `locator` and `error` go
+  with them hidden too, so a locator that holds one is not the call's own and matches nothing on the page.
 - **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
   Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
   screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.

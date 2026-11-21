@@ -630,21 +630,20 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
 export function liveViewStopped(stop: LiveStop): () => void {
   const own = link;
   if (!own || own.ended) return () => undefined;
-  const shown = shownStop(stop);
-  own.stop = shown;
-  postState(own, { type: 'stop', ...own.id, stop: shown });
+  own.stop = stop;
+  postState(own, { type: 'stop', ...own.id, stop: shownStop(stop) });
   return () => {
-    if (own.stop === shown) own.stop = null;
+    if (own.stop === stop) own.stop = null;
     postState(own, { type: 'stop', ...own.id, stop: null });
   };
 }
 
-/** A call as the run page shows it: its title shown as `shownTitle` shows it, with the values the attempt knows now. */
+/** A call as the run page shows it: its kept title shown as `shownTitle` shows it, with the values the attempt knows now. */
 function hideCallSecrets(call: LiveCall): LiveCall {
   return { ...call, title: shownTitle(call.title) };
 }
 
-/** A stop as the run page shows it: its call's title hidden as `hideCallSecrets` hides it, each time it is posted. */
+/** A stop as the run page shows it, kept as given: its call's title hidden as `hideCallSecrets` hides it, as it is posted. */
 function shownStop(stop: LiveStop): LiveStop {
   return { ...stop, call: hideCallSecrets(stop.call) };
 }

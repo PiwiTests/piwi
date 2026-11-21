@@ -48,6 +48,7 @@ test('moves between waits', async ({ page }) => {
 test('waits on a secret', async ({ page }) => {
   await page.goto('${base}/a');
   await page.getByLabel('Password').fill('${SECRET}');
+  await page.getByText('${SECRET}').textContent({ timeout: 500 }).catch(() => undefined);
   await page.getByText('${SECRET}').click({ timeout: 20000 }); // waits
 });
 `;
@@ -67,7 +68,7 @@ const ended = new Set<string>();
 /** The test the hub lets go on through its waits, to hear each call it waits in. */
 const MOVES = 'moves between waits';
 /** The calls the tests wait in: the click on a button that never shows, and the timeout. */
-const LONG_CALL = /Never|wait|getByText/i;
+const LONG_CALL = /Never|wait|Click getByText/i;
 const clicked: string[] = [];
 const bodies: string[] = [];
 const waitsAt: number[] = [];
@@ -97,6 +98,8 @@ beforeAll(async () => {
           heard.push(message);
           // Each test is paused until it waits in its long call, and ended there.
           const pauseSoon = () => setTimeout(() => send({ type: 'control', action: 'pause' }), 300);
+          // The hub follows the run's events, the calls' errors among them.
+          if (message.type === 'run-attach') send({ type: 'events', on: true });
           if (message.type === 'test-begin') {
             running = message.testId;
             titles.set(running, message.title[message.title.length - 1] ?? '');
@@ -191,6 +194,9 @@ afterAll(async () => {
 });
 
 const waiting = () => heard.filter((m): m is Extract<RunToHub, { type: 'waiting' }> => m.type === 'waiting');
+/** What the hub heard from the test that waits on a secret on. */
+const ofSecretTest = () =>
+  heard.slice(heard.findIndex((m) => m.type === 'test-begin' && m.title[m.title.length - 1] === 'waits on a secret'));
 const endOf = (title: string) => {
   const begin = heard.findIndex((m) => m.type === 'test-begin' && m.title[m.title.length - 1] === title);
   return heard.slice(begin).find((m): m is Extract<RunToHub, { type: 'test-end' }> => m.type === 'test-end');
@@ -221,21 +227,34 @@ describe('End the test while a Pause waits for its call', () => {
     expect(output).toContain('the test is skipped as the call returns');
   });
 
-  it('names the call a Pause waits in, and the call it stops at, with each value the attempt knows hidden', () => {
-    const begin = heard.findIndex(
-      (m) => m.type === 'test-begin' && m.title[m.title.length - 1] === 'waits on a secret',
-    );
-    const ofTest = heard.slice(begin);
-    const titles = ofTest.flatMap((m) =>
-      m.type === 'waiting' || m.type === 'stopped' ? [m.title] : m.type === 'notice' ? [m.message] : [],
-    );
-    expect(titles, output).toContain("Click getByText('<hidden>')");
+  it('names the call a Pause waits in, and the give-up notice, with each value the attempt knows hidden', () => {
+    const ofTest = ofSecretTest();
+    const waits = ofTest.flatMap((m) => (m.type === 'waiting' ? [m.title] : []));
+    expect(waits, output).toContain("Click getByText('<hidden>')");
+    const notices = ofTest.flatMap((m) => (m.type === 'notice' ? [m.message] : []));
     expect(
-      titles.some((title) => title?.includes("waited in Click getByText('<hidden>')")),
+      notices.some((notice) => notice.includes("waited in Click getByText('<hidden>')")),
       output,
     ).toBe(true);
-    expect(JSON.stringify(titles)).not.toContain(SECRET);
+    expect(JSON.stringify(ofTest)).not.toContain(SECRET);
     expect(endOf('waits on a secret')).toMatchObject({ status: 'skipped' });
+  });
+
+  it('names the call a Pause stops at, and its locator, with each value the attempt knows hidden', () => {
+    const stops = ofSecretTest().flatMap((m) => (m.type === 'stopped' ? [[m.title, m.locator]] : []));
+    expect(stops, output).toContainEqual(["Click getByText('<hidden>')", "getByText('<hidden>')"]);
+    expect(JSON.stringify(stops)).not.toContain(SECRET);
+  });
+
+  it('tells a call’s error with each value the attempt knows hidden', () => {
+    const errors = ofSecretTest().flatMap((m) =>
+      m.type === 'event' && m.event.kind === 'call' && m.event.error ? [m.event.error] : [],
+    );
+    expect(
+      errors.some((error) => error.includes("getByText('<hidden>')")),
+      JSON.stringify(errors),
+    ).toBe(true);
+    expect(JSON.stringify(errors)).not.toContain(SECRET);
   });
 
   it('says each call a Pause waits in as the test moves on, and stops at its next call that can', () => {

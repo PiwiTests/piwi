@@ -196,7 +196,9 @@ What the package does to a user's run, process by process.
   the instance's are (`maskSecretFields`). The titles of the stops and calls the run
   channel tells, and the call the pause bar and the terminal name, go through
   `shownTitle` (`hideTypedText`, `hideSecretsInText`, then `hideKnownValues` with the
-  attempt's known values as each is sent).
+  attempt's known values as each is sent; each kept until then as `keptTitle` keeps it). A
+  stop's `locator` and a failure's `error`, and a call event's `error`, go with those values
+  hidden too.
 - At a stop the bar shows, the editor can start the bar's **Pick a locator** or **Record
   here** (an intent: a `request` with `what: 'pick' | 'record'` that names the stop).
   `BarIntents` (`pause-at.ts`) hands it to the bar, which takes it as a click on its own
