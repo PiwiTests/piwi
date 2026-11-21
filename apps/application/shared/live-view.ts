@@ -36,6 +36,11 @@ export interface LiveWorkerState {
   pauseAsked?: { by?: string };
   /** Why the worker dropped the last Pause it was asked, until the next Pause or stop. */
   pauseDropped?: string;
+  /**
+   * Counts each change of its pause state as the instance saw it (a Pause asked, taken, dropped, a stop, Resume or End
+   * the test): a state that comes back, a Pause dropped again for the same reason, is another.
+   */
+  pauseSeq?: number;
 }
 
 /**

@@ -252,6 +252,31 @@ describe('a Pause the worker has not taken yet', () => {
     expect(published.at(-1)?.state).not.toHaveProperty('pauseDropped');
   });
 
+  test('stamps each change of the worker’s pause state with a sequence, a Pause dropped again for the same reason too', () => {
+    const { live, published } = relay();
+    connect(live, ON);
+    const ana = watch(live, { focus: WORKER }, ANA);
+    const seq = () => (published.at(-1)?.state as { pauseSeq?: number }).pauseSeq;
+    const seen: Array<number | undefined> = [seq()];
+    const step = (act: () => void) => {
+      act();
+      seen.push(seq());
+    };
+    const why = 'No test runs on this worker now.';
+    step(() => live.control(7, ana, ANA.person, WORKER, 'pause'));
+    step(() => live.receive(7, { type: 'pause-asked', ...WORKER, waiting: false, why }));
+    step(() => live.control(7, ana, ANA.person, WORKER, 'pause'));
+    step(() => live.receive(7, { type: 'pause-asked', ...WORKER, waiting: false, why }));
+    step(() => live.control(7, ana, ANA.person, WORKER, 'pause'));
+    step(() => live.receive(7, { type: 'pause-asked', ...WORKER, waiting: true }));
+    step(() => live.receive(7, { type: 'stop', ...WORKER, stop: PAUSED }));
+    step(() => live.control(7, ana, ANA.person, WORKER, 'resume'));
+    step(() => live.receive(7, { type: 'stop', ...WORKER, stop: null }));
+    expect(seen.every((n) => typeof n === 'number')).toBe(true);
+    // Each state the run page hears comes after the one before it.
+    for (let i = 1; i < seen.length; i++) expect(seen[i]!).toBeGreaterThan(seen[i - 1]!);
+  });
+
   test('End the test names who ended it to the worker', () => {
     const { live } = relay();
     const sink = connect(live, ON);

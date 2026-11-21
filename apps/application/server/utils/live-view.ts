@@ -291,6 +291,11 @@ interface WorkerLink {
   pauseDropped: string | null;
   /** Who asked the Pause its paused stop stands at; null for no name known. */
   pausedBy: string | null;
+  /**
+   * Counts each change of its pause state (a Pause asked, taken, dropped, a stop, Resume or End the test), which the run
+   * page hears with it (`pauseSeq`): a state that comes back, a Pause dropped again for the same reason, is another.
+   */
+  pauseSeq: number;
   /** The watches that show it in full. */
   viewers: Set<Viewer>;
   paused: LiveStop | null;
@@ -587,6 +592,7 @@ export class LiveViewRelay {
       pauseAsk: before?.pauseAsk ?? null,
       pauseDropped: before?.pauseDropped ?? null,
       pausedBy: before?.pausedBy ?? null,
+      pauseSeq: before?.pauseSeq ?? 0,
       viewers: new Set(),
       paused: before?.paused ?? null,
       rate: new RateWindow(MAX_RELAYED_FPS, this.now),
@@ -685,6 +691,7 @@ export class LiveViewRelay {
         link.pausedBy = message.stop?.reason === 'pause' ? (link.pauseAsk?.by ?? null) : null;
         if (message.stop?.reason === 'pause') link.pauseAsk = null;
         if (message.stop) link.pauseDropped = null;
+        link.pauseSeq++;
         this.publish(runId, this.stateOf(link));
         return null;
       case 'ended':
@@ -700,6 +707,7 @@ export class LiveViewRelay {
           link.pauseAsk = null;
           link.pauseDropped = message.why || null;
         }
+        link.pauseSeq++;
         this.publish(runId, this.stateOf(link));
         return null;
       case 'page-event':
@@ -1017,6 +1025,7 @@ export class LiveViewRelay {
       ...(link.pausedBy ? { pausedBy: link.pausedBy } : {}),
       ...(link.pauseAsk ? { pauseAsked: link.pauseAsk.by ? { by: link.pauseAsk.by } : {} } : {}),
       ...(link.pauseDropped ? { pauseDropped: link.pauseDropped } : {}),
+      pauseSeq: link.pauseSeq,
     };
   }
 
@@ -1113,7 +1122,6 @@ export class LiveViewRelay {
       link.pauseAsk = { by: viewer.name };
       link.pauseDropped = null;
       link.sink.send({ type: 'pause' } satisfies InstanceToWorker);
-      this.publish(runId, this.stateOf(link));
     } else if (link.paused?.reason === 'pause') {
       const end = viewer.name ? { type: 'end-test' as const, by: viewer.name } : { type: 'end-test' as const };
       link.sink.send((command === 'end' ? end : { type: 'resume' }) satisfies InstanceToWorker);
@@ -1123,6 +1131,9 @@ export class LiveViewRelay {
     } else {
       return { status: 409, message: CONTROL_NOT_PAUSED };
     }
+    // Each command taken is a change of the worker's pause state the run page hears.
+    link.pauseSeq++;
+    this.publish(runId, this.stateOf(link));
     return { ok: true, worker: idOf(link.id) };
   }
 
