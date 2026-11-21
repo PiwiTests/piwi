@@ -665,8 +665,24 @@ What the package does to a user's run, process by process.
   fixtures show (`showStop`, at the bar or for the editor) is posted as it starts and ends
   (`stop`), with the test's title and the call's through `hideSecretsInText`, whoever
   watches, and the stop held is posted again on each stream the worker opens, so a run
-  shared during a stop shows it; a CI run never stops, so this is for the run a person
-  shares.
+  shared during a stop shows it.
+- **A failing CI test held for its controllers.** A CI worker names `features=hold` on its
+  stream (`LIVE_HOLD_FEATURE`), and hears how long its project holds a failing test (`hold`,
+  in ms, null while the setting is off) and whether a person who may control the run shows
+  it in full (`view`'s `controller`). A test that fails while both stand, a test running and
+  the stream open (`liveViewMayHold`), is held by `holdFailure` as an interactive run's
+  failure is, in the `page` fixture's teardown, or, for a test that failed on a page of its
+  own, in `piwiCapture`'s before its view ends: its evidence read, the test timeout held
+  (`withTestTimeoutHeld`), no pause bar shown, its stop posted as `held` with its end
+  (`until`), and the run's log saying until when (UTC). The hold (`liveViewHold`) ends at
+  its length, at **Let it go** (`let-go`, taken on the worker's own stream open now, and only
+  while `hold` is set), as the instance says no controller shows the worker in full or
+  nobody watches, as `hold` turns null (which the instance also says before it closes the
+  stream of a run whose live view ends), as the stream that opens again is answered 404 or
+  409, and as the stream is refused for good or the worker ends; a stream that drops and
+  opens again keeps it. A new `hold` length applies to the hold that runs, its stop posted
+  again with its new `until`. The test then tears down as it would have, its result
+  unchanged (`tests/live-view-hold.spec.ts`, `tests/live-view-hold-worker.spec.ts`).
 - **Each frame is masked before it goes** (`live-mask.ts`): the page's secret fields (`SECRET_FIELD_SELECTOR`) and the
   project's `masks` are read through `internalCall` before and after the frame and painted over with the `jpeg-js` of
   `playwright-core/lib/utilsBundle`, feature-checked. Without it, a frame that shows one does not go, nor does one of
@@ -674,8 +690,8 @@ What the package does to a user's run, process by process.
 - **Its tests.** `tests/live-view.spec.ts`, `tests/live-view-share.spec.ts` and `tests/live-view-worker.spec.ts` drive
   the stream, who it posts for and when, `tests/live-view-binary.spec.ts` the two frame encodings,
   `tests/live-view-call-log.spec.ts` the call a full view follows, `tests/live-view-layers.spec.ts` its layers,
-  `tests/live-view-mask.spec.ts` the masks, and `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts`
-  Inspect (`internal/capture/live-inspect.ts`).
+  `tests/live-view-mask.spec.ts` the masks, `tests/live-view-hold.spec.ts` a failing CI test's hold, and
+  `tests/live-view-inspect.spec.ts` and `tests/live-inspect.spec.ts` Inspect (`internal/capture/live-inspect.ts`).
 
 **In the reporter process**
 

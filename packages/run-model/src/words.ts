@@ -24,6 +24,11 @@ export const RUN_WORDS_EN = {
   // Where a worker stands.
   runs_failedAt: 'Failed at $place$',
   runs_stateFailed: 'Failed, held at its line',
+  runs_heldFor: 'Held for $names$ · until $time$',
+  runs_heldUntil: 'Held · until $time$',
+  runs_letGo: 'Let it go',
+  runs_letGoTitle: 'End the hold: the test tears down as it would have, its result unchanged',
+  runs_heldJobTimeout: 'The CI job’s own timeout still runs.',
   runs_stoppedBreakpoint: 'Stopped at a breakpoint',
   runs_stoppedStep: 'Stopped after a step',
   runs_stoppedPause: 'Paused',

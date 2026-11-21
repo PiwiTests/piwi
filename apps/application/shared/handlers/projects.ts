@@ -96,7 +96,14 @@ import {
 import { parseProjectDecisions } from '#shared/capabilities';
 import { normalizeProjectTargets } from '#shared/analytics/targets';
 import { parseCoverageAreas, parseCoverageScope, type CoverageScope } from '@piwitests/core/coverage-scope';
-import { MAX_LIVE_MASKS, MAX_LIVE_MASK_LENGTH, parseLiveMasks } from '@piwitests/core/live-view';
+import {
+  MAX_LIVE_HOLD_MINUTES,
+  MAX_LIVE_MASKS,
+  MAX_LIVE_MASK_LENGTH,
+  MIN_LIVE_HOLD_MINUTES,
+  isLiveHoldMinutes,
+  parseLiveMasks,
+} from '@piwitests/core/live-view';
 import { repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
 import { parseTagKeyPatterns, resolveTagKeyPatterns } from '../integrations/tag-keys';
 
@@ -659,6 +666,9 @@ export const INVALID_COVERAGE_SCOPE =
 /** The error `updateProject` throws for masked elements `parseLiveMasks` refuses. */
 export const INVALID_LIVE_VIEW_MASKS = `liveViewMasks must be a list of at most ${MAX_LIVE_MASKS} Playwright locators of ${MAX_LIVE_MASK_LENGTH} characters at most, such as getByLabel('IBAN')`;
 
+/** The error `updateProject` throws for a hold's length `isLiveHoldMinutes` refuses. */
+export const INVALID_LIVE_VIEW_HOLD_MINUTES = `liveViewHoldMinutes must be a whole number of minutes from ${MIN_LIVE_HOLD_MINUTES} to ${MAX_LIVE_HOLD_MINUTES}`;
+
 /** The error `updateProject` throws for coverage areas `parseCoverageAreas` refuses. */
 export const INVALID_COVERAGE_AREAS =
   'coverageAreas must be a list of at most 20 { name, include: string[] }: distinct names of 1 to 40 letters, digits, spaces, ".", "_" or "-", each with at least one pattern';
@@ -735,6 +745,10 @@ export async function updateProject(
     askToWatch?: boolean;
     /** Playwright locators of the elements the live view paints over, beside the secret fields; null or [] removes them. */
     liveViewMasks?: unknown;
+    /** Whether a CI test that fails while a controller watches its worker waits at its failure (Hold a failing CI test). */
+    liveViewHold?: boolean;
+    /** How long such a test waits, in whole minutes (`isLiveHoldMinutes`). */
+    liveViewHoldMinutes?: number;
     /** `GeneratedSpecSettings`; null clears them. */
     generatedSpecs?: unknown;
     /** Per-project targets (`ProjectTargets`); null clears them. */
@@ -774,6 +788,8 @@ export async function updateProject(
     liveView,
     askToWatch,
     liveViewMasks,
+    liveViewHold,
+    liveViewHoldMinutes,
     generatedSpecs,
     targets,
     coverageScope,
@@ -784,6 +800,9 @@ export async function updateProject(
     defaultEnvironmentId,
     tagIds: dataTagIds,
   } = data;
+  if (liveViewHoldMinutes !== undefined && !isLiveHoldMinutes(liveViewHoldMinutes)) {
+    throw new Error(INVALID_LIVE_VIEW_HOLD_MINUTES);
+  }
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
   if (masks === null && liveViewMasks !== null) throw new Error(INVALID_LIVE_VIEW_MASKS);
   const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);
@@ -850,6 +869,8 @@ export async function updateProject(
         liveView,
         askToWatch,
         liveViewMasks: masks === undefined ? undefined : masks?.length ? masks : null,
+        liveViewHold,
+        liveViewHoldMinutes,
         generatedSpecs: generatedSpecs !== undefined ? (generatedSpecs as any) : undefined,
         targets: resolvedTargets,
         statusFilter: statusFilter === undefined ? undefined : statusFilterToStore(statusFilter),

@@ -107,9 +107,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   // The run page's live view: a live run's test workers hold its streams and post its frames, and a page watches
   // them. The demo runs no test worker and no browser: its simulator plays the workers' call logs to the page over the
   // demo's event channel, which the page's own watch reads (`app/demo/live-watch.ts`), so only the page Inspect shows
-  // at a call has a demo route.
+  // at a call, a simulated CI worker's held failure, and Let it go have demo routes.
   'GET /api/test-runs/:id/live-view',
-  'POST /api/test-runs/:id/live-view',
   'GET /api/test-runs/:id/live-view/watch',
   'POST /api/test-runs/:id/live-view/watch',
   'GET /api/test-runs/:id/live-view/workers',
