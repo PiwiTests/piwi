@@ -302,8 +302,7 @@ and the eight surfaces that must carry it are in the
 - **State limits plainly.** Playwright-only, pre-1.0, and "not the right tool if…" belong in the README and on the
   landing page. Trust is the point, not a caveat to bury.
 - **Piwi is "free" (of charge), never "open source" or "free software".** FSL-1.1-MIT is fair source: only the MIT
-  parts (the reporter, `core`, `picker-dom`, `integrations/`, `examples/`) are open source; a dated blog post keeps its
-  words under its update note.
+  parts (the reporter, `core`, `picker-dom`, `integrations/`, `examples/`) are open source.
 
 ## The home hero's illustration
 

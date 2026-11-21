@@ -25,7 +25,7 @@ export default defineConfig({
   title: 'Piwi Dashboard',
   titleTemplate: TITLE_TEMPLATE,
   description:
-    'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Free, self-hosted, zero telemetry.',
+    'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.',
   base: '/',
   // AGENTS.md is the agent guide for this directory, and CLAUDE.md the file
   // that loads it for Claude Code; neither is a page of the site: the guide
@@ -84,7 +84,7 @@ export default defineConfig({
       {
         property: 'og:description',
         content:
-          'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Free, self-hosted, zero telemetry.',
+          'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.',
       },
     ],
     ['meta', { property: 'og:image', content: ogImage }],

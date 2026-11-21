@@ -7,7 +7,7 @@ titleTemplate: false
 hero:
   name: "Piwi Dashboard"
   text: "Your Playwright results, kept and explained"
-  tagline: "CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Free, self-hosted, zero telemetry."
+  tagline: "Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used."
 
   actions:
     - theme: brand
