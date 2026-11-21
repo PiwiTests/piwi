@@ -48,7 +48,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   to the file updates the copy in the same change; `GlueTest` holds the two equal.
 - **The words both editors compute from the same answer are held equal by the golden fixtures**
   (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, a spec's test marks and lens rows, the Piwi
-  Picker tab's words): `GlueTest`
+  Picker tab's words, the Failures tab's empty text in each state): `GlueTest`
   (the marks and rows: `PiwiPluginTest`, drawn by `PiwiTestAnnotator` and `PiwiCodeVisionProvider`) and the VS Code
   extension's `tests/golden.test.ts` read the same file, so a change to either side's words changes the fixture and the
   other side. `vscode-spec.json` is the service's answer for a spec with the marks and lens rows VS Code computes from
