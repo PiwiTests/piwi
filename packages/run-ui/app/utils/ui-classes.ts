@@ -1,6 +1,6 @@
 /**
  * The neutral classes a few shared marks take, the same in the dashboard and Piwi Runner's window: code in a sentence,
- * a toggle button that is on, the current item in a strip of status-colored marks.
+ * a toggle button that is on, the current item in a strip of status-colored marks, the row that picks what shows.
  */
 
 /**
@@ -24,3 +24,9 @@ export const PRESSED_TOGGLE_CLASS = 'bg-elevated text-highlighted';
  * status color in both themes.
  */
 export const CURRENT_ITEM_RING_CLASS = 'ring-2 ring-offset-1 ring-offset-bg ring-inverted';
+
+/**
+ * The selected row of a list that picks what the page shows (an affected test, the opened attempt, the run shown): a
+ * raised surface inside a neutral ring, never the primary color.
+ */
+export const SELECTED_ROW_CLASS = 'bg-elevated ring-1 ring-inset ring-accented';

@@ -10,7 +10,8 @@
  * `current` event reports the test the playhead is on, for the tab to hand to the reel it opens next.
  */
 import type { Reel, ReelEntry, ReelGroup } from '#shared/video-reel';
-import { SELECTED_ROW_CLASS, formatDuration, getStatusIcon } from '~/utils';
+import { formatDuration, getStatusIcon } from '~/utils';
+import { SELECTED_ROW_CLASS } from '@piwitests/run-ui/ui-classes';
 import { statusPalette } from '@piwitests/run-ui/status-palette';
 import { REEL_SEARCH_FIELDS, reelSearchCount, searchReelEntries } from '~/utils/video-reel-search';
 

@@ -13,7 +13,7 @@ import {
   PROVIDER_TILES,
   isLocalCliProvider,
 } from '~/utils/ai-provider-catalog';
-import { SELECTED_ROW_CLASS } from '~/utils';
+import { SELECTED_ROW_CLASS } from '@piwitests/run-ui/ui-classes';
 
 const props = defineProps<{
   purpose: ModelPurpose;

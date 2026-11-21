@@ -1280,5 +1280,17 @@
         "example": "3"
       }
     }
+  },
+  "runui_runsLabel": {
+    "message": "Runs",
+    "description": "Accessible name of the list of a window’s runs, beside the run it shows. One word."
+  },
+  "runui_runsShown": {
+    "message": "Run shown",
+    "description": "Accessible name of the select that names the run shown, in place of the list of runs on a narrow window. A few words."
+  },
+  "runui_runsWaiting": {
+    "message": "A test waits at a stop",
+    "description": "Read by a screen reader on a run’s line in the list of runs, beside a pause mark: a test of the run stands stopped at a line, waiting for an answer."
   }
 }

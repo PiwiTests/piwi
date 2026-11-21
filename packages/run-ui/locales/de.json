@@ -1093,5 +1093,14 @@
         "example": "3"
       }
     }
+  },
+  "runui_runsLabel": {
+    "message": "Läufe"
+  },
+  "runui_runsShown": {
+    "message": "Angezeigter Lauf"
+  },
+  "runui_runsWaiting": {
+    "message": "Ein Test wartet an einem Halt"
   }
 }

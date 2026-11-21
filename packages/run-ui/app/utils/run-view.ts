@@ -174,6 +174,11 @@ export function desktopStopSaid(
   return stopSaid(session, worker, stop, words.run);
 }
 
+/** Whether a test of a hub's run waits at a stop. */
+export function desktopRunWaits(session: Pick<HubSession, 'workers'>): boolean {
+  return session.workers.some((worker) => !!worker.stop);
+}
+
 /** A run's name: its Piwi project, else its folder (`runName`). */
 export function desktopRunName(
   session: Pick<HubSession, 'project' | 'label'>,
