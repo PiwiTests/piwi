@@ -148,7 +148,8 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
-import { apiGetDemoLiveSnapshot } from './live-view';
+import { apiDemoLetGo, apiGetDemoLiveSnapshot, apiPostDemoLiveStop } from './live-view';
+import { findDemoUser } from '../demo-users';
 import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
@@ -1508,6 +1509,27 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
     handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
+  },
+  // A simulated CI worker's held failure and its end, which the run page hears as the instance tells it; the demo
+  // names who it is held for: the person acting, when they may control the run.
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view$/,
+    handler: async (m, body, _query, ctx) => {
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
+      const controls = !!acting && demoCan(ctx, 'run:control', projectId ?? undefined);
+      return apiPostDemoLiveStop(+m[1]!, body, controls && acting ? [acting.name] : []);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/let-go$/,
+    permission: 'run:control',
+    handler: async (m, body, _query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiDemoLetGo(+m[1]!, body);
+    },
   },
   // The page of a simulated worker at a call, for Inspect: a moment of the committed checkout trace, as the server
   // serves a live page. The rest of the live view runs in the page (`app/demo/live-watch.ts`).

@@ -42,7 +42,7 @@ import type { LiveCallLog, LiveTestOutcome, LiveViewerMessage, LiveWorkerId } fr
 import type { TestRunDetails } from '~~/types/api';
 import { simulatorInstanceId } from './simulator-instance';
 import { demoBrowser, demoCiRunner } from '#shared/demo/demo-environments.mjs';
-import { publishDemoLiveMessage } from './run-events';
+import { publishDemoLiveMessage, subscribeDemoEvents } from './run-events';
 import {
   DEMO_NO_PAGES,
   demoCallId,
@@ -103,6 +103,12 @@ interface SimAttempt {
    * heartbeat telling the time meanwhile, so the stuck check leaves it be.
    */
   stopMs?: number;
+  /**
+   * How long the attempt's failure is held for the people who may control the run, in wall-clock ms, in a CI run: the
+   * simulator posts the held stop and its end as a CI worker does (`POST /api/test-runs/:id/live-view`), and the hold
+   * ends sooner on **Let it go**.
+   */
+  heldMs?: number;
   error?: string;
   consoleLogs?: Array<Record<string, unknown>>;
   dialogs?: Array<Record<string, unknown>>;
@@ -620,6 +626,9 @@ interface BaseTestOptions {
 
 /** How long the breakpoint scenario's PayPal test stands stopped: past the stuck threshold of its seeded passes. */
 const BREAKPOINT_STOP_MS = 5 * 60_000;
+
+/** How long the held CI failure scenario holds its failing test, in wall-clock ms, unless it is let go first. */
+export const DEMO_HOLD_MS = 90_000;
 
 /** How long the stuck scenario's PayPal test waits: past the stuck threshold of its seeded passes. */
 const STUCK_HANG_MS = 6 * 60_000;
@@ -1346,6 +1355,43 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
     tests: () => baseTests({ breakpoint: true }),
   },
   {
+    id: 'held-failure',
+    label: 'Held CI failure',
+    description:
+      'A CI run: the Apple Pay test fails and waits at its failure for the people who may control the run, until Let it go',
+    icon: 'i-lucide-hand',
+    group: 'causes',
+    result: {
+      text: 'The Apple Pay test waited at its failure, its page open for Inspect, then ended as it failed: Let it go, or the hold’s length, let it tear down.',
+    },
+    speed: 2,
+    workers: 3,
+    environment: 'staging',
+    metadata: () =>
+      buildMetadata({
+        branch: 'feature/contact-method',
+        author: 'Carol White',
+        commitMessage: 'feat: replace the email field with a contact-method selector',
+      }),
+    tests: () => {
+      const tests = baseTests();
+      const i = tests.findIndex((t) => t.title === CLUSTER2_STORY.failingCases[0]!.title);
+      const failingCase = CLUSTER2_STORY.failingCases[0]!;
+      tests[i]!.attempts = [
+        {
+          status: 'failed',
+          duration: vary(10400, 0.05),
+          error: failingCase.error,
+          heldMs: DEMO_HOLD_MS,
+          ariaSnapshot: CLUSTER2_STORY.aria ?? undefined,
+          testSource: buildTestSource(CLUSTER2_STORY, failingCase, CHECKOUT_TESTS[i]!.declLine),
+          testSourceFrames: buildSourceFrames(failingCase),
+        },
+      ];
+      return tests;
+    },
+  },
+  {
     id: 'healing',
     label: 'Locator healing',
     description: 'A renamed field fails and joins the known cluster — watch the stale-aware recommendation',
@@ -1483,6 +1529,8 @@ export interface SimulationController {
 }
 
 const INIT_DELAY_MS = 1800;
+/** How often a held failure looks whether it was let go, in wall-clock ms. */
+const HOLD_TICK_MS = 250;
 const WORKER_GAP_MS = 250;
 
 function sleep(ms: number): Promise<void> {
@@ -1727,6 +1775,34 @@ async function runSingleSimulation(
     publishDemoLiveMessage(runId, message);
   }
 
+  /** A CI worker's held failure, or its end (null), as it posts it to the run's live view. */
+  async function postLiveStop(worker: LiveWorkerId, stop: Record<string, unknown> | null): Promise<void> {
+    await $fetch(`/api/test-runs/${runId}/live-view`, {
+      method: 'POST',
+      body: { type: 'stop', ...worker, stop },
+    }).catch(() => {});
+  }
+
+  /**
+   * Hold a failure of `worker` at `stop`, `ms` long, until **Let it go** of it comes over the demo's channel, or the
+   * run stops: the worker posts the held stop, then its end.
+   */
+  async function holdFailure(worker: LiveWorkerId, stop: Record<string, unknown>, ms: number): Promise<void> {
+    let letGo = false;
+    const unhear = subscribeDemoEvents((message) => {
+      if (message.scope === 'let-go' && message.runId === runId && message.worker.worker === worker.worker) {
+        letGo = true;
+      }
+    });
+    try {
+      await postLiveStop(worker, stop);
+      for (let waited = 0; waited < ms && !letGo && !ctl.stopped; waited += HOLD_TICK_MS) await sleep(HOLD_TICK_MS);
+    } finally {
+      unhear();
+      await postLiveStop(worker, null);
+    }
+  }
+
   /** The run's heartbeat, with the virtual time a hanging attempt reached (`SimAttempt.hangMs`). */
   async function postHeartbeat(at: number): Promise<void> {
     await $fetch(`/api/test-runs/${runId}/heartbeat`, { method: 'POST', body: { streamToken, at } }).catch(() => {});
@@ -1919,6 +1995,19 @@ async function runSingleSimulation(
             await sleep(attemptRemaining / scenario.speed);
             virtualNow += attemptRemaining;
           }
+        }
+
+        // A CI test's failure held for the people who may control the run: its worker says so, then waits.
+        if (a.heldMs && a.status === 'failed' && !cutShort()) {
+          const failedAt = parseLocation(liveSteps.find((s) => s.failed)?.location ?? test.location);
+          const said = (a.error ?? 'failed').split('\n').find((line) => line.trim()) ?? 'failed';
+          const stop = {
+            reason: 'held',
+            call: { title: `Failed: ${said.trim().slice(0, 300)}`, file: failedAt.filePath, line: failedAt.line },
+            test: test.title,
+            until: Date.now() + a.heldMs,
+          };
+          await holdFailure(liveWorker, stop, a.heldMs);
         }
 
         const stamped = test.relativeTimes

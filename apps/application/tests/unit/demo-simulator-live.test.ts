@@ -1,18 +1,26 @@
 import { afterEach, beforeAll, describe, expect, test, vi } from 'vitest';
 import type { LiveViewerMessage } from '@piwitests/core/live-view';
+import type { DemoEventMessage } from '~~/app/demo/run-events';
 import { DEMO_NO_PAGES } from '~~/app/demo/live-calls';
 import { streamSimulation } from './demo-simulator-harness';
 
 /**
  * What the demo's simulated workers say to a view of them, as the 'stuck' scenario plays it: the PayPal test's call log
  * waits on the disabled Pay button through its hang, and Inspect has the checkout page at that click; a test that runs
- * no call of the demo's trace says the demo has no page of it.
+ * no call of the demo's trace says the demo has no page of it. The 'held-failure' scenario's CI worker holds its failing
+ * test as a CI worker does, until the hold's length or **Let it go**.
  */
 
 const said = vi.hoisted(() => [] as Array<{ runId: number; message: LiveViewerMessage }>);
+/** Who hears the demo's channel: the simulator's held failures, which a test tells **Let it go** at once. */
+const hearers = vi.hoisted(() => new Set<(message: DemoEventMessage) => void>());
 vi.mock('~~/app/demo/run-events', async (importOriginal) => ({
   ...(await importOriginal<typeof import('~~/app/demo/run-events')>()),
   publishDemoLiveMessage: (runId: number, message: LiveViewerMessage) => said.push({ runId, message }),
+  subscribeDemoEvents: (hear: (message: DemoEventMessage) => void) => {
+    hearers.add(hear);
+    return () => hearers.delete(hear);
+  },
 }));
 
 let simulator: typeof import('~~/app/demo/simulator');
@@ -110,5 +118,47 @@ describe("the 'staging-down' scenario's workers", () => {
     for (const m of refusals) expect(m).toMatchObject({ refused: DEMO_NO_PAGES });
     expect(messages.filter((m) => m.type === 'call-log')).toEqual([]);
     expect(messages.filter((m) => m.type === 'test-ended').length).toBe(refusals.length);
+  });
+});
+
+describe("the 'held-failure' scenario's worker", () => {
+  /** The stops the run's workers posted, in order. */
+  const stopsOf = (posts: Array<{ url: string; body?: Record<string, unknown> }>) =>
+    posts.filter((p) => p.url === '/api/test-runs/1/live-view').map((p) => p.body!);
+
+  test('holds the failing test, saying until when, to the hold’s length, then lets it end as it failed', async () => {
+    const posts: Array<{ url: string; body?: Record<string, unknown>; at: number }> = [];
+    const run = await streamSimulation(simulator, 'held-failure', {
+      onRequest: (url, body) => posts.push({ url, body, at: Date.now() }),
+    });
+    const stops = stopsOf(posts);
+    expect(stops).toHaveLength(2);
+    const [held, end] = stops as [{ stop: Record<string, unknown> }, { stop: null }];
+    expect(held.stop).toMatchObject({ reason: 'held', test: 'should complete checkout with Apple Pay' });
+    expect(String((held.stop.call as { title: string }).title)).toMatch(/^Failed: /);
+    expect(end.stop).toBeNull();
+    const [heldAt, endedAt] = posts.filter((p) => p.url === '/api/test-runs/1/live-view').map((p) => p.at);
+    expect(endedAt! - heldAt!).toBeGreaterThanOrEqual(simulator.DEMO_HOLD_MS);
+    const complete = run.events.filter((e) => e.type === 'complete' && e.title === held.stop.test);
+    expect(complete.at(-1)).toMatchObject({ status: 'failed' });
+  });
+
+  test('ends the hold at Let it go', async () => {
+    const posts: Array<{ url: string; body?: Record<string, unknown>; at: number }> = [];
+    await streamSimulation(simulator, 'held-failure', {
+      onRequest: (url, body) => {
+        posts.push({ url, body, at: Date.now() });
+        const stop = body?.stop as { reason?: string } | null | undefined;
+        if (url === '/api/test-runs/1/live-view' && stop?.reason === 'held') {
+          // Let it go reaches the simulator once the held stop is posted.
+          const worker = { shard: null, worker: body!.worker as number, slot: body!.slot as number };
+          queueMicrotask(() => {
+            for (const hear of hearers) hear({ scope: 'let-go', runId: 1, worker });
+          });
+        }
+      },
+    });
+    const [heldAt, endedAt] = posts.filter((p) => p.url === '/api/test-runs/1/live-view').map((p) => p.at);
+    expect(endedAt! - heldAt!).toBeLessThan(simulator.DEMO_HOLD_MS);
   });
 });

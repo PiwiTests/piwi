@@ -249,14 +249,19 @@ export class DemoLiveWatch implements LiveWatchConnection {
 
 /**
  * The run's workers in its live view, in the demo: a stand-in for the worker of each lane that runs a test, which the
- * simulator plays, keyed as the run page keys its workers (`liveWorkerKey`).
+ * simulator plays, keyed as the run page keys its workers (`liveWorkerKey`), each keeping the held failure its
+ * simulated CI worker told (`before`, the run page's `live-worker`s).
  */
-export function demoLaneWorkers(lanes: Iterable<Lane>): Record<string, LiveWorkerState> {
+export function demoLaneWorkers(
+  lanes: Iterable<Lane>,
+  before: Readonly<Record<string, LiveWorkerState>> = {},
+): Record<string, LiveWorkerState> {
   const workers: Record<string, LiveWorkerState> = {};
   for (const lane of lanes) {
     if (!lane.test || lane.state === 'done') continue;
     const worker = { shard: lane.id.shard, worker: lane.worker ?? lane.id.lane, slot: lane.id.lane };
-    workers[liveWorkerKey(worker)] = { ...worker, connected: true, paused: null };
+    const key = liveWorkerKey(worker);
+    workers[key] = before[key] ?? { ...worker, connected: true, paused: null };
   }
   return workers;
 }
