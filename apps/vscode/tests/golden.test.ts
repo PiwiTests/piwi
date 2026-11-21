@@ -9,7 +9,7 @@ import type {
   RunStatus,
   StatusResult,
 } from '@piwitests/editor/protocol';
-import { failuresViewMessage, lensLines, statusBarView, testDecorations } from '../src/glue';
+import { failuresViewEmpty, lensLines, statusBarView, testDecorations } from '../src/glue';
 import { runNodes, workersNow, type RunNode } from '../src/run-control';
 import { NOT_A_CODE, pairingPrompt, pairingRequestTitle, pickerRows } from '../src/picker-pairing';
 import { VSCODE_PAIRING_PORTS } from '@piwitests/core/editor-pairing';
@@ -155,15 +155,19 @@ describe('the failures view in each state', () => {
   const LINK = /\[([^\]]+)\]\(command:([\w.]+)\)/g;
 
   test.each(states.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
-    // The welcome `package.json` shows in the state, with its links, under the view's message.
+    // With a message, a node for each link; else the welcome `package.json` shows in the state, with its links.
+    const empty = failuresViewEmpty({ view: c.view, items: [], run: null } as unknown as FailuresResult);
     const welcome =
       manifest.contributes.viewsWelcome.find(
         (w) => w.view === 'piwi.failures' && w.when === `piwi.failuresView == ${c.view.state}`,
       )?.contents ?? '';
-    const links = [...welcome.matchAll(LINK)].map((m) => [m[1], m[2]]);
+    const links = empty.message
+      ? empty.links.map((n) => [n.label, n.command])
+      : [...welcome.matchAll(LINK)].map((m) => [m[1], m[2]]);
     expect(links).toEqual(c.view.links.map((l) => [l.label, l.vscode]));
-    const welcomeText = welcome.replace(LINK, '').trim() || null;
-    const message = failuresViewMessage({ view: c.view, items: [], run: null } as unknown as FailuresResult);
-    expect({ text: message ?? welcomeText, links: links.map(([label]) => label) }).toEqual(c.shown);
+    const text = empty.message ?? (welcome.replace(LINK, '').trim() || null);
+    expect({ text, links: links.map(([label]) => label) }).toEqual(c.shown);
+    // VS Code shows no welcome under a message: a state with one has none to show.
+    if (empty.message) expect(welcome).toBe('');
   });
 });

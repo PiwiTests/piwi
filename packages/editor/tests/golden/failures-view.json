@@ -104,7 +104,7 @@
           "hasRun": false,
           "runId": null,
           "problemKind": "desktop-unproven",
-          "problem": "The desktop app on port 3000 answered without proving it holds its token: restart or update it",
+          "problem": "The desktop app's token is not sent to http://127.0.0.1:7494: the server there did not prove it holds the token. Restart or update the desktop app.",
           "branch": "main",
           "projectName": "Acme Mugs",
           "baseline": null
@@ -113,7 +113,7 @@
       "failing": 0,
       "view": {
         "state": "desktop-unproven",
-        "message": "The desktop app on port 3000 answered without proving it holds its token: restart or update it.",
+        "message": "The desktop app's token is not sent to http://127.0.0.1:7494: the server there did not prove it holds the token. Restart or update the desktop app.",
         "links": [
           {
             "label": "Retry",
@@ -128,7 +128,7 @@
         ]
       },
       "shown": {
-        "text": "The desktop app on port 3000 answered without proving it holds its token: restart or update it.",
+        "text": "The desktop app's token is not sent to http://127.0.0.1:7494: the server there did not prove it holds the token. Restart or update the desktop app.",
         "links": ["Retry", "Open the log"]
       }
     },

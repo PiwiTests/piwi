@@ -23,7 +23,7 @@ import {
   failingRuns,
   failureNodes,
   failuresViewDescription,
-  failuresViewMessage,
+  failuresViewEmpty,
   flakyTestsByRoot,
   isFlakyGroup,
   type FailureNode,
@@ -149,7 +149,9 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
   /** Draw the failures as they were read last, for the run in progress. */
   render(): void {
     const own = this.runs()?.contexts.find((c) => c.live?.own);
-    this.roots = failureNodes(this.result, { live: own?.live ?? null, liveRoot: own?.root ?? null });
+    const drawn = failureNodes(this.result, { live: own?.live ?? null, liveRoot: own?.root ?? null });
+    const empty = drawn.length ? null : failuresViewEmpty(this.result);
+    this.roots = empty ? empty.links : drawn;
     this.parents.clear();
     const walk = (nodes: FailureNode[], parent: FailureNode | undefined) => {
       for (const node of nodes) {
@@ -164,7 +166,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       : undefined;
     const grouping = this.result?.grouping ?? this.grouping;
     this.view.description = failuresViewDescription(grouping, this.result?.baseline?.label);
-    this.view.message = failuresViewMessage(this.result);
+    this.view.message = empty?.message;
     this.changed.fire(undefined);
     this.drawn();
   }
@@ -202,6 +204,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       };
     } else if (node.kind === 'overlay' && node.url) {
       item.command = { title: 'Open the run in the dashboard', command: 'piwi.openInDashboard', arguments: [node.url] };
+    } else if (node.command) {
+      item.command = { title: node.label, command: node.command };
     }
     return item;
   }

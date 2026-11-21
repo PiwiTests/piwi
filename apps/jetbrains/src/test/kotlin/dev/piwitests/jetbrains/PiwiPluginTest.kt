@@ -307,8 +307,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
 
     /**
      * The Failures tab in each state of the failures view the golden fixture holds
-     * (`packages/editor/tests/golden/failures-view.json`): pushed as the service pushes it, its tree's empty text says the
-     * state's sentence and its links, each a registered action, as VS Code's view and welcome do.
+     * (`packages/editor/tests/golden/failures-view.json`): pushed as the service pushes it, with the baseline that found
+     * no run, its tree's empty text says the state's sentence and its links, each a registered action, as VS Code's view
+     * does; the service's read, with no server, leaves no status and no failures again.
      */
     fun testTheFailuresTabSaysEachStateOfTheViewAsTheGoldenFixtureHoldsIt() {
         val service = project.service<PiwiProjectService>()
@@ -317,10 +318,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
         val golden = com.google.gson.JsonParser.parseString(
             File("../../packages/editor/tests/golden/failures-view.json").readText(),
         ).asJsonObject
-        val before = service.status
+        fun readDone() {
+            val until = System.currentTimeMillis() + 10_000
+            while (service.readingStatus && System.currentTimeMillis() < until) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(10)
+            }
+            assertFalse("the service's read", service.readingStatus)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
         try {
             PiwiFailuresToolWindowFactory().createToolWindowContent(project, window)
-            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            readDone()
             val tab = window.contentManager.findContent(PiwiFailuresToolWindowFactory.TAB_NAME)!!
             fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
             val tree = all(tab.component).filterIsInstance<com.intellij.ui.treeStructure.Tree>().first()
@@ -329,8 +338,10 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 val name = case.get("name").asString
                 val view = com.google.gson.Gson().fromJson(case.get("view"), FailuresView::class.java)
                 if (view.state == "failures") continue
+                val noRun = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
+                    ?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.endsWith("(no run)") }
                 service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
-                service.failuresChanged(FailuresResult(view = view))
+                service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
                 com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
                 val shown = case.getAsJsonObject("shown")
                 assertEquals(name, shown.get("text").asString, tree.emptyText.text)
@@ -345,8 +356,9 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 for (link in view.links) assertNotNull("$name: ${link.jetbrains}", actions.getAction(link.jetbrains))
             }
         } finally {
-            service.statusChanged(before ?: StatusResult(emptyList()))
             manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            service.refreshStatus()
+            readDone()
         }
     }
 
