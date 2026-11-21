@@ -432,8 +432,10 @@ What the package does to a user's run, process by process.
   400 or more), at most 50 a second, the others counted (`dropped`), their texts' and
   URLs' credentials hidden.
 - `positions` (in `features`): while the editor asks, the worker says where each call of the running test begins
-  in the user's code, its title through `hideTypedText` and `hideSecretsInText`, `POSITIONS_PER_SECOND` at most,
-  from the same listener.
+  in the user's code, `POSITIONS_PER_SECOND` at most, from the same listener. Its title is the runner's step's, as a
+  live view's call log names the call (`Click getByRole('link', { name: 'Cart' })`, `callTitle`), told once the
+  runner's own listener has named the step, through `hideTypedText`, `hideSecretsInText` and the attempt's known
+  secrets (`tests/run-channel-positions.spec.ts`).
 - `bind` shares the stopped context's browser with Playwright's own tools
   (`browser.bind('piwi-<ref>-w<worker>', { workspaceDir })`, feature-checked), until the
   test ends (`unbind` on `test-end`), or stops sharing it.
@@ -588,11 +590,12 @@ What the package does to a user's run, process by process.
   flight, again after a 429 and never after a 400: the running call told last (else the one
   that ended last), its status, its log folded by `compressCallLog`, its action point and its
   error's first line, each text through `hideTypedText` or `hideSecretsInLog`, then
-  `hideSecretsInText`, before it is cut, and, as each view is told, through `hideKnownValues` with the values the
-  attempt knows are secrets then (`knownSecrets`, passed in as `FollowOptions.secrets`; values of 8 characters or more, as
-  `withoutFieldSecrets` hides them). A listener on the worker's Playwright
-  instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which
-  never hears an internal call, gives each call's start and selector, matched to the stream by
+  `hideSecretsInText`, before it is cut (`cutText`), and, as each view is told, through `hideKnownValues` with the
+  values the attempt knows are secrets then (`knownSecrets`, passed in as `FollowOptions.secrets`; values of 8
+  characters or more, as `withoutFieldSecrets` hides them, and a start of one, 4 characters or more, before a cut
+  mark: the end of a text `cutText` cut, or Playwright's own `…` in an element's preview). A listener on the worker's
+  Playwright instrumentation (`trackCalls`, added by `piwiResources` when the live view can open), which never
+  hears an internal call, gives each call's start and selector, matched to the stream by
   the id the runner gives the call. While the call shown has waited a second, and while the
   watched page is its context's only one, an internal `evaluateAll` reads, once a second, the
   elements its selector matches: how many, the first one's box (none for a selector into a

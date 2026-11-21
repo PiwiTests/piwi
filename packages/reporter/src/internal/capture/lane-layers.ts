@@ -20,6 +20,7 @@ import {
 } from '@piwitests/core/live-layers';
 import {
   ariaMaskProblem,
+  cutText,
   hideSecretsInText,
   hideTypedText,
   isSecretLocator,
@@ -128,10 +129,13 @@ export function layersTest(): LayersTest | null {
   return current;
 }
 
-/** The title the runner gives the call `id` of the running test, the text it types and its credentials hidden. */
+/**
+ * The title the runner gives the call `id` of the running test, the text it types and its credentials hidden, cut to
+ * 300 characters (`cutText`).
+ */
 export function layersTitleOf(id: string): string | null {
   const title = current?.titleOf(id) ?? null;
-  return title === null ? null : hideSecretsInText(hideTypedText(title)).slice(0, 300);
+  return title === null ? null : cutText(hideSecretsInText(hideTypedText(title)), 300);
 }
 
 /** A wire's subscription to the page events: its pace, and how many it did not send since it last sent one. */
