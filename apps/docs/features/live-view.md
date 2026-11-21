@@ -107,7 +107,7 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 ## Limits
 
-- **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
+- **Watch only.** No input, and no control but **Let it go** on a [held CI failure](./hold-ci-failure): a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
 - **One page at a time**: the `page` fixture's, else the page of the test's latest call
   ([which](/guide/capture-fixtures#where-capture-works)).
@@ -119,11 +119,11 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 ## Related
 
-- [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
+- [Page events, text and filmstrip](./live-view-layers): what the page said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
 - [Stuck tests](./stuck-tests): a test past its usual time
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a local run live](./share-live): let a teammate watch a run on your machine
-- [Runs window](./runs-window): the live view of a test your editor runs, with its controls
-- [Desktop app runs](./desktop-runs): the desktop app's runs, and Share live from its tray
+- [Runs window](./runs-window): a test your editor runs, with its controls
+- [Desktop app runs](./desktop-runs): its runs, and Share live from its tray
 - [Failure evidence](./evidence): what a finished test keeps

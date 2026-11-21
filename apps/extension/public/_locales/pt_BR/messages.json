@@ -6903,6 +6903,37 @@
   "runs_stateFailed": {
     "message": "Falhou, retido na sua linha"
   },
+  "runs_heldFor": {
+    "message": "Retido para $names$ · até $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Retido · até $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Deixar seguir"
+  },
+  "runs_letGoTitle": {
+    "message": "Encerrar a retenção: o teste é desmontado como seria, com o resultado inalterado"
+  },
+  "runs_heldJobTimeout": {
+    "message": "O tempo limite do próprio job de CI continua correndo."
+  },
   "runs_stateRunning": {
     "message": "Em execução"
   },

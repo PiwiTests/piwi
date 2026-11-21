@@ -670,12 +670,14 @@ const LIVE_VIEW_CALL_LINES = [
 
 /**
  * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
- * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another.
+ * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another,
+ * and `features` what the worker can do (`hold`: it holds a failing CI test for its controllers).
  */
-function holdLiveWorkerStream(base, runId, key, after = null) {
+function holdLiveWorkerStream(base, runId, key, after = null, features = null) {
   const client = base.startsWith('https:') ? https : http;
   const continues = after === null ? '' : `&after=${after}`;
-  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}`, {
+  const can = features === null ? '' : `&features=${features}`;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}${can}`, {
     headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
   });
   request.on('response', (response) => response.resume());
@@ -3869,11 +3871,11 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'project-live-view-settings', width: 1280, height: 1100 },
-    { name: 'project-live-view-settings-mobile', width: 375, height: 1900 },
+    { name: 'project-live-view-settings', width: 1280, height: 1180 },
+    { name: 'project-live-view-settings-mobile', width: 375, height: 2200 },
   ].map(({ name, width, height }) => ({
     name,
-    description: `Project → Settings → Live view: the switch, the masked elements, and what goes out, to whom and what is kept, at ${width} px`,
+    description: `Project → Settings → Live view: the switches, the longest hold of a failing CI test, the masked elements, and what goes out, to whom and what is kept, at ${width} px`,
     route: '/projects/1?tab=settings&section=live-view',
     viewport: { width, height },
     of: '[data-shot="project-live-view-settings"]',
@@ -7091,6 +7093,117 @@ const SCENES = [
         if (run) {
           await request.post(`${base}/api/test-runs/${run.id}/finish`, {
             data: { streamToken: run.streamToken, status: 'passed', totalTests: 2 },
+          });
+        }
+      }
+    },
+  },
+  {
+    name: 'run-live-view-held',
+    description:
+      'A failed CI test held at its failure for the people who may control the run, in the lane panel: Failed, held at its line, until when, the failure, the CI job’s timeout, and Let it go, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 1000 },
+    outputs: ['run-live-view-held.png', 'run-live-view-held-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId)
+        throw new Error('run-live-view-held needs the seeded web-dashboard project (npm run app:seed:dev)');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, {
+            data: { liveView: true, liveViewHold: true, liveViewHoldMinutes: 5 },
+          }),
+          'hold on',
+        );
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 6 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'pays with a saved card';
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:24:3',
+                workerIndex: 0,
+                startedAt: Date.now() - 9_000,
+                browser: { projectName: 'chromium', browserName: 'chromium' },
+              },
+            ],
+          },
+        });
+        closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 'hold');
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await testPage.close();
+        const post = (message) =>
+          request.post(`${base}/api/test-runs/${run.id}/live-view`, {
+            headers: { Authorization: `Bearer ${run.key}` },
+            data: { shard: null, worker: 0, ...message },
+          });
+        const failure = {
+          title: 'Failed: expect(locator).toBeEnabled() failed',
+          file: 'tests/checkout.spec.ts',
+          line: 31,
+        };
+        await goto(`/test-runs/${run.id}`);
+        // The worker sends its page while someone watches it.
+        sending = setInterval(
+          () => void post({ type: 'frame', data, call: failure, test }).catch(() => undefined),
+          400,
+        );
+        await page.getByRole('button', { name: 'Watch worker 0 live' }).first().click({ timeout: 60_000 });
+        // Docked beside the run page when wide, a sheet when narrow.
+        await page.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        await ok(
+          await post({ type: 'stop', stop: { reason: 'held', call: failure, test, until: Date.now() + 5 * 60_000 } }),
+          'held stop',
+        );
+        await page.getByTestId('live-held-panel').waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await settle();
+        await shoot(undefined, { of: '[data-testid="lane-panel"]', pad: 0 });
+        await page.setViewportSize({ width: 390, height: 844 });
+        await page.getByRole('dialog').getByTestId('live-held-panel').waitFor({ timeout: 30_000 });
+        await settle();
+        await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, {
+          data: {
+            liveView: project.liveView === true,
+            liveViewHold: project.liveViewHold === true,
+            liveViewHoldMinutes: project.liveViewHoldMinutes ?? 5,
+          },
+        });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'failed', totalTests: 1 },
           });
         }
       }

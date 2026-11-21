@@ -266,6 +266,18 @@ const watching = ref<{
   executionId: number | null;
 } | null>(null);
 const watchOpen = ref(false);
+/** The worker the lane panel shows, as the run's live view says it stands: its lane's when it names one. */
+const watchedWorker = computed<LiveWorkerState | null>(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  return (
+    Object.values(liveWorkers.value).find(
+      (worker) =>
+        worker.shard === shown.shard &&
+        (typeof shown.slot === 'number' ? worker.slot === shown.slot : worker.worker === shown.worker),
+    ) ?? null
+  );
+});
 /** Whether the view opened from a row's Watch, which gives it the focus; the page's address opens it without. */
 const watchAsked = ref(false);
 // The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
@@ -427,7 +439,7 @@ watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
 // the lane panel, with its call log and Inspect's pages, and no image.
 if (isDemoMode) {
   watch(liveLanes, (lanes) => {
-    const workers = demoLaneWorkers(Object.values(lanes));
+    const workers = demoLaneWorkers(Object.values(lanes), liveWorkers.value);
     const keys = Object.keys(workers).sort().join();
     if (keys !== Object.keys(liveWorkers.value).sort().join()) liveWorkers.value = workers;
   });
@@ -1764,6 +1776,8 @@ const moreMenuItems = computed(() => {
         :project-key="testRun?.projectId"
         :project-name="testRun?.project?.name"
         :live="live"
+        :worker-state="watchedWorker"
+        :project-id="testRun?.projectId ?? null"
         :moved-why="movedWhy"
         v-model:attention="followAttention"
       />

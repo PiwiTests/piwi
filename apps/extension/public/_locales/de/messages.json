@@ -6903,6 +6903,37 @@
   "runs_stateFailed": {
     "message": "Fehlgeschlagen, an seiner Zeile angehalten"
   },
+  "runs_heldFor": {
+    "message": "Gehalten für $names$ · bis $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Gehalten · bis $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Freigeben"
+  },
+  "runs_letGoTitle": {
+    "message": "Das Halten beenden: Der Test wird wie vorgesehen abgebaut, sein Ergebnis bleibt unverändert"
+  },
+  "runs_heldJobTimeout": {
+    "message": "Das eigene Zeitlimit des CI-Jobs läuft weiter."
+  },
   "runs_stateRunning": {
     "message": "Läuft"
   },

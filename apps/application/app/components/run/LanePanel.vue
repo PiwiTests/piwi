@@ -17,7 +17,8 @@
  * searched with case and accents ignored, the lines naming the element the shown call targets marked; and, opened,
  * **Inspect** (`LaneInspect`): the page at each call as a document, the worker sending its snapshots while it is open.
  * Each is of the test the view shows, and let go with it; Inspect's of the lane's next test, sent before its first
- * image, wait for the view to move on to it. Watching only: nothing here reaches the test.
+ * image, wait for the view to move on to it. Watching only: nothing here reaches the test, but **Let it go** on a
+ * failed CI test held for the people who may control the run (`LaneHeld`), which ends its hold.
  *
  * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
  * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
@@ -42,6 +43,7 @@ import {
   type LiveTestOutcome,
   type LiveViewEnd,
   type LiveViewerMessage,
+  type LiveWorkerState,
 } from '#shared/live-view';
 import { readLiveViewSize } from '@piwitests/core/live-view';
 import { MAX_PAGE_EVENTS_PER_SECOND, type LaneLayer, type LaneText, type LaneThumb } from '@piwitests/core/live-layers';
@@ -100,8 +102,15 @@ const props = defineProps<{
   live: LiveWatchHandle;
   /** Why **Follow what needs attention** moved the view here, while it shows that lane. */
   movedWhy?: string | null;
+  /** The worker shown, as the run's live view says it stands: a failed CI test held at its line shows its hold. */
+  workerState?: LiveWorkerState | null;
+  /** The run's project, for who may let a held test go. */
+  projectId?: number | null;
 }>();
 const open = defineModel<boolean>('open', { required: true });
+/** The held failure of the worker shown, while it holds. */
+const heldStop = computed(() => (props.workerState?.paused?.reason === 'held' ? props.workerState.paused : null));
+const watchId = computed(() => props.live.watchId.value);
 /** **Follow what needs attention**: the page moves the view to a lane whose test failed, got stuck or stopped. */
 const attention = defineModel<boolean>('attention', { default: false });
 
@@ -836,6 +845,22 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
       <p v-if="movedWhy && !ended" role="status" class="text-xs text-muted" data-testid="live-moved">
         {{ movedWhy }}
       </p>
+      <LaneHeld
+        v-if="heldStop && workerState && !ended"
+        :run-id="runId"
+        :project-id="projectId ?? null"
+        :worker="{
+          shard: workerState.shard,
+          worker: workerState.worker,
+          ...(workerState.slot === undefined ? {} : { slot: workerState.slot }),
+        }"
+        :stop="heldStop"
+        :held-for="workerState.heldFor ?? []"
+        :holds="workerState.holds === true"
+        :watch-id="watchId"
+        :project-key="projectKey"
+        :project-name="projectName"
+      />
       <div class="grid gap-3 @3xl:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)] @3xl:items-start">
         <figure class="min-w-0 space-y-2" data-testid="live-view">
           <div
@@ -1154,8 +1179,8 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         </template>
       </UCollapsible>
       <p class="text-xs text-muted">
-        You watch the page; nothing you do here reaches the test. Nothing of the view is stored: the run’s trace keeps
-        the record.
+        You watch the page; nothing you do here reaches the test{{ heldStop ? ' but Let it go' : '' }}. Nothing of the
+        view is stored: the run’s trace keeps the record.
       </p>
     </div>
   </DefineBody>

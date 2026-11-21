@@ -6903,6 +6903,37 @@
   "runs_stateFailed": {
     "message": "En échec, retenu à sa ligne"
   },
+  "runs_heldFor": {
+    "message": "Retenu pour $names$ · jusqu’à $time$",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Retenu · jusqu’à $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Le laisser partir"
+  },
+  "runs_letGoTitle": {
+    "message": "Mettre fin à la retenue : le test se termine comme prévu, son résultat inchangé"
+  },
+  "runs_heldJobTimeout": {
+    "message": "Le délai du job de CI lui-même continue de courir."
+  },
   "runs_stateRunning": {
     "message": "En cours"
   },

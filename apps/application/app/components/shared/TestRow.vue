@@ -393,6 +393,8 @@ const clusterLabel = computed(() =>
             v-if="liveWorker?.paused && liveShows === 'watch'"
             :reason="liveWorker.paused.reason"
             :call="liveWorker.paused.call"
+            :until="liveWorker.paused.until"
+            :held-for="liveWorker.heldFor"
             :project-key="projectKey"
             :project-name="projectName"
           />

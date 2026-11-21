@@ -9,8 +9,11 @@ then paused at its next call, from any surface that watches it. It narrows one d
 [run control ADR](../adr/run-control.md) (D8, "the team instance never steers a run") for these two cases, and says how
 far.
 
-**Status.** Proposed 2026-11-21. Nothing built. Step 1 takes over Part 8 of [`live-view-next.md`](live-view-next.md)
-(its D11 and open questions 3 and 4), which now points here.
+**Status.** Proposed 2026-11-21. Step 1 is built on the run page (Delivery PR 2): the project setting, `hold` and
+`controller` on the CI worker's stream, the held stop and **Let it go** in the lane panel, the demo's Held CI failure
+and the page [Hold a failing CI test](../apps/docs/features/hold-ci-failure.md); the run control ADR's D8 links here
+(D10). Next: step 1 on the editors' worker view and the Runs window (PR 3). Step 1 takes over Part 8 of
+[`live-view-next.md`](live-view-next.md) (its D11 and open questions 3 and 4), which now points here.
 
 **Summary.**
 
