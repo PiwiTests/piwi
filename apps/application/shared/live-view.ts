@@ -32,6 +32,10 @@ export interface LiveWorkerState {
   heldFor?: string[];
   pauses?: boolean;
   pausedBy?: string;
+  /** A Pause the worker was sent and has not stopped for yet, with who asked it when known. */
+  pauseAsked?: { by?: string };
+  /** Why the worker dropped the last Pause it was asked, until the next Pause or stop. */
+  pauseDropped?: string;
 }
 
 /**
@@ -139,9 +143,14 @@ export const PAUSE_SETTING_OFF =
   "The project's setting is off: a Project admin turns on Let controllers pause a CI test in Project → Settings → Live view.";
 export const CONTROL_CANNOT_PAUSE = "This worker's reporter cannot pause its test: update @piwitests/reporter.";
 export const CONTROL_STOPPED = "This worker's test stands at a stop already.";
+
+/** What a second Pause answers while the worker has not stopped for the first: who asked it, when known. */
+export function pauseAskedAlready(by: string | null): string {
+  return by ? `A Pause is already asked by ${by}.` : 'A Pause is already asked.';
+}
 export const CONTROL_NOT_PAUSED = "This worker's test is not paused now.";
 export const CONTROL_DONE: Record<LiveControlCommand, string> = {
   pause: 'The test pauses before its next call.',
   resume: 'The test goes on.',
-  end: 'The test ends here: the rest of it is skipped.',
+  end: 'The test fails here, ended from Piwi: its retries run as after any failure.',
 };

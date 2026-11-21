@@ -39,6 +39,7 @@ import {
   CONTROL_NOT_PAUSED,
   CONTROL_STOPPED,
   LET_GO_NOT_HELD,
+  pauseAskedAlready,
   PAUSE_SETTING_OFF,
   type LiveWorkerState,
 } from '#shared/live-view';
@@ -282,7 +283,13 @@ interface WorkerLink {
   /** It was last told its project lets its controllers pause a CI test. */
   pauseOn: boolean;
   /** Who asked its latest Pause, and who its paused stop was paused by: null when the instance knows no name. */
-  pauseBy: string | null;
+  /**
+   * The Pause it was sent and has not stopped for yet, with who asked it (null for no name known); null for none. Why
+   * it dropped the last one it was asked (`pauseDropped`), until the next Pause or stop.
+   */
+  pauseAsk: { by: string | null } | null;
+  pauseDropped: string | null;
+  /** Who asked the Pause its paused stop stands at; null for no name known. */
   pausedBy: string | null;
   /** The watches that show it in full. */
   viewers: Set<Viewer>;
@@ -413,7 +420,6 @@ function laneOf(id: LiveWorkerId): string | null {
 }
 
 /** A worker's own fields, as each message about it names it. */
-
 function idOf(id: LiveWorkerId): LiveWorkerId {
   return id.slot === undefined
     ? { shard: id.shard, worker: id.worker }
@@ -578,7 +584,8 @@ export class LiveViewRelay {
       heldFor: before?.heldFor ?? [],
       pauses: hold !== null && pauses,
       pauseOn: false,
-      pauseBy: before?.pauseBy ?? null,
+      pauseAsk: before?.pauseAsk ?? null,
+      pauseDropped: before?.pauseDropped ?? null,
       pausedBy: before?.pausedBy ?? null,
       viewers: new Set(),
       paused: before?.paused ?? null,
@@ -675,8 +682,9 @@ export class LiveViewRelay {
       case 'stop':
         link.paused = message.stop;
         link.heldFor = message.stop?.reason === 'held' ? this.controllersOf(link) : [];
-        link.pausedBy = message.stop?.reason === 'pause' ? link.pauseBy : null;
-        if (!message.stop) link.pauseBy = null;
+        link.pausedBy = message.stop?.reason === 'pause' ? (link.pauseAsk?.by ?? null) : null;
+        if (message.stop?.reason === 'pause') link.pauseAsk = null;
+        if (message.stop) link.pauseDropped = null;
         this.publish(runId, this.stateOf(link));
         return null;
       case 'ended':
@@ -684,6 +692,15 @@ export class LiveViewRelay {
         return null;
       case 'unshared':
         this.endFocus(run, link, 'unshared');
+        return null;
+      case 'pause-asked':
+        // The worker took a Pause it was sent, or dropped it: the run page hears why, and Pause is offered again.
+        if (message.waiting) link.pauseAsk ??= { by: null };
+        else {
+          link.pauseAsk = null;
+          link.pauseDropped = message.why || null;
+        }
+        this.publish(runId, this.stateOf(link));
         return null;
       case 'page-event':
         if (!link.eventRate.take(1)) {
@@ -994,7 +1011,13 @@ export class LiveViewRelay {
     if (!link.holds) return state;
     const held = { ...state, holds: true, heldFor: [...link.heldFor] };
     if (!link.pauses || !link.pauseOn) return held;
-    return link.pausedBy ? { ...held, pauses: true, pausedBy: link.pausedBy } : { ...held, pauses: true };
+    return {
+      ...held,
+      pauses: true,
+      ...(link.pausedBy ? { pausedBy: link.pausedBy } : {}),
+      ...(link.pauseAsk ? { pauseAsked: link.pauseAsk.by ? { by: link.pauseAsk.by } : {} } : {}),
+      ...(link.pauseDropped ? { pauseDropped: link.pauseDropped } : {}),
+    };
   }
 
   /** The names of the controllers whose watches show `link` in full, each once, in the order they came. */
@@ -1054,6 +1077,7 @@ export class LiveViewRelay {
    */
   private tellHold(link: WorkerLink, ms: number | null, pause: boolean): InstanceToWorker {
     link.pauseOn = link.pauses && pause && ms !== null;
+    if (!link.pauseOn) link.pauseAsk = null;
     return link.pauseOn ? { type: 'hold', ms: ms!, pause: true } : { type: 'hold', ms };
   }
 
@@ -1061,9 +1085,10 @@ export class LiveViewRelay {
    * **Pause**, **Resume** or **End the test** (`command`): the worker that the watch `watchId` of `person` shows in
    * full (`worker`) pauses its test at its next call, or, paused, goes on or ends the test. Refused for a watch of
    * another run or another person (404), one opened by someone who may not control the run (403), one that shows
-   * another worker, a worker whose reporter cannot pause, Pause while its test stands at a stop, and Resume or End the
-   * test while it is not paused (409). The name of the watch's person goes with the paused stop it asks. The caller
-   * checks the project's settings.
+   * another worker, a worker whose reporter cannot pause, Pause while its test stands at a stop or while a Pause it has
+   * not taken yet waits (naming who asked it), and Resume or End the test while it is not paused (409); Resume takes
+   * back a Pause the worker has not stopped for yet. The name of the watch's person goes with the paused stop its
+   * Pause makes, and with End the test to the worker. The caller checks the project's settings.
    */
   control(
     runId: number,
@@ -1084,11 +1109,19 @@ export class LiveViewRelay {
     if (!link.pauseOn) return { status: 409, message: PAUSE_SETTING_OFF };
     if (command === 'pause') {
       if (link.paused) return { status: 409, message: CONTROL_STOPPED };
-      link.pauseBy = viewer.name;
+      if (link.pauseAsk) return { status: 409, message: pauseAskedAlready(link.pauseAsk.by) };
+      link.pauseAsk = { by: viewer.name };
+      link.pauseDropped = null;
       link.sink.send({ type: 'pause' } satisfies InstanceToWorker);
+      this.publish(runId, this.stateOf(link));
+    } else if (link.paused?.reason === 'pause') {
+      const end = viewer.name ? { type: 'end-test' as const, by: viewer.name } : { type: 'end-test' as const };
+      link.sink.send((command === 'end' ? end : { type: 'resume' }) satisfies InstanceToWorker);
+    } else if (command === 'resume' && link.pauseAsk) {
+      // Resume before the test paused takes the Pause back: the worker drops it, saying so.
+      link.sink.send({ type: 'resume' } satisfies InstanceToWorker);
     } else {
-      if (link.paused?.reason !== 'pause') return { status: 409, message: CONTROL_NOT_PAUSED };
-      link.sink.send({ type: command === 'end' ? 'end-test' : 'resume' } satisfies InstanceToWorker);
+      return { status: 409, message: CONTROL_NOT_PAUSED };
     }
     return { ok: true, worker: idOf(link.id) };
   }

@@ -816,7 +816,14 @@ export async function updateProject(
   // The pause needs the hold: it turns on beside it alone, and off with it.
   const holdOn = liveViewHold ?? projectResults[0].liveViewHold === true;
   if (liveViewPause === true && !holdOn) throw new Error(LIVE_VIEW_PAUSE_NEEDS_HOLD);
-  const pause = liveViewHold === false ? false : liveViewPause;
+  // Stored in the update itself as the pause asked and the hold as it stands then, so a concurrent change of the hold
+  // never leaves the pause on without it.
+  const holdNow = liveViewHold === undefined ? projects.liveViewHold : liveViewHold ? sql`TRUE` : sql`FALSE`;
+  const pauseNow = liveViewPause === undefined ? projects.liveViewPause : liveViewPause ? sql`TRUE` : sql`FALSE`;
+  const pause =
+    liveViewHold === undefined && liveViewPause === undefined
+      ? undefined
+      : sql`CASE WHEN ${holdNow} THEN ${pauseNow} ELSE FALSE END`;
   const masks = liveViewMasks === undefined || liveViewMasks === null ? liveViewMasks : parseLiveMasks(liveViewMasks);
   if (masks === null && liveViewMasks !== null) throw new Error(INVALID_LIVE_VIEW_MASKS);
   const linkTemplate = externalIdUrl === undefined ? undefined : normalizeExternalIdUrl(externalIdUrl);

@@ -165,7 +165,7 @@ describe('Pause, Resume and End the test', () => {
       { type: 'pause' },
       { type: 'resume' },
       { type: 'pause' },
-      { type: 'end-test' },
+      { type: 'end-test', by: 'Ana' },
     ]);
     expect(of(other, 'pause')).toEqual([]);
   });
@@ -216,5 +216,49 @@ describe('Pause, Resume and End the test', () => {
     });
     expect(of(sink, 'pause')).toEqual([]);
     expect(live.workersOf(7)[0]).not.toHaveProperty('pauses');
+  });
+});
+
+describe('a Pause the worker has not taken yet', () => {
+  test('is one at a time: a second controller’s is refused naming who asked, and the first asker names the pause', () => {
+    const { live, published } = relay();
+    const sink = connect(live, ON);
+    const ana = watch(live, { focus: WORKER }, ANA);
+    const bo = watch(live, { focus: WORKER }, BO);
+    expect(live.control(7, ana, ANA.person, WORKER, 'pause')).toEqual({ ok: true, worker: WORKER });
+    expect(published.at(-1)?.state).toMatchObject({ pauseAsked: { by: 'Ana' } });
+    expect(live.control(7, bo, BO.person, WORKER, 'pause')).toEqual({
+      status: 409,
+      message: 'A Pause is already asked by Ana.',
+    });
+    expect(of(sink, 'pause')).toHaveLength(1);
+    live.receive(7, { type: 'pause-asked', ...WORKER, waiting: true });
+    live.receive(7, { type: 'stop', ...WORKER, stop: PAUSED });
+    expect(published.at(-1)?.state).toMatchObject({ paused: PAUSED, pausedBy: 'Ana' });
+    expect(published.at(-1)?.state).not.toHaveProperty('pauseAsked');
+  });
+
+  test('is cancelled by Resume, and the worker’s drop of one says why, Pause offered again', () => {
+    const { live, published } = relay();
+    const sink = connect(live, ON);
+    const ana = watch(live, { focus: WORKER }, ANA);
+    live.control(7, ana, ANA.person, WORKER, 'pause');
+    expect(live.control(7, ana, ANA.person, WORKER, 'resume')).toEqual({ ok: true, worker: WORKER });
+    expect(of(sink, 'resume')).toEqual([{ type: 'resume' }]);
+    live.receive(7, { type: 'pause-asked', ...WORKER, waiting: false, why: 'Resume came before the test paused.' });
+    expect(published.at(-1)?.state).toMatchObject({ pauseDropped: 'Resume came before the test paused.' });
+    expect(published.at(-1)?.state).not.toHaveProperty('pauseAsked');
+    expect(live.control(7, ana, ANA.person, WORKER, 'pause')).toEqual({ ok: true, worker: WORKER });
+    expect(published.at(-1)?.state).not.toHaveProperty('pauseDropped');
+  });
+
+  test('End the test names who ended it to the worker', () => {
+    const { live } = relay();
+    const sink = connect(live, ON);
+    const ana = watch(live, { focus: WORKER }, ANA);
+    live.control(7, ana, ANA.person, WORKER, 'pause');
+    live.receive(7, { type: 'stop', ...WORKER, stop: PAUSED });
+    live.control(7, ana, ANA.person, WORKER, 'end');
+    expect(of(sink, 'end-test')).toEqual([{ type: 'end-test', by: 'Ana' }]);
   });
 });

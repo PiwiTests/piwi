@@ -175,7 +175,7 @@ describe('Pause, Resume and End the test', () => {
       expect(await controlRoute(event({}, {}, body(watch, 'resume')))).toMatchObject({ success: true });
       liveViewRelay.receive(10, { type: 'stop', ...WORKER, stop: PAUSED });
       expect(await controlRoute(event({}, {}, body(watch, 'end')))).toMatchObject({ success: true });
-      expect(commands(worker)).toEqual([{ type: 'pause' }, { type: 'resume' }, { type: 'end-test' }]);
+      expect(commands(worker)).toEqual([{ type: 'pause' }, { type: 'resume' }, { type: 'end-test', by: 'Ana' }]);
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/Pause: run #10, worker 1, by Ana \(user #1\)/));
       expect(info).toHaveBeenCalledWith(expect.stringMatching(/End the test: run #10, worker 1, by Ana/));
     } finally {
@@ -222,5 +222,10 @@ describe('the project’s pause setting', () => {
     await updateProject(db as never, 1, { liveViewHold: false });
     [row] = await db.select().from(schema.projects);
     expect(row).toMatchObject({ liveViewHold: false, liveViewPause: false });
+    // The pause turns on against the hold as it is stored, the other settings left as they are.
+    await updateProject(db as never, 1, { liveViewHold: true });
+    await updateProject(db as never, 1, { liveViewPause: true });
+    [row] = await db.select().from(schema.projects);
+    expect(row).toMatchObject({ liveViewHold: true, liveViewPause: true, liveViewHoldMinutes: 3 });
   });
 });
