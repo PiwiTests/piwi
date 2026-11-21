@@ -2,7 +2,7 @@ import { test, expect } from './fixtures';
 import { PROJECT } from '#shared/test-project-names';
 import { MCP_TOOL_DEFS } from '#shared/mcp-tools';
 
-function rpc(method: string, params?: Record<string, unknown>, id = 1) {
+function rpc(method: string, params?: Record<string, unknown>, id: number | string = 1) {
   return { jsonrpc: '2.0', id, method, params: params ?? {} };
 }
 
@@ -142,6 +142,54 @@ test.describe.serial('MCP server', () => {
     const unknown = await modern('resources/templates/list');
     expect(unknown.status()).toBe(404);
     expect((await unknown.json()).error.code).toBe(-32601);
+  });
+
+  test('a 2026-07-28 client — subscriptions/listen opens a stream that acknowledges no notification', async ({
+    baseURL,
+  }) => {
+    const gone = new AbortController();
+    const res = await fetch(`${baseURL}/mcp`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/json',
+        accept: 'application/json, text/event-stream',
+        'MCP-Protocol-Version': '2026-07-28',
+        'Mcp-Method': 'subscriptions/listen',
+      },
+      body: JSON.stringify(
+        rpc(
+          'subscriptions/listen',
+          {
+            _meta: {
+              'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+              'io.modelcontextprotocol/clientCapabilities': {},
+            },
+            notifications: { toolsListChanged: true },
+          },
+          'listen-1',
+        ),
+      ),
+      signal: gone.signal,
+    });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('content-type')).toBe('text/event-stream');
+    const { value } = await res.body!.getReader().read();
+    const data = new TextDecoder()
+      .decode(value)
+      .split('\n')
+      .find((line) => line.startsWith('data: '))!;
+    expect(JSON.parse(data.slice('data: '.length))).toEqual({
+      jsonrpc: '2.0',
+      method: 'notifications/subscriptions/acknowledged',
+      params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 'listen-1' }, notifications: {} },
+    });
+    gone.abort();
+  });
+
+  test('an empty batch — one Invalid Request error', async ({ request }) => {
+    const res = await request.post('/mcp', { data: [] });
+    expect(res.status()).toBe(400);
+    expect(await res.json()).toMatchObject({ id: null, error: { code: -32600 } });
   });
 
   test('ping — returns empty result', async ({ request }) => {

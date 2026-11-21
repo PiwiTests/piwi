@@ -29,7 +29,8 @@ A tool's result is JSON read by an AI coding agent: the same names and shapes ev
   (`@piwitests/editor/mcp-protocol`, re-exported by `protocol.ts`), in `/mcp` and the assistant's turn endpoint alike:
   one endpoint serves a legacy client (`initialize`, the `MCP-Protocol-Version` header) and a `2026-07-28` one
   (`_meta` on each request, `server/discover`), with no session. A body of notifications alone answers 202 with no
-  body (`postAnswer`). Checked by `packages/editor/tests/mcp-protocol.test.ts` and `tests/mcp.spec.ts`.
+  body (`postAnswer`), and a modern `subscriptions/listen` gets the stream of `openListenStream`, every message of it
+  carrying its subscription id. Checked by `packages/editor/tests/mcp-protocol.test.ts` and `tests/mcp.spec.ts`.
 
 ## Conventions
 

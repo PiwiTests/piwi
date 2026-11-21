@@ -14,10 +14,12 @@
  */
 import type { AiToolCall } from '../ai-tool-calls';
 import {
-  MCP_META,
   RPC,
   checkMcpRequest,
   discoverResult,
+  emptyBatchAnswer,
+  honoredListenFilter,
+  isListenRequest,
   isRefusal,
   negotiateProtocolVersion,
   ok,
@@ -29,19 +31,20 @@ import {
   type McpAnswer,
   type McpEra,
   type McpHeaders,
+  type McpListenFilter,
 } from '../mcp/protocol';
 import type { AssistantTurnTools } from './turn-token';
 
 /**
  * The reply to one POST: nothing (notifications only, a 202), JSON with its
  * HTTP status, an event stream, or a `subscriptions/listen` stream to open for
- * the request `id`, telling of tool changes when `toolsListChanged`.
+ * the request `id`, acknowledging `honored`.
  */
 export type TurnMcpReply =
   | { kind: 'none' }
   | { kind: 'json'; status: number; body: unknown }
   | { kind: 'stream'; body: string }
-  | { kind: 'listen'; id: string | number; toolsListChanged: boolean };
+  | { kind: 'listen'; id: string | number; honored: McpListenFilter };
 
 const MAX_BATCH_REQUESTS = 20;
 
@@ -50,35 +53,17 @@ const INSTRUCTIONS =
 
 const CAPABILITIES = { tools: { listChanged: true } };
 
-function serverInfo(version: string) {
+export function serverInfo(version: string) {
   return { name: 'piwi-assistant', version };
 }
 
-export function sseFrame(message: unknown): string {
+function sseFrame(message: unknown): string {
   return `event: message\ndata: ${JSON.stringify(message)}\n\n`;
 }
 
 const toolNames = (turn: AssistantTurnTools) => turn.definitions().map((d) => d.name);
 
 const TOOLS_CHANGED = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' } as const;
-
-/** The messages of a `subscriptions/listen` stream opened by request `id`: its acknowledgment, a change, its end. */
-export function listenMessages(id: string | number, toolsListChanged: boolean, version: string) {
-  const meta = { [MCP_META.subscriptionId]: id };
-  return {
-    acknowledged: {
-      jsonrpc: '2.0',
-      method: 'notifications/subscriptions/acknowledged',
-      params: { _meta: meta, notifications: toolsListChanged ? { toolsListChanged: true } : {} },
-    },
-    toolsChanged: { ...TOOLS_CHANGED, params: { _meta: meta } },
-    ended: {
-      jsonrpc: '2.0',
-      id,
-      result: { resultType: 'complete', _meta: { [MCP_META.serverInfo]: serverInfo(version) } },
-    },
-  };
-}
 
 export async function answerTurnMcp(
   turn: AssistantTurnTools,
@@ -94,6 +79,10 @@ export async function answerTurnMcp(
 ): Promise<TurnMcpReply> {
   const batch = Array.isArray(body);
   const requests = (batch ? body : [body]) as JsonRpcRequest[];
+  if (requests.length === 0) {
+    const empty = emptyBatchAnswer();
+    return { kind: 'json', status: empty.status, body: empty.response };
+  }
   if (requests.length > MAX_BATCH_REQUESTS) {
     return {
       kind: 'json',
@@ -120,9 +109,8 @@ export async function answerTurnMcp(
       answers.push(null);
       continue;
     }
-    if (req.method === 'subscriptions/listen' && era.modern && !batch) {
-      const filter = (req.params as { notifications?: { toolsListChanged?: unknown } } | undefined)?.notifications;
-      return { kind: 'listen', id: req.id, toolsListChanged: filter?.toolsListChanged === true };
+    if (!batch && isListenRequest(era, req)) {
+      return { kind: 'listen', id: req.id, honored: honoredListenFilter(req.params, { toolsListChanged: true }) };
     }
     if (!era.modern) legacyAnswered = true;
     const response = await dispatch(turn, { ...req, id: req.id }, era, opts.version);

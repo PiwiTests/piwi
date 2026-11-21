@@ -9,9 +9,13 @@ export {
   SUPPORTED_PROTOCOL_VERSIONS,
   checkMcpRequest,
   discoverResult,
+  emptyBatchAnswer,
+  honoredListenFilter,
+  isListenRequest,
   isRefusal,
   negotiateProtocolVersion,
   ok,
+  openListenStream,
   postAnswer,
   readMcpHeaders,
   rpcErr,
@@ -21,6 +25,7 @@ export {
   type McpAnswer,
   type McpEra,
   type McpHeaders,
+  type McpListenFilter,
 } from '@piwitests/editor/mcp-protocol';
 
 /**

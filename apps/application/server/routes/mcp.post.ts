@@ -10,10 +10,13 @@ import { publicBaseUrl } from '../utils/public-base-url';
 import {
   checkMcpRequest,
   discoverResult,
+  emptyBatchAnswer,
+  isListenRequest,
   isRefusal,
   mcpServerInfo,
   negotiateProtocolVersion,
   ok,
+  openListenStream,
   postAnswer,
   readMcpHeaders,
   rpcErr,
@@ -75,8 +78,8 @@ function parseModules(raw: string | null): Set<CapabilityModule> | null {
 // SUPPORTED_PROTOCOL_VERSIONS, legacy (`initialize`) and modern (`_meta` on
 // each request) clients alike, with no session (`utils/mcp/protocol.ts`).
 // A single POST /mcp handles initialize, server/discover, tools/list,
-// tools/call, prompts and ping; GET and DELETE answer 405 (`mcp.get.ts`,
-// `mcp.delete.ts`).
+// tools/call, prompts, ping and subscriptions/listen; GET and DELETE answer 405
+// (`mcp.get.ts`, `mcp.delete.ts`).
 // Auth: an OAuth access token (the client signs in through this instance's
 // authorization server, see utils/mcp-oauth.ts), or the same pd_<key> Bearer
 // token and session as the REST API.
@@ -102,6 +105,10 @@ export default eventHandler(async (event) => {
   }
 
   const body = await readBody<JsonRpcRequest | JsonRpcRequest[]>(event);
+  if (Array.isArray(body) && body.length === 0) {
+    setResponseStatus(event, 400);
+    return emptyBatchAnswer().response;
+  }
   const requests = Array.isArray(body) ? body : [body];
   if (requests.length > MAX_BATCH_REQUESTS) {
     setResponseStatus(event, 400);
@@ -118,6 +125,14 @@ export default eventHandler(async (event) => {
     if (!event.node.res.writableFinished) gone.abort();
   });
   const headers = readMcpHeaders((name) => getRequestHeader(event, name));
+  // A modern subscriptions/listen gets its stream, which acknowledges no notification: this server sends none.
+  if (!Array.isArray(body) && body?.jsonrpc === '2.0' && body.method === 'subscriptions/listen') {
+    const era = checkMcpRequest(body, headers);
+    if (!isRefusal(era) && isListenRequest(era, body)) {
+      openListenStream(event.node.res, body.id, {}, serverInfo(event));
+      return;
+    }
+  }
   const post = postAnswer(
     Array.isArray(body),
     await Promise.all(requests.map((req) => handleRequest(ctx, req, headers, event, db, gone.signal))),

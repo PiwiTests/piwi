@@ -1,8 +1,7 @@
 import { requireRouteId } from '../../../../utils/project-access';
 import { assistantTurnOfRequest } from '../../../../utils/assistant/turn-token';
-import { answerTurnMcp, listenMessages, sseFrame } from '../../../../utils/assistant/turn-mcp';
-import { readMcpHeaders } from '../../../../utils/mcp/protocol';
-import { createSSEEndpoint } from '../../../../utils/sse';
+import { answerTurnMcp, serverInfo } from '../../../../utils/assistant/turn-mcp';
+import { openListenStream, readMcpHeaders } from '../../../../utils/mcp/protocol';
 import { streamHeaders } from '#shared/stream-headers';
 
 defineRouteMeta({
@@ -34,34 +33,10 @@ export default eventHandler(async (event) => {
     return '';
   }
   if (reply.kind === 'listen') {
-    const messages = listenMessages(
-      reply.id,
-      reply.toolsListChanged,
-      String(useRuntimeConfig(event).public.appVersion ?? ''),
-    );
-    return createSSEEndpoint(event, (controller, encoder) => {
-      const write = (message: unknown) => {
-        try {
-          controller.enqueue(encoder.encode(sseFrame(message)));
-        } catch {
-          // The client closed the stream.
-        }
-      };
-      write(messages.acknowledged);
-      return turn.listeners.add({
-        toolsChanged: () => {
-          if (reply.toolsListChanged) write(messages.toolsChanged);
-        },
-        end: () => {
-          write(messages.ended);
-          try {
-            controller.close();
-          } catch {
-            // Closed already.
-          }
-        },
-      });
-    });
+    const version = String(useRuntimeConfig(event).public.appVersion ?? '');
+    const stream = openListenStream(event.node.res, reply.id, reply.honored, serverInfo(version));
+    stream.onClose(turn.listeners.add({ toolsChanged: () => stream.toolsChanged(), end: () => stream.end() }));
+    return;
   }
   if (reply.kind === 'stream') {
     setResponseHeaders(event, streamHeaders('text/event-stream'));

@@ -2316,6 +2316,21 @@ const routes: RouteEntry[] = [
       throw demoHttpError(401, 'This endpoint takes the token of a running answer');
     },
   },
+  // It takes POST alone, as the server's does.
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(405, 'The MCP endpoint takes POST alone.');
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(405, 'The MCP endpoint takes POST alone.');
+    },
+  },
   {
     method: 'GET',
     pattern: /^\/api\/settings\/ai\/limits$/,

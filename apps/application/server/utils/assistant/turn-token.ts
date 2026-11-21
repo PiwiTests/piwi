@@ -39,9 +39,14 @@ export interface AssistantTurnListener {
 /** The `subscriptions/listen` streams of one turn: told when its tools change, and ended when it ends. */
 export class AssistantTurnListeners {
   private readonly listeners = new Set<AssistantTurnListener>();
+  private ended = false;
 
-  /** Add a stream; the function returned removes it. */
+  /** Add a stream, ended at once when the turn has; the function returned removes it. */
   add(listener: AssistantTurnListener): () => void {
+    if (this.ended) {
+      listener.end();
+      return () => {};
+    }
     this.listeners.add(listener);
     return () => this.listeners.delete(listener);
   }
@@ -51,6 +56,7 @@ export class AssistantTurnListeners {
   }
 
   end(): void {
+    this.ended = true;
     const listeners = [...this.listeners];
     this.listeners.clear();
     for (const listener of listeners) listener.end();
@@ -116,9 +122,12 @@ export function liveAssistantTurn(
   return turn.conversationId === conversationId ? turn : null;
 }
 
-/** The conversation of a request to a turn's MCP endpoint, or null for any other request. */
+/**
+ * The conversation of a request to a turn's MCP endpoint, or null for any other
+ * request: a POST, or the GET and DELETE it answers with 405.
+ */
 export function assistantTurnRouteConversation(method: string, path: string): number | null {
-  if (method !== 'POST') return null;
+  if (method !== 'POST' && method !== 'GET' && method !== 'DELETE') return null;
   const match = /^\/api\/assistant\/conversations\/([1-9]\d{0,15})\/mcp$/.exec(path.split('?')[0]!);
   return match ? Number(match[1]) : null;
 }
