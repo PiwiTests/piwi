@@ -66,7 +66,11 @@ describe('parseInitArgs', () => {
   });
 
   it('reads the server URL and key from the environment and strips a trailing slash', () => {
-    const opts = parseInitArgs([], { PIWI_DASHBOARD_URL: 'https://piwi.example.com/', PIWI_API_KEY: 'pd_x' } as NodeJS.ProcessEnv, root);
+    const opts = parseInitArgs(
+      [],
+      { PIWI_DASHBOARD_URL: 'https://piwi.example.com/', PIWI_API_KEY: 'pd_x' } as NodeJS.ProcessEnv,
+      root,
+    );
     expect(opts.serverUrl).toBe('https://piwi.example.com');
     expect(opts.apiKey).toBe('pd_x');
     expect(opts.apiKeyFromEnv).toBe(true);
@@ -76,14 +80,20 @@ describe('parseInitArgs', () => {
 
   it('resolves --skills all / none', () => {
     expect(parseInitArgs(['--skills', 'none'], EMPTY_ENV, root).skillSlugs).toEqual([]);
-    expect(parseInitArgs(['--skills', 'all'], EMPTY_ENV, root).skillSlugs.length).toBeGreaterThan(WORKFLOW_SKILLS.length);
+    expect(parseInitArgs(['--skills', 'all'], EMPTY_ENV, root).skillSlugs.length).toBeGreaterThan(
+      WORKFLOW_SKILLS.length,
+    );
   });
 });
 
 describe('runInit', () => {
   it('configures a clean project end to end (without installing) and returns 0', async () => {
     scaffoldProject();
-    const code = await runInit(['--no-install', '--server-url', 'https://piwi.example.com', '--project', 'checkout'], EMPTY_ENV, root);
+    const code = await runInit(
+      ['--no-install', '--server-url', 'https://piwi.example.com', '--project', 'checkout'],
+      EMPTY_ENV,
+      root,
+    );
     expect(code).toBe(0);
 
     const config = fs.readFileSync(path.join(root, 'playwright.config.ts'), 'utf-8');
@@ -300,7 +310,9 @@ describe('runInit', () => {
     // Run again, it finds the dependency recorded.
     logs.length = 0;
     await runInit(['--no-install', '--no-skills', '--json'], EMPTY_ENV, root);
-    expect(JSON.parse(logs.join('\n')).steps.find((s: { step: string }) => s.step === 'dependency').status).toBe('already');
+    expect(JSON.parse(logs.join('\n')).steps.find((s: { step: string }) => s.step === 'dependency').status).toBe(
+      'already',
+    );
   });
 
   it('under --dry-run writes nothing at all', async () => {

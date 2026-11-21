@@ -302,7 +302,9 @@ describe("the worker's live view connection", () => {
         second.paint('a frame of the second portal');
         return framesOf(secondShot) > before;
       });
-      expect(posts.filter((p) => p.type === 'frame' && 'data' in p).every((p) => 'test' in p && p.test === 'two portals')).toBe(true);
+      expect(
+        posts.filter((p) => p.type === 'frame' && 'data' in p).every((p) => 'test' in p && p.test === 'two portals'),
+      ).toBe(true);
     } finally {
       await liveViewTestEnded();
       await laneTestEnded();

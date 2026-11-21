@@ -691,10 +691,19 @@ What the package does to a user's run, process by process.
   (`onLiveViewPause`), which make the attempt's `PauseState` (`livePause`) and arm its
   contexts as a local run's Pause does: the next stop of reason `pause` waits in `showStop`
   for its controllers (`liveViewPause`, the hold's length), with no bar, its timeout held,
-  posted as a `pause` stop with its end (`until`). **Resume** goes on, **End the test** ends
-  the test as a local run's does (`endTest`), and the pause ends at any of a hold's ends too;
-  a Pause no call took is dropped at them and as the test ends, never carried to the next
-  test (`tests/live-view-pause.spec.ts`, `tests/live-view-pause-worker.spec.ts`).
+  posted as a `pause` stop with its end (`until`). The worker says on its stream that it
+  took a Pause, or dropped it and why (`pause-asked`). **Resume** goes on; **End the test**
+  (`endFromPiwi`) fails the test at once with who ended it (`Ended from Piwi by Ana`), as a
+  timeout does: the runner's wait on the test function or a `beforeEach` hook is given up
+  (`_failWithError`, `_timeoutManager`, feature-checked), and the stopped call stays held by
+  its context's debugger until the context closes, its pages closed first, so it fails and
+  never runs, nor does anything after it; on a runner of another shape the test fails at its
+  next locator call or as its function ends. The pause ends at any of a hold's ends too. A
+  Pause no call took is dropped at them, at a Resume and as the test's function ends, its
+  failure then held as any other; and a test whose page was followed through Playwright's
+  call stream (`followsCallStream`: the setting turned on mid-run) takes none, since its
+  debugger would stop past the call's wait (`tests/live-view-pause.spec.ts`,
+  `tests/live-view-pause-end.spec.ts`, `tests/live-view-pause-worker.spec.ts`).
 - **Each frame is masked before it goes** (`live-mask.ts`): the page's secret fields (`SECRET_FIELD_SELECTOR`) and the
   project's `masks` are read through `internalCall` before and after the frame and painted over with the `jpeg-js` of
   `playwright-core/lib/utilsBundle`, feature-checked. Without it, a frame that shows one does not go, nor does one of

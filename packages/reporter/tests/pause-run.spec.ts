@@ -49,7 +49,9 @@ function inspectorOpen(): boolean {
 }
 
 /** A page of the app: it answers Piwi's pause bar with what the server says, once per bar; its button calls `/clicked`. */
-const PAGE = (title: string) => `<!doctype html><title>${title}</title><input><button onclick="fetch('/clicked')">Go</button>
+const PAGE = (
+  title: string,
+) => `<!doctype html><title>${title}</title><input><button onclick="fetch('/clicked')">Go</button>
 <script>
 new MutationObserver(() => {
   const bar = document.getElementById('__piwi-pause-bar');
@@ -371,8 +373,7 @@ module.exports = defineConfig({
     ...process.env,
     PIWI_PAUSE_AT: bp.map((line) => `tests/pause.spec.cjs:${line}`).join(';'),
   };
-  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
-    delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND']) delete env[name];
   withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(

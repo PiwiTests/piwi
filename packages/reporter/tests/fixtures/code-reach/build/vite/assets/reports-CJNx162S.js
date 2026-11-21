@@ -1,2 +1,7 @@
-import{t as e}from"./index-V9kYtUO2.js";function t(t){let n=document.createElement(`p`);n.id=`revenue`,n.textContent=`Revenue ${e([3,4,5].reduce((e,t)=>e+t,0))}`,t.append(n)}export{t as renderReports};
+import { t as e } from './index-V9kYtUO2.js';
+function t(t) {
+  let n = document.createElement(`p`);
+  ((n.id = `revenue`), (n.textContent = `Revenue ${e([3, 4, 5].reduce((e, t) => e + t, 0))}`), t.append(n));
+}
+export { t as renderReports };
 //# sourceMappingURL=reports-CJNx162S.js.map

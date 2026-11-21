@@ -400,6 +400,32 @@ describe('pausing a CI test', () => {
     expect(['let-go', 'step', '', null].some(isLiveControlCommand)).toBe(false);
   });
 
+  test('End the test names who ended it, as plain text, and nobody when the instance knows no name', () => {
+    expect(parseInstanceToWorker('{"type":"end-test","by":"Ana"}')).toEqual({ type: 'end-test', by: 'Ana' });
+    expect(parseInstanceToWorker(JSON.stringify({ type: 'end-test', by: 'Ana [x](y)\u202e' }))).toEqual({
+      type: 'end-test',
+      by: 'Ana x y',
+    });
+    expect(parseInstanceToWorker('{"type":"end-test","by":""}')).toEqual({ type: 'end-test' });
+    expect(parseInstanceToWorker('{"type":"end-test","by":5}')).toEqual({ type: 'end-test' });
+  });
+
+  test('the worker says it took a Pause, or dropped it and why', () => {
+    expect(readWorkerToInstance({ type: 'pause-asked', worker: 0, slot: 1, waiting: true })).toEqual({
+      type: 'pause-asked',
+      shard: null,
+      worker: 0,
+      slot: 1,
+      waiting: true,
+    });
+    expect(
+      readWorkerToInstance({ type: 'pause-asked', worker: 0, waiting: false, why: 'No test runs on this worker now.' }),
+    ).toEqual({ type: 'pause-asked', shard: null, worker: 0, waiting: false, why: 'No test runs on this worker now.' });
+    const long = readWorkerToInstance({ type: 'pause-asked', worker: 0, waiting: false, why: 'x'.repeat(900) });
+    expect((long as { why: string }).why).toHaveLength(300);
+    expect(typeof readWorkerToInstance({ type: 'pause-asked', worker: 0, waiting: 'yes' })).toBe('string');
+  });
+
   test('a paused stop says when its pause ends', () => {
     const until = 1_800_000_000_000;
     expect(

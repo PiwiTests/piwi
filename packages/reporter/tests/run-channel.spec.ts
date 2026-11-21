@@ -397,8 +397,7 @@ describe('the worker’s run connection', () => {
         what: 'record',
         value: {
           ok: false,
-          message:
-            "Record needs the pause bar in the test's window, and this stop shows none: run the test headed.",
+          message: "Record needs the pause bar in the test's window, and this stop shows none: run the test headed.",
         },
       });
     } finally {

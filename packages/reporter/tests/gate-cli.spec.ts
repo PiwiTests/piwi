@@ -38,10 +38,9 @@ describe('parseGateArgs', () => {
     expect(parseGateArgs([...base, '--max-reused', '300'], EMPTY_ENV).policy).toMatchObject({ maxReused: 300 });
     expect(parseGateArgs([...base, '--max-reused', '25%'], EMPTY_ENV).policy).toMatchObject({ maxReusedPercent: 25 });
     expect(() => parseGateArgs([...base, '--max-reused', '120%'], EMPTY_ENV)).toThrow(/percentage/);
-    expect(parseGateArgs([...base, '--require-executed', '@critical, smoke'], EMPTY_ENV).policy.requireExecuted).toEqual([
-      'critical',
-      'smoke',
-    ]);
+    expect(
+      parseGateArgs([...base, '--require-executed', '@critical, smoke'], EMPTY_ENV).policy.requireExecuted,
+    ).toEqual(['critical', 'smoke']);
   });
 
   it('accepts the --flag=value form', () => {

@@ -10,7 +10,12 @@ describe('mergeAnnotations', () => {
   it('merges test- and result-level annotations, deduped', () => {
     const merged = mergeAnnotations(
       { annotations: [{ type: 'skip', description: 'reason' }] },
-      { annotations: [{ type: 'skip', description: 'reason' }, { type: 'tag', description: '@smoke' }] },
+      {
+        annotations: [
+          { type: 'skip', description: 'reason' },
+          { type: 'tag', description: '@smoke' },
+        ],
+      },
     );
     expect(merged).toEqual([
       { type: 'skip', description: 'reason' },

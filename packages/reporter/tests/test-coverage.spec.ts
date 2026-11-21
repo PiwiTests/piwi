@@ -43,7 +43,11 @@ const settings = (server: CoverageSettings['server'], browser: CoverageSettings[
 
 describe('composeTestCoverage', () => {
   it("keeps a style sheet's rules, but not in a file the scripts reached whole", () => {
-    const rules = (path: string) => ({ path, runtime: 'browser' as const, functions: [[3, 4]] as Array<[number, number]> });
+    const rules = (path: string) => ({
+      path,
+      runtime: 'browser' as const,
+      functions: [[3, 4]] as Array<[number, number]>,
+    });
     const css = [rules('web/app.css'), rules('src/Card.vue')];
     const settings = { browser: 'files' as const, server: 'off' as const, css: 'rules' as const };
     expect(composeTestCoverage(null, ['src/Card.vue', 'src/main.ts'], settings, css)).toEqual({
@@ -55,7 +59,9 @@ describe('composeTestCoverage', () => {
       ],
     });
     // At `functions`, the scripts' functions and the rules are both whole: they add up.
-    const functions = [{ path: 'src/Card.vue', runtime: 'browser' as const, functions: [[10, 12]] as Array<[number, number]> }];
+    const functions = [
+      { path: 'src/Card.vue', runtime: 'browser' as const, functions: [[10, 12]] as Array<[number, number]> },
+    ];
     expect(composeTestCoverage(null, functions, { ...settings, browser: 'functions' }, css)?.files).toContainEqual({
       path: 'src/Card.vue',
       runtime: 'browser',
@@ -217,7 +223,8 @@ describe('browserFunctionCoverage', () => {
       ['src/a.ts', [[1, 4]]],
       ['src/b.ts', [[1, 4]]],
     ]);
-    const lines = (count: number) => Array.from({ length: count }, (_, i) => [3 * i + 1, 3 * i + 1] as [number, number]);
+    const lines = (count: number) =>
+      Array.from({ length: count }, (_, i) => [3 * i + 1, 3 * i + 1] as [number, number]);
     const coverage = browserFunctionCoverage(
       functions,
       new Map([
@@ -234,7 +241,15 @@ describe('browserFunctionCoverage', () => {
       v: 1,
       files: [
         { path: 'src/a.ts', runtime: 'browser', functions: [[1, 4]] },
-        { path: 'src/b.ts', runtime: 'browser', functions: [[1, 4]], lines: [[1, 1], [4, 4]] },
+        {
+          path: 'src/b.ts',
+          runtime: 'browser',
+          functions: [[1, 4]],
+          lines: [
+            [1, 1],
+            [4, 4],
+          ],
+        },
       ],
     });
   });
@@ -519,7 +534,11 @@ describe('CoverageCollection', () => {
       const tc = testCase(['src/pay.ts']);
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
       const ready = collection.apply(tc, [
-        { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) },
+        {
+          name: ATTACHMENT_NAMES.browserCoverage,
+          contentType: 'application/json',
+          body: Buffer.from(JSON.stringify(body)),
+        },
       ]);
       expect(ready).not.toBeNull();
       await collection.settle();
@@ -551,9 +570,24 @@ describe('CoverageCollection', () => {
       });
       const tc = testCase(['web/app.js']);
       const rules = { v: 1, files: [{ path: 'web/app.css', runtime: 'browser', functions: [[1, 1]] }] };
-      const known = { v: 1, files: [{ path: 'web/app.css', allFunctions: [[1, 1], [2, 2]] }] };
+      const known = {
+        v: 1,
+        files: [
+          {
+            path: 'web/app.css',
+            allFunctions: [
+              [1, 1],
+              [2, 2],
+            ],
+          },
+        ],
+      };
       collection.apply(tc, [
-        { name: ATTACHMENT_NAMES.cssCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(rules)) },
+        {
+          name: ATTACHMENT_NAMES.cssCoverage,
+          contentType: 'application/json',
+          body: Buffer.from(JSON.stringify(rules)),
+        },
         { name: ATTACHMENT_NAMES.cssRules, contentType: 'application/json', body: Buffer.from(JSON.stringify(known)) },
       ]);
       await collection.settle();
@@ -566,11 +600,26 @@ describe('CoverageCollection', () => {
         ],
       });
       const sent: unknown[] = [];
-      await collection.sendRunCoverage({ putJSON: async (_url: string, body: unknown) => void sent.push(body) } as never, 7, null);
+      await collection.sendRunCoverage(
+        { putJSON: async (_url: string, body: unknown) => void sent.push(body) } as never,
+        7,
+        null,
+      );
       expect(sent).toEqual([
         {
           v: 1,
-          files: [{ path: 'web/app.css', runtime: 'browser', blob, functions: [[1, 1]], allFunctions: [[1, 1], [2, 2]] }],
+          files: [
+            {
+              path: 'web/app.css',
+              runtime: 'browser',
+              blob,
+              functions: [[1, 1]],
+              allFunctions: [
+                [1, 1],
+                [2, 2],
+              ],
+            },
+          ],
         },
       ]);
     } finally {
@@ -685,7 +734,11 @@ describe('CoverageCollection', () => {
           contentType: 'application/json',
           body: Buffer.from(JSON.stringify({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions }] })),
         },
-        { name: ATTACHMENT_NAMES.browserFunctions, contentType: 'application/json', body: Buffer.from(JSON.stringify({ v: 1, files: known })) },
+        {
+          name: ATTACHMENT_NAMES.browserFunctions,
+          contentType: 'application/json',
+          body: Buffer.from(JSON.stringify({ v: 1, files: known })),
+        },
       ];
       collection.apply(
         testCase(['src/pay.ts']),
@@ -805,7 +858,9 @@ describe('CoverageCollection', () => {
       configDir: os.tmpdir(),
     });
     const tc = testCase(['src/pay.ts']);
-    const ready = collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from('{"v":1,"fil') }]);
+    const ready = collection.apply(tc, [
+      { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from('{"v":1,"fil') },
+    ]);
     expect(ready).toBeNull();
     expect(tc.coverage).toEqual({ v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser' }] });
   });
@@ -826,7 +881,11 @@ describe('CoverageCollection', () => {
       const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
       const ready = collection.apply(tc, [
         requestsAttachment(server.url, ['a.1']),
-        { name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) },
+        {
+          name: ATTACHMENT_NAMES.browserCoverage,
+          contentType: 'application/json',
+          body: Buffer.from(JSON.stringify(body)),
+        },
       ]);
       expect(ready).not.toBeNull();
       await ready;
@@ -965,7 +1024,13 @@ describe('CoverageCollection', () => {
     const tc = testCase(['src/pay.ts']);
     const body = { v: 1, files: [{ path: 'src/pay.ts', runtime: 'browser', functions: [[1, 1]] }] };
     expect(
-      collection.apply(tc, [{ name: ATTACHMENT_NAMES.browserCoverage, contentType: 'application/json', body: Buffer.from(JSON.stringify(body)) }]),
+      collection.apply(tc, [
+        {
+          name: ATTACHMENT_NAMES.browserCoverage,
+          contentType: 'application/json',
+          body: Buffer.from(JSON.stringify(body)),
+        },
+      ]),
     ).not.toBeNull();
     const started = Date.now();
     await collection.settle(100);

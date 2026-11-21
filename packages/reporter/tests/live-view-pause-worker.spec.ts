@@ -1,11 +1,18 @@
 import type * as http from 'node:http';
 import type { WorkerInfo } from '@playwright/test';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { LIVE_VIEW_ENV, formatLiveViewEnv } from '@piwitests/core/live-view';
+import {
+  LIVE_VIEW_ENV,
+  formatLiveViewEnv,
+  readWorkerToInstance,
+  type WorkerToInstance,
+} from '@piwitests/core/live-view';
 import {
   closeLiveView,
+  liveViewCallSource,
   liveViewMayPause,
   liveViewPause,
+  liveViewTestFunctionEnded,
   liveViewTestBegan,
   liveViewTestEnded,
   onLiveViewPause,
@@ -39,18 +46,27 @@ let opening: unknown[];
 let asked: string[];
 /** The address of each stream the worker opened. */
 let urls: string[];
+/** What the worker said of each Pause it was asked: taken, or dropped and why. */
+let pauseAsked: Array<Extract<WorkerToInstance, { type: 'pause-asked' }>>;
 
 beforeEach(async () => {
   streams = [];
   nextStatus = 200;
   asked = [];
   urls = [];
+  pauseAsked = [];
   opening = [
     { type: 'hold', ms: LONG_MS, pause: true },
     { ...VIEW, controller: true },
     { type: 'viewers', count: 1 },
   ];
-  onLiveViewPause({ pause: () => void asked.push('pause'), drop: () => void asked.push('drop') });
+  onLiveViewPause({
+    pause: () => {
+      asked.push('pause');
+      return null;
+    },
+    drop: () => void asked.push('drop'),
+  });
   server = await startServer((req, res) => {
     if (req.headers.authorization !== `Bearer ${KEY}`) return jsonRes(res, 401, {});
     if (req.method === 'GET') {
@@ -60,6 +76,10 @@ beforeEach(async () => {
       for (const message of opening) res.write(`data: ${JSON.stringify(message)}\n\n`);
       streams.push(res);
       return;
+    }
+    if (req.headers['content-type'] === 'application/json') {
+      const message = readWorkerToInstance(JSON.parse(req.body));
+      if (typeof message !== 'string' && message.type === 'pause-asked') pauseAsked.push(message);
     }
     jsonRes(res, 200, {});
   });
@@ -118,8 +138,58 @@ describe('a CI worker’s pause of its test', () => {
   it('follows the call log through the instrumentation while the setting is on, and only then', async () => {
     await running();
     expect(liveViewMayPause()).toBe(true);
+    expect(liveViewCallSource()).toBe('listener');
     say({ type: 'hold', ms: LONG_MS });
     await waitFor(() => !liveViewMayPause());
+    expect(liveViewCallSource()).toBe('stream');
+  });
+
+  it('says it took a Pause, and that it dropped one and why', async () => {
+    await running();
+    say({ type: 'pause' });
+    await waitFor(() => pauseAsked.length === 1);
+    expect(pauseAsked[0]).toMatchObject({ waiting: true });
+    liveViewTestFunctionEnded();
+    await waitFor(() => pauseAsked.length === 2);
+    expect(pauseAsked[1]).toMatchObject({ waiting: false, why: "The test's function ended before its next call." });
+    expect(asked).toEqual(['pause', 'drop']);
+    // Asked again, a Resume drops it.
+    say({ type: 'pause' });
+    say({ type: 'resume' });
+    await waitFor(() => pauseAsked.length === 4);
+    expect(pauseAsked[3]).toMatchObject({ waiting: false, why: 'Resume came before the test paused.' });
+  });
+
+  it('says why it takes no Pause with no test running, or nobody who may control the run watching', async () => {
+    await running();
+    say({ ...VIEW });
+    say({ type: 'pause' });
+    await waitFor(() => pauseAsked.length === 1);
+    await liveViewTestEnded();
+    say({ ...VIEW, controller: true });
+    say({ type: 'pause' });
+    await waitFor(() => pauseAsked.length === 2);
+    expect(pauseAsked.map((p) => !p.waiting && p.why)).toEqual([
+      'Nobody who may control the run watches this worker in full now.',
+      'No test runs on this worker now.',
+    ]);
+    expect(asked).toEqual([]);
+  });
+
+  it('takes no command on the stream of a worker outside CI', async () => {
+    const env: NodeJS.ProcessEnv = {
+      [LIVE_VIEW_ENV]: formatLiveViewEnv(server.url, RUN, KEY),
+      PIWI_SHARE_LIVE: 'true',
+    };
+    expect(openLiveView(worker, env, false)).toBe(true);
+    await waitFor(() => streams.length === 1);
+    liveViewTestBegan('pays', () => null);
+    await sleep(100);
+    say({ type: 'pause' });
+    await sleep(200);
+    expect(asked).toEqual([]);
+    expect(pauseAsked).toEqual([]);
+    expect(liveViewPause()).toBeNull();
   });
 
   it('takes a Pause with the setting on and a controller watching in full, its wait ending at its length', async () => {
@@ -148,15 +218,24 @@ describe('a CI worker’s pause of its test', () => {
     const second = liveViewPause()!;
     let how: string | null = null;
     void second.ended.then((end) => (how = end));
-    say({ type: 'end-test' });
+    say({ type: 'end-test', by: 'Ana' });
     await waitFor(() => how === 'end');
+    expect(second.by).toBe('Ana');
   });
 
-  it('ignores Let it go, and Resume and End the test while the test is not paused', async () => {
+  it('ignores Let it go at a pause, and Resume and End the test while the test is not paused', async () => {
     const { ended } = await paused();
     say({ type: 'let-go' });
     await sleep(200);
     expect(ended()).toBeNull();
+    say({ type: 'resume' });
+    await waitFor(() => ended() === 'resume');
+    say({ type: 'resume' });
+    say({ type: 'end-test' });
+    await sleep(200);
+    expect(asked).toEqual(['pause']);
+    expect(pauseAsked).toHaveLength(1);
+    expect(liveViewPause()).toBeNull();
   });
 
   it('ends as the last controller leaves, and drops a Pause no call took', async () => {

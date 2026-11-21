@@ -281,7 +281,11 @@ describe('the manifests of the origins a run reaches', () => {
       first,
       fakeResult({
         attachments: [
-          { name: ATTACHMENT_NAMES.network, contentType: 'application/json', body: Buffer.from(JSON.stringify(network)) },
+          {
+            name: ATTACHMENT_NAMES.network,
+            contentType: 'application/json',
+            body: Buffer.from(JSON.stringify(network)),
+          },
         ],
       }),
     );

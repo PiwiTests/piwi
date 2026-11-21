@@ -179,10 +179,13 @@ describe('executeStep', () => {
 describe('assertPostcondition', () => {
   it('waits for the target to become visible', async () => {
     const { page, log } = recorderPage();
-    await assertPostcondition({ assert: 'visible', locator: { method: 'getByRole', args: ['heading'] } }, {
-      page,
-      params: {},
-    });
+    await assertPostcondition(
+      { assert: 'visible', locator: { method: 'getByRole', args: ['heading'] } },
+      {
+        page,
+        params: {},
+      },
+    );
     expect(log).toContainEqual({ method: 'getByRole', args: ['heading'] });
     expect(log).toContainEqual({ method: 'waitFor', args: [{ state: 'visible' }] });
   });

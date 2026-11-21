@@ -46,12 +46,22 @@ const INDEX: LocatorIndex = {
     {
       locator: "getByText('Apply coupon')",
       lastSeenAt: '2026-09-26T00:00:00Z',
-      uses: [{ test: 3, actions: ['click'], callSites: ['tests/coupon.spec.ts:5:20'], projects: [], branches: ['main'] }],
+      uses: [
+        { test: 3, actions: ['click'], callSites: ['tests/coupon.spec.ts:5:20'], projects: [], branches: ['main'] },
+      ],
     },
     {
       locator: "getByRole('heading', { name: 'Your cart' })",
       lastSeenAt: '2026-09-26T00:00:00Z',
-      uses: [{ test: 3, actions: ['expect.toBeVisible'], callSites: ['tests/coupon.spec.ts:4:20'], projects: [], branches: ['main'] }],
+      uses: [
+        {
+          test: 3,
+          actions: ['expect.toBeVisible'],
+          callSites: ['tests/coupon.spec.ts:4:20'],
+          projects: [],
+          branches: ['main'],
+        },
+      ],
     },
   ],
   truncated: false,
@@ -143,7 +153,10 @@ beforeEach(() => {
   dir = fs.mkdtempSync(path.join(os.tmpdir(), 'piwi-preflight-'));
   git('init', '-q', '-b', 'main');
   write('playwright.config.ts', 'export default {};\n');
-  write('src/components/CheckoutButton.vue', '<template>\n  <button class="pay" @click="pay">\n    Pay now\n  </button>\n</template>\n');
+  write(
+    'src/components/CheckoutButton.vue',
+    '<template>\n  <button class="pay" @click="pay">\n    Pay now\n  </button>\n</template>\n',
+  );
   write('src/locales/en.json', '{\n  "checkout": {\n    "coupon": {\n      "apply": "Apply coupon"\n    }\n  }\n}\n');
   write('tests/pages/checkout.page.ts', PAGE_OBJECT);
   write('tests/coupon.spec.ts', COUPON_SPEC);
@@ -151,7 +164,10 @@ beforeEach(() => {
   git('add', '.');
   git('commit', '-q', '-m', 'init');
   // The change: the button's text renamed, the coupon string renamed in the locale file.
-  write('src/components/CheckoutButton.vue', '<template>\n  <button class="pay" @click="pay">\n    Pay\n  </button>\n</template>\n');
+  write(
+    'src/components/CheckoutButton.vue',
+    '<template>\n  <button class="pay" @click="pay">\n    Pay\n  </button>\n</template>\n',
+  );
   write('src/locales/en.json', '{\n  "checkout": {\n    "coupon": {\n      "apply": "Use coupon"\n    }\n  }\n}\n');
   out = [];
   err = [];
@@ -171,8 +187,22 @@ afterEach(() => {
 describe('parsePreflightArgs', () => {
   it('reads the flags with their defaults', () => {
     expect(parsePreflightArgs([])).toMatchObject({ base: 'HEAD', branch: null, fix: false, run: false, strict: false });
-    const args = parsePreflightArgs(['--base', '@{upstream}', '--branch=develop', '--fix', '--strict', '--', '--headed']);
-    expect(args).toMatchObject({ base: '@{upstream}', branch: 'develop', fix: true, strict: true, extra: ['--headed'] });
+    const args = parsePreflightArgs([
+      '--base',
+      '@{upstream}',
+      '--branch=develop',
+      '--fix',
+      '--strict',
+      '--',
+      '--headed',
+    ]);
+    expect(args).toMatchObject({
+      base: '@{upstream}',
+      branch: 'develop',
+      fix: true,
+      strict: true,
+      extra: ['--headed'],
+    });
   });
 
   it('refuses an unknown flag and a flag missing its value', () => {
@@ -197,7 +227,7 @@ describe('piwi preflight', () => {
     expect(text).toContain('"Pay now" → "Pay"');
     expect(text).toContain("getByRole('button', { name: 'Pay now' })");
     expect(text).toContain('click · 3 tests · likely');
-    expect(text).toContain("tests/pages/checkout.page.ts:4");
+    expect(text).toContain('tests/pages/checkout.page.ts:4');
     expect(text).toContain("→ getByRole('button', { name: 'Pay' })");
     expect(text).toContain('"Apply coupon" → "Use coupon" (key checkout.coupon.apply)');
     expect(text).toContain('edit by hand');
@@ -277,9 +307,9 @@ describe('piwi preflight', () => {
     codeIndex = { ...(codeIndex as object), reach: [{ file: 1, tests: [0, 1], origin: 'client' }] };
     out = [];
     await run('--json');
-    expect(JSON.parse(out.join('\n')).breaks.find((b: { locator: string }) => b.locator.includes('Pay now')).confidence).toBe(
-      'possible',
-    );
+    expect(
+      JSON.parse(out.join('\n')).breaks.find((b: { locator: string }) => b.locator.includes('Pay now')).confidence,
+    ).toBe('possible');
   });
 
   it('--fix leaves a possible break alone and lists its rewrite to apply by hand', async () => {
@@ -315,7 +345,10 @@ describe('piwi preflight', () => {
 
   it('says what it checked when the diff breaks nothing', async () => {
     git('checkout', '--', '.');
-    write('src/components/CheckoutButton.vue', '<template>\n  <button class="pay" @click="pay">\n    Pay now!\n  </button>\n</template>\n');
+    write(
+      'src/components/CheckoutButton.vue',
+      '<template>\n  <button class="pay" @click="pay">\n    Pay now!\n  </button>\n</template>\n',
+    );
     expect(await run()).toBe(0);
     expect(out.join('\n')).toContain('No break found in the 1 string this diff changes.');
   });

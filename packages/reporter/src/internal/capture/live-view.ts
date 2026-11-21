@@ -120,10 +120,11 @@ import type { PageFrame } from './page-view.js';
  * It says it can pause too (`LIVE_PAUSE_FEATURE`), and hears whether its project lets its controllers pause a CI test
  * (`hold`'s `pause`); while it does, the call log comes from the instrumentation (`liveViewMayPause`), as in a run a
  * person may pause. Only then, on its own stream open now, and while a controller watches it in full, **Pause**
- * (`pause`) asks the running test to stop at its next call (`onLiveViewPause`): the stop that comes waits
- * (`liveViewPause`), as a hold does and with the same length, posted as a stop of kind `pause` with its end, until
- * **Resume** (`resume`), **End the test** (`end-test`), which ends the test as a local run's does, or any of a hold's
- * ends. A Pause no call took yet is dropped at those ends, and as its test ends.
+ * (`pause`) asks the running test to stop at its next call (`onLiveViewPause`), the worker saying it took it or why
+ * not (`pause-asked`): the stop that comes waits (`liveViewPause`), as a hold does and with the same length, posted as
+ * a stop of kind `pause` with its end, until **Resume** (`resume`), **End the test** (`end-test`, with who asked),
+ * which fails the test there, or any of a hold's ends. A Pause no call took yet is dropped, saying why, at those ends,
+ * at a Resume, and as its test's function ends.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -233,14 +234,27 @@ interface Link {
 /** How a CI test's wait for its controllers ended: **End the test** (`end`), or any other way (`resume`). */
 export type LiveWaitEnd = 'resume' | 'end';
 
+/** Why a worker drops a Pause it was asked, as the instance tells the person who asked. */
+export const PAUSE_DROPPED = {
+  noTest: 'No test runs on this worker now.',
+  stopped: "This worker's test stands at a stop.",
+  left: 'Nobody who may control the run watches this worker in full now.',
+  off: "The project's setting is off.",
+  resumed: 'Resume came before the test paused.',
+  ended: 'The test ended before its next call.',
+  functionEnded: "The test's function ended before its next call.",
+} as const;
+
 /**
  * A CI test waiting for its controllers, held at its failure or paused at a call: when it ends at the latest, what
- * resolves as it ends, for whichever reason, and what ends it now (as on Resume).
+ * resolves as it ends, for whichever reason, who ended it at **End the test** (`by`, null when the instance named
+ * nobody), and what ends it now (as on Resume).
  */
 export interface LiveWait {
   /** When the wait ends at the latest, in epoch ms. */
   until: number;
   ended: Promise<LiveWaitEnd>;
+  readonly by: string | null;
   end: () => void;
 }
 
@@ -253,13 +267,18 @@ let waiting: {
   began: number;
   until: number;
   timer: ReturnType<typeof setTimeout>;
-  end: (how?: LiveWaitEnd) => void;
+  end: (how?: LiveWaitEnd, by?: string | null) => void;
   ended: Promise<LiveWaitEnd>;
+  by: string | null;
+  over: boolean;
 } | null = null;
 
-/** What the capture fixtures do as a controller pauses the running test, and as a Pause no call took is dropped. */
+/**
+ * What the capture fixtures do as a controller pauses the running test (`pause`: why it cannot take it, null when it
+ * took it), and as a Pause no call took is dropped.
+ */
 export interface LivePauseHandlers {
-  pause: () => void;
+  pause: () => string | null;
   drop: () => void;
 }
 
@@ -497,7 +516,7 @@ export function openLiveView(
 
 /** Close the worker's connection, as the worker ends. */
 export function closeLiveView(): void {
-  letWaitGo();
+  letWaitGo(PAUSE_DROPPED.noTest);
   const own = link;
   link = null;
   running = null;
@@ -594,7 +613,7 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
   if (!running) return;
   const ended = running;
   running = null;
-  if (link) link.pauseAsked = false;
+  if (link) dropPause(link, PAUSE_DROPPED.ended);
   const outcome = status ? { test: ended.title, status, ms: Math.max(0, Date.now() - ended.began) } : null;
   await stopView();
   const own = link;
@@ -665,7 +684,7 @@ function connect(own: Link): void {
     if (status !== null) own.answered = status;
     if (status !== null && GIVE_UP.has(status)) return void refuse(own, status);
     // The run's live view is not there now (the project's live view off, the run not live): no controller can see a wait.
-    if (status !== null && GONE_NOW.has(status) && own === link) letWaitGo();
+    if (status !== null && GONE_NOW.has(status) && own === link) letWaitGo(PAUSE_DROPPED.left);
     retry(own, status !== null && NOT_NOW.has(status));
   };
   const request = own.client.request(url, {
@@ -726,7 +745,8 @@ function connect(own: Link): void {
         else if (message?.type === 'text') sendText(own);
         else if (message?.type === 'hold') setHold(own, message.ms, message.pause === true);
         else if (message?.type === 'let-go' || message?.type === 'pause') control(own, request, message.type);
-        else if (message?.type === 'resume' || message?.type === 'end-test') control(own, request, message.type);
+        else if (message?.type === 'resume') control(own, request, 'resume');
+        else if (message?.type === 'end-test') control(own, request, 'end-test', message.by ?? null);
         else if (message) setViewers(own, message.count);
         if (message?.type === 'view' || message?.type === 'viewers') keepHold(own, message);
       }
@@ -799,7 +819,7 @@ function lostCause(status: number | null): string {
 /** The instance refused the key for good (`status`): nothing more is tried for the worker's life; the run says why. */
 function refuse(own: Link, status: number): void {
   if (own.refused !== null) return;
-  if (own === link) letWaitGo();
+  if (own === link) letWaitGo(PAUSE_DROPPED.left);
   own.refused = liveShareRefusal(status);
   own.answered = status;
   if (own.ci) goDark(own, 'It stays off for this worker.');
@@ -816,7 +836,7 @@ function refuse(own: Link, status: number): void {
  * share the run again.
  */
 function giveUp(own: Link): void {
-  if (own === link) letWaitGo();
+  if (own === link) letWaitGo(PAUSE_DROPPED.left);
   own.sharing = false;
   own.lost = liveShareRefusal(own.answered);
   own.viewers = 0;
@@ -863,7 +883,7 @@ function setHold(own: Link, ms: number | null, pause: boolean): void {
   own.hold = ms;
   own.pause = ms !== null && pause;
   if (own !== link) return;
-  if (!own.pause) dropPause(own);
+  if (!own.pause) dropPause(own, PAUSE_DROPPED.off);
   const wait = waiting;
   if (!wait) return;
   if (ms === null || (wait.kind === 'pause' && !own.pause)) return endWait();
@@ -880,34 +900,56 @@ function setHold(own: Link, ms: number | null, pause: boolean): void {
 }
 
 /**
- * A command of a controller, on the stream `request`, taken on the worker's own stream open now alone, while the
+ * A command of a controller, on the stream `request`, taken on a CI worker's own stream open now alone, while the
  * project holds failing CI tests: **Let it go** ends a hold; with the pause setting on, **Pause** asks the running test
- * to stop at its next call while a controller watches the worker in full, and **Resume** and **End the test** end a
- * pause, Resume dropping a Pause no call took.
+ * to stop at its next call while a controller watches the worker in full, the worker saying it took it or why not
+ * (`pause-asked`), and **Resume** and **End the test** (`by`, who asked) end a pause, Resume dropping a Pause no call
+ * took.
  */
-function control(own: Link, request: http.ClientRequest, command: 'let-go' | 'pause' | 'resume' | 'end-test'): void {
-  if (own !== link || own.stream !== request || own.hold === null) return;
+function control(
+  own: Link,
+  request: http.ClientRequest,
+  command: 'let-go' | 'pause' | 'resume' | 'end-test',
+  by: string | null = null,
+): void {
+  if (own !== link || !own.ci || own.stream !== request || own.hold === null) return;
   if (command === 'let-go') {
     if (waiting?.kind === 'held') endWait();
     return;
   }
   if (!own.pause) return;
   if (command === 'pause') {
-    if (waiting || own.pauseAsked || !running || !active(own) || !controllerWatches(own)) return;
+    if (own.pauseAsked) return;
+    const why = waiting
+      ? PAUSE_DROPPED.stopped
+      : !running || !active(own)
+        ? PAUSE_DROPPED.noTest
+        : !controllerWatches(own)
+          ? PAUSE_DROPPED.left
+          : pauseHandlers
+            ? pauseHandlers.pause()
+            : PAUSE_DROPPED.noTest;
+    if (why) return void postState(own, { type: 'pause-asked', ...own.id, waiting: false, why });
     own.pauseAsked = true;
-    pauseHandlers?.pause();
+    postState(own, { type: 'pause-asked', ...own.id, waiting: true });
   } else if (waiting?.kind === 'pause') {
-    endWait(command === 'end-test' ? 'end' : 'resume');
+    endWait(command === 'end-test' ? 'end' : 'resume', by);
   } else if (command === 'resume') {
-    dropPause(own);
+    dropPause(own, PAUSE_DROPPED.resumed);
   }
 }
 
-/** Drop a Pause no call took yet. */
-function dropPause(own: Link): void {
+/** Drop a Pause no call took yet, telling the instance why. */
+function dropPause(own: Link, why: string): void {
   if (!own.pauseAsked) return;
   own.pauseAsked = false;
   pauseHandlers?.drop();
+  postState(own, { type: 'pause-asked', ...own.id, waiting: false, why });
+}
+
+/** The running test's function ended: a Pause no call took is dropped, its failure held as any other. */
+export function liveViewTestFunctionEnded(): void {
+  if (link) dropPause(link, PAUSE_DROPPED.functionEnded);
 }
 
 /** Whether a controller watches the worker in full now, as the instance last said. */
@@ -924,18 +966,18 @@ function keepHold(
   message: Extract<InstanceToWorker, { type: 'view' }> | Extract<InstanceToWorker, { type: 'viewers' }>,
 ): void {
   const left = message.type === 'view' ? !message.full || message.controller !== true : message.count === 0;
-  if (own === link && left) letWaitGo();
+  if (own === link && left) letWaitGo(PAUSE_DROPPED.left);
 }
 
-/** End the running test's wait, if one waits: as on Resume, or as on End the test (`end`). */
-function endWait(how: LiveWaitEnd = 'resume'): void {
-  waiting?.end(how);
+/** End the running test's wait, if one waits: as on Resume, or as on End the test (`end`), by `by`. */
+function endWait(how: LiveWaitEnd = 'resume', by: string | null = null): void {
+  waiting?.end(how, by);
 }
 
-/** End the running test's wait, if one waits, and drop a Pause no call took: nobody can see either any more. */
-function letWaitGo(): void {
+/** End the running test's wait, if one waits, and drop a Pause no call took (`why`): nobody can see either any more. */
+function letWaitGo(why: string): void {
   endWait();
-  if (link) dropPause(link);
+  if (link) dropPause(link, why);
 }
 
 /**
@@ -958,9 +1000,15 @@ function startWait(kind: 'held' | 'pause', ms: number): LiveWait {
     until: began + ms,
     timer: setTimeout(() => endWait(), ms),
     ended,
-    end: (how = 'resume') => {
+    by: null,
+    over: false,
+    end: (how = 'resume', by = null) => {
+      // A wait ends once: what ended it first stands.
+      if (wait.over) return;
+      wait.over = true;
       clearTimeout(wait.timer);
       if (waiting === wait) waiting = null;
+      wait.by = by;
       resolve(how);
     },
   };
@@ -968,6 +1016,9 @@ function startWait(kind: 'held' | 'pause', ms: number): LiveWait {
   return {
     get until() {
       return wait.until;
+    },
+    get by() {
+      return wait.by;
     },
     ended,
     end: () => wait.end(),
@@ -993,8 +1044,11 @@ export function liveViewHold(): LiveHold | null {
 export function liveViewPause(): LiveWait | null {
   const own = link;
   if (!own?.pauseAsked) return null;
+  if (!own.pause || own.hold === null || !liveViewMayHold()) {
+    dropPause(own, controllerWatches(own) ? PAUSE_DROPPED.noTest : PAUSE_DROPPED.left);
+    return null;
+  }
   own.pauseAsked = false;
-  if (!own.pause || own.hold === null || !liveViewMayHold()) return null;
   return startWait('pause', own.hold);
 }
 
@@ -1242,7 +1296,7 @@ function followCalls(own: Link): void {
   const wanted = !!running && !own.logRefused && shownInFull(own);
   if (wanted && !shown.following) {
     const { page } = shown;
-    const source = own.ci && !running!.mayPause && !liveViewMayPause() ? 'stream' : 'listener';
+    const source = callSource(own);
     shown.following = followCallLog(
       page,
       running!.began,
@@ -1257,6 +1311,19 @@ function followCalls(own: Link): void {
     shown.following = null;
     forgetLog(own);
   }
+}
+
+/**
+ * Where a CI run's view follows the running test's calls from: Playwright's call stream in a run nothing pauses, the
+ * in-process instrumentation in any other, which moves no stop of the debugger.
+ */
+function callSource(own: Link): 'stream' | 'listener' {
+  return own.ci && !running?.mayPause && !liveViewMayPause() ? 'stream' : 'listener';
+}
+
+/** Where the view of the running test follows its calls from now; null with no key or no test running. */
+export function liveViewCallSource(): 'stream' | 'listener' | null {
+  return link && running ? callSource(link) : null;
 }
 
 /** The call log shown goes, and the one waiting to go. */

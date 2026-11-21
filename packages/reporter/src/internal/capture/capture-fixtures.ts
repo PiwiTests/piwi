@@ -166,12 +166,14 @@ import {
   liveViewStopped,
   liveViewTestBegan,
   liveViewTestEnded,
+  liveViewTestFunctionEnded,
   onLiveViewPause,
   openLiveView,
+  PAUSE_DROPPED,
   type LiveHold,
   type LiveWait,
 } from './live-view.js';
-import { listenCalls, trackCalls } from './live-call-log.js';
+import { followsCallStream, listenCalls, trackCalls } from './live-call-log.js';
 import { laneCalled, laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
 import { guardTracing } from './live-inspect.js';
 import { guardScreencast } from './page-view.js';
@@ -434,6 +436,9 @@ interface CaptureSink {
   // A controller paused this CI attempt on the instance's live view (`onLiveViewPause`): its `pause` was made for it, and
   // a stop of reason `pause` waits for its controllers (`liveViewPause`).
   livePause: boolean;
+  // The context whose debugger holds the call a controller ended this CI attempt at (`endFromPiwi`): its stop is not
+  // let go, so the call never runs; null for none.
+  endedFromPiwi: BrowserContext | null;
   // While the pause is on, the locator calls in flight by call site without its column: a stop on one of their lines
   // highlights the call's element, and a pick there is folded into its snapshot.
   locatorCalls: Map<string, LocatorCall>;
@@ -529,6 +534,7 @@ function createSink(): CaptureSink {
     userPick: null,
     pause: null,
     livePause: false,
+    endedFromPiwi: null,
     locatorCalls: new Map(),
     stops: [],
     shownStops: new Map(),
@@ -773,7 +779,12 @@ async function settleBeforeClose(closing: { page?: Page; context?: BrowserContex
 async function settleContextClose(context: BrowserContext): Promise<void> {
   CLOSING_CONTEXTS.add(context);
   await settleBeforeClose({ context });
-  if (contextDebugger(context)?.pausedDetails()) await steerDebugger(context, 'resume');
+  if (!contextDebugger(context)?.pausedDetails()) return;
+  // A call held where a controller ended the CI test goes on only once its pages are gone: it fails, and never runs.
+  if (ENDED_CONTEXTS.has(context)) {
+    await Promise.all(openPages(context).map((page) => internalCall(page, () => page.close()).catch(() => undefined)));
+  }
+  await steerDebugger(context, 'resume');
 }
 
 function isPageClosed(page: Page): boolean {
@@ -1657,6 +1668,9 @@ function locatorSource(target: Locator, method: string, args: unknown[]): string
 /** Each context whose next call is a `page.pause()` Piwi took over, with that call's site and page. */
 const PAGE_PAUSES = new WeakMap<BrowserContext, { location: string; page: Page }>();
 
+/** Each context whose debugger holds the call a controller ended a CI test at (`endFromPiwi`), until it closes. */
+const ENDED_CONTEXTS = new WeakSet<BrowserContext>();
+
 /** Each context whose close began: a stop of it goes on unshown. */
 const CLOSING_CONTEXTS = new WeakSet<BrowserContext>();
 
@@ -1799,7 +1813,8 @@ function onDebuggerStop(context: BrowserContext): void {
     } catch {
       if (state) how = goOn(state);
     } finally {
-      await steerDebugger(context, how);
+      // Ended from the instance's live view: the stopped call stays held until its context closes.
+      if (sink?.endedFromPiwi !== context) await steerDebugger(context, how);
     }
   })();
 }
@@ -2107,6 +2122,7 @@ async function showStop(
   const answer = await shown;
   if (!end.signal.aborted) {
     const chosen = fromEditor ?? answer;
+    if (chosen === 'end' && livePause && wait) return endFromPiwi(sink, context, location, wait.by);
     return chosen === 'end' ? endTest(sink, call, title, location, reason) : chosen;
   }
   // The test ended under it: as on Finish, nothing stops after it.
@@ -2173,6 +2189,62 @@ function endTest(
   console.log(`[piwi] ${said}`);
   tellHub({ type: 'notice', message: said });
   return 'end';
+}
+
+/** The error a CI test ended from the instance's live view fails with: who ended it, when the instance named them. */
+export function endedFromPiwiError(by: string | null): Error {
+  return new Error(by ? `Ended from Piwi by ${by}` : 'Ended from Piwi');
+}
+
+/**
+ * End a CI test at its pause (**End the test** from the instance's live view): the test fails at once with who ended it
+ * (`endedFromPiwiError`), as a timeout ends a test: the runner's wait on what runs now (the test function or a
+ * `beforeEach` hook, `_timeoutManager`, feature-checked) is given up with that error, and the stopped call stays held by
+ * its context's debugger (`endedFromPiwi`) until the context closes, so it never runs, nor does anything after it. The
+ * locator calls in flight that carry the end signal are given up too, and any later one fails with the same error. On a
+ * runner of another shape, the test fails at its next locator call, or as its function ends, and the stopped call
+ * runs first unless it is a locator call that carries the end signal (Playwright 1.62 and later).
+ */
+function endFromPiwi(sink: CaptureSink, context: BrowserContext, location: string, by: string | null): PauseAnswer {
+  const testInfo = sink.testInfo!;
+  const error = endedFromPiwiError(by);
+  console.log(`[piwi] ${error.message} at ${callSiteLine(location)}: the test fails here.`);
+  sink.ended = true;
+  sink.skip = error;
+  sink.end.abort(error);
+  if (failNow(testInfo, error)) {
+    sink.endedFromPiwi = context;
+    ENDED_CONTEXTS.add(context);
+    return 'end';
+  }
+  // The runner's wait cannot be given up: the test fails as it next reaches a locator call, or as its function ends.
+  const callbacks = (testInfo as unknown as { _onDidFinishTestFunctionCallbacks?: unknown })
+    ._onDidFinishTestFunctionCallbacks;
+  if (callbacks instanceof Set) {
+    callbacks.add(() => {
+      if (testInfo.status === 'passed') throw error;
+    });
+  }
+  return 'end';
+}
+
+/** The runner's part of a test that `failNow` reads, feature-checked. */
+interface RunnerTestInfo {
+  _failWithError?: (error: unknown) => void;
+  _timeoutManager?: { _running?: { timeoutPromise?: { reject?: (error: unknown) => void } } };
+}
+
+/**
+ * Fail the test now with `error`, as a timeout fails it: the runner records the error and gives up its wait on what
+ * runs now. False on a runner of another shape, which changes nothing.
+ */
+function failNow(testInfo: TestInfo, error: Error): boolean {
+  const runner = testInfo as unknown as RunnerTestInfo;
+  const reject = runner._timeoutManager?._running?.timeoutPromise?.reject;
+  if (typeof runner._failWithError !== 'function' || typeof reject !== 'function') return false;
+  runner._failWithError(error);
+  reject.call(runner._timeoutManager!._running!.timeoutPromise, error);
+  return true;
 }
 
 /**
@@ -2355,7 +2427,8 @@ function regionSecrets(region: Locator): Promise<string[]> {
  */
 async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   const testInfo = sink.testInfo;
-  if (sink.failureHeld || !testInfo) return;
+  // A CI test a controller ended failed as they asked: there is no failure of its own to hold.
+  if (sink.failureHeld || !testInfo || (sink.ended && sink.livePause)) return;
   const local = !!sink.pause && editorShows('failure');
   if (!local && !liveViewMayHold()) return;
   const { status, expectedStatus } = testInfo;
@@ -2726,6 +2799,8 @@ function endStopsWithTestFunction(testInfo: TestInfo, sink: CaptureSink): void {
   callbacks.clear();
   callbacks.add(() => {
     sink.functionEnded = true;
+    // A controller's Pause no call of the function took goes: the test's failure, if any, holds as any other.
+    liveViewTestFunctionEnded();
     return endShownStops(sink, 'ended');
   });
   for (const callback of theirs) callbacks.add(callback);
@@ -4019,6 +4094,13 @@ const runControl: RunControl = {
 };
 
 /**
+ * Why a CI test whose page was followed through Playwright's call stream takes no Pause: its debugger would stop a call
+ * after the call waited for its element (`followsCallStream`).
+ */
+const FOLLOWED_BEFORE_PAUSE =
+  "This test's page was followed before the project let its controllers pause, so a pause would stop past its call's wait: the worker's next test can pause.";
+
+/**
  * A controller's Pause of a CI test on the instance's live view: the running test stops at its next call, through the
  * pause a local run's Pause takes (`PauseState`'s `pause`, the contexts armed), and the stop waits for its controllers
  * (`showStop`). Dropped before a call took it, the test goes on unstopped. A test whose function ended, or that ends,
@@ -4027,11 +4109,14 @@ const runControl: RunControl = {
 onLiveViewPause({
   pause() {
     const sink = currentSink;
-    if (!sink?.testInfo || sink.ended || sink.ending) return;
+    if (!sink?.testInfo || sink.ended || sink.ending) return PAUSE_DROPPED.noTest;
+    if (sink.functionEnded) return PAUSE_DROPPED.functionEnded;
+    if ([...OPEN_CONTEXTS].some((context) => followsCallStream(context))) return FOLLOWED_BEFORE_PAUSE;
     sink.pause ??= pauseState(NO_BREAKPOINTS);
     sink.livePause = true;
     sink.pause.pause = true;
     void armStops(OPEN_CONTEXTS);
+    return null;
   },
   drop() {
     const sink = currentSink;

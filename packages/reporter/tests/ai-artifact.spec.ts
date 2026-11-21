@@ -27,7 +27,11 @@ const runEntry: RunEntry = {
   template: 'log in as {email}',
   steps: [
     { locator: { method: 'getByLabel', args: ['Email'] }, action: 'fill', value: '{{email}}' },
-    { locator: { method: 'getByRole', args: ['button', { name: 'Sign in' }] }, action: 'click', waitForResponse: '**/api/login' },
+    {
+      locator: { method: 'getByRole', args: ['button', { name: 'Sign in' }] },
+      action: 'click',
+      waitForResponse: '**/api/login',
+    },
   ],
   postcondition: { assert: 'visible', locator: { method: 'getByRole', args: ['heading', { name: 'Dashboard' }] } },
 };

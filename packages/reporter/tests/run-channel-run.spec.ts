@@ -367,8 +367,7 @@ module.exports = defineConfig({
       .flatMap((name) => (lines[`${name} bp`] ?? []).map((line) => `tests/${name}.spec.cjs:${line}`))
       .join(';'),
   };
-  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND'])
-    delete env[name];
+  for (const name of ['PWDEBUG', 'PIWI_DASHBOARD_URL', 'PIWI_RECORD_CHANNEL', 'PIWI_EDITOR_SEND']) delete env[name];
   withoutCi(env);
   await new Promise<void>((resolve) => {
     execFile(

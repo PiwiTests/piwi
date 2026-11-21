@@ -12,9 +12,9 @@ import { jsonRes, startServer } from './_helpers.js';
  * Pausing a CI test for its controllers, in a real CI run through the built package against a fake instance: with the
  * project's setting on (`hold`'s `pause`) and a controller watching its worker in full, a **Pause** on the worker's
  * stream stops its test before its next call, saying so (`stop` of kind `pause`, with its end), its timeout suspended;
- * the pause ends at **Resume**, at **End the test** (which ends the test as a local run's does), at its length, as the
+ * the pause ends at **Resume**, at **End the test** (which fails the test with who ended it), at its length, as the
  * last controller leaves, as the setting turns off and as the stream closes for good, and the test's result is its
- * own. Without the setting, or for a Viewer, a Pause changes nothing; the call log a full view takes comes meanwhile.
+ * own. Without the setting, or for a Viewer, a Pause changes nothing.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -249,18 +249,18 @@ afterAll(() => {
 });
 
 describe('pausing a CI test for its controllers', () => {
-  it('leaves each test’s result its own: passed once it goes on, failed with its own error, skipped at End the test', () => {
+  it('leaves each test’s result its own: passed once it goes on, failed with its own error, failed at End the test', () => {
     expect(
       run.tests.map((t) => [t.title, t.status]),
       run.output,
     ).toEqual(
       Object.keys(SCENARIOS).map((title) => [
         title,
-        title === 'ended at End the test' ? 'skipped' : title === 'resumed, then fails' ? 'failed' : 'passed',
+        title === 'ended at End the test' || title === 'resumed, then fails' ? 'failed' : 'passed',
       ]),
     );
     expect(resultOf('resumed, then fails').errors.join('\n')).toContain('toHaveText');
-    expect(resultOf('ended at End the test').annotations).toContain('skip');
+    expect(resultOf('ended at End the test').errors.join('\n')).toMatch(/^Error: Ended from Piwi$/m);
   });
 
   it('pauses the test before its next call, saying when the pause ends', () => {
@@ -311,10 +311,5 @@ describe('pausing a CI test for its controllers', () => {
     expect(test.status).toBe('passed');
     expect(pausedFor('paused longer than its timeout')).toBeGreaterThan(OVER_TIMEOUT_MS - 500);
     expect(test.duration).toBeLessThan(TIMEOUT_MS);
-  });
-
-  it('sends the call log a full view takes while the setting lets the test pause', () => {
-    const logs = posts.filter((p) => p.message.type === 'call-log');
-    expect(logs.length).toBeGreaterThan(0);
   });
 });

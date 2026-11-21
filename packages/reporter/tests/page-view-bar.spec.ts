@@ -402,7 +402,9 @@ describe('the pause bar in a live view of its page', () => {
       const hold = freshHold(1);
       expect(await keyMayPlay(page, PRESS, hold, never, () => true)).toBe(true);
       expect(hold).toMatchObject({ held: true, sent: true });
-      expect(await page.locator('#__piwi-pause-bar').evaluate((bar) => (bar as unknown as { inert: boolean }).inert)).toBe(true);
+      expect(
+        await page.locator('#__piwi-pause-bar').evaluate((bar) => (bar as unknown as { inert: boolean }).inert),
+      ).toBe(true);
       // A draw the hold is not answered for, as one a navigation takes away, takes none of the message's keys.
       const failed = pauseBarShows(page, Promise.reject(new Error('Execution context was destroyed')));
       expect(await keyMayPlay(page, PRESS, hold, never, () => true)).toBe(false);
@@ -439,7 +441,9 @@ describe('the pause bar in a live view of its page', () => {
       expect(Date.now() - ended).toBeLessThan(1000);
       expect(hold.sent).toBe(false);
       await sleep(300);
-      expect(await page.locator('#__piwi-pause-bar').evaluate((bar) => (bar as unknown as { inert: boolean }).inert)).toBe(false);
+      expect(
+        await page.locator('#__piwi-pause-bar').evaluate((bar) => (bar as unknown as { inert: boolean }).inert),
+      ).toBe(false);
     } finally {
       gone();
       await takeDown();

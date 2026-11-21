@@ -485,7 +485,11 @@ describe('HttpClient (against fake http.Server)', () => {
       ['proves it with another token', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 200],
       ['proves it for another port', (c: string) => desktopTokenProof(TOKEN, 1, c), 200],
       ['gives no proof', async () => null, 200],
-      ['proves it with another token and an error status', (c: string, p: number) => desktopTokenProof('pd_other', p, c), 503],
+      [
+        'proves it with another token and an error status',
+        (c: string, p: number) => desktopTokenProof('pd_other', p, c),
+        503,
+      ],
     ])('sends no token to a server that %s', async (_name, proofOf, status) => {
       const { server, url, requests } = await desktopServer(proofOf, status);
       try {

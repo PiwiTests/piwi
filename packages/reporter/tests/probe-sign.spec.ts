@@ -3,7 +3,11 @@ import { buildProbeHeader, signProbeMessage } from '../src/internal/probe/sign';
 
 describe('buildProbeHeader', () => {
   it('produces a base64 envelope whose signature matches the message', () => {
-    const header = buildProbeHeader('shared-secret', { route: 'POST /api/orders', fault: 'status', nth: 1 }, 1_700_000_000_000);
+    const header = buildProbeHeader(
+      'shared-secret',
+      { route: 'POST /api/orders', fault: 'status', nth: 1 },
+      1_700_000_000_000,
+    );
     const envelope = JSON.parse(Buffer.from(header, 'base64').toString('utf8'));
     expect(typeof envelope.nonce).toBe('string');
     expect(envelope.ts).toBe(1_700_000_000_000);

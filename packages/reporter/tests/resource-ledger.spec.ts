@@ -176,7 +176,10 @@ function info(
   };
 }
 
-function ledgerFor(fake: ReturnType<typeof fakePlaywright>, options: { leakCheck?: 'report' | 'fail' | 'close'; resultsFile?: string } = {}) {
+function ledgerFor(
+  fake: ReturnType<typeof fakePlaywright>,
+  options: { leakCheck?: 'report' | 'fail' | 'close'; resultsFile?: string } = {},
+) {
   let current: TestInfoLike | null = null;
   const ledger = new ResourceLedger(
     fake.playwright,
@@ -218,7 +221,12 @@ describe('ResourceLedger', () => {
     running(info('t1', { type: 'beforeAll' }, ['block']));
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
-    running(info('t1', { type: 'test', fixture: { title: 'shared', location: { file: path.resolve('tests/fixtures.ts'), line: 9 }, slot: {} } }));
+    running(
+      info('t1', {
+        type: 'test',
+        fixture: { title: 'shared', location: { file: path.resolve('tests/fixtures.ts'), line: 9 }, slot: {} },
+      }),
+    );
     await (await browser.newContext()).newPage();
     running(null);
     await browser.newContext();
@@ -361,7 +369,12 @@ describe('ResourceLedger', () => {
     const { census } = await ledger.testEnded(info('t1'));
     expect((context as unknown as { closed: boolean }).closed).toBe(true);
     expect(api.dispose).toHaveBeenCalled();
-    expect(census.closed.filter((c) => c.byPiwi).map((c) => c.id).sort()).toEqual([2, 4]);
+    expect(
+      census.closed
+        .filter((c) => c.byPiwi)
+        .map((c) => c.id)
+        .sort(),
+    ).toEqual([2, 4]);
     expect(census.open.map((o) => o.id)).toEqual([1]);
   });
 
@@ -419,13 +432,21 @@ describe('ResourceLedger', () => {
 });
 
 describe('servers and child processes', () => {
-  const listen = (server: net.Server) =>
-    new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
+  const listen = (server: net.Server) => new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()));
   const close = (server: net.Server) => new Promise<void>((resolve) => server.close(() => resolve()));
 
   function handleLedger() {
     let current: TestInfoLike | null = null;
-    const ledger = new ResourceLedger(fakePlaywright().playwright, 0, 'report', null, () => current, Date.now, {}, true);
+    const ledger = new ResourceLedger(
+      fakePlaywright().playwright,
+      0,
+      'report',
+      null,
+      () => current,
+      Date.now,
+      {},
+      true,
+    );
     ledger.install();
     return {
       ledger,
@@ -447,7 +468,9 @@ describe('servers and child processes', () => {
     await listen(closed);
     await close(closed);
     const { census } = await ledger.testEnded(info('t1'));
-    expect(census.running).toEqual([{ type: 'TCPServerWrap', site: expect.stringMatching(/resource-ledger\.spec\.ts:\d+$/) }]);
+    expect(census.running).toEqual([
+      { type: 'TCPServerWrap', site: expect.stringMatching(/resource-ledger\.spec\.ts:\d+$/) },
+    ]);
     // Counted one by one, servers leave the handle counts.
     expect(census.handles?.end).not.toHaveProperty('TCPServerWrap');
     await close(left);
@@ -479,7 +502,11 @@ describe('servers and child processes', () => {
     const { census } = await ledger.testEnded(info('t1'));
     left.kill();
     expect(census.running).toEqual([
-      { type: 'ChildProcess', site: expect.stringMatching(/resource-ledger\.spec\.ts:\d+$/), command: path.basename(process.execPath) },
+      {
+        type: 'ChildProcess',
+        site: expect.stringMatching(/resource-ledger\.spec\.ts:\d+$/),
+        command: path.basename(process.execPath),
+      },
     ]);
     ledger.uninstall();
   });
@@ -611,7 +638,12 @@ describe('following the calls a test makes', () => {
       await call(customer, 'close', 19);
       // A wait on the client tells its page as it begins, not as its internal end comes.
       const frames = [{ file: path.resolve('tests/cart.spec.ts'), line: 20 }];
-      await connection.sendMessageToServer(admin, '__waitInfo__', { waitId: 'w1', phase: 'before' }, { apiName: 'page.waitForURL', frames });
+      await connection.sendMessageToServer(
+        admin,
+        '__waitInfo__',
+        { waitId: 'w1', phase: 'before' },
+        { apiName: 'page.waitForURL', frames },
+      );
       await connection.sendMessageToServer(admin, '__waitInfo__', { waitId: 'w1', phase: 'after' }, { internal: true });
       expect(heard).toEqual([customer, admin, admin, customer, admin]);
     } finally {
@@ -633,8 +665,9 @@ describe('following the calls a test makes', () => {
       // The zone each call the listener makes runs in: Playwright's own for an internal call made outside any other.
       const zones: Array<{ internal?: unknown; apiName?: unknown }> = [];
       const unhear = onTestCallPage((told) => {
-        const wrap = (told as { _wrapApiCall: (run: (zone: object) => Promise<void>, options: object) => Promise<void> })
-          ._wrapApiCall;
+        const wrap = (
+          told as { _wrapApiCall: (run: (zone: object) => Promise<void>, options: object) => Promise<void> }
+        )._wrapApiCall;
         void wrap.call(told, async (zone) => void zones.push(zone), { internal: true, title: 'listener' });
       });
       try {
@@ -656,7 +689,14 @@ describe('following the calls a test makes', () => {
     const fake = fakePlaywright();
     const { connection, call } = withConnection(fake);
     let current: TestInfoLike | null = info('t1');
-    const ledger = new ResourceLedger(fake.playwright, 3, 'report', null, () => current, () => now);
+    const ledger = new ResourceLedger(
+      fake.playwright,
+      3,
+      'report',
+      null,
+      () => current,
+      () => now,
+    );
     ledger.install();
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
@@ -666,7 +706,12 @@ describe('following the calls a test makes', () => {
     Object.assign(page, { _type: 'Page', _parent: context });
     const frames = [{ file: path.resolve('tests/cart.spec.ts'), line: 12 }];
     // `waitForEvent` begins with the test's call and ends with an internal one, three seconds later.
-    await connection.sendMessageToServer(page, '__waitInfo__', { waitId: 'w1', phase: 'before' }, { apiName: 'page.waitForEvent', frames });
+    await connection.sendMessageToServer(
+      page,
+      '__waitInfo__',
+      { waitId: 'w1', phase: 'before' },
+      { apiName: 'page.waitForEvent', frames },
+    );
     now = 4000;
     await connection.sendMessageToServer(page, '__waitInfo__', { waitId: 'w1', phase: 'after' }, { internal: true });
     now = 5000;
@@ -687,7 +732,14 @@ describe('following the calls a test makes', () => {
     let now = 1000;
     const fake = fakePlaywright();
     const { connection, call } = withConnection(fake);
-    const ledger = new ResourceLedger(fake.playwright, 3, 'report', null, () => info('t1'), () => now);
+    const ledger = new ResourceLedger(
+      fake.playwright,
+      3,
+      'report',
+      null,
+      () => info('t1'),
+      () => now,
+    );
     ledger.install();
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
@@ -707,7 +759,12 @@ describe('following the calls a test makes', () => {
     now = 2000;
     await call({ _type: 'Frame', _parent: other }, 'goto', 11);
     now = 5000;
-    await connection.sendMessageToServer(page, 'waitForEventInfo', { info: { waitId: 'w1', phase: 'after' } }, { internal: true });
+    await connection.sendMessageToServer(
+      page,
+      'waitForEventInfo',
+      { info: { waitId: 'w1', phase: 'after' } },
+      { internal: true },
+    );
 
     const { census } = await ledger.testEnded(info('t1'));
     const lastUse = (id: number) => census.open.find((open) => open.id === id)?.lastUse;
@@ -721,7 +778,14 @@ describe('following the calls a test makes', () => {
     let now = 1000;
     const fake = fakePlaywright();
     const { call } = withConnection(fake);
-    const ledger = new ResourceLedger(fake.playwright, 3, 'report', null, () => info('t1'), () => now);
+    const ledger = new ResourceLedger(
+      fake.playwright,
+      3,
+      'report',
+      null,
+      () => info('t1'),
+      () => now,
+    );
     ledger.install();
     const browser = await fake.playwright.chromium.launch();
     const context = await browser.newContext();
@@ -807,12 +871,21 @@ describe('following the calls a test makes', () => {
     ledger.install();
     const browser = await fake.playwright.chromium.launch();
     const fixture = { title: 'slowCtx', location: { file: path.resolve('tests/fixtures.ts'), line: 4 } };
-    running({ ...info('t1', { type: 'test', fixture: { ...fixture, slot: { timeout: 20_000 } } }), project: { timeout: 30_000 } });
+    running({
+      ...info('t1', { type: 'test', fixture: { ...fixture, slot: { timeout: 20_000 } } }),
+      project: { timeout: 30_000 },
+    });
     const timed = await browser.newContext();
-    running({ ...info('t1', { type: 'test', fixture: { ...fixture, slot: { timeout: 30_000 } } }), project: { timeout: 30_000 } });
+    running({
+      ...info('t1', { type: 'test', fixture: { ...fixture, slot: { timeout: 30_000 } } }),
+      project: { timeout: 30_000 },
+    });
     await browser.newContext();
     // Playwright's own worker fixtures run with no timeout and no location.
-    running({ ...info('t1', { type: 'test', fixture: { title: 'browser', slot: { timeout: 0 } } }), project: { timeout: 30_000 } });
+    running({
+      ...info('t1', { type: 'test', fixture: { title: 'browser', slot: { timeout: 0 } } }),
+      project: { timeout: 30_000 },
+    });
     await browser.newContext();
     running({ ...info('t1', { type: 'test', fixture: { ...fixture, slot: null } }), project: { timeout: 30_000 } });
     await timed.close();
@@ -824,9 +897,16 @@ describe('following the calls a test makes', () => {
       worker: true,
       timed: true,
     });
-    expect(census.born.find((b) => b.id === 3)!.fixture).toEqual({ title: 'slowCtx', location: 'tests/fixtures.ts:4', worker: true });
+    expect(census.born.find((b) => b.id === 3)!.fixture).toEqual({
+      title: 'slowCtx',
+      location: 'tests/fixtures.ts:4',
+      worker: true,
+    });
     expect(census.born.find((b) => b.id === 4)!.fixture).toEqual({ title: 'browser', location: null, worker: true });
-    expect(census.closed.find((c) => c.id === 2)!.fixture).toEqual({ title: 'slowCtx', location: 'tests/fixtures.ts:4' });
+    expect(census.closed.find((c) => c.id === 2)!.fixture).toEqual({
+      title: 'slowCtx',
+      location: 'tests/fixtures.ts:4',
+    });
   });
 
   it('marks the browser launchPersistentContext opened as its context’s, and counts listeners on contexts and browsers', async () => {
@@ -934,7 +1014,10 @@ describe('the worker ledger and the capture fixture', () => {
     await browser.newContext();
 
     await expect(recordResourceCensus(testInfo(attach))).rejects.toThrow(/^Piwi: this test left one object open:/);
-    expect(attach).toHaveBeenCalledWith(ATTACHMENT_NAMES.resources, expect.objectContaining({ contentType: 'application/json' }));
+    expect(attach).toHaveBeenCalledWith(
+      ATTACHMENT_NAMES.resources,
+      expect.objectContaining({ contentType: 'application/json' }),
+    );
     const census = JSON.parse(String(attach.mock.calls[0]![1].body)) as ResourceCensus;
     expect(census.born.map((b) => b.kind)).toEqual(['browser', 'context']);
   });

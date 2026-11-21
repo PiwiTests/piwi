@@ -37,7 +37,7 @@ describe('playwrightInvocation', () => {
     });
   });
 
-  it("starts npx through its JavaScript entry on Windows, and nothing it cannot start without a shell", () => {
+  it('starts npx through its JavaScript entry on Windows, and nothing it cannot start without a shell', () => {
     const cwd = tempDir();
     const npx = resolveNpmEntry('npx');
     expect(playwrightInvocation(['x'], { cwd, platform: 'win32' })).toEqual(
@@ -90,7 +90,10 @@ describe('spawnPlaywright', () => {
     const project = tempDir();
     const cli = path.join(project, 'node_modules', 'playwright');
     fs.mkdirSync(cli, { recursive: true });
-    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }));
+    fs.writeFileSync(
+      path.join(cli, 'package.json'),
+      JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }),
+    );
     fs.writeFileSync(path.join(cli, 'cli.js'), "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n");
     const errors = vi.spyOn(console, 'error').mockImplementation(() => {});
     try {

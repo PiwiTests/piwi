@@ -190,7 +190,12 @@ describe('probable leaks from a real run without the fixtures', () => {
     const source = sourceLineReader();
     const tallies = attempts.map((attempt) =>
       tallyLifecycleSteps(
-        { file: path.relative(project, attempt.file), test: attempt.id, worker: attempt.worker, failed: attempt.failed },
+        {
+          file: path.relative(project, attempt.file),
+          test: attempt.id,
+          worker: attempt.worker,
+          failed: attempt.failed,
+        },
         attempt.steps as TestStep[],
         source,
       ),

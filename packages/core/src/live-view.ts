@@ -12,7 +12,8 @@
  * view never steers the run, with one exception: a CI worker of a project that holds a failing CI test for its
  * controllers (`hold`) waits at a failure while a controller watches it, and ends that wait on **Let it go** (`let-go`);
  * one of a project that lets its controllers pause a CI test too (`hold`'s `pause`) pauses its test at its next call,
- * resumes it and ends it as they ask (`pause`, `resume`, `end-test`).
+ * resumes it and ends it as they ask (`pause`, `resume`, `end-test`), saying whether it took a Pause or dropped it,
+ * and why (`pause-asked`).
  * Each message is JSON, checked field by field (`parseInstanceToWorker`, `readWorkerToInstance`).
  *
  * An instance that says on the stream what its viewers ask of the images (`view`: the largest size they show one at,
@@ -406,7 +407,9 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * (`hold`, in ms, `MAX_LIVE_HOLD_MINUTES` at most, null while the setting is off), and asks it to end such a hold
  * (`let-go`, **Let it go**). To a worker that said it can pause too (`LIVE_PAUSE_FEATURE`), `hold` says whether the
  * project lets its controllers pause a CI test (`pause`, absent while either setting is off), and the instance asks it
- * to pause its test at its next call (`pause`), and, paused, to go on (`resume`) or end the test (`end-test`).
+ * to pause its test at its next call (`pause`), and, paused, to go on (`resume`) or end the test (`end-test`, with the
+ * name of who asked, `by`, plain text, absent when the instance knows none); a Resume before the test paused drops the
+ * Pause.
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
@@ -427,7 +430,7 @@ export type InstanceToWorker =
   | { type: 'let-go' }
   | { type: 'pause' }
   | { type: 'resume' }
-  | { type: 'end-test' };
+  | { type: 'end-test'; by?: string };
 
 /**
  * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
@@ -464,7 +467,16 @@ export type WorkerToInstance =
   | (LiveWorkerId & { type: 'page-event'; event: PageEvent; at: number; test: string | null })
   /** The page's text, while a viewer asked for `text`, or why none goes. */
   | (LiveWorkerId & { type: 'text'; text: LaneText; test: string | null })
-  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null });
+  | (LiveWorkerId & { type: 'text'; refused: string; test: string | null })
+  /**
+   * A CI worker took a controller's **Pause**, which waits for its test's next call (`waiting`), or dropped the one it
+   * took or was asked, saying why (`why`).
+   */
+  | (LiveWorkerId & { type: 'pause-asked'; waiting: true })
+  | (LiveWorkerId & { type: 'pause-asked'; waiting: false; why: string });
+
+/** The longest reason a worker gives for a Pause it dropped. */
+export const MAX_PAUSE_DROPPED_WHY = 300;
 
 function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
@@ -687,6 +699,15 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
     }
     case 'unshared':
       return { type: 'unshared', ...id };
+    case 'pause-asked':
+      if (value.waiting === true) return { type: 'pause-asked', ...id, waiting: true };
+      if (value.waiting !== false) return 'A Pause the worker was asked is waiting, or was dropped.';
+      return {
+        type: 'pause-asked',
+        ...id,
+        waiting: false,
+        why: typeof value.why === 'string' ? plainLiveText(value.why, MAX_PAUSE_DROPPED_WHY) : '',
+      };
     case 'page-event': {
       const event = readPageEvent(value.event);
       return event && isLayerTime(value.at)
@@ -730,7 +751,10 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
   if (value.type === 'let-go') return { type: 'let-go' };
   if (value.type === 'pause') return { type: 'pause' };
   if (value.type === 'resume') return { type: 'resume' };
-  if (value.type === 'end-test') return { type: 'end-test' };
+  if (value.type === 'end-test') {
+    const by = typeof value.by === 'string' ? plainLiveText(value.by, MAX_ASK_BY) : '';
+    return by ? { type: 'end-test', by } : { type: 'end-test' };
+  }
   if (value.type === 'hold') {
     const ms = isInt(value.ms, 1, MAX_LIVE_HOLD_MINUTES * 60_000) ? value.ms : null;
     return ms !== null && value.pause === true ? { type: 'hold', ms, pause: true } : { type: 'hold', ms };
@@ -1284,13 +1308,22 @@ export function parseLiveAsk(value: unknown): LiveAsk | null {
   if (!isObject(value) || typeof value.id !== 'string' || !ASK_ID.test(value.id) || typeof value.by !== 'string') {
     return null;
   }
-  const plain = value.by
+  const by = plainLiveText(value.by, MAX_ASK_BY);
+  return by ? { id: value.id, by } : null;
+}
+
+/**
+ * A name or a sentence of the live view as plain text on one line: control and direction characters go, and so do the
+ * characters a notification would read as a link or as markup (`[]()<>` and backticks), cut to `max` characters, never
+ * inside one; empty for none.
+ */
+export function plainLiveText(value: string, max: number): string {
+  const plain = value
     .replace(/[\p{Cc}\p{Cf}\u2028\u2029]/gu, ' ')
     .replace(/[[\]()<>`]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
-  const by = Array.from(plain).slice(0, MAX_ASK_BY).join('').trim();
-  return by ? { id: value.id, by } : null;
+  return Array.from(plain).slice(0, max).join('').trim();
 }
 
 /** An answer to an ask; null when it is not one. */
