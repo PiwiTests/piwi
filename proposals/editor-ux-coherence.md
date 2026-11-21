@@ -82,9 +82,11 @@ the sentence and links both editors show (`failures-view.json`), which the servi
 `GlueTest` read, VS Code's message and link nodes for each state read from its view's pure half (VS Code shows no
 welcome under a message, so a state with a sentence lists its links as the tree's nodes), and JetBrains' Failures tab
 drawn in each state by `PiwiPluginTest`; a run with no failure reads alike in both
-(`No failure in run #124 of main.`); VS Code's nightly suite opens a window in each of those states (a run with no
+(`No failure in run #124 of main.`); VS Code's nightly suite opens a window in four of those states (a run with no
 failure, no run yet, an instance that does not answer, none named) and holds what the view shows on screen to the
-same golden file. L6 is built. NF10
+same golden file. L6 is built, two of its parts replaced: `PiwiPluginTest` draws the spec through the gutter's
+annotator and the Code Vision providers rather than `CodeVisionTestCase` and `findAllGutters`, and the snapshot of VS
+Code it compares with is the integration suite's `vscode-spec.json` rather than one the nightly suite takes. NF10
 decided: the CI runs keep their own view and tab, apart from the developer's Runs view and tab. L4 in part since: the ASP.NET Core route manifest
 names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
 handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·
@@ -833,8 +835,8 @@ fixture; the keymap test ([LI15](#li15)). The nightly suite adds layout checks (
 mark on a flaky test). **Lives in** `apps/vscode/tests`, `apps/jetbrains/src/test` and `.github` (FSL). **Replaces**
 JetBrains checks that never look at what the IDE draws. **Depends on** [LI1](#li1), [LI2](#li2). **Revisits**
 [real-editor-checks.md](real-editor-checks.md) D1 to D3, which wait for a CI license before any JetBrains check of what
-is drawn. Built (L6): the snapshot of VS Code is the integration suite's `vscode-spec.json`, with the
-failures view's states in `failures-view.json`.
+is drawn. Built (L6), with `PiwiPluginTest` in place of `CodeVisionTestCase` and `findAllGutters`, the integration
+suite's `vscode-spec.json` as the snapshot of VS Code, and the failures view's states in `failures-view.json`.
 
 **Hand-offs (principles 1 and 2).**
 

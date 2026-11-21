@@ -1164,14 +1164,16 @@ about driving VS Code this way is recorded in
 
 ## Nightly suite
 
-The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture in the same window. It asserts on
+The nightly suite (`tests/e2e/`, `npm run vscode:test:e2e`) opens the same fixture, in one window for
+`editor.spec.mjs`. It asserts on
 the workbench's DOM what the in-process suites check as answers: the status bar's counts, the Problems panel's rows,
 the quick fixes, the hover, CodeLens, the failures view and the Testing view. It also checks the layout: no row of
 lenses of the active editor, at the window's width and in an editor half as wide, is cut short (its text past its
 box, or its box past the code's area), and a flaky test's line says so. `failures-states.spec.mjs` opens a window of its
-own for each state of the failures view without a failure to list (a run with no failure, no run yet, an instance that
-does not answer, none named), its stub serving that state (`startStub`'s `latest`), and holds the view's sentence and
-link rows, or its welcome and buttons, to `packages/editor/tests/golden/failures-view.json`.
+own for four states of the failures view without a failure to list: a run with no failure and no run yet, from the stub
+(`startStub`'s `latest`), an instance that does not answer, and none named. It holds the view's sentence and link rows,
+or its welcome and buttons, to `packages/editor/tests/golden/failures-view.json`; the loading, desktop-app and
+baseline states are held there by the unit tests alone.
 
 `.github/workflows/nightly-vscode.yml` runs it every night and on demand, not on pull requests. A failure leaves the
 HTML report, with a screenshot of the window.

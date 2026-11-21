@@ -607,9 +607,11 @@ const clearRun = (commit) => {
 /**
  * Serves what the editor service reads of a Piwi instance, on a free loopback port; `testFunctions` is the project's
  * catalog of page object methods and helpers, and `latest` the branch's latest run: the fixture's run with its
- * failures (`failures`), that run with none (`clear`), or no run of the project yet (`none`).
+ * failures (`failures`), that run with none (`clear`), or no run of the project yet (`none`). `latest` changes the
+ * branch's failures alone: the run's page, the test cases and their histories stay the fixture's.
  */
 export function startStub(commit, { testFunctions = [], latest = 'failures' } = {}) {
+  if (!['failures', 'clear', 'none'].includes(latest)) throw new Error(`No latest run named "${latest}"`);
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://stub');
     const json = (body) => {

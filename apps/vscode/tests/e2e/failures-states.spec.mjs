@@ -1,9 +1,9 @@
-// The failures view in a real VS Code, in each state it can be in without a failure to list: a window of its own for
-// each, on the fixture project of `scripts/lib/editor-fixture.mjs`, its stub instance serving a run with no failure, no
-// run, or nothing at all, or no instance named. What the view shows on screen is held to the sentence and links of
+// The failures view in a real VS Code, in four states without a failure to list: a run with no failure and no run yet,
+// served by the stub of `scripts/lib/editor-fixture.mjs`, an instance that does not answer, and none named. Each opens
+// a window of its own on the fixture project. What the view shows on screen is held to the sentence and links of
 // `packages/editor/tests/golden/failures-view.json`, which the JetBrains plugin's Failures tab is held to too.
 import * as fs from 'node:fs';
-import * as http from 'node:http';
+import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,12 +25,10 @@ function shown(name) {
   return found.shown;
 }
 
-test.describe.configure({ mode: 'serial' });
-
 let parent;
-/** The window of the test in progress, and what it served. */
+/** The window of the test in progress, and the servers it reads. */
 let window;
-let stub;
+const servers = [];
 
 test.beforeAll(() => {
   if (!fs.existsSync(path.join(extensionPath, 'dist', 'extension.cjs'))) {
@@ -44,9 +42,8 @@ test.afterEach(async ({}, testInfo) => {
     await testInfo.attach('window', { body: await window.page.screenshot(), contentType: 'image/png' });
   }
   await window?.close();
-  stub?.server.close();
   window = undefined;
-  stub = undefined;
+  for (const server of servers.splice(0)) server.close();
 });
 
 test.afterAll(() => {
@@ -60,13 +57,17 @@ function fixtureIn(name) {
   return { folder, ...writeWorkspace(folder) };
 }
 
-/** A window on the fixture, the instance at `url` (none without one), with the failures view in sight. */
+/**
+ * A window on the fixture with the failures view in sight, the instance at `url`, or none named: the variables blank,
+ * so the shell's own never reach it.
+ */
 async function launch({ workspace, folder, url }) {
   window = await launchVSCode({
     extensionPath,
     workspace,
     env: {
-      ...(url ? { PIWI_DASHBOARD_URL: url, PIWI_PROJECT_NAME: PROJECT.name } : {}),
+      PIWI_DASHBOARD_URL: url ?? '',
+      PIWI_PROJECT_NAME: url ? PROJECT.name : '',
       PIWI_DESKTOP_CONFIG: path.join(folder, 'no-desktop.json'),
     },
   });
@@ -75,20 +76,21 @@ async function launch({ workspace, folder, url }) {
   return window.page;
 }
 
-/** The Failures pane of the Piwi panel. */
+/** The Failures pane of the Piwi panel, by its heading. */
 const failuresPane = (page) =>
-  page.locator('.pane').filter({ has: page.locator('.pane-header', { hasText: /^Failures/ }) });
+  page.locator('.pane').filter({ has: page.getByRole('heading', { name: 'Failures', exact: true }) });
 
-/** The view's sentence above its rows, and the rows: each a link the state names. */
+/** The view's sentence above its tree, and the tree's items: each a link the state names. */
 async function expectSentenceAndLinks(page, text, links) {
   const pane = failuresPane(page);
   await expect(typeof text === 'string' ? pane.getByText(text, { exact: true }) : pane.getByText(text)).toBeVisible();
-  await expect(pane.locator('.monaco-list-row')).toHaveText(links);
+  await expect(page.getByRole('tree', { name: 'Failures', exact: true }).getByRole('treeitem')).toHaveText(links);
 }
 
 test('a run with no failure says so, with Refresh the latest run', async () => {
   const fixture = fixtureIn('clear');
-  stub = await startStub(fixture.commit, { latest: 'clear' });
+  const stub = await startStub(fixture.commit, { latest: 'clear' });
+  servers.push(stub.server);
   const page = await launch({ ...fixture, url: stub.url });
   const { text, links } = shown('no failure in the run read');
   await expectSentenceAndLinks(page, text, links);
@@ -96,7 +98,8 @@ test('a run with no failure says so, with Refresh the latest run', async () => {
 
 test('a project with no run yet says so, with Compare with… and Get started', async () => {
   const fixture = fixtureIn('norun');
-  stub = await startStub(fixture.commit, { latest: 'none' });
+  const stub = await startStub(fixture.commit, { latest: 'none' });
+  servers.push(stub.server);
   const page = await launch({ ...fixture, url: stub.url });
   const { text, links } = shown('no run of the project yet');
   await expectSentenceAndLinks(page, text, links);
@@ -104,12 +107,13 @@ test('a project with no run yet says so, with Compare with… and Get started', 
 
 test('an instance that does not answer is named, with Retry and Open settings', async () => {
   const fixture = fixtureIn('unreachable');
-  // A port that was free a moment ago, so nothing answers there.
-  const closed = http.createServer();
-  await new Promise((resolve) => closed.listen(0, '127.0.0.1', resolve));
-  const url = `http://127.0.0.1:${closed.address().port}`;
-  await new Promise((resolve) => closed.close(resolve));
+  // A port held for the test, closing every connection at once: nothing answers there, and nothing else takes it.
+  const silent = net.createServer((socket) => socket.destroy());
+  await new Promise((resolve) => silent.listen(0, '127.0.0.1', resolve));
+  servers.push(silent);
+  const url = `http://127.0.0.1:${silent.address().port}`;
   const page = await launch({ ...fixture, url });
+  // The golden case names another address; the sentence around it and the links are the same.
   const { links } = shown('the instance does not answer');
   const escaped = url.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   await expectSentenceAndLinks(
@@ -125,5 +129,6 @@ test('no instance named shows the welcome, with Connect… and Record a new test
   const { text, links } = shown('no connection');
   const pane = failuresPane(page);
   await expect(pane.getByText(text, { exact: true })).toBeVisible();
+  // The welcome's buttons: the workbench gives its content no role of its own.
   await expect(pane.locator('.welcome-view-content').getByRole('button')).toHaveText(links);
 });
