@@ -5,7 +5,7 @@
  * live), or from a run outside CI while someone has the run open (`test-stopped`). The row's **Watch** opens the view
  * of a live view's page.
  */
-import { stopWords } from '~/utils/stop-words';
+import { stopStoodMs, stopWords } from '~/utils/stop-words';
 
 const props = defineProps<{
   reason: string;
@@ -18,11 +18,12 @@ const props = defineProps<{
 }>();
 
 const words = computed(() => stopWords(props.reason));
-const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 10_000) });
+const now = useStopClock();
 /** How long the stop has stood, once it stood a while. */
-const stoodFor = computed(() =>
-  props.since && now.value - props.since >= 60_000 ? formatLongDuration(now.value - props.since) : null,
-);
+const stoodFor = computed(() => {
+  const ms = stopStoodMs(props.since, now.value);
+  return ms === null ? null : formatLongDuration(ms);
+});
 const pausedText = computed(() =>
   [props.call.title, props.call.file ? `${props.call.file}:${props.call.line ?? ''}` : ''].filter(Boolean).join(' · '),
 );
