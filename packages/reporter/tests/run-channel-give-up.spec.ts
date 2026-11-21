@@ -242,7 +242,10 @@ describe('End the test while a Pause waits for its call', () => {
 
   it('names the call a Pause stops at, and its locator, with each value the attempt knows hidden', () => {
     const stops = ofSecretTest().flatMap((m) => (m.type === 'stopped' ? [[m.title, m.locator]] : []));
-    expect(stops, output).toContainEqual(["Click getByText('<hidden>')", "getByText('<hidden>')"]);
+    // The runner's step title names the locator on newer Playwright; on the version floor it is the action alone.
+    const stop = stops.find(([, locator]) => locator === "getByText('<hidden>')");
+    expect(stop, output).toBeDefined();
+    expect(["Click getByText('<hidden>')", 'Click']).toContain(stop![0]);
     expect(JSON.stringify(stops)).not.toContain(SECRET);
   });
 
