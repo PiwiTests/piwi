@@ -6,7 +6,14 @@
 import * as http from 'node:http';
 import * as net from 'node:net';
 import { afterEach, describe, expect, test } from 'vitest';
-import { AGENT_PATH, AgentServer, MAX_AGENT_BATCH, MAX_AGENT_BODY, MAX_AGENT_REQUESTS } from '../src/agent-server';
+import {
+  AGENT_PATH,
+  AgentServer,
+  MAX_AGENT_BATCH,
+  MAX_AGENT_BODY,
+  MAX_AGENT_LISTENS,
+  MAX_AGENT_REQUESTS,
+} from '../src/agent-server';
 import { AGENT_TOOLS, type ToolResult } from '../src/run-agent';
 
 const TOKEN = 'a'.repeat(43);
@@ -444,5 +451,73 @@ describe("the agents' MCP server", () => {
     });
     expect(future.status).toBe(400);
     expect(JSON.parse(future.body).error).toMatchObject({ code: -32022, data: { requested: '2099-01-01' } });
+  });
+
+  test('holds a 2026-07-28 subscriptions/listen stream open outside the request slots, and ends it as it closes', async () => {
+    const opened = await open();
+    const meta = {
+      'io.modelcontextprotocol/protocolVersion': '2026-07-28',
+      'io.modelcontextprotocol/clientCapabilities': {},
+    };
+    /** A listen request whose first chunk, the acknowledgment, is read; the rest of the stream when it ends. */
+    const listen = (id: number) =>
+      new Promise<{ status: number; first: string; rest: Promise<string> }>((resolve, reject) => {
+        const req = http.request(
+          {
+            host: '127.0.0.1',
+            port: opened.port,
+            method: 'POST',
+            path: AGENT_PATH,
+            headers: {
+              'content-type': 'application/json',
+              authorization: `Bearer ${TOKEN}`,
+              'mcp-protocol-version': '2026-07-28',
+              'mcp-method': 'subscriptions/listen',
+            },
+          },
+          (res) => {
+            res.setEncoding('utf8');
+            let rest = '';
+            const ended = new Promise<string>((done) => res.on('end', () => done(rest)));
+            res.once('data', (first: string) => {
+              res.on('data', (chunk: string) => (rest += chunk));
+              resolve({ status: res.statusCode ?? 0, first, rest: ended });
+            });
+            res.on('end', () => resolve({ status: res.statusCode ?? 0, first: '', rest: ended }));
+          },
+        );
+        req.on('error', reject);
+        req.end(rpc('subscriptions/listen', { _meta: meta, notifications: { toolsListChanged: true } }, id));
+      });
+    const streams = await Promise.all(Array.from({ length: MAX_AGENT_LISTENS }, (_, i) => listen(i + 1)));
+    for (const [index, stream] of streams.entries()) {
+      expect(stream.status).toBe(200);
+      expect(JSON.parse(stream.first.replace(/^event: message\ndata: /, ''))).toEqual({
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: { _meta: { 'io.modelcontextprotocol/subscriptionId': index + 1 }, notifications: {} },
+      });
+    }
+    // The streams hold no request slot, and one more is refused.
+    expect((await request(opened.port, { body: rpc('ping') })).status).toBe(200);
+    const refused = await request(opened.port, {
+      body: rpc('subscriptions/listen', { _meta: meta }, 9),
+      headers: { 'mcp-protocol-version': '2026-07-28', 'mcp-method': 'subscriptions/listen' },
+    });
+    expect(refused.status).toBe(503);
+
+    opened.close();
+    const ended = await streams[0]!.rest;
+    expect(JSON.parse(ended.trim().replace(/^event: message\ndata: /, ''))).toEqual({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        resultType: 'complete',
+        _meta: {
+          'io.modelcontextprotocol/subscriptionId': 1,
+          'io.modelcontextprotocol/serverInfo': { name: 'piwi-runs', version: '9.9.9' },
+        },
+      },
+    });
   });
 });

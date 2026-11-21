@@ -20,9 +20,11 @@ import { isHubHost } from '@piwitests/core/run-hub';
 import {
   checkMcpRequest,
   discoverResult,
+  isListenRequest,
   isRefusal,
   negotiateProtocolVersion,
   ok,
+  openListenStream,
   postAnswer,
   readMcpHeaders,
   rpcErr,
@@ -32,6 +34,7 @@ import {
   type JsonRpcResponse,
   type McpAnswer,
   type McpHeaders,
+  type McpListenStream,
 } from './mcp-protocol.js';
 import { sameToken } from './recorder/handoff.js';
 import { AGENT_INSTRUCTIONS, AGENT_TOOLS, type ToolDefinition, type ToolResult } from './run-agent.js';
@@ -44,6 +47,8 @@ export const MAX_AGENT_BODY = 256 * 1024;
 export const MAX_AGENT_BATCH = 8;
 /** The most requests answered at once: one more is refused with a 503 until one is answered. */
 export const MAX_AGENT_REQUESTS = 8;
+/** The most `subscriptions/listen` streams open at once, apart from the requests answered: one more is refused with a 503. */
+export const MAX_AGENT_LISTENS = 4;
 
 /** Whether a token the client gives is one the server takes: 32 to 256 characters of base64url. */
 export function isAgentToken(token: unknown): token is string {
@@ -107,6 +112,8 @@ function newToken(): string {
 
 export class AgentServer {
   private busy = 0;
+  /** The `subscriptions/listen` streams open now: the server sends no change, so each only stays open until it ends. */
+  private readonly listens = new Set<McpListenStream>();
   /** A second token, this process's alone, never kept by the client: the one the discovery file names. */
   private local = newToken();
   /** The tool calls being answered, by their JSON-RPC id, each with what aborts it: a cancel names them by id. */
@@ -184,6 +191,7 @@ export class AgentServer {
   }
 
   close(): void {
+    for (const listen of this.listens) listen.end();
     this.server.close();
     this.server.closeAllConnections();
   }
@@ -243,6 +251,7 @@ export class AgentServer {
       return this.send(res, 400, rpcErr(null, RPC.INVALID_REQUEST, `A batch holds 1 to ${MAX_AGENT_BATCH} requests.`));
     }
     const headers = readMcpHeaders((name) => req.headers[name]);
+    if (!batch && this.listen(parsed, headers, res)) return;
     const post = postAnswer(
       batch,
       await Promise.all(requests.map((request) => this.dispatch(request, headers, gone.signal))),
@@ -254,6 +263,26 @@ export class AgentServer {
       return;
     }
     this.send(res, post.status, post.body);
+  }
+
+  /**
+   * A modern `subscriptions/listen` answered with its stream, which acknowledges no notification (this server sends
+   * none) and holds no request slot; false for any other message.
+   */
+  private listen(value: unknown, headers: McpHeaders, res: http.ServerResponse): boolean {
+    if (typeof value !== 'object' || value === null || (value as JsonRpcRequest).jsonrpc !== '2.0') return false;
+    const request = value as JsonRpcRequest;
+    if (request.method !== 'subscriptions/listen') return false;
+    const era = checkMcpRequest(request, headers);
+    if (isRefusal(era) || !isListenRequest(era, request)) return false;
+    if (this.listens.size >= MAX_AGENT_LISTENS) {
+      refuse(res, 503, `${MAX_AGENT_LISTENS} subscriptions are open at once at most.`, { 'Retry-After': '5' });
+      return true;
+    }
+    const stream = openListenStream(res, request.id, {}, this.serverInfo);
+    this.listens.add(stream);
+    stream.onClose(() => this.listens.delete(stream));
+    return true;
   }
 
   private send(res: http.ServerResponse, status: number, body: unknown): void {

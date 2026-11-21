@@ -1505,7 +1505,9 @@ server of its own, over MCP's streamable HTTP transport (one POST per request, a
 alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`): a legacy client opens
 with `initialize` and names its version in the `MCP-Protocol-Version` header, a `2026-07-28` client names it in each
 request's `_meta` and its headers, and `checkMcpRequest` refuses with a 400 a version none serves or headers that do
-not match the body. It listens only once the
+not match the body. A modern `subscriptions/listen` gets a stream (`openListenStream`) that acknowledges no
+notification, since the server sends none, and stays open until its client closes it or the server closes:
+`MAX_AGENT_LISTENS` at once, apart from the requests answered. It listens only once the
 client turns it on, as the service starts (`InitializationOptions.agents.enabled`) or later (`piwi/agents { enabled }`,
 answered with its address and token), and closes as the client turns it off or the service stops.
 

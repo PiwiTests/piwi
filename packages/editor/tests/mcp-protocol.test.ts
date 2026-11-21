@@ -9,8 +9,12 @@ import {
   checkMcpRequest,
   decodeMcpHeaderValue,
   discoverResult,
+  emptyBatchAnswer,
+  honoredListenFilter,
+  isListenRequest,
   negotiateProtocolVersion,
   ok,
+  openListenStream,
   postAnswer,
   rpcErr,
   servedResponse,
@@ -186,6 +190,93 @@ describe('postAnswer', () => {
     expect(postAnswer(true, [served, null, refused])).toEqual({
       status: 400,
       body: [served.response, refused.response],
+    });
+  });
+});
+
+describe('subscriptions/listen', () => {
+  test('is a modern request with an id, and acknowledges only what the server sends', () => {
+    const listen = request('subscriptions/listen', { _meta: meta, notifications: { toolsListChanged: true } });
+    expect(isListenRequest({ version: MODERN, modern: true }, listen)).toBe(true);
+    expect(isListenRequest({ version: '2025-06-18', modern: false }, listen)).toBe(false);
+    expect(isListenRequest({ version: MODERN, modern: true }, request('subscriptions/listen', {}, null))).toBe(false);
+    expect(honoredListenFilter(listen.params, { toolsListChanged: true })).toEqual({ toolsListChanged: true });
+    expect(honoredListenFilter(listen.params, {})).toEqual({});
+    expect(honoredListenFilter({ notifications: { promptsListChanged: true } }, { toolsListChanged: true })).toEqual(
+      {},
+    );
+  });
+
+  test('writes the acknowledgment, the changes it acknowledged, and the result as the server ends it', () => {
+    const written: string[] = [];
+    let close: () => void = () => {};
+    const res = {
+      destroyed: false,
+      writeHead: (status: number, headers: Record<string, string>) =>
+        written.push(`${status} ${headers['Content-Type']}`),
+      write: (chunk: string) => written.push(chunk),
+      end: () => written.push('end'),
+      on: (_event: 'close', listener: () => void) => (close = listener),
+    };
+    const stream = openListenStream(res, 'sub', { toolsListChanged: true }, { name: 'piwi-test', version: '1' });
+    const closed: string[] = [];
+    stream.onClose(() => closed.push('closed'));
+    stream.toolsChanged();
+    stream.end();
+    stream.toolsChanged();
+    close();
+    const data = written
+      .filter((chunk) => chunk.startsWith('event: message'))
+      .map((chunk) => JSON.parse(chunk.replace(/^event: message\ndata: /, '')));
+    expect(written[0]).toBe('200 text/event-stream');
+    expect(data).toEqual([
+      {
+        jsonrpc: '2.0',
+        method: 'notifications/subscriptions/acknowledged',
+        params: {
+          _meta: { 'io.modelcontextprotocol/subscriptionId': 'sub' },
+          notifications: { toolsListChanged: true },
+        },
+      },
+      {
+        jsonrpc: '2.0',
+        method: 'notifications/tools/list_changed',
+        params: { _meta: { 'io.modelcontextprotocol/subscriptionId': 'sub' } },
+      },
+      {
+        jsonrpc: '2.0',
+        id: 'sub',
+        result: {
+          resultType: 'complete',
+          _meta: {
+            'io.modelcontextprotocol/subscriptionId': 'sub',
+            'io.modelcontextprotocol/serverInfo': { name: 'piwi-test', version: '1' },
+          },
+        },
+      },
+    ]);
+    expect(written[written.length - 1]).toBe('end');
+    expect(stream.closed).toBe(true);
+    expect(closed).toEqual(['closed']);
+  });
+
+  test('sends no change it did not acknowledge', () => {
+    const written: string[] = [];
+    const res = {
+      destroyed: false,
+      writeHead: () => {},
+      write: (chunk: string) => written.push(chunk),
+      end: () => {},
+      on: () => {},
+    };
+    openListenStream(res, 1, {}, { name: 'piwi-test', version: '1' }).toolsChanged();
+    expect(written).toHaveLength(1);
+  });
+
+  test('an empty batch is one Invalid Request error', () => {
+    expect(emptyBatchAnswer()).toEqual({
+      status: 400,
+      response: { jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request: an empty batch.' } },
     });
   });
 });

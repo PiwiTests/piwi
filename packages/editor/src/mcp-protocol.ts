@@ -12,7 +12,8 @@
  *   `server/discover` what the server supports.
  *
  * `checkMcpRequest` decides each message's era, or refuses it with a 400 (an unsupported version, headers that do not
- * match the body, a modern request without its `_meta`); `servedResponse` shapes a served answer for its era.
+ * match the body, a modern request without its `_meta`); `servedResponse` shapes a served answer for its era, and
+ * `openListenStream` answers a modern `subscriptions/listen` with the stream it opens.
  */
 /** The revisions whose clients name their version, identity and capabilities on every request, with no `initialize`. */
 export const MODERN_PROTOCOL_VERSIONS = ['2026-07-28'] as const;
@@ -305,4 +306,126 @@ export function postAnswer(
   if (!sent.length) return null;
   const status = sent.find((answer) => answer.status !== 200)?.status ?? 200;
   return { status, body: batch ? sent.map((answer) => answer.response) : sent[0]!.response };
+}
+
+/** The change notifications a `subscriptions/listen` stream sends: those the client asked for that the server has. */
+export interface McpListenFilter {
+  toolsListChanged?: true;
+}
+
+/** Whether a message is a modern `subscriptions/listen` request, which the server answers with a stream of its own. */
+export function isListenRequest(
+  era: McpEra,
+  message: JsonRpcRequest,
+): message is JsonRpcRequest & { id: string | number } {
+  return (
+    era.modern &&
+    message.method === 'subscriptions/listen' &&
+    (typeof message.id === 'string' || typeof message.id === 'number')
+  );
+}
+
+/** What a `subscriptions/listen` request asks for, narrowed to the notifications the server sends (`sends`). */
+export function honoredListenFilter(params: unknown, sends: { toolsListChanged?: boolean }): McpListenFilter {
+  const asked = isObject(params) && isObject(params.notifications) ? params.notifications : {};
+  return asked.toolsListChanged === true && sends.toolsListChanged ? { toolsListChanged: true } : {};
+}
+
+/** The part of a Node HTTP response a listen stream writes to. */
+export interface McpStreamResponse {
+  writeHead(status: number, headers: Record<string, string>): unknown;
+  write(chunk: string): unknown;
+  end(): unknown;
+  on(event: 'close', listener: () => void): unknown;
+  readonly destroyed: boolean;
+}
+
+/** How often an open listen stream gets a comment, so a proxy keeps it and a client that left is noticed. */
+export const LISTEN_HEARTBEAT_MS = 15_000;
+
+/** A `subscriptions/listen` stream, open until the client closes it or the server ends it. */
+export interface McpListenStream {
+  /** The server's tools changed: told when the stream acknowledged `toolsListChanged`. */
+  toolsChanged(): void;
+  /** End the subscription: the request's result, then the end of the stream. */
+  end(): void;
+  /** Called once, as the stream closes from either side. */
+  onClose(listener: () => void): void;
+  readonly closed: boolean;
+}
+
+function sseFrame(message: unknown): string {
+  return `event: message\ndata: ${JSON.stringify(message)}\n\n`;
+}
+
+/**
+ * Answer the modern `subscriptions/listen` request `id` with its stream on `res`: the acknowledgment of `honored`
+ * first, each change it names after, a comment every `LISTEN_HEARTBEAT_MS`, and the request's result when the server
+ * ends it. Every message carries the subscription's id (the request's) in `_meta`.
+ */
+export function openListenStream(
+  res: McpStreamResponse,
+  id: string | number,
+  honored: McpListenFilter,
+  server: McpServerInfo,
+): McpListenStream {
+  const meta = { [MCP_META.subscriptionId]: id };
+  const closers: Array<() => void> = [];
+  let closed = false;
+  res.writeHead(200, {
+    'Content-Type': 'text/event-stream',
+    'Cache-Control': 'no-cache, no-transform',
+    Connection: 'keep-alive',
+    'X-Accel-Buffering': 'no',
+  });
+  res.write(
+    sseFrame({
+      jsonrpc: '2.0',
+      method: 'notifications/subscriptions/acknowledged',
+      params: { _meta: meta, notifications: honored },
+    }),
+  );
+  const heartbeat = setInterval(() => {
+    if (!closed) res.write(':\n\n');
+  }, LISTEN_HEARTBEAT_MS);
+  heartbeat.unref?.();
+  const gone = (): void => {
+    if (closed) return;
+    closed = true;
+    clearInterval(heartbeat);
+    for (const close of closers.splice(0)) close();
+  };
+  res.on('close', gone);
+  if (res.destroyed) gone();
+  return {
+    toolsChanged() {
+      if (!closed && honored.toolsListChanged) {
+        res.write(sseFrame({ jsonrpc: '2.0', method: 'notifications/tools/list_changed', params: { _meta: meta } }));
+      }
+    },
+    end() {
+      if (closed) return;
+      res.write(
+        sseFrame({
+          jsonrpc: '2.0',
+          id,
+          result: { resultType: 'complete', _meta: { ...meta, [MCP_META.serverInfo]: server } },
+        }),
+      );
+      res.end();
+      gone();
+    },
+    onClose(listener) {
+      if (closed) listener();
+      else closers.push(listener);
+    },
+    get closed() {
+      return closed;
+    },
+  };
+}
+
+/** The refusal of an empty batch, which JSON-RPC answers with one Invalid Request error. */
+export function emptyBatchAnswer(): McpAnswer {
+  return { status: 400, response: rpcErr(null, RPC.INVALID_REQUEST, 'Invalid Request: an empty batch.') };
 }
