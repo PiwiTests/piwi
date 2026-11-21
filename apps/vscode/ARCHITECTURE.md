@@ -318,7 +318,7 @@ opening the cluster's page it answers or saying which ticket is linked already.
   tests shows while the view lists failures (`piwi.failuresView == failures`), the instance answering or not.
   `tests/menus.test.ts` holds the gates.
 - While the tree draws no node, the view says its state (`failuresViewEmpty`): for `clear`, `norun`, `unreachable`,
-  `desktop-unproven` and `loading` the view's message is the service's sentence and the tree a node for each action
+  `desktop-unproven`, `refused`, `no-project` and `loading` the view's message is the service's sentence and the tree a node for each action
   the state links (`FailuresView.links`), as VS Code hides the welcome under a message; for `disconnected` and
   `unavailable` (the service does not answer, read again when the client stops), the welcome content that follows the
   `piwi.failuresView` context key, with its buttons.
@@ -1173,10 +1173,11 @@ the workbench's DOM what the in-process suites check as answers: the status bar'
 the quick fixes, the hover, CodeLens, the failures view and the Testing view. It also checks the layout: no row of
 lenses of the active editor, at the window's width and in an editor half as wide, is cut short (its text past its
 box, or its box past the code's area), and a flaky test's line says so. `failures-states.spec.mjs` opens a window of its
-own for four states of the failures view without a failure to list: a run with no failure and no run yet, from the stub
-(`startStub`'s `latest`), an instance that does not answer, and none named. It holds the view's sentence and link rows,
-or its welcome and buttons, to `packages/editor/tests/golden/failures-view.json`; the loading, desktop-app and
-baseline states are held there by the unit tests alone.
+own for six states of the failures view without a failure to list: a run with no failure, no run yet and no project
+chosen, from the stub (`startStub`'s `latest`), an instance that does not answer, one that asks for a key, and none
+named. It holds the view's sentence and link rows, or its welcome and buttons, to
+`packages/editor/tests/golden/failures-view.json`; the loading, desktop-app and baseline states are held there by the
+unit tests alone.
 
 `.github/workflows/nightly-vscode.yml` runs it every night and on demand, not on pull requests. A failure leaves the
 HTML report, with a screenshot of the window.

@@ -474,8 +474,8 @@ function sentence(text: string): string {
  * The state a failures view is in and its words, from the contexts and how many tests still fail (`failing`, the
  * answer's count, which leaves out the failures fixed locally): failures when any test fails; else no failure when a
  * context read a run; else, in this order, the first instance that does not answer, the first desktop app that did not
- * prove it holds the token, an instance still being read, no run for a connected context (its baseline's, when one is
- * chosen), and no connection.
+ * prove it holds the token, the first instance that refused the key, the first instance with no project chosen or found,
+ * an instance still being read, no run for a connected context (its baseline's, when one is chosen), and no connection.
  */
 export function failuresView(contexts: ContextViewState[], failing: number): FailuresView {
   const view = (state: FailuresViewState, message: string | null): FailuresView => ({
@@ -501,6 +501,10 @@ export function failuresView(contexts: ContextViewState[], failing: number): Fai
   }
   const unproven = contexts.find((c) => c.problemKind === 'desktop-unproven');
   if (unproven) return view('desktop-unproven', sentence(unproven.problem ?? 'Restart or update the desktop app'));
+  const refused = contexts.find((c) => c.problemKind === 'refused');
+  if (refused) return view('refused', sentence(refused.problem ?? 'The instance refused the API key'));
+  const noProject = contexts.find((c) => c.problemKind === 'no-project');
+  if (noProject) return view('no-project', sentence(noProject.problem ?? 'No project chosen'));
   if (contexts.some((c) => c.loading)) return view('loading', 'Piwi is reading the instance…');
   const idle = contexts.find((c) => c.connected);
   if (idle) {
@@ -526,6 +530,8 @@ const VIEW_LINKS: Record<FailuresViewState, readonly string[]> = {
   clear: ['piwi.refreshRun'],
   unreachable: ['piwi.refresh', 'piwi.openSettings'],
   'desktop-unproven': ['piwi.refresh', 'piwi.openLog'],
+  refused: ['piwi.connect', 'piwi.openSettings'],
+  'no-project': ['piwi.connect', 'piwi.openSettings'],
   loading: [],
   norun: ['piwi.compareWith', 'piwi.getStarted'],
   disconnected: ['piwi.connect', 'piwi.recordFile'],

@@ -941,8 +941,8 @@ data class FailureTreeNode(
 data class FailuresParams(val grouping: String? = null)
 
 /**
- * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, loading, disconnected)
- * and the sentence it shows for it; null beside failures.
+ * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, refused, no-project,
+ * loading, disconnected) and the sentence it shows for it; null beside failures.
  */
 data class FailuresView(
     val state: String = "failures",

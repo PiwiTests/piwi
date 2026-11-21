@@ -685,8 +685,9 @@ export type ConnectionSource = 'environment' | 'dotenv' | 'desktop' | 'editor';
 
 /**
  * What a failures view shows: failures, none in a run read (`clear`), an instance that does not answer (`unreachable`),
- * a desktop app that did not prove it holds the token (`desktop-unproven`), an instance still being read (`loading`), no
- * run to read yet (`norun`), or no connection (`disconnected`).
+ * a desktop app that did not prove it holds the token (`desktop-unproven`), an instance that refused the key or asked
+ * for one (`refused`), no project chosen or found (`no-project`), an instance still being read (`loading`), no run to
+ * read yet (`norun`), or no instance named (`disconnected`).
  */
 export type FailuresViewState =
   | 'failures'
@@ -694,6 +695,8 @@ export type FailuresViewState =
   | 'norun'
   | 'unreachable'
   | 'desktop-unproven'
+  | 'refused'
+  | 'no-project'
   | 'loading'
   | 'disconnected';
 

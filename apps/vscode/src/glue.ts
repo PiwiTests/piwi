@@ -382,6 +382,8 @@ const FAILURES_MESSAGE_STATES: ReadonlySet<string> = new Set([
   'norun',
   'unreachable',
   'desktop-unproven',
+  'refused',
+  'no-project',
   'loading',
 ]);
 
