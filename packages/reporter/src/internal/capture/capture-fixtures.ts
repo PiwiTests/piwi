@@ -158,12 +158,15 @@ import { stripAnsi } from '@piwitests/core/error-parse';
 import { canRecordFromHere, recordFromHere } from './record-handoff.js';
 import {
   closeLiveView,
+  liveViewHold,
+  liveViewMayHold,
   liveViewMayPause,
   liveViewOpen,
   liveViewStopped,
   liveViewTestBegan,
   liveViewTestEnded,
   openLiveView,
+  type LiveHold,
 } from './live-view.js';
 import { listenCalls, trackCalls } from './live-call-log.js';
 import { laneCalled, laneSawPage, lanePage, laneTestBegan, laneTestEnded } from './lane-feed.js';
@@ -1825,11 +1828,15 @@ function stopBarPage(sink: CaptureSink, context: BrowserContext, of: StopPage): 
   return open[open.length - 1] ?? null;
 }
 
-/** What a stop at a failure shows beside the stop's own: the failing locator a pick replaces. */
+/**
+ * What a stop at a failure shows beside the stop's own: the failing locator a pick replaces; and, for a CI test held
+ * for its controllers on the instance's live view, its hold, which ends the stop.
+ */
 interface FailureStop {
   failed: FailedLocatorInfo | null;
   /** The error the stop names (`failureError`); null for an error with no text. */
   error: string | null;
+  hold?: LiveHold | null;
 }
 
 /**
@@ -1869,9 +1876,11 @@ async function showStop(
   const page = stopBarPage(sink, context, of);
   const guessed = !('page' in of);
   if (!testInfo) return undefined;
-  const bar = !!page && pauseGateFromTestInfo(testInfo, sink.headless).headless === false;
+  // A CI test held for its controllers shows no bar: nobody stands at the CI machine to answer it.
+  const hold = failure?.hold ?? null;
+  const bar = !hold && !!page && pauseGateFromTestInfo(testInfo, sink.headless).headless === false;
   const place = runChannelOpen() ? callSitePlace(location) : null;
-  if (!bar && !place) return undefined;
+  if (!bar && !place && !hold) return undefined;
   const failing = failure?.failed ?? null;
   /** A pick, folded into the snapshots, printed and posted to the editor: whether the editor took it. */
   const pickTaken = async (picked: PickedLocator): Promise<boolean> => {
@@ -1910,9 +1919,10 @@ async function showStop(
   // The run page's live view says the worker is paused, until the stop ends.
   const stoppedAt = callSitePlace(location);
   const goneOn = liveViewStopped({
-    reason,
+    reason: hold ? 'held' : reason,
     call: { title, file: stoppedAt?.file ?? null, line: stoppedAt?.line ?? null },
     test: testInfo.title,
+    ...(hold ? { until: hold.until } : {}),
   });
   // The reporter's process tells the instance, while someone has the run open (`stop-notes.ts`).
   const noted = { testId: testInfo.testId, retry: testInfo.retry };
@@ -1934,6 +1944,7 @@ async function showStop(
   const end = new AbortController();
   const over = new AbortController();
   end.signal.addEventListener('abort', () => over.abort(), { once: true });
+  void hold?.ended.then(() => over.abort());
   let fromEditor: PauseAnswer | undefined;
   const pickAt =
     page && !guessed
@@ -2017,7 +2028,11 @@ async function showStop(
       : undefined;
   const shown = withTestTimeoutHeld(testInfo, async (): Promise<PauseAnswer> => {
     if (!bar || !page) {
-      console.log(stopLine(failure ? 'failure' : reason, callSiteLine(location), title, runHost()));
+      console.log(
+        hold
+          ? heldLine(callSiteLine(location), hold.until)
+          : stopLine(failure ? 'failure' : reason, callSiteLine(location), title, runHost()),
+      );
       if (page && intents && held) {
         const stop = held.stop;
         await internalCall(page, () =>
@@ -2058,6 +2073,7 @@ async function showStop(
       ),
     );
   }).finally(async () => {
+    hold?.end();
     // A stop ended unanswered took its duration as it ended; a call the test ended under is waited for a while.
     if (!end.signal.aborted) record.duration = Date.now() - record.startedAt;
     else if (end.signal.reason === 'ended') releaseCall(sink, call?.settled ?? Promise.resolve());
@@ -2084,6 +2100,12 @@ async function showStop(
   // Its page or context closed: as on Resume, once the page that closed is gone.
   await settledWithin(stop.after ? [stop.after] : [], END_STOP_MS);
   return 'resume';
+}
+
+/** What a CI run's log says of a failing test held for its controllers: where, and until when at most, in UTC. */
+function heldLine(place: string, until: number): string {
+  const time = new Date(until).toISOString().slice(11, 19);
+  return `[piwi] The test failed at ${place}: held for the people watching it on the run page, until ${time} UTC at the latest.`;
 }
 
 /**
@@ -2300,8 +2322,10 @@ function regionSecrets(region: Locator): Promise<string[]> {
 
 /**
  * A failure in an interactive run (the worker's run connection open to an editor that shows a held failure,
- * `editorShows`, and a test that can stop): once the test function and its hooks are done, the failing page is held, as
- * a stop at the failing line with the reason `failure`. The evidence is read first, and nothing the pages do during the
+ * `editorShows`, and a test that can stop), or in a CI run whose project holds a failing test for its controllers
+ * while one watches its worker in full (`liveViewMayHold`): once the test function and its hooks are done, the failing
+ * page is held, as a stop at the failing line with the reason `failure`, which the instance's live view hears as
+ * `held` with its end, and which its hold ends (`liveViewHold`). The evidence is read first, and nothing the pages do during the
  * hold is the failure's (`frozenAt`): no request, console entry or dialog is recorded from then on, and the code reach
  * of its context ends. The test timeout is held while the stop shows (`withTestTimeoutHeld`). The editor and the bar
  * answer it as any stop, with Pick (which replaces the failing locator), Record (the missing steps, above the failing
@@ -2313,7 +2337,9 @@ function regionSecrets(region: Locator): Promise<string[]> {
  */
 async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   const testInfo = sink.testInfo;
-  if (sink.failureHeld || !sink.pause || !testInfo || !editorShows('failure')) return;
+  if (sink.failureHeld || !testInfo) return;
+  const local = !!sink.pause && editorShows('failure');
+  if (!local && !liveViewMayHold()) return;
   const { status, expectedStatus } = testInfo;
   if ((status !== 'failed' && status !== 'timedOut') || status === expectedStatus) return;
   const page = [sink.lastActivePage, fallback].find((open) => !!open && !isPageClosed(open));
@@ -2347,7 +2373,10 @@ async function holdFailure(sink: CaptureSink, fallback?: Page): Promise<void> {
   const title = hideSecretsInText(`Failed: ${said.trim().slice(0, 300)}`).slice(0, 1000);
   const errorText = failureError(error?.message ?? error?.value);
   const named = errorText === null ? null : hideSecretsInText(errorText).slice(0, MAX_STOP_ERROR);
-  await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed, error: named });
+  // A CI test is held from here on, while its controllers still watch.
+  const hold = local ? null : liveViewHold();
+  if (!local && !hold) return;
+  await showStop(sink, context, title, location, 'failure', undefined, { page }, { failed, error: named, hold });
 }
 
 /** The most lines of a failure's error its stop names. */
