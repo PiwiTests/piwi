@@ -1,5 +1,6 @@
 import { fileURLToPath, URL } from 'node:url'
 import { defineConfig, type HeadConfig } from 'vitepress'
+import { writeRedirectPages } from './moved-pages'
 import { landingCards, nav, sidebars } from './navigation'
 import { pageMeta, TITLE_TEMPLATE } from './page-meta.mts'
 
@@ -24,7 +25,7 @@ export default defineConfig({
   title: 'Piwi Dashboard',
   titleTemplate: TITLE_TEMPLATE,
   description:
-    'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+    'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.',
   base: '/',
   // AGENTS.md is the agent guide for this directory, and CLAUDE.md the file
   // that loads it for Claude Code; neither is a page of the site: the guide
@@ -49,6 +50,8 @@ export default defineConfig({
   // VitePress writes the page description into the HTML unescaped; as a head
   // tag it is escaped, so a quote in a description cannot break the markup.
   transformHead: ({ description }) => [['meta', { name: 'description', content: description }]],
+  // A page that moved answers at its old URL with a redirect page (moved-pages.ts).
+  buildEnd: ({ outDir }) => writeRedirectPages(outDir, siteUrl),
   vite: {
     // The #shared modules imported below live outside the docs root, and their
     // nearest tsconfig (application/tsconfig.json) references Nuxt-generated
@@ -81,7 +84,7 @@ export default defineConfig({
       {
         property: 'og:description',
         content:
-          'CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used. Self-hosted, zero telemetry.',
+          'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.',
       },
     ],
     ['meta', { property: 'og:image', content: ogImage }],

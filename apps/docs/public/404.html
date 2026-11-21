@@ -4,20 +4,14 @@
   <meta charset="utf-8">
   <title>Piwi Dashboard</title>
   <script>
-    // GitHub Pages SPA redirect + moved-page redirects.
+    // GitHub Pages serves this page for any URL with no file behind it, and
+    // offers no server-side redirects. A moved page answers at its old URL with
+    // a redirect page of its own (.vitepress/moved-pages.ts), never here.
     //
-    // GitHub Pages serves this 404.html for any URL that has no matching static
-    // file, and offers no server-side redirects. Two things depend on it:
-    //
-    // 1. The demo SPA (client-side only): every deep link hits this page, so we
-    //    save the intended path in sessionStorage and bounce to the SPA entry
-    //    point for Vue Router to render.
-    // 2. Pages the docs restructure moved to a new path. Old URLs (bookmarks,
-    //    external inbound links, older README copies) must keep working, so we
-    //    map each old path to its new home and redirect, preserving the query
-    //    and hash. Add a row here whenever a page moves.
-    //
-    // Anything not matched falls back to the documentation root.
+    // The demo SPA (client-side only): every deep link lands here, so the
+    // intended path is saved in sessionStorage and the visitor bounced to the
+    // SPA entry point for Vue Router to render. Anything else goes to the
+    // documentation root.
     ;(function () {
       const demoBase = '/demo'
       const path = window.location.pathname
@@ -26,66 +20,6 @@
         const relativePath = path.slice(demoBase.length) || '/'
         sessionStorage.setItem('spa:redirect', relativePath + window.location.search + window.location.hash)
         window.location.replace(demoBase + '/')
-        return
-      }
-
-      // Old path → new path for pages that have moved. Keys are matched against
-      // the pathname with any trailing slash removed.
-      const moved = {
-        '/deployment': '/operate/deployment',
-        '/production-checklist': '/operate/production-checklist',
-        '/upgrading': '/operate/upgrading',
-        '/backup-restore': '/operate/backup-restore',
-        '/authentication': '/operate/authentication',
-        '/database': '/operate/database',
-        '/storage': '/operate/storage',
-        '/ui-overview': '/features/ui-overview',
-        '/evidence': '/features/evidence',
-        '/failure-clusters': '/features/failure-clusters',
-        '/ai-diagnosis': '/features/ai-diagnosis',
-        '/fix-plans': '/features/fix-plans',
-        '/run-changes': '/features/run-changes',
-        '/flaky-tests': '/features/flaky-tests',
-        '/slow-tests': '/features/slow-tests',
-        '/branches': '/features/branches',
-        '/analytics': '/features/analytics',
-        '/timeline-markers': '/features/timeline-markers',
-        '/notifications': '/features/notifications',
-        '/locator-healing': '/features/locator-healing',
-        '/auto-heal': '/features/auto-heal',
-        '/offline-export': '/features/offline-export',
-        '/share-links': '/features/share-links',
-        '/what-piwi-does': '/guide/what-piwi-does',
-        '/getting-started': '/guide/getting-started',
-        '/concepts': '/guide/concepts',
-        '/first-failure': '/guide/first-failure',
-        '/comparison': '/guide/comparison',
-        '/privacy': '/guide/privacy',
-        '/reporter': '/guide/reporter',
-        '/capture-fixtures': '/guide/capture-fixtures',
-        '/ai-steps': '/features/ai-steps',
-        '/ci': '/guide/ci',
-        '/test-selection': '/features/test-selection',
-        '/backend-logs': '/guide/backend-logs',
-        '/importing-runs': '/guide/importing-runs',
-        '/desktop': '/features/desktop',
-        '/extension': '/features/extension',
-        '/mcp': '/features/mcp',
-        '/ide-integration': '/features/ide-integration',
-        '/test-functions': '/features/test-functions',
-        '/cli': '/reference/cli',
-        '/configuration': '/reference/configuration',
-        '/configuration/generator': '/reference/configuration/generator',
-        '/guide/ai-steps': '/features/ai-steps',
-        '/guide/test-selection': '/features/test-selection',
-        '/features/analytics-widgets': '/reference/analytics-widgets',
-        '/reference/feature-map': '/reference/features',
-        '/recipes': '/#something-is-red-right-now',
-      }
-      const normalized = path.length > 1 ? path.replace(/\/$/, '') : path
-      const target = moved[normalized]
-      if (target) {
-        window.location.replace(target + window.location.search + window.location.hash)
         return
       }
 
