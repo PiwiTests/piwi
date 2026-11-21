@@ -14,7 +14,7 @@ type Matcher = string | RegExp | Array<string | RegExp>;
  * - `safe`: nothing a test observes changes. Traces and video for failures or retries only, and failure screenshots.
  * - `fast`: `safe`, plus changes to what the page does: reduced motion and instant animations, and one browser context
  *   per worker, reset between tests.
- * - `max`: `fast`, plus every hook into Playwright's internals.
+ * - `max`: `fast`, plus every hook into Playwright's internals but `keepStaticCache`, which a project turns on itself.
  */
 export type Preset = 'safe' | 'fast' | 'max';
 
@@ -123,10 +123,11 @@ export interface Optimizations {
      * With `reuseContext`: the reset between tests leaves the browser's HTTP cache while it holds only static assets:
      * responses `immutable`; images, fonts, stylesheets, scripts and media with no lifetime of their own or one of a
      * week; other responses fresh for a week requested without a cookie. Anything else the browser could reuse clears
-     * it, and so does a request still waiting for its response at the reset, or a response no page or worker received.
-     * A file the app changes at the same URL between tests, with no lifetime of its own, reaches the next test as it
-     * was, and so can a response to a request a document starts in `pagehide`, `unload` or `visibilitychange`. Chromium
-     * only: other browsers give no events for responses no page received, so their cache is always cleared.
+     * it, a favicon included, and so does a request still waiting for its response at the reset, or a response no page
+     * or worker received. A file the app changes at the same URL between tests, with no lifetime of its own, reaches the
+     * next test as it was, and so can a response to a request a document starts in `pagehide`, `unload` or
+     * `visibilitychange`. Chromium only: other browsers give no events for responses no page received, so their cache
+     * is always cleared. Not part of the `max` preset.
      */
     keepStaticCache?: boolean;
   };
@@ -205,7 +206,6 @@ export function presetOptions(preset: Preset, config: AnyConfig): Optimizations 
         fastReset: true,
         fastStackTraces: true,
         screenshotMatches: true,
-        keepStaticCache: true,
         earlyInjection: true,
         fastTraces: true,
       },

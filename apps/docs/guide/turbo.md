@@ -74,12 +74,12 @@ the page it last acted on. Name `failureScreenshots: false` to keep that one.
 |---|---|
 | `safe` | Nothing a test observes changes: traces the config records are kept for failures (on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of each test worker. |
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests. |
-| `max` | `fast`, plus the [experimental hooks](#experimental-hooks). |
+| `max` | `fast`, plus the [experimental hooks](#experimental-hooks) but `keepStaticCache`. |
 
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option you name beside the preset wins over it. On the package's reference suite, against a typical unoptimized setup,
 `safe` took 4% off a run's wall time and 7% off its CPU time, and `fast` 6% and 53%. On a CI shard of Piwi's own
-suite, `max` took 29% off the wall time and 32% off the CPU time, and raised peak memory by 79%.
+suite, `max` with `keepStaticCache` took 29% off the wall time and 32% off the CPU time, and raised peak memory by 79%.
 
 ## Sign-in and third-party requests
 
@@ -139,13 +139,12 @@ Every preset is a set of these options; name one to override it.
 | `reuseContext` | One browser context per worker, reset between tests. |
 | `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given. The runner loads Playwright before the config: [`piwi-turbo`](#a-faster-start-piwi-turbo) caches its start too. Skipped when coverage is collected or a compile cache is already set. |
 
-`lightTraces` cut the CPU time of a suite that traces every test by 46%, and its artifacts by 97%. A faster suite can
-surface races that slower runs hid: measure on your own suite before keeping any of these.
+A faster suite can surface races that slower runs hid: measure on your own suite before keeping any of these.
 
 ## Experimental hooks
 
-**Experimental.** Ten options reach into Playwright's internals inside each test worker. `max` turns them all on;
-name them under `experimental` to pick some. The [package
+**Experimental.** Ten options reach into Playwright's internals inside each test worker. `max` turns on all but
+`keepStaticCache`; name them under `experimental` to pick some. The [package
 README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-hooks) describes each one and its limits:
 
 - `fastScreenshots` (Chromium) encodes PNG screenshots for speed, and `screenshotMatches` passes a screenshot
@@ -155,9 +154,9 @@ README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#experimental-
 - `failFast` ends a failing assertion once nothing can change the page; keep it off for a test changing the page
   from its Node code while an assertion waits.
 - `fastReset` and `keepStaticCache` lighten the reset of a reused context: storage cleared through CDP, the tab's
-  second reset skipped when the test changed nothing it resets, and the HTTP cache kept while it holds only static
-  assets. An app that changes a file at the same URL between tests, served with no lifetime of its own, needs
-  `keepStaticCache` off.
+  second reset skipped when the test changed nothing it resets, and on Chromium the HTTP cache kept while it holds only
+  static assets. Keep `keepStaticCache` off for an app that changes a file at the same URL between tests with no
+  lifetime of its own, or fetches a cacheable response as a page unloads.
 - `earlyInjection` (Chromium) creates the script Playwright's actions run through while each page loads, rather than
   at its first action, and `fastTraces` makes traces cheaper: no request for the script bodies they leave out, and on
   Chromium fewer waits for DOM snapshots.

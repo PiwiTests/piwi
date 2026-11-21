@@ -21,8 +21,11 @@ tell a real gain from noise.
    `withOptimizations(config, options)` and gives tests a `test` from `@piwitests/turbo/test`. It contains no Playwright
    or Flashwright code; the techniques it takes from Flashwright are credited in its README.
 2. **Presets first, levers second.** `safe` changes nothing a test observes and only lowers costs the config already
-   has; `fast` adds reduced motion, instant animations and context reuse; `max` adds every experimental hook. An option
-   named beside a preset wins, and one left `undefined` keeps the preset's value.
+   has; `fast` adds reduced motion, instant animations and context reuse; `max` adds every experimental hook but
+   `keepStaticCache`. That one is the hook whose mistake nothing reports: a response it keeps that should have been
+   cleared reaches the next test as it was, which then runs on stale content without a sign of why, where the other
+   hooks throw or only cost time. A project names it once its own pages fit its limits. An option named beside a
+   preset wins, and one left `undefined` keeps the preset's value.
 3. **Public levers**: `trace`, `lightTraces`, `failureScreenshots`, `videoOnRetry`, `reducedMotion`,
    `instantAnimations`, `reuseContext` and `compileCache`. `signIn` and `blockRequests` need the suite's own paths and
    URLs, so no preset sets them.
@@ -128,7 +131,8 @@ As merged, after the review's fixes, each against stock on Flashwright's suites 
 | Inventory | 1.10× | 1.07× | 1.02× | 1.03× |
 
 On Piwi's own suite, as merged: one CI shard of 244 tests with its CI settings (two workers, the built server, two
-retries), 5 interleaved rounds, each change the median of the per-round ratios against stock:
+retries), 5 interleaved rounds, each change the median of the per-round ratios against stock. `max` here included
+`keepStaticCache`:
 
 | | stock | `max` | `max` through `piwi-turbo` |
 |---|---:|---:|---:|
@@ -225,21 +229,26 @@ renderer, for the whole run. What `piwi-turbo` adds to the peak was not broken d
 - **Returning before the teardown**: a one-test run spends about 65 ms between its last test's end and its exit. Most
   of it, about 52 ms, is Playwright stopping its workers, which it does before the reporters end and print the
   summary; a command that returned sooner would leave the summary out. What follows the reporters is about 13 ms.
-- **`keepStaticCache` judging from Playwright's responses alone**: a request the page made just as its test ended
-  could leave its response in the cache. One still in flight at the reset was never judged; and one the page started
-  while the reset navigated it to `about:blank` was answered and cached by the browser, but its document, being
-  replaced, never announced it, so Playwright never reported it (only the browser's `Network.requestWillBeSentExtraInfo`
-  and `responseReceivedExtraInfo` carried it). The isolation pair for a response arriving 20 ms after its test failed
-  in 12 of 45 runs in a tight loop. A first fix also cleared the cache for a request not finished and one announced
-  only by those events, on the tab's session alone; a review then found a fetch aborted as its headers arrived still
-  cached unseen, while an open `EventSource`, an unread body and every request of a worker (announced on the worker's
-  session) cleared the cache at each reset. The reset now clears it for a request still waiting for its response, for
-  a response the browser received over the network that no page or worker received, read from every session of
-  Playwright's network manager of the tab, and for a fetched favicon, which Playwright reports no event for. Those
-  events are Chromium's, so other browsers always clear. TodoMVC with `max` measured the same (4,725 and 4,622 ms). A
-  request a document starts in `pagehide`, `unload` or `visibilitychange` as the reset replaces it shows in none of
-  those events, and its response, still being written when Playwright's reset clears the cache, is dropped by that
-  clear and kept without it. That case stays a documented limit of the hook.
+- **`keepStaticCache` judging from Playwright's responses alone**: a request the page made just as its test ended could
+  leave its response in the cache. One still in flight at the reset was never judged; and one the page started while the
+  reset navigated it to `about:blank` was answered and cached by the browser, but its document, being replaced, never
+  announced it, so Playwright never reported it (only the browser's `Network.requestWillBeSentExtraInfo` and
+  `responseReceivedExtraInfo` carried it). The isolation pair for a response arriving 20 ms after its test failed in 12
+  of 45 runs in a tight loop. A first fix also cleared the cache for a request not finished and one announced only by
+  those events, on the tab's session alone; a review then found a fetch aborted as its headers arrived still cached
+  unseen, while an open `EventSource`, an unread body and every request of a worker (announced on the worker's session)
+  cleared the cache at each reset. A second review found three more gaps: a favicon was recognized by its last URL, so
+  one that redirected to an icon elsewhere was kept unseen (Playwright reports no event for a favicon, whatever its
+  hops); a service worker's sessions went unwatched; and no isolation pair held the check for a request still waiting.
+  The reset now clears the cache for a request still waiting for its response; for a response the browser received over
+  the network that no page, worker or service worker received, read from every session of Playwright's network managers;
+  for a request any of whose URLs ends in `/favicon.ico` (Playwright reports no event from that hop on) when the browser
+  could serve one of its hops again; and while a service worker runs whose network goes unwatched. Those events are
+  Chromium's, so other browsers always clear. TodoMVC with `max` took 4,725 ms on the build without these checks and
+  4,622 ms with them (5 runs each). A request a document starts in `pagehide`, `unload` or `visibilitychange` as the
+  reset replaces it shows in none of those events, and its response, still being written when Playwright's reset clears
+  the cache, is dropped by that clear and kept without it. That case stays a documented limit of the hook, and the
+  reason `max` leaves it out.
 - **`keepStaticCache` reading each response in the test's process**: a `response` listener on the context makes
   Playwright send every response of the run to the worker's client, 291 for one load of the dashboard, and that cost
   as much as the kept cache saved (median page load 412–486 ms with it, 424–472 ms without). The hook records the

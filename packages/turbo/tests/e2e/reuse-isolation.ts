@@ -12,7 +12,9 @@ export function defineIsolationTests(test: typeof turboTest): void {
   let server: Server;
   let origin: string;
   // Requests the server answered, by route: the HTTP cache answers the others.
-  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0, unloaded: 0 };
+  const hits = { fresh: 0, static: 0, staticCookie: 0, late: 0, unloaded: 0, favicon: 0, icon: 0 };
+  // The requests for a response the server sends a moment after each arrives, and the responses sent.
+  const slow = { asked: 0, sent: 0 };
 
   test.beforeAll(async () => {
     server = createServer((request, response) => {
@@ -65,6 +67,27 @@ export function defineIsolationTests(test: typeof turboTest): void {
       if (request.url === '/unloaded') {
         response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
         response.end(String(++hits.unloaded));
+        return;
+      }
+      // A response the browser may serve again for ten minutes, sent 300 ms after its request arrives.
+      if (request.url === '/slow') {
+        slow.asked++;
+        setTimeout(() => {
+          response.writeHead(200, { 'content-type': 'text/plain', 'cache-control': 'max-age=600' });
+          response.end(String(++slow.sent));
+        }, 300);
+        return;
+      }
+      // A favicon that redirects to an icon, both of which the browser may serve again without asking.
+      if (request.url === '/sub/favicon.ico') {
+        hits.favicon++;
+        response.writeHead(301, { location: '/icons/sub.ico' });
+        response.end();
+        return;
+      }
+      if (request.url === '/icons/sub.ico') {
+        response.writeHead(200, { 'content-type': 'image/x-icon', 'cache-control': 'max-age=600' });
+        response.end(String(++hits.icon));
         return;
       }
       // A response the browser may serve again for ten minutes, and a static asset it may keep for a year.
@@ -464,6 +487,33 @@ export function defineIsolationTests(test: typeof turboTest): void {
     const before = hits.unloaded;
     await page.evaluate(() => fetch('/unloaded').then((response) => response.text()));
     expect(hits.unloaded).toBe(before + 1);
+  });
+
+  test('leaves a reusable response on its way as the test ends', async ({ page }) => {
+    await page.goto(origin);
+    const asked = slow.asked;
+    await page.evaluate(() => void fetch('/slow', { keepalive: true }));
+    await expect.poll(() => slow.asked).toBe(asked + 1);
+  });
+
+  test('gets the response that was on its way from the server', async ({ page }) => {
+    await page.goto(origin);
+    await expect.poll(() => slow.sent).toBe(slow.asked);
+    const asked = slow.asked;
+    await page.evaluate(() => fetch('/slow').then((response) => response.text()));
+    expect(slow.asked).toBe(asked + 1);
+  });
+
+  test('leaves a favicon that redirects to a reusable icon', async ({ page }) => {
+    await page.goto(origin);
+    await page.evaluate(() => fetch('/sub/favicon.ico').then((response) => response.text()));
+  });
+
+  test('gets that favicon and its icon from the server', async ({ page }) => {
+    await page.goto(origin);
+    const before = { ...hits };
+    await page.evaluate(() => fetch('/sub/favicon.ico').then((response) => response.text()));
+    expect([hits.favicon, hits.icon]).toEqual([before.favicon + 1, before.icon + 1]);
   });
 
   test('leaves a response the browser could serve again without asking, beside a static asset', async ({ page }) => {

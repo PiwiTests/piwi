@@ -95,15 +95,24 @@ interface CacheWatch {
   /** Its requests that have no response yet. */
   waiting: Set<ServerPage>;
   /**
-   * On Chromium, by protocol id, from every session of its tabs: the responses the browser received over the network,
-   * and those a page or worker received.
+   * On Chromium, by protocol id, from every session of its tabs and service workers: the responses the browser received
+   * over the network (each hop's status and raw headers), the requests' raw headers, and the responses a page or
+   * worker received.
    */
-  answered: Set<string>;
+  answered: Map<string, Array<{ status: number; headers: Record<string, string> }>>;
+  requestHeaders: Map<string, Record<string, string>>;
   delivered: Set<string>;
-  /** A favicon the browser received over the network, which Playwright reports no event for. */
-  favicon: boolean;
+  /** The requests Playwright counts as favicons and reports no event for, with their method. */
+  favicons: Map<string, string>;
   /** Not Chromium: no events show a response the browser cached without a page receiving it. */
   blind: boolean;
+}
+
+/** The protocol's headers as `cacheVerdict` reads them: names in lower case, a repeated header's values in one list. */
+function lowerCased(headers: Record<string, string> | undefined): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(headers ?? {}).map(([name, value]) => [name.toLowerCase(), String(value).replace(/\n/g, ', ')]),
+  );
 }
 
 class IncompatibleError extends Error {
@@ -395,63 +404,81 @@ export function watchStaticCache(serverContext: ServerPage): void {
   const received: CacheWatch = {
     responses: [],
     waiting: new Set(),
-    answered: new Set(),
+    answered: new Map(),
+    requestHeaders: new Map(),
     delivered: new Set(),
-    favicon: false,
+    favicons: new Map(),
     blind: browserName !== 'chromium',
   };
   state.staticCacheResponses.set(serverContext, received);
   serverContext.on('request', (request: ServerPage) => received.waiting.add(request));
   serverContext.on('response', (response: ServerPage) => {
     received.responses.push(response);
-    received.waiting.delete(response.request?.());
+    if (typeof response?.request !== 'function')
+      state.error ??= new IncompatibleError("Playwright's server responses no longer have request()");
+    else received.waiting.delete(response.request());
   });
   serverContext.on('requestfailed', (request: ServerPage) => received.waiting.delete(request));
   if (received.blind) return;
-  for (const page of serverContext.pages()) watchTabNetwork(page);
+  for (const page of serverContext.pages()) watchNetworkManager(page?.delegate?._networkManager, serverContext);
+  for (const worker of serviceWorkersOf(serverContext))
+    if (worker._networkManager) watchNetworkManager(worker._networkManager, serverContext);
   serverContext.on('page', (page: ServerPage) => {
     try {
-      watchTabNetwork(page);
+      watchNetworkManager(page?.delegate?._networkManager, serverContext);
     } catch (error) {
       state.error ??= error as Error;
     }
   });
 }
 
-/** The protocol sessions keepStaticCache listens to. */
-const watchedSessions = new WeakSet<object>();
+function serviceWorkersOf(serverContext: ServerPage): ServerPage[] {
+  if (typeof serverContext.serviceWorkers !== 'function')
+    throw new IncompatibleError("Playwright's server context no longer lists its service workers");
+  return serverContext.serviceWorkers();
+}
 
 /**
  * A response the browser receives over the network can enter its cache although no page receives it: a request the
  * page aborts as its headers arrive, or one a document makes while the reset replaces it. Chromium's own events show
- * it on the session the request went through, the tab's, a worker's or an out-of-process frame's, all of which
- * Playwright's network manager of the tab holds. A request a document starts in `pagehide`, `unload` or
+ * it on the session the request went through, a tab's, a worker's, an out-of-process frame's or a service worker's,
+ * all of which Playwright's network managers hold. A request a document starts in `pagehide`, `unload` or
  * `visibilitychange` as it is replaced shows in none of them.
  */
-function watchTabNetwork(page: ServerPage): void {
-  const manager = page?.delegate?._networkManager;
+function watchNetworkManager(manager: ServerPage, context: ServerPage): void {
   const sessions = manager?._sessions as Map<ServerPage, unknown> | undefined;
   if (!(sessions instanceof Map) || typeof manager.addSession !== 'function')
     throw new IncompatibleError("Playwright's Chromium network manager no longer holds its sessions");
   hookNetworkSessions(Object.getPrototypeOf(manager));
-  for (const session of sessions.keys()) watchSession(session, page.browserContext);
+  for (const session of sessions.keys()) watchSession(session, context);
 }
 
 let networkSessionsHooked = false;
 
-/** Watches the sessions a tab's network manager adds later: workers, out-of-process frames. */
+/** Watches the sessions a network manager adds later: workers, out-of-process frames, a service worker's own. */
 function hookNetworkSessions(proto: ServerPage): void {
   if (networkSessionsHooked) return;
   const addSession = proto.addSession as ((session: ServerPage, ...rest: unknown[]) => Promise<unknown>) | undefined;
   if (typeof addSession !== 'function')
     throw new IncompatibleError("Playwright's Chromium network manager no longer adds its sessions");
   proto.addSession = function (this: ServerPage, session: ServerPage, ...rest: unknown[]) {
-    const context = this._page?.browserContext;
-    if (context && state.staticCacheResponses.has(context)) watchSession(session, context);
+    const context = this._page?.browserContext ?? this._serviceWorker?.browserContext;
+    try {
+      if (context && state.staticCacheResponses.has(context)) watchSession(session, context);
+    } catch (error) {
+      state.error ??= error as Error;
+    }
     return addSession.call(this, session, ...rest);
   };
   networkSessionsHooked = true;
 }
+
+type ProtocolEvent = {
+  requestId?: string;
+  request?: { url?: string; method?: string };
+  headers?: Record<string, string>;
+  statusCode?: number;
+};
 
 function watchSession(session: ServerPage, context: ServerPage): void {
   if (watchedSessions.has(session)) return;
@@ -459,16 +486,32 @@ function watchSession(session: ServerPage, context: ServerPage): void {
     throw new IncompatibleError("Playwright's Chromium sessions no longer emit the protocol's events");
   watchedSessions.add(session);
   const watch = () => state.staticCacheResponses.get(context);
-  session.on('Network.responseReceivedExtraInfo', (event: { requestId?: string }) => {
-    if (event?.requestId) watch()?.answered.add(event.requestId);
+  // Playwright's rule, carried across redirects: the request id stays the same from hop to hop.
+  session.on('Network.requestWillBeSent', (event: ProtocolEvent) => {
+    if (event?.requestId && event.request?.url?.endsWith('/favicon.ico'))
+      watch()?.favicons.set(event.requestId, event.request?.method ?? 'GET');
   });
-  session.on('Network.responseReceived', (event: { requestId?: string; response?: { url?: string } }) => {
+  // Each hop's headers join those of the hops before it: a cookie sent on any hop marks the request credentialed.
+  session.on('Network.requestWillBeSentExtraInfo', (event: ProtocolEvent) => {
     const received = watch();
     if (!received || !event?.requestId) return;
-    received.delivered.add(event.requestId);
-    if (event.response?.url?.split(/[?#]/)[0]?.endsWith('/favicon.ico')) received.favicon = true;
+    const sent = received.requestHeaders.get(event.requestId);
+    received.requestHeaders.set(event.requestId, { ...sent, ...lowerCased(event.headers) });
+  });
+  session.on('Network.responseReceivedExtraInfo', (event: ProtocolEvent) => {
+    const received = watch();
+    if (!received || !event?.requestId) return;
+    const hops = received.answered.get(event.requestId) ?? [];
+    hops.push({ status: event.statusCode ?? 0, headers: lowerCased(event.headers) });
+    received.answered.set(event.requestId, hops);
+  });
+  session.on('Network.responseReceived', (event: ProtocolEvent) => {
+    if (event?.requestId) watch()?.delivered.add(event.requestId);
   });
 }
+
+/** The protocol sessions keepStaticCache listens to. */
+const watchedSessions = new WeakSet<object>();
 
 /**
  * Whether the responses a context received since its last reset left nothing in the HTTP cache but static assets.
@@ -539,16 +582,32 @@ function hookContextReset(core: ServerPage): void {
       const judged = { ...received, waiting: [...received.waiting] };
       received.responses = [];
       received.waiting = new Set();
-      received.answered = new Set();
+      received.answered = new Map();
+      received.requestHeaders = new Map();
       received.delivered = new Set();
-      received.favicon = false;
-      // A request still waiting for its response, a response the browser received that no page received, or a
-      // favicon, which Playwright reports no event for, may have left anything in the cache.
+      received.favicons = new Map();
+      // A request still waiting for its response, a response the browser received that no page received, a favicon
+      // the browser may serve again (Playwright reports no event for favicons), or a service worker whose network goes
+      // unwatched, may have left anything in the cache.
+      const reusableFavicon = [...judged.favicons].some(([id, method]) =>
+        (judged.answered.get(id) ?? []).some(
+          (hop) => cacheVerdict(method, hop.status, hop.headers, judged.requestHeaders.get(id)) === 'reusable',
+        ),
+      );
+      const unwatchedWorker =
+        !judged.blind &&
+        serviceWorkersOf(this).some(
+          (worker) =>
+            ![...((worker._networkManager?._sessions as Map<object, unknown> | undefined)?.keys() ?? [])].some(
+              (session) => watchedSessions.has(session),
+            ),
+        );
       const keep =
         !judged.blind &&
-        !judged.favicon &&
+        !reusableFavicon &&
+        !unwatchedWorker &&
         judged.waiting.length === 0 &&
-        [...judged.answered].every((id) => judged.delivered.has(id)) &&
+        [...judged.answered.keys()].every((id) => judged.delivered.has(id)) &&
         (await onlyStaticAssets(judged.responses));
       if (!keep) return await resetStorage.call(this, progress, storageState, mode);
       this.clearCache = async () => {

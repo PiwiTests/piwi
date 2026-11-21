@@ -41,7 +41,7 @@ import { test, expect } from '@piwitests/turbo/test';
 | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `safe` | Nothing a test observes changes. Traces the config records are kept for failures (recorded on the first retry when it retries), screenshots are taken of failed tests only, video on the first retry. Node's compile cache shortens the start of each test worker.                               |
 | `fast` | `safe`, plus reduced motion and instant animations, which change what the page does, and one browser context per worker, reset between tests, in place of a new context for each test.                                                                                                           |
-| `max`  | `fast`, plus every experimental hook: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, a reset that keeps static assets cached, Playwright's injected script created while a page loads, and traces that do not request the script bodies they leave out. |
+| `max`  | `fast`, plus every experimental hook but `keepStaticCache`: faster PNG encoding, a shorter retry backoff, assertions that fail once the page is idle, pointer actions that skip the wait for a still element, a lighter reset of the reused context, stack traces that look up source maps for your own code only, screenshot assertions that pass a known capture without decoding it, Playwright's injected script created while a page loads, and traces that do not request the script bodies they leave out. |
 
 A preset only lowers costs your config has: it never turns on traces, screenshots or video the config leaves off. An
 option named beside the preset wins over it.
@@ -76,7 +76,7 @@ the form in every test, a trace of every test, the default worker count):
 | `signIn`, `blockRequests`, reduced motion, traces of failures and four workers | 80 s → 16 s | 84 s → 30 s             | −100%     |
 
 On one CI shard of Piwi's own dashboard suite, 244 tests run as its CI runs them (two workers, two retries), `max`
-took the wall time from 178 s to 137 s and the CPU time from 518 s to 359 s, and raised peak memory from 3.2 GB to
+with `keepStaticCache` took the wall time from 178 s to 137 s and the CPU time from 518 s to 359 s, and raised peak memory from 3.2 GB to
 5.6 GB (see [context reuse](#context-reuse)).
 
 What each experimental hook measured on its own, and how every figure was measured, are in the
@@ -192,7 +192,8 @@ Every preset is a set of these options; name one to override it.
 
 ### Experimental hooks
 
-`max` turns these on; name them under `experimental` to pick some, or set one for a file with `test.use()`.
+`max` turns these on, all but `keepStaticCache`; name them under `experimental` to pick some, or set one for a file
+with `test.use()`.
 
 ```ts
 withOptimizations(config, {
@@ -247,21 +248,21 @@ withOptimizations(config, {
   it. The captures that matched are remembered by hash in `node_modules/.cache/piwi-turbo` (the cache folder of
   [`piwi-turbo`](#a-faster-start-piwi-turbo)), so with `fastScreenshots`, whose bytes differ from the baseline's, an
   assertion gains from its second run on. A passing assertion took 33 ms in place of 81 ms with both hooks on.
-- **`keepStaticCache`** (with `reuseContext`): Playwright's reset clears the browser's HTTP cache, so each test downloads
-  and compiles the app's scripts again. The reset leaves the cache when what the context received since the last reset
-  holds nothing the browser could serve again without asking the server but static assets: a response marked
-  `immutable`; an image, font, stylesheet, script, WebAssembly module or media file with no lifetime of its own or one
-  of a week or more; any other response fresh for a week whose request carried no cookie or credentials; none of them
-  private, setting a cookie or varying with one. Anything else the browser could reuse clears the whole cache, as
-  stock: an API response or a stylesheet with a short lifetime, a permanent redirect, a page with an `Expires` date.
-  A file the app changes at the same URL between tests, served with a `Last-Modified` date and no lifetime (an avatar,
-  a stylesheet for each user), reaches the next test as it was: leave the hook off for such a suite. A request still
-  waiting for its response at the reset clears the cache too, and so does a response the browser received that no
-  page or worker received (a fetch aborted as its headers arrive, one a document makes as the reset replaces it) and
-  a fetched favicon. Only Chromium's own network events show those, so on other browsers the cache is always cleared.
-  A request a document starts in `pagehide`, `unload` or `visibilitychange` shows in none of them: leave the hook off
-  for a page that fetches a cacheable response then. On Piwi's own dashboard, a page load took 328–342 ms in place of
-  404–450 ms.
+- **`keepStaticCache`** (with `reuseContext`, not part of `max`): Playwright's reset clears the browser's HTTP cache, so
+  each test downloads and compiles the app's scripts again. The reset leaves the cache when what the context received
+  since the last reset holds nothing the browser could serve again without asking the server but static assets: a
+  response marked `immutable`; an image, font, stylesheet, script, WebAssembly module or media file with no lifetime of
+  its own or one of a week or more; any other response fresh for a week whose request carried no cookie or credentials;
+  none of them private, setting a cookie or varying with one. Anything else the browser could reuse clears the whole
+  cache, as stock: an API response or a stylesheet with a short lifetime, a permanent redirect, a page with an `Expires`
+  date. A file the app changes at the same URL between tests, served with a `Last-Modified` date and no lifetime (an
+  avatar, a stylesheet for each user), reaches the next test as it was: leave the hook off for such a suite. A request
+  still waiting for its response at the reset clears the cache too, and so does a response the browser received that no
+  page, worker or service worker received (a fetch aborted as its headers arrive, one a document makes as the reset
+  replaces it), and a favicon the browser could serve again, which Playwright reports no event for. Only Chromium's own
+  network events show those, so on other browsers the cache is always cleared. A request a document starts in
+  `pagehide`, `unload` or `visibilitychange` shows in none of them: leave the hook off for a page that fetches a
+  cacheable response then. On Piwi's own dashboard, a page load took 328–342 ms in place of 404–450 ms.
 - **`earlyInjection`** (Chromium): Playwright's actions and assertions run through an injected script of about 180 KB,
   which it creates in each new document at the first call. The script and its utility script are created in the
   tab's new document as soon as it has a context, while the document loads: the first fill after a navigation took 9

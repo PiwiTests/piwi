@@ -115,7 +115,7 @@ describe('presets', () => {
     expect(result.use).not.toHaveProperty('retryIntervals');
   });
 
-  test('max adds every hook', () => {
+  test('max adds every hook but keepStaticCache', () => {
     const result = withOptimizations<PlaywrightTestConfig>({}, { preset: 'max' });
     expect(result.use).toMatchObject({
       fastScreenshots: true,
@@ -125,11 +125,19 @@ describe('presets', () => {
       fastReset: true,
       fastStackTraces: true,
       screenshotMatches: true,
-      keepStaticCache: true,
       earlyInjection: true,
       fastTraces: true,
       instantAnimations: true,
     });
+    expect(result.use).not.toHaveProperty('keepStaticCache');
+  });
+
+  test('keepStaticCache joins max when named', () => {
+    const result = withOptimizations<PlaywrightTestConfig>(
+      {},
+      { preset: 'max', experimental: { keepStaticCache: true } },
+    );
+    expect(result.use).toMatchObject({ keepStaticCache: true, fastReset: true });
   });
 
   test('turns reuse off when asked, whatever the preset', () => {
