@@ -11,6 +11,7 @@
     "packages/editor",
     "packages/run-ui",
     "packages/run-model",
+    "packages/turbo",
     "apps/application",
     "apps/runner",
     "apps/extension",

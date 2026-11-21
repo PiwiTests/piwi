@@ -8,23 +8,24 @@ the conventions that apply everywhere. Each area has its own guide next to its c
 `CLAUDE.md` beside it when you open a file there, and other agents read it before editing. A guide's table may send a
 file outside its directory to another guide: read that one yourself, whatever the agent.
 
-| Editing…                                                         | Read first                                                   |
-| ---------------------------------------------------------------- | ------------------------------------------------------------ |
-| `apps/application/`: the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md)   |
-| `packages/reporter/`: the Playwright reporter package            | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
-| `apps/desktop/`: the Tauri desktop shell                         | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md)           |
-| `packages/run-ui/`: the Nuxt layer the dashboard and Runner share | [`packages/run-ui/AGENTS.md`](packages/run-ui/AGENTS.md)     |
+| Editing… | Read first |
+| --- | --- |
+| `apps/application/`: the Nuxt dashboard (app, server, demo, MCP) | [`apps/application/AGENTS.md`](apps/application/AGENTS.md) |
+| `packages/reporter/`: the Playwright reporter package | [`packages/reporter/AGENTS.md`](packages/reporter/AGENTS.md) |
+| `apps/desktop/`: the Tauri desktop shell | [`apps/desktop/AGENTS.md`](apps/desktop/AGENTS.md) |
+| `packages/run-ui/`: the Nuxt layer the dashboard and Runner share | [`packages/run-ui/AGENTS.md`](packages/run-ui/AGENTS.md) |
 | `packages/run-model/`: the run model the Runs window and the desktop tray share | [`packages/run-model/AGENTS.md`](packages/run-model/AGENTS.md) |
 | `apps/runner/`: Piwi Runner, the window and Node host that run a team instance's requests | [`apps/runner/AGENTS.md`](apps/runner/AGENTS.md) |
-| `apps/extension/`: the browser extension (Manifest V3)           | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md)       |
-| `packages/editor/`: the editor service (language server)         | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md)     |
-| `apps/vscode/`: the VS Code extension                            | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md)             |
-| `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin)         | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md)       |
-| `apps/docs/`: the VitePress documentation site                   | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md)                 |
-| `apps/showcase/`: the showcase's story, played on every tool     | [`apps/showcase/AGENTS.md`](apps/showcase/AGENTS.md)         |
-| `.github/`: the CI workflows and the actions they share          | [`.github/AGENTS.md`](.github/AGENTS.md)                     |
-| `proposals/`: design records for work proposed or being built    | [`proposals/AGENTS.md`](proposals/AGENTS.md)                 |
-| `adr/`: architecture decision records for shipped work           | [`adr/AGENTS.md`](adr/AGENTS.md)                             |
+| `apps/extension/`: the browser extension (Manifest V3) | [`apps/extension/AGENTS.md`](apps/extension/AGENTS.md) |
+| `packages/editor/`: the editor service (language server) | [`packages/editor/AGENTS.md`](packages/editor/AGENTS.md) |
+| `packages/turbo/`: faster Playwright suites | [`packages/turbo/AGENTS.md`](packages/turbo/AGENTS.md) |
+| `apps/vscode/`: the VS Code extension | [`apps/vscode/AGENTS.md`](apps/vscode/AGENTS.md) |
+| `apps/jetbrains/`: the JetBrains plugin (Gradle, Kotlin) | [`apps/jetbrains/AGENTS.md`](apps/jetbrains/AGENTS.md) |
+| `apps/docs/`: the VitePress documentation site | [`apps/docs/AGENTS.md`](apps/docs/AGENTS.md) |
+| `apps/showcase/`: the showcase's story, played on every tool | [`apps/showcase/AGENTS.md`](apps/showcase/AGENTS.md) |
+| `.github/`: the CI workflows and the actions they share | [`.github/AGENTS.md`](.github/AGENTS.md) |
+| `proposals/`: design records for work proposed or being built | [`proposals/AGENTS.md`](proposals/AGENTS.md) |
+| `adr/`: architecture decision records for shipped work | [`adr/AGENTS.md`](adr/AGENTS.md) |
 
 The dashboard's guide lists the topic guides of its subsystems. An `ARCHITECTURE.md` beside a guide is the map of
 that area (what exists and how it works): open it when you need to understand the code, not before every edit.
@@ -54,6 +55,7 @@ packages/editor/      @piwitests/editor: the language server both editor clients
 packages/run-ui/      @piwitests/run-ui: the Nuxt layer the dashboard and Piwi Runner share (run request UI, Tauri bridge)
 packages/run-model/   @piwitests/run-model: the run model Piwi Picker's Runs window and the desktop app's tray share
 packages/server/      @piwitests/server: the published npm run option (`npx @piwitests/server`)
+packages/turbo/       @piwitests/turbo: faster Playwright suites without a fork, and the benchmark that measures it
 integrations/         Instrumentation adapters: nitro/ (npm), aspnetcore/ and serilog/ (NuGet, .NET tests, .slnx)
 examples/sample-app/  One web app and its Playwright suite, served by each supported backend
 shared/               Base lint/format configs and the catalog checks
@@ -111,10 +113,10 @@ they take long, and CI runs them.
 
 ### Licensing (MUST follow)
 
-`packages/reporter`, `packages/core`, `packages/picker-dom`, `integrations/` and `examples/` are MIT; everything else
-is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other way: app, server,
-desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new package or
-integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
+`packages/reporter`, `packages/core`, `packages/picker-dom`, `packages/turbo`, `integrations/` and `examples/` are MIT;
+everything else is FSL-1.1-MIT (see `LICENSE`). Code may move from the MIT parts into the FSL parts, never the other
+way: app, server, desktop or extension code moved into `core` or `picker-dom` ships under MIT inside the reporter. A new
+package or integration gets its own `LICENSE` file and a `license` field that match the side it belongs to.
 
 ### Comments
 

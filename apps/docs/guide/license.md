@@ -41,6 +41,7 @@ years are up.
 |---|---|
 | Dashboard, server (`@piwitests/server` and the Docker image), desktop app, Piwi Runner, browser extension, editor extensions (VS Code, JetBrains) | FSL-1.1-MIT |
 | Playwright reporter (`@piwitests/reporter`) | MIT |
+| Faster test runs (`@piwitests/turbo`) | MIT |
 | Backend-log integrations (Nitro, ASP.NET Core, Serilog) | MIT |
 | Examples | MIT |
 

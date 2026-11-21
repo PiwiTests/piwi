@@ -1,0 +1,159 @@
+// The reference benchmark: a typical unoptimized setup as the baseline, one variant per @piwitests/turbo lever, the main
+// public levers together ("tuned"), then the experimental hooks on top of them.
+//
+//   npm run turbo:bench                                            every variant against stock
+//   npm run turbo:bench -- --only tuned,tuned+fast-png,tuned+retry,tuned+hooks --runs 8
+//                                                            the hooks against the tuned suite
+//   npm run turbo:bench -- --only stock,failure-screenshots,instant-animations,preset-safe,preset-fast,preset-max
+//                                                            the newer levers and the presets against stock
+// A run's baseline is the first name given to --only, else the first variant of this list.
+import { createRequire } from 'node:module';
+
+const stock = { BENCH_AUTH: 'ui', BENCH_TRACE: 'on' };
+const tuned = {
+  BENCH_AUTH: 'state',
+  BENCH_TRACE: 'retain-on-failure',
+  BENCH_BLOCK_THIRD_PARTY: '1',
+  BENCH_REDUCED_MOTION: '1',
+  BENCH_WORKERS: '4',
+};
+const fastRetry = '10,20,40,50';
+// Playwright's CLI by path: `npx` inside a workspace runs from the workspace's root, not from this folder.
+const playwright = [process.execPath, createRequire(import.meta.url).resolve('@playwright/test/cli')];
+
+export default {
+  command: [...playwright, 'test'],
+  runs: 5,
+  warmup: 1,
+  // Visual baselines come from the stock configuration, once, before any measured run.
+  prepare: [[...playwright, 'test', '--grep', '@visual', '--update-snapshots', '--reporter=dot']],
+  clean: ['test-results'],
+  artifacts: ['test-results'],
+  variants: [
+    {
+      name: 'stock',
+      description:
+        "A typical unoptimized setup: every test signs in through the form, trace on for every test, Playwright's default worker count, third-party scripts load.",
+      env: stock,
+    },
+    {
+      name: 'storage-state',
+      description: 'signIn: sign in once in a setup project, load the saved state into each fresh context.',
+      env: { ...stock, BENCH_AUTH: 'state' },
+    },
+    {
+      name: 'trace-on-failure',
+      description: 'trace: retain-on-failure.',
+      env: { ...stock, BENCH_TRACE: 'retain-on-failure' },
+    },
+    {
+      name: 'block-third-party',
+      description: 'blockRequests: abort the third-party origin (analytics, chat widget).',
+      env: { ...stock, BENCH_BLOCK_THIRD_PARTY: '1' },
+    },
+    {
+      name: 'reduced-motion',
+      description: 'reducedMotion: emulate prefers-reduced-motion; the app skips its transitions.',
+      env: { ...stock, BENCH_REDUCED_MOTION: '1' },
+    },
+    {
+      name: 'workers-4',
+      description: 'Four workers instead of the default (half the CPUs).',
+      env: { ...stock, BENCH_WORKERS: '4' },
+    },
+    {
+      name: 'light-traces',
+      description: 'lightTraces: traces for every test, with DOM snapshots only, without the screencast.',
+      env: { ...stock, BENCH_LIGHT_TRACES: '1' },
+    },
+    {
+      name: 'action-traces',
+      description: "lightTraces: 'actions': traces for every test, without snapshots or the screencast.",
+      env: { ...stock, BENCH_LIGHT_TRACES: 'actions' },
+    },
+    {
+      name: 'failure-screenshots',
+      description: 'failureScreenshots: screenshots of failed tests only, in place of only-on-failure.',
+      env: { ...stock, BENCH_FAILURE_SCREENSHOTS: '1' },
+    },
+    {
+      name: 'instant-animations',
+      description: 'instantAnimations: CSS and Web Animations run 1000 times faster.',
+      env: { ...stock, BENCH_INSTANT_ANIMATIONS: '1' },
+    },
+    {
+      name: 'reuse-context',
+      description: 'reuseContext: one browser context per worker, reset between tests.',
+      env: { ...stock, BENCH_REUSE: '1' },
+    },
+    {
+      name: 'compile-cache',
+      description: "compileCache: Node's compile cache for the test workers.",
+      env: { ...stock, BENCH_COMPILE_CACHE: '1' },
+    },
+    { name: 'preset-safe', description: "preset: 'safe'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'safe' } },
+    { name: 'preset-fast', description: "preset: 'fast'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast' } },
+    { name: 'preset-max', description: "preset: 'max'.", env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'max' } },
+    {
+      name: 'preset-fast-no-reuse',
+      description: "preset: 'fast' with reuseContext: false.",
+      env: { BENCH_AUTH: 'ui', BENCH_PRESET: 'fast', BENCH_REUSE: '0' },
+    },
+    {
+      name: 'stock-red',
+      description: 'stock, with six failing tests.',
+      env: { ...stock, BENCH_FAILING: '1' },
+    },
+    {
+      name: 'stock-red+fail-fast',
+      description: 'stock with six failing tests, plus the experimental failFast hook.',
+      env: { ...stock, BENCH_FAILING: '1', BENCH_FAIL_FAST: '1' },
+    },
+    {
+      name: 'tuned',
+      description: 'signIn, trace retain-on-failure, blockRequests, reducedMotion and four workers together.',
+      env: tuned,
+    },
+    {
+      name: 'tuned+fast-png',
+      description: 'tuned, plus the experimental fastScreenshots hook.',
+      env: { ...tuned, BENCH_FAST_SCREENSHOTS: '1' },
+    },
+    {
+      name: 'tuned+retry',
+      description: `tuned, plus the experimental retryIntervals hook at [${fastRetry}] ms.`,
+      env: { ...tuned, BENCH_RETRY_INTERVALS: fastRetry },
+    },
+    {
+      name: 'tuned+hooks',
+      description: 'tuned, plus the experimental fastScreenshots and retryIntervals hooks.',
+      env: { ...tuned, BENCH_FAST_SCREENSHOTS: '1', BENCH_RETRY_INTERVALS: fastRetry },
+    },
+    {
+      name: 'tuned+skip-stability-wait',
+      description: 'tuned, plus the experimental skipStabilityWait hook.',
+      env: { ...tuned, BENCH_SKIP_STABILITY_WAIT: '1' },
+    },
+    {
+      name: 'tuned+reuse',
+      description: 'tuned, plus reuseContext.',
+      env: { ...tuned, BENCH_REUSE: '1' },
+    },
+    {
+      name: 'tuned+reuse+fast-reset',
+      description: 'tuned with reuseContext, plus the experimental fastReset hook.',
+      env: { ...tuned, BENCH_REUSE: '1', BENCH_FAST_RESET: '1' },
+    },
+    {
+      name: 'tuned+fast-stack-traces',
+      description: 'tuned, plus the experimental fastStackTraces hook.',
+      env: { ...tuned, BENCH_FAST_STACK_TRACES: '1' },
+    },
+    { name: 'tuned-red', description: 'tuned, with six failing tests.', env: { ...tuned, BENCH_FAILING: '1' } },
+    {
+      name: 'tuned-red+fail-fast',
+      description: 'tuned with six failing tests, plus the experimental failFast hook.',
+      env: { ...tuned, BENCH_FAILING: '1', BENCH_FAIL_FAST: '1' },
+    },
+  ],
+};
