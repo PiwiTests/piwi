@@ -6934,6 +6934,31 @@
   "runs_heldJobTimeout": {
     "message": "El tiempo límite del propio job de CI sigue corriendo."
   },
+  "runs_pausedBy": {
+    "message": "En pausa por $name$ · hasta las $time$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_pausedUntil": {
+    "message": "En pausa · hasta las $time$",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_ciResumeTitle": {
+    "message": "Dejar que la prueba siga desde donde está en pausa"
+  },
   "runs_stateRunning": {
     "message": "En curso"
   },

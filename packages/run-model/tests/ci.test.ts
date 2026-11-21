@@ -15,6 +15,11 @@ import {
   isCiOrigin,
   offersLetGo,
   readCiHold,
+  CI_CONTROL_WORDS,
+  ciControlsOffered,
+  ciPauseWords,
+  pausedByWords,
+  readCiPause,
   type CiRun,
 } from '../src/ci';
 import { englishRunSpeaker as en } from '../src/words';
@@ -163,6 +168,79 @@ describe('a CI test held at its failure for its controllers', () => {
     expect(offersLetGo(hold, { shows: true, controller: false })).toBe(false);
     expect(offersLetGo(hold, { shows: false, controller: true })).toBe(false);
     expect(offersLetGo(null, { shows: true, controller: true })).toBe(false);
+  });
+});
+
+describe('a CI test paused for its controllers', () => {
+  const event = (over: Record<string, unknown> = {}) => ({
+    shard: null,
+    worker: 3,
+    slot: 1,
+    connected: true,
+    holds: true,
+    heldFor: [],
+    pauses: true,
+    pausedBy: 'Ana',
+    paused: {
+      reason: 'pause',
+      call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/pay.spec.ts', line: 12 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    },
+    ...over,
+  });
+  const running = (over: Record<string, unknown> = {}) => event({ paused: null, pausedBy: undefined, ...over });
+  const CONTROLLER = { shows: true, controller: true };
+
+  it('reads the paused stop of a worker that can pause, and who paused it', () => {
+    expect(readCiPause(event())).toEqual({
+      worker: { shard: null, worker: 3, slot: 1 },
+      call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/pay.spec.ts', line: 12 },
+      until: 1_763_727_900_000,
+      pausedBy: 'Ana',
+    });
+    expect(readCiPause(event({ pausedBy: undefined }))).toMatchObject({ pausedBy: null });
+    expect(readCiPause(event({ pausedBy: 'x'.repeat(300) }))!.pausedBy).toHaveLength(100);
+  });
+
+  it('reads no pause of a worker that left, cannot pause, stands at no stop or at a hold', () => {
+    expect(readCiPause(event({ connected: false }))).toBeNull();
+    expect(readCiPause(event({ pauses: undefined }))).toBeNull();
+    expect(readCiPause(running())).toBeNull();
+    expect(readCiPause(event({ paused: { ...event().paused, reason: 'held' } }))).toBeNull();
+    // A local run's pause, shared live, names no end: it is no controller's.
+    expect(readCiPause(event({ paused: { ...event().paused, until: undefined } }))).toBeNull();
+  });
+
+  it('says it is paused, by whom and until when, its place, and that the CI job’s timeout still runs', () => {
+    const clock = (time: number) => (time === 1_763_727_900_000 ? '12:05' : '?');
+    expect(ciPauseWords(readCiPause(event())!, en, clock)).toEqual({
+      state: 'Paused',
+      pausedBy: 'Paused by Ana · until 12:05',
+      place: 'tests/pay.spec.ts:12',
+      note: 'The CI job’s own timeout still runs.',
+    });
+    expect(pausedByWords(1_763_727_900_000, null, en, clock)).toBe('Paused · until 12:05');
+    expect(pausedByWords(null, 'Ana', en, clock)).toBeNull();
+  });
+
+  it('offers a controller’s own watch Pause while the test runs, Resume and End the test while it is paused', () => {
+    expect(ciControlsOffered(running(), CONTROLLER, true)).toEqual(['pause']);
+    expect(ciControlsOffered(event(), CONTROLLER, true)).toEqual(['resume', 'end']);
+    // No test runs, a test held at its failure, a worker that cannot pause, a watch of another lane or a Viewer's.
+    expect(ciControlsOffered(running(), CONTROLLER, false)).toEqual([]);
+    expect(ciControlsOffered(event({ paused: { ...event().paused, reason: 'held' } }), CONTROLLER, true)).toEqual([]);
+    expect(ciControlsOffered(running({ pauses: undefined }), CONTROLLER, true)).toEqual([]);
+    expect(ciControlsOffered(running(), { shows: false, controller: true }, true)).toEqual([]);
+    expect(ciControlsOffered(running(), { shows: true, controller: false }, true)).toEqual([]);
+    expect(ciControlsOffered(null, CONTROLLER, true)).toEqual([]);
+  });
+
+  it('words each control as a local run’s', () => {
+    expect(en.say(CI_CONTROL_WORDS.pause.label.key)).toBe('Pause');
+    expect(en.say(CI_CONTROL_WORDS.resume.label.key)).toBe('Resume');
+    expect(en.say(CI_CONTROL_WORDS.end.label.key)).toBe('End the test');
+    expect(en.say(CI_CONTROL_WORDS.resume.title.key)).toBe('Let the test go on from where it is paused');
   });
 });
 
