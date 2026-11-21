@@ -642,7 +642,9 @@ A run in progress is `live` in `piwi/runStatus` when it runs on the branch the c
 branch, or when it is the editor's own, wherever it runs. It is counted through its own stream
 (`GET /api/test-runs/:id/stream`). The client hears of it at most once every 300 ms, and that notification places no
 failure again (`progressed` in `RunWatchOptions`). `live` goes back to null in the notification that brings the
-failures read once the run ended.
+failures read once the run ended. A run the editor did not start says where it comes from, by its origin's kind
+(`LiveRun.from`, `FROM_WORDS` in `src/run-watch.ts`: `from the desktop app`, `on a developer's machine`), which both
+clients put in the status item's tooltip; a CI run and one that names no origin say nothing.
 
 Until then, the tests its stream begins (`test-begin`) and ends (`test-completed`) are kept in
 `PiwiContext.liveTests`. An event names its test by its id, else by its title and suite path in its spec, looked up in

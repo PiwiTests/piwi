@@ -1214,6 +1214,12 @@ export interface LiveRun {
   /** The branch it runs on, as it reported it; absent for a run that names none. */
   branch?: string;
   /**
+   * Where a run the editor did not start comes from, by its origin, for the tooltips: `from the desktop app`, `on a
+   * developer's machine`, `a Flake Lab run`. Absent for the editor's own run, a CI run, an imported one, and a run that
+   * names no origin.
+   */
+  from?: string;
+  /**
    * Who started an own run when a person did not (`Started by Claude Code`, as `RunSession.label` says): the clients
    * say it where they would say the run is the person's. Absent for a person's run.
    */

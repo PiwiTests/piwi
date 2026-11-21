@@ -44,7 +44,7 @@ export default defineNuxtPlugin(() => {
     { immediate: true },
   );
 
-  // A run's page, once its process names it, stays on the run's card after the run ended.
+  // A run's page, once its process names it, stays on the run after it ended.
   watch(sessions, (live) => noteRunPages(runs.value, live), { immediate: true });
 
   hub.onStopRun((ref) => {

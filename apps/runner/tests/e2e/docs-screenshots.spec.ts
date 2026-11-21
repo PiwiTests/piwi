@@ -3,8 +3,9 @@ import { expect, test, type Page } from '@playwright/test';
 import { VIEWER, hubRun, playShell, root, runRequest } from './shell';
 
 /**
- * Piwi Runner's window on its docs page (`apps/docs/features/piwi-runner.md`), in English, at its default width and at
- * 2×: its runs (one going on with its worker live, one that failed with its output, one that passed) and its settings.
+ * Piwi Runner's window on its docs page (`apps/docs/features/piwi-runner.md`), in English, at its default size and at
+ * 2×: its runs (one going on, shown with its worker live, one that failed, then shown with its results and its output,
+ * one that passed) and its settings.
  * Skipped unless `PIWI_DOCS_SHOTS=1`; recapture with `PIWI_DOCS_SHOTS=1 npm run runner:e2e -- docs-screenshots`, after
  * `npm run runner:window`. The harness in `apps/application/scripts/take-feature-screenshots.mjs` lists the
  * `runner-*.png` images as external so `--check` leaves them alone.
@@ -41,8 +42,8 @@ const SEARCH_TEST = [
 ];
 
 test.skip(!process.env.PIWI_DOCS_SHOTS, 'captures docs illustrations only when PIWI_DOCS_SHOTS=1');
-test.use({ viewport: { width: 960, height: 900 }, deviceScaleFactor: 2, colorScheme: 'light' });
-/** How long the folds' and the tabs' transitions take, on the page's own clock. */
+test.use({ viewport: { width: 960, height: 680 }, deviceScaleFactor: 2, colorScheme: 'light' });
+/** How long the tabs' transitions take, on the page's own clock. */
 const SETTLE_MS = 400;
 
 /** Confirms a request for `tests`, which the window starts as the shell's next run. */
@@ -76,20 +77,27 @@ test('the runs and the settings, for the docs', async ({ page }) => {
   await confirm(page, 'r2', CART_TESTS);
   await finish(page, 2, FAILED_OUTPUT, 1, 52_000);
   await confirm(page, 'r3');
+  await page.evaluate((event) => window.__events.emit('piwi:local-run', event), {
+    id: 3,
+    kind: 'stdout',
+    line: 'Running 1 test using 1 worker',
+  });
   await page.evaluate((viewer) => window.__events.send('hub', { type: 'hello', viewer }), VIEWER);
   await page.evaluate((event) => window.__events.send('hub', event), hubRun('desktop-3', { stopped: false }));
   await page.clock.fastForward(24_000);
 
-  // The run that passed folded, the one that failed open with its output.
-  const passed = page.getByTestId('runner-finished').locator('[data-status="passed"]');
-  await passed.getByRole('button', { name: 'search › finds a product by name' }).click();
-  await expect(
-    page.getByTestId('runner-finished').locator('[data-status="failed"] [data-testid="run-output"]'),
-  ).toBeVisible();
+  // The run going on, shown as it started, with its worker live; then the one that failed, with its results and output.
+  await expect(page.getByTestId('runner-run').filter({ visible: true })).toHaveAttribute('data-status', 'running');
   await page.mouse.move(0, 0);
-  await page.evaluate(() => window.scrollTo(0, 0));
   await page.waitForTimeout(SETTLE_MS);
   await page.screenshot({ path: path.join(SCREENSHOTS, 'runner-runs.png') });
+
+  await page.getByRole('navigation', { name: 'Runs' }).getByRole('button', { name: '2 tests' }).click();
+  const failed = page.locator('[data-testid="runner-run"][data-status="failed"]');
+  await expect(failed.getByTestId('run-output')).toBeVisible();
+  await page.mouse.move(0, 0);
+  await page.waitForTimeout(SETTLE_MS);
+  await page.screenshot({ path: path.join(SCREENSHOTS, 'runner-run-results.png') });
 
   await page.getByTestId('runner-status').click();
   await expect(page.getByTestId('runner-connection')).toBeVisible();

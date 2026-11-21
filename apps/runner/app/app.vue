@@ -6,10 +6,10 @@ import { de, en, es, fr, pt_br } from '@nuxt/ui/locale';
  * Piwi Runner's window: connect to a team instance, link folders, confirm the run requests it sends, and watch the
  * runs. It holds no project data and no account; the shell keeps the instance's key in the OS keychain.
  *
- * Two views under the header (`RunnerHeader`), drawn once the connection is known: the runs, with the welcome in their
- * place while the window is not connected, and the settings, a section at a time (`RunnerSettings`). What a run had
- * open stays across them (`useRunnerDisclosures`), each view comes back where it was scrolled, and a confirmed request
- * or a stop brings the runs back.
+ * Two views under the header (`RunnerHeader`), drawn once the connection is known: the runs, which fill the window
+ * below it, with the welcome above them while the window is not connected, and the settings, a section at a time
+ * (`RunnerSettings`). The runs stay drawn while the settings show, so the run shown and its live view go on; the
+ * settings come back where they were scrolled, and a confirmed request or a stop brings the runs back.
  */
 const { runs, listen, startRequest } = useRunnerRuns();
 const { connection, connected, loadConnection, loadFolders } = useDesktopTeamConnection();
@@ -32,7 +32,7 @@ const anyRun = computed(
   () => runs.value.length > 0 || (Object.values(hub.state.sessions) as HubSession[]).some((s) => !s.ended),
 );
 
-/** Where each view was scrolled, to come back there. */
+/** Where each view was scrolled, to come back there: the settings scroll the window, the runs their own panes. */
 const scrolled: Record<string, number> = {};
 watch(view, async (next, previous) => {
   scrolled[previous] = window.scrollY;
@@ -88,14 +88,19 @@ onMounted(async () => {
 
 <template>
   <UApp :locale="uiLocale">
-    <RunnerHeader v-model:view="view" :known="known" @connection="openConnection" />
-    <main v-if="known" class="mx-auto max-w-3xl p-4 sm:p-6">
-      <div v-if="view === 'runs'" class="space-y-8">
-        <RunnerWelcome v-if="!connected" />
-        <RunnerRunList v-if="connected || anyRun" />
-      </div>
-      <RunnerSettings v-else v-model:section="section" />
-    </main>
+    <div :class="view === 'runs' ? 'flex h-svh flex-col' : ''">
+      <RunnerHeader v-model:view="view" :known="known" @connection="openConnection" />
+      <main
+        v-if="known"
+        :class="view === 'runs' ? 'flex min-h-0 flex-1 flex-col overflow-y-auto' : 'mx-auto max-w-3xl p-4 sm:p-6'"
+      >
+        <div v-show="view === 'runs'" class="flex min-h-0 flex-1 flex-col">
+          <RunnerWelcome v-if="!connected" class="mx-auto w-full max-w-3xl shrink-0 p-4 sm:p-6" />
+          <RunnerRunList v-if="connected || anyRun" />
+        </div>
+        <RunnerSettings v-if="view === 'settings'" v-model:section="section" />
+      </main>
+    </div>
     <DesktopTeamRunRequestModal @start="start" />
   </UApp>
 </template>

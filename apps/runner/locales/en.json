@@ -49,7 +49,7 @@
   },
   "runner_output": {
     "message": "Output",
-    "description": "Summary of the collapsed block that shows a run's terminal output."
+    "description": "Heading of the block that shows a run's terminal output, above it."
   },
   "runner_stillRunning": {
     "message": "Still running from before the window reloaded",
@@ -185,7 +185,7 @@
   },
   "runner_clearFinished": {
     "message": "Clear finished",
-    "description": "Button beside runner_finishedHeading: removes the runs that ended from the list."
+    "description": "Button beside runner_finishedHeading in the list of runs: removes the runs that ended from the list."
   },
   "runner_openInstance": {
     "message": "Open $host$",
@@ -267,11 +267,11 @@
   },
   "runner_runningHeading": {
     "message": "Running now",
-    "description": "Heading of the runs going on, above their cards."
+    "description": "Heading of the runs going on, in the list of runs and the select that names the run shown."
   },
   "runner_finishedHeading": {
     "message": "Finished",
-    "description": "Heading of the runs that ended, above their list. runner_clearFinished empties it."
+    "description": "Heading of the runs that ended, in the list of runs and the select that names the run shown. runner_clearFinished empties it."
   },
   "runner_foldersHint": {
     "message": "Each project's tests run in the folder linked to it, with your own tools and environment.",

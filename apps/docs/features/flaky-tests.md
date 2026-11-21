@@ -33,7 +33,7 @@ The project's **Failures** tab has a **Flaky** view with a **lookback window** o
 **Scoping**: only runs within the project's **Filters** count: environment (the [default environment](./environments#default-environment) unless picked), branch (the [default branch](./branches#the-default-branch) unless picked) and full runs only.
 
 <figure>
-  <img src="/screenshots/flaky-detection.png" alt="Flaky tests tab listing tests with composite score, failure rate, retry passes, and flip counts">
+  <img src="/screenshots/flaky-detection.png" alt="The Flaky view of a project’s Failures tab, listing tests with composite score, failure rate, retry passes, and flip counts">
   <figcaption>The Flaky view: each intermittent test scored and ranked by impact, with its top suspect.</figcaption>
 </figure>
 

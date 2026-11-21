@@ -312,7 +312,8 @@ Each entry names folders under `server/api/`.
   (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
   `DesktopRunShare` shows a run's Share live,
   and `DesktopRunCopyList` the code to copy, and the layer's `DesktopRunOutputPane` a run's output in its ANSI colors,
-  with its filter, first error and Copy, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
+  with its filter, first error and Copy, `DesktopRunsPanel` the tray's list beside the run shown, as in Piwi Runner's
+  window, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
   page or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
   `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). An ended run lists what
   it failed on (`DesktopLocalRunResults`: its Piwi runs, else its output's summary), each test to open or run again

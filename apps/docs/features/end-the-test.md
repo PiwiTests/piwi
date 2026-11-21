@@ -21,7 +21,7 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 - **VS Code**: **End the test** in the stopped line's hover, the status bar beside **Finish**, and **Piwi: End the test** in the palette. It has no key: bind one in **Preferences: Open Keyboard Shortcuts**
   (search `piwi`).
 - **A JetBrains IDE**: **End the test** in the stopped line's inlay and the arrow's menu, **Tools → Piwi
-  → End the test** and the status bar item's menu. Give it a key in **Settings → Keymap**.
+  → Run control → End the test** and the status bar item's menu. Give it a key in **Settings → Keymap**.
 - **The [pause
   bar](./editor-breakpoints#pause-a-run)**: **End the test**.
 - **Piwi Picker's [Runs window](./runs-window)** and the
@@ -36,7 +36,7 @@ It is offered at any stop but a failure, with a reporter newer than 0.62.0:
 desktop app's tray say the call it waits in and, for a locator call, how long it has run, and offer **End the test**
 there. The Piwi item reads `Piwi: pausing… · waits in` the call and how long it has waited, in both editors, the call's line
 says the worker waits there with **End the test** after it (in its hover in VS Code), and **End the test** in the item's
-menu (**Tools → Piwi → End the test** in a JetBrains IDE) ends it too:
+menu (**Tools → Piwi → Run control → End the test** in a JetBrains IDE) ends it too:
 
 - **A locator call or an assertion**, with Playwright 1.62 or later, is given up at once, and the test is skipped.
 - **Another call** (a `waitForTimeout`, a navigation) finishes first, and the test is skipped at its next locator

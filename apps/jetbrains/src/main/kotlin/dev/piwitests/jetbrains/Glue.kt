@@ -427,14 +427,15 @@ object Glue {
     }
 
     /**
-     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
-     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, and another's where it comes from (`Run #131 on
+     * feature-x (from the desktop app) is running: …`), as VS Code's `liveLine`.
      */
     private fun liveLine(live: LiveRun): String {
         val run = when {
             live.own && live.label != null -> "Run #${live.runId} (${live.label})"
             live.own -> "Your run #${live.runId}"
-            else -> othersRun(live, "Run")
+            else -> othersRun(live, "Run") + (live.from?.let { " ($it)" } ?: "")
         }
         return "\n$run is running: ${liveCount(live)}"
     }
@@ -3209,7 +3210,7 @@ object Glue {
     /**
      * The links of the inlay above a stop, after its paused text, as VS Code's row (`stopLensControls`): Resume, Step and
      * Finish (Resume alone at a failure), then Write code… while the stop offers a code action. Run to the caret, End the
-     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi.
+     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi → Run control.
      */
     fun stopInlayLinks(stop: ShownStop): List<StopLink> =
         stopControls(stop).filter { it != StopControl.RUN_TO_CARET && it != StopControl.END } +
@@ -3221,7 +3222,7 @@ object Glue {
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
      * Record, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
-     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
+     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi → Run control**;
      * the inlay names it shorter, beside the controls.
      */
     enum class StopAction(

@@ -10,6 +10,8 @@ let unlisten: (() => void) | null = null;
  */
 export function useRunnerRuns() {
   const runs = useState<RunnerRun[]>('runner-runs', () => []);
+  /** The run the person chose in the list: a run's key, or the ref of a run the hub has that the window holds none for. */
+  const chosen = useState<number | string | null>('runner-chosen-run', () => null);
 
   function runBook() {
     book ??= createRunnerRuns(runs.value, {
@@ -28,7 +30,7 @@ export function useRunnerRuns() {
     unlisten = await events.listen<RunnerRunEvent>('piwi:local-run', ({ payload }) => book?.handle(payload));
   }
 
-  /** Starts the run of a request the person confirmed, as the confirmation's `start` names it. */
+  /** Starts the run of a request the person confirmed, as the confirmation's `start` names it, and shows it. */
   function startRequest(input: {
     requestId: string;
     instance: string;
@@ -38,7 +40,10 @@ export function useRunnerRuns() {
     title: string;
   }) {
     const { cases, ...run } = input;
-    return runBook().start({ ...run, tests: cases });
+    const started = runBook().start({ ...run, tests: cases });
+    // The run book lists the run first before it waits for the shell.
+    chosen.value = runs.value[0]?.key ?? null;
+    return started;
   }
 
   function stopRun(run: RunnerRun) {
@@ -65,5 +70,5 @@ export function useRunnerRuns() {
     runBook().clearFinished();
   }
 
-  return { runs, listen, startRequest, stopRun, setHold, stopShellRun, clearFinished };
+  return { runs, chosen, listen, startRequest, stopRun, setHold, stopShellRun, clearFinished };
 }

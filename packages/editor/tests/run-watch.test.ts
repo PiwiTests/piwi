@@ -409,3 +409,50 @@ describe('the live run read twice', () => {
     watch.dispose();
   });
 });
+
+describe('a run in progress the editor did not start', () => {
+  test('says where it comes from by its origin, a CI run and one that names no origin saying nothing', async () => {
+    const live = async (metadata: Record<string, unknown>) => {
+      const connection = { serverUrl: 'http://piwi.test', apiKey: 'pd_key', project: 'shop' };
+      const client = {
+        connection,
+        runDetails: async (id: number) => ({
+          id,
+          status: 'running',
+          branch: 'main',
+          startTime: '2026-09-27T12:00:00.000Z',
+          metadata,
+          totalTests: 2,
+        }),
+      };
+      const context = {
+        client,
+        project: { id: 7 },
+        live: null,
+        liveTests: new Map(),
+        liveStuck: new Map(),
+        ownRuns: new Set(),
+        runBranch: 'main',
+        checkedOutBranch: 'main',
+      } as unknown as PiwiContext;
+      const runStreams = { follow: () => () => {} } as unknown as RunStreams;
+      const watch = new RunWatch({ contexts: () => [context], changed: () => {}, notice: () => {}, runStreams });
+      (watch as unknown as { onEvent(key: string, event: InstanceEvent): void }).onEvent(
+        `${connection.serverUrl}\n${connection.apiKey}`,
+        { type: 'run-started', runId: 9, projectId: 7 },
+      );
+      await new Promise((resolve) => setTimeout(resolve, 30));
+      watch.dispose();
+      return context.live;
+    };
+    expect(await live({ piwiOrigin: { kind: 'desktop' } })).toMatchObject({ own: false, from: 'from the desktop app' });
+    expect(await live({ piwiOrigin: { kind: 'local' } })).toMatchObject({ from: "on a developer's machine" });
+    expect(await live({ piwiOrigin: { kind: 'flake-lab' } })).toMatchObject({ from: 'a Flake Lab run' });
+    const ci = await live({ piwiOrigin: { kind: 'ci' } });
+    expect(ci).toMatchObject({ runId: 9, ci: true });
+    expect(ci).not.toHaveProperty('from');
+    const unnamed = await live({});
+    expect(unnamed).toMatchObject({ runId: 9, own: false });
+    expect(unnamed).not.toHaveProperty('from');
+  });
+});
