@@ -487,7 +487,7 @@ const tests = {
   async 'the failures view lists the latest run’s failure under the run and its spec'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const roots = await waitFor(async () => {
-      const found = await api.failureChildren();
+      const found = (await api.failureChildren()).filter((n) => n.kind !== 'link');
       return found.length ? found : null;
     }, 'the failures view');
     assert.equal(roots.length, 1);
@@ -1852,7 +1852,7 @@ const tests = {
     await waitFor(() => api.statusItem().text !== '$(warning) Piwi: not running', 'the service to start again');
     // The service answers again: the failures view reads its tree from it.
     const roots = await waitFor(async () => {
-      const nodes = await api.failureChildren();
+      const nodes = (await api.failureChildren()).filter((n) => n.kind !== 'link');
       return nodes.length ? nodes : null;
     }, 'the failures tree from the started service');
     assert.ok(roots.length > 0);

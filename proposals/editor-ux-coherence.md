@@ -25,7 +25,7 @@ balloon, Don't Show Again on VS Code's confirmation of what Piwi Picker inserted
 of each kind of balloon's group), with their findings; and a picked locator sent to the project whose run made it
 (#1289). M10, M22 and M7 built since: JetBrains' Run options… lists Run headed and Hold failures as VS Code's,
 in the words table's words (NF3); each failures view state carries the actions it links (`FailuresView.links`), which
-JetBrains' tool window draws and VS Code's welcomes are held to, reading the instance again Retry wherever it answers a
+both editors draw under the state's sentence, reading the instance again Retry wherever it answers a
 failure (NF3); both editors mark the line a pausing test waits at, naming its worker, with End the test (LR18); and a
 failure's quick fixes edit, Run with Piwi first only once its line was rewritten, its trace, context, page, the desktop
 app's jobs and File an issue left to its node (`untestedSuspects`, `piwi/fileIssue`), Run, Debug and Verify ×3
@@ -77,8 +77,14 @@ row of lenses cut short, a failing line's row holding its reason and Run with Pi
 test's actions, #1474), a flaky test's mark, and a live answer: VS Code's integration suite records the service's
 answer for its fixture's spec with the marks and Piwi's lens rows VS Code computes from it
 (`packages/editor/tests/golden/vscode-spec.json`, on each pull request that changes the editor clients), which
-`PiwiPluginTest` draws from too. Left: a snapshot of what VS Code draws on screen, which the nightly suite would take,
-and HM8's tool window states. NF10
+`PiwiPluginTest` draws from too; and the failures view's states (HM8): one golden file holds each state's answer and
+the sentence and links both editors show (`failures-view.json`), which the service's test, VS Code's golden test and
+`GlueTest` read, VS Code's message and link nodes for each state read from its view's pure half (VS Code shows no
+welcome under a message, so a state with a sentence lists its links as the tree's nodes), and JetBrains' Failures tab
+drawn in each state by `PiwiPluginTest`; a run with no failure reads alike in both
+(`No failure in run #124 of main.`). Left: a snapshot of what VS Code draws on screen, which the nightly suite would
+take, and VS Code's window in each state, which its integration suite cannot reach: its instance is named by the
+environment, and the view keeps the failures it read once the instance stops answering. NF10
 decided: the CI runs keep their own view and tab, apart from the developer's Runs view and tab. L4 in part since: the ASP.NET Core route manifest
 names each handler's line, the instance keeps it on the handler file and the code index carries each route a file
 handles with the tests that called it, and both editors put a lens above each handler (`GET /api/orders/:id · 4 tests ·
@@ -358,7 +364,7 @@ These rules hold them together; each larger item of §10 carries one or more.
 5. **The IDE's own places first, with Run, Debug and Coverage meaning what the IDE means; Piwi's own marks only for what
    the IDE cannot show.** ([TL3](#tl3), [LR3](#lr3), [AC3](#ac3))
 6. **The service words and decides, the clients draw, and a contract test fails when the service sends an icon key a
-   client lacks.** ([HM8](#hm8), HM16 built)
+   client lacks.** (HM8 and HM16 built)
 7. **Registered and discoverable: every Piwi entry in a JetBrains popup is a registered action, every VS Code command
    has an icon and a when clause.** ([LI1](#li1))
 8. **Quiet, and switchable where the IDE keeps its switches: an alarm only for what the developer's own work caused, one
@@ -469,13 +475,6 @@ that data the clients differ. The direction: one Piwi menu ([LI4](#li4)), one ho
 and the views computed by the editor service ([LI6](#li6)), one notification policy by kind ([LI14](#li14)).
 
 ### 7.1 The status item
-
-### 7.2 The homes
-
-<a id="hm8"></a>**HM8. No check on the editor fixture covers a state of the Piwi tool window.** Both clients word an
-instance that does not answer, a desktop app that fails its proof and a lost connection as the service does, with the
-same links per state, and their unit tests hold the words; nothing opens either editor on the fixture in each state.
-**(read)** Fix: each state checked on the editor fixture in both. ([LI5](#li5), [L6](#l6))
 
 ### 7.4 Notifications
 
@@ -884,11 +883,11 @@ command id, action id, group id, view id or setting key registers it in D25 in t
 
 ### Large
 
-| Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings                                               |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | ------------------------------------------------------ |
-| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)                                            |
-| <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)                                            |
-| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19))                                   |
+| Step              | Change                                                                                                                                                                                                                                                                          | Scope | Findings             |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----- | -------------------- |
+| <a id="l3"></a>L3 | **A debug session spike, decided for both IDEs** ([LI10](#li10)), tried in Rider with the backend under the debugger                                                                                                                                                            | `ide` | [LR3](#lr3)          |
+| <a id="l4"></a>L4 | **Endpoint-level reach**: Open in IDE on .NET frames (`ui`), skipped until a frame's build path maps to a repository file; the handler line and the lens per action are built                                                                                                   | `ui`  | [RD8](#rd8)          |
+| <a id="l6"></a>L6 | **Both editors checked on the shared fixture, without a license** ([LI19](#li19)): a `CodeVisionTestCase` expecting VS Code's row, `findAllGutters`, golden fixtures through `glue.ts` and `Glue.kt`, and the nightly layout checks; the workflow change as its own `ci` commit | `ide` | none ([LI19](#li19)) |
 
 ### Sequence
 

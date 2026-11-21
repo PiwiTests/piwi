@@ -263,6 +263,9 @@ class PiwiProjectService(private val project: Project) : Disposable {
 
     /** Whether a whole read runs, and whether another was asked for meanwhile: it follows once the first ends. */
     private val reading = AtomicBoolean()
+
+    /** Whether a read of the status, the runs and the failures (`refreshStatus`) is under way. */
+    internal val readingStatus: Boolean get() = reading.get()
     private val readAgain = AtomicBoolean()
 
     /** Whether the listeners are told already: once on the event thread for the changes made meanwhile. */

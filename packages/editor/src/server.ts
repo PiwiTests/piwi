@@ -1752,6 +1752,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
       connected: !!c.index && !c.problem,
       loading: !!c.client && !c.index && !c.problem,
       hasRun: !!c.failures?.run || !!c.failures?.overlays?.length,
+      runId: c.failures?.run?.id ?? null,
       problemKind: c.problemKind,
       problem: c.problem,
       branch: c.failures?.run?.branch ?? c.runBranch,

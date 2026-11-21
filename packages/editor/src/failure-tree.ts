@@ -453,6 +453,8 @@ export interface ContextViewState {
   loading: boolean;
   /** It read a run of its branch, or runs laid over none. */
   hasRun: boolean;
+  /** The id of the run it read on the instance; null with none, or with runs laid over none alone. */
+  runId: number | null;
   problemKind: ProblemKind | null;
   problem: string | null;
   /** The branch its run was read on. */
@@ -483,7 +485,13 @@ export function failuresView(contexts: ContextViewState[], failing: number): Fai
   });
   if (failing > 0) return view('failures', null);
   const read = contexts.find((c) => c.connected && c.hasRun);
-  if (read) return view('clear', `No failure in the latest run of ${read.branch ?? 'this branch'}.`);
+  if (read) {
+    const of = read.branch ? ` of ${read.branch}` : '';
+    return view(
+      'clear',
+      read.runId !== null ? `No failure in run #${read.runId}${of}.` : `No failure in the latest run${of}.`,
+    );
+  }
   const unreachable = contexts.find((c) => c.problemKind === 'unreachable');
   if (unreachable) {
     return view(

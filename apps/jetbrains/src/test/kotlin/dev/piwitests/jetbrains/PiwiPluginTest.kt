@@ -306,6 +306,69 @@ class PiwiPluginTest : BasePlatformTestCase() {
     }
 
     /**
+     * The Failures tab in each state of the failures view the golden fixture holds
+     * (`packages/editor/tests/golden/failures-view.json`): pushed as the service pushes it, with the baseline that found
+     * no run, its tree's empty text says the state's sentence and its links, each a registered action, as VS Code's view
+     * does; the service's read, with no server, leaves no status and no failures again.
+     */
+    fun testTheFailuresTabSaysEachStateOfTheViewAsTheGoldenFixtureHoldsIt() {
+        val service = project.service<PiwiProjectService>()
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        val golden = com.google.gson.JsonParser.parseString(
+            File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        fun readDone() {
+            val until = System.currentTimeMillis() + 10_000
+            while (service.readingStatus && System.currentTimeMillis() < until) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(10)
+            }
+            assertFalse("the service's read", service.readingStatus)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+        try {
+            PiwiFailuresToolWindowFactory().createToolWindowContent(project, window)
+            readDone()
+            val tab = window.contentManager.findContent(PiwiFailuresToolWindowFactory.TAB_NAME)!!
+            fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
+            val tree = all(tab.component).filterIsInstance<com.intellij.ui.treeStructure.Tree>().first()
+            val actions = ActionManager.getInstance()
+            for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+                val name = case.get("name").asString
+                val view = com.google.gson.Gson().fromJson(case.get("view"), FailuresView::class.java)
+                if (view.state == "failures") continue
+                val noRun = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
+                    ?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.endsWith("(no run)") }
+                // Another read of the service, started elsewhere, writes no status over the pushed one: push again.
+                val drawn = (1..20).any {
+                    readDone()
+                    service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
+                    service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
+                    com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                    service.status != null && service.failuresResult?.view == view
+                }
+                assertTrue("$name: drawn from the pushed state", drawn)
+                val shown = case.getAsJsonObject("shown")
+                assertEquals(name, shown.get("text").asString, tree.emptyText.text)
+                val fragments = buildList {
+                    val each = tree.emptyText.secondaryComponent.iterator()
+                    while (each.hasNext()) {
+                        each.next()
+                        if (each.fragment.isNotBlank()) add(each.fragment)
+                    }
+                }
+                assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, fragments)
+                for (link in view.links) assertNotNull("$name: ${link.jetbrains}", actions.getAction(link.jetbrains))
+            }
+        } finally {
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            service.refreshStatus()
+            readDone()
+        }
+    }
+
+    /**
      * The Log tab shows the lines written before it opened, then each line as it is written, a failed request under its
      * method once a minute; closed, it opens again with them all.
      */

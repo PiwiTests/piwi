@@ -23,6 +23,7 @@ import {
   failingRuns,
   failureNodes,
   failuresViewDescription,
+  failuresViewEmpty,
   flakyTestsByRoot,
   isFlakyGroup,
   type FailureNode,
@@ -35,9 +36,6 @@ const DEBOUNCE_MS = 200;
 
 /** What the view's welcome says while the tree is empty: `piwi.failuresView` in `package.json`'s `viewsWelcome`. */
 type ViewState = FailuresViewState | 'unavailable';
-
-/** The states whose sentence, from the service, shows above the welcome's buttons. */
-const MESSAGE_STATES: ReadonlySet<ViewState> = new Set(['norun', 'unreachable', 'desktop-unproven', 'loading']);
 
 const ICON_COLORS: Record<string, string> = {
   error: 'problemsErrorIcon.foreground',
@@ -151,7 +149,9 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
   /** Draw the failures as they were read last, for the run in progress. */
   render(): void {
     const own = this.runs()?.contexts.find((c) => c.live?.own);
-    this.roots = failureNodes(this.result, { live: own?.live ?? null, liveRoot: own?.root ?? null });
+    const drawn = failureNodes(this.result, { live: own?.live ?? null, liveRoot: own?.root ?? null });
+    const empty = drawn.length ? null : failuresViewEmpty(this.result);
+    this.roots = empty ? empty.links : drawn;
     this.parents.clear();
     const walk = (nodes: FailureNode[], parent: FailureNode | undefined) => {
       for (const node of nodes) {
@@ -166,15 +166,7 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       : undefined;
     const grouping = this.result?.grouping ?? this.grouping;
     this.view.description = failuresViewDescription(grouping, this.result?.baseline?.label);
-    const run = this.result?.run;
-    // Without a run, the service's words name the instance or the branch above the welcome's buttons.
-    const view = this.result?.view;
-    this.view.message =
-      view && MESSAGE_STATES.has(view.state)
-        ? (view.message ?? undefined)
-        : run && !this.result?.items.length
-          ? `No failure in run #${run.id}${run.branch ? ` of ${run.branch}` : ''}.`
-          : undefined;
+    this.view.message = empty?.message;
     this.changed.fire(undefined);
     this.drawn();
   }
@@ -212,6 +204,8 @@ export class FailuresView implements vscode.TreeDataProvider<FailureNode>, vscod
       };
     } else if (node.kind === 'overlay' && node.url) {
       item.command = { title: 'Open the run in the dashboard', command: 'piwi.openInDashboard', arguments: [node.url] };
+    } else if (node.command) {
+      item.command = { title: node.label, command: node.command };
     }
     return item;
   }
