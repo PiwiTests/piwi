@@ -670,12 +670,14 @@ const LIVE_VIEW_CALL_LINES = [
 
 /**
  * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
- * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another.
+ * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another;
+ * `slot` the worker's lane, from a reporter that says it.
  */
-function holdLiveWorkerStream(base, runId, key, after = null) {
+function holdLiveWorkerStream(base, runId, key, after = null, slot = null) {
   const client = base.startsWith('https:') ? https : http;
   const continues = after === null ? '' : `&after=${after}`;
-  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}`, {
+  const lane = slot === null ? '' : `&slot=${slot}`;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}${lane}`, {
     headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
   });
   request.on('response', (response) => response.resume());
@@ -7097,6 +7099,130 @@ const SCENES = [
     },
   },
   {
+    name: 'run-live-view-paused',
+    description:
+      'The live view of a shared run’s worker whose test a developer paused: its row and the lane panel both say Paused at the call it waits at, with no running time, at 1280 and 390 px',
+    route: '/projects',
+    viewport: { width: 1280, height: 900 },
+    outputs: ['run-live-view-paused.png', 'run-live-view-paused-narrow.png'],
+    async run({ page, base, goto, shoot, settle }) {
+      const request = page.request;
+      const ok = async (response, what) => {
+        if (!response.ok()) throw new Error(`${what}: ${response.status()} ${await response.text()}`);
+        return response;
+      };
+      const { items } = await (await ok(await request.get(`${base}/api/projects/menu`), 'projects')).json();
+      const projectId = items.find((p) => p.name === 'web-dashboard')?.id;
+      if (!projectId) throw new Error('run-live-view-paused needs the seeded web-dashboard project');
+      const project = await (await ok(await request.get(`${base}/api/projects/${projectId}`), 'project')).json();
+      let run = null;
+      let closeStream = () => {};
+      let sending = null;
+      try {
+        await ok(
+          await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: true } }),
+          'live view on',
+        );
+        const setup = await (
+          await postRetrying(request, base, '/api/test-runs/setup', {
+            data: { projectName: 'web-dashboard', startTime: new Date().toISOString(), liveView: true },
+          })
+        ).json();
+        const begun = await (
+          await postRetrying(request, base, `/api/test-runs/${setup.runId}/begin`, {
+            data: { setupToken: setup.setupToken, totalTests: 4 },
+          })
+        ).json();
+        run = { id: setup.runId, key: setup.liveView.key, streamToken: begun.streamToken };
+        const test = 'places an order';
+        await postRetrying(request, base, `/api/test-runs/${run.id}/events`, {
+          data: {
+            streamToken: run.streamToken,
+            testCases: [
+              {
+                type: 'begin',
+                title: test,
+                location: 'tests/checkout.spec.ts:12:3',
+                workerIndex: 0,
+                parallelIndex: 0,
+                startedAt: Date.now() - 9_000,
+                browser: { projectName: 'chromium', browserName: 'chromium' },
+              },
+            ],
+          },
+        });
+        closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 0);
+
+        const viewport = { width: 1280, height: 800 };
+        const testPage = await page.context().newPage();
+        await testPage.setViewportSize(viewport);
+        await testPage.setContent(LIVE_VIEW_CHECKOUT);
+        const data = (await testPage.screenshot({ type: 'jpeg', quality: 50 })).toString('base64');
+        await testPage.close();
+
+        const call = {
+          title: "Check getByRole('checkbox', { name: 'I accept the terms' })",
+          file: 'tests/pages/checkout-page.ts',
+          line: 19,
+        };
+        const post = (message) =>
+          request
+            .post(`${base}/api/test-runs/${run.id}/live-view`, {
+              headers: { Authorization: `Bearer ${run.key}` },
+              data: { shard: null, worker: 0, slot: 0, ...message },
+            })
+            .catch(() => undefined);
+        const send = () =>
+          Promise.all([
+            post({ type: 'frame', data, call, test }),
+            post({
+              type: 'call-log',
+              test,
+              log: {
+                id: 'call@41',
+                call,
+                status: 'running',
+                lines: ["- waiting for getByRole('checkbox', { name: 'I accept the terms' })"],
+                point: null,
+                target: null,
+                viewport,
+                ms: 1_200,
+                error: null,
+              },
+            }),
+          ]);
+        sending = setInterval(send, 400);
+        await post({ type: 'stop', stop: { reason: 'pause', call, test } });
+        await goto(`/test-runs/${run.id}`);
+        await page.getByTestId('live-paused').first().waitFor({ timeout: 60_000 });
+        await page
+          .getByRole('button', { name: /^Watch worker \d+ live$/ })
+          .first()
+          .click({ timeout: 60_000 });
+        const panel = page.getByTestId('lane-panel');
+        await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+        await panel.locator('[data-testid="live-call-state"][data-stop="pause"]').waitFor({ timeout: 30_000 });
+        clearInterval(sending);
+        await send();
+        await settle();
+        await shoot();
+        await page.setViewportSize({ width: 390, height: 844 });
+        await send();
+        await settle();
+        await shoot('narrow', { of: '[data-testid="lane-panel"]', pad: 0 });
+      } finally {
+        clearInterval(sending);
+        closeStream();
+        await request.patch(`${base}/api/projects/${projectId}`, { data: { liveView: project.liveView === true } });
+        if (run) {
+          await request.post(`${base}/api/test-runs/${run.id}/finish`, {
+            data: { streamToken: run.streamToken, status: 'passed', totalTests: 1 },
+          });
+        }
+      }
+    },
+  },
+  {
     name: 'run-live-view-layers',
     description:
       'The lane panel of a CI run’s worker with its layers: the filmstrip of the test’s calls, the page’s events (an API call, a console error, a request pending, then failing with the backend’s exception under it) and its text, masked, with the element the call waits on marked, at 1280 px; at 390 px the sheet’s filmstrip with one image larger, then its events and its text searched',
@@ -7240,7 +7366,10 @@ const SCENES = [
         sending = setInterval(send, 400);
         await goto(`/test-runs/${run.id}`);
         await page.evaluate(() => localStorage.setItem('piwi-lane-panel-width', '40'));
-        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        await page
+          .getByRole('button', { name: /^Watch worker \d+ live$/ })
+          .first()
+          .click({ timeout: 60_000 });
         const panel = page.getByTestId('lane-panel');
         await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
         await panel.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
@@ -7395,7 +7524,10 @@ const SCENES = [
         sending = setInterval(send, 500);
         await goto(`/test-runs/${run.id}`);
         await page.evaluate(() => localStorage.setItem('piwi-lane-panel-width', '44'));
-        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        await page
+          .getByRole('button', { name: /^Watch worker \d+ live$/ })
+          .first()
+          .click({ timeout: 60_000 });
         const panel = page.getByTestId('lane-panel');
         await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
 

@@ -15,6 +15,7 @@ import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
+import { watchedStop } from '~/utils/stop-words';
 import { PRESSED_TOGGLE_CLASS } from '@piwitests/run-ui/ui-classes';
 import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
@@ -435,6 +436,10 @@ if (isDemoMode) {
 /** The workers Watch all shows: those in the run's live view. */
 const watchAllWorkers = computed<LiveWorkerState[]>(() => Object.values(liveWorkers.value));
 const lanesNow = computed(() => Object.values(liveLanes.value));
+/** The stop the watched worker's test stands at, which its view says in its row's words. */
+const watchedLaneStop = computed(() =>
+  watching.value ? watchedStop(lanesNow.value, Object.values(liveWorkers.value), watching.value) : null,
+);
 /** Whether the run page offers Watch all: a live run with a worker in its live view, or the demo's running lanes. */
 const offersWatchAll = computed(
   () => isLive.value && !liveRunEnded.value && (watchAllWorkers.value.length > 0 || watchAll.value),
@@ -1765,6 +1770,7 @@ const moreMenuItems = computed(() => {
         :project-name="testRun?.project?.name"
         :live="live"
         :moved-why="movedWhy"
+        :stop="watchedLaneStop"
         v-model:attention="followAttention"
       />
     </ClientOnly>

@@ -4,7 +4,8 @@ import { streamSimulation } from './demo-simulator-harness';
 
 /**
  * The demo's run from an editor: its PayPal test stands stopped at a breakpoint and goes on, told as the reporter of a
- * run outside CI tells it (`test-stopped`, then `test-resumed` with the time it stood stopped), and then passes.
+ * run outside CI tells it (`test-stopped`, then `test-resumed` with the time it stood stopped, each naming the attempt
+ * and its lane), and then passes.
  */
 
 let simulator: typeof import('~~/app/demo/simulator');
@@ -35,8 +36,16 @@ describe("the 'breakpoint' scenario", () => {
     expect(stop).toMatchObject({ reason: 'breakpoint', bar: true, pausedMs: 0 });
     expect(stop!.file).toMatch(/^tests\/.+\.ts$/);
     expect(stop!.line).toBeGreaterThan(0);
-    expect(stopped).toMatchObject({ location: ofTest[0]!.location, workerIndex: ofTest[0]!.workerIndex });
-    expect(ofTest.find((e) => e.type === 'test-resumed')).toMatchObject({ pausedMs: 5 * 60_000 });
+    // The attempt and the lane it stands in, as the reporter names them: the run page's lane panel reads the stop there.
+    const of = {
+      location: ofTest[0]!.location,
+      workerIndex: ofTest[0]!.workerIndex,
+      parallelIndex: ofTest[0]!.parallelIndex,
+      retries: 0,
+    };
+    expect(of.parallelIndex).toEqual(expect.any(Number));
+    expect(stopped).toMatchObject(of);
+    expect(ofTest.find((e) => e.type === 'test-resumed')).toMatchObject({ ...of, pausedMs: 5 * 60_000 });
     expect(ofTest.at(-1)).toMatchObject({ type: 'complete', status: 'passed' });
   });
 });
