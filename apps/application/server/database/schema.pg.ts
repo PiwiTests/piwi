@@ -78,6 +78,8 @@ export const projects = pgTable(
     liveView: boolean('live_view').notNull().default(false), // true = while a run of the project executes, people who may open it can watch each worker's page from the run page; off by default
     liveViewMasks: jsonb('live_view_masks'), // string[] — Playwright locators of elements the live view paints over in each image, beside the secret fields; null = none
     askToWatch: boolean('ask_to_watch').notNull().default(true), // true = a signed-in reader of a run that is not shared live may ask its developer to share it (Ask to watch); on by default
+    liveViewHold: boolean('live_view_hold').notNull().default(false), // true = a CI test that fails while someone with run:control watches its worker in full waits at its failure, liveViewHoldMinutes long at most; off by default
+    liveViewHoldMinutes: integer('live_view_hold_minutes').notNull().default(5), // how long a failing CI test is held for its controllers, 1 to 15 minutes
     statusFilter: jsonb('status_filter'), // ProjectRunScope — the runs that set the project's status (its latest run in the sidebar and the projects list); null = every run
     tagKeys: jsonb('tag_keys'), // TagKeyPatterns — the patterns that read the issue key and the test case key out of a test's tags (shared/integrations/tag-keys.ts); null = both off
     defaultEnvironmentId: integer('default_environment_id').references((): AnyPgColumn => environments.id, {

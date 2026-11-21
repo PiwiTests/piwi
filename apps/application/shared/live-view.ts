@@ -17,7 +17,9 @@ export {
 
 /**
  * A worker of a live run as the run page knows it: its lane (`slot`, from a reporter that says it), whether it is
- * connected, and its test's stop while it holds.
+ * connected, and its test's stop while it holds. A CI worker that can hold a failing test for its controllers says so
+ * (`holds`), with the names of the controllers its held stop is held for (`heldFor`, none when the instance knows no
+ * names).
  */
 export interface LiveWorkerState {
   shard: number | null;
@@ -25,6 +27,8 @@ export interface LiveWorkerState {
   slot?: number;
   connected: boolean;
   paused: LiveStop | null;
+  holds?: boolean;
+  heldFor?: string[];
 }
 
 /**
