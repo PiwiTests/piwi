@@ -428,6 +428,8 @@ export class CiSessions {
     switch (event.type) {
       case 'init':
       case 'run-progress':
+        // A stream opened again names only the workers connected now: a hold heard before goes with its connection.
+        if (event.type === 'init') f.holds.clear();
         this.count(f, data);
         if (typeof data.status === 'string' && ACTIVE.has(data.status)) f.status = data.status;
         break;

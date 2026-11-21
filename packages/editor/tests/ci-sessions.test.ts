@@ -385,6 +385,64 @@ describe('the CI sessions', () => {
     expect(sessions!.heldWorker(ROOT, 78, null, 2)).toBeNull();
   });
 
+  test('forget a hold as the run’s stream opens again, whose worker left meanwhile, nor give it to the lane’s next test', async () => {
+    const c = context();
+    const heard = start([c], { watching: () => ({ shard: null, lane: 2, controller: true }) });
+    sessions!.offer(c, ciRun(78));
+    const test = (title: string, workerIndex: number, line: number) => ({
+      title,
+      filePath: 'tests/checkout.spec.ts',
+      location: `tests/checkout.spec.ts:${line}:1`,
+      workerIndex,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    });
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', test('pays', 4, 3));
+    const held = {
+      reason: 'held',
+      call: { title: 'boom', file: 'tests/checkout.spec.ts', line: 7 },
+      until: 1_763_727_900_000,
+    };
+    send(78, 'live-worker', {
+      shard: null,
+      worker: 4,
+      slot: 1,
+      connected: true,
+      holds: true,
+      heldFor: ['Ana'],
+      paused: held,
+    });
+    await settle();
+    expect(heard[heard.length - 1]!.tests[0]!.held).toBeDefined();
+    // The stream opens again: worker 4 left meanwhile, worker 5 runs the lane's next test, and its catch-up names no
+    // worker that left.
+    send(78, 'init', { id: 78, status: 'running', totalTests: 4, passedTests: 0, failedTests: 1, skippedTests: 0 });
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'live-worker', {
+      shard: null,
+      worker: 5,
+      slot: 1,
+      connected: true,
+      holds: true,
+      paused: null,
+      heldFor: [],
+    });
+    await settle();
+    expect(heard[heard.length - 1]!.tests[0]!.held).toBeUndefined();
+    send(78, 'test-completed', { ...test('pays', 4, 3), status: 'failed' });
+    send(78, 'test-begin', test('refunds', 5, 9));
+    await settle();
+    const refunds = heard[heard.length - 1]!.tests.find((t) => t.title.at(-1) === 'refunds')!;
+    expect(refunds.held).toBeUndefined();
+    expect(sessions!.heldWorker(ROOT, 78, null, 2)).toBeNull();
+    // Even unheard, a hold of the worker that left is none of the next worker's test.
+    send(78, 'live-worker', { shard: null, worker: 4, slot: 1, connected: true, holds: true, paused: held });
+    await settle();
+    expect(heard[heard.length - 1]!.tests.find((t) => t.title.at(-1) === 'refunds')!.held).toBeUndefined();
+  });
+
   test('follow only a CI run of the branch read or checked out, while it runs', async () => {
     const c = context();
     const heard = start([c]);
