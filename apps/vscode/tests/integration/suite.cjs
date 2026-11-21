@@ -229,6 +229,7 @@ const tests = {
       'golden',
       'vscode-spec.json',
     );
+    await vscode.commands.executeCommand('workbench.action.closeAllEditors');
     if (process.env.PIWI_GOLDEN_WRITE === '1') {
       fs.writeFileSync(golden, `${JSON.stringify(drawn, null, 2)}\n`);
       return;
