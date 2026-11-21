@@ -207,7 +207,11 @@ export const guideSidebar: SidebarGroup[] = [
       { text: 'Reporter', link: '/guide/reporter' },
       { text: 'Capture fixtures', link: '/guide/capture-fixtures' },
       { text: 'CI & sharding', link: '/guide/ci' },
-      { text: 'Faster test runs', link: '/guide/turbo' },
+      {
+        text: 'Faster test runs',
+        link: '/guide/turbo',
+        items: [{ text: 'The piwi-turbo command', link: '/guide/piwi-turbo' }],
+      },
       { text: 'Source control', link: '/guide/source-control' },
       {
         text: 'AI provider',

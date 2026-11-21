@@ -8,7 +8,8 @@ lang: en-US
 
 `@piwitests/turbo` applies the changes that make a Playwright suite faster to your config, and comes with a
 benchmark to check them on your own suite. It does not fork Playwright: you keep `@playwright/test`, its browsers and
-its upgrades. It needs nothing from a Piwi server and works with or without the [reporter](./reporter).
+its upgrades. It needs nothing from a Piwi server and works with or without the [reporter](./reporter). Its
+[`piwi-turbo` command](./piwi-turbo) also shortens the start of each run.
 
 ## Install
 
@@ -107,23 +108,6 @@ took 15% and 4% off two app suites, changed nothing on one of very large pages, 
 tests, where Playwright's reset of a context takes longer than a new context: turn it off for such a suite. On a suite
 whose time is mostly waiting on its API it changes little.
 
-## A faster start: `piwi-turbo`
-
-Playwright loads its own modules before it reads the config, and each worker loads them again. The `piwi-turbo`
-command runs the project's Playwright with that start cut down, and passes every command and option on:
-
-```sh
-npx piwi-turbo test tests/checkout.spec.ts
-```
-
-It caches Playwright's compiled modules for the runner and its workers, and for `test` starts a spare worker that
-loads Playwright, and launches the browser the last run launched, while the runner reads the config. A single test went from 1.2 s to 0.7 s: it helps an edit-and-run
-loop or an agent that runs one test at a time, not a long CI run. IDE extensions that start `playwright` themselves
-bypass it. With `--warm` first, a background process keeps a runner loaded for the next `test` command: a test that
-opens a page took 0.4 s, without the start of `npx`. The [package
-README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo#a-faster-start-piwi-turbo) lists its variables and
-measurements.
-
 ## Advanced: the levers one by one
 
 Every preset is a set of these options; name one to override it.
@@ -137,9 +121,10 @@ Every preset is a set of these options; name one to override it.
 | `reducedMotion` | Emulates `prefers-reduced-motion: reduce`. Leave it off for tests of animations. |
 | `instantAnimations` | Chromium runs CSS and Web Animations 1000 times faster, whether or not the app honors reduced motion. |
 | `reuseContext` | One browser context per worker, reset between tests. |
-| `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given. The runner loads Playwright before the config: [`piwi-turbo`](#a-faster-start-piwi-turbo) caches its start too. Skipped when coverage is collected or a compile cache is already set. |
+| `compileCache` | Node's compile cache for the test workers, in `node_modules/.cache/piwi-turbo-compile` (the temporary folder without `node_modules`) or the folder given. The runner loads Playwright before the config: [`piwi-turbo`](./piwi-turbo) caches its start too. Skipped when coverage is collected or a compile cache is already set. |
 
-A faster suite can surface races that slower runs hid: measure on your own suite before keeping any of these.
+`lightTraces` cut the CPU time of a suite that traces every test by 46%, and its artifacts by 97%. A faster suite can
+surface races that slower runs hid: measure on your own suite before keeping any of these.
 
 ## Experimental hooks
 
@@ -195,6 +180,7 @@ peak memory, artifact size, failures, and where the test time went. Its
 [README](https://github.com/PiwiTests/piwi/tree/main/packages/turbo/bench) shows how to point it at your own suite.
 
 ## Related
+- [The piwi-turbo command](./piwi-turbo) — a shorter start for each run
 - [Our suite takes too long: where is the time going?](/recipes/faster-suite) — find the time before cutting it
 - [CI & sharding](./ci) — the parallelism you already have
 - [Capture fixtures](./capture-fixtures) — the fixtures that extend `@piwitests/turbo/test`
