@@ -593,11 +593,23 @@ const SCREENSHOT = path.join(
   'checkout-error-banner.png',
 );
 
+/** The branch's latest run with no failure in it, and nothing laid over it. */
+const clearRun = (commit) => {
+  const { run } = branchFailures(commit);
+  return {
+    run: { ...run, status: 'passed', passedTests: run.totalTests, failedTests: 0, flakyTests: 0 },
+    overlays: [],
+    failures: [],
+    resolved: [],
+  };
+};
+
 /**
  * Serves what the editor service reads of a Piwi instance, on a free loopback port; `testFunctions` is the project's
- * catalog of page object methods and helpers.
+ * catalog of page object methods and helpers, and `latest` the branch's latest run: the fixture's run with its
+ * failures (`failures`), that run with none (`clear`), or no run of the project yet (`none`).
  */
-export function startStub(commit, { testFunctions = [] } = {}) {
+export function startStub(commit, { testFunctions = [], latest = 'failures' } = {}) {
   const server = http.createServer((req, res) => {
     const u = new URL(req.url ?? '/', 'http://stub');
     const json = (body) => {
@@ -638,7 +650,10 @@ export function startStub(commit, { testFunctions = [] } = {}) {
           },
         ],
       });
-    if (p === `/api/projects/${PROJECT.id}/branch-failures`) return json(branchFailures(commit));
+    if (p === `/api/projects/${PROJECT.id}/branch-failures`) {
+      if (latest === 'none') return json({ run: null, overlays: [], failures: [], resolved: [] });
+      return json(latest === 'clear' ? clearRun(commit) : branchFailures(commit));
+    }
     if (p === `/api/projects/${PROJECT.id}/test-functions`)
       return json({ testFunctions: testFunctions.map((entry) => ({ entry })) });
     if (p === `/api/projects/${PROJECT.id}/selections/preview`)
