@@ -1,0 +1,105 @@
+{
+  "spec": {
+    "file": "tests/checkout.spec.ts",
+    "text": "import { test } from '@playwright/test';\n\ntest('pays', async ({ page }) => {});\n"
+  },
+  "summary": {
+    "file": {
+      "line": 0,
+      "title": "1 test in Piwi",
+      "command": {
+        "title": "Run every test of this spec with Piwi",
+        "command": "piwi.runTests",
+        "arguments": [
+          {
+            "uri": "file:///workspace/tests/checkout.spec.ts",
+            "testIds": [],
+            "locations": ["tests/checkout.spec.ts"]
+          }
+        ]
+      }
+    },
+    "lines": [
+      {
+        "line": 2,
+        "title": "passed in its latest run · passed 48 of 50 runs",
+        "command": {
+          "title": "Open in dashboard",
+          "command": "piwi.openInDashboard",
+          "arguments": ["http://piwi.test/test-cases/1"]
+        },
+        "status": "passed",
+        "endLine": 2,
+        "testCaseId": 1,
+        "actions": [
+          {
+            "group": "run",
+            "kind": "run",
+            "title": "Run with Piwi",
+            "command": {
+              "title": "Run with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///workspace/tests/checkout.spec.ts",
+                  "testIds": [1]
+                }
+              ]
+            },
+            "section": ""
+          },
+          {
+            "group": "run",
+            "kind": "debug",
+            "title": "Debug with Piwi",
+            "command": {
+              "title": "Debug with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///workspace/tests/checkout.spec.ts",
+                  "testIds": [1],
+                  "headed": true,
+                  "holdFailures": true,
+                  "debugging": true
+                }
+              ]
+            },
+            "section": ""
+          },
+          {
+            "group": "run",
+            "kind": "verify",
+            "title": "Verify ×3 with Piwi",
+            "command": {
+              "title": "Verify ×3 with Piwi",
+              "command": "piwi.runTests",
+              "arguments": [
+                {
+                  "uri": "file:///workspace/tests/checkout.spec.ts",
+                  "testIds": [],
+                  "locations": ["tests/checkout.spec.ts:3"],
+                  "repeat": 3
+                }
+              ]
+            },
+            "section": ""
+          },
+          {
+            "group": "evidence",
+            "title": "Open in dashboard",
+            "command": {
+              "title": "Open in dashboard",
+              "command": "piwi.openInDashboard",
+              "arguments": ["http://piwi.test/test-cases/1"]
+            },
+            "section": "Evidence"
+          }
+        ]
+      }
+    ]
+  },
+  "marks": [[2, "passed", "Piwi: passed in its latest run · passed 48 of 50 runs"]],
+  "failing": null,
+  "lenses": [[0, ["1 test in Piwi"]]]
+}
