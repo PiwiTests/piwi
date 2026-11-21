@@ -476,6 +476,10 @@ export interface ProjectWithTestRuns {
   askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
+  /** Whether a CI test that fails while someone with `run:control` watches its worker in full waits at its failure. */
+  liveViewHold?: boolean;
+  /** How long such a test waits at most, in minutes: 1 to 15. */
+  liveViewHoldMinutes?: number;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -523,6 +527,10 @@ export interface ProjectDetails {
   askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
+  /** Whether a CI test that fails while someone with `run:control` watches its worker in full waits at its failure. */
+  liveViewHold?: boolean;
+  /** How long such a test waits at most, in minutes: 1 to 15. */
+  liveViewHoldMinutes?: number;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */

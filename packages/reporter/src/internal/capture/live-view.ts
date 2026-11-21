@@ -10,9 +10,11 @@ import {
   LIVE_FRAME_TYPE,
   LIVE_FRAME_WIDTH,
   LIVE_SHARE_MISSING,
+  LIVE_HOLD_FEATURE,
   LIVE_SHARE_UNKNOWN,
   LIVE_VIEW_AFTER_PARAM,
   LIVE_VIEW_ENV,
+  LIVE_VIEW_FEATURES_PARAM,
   MAX_LIVE_FRAME,
   encodeLiveMessage,
   liveFrameHeader,
@@ -104,6 +106,15 @@ import type { PageFrame } from './page-view.js';
  * go too (`live-inspect.ts`), sharing the frames' bytes a second (`LiveByteBudget`: each of its posts waits once, a
  * second at most, and the frames after it are spaced by its bytes, a second at most), and Inspect opens again as the
  * project's masks change.
+ *
+ * A CI worker says on its stream that it can hold (`LIVE_HOLD_FEATURE`), and hears how long its project holds a
+ * failing CI test for its controllers (`hold`, null while the setting is off) and whether a person who may control
+ * the run watches it in full (`view`'s `controller`). A test that fails while both stand waits at its failure
+ * (`liveViewHold`, which the capture fixtures' held failure takes), and ends that wait at the hold's length, at
+ * **Let it go** (`let-go`, taken on its own stream alone and only while the setting is on), as the instance says no
+ * controller watches it in full any more, as the setting turns off, as the stream that opens again is answered that
+ * the run's live view is not there now (404, 409), and as its stream closes for good. A new length applies to the
+ * hold that runs, its held stop posted again with its new end.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -137,6 +148,8 @@ const GIVE_UP = new Set([403, 410]);
  * live view off.
  */
 const NOT_NOW = new Set([401, 404]);
+/** The answers that say the run's live view is not there now: the project's live view off, the run not live. */
+const GONE_NOW = new Set([404, 409]);
 
 const TOO_HEAVY =
   `This page is too heavy for the live view: each image of it is over ${MAX_LIVE_FRAME / 1024} KB, ` +
@@ -200,7 +213,26 @@ interface Link {
    * says it, which takes frames in base64 inside JSON alone, and shows the worker in full alone.
    */
   asked: Extract<InstanceToWorker, { type: 'view' }> | null;
+  /** How long its project holds a failing CI test for its controllers, in ms, as the instance said; null for not. */
+  hold: number | null;
 }
+
+/** A failing CI test's hold: when it ends, what resolves as it ends, for whichever reason, and what ends it now. */
+export interface LiveHold {
+  /** When the hold ends at the latest, in epoch ms. */
+  until: number;
+  ended: Promise<void>;
+  end: () => void;
+}
+
+/** The hold of the running test's failure, while it holds. */
+let holding: {
+  began: number;
+  until: number;
+  timer: ReturnType<typeof setTimeout>;
+  end: () => void;
+  ended: Promise<void>;
+} | null = null;
 
 /**
  * What runs for the layers the full views ask: the page's events, the trace's text, the filmstrip's posts, and Inspect
@@ -407,6 +439,7 @@ export function openLiveView(
     logRefused: false,
     masks: [],
     asked: null,
+    hold: null,
   };
   if (link.sharing) connect(link);
   unhearLane = onLanePage(lanePageChanged);
@@ -423,6 +456,7 @@ export function openLiveView(
 
 /** Close the worker's connection, as the worker ends. */
 export function closeLiveView(): void {
+  endHold();
   const own = link;
   link = null;
   running = null;
@@ -570,6 +604,7 @@ function connect(own: Link): void {
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
   if (own.id.slot !== undefined) url.searchParams.set('slot', String(own.id.slot));
   if (own.after !== null) url.searchParams.set(LIVE_VIEW_AFTER_PARAM, String(own.after));
+  if (own.ci) url.searchParams.set(LIVE_VIEW_FEATURES_PARAM, LIVE_HOLD_FEATURE);
   let openedAt: number | null = null;
   let dropped = false;
   /**
@@ -587,6 +622,8 @@ function connect(own: Link): void {
     if (openedAt !== null && Date.now() - openedAt >= STEADY_MS) own.retries = 0;
     if (status !== null) own.answered = status;
     if (status !== null && GIVE_UP.has(status)) return void refuse(own, status);
+    // The run's live view is not there now (the project's live view off, the run not live): no controller can see a hold.
+    if (status !== null && GONE_NOW.has(status) && own === link) endHold();
     retry(own, status !== null && NOT_NOW.has(status));
   };
   const request = own.client.request(url, {
@@ -645,7 +682,10 @@ function connect(own: Link): void {
         else if (message?.type === 'view') setAsked(own, message);
         else if (message?.type === 'resend') resendView(own);
         else if (message?.type === 'text') sendText(own);
+        else if (message?.type === 'hold') setHold(own, message.ms);
+        else if (message?.type === 'let-go') letGo(own, request);
         else if (message) setViewers(own, message.count);
+        if (message?.type === 'view' || message?.type === 'viewers') keepHold(own, message);
       }
     });
     response.on('error', () => drop(null));
@@ -716,6 +756,7 @@ function lostCause(status: number | null): string {
 /** The instance refused the key for good (`status`): nothing more is tried for the worker's life; the run says why. */
 function refuse(own: Link, status: number): void {
   if (own.refused !== null) return;
+  if (own === link) endHold();
   own.refused = liveShareRefusal(status);
   own.answered = status;
   if (own.ci) goDark(own, 'It stays off for this worker.');
@@ -732,6 +773,7 @@ function refuse(own: Link, status: number): void {
  * share the run again.
  */
 function giveUp(own: Link): void {
+  if (own === link) endHold();
   own.sharing = false;
   own.lost = liveShareRefusal(own.answered);
   own.viewers = 0;
@@ -768,6 +810,86 @@ function resendView(own: Link): void {
   view.frames.resend();
   if (own.log && shownInFull(own)) postLog(own, own.log);
   if (layerAsked(own, 'filmstrip')) queueStrip(own);
+}
+
+/** The project holds a failing CI test for its controllers `ms` long from now on, or not (null): off ends a hold. */
+function setHold(own: Link, ms: number | null): void {
+  own.hold = ms;
+  if (own !== link || !holding) return;
+  if (ms === null) return endHold();
+  // A new length applies to the hold that runs: it ends its new length after it began, at once when that is past.
+  const hold = holding;
+  const until = hold.began + ms;
+  if (until <= Date.now()) return endHold();
+  clearTimeout(hold.timer);
+  hold.until = until;
+  hold.timer = setTimeout(() => endHold(), until - Date.now());
+  if (own.stop?.reason === 'held') {
+    own.stop.until = until;
+    postState(own, { type: 'stop', ...own.id, stop: own.stop });
+  }
+}
+
+/** **Let it go**, on the stream `request`: it ends the hold, on the worker's own stream open now and with the setting on. */
+function letGo(own: Link, request: http.ClientRequest): void {
+  if (own === link && own.stream === request && own.hold !== null) endHold();
+}
+
+/** Whether a controller watches the worker in full now, as the instance last said. */
+function controllerWatches(own: Link): boolean {
+  return own.viewers > 0 && !!own.asked?.full && own.asked.controller === true;
+}
+
+/**
+ * The instance said who watches: a hold ends as it says no controller shows the worker in full (`view`), or nobody
+ * watches it (`viewers`).
+ */
+function keepHold(
+  own: Link,
+  message: Extract<InstanceToWorker, { type: 'view' }> | Extract<InstanceToWorker, { type: 'viewers' }>,
+): void {
+  const left = message.type === 'view' ? !message.full || message.controller !== true : message.count === 0;
+  if (own === link && left) endHold();
+}
+
+/** End the hold of the running test's failure, if one holds. */
+function endHold(): void {
+  holding?.end();
+}
+
+/**
+ * Whether a test failing now would be held for its controllers: in a CI run whose project holds failing tests
+ * (`hold`), while the stream is open, a test runs, and a controller watches the worker in full.
+ */
+export function liveViewMayHold(): boolean {
+  const own = link;
+  return !!own && own.ci && !holding && !!running && active(own) && own.hold !== null && controllerWatches(own);
+}
+
+/**
+ * Hold the running test's failure for its controllers, when `liveViewMayHold`; null when it does not hold. The hold
+ * ends at its length, at **Let it go**, as no controller watches any more, as the setting turns off, or as the stream
+ * closes for good, whichever comes first; `ended` resolves then.
+ */
+export function liveViewHold(): LiveHold | null {
+  const own = link;
+  if (!own || own.hold === null || !liveViewMayHold()) return null;
+  let resolve!: () => void;
+  const ended = new Promise<void>((settle) => (resolve = settle));
+  const began = Date.now();
+  const hold: NonNullable<typeof holding> = {
+    began,
+    until: began + own.hold,
+    timer: setTimeout(() => endHold(), own.hold),
+    ended,
+    end: () => {
+      clearTimeout(hold.timer);
+      if (holding === hold) holding = null;
+      resolve();
+    },
+  };
+  holding = hold;
+  return { until: hold.until, ended, end: hold.end };
 }
 
 /**

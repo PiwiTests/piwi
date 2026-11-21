@@ -9,8 +9,9 @@
  * ended (`ended`), and when the run stops being shared (`unshared`). In a CI run, while anyone watches it in full, it
  * posts too the call its test is in as Playwright logs it (`call-log`): the log's last lines, the point an input action acts on,
  * and the elements the call's locator matches while it waits. Nothing goes from the instance to the page: the
- * view never steers the run. Each message is JSON, checked field by field (`parseInstanceToWorker`,
- * `readWorkerToInstance`).
+ * view never steers the run, with one exception: a CI worker of a project that holds a failing CI test for its
+ * controllers (`hold`) waits at a failure while a controller watches it, and ends that wait on **Let it go** (`let-go`).
+ * Each message is JSON, checked field by field (`parseInstanceToWorker`, `readWorkerToInstance`).
  *
  * An instance that says on the stream what its viewers ask of the images (`view`: the largest size they show one at,
  * in device pixels, the pace, and whether one of them shows the worker in full) takes each frame as its JPEG's bytes
@@ -262,11 +263,32 @@ export function readLiveTestTitle(value: unknown): string | null {
   return typeof value === 'string' && value ? value.slice(0, MAX_TEST_TITLE) : null;
 }
 
-/** A stop of a worker's test: why, the call it holds, and the test's title, which tells its row from the one before. */
+/**
+ * A stop of a worker's test: why, the call it holds, and the test's title, which tells its row from the one before. A
+ * failed CI test held for its controllers (`held`) says when its hold ends (`until`, epoch ms).
+ */
 export interface LiveStop {
-  reason: StopReason | 'other';
+  reason: StopReason | 'held' | 'other';
   call: LiveCall;
   test: string | null;
+  until?: number;
+}
+
+/**
+ * The query parameter of a worker's stream that lists what its reporter can do on it, comma-separated: `hold`
+ * (`LIVE_HOLD_FEATURE`), a CI worker that holds a failing test for its controllers and takes **Let it go**.
+ */
+export const LIVE_VIEW_FEATURES_PARAM = 'features';
+export const LIVE_HOLD_FEATURE = 'hold';
+
+/** How long a failed CI test is held for its controllers, in minutes: a project's setting, within these bounds. */
+export const MIN_LIVE_HOLD_MINUTES = 1;
+export const MAX_LIVE_HOLD_MINUTES = 15;
+export const DEFAULT_LIVE_HOLD_MINUTES = 5;
+
+/** Whether `value` is a hold's length a project may set, in whole minutes. */
+export function isLiveHoldMinutes(value: unknown): value is number {
+  return isInt(value, MIN_LIVE_HOLD_MINUTES, MAX_LIVE_HOLD_MINUTES);
 }
 
 /** A box on the test's page, in its viewport's pixels. */
@@ -361,7 +383,11 @@ export function parseLiveMasks(value: unknown): string[] | null {
  * full views ask beside the images (`@piwitests/core/live-layers`: `events`, `text` and `filmstrip`; the call log goes
  * with `full`), none from an instance that does not say them; `text` asks for the page's text now (a viewer asked).
  * `view`'s `inspect` says a full view has Inspect open (`@piwitests/core/live-inspect`), false from an instance that
- * does not say it.
+ * does not say it, and its `controller` that one of the full views is a person who may control the project's runs
+ * (`run:control`), absent otherwise. To a worker that said it can hold (`LIVE_HOLD_FEATURE`), the instance says as the
+ * stream opens, and as a project admin changes it, how long the project holds a failing CI test for its controllers
+ * (`hold`, in ms, `MAX_LIVE_HOLD_MINUTES` at most, null while the setting is off), and asks it to end such a hold
+ * (`let-go`, **Let it go**).
  */
 export type InstanceToWorker =
   | { type: 'viewers'; count: number }
@@ -374,9 +400,12 @@ export type InstanceToWorker =
       full: boolean;
       layers: LaneLayer[];
       inspect: boolean;
+      controller?: true;
     }
   | { type: 'resend' }
-  | { type: 'text' };
+  | { type: 'text' }
+  | { type: 'hold'; ms: number | null }
+  | { type: 'let-go' };
 
 /**
  * The size of an image a viewer asks for, in device pixels, from a message or a query: within a tile's size and
@@ -451,7 +480,16 @@ export function liveLaneKey(lane: { shard: number | null; slot: number }): strin
   return `${lane.shard ?? ''}#${lane.slot}`;
 }
 
-const STOP_REASONS: readonly string[] = ['breakpoint', 'step', 'pause', 'run-to', 'page-pause', 'failure', 'other'];
+const STOP_REASONS: readonly string[] = [
+  'breakpoint',
+  'step',
+  'pause',
+  'run-to',
+  'page-pause',
+  'failure',
+  'held',
+  'other',
+];
 
 /**
  * A call, checked field by field, its title cut short and the text a fill, a typing or an insert types hidden
@@ -609,7 +647,9 @@ export function readWorkerToInstance(value: unknown): WorkerToInstance | string 
       const reason = STOP_REASONS.includes(value.stop.reason as string)
         ? (value.stop.reason as LiveStop['reason'])
         : 'other';
-      return { type: 'stop', ...id, stop: { reason, call, test: readLiveTestTitle(value.stop.test) } };
+      const stop: LiveStop = { reason, call, test: readLiveTestTitle(value.stop.test) };
+      if (reason === 'held' && isEpochMs(value.stop.until)) stop.until = Math.round(value.stop.until);
+      return { type: 'stop', ...id, stop };
     }
     case 'call-log': {
       const log = readLiveCallLog(value.log);
@@ -658,10 +698,16 @@ export function parseInstanceToWorker(data: string): InstanceToWorker | null {
     const full = typeof value.full === 'boolean' ? value.full : true;
     const layers = (readLaneLayers(value.layers) ?? []).filter((layer) => layer !== 'calls');
     const inspect = value.inspect === true;
-    return { type: 'view', ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers, inspect };
+    const view = { type: 'view' as const, ...size, fps: Math.min(LIVE_FRAME_FPS, value.fps), full, layers, inspect };
+    return value.controller === true && full ? { ...view, controller: true } : view;
   }
   if (value.type === 'resend') return { type: 'resend' };
   if (value.type === 'text') return { type: 'text' };
+  if (value.type === 'let-go') return { type: 'let-go' };
+  if (value.type === 'hold') {
+    const ms = isInt(value.ms, 1, MAX_LIVE_HOLD_MINUTES * 60_000) ? value.ms : null;
+    return { type: 'hold', ms };
+  }
   if (value.type !== 'viewers' || !isInt(value.count, 0, 1_000_000)) return null;
   return { type: 'viewers', count: value.count };
 }

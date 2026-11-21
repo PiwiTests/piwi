@@ -156,7 +156,9 @@ const liveShows = computed(() =>
  * reads the two; none while the desktop app's own hub shows the stop.
  */
 const shownStop = computed(() =>
-  liveShows.value === 'pause-and-watch' ? null : testStop(props.liveWorker?.paused, tc.value?.liveStop),
+  liveShows.value === 'pause-and-watch'
+    ? null
+    : testStop(props.liveWorker?.paused, tc.value?.liveStop, props.liveWorker),
 );
 /** The row's test stands at a stop: in the run's live view, in a run the desktop app started, or as its reporter told. */
 const stopped = computed(
@@ -392,6 +394,8 @@ const clusterLabel = computed(() =>
             :reason="shownStop.reason"
             :call="shownStop.call"
             :since="shownStop.since"
+            :until="shownStop.held?.until"
+            :held-for="shownStop.held?.heldFor"
             :project-key="projectKey"
             :project-name="projectName"
           />

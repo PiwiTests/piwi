@@ -28,6 +28,8 @@ import {
   MAX_ASK_BY,
   parseLiveAsk,
   parseLiveAskAnswer,
+  isLiveHoldMinutes,
+  MAX_LIVE_HOLD_MINUTES,
 } from '../src/live-view';
 import { LatestPacer, fitViewSize } from '../src/run-view';
 
@@ -318,6 +320,57 @@ describe('the messages', () => {
         locators: null,
       });
     }
+  });
+});
+
+describe('holding a failing CI test', () => {
+  test('a held stop says when its hold ends, and only a held one', () => {
+    const until = 1_800_000_000_000;
+    expect(
+      readWorkerToInstance({
+        type: 'stop',
+        worker: 0,
+        slot: 1,
+        stop: { reason: 'held', call: { title: 'Failed: Timed out', file: 'a.spec.ts', line: 4 }, test: 'pays', until },
+      }),
+    ).toEqual({
+      type: 'stop',
+      shard: null,
+      worker: 0,
+      slot: 1,
+      stop: { reason: 'held', call: { title: 'Failed: Timed out', file: 'a.spec.ts', line: 4 }, test: 'pays', until },
+    });
+    expect(
+      readWorkerToInstance({ type: 'stop', worker: 0, stop: { reason: 'failure', call: { title: 'x' }, until } }),
+    ).toEqual(expect.objectContaining({ stop: { reason: 'failure', call: expect.anything(), test: null } }));
+    expect(
+      readWorkerToInstance({ type: 'stop', worker: 0, stop: { reason: 'held', call: { title: 'x' }, until: 'soon' } }),
+    ).toEqual(expect.objectContaining({ stop: { reason: 'held', call: expect.anything(), test: null } }));
+  });
+
+  test('the instance says how long the project holds, whether a controller watches in full, and Let it go', () => {
+    expect(parseInstanceToWorker('{"type":"hold","ms":300000}')).toEqual({ type: 'hold', ms: 300_000 });
+    expect(parseInstanceToWorker('{"type":"hold","ms":null}')).toEqual({ type: 'hold', ms: null });
+    // Past the longest hold, or no whole number of ms: the setting reads as off.
+    for (const ms of [MAX_LIVE_HOLD_MINUTES * 60_000 + 1, 0, -5, 1.5, '300000']) {
+      expect(parseInstanceToWorker(JSON.stringify({ type: 'hold', ms })), String(ms)).toEqual({
+        type: 'hold',
+        ms: null,
+      });
+    }
+    expect(parseInstanceToWorker('{"type":"let-go"}')).toEqual({ type: 'let-go' });
+    const view = { type: 'view', width: 640, height: 400, fps: 4, full: true, layers: [] };
+    expect(parseInstanceToWorker(JSON.stringify({ ...view, controller: true }))).toMatchObject({ controller: true });
+    expect(parseInstanceToWorker(JSON.stringify(view))).not.toHaveProperty('controller');
+    // A controller counts only while a view shows the worker in full.
+    expect(parseInstanceToWorker(JSON.stringify({ ...view, full: false, controller: true }))).not.toHaveProperty(
+      'controller',
+    );
+  });
+
+  test('a project holds for 1 to 15 whole minutes', () => {
+    expect([1, 5, 15].every(isLiveHoldMinutes)).toBe(true);
+    expect([0, 16, 2.5, '5', null].some(isLiveHoldMinutes)).toBe(false);
   });
 });
 
