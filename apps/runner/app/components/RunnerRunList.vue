@@ -1,21 +1,33 @@
 <script setup lang="ts">
 /**
- * The runs of this window, in two lists: **Running now**, a card each with its live view (`RunnerRunCard`), and
- * **Finished**, a row each (`RunnerRunRow`), the last to end first, with **Clear finished**. A run the hub still has that this
- * window holds no entry for (the window was reloaded while it went on) shows live under its name, with Stop and Force
- * stop. While
+ * The runs of this window in the layer's runs panel (`DesktopRunsPanel`), as the dashboard's Local runs tray shows its
+ * own. On the left, **Running now**, with the runs the hub still has that this window holds no entry for (the window
+ * was reloaded while they went on), then **Finished**, the last to end first, with **Clear finished**: each line says
+ * how its run stands, whether a test of it waits at a stop, and how long it ran. On the right, the run shown
+ * (`RunnerRunDetail`; a run the window holds no entry for shows live under its name, with Stop and Force stop): the one
+ * the person chose (`chosen`), else a running run a test of which waits at a stop, else the newest running, else the
+ * last to end. A run the person confirms shows (`startRequest`); a stop the window hears shows its run, unless the
+ * keyboard is in the run shown. Every running run stays drawn while another shows, so its live view goes on. While
  * there is none, the window says how one comes and opens the instance in the browser; while the instance does not
- * answer, a line above says so. The code made at a stop and the locators picked wait on top, to copy
+ * answer, a line above says so. The code made at a stop and the locators picked wait on top of the run shown, to copy
  * (`DesktopRunCopyList`).
  */
 import type { HubSession } from '@piwitests/core/run-hub';
-import { runnerFinishedRuns, runnerShellIdOf, runnerUnlistedSessions } from '~/utils/runner-runs';
+import { desktopRunName } from '@piwitests/run-ui/run-view';
+import {
+  isRunnerRunRef,
+  runnerFinishedRuns,
+  runnerShellIdOf,
+  runnerUnlistedSessions,
+  type RunnerRun,
+} from '~/utils/runner-runs';
 
-const { runs, stopShellRun, clearFinished } = useRunnerRuns();
+const { runs, chosen, stopShellRun, clearFinished } = useRunnerRuns();
 const { connection } = useDesktopTeamRequests();
 const hub = useDesktopRunHub();
 const words = useRunUiWords();
 const { t } = useRunnerWords();
+const view = useRunnerRunView();
 
 const sessions = computed(() => Object.values(hub.state.sessions) as HubSession[]);
 const running = computed(() => runs.value.filter((run) => run.status === 'running'));
@@ -35,6 +47,91 @@ function stopUnlisted(session: HubSession) {
   void stopShellRun(shellId);
 }
 
+/** Whether a test of a hub's run waits at a stop. */
+const sessionWaits = (session: HubSession) => session.workers.some((worker) => worker.stop);
+
+/** Whether a test of a run going on waits at a stop, by the hub's live run of it. */
+function waits(run: RunnerRun): boolean {
+  if (run.status !== 'running') return false;
+  const session = sessions.value.find((each) => isRunnerRunRef(each.ref, run.shellId));
+  return !!session && sessionWaits(session);
+}
+
+/**
+ * The key of the run shown: the one chosen while the list holds it, else a running run a test of which waits at a
+ * stop, else the newest running, else the last to end.
+ */
+const shownKey = computed<number | string | null>(() => {
+  const picked = chosen.value;
+  if (typeof picked === 'number' && runs.value.some((run) => run.key === picked)) return picked;
+  if (typeof picked === 'string' && unlisted.value.some((session) => session.ref === picked)) return picked;
+  return (
+    running.value.find(waits)?.key ??
+    unlisted.value.find(sessionWaits)?.ref ??
+    running.value[0]?.key ??
+    unlisted.value[0]?.ref ??
+    finished.value[0]?.key ??
+    null
+  );
+});
+
+// The run shown is kept as chosen, so it does not move as other runs go on.
+watch(
+  shownKey,
+  (key) => {
+    if (key !== null) chosen.value = key;
+  },
+  { immediate: true },
+);
+
+const panel = useTemplateRef<{ isWorking: () => boolean }>('panel');
+
+// A stop shows its run, unless the person works in the run shown; its line marks it all the same.
+const stopHeard = hub.onStop((session) => {
+  if (panel.value?.isWorking()) return;
+  const run = runs.value.find((each) => isRunnerRunRef(session.ref, each.shellId));
+  chosen.value = run ? run.key : session.ref;
+});
+onScopeDispose(stopHeard);
+
+/** The runs drawn on the right, the one shown visible: every running run, so showing another ends none of their views. */
+const drawn = computed(() => {
+  const shownEnded = finished.value.find((run) => run.key === shownKey.value);
+  return shownEnded ? [...running.value, shownEnded] : running.value;
+});
+
+/** A run's line in the list. */
+function lineOf(run: RunnerRun) {
+  const status = view.status(run);
+  return {
+    key: run.key,
+    title: view.name(run),
+    status: { label: status.words, color: status.tone },
+    waits: waits(run),
+    duration: view.duration(run),
+  };
+}
+
+const groups = computed(() => [
+  {
+    key: 'running',
+    title: t('runner_runningHeading'),
+    items: [
+      ...running.value.map(lineOf),
+      ...unlisted.value.map((session) => ({
+        key: session.ref,
+        title: desktopRunName(session, words),
+        status: {
+          label: stopping.value[session.ref] === undefined ? t('runner_statusRunning') : t('runner_stopping'),
+          color: 'primary' as const,
+        },
+        waits: sessionWaits(session),
+      })),
+    ],
+  },
+  { key: 'finished', title: t('runner_finishedHeading'), items: finished.value.map(lineOf) },
+]);
+
 const empty = computed(() => !runs.value.length && !unlisted.value.length);
 const host = computed(() => teamInstanceHost(connection.value.instance, words));
 /** The instance, to open from the empty list while connected. */
@@ -53,86 +150,82 @@ function announce(text: string) {
 </script>
 
 <template>
-  <section class="space-y-6" data-testid="runner-runs">
+  <section class="flex min-h-0 flex-1 flex-col" data-testid="runner-runs">
     <div
       v-if="connection.state === 'offline'"
       role="status"
-      class="flex items-start gap-3 rounded-lg border border-warning/40 bg-warning/10 px-4 py-3 text-sm text-default"
+      class="flex shrink-0 items-start gap-3 border-b border-warning/40 bg-warning/10 px-4 py-2 text-sm text-default"
       data-testid="runner-offline"
     >
       <UIcon name="i-lucide-wifi-off" class="mt-0.5 size-4 shrink-0 text-warning" />
       <p class="min-w-0">{{ t('runner_offline', { host }) }}</p>
     </div>
-    <DesktopRunCopyList v-if="hub.state.kept.length" :kept="hub.state.kept" :roots="hub.state.roots" />
 
-    <div
-      v-if="empty"
-      class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-accented bg-default px-6 py-10 text-center"
-      data-testid="runner-no-runs"
-    >
-      <span class="flex size-12 items-center justify-center rounded-full bg-elevated text-muted">
-        <UIcon name="i-lucide-inbox" class="size-6" />
-      </span>
-      <p class="max-w-sm text-sm text-muted">{{ t('runner_noRuns') }}</p>
-      <UButton
-        v-if="instance"
-        :to="instance"
-        target="_blank"
-        size="sm"
-        color="neutral"
-        variant="outline"
-        trailing-icon="i-lucide-external-link"
-        >{{ t('runner_openInstance', { host }) }}</UButton
+    <div v-if="empty" class="mx-auto w-full max-w-3xl space-y-6 p-4 sm:p-6">
+      <DesktopRunCopyList v-if="hub.state.kept.length" :kept="hub.state.kept" :roots="hub.state.roots" />
+      <div
+        class="flex flex-col items-center gap-3 rounded-lg border border-dashed border-accented bg-default px-6 py-10 text-center"
+        data-testid="runner-no-runs"
       >
-    </div>
-
-    <div v-if="running.length || unlisted.length" class="space-y-3" data-testid="runner-running">
-      <h2 class="flex items-center gap-2 text-sm font-semibold text-highlighted">
-        {{ t('runner_runningHeading') }}
-        <UBadge size="sm" color="primary" variant="subtle">{{ words.number(running.length + unlisted.length) }}</UBadge>
-      </h2>
-      <RunnerRunCard v-for="run in running" :key="run.key" :run="run" @announce="announce" />
-      <UCard
-        v-for="session in unlisted"
-        :key="session.ref"
-        :ui="{ body: 'space-y-3 p-4 sm:p-4' }"
-        data-testid="runner-unlisted-run"
-      >
-        <div class="flex items-center gap-3">
-          <span class="flex size-9 shrink-0 items-center justify-center rounded-full bg-primary/10 text-primary">
-            <UIcon name="i-lucide-loader-circle" class="size-5 animate-spin" />
-          </span>
-          <p class="min-w-0 flex-1 text-xs text-muted">{{ t('runner_stillRunning') }}</p>
-          <DesktopRunStopButton
-            :stopping="stopping[session.ref] !== undefined"
-            :since="stopping[session.ref]"
-            @stop="stopUnlisted(session)"
-            @force="stopUnlisted(session)"
-          />
-        </div>
-        <DesktopRunSession :session="session" named @announce="announce" />
-      </UCard>
-    </div>
-
-    <div v-if="finished.length" class="space-y-3" data-testid="runner-finished">
-      <div class="flex min-h-7 items-center gap-3">
-        <h2 class="flex flex-1 items-center gap-2 text-sm font-semibold text-highlighted">
-          {{ t('runner_finishedHeading') }}
-          <UBadge size="sm" color="neutral" variant="subtle">{{ words.number(finished.length) }}</UBadge>
-        </h2>
+        <span class="flex size-12 items-center justify-center rounded-full bg-elevated text-muted">
+          <UIcon name="i-lucide-inbox" class="size-6" />
+        </span>
+        <p class="max-w-sm text-sm text-muted">{{ t('runner_noRuns') }}</p>
         <UButton
-          size="xs"
+          v-if="instance"
+          :to="instance"
+          target="_blank"
+          size="sm"
           color="neutral"
-          variant="ghost"
-          icon="i-lucide-brush-cleaning"
-          data-testid="runner-clear-finished"
-          @click="clearFinished"
-          >{{ t('runner_clearFinished') }}</UButton
+          variant="outline"
+          trailing-icon="i-lucide-external-link"
+          >{{ t('runner_openInstance', { host }) }}</UButton
         >
       </div>
-      <ul class="divide-y divide-default overflow-hidden rounded-lg border border-default bg-default">
-        <RunnerRunRow v-for="run in finished" :key="run.key" :run="run" />
-      </ul>
+    </div>
+
+    <div v-else class="flex min-h-80 flex-1 flex-col">
+      <DesktopRunsPanel ref="panel" :groups="groups" :shown="shownKey" @select="chosen = $event">
+        <template #group-actions="{ group }">
+          <UButton
+            v-if="group.key === 'finished'"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-brush-cleaning"
+            data-testid="runner-clear-finished"
+            @click="clearFinished"
+            >{{ t('runner_clearFinished') }}</UButton
+          >
+        </template>
+        <DesktopRunCopyList v-if="hub.state.kept.length" :kept="hub.state.kept" :roots="hub.state.roots" class="mb-4" />
+        <RunnerRunDetail
+          v-for="run in drawn"
+          v-show="run.key === shownKey"
+          :key="run.key"
+          :run="run"
+          @announce="announce"
+        />
+        <article
+          v-for="session in unlisted"
+          v-show="session.ref === shownKey"
+          :key="session.ref"
+          :aria-label="desktopRunName(session, words)"
+          class="space-y-3"
+          data-testid="runner-unlisted-run"
+        >
+          <div class="flex flex-wrap items-center gap-3">
+            <p class="min-w-0 flex-1 basis-48 text-xs text-muted">{{ t('runner_stillRunning') }}</p>
+            <DesktopRunStopButton
+              :stopping="stopping[session.ref] !== undefined"
+              :since="stopping[session.ref]"
+              @stop="stopUnlisted(session)"
+              @force="stopUnlisted(session)"
+            />
+          </div>
+          <DesktopRunSession :session="session" named @announce="announce" />
+        </article>
+      </DesktopRunsPanel>
     </div>
     <p class="sr-only" aria-live="polite">{{ announcement }}</p>
   </section>

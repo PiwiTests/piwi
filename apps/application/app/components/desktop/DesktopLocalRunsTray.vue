@@ -6,9 +6,10 @@
  * height. Mounted once in the default layout's main column; runs keep going while it is closed, and closing it never
  * stops anything. Renders nothing without the IPC bridge.
  *
- * On its left, the runs: **Running now**, the runs another window of the app started, then **Finished**, each line
- * saying how the run stands (`useDesktopRunBadge`: `3 of 9 tests · 1 failed` while it runs, how it ended after),
- * whether a test of it waits at a stop, and how long it ran. On its right, the run chosen there (`selected`, else a
+ * Its runs and the run shown are the layer's runs panel (`DesktopRunsPanel`, as Piwi Runner's window shows its own). On
+ * its left, the runs: **Running now**, the runs another window of the app started, then **Finished**, each line saying
+ * how the run stands (`useDesktopRunBadge`: `3 of 9 tests · 1 failed` while it runs, how it ended after), whether a
+ * test of it waits at a stop, and how long it ran. On its right, the run chosen there (`selected`, else a
  * run waiting at a stop, else the newest running, else the newest): its command, **Stop**, which gives way to **Force
  * stop** while it winds down (`DesktopRunStopButton`), or **Run again** and **More actions** (**Copy the command**,
  * **Remove from the list**) once it ended, its separate output window, its Hold failures, its links, its workers live
@@ -123,6 +124,9 @@ function select(target: number | string) {
   selected.value = target;
 }
 
+/** The key of what the right side shows: a run's, or the ref of a run another window started. */
+const shownKey = computed(() => shownRun.value?.key ?? shownSession.value?.ref ?? null);
+
 // The default shown is kept as chosen, so it does not move as other runs go on.
 watch(
   () => shownRun.value?.key,
@@ -132,16 +136,14 @@ watch(
   { immediate: true },
 );
 
-/** The right side, which the keyboard may be in. */
-const detail = useTemplateRef<HTMLElement>('detail');
+const panel = useTemplateRef<{ isWorking: () => boolean }>('panel');
 
 /**
  * Shows `target` on the right as a run starts or stops, unless the person works in the run shown: the keyboard is in
  * it (a control, the live view's Interact, the output's filter). The list marks a stop all the same.
  */
 function showUnlessWorking(target: number | string) {
-  const working = !!detail.value && !!document.activeElement && detail.value.contains(document.activeElement);
-  if (!working) select(target);
+  if (!panel.value?.isWorking()) select(target);
 }
 
 /** How long a result's Run again keeps the run it came from shown: the run it starts may wait on its environment. */
@@ -387,26 +389,25 @@ function sessionWaits(session: HubSession): boolean {
   return session.workers.some((worker) => worker.stop);
 }
 
-/** Whether the tray is wide enough for the list beside the run shown; narrower, a select names the run shown. */
-const wide = useMediaQuery('(min-width: 768px)');
+/** A run's line in the list: its title, how it stands, whether a test of it waits at a stop, how long it ran. */
+function lineOf(run: LocalRun) {
+  return { key: run.key, title: localRunTitle(run), status: badge(run), waits: waits(run), duration: duration(run) };
+}
 
-/** The select's choices, narrow: each run of the tray with how it stands, then the runs another window started. */
-const runChoices = computed(() => [
-  ...runs.value.map((run) => ({ label: `${localRunTitle(run)} · ${badge(run).label}`, value: `run:${run.key}` })),
-  ...otherSessions.value.map((session) => ({
-    label: desktopRunName(session, words),
-    value: `session:${session.ref}`,
-  })),
-]);
-const chosenChoice = computed({
-  get: () =>
-    shownRun.value ? `run:${shownRun.value.key}` : shownSession.value ? `session:${shownSession.value.ref}` : undefined,
-  set: (value: string | undefined) => {
-    if (!value) return;
-    const at = value.indexOf(':');
-    select(value.slice(0, at) === 'run' ? Number(value.slice(at + 1)) : value.slice(at + 1));
+/** The list's groups: the runs going on, those another window started, then those that ended. */
+const groups = computed(() => [
+  { key: 'running', title: 'Running now', items: running.value.map(lineOf) },
+  {
+    key: 'other-windows',
+    title: 'Started in another window',
+    items: otherSessions.value.map((session) => ({
+      key: session.ref,
+      title: desktopRunName(session, words),
+      waits: sessionWaits(session),
+    })),
   },
-});
+  { key: 'finished', title: 'Finished', items: finished.value.map(lineOf) },
+]);
 </script>
 
 <template>
@@ -477,179 +478,108 @@ const chosenChoice = computed({
       </p>
     </div>
 
-    <div v-else class="flex min-h-0 flex-1" :class="wide ? 'flex-row' : 'flex-col'">
-      <!-- Narrow, a select names the run shown, so the run keeps the tray's height. -->
-      <div v-if="!wide" class="shrink-0 border-b border-default p-2">
-        <USelect v-model="chosenChoice" :items="runChoices" aria-label="Run shown" class="w-full" />
-      </div>
-      <nav v-else aria-label="Runs" class="w-72 shrink-0 overflow-y-auto border-r border-default">
-        <template
-          v-for="group in [
-            { title: 'Running now', items: running },
-            { title: 'Finished', items: finished },
-          ]"
-          :key="group.title"
-        >
-          <section v-if="group.items.length > 0" :aria-label="group.title">
-            <h3 class="px-3 pt-2 pb-1 text-xs text-muted">{{ group.title }}</h3>
-            <ul>
-              <li v-for="run in group.items" :key="run.key">
-                <button
-                  type="button"
-                  class="flex w-full min-w-0 flex-col gap-0.5 px-3 py-1.5 text-left hover:bg-elevated/60 focus-visible:outline-2 focus-visible:outline-primary"
-                  :class="run.key === shownRun?.key ? SELECTED_ROW_CLASS : ''"
-                  :aria-current="run.key === shownRun?.key || undefined"
-                  :aria-label="localRunTitle(run)"
-                  :aria-describedby="`desktop-run-line-${run.key}`"
-                  data-run-line
-                  :data-key="run.key"
-                  @click="select(run.key)"
-                >
-                  <span class="truncate text-sm font-medium" :title="localRunTitle(run)">{{ localRunTitle(run) }}</span>
-                  <!-- The line is named by its run's title alone; how the run stands describes it. -->
-                  <span :id="`desktop-run-line-${run.key}`" class="flex min-w-0 items-center gap-2">
-                    <UBadge :color="badge(run).color" variant="subtle" size="sm" class="min-w-0 truncate">
-                      {{ badge(run).label }}
-                    </UBadge>
-                    <span v-if="waits(run)" class="flex shrink-0 items-center text-warning">
-                      <UIcon name="i-lucide-circle-pause" class="size-3.5" aria-hidden="true" />
-                      <span class="sr-only">A test waits at a stop</span>
-                    </span>
-                    <span class="ml-auto shrink-0 text-xs text-muted tabular-nums">{{ duration(run) }}</span>
-                  </span>
-                </button>
-              </li>
-            </ul>
-          </section>
-          <section
-            v-if="group.title === 'Running now' && otherSessions.length > 0"
-            aria-labelledby="desktop-runs-other-windows"
-          >
-            <h3 id="desktop-runs-other-windows" class="px-3 pt-2 pb-1 text-xs text-muted">Started in another window</h3>
-            <ul>
-              <li v-for="session in otherSessions" :key="session.ref">
-                <button
-                  type="button"
-                  class="flex w-full min-w-0 items-center gap-2 px-3 py-1.5 text-left hover:bg-elevated/60 focus-visible:outline-2 focus-visible:outline-primary"
-                  :class="session.ref === shownSession?.ref ? SELECTED_ROW_CLASS : ''"
-                  :aria-current="session.ref === shownSession?.ref || undefined"
-                  @click="select(session.ref)"
-                >
-                  <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ desktopRunName(session, words) }}</span>
-                  <span v-if="sessionWaits(session)" class="flex shrink-0 items-center text-warning">
-                    <UIcon name="i-lucide-circle-pause" class="size-3.5" aria-hidden="true" />
-                    <span class="sr-only">A test waits at a stop</span>
-                  </span>
-                </button>
-              </li>
-            </ul>
-          </section>
-        </template>
-      </nav>
-
-      <div ref="detail" class="min-w-0 flex-1 overflow-y-auto px-3 py-2">
-        <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />
-        <article
-          v-for="run in drawnRuns"
-          v-show="run.key === shownRun?.key"
-          :key="run.key"
-          :data-run="run.key"
-          :aria-label="localRunTitle(run)"
-          class="space-y-2"
-        >
-          <div class="flex flex-wrap items-center gap-2">
-            <p class="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted" :title="localRunDetail(run)">
-              {{ localRunDetail(run) }}
-            </p>
-            <div class="ml-auto flex shrink-0 items-center gap-1">
-              <DesktopRunStopButton
-                v-if="run.status === 'running'"
-                :stopping="run.stopRequested"
-                :since="run.stopRequestedAt"
-                @stop="store.stopRun(run)"
-                @force="store.stopRun(run)"
-              />
-              <UTooltip v-else-if="rerunnable(run)" :text="`Run again: ${localRunTitle(run)}, with the same options`">
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-rotate-ccw"
-                  aria-label="Run again"
-                  @click="void runAgain(run)"
-                />
-              </UTooltip>
-              <UTooltip :text="separateLabel(run)">
-                <UButton
-                  size="xs"
-                  color="neutral"
-                  variant="ghost"
-                  :icon="separate[run.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
-                  :aria-label="separateLabel(run)"
-                  @click="toggleSeparate(run)"
-                />
-              </UTooltip>
-              <UDropdownMenu v-if="run.status !== 'running'" :items="moreActions(run)">
-                <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-ellipsis" aria-label="More actions" />
-              </UDropdownMenu>
-            </div>
-          </div>
-          <p v-if="localRunEnvironmentNote(run)" class="text-xs text-warning" data-testid="local-run-environment-note">
-            {{ localRunEnvironmentNote(run) }}
+    <DesktopRunsPanel v-else ref="panel" :groups="groups" :shown="shownKey" @select="select">
+      <DesktopRunCopyList :kept="hub.state.kept" :roots="hub.state.roots" />
+      <article
+        v-for="run in drawnRuns"
+        v-show="run.key === shownRun?.key"
+        :key="run.key"
+        :data-run="run.key"
+        :aria-label="localRunTitle(run)"
+        class="space-y-2"
+      >
+        <div class="flex flex-wrap items-center gap-2">
+          <p class="min-w-0 flex-1 basis-60 truncate font-mono text-[11px] text-muted" :title="localRunDetail(run)">
+            {{ localRunDetail(run) }}
           </p>
-          <DesktopRunHoldSwitch
-            v-if="run.status === 'running' && !editorRunsOf(run).length"
-            :run="run"
-            :described-id="`desktop-run-hold-${run.key}`"
-            data-shot="desktop-run-hold"
-          />
-          <div v-if="run.piwiRunId != null" class="flex flex-wrap items-center gap-2">
-            <UButton
-              v-if="run.status === 'failed'"
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-external-link"
-              @click="openFailure(run)"
-            >
-              Open the failure
-            </UButton>
-            <UButton
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-external-link"
-              :to="`/test-runs/${run.piwiRunId}`"
-              @click="trayOpen = false"
-            >
-              Open run #{{ run.piwiRunId }}
-            </UButton>
-            <UButton
-              v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"
-              size="xs"
-              color="neutral"
-              variant="outline"
-              icon="i-lucide-git-compare"
-              :to="localRunCompareTo(run)!"
-              :title="`What changed between run #${run.sourceRunId}, where these tests come from, and this one`"
-              @click="trayOpen = false"
-            >
-              Compare with run #{{ run.sourceRunId }}
-            </UButton>
+          <div class="ml-auto flex shrink-0 items-center gap-1">
+            <DesktopRunStopButton
+              v-if="run.status === 'running'"
+              :stopping="run.stopRequested"
+              :since="run.stopRequestedAt"
+              @stop="store.stopRun(run)"
+              @force="store.stopRun(run)"
+            />
+            <UTooltip v-else-if="rerunnable(run)" :text="`Run again: ${localRunTitle(run)}, with the same options`">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-rotate-ccw"
+                aria-label="Run again"
+                @click="void runAgain(run)"
+              />
+            </UTooltip>
+            <UTooltip :text="separateLabel(run)">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :icon="separate[run.key] ? 'i-lucide-panel-bottom-open' : 'i-lucide-app-window'"
+                :aria-label="separateLabel(run)"
+                @click="toggleSeparate(run)"
+              />
+            </UTooltip>
+            <UDropdownMenu v-if="run.status !== 'running'" :items="moreActions(run)">
+              <UButton size="xs" color="neutral" variant="ghost" icon="i-lucide-ellipsis" aria-label="More actions" />
+            </UDropdownMenu>
           </div>
-          <DesktopEditorRunNote v-if="editorRunsOf(run).length" :runs="editorRunsOf(run)" />
-          <DesktopRunSession
-            v-for="session in sessionsOf(run)"
-            :key="session.ref"
-            :session="session"
-            @announce="announce"
-          />
-          <DesktopLocalRunResults :run="run" @keep-open="keepRunShown(run)" />
-          <p v-if="separate[run.key]" class="text-xs text-muted">The output is in a separate window.</p>
-          <DesktopRunOutputPane v-else :lines="run.lines" />
-        </article>
-        <DesktopRunSession v-if="shownSession" :session="shownSession" named @announce="announce" />
-      </div>
-    </div>
+        </div>
+        <p v-if="localRunEnvironmentNote(run)" class="text-xs text-warning" data-testid="local-run-environment-note">
+          {{ localRunEnvironmentNote(run) }}
+        </p>
+        <DesktopRunHoldSwitch
+          v-if="run.status === 'running' && !editorRunsOf(run).length"
+          :run="run"
+          :described-id="`desktop-run-hold-${run.key}`"
+          data-shot="desktop-run-hold"
+        />
+        <div v-if="run.piwiRunId != null" class="flex flex-wrap items-center gap-2">
+          <UButton
+            v-if="run.status === 'failed'"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-external-link"
+            @click="openFailure(run)"
+          >
+            Open the failure
+          </UButton>
+          <UButton
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-external-link"
+            :to="`/test-runs/${run.piwiRunId}`"
+            @click="trayOpen = false"
+          >
+            Open run #{{ run.piwiRunId }}
+          </UButton>
+          <UButton
+            v-if="run.sourceRunId != null && run.sourceRunId !== run.piwiRunId"
+            size="xs"
+            color="neutral"
+            variant="outline"
+            icon="i-lucide-git-compare"
+            :to="localRunCompareTo(run)!"
+            :title="`What changed between run #${run.sourceRunId}, where these tests come from, and this one`"
+            @click="trayOpen = false"
+          >
+            Compare with run #{{ run.sourceRunId }}
+          </UButton>
+        </div>
+        <DesktopEditorRunNote v-if="editorRunsOf(run).length" :runs="editorRunsOf(run)" />
+        <DesktopRunSession
+          v-for="session in sessionsOf(run)"
+          :key="session.ref"
+          :session="session"
+          @announce="announce"
+        />
+        <DesktopLocalRunResults :run="run" @keep-open="keepRunShown(run)" />
+        <p v-if="separate[run.key]" class="text-xs text-muted">The output is in a separate window.</p>
+        <DesktopRunOutputPane v-else :lines="run.lines" />
+      </article>
+      <DesktopRunSession v-if="shownSession" :session="shownSession" named @announce="announce" />
+    </DesktopRunsPanel>
   </section>
 </template>
