@@ -241,6 +241,7 @@ try {
       PIWI_DESKTOP_CONFIG: path.join(workspace, 'no-desktop.json'),
       PIWI_EDITORS_DIR: editors,
       PIWI_TEST_WORKSPACE: workspace,
+      ...(process.env.PIWI_GOLDEN_WRITE ? { PIWI_GOLDEN_WRITE: '1' } : {}),
     },
   });
 } catch (e) {
