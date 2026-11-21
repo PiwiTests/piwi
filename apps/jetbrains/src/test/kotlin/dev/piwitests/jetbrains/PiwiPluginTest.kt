@@ -340,9 +340,15 @@ class PiwiPluginTest : BasePlatformTestCase() {
                 if (view.state == "failures") continue
                 val noRun = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
                     ?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.endsWith("(no run)") }
-                service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
-                service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
-                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                // Another read of the service, started elsewhere, writes no status over the pushed one: push again.
+                val drawn = (1..20).any {
+                    readDone()
+                    service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
+                    service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
+                    com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                    service.status != null && service.failuresResult?.view == view
+                }
+                assertTrue("$name: drawn from the pushed state", drawn)
                 val shown = case.getAsJsonObject("shown")
                 assertEquals(name, shown.get("text").asString, tree.emptyText.text)
                 val fragments = buildList {
