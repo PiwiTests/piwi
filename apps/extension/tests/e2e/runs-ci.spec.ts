@@ -277,6 +277,88 @@ test('a controller pauses a CI test on the watch of its lane, sees the Pause ask
   await expect(run.getByRole('button', { name: 'Pause', exact: true })).not.toHaveAttribute('aria-disabled', 'true');
 });
 
+/** A `lane` event of the run's stream, as a busy run sends one between the workers' states. */
+function laneEvent(n: number, worker: number, title: string, retry = 0) {
+  const event = {
+    id: { run: 78, shard: null, lane: n },
+    state: 'running',
+    worker,
+    test: { id: `t${n}-${retry}`, title, retry },
+    stop: null,
+    waiting: null,
+    done: 3,
+    failed: retry,
+  };
+  for (const res of instance.runStreams)
+    res.write(`data: ${JSON.stringify({ type: 'lane', data: event, seq: 1 })}\n\n`);
+}
+
+test('a Pause the worker drops says so alone, and Pause is offered again however fast the drop came', async ({
+  context,
+  extensionId,
+}) => {
+  instance.controller = true;
+  const page = await context.newPage();
+  await openRuns(page, extensionId);
+  const run = page.getByRole('region', { name: 'CI run #78' });
+  await run
+    .getByRole('listitem')
+    .filter({ hasText: 'Worker 2' })
+    .getByRole('button', { name: 'Watch', exact: true })
+    .click();
+  await expect.poll(() => instance.watches.length).toBe(1);
+  const why = 'No test runs on this worker now.';
+  instance.worker({ ...PAUSING, pauseSeq: 1 });
+  const pause = run.getByRole('button', { name: 'Pause', exact: true });
+  await pause.click();
+  await expect.poll(() => instance.controls.length).toBe(1);
+  await expect(run.locator('.ci-controls')).toContainText('The test pauses before its next call.');
+  // The Pause is taken, then dropped at once: what the click came to goes with the state it was said in.
+  laneEvent(0, 4, 'cart › pays with a coupon');
+  instance.worker({ ...PAUSING, pauseAsked: {}, pauseSeq: 2 });
+  instance.worker({ ...PAUSING, pauseDropped: why, pauseSeq: 3 });
+  await expect(run.locator('.ci-controls')).toContainText(`The Pause was dropped: ${why}`);
+  await expect(run.locator('.ci-controls')).not.toContainText('The test pauses before its next call.');
+  await expect(pause).not.toHaveAttribute('aria-disabled', 'true');
+  // The same again, the same reason: Pause is offered again all the same.
+  await pause.click();
+  await expect.poll(() => instance.controls.length).toBe(2);
+  instance.worker({ ...PAUSING, pauseAsked: {}, pauseSeq: 4 });
+  instance.worker({ ...PAUSING, pauseDropped: why, pauseSeq: 5 });
+  await expect(pause).not.toHaveAttribute('aria-disabled', 'true');
+});
+
+test('a new worker in the lane takes the controls: one press, one command, for that worker', async ({
+  context,
+  extensionId,
+}) => {
+  instance.controller = true;
+  const page = await context.newPage();
+  await openRuns(page, extensionId);
+  const run = page.getByRole('region', { name: 'CI run #78' });
+  await run
+    .getByRole('listitem')
+    .filter({ hasText: 'Worker 2' })
+    .getByRole('button', { name: 'Watch', exact: true })
+    .click();
+  await expect.poll(() => instance.watches.length).toBe(1);
+  instance.worker({ ...PAUSING, pauseSeq: 1 });
+  await expect(run.getByRole('button', { name: 'Pause', exact: true })).toBeVisible();
+  // Playwright starts worker 6 in the lane after a failure: the lane's next test.
+  laneEvent(1, 6, 'checkout › ships abroad', 1);
+  instance.worker({ ...PAUSING, connected: false });
+  instance.worker({ ...PAUSING, worker: 6, pauseSeq: 0 });
+  await page.waitForTimeout(800);
+  const pause = run.getByRole('button', { name: 'Pause', exact: true });
+  await pause.click();
+  await pause.dispatchEvent('click');
+  await page.waitForTimeout(500);
+  expect(instance.controls.map((c) => c.body)).toEqual([
+    { watch: 'watch-0123456789ab', shard: null, worker: 6, slot: 1, command: 'pause' },
+  ]);
+  await expect(pause).toHaveAttribute('aria-disabled', 'true');
+});
+
 test('a CI test paused offers no control to a watch the instance did not say is a controller’s', async ({
   context,
   extensionId,

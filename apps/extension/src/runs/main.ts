@@ -1314,8 +1314,8 @@ interface CiView extends RunsCiLane {
   call: string | null;
   /** The instance said this window's watch of the lane counts as a controller's: **Let it go** may be offered. */
   controller: boolean;
-  /** What **Let it go** or a control came to, until the lane's hold or pause changes. */
-  ciNote: { ok: boolean; text: string } | null;
+  /** What **Let it go** or a control came to, in the lane's state it was asked in (`state`), dropped once it changes. */
+  ciNote: { ok: boolean; text: string; state: string } | null;
 }
 
 let ciView: CiView | null = null;
@@ -1484,8 +1484,16 @@ const ciAsks = new CiAsks();
 function ciStateKey(test: RunsCiTest | undefined): string | null {
   if (!test) return null;
   if (test.held) return `held:${ciHoldKey(test.held)}`;
-  const state = test.live ? ciControlStateKey(test.live) : null;
+  const state = test.live ? ciControlStateKey(test.live, `${test.title}\x1f${test.retry}`) : null;
   return state ? `control:${state}` : null;
+}
+
+/** What the window shows of each CI lane's state, as text, by `ciLaneKey`: an ask the instance took goes as it changes. */
+const ciShown = new Map<string, string>();
+
+/** A CI lane's state as the window shows it, as text: its hold, its worker's pause state, its test. */
+function ciShownOf(test: RunsCiTest | undefined): string {
+  return JSON.stringify(test ? [test.title, test.retry, test.held ?? null, test.live ?? null] : null);
 }
 
 /** A button of a CI lane: **Let it go**, else a control. */
@@ -1506,9 +1514,10 @@ async function askCiLane(view: CiView, button: CiButton, state: string): Promise
     { ok: false, message: '', ci: 'late' },
   );
   if (!answer.ok) ciAsks.refused(ciLaneKey(view), state);
+  else ciAsks.took(ciLaneKey(view), state, ciShown.get(ciLaneKey(view)) ?? '');
   if (ciView !== view) return;
   const text = answer.ok ? answer.message : ciAskRefusalText(answer, button);
-  view.ciNote = text ? { ok: answer.ok, text } : null;
+  view.ciNote = text ? { ok: answer.ok, text, state } : null;
   if (text) announce(text);
   render();
 }
@@ -2846,7 +2855,11 @@ function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
   const children: HTMLElement[] = [caption];
   const test = run.tests.find((t) => t.shard === view.shard && t.lane === view.lane);
   const state = ciStateKey(test);
-  ciAsks.seen(ciLaneKey(view), state);
+  const shown = ciShownOf(test);
+  ciShown.set(ciLaneKey(view), shown);
+  ciAsks.seen(ciLaneKey(view), state, shown);
+  // What the last ask came to stands in the state it was asked in alone.
+  if (view.ciNote && view.ciNote.state !== state) view.ciNote = null;
   const stop =
     test && state && view.status !== 'ended' && view.status !== 'refused' ? renderCiStop(view, test, state) : null;
   if (stop) children.push(stop);
@@ -2912,7 +2925,7 @@ function renderCiStop(view: CiView, test: RunsCiTest, state: string): HTMLElemen
   const ask = !hold && !pause && test.live ? ciPauseAskWords(readCiPauseAsk(test.live), runsSpeaker) : null;
   if (!hold && !pause && !buttons.length && !ask && !view.ciNote) return null;
   const asked = ciAsks.asked(ciLaneKey(view), state);
-  return part(key, [hold, pause, buttons, ask, asked, view.ciNote], () => {
+  return part(key, [state, hold, pause, buttons, ask, asked, view.ciNote], () => {
     const box = element('div', hold ? 'ci-held-box' : pause ? 'ci-held-box ci-paused-box' : 'ci-controls');
     box.setAttribute('role', 'status');
     if (hold || pause) {

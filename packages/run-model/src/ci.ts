@@ -108,7 +108,7 @@ export function ciRunWhere(run: Pick<CiRun, 'branch' | 'project'>, severalProjec
   return project ? { key: 'runs_ciProject', args: { project } } : null;
 }
 
-/** What a surface says of every CI run it lists: they run on CI, watched only but for the controls of a test held or paused. */
+/** What a surface says of every CI run it lists: they run on CI, watched only but for the controls a controller is offered. */
 export const CI_READ_ONLY: RunMessage = { key: 'runs_ciReadOnly' };
 
 /**
@@ -228,32 +228,44 @@ export function ciHoldKey(hold: Pick<CiHold, 'worker' | 'until'>): string {
 /**
  * **Let it go**, **Pause**, **Resume** and **End the test** asked of each CI lane (by a surface's own key of the lane),
  * once per state of the lane (`ciHoldKey` for a hold, `ciControlStateKey` for the controls): a button is off from its
- * ask until the lane's state changes, and on again after a refusal. A state the lane comes back to (a Pause dropped
- * again for the same reason) is asked anew, since the surface saw it change in between (`seen`).
+ * ask until the lane's state changes (`seen` with another key), and on again after a refusal (`refused`). An ask the
+ * instance took (`took`) goes too as soon as the lane shows anything new (`seen` with another `shown`), whatever its
+ * key: a surface that missed the states in between asks again in the one it sees.
  */
 export class CiAsks {
-  private readonly states = new Map<string, string>();
+  private readonly asks = new Map<string, { state: string; shown: string | null }>();
 
   /** Whether a control was asked in the state `state` of `lane`, and waits for its answer or went through. */
   asked(lane: string, state: string): boolean {
-    return this.states.get(lane) === state;
+    return this.asks.get(lane)?.state === state;
   }
 
   /** Ask in the state `state` of `lane`: false when a control was asked in it already. */
   ask(lane: string, state: string): boolean {
     if (this.asked(lane, state)) return false;
-    this.states.set(lane, state);
+    this.asks.set(lane, { state, shown: null });
     return true;
   }
 
   /** The ask in `state` was refused: a control may be asked in it again. */
   refused(lane: string, state: string): void {
-    if (this.asked(lane, state)) this.states.delete(lane);
+    if (this.asked(lane, state)) this.asks.delete(lane);
   }
 
-  /** The lane stands in `state` now (null for none): an ask of another state goes. */
-  seen(lane: string, state: string | null): void {
-    if (this.states.has(lane) && this.states.get(lane) !== state) this.states.delete(lane);
+  /** The instance took the ask in `state` while the lane showed `shown`: it goes once the lane shows anything else. */
+  took(lane: string, state: string, shown: string): void {
+    const ask = this.asks.get(lane);
+    if (ask?.state === state) ask.shown = shown;
+  }
+
+  /**
+   * The lane stands in `state` now (null for none), shown as `shown` (what the surface draws of it, as text): an ask of
+   * another state goes, and so does one the instance took while the lane showed something else.
+   */
+  seen(lane: string, state: string | null, shown: string | null = null): void {
+    const ask = this.asks.get(lane);
+    if (!ask) return;
+    if (ask.state !== state || (ask.shown !== null && shown !== null && ask.shown !== shown)) this.asks.delete(lane);
   }
 }
 
@@ -408,14 +420,16 @@ export function ciWorkerStateOf(
 }
 
 /**
- * The state of a CI lane's worker that its controls follow (`CiAsks`): running (with why its last Pause was dropped),
- * a Pause asked, or paused until its end; null for a worker that cannot pause.
+ * The state of a CI lane's worker that its controls follow (`CiAsks`): its test (`test`, the surface's id of it, null
+ * when unknown), the instance's count of its pause state's changes (`pauseSeq`), and running (with why its last Pause
+ * was dropped), a Pause asked, or paused until its end; null for a worker that cannot pause.
  */
-export function ciControlStateKey(state: unknown): string | null {
+export function ciControlStateKey(state: unknown, test: string | null): string | null {
   const fields = pausingWorker(state);
   const id = fields ? readLiveWorkerId(fields.shard, fields.worker, fields.slot) : null;
   if (!id) return null;
-  const at = `${id.shard ?? ''}:${id.worker}`;
+  const seq = typeof fields!.pauseSeq === 'number' && Number.isInteger(fields!.pauseSeq) ? fields!.pauseSeq : 0;
+  const at = `${id.shard ?? ''}:${id.worker}:${test ?? ''}:${seq}`;
   const pause = readCiPause(state);
   if (pause) return `${at}:paused:${pause.until ?? ''}`;
   const ask = readCiPauseAsk(state);

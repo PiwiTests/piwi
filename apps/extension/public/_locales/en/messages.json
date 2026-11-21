@@ -8989,8 +8989,8 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Watched only: these run on CI, so nothing here steers them, except the controls of a CI test held or paused for you. Watch shows a running test’s page here.",
-    "description": "Runs window, under the list of CI runs in progress: they are only watched, but for Let it go (runs_letGo) on a failure held for the person and Pause, Resume and End the test of a test paused for them, and Watch (runs_watch) on a running test shows its page in the window."
+    "message": "Watched only: these run on CI, so nothing here steers them, except Pause, Resume, End the test and Let it go, for those who may control them. Watch shows a running test’s page here.",
+    "description": "Runs window, under the list of CI runs in progress: they are only watched, but for Pause, Resume, End the test and Let it go (runs_pause, runs_resume, runs_end, runs_letGo), offered to the people who may control the run, and Watch (runs_watch) on a running test shows its page in the window."
   },
   "runs_ciTests": {
     "message": "Tests running now",

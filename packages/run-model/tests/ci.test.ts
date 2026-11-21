@@ -99,7 +99,7 @@ describe('the CI runs of a project in progress', () => {
     expect(where(run(78, { branch: null }), true)).toBe('Shop');
     expect(where(run(78, { branch: null }), false)).toBeNull();
     expect(en.say(CI_READ_ONLY.key)).toContain(
-      'nothing here steers them, except the controls of a CI test held or paused for you',
+      'nothing here steers them, except Pause, Resume, End the test and Let it go, for those who may control them',
     );
   });
 });
@@ -327,12 +327,21 @@ describe('the controls of a CI lane, asked once per state', () => {
   };
 
   it('names each state of a lane’s worker apart: running, a Pause asked, paused until its end, a Pause dropped', () => {
-    expect(ciControlStateKey(state())).toBe(':3:running:');
-    expect(ciControlStateKey(state({ pauseAsked: { by: 'Ana' } }))).toBe(':3:asked');
-    expect(ciControlStateKey(state({ paused: PAUSED, pausedBy: 'Ana' }))).toBe(':3:paused:1763727900000');
-    expect(ciControlStateKey(state({ pauseDropped: 'No test runs.' }))).toBe(':3:running:No test runs.');
-    expect(ciControlStateKey(state({ pauses: undefined }))).toBeNull();
-    expect(ciControlStateKey(null)).toBeNull();
+    expect(ciControlStateKey(state(), 't1')).toBe(':3:t1:0:running:');
+    expect(ciControlStateKey(state({ pauseAsked: { by: 'Ana' }, pauseSeq: 1 }), 't1')).toBe(':3:t1:1:asked');
+    expect(ciControlStateKey(state({ paused: PAUSED, pausedBy: 'Ana', pauseSeq: 3 }), 't1')).toBe(
+      ':3:t1:3:paused:1763727900000',
+    );
+    expect(ciControlStateKey(state({ pauseDropped: 'No test runs.', pauseSeq: 2 }), 't1')).toBe(
+      ':3:t1:2:running:No test runs.',
+    );
+    // A Pause dropped again for the same reason, or the worker's next test, is another state.
+    expect(ciControlStateKey(state({ pauseDropped: 'No test runs.', pauseSeq: 4 }), 't1')).not.toBe(
+      ciControlStateKey(state({ pauseDropped: 'No test runs.', pauseSeq: 2 }), 't1'),
+    );
+    expect(ciControlStateKey(state(), 't2')).not.toBe(ciControlStateKey(state(), 't1'));
+    expect(ciControlStateKey(state({ pauses: undefined }), 't1')).toBeNull();
+    expect(ciControlStateKey(null, 't1')).toBeNull();
   });
 
   it('finds the state of a lane’s worker: by its lane and its worker, else, from an older reporter, its worker', () => {
@@ -344,6 +353,23 @@ describe('the controls of a CI lane, asked once per state', () => {
     expect(ciWorkerStateOf([lane1], { shard: null, slot: 1 }, 4)).toBeNull();
     expect(ciWorkerStateOf([older], { shard: null, slot: 2 }, 5)).toBe(older);
     expect(ciWorkerStateOf([lane1], { shard: 2, slot: 1 }, 3)).toBeNull();
+  });
+
+  it('forgets an ask the instance took once the lane shows anything new, whatever its state’s key', () => {
+    const asks = new CiAsks();
+    expect(asks.ask('lane', 'k')).toBe(true);
+    asks.seen('lane', 'k', 'shown-1');
+    asks.took('lane', 'k', 'shown-1');
+    // Redrawn as it was: still asked.
+    asks.seen('lane', 'k', 'shown-1');
+    expect(asks.asked('lane', 'k')).toBe(true);
+    // Anything new of the lane after the answer, even under the same key: asked anew.
+    asks.seen('lane', 'k', 'shown-2');
+    expect(asks.asked('lane', 'k')).toBe(false);
+    // An ask not answered yet stays while the lane's key stays.
+    asks.ask('lane', 'k');
+    asks.seen('lane', 'k', 'shown-3');
+    expect(asks.asked('lane', 'k')).toBe(true);
   });
 
   it('forgets an ask as the lane’s state changes, so the same state coming back is asked anew', () => {

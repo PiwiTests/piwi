@@ -968,8 +968,10 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 - The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
-- Every control but Pause, Share live and End the test while a Pause waits for a call (`give-up`, naming the worker)
-  names the stop shown (`since`), so a click made twice never answers the next stop.
+- Every control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the trace so far
+  (`trace`) and End the test while a Pause waits for a call (`give-up`, naming the worker) names the stop shown
+  (`since`), so a click made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share
+  live, Hold failures, Stop the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`).
 - At a stop, the test's controls are Resume, Step and Finish, and End the test where the stop's `intents` list `end`
   (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
@@ -1193,7 +1195,10 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   `ciControlsOffered` decides (**Pause**, **Resume**, **End the test**), each sending `ci-control` with its command,
   which the worker posts on that watch for the lane's worker (`CiRunsWatch.laneWorker`, `controlCiTest`), saying why
   not (`unwatched`, `uncontrolled`, `no-worker`) or the instance's sentence. Let it go and the controls are asked once
-  in each state of the lane (`CiAsks`, `ciStateKey`), their buttons off until it changes or the ask is refused.
+  in each state of the lane (`CiAsks`, `ciStateKey`: its hold, or its test and the instance's `pauseSeq`), their
+  buttons off until it changes, the lane shows anything new after the instance took the ask (`ciShown`), or the ask is
+  refused; what the ask came to shows under them in that state alone (`ciNote.state`), and the box is drawn again as
+  the state changes.
 
 ### Run-level controls, keys and the window's place
 

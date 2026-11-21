@@ -7573,7 +7573,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Regarder seulement : elles tournent en CI, rien ici ne les pilote, sauf les commandes d’un test de CI retenu ou mis en pause pour vous. Regarder affiche ici la page d’un test en cours."
+    "message": "Regarder seulement : elles tournent en CI, rien ici ne les pilote, sauf Pause, Reprendre, Terminer le test et Le laisser partir, pour qui peut les contrôler. Regarder affiche ici la page d’un test en cours."
   },
   "runs_ciTests": {
     "message": "Tests en cours"

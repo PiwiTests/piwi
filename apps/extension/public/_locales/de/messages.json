@@ -7573,7 +7573,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Nur zum Ansehen: Diese Läufe laufen in der CI, nichts hier steuert sie, außer den Steuerelementen eines für Sie angehaltenen oder pausierten CI-Tests. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
+    "message": "Nur zum Ansehen: Diese Läufe laufen in der CI, nichts hier steuert sie, außer Anhalten, Fortsetzen, Test beenden und Freigeben, für alle, die sie steuern dürfen. „Ansehen“ zeigt hier die Seite eines laufenden Tests."
   },
   "runs_ciTests": {
     "message": "Jetzt laufende Tests"
