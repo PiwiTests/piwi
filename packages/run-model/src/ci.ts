@@ -145,8 +145,9 @@ export function readCiHold(data: unknown): CiHold | null {
 }
 
 /**
- * The hold of a CI lane (`slot`, Playwright's `parallelIndex`, in its shard) among a run's holds: the one that names
- * the lane, else, from a reporter that names none, the one of the lane's worker (`worker`, null when unknown).
+ * The hold of a CI lane (`slot`, Playwright's `parallelIndex`, in its shard) among a run's holds: the one of the lane's
+ * worker (`worker`) that names the lane, or, from a reporter that names none, the one of that worker. A hold of
+ * another worker of the lane, one that left it, is none of its test's; with the worker unknown (null), the lane's.
  */
 export function ciHoldOf(
   holds: Iterable<CiHold>,
@@ -155,7 +156,8 @@ export function ciHoldOf(
 ): CiHold | null {
   for (const hold of holds) {
     if (hold.worker.shard !== lane.shard) continue;
-    if (hold.worker.slot !== undefined ? hold.worker.slot === lane.slot : hold.worker.worker === worker) return hold;
+    if (worker !== null && hold.worker.worker !== worker) continue;
+    if (hold.worker.slot !== undefined ? hold.worker.slot === lane.slot : worker !== null) return hold;
   }
   return null;
 }

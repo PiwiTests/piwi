@@ -388,6 +388,11 @@ export class CiRunsWatch {
         await response.body?.cancel().catch(() => {});
         return;
       }
+      // The stream opened again names only the workers connected now: a hold heard before goes with its connection.
+      if (f.holds.size) {
+        f.holds.clear();
+        this.tellSoon();
+      }
       const reader = response.body.pipeThrough(new TextDecoderStream()).getReader();
       abort.signal.addEventListener('abort', () => void reader.cancel().catch(() => {}), { once: true });
       const parser = new EventParser();

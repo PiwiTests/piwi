@@ -132,10 +132,13 @@ describe('a CI test held at its failure for its controllers', () => {
   it('finds a lane’s hold by its lane, else, from an older reporter, by its worker', () => {
     const hold = readCiHold(event())!;
     const older = readCiHold(event({ slot: undefined, worker: 5 }))!;
-    expect(ciHoldOf([hold, older], { shard: null, slot: 1 }, 9)).toBe(hold);
+    expect(ciHoldOf([hold, older], { shard: null, slot: 1 }, 3)).toBe(hold);
     expect(ciHoldOf([hold, older], { shard: null, slot: 4 }, 5)).toBe(older);
     expect(ciHoldOf([hold, older], { shard: 2, slot: 1 }, 3)).toBeNull();
     expect(ciHoldOf([hold], { shard: null, slot: 0 }, 3)).toBeNull();
+    // A hold of a worker that left the lane is not the hold of the next worker's test there.
+    expect(ciHoldOf([hold], { shard: null, slot: 1 }, 5)).toBeNull();
+    expect(ciHoldOf([hold], { shard: null, slot: 1 }, null)).toBe(hold);
   });
 
   it('says where it stands, for whom and until when, its place, and that the CI job’s timeout still runs', () => {
