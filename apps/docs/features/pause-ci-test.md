@@ -22,15 +22,23 @@ default. It is off in every project, and needs `@piwitests/reporter` 0.75.0 or l
 its lanes offer no **Pause**.
 
 The CI workers of the runs going on hear the change at once. While it is on, a CI worker follows its test's calls
-through Playwright's in-process instrumentation, as a local run that may pause does, so a pause stops where a local
-run's would.
+through Playwright's in-process instrumentation, as a local run that may pause does, so a pause stops a call before it
+waits for its element, where a local run's would. A test whose page was watched before the setting was turned on was
+followed through Playwright's own call stream, which would stop the call only after that wait: it takes no Pause, and
+says so; the worker's next test can pause.
 
 ## Pause, Resume, End the test
 
 In the run page's lane panel of a CI lane, someone with the `run:control` permission on the project
 ([roles](/operate/project-access#what-each-role-can-do)) sees **Pause** while the lane's test runs. The test stops
 before its next call, the way a local run's **Pause** stops it: a test waiting in a long call stops once that call
-ends.
+ends. Until then the lane panel says **Pause asked by Ana**, and **Resume** takes the Pause back. One Pause at a time:
+a second one, from anyone, is refused naming who asked the first.
+
+The worker drops a Pause it cannot take, and the lane panel says why, with **Pause** offered again: no test runs (the
+worker is between tests, or in a `beforeAll` hook), the test's function ended first (its `afterEach` hooks and
+fixtures never stop, and a failure is then [held](./hold-ci-failure) as any other), nobody with `run:control` watches
+the lane in full any more, or the setting went off.
 
 While it is paused, the test's row and its lane panel say by whom and until when: **Paused by Ana · until 12:05**,
 or **Paused · until 12:05** when the instance knows no name. The lane panel shows the call the test stopped before and its place, and the live
@@ -38,9 +46,13 @@ view goes on as for any watched test: the image, [page events, text and filmstri
 [Inspect](./live-inspect). The lane panel offers:
 
 - **Resume**: the test goes on from where it stopped;
-- **End the test**: the test ends there, as a local run's **End the test** ends it: the call it stopped before never
-  runs, the rest of the test is skipped, and its `afterEach` hooks and fixtures tear down. Its result is skipped, with
-  the reason a local run's gives.
+- **End the test**: the test fails there, at once, with the error `Ended from Piwi by Ana` (`Ended from Piwi` when the
+  instance knows no name), so the CI job stays red and the test's retries run as after any failure. The call it
+  stopped before never runs, nor does anything after it in the test or its `beforeEach` hook: the call stays held
+  until its page closes, then fails, which the result may list as a second error. The `afterEach` hooks and fixtures
+  tear down as after any failure. On a Playwright runner whose internals Piwi does not recognize, the test fails at
+  its next locator call or as its function ends instead, and the call it stopped before runs first unless it is a
+  locator call on Playwright 1.62 or later.
 
 A Viewer or a Contributor watching sees the pause, and no control. A refusal is said in the instance's words, such as
 "The project's setting is off" or "You may watch this run, not control it".
@@ -65,7 +77,8 @@ A pause ends at the first of:
   lane, as for a [hold](./hold-ci-failure#when-it-ends);
 - the project's setting turned off, the hold's included, or the run's live view ending.
 
-A **Pause** that no call took yet is dropped at the same ends, and as its test ends: it never stops the next test.
+A **Pause** that no call took yet is dropped at the same ends, and as its test's function ends: it never stops the
+next test.
 Each command is logged by the instance at info level, with the run, the worker, the command and who asked. Nothing is
 stored.
 

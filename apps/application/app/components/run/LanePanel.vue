@@ -81,7 +81,8 @@ import {
 } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
 import { stopStoodMs, stopWords, type ShownStop } from '~/utils/stop-words';
-import { ciControlsOffered } from '@piwitests/run-model/ci';
+import { ciControlsOffered, ciPauseAskWords, readCiPauseAsk } from '@piwitests/run-model/ci';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 
 const props = defineProps<{
   runId: number;
@@ -555,7 +556,6 @@ const shownCall = computed<LiveCall | null>(
     currentLog.value?.call ??
     (laterStep.value ? { title: stepLabel(laterStep.value), file: null, line: null } : call.value),
 );
-/** How long the running call has run, counted on between two call logs, or how long the call that ended took. */
 /**
  * The controls of the CI lane shown this person sees (`ciControlsOffered`): Pause while its test runs, Resume and End
  * the test while it is paused; none for someone who may not control the run's project, or a worker that cannot pause.
@@ -565,11 +565,16 @@ const ciControls = computed(() => {
   const runs = !ended.value && !outcome.value && !!watchedTest.value;
   return ciControlsOffered(props.workerState, { shows: true, controller: true }, runs);
 });
+/** A Pause of the CI lane shown that waits for its test's next call, or why its worker dropped the last one. */
+const pauseAskWords = computed(() =>
+  props.workerState ? ciPauseAskWords(readCiPauseAsk(props.workerState), englishRunSpeaker) : null,
+);
 /** What reaches the test from here, for this person: Let it go, the CI lane's controls, or nothing. */
 const reaches = computed(() => {
   if (canLetGo.value) return ' but Let it go';
   return ciControls.value.length ? ' but Pause, Resume and End the test' : '';
 });
+/** How long the running call has run, counted on between two call logs, or how long the call that ended took. */
 const callMs = computed(() => {
   const shown = currentLog.value;
   if (!shown) return 0;
@@ -899,7 +904,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         :project-name="projectName"
       />
       <LanePaused
-        v-else-if="(pausedStop || ciControls.length) && workerState && !ended"
+        v-else-if="(pausedStop || ciControls.length || pauseAskWords) && workerState && !ended"
         :run-id="runId"
         :worker="{
           shard: workerState.shard,
@@ -908,6 +913,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         }"
         :stop="pausedStop"
         :controls="ciControls"
+        :ask-words="pauseAskWords"
         :watch-id="watchId"
         :project-key="projectKey"
         :project-name="projectName"

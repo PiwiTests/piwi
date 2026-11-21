@@ -3,12 +3,13 @@
  * A CI lane's controls for the people who may control the run, in the lane panel, in a local run's words and controls
  * (`@piwitests/run-model`'s `CI_CONTROL_WORDS`): **Pause** while its test runs; and, while the test is paused for its
  * controllers, by whom and until when (`Paused by Ana · until 12:05`, else `Paused`), the call it stopped
- * before and its place, that the CI job's own timeout still runs, and **Resume** and **End the test**. Each asks the
- * instance on the page's watch, which shows the worker in full (`POST …/live-view/control`); a refusal says why. Anyone
- * else watching sees the pause, and no control.
+ * before and its place, that the CI job's own timeout still runs, and **Resume** and **End the test**. While a Pause
+ * waits for the test's next call it says so (`Pause asked by Ana`), and **Resume** takes it back; once the worker
+ * dropped one, it says why (`askWords`). Each asks the instance on the page's watch, which shows the worker in full
+ * (`POST …/live-view/control`); a refusal says why. Anyone else watching sees the pause, and no control.
  */
 import type { LiveControlCommand, LiveWorkerId } from '@piwitests/core/live-view';
-import { CI_CONTROL_WORDS } from '@piwitests/run-model/ci';
+import { CI_CANCEL_PAUSE_TITLE, CI_CONTROL_WORDS } from '@piwitests/run-model/ci';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
 import { pausedStopWords, stopWords, type ShownStop } from '~/utils/stop-words';
 
@@ -21,6 +22,8 @@ const props = defineProps<{
   controls: LiveControlCommand[];
   /** The id of the page's watch of the run, which shows the worker in full; null while none is open. */
   watchId: string | null;
+  /** A Pause that waits for the test's next call, or why the worker dropped the last one (`ciPauseAskWords`). */
+  askWords?: string | null;
   /** Piwi project id + name, for the IDE opener of the paused call's place. */
   projectKey?: string | number | null;
   projectName?: string | null;
@@ -50,6 +53,9 @@ const ICONS: Record<LiveControlCommand, string> = {
 };
 
 function say(control: LiveControlCommand, part: 'label' | 'title'): string {
+  // Resume before the test paused takes the Pause back.
+  if (control === 'resume' && part === 'title' && !paused.value)
+    return englishRunSpeaker.say(CI_CANCEL_PAUSE_TITLE.key);
   return englishRunSpeaker.say(CI_CONTROL_WORDS[control][part].key);
 }
 
@@ -108,7 +114,11 @@ async function ask(control: LiveControlCommand): Promise<void> {
       >
     </div>
   </div>
-  <div v-else-if="controls.length" class="flex flex-wrap items-center gap-x-3 gap-y-1" data-testid="live-controls">
+  <div
+    v-else-if="controls.length || askWords"
+    class="flex flex-wrap items-center gap-x-3 gap-y-1"
+    data-testid="live-controls"
+  >
     <UButton
       v-for="control in controls"
       :key="control"
@@ -123,5 +133,6 @@ async function ask(control: LiveControlCommand): Promise<void> {
       @click="ask(control)"
       >{{ say(control, 'label') }}</UButton
     >
+    <span v-if="askWords" class="text-xs text-muted" data-testid="live-pause-ask">{{ askWords }}</span>
   </div>
 </template>

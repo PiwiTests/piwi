@@ -104,6 +104,11 @@ test.describe('Pause a CI test', () => {
       // Authentication is off on this server: whoever watches may control the run.
       await panel.getByTestId('live-control-pause').click({ timeout: 15_000 });
       await expect.poll(commands).toEqual([{ type: 'pause' }]);
+      // Asked and taken, the Pause waits for the test's next call: the panel says so, and offers Resume in its place.
+      expect(await post({ type: 'pause-asked', waiting: true })).toBe(true);
+      await expect(panel.getByTestId('live-pause-ask')).toHaveText('Pause asked');
+      await expect(panel.getByTestId('live-control-resume')).toBeVisible();
+      await expect(panel.getByTestId('live-control-pause')).toHaveCount(0);
       expect(await post({ type: 'stop', stop })).toBe(true);
       const row = page.getByTestId('live-paused');
       await expect(row).toHaveAttribute('data-reason', 'pause', { timeout: 15_000 });
@@ -126,6 +131,7 @@ test.describe('Pause a CI test', () => {
       await expect(paused).toBeHidden({ timeout: 10_000 });
       await expect(row).toBeHidden({ timeout: 10_000 });
       await panel.getByTestId('live-control-pause').click({ timeout: 15_000 });
+      await expect.poll(commands).toHaveLength(3);
       expect(await post({ type: 'stop', stop })).toBe(true);
       await paused.getByRole('button', { name: 'End the test' }).click({ timeout: 15_000 });
       await expect
@@ -192,6 +198,18 @@ test.describe('Pause a CI test', () => {
       await page.getByRole('button', { name: /^Watch worker \d+ live$/ }).click({ timeout: 30_000 });
       const panel = page.getByTestId('lane-panel');
       await expect(panel.getByTestId('live-frame')).toBeVisible({ timeout: 30_000 });
+      // The run page heard the worker, which can hold and takes no Pause now: no Pause shows.
+      await expect
+        .poll(
+          async () =>
+            (
+              (await (await request.get(`/api/test-runs/${runId}/live-view/workers`)).json()) as {
+                workers: Array<Record<string, unknown>>;
+              }
+            ).workers[0],
+        )
+        .toMatchObject({ holds: true });
+      await expect(panel.getByTestId('live-follow')).toBeVisible();
       await expect(panel.getByTestId('live-control-pause')).toHaveCount(0);
       const hello = worker.heard();
       expect(hello.some((message) => message.type === 'pause')).toBe(false);
