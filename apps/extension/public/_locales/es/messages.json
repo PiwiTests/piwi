@@ -6959,6 +6959,30 @@
   "runs_ciResumeTitle": {
     "message": "Dejar que la prueba siga desde donde está en pausa"
   },
+  "runs_pauseAsked": {
+    "message": "Pausa pedida"
+  },
+  "runs_pauseAskedBy": {
+    "message": "Pausa pedida por $name$",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "La pausa se descartó: $why$",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Retirar la pausa: la prueba sigue sin detenerse"
+  },
   "runs_stateRunning": {
     "message": "En curso"
   },

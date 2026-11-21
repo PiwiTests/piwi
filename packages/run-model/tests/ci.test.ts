@@ -17,6 +17,8 @@ import {
   readCiHold,
   CI_CONTROL_WORDS,
   ciControlsOffered,
+  ciPauseAskWords,
+  readCiPauseAsk,
   ciPauseWords,
   pausedByWords,
   readCiPause,
@@ -234,6 +236,29 @@ describe('a CI test paused for its controllers', () => {
     expect(ciControlsOffered(running(), { shows: false, controller: true }, true)).toEqual([]);
     expect(ciControlsOffered(running(), { shows: true, controller: false }, true)).toEqual([]);
     expect(ciControlsOffered(null, CONTROLLER, true)).toEqual([]);
+  });
+
+  it('reads a Pause the worker has not stopped for yet, and why it dropped the last one', () => {
+    expect(readCiPauseAsk(running({ pauseAsked: { by: 'Ana' } }))).toEqual({ asked: { by: 'Ana' }, dropped: null });
+    expect(readCiPauseAsk(running({ pauseAsked: {} }))).toEqual({ asked: { by: null }, dropped: null });
+    expect(readCiPauseAsk(running({ pauseDropped: 'No test runs on this worker now.' }))).toEqual({
+      asked: null,
+      dropped: 'No test runs on this worker now.',
+    });
+    expect(readCiPauseAsk(running({ pauses: undefined, pauseAsked: { by: 'Ana' } }))).toEqual({
+      asked: null,
+      dropped: null,
+    });
+    expect(ciPauseAskWords({ asked: { by: 'Ana' }, dropped: null }, en)).toBe('Pause asked by Ana');
+    expect(ciPauseAskWords({ asked: { by: null }, dropped: null }, en)).toBe('Pause asked');
+    expect(ciPauseAskWords({ asked: null, dropped: 'Resume came before the test paused.' }, en)).toBe(
+      'The Pause was dropped: Resume came before the test paused.',
+    );
+    expect(ciPauseAskWords({ asked: null, dropped: null }, en)).toBeNull();
+  });
+
+  it('offers Resume alone while a Pause waits for the test’s next call, which takes it back', () => {
+    expect(ciControlsOffered(running({ pauseAsked: { by: 'Ana' } }), CONTROLLER, true)).toEqual(['resume']);
   });
 
   it('words each control as a local run’s', () => {

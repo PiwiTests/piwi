@@ -6,10 +6,16 @@
  * number on the instance names them (`CI run #78`), their branch and project say where they run, their tally how far
  * they are, and their page is where to watch a running test.
  */
-import { isEpochMs, readLiveCall, readLiveWorkerId, type LiveCall, type LiveWorkerId } from '@piwitests/core/live-view';
+import {
+  isEpochMs,
+  readLiveCall,
+  readLiveWorkerId,
+  type LiveCall,
+  type LiveControlCommand,
+  type LiveWorkerId,
+} from '@piwitests/core/live-view';
 import { RUN_ORIGIN_METADATA_KEY, parseRunOrigin } from '@piwitests/core/wire';
 import type { RunMessage, RunSpeaker } from './words';
-import type { LiveControlCommand } from '@piwitests/core/live-view';
 
 /** A CI run in progress, as the instance lists it. */
 export interface CiRun {
@@ -327,8 +333,43 @@ export function ciControlsOffered(
   const fields = pausingWorker(state);
   if (!fields || !watch.shows || !watch.controller) return [];
   if (readCiPause(state)) return ['resume', 'end'];
+  // A Pause that waits for the test's next call is taken back by Resume.
+  if (readCiPauseAsk(state).asked) return ['resume'];
   return running && !fields.paused ? ['pause'] : [];
 }
+
+/**
+ * A CI worker's Pause it has not stopped for yet (`asked`, with who asked it, null for no name), and why it dropped the
+ * last one it was asked (`dropped`), from the run's `live-worker` event of a worker that can pause; both null for
+ * anything else.
+ */
+export function readCiPauseAsk(data: unknown): {
+  asked: { by: string | null } | null;
+  dropped: string | null;
+} {
+  const fields = pausingWorker(data);
+  const asked =
+    fields?.pauseAsked && typeof fields.pauseAsked === 'object' ? (fields.pauseAsked as Record<string, unknown>) : null;
+  const by = typeof asked?.by === 'string' && asked.by.trim() ? asked.by.slice(0, MAX_NAME) : null;
+  const dropped = typeof fields?.pauseDropped === 'string' && fields.pauseDropped ? fields.pauseDropped : null;
+  return { asked: asked ? { by } : null, dropped: dropped && dropped.slice(0, MAX_DROPPED) };
+}
+
+/** The longest reason a surface says for a dropped Pause. */
+const MAX_DROPPED = 300;
+
+/**
+ * What a surface says of a CI lane's Pause beside its controls: `Pause asked by Ana` while it waits for the test's next
+ * call, or why the worker dropped it; null for neither.
+ */
+export function ciPauseAskWords(ask: ReturnType<typeof readCiPauseAsk>, speaker: RunSpeaker): string | null {
+  if (ask.asked)
+    return ask.asked.by ? speaker.say('runs_pauseAskedBy', { name: ask.asked.by }) : speaker.say('runs_pauseAsked');
+  return ask.dropped ? speaker.say('runs_pauseDropped', { why: ask.dropped }) : null;
+}
+
+/** Resume's title on a CI lane while a Pause waits for the test's next call: it takes the Pause back. */
+export const CI_CANCEL_PAUSE_TITLE: RunMessage = { key: 'runs_ciCancelPauseTitle' };
 
 /** Each control of a CI lane, in a local run's words: its label and its title. */
 export const CI_CONTROL_WORDS: Record<LiveControlCommand, { label: RunMessage; title: RunMessage }> = {

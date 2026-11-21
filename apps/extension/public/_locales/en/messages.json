@@ -8235,6 +8235,34 @@
     "message": "Let the test go on from where it is paused",
     "description": "Run page and Runs window, the tooltip of Resume on a CI test paused for the people who may control the run."
   },
+  "runs_pauseAsked": {
+    "message": "Pause asked",
+    "description": "Run page and Runs window, beside a CI lane's controls while a Pause waits for its test's next call."
+  },
+  "runs_pauseAskedBy": {
+    "message": "Pause asked by $name$",
+    "description": "Run page and Runs window, beside a CI lane's controls while a Pause waits for its test's next call. $name$ is who asked it.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "The Pause was dropped: $why$",
+    "description": "Run page and Runs window, beside a CI lane's controls once the worker dropped the Pause it was asked. $why$ is the worker's reason, in English.",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Take the Pause back: the test goes on without stopping",
+    "description": "Run page and Runs window, the tooltip of Resume on a CI lane while a Pause waits for its test's next call: it takes the Pause back."
+  },
   "runs_stateRunning": {
     "message": "Running",
     "description": "Runs window, the state of a test that runs."
