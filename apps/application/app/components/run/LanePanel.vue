@@ -6,8 +6,9 @@
  * watch of the run (`useLiveWatch`), which **Watch all** shares; it opens on the worker's latest tile when it came
  * within `TILE_OPEN_MS`. The worker also sends the call its test is in as Playwright logs it (in a CI run from its call
  * stream, in a shared run from its in-process instrumentation, the call alone for a browser it connected to): the
- * log's last lines beside the image, how long the call has run and the elements its locator matches, and over the
- * image the first one outlined and the point an input action acts on; **Zoom to the element** crops the image around
+ * log's last lines beside the image, how long the call has run and the elements its locator matches (while the test
+ * stands at a stop, the stop as its row says it, `stop`, in their place), and over the image the first one
+ * outlined and the point an input action acts on; **Zoom to the element** crops the image around
  * that element, a click on the image zooms where it points.
  *
  * Under the image, the layers the view asks of the worker while it shows them (`@piwitests/core/live-layers`): the
@@ -78,6 +79,7 @@ import {
   type InspectHeard,
 } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
+import { stopStoodMs, stopWords, type ShownStop } from '~/utils/stop-words';
 
 const props = defineProps<{
   runId: number;
@@ -102,20 +104,22 @@ const props = defineProps<{
   live: LiveWatchHandle;
   /** Why **Follow what needs attention** moved the view here, while it shows that lane. */
   movedWhy?: string | null;
-  /** The worker shown, as the run's live view says it stands: a failed CI test held at its line shows its hold. */
+  /** The stop the worker's test stands at (`watchedStop`), which the view says as its row does; null for none. */
+  stop?: ShownStop | null;
+  /** The worker shown, as the run's live view names it: the worker **Let it go** of a held test reaches. */
   workerState?: LiveWorkerState | null;
   /** The run's project, for who may let a held test go. */
   projectId?: number | null;
 }>();
 const open = defineModel<boolean>('open', { required: true });
-/** The held failure of the worker shown, while it holds. */
-const heldStop = computed(() => (props.workerState?.paused?.reason === 'held' ? props.workerState.paused : null));
+/** The held failure of the worker shown, while it holds: its stop as its row reads it (`watchedStop`). */
+const heldStop = computed(() => (props.stop?.reason === 'held' && props.stop.held ? props.stop : null));
 const { can } = useAuth();
 /** Whether this person may end the hold shown: one who may control the run's project, of a worker that can hold. */
 const canLetGo = computed(
   () =>
-    !!heldStop.value &&
-    props.workerState?.holds === true &&
+    !!heldStop.value?.held?.holds &&
+    !!props.workerState &&
     props.projectId != null &&
     can('run:control', props.projectId),
 );
@@ -553,9 +557,17 @@ const callMs = computed(() => {
   if (!shown) return 0;
   return shown.status === 'running' ? shown.ms + Math.max(0, now.value - logAt.value) : shown.ms;
 });
-/** What the running call's locator matches, said when it explains a wait. */
+/** The clock the rows' stops read too, so the panel's time of a stop turns over with its row's. */
+const stopsNow = useStopClock();
+/** The test's stop, in its row's words, and for how long once it stood a while; null while the test goes on. */
+const stopLine = computed(() => {
+  if (!props.stop) return null;
+  const stood = stopStoodMs(props.stop.since, stopsNow.value);
+  return { words: stopWords(props.stop.reason), stood: stood === null ? null : formatLongDuration(stood) };
+});
+/** What the running call's locator matches, said when it explains a wait, and not while its test stands at a stop. */
 const targetText = computed(() => {
-  const target = currentLog.value?.status === 'running' ? currentLog.value.target : null;
+  const target = currentLog.value?.status === 'running' && !props.stop ? currentLog.value.target : null;
   if (!target) return '';
   if (target.count === 0) return 'No element matches its locator yet';
   if (target.count > 1) return `${target.count} elements match its locator`;
@@ -863,7 +875,6 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
           ...(workerState.slot === undefined ? {} : { slot: workerState.slot }),
         }"
         :stop="heldStop"
-        :held-for="workerState.heldFor ?? []"
         :can-let-go="canLetGo"
         :watch-id="watchId"
         :project-key="projectKey"
@@ -963,10 +974,25 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
               /></template>
             </template>
           </figcaption>
-          <p v-if="currentLog && !ended" class="text-xs text-muted" data-testid="live-call-state">
-            <template v-if="currentLog.status === 'running'">Running for {{ formatLongDuration(callMs) }}</template>
+          <p
+            v-if="(currentLog || stopLine) && !ended"
+            class="text-xs text-muted"
+            data-testid="live-call-state"
+            :data-stop="stop?.reason"
+          >
+            <template v-if="stopLine"
+              ><UIcon
+                :name="stop?.reason === 'held' ? 'i-lucide-hand' : 'i-lucide-pause'"
+                class="mr-1 size-3 align-[-0.125em]"
+                :class="stop?.reason === 'held' ? 'text-error' : 'text-warning'"
+              /><span class="font-semibold text-highlighted">{{ stopLine.words }}</span
+              ><template v-if="stopLine.stood"> · for {{ stopLine.stood }}</template></template
+            >
+            <template v-else-if="currentLog?.status === 'running'"
+              >Running for {{ formatLongDuration(callMs) }}</template
+            >
             <template v-else
-              >{{ currentLog.status === 'failed' ? 'Failed after' : 'Done in' }} <DurationValue :ms="callMs"
+              >{{ currentLog?.status === 'failed' ? 'Failed after' : 'Done in' }} <DurationValue :ms="callMs"
             /></template>
             <template v-if="targetText">
               · <span data-testid="live-call-target">{{ targetText }}</span></template

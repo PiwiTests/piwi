@@ -15,6 +15,7 @@ import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
+import { watchedStop } from '~/utils/stop-words';
 import { PRESSED_TOGGLE_CLASS } from '@piwitests/run-ui/ui-classes';
 import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
@@ -421,6 +422,16 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 }
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
+/**
+ * The stop the watched worker's test stands at, read as its row reads it (`watchedStop`): of the worker now in the
+ * view's lane, or of the worker watched when it says no lane.
+ */
+const watchedTestStop = computed(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  const worker = (shown.slot === undefined ? null : laneWorker({ shard: shown.shard, slot: shown.slot })) ?? shown;
+  return watchedStop(dedupedDisplayCases.value, liveWorkers.value, worker);
+});
 
 // The page's one watch of the run: the lane panel's full view and Watch all's tiles, on one connection.
 const live = useLiveWatch(() => Number(runId));
@@ -1776,6 +1787,7 @@ const moreMenuItems = computed(() => {
         :worker-state="watchedWorker"
         :project-id="testRun?.projectId ?? null"
         :moved-why="movedWhy"
+        :stop="watchedTestStop"
         v-model:attention="followAttention"
       />
     </ClientOnly>

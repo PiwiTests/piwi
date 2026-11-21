@@ -43,9 +43,9 @@ The tray menu, in the editors' order: **Show the stopped test** if one waits, **
 running test (machine kept awake), **MCP server…**, **Desktop app settings…**, **Run in background** (off, closing
 the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit Piwi Desktop**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
 and macOS menu items. **Open in a
-window**, on a worker of the [Local runs tray](./desktop-runs), keeps that worker in a window above the others.
+window**, on a worker of the [Local runs tray](./desktop-runs), keeps it on top, then says how its run ended.
 While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
-the Dock icon and in the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)
+the Dock icon and the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)
 says how it stands: blue while it runs, red once a test failed, violet while a test of the app's runs, or of an
 editor's, waits at a stop for you (`1 test waits for you`). A run from the window's Local runs tray flashes its outcome
 as it ends (slate when interrupted), whatever else runs, and, failed while you look away, bounces the Dock icon or

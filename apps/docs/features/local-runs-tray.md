@@ -51,6 +51,12 @@ your terminal, as the run button's **Copy as command** writes it, and **Remove f
 runs** removes all of them. While the tray is
 closed, a run that ends marks the sidebar's **Local runs** with a dot, red when it failed, until you open the tray.
 
+**Open the run in a separate window**, the run's window button, shows the whole run in a window of its own:
+its **Stop** or **Run again**, **Hold failures**, links, workers, failures and output. **Run again** there runs in
+that window; a link opens in the app's window. **Show in the tray**, closing the window, or that button, now **Show
+the run here**, brings it back. The window stays open whatever page the app shows and through a reload, and closes as
+its run leaves the tray and with the app; one the reloaded tray shows no run in closes.
+
 A reproduction, a bisect step or a Flake Lab run that went to the editor open on the project's linked folder
 ([A reproduction in your editor](./desktop-runs#a-reproduction-in-your-editor)) says where its tests wait,
 **In Visual Studio Code**, read only, with no **Hold failures**: the editor holds them. Its line is marked while one
@@ -99,12 +105,6 @@ Each run shows its output under its workers, in Playwright's terminal colors, fo
 scroll up; **Go to the latest line** follows it again. Above it, a field keeps only the lines holding what you type,
 case and accents ignored; **Go to the first error** scrolls to the first failure Playwright printed; a toggle wraps
 long lines; and **Copy output** copies every line the tray keeps, without the colors. Its corner drags it taller.
-**Open the output in a
-separate window**, the window button on the run, moves it to a window of its own, beside your editor or on another
-screen, still updating, with the run's **Stop**. Closing that window, or the same button, now **Show the output
-here**, brings it back. The window stays open whatever page the app shows, an analytics dashboard in TV mode
-included, and through a reload; it closes as its run leaves the tray (**Clear finished runs**) and with the app. A
-window the reloaded tray no longer shows a run in closes.
 
 ## A reload
 

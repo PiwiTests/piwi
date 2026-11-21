@@ -1940,7 +1940,9 @@ async function runSingleSimulation(
             const of = {
               title: test.title,
               location: test.location,
+              retries: attempt,
               workerIndex,
+              parallelIndex,
               shardIndex: shardOverride?.shardIndex ?? null,
               browser: test.browser ?? null,
             };

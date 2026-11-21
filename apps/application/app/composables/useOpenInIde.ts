@@ -23,6 +23,7 @@
  * the JetBrains plugin and the VS Code extension, with `debug=1`: the IDE opens
  * the failing line and asks before it runs the test.
  */
+import { RUN_OUTPUT_CHANNEL, type RunOutputMessage } from '~/utils/run-output-channel';
 import {
   type IdeMethod,
   buildJetbrainsHttpUrl,
@@ -319,6 +320,14 @@ export function useOpenInIde() {
 
   async function openInIde(target: OpenTarget) {
     if (!import.meta.client) return;
+    // A run's or a worker's window holds no grant of the shell: the dashboard window opens the file for it.
+    const label = tauriWindowLabel();
+    if (tauriCore() && (label?.startsWith('output-') || label?.startsWith('worker-'))) {
+      const channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL);
+      channel.postMessage({ type: 'open-in-ide', target: { ...target } } satisfies RunOutputMessage);
+      channel.close();
+      return;
+    }
 
     const method = target.method ?? prefs.value.method;
     const rel = target.filePath;

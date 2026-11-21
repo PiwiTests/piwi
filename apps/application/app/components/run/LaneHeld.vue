@@ -7,15 +7,15 @@
  * instance to end the hold on the page's watch, which shows the worker in full; the test then tears down as it would
  * have.
  */
-import type { LiveStop, LiveWorkerId } from '@piwitests/core/live-view';
+import type { LiveWorkerId } from '@piwitests/core/live-view';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
-import { heldStopWords, stopWords } from '~/utils/stop-words';
+import { heldStopWords, stopWords, type ShownStop } from '~/utils/stop-words';
 
 const props = defineProps<{
   runId: number;
   worker: LiveWorkerId;
-  stop: LiveStop;
-  heldFor: string[];
+  /** The held stop, as the test's row reads it too (`testStop`): its call, and its hold's end and controllers. */
+  stop: ShownStop;
   /** Whether this person may end the hold: **Let it go** shows. */
   canLetGo: boolean;
   /** The id of the page's watch of the run, which shows the worker in full; null while none is open. */
@@ -28,7 +28,7 @@ const props = defineProps<{
 const toast = useToast();
 const asked = ref(false);
 const state = computed(() => stopWords('held'));
-const held = computed(() => heldStopWords(props.stop, props.heldFor));
+const held = computed(() => heldStopWords({ until: props.stop.held?.until }, props.stop.held?.heldFor ?? []));
 
 async function letGo(): Promise<void> {
   if (asked.value || !props.watchId) return;
