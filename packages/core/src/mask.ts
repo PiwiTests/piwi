@@ -883,13 +883,19 @@ export function withoutFieldSecrets(snapshot: string, secrets: readonly string[]
   return hideKnownValues(out, values);
 }
 
-/** The last character of a text {@link cutText} shortened: what tells {@link hideKnownValues} that the text was cut. */
+/**
+ * The last character of a text {@link cutText} shortened, and the one Playwright cuts a text with (an element's text or
+ * attribute in the preview a call log shows): where {@link hideKnownValues} looks for the start of a value.
+ */
 export const CUT_MARK = '…';
+
+/** The fewest characters of a value's start that {@link hideKnownValues} hides before a {@link CUT_MARK}. */
+const MIN_CUT_START = 4;
 
 /**
  * `text` as it is when it is `max` characters or fewer, else its first `max - 1` characters and {@link CUT_MARK}: how a
  * text is cut before {@link hideKnownValues} hides the values the attempt knows in it, which then also hides the start
- * of one the cut left at its end. Pure.
+ * of one the cut left at its end, within `max` characters. Pure.
  */
 export function cutText(text: string, max: number): string {
   return text.length <= max ? text : `${text.slice(0, Math.max(0, max - 1))}${CUT_MARK}`;
@@ -900,35 +906,57 @@ export function cutText(text: string, max: number): string {
  * and as a quoted value of an ARIA snapshot escapes it. A shorter value is left: it would also match inside words,
  * numbers and markup that have nothing to do with it (a three-letter value hides part of every word that holds it),
  * so a text shows it only where a rule reads where it stands (a field's value in a snapshot line, `withoutFieldSecrets`).
- * A text that ends with {@link CUT_MARK} (one {@link cutText} shortened) also has the longest start of such a value,
- * as written or escaped, that stands right before the mark written as {@link HIDDEN_VALUE}: a start of any length,
- * from one character on, since it is looked for at the cut alone, where one that merely matches costs only the end of
- * a text already cut. A text without the mark keeps an end that merely starts a value.
+ * Right before each {@link CUT_MARK} (the end of a text {@link cutText} shortened, or a cut of Playwright's inside
+ * it), the longest start of such a value, as written or escaped, is hidden too when it is 4 characters or more
+ * (`MIN_CUT_START`): a shorter one tells little of a value of 8 or more, and the end of the word before a `…` matches
+ * one by chance. A start hidden is written with the characters before it, 8 in all, so no text grows longer than it was
+ * (one whose start stands in its first 8 characters aside), and a text keeps the bound it was cut to. Every place is
+ * found in `text` as it is, then each is hidden, places that overlap as one: a value that holds another, or starts
+ * with it, is hidden whole whichever is known first.
  * The one rule for the values the attempt knows are secrets (`withoutFieldSecrets`, `maskAriaSnapshot`, the live call
  * log), so what one path hides another cannot show. No values leave `text` as it is. Pure.
  */
 export function hideKnownValues(text: string, values: readonly string[]): string {
-  let out = text;
-  const forms: string[] = [];
-  for (const value of values) {
-    if (value.length < 8) continue;
-    for (const written of new Set([value, escapedInQuotes(value)])) {
-      out = out.split(written).join(HIDDEN_VALUE);
-      forms.push(written);
-    }
+  const forms = [...new Set(values.filter((v) => v.length >= 8).flatMap((v) => [v, escapedInQuotes(v)]))];
+  if (!forms.length) return text;
+  const places: Array<[number, number]> = [];
+  for (const form of forms) {
+    for (let at = text.indexOf(form); at !== -1; at = text.indexOf(form, at + 1)) places.push([at, at + form.length]);
   }
-  if (!forms.length || !out.endsWith(CUT_MARK)) return out;
-  const kept = out.slice(0, -CUT_MARK.length);
+  for (let mark = text.indexOf(CUT_MARK); mark !== -1; mark = text.indexOf(CUT_MARK, mark + 1)) {
+    const start = longestStartBefore(text, mark, forms);
+    if (start) places.push([Math.max(0, mark - Math.max(start, HIDDEN_VALUE.length)), mark]);
+  }
+  if (!places.length) return text;
+  places.sort((a, b) => a[0] - b[0]);
+  let out = '';
+  let kept = 0;
+  let open = places[0]!;
+  for (const place of places.slice(1)) {
+    if (place[0] < open[1]) {
+      open = [open[0], Math.max(open[1], place[1])];
+      continue;
+    }
+    out += `${text.slice(kept, open[0])}${HIDDEN_VALUE}`;
+    kept = open[1];
+    open = place;
+  }
+  return `${out}${text.slice(kept, open[0])}${HIDDEN_VALUE}${text.slice(open[1])}`;
+}
+
+/** The length of the longest start of one of `forms`, `MIN_CUT_START` long or more, ending at `mark`; 0 for none. */
+function longestStartBefore(text: string, mark: number, forms: readonly string[]): number {
+  const last = text.charCodeAt(mark - 1);
   let longest = 0;
   for (const form of forms) {
-    for (let length = Math.min(form.length - 1, kept.length); length > longest; length--) {
-      if (kept.endsWith(form.slice(0, length))) {
+    for (let length = Math.min(form.length - 1, mark); length >= Math.max(longest + 1, MIN_CUT_START); length--) {
+      if (form.charCodeAt(length - 1) === last && text.startsWith(form.slice(0, length), mark - length)) {
         longest = length;
         break;
       }
     }
   }
-  return longest ? `${kept.slice(0, -longest)}${HIDDEN_VALUE}${CUT_MARK}` : out;
+  return longest;
 }
 
 /** The roles of an ARIA snapshot's nodes whose value is what a person typed or chose: a field's. */
