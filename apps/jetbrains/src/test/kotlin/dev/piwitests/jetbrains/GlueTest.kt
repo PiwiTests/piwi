@@ -1091,6 +1091,33 @@ class GlueTest {
     }
 
     /**
+     * The tool window's empty text in each state of the failures view, as the golden fixture both editors read holds it
+     * (`packages/editor/tests/golden/failures-view.json`), with the baseline that found no run as the window reads it:
+     * the service's sentence and the actions it links, as VS Code's view shows them. Beside failures, the tree shows
+     * them, and no empty text.
+     */
+    @Test
+    fun `the tool window says each state of the failures view as VS Code's view does`() {
+        val gson = com.google.gson.Gson()
+        val golden = com.google.gson.JsonParser.parseString(
+            java.io.File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+            val name = case.get("name").asString
+            val view = gson.fromJson(case.get("view"), FailuresView::class.java)
+            if (view.state == "failures") continue
+            val shown = case.getAsJsonObject("shown")
+            val baseline = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
+                ?.takeUnless { it.isJsonNull }?.asString
+            val noRun = Glue.baselineLine(baseline)?.takeIf { it.endsWith("(no run)") }
+            val empty = Glue.failuresEmpty(view, noRun, null)
+            assertEquals(name, shown.get("text").asString, empty.text)
+            assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, empty.links.map { it.label })
+            assertEquals(name, view.links.map { it.jetbrains }, empty.links.map { it.actionId })
+        }
+    }
+
+    /**
      * The Piwi Picker tab's words, which the VS Code extension's Piwi Picker view says too: the golden fixture both read
      * (`packages/editor/tests/golden/picker-pairing.json`), in the JetBrains words.
      */
@@ -2497,14 +2524,22 @@ class GlueTest {
         val compare = FailuresViewLink("Compare with…", "piwi.compareWith", "Piwi.CompareWith")
         val none = Glue.failuresEmpty(FailuresView("norun", "No run of feature/x yet.", listOf(compare)), null, null)
         assertEquals(Glue.EmptyText("No run of feature/x yet.", listOf(Glue.Link("Compare with…", "Piwi.CompareWith"))), none)
-        assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun", "No run of main yet."), "Baseline: run #9 (no run)", null).text)
+        val baseline = "Baseline: run #9 (no run). Compare with another run."
+        assertEquals(baseline, Glue.failuresEmpty(FailuresView("norun", baseline), "Baseline: run #9 (no run)", null).text)
+        assertEquals("Baseline: run #9 (no run)", Glue.failuresEmpty(FailuresView("norun"), "Baseline: run #9 (no run)", null).text)
+        assertEquals(
+            "No failure in the latest run of main.",
+            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main."), "Baseline: run #9 (no run)", null).text,
+        )
         assertEquals(Glue.EmptyText("Not connected to a Piwi instance"), Glue.failuresEmpty(FailuresView("disconnected"), null, null))
         assertEquals(Glue.EmptyText("Piwi is reading the instance…"), Glue.failuresEmpty(FailuresView("loading", "Piwi is reading the instance…"), null, null))
         val refresh = FailuresViewLink("Refresh the latest run", "piwi.refreshRun", "Piwi.RefreshRun")
         assertEquals(
-            Glue.EmptyText("No failure in run #41", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
-            Glue.failuresEmpty(FailuresView("clear", "No failure in the latest run of main.", listOf(refresh)), null, 41),
+            Glue.EmptyText("No failure in run #41 of main.", listOf(Glue.Link("Refresh the latest run", "Piwi.RefreshRun"))),
+            Glue.failuresEmpty(FailuresView("clear", "No failure in run #41 of main.", listOf(refresh)), null, 41),
         )
+        // A service that says no sentence: the run read.
+        assertEquals("No failure in run #41", Glue.failuresEmpty(FailuresView("clear"), null, 41).text)
     }
 
     @Test

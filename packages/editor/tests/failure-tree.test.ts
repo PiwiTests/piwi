@@ -16,7 +16,7 @@ import {
   runLabel,
   type ContextFailures,
 } from '../src/failure-tree';
-import type { FailuresResult, FailureTreeNode } from '../src/protocol';
+import type { FailuresResult, FailureTreeNode, FailuresView } from '../src/protocol';
 
 const base = { url: 'http://piwi/test-run-cases/1', hasTrace: false, headline: 'Failed', isNew: false } as const;
 
@@ -523,6 +523,7 @@ describe('failuresView', () => {
     connected: true,
     loading: false,
     hasRun: true,
+    runId: 124,
     problemKind: null,
     problem: null,
     branch: 'main',
@@ -531,12 +532,12 @@ describe('failuresView', () => {
     ...over,
   });
 
-  test('says nothing beside failures, and names the branch whose latest run has none', () => {
+  test('says nothing beside failures, and names the run and the branch that have none', () => {
     expect(failuresView([ctx()], 1)).toMatchObject({ state: 'failures', message: null });
-    expect(failuresView([ctx()], 0)).toMatchObject({
-      state: 'clear',
-      message: 'No failure in the latest run of main.',
-    });
+    expect(failuresView([ctx()], 0)).toMatchObject({ state: 'clear', message: 'No failure in run #124 of main.' });
+    // Runs laid over no run of the branch, and a run that names no branch.
+    expect(failuresView([ctx({ runId: null })], 0).message).toBe('No failure in the latest run of main.');
+    expect(failuresView([ctx({ branch: null })], 0).message).toBe('No failure in run #124.');
   });
 
   test('counts no failure fixed locally, so Re-run Failing goes once the last failing test passed', () => {
@@ -615,39 +616,12 @@ describe('failuresView', () => {
   });
 });
 
-describe('VS Code’s welcomes of the failures view', () => {
-  test('link the actions the service links for each state, by its labels', () => {
-    const manifest = JSON.parse(
-      fs.readFileSync(path.resolve(__dirname, '..', '..', '..', 'apps', 'vscode', 'package.json'), 'utf-8'),
-    ) as {
-      contributes: { viewsWelcome: Array<{ view: string; contents: string; when: string }> };
-    };
-    const base = {
-      connected: true,
-      hasRun: true,
-      loading: false,
-      problemKind: null,
-      problem: null,
-      branch: 'main',
-      projectName: 'Acme',
-      baseline: null,
-    } as const;
-    const views = [
-      failuresView([base], 0),
-      failuresView([{ ...base, connected: false, hasRun: false, problemKind: 'unreachable' }], 0),
-      failuresView([{ ...base, connected: false, hasRun: false, problemKind: 'desktop-unproven' }], 0),
-      failuresView([{ ...base, hasRun: false }], 0),
-      failuresView([{ ...base, connected: false, hasRun: false }], 0),
-    ];
-    for (const view of views) {
-      const welcome = manifest.contributes.viewsWelcome.find(
-        (w) => w.view === 'piwi.failures' && w.when === `piwi.failuresView == ${view.state}`,
-      );
-      const links = [...(welcome?.contents ?? '').matchAll(/\[([^\]]+)\]\(command:([\w.]+)\)/g)].map((m) => [
-        m[1],
-        m[2],
-      ]);
-      expect(links, view.state).toEqual(view.links.map((l) => [l.label, l.vscode]));
-    }
+describe('the failures view’s states, as the golden fixture holds them for both editors', () => {
+  const golden = JSON.parse(fs.readFileSync(path.join(__dirname, 'golden', 'failures-view.json'), 'utf8')) as {
+    cases: Array<{ name: string; contexts: ContextViewState[]; failing: number; view: FailuresView }>;
+  };
+
+  test.each(golden.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    expect(failuresView(c.contexts, c.failing)).toEqual(c.view);
   });
 });

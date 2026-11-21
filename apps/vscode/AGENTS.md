@@ -18,7 +18,7 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   JetBrains plugin restates the file and `GlueTest` holds its copy to it.
 - **The words both editors compute from the same answer are held equal by the golden fixtures**
   (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, a spec's test marks and lens rows, the Piwi
-  Picker view's words):
+  Picker view's words, the failures view's sentence and links in each state):
   `tests/golden.test.ts` here and `GlueTest` (the marks and rows: `PiwiPluginTest`, drawn by the gutter's annotator and
   the Code Vision providers) read the same file, so a change to either side's words changes the fixture and the other
   side.
