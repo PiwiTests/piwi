@@ -34,6 +34,7 @@
  * then `t` opens or closes it.
  */
 import type { HubSession, HubWorker } from '@piwitests/core/run-hub';
+import type { DesktopRunsPanel } from '#components';
 import {
   localRunCompareTo,
   localRunCopyCommand,
@@ -44,7 +45,7 @@ import {
   type LocalRun,
 } from '~/composables/useDesktopLocalRuns';
 import { desktopEditorRunsOf, desktopRunOf } from '~/utils/desktop-run-view';
-import { desktopRunName, desktopStopSaid, desktopWorkerKey } from '@piwitests/run-ui/run-view';
+import { desktopRunName, desktopRunWaits, desktopStopSaid, desktopWorkerKey } from '@piwitests/run-ui/run-view';
 
 const store = useDesktopLocalRuns();
 const { runs, trayOpen, shownWorker, activeCount, trayMounts, separate } = store;
@@ -136,7 +137,7 @@ watch(
   { immediate: true },
 );
 
-const panel = useTemplateRef<{ isWorking: () => boolean }>('panel');
+const panel = useTemplateRef<InstanceType<typeof DesktopRunsPanel>>('panel');
 
 /**
  * Shows `target` on the right as a run starts or stops, unless the person works in the run shown: the keyboard is in
@@ -384,11 +385,6 @@ const drawnRuns = computed(() =>
   shownRun.value && !running.value.includes(shownRun.value) ? [...running.value, shownRun.value] : running.value,
 );
 
-/** Whether a test of a run another window started waits at a stop. */
-function sessionWaits(session: HubSession): boolean {
-  return session.workers.some((worker) => worker.stop);
-}
-
 /** A run's line in the list: its title, how it stands, whether a test of it waits at a stop, how long it ran. */
 function lineOf(run: LocalRun) {
   return { key: run.key, title: localRunTitle(run), status: badge(run), waits: waits(run), duration: duration(run) };
@@ -403,7 +399,7 @@ const groups = computed(() => [
     items: otherSessions.value.map((session) => ({
       key: session.ref,
       title: desktopRunName(session, words),
-      waits: sessionWaits(session),
+      waits: desktopRunWaits(session),
     })),
   },
   { key: 'finished', title: 'Finished', items: finished.value.map(lineOf) },

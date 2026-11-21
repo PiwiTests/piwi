@@ -17,6 +17,8 @@ const LANGUAGES = [
 ];
 
 const ESC = '\u001b';
+/** `text` matched as it is in a regular expression. */
+const escaped = (text: string) => text.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 /** What the run prints: Playwright's colors on, as the shell starts it. */
 const OUTPUT = [
   'Running 1 test using 1 worker',
@@ -160,27 +162,31 @@ for (const { code, tag, close } of LANGUAGES) {
     const finished = list.getByRole('region', { name: said(runner, 'runner_finishedHeading') });
     const line = finished.getByRole('button', { name: 'checkout › pays with a saved card' });
     await expect(line).toHaveAttribute('aria-current', 'true');
-    await expect(line).toContainText(said(runner, 'runner_statusFailed'));
+    await expect(line).toHaveAccessibleDescription(new RegExp(escaped(said(runner, 'runner_statusFailed'))));
     await expect(shown).toBeHidden();
     expect(await clipped(page.locator('main'))).toEqual([]);
-
-    // Clear finished takes the ended run away.
-    await finished.getByTestId('runner-clear-finished').click();
-    await expect(run).toBeHidden();
-    await expect(page.getByText(said(runner, 'runner_noRuns'))).toBeVisible();
     await page.setViewportSize({ width: 640, height: 480 });
 
     // A run the hub has and this window holds no entry for: its worker stopped at a Pause, in the run model's words,
-    // counted on the Runs tab. The stop brings the runs back from the settings.
+    // counted on the Runs tab. The stop brings the runs back from the settings and shows its run in place of the one
+    // chosen, its wait said in the select.
     await header.getByRole('tab', { name: said(runner, 'runner_settingsHeading') }).click();
     await expect(page.getByTestId('runner-settings')).toBeVisible();
     await page.evaluate((event) => window.__events.send('hub', event), hubRun());
     await expect(page.getByTestId('runner-settings')).toBeHidden();
     const unlisted = page.getByTestId('runner-unlisted-run');
     await expect(unlisted.getByText(said(runner, 'runner_stillRunning'))).toBeVisible();
+    await expect(run).toBeHidden();
+    await expect(shown).toContainText(said(layer, 'runui_runsWaiting'));
     await expect(header.getByRole('tab', { name: said(runner, 'runner_runsHeading') })).toContainText('1');
     await expect(unlisted.getByText(runWords.runs_stoppedPause!, { exact: true }).first()).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
+
+    // Clear finished, beside the select, takes the ended run away; the run going on stays shown.
+    await page.getByTestId('runner-clear-finished').click();
+    await expect(page.getByTestId('runner-clear-finished')).toBeHidden();
+    await expect(page.getByTestId('runner-run')).toHaveCount(0);
+    await expect(unlisted).toBeVisible();
   });
 
   test(`the window speaks ${code} before it is connected, with no text cut`, async ({ page }) => {

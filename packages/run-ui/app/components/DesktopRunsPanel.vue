@@ -4,9 +4,14 @@
  * runs). On the left, the runs in their groups (`groups`, a group with no run left out), each line named by its run's
  * title and described by how it stands (`status`), whether a test of it waits at a stop (`waits`) and how long it ran
  * (`duration`); a click shows it (`select`). On the right, the run shown (`shown`), which the host draws in the default
- * slot. Narrower than `WIDE_PX`, a select names the run shown above it, the groups' actions beside it. A group's
+ * slot. Narrower than `WIDE_PX`, a select names the run shown above it, each choice saying how its run stands and
+ * whether a test of it waits, the groups' actions beside it; a panel the host hides keeps the layout it had. A group's
  * `#group-actions` slot holds its own buttons (Clear finished). `isWorking()` says whether the keyboard is in the run
  * shown: a host leaves it shown then, as a run starts or a test stops.
+ *
+ * Each run shown comes back where it was scrolled, and one shown for the first time at its top. When an update takes
+ * away what the keyboard was on (a line that moves to another group as its run ends, a Force stop gone with its run),
+ * the keyboard goes to the run shown's line, or to the select when narrow.
  */
 import type { BadgeProps } from '@nuxt/ui';
 import { SELECTED_ROW_CLASS } from '@piwitests/run-ui/ui-classes';
@@ -40,7 +45,13 @@ const WIDE_PX = 720;
 const root = useTemplateRef<HTMLElement>('root');
 const detail = useTemplateRef<HTMLElement>('detail');
 const { width } = useElementSize(root);
-const wide = computed(() => width.value >= WIDE_PX);
+/** Whether the list shows beside the run shown, by the panel's last width: a hidden panel measures none. */
+const wide = ref(false);
+function measured(value: number) {
+  if (value > 0) wide.value = value >= WIDE_PX;
+}
+watch(width, measured);
+onMounted(() => measured(root.value?.offsetWidth ?? 0));
 
 const shownGroups = computed(() => props.groups.filter((group) => group.items.length > 0));
 
@@ -48,12 +59,14 @@ const shownGroups = computed(() => props.groups.filter((group) => group.items.le
 const describedId = (group: RunsPanelGroup, item: RunsPanelItem) => `${id}-${group.key}-${item.key}`;
 const described = (item: RunsPanelItem) => !!item.status || !!item.waits || !!item.duration;
 
-/** The select's choices, narrow: each group's runs under its title, each with how it stands. */
+/** The select's choices, narrow: each group's runs under its title, each with how it stands and a stop waiting. */
 const choices = computed(() =>
   shownGroups.value.map((group) => [
     { type: 'label' as const, label: group.title },
     ...group.items.map((item) => ({
-      label: item.status ? `${item.title} · ${item.status.label}` : item.title,
+      label: [item.title, item.status?.label, item.waits ? words.t('runui_runsWaiting') : null]
+        .filter((part): part is string => !!part)
+        .join(' · '),
       value: `${group.key}:${item.key}`,
     })),
   ]),
@@ -82,6 +95,37 @@ function isWorking(): boolean {
 }
 
 defineExpose({ isWorking });
+
+/**
+ * Where each run shown was scrolled, by its key: kept before the run shown changes, given back once it is drawn, so a
+ * host may still scroll what it shows into view after.
+ */
+const scrolled = new Map<string | number, number>();
+watch(
+  () => props.shown,
+  (_next, previous) => {
+    if (previous !== null && detail.value) scrolled.set(previous, detail.value.scrollTop);
+  },
+);
+watch(
+  () => props.shown,
+  (next) => {
+    if (detail.value) detail.value.scrollTop = next === null ? 0 : (scrolled.get(next) ?? 0);
+  },
+  { flush: 'post' },
+);
+
+/** Whether the keyboard was in the panel as an update began. */
+let focusedBefore = false;
+onBeforeUpdate(() => {
+  focusedBefore = !!root.value && root.value.contains(document.activeElement);
+});
+onUpdated(() => {
+  if (!focusedBefore || !root.value || root.value.contains(document.activeElement)) return;
+  root.value
+    .querySelector<HTMLElement>(wide.value ? '[data-run-line][aria-current="true"]' : '[role="combobox"]')
+    ?.focus();
+});
 </script>
 
 <template>

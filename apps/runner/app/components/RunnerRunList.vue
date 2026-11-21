@@ -13,7 +13,8 @@
  * (`DesktopRunCopyList`).
  */
 import type { HubSession } from '@piwitests/core/run-hub';
-import { desktopRunName } from '@piwitests/run-ui/run-view';
+import type { DesktopRunsPanel } from '#components';
+import { desktopRunName, desktopRunWaits } from '@piwitests/run-ui/run-view';
 import {
   isRunnerRunRef,
   runnerFinishedRuns,
@@ -47,14 +48,11 @@ function stopUnlisted(session: HubSession) {
   void stopShellRun(shellId);
 }
 
-/** Whether a test of a hub's run waits at a stop. */
-const sessionWaits = (session: HubSession) => session.workers.some((worker) => worker.stop);
-
 /** Whether a test of a run going on waits at a stop, by the hub's live run of it. */
 function waits(run: RunnerRun): boolean {
   if (run.status !== 'running') return false;
   const session = sessions.value.find((each) => isRunnerRunRef(each.ref, run.shellId));
-  return !!session && sessionWaits(session);
+  return !!session && desktopRunWaits(session);
 }
 
 /**
@@ -67,7 +65,7 @@ const shownKey = computed<number | string | null>(() => {
   if (typeof picked === 'string' && unlisted.value.some((session) => session.ref === picked)) return picked;
   return (
     running.value.find(waits)?.key ??
-    unlisted.value.find(sessionWaits)?.ref ??
+    unlisted.value.find(desktopRunWaits)?.ref ??
     running.value[0]?.key ??
     unlisted.value[0]?.ref ??
     finished.value[0]?.key ??
@@ -84,7 +82,7 @@ watch(
   { immediate: true },
 );
 
-const panel = useTemplateRef<{ isWorking: () => boolean }>('panel');
+const panel = useTemplateRef<InstanceType<typeof DesktopRunsPanel>>('panel');
 
 // A stop shows its run, unless the person works in the run shown; its line marks it all the same.
 const stopHeard = hub.onStop((session) => {
@@ -125,7 +123,7 @@ const groups = computed(() => [
           label: stopping.value[session.ref] === undefined ? t('runner_statusRunning') : t('runner_stopping'),
           color: 'primary' as const,
         },
-        waits: sessionWaits(session),
+        waits: desktopRunWaits(session),
       })),
     ],
   },
