@@ -5,7 +5,7 @@
  * title and described by how it stands (`status`), whether a test of it waits at a stop (`waits`) and how long it ran
  * (`duration`); a click shows it (`select`). On the right, the run shown (`shown`), which the host draws in the default
  * slot. Narrower than `WIDE_PX`, a select names the run shown above it, each choice saying how its run stands and
- * whether a test of it waits, the groups' actions beside it; a panel the host hides keeps the layout it had. A group's
+ * whether a test of it waits, wrapped rather than cut, the groups' actions beside it; a panel the host hides keeps the layout it had. A group's
  * `#group-actions` slot holds its own buttons (Clear finished). `isWorking()` says whether the keyboard is in the run
  * shown: a host leaves it shown then, as a run starts or a test stops.
  *
@@ -136,6 +136,10 @@ onUpdated(() => {
         v-model="chosenChoice"
         :items="choices"
         :aria-label="words.t('runui_runsShown')"
+        :ui="{
+          value: 'text-clip whitespace-normal break-words text-left',
+          itemLabel: 'text-clip whitespace-normal break-words',
+        }"
         class="min-w-0 flex-1 basis-56"
       />
       <template v-for="group in shownGroups" :key="group.key">
