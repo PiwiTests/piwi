@@ -45,14 +45,27 @@ const SETTINGS = {
   // The code's problems out of sight, still kept: no squiggle, no mark in the scrollbar, no color or count on a tab, and
   // no word of them in the status bar.
   'problems.decorations.enabled': false,
-  'workbench.colorCustomizations': Object.fromEntries(
-    ['Error', 'Warning', 'Info'].flatMap((kind) => [
+  // The count badges on the panel's views go too.
+  'workbench.colorCustomizations': Object.fromEntries([
+    ...['Error', 'Warning', 'Info'].flatMap((kind) => [
       [`editor${kind}.foreground`, '#00000000'],
       [`editor${kind}.border`, '#00000000'],
       [`editorOverviewRuler.${kind.toLowerCase()}Foreground`, '#00000000'],
     ]),
-  ),
+    ...['panelTitleBadge', 'activityBarBadge'].flatMap((badge) => [
+      [`${badge}.background`, '#00000000'],
+      [`${badge}.foreground`, '#00000000'],
+    ]),
+  ]),
 };
+
+/**
+ * No notification shows as a toast but the one a beat answers, **Debug in my editor**'s question: the others still
+ * reach the notification center, out of sight. A rule of the window's style, which no setting holds.
+ */
+const TOASTS_HIDDEN = `.notification-toast-container:not(:has([aria-label*="Debug this test here?"])) {
+  display: none !important;
+}`;
 
 /** The status bar's entries hidden, Piwi's alone shown: the workbench's state, seeded as hiding them leaves it. */
 const STORAGE = {
@@ -62,6 +75,7 @@ const STORAGE = {
     'status.notifications',
     'status.runningTasks',
     'status.forwardedPorts',
+    'status.progress',
     'status.editor.mode',
     'status.languageStatus',
     'status.editor.eol',
@@ -145,6 +159,11 @@ export class Editor {
     }
     await this.command('View: Toggle Panel Visibility');
     await panel.waitFor({ state: 'hidden' });
+  }
+
+  /** Hides every notification toast but the debug question (`TOASTS_HIDDEN`). */
+  async hideToasts() {
+    await this.page.addStyleTag({ content: TOASTS_HIDDEN });
   }
 
   async close() {

@@ -215,6 +215,7 @@ export async function buildSet(set, { say }) {
   // The code takes the window's width: a stop's row of controls fits above its line, beside the worker's panel too.
   await set.editor.command('View: Close Primary Side Bar');
   await set.editor.shrinkPanel();
+  await set.editor.hideToasts();
   // What the window said as it opened, the warning of a profile run as root included, is not the story's.
   await set.editor.command('Notifications: Clear All Notifications');
 
