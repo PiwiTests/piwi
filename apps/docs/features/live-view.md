@@ -36,10 +36,6 @@ has no view: the log names the first one. A CI run without a view logs why inste
 Turning it off ends every view at once. Turned on again, a run that had a view and still runs gets it back within a
 minute.
 
-A CI run's workers keep their view through an outage or a restart of the dashboard: each tries again after 1, 2, 4,
-8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out says so once in the
-run's log, with the cause, and once more as it is back.
-
 ## Check availability
 
 A running run's **Tests** tab says **Live view available**, or what is missing, its help giving the step:
@@ -119,11 +115,12 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 ## Related
 
-- [Page events, text and filmstrip](./live-view-layers): what the page said, beside the image
+- [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
+- [Hold a failing CI test](./hold-ci-failure): a CI failure waits while someone who may control the run watches it
 - [Stuck tests](./stuck-tests): a test past its usual time
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a local run live](./share-live): let a teammate watch a run on your machine
-- [Runs window](./runs-window): a test your editor runs, with its controls
-- [Desktop app runs](./desktop-runs): its runs, and Share live from its tray
+- [Runs window](./runs-window): the live view of a test your editor runs, with its controls
+- [Desktop app runs](./desktop-runs): the desktop app's runs, and Share live from its tray
 - [Failure evidence](./evidence): what a finished test keeps

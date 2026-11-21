@@ -671,13 +671,14 @@ const LIVE_VIEW_CALL_LINES = [
 /**
  * A worker's stream to the run's live view, held as a CI worker holds it: while it is open, the run page offers Watch
  * on the test the worker runs. `after` names the run it continues, as a run its editor window shares after another,
- * and `features` what the worker can do (`hold`: it holds a failing CI test for its controllers).
+ * `features` what the worker can do (`hold`: it holds a failing CI test for its controllers), and `slot` its lane.
  */
-function holdLiveWorkerStream(base, runId, key, after = null, features = null) {
+function holdLiveWorkerStream(base, runId, key, after = null, features = null, slot = null) {
   const client = base.startsWith('https:') ? https : http;
   const continues = after === null ? '' : `&after=${after}`;
   const can = features === null ? '' : `&features=${features}`;
-  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${continues}${can}`, {
+  const lane = slot === null ? '' : `&slot=${slot}`;
+  const request = client.request(`${base}/api/test-runs/${runId}/live-view?worker=0${lane}${continues}${can}`, {
     headers: { Accept: 'text/event-stream', Authorization: `Bearer ${key}` },
   });
   request.on('response', (response) => response.resume());
@@ -7147,13 +7148,14 @@ const SCENES = [
                 title: test,
                 location: 'tests/checkout.spec.ts:24:3',
                 workerIndex: 0,
+                parallelIndex: 0,
                 startedAt: Date.now() - 9_000,
                 browser: { projectName: 'chromium', browserName: 'chromium' },
               },
             ],
           },
         });
-        closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 'hold');
+        closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 'hold', 0);
         const viewport = { width: 1280, height: 800 };
         const testPage = await page.context().newPage();
         await testPage.setViewportSize(viewport);
@@ -7163,7 +7165,7 @@ const SCENES = [
         const post = (message) =>
           request.post(`${base}/api/test-runs/${run.id}/live-view`, {
             headers: { Authorization: `Bearer ${run.key}` },
-            data: { shard: null, worker: 0, ...message },
+            data: { shard: null, worker: 0, slot: 0, ...message },
           });
         const failure = {
           title: 'Failed: expect(locator).toBeEnabled() failed',
@@ -7176,7 +7178,7 @@ const SCENES = [
           () => void post({ type: 'frame', data, call: failure, test }).catch(() => undefined),
           400,
         );
-        await page.getByRole('button', { name: 'Watch worker 0 live' }).first().click({ timeout: 60_000 });
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
         // Docked beside the run page when wide, a sheet when narrow.
         await page.getByTestId('live-frame').waitFor({ timeout: 30_000 });
         await ok(

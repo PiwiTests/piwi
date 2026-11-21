@@ -266,17 +266,12 @@ const watching = ref<{
   executionId: number | null;
 } | null>(null);
 const watchOpen = ref(false);
-/** The worker the lane panel shows, as the run's live view says it stands: its lane's when it names one. */
+/** The worker the lane panel shows, as the run's live view says it stands: its lane's newest when it names one. */
 const watchedWorker = computed<LiveWorkerState | null>(() => {
   const shown = watching.value;
   if (!shown) return null;
-  return (
-    Object.values(liveWorkers.value).find(
-      (worker) =>
-        worker.shard === shown.shard &&
-        (typeof shown.slot === 'number' ? worker.slot === shown.slot : worker.worker === shown.worker),
-    ) ?? null
-  );
+  if (typeof shown.slot === 'number') return laneWorker({ shard: shown.shard, slot: shown.slot });
+  return liveWorkers.value[liveWorkerKey(shown)] ?? null;
 });
 /** Whether the view opened from a row's Watch, which gives it the focus; the page's address opens it without. */
 const watchAsked = ref(false);
@@ -453,7 +448,9 @@ const offersWatchAll = computed(
 );
 const runningRows = computed(() => dedupedDisplayCases.value.filter((row) => row.status === 'running'));
 /** What each lane needs attention for now: its rows' failures and Stuck? marks, and its stop. */
-const attentionNow = computed(() => attentionSignals(displayTestCases.value, lanesNow.value));
+const attentionNow = computed(() =>
+  attentionSignals(displayTestCases.value, lanesNow.value, Object.values(liveWorkers.value)),
+);
 /** **Follow what needs attention**: the lane panel moves on its own to a lane whose test failed, got stuck or stopped. */
 const followAttention = ref(false);
 /** Why the lane panel moved where it is, while it shows that lane. */

@@ -110,6 +110,15 @@ const props = defineProps<{
 const open = defineModel<boolean>('open', { required: true });
 /** The held failure of the worker shown, while it holds. */
 const heldStop = computed(() => (props.workerState?.paused?.reason === 'held' ? props.workerState.paused : null));
+const { can } = useAuth();
+/** Whether this person may end the hold shown: one who may control the run's project, of a worker that can hold. */
+const canLetGo = computed(
+  () =>
+    !!heldStop.value &&
+    props.workerState?.holds === true &&
+    props.projectId != null &&
+    can('run:control', props.projectId),
+);
 const watchId = computed(() => props.live.watchId.value);
 /** **Follow what needs attention**: the page moves the view to a lane whose test failed, got stuck or stopped. */
 const attention = defineModel<boolean>('attention', { default: false });
@@ -848,7 +857,6 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
       <LaneHeld
         v-if="heldStop && workerState && !ended"
         :run-id="runId"
-        :project-id="projectId ?? null"
         :worker="{
           shard: workerState.shard,
           worker: workerState.worker,
@@ -856,7 +864,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         }"
         :stop="heldStop"
         :held-for="workerState.heldFor ?? []"
-        :holds="workerState.holds === true"
+        :can-let-go="canLetGo"
         :watch-id="watchId"
         :project-key="projectKey"
         :project-name="projectName"
@@ -1179,7 +1187,7 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         </template>
       </UCollapsible>
       <p class="text-xs text-muted">
-        You watch the page; nothing you do here reaches the test{{ heldStop ? ' but Let it go' : '' }}. Nothing of the
+        You watch the page; nothing you do here reaches the test{{ canLetGo ? ' but Let it go' : '' }}. Nothing of the
         view is stored: the run’s trace keeps the record.
       </p>
     </div>

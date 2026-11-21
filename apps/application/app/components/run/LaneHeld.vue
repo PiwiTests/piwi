@@ -2,9 +2,10 @@
 /**
  * A failed CI test held at its failure for the people who may control the run, in the lane panel: where it stands
  * (`Failed, held at its line`), for whom and until when (`Held for Ana · until 12:05`), the failure it holds and its
- * place, and that the CI job's own timeout still runs. **Let it go** shows to someone who may control the project's
- * runs (`run:control`), for a worker that can hold, and asks the instance to end the hold on the page's watch, which
- * shows the worker in full; the test then tears down as it would have.
+ * place, and that the CI job's own timeout still runs. **Let it go** shows when the panel says this person may end it
+ * (`canLetGo`: someone who may control the project's runs, `run:control`, of a worker that can hold), and asks the
+ * instance to end the hold on the page's watch, which shows the worker in full; the test then tears down as it would
+ * have.
  */
 import type { LiveStop, LiveWorkerId } from '@piwitests/core/live-view';
 import { englishRunSpeaker } from '@piwitests/run-model/words';
@@ -12,12 +13,11 @@ import { heldStopWords, stopWords } from '~/utils/stop-words';
 
 const props = defineProps<{
   runId: number;
-  projectId: number | null;
   worker: LiveWorkerId;
   stop: LiveStop;
   heldFor: string[];
-  /** The worker said it can hold, so it takes **Let it go**. */
-  holds: boolean;
+  /** Whether this person may end the hold: **Let it go** shows. */
+  canLetGo: boolean;
   /** The id of the page's watch of the run, which shows the worker in full; null while none is open. */
   watchId: string | null;
   /** Piwi project id + name, for the IDE opener of the failure's place. */
@@ -26,11 +26,9 @@ const props = defineProps<{
 }>();
 
 const toast = useToast();
-const { can } = useAuth();
 const asked = ref(false);
 const state = computed(() => stopWords('held'));
 const held = computed(() => heldStopWords(props.stop, props.heldFor));
-const canLetGo = computed(() => props.holds && props.projectId !== null && can('run:control', props.projectId));
 
 async function letGo(): Promise<void> {
   if (asked.value || !props.watchId) return;
