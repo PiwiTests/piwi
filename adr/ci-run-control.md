@@ -1,15 +1,18 @@
 # Holding and pausing a CI test from anywhere
 
+- Status: accepted
+- Date: 2026-11-21
+
 A test running in CI can be watched from the run page, the editors and Piwi Picker's Runs window, and its page
 inspected at each call ([`features/live-view`](../apps/docs/features/live-view.md),
 [`features/live-inspect`](../apps/docs/features/live-inspect.md)), but nothing makes it wait: a failure is gone a
 second after it happens, and a test that waits on an element goes on past the moment worth seeing. This plan lets the
 people who may already re-run a project's CI make a CI test wait where they can look at it: first held at its failure,
 then paused at its next call, from any surface that watches it. It narrows one decision of the
-[run control ADR](../adr/run-control.md) (D8, "the team instance never steers a run") for these two cases, and says how
+[run control ADR](run-control.md) (D8, "the team instance never steers a run") for these two cases, and says how
 far.
 
-**Status.** Proposed 2026-11-21. Step 1 is built on the run page (Delivery PR 2): the project setting, `hold` and
+**Status.** Built: all five Delivery PRs, accepted 2026-11-21. Step 1 is built on the run page (Delivery PR 2): the project setting, `hold` and
 `controller` on the CI worker's stream, the held stop and **Let it go** in the lane panel, the demo's Held CI failure
 and the page [Hold a failing CI test](../apps/docs/features/hold-ci-failure.md); the run control ADR's D8 links here
 (D10). Step 1 is built on the editors' worker view and the Runs window too (Delivery PR 3): the instance tells a
@@ -19,8 +22,14 @@ watch. Step 2 is built on the run page (Delivery PR 4): the second setting, `pau
 stream and the call log through instrumentation while it is on, **Pause**, **Resume** and **End the test** in the lane
 panel of a CI lane (one route, `POST /api/test-runs/:id/live-view/control`), the paused stop read as
 `Paused by Ana · until 12:05`, the demo's paused CI lane and the page [Pause a CI test](../apps/docs/features/pause-ci-test.md).
-Next: step 2 on the editors' worker view and the Runs window. Step 1 takes over Part 8 of
-[`live-view-next.md`](live-view-next.md) (its D11 and open questions 3 and 4), which now points here.
+Step 2 is built on the editors' worker view and the Runs window too (Delivery PR 5): the editor service sends each
+CI lane's paused test, its Pause asked or dropped and the controls its watch offers as a controller's in the run page's
+words, VS Code's worker panel and the JetBrains **Worker** tab show them and send `piwi/ciControl` with the command, and
+the Runs window does the same through its own connection, each asking one control in each state of the lane. Every
+surface says what reaches a CI run from it: nothing but Pause, Resume, End the test and Let it go, for those who may
+control it. Nothing was
+left out. Step 1 takes over Part 8 of
+[`live-view-next.md`](../proposals/live-view-next.md) (its D11 and open questions 3 and 4), which now points here.
 
 **Summary.**
 
@@ -42,7 +51,7 @@ feeds the third, **hand back a fix**: Inspect's picker on the page where the tes
 - **Controller**: a person, or a connection's identity, with the `run:control` permission on the run's project
   (Maintainer and Project admin: [roles](../apps/docs/operate/project-access.md#what-each-role-can-do)), watching the
   lane.
-- **Lane**, **watch**, **stop**: as the [live-runs ADR](../adr/live-runs.md#terms) defines them.
+- **Lane**, **watch**, **stop**: as the [live-runs ADR](live-runs.md#terms) defines them.
 
 ## What exists
 
@@ -129,7 +138,8 @@ Each PR is usable on its own; sizes are relative (S, M).
 | 1 | This plan, and live-view-next Part 8 pointing here. | S |
 | 2 | Step 1: the setting, `hold` on the stream, `controller` in `view`, the held stop, **Let it go**, on the run page; the docs page **Hold a failing CI test**; the demo; the run control ADR's line (D10). | M |
 | 3 | Step 1 on the editors' worker view and the Runs window. | M |
-| 4 | Step 2: the setting, the four commands on every surface, the call log through instrumentation when it is on. | M |
+| 4 | Step 2: the setting, the four commands on the run page, the call log through instrumentation when it is on. | M |
+| 5 | Step 2 on the editors' worker view and the Runs window. | M |
 
 ## Verification
 
@@ -157,6 +167,6 @@ Each PR is usable on its own; sizes are relative (S, M).
 ## Not in this plan
 
 - **Input into a CI page, remote DevTools, VNC**: D6, and live-view-next's
-  [Not in this plan](live-view-next.md#not-in-this-plan).
+  [Not in this plan](../proposals/live-view-next.md#not-in-this-plan).
 - **Holding a CI run nobody watches**, as a CI variable might ask: a wait nobody looks at only costs minutes.
 - **A stored audit trail** (D9).

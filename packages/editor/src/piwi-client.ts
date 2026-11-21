@@ -799,6 +799,22 @@ export class PiwiClient {
     });
   }
 
+  /**
+   * **Pause**, **Resume** or **End the test** of a CI test (`POST /api/test-runs/:id/live-view/control`), on the watch
+   * `body` names: the instance's answer.
+   */
+  liveControl(runId: number, body: Record<string, unknown>): Promise<Response> {
+    return instanceFetch(`${this.connection.serverUrl}/api/test-runs/${runId}/live-view/control`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...(this.connection.apiKey ? { 'X-API-Key': this.connection.apiKey } : {}),
+      },
+      body: JSON.stringify(body),
+      signal: AbortSignal.timeout(TIMEOUT_MS),
+    });
+  }
+
   /** A server-sent events stream, open until it ends or `signal` aborts. */
   private stream(path: string, signal: AbortSignal): Promise<Response> {
     return instanceFetch(`${this.connection.serverUrl}${path}`, {

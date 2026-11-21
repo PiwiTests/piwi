@@ -48,6 +48,8 @@ function stubInstance() {
   const posts: Array<{ headers: http.IncomingHttpHeaders; body: Record<string, unknown> }> = [];
   /** The asks of **Let it go**, as the instance got them. */
   const letGos: Array<{ headers: http.IncomingHttpHeaders; body: Record<string, unknown> }> = [];
+  /** The controls asked, as the instance got them. */
+  const controls: Array<{ headers: http.IncomingHttpHeaders; body: Record<string, unknown> }> = [];
   /** The watches the stub held without answering, and whether each request closed. */
   const held: Array<{ closed: boolean }> = [];
   const state = {
@@ -59,6 +61,8 @@ function stubInstance() {
     controller: false,
     /** How the instance answers **Let it go**. */
     letGo: { status: 200, body: { success: true, message: 'The test goes on.' } as unknown },
+    /** How the instance answers a control. */
+    control: { status: 200, body: { success: true, message: 'The test pauses before its next call.' } as unknown },
   };
   const server = http.createServer((req, res) => {
     const url = new URL(req.url!, 'http://stub');
@@ -69,6 +73,16 @@ function stubInstance() {
         letGos.push({ headers: req.headers, body: JSON.parse(text) as Record<string, unknown> });
         res.writeHead(state.letGo.status, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(state.letGo.body));
+      });
+      return;
+    }
+    if (url.pathname === '/api/test-runs/78/live-view/control' && req.method === 'POST') {
+      let text = '';
+      req.on('data', (chunk: Buffer) => (text += chunk.toString()));
+      req.on('end', () => {
+        controls.push({ headers: req.headers, body: JSON.parse(text) as Record<string, unknown> });
+        res.writeHead(state.control.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(state.control.body));
       });
       return;
     }
@@ -115,7 +129,7 @@ function stubInstance() {
     res.write(encodeLiveMessage({ type: 'hello', watch: WATCH_ID, ...(state.controller ? { controller: true } : {}) }));
     opened.push(entry);
   });
-  return { server, opened, posts, letGos, held, state };
+  return { server, opened, posts, letGos, controls, held, state };
 }
 
 describe('watching a CI run’s lane on the instance', () => {
@@ -209,6 +223,50 @@ describe('watching a CI run’s lane on the instance', () => {
     expect(await watch.letGo(lane2, held)).toEqual({ ok: false, message: 'This worker holds no failing test now.' });
     stub.state.letGo = { status: 403, body: {} };
     expect(await watch.letGo(lane2, held)).toEqual({ ok: false, message: 'The instance refused the editor’s key.' });
+  });
+
+  test('asks a control of the lane’s worker on its watch of the lane, for a controller alone, in the instance’s words', async () => {
+    const { stub, watch } = await start({ controller: true });
+    const worker = { shard: null, worker: 4, slot: 1 };
+    expect(await watch.control({ ...lane2, command: 'pause' }, worker)).toEqual({
+      ok: false,
+      message: 'Watch this worker first: its controls go on the watch that shows it.',
+    });
+    await watch.watch({ ...lane2, on: true });
+    await waitFor(() => watch.watching(ROOT, 78)?.controller);
+    expect(await watch.control({ ...lane2, command: 'pause' }, null)).toEqual({
+      ok: false,
+      message: 'No worker runs in this lane now.',
+    });
+    expect(await watch.control({ ...lane2, lane: 1, command: 'pause' }, worker)).toMatchObject({ ok: false });
+    expect(stub.controls).toEqual([]);
+    expect(await watch.control({ ...lane2, command: 'pause' }, worker)).toEqual({
+      ok: true,
+      message: 'The test pauses before its next call.',
+    });
+    expect(stub.controls).toEqual([
+      {
+        headers: expect.objectContaining({ 'x-api-key': 'pd_key', 'content-type': 'application/json' }),
+        body: { watch: WATCH_ID, worker: 4, shard: null, slot: 1, command: 'pause' },
+      },
+    ]);
+    // The instance's refusal, in its own words.
+    stub.state.control = { status: 409, body: { message: 'A Pause is already asked by Bo' } };
+    expect(await watch.control({ ...lane2, command: 'pause' }, worker)).toEqual({
+      ok: false,
+      message: 'A Pause is already asked by Bo.',
+    });
+  });
+
+  test('refuses the controls on a watch the instance did not say is a controller’s', async () => {
+    const { stub, watch } = await start();
+    await watch.watch({ ...lane2, on: true });
+    await pause();
+    expect(await watch.control({ ...lane2, command: 'end' }, { shard: null, worker: 4, slot: 1 })).toEqual({
+      ok: false,
+      message: 'You may watch this run, not control it.',
+    });
+    expect(stub.controls).toEqual([]);
   });
 
   test('refuses Let it go on a watch the instance did not say is a controller’s', async () => {

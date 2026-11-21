@@ -644,7 +644,40 @@ data class CiTest(
     val at: CiPosition? = null,
     val watch: String? = null,
     val held: CiHeld? = null,
+    val paused: CiPaused? = null,
+    val pauseAsk: String? = null,
+    val controls: CiControls? = null,
 )
+
+/**
+ * A running CI test paused for the people who may control its project's runs, in the run page's words: where it stands
+ * (`state`), by whom and until when (`pausedBy`, null when its worker names no end), the call it stopped before, its
+ * place as the run names it (`place`) and in the project (`at`, which the place opens; null when the project holds no
+ * such file), and that the CI job's own timeout still runs (`note`).
+ */
+data class CiPaused(
+    val state: String = "",
+    val pausedBy: String? = null,
+    val call: String = "",
+    val place: String? = null,
+    val at: CiHeldAt? = null,
+    val note: String = "",
+)
+
+/**
+ * The controls the IDE offers on a CI lane (`piwi/ciControl`), as the service decides them for its watch of the lane:
+ * `id` names the lane's state they follow, in which the IDE asks one, again only after a refusal; each `offered` one its
+ * command (`pause`, `resume`, `end`), label and tooltip.
+ */
+data class CiControls(val id: String = "", val offered: List<CiControl>? = null)
+
+data class CiControl(val command: String = "", val label: String = "", val title: String = "")
+
+/**
+ * `piwi/ciControl`: **Pause**, **Resume** or **End the test** (`command`) on the CI lane the IDE watches; the service
+ * asks the instance on its watch of the lane, and answers with the instance's sentence or why not.
+ */
+data class CiControlParams(val root: String?, val runId: Int, val shard: Int?, val lane: Int, val command: String)
 
 /**
  * A running CI test held at its failure for the people who may control its project's runs, in the run page's words:
@@ -1922,6 +1955,9 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/ciWatch")
     fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciControl")
+    fun ciControl(params: CiControlParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/ciLetGo")
     fun ciLetGo(params: CiLetGoParams): CompletableFuture<RunControlResult?>

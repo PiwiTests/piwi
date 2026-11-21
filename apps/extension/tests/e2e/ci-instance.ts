@@ -25,6 +25,9 @@ export interface CiInstance {
   /** What the extension posted to let a held test go, with its key; the instance answers with `letGoAnswer`. */
   letGos: Array<{ body: Record<string, unknown>; key: unknown }>;
   letGoAnswer: { status: number; body: Record<string, unknown> };
+  /** What the extension posted to pause, resume or end a test, with its key; answered with `controlAnswer`. */
+  controls: Array<{ body: Record<string, unknown>; key: unknown }>;
+  controlAnswer: { status: number; body: Record<string, unknown> };
   /** Send a `live-worker` event on the run's streams: a worker's held stop, or its end. */
   worker(state: Record<string, unknown>): void;
   /** Send a live message on the latest watch. */
@@ -65,6 +68,8 @@ export async function startCiInstance(): Promise<CiInstance> {
     posts: [],
     controller: false,
     letGos: [],
+    controls: [],
+    controlAnswer: { status: 200, body: { success: true, message: 'The test pauses before its next call.' } },
     letGoAnswer: {
       status: 200,
       body: { success: true, message: 'The test goes on: it tears down as it would have, its result unchanged.' },
@@ -119,6 +124,14 @@ export async function startCiInstance(): Promise<CiInstance> {
           ...(instance.controller ? { controller: true as const } : {}),
         }),
       );
+      return;
+    }
+    if (path === '/api/test-runs/78/live-view/control' && req.method === 'POST') {
+      void readBody(req).then((body) => {
+        instance.controls.push({ body, key: req.headers['x-api-key'] });
+        res.writeHead(instance.controlAnswer.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(instance.controlAnswer.body));
+      });
       return;
     }
     if (path === '/api/test-runs/78/live-view/let-go' && req.method === 'POST') {

@@ -108,7 +108,7 @@ export function ciRunWhere(run: Pick<CiRun, 'branch' | 'project'>, severalProjec
   return project ? { key: 'runs_ciProject', args: { project } } : null;
 }
 
-/** What a surface says of every CI run it lists: they run on CI, watched only but for Let it go on a held failure. */
+/** What a surface says of every CI run it lists: they run on CI, watched only but for the controls a controller is offered. */
 export const CI_READ_ONLY: RunMessage = { key: 'runs_ciReadOnly' };
 
 /**
@@ -226,27 +226,46 @@ export function ciHoldKey(hold: Pick<CiHold, 'worker' | 'until'>): string {
 }
 
 /**
- * **Let it go** asked of each lane's hold (by a surface's own key of the lane, and `ciHoldKey`): once per hold, its
- * button off from the ask until that hold ends, asked again only after a refusal. The lane's next hold is asked anew.
+ * **Let it go**, **Pause**, **Resume** and **End the test** asked of each CI lane (by a surface's own key of the lane),
+ * once per state of the lane (`ciHoldKey` for a hold, `ciControlStateKey` for the controls): a button is off from its
+ * ask until the lane's state changes (`seen` with another key), and on again after a refusal (`refused`). An ask the
+ * instance took (`took`) goes too as soon as the lane shows anything new (`seen` with another `shown`), whatever its
+ * key: a surface that missed the states in between asks again in the one it sees.
  */
-export class LetGoAsks {
-  private readonly holds = new Map<string, string>();
+export class CiAsks {
+  private readonly asks = new Map<string, { state: string; shown: string | null }>();
 
-  /** Whether Let it go was asked of the hold `hold` of `lane`, and waits for its answer or went through. */
-  asked(lane: string, hold: string): boolean {
-    return this.holds.get(lane) === hold;
+  /** Whether a control was asked in the state `state` of `lane`, and waits for its answer or went through. */
+  asked(lane: string, state: string): boolean {
+    return this.asks.get(lane)?.state === state;
   }
 
-  /** Ask of the hold `hold` of `lane`: false when it was asked already. */
-  ask(lane: string, hold: string): boolean {
-    if (this.asked(lane, hold)) return false;
-    this.holds.set(lane, hold);
+  /** Ask in the state `state` of `lane`: false when a control was asked in it already. */
+  ask(lane: string, state: string): boolean {
+    if (this.asked(lane, state)) return false;
+    this.asks.set(lane, { state, shown: null });
     return true;
   }
 
-  /** The ask of `hold` was refused: it may be asked again. */
-  refused(lane: string, hold: string): void {
-    if (this.asked(lane, hold)) this.holds.delete(lane);
+  /** The ask in `state` was refused: a control may be asked in it again. */
+  refused(lane: string, state: string): void {
+    if (this.asked(lane, state)) this.asks.delete(lane);
+  }
+
+  /** The instance took the ask in `state` while the lane showed `shown`: it goes once the lane shows anything else. */
+  took(lane: string, state: string, shown: string): void {
+    const ask = this.asks.get(lane);
+    if (ask?.state === state) ask.shown = shown;
+  }
+
+  /**
+   * The lane stands in `state` now (null for none), shown as `shown` (what the surface draws of it, as text): an ask of
+   * another state goes, and so does one the instance took while the lane showed something else.
+   */
+  seen(lane: string, state: string | null, shown: string | null = null): void {
+    const ask = this.asks.get(lane);
+    if (!ask) return;
+    if (ask.state !== state || (ask.shown !== null && shown !== null && ask.shown !== shown)) this.asks.delete(lane);
   }
 }
 
@@ -377,3 +396,42 @@ export const CI_CONTROL_WORDS: Record<LiveControlCommand, { label: RunMessage; t
   resume: { label: { key: 'runs_resume' }, title: { key: 'runs_ciResumeTitle' } },
   end: { label: { key: 'runs_end' }, title: { key: 'runs_endTitle' } },
 };
+
+/** The `live-worker` events' fields of a worker, by its lane and worker, as `ciHoldOf` matches a hold. */
+type WorkerFields = Record<string, unknown>;
+
+/**
+ * The latest `live-worker` event of a CI lane's worker (`slot`, in its shard) among a run's (`states`): the one of the
+ * lane's worker (`worker`) that names the lane, or, from a reporter that names none, the one of that worker; with the
+ * worker unknown (null), the lane's. A worker that left the lane is none of its next test's.
+ */
+export function ciWorkerStateOf(
+  states: Iterable<WorkerFields>,
+  lane: { shard: number | null; slot: number },
+  worker: number | null,
+): WorkerFields | null {
+  for (const state of states) {
+    const id = readLiveWorkerId(state.shard, state.worker, state.slot);
+    if (!id || id.shard !== lane.shard) continue;
+    if (worker !== null && id.worker !== worker) continue;
+    if (id.slot !== undefined ? id.slot === lane.slot : worker !== null) return state;
+  }
+  return null;
+}
+
+/**
+ * The state of a CI lane's worker that its controls follow (`CiAsks`): its test (`test`, the surface's id of it, null
+ * when unknown), the instance's count of its pause state's changes (`pauseSeq`), and running (with why its last Pause
+ * was dropped), a Pause asked, or paused until its end; null for a worker that cannot pause.
+ */
+export function ciControlStateKey(state: unknown, test: string | null): string | null {
+  const fields = pausingWorker(state);
+  const id = fields ? readLiveWorkerId(fields.shard, fields.worker, fields.slot) : null;
+  if (!id) return null;
+  const seq = typeof fields!.pauseSeq === 'number' && Number.isInteger(fields!.pauseSeq) ? fields!.pauseSeq : 0;
+  const at = `${id.shard ?? ''}:${id.worker}:${test ?? ''}:${seq}`;
+  const pause = readCiPause(state);
+  if (pause) return `${at}:paused:${pause.until ?? ''}`;
+  const ask = readCiPauseAsk(state);
+  return ask.asked ? `${at}:asked` : `${at}:running:${ask.dropped ?? ''}`;
+}

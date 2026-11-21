@@ -418,6 +418,37 @@ describe('the lanes of the CI runs', () => {
     expect(ci.held(1, null, 1)).toBeNull();
   });
 
+  it('says each lane’s worker as the run’s live view names it, for a CI test’s pause and controls', async () => {
+    vi.useFakeTimers();
+    const { ci, streams, opened } = watch([1]);
+    const listener = vi.fn();
+    ci.listen(listener);
+    await vi.advanceTimersByTimeAsync(0);
+    const s = streams.get(1)!;
+    s.send('live-view', { enabled: true, keyed: true });
+    s.send('lane', lane(1, { worker: 4 }));
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true, pauses: true, paused: null };
+    s.send('live-worker', { ...worker, pauseAsked: { by: 'Ana' } });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ci.state()[0]!.tests[0]!.live).toEqual({ ...worker, pauseAsked: { by: 'Ana' } });
+    expect(ci.laneWorker(1, null, 1)).toEqual({ shard: null, worker: 4, slot: 1 });
+    expect(ci.laneWorker(1, null, 0)).toBeNull();
+    // A worker that left says nothing any more.
+    s.send('live-worker', { ...worker, connected: false });
+    await vi.advanceTimersByTimeAsync(100);
+    expect(ci.state()[0]!.tests[0]!.live).toBeUndefined();
+    expect(ci.laneWorker(1, null, 1)).toBeNull();
+    // Nor does one heard before the run's stream opened again.
+    s.send('live-worker', worker);
+    await vi.advanceTimersByTimeAsync(100);
+    ci.shown(listener, false);
+    await vi.advanceTimersByTimeAsync(100);
+    ci.shown(listener, true);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(opened).toEqual([1, 1]);
+    expect(ci.laneWorker(1, null, 1)).toBeNull();
+  });
+
   it('opens a stream again at the next read once it ended or went silent, and tells a run that left', async () => {
     vi.useFakeTimers();
     const { ci, opened, streams, left, setRuns } = watch([1]);

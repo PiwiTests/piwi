@@ -9,8 +9,9 @@
  * nothing for `IDLE_MS`, or on an error: the client hears why (`ended`) unless it asked. The layers the client asks
  * (`CiWatchParams.layers`) are the watch's (`layers`, changed in place), the call log being the full view's own: each
  * goes to the client as it comes (`piwi/ciLayer`), the lane's alone, none it did not ask for. Nothing here reaches the
- * run's workers: no control, input or pick, but **Let it go** (`letGo`) on a test of the lane held at its failure, which
- * goes to the instance on this watch, only once its `hello` said it counts as a controller's (`watching`).
+ * run's workers: no control, input or pick, but **Let it go** (`letGo`) on a test of the lane held at its failure, and
+ * **Pause**, **Resume** and **End the test** of one whose project lets its controllers pause it (`control`), which go
+ * to the instance on this watch, only once its `hello` said it counts as a controller's (`watching`).
  */
 import {
   LIVE_STREAM_TYPE,
@@ -26,7 +27,15 @@ import { LANE_TEXTS_PER_SECOND, readLaneLayers, type LaneLayer } from '@piwitest
 import type { LaneLayerData } from '@piwitests/core/run-channel';
 import { FrameSender } from './client-page-view.js';
 import type { PiwiClient } from './piwi-client.js';
-import type { CiFrame, CiLayer, CiLetGoParams, CiSession, CiWatchParams, RunControlResult } from './protocol.js';
+import type {
+  CiControlParams,
+  CiFrame,
+  CiLayer,
+  CiLetGoParams,
+  CiSession,
+  CiWatchParams,
+  RunControlResult,
+} from './protocol.js';
 
 /** The size the editors' panels show a CI lane at, in device pixels; the instance holds it within its bounds. */
 export const CI_WATCH_SIZE = { width: 960, height: 600 };
@@ -171,6 +180,9 @@ async function refusal(response: Response): Promise<string> {
   }
 }
 
+/** Why a watch the instance did not say is a controller's takes no command. */
+const NOT_CONTROLLER = 'You may watch this run, not control it.';
+
 const SUPERSEDED: RunControlResult = { ok: false, message: 'Another CI watch took the place of this one.' };
 const LATE = 'The instance did not open the watch in time: try again in a moment.';
 
@@ -260,23 +272,61 @@ export class CiWatch {
    * **Let it go** on the lane the watch shows, whose held worker is `held` (the CI sessions' `heldWorker`): asked of the
    * instance on this watch, only once its `hello` said it counts as a controller's. The instance's sentence, or why not.
    */
-  async letGo(params: CiLetGoParams, held: LiveWorkerId | null): Promise<RunControlResult> {
-    const own = this.current;
-    const shard = params.shard ?? null;
-    if (
-      !own?.id ||
-      own.runId !== params.runId ||
-      own.shard !== shard ||
-      own.lane !== params.lane ||
-      (params.root !== undefined && own.root !== params.root)
-    ) {
-      return { ok: false, message: 'Watch this worker first: Let it go goes on the watch that shows it.' };
+  letGo(params: CiLetGoParams, held: LiveWorkerId | null): Promise<RunControlResult> {
+    const own = this.shows(params);
+    if (!own)
+      return Promise.resolve({
+        ok: false,
+        message: 'Watch this worker first: Let it go goes on the watch that shows it.',
+      });
+    if (!own.controller) return Promise.resolve({ ok: false, message: NOT_CONTROLLER });
+    if (!held) return Promise.resolve({ ok: false, message: 'This worker holds no failing test now.' });
+    return this.ask(
+      () => own.client.letGo(own.runId, { watch: own.id, ...held }),
+      'The test goes on: it tears down as it would have, its result unchanged.',
+    );
+  }
+
+  /**
+   * **Pause**, **Resume** or **End the test** (`params.command`) of the lane the watch shows, whose worker is `worker`
+   * (the CI sessions' `laneWorker`): asked of the instance on this watch, only once its `hello` said it counts as a
+   * controller's. The instance's sentence, or why not.
+   */
+  control(params: CiControlParams, worker: LiveWorkerId | null): Promise<RunControlResult> {
+    const own = this.shows(params);
+    if (!own) {
+      return Promise.resolve({
+        ok: false,
+        message: 'Watch this worker first: its controls go on the watch that shows it.',
+      });
     }
-    if (!own.controller) return { ok: false, message: 'You may watch this run, not control it.' };
-    if (!held) return { ok: false, message: 'This worker holds no failing test now.' };
+    if (!own.controller) return Promise.resolve({ ok: false, message: NOT_CONTROLLER });
+    if (!worker) return Promise.resolve({ ok: false, message: 'No worker runs in this lane now.' });
+    return this.ask(
+      () => own.client.liveControl(own.runId, { watch: own.id, ...worker, command: params.command }),
+      'The instance took the command.',
+    );
+  }
+
+  /** The watch, when it opened and shows the lane `lane` names. */
+  private shows(lane: {
+    root?: string;
+    runId: number;
+    shard: number | null;
+    lane: number;
+  }): (Watch & { id: string }) | null {
+    const own = this.current;
+    const shard = lane.shard ?? null;
+    if (!own?.id || own.runId !== lane.runId || own.shard !== shard || own.lane !== lane.lane) return null;
+    if (lane.root !== undefined && own.root !== lane.root) return null;
+    return own as Watch & { id: string };
+  }
+
+  /** A command asked of the instance: its sentence, else `done`; or its refusal in its own words. */
+  private async ask(send: () => Promise<Response>, done: string): Promise<RunControlResult> {
     let response: Response;
     try {
-      response = await own.client.letGo(own.runId, { watch: own.id, ...held });
+      response = await send();
     } catch {
       return { ok: false, message: 'The instance did not answer.' };
     }
@@ -285,15 +335,9 @@ export class CiWatch {
     try {
       said = ((await response.json()) as { message?: unknown } | null)?.message;
     } catch {
-      // No JSON: the test goes on all the same.
+      // No JSON: the instance took it all the same.
     }
-    return {
-      ok: true,
-      message:
-        typeof said === 'string' && said.trim()
-          ? said.trim().slice(0, MAX_REFUSAL)
-          : 'The test goes on: it tears down as it would have, its result unchanged.',
-    };
+    return { ok: true, message: typeof said === 'string' && said.trim() ? said.trim().slice(0, MAX_REFUSAL) : done };
   }
 
   /** The watch ends as the client asked, or as another takes its place: the client hears nothing of it. */

@@ -408,6 +408,24 @@
       .ci-held-box .place {
         font-family: var(--mono);
       }
+      .ci-paused {
+        color: var(--stopped);
+        font-weight: 600;
+      }
+      .ci-held-box.ci-paused-box {
+        border-color: var(--stopped);
+      }
+      .ci-held-box.ci-paused-box .ci-held-state strong {
+        color: var(--stopped);
+      }
+      /* A CI lane's controls while its test runs, or a Pause waits: the buttons and what the Pause came to. */
+      .ci-controls {
+        margin: 0 0 8px;
+        font-size: 12px;
+      }
+      .ci-controls p {
+        margin: 4px 0 0;
+      }
       .ci-view .page-head {
         font-size: 12px;
       }

@@ -4513,7 +4513,7 @@ object Glue {
         val session = sessions[ciKey(lane.root, lane.runId)] ?: return "$name · the run ended."
         val test = ciLaneTest(session, lane) ?: return "$name · between tests · read-only"
         val title = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
-        test.held?.let { return "$name · ${it.state}: $title" }
+        (test.held?.state ?: test.paused?.state)?.let { return "$name · $it: $title" }
         val at = test.at?.let { " · ${it.title}" }.orEmpty()
         return "$name · Running $title$at · read-only"
     }
@@ -4521,59 +4521,122 @@ object Glue {
     private fun ciLaneTest(session: CiSession, lane: CiLane): CiTest? =
         session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
 
-    /** The CI lane's running test held at its failure for the run's controllers, as the service says it; null for none. */
-    fun ciLaneHeld(sessions: Map<String, CiSession>, lane: CiLane): CiHeld? =
-        sessions[ciKey(lane.root, lane.runId)]?.let { ciLaneTest(it, lane) }?.held
+    /** A button of a CI lane as the service offers it: Let it go (`let-go`), Pause, Resume or End the test. */
+    data class CiButton(val command: String, val label: String, val title: String)
 
     /**
-     * A held CI failure as the Worker tab shows it above the image, one line each: where it stands and for whom, its
-     * error, and that the CI job's own timeout still runs; a part the service left empty is left out. Its place is a
-     * link of its own (`HeldShown.place`).
+     * A CI lane's test held at its failure or paused for the run's controllers, and the controls of the lane, as the
+     * service says them (the mirror of VS Code's `ciLaneStop`): where it stands and by or for whom, its call and place
+     * (`at`, where the project holds it), the job's timeout note, the buttons the service offers (Let it go on a held
+     * failure, else its `controls`), the lane's state they follow (`id`, which an ask is kept by: `CiAsks`), and a Pause
+     * waiting or dropped (`ask`). `state` is empty while neither held nor paused.
      */
-    fun ciHeldLines(held: CiHeld): List<String> = listOf(
-        listOfNotNull(held.state, held.heldFor).joinToString(" · "),
-        held.error,
-        held.note,
-    ).filter { it.isNotBlank() }
+    data class CiStop(
+        val id: String?,
+        val held: Boolean,
+        val state: String,
+        val by: String?,
+        val call: String,
+        val place: String?,
+        val at: CiHeldAt?,
+        val note: String,
+        val buttons: List<CiButton>,
+        val ask: String?,
+    )
+
+    /** The CI lane's running test held or paused, its controls and its Pause asked, as the service says them; null for none. */
+    fun ciLaneStop(sessions: Map<String, CiSession>, lane: CiLane): CiStop? {
+        val test = sessions[ciKey(lane.root, lane.runId)]?.let { ciLaneTest(it, lane) } ?: return null
+        test.held?.let { held ->
+            val buttons = if (held.letGo) listOf(CiButton("let-go", held.letGoLabel, held.letGoTitle)) else emptyList()
+            return CiStop(held.id, true, held.state, held.heldFor, held.error, held.place, held.at, held.note, buttons, null)
+        }
+        val paused = test.paused
+        if (paused == null && test.controls == null && test.pauseAsk == null) return null
+        val buttons = test.controls?.offered.orEmpty().map { CiButton(it.command, it.label, it.title) }
+        return CiStop(
+            test.controls?.id,
+            false,
+            // `Paused by Ana · until 12:05` says the state itself, as the run page says it.
+            paused?.let { it.pausedBy ?: it.state }.orEmpty(),
+            null,
+            paused?.call.orEmpty(),
+            paused?.place,
+            paused?.at,
+            paused?.note.orEmpty(),
+            buttons,
+            test.pauseAsk,
+        )
+    }
 
     /**
-     * What the Worker tab shows of a held CI failure: its lines, its place (which opens the failing line when the project
-     * holds it: `placeOpens`), and **Let it go** in the service's words where the service offers it, off while it was
-     * asked of this hold (`asking`).
+     * What the Worker tab shows of a CI lane's held or paused test: its lines (where it stands and by or for whom, its
+     * call, the job's timeout note, none while neither), its place (which opens its line where the project holds it:
+     * `placeOpens`), whether it is held (drawn as a failure), the service's buttons, off once one was asked in the
+     * lane's state (`asking`), and a Pause waiting or dropped (`ask`).
      */
-    data class HeldShown(
+    data class CiStopShown(
         val lines: List<String>,
         val place: String?,
         val placeOpens: Boolean,
-        val offered: Boolean,
+        val held: Boolean,
+        val buttons: List<CiButton>,
         val asking: Boolean,
-        val label: String,
-        val title: String,
+        val ask: String?,
     )
 
-    fun ciHeldShown(held: CiHeld, asking: Boolean): HeldShown =
-        HeldShown(ciHeldLines(held), held.place, held.at != null, held.letGo, asking, held.letGoLabel, held.letGoTitle)
+    fun ciStopShown(stop: CiStop, asking: Boolean): CiStopShown {
+        val lines = if (stop.state.isEmpty()) emptyList() else listOf(
+            listOfNotNull(stop.state, stop.by).joinToString(" · "),
+            stop.call,
+            stop.note,
+        ).filter { it.isNotBlank() }
+        return CiStopShown(lines, stop.place, stop.at != null, stop.held, stop.buttons, asking, stop.ask)
+    }
 
     /**
-     * **Let it go** asked of each CI lane's hold (by its `CiHeld.id`), as `LetGoAsks` of `@piwitests/run-model/ci`
-     * keeps them for VS Code and the Runs window: once per hold, its button off from the ask until that hold ends, asked
-     * again only after a refusal. On the event thread.
+     * A CI lane's buttons asked in each state of the lane (`CiStop.id`), as `CiAsks` of `@piwitests/run-model/ci` keeps
+     * them for VS Code and the Runs window: one asked in a state, the buttons off until it changes (`seen`), asked again
+     * after a refusal, and, once the instance took the ask (`took`), as soon as the lane shows anything new (`shown`,
+     * whatever its state). On the event thread.
      */
-    class LetGoAsks {
-        private val holds = HashMap<CiLane, String>()
+    class CiAsks {
+        private class Ask(val state: String, var shown: String? = null)
 
-        fun asked(lane: CiLane, hold: String): Boolean = holds[lane.copy(dashboard = null)] == hold
+        private val asks = HashMap<CiLane, Ask>()
 
-        fun ask(lane: CiLane, hold: String): Boolean {
-            if (asked(lane, hold)) return false
-            holds[lane.copy(dashboard = null)] = hold
+        fun asked(lane: CiLane, state: String): Boolean = asks[lane.copy(dashboard = null)]?.state == state
+
+        fun ask(lane: CiLane, state: String): Boolean {
+            if (asked(lane, state)) return false
+            asks[lane.copy(dashboard = null)] = Ask(state)
             return true
         }
 
-        fun refused(lane: CiLane, hold: String) {
-            if (asked(lane, hold)) holds.remove(lane.copy(dashboard = null))
+        fun refused(lane: CiLane, state: String) {
+            if (asked(lane, state)) asks.remove(lane.copy(dashboard = null))
+        }
+
+        fun took(lane: CiLane, state: String, shown: String) {
+            asks[lane.copy(dashboard = null)]?.takeIf { it.state == state }?.shown = shown
+        }
+
+        fun seen(lane: CiLane, state: String?, shown: String? = null) {
+            val key = lane.copy(dashboard = null)
+            val ask = asks[key] ?: return
+            if (ask.state != state || (ask.shown != null && shown != null && ask.shown != shown)) asks.remove(key)
         }
     }
+
+    /**
+     * Whether what a button of a CI lane came to (said under the caption) still stands: while the lane stands in the state
+     * it was asked in (`noteState`; null for a note no button gave).
+     */
+    fun ciNoteStands(noteState: String?, state: String?): Boolean = noteState == null || noteState == state
+
+    /** What a control asks of the service for the CI lane the Worker tab shows (`piwi/ciControl`). */
+    fun ciControlParams(lane: CiLane, command: String): CiControlParams =
+        CiControlParams(lane.root, lane.runId, lane.shard, lane.lane, command)
 
     /** What **Let it go** asks of the service for the CI lane the Worker tab shows (`piwi/ciLetGo`). */
     fun ciLetGoParams(lane: CiLane): CiLetGoParams = CiLetGoParams(lane.root, lane.runId, lane.shard, lane.lane)
@@ -4600,7 +4663,7 @@ object Glue {
                 test.project,
                 if (test.retry > 0) "retry ${test.retry}" else "",
                 if (running) ciLane(test) else test.status,
-                if (running) test.held?.state ?: test.at?.title.orEmpty() else "",
+                if (running) test.held?.state ?: test.paused?.state ?: test.at?.title.orEmpty() else "",
             ).filter { it.isNotEmpty() }.joinToString(" · ")
             val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
             var testKey = "$key\n${test.uri.orEmpty()}\n${test.title.orEmpty().joinToString("\u001f")}\n${test.project}"
@@ -4616,7 +4679,7 @@ object Glue {
                     CiRow(
                         "ci-watch",
                         "Watch",
-                        "${ciLane(test)} · ${test.held?.state ?: "read-only"}",
+                        "${ciLane(test)} · ${test.held?.state ?: test.paused?.state ?: "read-only"}",
                         lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
                         key = "$testKey\nwatch-here",
                     )

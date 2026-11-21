@@ -7573,7 +7573,7 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Só para assistir: elas rodam na CI, então nada aqui as conduz, exceto Deixar seguir numa falha retida para você. Assistir mostra aqui a página de um teste em execução."
+    "message": "Só para assistir: elas rodam na CI, então nada aqui as conduz, exceto Pausar, Retomar, Encerrar o teste e Deixar seguir, para quem pode controlá-las. Assistir mostra aqui a página de um teste em execução."
   },
   "runs_ciTests": {
     "message": "Testes em execução agora"
@@ -7640,6 +7640,12 @@
   },
   "runs_ciNotHeld": {
     "message": "Este worker não retém nenhum teste com falha agora."
+  },
+  "runs_ciControlUnwatched": {
+    "message": "Os controles passam pela visualização desta janela sobre o worker: assista a ele de novo primeiro."
+  },
+  "runs_ciNoWorker": {
+    "message": "Nenhum worker roda nesta raia agora."
   },
   "runs_ciRefusedOffline": {
     "message": "A instância não respondeu."

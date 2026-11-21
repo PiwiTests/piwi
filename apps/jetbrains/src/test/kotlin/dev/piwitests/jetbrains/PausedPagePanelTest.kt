@@ -27,16 +27,24 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertEquals("The page of the CI worker's test", PausedPagePanel().apply { forCiWorker() }.pageName())
     }
 
-    fun testAHeldCiFailureShowsInPlainTextWithItsPlaceAndLetItGoInTheServicesWordsUntilAsked() {
+    fun testAHeldOrPausedCiTestShowsInPlainTextWithItsPlaceAndTheServicesButtonsUntilOneIsAsked() {
         val panel = PausedPagePanel().apply { forCiWorker() }
-        var pressed = 0
+        val pressed = mutableListOf<String>()
         var opened = 0
-        panel.letCiHoldGo = { pressed++ }
-        panel.openHeldPlace = { opened++ }
+        panel.ciCommand = { pressed += it }
+        panel.openCiPlace = { opened++ }
         val lines = listOf("Failed, held at its line · Held for Ana · until 12:05", "<b>Expected</b>", "The CI job’s own timeout still runs.")
-        val held = Glue.HeldShown(lines, "tests/checkout.spec.ts:7", placeOpens = true, offered = true, asking = false, label = "Let it go", title = "End the hold")
-        panel.held(held)
-        assertEquals(lines, panel.heldLines)
+        val held = Glue.CiStopShown(
+            lines,
+            "tests/checkout.spec.ts:7",
+            placeOpens = true,
+            held = true,
+            buttons = listOf(Glue.CiButton("let-go", "Let it go", "End the hold")),
+            asking = false,
+            ask = null,
+        )
+        panel.ciStop(held)
+        assertEquals(lines, panel.ciStopLines)
         val shown = descendants(panel).filterIsInstance<JLabel>().filter { it.text in lines }
         assertEquals(lines, shown.map { it.text })
         assertTrue(shown.all { it.getClientProperty("html.disable") == true })
@@ -45,19 +53,26 @@ class PausedPagePanelTest : BasePlatformTestCase() {
         assertEquals(1, opened)
         val letGo = descendants(panel).filterIsInstance<JButton>().single { it.text == "Let it go" }
         assertEquals("End the hold", letGo.toolTipText)
-        assertTrue(panel.letGoOffered)
+        assertEquals(listOf("Let it go"), panel.ciButtonsOffered)
         letGo.doClick()
-        assertEquals(1, pressed)
-        panel.held(held.copy(asking = true))
-        assertFalse(panel.letGoOffered)
+        assertEquals(listOf("let-go"), pressed)
+        panel.ciStop(held.copy(asking = true))
+        assertEquals(emptyList<String>(), panel.ciButtonsOffered)
         // A place the project does not hold opens nothing.
-        panel.held(held.copy(placeOpens = false))
+        panel.ciStop(held.copy(placeOpens = false))
         assertFalse(place.isEnabled)
-        // Not offered to someone who may not control the run, and gone with the hold.
-        panel.held(held.copy(offered = false))
-        assertFalse(letGo.isVisible)
-        panel.held(null)
-        assertFalse(letGo.isVisible)
+        // Paused: Resume and End the test, each its own command; a Pause waiting, its words alone.
+        panel.ciStop(held.copy(held = false, buttons = listOf(Glue.CiButton("resume", "Resume", "Go on"), Glue.CiButton("end", "End the test", "End it"))))
+        assertEquals(listOf("Resume", "End the test"), panel.ciButtonsOffered)
+        descendants(panel).filterIsInstance<JButton>().single { it.text == "End the test" }.doClick()
+        assertEquals(listOf("let-go", "end"), pressed)
+        panel.ciStop(Glue.CiStopShown(emptyList(), null, false, false, listOf(Glue.CiButton("resume", "Resume", "Take it back")), false, "Pause asked by Ana"))
+        assertTrue(descendants(panel).filterIsInstance<JLabel>().any { it.text == "Pause asked by Ana" && it.isVisible })
+        assertEquals(listOf("Resume"), panel.ciButtonsOffered)
+        // Not offered to someone who may not control the run, and gone with the stop.
+        panel.ciStop(held.copy(buttons = emptyList()))
+        assertEquals(emptyList<String>(), panel.ciButtonsOffered)
+        panel.ciStop(null)
         assertTrue(descendants(panel).filterIsInstance<JLabel>().none { it.text in lines })
     }
 

@@ -20,6 +20,7 @@ import {
   fetchActiveRuns,
   fetchDesktopHubs,
   fetchRunMetadata,
+  controlCiTest,
   letGoCiTest,
   openLiveWatch,
   openRunStream,
@@ -95,6 +96,8 @@ export const ciWatch: CiLaneWatch = new CiLaneWatch({
     withConnectionHealth(settings.instanceUrl, () => changeLiveWatch(settings, runId, body)),
   letGo: (settings, runId, body) =>
     withConnectionHealth(settings.instanceUrl, () => letGoCiTest(settings, runId, body)),
+  control: (settings, runId, body) =>
+    withConnectionHealth(settings.instanceUrl, () => controlCiTest(settings, runId, body)),
 });
 
 /** The browser windows of the Runs windows connected now, by their port. */
@@ -178,6 +181,10 @@ function serveRunsPort(port: chrome.runtime.Port): void {
       const { id, ...lane } = request;
       const held = ciRuns.held(lane.runId, lane.shard, lane.lane);
       void ciWatch.letGo(lane, held).then((answer) => post({ type: 'answer', id, ...answer }));
+    } else if (request.type === 'ci-control') {
+      const { id, command, ...lane } = request;
+      const worker = ciRuns.laneWorker(lane.runId, lane.shard, lane.lane);
+      void ciWatch.control(lane, worker, command).then((answer) => post({ type: 'answer', id, ...answer }));
     } else if (request.type === 'command') {
       const { id, ...command } = request;
       void runHubs.command(command, viewer).then((answer) => post({ type: 'answer', id, ...answer }));

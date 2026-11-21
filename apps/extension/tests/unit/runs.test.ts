@@ -415,6 +415,20 @@ describe('Watch on a CI run, as the worker reads it', () => {
     }
   });
 
+  it('names the run, its shard, its lane and the command for a control, and nothing more', () => {
+    const control = { type: 'ci-control', id: 6, runId: 78, shard: null, lane: 1, command: 'pause' };
+    expect(parseRunsRequest(control)).toEqual(control);
+    expect(parseRunsRequest({ ...control, command: 'end' })).toEqual({ ...control, command: 'end' });
+    for (const bad of [
+      { ...control, command: 'let-go' },
+      { ...control, command: undefined },
+      { ...control, lane: -1 },
+      { ...control, id: 0 },
+    ]) {
+      expect(parseRunsRequest(bad), JSON.stringify(bad)).toBeNull();
+    }
+  });
+
   it('names the run, its shard and its lane for Let it go, and nothing more', () => {
     const letGo = { type: 'ci-let-go', id: 5, runId: 78, shard: null, lane: 1 };
     expect(parseRunsRequest(letGo)).toEqual(letGo);

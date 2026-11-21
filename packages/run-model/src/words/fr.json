@@ -169,7 +169,7 @@
   "runs_ciWhere": "sur $branch$",
   "runs_ciWhereProject": "$project$, sur $branch$",
   "runs_ciProject": "$project$",
-  "runs_ciReadOnly": "Regarder seulement : elles tournent en CI, rien ici ne les pilote, sauf Le laisser partir sur un échec retenu pour vous. Regarder affiche ici la page d’un test en cours.",
+  "runs_ciReadOnly": "Regarder seulement : elles tournent en CI, rien ici ne les pilote, sauf Pause, Reprendre, Terminer le test et Le laisser partir, pour qui peut les contrôler. Regarder affiche ici la page d’un test en cours.",
   "runs_answerPausing": "Pause au prochain appel.",
   "runs_answerStepping": "Passage à l’appel suivant.",
   "runs_answerResuming": "Reprise.",
