@@ -15,6 +15,10 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
+[dev-dependencies]
+# The tests of `spec_filter.rs` match its filters against the paths and `file:` URLs Playwright tests them on.
+regex = "1"
+
 [dependencies]
 # `devtools` compiles the webview inspector into release builds too (it is
 # always on in debug builds). It stays dormant unless the app is launched with
