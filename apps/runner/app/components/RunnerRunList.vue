@@ -23,7 +23,7 @@ import {
   type RunnerRun,
 } from '~/utils/runner-runs';
 
-const { runs, chosen, stopShellRun, clearFinished } = useRunnerRuns();
+const { runs, chosen, unlistedStops, stopShellRun, clearFinished } = useRunnerRuns();
 const { connection } = useDesktopTeamRequests();
 const hub = useDesktopRunHub();
 const words = useRunUiWords();
@@ -37,15 +37,16 @@ const finished = computed(() => runnerFinishedRuns(runs.value));
 /** The hub's live runs no run of this window is: the window was reloaded while they went on. */
 const unlisted = computed(() => runnerUnlistedSessions(sessions.value, runs.value));
 /**
- * The runs of `unlisted` whose Stop was asked, and when, kept while the window shows another view: a second ask (Force
- * stop) kills the process.
+ * When a run of `unlisted` was asked to stop, here, by the team instance or before the window loaded; undefined while
+ * it was not. A second ask (Force stop) kills the process.
  */
-const stopping = useState<Record<string, number>>('runner-unlisted-stops', () => ({}));
+function stopAskedAt(session: HubSession): number | undefined {
+  const shellId = runnerShellIdOf(session.ref);
+  return shellId === null ? undefined : unlistedStops.value[shellId];
+}
 function stopUnlisted(session: HubSession) {
   const shellId = runnerShellIdOf(session.ref);
-  if (shellId === null) return;
-  if (stopping.value[session.ref] === undefined) stopping.value = { ...stopping.value, [session.ref]: Date.now() };
-  void stopShellRun(shellId);
+  if (shellId !== null) void stopShellRun(shellId);
 }
 
 /** Whether a test of a run going on waits at a stop, by the hub's live run of it. */
@@ -120,7 +121,7 @@ const groups = computed(() => [
         key: session.ref,
         title: desktopRunName(session, words),
         status: {
-          label: stopping.value[session.ref] === undefined ? t('runner_statusRunning') : t('runner_stopping'),
+          label: stopAskedAt(session) === undefined ? t('runner_statusRunning') : t('runner_stopping'),
           color: 'primary' as const,
         },
         waits: desktopRunWaits(session),
@@ -215,8 +216,8 @@ function announce(text: string) {
           <div class="flex flex-wrap items-center gap-3">
             <p class="min-w-0 flex-1 basis-48 text-xs text-muted">{{ t('runner_stillRunning') }}</p>
             <DesktopRunStopButton
-              :stopping="stopping[session.ref] !== undefined"
-              :since="stopping[session.ref]"
+              :stopping="stopAskedAt(session) !== undefined"
+              :since="stopAskedAt(session)"
               @stop="stopUnlisted(session)"
               @force="stopUnlisted(session)"
             />

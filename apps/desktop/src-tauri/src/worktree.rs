@@ -2077,11 +2077,12 @@ fn finish_job(
         },
         cleaned,
     );
-    if let Some(runs) = app.try_state::<LocalRuns>() {
-        runs.note_exit(id, code.or(Some(1)));
+    let stopped = app.try_state::<LocalRuns>().is_some_and(|runs| {
+        let stopped = runs.note_exit(id, code.or(Some(1)));
         runs.drop_job(id);
-    }
-    emit(app, RunEventPayload::exit(id, code.or(Some(1))));
+        stopped
+    });
+    emit(app, RunEventPayload::exit(id, code.or(Some(1)), stopped));
 }
 
 #[cfg(test)]

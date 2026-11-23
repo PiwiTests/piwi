@@ -31,8 +31,9 @@ export interface RunnerRun {
   /** The shell's id for the run; null until the start resolves. */
   shellId: number | null;
   status: RunnerRunStatus;
+  /** The run was asked to stop: by the person here, or by the team instance, which the shell says (`stopping`). */
   stopRequested: boolean;
-  /** When the person asked the run to stop, in ms since the epoch: Force stop waits a moment after it. */
+  /** When the run was asked to stop, in ms since the epoch: Force stop waits a moment after it. */
   stopRequestedAt?: number | null;
   /**
    * **Hold failures**: a failure no pause bar shows waits in the window for an answer while the run shows there, as a
@@ -51,12 +52,16 @@ export interface RunnerRun {
   linesTotal: number;
 }
 
-/** One `piwi:local-run` event: a line of output, an error line, or the exit of the run. */
+/**
+ * One `piwi:local-run` event: a line of output, an error line, the start of a stop (`stopping`, whoever asked), or the
+ * exit of the run, with whether it was stopped.
+ */
 export interface RunnerRunEvent {
   id: number;
   kind: string;
   line?: string | null;
   code?: number | null;
+  stopped?: boolean | null;
 }
 
 export interface RunnerRunStart {
@@ -113,17 +118,32 @@ export function noteRunPages(
   }
 }
 
-/** The status a run ends in: the person's stop wins, then the exit code. */
+/** The status a run ends in: a stop wins, then the exit code. */
 export function finishedStatus(run: Pick<RunnerRun, 'stopRequested'>, code: number | null): RunnerRunStatus {
   if (run.stopRequested) return 'stopped';
   if (code === 0) return 'passed';
   return code === null ? 'error' : 'failed';
 }
 
-/** Applies one event, heard at `at`, to the run it belongs to. */
+/** Marks a run asked to stop at `at`, keeping the time of the first ask. */
+function noteStop(run: RunnerRun, at: number): void {
+  if (!run.stopRequested) run.stopRequestedAt = at;
+  run.stopRequested = true;
+}
+
+/**
+ * Applies one event, heard at `at`, to the run it belongs to. The shell says when a stop begins (`stopping`), whoever
+ * asked it, the team instance included: the run shows stopping and its Stop becomes Force stop. An exit the shell says
+ * was stopped ends the run stopped.
+ */
 export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent, at: number = Date.now()): void {
   if (run.status !== 'running') return;
+  if (event.kind === 'stopping') {
+    noteStop(run, at);
+    return;
+  }
   if (event.kind === 'exit') {
+    if (event.stopped) noteStop(run, at);
     run.exitCode = event.code ?? null;
     run.status = finishedStatus(run, run.exitCode);
     run.endedAt = at;
@@ -157,6 +177,24 @@ export function runnerUnlistedSessions<S extends { ref: string; ended: boolean }
   runs: readonly RunnerRun[],
 ): S[] {
   return sessions.filter((session) => !session.ended && !runs.some((run) => isRunnerRunRef(session.ref, run.shellId)));
+}
+
+/**
+ * The shell's runs this window holds no entry for (it was reloaded while they went on) that were asked to stop, by
+ * shell id, each with when the window first heard so: a stop asked here, a `stopping` event, or the shell's list of the
+ * runs that wind down (`desktop_local_runs`).
+ */
+export type RunnerUnlistedStops = Record<number, number>;
+
+/** `stops` with shell run `shellId` asked to stop at `at`, unless a run of `runs` is that run or its stop is known. */
+export function withUnlistedStop(
+  stops: RunnerUnlistedStops,
+  runs: readonly RunnerRun[],
+  shellId: number,
+  at: number,
+): RunnerUnlistedStops {
+  if (stops[shellId] !== undefined || runs.some((run) => run.shellId === shellId)) return stops;
+  return { ...stops, [shellId]: at };
 }
 
 /** A spec path with POSIX separators and no leading `./`. */
@@ -290,8 +328,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
    */
   async function stop(run: RunnerRun): Promise<void> {
     if (run.status !== 'running' || run.shellId === null) return;
-    if (!run.stopRequested) run.stopRequestedAt = now();
-    run.stopRequested = true;
+    noteStop(run, now());
     try {
       await backend.invoke('desktop_stop_local_tests', { runId: run.shellId });
     } catch {

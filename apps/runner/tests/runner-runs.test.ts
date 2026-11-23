@@ -13,6 +13,7 @@ import {
   runnerShellIdOf,
   runnerShownRefs,
   runnerTestResults,
+  withUnlistedStop,
   type RunnerRun,
   type RunnerRunBackend,
 } from '../app/utils/runner-runs';
@@ -131,6 +132,33 @@ describe('a run', () => {
     expect(run.stopRequestedAt).toBe(4_000);
     book.handle({ id: 7, kind: 'exit', code: 130 });
     expect(run.status).toBe('stopped');
+  });
+
+  test('a stop the shell began shows the run stopping, its Stop forces it, and it ends stopped', async () => {
+    const { book, spy, clock } = setup();
+    const run = await book.start(input);
+    clock.now = 4_000;
+    book.handle({ id: 7, kind: 'stopping' });
+    expect(run).toMatchObject({ status: 'running', stopRequested: true, stopRequestedAt: 4_000 });
+    clock.now = 9_000;
+    await book.stop(run);
+    expect(spy).toHaveBeenLastCalledWith('desktop_stop_local_tests', { runId: 7 });
+    expect(run.stopRequestedAt).toBe(4_000);
+    book.handle({ id: 7, kind: 'exit', code: 1, stopped: true });
+    expect(run.status).toBe('stopped');
+  });
+
+  test('an exit the shell says was stopped ends stopped, one it says was not ends by its code', async () => {
+    const stopped = setup();
+    const run = await stopped.book.start(input);
+    stopped.clock.now = 5_000;
+    stopped.book.handle({ id: 7, kind: 'exit', code: 1, stopped: true });
+    expect(run).toMatchObject({ status: 'stopped', stopRequested: true, stopRequestedAt: 5_000, endedAt: 5_000 });
+
+    const failed = setup();
+    const other = await failed.book.start(input);
+    failed.book.handle({ id: 7, kind: 'exit', code: 1, stopped: false });
+    expect(other.status).toBe('failed');
   });
 
   test('stop does nothing for a run that has ended or has no id yet', async () => {
@@ -353,5 +381,19 @@ describe('runnerTestResults', () => {
   test('says nothing while the run goes on, or when its output holds no summary', () => {
     expect(runnerTestResults(ended('running', FAILED))).toBeNull();
     expect(runnerTestResults(ended('error', ['No folder is linked to this project']))).toBeNull();
+  });
+});
+
+describe('withUnlistedStop', () => {
+  test('keeps when a run the window holds no entry for was first asked to stop', () => {
+    const runs = [{ shellId: 7 }] as RunnerRun[];
+    const once = withUnlistedStop({}, runs, 9, 1_000);
+    expect(once).toEqual({ 9: 1_000 });
+    expect(withUnlistedStop(once, runs, 9, 5_000)).toBe(once);
+  });
+
+  test('leaves a run the window holds to its own entry', () => {
+    const stops = {};
+    expect(withUnlistedStop(stops, [{ shellId: 7 }] as RunnerRun[], 7, 1_000)).toBe(stops);
   });
 });

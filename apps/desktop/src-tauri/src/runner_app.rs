@@ -393,6 +393,7 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             desktop_set_run_in_background,
             desktop_set_start_on_login,
             runner::desktop_stop_local_tests,
+            runner::desktop_local_runs,
             run_target::desktop_keep_run_target_key,
             run_target::desktop_forget_run_target,
             run_target::desktop_request_folders,

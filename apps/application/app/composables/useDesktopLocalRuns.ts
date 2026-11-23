@@ -473,9 +473,12 @@ interface BisectEventPayload {
 
 interface LocalRunEventPayload {
   id: number;
-  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect' | 'repro' | 'lab';
+  /** `stopping`: the shell began to stop the process, whoever asked (the team instance stops a request's run). */
+  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'stopping' | 'phase' | 'bisect' | 'repro' | 'lab';
   line: string | null;
   code: number | null;
+  /** For kind === 'exit': whether the process was stopped, whoever asked. */
+  stopped?: boolean;
   /** For kind === 'phase': which phase the run entered. */
   phase?: LocalRunPhase | null;
   /** For kind === 'bisect': the bisect progress event. */
@@ -528,13 +531,15 @@ interface KeptForReload {
 }
 
 /**
- * The shell's runs as `desktop_local_runs` answers: those still going, the latest that ended, each with its code and
- * the events that carried its verdict (what a repro spec recorded, a lab's report, a bisect's result), and the origin
- * reference this window gave each plain run it started.
+ * The shell's runs as `desktop_local_runs` answers: those still going and which of them were asked to stop (by the team
+ * instance that requested one, say), the latest that ended, each with its code, whether it was stopped and the events
+ * that carried its verdict (what a repro spec recorded, a lab's report, a bisect's result), and the origin reference this
+ * window gave each plain run it started.
  */
 interface ShellLocalRuns {
   running: number[];
-  ended: Array<{ id: number; code: number | null; events?: LocalRunEventPayload[] }>;
+  stopping?: number[];
+  ended: Array<{ id: number; code: number | null; stopped?: boolean; events?: LocalRunEventPayload[] }>;
   origins?: Array<{ id: number; originRef: string }>;
 }
 
@@ -665,8 +670,20 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /** The run was asked to stop, here or by the shell: it shows stopping, then ends stopped. */
+  function noteStop(run: LocalRun) {
+    if (run.status !== 'running') return;
+    if (!run.stopRequested) run.stopRequestedAt = Date.now();
+    run.stopRequested = true;
+  }
+
   function dispatch(run: LocalRun, payload: LocalRunEventPayload) {
+    if (payload.kind === 'stopping') {
+      noteStop(run);
+      return;
+    }
     if (payload.kind === 'exit') {
+      if (payload.stopped) noteStop(run);
       exitResolvers.get(payload.id)?.(payload.code);
       return;
     }
@@ -729,10 +746,12 @@ export function useDesktopLocalRuns() {
     // events for it, then release the buffer — no event can slip through.
     run.stepStarting = false;
     nameStep(run, shellId);
+    // A Stop asked here while the step started reaches its process now, its wind-down counted from here; one the shell
+    // began meanwhile comes among the step's events.
+    const stopAsked = run.stopRequested;
     const exit = adopt(run, shellId);
     releaseBuffer();
-    // A Stop asked while the step started reaches its process now, its wind-down counted from here.
-    if (run.stopRequested) {
+    if (stopAsked) {
       run.stopRequestedAt = Date.now();
       void askToStop(shellId);
     }
@@ -1834,8 +1853,7 @@ export function useDesktopLocalRuns() {
    */
   async function stopRun(run: LocalRun) {
     if (run.status !== 'running') return;
-    if (!run.stopRequested) run.stopRequestedAt = Date.now();
-    run.stopRequested = true;
+    noteStop(run);
     if (run.shellId != null) await askToStop(run.shellId);
   }
 
@@ -2034,10 +2052,12 @@ export function useDesktopLocalRuns() {
       if (id != null && ended) {
         nameStep(run, id);
         replayEnded(run, id, ended.events ?? []);
+        if (ended.stopped) noteStop(run);
         run.shellId = null;
         resumed = Promise.resolve(ended.code);
       } else if (id != null && shell?.running.includes(id)) {
         nameStep(run, id);
+        if (shell.stopping?.includes(id)) noteStop(run);
         resumed = adopt(run, id);
       } else {
         run.shellId = null;

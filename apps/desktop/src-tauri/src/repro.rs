@@ -389,15 +389,16 @@ pub async fn desktop_run_repro(
                         .and_then(|bytes| serde_json::from_slice::<serde_json::Value>(&bytes).ok());
                     let _ = std::fs::remove_dir_all(&result_dir);
                     let verdict = RunEventPayload::repro(id, recorded);
-                    if let Some(runs) = emit_app.try_state::<LocalRuns>() {
+                    let stopped = emit_app.try_state::<LocalRuns>().is_some_and(|runs| {
                         runs.keep_verdict(id, verdict.clone());
-                        runs.note_exit(id, status.code);
+                        let stopped = runs.note_exit(id, status.code);
                         runs.forget_child(id);
                         runs.remove_spec(id);
-                    }
+                        stopped
+                    });
                     crate::run_target::hand_local_runs(&emit_app);
                     let _ = emit_app.emit(RUN_EVENT, &verdict);
-                    RunEventPayload::exit(id, status.code)
+                    RunEventPayload::exit(id, status.code, stopped)
                 }
                 _ => continue,
             };
