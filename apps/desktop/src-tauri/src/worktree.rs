@@ -3,7 +3,11 @@
 //
 // A reproduction, a lab session and a bisect all run in a throwaway `git worktree` of a commit,
 // created under this app's data dir — never inside the linked folder — so the
-// user's HEAD, uncommitted changes and `node_modules` are left alone. The shell
+// user's HEAD, uncommitted changes and `node_modules` are left alone. The worktree
+// is the whole repository's, and each job runs Playwright in the linked folder's
+// place in it (`RepoPlace`), which holds the config: a monorepo's subfolder as
+// well as the root. Dependencies install where the lockfile is (`install_folder`),
+// the linked folder or the workspace root above it. The shell
 // drives every step itself (checkout · install · browser · test, and for a bisect
 // the good/bad loop) and streams progress into the Local runs tray on the same
 // `piwi:local-run` channel a normal local run uses.
@@ -18,7 +22,7 @@
 // the `piwi flake` arguments and environment are built here.
 
 use std::io::{BufRead, BufReader};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -32,7 +36,7 @@ use crate::mcp_clients::ServerInfo;
 use crate::node_path;
 use crate::repro::local_get_json;
 use crate::runner::{
-    linked_folder, resolve_playwright_cli, validate_args, Job, JobChild, LinkRecord, LocalRuns,
+    linked_folder, resolve_playwright_cli, validate_args, Job, JobChild, LocalRuns,
     RunEventPayload, COLOR_ENV, RUN_EVENT,
 };
 
@@ -65,8 +69,8 @@ pub struct FirstBad {
 }
 
 /// How to tear a job's worktree down: reset an in-progress bisect, then remove
-/// the worktree from the main repo. Run once, whether the driver finishes, the
-/// user stops it, or the app quits.
+/// the worktree from the main repo (`folder`, the repository's root). Run once,
+/// whether the driver finishes, the user stops it, or the app quits.
 pub struct Cleanup {
     pub git: PathBuf,
     pub folder: PathBuf,
@@ -95,6 +99,8 @@ pub(crate) enum PackageManager {
 }
 
 impl PackageManager {
+    const ALL: [PackageManager; 3] = [PackageManager::Npm, PackageManager::Pnpm, PackageManager::Yarn];
+
     /// The lockfile whose presence selects this manager.
     fn lockfile(self) -> &'static str {
         match self {
@@ -124,6 +130,20 @@ pub(crate) fn detect_package_manager(folder: &Path) -> PackageManager {
     } else {
         PackageManager::Npm
     }
+}
+
+/// The folder of `worktree` whose dependencies a job installs, relative to its root: the nearest folder from `sub`
+/// (the linked folder's place) up to the root that holds a lockfile, the folder's own or its workspace root's, else
+/// `sub`.
+pub(crate) fn install_folder(worktree: &Path, sub: &Path) -> PathBuf {
+    sub.ancestors()
+        .find(|rel| {
+            PackageManager::ALL
+                .iter()
+                .any(|pm| worktree.join(rel).join(pm.lockfile()).is_file())
+        })
+        .unwrap_or(sub)
+        .to_path_buf()
 }
 
 /// Whether two files exist and hold byte-identical contents — the test for the
@@ -642,6 +662,22 @@ fn git_capture(git: &Path, dir: &Path, args: &[&str]) -> Result<String, String> 
     }
 }
 
+/// Whether the commit checked out in `worktree` holds the folder `sub`: a bisect step's checkout can leave a folder
+/// the commit lacks on disk, holding files git does not track (`node_modules`, an env file).
+fn holds_folder(git: &Path, worktree: &Path, sub: &Path) -> bool {
+    if sub.as_os_str().is_empty() {
+        return true;
+    }
+    let path: Vec<String> = sub.iter().map(|part| part.to_string_lossy().into_owned()).collect();
+    console_command(git)
+        .arg("-C")
+        .arg(worktree)
+        .args(["cat-file", "-e", &format!("HEAD:{}", path.join("/"))])
+        .output()
+        .map(|o| o.status.success())
+        .unwrap_or(false)
+}
+
 /// Whether a commit is known to the repository at `folder`.
 fn commit_exists(git: &Path, folder: &Path, sha: &str) -> bool {
     console_command(git)
@@ -759,17 +795,23 @@ fn link_node_modules(folder: &Path, worktree: &Path) -> Result<(), String> {
     }
 }
 
-/// Install dependencies in the worktree. Prefers linking the linked folder's
-/// `node_modules` when the lockfile is byte-identical; otherwise runs the folder's
-/// package manager. Returns whether the step succeeded.
+/// Install dependencies in the worktree of the repository at `root`, in the
+/// folder that holds the lockfile ([`install_folder`], from `sub`, the linked
+/// folder's place). Prefers linking the checkout's `node_modules` of that folder
+/// when the lockfile is byte-identical; otherwise runs the package manager the
+/// lockfile names. Returns whether the step succeeded.
 fn install_worktree(
     app: &AppHandle,
     id: u32,
-    folder: &Path,
+    root: &Path,
     worktree: &Path,
+    sub: &Path,
     stop: &AtomicBool,
 ) -> bool {
-    let pm = detect_package_manager(folder);
+    let rel = install_folder(worktree, sub);
+    let (folder, worktree) = (root.join(&rel), worktree.join(&rel));
+    let (folder, worktree) = (folder.as_path(), worktree.as_path());
+    let pm = detect_package_manager(worktree);
     let lockfile = pm.lockfile();
     let folder_lock = folder.join(lockfile);
     let worktree_lock = worktree.join(lockfile);
@@ -1025,11 +1067,49 @@ fn record_child(app: &AppHandle, id: u32, child: Option<JobChild>) {
 
 // ── Commands ──────────────────────────────────────────────────────────────────
 
-/// Resolve the linked folder for a project, checking it is on disk and a git repo.
-fn resolve_repo(
-    app: &AppHandle,
-    project_id: &str,
-) -> Result<(LinkRecord, PathBuf, PathBuf), String> {
+/// Where a linked folder sits in its git repository: the repository's root, and
+/// the folder's path relative to it, empty at the root. A job checks out the
+/// root and runs Playwright in the same folder of its worktree ([`run_folder`]).
+pub(crate) struct RepoPlace {
+    pub root: PathBuf,
+    pub sub: PathBuf,
+}
+
+/// Where `folder` sits in its git repository, as `git rev-parse --show-toplevel
+/// --show-prefix` says; an error for a folder in no repository.
+pub(crate) fn repo_place(git: &Path, folder: &Path) -> Result<RepoPlace, String> {
+    const NO_REPO: &str = "the linked folder is in no git repository: a reproduction, a bisect and the lab check out \
+                           its commits";
+    let out = console_command(git)
+        .arg("-C")
+        .arg(folder)
+        .args(["rev-parse", "--show-toplevel", "--show-prefix"])
+        .output()
+        .map_err(|e| e.to_string())?;
+    if !out.status.success() {
+        return Err(NO_REPO.into());
+    }
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let mut lines = stdout.lines();
+    let root = lines.next().filter(|line| !line.is_empty()).ok_or(NO_REPO)?;
+    let sub: PathBuf = lines
+        .next()
+        .unwrap_or_default()
+        .split('/')
+        .filter(|part| !part.is_empty())
+        .collect();
+    if sub.components().any(|part| !matches!(part, Component::Normal(_))) {
+        return Err(NO_REPO.into());
+    }
+    Ok(RepoPlace {
+        root: PathBuf::from(root),
+        sub,
+    })
+}
+
+/// Resolve the linked folder for a project, checking it is on disk and in a git
+/// repository: the folder, git, and where the folder sits in its repository.
+fn resolve_repo(app: &AppHandle, project_id: &str) -> Result<(PathBuf, PathBuf, RepoPlace), String> {
     if !crate::runner::valid_project_id(project_id) {
         return Err("invalid project id".into());
     }
@@ -1039,14 +1119,24 @@ fn resolve_repo(
         return Err("the linked folder no longer exists — pick it again".into());
     }
     let git = resolve_tool(app, "git").ok_or("git was not found — install it and try again")?;
-    if !folder.join(".git").exists() {
-        return Err(
-            "the linked folder is not the root of a git repository: a reproduction, a bisect and the lab check out the \
-             repository and run Playwright at its root, so they need a repository whose Playwright config is at its root"
-                .into(),
-        );
+    let place = repo_place(&git, &folder)?;
+    Ok((folder, git, place))
+}
+
+/// The folder of `worktree` the linked folder is (`sub`, [`RepoPlace`]), where
+/// a job runs Playwright; none, said, when the commit checked out has no such folder.
+fn run_folder(app: &AppHandle, id: u32, worktree: &Path, sub: &Path) -> Option<PathBuf> {
+    let dir = worktree.join(sub);
+    if dir.is_dir() {
+        return Some(dir);
     }
-    Ok((record, folder, git))
+    emit_line(
+        app,
+        id,
+        "error",
+        format!("This commit has no {} folder, where the linked folder sits in the repository.", sub.display()),
+    );
+    None
 }
 
 /// Prepare job `id`'s worktree of `commit` under the worktrees dir. Returns the
@@ -1147,7 +1237,7 @@ pub async fn desktop_reproduce_here(
         return Err("invalid commit".into());
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
-    let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let (folder, git, place) = resolve_repo(&app, &project_id)?;
     let settings =
         crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
 
@@ -1155,7 +1245,7 @@ pub async fn desktop_reproduce_here(
     let id = state.allocate_id();
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
-    let worktree = add_worktree(&app, &git, &folder, &project_id, &commit, id)?;
+    let worktree = add_worktree(&app, &git, &place.root, &project_id, &commit, id)?;
     state.label(id, crate::runner::run_label("the reproduction", &folder));
     state.register_job(
         id,
@@ -1164,7 +1254,7 @@ pub async fn desktop_reproduce_here(
             child: Arc::new(Mutex::new(None)),
             cleanup: Cleanup {
                 git: git.clone(),
-                folder: folder.clone(),
+                folder: place.root.clone(),
                 worktree: worktree.clone(),
                 bisect: false,
             },
@@ -1177,7 +1267,7 @@ pub async fn desktop_reproduce_here(
             &app,
             id,
             &folder,
-            &git,
+            &place,
             &worktree,
             &commit,
             &args,
@@ -1187,7 +1277,7 @@ pub async fn desktop_reproduce_here(
             &stop,
         )
         .await;
-        finish_job(&app, id, &git, &folder, &worktree, false, &cleaned, code);
+        finish_job(&app, id, &git, &place.root, &worktree, false, &cleaned, code);
     });
     Ok(id)
 }
@@ -1197,7 +1287,7 @@ async fn reproduce_driver(
     app: &AppHandle,
     id: u32,
     folder: &Path,
-    _git: &Path,
+    place: &RepoPlace,
     worktree: &Path,
     commit: &str,
     args: &[String],
@@ -1219,42 +1309,43 @@ async fn reproduce_driver(
         "stdout",
         "The commit's own Playwright version is used — not the run's pin.",
     );
+    let dir = run_folder(app, id, worktree, &place.sub)?;
 
     emit(app, RunEventPayload::phase(id, "install"));
-    if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
+    if stop.load(Ordering::SeqCst) || !install_worktree(app, id, &place.root, worktree, &place.sub, stop) {
         return None;
     }
-    if !place_env_file(app, id, folder, worktree, settings, None) {
+    if !place_env_file(app, id, folder, &dir, settings, None) {
         return None;
     }
-    if stop.load(Ordering::SeqCst) || !selects_a_test(app, id, worktree, args, settings).await {
+    if stop.load(Ordering::SeqCst) || !selects_a_test(app, id, &dir, args, settings).await {
         return None;
     }
     let env = origin_env("reproduce", origin_ref);
     let attended = crate::hub_env::attended_args(args);
     let job = (folder, commit);
-    run_test_phase(app, id, worktree, job, args, browser, &env, settings, stop, attended).await
+    run_test_phase(app, id, &dir, job, args, browser, &env, settings, stop, attended).await
 }
 
 /// For a protected environment, whether the reproduction's filters select a test once kept to its required tags: a
-/// `--list` of the worktree's Playwright with the same arguments, run variables and environment. When none is
-/// selected, or the tests cannot be listed, it says so and the reproduction stops before its test phase, with no
-/// verdict. True for any other environment.
+/// `--list` of the worktree's Playwright in `dir`, the linked folder's place, with the same arguments, run variables
+/// and environment. When none is selected, or the tests cannot be listed, it says so and the reproduction stops before
+/// its test phase, with no verdict. True for any other environment.
 async fn selects_a_test(
     app: &AppHandle,
     id: u32,
-    worktree: &Path,
+    dir: &Path,
     args: &[String],
     settings: &RunSettings,
 ) -> bool {
     let Some(environment) = settings.environment.as_ref().filter(|environment| environment.protected) else {
         return true;
     };
-    let Some(cli) = resolve_playwright_cli(worktree) else {
+    let Some(cli) = resolve_playwright_cli(dir) else {
         emit_line(app, id, "error", "No Playwright installation found in the worktree.");
         return false;
     };
-    let cwd = crate::runner::playwright_folder(worktree);
+    let cwd = crate::runner::playwright_folder(dir);
     let mut list_args = vec![
         node_path(&cli),
         "test".to_string(),
@@ -1272,9 +1363,9 @@ async fn selects_a_test(
         Ok(command) => {
             command
                 .args(list_args)
-                .current_dir(worktree)
+                .current_dir(dir)
                 .envs(settings.envs())
-                .envs(run_path_env(app, worktree))
+                .envs(run_path_env(app, dir))
                 .env("NO_COLOR", "1")
                 .output()
                 .await
@@ -1330,16 +1421,16 @@ async fn selects_a_test(
     }
 }
 
-/// Copy the env file of the environment a job runs for from the linked folder `folder` into its worktree, before its
-/// test runs ([`crate::environments::copy_env_file`]), and say what it did. False when the copy is refused, which
-/// stops the job; a file the linked folder lacks is said, and the job goes on without it. For a bisect, `tracked` is
-/// git and the range `good..bad` it checks out: a name a commit of the range tracks is not copied, since a checkout
-/// would replace or remove the copy, and the job goes on with what each commit holds.
+/// Copy the env file of the environment a job runs for from the linked folder `folder` into `dir`, the linked folder's
+/// place in its worktree, before its test runs ([`crate::environments::copy_env_file`]), and say what it did. False
+/// when the copy is refused, which stops the job; a file the linked folder lacks is said, and the job goes on without
+/// it. For a bisect, `tracked` is git and the range `good..bad` it checks out: a name a commit of the range tracks is
+/// not copied, since a checkout would replace or remove the copy, and the job goes on with what each commit holds.
 fn place_env_file(
     app: &AppHandle,
     id: u32,
     folder: &Path,
-    worktree: &Path,
+    dir: &Path,
     settings: &RunSettings,
     tracked: Option<(&Path, &str, &str)>,
 ) -> bool {
@@ -1351,7 +1442,7 @@ fn place_env_file(
         return true;
     };
     if let Some((git, good, bad)) = tracked {
-        if tracked_in_range(git, worktree, good, bad, name) {
+        if tracked_in_range(git, dir, good, bad, name) {
             emit_line(
                 app,
                 id,
@@ -1361,7 +1452,7 @@ fn place_env_file(
             return true;
         }
     }
-    match crate::environments::copy_env_file(folder, worktree, name) {
+    match crate::environments::copy_env_file(folder, dir, name) {
         Ok(EnvFileCopy::Copied) => {
             emit_line(
                 app,
@@ -1396,25 +1487,26 @@ fn place_env_file(
     }
 }
 
-/// Whether a commit of `good..bad` adds, changes or removes `name` at the worktree's root: git would replace or delete
-/// a copy of it as the bisect checks the commits out. A git that cannot answer counts as tracked.
-fn tracked_in_range(git: &Path, worktree: &Path, good: &str, bad: &str, name: &str) -> bool {
+/// Whether a commit of `good..bad` adds, changes or removes `name` in `dir`, a folder of the worktree: git would replace
+/// or delete a copy of it as the bisect checks the commits out. A git that cannot answer counts as tracked.
+fn tracked_in_range(git: &Path, dir: &Path, good: &str, bad: &str, name: &str) -> bool {
     let range = format!("{good}..{bad}");
-    git_capture(git, worktree, &["log", "--format=", "--name-only", &range, "--", name])
+    git_capture(git, dir, &["log", "--format=", "--name-only", &range, "--", name])
         .map(|out| !out.trim().is_empty())
         .unwrap_or(true)
 }
 
-/// The browser + test phases shared by reproduce and each bisect step; the test
-/// runs with [`flake_lab_env`], reporting to this app, `env`, and the run
-/// variables and the environment of `settings`. `job`: the linked folder and
-/// the commit the worktree checks out, which pick its hub. `attended`: whether a
-/// person attends the run (a reproduction, not a bisect).
+/// The browser + test phases shared by reproduce and each bisect step, in
+/// `dir`, the linked folder's place in the worktree; the test runs with
+/// [`flake_lab_env`], reporting to this app, `env`, and the run variables and
+/// the environment of `settings`. `job`: the linked folder and the commit the
+/// worktree checks out, which pick its hub. `attended`: whether a person
+/// attends the run (a reproduction, not a bisect).
 #[allow(clippy::too_many_arguments)]
 async fn run_test_phase(
     app: &AppHandle,
     id: u32,
-    worktree: &Path,
+    dir: &Path,
     job: (&Path, &str),
     args: &[String],
     browser: Option<&str>,
@@ -1423,10 +1515,10 @@ async fn run_test_phase(
     stop: &AtomicBool,
     attended: bool,
 ) -> Option<i32> {
-    let cli = resolve_playwright_cli(worktree)?;
+    let cli = resolve_playwright_cli(dir)?;
 
     emit(app, RunEventPayload::phase(id, "browser"));
-    if stop.load(Ordering::SeqCst) || !ensure_browser(app, id, worktree, &cli, browser).await {
+    if stop.load(Ordering::SeqCst) || !ensure_browser(app, id, dir, &cli, browser).await {
         return None;
     }
 
@@ -1435,12 +1527,12 @@ async fn run_test_phase(
         return None;
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
-    let cwd = crate::runner::playwright_folder(worktree);
+    let cwd = crate::runner::playwright_folder(dir);
     node_args.extend(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows)));
     node_args.extend(settings.args());
     let mut env_with_app = lab_env_with_hub(app, id, attended, job.0, job.1).await;
     env_with_app.extend_from_slice(env);
-    run_sidecar_streaming(app, id, Some(&cli), worktree, node_args, &env_with_app, &settings.envs()).await
+    run_sidecar_streaming(app, id, Some(&cli), dir, node_args, &env_with_app, &settings.envs()).await
 }
 
 /// Drive a git bisect over the window `good..bad` in a throwaway worktree, step by
@@ -1465,7 +1557,7 @@ pub async fn desktop_bisect_here(
         return Err("invalid commit".into());
     }
     let origin_ref = origin_reference(cluster_id, origin_ref)?;
-    let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let (folder, git, place) = resolve_repo(&app, &project_id)?;
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
     settings.refuse_protected(
         "A bisect",
@@ -1493,7 +1585,7 @@ pub async fn desktop_bisect_here(
     let id = state.allocate_id();
     let stop = Arc::new(AtomicBool::new(false));
     let cleaned = Arc::new(AtomicBool::new(false));
-    let worktree = add_worktree(&app, &git, &folder, &project_id, &bad, id)?;
+    let worktree = add_worktree(&app, &git, &place.root, &project_id, &bad, id)?;
     state.label(id, crate::runner::run_label("the bisect", &folder));
     state.register_job(
         id,
@@ -1502,7 +1594,7 @@ pub async fn desktop_bisect_here(
             child: Arc::new(Mutex::new(None)),
             cleanup: Cleanup {
                 git: git.clone(),
-                folder: folder.clone(),
+                folder: place.root.clone(),
                 worktree: worktree.clone(),
                 bisect: true,
             },
@@ -1517,6 +1609,7 @@ pub async fn desktop_bisect_here(
             &git,
             &worktree,
             &folder,
+            &place,
             &good,
             &bad,
             &args,
@@ -1527,7 +1620,7 @@ pub async fn desktop_bisect_here(
             &stop,
         )
         .await;
-        finish_job(&app, id, &git, &folder, &worktree, true, &cleaned, code);
+        finish_job(&app, id, &git, &place.root, &worktree, true, &cleaned, code);
     });
     Ok(id)
 }
@@ -1539,6 +1632,7 @@ async fn bisect_driver(
     git: &Path,
     worktree: &Path,
     folder: &Path,
+    place: &RepoPlace,
     good: &str,
     bad: &str,
     args: &[String],
@@ -1558,8 +1652,9 @@ async fn bisect_driver(
             format!("Each step runs the Flake Lab arm that reproduced test {test_case_id}: bad on a failure with the same error as in CI, good after enough clean runs."),
         );
     }
+    let dir = run_folder(app, id, worktree, &place.sub)?;
     // An untracked file stays in the worktree as the bisect checks out each commit.
-    if !place_env_file(app, id, folder, worktree, settings, Some((git, good, bad))) {
+    if !place_env_file(app, id, folder, &dir, settings, Some((git, good, bad))) {
         return None;
     }
     let start = git_capture(git, worktree, &["bisect", "start", bad, good]);
@@ -1615,10 +1710,15 @@ async fn bisect_driver(
             ),
         );
 
+        // The linked folder may be missing at a commit of the window, which is then skipped.
+        let present = holds_folder(git, worktree, &place.sub);
+        if !present {
+            emit_line(app, id, "stderr", format!("This commit has no {} folder: skipped.", place.sub.display()));
+        }
         // Install can change inside the window, so re-check the lockfile each step.
-        let installed = install_worktree(app, id, folder, worktree, stop);
+        let installed = present && install_worktree(app, id, &place.root, worktree, &place.sub, stop);
         let browser_ok =
-            installed && ensure_browser_for_step(app, id, worktree, browser, stop).await;
+            installed && ensure_browser_for_step(app, id, &dir, browser, stop).await;
         // The sub-command that judges this commit — `skip` when it cannot be
         // built or tested, otherwise `good`/`bad` from the test's exit code. Each
         // advances the bisect and prints the next candidate, which becomes the
@@ -1627,7 +1727,7 @@ async fn bisect_driver(
             "skip"
         } else if let Some(test_case_id) = flake {
             let at = candidate.as_deref().unwrap_or_default();
-            let code = run_flake_step(app, id, folder, worktree, at, test_case_id, &settings.envs(), stop).await;
+            let code = run_flake_step(app, id, folder, &dir, at, test_case_id, &settings.envs(), stop).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1642,7 +1742,7 @@ async fn bisect_driver(
             let env = origin_env("bisect", origin_ref);
             let job = (folder, candidate.as_deref().unwrap_or_default());
             let code =
-                run_test_phase(app, id, worktree, job, args, browser, &env, settings, stop, false).await;
+                run_test_phase(app, id, &dir, job, args, browser, &env, settings, stop, false).await;
             if stop.load(Ordering::SeqCst) {
                 return None;
             }
@@ -1699,13 +1799,13 @@ fn resolve_reporter_cli(folder: &Path, worktree: &Path) -> Option<PathBuf> {
         .or_else(|| crate::runner::resolve_node_module(worktree, &[REPORTER_CLI]))
 }
 
-/// One flake-aware bisect step: `piwi flake verify <id> --bisect` in the
-/// worktree. Returns its exit code.
+/// One flake-aware bisect step: `piwi flake verify <id> --bisect` in `dir`,
+/// the linked folder's place in the worktree. Returns its exit code.
 async fn run_flake_step(
     app: &AppHandle,
     id: u32,
     folder: &Path,
-    worktree: &Path,
+    dir: &Path,
     commit: &str,
     test_case_id: u64,
     variables: &[(String, String)],
@@ -1714,13 +1814,13 @@ async fn run_flake_step(
     if stop.load(Ordering::SeqCst) {
         return None;
     }
-    let Some(cli) = resolve_reporter_cli(folder, worktree) else {
+    let Some(cli) = resolve_reporter_cli(folder, dir) else {
         emit_line(app, id, "error", "@piwitests/reporter is not installed in the linked folder or at this commit — install it to run the lab.");
         return None;
     };
     let args = flake_bisect_args(&cli, test_case_id);
     let env = lab_env_with_hub(app, id, false, folder, commit).await;
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env, variables).await
+    run_sidecar_streaming(app, id, Some(&cli), dir, args, &env, variables).await
 }
 
 /// Run a Flake Lab session on one test at the commit of its latest failure, in
@@ -1767,7 +1867,7 @@ pub async fn desktop_flake_lab_here(
     if !valid_sha(&commit) {
         return Err("the latest failure's commit is not a commit id".into());
     }
-    let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let (folder, git, place) = resolve_repo(&app, &project_id)?;
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
     settings.refuse_protected("Flake Lab", "its runs cannot be kept to the required tags")?;
     let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
@@ -1781,7 +1881,7 @@ pub async fn desktop_flake_lab_here(
     let worktree = add_worktree_in(
         &worktrees_root(&app)?,
         &git,
-        &folder,
+        &place.root,
         &project_id,
         "flake-",
         &commit,
@@ -1795,7 +1895,7 @@ pub async fn desktop_flake_lab_here(
             child: Arc::new(Mutex::new(None)),
             cleanup: Cleanup {
                 git: git.clone(),
-                folder: folder.clone(),
+                folder: place.root.clone(),
                 worktree: worktree.clone(),
                 bisect: false,
             },
@@ -1808,6 +1908,7 @@ pub async fn desktop_flake_lab_here(
             &app,
             id,
             &folder,
+            &place,
             &worktree,
             &commit,
             dirty,
@@ -1822,7 +1923,7 @@ pub async fn desktop_flake_lab_here(
             &app,
             id,
             &git,
-            &folder,
+            &place.root,
             &worktree,
             false,
             &cleaned,
@@ -1837,6 +1938,7 @@ async fn flake_lab_driver(
     app: &AppHandle,
     id: u32,
     folder: &Path,
+    place: &RepoPlace,
     worktree: &Path,
     commit: &str,
     dirty: bool,
@@ -1845,26 +1947,29 @@ async fn flake_lab_driver(
     settings: &RunSettings,
     stop: &AtomicBool,
 ) -> Option<i32> {
-    let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
-    if !place_env_file(app, id, folder, worktree, settings, None) {
+    let (cli, dir) = prepare_lab(app, id, folder, place, worktree, commit, dirty, stop)?;
+    if !place_env_file(app, id, folder, &dir, settings, None) {
         return None;
     }
     let args = flake_lab_args(&cli, test_case_id, options);
     let env = lab_env_with_hub(app, id, false, folder, commit).await;
-    run_sidecar_streaming(app, id, Some(&cli), worktree, args, &env, &settings.envs()).await
+    run_sidecar_streaming(app, id, Some(&cli), &dir, args, &env, &settings.envs()).await
 }
 
 /// The phases before a lab runs in its worktree: checkout, install, and the
-/// reporter's `piwi` entry to run. None when a phase failed or the run was stopped.
+/// reporter's `piwi` entry to run, with the linked folder's place in the
+/// worktree, where it runs. None when a phase failed or the run was stopped.
+#[allow(clippy::too_many_arguments)]
 fn prepare_lab(
     app: &AppHandle,
     id: u32,
     folder: &Path,
+    place: &RepoPlace,
     worktree: &Path,
     commit: &str,
     dirty: bool,
     stop: &AtomicBool,
-) -> Option<PathBuf> {
+) -> Option<(PathBuf, PathBuf)> {
     emit(app, RunEventPayload::phase(id, "checkout"));
     emit_line(
         app,
@@ -1883,9 +1988,10 @@ fn prepare_lab(
             "Your checkout has uncommitted changes; they stay as they are, and the lab does not see them.",
         );
     }
+    let dir = run_folder(app, id, worktree, &place.sub)?;
 
     emit(app, RunEventPayload::phase(id, "install"));
-    if stop.load(Ordering::SeqCst) || !install_worktree(app, id, folder, worktree, stop) {
+    if stop.load(Ordering::SeqCst) || !install_worktree(app, id, &place.root, worktree, &place.sub, stop) {
         return None;
     }
 
@@ -1893,11 +1999,11 @@ fn prepare_lab(
     if stop.load(Ordering::SeqCst) {
         return None;
     }
-    let Some(cli) = resolve_reporter_cli(folder, worktree) else {
+    let Some(cli) = resolve_reporter_cli(folder, &dir) else {
         emit_line(app, id, "error", "@piwitests/reporter is not installed in the linked folder or at this commit — install it to run the lab.");
         return None;
     };
-    Some(cli)
+    Some((cli, dir))
 }
 
 /// Run an editor's Flake Lab job the developer started in the window: the
@@ -1926,7 +2032,7 @@ pub async fn desktop_flake_lab_job(
         .await
         .map_err(|e| e.to_string())??;
     let (commit, plan) = parse_lab_job(&request)?;
-    let (_record, folder, git) = resolve_repo(&app, &project_id)?;
+    let (folder, git, place) = resolve_repo(&app, &project_id)?;
     let settings = crate::environments::read_run_settings(&app, &project_id, environment).await?;
     settings.refuse_protected("Flake Lab", "its runs cannot be kept to the required tags")?;
     let dirty = git_capture(&git, &folder, &["status", "--porcelain"])
@@ -1936,10 +2042,10 @@ pub async fn desktop_flake_lab_job(
     let state = app.state::<LocalRuns>();
     let id = state.allocate_id();
     let root = worktrees_root(&app)?;
-    let worktree = add_worktree_in(&root, &git, &folder, &project_id, "lab-job-", &commit, id)?;
+    let worktree = add_worktree_in(&root, &git, &place.root, &project_id, "lab-job-", &commit, id)?;
     let cleanup = Cleanup {
         git: git.clone(),
-        folder: folder.clone(),
+        folder: place.root.clone(),
         worktree: worktree.clone(),
         bisect: false,
     };
@@ -1967,7 +2073,7 @@ pub async fn desktop_flake_lab_job(
 
     tauri::async_runtime::spawn(async move {
         let code = lab_job_driver(
-            &app, id, &folder, &worktree, &commit, dirty, &plan_file, &settings, &stop,
+            &app, id, &folder, &place, &worktree, &commit, dirty, &plan_file, &settings, &stop,
         )
         .await;
         let _ = std::fs::remove_file(&plan_file);
@@ -1976,7 +2082,7 @@ pub async fn desktop_flake_lab_job(
             &app,
             id,
             &git,
-            &folder,
+            &place.root,
             &worktree,
             false,
             &cleaned,
@@ -1991,6 +2097,7 @@ async fn lab_job_driver(
     app: &AppHandle,
     id: u32,
     folder: &Path,
+    place: &RepoPlace,
     worktree: &Path,
     commit: &str,
     dirty: bool,
@@ -1998,33 +2105,34 @@ async fn lab_job_driver(
     settings: &RunSettings,
     stop: &AtomicBool,
 ) -> Option<i32> {
-    let cli = prepare_lab(app, id, folder, worktree, commit, dirty, stop)?;
-    if !place_env_file(app, id, folder, worktree, settings, None) {
+    let (cli, dir) = prepare_lab(app, id, folder, place, worktree, commit, dirty, stop)?;
+    if !place_env_file(app, id, folder, &dir, settings, None) {
         return None;
     }
     let args = lab_job_args(&cli, plan_file);
     let env = lab_env_with_hub(app, id, false, folder, commit).await;
-    let (code, stdout) = run_sidecar(app, id, worktree, args, &env, &settings.envs(), true).await;
+    let (code, stdout) = run_sidecar(app, id, &dir, args, &env, &settings.envs(), true).await;
     crate::runner::emit_verdict(app, RunEventPayload::lab(id, parse_lab_report(&stdout)));
     code
 }
 
-/// The browser phase for a bisect step, without emitting the "browser" phase
-/// header on every step (the tray already shows the candidate).
+/// The browser phase for a bisect step in `dir`, the linked folder's place in
+/// the worktree, without emitting the "browser" phase header on every step
+/// (the tray already shows the candidate).
 async fn ensure_browser_for_step(
     app: &AppHandle,
     id: u32,
-    worktree: &Path,
+    dir: &Path,
     browser: Option<&str>,
     stop: &AtomicBool,
 ) -> bool {
     if stop.load(Ordering::SeqCst) {
         return false;
     }
-    let Some(cli) = resolve_playwright_cli(worktree) else {
+    let Some(cli) = resolve_playwright_cli(dir) else {
         return false;
     };
-    ensure_browser(app, id, worktree, &cli, browser).await
+    ensure_browser(app, id, dir, &cli, browser).await
 }
 
 /// `git show -s` for a commit, as the identity the tray shows and the cluster
@@ -2056,13 +2164,14 @@ fn describe_commit(git: &Path, worktree: &Path, sha: &str) -> FirstBad {
     }
 }
 
-/// Drop a finished job from tracking, tear its worktree down and emit the exit.
+/// Drop a finished job from tracking, tear its worktree of the repository at
+/// `root` down and emit the exit.
 #[allow(clippy::too_many_arguments)]
 fn finish_job(
     app: &AppHandle,
     id: u32,
     git: &Path,
-    folder: &Path,
+    root: &Path,
     worktree: &Path,
     bisect: bool,
     cleaned: &AtomicBool,
@@ -2071,7 +2180,7 @@ fn finish_job(
     perform_cleanup(
         &Cleanup {
             git: git.to_path_buf(),
-            folder: folder.to_path_buf(),
+            folder: root.to_path_buf(),
             worktree: worktree.to_path_buf(),
             bisect,
         },
@@ -2532,6 +2641,107 @@ mod tests {
         );
         assert!(!worktree.exists());
         assert_eq!(repo.run(&["status", "--porcelain"]), status);
+    }
+
+    #[test]
+    fn a_folder_inside_a_repository_is_found_at_its_place_in_a_worktree_of_the_root() {
+        let Some(repo) = Repo::new("subfolder") else {
+            return;
+        };
+        let e2e = repo.folder().join("e2e").join("web");
+        std::fs::create_dir_all(&e2e).unwrap();
+        std::fs::write(e2e.join("playwright.config.ts"), "export default {};\n").unwrap();
+        repo.run(&["add", "."]);
+        repo.run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "e2e"]);
+        let head = repo.run(&["rev-parse", "HEAD"]).trim().to_string();
+
+        let at_root = repo_place(&repo.git, &repo.folder()).unwrap();
+        assert_eq!(at_root.sub, PathBuf::new());
+        let place = repo_place(&repo.git, &e2e).unwrap();
+        assert_eq!(place.sub, Path::new("e2e").join("web"));
+        assert_eq!(
+            crate::runner::real_path(&place.root),
+            crate::runner::real_path(&repo.folder())
+        );
+        assert_eq!(
+            crate::runner::real_path(&at_root.root),
+            crate::runner::real_path(&place.root)
+        );
+
+        let worktree =
+            add_worktree_in(&repo.dir.join("worktrees"), &repo.git, &place.root, "3", "", &head, 1).unwrap();
+        assert!(worktree.join(&place.sub).join("playwright.config.ts").is_file());
+        perform_cleanup(
+            &Cleanup {
+                git: repo.git.clone(),
+                folder: place.root.clone(),
+                worktree: worktree.clone(),
+                bisect: false,
+            },
+            &AtomicBool::new(false),
+        );
+        assert!(!worktree.exists());
+    }
+
+    #[test]
+    fn a_commit_holds_the_linked_folder_only_when_it_tracks_it() {
+        let Some(repo) = Repo::new("holds") else {
+            return;
+        };
+        let before = repo.run(&["rev-parse", "HEAD"]).trim().to_string();
+        let sub = Path::new("e2e").join("web");
+        std::fs::create_dir_all(repo.folder().join(&sub)).unwrap();
+        std::fs::write(repo.folder().join(&sub).join("a.spec.ts"), "").unwrap();
+        repo.run(&["add", "."]);
+        repo.run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "e2e"]);
+        let after = repo.run(&["rev-parse", "HEAD"]).trim().to_string();
+
+        let root = repo.dir.join("worktrees");
+        let old = add_worktree_in(&root, &repo.git, &repo.folder(), "3", "", &before, 1).unwrap();
+        std::fs::create_dir_all(old.join(&sub).join("node_modules")).unwrap();
+        assert!(!holds_folder(&repo.git, &old, &sub), "untracked files do not make it the commit's");
+        assert!(holds_folder(&repo.git, &old, Path::new("")));
+        let new = add_worktree_in(&root, &repo.git, &repo.folder(), "3", "", &after, 2).unwrap();
+        assert!(holds_folder(&repo.git, &new, &sub));
+        for worktree in [old, new] {
+            perform_cleanup(
+                &Cleanup {
+                    git: repo.git.clone(),
+                    folder: repo.folder(),
+                    worktree,
+                    bisect: false,
+                },
+                &AtomicBool::new(false),
+            );
+        }
+    }
+
+    #[test]
+    fn a_folder_in_no_repository_is_refused() {
+        let Some(repo) = Repo::new("no-repo") else {
+            return;
+        };
+        let outside = repo.dir.join("outside");
+        std::fs::create_dir_all(&outside).unwrap();
+        let err = repo_place(&repo.git, &outside).err().unwrap();
+        assert!(err.contains("no git repository"), "{err}");
+    }
+
+    #[test]
+    fn dependencies_install_where_the_nearest_lockfile_is() {
+        let dir = std::env::temp_dir().join(format!("piwi-install-folder-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let sub = Path::new("apps").join("web");
+        std::fs::create_dir_all(dir.join(&sub)).unwrap();
+        assert_eq!(install_folder(&dir, &sub), sub, "no lockfile: the linked folder");
+        std::fs::write(dir.join("pnpm-lock.yaml"), "").unwrap();
+        assert_eq!(install_folder(&dir, &sub), PathBuf::new(), "the workspace root's");
+        std::fs::write(dir.join("apps").join("yarn.lock"), "").unwrap();
+        assert_eq!(install_folder(&dir, &sub), PathBuf::from("apps"), "the nearest one");
+        std::fs::write(dir.join(&sub).join("package-lock.json"), "").unwrap();
+        assert_eq!(install_folder(&dir, &sub), sub, "the linked folder's own");
+        assert_eq!(install_folder(&dir, Path::new("")), PathBuf::new());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

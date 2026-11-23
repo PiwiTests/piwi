@@ -74,6 +74,9 @@ The bundled server is the hub of every Playwright run the shell starts.
   instead: the run channel of the live editor whose workspace holds its linked folder, when one does (from the
   route's `editor` for `?folder=`), as `desktop-<id>-at-<commit>`, its picks still to the server, else the bundled
   server's.
+- **Where a job in a worktree runs.** The worktree is of the repository's root, and the job runs Playwright, the
+  browser install and `piwi flake` in the linked folder's place in it (`repo_place`, `run_folder`), with its filters
+  anchored there; dependencies install in the nearest folder up to the root that holds a lockfile (`install_folder`).
 - **A run nobody attends** (Flake Lab, a bisect, a lab job, one with `--ui`, or with `--repeat-each` above 1 unless it
   stops at its first failure) ends its ref in `-unattended` (`attended_args`, mirrored by `desktopArgsAttended`), and
   the server never holds its failures.
