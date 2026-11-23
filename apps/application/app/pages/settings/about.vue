@@ -97,8 +97,9 @@ const dbBackendLabel = computed(() => {
             <span class="font-mono" :title="buildSha">{{ shortSha }}</span>
           </template>
         </p>
-        <p v-if="buildTime" class="mt-0.5">
-          <ClientOnly fallback-tag="span" :fallback="`Built ${formatRelativeTime(buildTime)}`">
+        <!-- Relative to the browser's clock, so the server renders only the line's height. -->
+        <p v-if="buildTime" class="mt-0.5 min-h-5">
+          <ClientOnly>
             <span :title="prettyDateFormat(buildTime)">Built {{ formatRelativeTime(buildTime) }}</span>
           </ClientOnly>
         </p>
