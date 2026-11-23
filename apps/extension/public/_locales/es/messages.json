@@ -172,10 +172,10 @@
     "message": "La aplicación de escritorio rechazó el token."
   },
   "common_desktopUnsupported": {
-    "message": "Esta dirección no es una aplicación de escritorio de Piwi que pueda ejecutar informes de errores."
+    "message": "Esta dirección no es una aplicación de escritorio de Piwi que pueda ejecutar informes de bug."
   },
   "common_desktopNotProven": {
-    "message": "El programa en esta dirección no demostró ser la aplicación de escritorio vinculada, así que no se envió el token. Comprueba que la aplicación esté abierta y actualizada, y vuelve a vincularla."
+    "message": "El programa en esta dirección no demostró ser la aplicación de escritorio emparejada, así que no se envió el token. Comprueba que la aplicación esté abierta y actualizada, y vuelve a emparejarla."
   },
   "common_desktopStatus": {
     "message": "La aplicación de escritorio respondió $status$.",
@@ -576,13 +576,13 @@
     "message": "Sin conectar"
   },
   "options_desktopOffer": {
-    "message": "La aplicación de escritorio vinculada ejecuta Piwi en este equipo: úsala como tu instancia, con su dirección y su token."
+    "message": "La aplicación de escritorio emparejada ejecuta Piwi en esta máquina: úsala como tu instancia, con su dirección y su token."
   },
   "options_useDesktop": {
     "message": "Usar la aplicación de escritorio como instancia"
   },
   "options_desktopPairHint": {
-    "message": "Para ejecutar los informes de error con Playwright en este equipo, $link$.",
+    "message": "Para ejecutar los informes de bug con Playwright en esta máquina, $link$.",
     "placeholders": {
       "link": {
         "content": "$1",
@@ -591,7 +591,7 @@
     }
   },
   "options_desktopPairHintLink": {
-    "message": "vincula la aplicación de escritorio"
+    "message": "empareja la aplicación de escritorio"
   },
   "options_healthOk": {
     "message": "Respondió $time$",
@@ -630,10 +630,10 @@
     }
   },
   "options_statePaired": {
-    "message": "Vinculado"
+    "message": "Emparejado"
   },
   "options_stateNotPaired": {
-    "message": "Sin vincular"
+    "message": "Sin emparejar"
   },
   "options_lead": {
     "message": "Opcional. Conectado a tu instancia de Piwi, el grabador usa los page objects y las funciones auxiliares de tus proyectos, y los clasifica en directo mientras grabas. Elegir locators y grabar una prueba sencilla siempre funcionan sin conexión."
@@ -743,7 +743,7 @@
     "message": "Desconectar"
   },
   "options_privacy": {
-    "message": "Solo se usa desde esta página: la clave de API nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies, los descargues o los envíes a tu editor emparejado o a tu aplicación de escritorio vinculada. La conexión descarga los patrones de dirección de tus proyectos, el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas; añadir un sitio solo envía su patrón."
+    "message": "Solo se usa desde esta página: la clave de API nunca llega a los scripts de una página web. Los pasos grabados no van a ninguna parte, salvo que los copies, los descargues o los envíes a tu editor o a tu aplicación de escritorio emparejados. La conexión descarga los patrones de dirección de tus proyectos, el catálogo de funciones de cada proyecto asignado y los elementos que alcanzan sus pruebas; añadir un sitio solo envía su patrón."
   },
   "options_testing": {
     "message": "Probando…"
@@ -752,19 +752,19 @@
     "message": "Aplicación de escritorio"
   },
   "options_desktopHint": {
-    "message": "Opcional. Vinculado a la aplicación de escritorio Piwi Desktop, Reproducir puede pedirle que ejecute un informe de error con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
+    "message": "Opcional. Emparejado con la aplicación de escritorio Piwi Desktop, Reproducir puede pedirle que ejecute un informe de bug con Playwright en tu proyecto. Las ejecuciones que inicia también aparecen en la ventana Ejecuciones (Ejecuciones, en el menú de la extensión)."
   },
   "options_desktopUrl": {
     "message": "Dirección de la aplicación de escritorio"
   },
   "options_desktopUrlHint": {
-    "message": "Aparece en la aplicación, en Settings → Desktop app, en «Pair with Piwi Picker». Vincular pide a la ventana de la aplicación que autorice a Piwi Picker."
+    "message": "Aparece en la aplicación, en Settings → Desktop app, en «Pair with Piwi Picker». Emparejar pide a la ventana de la aplicación que autorice a Piwi Picker."
   },
   "options_desktopPair": {
-    "message": "Vincular"
+    "message": "Emparejar"
   },
   "options_desktopManual": {
-    "message": "Vincular a mano"
+    "message": "Emparejar a mano"
   },
   "options_desktopToken": {
     "message": "Token"
@@ -776,10 +776,10 @@
     "message": "Guardar y probar"
   },
   "options_desktopForget": {
-    "message": "Desvincular"
+    "message": "Desemparejar"
   },
   "options_desktopPairedAt": {
-    "message": "Vinculado a la aplicación de escritorio en $url$.",
+    "message": "Emparejado con la aplicación de escritorio en $url$.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -803,13 +803,13 @@
     "message": "Abre la ventana de la aplicación de escritorio: la solicitud te espera allí."
   },
   "options_desktopPairDenied": {
-    "message": "La vinculación se rechazó en la aplicación de escritorio."
+    "message": "El emparejamiento se rechazó en la aplicación de escritorio."
   },
   "options_desktopPairExpired": {
-    "message": "La solicitud caducó antes de ser autorizada. Haz clic en Vincular para pedirla de nuevo."
+    "message": "La solicitud caducó antes de ser autorizada. Haz clic en Emparejar para pedirla de nuevo."
   },
   "options_desktopPairCancelled": {
-    "message": "Se canceló la vinculación."
+    "message": "Se canceló el emparejamiento."
   },
   "options_desktopPairUnreachable": {
     "message": "Nada responde en $url$. ¿Está abierta la aplicación de escritorio? Su dirección aparece en Settings → Desktop app.",
@@ -821,7 +821,7 @@
     }
   },
   "options_desktopPairUnsupported": {
-    "message": "Lo que responde en $url$ no puede vincularse en un paso: comprueba la dirección en la aplicación de escritorio, en Settings → Desktop app, actualiza la aplicación o vincúlala a mano.",
+    "message": "Lo que responde en $url$ no puede emparejarse en un paso: comprueba la dirección en la aplicación de escritorio, en Settings → Desktop app, actualiza la aplicación o emparéjala a mano.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -830,10 +830,10 @@
     }
   },
   "options_desktopPairTooMany": {
-    "message": "Ya esperan tres vinculaciones en la ventana de la aplicación de escritorio: respóndelas primero."
+    "message": "Ya esperan tres solicitudes de emparejamiento en la ventana de la aplicación de escritorio: respóndelas primero."
   },
   "options_desktopForgotten": {
-    "message": "La aplicación de escritorio ya no está vinculada."
+    "message": "La aplicación de escritorio ya no está emparejada."
   },
   "options_desktopNotLoopback": {
     "message": "Introduce la dirección de la aplicación de escritorio, como http://127.0.0.1:3000."
@@ -842,7 +842,7 @@
     "message": "Pega primero el token de la aplicación, en Settings → Desktop app."
   },
   "options_desktopNeedsAccess": {
-    "message": "Permite el acceso a la dirección de la aplicación de escritorio para vincularla."
+    "message": "Permite el acceso a la dirección de la aplicación de escritorio para emparejarla."
   },
   "options_accessDenied": {
     "message": "Se rechazó el acceso a esa instancia: permítelo para que Piwi Picker pueda leer tu catálogo."
@@ -1299,7 +1299,7 @@
     "message": "Lo usa tu instancia de Piwi: Desconectar quita este acceso."
   },
   "options_siteUseDesktop": {
-    "message": "Lo usa la aplicación de escritorio: Desvincular quita este acceso."
+    "message": "Lo usa la aplicación de escritorio: Desemparejar quita este acceso."
   },
   "options_siteUseEditor": {
     "message": "Lo usa tu editor: Desemparejar quita este acceso."
@@ -3529,7 +3529,7 @@
     "message": "eventos de la página"
   },
   "replay_fileAsk_one": {
-    "message": "El paso $step$ elige $count$ archivo, $files$, que el informe nombra pero no contiene. Elíjalo en este equipo para continuar, u omita el paso.",
+    "message": "El paso $step$ elige $count$ archivo, $files$, que el informe nombra pero no contiene. Elígelo en esta máquina para continuar, u omite el paso.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3546,7 +3546,7 @@
     }
   },
   "replay_fileAsk_other": {
-    "message": "El paso $step$ elige $count$ archivos, $files$, que el informe nombra pero no contiene. Elíjalos en este equipo para continuar, u omita el paso.",
+    "message": "El paso $step$ elige $count$ archivos, $files$, que el informe nombra pero no contiene. Elígelos en esta máquina para continuar, u omite el paso.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -3853,7 +3853,7 @@
     "message": "Ejecutar con Playwright en la aplicación de escritorio"
   },
   "replay_desktopNotPaired": {
-    "message": "Primero vincula la aplicación de escritorio, en la configuración de Piwi Picker, en Aplicación de escritorio."
+    "message": "Primero empareja la aplicación de escritorio, en la configuración de Piwi Picker, en Aplicación de escritorio."
   },
   "replay_desktopOpenOptions": {
     "message": "Abrir la configuración"

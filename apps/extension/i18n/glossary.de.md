@@ -52,6 +52,7 @@ above all on popup tiles, buttons and badges.
 | run request                         | Laufanfrage                | a team instance asking to run tests on this machine; _die Anfrage_ once the sentence says which one |
 | to run (tests)                      | ausführen                  | the Run button is _Ausführen_; the run itself is _Lauf_                                             |
 | linked folder                       | verknüpfter Ordner         | `der verknüpfte Ordner`; to link is _verknüpfen_, to unlink _Verknüpfung lösen_                     |
+| to pair / paired                    | koppeln / gekoppelt        | an editor or the desktop app; to unpair is _entkoppeln_, the pairing _die Kopplung_                 |
 | this machine                        | dieser Rechner             | `auf diesem Rechner`; _Computer_ where the English says computer                                    |
 | tray (system tray)                  | Infobereich                | `im Infobereich`, for the macOS menu bar too                                                        |
 | local host (Runner's server)        | lokaler Server             | `der lokale Server`; never _Host_                                                                   |

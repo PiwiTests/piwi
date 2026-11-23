@@ -38,6 +38,7 @@ one of `store/amo-description.fr.md`: plain sentences, `vous`, no anglicism wher
 | team instance                       | instance d’équipe            | the instance whose pages send Piwi Runner its run requests               |
 | run request                         | demande d’exécution          |                                                                          |
 | linked folder                       | dossier lié                  | to link, to unlink: _lier_, _dissocier_                                  |
+| to pair / paired                    | associer / associé           | to unpair is _dissocier_; the pairing is _l’association_                 |
 | worker (Playwright)                 | worker (masculin)            | `un worker`, `des workers`                                               |
 | stop, breakpoint                    | arrêt, point d’arrêt         | a test stopped at a line: _cet arrêt_                                    |
 | Hold failures                       | Retenir les échecs           | the switch, in Piwi Picker and Piwi Runner                               |

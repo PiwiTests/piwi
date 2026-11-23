@@ -32,6 +32,7 @@ This is a draft: no native reader has reviewed it yet.
 | team instance                                 | instância da equipe                         | `sua instância da equipe`; Piwi Runner's word for the instance that sends it run requests |
 | run request                                   | pedido de execução                          | `o pedido`; _requisição_ stays for an HTTP request                                        |
 | linked folder / to link, to unlink            | pasta vinculada / vincular, desvincular     | `a pasta vinculada a esse projeto`                                                        |
+| to pair, to unpair / paired                   | parear, desparear / pareado                 | an editor or the desktop app; the pairing is _o pareamento_                               |
 | tray (system tray)                            | área de notificação                         | `na área de notificação`; the tray menu is its menu                                       |
 | local host (Piwi Runner's)                    | servidor local                              | the Node process that serves Runner's window; not the code word `localhost`               |
 | worker (Playwright)                           | worker (masculino)                          | `o worker`, `os workers`, as the Runs window says it                                      |

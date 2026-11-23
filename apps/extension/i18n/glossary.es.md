@@ -49,6 +49,7 @@ Spanish word is as clear. This catalog is a draft until a native reader reviews 
 | team instance                       | instancia del equipo                      | `la instancia de tu equipo` for _your team instance_                                     |
 | run request                         | solicitud de ejecución                    | a request a person makes; `petición` stays for an HTTP request (`Simular una petición`)  |
 | linked folder / to link, unlink     | carpeta vinculada / vincular, desvincular |                                                                                          |
+| to pair, to unpair / paired         | emparejar, desemparejar / emparejado      | an editor or the desktop app; `el emparejamiento`; _vincular_ is for linked folders      |
 | tray (system tray)                  | bandeja del sistema                       | `el menú de la bandeja`; Windows calls it _área de notificación_, macOS _barra de menús_ |
 | local host (Runner's server)        | servidor local                            |                                                                                          |
 | this machine, this computer         | esta máquina                              | not _este equipo_, which reads as the team beside _instancia del equipo_                 |
