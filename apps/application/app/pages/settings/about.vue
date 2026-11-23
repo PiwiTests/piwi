@@ -54,6 +54,20 @@ const playwrightVersion = computed(
   () => recentRuns.value?.items.find((run) => run.playwrightVersion)?.playwrightVersion ?? null,
 );
 
+// What a restart would cut, for an administrator. Loaded after the page shows.
+const { can } = useAuth();
+const canSeeActivity = can('settings:manage');
+const { data: activity } = useFetch<ApiResponse<typeof import('~~/server/api/admin/activity.get').default>>(
+  '/api/admin/activity',
+  { server: false, lazy: true, immediate: canSeeActivity },
+);
+const activityHint = computed(() => {
+  if (!activity.value) return undefined;
+  const uploads = activity.value.uploadsInProgress;
+  if (uploads > 0) return `${uploads} ${uploads === 1 ? 'upload' : 'uploads'} being received`;
+  return activity.value.runsInProgress.length > 0 ? 'Wait for them before a restart' : 'Nothing to wait for';
+});
+
 /** Where a version tile's value comes from, and whether the reporter is behind this dashboard. */
 function runVersionHint(version: string | null, comparedToApp: boolean): string | undefined {
   if (!runsLoaded.value) return undefined;
@@ -134,6 +148,13 @@ const dbBackendLabel = computed(() => {
           :hint="runVersionHint(playwrightVersion, false)"
         />
         <StatTile v-if="!isDesktop" label="Authentication" :value="authEnabled ? 'Enabled' : 'Disabled'" />
+        <StatTile
+          v-if="canSeeActivity"
+          label="Runs in progress"
+          :value="activity?.runsInProgress.length"
+          :hint="activityHint"
+          data-testid="about-activity"
+        />
       </StatTileGrid>
     </SectionCard>
 

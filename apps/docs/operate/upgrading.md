@@ -7,16 +7,23 @@ lang: en-US
 # Upgrading
 
 Piwi is pre-1.0. Minor releases can carry breaking changes, and the database schema moves
-with them. Upgrading is normally a one-line change — but it's a one-way door, so it's worth knowing
-what happens before you pull a new tag.
+with them. Upgrading is normally a one-line change, but a one-way door: know what happens before you pull a new tag.
 
 ## The short version
 
 1. Read the [changelog](https://github.com/PiwiTests/piwi/blob/main/CHANGELOG.md) for the versions
    you're skipping, looking for **⚠ BREAKING CHANGES**.
 2. **Back up** the database and file storage ([how](./backup-restore)).
-3. Pull the new tag and restart.
-4. Check the logs for `migrations completed successfully`, then confirm the version at
+3. **Wait until no run is in progress**: a run that ends while the server is down loses its end. **Settings → About**
+   shows an administrator the count; a script asks with an administrator's API key, until `runsInProgress` is empty
+   and `uploadsInProgress` is 0:
+
+   ```bash
+   node -e "fetch('http://localhost:3000/api/admin/activity',{headers:{'X-API-Key':'pd_your_key'}}).then(r=>r.text()).then(console.log)"
+   ```
+
+4. Pull the new tag and restart.
+5. Check the logs for `migrations completed successfully`, then confirm the version at
    **Settings → About**.
 
 ## What happens when a new version starts
@@ -127,8 +134,8 @@ Three ways, in increasing order of automation:
   curl -s http://localhost:3000/api/version
   ```
 
-- `GET /api/health` is the readiness probe — it verifies database connectivity and returns 503 when
-  the database isn't reachable, which is what you want a container orchestrator watching.
+- `GET /api/health` is the readiness probe for a container orchestrator: it returns 503 while the database isn't
+  reachable.
 
 In the startup logs, the lines worth grepping for are `Running <dialect> migrations from …` and
 `migrations completed successfully` — plus `Migration history repaired` after a
@@ -143,9 +150,7 @@ lockstep:
   streaming, the reporter falls back to batch submission on its own.
 - An **older reporter against a newer server** keeps working; wire fields are added, not repurposed.
 
-That said, features land in pairs. Locator healing needs both a reporter that captures snapshots and a
-server that ranks them, so if a new capability doesn't appear, matching the two versions is the first
-thing to try.
+A feature can need both, as locator healing does: if a new capability doesn't appear, match the two versions first.
 
 ```bash
 npm install --save-dev @piwitests/reporter@latest
@@ -173,7 +178,7 @@ clients use, a container's name included, in `PIWI_SITE_URL` or `PIWI_ALLOWED_HO
 ([why](./authentication#disabling-authentication)).
 
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
-report what you saw. Downgrading on a migrated database compounds the problem.
+report what you saw.
 
 **The Windows desktop installer says "Error opening file for writing".** Up to version 0.37, an
 in-app update could leave the app's bundled server running — a `node.exe` in the install folder,

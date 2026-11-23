@@ -13,6 +13,7 @@
  */
 
 export const PROJECT = {
+  ADMIN_ACTIVITY: 'admin-activity-test',
   ANALYTICS_TEST: 'analytics-widgets-test',
   ANALYTICS_SCOPE_TEST: 'analytics-scope-test',
   ANALYTICS_TREND_DEPTH: 'analytics-trend-depth-test',

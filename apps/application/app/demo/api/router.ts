@@ -497,7 +497,7 @@ import {
   apiListAssistantNudgeDismissals,
   apiUndoAssistantNudgeDismissal,
 } from './assistant-nudges';
-import { apiGetAdminStats, apiGetStorageAnalysis } from './admin';
+import { apiGetAdminActivity, apiGetAdminStats, apiGetStorageAnalysis } from './admin';
 import { apiListProjectStars, apiStarProject, apiUnstarProject } from './project-stars';
 import { demoHttpError } from './http-error';
 import {
@@ -4612,6 +4612,12 @@ const routes: RouteEntry[] = [
 
   // Admin
   { method: 'GET', pattern: /^\/api\/admin\/stats$/, permission: 'storage:manage', handler: () => apiGetAdminStats() },
+  {
+    method: 'GET',
+    pattern: /^\/api\/admin\/activity$/,
+    permission: 'settings:manage',
+    handler: () => apiGetAdminActivity(),
+  },
   {
     method: 'GET',
     pattern: /^\/api\/admin\/storage$/,

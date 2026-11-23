@@ -6,6 +6,7 @@ import {
   type LiveViewerMessage,
 } from '@piwitests/core/live-view';
 import { streamHeaders } from '#shared/stream-headers';
+import { eventStreams } from './instance-activity';
 
 /** Every how many milliseconds an open stream gets a comment, so a proxy keeps it and a gone client is noticed. */
 const HEARTBEAT_MS = 15_000;
@@ -42,6 +43,7 @@ function openStream(event: H3Event, format: StreamFormat): EventStreamSink {
   const { req, res } = event.node;
   const closers: Array<() => void> = [];
   let closed = false;
+  const uncount = eventStreams.open();
   res.writeHead(200, streamHeaders(format.type));
   res.write(format.opening);
   const heartbeat = setInterval(() => {
@@ -51,6 +53,7 @@ function openStream(event: H3Event, format: StreamFormat): EventStreamSink {
   const onGone = (): void => {
     if (closed) return;
     closed = true;
+    uncount();
     clearInterval(heartbeat);
     for (const close of closers.splice(0)) close();
   };
