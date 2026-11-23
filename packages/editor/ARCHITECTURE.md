@@ -2002,7 +2002,7 @@ runtime.
 The launcher (`launcher.ts`):
 
 - resolves the project's Playwright at run time, never bundled (`playwright.ts`: in the project's own `node_modules`,
-  the test runner's package first, as for the CLI);
+  a package linked there from elsewhere included, the test runner's package first, as for the CLI);
 - opens the browser with the project's options (`context-options.ts`): `headless: false` unless
   `PIWI_RECORDER_HEADLESS=1`, Chromium's translation feature disabled, an explicit allowlist of context options, and a
   missing `storageState` file left out and said so;
