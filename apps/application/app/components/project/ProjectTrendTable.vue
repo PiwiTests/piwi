@@ -204,7 +204,9 @@ const columns: TableColumn<Row>[] = [
           >
             <RunStatusBadge :status="row.original.latestFullRun.status" />
             <div class="text-xs text-gray-500 dark:text-gray-400">
-              <div>{{ formatRelativeTime(row.original.latestFullRun.startTime) }}</div>
+              <div class="min-h-4">
+                <ClientOnly>{{ formatRelativeTime(row.original.latestFullRun.startTime) }}</ClientOnly>
+              </div>
               <DurationValue v-if="row.original.latestFullRun.duration" :ms="row.original.latestFullRun.duration" />
             </div>
           </NuxtLink>
@@ -263,7 +265,7 @@ const columns: TableColumn<Row>[] = [
             >
               <RunStatusBadge :status="row.latestFullRun.status" />
               <span class="text-gray-500 dark:text-gray-400 truncate">
-                {{ formatRelativeTime(row.latestFullRun.startTime) }}
+                <ClientOnly>{{ formatRelativeTime(row.latestFullRun.startTime) }}</ClientOnly>
               </span>
             </NuxtLink>
             <span v-else class="text-gray-400">No full runs</span>

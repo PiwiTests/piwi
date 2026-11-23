@@ -8,7 +8,7 @@ import { waitForHydration } from './utils';
 
 test.describe('Settings → About', () => {
   test('the build time hydrates without a mismatch when the clocks disagree', async ({ page }) => {
-    // Vue only reports mismatches in a dev build; in a production run this stays empty.
+    // A production build logs the summary line alone, a dev build each mismatch too.
     const hydrationErrors: string[] = [];
     page.on('console', (msg) => {
       if (/Hydration (completed but contains mismatches|text content mismatch)/.test(msg.text())) {

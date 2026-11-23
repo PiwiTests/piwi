@@ -173,6 +173,7 @@ export const PROJECT = {
   QUALITY_REPORT_SCHEDULES: 'quality-report-schedules-test',
   QUALITY_REPORT: 'quality-report-test',
   QUARANTINE: 'quarantine-test',
+  RELATIVE_TIMES: 'relative-times-test',
   REPORTER_API_KEY_E2E: 'reporter-api-key-e2e-test',
   REPORTER_API_KEY_LIB: 'reporter-api-key-lib-test',
   REPORTER_AUTH_LIB: 'reporter-auth-lib-test',
