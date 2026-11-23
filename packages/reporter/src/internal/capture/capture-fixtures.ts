@@ -4310,7 +4310,12 @@ export const piwiFixtures: Fixtures<
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
     // now, before the page's context closes.
     const sink = currentSink;
-    if (sink) await holdFailure(sink, page);
+    if (!sink) return;
+    await holdFailure(sink, page);
+    // Code reach ends on the context's pages before Playwright's `context` fixture closes the context or, with
+    // `reuseContext`, hands it and this page to the next test: a page still recording would stop that test's reset to
+    // `about:blank` at its `beforeunload` breakpoint, with no session left to resume it.
+    await stopSinkCodeReach(sink, { page, context: pageContext(page) ?? undefined });
   },
 
   // Auto, test-scoped: open a capture sink for the running test and flush it
