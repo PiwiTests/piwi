@@ -216,17 +216,17 @@ address). See the [configuration reference](/reference/configuration).
 
 ## Matching the run
 
-Piwi keeps every dispatch and matches its run as that run starts: by the dispatch id the run carries as
-`PIWI_ORIGIN_REF`, else by the CI's own run id (GitHub's run, GitLab's pipeline, Bitbucket's build), and a Flake Lab run
-by its experiment's test. A re-run unmatched at its end matches by its branch, a start within six hours and exactly its
-spec files.
+Piwi matches each dispatch's run as it starts: by the `PIWI_ORIGIN_REF` the run carries, else by the CI's own run id
+(GitHub's run, GitLab's pipeline, Bitbucket's build), and a Flake Lab run by its experiment's test. At its end, a CI
+server re-run, or a GitHub one answered without a run, matches by branch, a start within six hours and exactly its spec
+files.
 
-A matched re-run's [origin](/reference/test-metadata#run-origin) is `ci-rerun`; the last re-run links its build and its
-run with its result, or reads *no run reported* after six hours. A repeat within ten seconds is refused; dispatches are
-kept 90 days.
+A matched re-run's [origin](/reference/test-metadata#run-origin) is `ci-rerun`; the last re-run links its build and run
+with its result, or reads *no run reported* after six hours. A repeat within ten seconds is refused; dispatches are kept
+90 days.
 
-GitHub answers each dispatch with its run, so a workflow needs no change. The dispatch id input is optional (GitHub
-rejects undeclared inputs); to declare it, pass it on as `PIWI_ORIGIN_REF`:
+A workflow GitHub answers with its run needs no change; otherwise the dispatch id input, optional since GitHub refuses
+undeclared ones and passed on as `PIWI_ORIGIN_REF`, alone matches a whole suite:
 
 ```yaml
 on:

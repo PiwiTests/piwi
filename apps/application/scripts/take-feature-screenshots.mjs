@@ -3674,7 +3674,7 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'ci-rerun-last-run', cluster: 6, width: 1280, height: 1400, docs: true },
+    { name: 'ci-rerun-last-run', cluster: 6, width: 1600, height: 1400, docs: true },
     { name: 'cluster-last-rerun-mobile', cluster: 6, width: 390, height: 2400 },
     { name: 'cluster-last-rerun-unreported', cluster: 3, width: 1280, height: 1400 },
   ].map(({ name, cluster, width, height, docs }) => ({
