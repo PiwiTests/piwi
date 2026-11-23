@@ -165,8 +165,20 @@ async function stopServer(child) {
   if (timedOut) killServer(child, 'SIGKILL');
 }
 
-async function get(url, timeoutMs = 30_000) {
-  return fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+// A `fetch failed` whose cause is one of these never reached the server's answer, so a GET is safe to ask again.
+const CONNECTION_FAILURES = new Set(['ECONNRESET', 'ECONNREFUSED', 'UND_ERR_SOCKET']);
+
+// Every request of the smoke is a GET, so one that fails at the connection is asked again: `attempts` times in all.
+async function get(url, { timeoutMs = 30_000, attempts = 3 } = {}) {
+  for (let attempt = 1; ; attempt++) {
+    try {
+      return await fetch(url, { signal: AbortSignal.timeout(timeoutMs) });
+    } catch (error) {
+      if (attempt >= attempts || !CONNECTION_FAILURES.has(error.cause?.code)) throw error;
+      log(`GET ${url} failed (${error.cause.code}), asking again`);
+      await delay(500);
+    }
+  }
 }
 
 async function waitForServer(baseUrl, server) {
@@ -175,7 +187,7 @@ async function waitForServer(baseUrl, server) {
     if (server.exitCode !== null || server.signalCode !== null) {
       throw new Error(`the server exited (code ${server.exitCode ?? server.signalCode}) before /api/health answered`);
     }
-    const response = await get(`${baseUrl}/api/health`, 5_000).catch(() => null);
+    const response = await get(`${baseUrl}/api/health`, { timeoutMs: 5_000, attempts: 1 }).catch(() => null);
     if (response?.ok) return;
     await delay(1_000);
   }
