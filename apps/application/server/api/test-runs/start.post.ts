@@ -11,6 +11,7 @@ import { runCommit, runOrigin, withRequestOrigin } from '#shared/run-eligibility
 import { checkRequestToken, grantedProject, presentsRequestToken, spendRequestToken } from '../../utils/request-tokens';
 import { runEventBus } from '../../utils/run-events';
 import { pinProjectRepository } from '../../utils/scm/project-repository';
+import { matchStartedRunToCiDispatch } from '../../utils/ci-dispatches';
 import { persistShardToken, shardTokenDigest, streamTokenDigest } from '../../utils/shard-tokens';
 import { getProjectScope } from '../../utils/project-access';
 import { withInstanceRunLock } from '../../utils/ingest-locks';
@@ -171,6 +172,7 @@ export default eventHandler(async (event) => {
       await applyReporterKeep(db, testRun.id, body.keep);
       await saveEnvironmentSnapshots(db, testRun.id, body.environments);
       await pinProjectRepository(db, project.id, metadata);
+      await matchStartedRunToCiDispatch(db, testRun.id);
       runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
       runEventBus.cacheRunState(testRun.id, {
         streamToken: streamTokenDigest(streamToken),
@@ -237,7 +239,10 @@ export default eventHandler(async (event) => {
     else await applyReporterKeep(db, testRun.id, body.keep);
     await saveEnvironmentSnapshots(db, testRun.id, body.environments);
     // A private run pins nothing of the project's.
-    if (!grant) await pinProjectRepository(db, project.id, metadata);
+    if (!grant) {
+      await pinProjectRepository(db, project.id, metadata);
+      await matchStartedRunToCiDispatch(db, testRun.id);
+    }
     runEventBus.publishGlobal({ type: 'run-started', runId: testRun.id, projectId: project.id });
     runEventBus.cacheRunState(testRun.id, { streamToken: streamTokenDigest(streamToken), projectId: project.id });
 

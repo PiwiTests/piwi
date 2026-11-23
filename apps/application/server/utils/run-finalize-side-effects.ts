@@ -17,7 +17,7 @@ import { recordRunHealth } from '#shared/handlers/run-health';
 import { upsertDailyRollup } from '#shared/handlers/analytics/rollups';
 import { recordRunResourceFindings } from '#shared/handlers/resource-findings';
 import { runEventBus } from './run-events';
-import { matchCiRerunRun } from './ci-rerun';
+import { matchRunToCiDispatch } from './ci-dispatches';
 import { inferRunOutcomes } from './outcome-inference';
 import { pinProjectRepository } from './scm/project-repository';
 
@@ -103,7 +103,9 @@ export async function runFinalizeSideEffects(
       .then(recompute)
       .catch((e) => console.error('[analytics] upsertDailyRollup failed', e));
   }
-  matchCiRerunRun(db, id).catch((e) => console.error('[ci-rerun] matchCiRerunRun failed', e));
+  matchRunToCiDispatch(db, id, 'finish').catch((e) =>
+    console.error('[ci-dispatches] matching a finished run failed', e),
+  );
   syncAutoMarkersForRun(db, id)
     .catch((e) => console.error('[markers] syncAutoMarkersForRun failed', e))
     .then(() => syncEnvironmentMarkersForRun(db, id))

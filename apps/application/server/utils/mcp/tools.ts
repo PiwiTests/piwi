@@ -3037,7 +3037,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       db,
       id,
       { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null, apiKeyId: ctx.apiKeyId ?? null },
-      { actionId: action || undefined },
+      { actionId: action || undefined, origin: 'mcp' },
     );
     if (!outcome.ok) {
       if (outcome.error === 'not-found') return null;

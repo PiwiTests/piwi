@@ -260,6 +260,15 @@ describe('resolveCiActionsSettings', () => {
       { name: 'SUITE', kind: 'choice', options: ['smoke', 'full'], default: 'smoke' },
     ]);
     expect(ciActionInputValues(resolved.actions[0]!)).toEqual({ TARGET_ENV: 'staging', SUITE: 'smoke' });
+    // A chosen value picks a choice's option, never another value, and never replaces a fixed one.
+    expect(ciActionInputValues(resolved.actions[0]!, { SUITE: 'full', TARGET_ENV: 'prod' })).toEqual({
+      TARGET_ENV: 'staging',
+      SUITE: 'full',
+    });
+    expect(ciActionInputValues(resolved.actions[0]!, { SUITE: 'nightly' })).toEqual({
+      TARGET_ENV: 'staging',
+      SUITE: 'smoke',
+    });
     expect(ciActionSentNames(resolved.actions[0]!)).toEqual(['args', 'TARGET_ENV', 'SUITE']);
   });
 
@@ -471,6 +480,16 @@ describe('pickCiAction', () => {
   test('picks nothing from a project with no actions', () => {
     expect(pickCiAction(settings([]), 'tests', { provider: 'github' }).action).toBeNull();
   });
+
+  test('the action that started the run comes before its environment and the default', () => {
+    expect(
+      pickCiAction(all, 'tests', { provider: 'github', startedBy: 'prod', environment: 'staging' }).action?.id,
+    ).toBe('prod');
+    // An action that is gone leaves the usual order.
+    expect(
+      pickCiAction(all, 'tests', { provider: 'github', startedBy: 'nope', environment: 'staging' }).action?.id,
+    ).toBe('staging');
+  });
 });
 
 describe('a dispatch sends the inputs beside the arguments', () => {
@@ -495,7 +514,11 @@ describe('a dispatch sends the inputs beside the arguments', () => {
       ref: 'main',
       inputs: { TARGET_ENV: 'staging' },
     });
-    expect(calls[0]!.body).toEqual({ ref: 'main', inputs: { TARGET_ENV: 'staging', args: ARGS } });
+    expect(calls[0]!.body).toEqual({
+      ref: 'main',
+      inputs: { TARGET_ENV: 'staging', args: ARGS },
+      return_run_details: true,
+    });
   });
 
   test('GitHub never lets an input replace the arguments', async () => {
@@ -527,6 +550,56 @@ describe('a dispatch sends the inputs beside the arguments', () => {
       { key: 'TARGET_ENV', value: 'staging' },
       { key: 'PIWI_RERUN_ARGS', value: ARGS },
     ]);
+  });
+});
+
+describe('a GitHub dispatch links the run it created', () => {
+  const sent: any[] = [];
+  let answers: Response[] = [];
+  beforeEach(() => {
+    sent.length = 0;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: string, init: { body: string }) => {
+        sent.push(JSON.parse(init.body));
+        return answers.shift()!;
+      }),
+    );
+  });
+  afterEach(() => vi.unstubAllGlobals());
+
+  const dispatch = () => new GitHubProvider('acme/shop', 'tok').dispatchRerun(github().target, 'a', { ref: 'main' });
+  const json = (body: unknown, status: number) => new Response(JSON.stringify(body), { status });
+
+  test('takes the run id and its page from the answer to return_run_details', async () => {
+    const page = 'https://github.com/acme/shop/actions/runs/555';
+    answers = [json({ workflow_run_id: 555, run_url: 'https://api.github.com/x', html_url: page }, 200)];
+    expect(await dispatch()).toEqual({ url: page, ref: 'main', runId: '555' });
+  });
+
+  test('links the workflow’s runs on the branch when GitHub names no run, or a page of another repository', async () => {
+    answers = [new Response(null, { status: 204 })];
+    expect(await dispatch()).toEqual({
+      url: 'https://github.com/acme/shop/actions/workflows/e2e.yml?query=branch%3Amain',
+      ref: 'main',
+    });
+    answers = [json({ workflow_run_id: 9, html_url: 'https://github.com/evil/repo/actions/runs/9' }, 200)];
+    expect((await dispatch()).runId).toBeUndefined();
+  });
+
+  test('sends again without the parameter to a GitHub that does not know it', async () => {
+    answers = [
+      json({ message: 'Invalid request. "return_run_details" is not a permitted key.' }, 422),
+      new Response(null, { status: 204 }),
+    ];
+    expect((await dispatch()).runId).toBeUndefined();
+    expect(sent.map((body) => 'return_run_details' in body)).toEqual([true, false]);
+  });
+
+  test('fails on any other refusal, sending once', async () => {
+    answers = [json({ message: 'No ref found for: gone' }, 422)];
+    await expect(dispatch()).rejects.toThrow('No ref found for: gone');
+    expect(sent).toHaveLength(1);
   });
 });
 

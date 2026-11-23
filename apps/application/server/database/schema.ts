@@ -103,6 +103,7 @@ export const {
   projectStars,
   runTargets,
   runRequests,
+  ciDispatches,
   credentials,
   credentialProjects,
   credentialUses,
@@ -207,6 +208,7 @@ export type {
   ReportSnapshot,
   RunTarget,
   RunRequestRow,
+  CiDispatchRow,
   CredentialRow,
   CredentialUseRow,
 } from './schema.sqlite';

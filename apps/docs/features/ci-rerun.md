@@ -14,7 +14,7 @@ the cluster's retry arguments (each affected test's `file:line` from its latest 
 in) on the branch of the cluster's latest run, and links to the run it started. The configured ref is used only when
 that run has no branch. An execution's Verify section offers **Re-run this test in CI** beside **Re-run the
 cluster in CI**; both are recorded as the cluster's last re-run, which says where it went, when, by whom, and links to
-the build.
+the build and the run that answered it, with its result.
 
 It is **off by default** and configured per project in the **CI** section of the project's **Settings** tab (under
 Integrations, beside **Issue tracker**): a list of named [CI actions](#ci-actions), each saying where Piwi starts CI and
@@ -216,14 +216,16 @@ address). See the [configuration reference](/reference/configuration).
 
 ## Matching the run
 
-When the re-run finishes, Piwi recognizes it and records its [origin](/reference/test-metadata#run-origin) as `ci-rerun`.
-A Jenkins job matches by the dispatch id it passes on as `PIWI_ORIGIN_REF`; a Custom request by that id too, or by the
-build number its `buildNumber` pointer reads from the answer. GitLab matches by its pipeline id and Bitbucket by its
-build number; GitHub by the dispatch id when the workflow passes it on. Once matched, the last dispatch links to the
-build the run recorded.
+Piwi keeps every dispatch and matches the run it started as soon as that run starts: by the dispatch id it carries as
+`PIWI_ORIGIN_REF`, else by the CI's own run id (GitHub's run, GitLab's pipeline, Bitbucket's build). A re-run unmatched
+at its end is matched by its branch, a start within six hours and exactly its spec files.
 
-GitHub rejects an input the workflow does not declare, so the dispatch id input is optional. Declare it and hand it to
-the reporter as `PIWI_ORIGIN_REF`:
+A matched re-run's [origin](/reference/test-metadata#run-origin) is `ci-rerun`; the last re-run links its build and its
+run, with the result, or reads *no run reported* after six hours. A dispatch repeated within ten seconds is refused, and
+dispatches are kept 90 days.
+
+GitHub answers each dispatch with its run, so a workflow needs no change. The dispatch id input is optional (GitHub
+rejects undeclared inputs); to declare it, pass it on as `PIWI_ORIGIN_REF`:
 
 ```yaml
 on:
@@ -245,9 +247,6 @@ jobs:
         env:
           PIWI_ORIGIN_REF: ${{ inputs.piwi_dispatch }}
 ```
-
-Without it, a run is matched on its branch, a start within six hours of the dispatch, and exactly the dispatched spec
-files.
 
 ## Limits
 

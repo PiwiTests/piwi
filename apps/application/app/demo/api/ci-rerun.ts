@@ -7,7 +7,6 @@
  */
 import { eq } from 'drizzle-orm';
 import { failureClusters, projects, testRuns, users } from '~~/server/database/schema.sqlite';
-import type { ClusterRerunDispatch } from '#shared/ci-rerun';
 import {
   ciActionInputValues,
   ciActionsProblem,
@@ -32,13 +31,14 @@ import {
 } from '#shared/ci-server';
 import { buildRetryArgs, NO_RETRY_ARGS, withRetryCases, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
+import { ciServerValues, executionRerunTarget, rerunFiles } from '#shared/handlers/ci-rerun-target';
 import {
-  ciServerValues,
+  claimCiDispatch,
   clusterLastDispatch,
-  executionRerunTarget,
-  recordClusterDispatch,
-  rerunFiles,
-} from '#shared/handlers/ci-rerun-target';
+  getCiDispatch,
+  runDispatchAction,
+  settleCiDispatch,
+} from '#shared/handlers/ci-dispatches';
 import { ciActionsCredentialProblem, loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
 import { credentialRefusal } from '#shared/credentials';
 import type { getDemoDb } from '../db.client';
@@ -78,22 +78,28 @@ async function targetCredential(
 }
 
 /** The action a re-run uses: the demo reaches only CI servers, so a repository host's action is not served. */
-function pickRerunAction(settings: CiActionsSettings, environment: RunEnvironment, actionId?: string | null) {
-  return pickCiAction(settings, 'tests', { provider: null, ...environment, actionId });
+function pickRerunAction(settings: CiActionsSettings, run: RunEnvironment, actionId?: string | null) {
+  return pickCiAction(settings, 'tests', { provider: null, ...run, actionId });
 }
 
 interface RunEnvironment {
   environmentId: number | null;
   environment: string | null;
+  /** The action whose dispatch started the run, as the server reads it. */
+  startedBy: string | null;
 }
 
-/** The environment of a run, as the server reads it: the one its label resolved to, and the label. */
+/** The environment of a run, as the server reads it (the one its label resolved to, and the label), and its dispatch's action. */
 async function runEnvironment(db: DemoDB, runId: number): Promise<RunEnvironment> {
   const [run] = await db
     .select({ environment: testRuns.environment, environmentId: testRuns.environmentId })
     .from(testRuns)
     .where(eq(testRuns.id, runId));
-  return { environmentId: run?.environmentId ?? null, environment: run?.environment?.trim() || null };
+  return {
+    environmentId: run?.environmentId ?? null,
+    environment: run?.environment?.trim() || null,
+    startedBy: (await runDispatchAction(db, runId))?.actionId ?? null,
+  };
 }
 
 /**
@@ -216,7 +222,8 @@ async function dispatch(
   const ready = withRetryCases(await availability(db, input.projectId, input.runId, input.actionId), input.cases);
   if (!ready.available) throw demoHttpError(400, ready.reason ?? UNAVAILABLE);
   const { settings } = await projectCiActions(db, input.projectId);
-  const action = pickRerunAction(settings, await runEnvironment(db, input.runId), input.actionId).action as
+  const run = await runEnvironment(db, input.runId);
+  const action = pickRerunAction(settings, run, input.actionId).action as
     | (CiAction & { target: { type: 'ci-server' } })
     | null;
   if (!action) throw demoHttpError(400, NO_TARGET);
@@ -226,24 +233,33 @@ async function dispatch(
   const id = randomId();
   const values = await ciServerValues(db, input.runId, target, args, id);
   const { baseUrl } = await targetCredential(db, target);
-  const prepared = prepare(target, baseUrl, values, Object.entries(ciActionInputValues(action)));
+  const started = run.startedBy === action.id ? await runDispatchAction(db, input.runId) : null;
+  const inputs = ciActionInputValues(action, started?.inputs);
+  const prepared = prepare(target, baseUrl, values, Object.entries(inputs));
   if ('error' in prepared) throw demoHttpError(400, prepared.error);
-  const record: ClusterRerunDispatch = {
+  const claim = await claimCiDispatch(db, {
     id,
+    projectId: input.projectId,
     actionId: action.id,
+    actionName: action.name,
+    origin: 'page',
+    kind: 'tests',
+    sourceRunId: input.runId,
+    clusterId: input.clusterId,
+    testCaseId: null,
     provider: 'ci-server',
     preset: target.preset,
-    url: prepared.link,
-    args,
     ref: values.ref || null,
+    inputs,
+    args,
     files: rerunFiles(input.cases),
     tests: input.cases.length,
-    at: Date.now(),
-    byName: await actorName(db, userId),
     byUserId: userId,
-  };
-  if (input.clusterId != null) await recordClusterDispatch(db, input.clusterId, record);
-  return { ok: true, demo: true, dispatch: record };
+    byName: await actorName(db, userId),
+  });
+  if (!claim.claimed) throw demoHttpError(409, 'The same dispatch was sent a moment ago.');
+  await settleCiDispatch(db, id, { url: prepared.link, ref: values.ref || null, providerRunId: null });
+  return { ok: true, demo: true, dispatch: await getCiDispatch(db, id) };
 }
 
 /** `POST /api/failure-clusters/:id/rerun` in the demo. */

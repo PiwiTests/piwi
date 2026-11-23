@@ -11,29 +11,23 @@
  * the button's enabled/disabled state) and the dispatch route agree.
  */
 import { randomBytes } from 'node:crypto';
-import { and, desc, eq, isNotNull } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import { failureClusters, testCases, testRuns, testRunsCases } from '../database/schema';
 import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
 import { readProjectRepositoryUrl } from './scm/project-repository';
 import { normalizeGitUrl } from './scm/git-url';
-import { buildRetryArgs, NO_RETRY_ARGS, toPosixPath, withRetryCases, type RetryCase } from '#shared/retry-command';
+import { buildRetryArgs, NO_RETRY_ARGS, withRetryCases, type RetryCase } from '#shared/retry-command';
 import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
+import { ciServerValues, executionRerunTarget, rerunFiles, rerunRefAndCommit } from '#shared/handlers/ci-rerun-target';
 import {
-  ciServerValues,
+  claimCiDispatch,
   clusterLastDispatch,
-  executionRerunTarget,
-  recordClusterDispatch,
-  rerunFiles,
-  rerunRefAndCommit,
-} from '#shared/handlers/ci-rerun-target';
-import {
-  flakeLabCiArgs,
-  matchRerunDispatch,
-  RERUN_CLOCK_SLACK_MS,
-  RERUN_MATCH_WINDOW_MS,
-  type CiRerunProvider,
-  type ClusterRerunDispatch,
-} from '#shared/ci-rerun';
+  getCiDispatch,
+  runDispatchAction,
+  settleCiDispatch,
+} from '#shared/handlers/ci-dispatches';
+import { flakeLabCiArgs, type CiRerunProvider } from '#shared/ci-rerun';
+import type { CiDispatchOrigin, CiDispatchView } from '#shared/ci-dispatches';
 import {
   ciActionInputValues,
   ciServerTargetOf,
@@ -46,7 +40,6 @@ import {
 } from '#shared/ci-actions';
 import { getCiActionsSettings } from './ci-actions';
 import { ciServerRequestTemplate } from '#shared/ci-server';
-import { safeHttpUrl } from '#shared/utils/safe-url';
 import {
   ciServerBaseUrl,
   ciServerBaseUrlProblem,
@@ -58,9 +51,8 @@ import {
 import { loadCredentialRecord } from '#shared/handlers/credentials';
 import { credentialRefusal } from '#shared/credentials';
 import { CredentialRefusedError, credentialEnvRefusal } from './credentials';
-import { CI_RUN_ORIGINS, RUN_ORIGIN_METADATA_KEY, runCommit, runOrigin, runOriginRef } from '#shared/run-eligibility';
-import { resolveRunBranch } from './run-branch';
 import type { RunMetadata } from './run-json-types';
+import { apiError } from './api-error';
 import type { DbClient } from '../database';
 
 /** The repository URL from a cluster's most recent run, normalized, or null. */
@@ -174,7 +166,8 @@ async function dispatchReadiness(
   const repositoryUrl = runId ? await clusterRepositoryUrl(db, runId) : null;
   const detected = detectScmProvider(repositoryUrl);
   const environment = runId ? await clusterEnvironment(db, runId) : null;
-  const pick = pickCiAction(settings, kind, { provider: detected, ...environment, actionId });
+  const startedBy = (await runDispatchAction(db, runId))?.actionId ?? null;
+  const pick = pickCiAction(settings, kind, { provider: detected, ...environment, actionId, startedBy });
   const action = pick.action;
   const provider = action ? action.target.type : detected;
   const scmCredentialId = action && action.target.type !== 'ci-server' ? (action.target.credentialId ?? null) : null;
@@ -280,119 +273,161 @@ async function rerunRef(db: DbClient, runId: number): Promise<string | null> {
   return (await rerunRefAndCommit(db, runId)).ref;
 }
 
-/** A dispatch as `dispatchClusterRerun` sent it. */
-export type DispatchedRerun = Omit<ClusterRerunDispatch, 'at' | 'byName' | 'byUserId'>;
+/** A second dispatch of the same action, arguments, branch and inputs within the guard: the earlier one. */
+class DuplicateDispatchError extends Error {
+  constructor(readonly existing: CiDispatchView) {
+    super('The same dispatch was sent a moment ago.');
+  }
+}
+
+/** Where a dispatch's tests come from, and what started it, as its record names them. */
+interface DispatchSource {
+  kind: CiActionKind;
+  origin: CiDispatchOrigin;
+  clusterId?: number | null;
+  testCaseId?: number | null;
+}
 
 /**
  * Send a dispatch of these arguments through an action, on the repository and
  * branch of the run they come from (the target's configured ref when that run
- * has none). The action's inputs go beside the arguments, never into them.
- * Throws with the provider's message on a failure.
+ * has none). The action's inputs go beside the arguments, never into them: the
+ * values `chosen` names for its choices, else their defaults. The dispatch is
+ * stored before it is sent ({@link claimCiDispatch}, which refuses the same one
+ * twice), then settled with the provider's answer, or as refused with its
+ * error, which is thrown again.
  */
 async function dispatchWithAction(
   db: DbClient,
-  input: {
+  input: DispatchSource & {
     projectId: number;
     runId: number | null;
     action: CiAction;
+    chosen?: Record<string, string> | null;
     args: string;
-    id: string;
     /** The spec files and the number of tests the arguments name, recorded for matching the run it starts. */
     cases?: RetryCase[];
     actor: CiRerunActor;
   },
-): Promise<DispatchedRerun> {
-  const { action, args, id } = input;
+): Promise<CiDispatchView> {
+  const { action, args } = input;
+  const id = randomBytes(8).toString('hex');
   const reserved = reservedInputName(action);
   if (reserved)
     throw new Error(reservedInputMessage(reserved, action.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'));
-  const inputs = ciActionInputValues(action);
-  const named = input.cases ? { files: rerunFiles(input.cases), tests: input.cases.length } : {};
+  const inputs = ciActionInputValues(action, input.chosen);
   const target = action.target;
+  // The virtual administrator of an instance without sign-in is id 0, no user row.
+  const credentialActor = { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null };
 
+  let send: () => Promise<{ url: string; ref: string | null; providerRunId: string | null }>;
+  let ref: string | null;
   if (target.type === 'ci-server') {
     const server = ciServerTargetOf(target);
     const values = await ciServerValues(db, input.runId, server, args, id);
-    const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs, {
-      // The virtual administrator of an instance without sign-in is id 0, no user row.
-      actor: { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null },
-      actionId: action.id,
+    ref = values.ref || null;
+    send = async () => {
+      const sent = await dispatchToCiServer(db, input.projectId, server, 'rerun', values, inputs, {
+        actor: credentialActor,
+        actionId: action.id,
+      });
+      return { url: sent.url, ref, providerRunId: sent.buildNumber ?? null };
+    };
+  } else {
+    const repositoryUrl = input.runId ? await clusterRepositoryUrl(db, input.runId) : null;
+    if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
+      throw new Error('No supported repository to dispatch to');
+    }
+    const scm = await createScmProvider(repositoryUrl, db, input.projectId, {
+      actor: credentialActor,
+      credentialId: target.credentialId ?? null,
+      strict: true,
     });
-    return {
-      id,
-      actionId: action.id,
-      provider: 'ci-server',
-      preset: target.preset,
-      url: sent.url,
-      args,
-      ref: values.ref || null,
-      ...named,
-      ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
+    if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
+    ref = input.runId ? await rerunRef(db, input.runId) : null;
+    send = async () => {
+      const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs, actionId: action.id });
+      return {
+        url: sent.url,
+        ref: sent.ref ?? ref,
+        providerRunId: sent.runId ?? sent.pipelineId ?? sent.buildNumber ?? null,
+      };
     };
   }
 
-  const repositoryUrl = input.runId ? await clusterRepositoryUrl(db, input.runId) : null;
-  if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
-    throw new Error('No supported repository to dispatch to');
-  }
-  const scm = await createScmProvider(repositoryUrl, db, input.projectId, {
-    // The virtual administrator of an instance without sign-in is id 0, no user row.
-    actor: { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null },
-    credentialId: target.credentialId ?? null,
-    strict: true,
-  });
-  if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
-
-  const ref = input.runId ? await rerunRef(db, input.runId) : null;
-  const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs, actionId: action.id });
-  return {
+  const claim = await claimCiDispatch(db, {
     id,
+    projectId: input.projectId,
     actionId: action.id,
+    actionName: action.name,
+    origin: input.origin,
+    kind: input.kind,
+    sourceRunId: input.runId,
+    clusterId: input.clusterId ?? null,
+    testCaseId: input.testCaseId ?? null,
     provider: target.type,
-    url: sent.url,
+    preset: target.type === 'ci-server' ? target.preset : null,
+    ref,
+    inputs,
     args,
-    ref: sent.ref ?? ref,
-    ...named,
-    ...(sent.pipelineId ? { pipelineId: sent.pipelineId } : {}),
-    ...(sent.buildNumber ? { buildNumber: sent.buildNumber } : {}),
-  };
+    files: input.cases ? rerunFiles(input.cases) : null,
+    tests: input.cases ? input.cases.length : null,
+    byUserId: input.actor.id || null,
+    byName: input.actor.name,
+  });
+  if (!claim.claimed) throw new DuplicateDispatchError(claim.existing);
+  try {
+    await settleCiDispatch(db, id, await send());
+  } catch (e) {
+    await settleCiDispatch(db, id, { refused: e instanceof Error ? e.message : 'Dispatch failed' });
+    throw e;
+  }
+  return (await getCiDispatch(db, id))!;
 }
 
-/** The action a dispatch of `kind` for a run uses, or the error a dispatch throws. */
+/**
+ * The action a dispatch of `kind` for a run uses, or the error a dispatch
+ * throws, and the inputs to send it with: those the run's own dispatch sent,
+ * when the run was started by this action.
+ */
 async function actionFor(
   db: DbClient,
   projectId: number,
   runId: number | null,
   kind: CiActionKind,
   actionId?: string | null,
-): Promise<CiAction> {
+): Promise<{ action: CiAction; chosen: Record<string, string> | null }> {
   const settings: CiActionsSettings = await getCiActionsSettings(db, projectId);
   const provider = detectScmProvider(runId ? await clusterRepositoryUrl(db, runId) : null);
   const environment = runId ? await clusterEnvironment(db, runId) : null;
-  const pick = pickCiAction(settings, kind, { provider, ...environment, actionId });
+  const started = await runDispatchAction(db, runId);
+  const pick = pickCiAction(settings, kind, { provider, ...environment, actionId, startedBy: started?.actionId });
   if (!pick.action) throw new Error(pick.reason);
-  return pick.action;
+  return { action: pick.action, chosen: started?.actionId === pick.action.id ? started.inputs : null };
 }
 
 /**
  * Dispatch a CI re-run of a cluster's affected tests on the branch of its
  * latest run (the action's configured ref when that run has none). Assumes
- * availability was already checked (the route does). Returns what was sent and
- * what the provider answered. Throws with the provider's message on a dispatch
- * failure.
+ * availability was already checked (the route does). Returns the dispatch as
+ * stored. Throws with the provider's message on a dispatch failure.
  */
 export async function dispatchClusterRerun(
   db: DbClient,
   cluster: { id: number; projectId: number; lastSeenRunId: number },
   actor: CiRerunActor,
   actionId?: string | null,
-): Promise<DispatchedRerun> {
+  origin: CiDispatchOrigin = 'page',
+): Promise<CiDispatchView> {
   return dispatchRerunOf(db, {
     projectId: cluster.projectId,
     runId: cluster.lastSeenRunId,
     cases: await clusterRerunCases(db, cluster.id),
     actionId,
     actor,
+    kind: 'tests',
+    origin,
+    clusterId: cluster.id,
   });
 }
 
@@ -406,21 +441,19 @@ class NoRetryArgsError extends Error {
 /** Dispatch a CI re-run of these cases, through the action the project's settings pick for the run. */
 async function dispatchRerunOf(
   db: DbClient,
-  input: { projectId: number; runId: number; cases: RetryCase[]; actionId?: string | null; actor: CiRerunActor },
-): Promise<DispatchedRerun> {
-  const action = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
+  input: DispatchSource & {
+    projectId: number;
+    runId: number;
+    cases: RetryCase[];
+    actionId?: string | null;
+    actor: CiRerunActor;
+  },
+): Promise<CiDispatchView> {
+  const { action, chosen } = await actionFor(db, input.projectId, input.runId, 'tests', input.actionId);
   const args = buildRetryArgs(input.cases);
   // Empty arguments would re-run the whole suite.
   if (!args) throw new NoRetryArgsError();
-  return dispatchWithAction(db, {
-    projectId: input.projectId,
-    runId: input.runId,
-    action,
-    args,
-    id: randomBytes(8).toString('hex'),
-    cases: input.cases,
-    actor: input.actor,
-  });
+  return dispatchWithAction(db, { ...input, action, chosen, args });
 }
 
 /** Who asked for a re-run, as the dispatch record names them, and the API key it came through, for the credential log. */
@@ -430,21 +463,46 @@ export interface CiRerunActor {
   apiKeyId?: number | null;
 }
 
-export type ClusterRerunOutcome =
-  | { ok: true; dispatch: ClusterRerunDispatch }
-  | { ok: false; error: 'not-found' | 'unavailable' | 'dispatch-failed'; message: string };
+/** What a dispatch from a page or a tool came to: the dispatch, or why there is none (the earlier one for a repeat). */
+export type CiDispatchOutcome =
+  | { ok: true; dispatch: CiDispatchView }
+  | { ok: false; error: 'not-found' | 'unavailable' | 'dispatch-failed'; message: string }
+  | { ok: false; error: 'duplicate'; message: string; dispatch: CiDispatchView };
+
+const STATUS_BY_ERROR = { 'not-found': 404, unavailable: 400, 'dispatch-failed': 502, duplicate: 409 } as const;
+
+/** The API error of a dispatch that did not go: a repeat answers 409 with the earlier dispatch as `data.dispatch`. */
+export function ciDispatchError(outcome: Extract<CiDispatchOutcome, { ok: false }>) {
+  return apiError({
+    statusCode: STATUS_BY_ERROR[outcome.error],
+    message: outcome.message,
+    ...(outcome.error === 'duplicate' ? { data: { dispatch: outcome.dispatch } } : {}),
+  });
+}
+
+/** The outcome of a dispatch that threw. */
+function failedDispatch(e: unknown, fallback: string): CiDispatchOutcome {
+  if (e instanceof DuplicateDispatchError) {
+    return { ok: false, error: 'duplicate', message: e.message, dispatch: e.existing };
+  }
+  return {
+    ok: false,
+    error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
+    message: e instanceof Error ? e.message : fallback,
+  };
+}
 
 /**
- * Re-run a cluster's affected tests in CI: check availability, dispatch, and
- * store the dispatch on the cluster as `lastRerunDispatch`. The REST route and
- * the MCP tool both call it, after their own access checks.
+ * Re-run a cluster's affected tests in CI: check availability, then dispatch,
+ * which stores the dispatch with the cluster. The REST route and the MCP tool
+ * both call it, after their own access checks.
  */
 export async function rerunClusterInCi(
   db: DbClient,
   clusterId: number,
   actor: CiRerunActor,
-  options: { actionId?: string | null } = {},
-): Promise<ClusterRerunOutcome> {
+  options: { actionId?: string | null; origin?: CiDispatchOrigin } = {},
+): Promise<CiDispatchOutcome> {
   const [cluster] = await db
     .select({
       id: failureClusters.id,
@@ -470,25 +528,14 @@ export async function rerunClusterInCi(
     };
   }
 
-  let dispatched: DispatchedRerun;
   try {
-    dispatched = await dispatchClusterRerun(db, cluster, actor, options.actionId);
-  } catch (e) {
     return {
-      ok: false,
-      error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
-      message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
+      ok: true,
+      dispatch: await dispatchClusterRerun(db, cluster, actor, options.actionId, options.origin ?? 'page'),
     };
+  } catch (e) {
+    return failedDispatch(e, 'CI re-run dispatch failed');
   }
-
-  const dispatch: ClusterRerunDispatch = {
-    ...dispatched,
-    at: Date.now(),
-    byName: actor.name,
-    byUserId: actor.id,
-  };
-  await recordClusterDispatch(db, cluster.id, dispatch);
-  return { ok: true, dispatch };
 }
 
 /** Whether an execution's test can be re-run in CI, and its cluster's last re-run, when it has a cluster. */
@@ -503,15 +550,15 @@ export async function executionRerunInfo(db: DbClient, executionId: number) {
 
 /**
  * Re-run one execution's test in CI: at its line and in its Playwright project,
- * on the branch of its run. The dispatch is recorded on the execution's
- * cluster, when it has one, as that cluster's last re-run, so the run it starts
- * is recognized as the cluster's (`matchCiRerunRun`).
+ * on the branch of its run. The dispatch names the execution's cluster, when
+ * it has one, so it shows as that cluster's last re-run.
  */
 export async function rerunExecutionInCi(
   db: DbClient,
   executionId: number,
   actor: CiRerunActor,
-): Promise<ClusterRerunOutcome> {
+  options: { origin?: CiDispatchOrigin } = {},
+): Promise<CiDispatchOutcome> {
   const target = await executionRerunTarget(db, executionId);
   if (!target) return { ok: false, error: 'not-found', message: 'Test run case not found' };
 
@@ -530,90 +577,20 @@ export async function rerunExecutionInCi(
     };
   }
 
-  let dispatched: DispatchedRerun;
   try {
-    dispatched = await dispatchRerunOf(db, {
+    const dispatch = await dispatchRerunOf(db, {
       projectId: target.projectId,
       runId: target.runId,
       cases: [target.rerunCase],
       actor,
+      kind: 'tests',
+      origin: options.origin ?? 'page',
+      clusterId: target.clusterId,
     });
+    return { ok: true, dispatch };
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof NoRetryArgsError || e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
-      message: e instanceof Error ? e.message : 'CI re-run dispatch failed',
-    };
+    return failedDispatch(e, 'CI re-run dispatch failed');
   }
-
-  const dispatch: ClusterRerunDispatch = { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id };
-  if (target.clusterId != null) await recordClusterDispatch(db, target.clusterId, dispatch);
-  return { ok: true, dispatch };
-}
-
-/**
- * Recognize a finished CI run as the re-run a cluster dispatched (see
- * `matchRerunDispatch`): stamp its origin `ci-rerun` with the dispatch id, and
- * record the run on the dispatch, whose link becomes the build the run
- * recorded (`ci.buildUrl`) when it has one. Returns the cluster whose dispatch
- * it answered, or null.
- */
-export async function matchCiRerunRun(db: DbClient, runId: number): Promise<number | null> {
-  const [run] = await db
-    .select({
-      projectId: testRuns.projectId,
-      metadata: testRuns.metadata,
-      branch: testRuns.branch,
-      startTime: testRuns.startTime,
-    })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
-  if (!run || !(CI_RUN_ORIGINS as readonly string[]).includes(runOrigin(run.metadata))) return null;
-
-  const startedAt = run.startTime instanceof Date ? run.startTime.getTime() : Number(run.startTime);
-  const clusters = await db
-    .select({ id: failureClusters.id, dispatch: failureClusters.lastRerunDispatch })
-    .from(failureClusters)
-    .where(and(eq(failureClusters.projectId, run.projectId), isNotNull(failureClusters.lastRerunDispatch)));
-  const dispatches = clusters
-    .map((c) => ({ ...(c.dispatch as ClusterRerunDispatch), clusterId: c.id }))
-    .filter((d) => d.id && startedAt >= d.at - RERUN_CLOCK_SLACK_MS && startedAt - d.at <= RERUN_MATCH_WINDOW_MS);
-  if (dispatches.length === 0) return null;
-
-  const executed = await db
-    .selectDistinct({ filePath: testCases.filePath })
-    .from(testRunsCases)
-    .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
-    .where(eq(testRunsCases.testRunId, runId));
-  const meta = (run.metadata as RunMetadata | null) ?? null;
-  const match = matchRerunDispatch(
-    {
-      originRef: runOriginRef(run.metadata),
-      pipelineId: meta?.ci?.pipelineId ?? null,
-      buildNumber: meta?.ci?.buildNumber ?? null,
-      branch: run.branch ?? resolveRunBranch(run.metadata) ?? null,
-      startedAt,
-      files: executed.map((r) => toPosixPath(r.filePath)),
-    },
-    dispatches,
-  );
-  if (!match) return null;
-
-  const { clusterId, ...dispatch } = match;
-  const buildUrl = safeHttpUrl(meta?.ci?.buildUrl ?? null);
-  const metadata = {
-    ...((run.metadata as Record<string, unknown> | null) ?? {}),
-    [RUN_ORIGIN_METADATA_KEY]: { kind: 'ci-rerun', ref: dispatch.id },
-  };
-  await db
-    .update(testRuns)
-    .set({ metadata, origin: runOrigin(metadata), commit: runCommit(metadata) })
-    .where(eq(testRuns.id, runId));
-  await db
-    .update(failureClusters)
-    .set({ lastRerunDispatch: { ...dispatch, ...(buildUrl ? { url: buildUrl } : {}), runId } })
-    .where(eq(failureClusters.id, clusterId));
-  return clusterId;
 }
 
 /** The run of a test's newest execution, whose repository and branch a Flake Lab dispatch uses. */
@@ -655,10 +632,6 @@ export async function flakeLabCiAvailability(
   };
 }
 
-export type FlakeLabCiOutcome =
-  | { ok: true; dispatch: ClusterRerunDispatch }
-  | { ok: false; error: 'not-found' | 'unavailable' | 'dispatch-failed'; message: string };
-
 /**
  * Run a test's Flake Lab experiment in CI: the Flake Lab action receives the
  * `piwi flake` arguments, through the same dispatch as a cluster's re-run, on
@@ -670,7 +643,8 @@ export async function runFlakeLabInCi(
   testCaseId: number,
   kind: 'reproduce' | 'verify',
   actor: CiRerunActor,
-): Promise<FlakeLabCiOutcome> {
+  options: { origin?: CiDispatchOrigin } = {},
+): Promise<CiDispatchOutcome> {
   const [tc] = await db.select({ projectId: testCases.projectId }).from(testCases).where(eq(testCases.id, testCaseId));
   if (!tc) return { ok: false, error: 'not-found', message: 'Test case not found' };
   const ready = await dispatchReadiness(db, tc.projectId, await latestTestRunId(db, testCaseId), 'flakeLab');
@@ -679,21 +653,20 @@ export async function runFlakeLabInCi(
   }
   try {
     const runId = await latestTestRunId(db, testCaseId);
-    const action = await actionFor(db, tc.projectId, runId, 'flakeLab');
-    const dispatched = await dispatchWithAction(db, {
+    const { action, chosen } = await actionFor(db, tc.projectId, runId, 'flakeLab');
+    const dispatch = await dispatchWithAction(db, {
       projectId: tc.projectId,
       runId,
       action,
+      chosen,
       args: flakeLabCiArgs(testCaseId, kind),
-      id: randomBytes(8).toString('hex'),
       actor,
+      kind: 'flakeLab',
+      origin: options.origin ?? 'page',
+      testCaseId,
     });
-    return { ok: true, dispatch: { ...dispatched, at: Date.now(), byName: actor.name, byUserId: actor.id } };
+    return { ok: true, dispatch };
   } catch (e) {
-    return {
-      ok: false,
-      error: e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
-      message: e instanceof Error ? e.message : 'Dispatch failed',
-    };
+    return failedDispatch(e, 'Dispatch failed');
   }
 }

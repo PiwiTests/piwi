@@ -1,13 +1,12 @@
 /**
- * The database reads and writes a CI re-run makes, shared by the server's
- * dispatch (`server/utils/ci-rerun.ts`) and the demo's: what an execution
- * re-runs, the branch and commit a dispatch fills its request with, and the
- * cluster's last dispatch. Nothing here sends a request.
+ * The database reads a CI re-run makes, shared by the server's dispatch
+ * (`server/utils/ci-rerun.ts`) and the demo's: what an execution re-runs, and
+ * the branch and commit a dispatch fills its request with. What a dispatch
+ * records is `ci-dispatches.ts`. Nothing here sends a request.
  */
 import { eq } from 'drizzle-orm';
-import { failureClusters, testCases, testRuns, testRunsCases } from '../../server/database/schema';
+import { testCases, testRuns, testRunsCases } from '../../server/database/schema';
 import { resolveRunBranch } from '../../server/utils/run-branch';
-import type { ClusterRerunDispatch } from '#shared/ci-rerun';
 import type { CiServerTarget, CiTemplateValues } from '#shared/ci-server';
 import { toPosixPath, type RetryCase } from '#shared/retry-command';
 import { runCommit } from '#shared/run-eligibility';
@@ -68,29 +67,4 @@ export async function ciServerValues(
 /** The spec files a dispatch re-runs, as its record lists them. */
 export function rerunFiles(cases: RetryCase[]): string[] {
   return [...new Set(cases.map((c) => toPosixPath(c.filePath)))].sort();
-}
-
-/** A cluster's last CI re-run, or null when it has none (or no cluster is given). */
-export async function clusterLastDispatch(
-  db: DrizzleDB,
-  clusterId: number | null,
-): Promise<ClusterRerunDispatch | null> {
-  if (clusterId == null) return null;
-  const [cluster] = await db
-    .select({ lastRerunDispatch: failureClusters.lastRerunDispatch })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, clusterId));
-  return (cluster?.lastRerunDispatch as ClusterRerunDispatch | null) ?? null;
-}
-
-/** Record a dispatch as the cluster's last CI re-run. */
-export async function recordClusterDispatch(
-  db: DrizzleDB,
-  clusterId: number,
-  dispatch: ClusterRerunDispatch,
-): Promise<void> {
-  await db
-    .update(failureClusters)
-    .set({ lastRerunDispatch: dispatch, updatedAt: new Date() })
-    .where(eq(failureClusters.id, clusterId));
 }

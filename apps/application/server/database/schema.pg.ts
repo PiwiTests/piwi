@@ -359,7 +359,6 @@ export const failureClusters = pgTable(
     timeToResolutionMs: bigint('time_to_resolution_ms', { mode: 'number' }), // first seen → fix landed, in ms (exceeds 32-bit int range past 24.8 days)
     fixVerification: text('fix_verification'), // 'stopped-failing' | 'diagnosis-verified' | 'regressed'
     flakeEvidenceRunId: integer('flake_evidence_run_id'), // latest run in which every affected test passed at the commit the cluster last failed at: flake evidence, not a fix
-    lastRerunDispatch: jsonb('last_rerun_dispatch'), // ClusterRerunDispatch — most recent "Re-run in CI" dispatch
     bisectResult: jsonb('bisect_result'), // BisectedCommit — first bad commit the desktop bisect found (sha, subject, author, date)
     // Inbox triage — orthogonal to `status`. A snooze hides a cluster from every
     // inbox queue until the deadline passes (or, in "until-recurs" mode, until a
@@ -3205,6 +3204,54 @@ export const runRequests = pgTable(
     runIdx: index('idx_run_requests_run').on(t.runId),
     environmentIdx: index('idx_run_requests_environment').on(t.environmentId),
     requestTokenIdx: index('idx_run_requests_run_token').on(t.requestTokenDigest),
+  }),
+);
+
+// CI dispatches: one row per dispatch of a CI action, from any place, and the run it was matched to
+export const ciDispatches = pgTable(
+  'ci_dispatches',
+  {
+    id: text('id').primaryKey(), // 16 hex digits: the dispatch id, which the run hands back as PIWI_ORIGIN_REF
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    actionId: text('action_id'), // the CI action (`ciRerun.actions[].id`); null for a dispatch stored before CI actions
+    actionName: text('action_name'), // the action's name when it was dispatched, kept after a rename or a removal
+    origin: text('origin').notNull(), // CiDispatchOrigin: what started it ('page', 'mcp', 'api')
+    kind: text('kind').notNull(), // CiActionKind: 'tests', 'suite' or 'flakeLab'
+    sourceRunId: integer('source_run_id'), // the run its tests or its branch came from; no foreign key, so a run's delete never waits on it
+    clusterId: integer('cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }), // the cluster it re-ran, or the cluster of the test it re-ran
+    testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }), // the test of a Flake Lab experiment
+    provider: text('provider').notNull(), // CiRerunProvider: 'github', 'gitlab', 'bitbucket' or 'ci-server'
+    preset: text('preset'), // CiServerPreset, for a 'ci-server' dispatch
+    ref: text('ref'), // the branch sent; null when the target runs its configured branch
+    inputs: jsonb('inputs'), // Record<string, string>: the action's inputs as sent, fixed and chosen
+    args: text('args').notNull(), // the Playwright (or `piwi flake`) arguments handed to CI
+    files: jsonb('files'), // string[]: the spec files the arguments name, POSIX separators
+    tests: integer('tests'), // how many tests the arguments name
+    url: text('url'), // the provider's run once known, else its runs list; null before the provider answered
+    providerRunId: text('provider_run_id'), // GitHub's run id, GitLab's pipeline id, Bitbucket's or the CI server's build number
+    state: text('state').notNull().default('dispatched'), // CiDispatchState
+    detail: text('detail'), // the provider's error, for a refused dispatch
+    runId: integer('run_id'), // the run matched to it; no foreign key, so a run's delete never waits on it
+    byUserId: integer('by_user_id').references(() => users.id, { onDelete: 'set null' }),
+    byName: text('by_name'), // who pressed it, kept after their account is deleted
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    matchedAt: timestamp('matched_at', { mode: 'date' }),
+    updatedAt: timestamp('updated_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+  },
+  (t) => ({
+    projectIdx: index('idx_ci_dispatches_project').on(t.projectId, t.createdAt),
+    projectStateIdx: index('idx_ci_dispatches_project_state').on(t.projectId, t.state),
+    clusterIdx: index('idx_ci_dispatches_cluster').on(t.clusterId, t.createdAt),
+    testCaseIdx: index('idx_ci_dispatches_test_case').on(t.testCaseId),
+    byUserIdx: index('idx_ci_dispatches_by_user').on(t.byUserId),
+    runIdx: index('idx_ci_dispatches_run').on(t.runId),
+    providerRunIdx: index('idx_ci_dispatches_provider_run').on(t.providerRunId),
   }),
 );
 

@@ -3674,6 +3674,28 @@ const SCENES = [
     },
   })),
   ...[
+    { name: 'cluster-last-rerun', cluster: 6, width: 1280, height: 1400 },
+    { name: 'cluster-last-rerun-mobile', cluster: 6, width: 390, height: 2400 },
+    { name: 'cluster-last-rerun-unreported', cluster: 3, width: 1280, height: 1400 },
+  ].map(({ name, cluster, width, height }) => ({
+    name,
+    description: `Failure cluster → More ways to fix → Verify: the last re-run in CI, ${
+      cluster === 6 ? 'with the run that answered it and its result' : 'that no run answered'
+    }, at ${width} px`,
+    route: `/failure-clusters/${cluster}`,
+    viewport: { width, height },
+    of: '[data-shot="fix-verify"]',
+    async run({ page, shoot, settle }) {
+      const verify = page.locator('[data-tour="fix-section-verify"]');
+      await verify.waitFor({ timeout: 90000 });
+      if ((await verify.getAttribute('aria-expanded')) !== 'true') await verify.click();
+      await page.getByTestId('ci-rerun-last-dispatch').waitFor({ timeout: 30000 });
+      await page.locator('[data-shot="fix-verify"]').evaluate((node) => node.scrollIntoView({ block: 'center' }));
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
     { name: 'project-ci-settings', width: 1280, height: 1100 },
     { name: 'project-ci-settings-mobile', width: 375, height: 1700 },
   ].map(({ name, width, height }) => ({

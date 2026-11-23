@@ -3249,6 +3249,64 @@ for (const story of FAILURE_STORIES) {
   }
 }
 
+// ── CI dispatches ──────────────────────────────────────────────────────────
+// Two clusters' Re-run in CI, as the cluster page's "Last re-run" line shows them. Cluster 6's went to its project's
+// Jenkins job twenty minutes before the run its spec fix landed in, a run that passed and answered it: the line links
+// that run with its result. Cluster 3's went to the API job half an hour after a failure more than eight hours before
+// the newest run, and no run answered it within the matching window.
+const CI_DISPATCHES = [];
+{
+  const newestRunMs = Math.max(...TEST_RUNS.map((r) => r.start_time)) * 1000;
+  const dispatchOf = (clusterId, id, answeredBy) => {
+    const story = FAILURE_STORIES.find((s) => s.clusterId === clusterId);
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
+    const action = PROJECTS.find((p) => p.id === story.projectId).ci_rerun.actions[0];
+    const run = answeredBy ? TEST_RUNS.find((r) => r.id === answeredBy) : null;
+    const failed = run
+      ? null
+      : clusterStats[clusterId].failedRuns.find((r) => r.startMs <= newestRunMs - 8 * 60 * 60 * 1000);
+    if (!run && !failed) throw new Error(`Cluster ${clusterId} has no failure eight hours before the newest run`);
+    const at = run ? run.start_time * 1000 - 20 * 60 * 1000 : failed.startMs + 30 * 60 * 1000;
+    const jobPage = `https://jenkins.example.com/${action.target.fields.job
+      .split('/')
+      .map((name) => `job/${name}`)
+      .join('/')}/`;
+    return {
+      id,
+      project_id: story.projectId,
+      action_id: action.id,
+      action_name: action.name,
+      origin: 'page',
+      kind: 'tests',
+      source_run_id: failed?.runId ?? cluster.last_seen_run_id,
+      cluster_id: clusterId,
+      test_case_id: null,
+      provider: 'ci-server',
+      preset: 'jenkins',
+      ref: 'main',
+      inputs: JSON.stringify({}),
+      args: `${story.failingCases.map((c) => `"/${story.specFile}:${c.failingLine}"`).join(' ')} --project="chromium"`,
+      files: JSON.stringify([story.specFile]),
+      tests: story.failingCases.length,
+      url: jobPage,
+      provider_run_id: null,
+      state: run ? 'ended' : 'unreported',
+      detail: null,
+      run_id: run?.id ?? null,
+      by_user_id: DEFAULT_DEMO_USER.id,
+      by_name: DEFAULT_DEMO_USER.name,
+      created_at: at,
+      matched_at: run ? run.start_time * 1000 : null,
+      updated_at: run ? run.start_time * 1000 : at + 6 * 3600 * 1000,
+    };
+  };
+  const fixed = FAILURE_CLUSTERS.find((c) => c.id === 6);
+  CI_DISPATCHES.push(
+    dispatchOf(6, '5d1c0a0000000006', fixed.fix_landed_run_id),
+    dispatchOf(3, '5d1c0a0000000003', null),
+  );
+}
+
 // ── Demo merge suggestions ─────────────────────────────────────────────────
 // Two pending pairs (one LLM-judged, one embedding) so the list and both
 // actions are exercisable, plus one rejected pair that demonstrates a
@@ -6382,6 +6440,8 @@ const REBASE_SQL = [
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
   `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
+  // matched_at is nullable; NULL + delta stays NULL.
+  `UPDATE ci_dispatches SET created_at = created_at + ${D_MS}, matched_at = matched_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE analytics_dashboards SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS}, last_viewed_at = last_viewed_at + ${D_MS};`,
   `UPDATE assistant_conversations SET created_at = created_at + ${D_MS}, updated_at = updated_at + ${D_MS};`,
   `UPDATE assistant_messages SET created_at = created_at + ${D_MS};`,
@@ -8011,6 +8071,9 @@ const lines = [
   '',
   '-- Failure clusters',
   insert('failure_clusters', FAILURE_CLUSTERS),
+  '',
+  '-- CI dispatches (reference failure_clusters)',
+  insert('ci_dispatches', CI_DISPATCHES),
   '',
   '-- Demo AI diagnoses',
   insert('failure_diagnoses', FAILURE_DIAGNOSES),

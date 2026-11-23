@@ -26,6 +26,8 @@ export interface RerunDispatchResult {
   url: string;
   /** The branch the pipeline runs on. */
   ref?: string;
+  /** GitHub's id for the workflow run the dispatch created, when GitHub answered one. */
+  runId?: string;
   /** GitLab's pipeline id. */
   pipelineId?: string;
   /** Bitbucket's build number. */

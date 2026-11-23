@@ -7,9 +7,15 @@ run starts, and lets a project start its whole suite on CI. It builds steps 2 to
 [#1292](https://github.com/PiwiTests/piwi/issues/1292), with a wider scope than the issue: there the dialog was for CI
 only, a main click dispatched at once, and the run page was not one of the places.
 
-**Status.** Proposed 2026-11-23, waiting for the maintainer's sign-off. Nothing is built. Step 1 of #1292, the CI
-actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in
-[ci-actions.md](../adr/ci-actions.md).
+**Status.** Accepted 2026-11-23, with the five questions settled as [Settled questions](#settled-questions) records.
+PR 2 is built: the `ci_dispatches` table, with each cluster's stored last re-run copied in and the column dropped;
+every dispatch stored before it is sent (cluster, execution, Flake Lab, MCP), refused ones with the provider's error,
+and a repeat within 10 seconds answered 409 with the first (D13); matching at `/start` and `/begin` by the dispatch id
+or the provider's id, and at finish by those or the files (D10, D11); GitHub's run id (D12); the `unreported` sweep and
+the 90-day retention (D18); the action that started the failed run picked first, with the values it was sent with
+(D2); and "Last re-run" linking the run with its result. The demo seeds a matched and an unreported re-run. PR 3 and
+the rest remain. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and
+is recorded in [ci-actions.md](../adr/ci-actions.md).
 
 ## What exists
 
@@ -52,10 +58,10 @@ Behind those buttons:
 | D7  | **The server checks the inputs.** A dispatch may send only the action's choice inputs, each with one of its options. A fixed input can't be overridden, and an input the action doesn't declare is refused with 400.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
 | D8  | **A `ci_dispatches` table holds one row per dispatch**, refused ones included, for the audit. Its columns are listed under [The dispatch record](#the-dispatch-record). A cluster's last re-run reads from it, and `failure_clusters.last_rerun_dispatch` is copied into it and dropped.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                               |
 | D9  | **A dispatch is `dispatched`, `running`, `ended`, `unreported` or `refused`.** It is `running` once a run is matched, and `ended` once that run finishes; the result is read from the run, never copied. `unreported` is final, set when no run matched within the matching window (six hours, `RERUN_MATCH_WINDOW_MS`). `refused` means the provider answered with an error, kept in `detail`. After 30 minutes in `dispatched`, the follow-up view gives the likely causes while matching goes on.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| D10 | **A run is matched when it starts**, at `/setup` and `/start` (and in the batch routes, which create a run and finish it at once), against the project's open dispatches, strongest identifier first. (1) The dispatch id, which the run carries as `PIWI_ORIGIN_REF`. (2) The provider's id for the run: GitHub `ci.runId`, GitLab `ci.pipelineId`, Bitbucket `ci.buildNumber`, and for Jenkins `ci.jobName` with `ci.buildNumber` (build numbers count per job). (3) At finish only, the file match: branch, a start within the window and exactly the dispatched spec files. It is for `tests` and `flakeLab` dispatches only, never `suite`. A run not matched at start is tried again at finish with all three, which covers batch uploads.                                                                                                                                                                                                                                       |
+| D10 | **A run is matched when it starts**, at `/start` and `/begin`, where the reporter's metadata arrives (`/setup` holds none), against the project's open dispatches, strongest identifier first. (1) The dispatch id, which the run carries as `PIWI_ORIGIN_REF`. (2) The provider's id for the run: GitHub `ci.runId`, GitLab `ci.pipelineId`, Bitbucket `ci.buildNumber`. A Jenkins job always gets the dispatch id as a parameter, since Jenkins answers a queue item and no build number. (3) At finish only, the file match: branch, a start within the window and exactly the dispatched spec files. It is for `tests` and `flakeLab` dispatches only, never `suite`. A run not matched at start is tried again at finish with all three, which also covers a batch upload, which creates a run and finishes it at once.                                                                                                                                                                                                                                       |
 | D11 | **What a match changes on the run.** A run matched to a `tests` dispatch is stamped `ci-rerun` with the dispatch id as its ref, as today. A `flakeLab` run keeps the `flake-lab` origin its command sets. A `suite` run keeps `ci` (Q4). The link always lives on the dispatch row (`run_id`).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
 | D12 | **GitHub links straight to its run.** A GitHub dispatch sends `return_run_details: true`. A `200` stores `workflow_run_id` as the provider's id and `html_url` as the link. A `204` keeps today's behavior: the workflow's runs list and the other matches. A `422` that names the parameter (a GitHub Enterprise Server without it) is sent once more without it, which is safe because a `422` dispatched nothing.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| D13 | **A double click is refused.** A dispatch with the same project, action, kind, source, branch and inputs as one stored in the last 10 seconds (refused ones aside) answers 409 with the existing dispatch, and the dialog shows that dispatch's follow-up.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| D13 | **A double click is refused.** A dispatch with the same project, action, kind, arguments, branch and inputs as one stored in the last 10 seconds (refused ones aside) answers 409 with the existing dispatch, and the dialog shows that dispatch's follow-up.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
 | D14 | **One follow-up view for both kinds** (`RunFollowUp`), shown in the dialog after **Send** and by "Last re-run". A run request shows sent, running, then ended, with **Stop** and **Run again** as today. A dispatch shows "Dispatched to <target> · Open in CI · waiting for the run to report…", then **Open run #N** with the run's result once matched. Without a run, it shows the likely causes: the job doesn't pass on `PIWI_ORIGIN_REF`, the reporter isn't set up in that job, or the job failed before Playwright started. A dispatch has **Run again** and no **Stop**: a CI run is cancelled in the CI. Both map to one shared view type (`#shared/run-follow-up`), so the component never reads two state models. While the page is open, it reads the dispatch every 5 seconds until it is matched, then every 30 seconds until it is final. A toast offers **Open run #N** when the run reports, and the page never navigates on its own.                               |
 | D15 | **One route dispatches for every place**, `POST /api/projects/:id/ci-dispatches`. Each place calls it with its source, and the per-place routes go (Q5). Under [API](#api).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                            |
 | D16 | **MCP.** `rerun_cluster_in_ci` takes an optional `ref` and `inputs` and returns the dispatch id. A new read tool, `get_ci_dispatch`, returns a dispatch's state, its run and the run's result, so an agent can follow what it started. Starting a whole suite from MCP is left out.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    |
@@ -96,7 +102,7 @@ The desktop window's run button and Copy retry command are Q1 and Q2.
 | `inputs`                                      | The values sent, fixed and chosen (JSON)                                                                                   |
 | `args`, `files`, `tests`                      | The Playwright arguments, and the spec files and test count they name                                                      |
 | `url`                                         | The provider's run once known, else its runs list                                                                          |
-| `provider_run_id`, `provider_job`             | GitHub's run id, GitLab's pipeline id, Bitbucket's or the CI server's build number; the Jenkins job name, compared decoded |
+| `provider_run_id` | GitHub's run id, GitLab's pipeline id, Bitbucket's or a Custom request's build number |
 | `state`, `detail`                             | D9, and the provider's error text                                                                                          |
 | `run_id`                                      | The matched run, with no foreign key (as `run_requests.run_id`), so deleting a run never waits on it                       |
 | `by_user_id`, `by_name`                       | Who pressed it (set null on delete; the name stays)                                                                        |
@@ -127,7 +133,7 @@ seconds, the way the demo's seeded app answers run requests.
 
 ## Delivery plan
 
-1. **This record**, with the scope update posted on #1292.
+1. **This record**, with the scope update posted on #1292 once it is merged.
 2. **The dispatch record** (#1292 step 2, server side). `ci_dispatches` and its migrations; every dispatch recorded,
    from the cluster, the execution, Flake Lab and MCP; D10 to D13; the `unreported` sweep and D18; D2's "the action
    that produced the run". "Last re-run" reads from the table and links to the Piwi run with its result. Also the demo
@@ -138,31 +144,31 @@ seconds, the way the demo's seeded app answers run requests.
 4. **The button and the dialog** (#1292 step 3) on every place under [Per place](#per-place), with Run on my machine's
    modal folded into `RunDialog`. Also the docs (`features/ci-rerun.md`, `features/run-on-my-machine.md`), the demo,
    the tour stops that show these screens, and before and after screenshots at 390 px and 1280 px.
-5. **This computer** in the desktop window, if Q1 is agreed.
+5. **This computer** in the desktop window (Q1).
 6. **The waiting row** (#1292 step 4): the project's run list shows its open dispatches ("Waiting for CI · Smoke ·
    staging on main · dispatched 2 minutes ago by Ana · Open in CI"), and the viewer's own waiting requests, which only
    they see.
 7. **Tags** (#1292 step 5): an action accepts `tags`, and **What** gains "Tests tagged…" from the project's tags,
    sent as one `--grep`. This is CI only, until a run request takes tags.
 
-## Open questions
+## Settled questions
 
 - **Q1. The desktop window's run button.** It runs at once, doubles as the status of a run of the same tests, and its
   menu holds one-off runs, option toggles and fixes. Run on my machine is hidden in the desktop window, so the window
-  would show only _CI_ under Where. Recommendation: a _This computer_ row in Where that folds that button in, built on
-  its own (PR 5). Until then, the button stays beside the new one in the desktop window, and so does each row of the
-  run's test list.
+  would show only _CI_ under Where. Settled: a _This computer_ row in Where folds that button in, built on its own
+  (PR 5). Until then, the button stays beside the new one in the desktop window, and so does each row of the run's
+  test list.
 - **Q2. Copy retry command.** It copies a command and runs nothing, it is the run page's primary action on a red run,
-  and a guide anchor points at it (`run-retry-command`). Recommendation: keep it as its own button.
-- **Q3. "Every test" on the run page.** An app runs the run's own tests (capped at 200). CI would run the action's
-  whole suite on the run's branch, which differs when the run was partial (a selection or a grep). Recommendation: CI
-  runs the whole suite, and the line under What says so; a list of a few thousand `file:line` could exceed the size a
-  workflow input or a pipeline variable takes.
-- **Q4. The origin of a matched whole-suite run.** It is an ordinary full CI run, so it should feed flakiness and
-  trends like any `ci` run, while a `ci-rerun` run is a re-run of failures. Recommendation: keep `ci`. The alternative
-  is a new origin, `ci-dispatch`, which changes the run-origin register entry (D29).
-- **Q5. The per-place routes.** Recommendation: remove them in PR 3 with a `BREAKING CHANGE:` footer, as the register
-  asks (no compatibility aliases). The alternative is to keep them as thin wrappers until 1.0.
+  and a guide anchor points at it (`run-retry-command`). Settled: it stays its own button.
+- **Q3. "Every test" on the run page.** An app runs the run's own tests (capped at 200). Settled: CI runs the action's
+  whole suite on the run's branch, and the line under What says so, though it differs from the run's tests when the
+  run was partial (a selection or a grep). A list of a few thousand `file:line` could exceed the size a workflow input
+  or a pipeline variable takes.
+- **Q4. The origin of a matched whole-suite run.** Settled: it keeps `ci`. It is an ordinary full CI run, so it feeds
+  flakiness and trends like any CI run, while a `ci-rerun` run is a re-run of failures. A new origin would have
+  changed the run-origin register entry (D29).
+- **Q5. The per-place routes.** Settled: PR 3 removes them with a `BREAKING CHANGE:` footer, following the register's
+  convention of no compatibility aliases.
 
 ## Non-goals
 

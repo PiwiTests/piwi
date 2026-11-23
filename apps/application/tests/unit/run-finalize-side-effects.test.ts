@@ -38,8 +38,8 @@ vi.mock('../../server/utils/heal/policy', () => ({ maybeEnqueueHealActionInBackg
 vi.mock('../../server/utils/outcome-inference', () => ({ inferRunOutcomes }));
 vi.mock('#shared/handlers/markers', () => ({ syncAutoMarkersForRun }));
 vi.mock('#shared/handlers/flaky-classify', () => ({ classifyRunFlakyTests }));
-const matchCiRerunRun = vi.fn(() => Promise.resolve(null));
-vi.mock('../../server/utils/ci-rerun', () => ({ matchCiRerunRun }));
+const matchRunToCiDispatch = vi.fn(() => Promise.resolve(null));
+vi.mock('../../server/utils/ci-dispatches', () => ({ matchRunToCiDispatch }));
 const upsertDailyRollup = vi.fn((_db: unknown, _id: number) => Promise.resolve());
 vi.mock('#shared/handlers/analytics/rollups', () => ({ upsertDailyRollup }));
 const runTrackerAutomation = vi.fn((_db: unknown, _id: number) => Promise.resolve(0));
