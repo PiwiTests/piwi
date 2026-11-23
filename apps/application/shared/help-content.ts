@@ -1611,6 +1611,7 @@ export const HELP_TOPICS = {
       '- **Server** — each instrumented server under test: time zone, culture, runtime, app version.',
     ].join('\n'),
     doc: 'features/run-environment',
+    recipe: { question: 'Fails on CI, passes locally', doc: 'recipes/fails-on-ci' },
   },
 
   'run-environment': {
@@ -1623,6 +1624,7 @@ export const HELP_TOPICS = {
       'A run from an older reporter shows nothing here: it was never recorded.',
     ].join('\n'),
     doc: 'features/run-environment',
+    recipe: { question: 'Fails on CI, passes locally', doc: 'recipes/fails-on-ci' },
   },
 
   // ── Visual diff ──────────────────────────────────────────────────────────

@@ -65,17 +65,18 @@ CI's values:
 
 ::: code-group
 
-```bash [bash]
+```bash [Linux / macOS]
 TZ=UTC LANG=en_US.UTF-8 npx playwright test
 ```
 
-```powershell [PowerShell]
+```powershell [Windows (PowerShell)]
 $env:TZ='UTC'; $env:LANG='en_US.UTF-8'; npx playwright test
 ```
 
 :::
 
 Browsers on Windows may not follow `TZ`: set `use.timezoneId` in the Playwright config instead.
+[Fails on CI, passes locally](/recipes/fails-on-ci) walks through it from the run page to the fix.
 
 ## Related
 
@@ -83,3 +84,4 @@ Browsers on Windows may not follow `TZ`: set `use.timezoneId` in the Playwright 
 - [Backend logs](/guide/backend-logs#server-environment): what a server under test answers.
 - [Flake Lab](./flake-lab): confirm a time zone or locale suspect by experiment.
 - [CI & sharding](/guide/ci): the run metadata the reporter collects.
+- [Fails on CI, passes locally](/recipes/fails-on-ci): from what differs to the config that pins it.
