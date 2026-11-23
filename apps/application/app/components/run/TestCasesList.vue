@@ -6,7 +6,8 @@ import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 import type { LiveStepInfo, LiveStepsByWorker } from '~/utils/live-steps';
 import { liveResourcesByWorker, liveResourcesForCase, type LiveWorkerResources } from '~/utils/live-worker-resources';
 import type { RunResourceTimelinePart } from '#shared/handlers/run-resources';
-import { liveWorkerKey, type LiveWorkerState } from '#shared/live-view';
+import type { LiveWorkerState } from '#shared/live-view';
+import { currentRows, rowLiveWorker, rowWorkerKey } from '~/utils/live-row-worker';
 import type { LiveRowNote } from '~/utils/live-row-note';
 import type { HubSession } from '@piwitests/core/run-hub';
 import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
@@ -91,43 +92,19 @@ function liveStep(tc: TestCaseResult): LiveStepInfo | null {
   return liveStepForCase(props.liveSteps, tc);
 }
 
-/** A running row's worker, as the run's live view files it. */
-function workerKeyOf(tc: TestCaseResult): string | null {
-  if (tc.status !== 'running' || tc.workerIndex == null) return null;
-  return liveWorkerKey({ shard: tc.shardIndex ?? null, worker: tc.workerIndex });
-}
+/** The execution each worker runs now, in the run's live view or in a run the desktop app started (`currentRows`). */
+const currentExecutionOf = computed(() =>
+  props.liveWorkers || props.desktopSessions?.length ? currentRows(props.testCases) : new Map<string, TestCaseResult>(),
+);
 
-/**
- * The execution each worker runs now, in the run's live view or in a run the desktop app started: its running row that
- * began last. A row of the test before, whose end has not streamed in yet, is not it, nor an earlier repetition of the
- * same test (`--repeat-each`).
- */
-const currentExecutionOf = computed(() => {
-  const current = new Map<string, TestCaseResult>();
-  if (!props.liveWorkers && !props.desktopSessions?.length) return current;
-  for (const tc of props.testCases) {
-    const key = workerKeyOf(tc);
-    if (!key) continue;
-    const seen = current.get(key);
-    if (!seen || (tc.startedAt ?? 0) >= (seen.startedAt ?? 0)) current.set(key, tc);
-  }
-  return current;
-});
-
-/**
- * The row's worker in the run's live view, when the row is the test that worker runs now. A stop names its test: one
- * of the worker's next test, whose begin has not streamed in yet, is not this row's.
- */
+/** The row's worker in the run's live view, when the row is the test that worker runs now (`rowLiveWorker`). */
 function liveWorkerOf(tc: TestCaseResult): LiveWorkerState | null {
-  const key = workerKeyOf(tc);
-  const worker = key ? props.liveWorkers?.[key] : null;
-  if (!key || !worker || currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
-  return worker.paused?.test && worker.paused.test !== tc.title ? { ...worker, paused: null } : worker;
+  return rowLiveWorker(currentExecutionOf.value, props.liveWorkers, tc);
 }
 
 /** The row's worker in a run the desktop app started, when the row is the test that worker runs now. */
 function desktopWorkerOf(tc: TestCaseResult): DesktopRowWorker | null {
-  const key = workerKeyOf(tc);
+  const key = rowWorkerKey(tc);
   if (!key || !props.desktopSessions?.length) return null;
   if (currentExecutionOf.value.get(key)?.executionId !== tc.executionId) return null;
   return desktopRowWorker(props.desktopSessions, tc);

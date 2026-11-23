@@ -219,7 +219,7 @@ test('watched on a page too heavy for its frames', async ({ page }) => {
 `;
 
 const HEAVIER_SPEC = (base: string) => `const { test, expect } = require('../fixture.cjs');
-test('watched on a page too heavy for a lighter image', async ({ page }) => {
+test('watched on a large page too heavy for its frames', async ({ page }) => {
   await page.goto('${base}/noisier');
   await expect(page.locator('#go')).toBeVisible(); // bp
 });
@@ -325,7 +325,7 @@ const watched: Record<
 > = {};
 /** Whether the frame a view sent again, asked again, was the one it sent last. */
 const resent: boolean[] = [];
-/** What the view of a page too heavy for a lighter image said, each time. */
+/** Why the view of a large page too heavy for its frames said no frame goes, each time. */
 const heavy: { refusals?: string[] } = {};
 /**
  * The pause bar's bottom edge at the headed stop, the frames its view sent until the page was clicked, whether a Tab
@@ -568,10 +568,10 @@ async function onStopped(connection: Connection, stop: Stopped): Promise<void> {
       answers.push(await view(true));
       await waitFor(() => frames(connection, stop.stop).length > 0, 5000);
       await watch(500, 0);
-    } else if (test === 'watched on a page too heavy for a lighter image') {
+    } else if (test === 'watched on a large page too heavy for its frames') {
       answers.push(await view(true));
-      await waitFor(() => refusals(connection, stop.stop).length > 0, 5000);
-      // The page paints again: it is said once.
+      await waitFor(() => frames(connection, stop.stop).length > 0, 5000);
+      // The page paints again, and the view goes on.
       answers.push(await play([{ type: 'mouse', action: 'move', x: 600, y: 300 }]));
       await watch(1000, 0);
       heavy.refusals = refusals(connection, stop.stop).map((m) => m.refused);
@@ -815,7 +815,7 @@ describe('the live view of a stopped page', () => {
       ['picked on a sharper image', 'passed', []],
       ['watched with a secret field', 'passed', []],
       ['watched on a page too heavy for its frames', 'passed', []],
-      ['watched on a page too heavy for a lighter image', 'passed', []],
+      ['watched on a large page too heavy for its frames', 'passed', []],
       ...(FIREFOX ? [['watched in Firefox', 'passed', []]] : []),
     ]);
     // Pick on the image reads each element's box from the snapshot, which Playwright 1.60 added.
@@ -849,7 +849,7 @@ describe('the live view of a stopped page', () => {
     // Each frame names the viewport of its page: the noisy pages' own, else the config's.
     const viewports: Record<string, { width: number; height: number }> = {
       'watched on a page too heavy for its frames': { width: 1280, height: 720 },
-      'watched on a page too heavy for a lighter image': { width: 1920, height: 1080 },
+      'watched on a large page too heavy for its frames': { width: 1920, height: 1080 },
     };
     for (const connection of connections) {
       const running = new Map(
@@ -1056,19 +1056,20 @@ describe('the live view of a stopped page', () => {
     }
   });
 
-  it('shows a lighter image of a page whose frames are too long, and says once why none goes when it is too', () => {
+  it('shows a lighter image of a page whose frames are too long, at the size the view asks', () => {
     expect(said['watched on a page too heavy for its frames']).toEqual([ON]);
     const lighter = watched['watched on a page too heavy for its frames']!;
     expect(lighter.firstJpeg!.length).toBeLessThanOrEqual(MAX_VIEW_FRAME);
     expect(jpegSize(lighter.firstJpeg!)).toEqual({ width: 1280, height: 720 });
-    expect(said['watched on a page too heavy for a lighter image']).toEqual([
+    // A large page's lighter image of its whole viewport would be too long as well: it goes at the size the view asks.
+    expect(said['watched on a large page too heavy for its frames']).toEqual([
       ON,
       { ok: true, message: 'Played 1 event.' },
     ]);
-    expect(heavy.refusals).toEqual([
-      'This page is too heavy for the live view: each image of it is over 384 KB, a lighter one included. The image of the stop still shows it.',
-    ]);
-    expect(watched['watched on a page too heavy for a lighter image']!.frames).toBe(0);
+    const large = watched['watched on a large page too heavy for its frames']!;
+    expect(large.firstJpeg!.length).toBeLessThanOrEqual(MAX_VIEW_FRAME);
+    expect(jpegSize(large.firstJpeg!)).toEqual({ width: 1280, height: 720 });
+    expect(heavy.refusals).toEqual([]);
   });
 
   it.skipIf(!FIREFOX)('shows a page in Firefox, its frames at the view’s pace', () => {

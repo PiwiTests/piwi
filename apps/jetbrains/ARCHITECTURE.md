@@ -268,7 +268,7 @@ service grouped (`FailuresResult.tree`), with each run's age. Its nodes are the 
 [The failures answer](../../packages/editor/ARCHITECTURE.md#the-failures-answer) in the editor service's reference.
 With no failure, the empty text is `Glue.failuresEmpty` of the state the service says (`FailuresResult.view`), with
 the actions the service links for that state (`FailuresView.links`, drawn as `Glue.Link`s by their action ids), as VS
-Code's welcomes, which a test of the service holds to the same links.
+Code's view shows them: the golden file `packages/editor/tests/golden/failures-view.json` holds both to the same words.
 
 - **The toolbar** holds, in VS Code's order, **Refresh the latest run**, **Re-run the failing tests**, **Open in
   dashboard**, **Compare with…** and **Group the failures by…**, then the navigation (previous and next failure, expand
@@ -464,7 +464,7 @@ the disabled actions are left out). First comes what the state calls for (`Glue.
 - while a run is shared live: the share's entries, the run page, its link and **Stop sharing…**, which asks first
   ([Run control](#run-control)).
 
-A live run's section lists the `Piwi.RunControl` group, as **Tools → Piwi** does, in its order (`RUN_ACTIONS`, held to
+A live run's section lists the `Piwi.RunControl` group, as **Tools → Piwi → Run control** does, in its order (`RUN_ACTIONS`, held to
 the group by `PiwiPluginTest`): the controls, the page and the trace so far (`Piwi.OpenTraceSoFar`), the code actions,
 sharing, then Stop. Every row that a registered action does is that action, the stops as `Piwi.ShowStop` and the run
 pages as `Piwi.OpenRunPage`, each wrapped to act on its stop or page (`registeredWith`). Then come the registered
@@ -557,9 +557,9 @@ Three actions, under **Tools → Piwi** and in the **Piwi** submenu of the edito
 in a project with a Playwright config (`RunInSpecAction`). The submenu, `Piwi.EditorPopup` (`PiwiEditorPopupGroup`),
 holds the VS Code extension's sections in its order (run, record, a recording's controls); the project view's
 (`Piwi.ProjectViewPopup`) holds Run this spec, Run the tests that reach this file and Record a new test file… on a file
-or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is six compact groups in this order:
-`Piwi.Run`, `Piwi.Record`, `Piwi.RunControl` (while a run is live), `Piwi.Dashboard`, `Piwi.Agents` and
-`Piwi.Connection`. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
+or a folder, as VS Code's explorer does. **Tools → Piwi** (`Piwi.Actions`) is six groups in this order:
+`Piwi.Run`, `Piwi.Record`, `Piwi.RunControlMenu` (the **Run control** submenu holding `Piwi.RunControl`, shown while
+one of its entries applies), `Piwi.Dashboard`, `Piwi.Agents` and `Piwi.Connection`, each compact. Each leaves out what does not apply; `PiwiPluginTest` holds all three:
 
 - **Run the test at the caret** (`Piwi.RunTestAtCursor`, `Ctrl+Alt+Shift+K`);
 - **Debug the test at the caret** (`Piwi.DebugTestAtCursor`), as Debug with Piwi;
@@ -688,7 +688,7 @@ written since.
 the call a test runs, where it sends `give-up`, naming the worker and no stop), `Piwi.ShowPausedPage` and
 `Piwi.StopRun`.
 
-- They are under **Tools → Piwi**, and in the status bar item's menu while a run is live, after the stops it lists; the
+- They are under **Tools → Piwi → Run control**, and in the status bar item's menu while a run is live, after the stops it lists; the
   item reads the service's line, `Piwi: stopped at a breakpoint · checkout.page.ts:12` while one is stopped, with the
   pause's icon, or the error's while every stop held is a failure (`RunLine.state`).
 - They are enabled only while they apply (`Glue.runControls`). Within `Glue.RESUMED_MILLIS` of an answer, until another
@@ -715,7 +715,7 @@ press starts no debug session. While a run is live, `PiwiRunActionPromoter` (an 
 the actions a key runs: a keymap that gives the key to another action too (the VSCode keymaps' `F5`, `Debug`; NetBeans'
 `F4`, `EditSource`) runs Piwi's while it applies, the other once it does not.
 
-**The Worker tab.** **Tools → Piwi → Watch a worker's test** (`WatchWorkerAction`) and **Pause and watch a worker's
+**The Worker tab.** **Tools → Piwi → Run control → Watch a worker's test** (`WatchWorkerAction`) and **Pause and watch a worker's
 test** (`PauseAndWatchAction`) open a **Worker N** tab of the Piwi tool window (`PiwiRunSessions.showWorker`) on a
 worker whose reporter shows its running test (`Glue.watchableWorkers`). It watches the worker's lane with
 `piwi/laneView`, decodes `piwi/laneFrame` as the paused page decodes its frames, and says what the worker does
@@ -819,7 +819,7 @@ What the service does: [Code from a stop](../../packages/editor/ARCHITECTURE.md#
 service's reference.
 
 **The actions.** A stop also offers the code actions its worker takes (`RunWorker.takes`, `Glue.stopActions`): after
-the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi** while some stop
+the controls in its inlay, its gutter popup and the status bar item's menu, and under **Tools → Piwi → Run control** while some stop
 offers them (`StopCodeAction`: `Piwi.PickAtStop`, `Piwi.RecordAtStop`, `Piwi.AssertAtStop`, `Piwi.AssertRegionAtStop`,
 `Piwi.MockAtStop`, no shortcut). They are **Pick a locator**, **Record**, **Assert** and **Assert a region** at a
 stop the pause bar shows, **Mock a request** at any; the inlay names them shorter (`StopLink.inlayLabel`). Each is a
@@ -870,6 +870,15 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   offers **Watch on the dashboard** in a notification. Another CI lane takes the watch's place on the service's side
   without an `on: false`; a local slot, the tab closed or hidden, and a `piwi/ciWatch` the service did not answer
   within 20 s end it.
+- **A held or paused CI test** (`CiTest.held`, `CiTest.paused`, `Glue.ciLaneStop`) shows under the caption in the
+  service's words, one plain line each (`Glue.ciStopShown`, `PausedPagePanel.ciStop`), its place a link that opens its
+  line (`openCiPlace`), drawn again as the CI sessions change. The lane's buttons are the service's, in its words:
+  **Let it go** on a held failure (`piwi/ciLetGo`, `RunRemote.ciLetGo`), else `CiTest.controls` (**Pause**, **Resume**,
+  **End the test**: `piwi/ciControl`, `RunRemote.ciControl`), with a Pause waiting or dropped under them. One is asked
+  in each state of the lane (`Glue.CiAsks`, by the state's `id`), the buttons off until it changes, the lane shows
+  anything new after the instance took the ask, or the ask is refused; the answer shows under the caption while the lane
+  stands in that state (`Glue.ciNoteStands`), a refusal in a balloon too (`PiwiRunSessions.askCi`). The CI Runs tab
+  marks a held or paused test and its Watch (`Glue.ciRows`).
 - **The lane's layers** show under the Worker tab's image, in a splitter (`PausedPagePanel.withLayers`,
   `LaneLayersPanel`), a local slot's (`piwi/laneLayer`) and a CI lane's (`piwi/ciLayer`) alike: **Why it waits**
   (`Glue.waitsView`), then the **Events**, **Text** and **Filmstrip** tabs (`Glue.eventLine`, `Glue.withLaneLayer`,
@@ -893,8 +902,9 @@ one says `ended`, or the service's process ends (`Glue.withCiSession`, `PiwiCiRu
   the sessions change and as an editor opens. The editors open are read, never a file from disk. The tests of several
   runs on one line share one inlay.
 
-`GlueTest` checks the rows and their keys, the marks, the CI lane's title and caption, and that a session and a CI
-frame read as the service sends them.
+`GlueTest` checks the rows and their keys, the marks, the CI lane's title and caption, its held or paused test's lines and
+buttons, and that a session, a held failure, a paused test and a CI frame read as the service sends them;
+`PausedPagePanelTest` the held or paused test's lines and buttons.
 
 ## Finding Playwright configs
 
@@ -1057,17 +1067,40 @@ meanwhile included. `PiwiRecordingTest` drives it with synthetic updates, the ca
 ## Send to editor
 
 `PiwiSendHandler.kt` is the Send to editor endpoint: `POST /api/piwi/send` on the IDE's built-in server, with the token
-from `PasswordSafe`. **Pair with Piwi Picker** copies the pairing address, and names the ports a JetBrains Gateway
-backend's person forwards under **Ports** in the JetBrains Client, at the same numbers: the IDE's and the live run
-hubs' (`Glue.forwardingHint`; the platform has no public way to forward one). The handler mirrors
+from `PasswordSafe`. Each JetBrains product keeps its own token (`Glue.sendTokenUser`; the entry every IDE shared
+before is copied to it once, `Glue.ownSendToken`), so Unpair in one IDE changes no other's pairing. **Copy the pairing
+address for Piwi Picker** copies the pairing address, and names the ports a JetBrains Gateway backend's person forwards
+under **Ports** in the JetBrains Client, at the same numbers: the IDE's and the live run hubs' (`Glue.forwardingHint`;
+the platform has no public way to forward one). The handler mirrors
 `@piwitests/core/editor-send` (`Glue.parseSendPayload`, `Glue.sendAuthorized`).
+
+**Pairing by code.** Beside it, without a token, `GET /api/piwi/hello` says which IDE listens (`Glue.editorHello`: the
+product, `ApplicationNamesInfo`, and the open projects' names), and `POST /api/piwi/pairings` and
+`GET /api/piwi/pairings/<id>` are `Glue.EditorPairingRequests`, mirroring `@piwitests/core/editor-pairing`, held by
+`PiwiPickerPairing` for the whole IDE. A new request shows a `Piwi requests` notification with **Type the code…** and
+**Deny** in the project focused last, opens the **Piwi Picker** tab beside and asks for the IDE's attention. **Type the
+code…** there or in the tab asks for the code Piwi Picker shows in a dialog (`PiwiPickerPairing.allow`), mints the
+token if none is kept and hands it to the request with the proof of that code (`Glue.allowEditorPairing`), which Piwi
+Picker's next poll takes once; Piwi Picker refuses a proof that is not of its own code. A
+request's notification expires once it waits no more; with no project open, the request is asked about as a project
+opens its tab. The
+pairing (when, and Piwi Picker's browser) and when Piwi Picker was last heard from (a request the token let through
+from an extension's `Origin`, written once a minute at most) are application-level properties.
+
+**The Piwi Picker tab** (`PiwiPickerTab`, opened by **Pair with Piwi Picker**, also in the status bar item's popup):
+the requests waiting, with **Type the code…** and **Deny**; the pairing, when Piwi Picker was last heard from and the built-in server's
+port (`Glue.pickerRows`, the words of the VS Code extension's Piwi Picker view); how to pair before any; **Copy the
+pairing address** and **Unpair** (`Piwi.UnpairPicker`: after asking, `PiwiSendToken.renew`, and the requests allowed
+and not polled yet hand over nothing). Every half minute while it is open, an `Alarm` expires the requests past their
+time and draws it again only when what it shows changed, so its focus and scroll stay.
 
 **Threads.** A preflight without a challenge is answered on the I/O thread. Every other request is served on a pooled
 thread, where the token, the file and its document are read: the built-in server's I/O thread touches neither the
 password safe nor the disk. Only the writes run on the event thread.
 
 **Who gets an answer.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send` and `/api/piwi/live`, which
-the token authenticates, and leaves the platform's `isAccessible` its check of `Host`, so a page reached under another
+the token authenticates, and on `/api/piwi/hello` and `/api/piwi/pairings`, which hand nothing over before the person
+types the code (a start refuses any other `Origin` itself), and leaves the platform's `isAccessible` its check of `Host`, so a page reached under another
 name than this machine's is refused. Every answer to a request carrying `x-piwi-editor-challenge`
 (`Glue.isEditorChallenge`), whatever its path and status, the preflight and the 401 included, carries
 `x-piwi-editor-proof` (`Glue.editorTokenProof`, mirroring `@piwitests/core/editor-send`, for the port the request
@@ -1191,6 +1224,7 @@ file is opened.
 | ------------------------------------------------------------------- | ----------------------------------------------- |
 | The instance URL and the project (`PiwiSettings`)                   | `.idea/piwi.xml`, which a repository may commit |
 | The API key, **per instance** (`Glue.apiKeyEntry`)                  | the IDE's `PasswordSafe`                        |
+| The Send to editor token, **per product** (`Glue.sendTokenUser`)    | the IDE's `PasswordSafe`                        |
 | Choices made for this project on this machine (`PiwiLocalSettings`) | `.idea/workspace.xml`                           |
 | Each person's own options (`PiwiUserSettings`), in every project    | the IDE's `options/piwi.xml`                    |
 

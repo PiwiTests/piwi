@@ -152,6 +152,51 @@ describe('the Local runs a reload of the window keeps', () => {
     expect(next.key).toBeGreaterThan(run.key);
   });
 
+  test('keeps the window a run took from the run it was started from again, through a reload', async () => {
+    const storage = new Map<string, string>();
+    const before = await pageWith(storage);
+    const first = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => first.shellId === 41);
+    before.shell(exit(41, 1));
+    await until(() => first.status === 'failed');
+    before.store.separate.value = { [first.key]: true };
+    const again = before.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => again.shellId === 42);
+
+    // A Run again in the first run's window: the run it starts shows in that window, the first one in the tray.
+    before.store.moveWindow(first, again);
+    expect(before.store.separate.value).toEqual({ [first.key]: false, [again.key]: true });
+    expect(before.store.windowNameOf(again.key)).toBe(before.store.windowNameOf(first.key));
+    const name = before.store.windowNameOf(again.key);
+    before.store.keepForReload();
+
+    const after = await pageWith(storage, { running: [42], ended: [{ id: 41, code: 1 }] });
+    await after.store.takeBackAfterReload();
+    expect(after.store.windowNameOf(again.key)).toBe(name);
+    expect(after.invoked).toContainEqual({ cmd: 'desktop_close_other_output_windows', args: { keep: [name] } });
+
+    // The first run shown apart again takes a name of its own; the second, back in the tray, gives its name back.
+    after.store.separateRun(first.key, true);
+    expect(after.store.windowNameOf(first.key)).not.toBe(name);
+    after.store.separateRun(again.key, false);
+    expect(after.store.windowNameOf(again.key)).not.toBe(name);
+    expect(after.store.separate.value).toMatchObject({ [first.key]: true, [again.key]: false });
+  });
+
+  test('brings a run shown in a separate window back to the tray as it is asked to show the run or its worker', async () => {
+    const page = await pageWith(new Map());
+    const run = page.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => run.shellId === 41);
+    page.store.separateRun(run.key, true);
+    page.store.showWorker('desktop-41', 0);
+    expect(page.store.separate.value[run.key]).toBe(false);
+    expect(page.store.trayOpen.value).toBe(true);
+    page.store.separateRun(run.key, true);
+    page.store.showRun(run.key);
+    expect(page.store.separate.value[run.key]).toBe(false);
+    expect(page.store.chosen.value).toBe(run.key);
+  });
+
   test('ends a step that ended during the reload with its code, then runs the run’s next step', async () => {
     const storage = new Map<string, string>();
     const before = await pageWith(storage);
@@ -342,6 +387,117 @@ describe('the Local runs a reload of the window keeps', () => {
     await page.store.takeBackAfterReload();
     expect(page.store.runs.value).toEqual([]);
     expect(page.invoked).toEqual([]);
+  });
+});
+
+describe('the Local runs a restart of the app keeps', () => {
+  /** The window's local storage, which a restart of the app keeps. */
+  function localStorageOn(local: Map<string, string>) {
+    vi.stubGlobal('localStorage', {
+      getItem: (key: string) => local.get(key) ?? null,
+      setItem: (key: string, value: string) => local.set(key, value),
+      removeItem: (key: string) => local.delete(key),
+    });
+  }
+
+  test('takes back the runs that ended, with their output, and no name on the hub a new run may take', async () => {
+    const local = new Map<string, string>();
+    localStorageOn(local);
+    const before = await pageWith(new Map());
+    const run = before.store.startRun({
+      projectId: 3,
+      projectLabel: 'Shop',
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }],
+    })!;
+    await until(() => run.shellId === 41);
+    // The run opened the tray; the person closes it, and the run ends unseen until the tray shows again.
+    expect(before.store.trayOpen.value).toBe(true);
+    before.store.trayOpen.value = false;
+    before.shell(line(41, '  ✘  1 cart.spec.ts:3:1 › pays (1.2s)'));
+    before.shell(exit(41, 1));
+    await until(() => run.status === 'failed');
+    expect(before.store.unseen.value).toEqual([run.key]);
+    before.store.markSeen();
+    expect(before.store.unseen.value).toEqual([]);
+
+    // The app starts again: a new window, its session storage empty, the shell numbering its processes anew.
+    localStorageOn(local);
+    const after = await pageWith(new Map(), { running: [], ended: [] }, 40);
+    await after.store.takeBackAfterReload();
+    const back = after.store.runs.value[0]!;
+    expect(back).toMatchObject({ status: 'failed', exitCode: 1, projectLabel: 'Shop', shellId: null, hubRefs: [] });
+    expect(back.lines.map((l) => l.text)).toEqual(['  ✘  1 cart.spec.ts:3:1 › pays (1.2s)']);
+    expect(after.invoked).toEqual([]);
+
+    // A run of this start takes a key of its own, and its name on the hub is its alone.
+    const next = after.store.startRun({ projectId: 3, cases: [{ filePath: 'cart.spec.ts', title: 'checks out' }] })!;
+    await until(() => next.shellId === 41);
+    expect(next.key).not.toBe(back.key);
+    expect(after.store.runs.value.filter((r) => r.hubRefs.includes('desktop-41'))).toEqual([next]);
+
+    // Remove takes a run that ended away, for the next start too, with what the window kept for it.
+    after.store.holds.value = { [back.key]: true, [next.key]: true };
+    after.store.separate.value = { [back.key]: true };
+    after.store.removeRun(back);
+    expect(after.store.runs.value).toEqual([next]);
+    expect(after.store.holds.value).toEqual({ [next.key]: true });
+    expect(after.store.separate.value).toEqual({});
+    expect(JSON.parse(local.get('piwi:desktop-local-runs-finished')!)).toEqual([]);
+  });
+
+  test('copies, for a run of tests alone, the command a terminal runs them with, in the person’s shell', async () => {
+    await pageWith(new Map());
+    const { localRunCopyCommand, DEFAULT_LOCAL_RUN_OPTIONS } =
+      await import('../../app/composables/useDesktopLocalRuns');
+    const run = {
+      kind: 'tests' as const,
+      cases: [{ filePath: 'tests/cart.spec.ts', title: 'charges $5', line: 12, projectName: 'chromium' }],
+      options: { ...DEFAULT_LOCAL_RUN_OPTIONS },
+      runVariables: [{ name: 'BASE_URL', value: 'http://localhost:3000' }],
+      environment: null,
+    };
+    expect(localRunCopyCommand(run, 'bash')).toBe(
+      'BASE_URL=http://localhost:3000 npx playwright test "/tests/cart.spec.ts:12" --project="chromium"',
+    );
+    expect(localRunCopyCommand(run, 'powershell')).toContain('$env:BASE_URL');
+    expect(localRunCopyCommand({ ...run, kind: 'repro' }, 'bash')).toBeNull();
+  });
+
+  test('runs one test of an ended run again by its line, with the run’s Hold failures, compared with its own run', async () => {
+    const page = await pageWith(new Map());
+    const run = page.store.startRun({
+      projectId: 3,
+      cases: [{ filePath: 'cart.spec.ts', title: 'checks out', line: 5 }],
+      options: { mode: 'file' },
+    })!;
+    await until(() => run.shellId === 41);
+    page.store.holds.value = { [run.key]: true };
+    page.shell(exit(41, 1));
+    await until(() => run.status === 'failed');
+
+    const next = (await page.store.rerunTests(run, [{ filePath: 'cart.spec.ts', title: 'pays', line: 9 }], {}, 77))!;
+    expect(next.options.mode).toBe('file-line');
+    expect(next.steps[0]!.args).toEqual(['cart.spec.ts:9']);
+    expect(next.sourceRunId).toBe(77);
+    expect(page.store.holds.value[next.key]).toBe(true);
+    expect(
+      await page.store.rerunTests({ ...run, kind: 'repro' }, [{ filePath: 'cart.spec.ts', title: 'pays' }]),
+    ).toBeNull();
+  });
+
+  test('takes back nothing on a reload, which keeps its own runs', async () => {
+    const local = new Map<string, string>();
+    localStorageOn(local);
+    local.set(
+      'piwi:desktop-local-runs-finished',
+      JSON.stringify([{ key: 9, status: 'passed', lines: [], hubRefs: [], cases: [] }]),
+    );
+    const storage = new Map<string, string>();
+    const before = await pageWith(storage);
+    before.store.keepForReload();
+    const after = await pageWith(storage);
+    await after.store.takeBackAfterReload();
+    expect(after.store.runs.value).toEqual([]);
   });
 });
 

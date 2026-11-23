@@ -980,5 +980,127 @@
   },
   "runui_connectionKeepKeyFailed": {
     "message": "Impossible de conserver la clé : déconnecté"
+  },
+  "runui_runStop": {
+    "message": "Arrêter"
+  },
+  "runui_runForceStop": {
+    "message": "Arrêter de force"
+  },
+  "runui_runForceStopHint": {
+    "message": "Tuer le processus maintenant : Playwright risque de ne pas écrire son rapport"
+  },
+  "runui_runStopsWithin": {
+    "message": "Se termine d’ici $seconds$ s",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_runStopsWithinHint": {
+    "message": "Playwright s’arrête et écrit son rapport. Un processus encore en cours à ce moment-là est tué."
+  },
+  "runui_outputWaiting": {
+    "message": "En attente de la sortie…"
+  },
+  "runui_outputFilter": {
+    "message": "Filtrer la sortie"
+  },
+  "runui_outputMatches_one": {
+    "message": "$shown$ sur $count$ ligne",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputMatches_other": {
+    "message": "$shown$ sur $count$ lignes",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputNoMatch": {
+    "message": "Aucune ligne ne contient ce texte"
+  },
+  "runui_outputWrap": {
+    "message": "Renvoyer les longues lignes à la ligne"
+  },
+  "runui_outputFirstError": {
+    "message": "Aller à la première erreur"
+  },
+  "runui_outputLatest": {
+    "message": "Aller à la dernière ligne"
+  },
+  "runui_outputCopy": {
+    "message": "Copier la sortie"
+  },
+  "runui_outputLabel": {
+    "message": "Sortie"
+  },
+  "runui_resultsLabel": {
+    "message": "Résultats"
+  },
+  "runui_resultPassed": {
+    "message": "Réussi"
+  },
+  "runui_resultFailed": {
+    "message": "En échec"
+  },
+  "runui_resultFlaky": {
+    "message": "Instable"
+  },
+  "runui_resultSkipped": {
+    "message": "Ignoré"
+  },
+  "runui_resultInterrupted": {
+    "message": "Interrompu"
+  },
+  "runui_resultDidNotRun": {
+    "message": "Non exécuté"
+  },
+  "runui_resultUnknown": {
+    "message": "Aucun résultat dans la sortie"
+  },
+  "runui_resultsMore_one": {
+    "message": "Afficher $count$ de plus",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_resultsMore_other": {
+    "message": "Afficher $count$ de plus",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_runsLabel": {
+    "message": "Exécutions"
+  },
+  "runui_runsShown": {
+    "message": "Exécution affichée"
+  },
+  "runui_runsWaiting": {
+    "message": "Un test attend à un arrêt"
   }
 }

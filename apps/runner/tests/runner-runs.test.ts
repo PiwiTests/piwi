@@ -12,6 +12,7 @@ import {
   runnerUnlistedSessions,
   runnerShellIdOf,
   runnerShownRefs,
+  runnerTestResults,
   type RunnerRun,
   type RunnerRunBackend,
 } from '../app/utils/runner-runs';
@@ -82,7 +83,11 @@ describe('a run', () => {
     book.handle({ id: 7, kind: 'stdout', line: 'Running 2 tests' });
     book.handle({ id: 7, kind: 'stderr', line: 'warn' });
     book.handle({ id: 7, kind: 'exit', code: 0 });
-    expect(run.lines).toEqual(['Running 2 tests', 'warn']);
+    expect(run.lines).toEqual([
+      { id: 1, text: 'Running 2 tests', error: false },
+      { id: 2, text: 'warn', error: true },
+    ]);
+    expect(run.linesTotal).toBe(2);
     expect(run).toMatchObject({ status: 'passed', exitCode: 0 });
   });
 
@@ -97,7 +102,7 @@ describe('a run', () => {
     });
     const bad = await broken.book.start(input);
     expect(bad.status).toBe('error');
-    expect(bad.lines).toEqual(['No folder is linked to this project']);
+    expect(bad.lines).toEqual([{ id: 1, text: 'No folder is linked to this project', error: true }]);
   });
 
   test('events that arrive before the start resolves are applied once its id is known', async () => {
@@ -108,16 +113,22 @@ describe('a run', () => {
     book.handle({ id: 4, kind: 'stdout', line: 'someone else' });
     resolve(9);
     const run = await starting;
-    expect(run.lines).toEqual(['early']);
+    expect(run.lines.map((line) => line.text)).toEqual(['early']);
     expect(runs[0]).toBe(run);
   });
 
   test('stop asks the shell once the id is known and labels the end as stopped', async () => {
-    const { book, spy } = setup();
+    const { book, spy, clock } = setup();
     const run = await book.start(input);
+    clock.now = 4_000;
     await book.stop(run);
     expect(spy).toHaveBeenLastCalledWith('desktop_stop_local_tests', { runId: 7 });
-    expect(run.stopRequested).toBe(true);
+    expect(run).toMatchObject({ stopRequested: true, stopRequestedAt: 4_000 });
+    // Force stop asks again, and the stop keeps the time it was first asked.
+    clock.now = 6_000;
+    await book.stop(run);
+    expect(spy).toHaveBeenCalledTimes(3);
+    expect(run.stopRequestedAt).toBe(4_000);
     book.handle({ id: 7, kind: 'exit', code: 130 });
     expect(run.status).toBe('stopped');
   });
@@ -146,7 +157,7 @@ describe('a run', () => {
   });
 
   test('events after the exit change nothing', () => {
-    const run = { status: 'passed', lines: [] as string[] } as unknown as RunnerRun;
+    const run = { status: 'passed', lines: [], linesTotal: 0 } as unknown as RunnerRun;
     applyRunEvent(run, { id: 1, kind: 'stdout', line: 'late' });
     expect(run.lines).toEqual([]);
   });
@@ -156,7 +167,8 @@ describe('a run', () => {
     const run = await book.start(input);
     for (let i = 0; i < RUNNER_MAX_LINES + 5; i++) book.handle({ id: 7, kind: 'stdout', line: `line ${i}` });
     expect(run.lines).toHaveLength(RUNNER_MAX_LINES);
-    expect(run.lines[0]).toBe('line 5');
+    expect(run.lines[0]).toEqual({ id: 6, text: 'line 5', error: false });
+    expect(run.linesTotal).toBe(RUNNER_MAX_LINES + 5);
   });
 
   test('keeps a bounded number of finished runs and never drops a running one', async () => {
@@ -272,5 +284,74 @@ describe('the run’s page', () => {
     book.handle({ id: 7, kind: 'exit', code: 1 });
     noteRunPages(runs, []);
     expect(run).toMatchObject({ status: 'failed', page });
+  });
+});
+
+describe('runnerTestResults', () => {
+  const ended = (status: RunnerRun['status'], printed: string[], tests = [TEST]) =>
+    ({ status, tests, lines: printed.map((text, i) => ({ id: i + 1, text, error: false })) }) as Pick<
+      RunnerRun,
+      'status' | 'tests' | 'lines'
+    >;
+  const FAILED = [
+    '  ✘  1 [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays (1.2s)',
+    '',
+    '  1) [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays ──────────',
+    '',
+    '    Error: expect(locator).toHaveText(expected) failed',
+    '',
+    '      2 | test(…)',
+    '  1 failed',
+    '    [chromium] › tests/checkout.spec.ts:3:1 › checkout › pays ───────────',
+  ];
+
+  test('says how each requested test came out, a failed one with its error', () => {
+    expect(runnerTestResults(ended('failed', FAILED))).toEqual([
+      {
+        key: '0',
+        status: 'failed',
+        title: 'checkout › pays',
+        place: 'tests/checkout.spec.ts:3',
+        project: 'chromium',
+        error: ['Error: expect(locator).toHaveText(expected) failed'],
+      },
+    ]);
+  });
+
+  test('reads a test the output names no result for as passed when the run passed, else as unknown', () => {
+    expect(runnerTestResults(ended('passed', ['  1 passed (1.0s)']))?.[0]?.status).toBe('passed');
+    const other = { ...TEST, line: 9, title: 'checkout › refunds' };
+    expect(runnerTestResults(ended('failed', FAILED, [TEST, other]))?.map((row) => row.status)).toEqual([
+      'failed',
+      'unknown',
+    ]);
+  });
+
+  test('finds a test run by its title on another line, the closest path first, and in another project', () => {
+    const moved = FAILED.map((line) => line.replaceAll('checkout.spec.ts:3:1', 'checkout.spec.ts:5:1'));
+    expect(runnerTestResults(ended('failed', moved))?.[0]?.status).toBe('failed');
+
+    const login = (dir: string) => ({ ...TEST, filePath: `${dir}login.spec.ts`, line: 4, title: 'logs in' });
+    const output = [
+      '  ✓  1 [chromium] › admin/login.spec.ts:4:1 › logs in (1.0s)',
+      '  1) [chromium] › login.spec.ts:4:1 › logs in ───',
+      '',
+      '    Error: boom',
+      '  1 failed',
+      '    [chromium] › login.spec.ts:4:1 › logs in ───',
+      '  1 passed (2.0s)',
+    ];
+    expect(runnerTestResults(ended('failed', output, [login(''), login('admin/')]))?.map((row) => row.status)).toEqual([
+      'failed',
+      'passed',
+    ]);
+
+    const firefox = FAILED.map((line) => line.replaceAll('[chromium]', '[firefox]'));
+    expect(runnerTestResults(ended('failed', firefox))?.[0]?.status).toBe('failed');
+  });
+
+  test('says nothing while the run goes on, or when its output holds no summary', () => {
+    expect(runnerTestResults(ended('running', FAILED))).toBeNull();
+    expect(runnerTestResults(ended('error', ['No folder is linked to this project']))).toBeNull();
   });
 });

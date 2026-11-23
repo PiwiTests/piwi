@@ -287,7 +287,9 @@ Each entry names folders under `server/api/`.
 - **`desktop/`**: routes the desktop app calls: its event stream, local imports, Piwi Picker pairing, reproduction
   requests, reporter configuration, and the hub of the runs its shell starts (`run-channel`, `live`, `runs/`; the hub
   is `server/utils/desktop-runs.ts`, on the editor service's run control). The window's side is the Local runs tray
-  (`DesktopLocalRunsTray`): `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
+  (`DesktopLocalRunsTray`), docked under the page in the default layout's main column (the pages' panels take its
+  height off theirs, `--desktop-runs-height` in `app.config.ts`), its runs listed on its left and the one chosen on its
+  right: `useDesktopRunHub` holds the hub's stream and commands, each worker's Watch and each
   lane's Interact (turned off on the page, its input finished first by `DesktopRunLiveImage.release`, the stop is
   given back by `DesktopRunWorker`), and
   a run another tool stops through the hub (`stop-run`) is stopped by the window whose tray holds it, as its own Stop
@@ -309,12 +311,21 @@ Each entry names folders under `server/api/`.
   (`runs/inspect/page`). The layer's lane view opens and closes it, and shows the view the app gives it
   (`RUN_VIEW_HOST`'s `inspect`); Piwi Runner's window has none.
   `DesktopRunShare` shows a run's Share live,
-  and `DesktopRunCopyList` the code to copy, and `DesktopLocalRunConsole` a run's output in its ANSI colors, in the
-  tray or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
-  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`). A run's state and count
+  and `DesktopRunCopyList` the code to copy, and the layer's `DesktopRunOutputPane` a run's output in its ANSI colors,
+  with its filter, first error and Copy, `DesktopRunsPanel` the tray's list beside the run shown, as in Piwi Runner's
+  window, and `DesktopRunStopButton` its Stop and Force stop, in the tray, on the run
+  page or in a window of its own (`DesktopRunOutputWindows`, mounted in `app.vue`, has a `DesktopRunOutputWindow` feed
+  `pages/desktop/run-output.vue` over a `BroadcastChannel`, `app/utils/run-output-channel.ts`, and do what it asks).
+  That window shows the run whole: its workers live from the hub it reads itself, its Hold failures
+  (`useDesktopRunHold`), what it failed on (`useDesktopLocalRunRows`), and Run again, which moves the window to the run
+  it starts (`moveWindow`, `windowNames`). A worker's window (`pages/desktop/run-worker.vue`) says how its run came out
+  once it ended, and asks the dashboard window over the same channel to show the run in the tray. An ended run lists what
+  it failed on (`DesktopLocalRunResults`: its Piwi runs, else its output's summary), each test to open or run again
+  (`rerunTests`). A run's state and count
   come from `useDesktopRunBadge` (`desktopRunProgress`, its steps' `HubProgress`), and a reload keeps the tray's runs
   (`plugins/desktop-local-runs.client.ts`: `keepForReload`, `takeBackAfterReload` and the shell's
-  `desktop_local_runs`). The live view (`useDesktopRunHub`, the `DesktopRun*`
+  `desktop_local_runs`), and a restart its finished runs (`keepFinished`, `takeBackFinished`, in local storage). The
+  sidebar's `DesktopLocalRunsIndicator` opens and closes the tray, marking the runs that ended `unseen`. The live view (`useDesktopRunHub`, the `DesktopRun*`
   components, their pure half `@piwitests/run-ui/run-view`) is the `@piwitests/run-ui` layer's, which Piwi Runner's
   window shows too; the app's own half is `app/utils/desktop-run-view.ts`, and its plugin `run-view-host.ts` gives the
   layer a worker's own window, the Open in editor link and a lane's Inspect (`RUN_VIEW_HOST`). On the run
@@ -328,7 +339,7 @@ Each entry names folders under `server/api/`.
     runs whose **Hold failures** switch is on (off by default; on for a reproduction and for a run started with it on,
     `desktopHoldsByDefault`; **Run again** keeps this window's choice; never for a run nobody attends,
     `desktopHoldRefusal`), each by its steps' names (`hubRefs`), and for none while no tray is mounted (`trayMounts`).
-    Expanding a run or closing the tray changes none of it (`tests/desktop-run-view.spec.ts`,
+    Choosing a run in the tray or closing it changes none of it (`tests/desktop-run-view.spec.ts`,
     `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **`flake-lab/inbox`, `gaps/`**: cross-project inboxes of the Flake Lab and the scenario gaps.
 - **`health`, `version`, `capabilities`, `setup-status`, `metrics`, `rollups`, `stream`, `agent-skills`**: the
@@ -337,19 +348,23 @@ Each entry names folders under `server/api/`.
 
 ### Other routes
 
-- **`server/routes/mcp.post.ts`**: the MCP server endpoint. Tool definitions in `shared/mcp-tools.ts`, handlers in
-  `server/utils/mcp/`. In the desktop build it also serves the tools for the runs the shell starts
-  (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of those runs (`DesktopRuns.agent`),
-  its answers passed on as they are, the code it makes sent to the window to copy. `describe_piwi` and
+- **`server/routes/mcp.post.ts`**: the MCP server endpoint, for legacy and `2026-07-28` clients alike through the
+  editor service's `mcp-protocol.ts` (`server/utils/mcp/protocol.ts`); `mcp.get.ts` answers an MCP client's GET
+  (`Accept: text/event-stream`) with 405 and sends any other to the MCP settings page, and `mcp.delete.ts` answers 405.
+  Tool definitions in `shared/mcp-tools.ts`, handlers in `server/utils/mcp/`. In the desktop build it also serves the
+  tools for the runs the shell starts (`server/utils/mcp/run-tools.ts`): the editor service's `RunAgent` on the hub of
+  those runs (`DesktopRuns.agent`), its answers passed on as they are, the code it makes sent to the window to copy.
+  `describe_piwi` and
   `get_release_notes` live in `server/utils/mcp/about-piwi.ts`: they read the docs and the CHANGELOG bundled as Nitro
   server assets, parsed by `shared/docs-corpus.ts` and `shared/changelog.ts`, with the pieces and setup decisions in
   `shared/piwi-ecosystem.ts`. `server/utils/bundled-assets.ts` reads the bundled CHANGELOG for that tool and for
   `GET /api/changelog`, which pages it (`changelogPage`) for the Changelog window (`ChangelogModal`); the demo build
   copies the file beside its seed and pages it the same way.
 - **`server/routes/oauth/`, `server/routes/.well-known/`**: the OAuth authorization server MCP clients sign in
-  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration, `authorize` (stores the request and
-  redirects to the `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh
-  rotation) and `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
+  through: discovery metadata (RFC 9728, RFC 8414), dynamic client registration or a client ID metadata document
+  (fetched at `authorize`, `mcp-oauth-client-metadata.ts`), `authorize` (stores the request and redirects to the
+  `/oauth/consent` page, backed by `api/oauth/authorizations/[id]`), `token` (code with PKCE, refresh rotation) and
+  `revoke`. Logic in `server/utils/mcp-oauth.ts`, pure helpers in `mcp-oauth-helpers.ts`, tables
   `oauth_clients`, `oauth_authorization_requests`, `oauth_grants`.
 - **`server/routes/share/`**: the public page of a share link (an execution or a cluster rendered as the offline
   export, a report snapshot, a live dashboard), with its badge and chart image.

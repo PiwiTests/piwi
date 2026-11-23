@@ -208,6 +208,12 @@ const PROJECTS = [
     // Keys in test tags: the checkout tests carry a story key (SHOP-1234) and a test case key (SHOP-T123). The issue
     // pattern reads only the story key and the test case pattern only the test case key, so no tag matches both.
     tag_keys: { issue: '^[A-Z][A-Z0-9]+-[0-9]+$', testCase: '^SHOP-T[0-9]+$' },
+    // Its CI runs' workers can be watched, a failing CI test waits at its failure for the people who may control the
+    // run (the simulator's Held CI failure), and they may pause a CI test they watch (its Paused CI test).
+    live_view: 1,
+    live_view_hold: 1,
+    live_view_hold_minutes: 5,
+    live_view_pause: 1,
   },
   {
     id: 2,

@@ -7,7 +7,8 @@ lang: en-US
 # Editor commands
 
 Every command the two editors offer, by what it acts on. VS Code lists them in the command palette under **Piwi:**;
-a JetBrains IDE lists them under **Tools → Piwi** and in **Find Action**, says caret for cursor and project for window,
+a JetBrains IDE lists them under **Tools → Piwi**, a run's in its **Run control** submenu, and in
+**Find Action**, says caret for cursor and project for window,
 and shows a toggle's state with a check mark. A row that names one editor is that editor's alone. Some commands have a
 shortcut in both editors ([Keys](#keys)); a run's controls take the debugger's keys
 ([The controls](/features/editor-run-control#the-controls)).
@@ -95,7 +96,10 @@ an issue** and, on a flaky test in VS Code, **Look into this flake…**:
 | **Piwi: Record a new test file…** | Create a spec and record into it; in a JetBrains IDE, the **New** menu's **Playwright test (recorded)…** too |
 | **Piwi: Stop recording**, **Piwi: Pause recording**, **Piwi: Resume recording** | Control the recording in progress |
 | **Piwi: Go to the recorded lines** | JetBrains: open the lines the recording in progress writes |
-| **Piwi: Pair with Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker) |
+| **Piwi: Pair with Piwi Picker** | Open the [pairing panel](/features/editor-pairing#the-pairing-panel), where you allow Piwi Picker's request |
+| **Piwi: Copy the pairing address for Piwi Picker** | Copy the address [Piwi Picker sends to](/features/editor-recording#send-from-piwi-picker), to pair a remote window |
+| **Piwi: Allow Piwi Picker to pair…**, **Piwi: Deny Piwi Picker's pairing request** | VS Code: answer a request of the pairing panel, also in its notification: Allow asks for the code Piwi Picker shows |
+| **Piwi: Unpair Piwi Picker** | Give the editor a new pairing token: Piwi Picker reaches it again once paired again |
 
 ## Run control
 
@@ -116,7 +120,7 @@ an issue** and, on a flaky test in VS Code, **Look into this flake…**:
   editor title, Pause or Resume, Step, Finish and Stop (on a run this window started) in the debug toolbar's order, the
   others under `…`; and, while a test is stopped, in the editor's context menu, right after its Go to entries, and on
   its worker's page (Resume, Step, Finish and Write code…).
-- **In a JetBrains IDE**: **Tools → Piwi** and the **Run** menu, enabled while they apply; the toolbar of the run's
+- **In a JetBrains IDE**: **Tools → Piwi → Run control** and the **Run** menu, enabled while they apply; the toolbar of the run's
   Run tab, acting on that run; the status bar item's menu; and, while a test is stopped, first in the editor's context
   menu, and on its worker's tab (Resume, Step, Finish and Write code…).
 

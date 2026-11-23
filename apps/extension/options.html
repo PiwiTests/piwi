@@ -366,7 +366,11 @@
       /* The column header names each field; the placeholder only says what empty means, in the narrower type. */
       .mapping-row input::placeholder,
       .add-fields input::placeholder {
-        font-family: ui-sans-serif, system-ui, -apple-system, sans-serif;
+        font-family:
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          sans-serif;
       }
       /* A line's remove button: its icon alone, red once hovered. */
       .mapping-row button.remove-mapping {
@@ -492,6 +496,21 @@
       }
       .code-panel[hidden] {
         display: none;
+      }
+      /* The editors Pair found, one button each, when there is more than one. */
+      .choice-panel {
+        display: flex;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 10px;
+      }
+      .choice-panel[hidden] {
+        display: none;
+      }
+      .choice-list {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
       }
       /* An offer to act on in one click: a sentence, and its button at the end. */
       .offer {
@@ -652,7 +671,13 @@
           <span data-i18n="options_desktopOffer">
             The desktop app you paired runs Piwi on this computer: use it as your instance, with its address and token.
           </span>
-          <button id="use-desktop" type="button" class="small primary" data-i18n="options_useDesktop" data-icon="monitor">
+          <button
+            id="use-desktop"
+            type="button"
+            class="small primary"
+            data-i18n="options_useDesktop"
+            data-icon="monitor"
+          >
             Use the desktop app as your instance
           </button>
         </div>
@@ -714,7 +739,13 @@
         <div id="sites-body">
           <div class="subhead">
             <h3 data-i18n="options_serverHeading" data-icon="plug">From your Piwi instance</h3>
-            <button id="refresh-server" type="button" class="small" data-i18n="options_serverRefresh" data-icon="refresh">
+            <button
+              id="refresh-server"
+              type="button"
+              class="small"
+              data-i18n="options_serverRefresh"
+              data-icon="refresh"
+            >
               Refresh
             </button>
           </div>
@@ -740,7 +771,9 @@
               Add a line
             </button>
             <span class="spacer"></span>
-            <button id="save" class="primary small" type="button" data-i18n="options_save" data-icon="save">Save</button>
+            <button id="save" class="primary small" type="button" data-i18n="options_save" data-icon="save">
+              Save
+            </button>
           </div>
 
           <details id="add-site" class="panel">
@@ -795,7 +828,13 @@
             </div>
             <div class="hint" id="add-note" hidden></div>
             <div class="row">
-              <button id="add-to-server" type="button" class="small primary" data-i18n="options_addToServer" data-icon="upload">
+              <button
+                id="add-to-server"
+                type="button"
+                class="small primary"
+                data-i18n="options_addToServer"
+                data-icon="upload"
+              >
                 Add to Piwi
               </button>
               <button id="add-locally" type="button" class="small" data-i18n="options_addLocally" data-icon="browser">
@@ -825,7 +864,8 @@
           </button>
         </div>
         <div class="hint" data-i18n="options_desktopUrlHint">
-          Shown in the app’s Settings → Desktop app, under Pair with Piwi Picker. Pair asks the app’s window to allow Piwi Picker.
+          Shown in the app’s Settings → Desktop app, under Pair with Piwi Picker. Pair asks the app’s window to allow
+          Piwi Picker.
         </div>
 
         <div id="desktop-pair-panel" class="panel code-panel" hidden>
@@ -876,17 +916,67 @@
           <span id="editor-pill" class="pill" data-i18n="options_stateNotPaired">Not paired</span>
         </div>
         <p class="lead" data-i18n="options_editorHint">
-          In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address
-          it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and
-          are inserted at its cursor.
+          Paired with VS Code or a JetBrains IDE on this computer that has Piwi’s extension, Piwi Picker sends the
+          locators you pick and the steps you record to its cursor, and shows the runs it starts in the Runs window
+          (Runs, in the popup), where you pause, step and watch them.
         </p>
-        <label for="editor-address" data-i18n="options_editorAddress">Pairing address</label>
         <div class="inline">
-          <input id="editor-address" class="mono" type="password" autocomplete="off" spellcheck="false" />
           <button id="editor-pair" type="button" class="primary" data-i18n="options_editorPair" data-icon="link">
             Pair
           </button>
         </div>
+        <div class="hint" data-i18n="options_editorPairHint">
+          Pair finds the editors open on this computer and asks the one you choose: type there the code Piwi Picker
+          shows.
+        </div>
+
+        <div id="editor-choices" class="panel choice-panel" hidden>
+          <div data-i18n="options_editorChoose">Pair with which editor?</div>
+          <div id="editor-choice-list" class="choice-list"></div>
+          <button
+            id="editor-choose-cancel"
+            type="button"
+            class="small"
+            data-i18n="options_connectCancel"
+            data-icon="close"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <div id="editor-pair-panel" class="panel code-panel" hidden>
+          <div id="editor-code-line"></div>
+          <button
+            id="editor-pair-cancel"
+            type="button"
+            class="small"
+            data-i18n="options_connectCancel"
+            data-icon="close"
+          >
+            Cancel
+          </button>
+        </div>
+
+        <details id="editor-manual">
+          <summary data-i18n="options_editorManual" data-icon="edit">Pair with an address</summary>
+          <label for="editor-address" data-i18n="options_editorAddress">Pairing address</label>
+          <div class="inline">
+            <input id="editor-address" class="mono" type="password" autocomplete="off" spellcheck="false" />
+            <button
+              id="editor-address-pair"
+              type="button"
+              data-i18n="options_editorAddressPair"
+              data-icon="check-circle"
+            >
+              Use this address
+            </button>
+          </div>
+          <div class="hint" data-i18n="options_editorManualHint">
+            For a remote window (SSH, WSL, a dev container), or an editor Pair does not find: run “Piwi: Copy the
+            pairing address for Piwi Picker” in it and paste the address here.
+          </div>
+        </details>
+
         <div class="card-foot">
           <div id="editor-status" role="status"></div>
           <button
@@ -909,8 +999,8 @@
           </h2>
         </div>
         <p class="lead" data-i18n="options_siteAccessHint">
-          A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay
-          follows you across its pages. It asks for each site the first time a tool needs it.
+          A site you allow is one Piwi Picker can run on without a click on its icon, so a recording or a replay follows
+          you across its pages. It asks for each site the first time a tool needs it.
         </p>
         <div id="site-access"></div>
         <div class="card-foot"><div id="site-access-status" role="status"></div></div>

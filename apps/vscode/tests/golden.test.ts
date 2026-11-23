@@ -1,9 +1,18 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { describe, expect, test } from 'vitest';
-import type { FileSummary, RunSession, RunStatus, StatusResult } from '@piwitests/editor/protocol';
-import { lensLines, statusBarView, testDecorations } from '../src/glue';
+import type {
+  FailuresResult,
+  FailuresView,
+  FileSummary,
+  RunSession,
+  RunStatus,
+  StatusResult,
+} from '@piwitests/editor/protocol';
+import { failuresViewEmpty, lensLines, statusBarView, testDecorations } from '../src/glue';
 import { runNodes, workersNow, type RunNode } from '../src/run-control';
+import { NOT_A_CODE, pairingPrompt, pairingRequestTitle, pickerRows } from '../src/picker-pairing';
+import { VSCODE_PAIRING_PORTS } from '@piwitests/core/editor-pairing';
 
 /**
  * The golden fixtures both editors' pure halves read (`packages/editor/tests/golden/`): the same inputs give the same
@@ -76,4 +85,89 @@ describe('the golden fixtures both editors read', () => {
       expect(workersNow(sessions)).toEqual(c.workers);
     });
   }
+});
+
+/** The Piwi Picker panel's words, which the JetBrains plugin's Piwi Picker tab says too (`GlueTest` reads the file). */
+const picker = JSON.parse(
+  fs.readFileSync(path.resolve(__dirname, '../../../packages/editor/tests/golden/picker-pairing.json'), 'utf-8'),
+) as {
+  now: string;
+  intro: string;
+  howToPair: string;
+  notACode: string;
+  request: { client: string; title: string; prompt: string };
+  cases: Array<{
+    name: string;
+    paired: { at: string; client: string | null } | null;
+    heard: string | null;
+    port: 'pairing' | number;
+    rows: Array<[string, string]>;
+  }>;
+};
+
+/** A text of the fixture in VS Code's own words: the cursor, the window, the editor. */
+const inVsCode = (text: string, port = VSCODE_PAIRING_PORTS[0]!) =>
+  text
+    .replace('{cursor}', 'cursor')
+    .replace('{window}', 'window')
+    .replace('{editor}', 'editor')
+    .replace('{port}', String(port));
+
+describe('the Piwi Picker panel’s words both editors say', () => {
+  for (const c of picker.cases) {
+    test(c.name, () => {
+      const port = c.port === 'pairing' ? VSCODE_PAIRING_PORTS[0]! : c.port;
+      const rows = pickerRows(
+        {
+          waiting: [],
+          paired: c.paired ? { at: Date.parse(c.paired.at), client: c.paired.client } : null,
+          heard: c.heard ? Date.parse(c.heard) : null,
+          port,
+          heldPort: null,
+        },
+        Date.parse(picker.now),
+      );
+      expect(rows.map((r) => [r.label, r.description])).toEqual(
+        c.rows.map(([label, description]) => [inVsCode(label, port), description]),
+      );
+    });
+  }
+
+  test('a request’s title and notification, the welcome, and a typed text that is no code', () => {
+    expect(pairingRequestTitle(picker.request.client)).toBe(picker.request.title);
+    expect(pairingPrompt({ client: picker.request.client })).toBe(inVsCode(picker.request.prompt));
+    expect(NOT_A_CODE).toBe(picker.notACode);
+    const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')) as {
+      contributes: { viewsWelcome: Array<{ view: string; contents: string }> };
+    };
+    const welcome = manifest.contributes.viewsWelcome.find((w) => w.view === 'piwi.picker')!.contents;
+    expect(welcome.startsWith(`${inVsCode(picker.intro)} ${picker.howToPair}\n`)).toBe(true);
+  });
+});
+
+describe('the failures view in each state', () => {
+  const states = JSON.parse(
+    fs.readFileSync(path.resolve(__dirname, '../../../packages/editor/tests/golden/failures-view.json'), 'utf-8'),
+  ) as { cases: Array<{ name: string; view: FailuresView; shown: { text: string | null; links: string[] } }> };
+  const manifest = JSON.parse(fs.readFileSync(path.resolve(__dirname, '../package.json'), 'utf-8')) as {
+    contributes: { viewsWelcome: Array<{ view: string; contents: string; when: string }> };
+  };
+  const LINK = /\[([^\]]+)\]\(command:([\w.]+)\)/g;
+
+  test.each(states.cases.map((c) => [c.name, c] as const))('%s', (_name, c) => {
+    // With a message, a node for each link; else the welcome `package.json` shows in the state, with its links.
+    const empty = failuresViewEmpty({ view: c.view, items: [], run: null } as unknown as FailuresResult);
+    const welcome =
+      manifest.contributes.viewsWelcome.find(
+        (w) => w.view === 'piwi.failures' && w.when === `piwi.failuresView == ${c.view.state}`,
+      )?.contents ?? '';
+    const links = empty.message
+      ? empty.links.map((n) => [n.label, n.command])
+      : [...welcome.matchAll(LINK)].map((m) => [m[1], m[2]]);
+    expect(links).toEqual(c.view.links.map((l) => [l.label, l.vscode]));
+    const text = empty.message ?? (welcome.replace(LINK, '').trim() || null);
+    expect({ text, links: links.map(([label]) => label) }).toEqual(c.shown);
+    // VS Code shows no welcome under a message: a state with one has none to show.
+    if (empty.message) expect(welcome).toBe('');
+  });
 });

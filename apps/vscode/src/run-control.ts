@@ -12,6 +12,9 @@
  */
 import type { TestOutcome } from './glue';
 import type {
+  CiControlCommand,
+  CiControlParams,
+  CiLetGoParams,
   CiSession,
   CiTest,
   DriveStopParams,
@@ -2079,6 +2082,11 @@ export interface PausedPageView {
   lane?: boolean;
   /** The slot is a CI run's lane, read-only: Watch alone, no Interact and no pick. */
   ci?: boolean;
+  /**
+   * The CI lane's test held at its failure or paused for the run's controllers, and its controls, as the service says
+   * them (`ciLaneStop`): its buttons off once one was asked in the lane's state (`asking`).
+   */
+  ciStop?: (CiStopView & { asking: boolean }) | null;
   /** The image shows what the worker did before: a test or a stop it left, until the next image comes. */
   stale?: boolean;
   /**
@@ -2327,13 +2335,13 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '<head>',
     '<meta charset="UTF-8">',
     `<meta http-equiv="Content-Security-Policy" content="${csp}">`,
-    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools,.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.toggle{position:relative;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--vscode-panel-border);border-radius:2px;cursor:pointer}.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0}.toggle:has(input:checked){background:var(--vscode-inputOption-activeBackground);border-color:var(--vscode-inputOption-activeBorder)}.toggle:has(input:focus-visible){outline:1px solid var(--vscode-focusBorder)}.toggle:has(input:disabled){opacity:.5;cursor:default}.glyph{width:16px;height:16px;fill:currentColor}.glyph.line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-button-border,transparent);border-radius:2px;padding:2px 8px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:disabled{opacity:.5;cursor:default}details{margin:8px 0;color:var(--vscode-descriptionForeground)}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
+    `<style nonce="${nonce}">body{margin:0;padding:8px 12px;font:13px var(--vscode-font-family);color:var(--vscode-foreground)}p{margin:0 0 8px}.hint,.note{color:var(--vscode-descriptionForeground)}img{max-width:100%;border:1px solid var(--vscode-panel-border)}img.pick{cursor:crosshair}img.stale{opacity:.5}img:focus{outline:2px solid var(--vscode-focusBorder)}.tools,.controls{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:8px}.toggle{position:relative;display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border:1px solid var(--vscode-panel-border);border-radius:2px;cursor:pointer}.toggle input{position:absolute;opacity:0;width:1px;height:1px;margin:0}.toggle:has(input:checked){background:var(--vscode-inputOption-activeBackground);border-color:var(--vscode-inputOption-activeBorder)}.toggle:has(input:focus-visible){outline:1px solid var(--vscode-focusBorder)}.toggle:has(input:disabled){opacity:.5;cursor:default}.glyph{width:16px;height:16px;fill:currentColor}.glyph.line{fill:none;stroke:currentColor;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}button{font:inherit;color:var(--vscode-button-secondaryForeground);background:var(--vscode-button-secondaryBackground);border:1px solid var(--vscode-button-border,transparent);border-radius:2px;padding:2px 8px;cursor:pointer}button:hover{background:var(--vscode-button-secondaryHoverBackground)}button:disabled{opacity:.5;cursor:default}details{margin:8px 0;color:var(--vscode-descriptionForeground)}.ci-stop{border:1px solid var(--vscode-editorWarning-foreground);padding:4px 8px;margin:0 0 8px}.ci-stop.held{border-color:var(--vscode-errorForeground)}.ci-stop p{margin:0 0 4px;white-space:pre-wrap;word-break:break-word}.ci-stop .place{display:block;margin:0 0 4px;padding:0;border:0;background:none;color:var(--vscode-textLink-foreground);font:12px var(--vscode-editor-font-family);cursor:pointer}.ci-stop .place:disabled{color:var(--vscode-descriptionForeground);cursor:default}${layers ? LAYERS_STYLE : ''}[hidden]{display:none!important}</style>`,
     '</head>',
     '<body>',
     `<p${live ? ' id="caption"' : ''}>${escapeHtml(view.caption)}</p>`,
     live
       ? view.ci
-        ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: true, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. It is read-only: nothing here clicks, types, picks or pauses on CI. Nothing is stored.</p></details>`
+        ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: true, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker of the CI run runs, a few images a second, through its tests, as the team instance relays it with the editor's key: the worker hid the secret fields before it sent them. Watched only: nothing here steers a CI run, except Pause, Resume, End the test and Let it go, for those who may control it. Nothing here clicks, types or picks on CI. A test that fails while someone who may control the project's runs watches waits at its failure when the project holds failing CI tests, and Let it go, offered to them, ends the wait; when the project lets them, they pause, resume and end its test too. Nothing is stored.</p></details>${ciStopHtml(view.ciStop ?? null)}`
         : view.lane
           ? `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { disabled: true })}<button id="trace" type="button" title="${escapeHtml(OPEN_TRACE_TITLE)}"${view.trace ? '' : ' hidden'}${view.trace?.asking ? ' disabled' : ''}>Open the trace so far</button></div><details><summary>How the view works</summary><p>Watch shows the page of the test this worker runs, a few images a second, through its tests and stops. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
           : `<div class="tools">${toggleHtml('live', editorWords('page.watch'), WATCH_GLYPH, {})}${toggleHtml('interact', editorWords('page.interact'), INTERACT_GLYPH, { hidden: !live.input, disabled: true })}</div><details><summary>How the view works</summary><p>Watch shows the page of this stopped test as it changes. ${INPUT_RULE} Nothing is stored or shared with the team.</p></details>`
@@ -2367,6 +2375,32 @@ export function pausedPageHtml(view: PausedPageView, nonce: string, scriptUri?: 
     '</body>',
     '</html>',
   ].join('\n');
+}
+
+/**
+ * A CI lane's test held at its failure or paused, above its image (`CiStopView.box`): where it stands and by or for
+ * whom, its call and place (which opens its line), that the CI job's own timeout still runs; then the lane's buttons as
+ * the service offers them (Let it go, Pause, Resume, End the test), off once one was asked, and a Pause waiting or
+ * dropped. Hidden while there is none, for the view's script to fill. Every text is escaped.
+ */
+function ciStopHtml(stop: PausedPageView['ciStop']): string {
+  const box = stop?.box ?? null;
+  const buttons = stop?.buttons ?? [];
+  return [
+    `<div id="ci-stop" class="ci-stop${box?.kind === 'held' ? ' held' : ''}" role="status"${box ? '' : ' hidden'}>`,
+    `<p><strong id="ci-stop-state">${escapeHtml(box?.state ?? '')}</strong> <span id="ci-stop-by">${box?.by ? `· ${escapeHtml(box.by)}` : ''}</span></p>`,
+    `<p id="ci-stop-call">${escapeHtml(box?.call ?? '')}</p>`,
+    `<button id="ci-stop-place" class="place" type="button" title="Open the line"${box?.place ? '' : ' hidden'}${box?.at ? '' : ' disabled'}>${escapeHtml(box?.place ?? '')}</button>`,
+    `<p id="ci-stop-note" class="hint">${escapeHtml(box?.note ?? '')}</p>`,
+    '</div>',
+    `<div id="ci-buttons" class="controls"${buttons.length ? '' : ' hidden'}>${buttons
+      .map(
+        (b) =>
+          `<button type="button" data-command="${escapeHtml(b.command)}" title="${escapeHtml(b.title)}"${stop?.asking ? ' disabled' : ''}>${escapeHtml(b.label)}</button>`,
+      )
+      .join('')}</div>`,
+    `<p id="ci-ask" class="hint"${stop?.ask ? '' : ' hidden'}>${escapeHtml(stop?.ask ?? '')}</p>`,
+  ].join('');
 }
 
 /** The style of the worker panel's sections beside the image. */
@@ -2483,29 +2517,138 @@ export function ciLaneCaption(sessions: CiSessions, lane: CiLane): string {
     (t) => t.status === 'running' && t.lane === lane.lane && (t.shard ?? null) === lane.shard,
   );
   if (!test) return `${name} · between tests · read-only`;
+  const stood = test.held ?? test.paused;
+  if (stood) return `${name} · ${stood.state}: ${ciTestName(test)}`;
   const at = test.at ? ` · ${test.at.title}` : '';
   return `${name} · Running ${ciTestName(test)}${at} · read-only`;
 }
 
 /**
- * Whether the worker panel takes a message of its script while it shows a CI run's lane, read-only: its `ready`, Watch
- * (`view`), the sections it opens (`layers`) and the page's text asked again (`text`) alone, never Interact, a pick,
- * input or a release.
+ * A CI lane's test held at its failure or paused for the run's controllers, and the controls of the lane, as the service
+ * says them: the box above the image (`box`, null while neither), the buttons the service offers (Let it go on a held
+ * failure, else its `controls`), the lane's state they follow (`id`, which an ask is kept by: `CiAsks`), and a Pause
+ * waiting or dropped (`ask`).
  */
-export function ciLaneTakes(message: Readonly<Record<string, unknown>>): boolean {
-  return message.type === 'ready' || message.type === 'view' || message.type === 'layers' || message.type === 'text';
+export interface CiStopView {
+  id: string | null;
+  box: {
+    kind: 'held' | 'paused';
+    state: string;
+    by: string | null;
+    call: string;
+    place: string | null;
+    at: { uri: string; line: number } | null;
+    note: string;
+  } | null;
+  buttons: Array<{ command: CiControlCommand | 'let-go'; label: string; title: string }>;
+  ask: string | null;
+}
+
+/** The CI lane's running test held or paused, its controls and its Pause asked, as the service says them; null for none. */
+export function ciLaneStop(sessions: CiSessions, lane: CiLane): CiStopView | null {
+  const test = sessions
+    .get(ciKey(lane))
+    ?.tests.find((t) => t.status === 'running' && t.lane === lane.lane && (t.shard ?? null) === lane.shard);
+  if (!test) return null;
+  const { held, paused } = test;
+  if (held) {
+    return {
+      id: held.id,
+      box: {
+        kind: 'held',
+        state: held.state,
+        by: held.heldFor,
+        call: held.error,
+        place: held.place,
+        at: held.at,
+        note: held.note,
+      },
+      buttons: held.letGo ? [{ command: 'let-go', label: held.letGoLabel, title: held.letGoTitle }] : [],
+      ask: null,
+    };
+  }
+  if (!paused && !test.controls && !test.pauseAsk) return null;
+  return {
+    id: test.controls?.id ?? null,
+    box: paused
+      ? {
+          kind: 'paused',
+          // `Paused by Ana · until 12:05` says the state itself, as the run page says it.
+          state: paused.pausedBy ?? paused.state,
+          by: null,
+          call: paused.call,
+          place: paused.place,
+          at: paused.at,
+          note: paused.note,
+        }
+      : null,
+    buttons: test.controls?.offered ?? [],
+    ask: test.pauseAsk ?? null,
+  };
 }
 
 /**
- * Whether the worker panel draws a CI lane again as the CI sessions change: only when its caption or whether it watches
- * changed, so a push of another run, or of nothing the panel says, posts nothing to it.
+ * Whether what a button of a CI lane came to (said under the caption) still stands: while the lane stands in the state
+ * it was asked in (`noteState`, the stop's `id`; null for a note no button gave).
+ */
+export function ciNoteStands(noteState: string | null, stop: CiStopView | null): boolean {
+  return noteState === null || stop?.id === noteState;
+}
+
+/** What the worker panel shows of a CI lane's stop, as text: an ask the instance took goes once it changes (`CiAsks`). */
+export function ciStopShown(stop: CiStopView | null): string {
+  return JSON.stringify(stop);
+}
+
+/** A CI lane's key, which its controls' asks are kept by (`CiAsks`): its session's folder and run, shard and lane. */
+export function ciLaneKey(lane: Pick<CiLane, 'root' | 'runId' | 'shard' | 'lane'>): string {
+  return `${lane.root}\n${lane.runId}\n${lane.shard ?? ''}\n${lane.lane}`;
+}
+
+/** Where the place of a held or paused CI test opens in the editor: its file at its line; null when the workspace has none. */
+export function ciStopPlace(
+  box: NonNullable<CiStopView['box']>,
+): { uri: string; line: number; character: number } | null {
+  return box.at ? { uri: box.at.uri, line: box.at.line, character: 0 } : null;
+}
+
+/**
+ * What a button of the CI lane the worker panel shows asks of the service: **Let it go** (`piwi/ciLetGo`), else a
+ * control (`piwi/ciControl`) with its command.
+ */
+export function ciCommandParams(lane: CiLane, command: 'let-go'): CiLetGoParams;
+export function ciCommandParams(lane: CiLane, command: CiControlCommand): CiControlParams;
+export function ciCommandParams(lane: CiLane, command: CiControlCommand | 'let-go'): CiLetGoParams | CiControlParams;
+export function ciCommandParams(lane: CiLane, command: CiControlCommand | 'let-go'): CiLetGoParams | CiControlParams {
+  const where = { root: lane.root, runId: lane.runId, shard: lane.shard, lane: lane.lane };
+  return command === 'let-go' ? where : { ...where, command };
+}
+
+/**
+ * Whether the worker panel takes a message of its script while it shows a CI run's lane, read-only: its `ready`, Watch
+ * (`view`), the sections it opens (`layers`), the page's text asked again (`text`), a button of the lane (`ci-command`:
+ * Let it go, Pause, Resume, End the test) and the place of its held or paused test opened (`ci-place`) alone, never
+ * Interact, a pick, input or a release.
+ */
+export function ciLaneTakes(message: Readonly<Record<string, unknown>>): boolean {
+  return ['ready', 'view', 'layers', 'text', 'ci-command', 'ci-place'].includes(message.type as string);
+}
+
+/**
+ * Whether the worker panel draws a CI lane again as the CI sessions change: only when its caption, whether it watches,
+ * or its held or paused test and its controls (`stop`) changed, so a push of another run, or of nothing the panel says,
+ * posts nothing to it.
  */
 export function ciLaneRedraws(
-  view: Pick<PausedPageView, 'caption' | 'live'> | null,
+  view: Pick<PausedPageView, 'caption' | 'live' | 'ciStop'> | null,
   caption: string,
   watching: boolean,
+  stop: CiStopView | null = null,
 ): boolean {
-  return !view || view.caption !== caption || (view.live?.on ?? false) !== watching;
+  if (!view || view.caption !== caption || (view.live?.on ?? false) !== watching) return true;
+  const said = (shown: CiStopView | null | undefined) =>
+    shown ? JSON.stringify([shown.id, shown.box, shown.buttons, shown.ask]) : '';
+  return said(view.ciStop) !== said(stop);
 }
 
 /**
@@ -2674,7 +2817,7 @@ function ciTestDescription(test: CiTest): string {
     test.project,
     test.retry ? `retry ${test.retry}` : '',
     running ? ciLaneName(test) : test.status,
-    running ? (test.at?.title ?? '') : '',
+    running ? (test.held?.state ?? test.paused?.state ?? test.at?.title ?? '') : '',
   ];
   return parts.filter(Boolean).join(' · ');
 }
@@ -2744,7 +2887,7 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
           description: ciTestDescription(test),
           tooltip:
             `${ciTestName(test)}${test.project ? ` (${test.project})` : ''}: ` +
-            `${test.status === 'running' ? 'running on CI, read-only' : test.status}.${where}`,
+            `${test.held ? [test.held.state, test.held.heldFor].filter(Boolean).join(' · ') : test.paused ? (test.paused.pausedBy ?? test.paused.state) : test.status === 'running' ? 'running on CI' : test.status}.${where}`,
           icon: CI_TEST_ICONS[test.status],
           open: place,
           children: watch,
@@ -2756,7 +2899,7 @@ export function ciNodes(sessions: CiSessions): CiNode[] {
         description: `${session.branch ? `${session.branch} · ` : ''}${session.summary}`,
         tooltip:
           `${session.name}${session.branch ? ` on ${session.branch}` : ''}: ${session.summary}. ` +
-          'Read-only: it runs on CI, so nothing here pauses or steers it.' +
+          'Watched only: it runs on CI, so nothing here steers it, except Pause, Resume, End the test and Let it go, for those who may control it.' +
           (session.watchable ? ' Its running tests can be watched, here or on the dashboard.' : ''),
         icon: 'cloud',
         open: null,

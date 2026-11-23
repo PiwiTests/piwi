@@ -407,10 +407,11 @@ describe('the live view’s masking', () => {
   it('sends the images that show a masked element half a second apart at least, each at its frame’s size', () => {
     const sent = images();
     for (let i = 1; i < sent.length; i++) expect(sent[i]!.at - sent[i - 1]!.at).toBeGreaterThanOrEqual(400);
-    // The screencast's frames are the view's size; the images taken in its place, the page's.
-    const screencast = sent.filter(({ image }) => image.width / image.height > 1.5);
-    for (const { image } of screencast) expect(image.width).toBeLessThanOrEqual(640);
-    for (const { image } of sent) expect(image.width).toBeLessThanOrEqual(1000);
+    // The screencast's frames and the images taken in their place are the view's size, 640 by 400 at most.
+    for (const { image } of sent) {
+      expect(image.width).toBeLessThanOrEqual(640);
+      expect(image.height).toBeLessThanOrEqual(400);
+    }
   });
 
   it('sends no image while its project masks what this reporter cannot read, and says why', () => {

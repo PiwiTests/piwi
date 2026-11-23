@@ -14,7 +14,7 @@
 import { randomBytes } from 'node:crypto';
 import type { PiwiConnection } from '@piwitests/core/dotenv';
 import { isFlakyResult } from '@piwitests/core/status-classify';
-import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY } from '@piwitests/core/wire';
+import { parseRunOrigin, RUN_ORIGIN_METADATA_KEY, type RunOriginKind } from '@piwitests/core/wire';
 import type { PiwiContext } from './context.js';
 import type { BranchFailures, CatalogCase, RunDetails } from './piwi-client.js';
 import type { LiveRun, LiveTestStatus, Notice, RepeatVerdict, RunEnded, VerdictWords } from './protocol.js';
@@ -123,7 +123,29 @@ function liveOf(run: RunDetails, own: boolean, ref: string | null = null): LiveR
     ...(ref ? { ref } : {}),
     ...(!own && isCiRun(run) ? { ci: true } : {}),
     ...(run.branch ? { branch: run.branch } : {}),
+    ...(own ? {} : fromOf(run)),
   };
+}
+
+/** Where a run the editor did not start comes from, as the tooltips say it (`LiveRun.from`), by its origin's kind. */
+const FROM_WORDS: Partial<Record<RunOriginKind, string>> = {
+  local: "on a developer's machine",
+  editor: 'from an editor',
+  desktop: 'from the desktop app',
+  request: 'asked for from the dashboard',
+  preflight: 'a preflight',
+  bug: "a bug report's test",
+  'flake-lab': 'a Flake Lab run',
+  probe: 'a Flake Lab probe',
+  bisect: 'a bisect step',
+  reproduce: 'a reproduction',
+};
+
+/** `LiveRun.from` for a run of `run`'s origin; none for a CI run's, an imported one's, or a run that names no origin. */
+function fromOf(run: RunDetails): Pick<LiveRun, 'from'> {
+  const kind = parseRunOrigin(run.metadata?.[RUN_ORIGIN_METADATA_KEY])?.kind;
+  const words = kind ? FROM_WORDS[kind] : undefined;
+  return words ? { from: words } : {};
 }
 
 /** Whether a run is a CI run's: its origin says so, else, for a run that names none, the CI it names. */

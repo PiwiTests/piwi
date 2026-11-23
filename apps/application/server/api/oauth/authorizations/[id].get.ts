@@ -9,7 +9,7 @@ defineRouteMeta({
     tags: ['MCP OAuth'],
     summary: 'Describe an MCP client authorization request',
     description:
-      'What the consent page at `/oauth/consent` shows before the user allows or denies: the name the client registered (self-asserted), its `client_uri`, where the answer is sent (`web` with the host, `loopback` for an application on the user’s computer, `app` with the scheme), the expiry and the status (`pending`, `approved`, `denied`, `consumed` or `expired`). The path parameter is the request id the authorize endpoint put in the consent page URL. Failed lookups are rate-limited; 404 when authentication is off.',
+      'What the consent page at `/oauth/consent` shows before the user allows or denies: the name the client registered (self-asserted), its `client_uri`, `clientIdHost` (the host that published the client’s metadata document when its `client_id` is one, else null), where the answer is sent (`web` with the host, `loopback` for an application on the user’s computer, `app` with the scheme), the expiry and the status (`pending`, `approved`, `denied`, `consumed` or `expired`). The path parameter is the request id the authorize endpoint put in the consent page URL. Failed lookups are rate-limited; 404 when authentication is off.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }],
     'x-required-permission': 'signed-in',
   },

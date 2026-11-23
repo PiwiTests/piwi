@@ -5,10 +5,15 @@
  * stands, its controls and its page live, as the tray shows them (`DesktopRunWorker`). The run is named by `?ref=` and
  * the worker by its lane, `?lane=` (Playwright's `parallelIndex`, which the worker replacing a failed one keeps). The
  * window holds the runs' hub stream itself (`useDesktopRunHub`) while its run goes on, present on the runs while it is
- * not hidden, and lets it go once the run ended; the hub plugin leaves it alone. A window of its own: no layout.
+ * not hidden, and lets it go once the run ended; the hub plugin leaves it alone. Once the run ended, it says how the run
+ * came out, as its process counted it, and **Show in Local runs** asks the dashboard window over `RUN_OUTPUT_CHANNEL`
+ * to open its tray on the run and come to the front. A window of its own: no layout.
  */
+import { progressWords } from '@piwitests/run-model/outcome';
 import { testName } from '@piwitests/run-model/stop';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
+import { RUN_OUTPUT_CHANNEL, type RunOutputMessage } from '~/utils/run-output-channel';
 
 definePageMeta({ layout: false });
 
@@ -21,6 +26,30 @@ const session = computed(() => hub.state.sessions[runRef]);
 const worker = computed(() => session.value?.workers.find((w) => w.parallelIndex === lane));
 /** The run ended: the stream listed the live runs without it, or let it go after holding it. */
 const ended = ref(false);
+
+/** How a run ends, in words. */
+const END_WORDS: Record<string, string> = {
+  passed: 'Passed',
+  failed: 'Failed',
+  timedout: 'Timed out',
+  interrupted: 'Interrupted',
+  other: 'Ended',
+};
+
+/** How the run came out, as its process counted it: its end, then how far it came; null for a run that did not say. */
+const outcome = computed(() => {
+  const progress = hub.state.endedProgress[runRef];
+  if (!progress) return null;
+  return [END_WORDS[progress.status] ?? 'Ended', ...progressWords(progress, englishRunSpeaker)].join(' · ');
+});
+
+let channel: BroadcastChannel | null = null;
+onMounted(() => (channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL)));
+onBeforeUnmount(() => channel?.close());
+
+function showInLocalRuns() {
+  channel?.postMessage({ type: 'show-run', ref: runRef } satisfies RunOutputMessage);
+}
 
 useHead({
   title: computed(() => {
@@ -62,7 +91,14 @@ onBeforeUnmount(letGo);
 <template>
   <main class="min-h-dvh bg-default">
     <DesktopRunWorker v-if="session && worker" :session="session" :worker="worker" @announce="announce" />
-    <p v-else-if="ended" class="p-4 text-sm text-muted">This run ended: close the window.</p>
+    <div v-else-if="ended" class="space-y-3 p-4">
+      <p role="status" class="text-sm text-highlighted" data-testid="run-worker-outcome">
+        {{ outcome ? `This run ended: ${outcome}.` : 'This run ended.' }}
+      </p>
+      <UButton size="sm" color="neutral" variant="outline" icon="i-lucide-panel-bottom-open" @click="showInLocalRuns">
+        Show in Local runs
+      </UButton>
+    </div>
     <p v-else-if="hub.state.listed" class="p-4 text-sm text-muted">This worker has no test running now.</p>
     <p v-else class="p-4 text-sm text-muted">Connecting to the run…</p>
     <p role="status" aria-live="polite" class="sr-only">{{ announcement }}</p>

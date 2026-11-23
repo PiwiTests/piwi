@@ -26,9 +26,11 @@ then each worker's test and whether it runs or where it stopped (the file and li
 the page). A run that ended says how: passed, failed with its first
 failure, timed out or interrupted. The count and the outcome need `@piwitests/reporter` newer than 0.67.0. A run
 without [**Watch**](#watch-live) and no test stopped says how one stops: a breakpoint, a `page.pause()` or **Pause**. A run [started outside Piwi](./terminal-runs) shows too, marked **Terminal** or **Test runner**.
-The CI runs in progress of the projects your [connection](./extension-connection) maps show read-only, through that
-instance, read again every 15 seconds while the window is open, with **Open** and their running tests, each with **Watch**
-([A CI run of your branch](./editor-ci-runs)).
+The CI runs in progress of the projects your [connection](./extension-connection) maps show, watched only, through
+that instance, read again every 15 seconds while the window is open, with **Open** and their running tests, each with
+**Watch** ([A CI run of your branch](./editor-ci-runs)): nothing steers them, except
+[Pause, Resume, End the test](./pause-ci-test#where-it-shows) and [Let it go](./hold-ci-failure#where-it-shows), for
+those who may control them.
 
 ## The controls
 

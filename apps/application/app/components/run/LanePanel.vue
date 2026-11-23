@@ -6,8 +6,9 @@
  * watch of the run (`useLiveWatch`), which **Watch all** shares; it opens on the worker's latest tile when it came
  * within `TILE_OPEN_MS`. The worker also sends the call its test is in as Playwright logs it (in a CI run from its call
  * stream, in a shared run from its in-process instrumentation, the call alone for a browser it connected to): the
- * log's last lines beside the image, how long the call has run and the elements its locator matches, and over the
- * image the first one outlined and the point an input action acts on; **Zoom to the element** crops the image around
+ * log's last lines beside the image, how long the call has run and the elements its locator matches (while the test
+ * stands at a stop, the stop as its row says it, `stop`, in their place), and over the image the first one
+ * outlined and the point an input action acts on; **Zoom to the element** crops the image around
  * that element, a click on the image zooms where it points.
  *
  * Under the image, the layers the view asks of the worker while it shows them (`@piwitests/core/live-layers`): the
@@ -17,7 +18,9 @@
  * searched with case and accents ignored, the lines naming the element the shown call targets marked; and, opened,
  * **Inspect** (`LaneInspect`): the page at each call as a document, the worker sending its snapshots while it is open.
  * Each is of the test the view shows, and let go with it; Inspect's of the lane's next test, sent before its first
- * image, wait for the view to move on to it. Watching only: nothing here reaches the test.
+ * image, wait for the view to move on to it. Watching only: nothing here reaches the test, but **Let it go** on a
+ * failed CI test held for the people who may control the run (`LaneHeld`), which ends its hold, and, while the
+ * project lets them, **Pause**, **Resume** and **End the test** of a CI test (`LanePaused`).
  *
  * A view opened with no test (by its address, a tile with no running row, a move) takes the first it hears. A view of
  * a worker that says its lane (`slot`) follows the lane: it says how each test ended, keeps the lane's earlier tests
@@ -42,6 +45,7 @@ import {
   type LiveTestOutcome,
   type LiveViewEnd,
   type LiveViewerMessage,
+  type LiveWorkerState,
 } from '#shared/live-view';
 import { readLiveViewSize } from '@piwitests/core/live-view';
 import { MAX_PAGE_EVENTS_PER_SECOND, type LaneLayer, type LaneText, type LaneThumb } from '@piwitests/core/live-layers';
@@ -76,6 +80,9 @@ import {
   type InspectHeard,
 } from '~/utils/live-inspect';
 import { CURRENT_ITEM_RING_CLASS } from '@piwitests/run-ui/ui-classes';
+import { stopStoodMs, stopWords, type ShownStop } from '~/utils/stop-words';
+import { ciControlsOffered, ciPauseAskWords, readCiPauseAsk } from '@piwitests/run-model/ci';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
 
 const props = defineProps<{
   runId: number;
@@ -100,8 +107,28 @@ const props = defineProps<{
   live: LiveWatchHandle;
   /** Why **Follow what needs attention** moved the view here, while it shows that lane. */
   movedWhy?: string | null;
+  /** The stop the worker's test stands at (`watchedStop`), which the view says as its row does; null for none. */
+  stop?: ShownStop | null;
+  /** The worker shown, as the run's live view names it: the worker **Let it go** of a held test reaches. */
+  workerState?: LiveWorkerState | null;
+  /** The run's project, for who may let a held test go. */
+  projectId?: number | null;
 }>();
 const open = defineModel<boolean>('open', { required: true });
+/** The held failure of the worker shown, while it holds: its stop as its row reads it (`watchedStop`). */
+const heldStop = computed(() => (props.stop?.reason === 'held' && props.stop.held ? props.stop : null));
+const { can } = useAuth();
+/** Whether this person may end the hold shown: one who may control the run's project, of a worker that can hold. */
+const canLetGo = computed(
+  () =>
+    !!heldStop.value?.held?.holds &&
+    !!props.workerState &&
+    props.projectId != null &&
+    can('run:control', props.projectId),
+);
+const watchId = computed(() => props.live.watchId.value);
+/** The CI pause of the worker shown, while its test is paused for its controllers: its stop as its row reads it. */
+const pausedStop = computed(() => (props.stop?.ciPause ? props.stop : null));
 /** **Follow what needs attention**: the page moves the view to a lane whose test failed, got stuck or stopped. */
 const attention = defineModel<boolean>('attention', { default: false });
 
@@ -529,15 +556,41 @@ const shownCall = computed<LiveCall | null>(
     currentLog.value?.call ??
     (laterStep.value ? { title: stepLabel(laterStep.value), file: null, line: null } : call.value),
 );
+/**
+ * The controls of the CI lane shown this person sees (`ciControlsOffered`): Pause while its test runs, Resume and End
+ * the test while it is paused; none for someone who may not control the run's project, or a worker that cannot pause.
+ */
+const ciControls = computed(() => {
+  if (!props.workerState || props.projectId == null || !can('run:control', props.projectId)) return [];
+  const runs = !ended.value && !outcome.value && !!watchedTest.value;
+  return ciControlsOffered(props.workerState, { shows: true, controller: true }, runs);
+});
+/** A Pause of the CI lane shown that waits for its test's next call, or why its worker dropped the last one. */
+const pauseAskWords = computed(() =>
+  props.workerState ? ciPauseAskWords(readCiPauseAsk(props.workerState), englishRunSpeaker) : null,
+);
+/** What reaches the test from here, for this person: Let it go, the CI lane's controls, or nothing. */
+const reaches = computed(() => {
+  if (canLetGo.value) return ' but Let it go';
+  return ciControls.value.length ? ' but Pause, Resume and End the test' : '';
+});
 /** How long the running call has run, counted on between two call logs, or how long the call that ended took. */
 const callMs = computed(() => {
   const shown = currentLog.value;
   if (!shown) return 0;
   return shown.status === 'running' ? shown.ms + Math.max(0, now.value - logAt.value) : shown.ms;
 });
-/** What the running call's locator matches, said when it explains a wait. */
+/** The clock the rows' stops read too, so the panel's time of a stop turns over with its row's. */
+const stopsNow = useStopClock();
+/** The test's stop, in its row's words, and for how long once it stood a while; null while the test goes on. */
+const stopLine = computed(() => {
+  if (!props.stop) return null;
+  const stood = stopStoodMs(props.stop.since, stopsNow.value);
+  return { words: stopWords(props.stop.reason), stood: stood === null ? null : formatLongDuration(stood) };
+});
+/** What the running call's locator matches, said when it explains a wait, and not while its test stands at a stop. */
 const targetText = computed(() => {
-  const target = currentLog.value?.status === 'running' ? currentLog.value.target : null;
+  const target = currentLog.value?.status === 'running' && !props.stop ? currentLog.value.target : null;
   if (!target) return '';
   if (target.count === 0) return 'No element matches its locator yet';
   if (target.count > 1) return `${target.count} elements match its locator`;
@@ -836,6 +889,35 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
       <p v-if="movedWhy && !ended" role="status" class="text-xs text-muted" data-testid="live-moved">
         {{ movedWhy }}
       </p>
+      <LaneHeld
+        v-if="heldStop && workerState && !ended"
+        :run-id="runId"
+        :worker="{
+          shard: workerState.shard,
+          worker: workerState.worker,
+          ...(workerState.slot === undefined ? {} : { slot: workerState.slot }),
+        }"
+        :stop="heldStop"
+        :can-let-go="canLetGo"
+        :watch-id="watchId"
+        :project-key="projectKey"
+        :project-name="projectName"
+      />
+      <LanePaused
+        v-else-if="(pausedStop || ciControls.length || pauseAskWords) && workerState && !ended"
+        :run-id="runId"
+        :worker="{
+          shard: workerState.shard,
+          worker: workerState.worker,
+          ...(workerState.slot === undefined ? {} : { slot: workerState.slot }),
+        }"
+        :stop="pausedStop"
+        :controls="ciControls"
+        :ask-words="pauseAskWords"
+        :watch-id="watchId"
+        :project-key="projectKey"
+        :project-name="projectName"
+      />
       <div class="grid gap-3 @3xl:grid-cols-[minmax(0,1fr)_minmax(16rem,24rem)] @3xl:items-start">
         <figure class="min-w-0 space-y-2" data-testid="live-view">
           <div
@@ -930,10 +1012,25 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
               /></template>
             </template>
           </figcaption>
-          <p v-if="currentLog && !ended" class="text-xs text-muted" data-testid="live-call-state">
-            <template v-if="currentLog.status === 'running'">Running for {{ formatLongDuration(callMs) }}</template>
+          <p
+            v-if="(currentLog || stopLine) && !ended && !((heldStop || pausedStop) && workerState)"
+            class="text-xs text-muted"
+            data-testid="live-call-state"
+            :data-stop="stop?.reason"
+          >
+            <template v-if="stopLine"
+              ><UIcon
+                :name="stop?.reason === 'held' ? 'i-lucide-hand' : 'i-lucide-pause'"
+                class="mr-1 size-3 align-[-0.125em]"
+                :class="stop?.reason === 'held' ? 'text-error' : 'text-warning'"
+              /><span class="font-semibold text-highlighted">{{ stopLine.words }}</span
+              ><template v-if="stopLine.stood"> · for {{ stopLine.stood }}</template></template
+            >
+            <template v-else-if="currentLog?.status === 'running'"
+              >Running for {{ formatLongDuration(callMs) }}</template
+            >
             <template v-else
-              >{{ currentLog.status === 'failed' ? 'Failed after' : 'Done in' }} <DurationValue :ms="callMs"
+              >{{ currentLog?.status === 'failed' ? 'Failed after' : 'Done in' }} <DurationValue :ms="callMs"
             /></template>
             <template v-if="targetText">
               · <span data-testid="live-call-target">{{ targetText }}</span></template
@@ -1154,8 +1251,8 @@ const [DefineBody, ReuseBody] = createReusableTemplate();
         </template>
       </UCollapsible>
       <p class="text-xs text-muted">
-        You watch the page; nothing you do here reaches the test. Nothing of the view is stored: the run’s trace keeps
-        the record.
+        You watch the page; nothing you do here reaches the test{{ reaches }}. Nothing of the view is stored: the run’s
+        trace keeps the record.
       </p>
     </div>
   </DefineBody>

@@ -1,0 +1,53 @@
+{
+  "now": "2026-11-19T15:00:00Z",
+  "intro": "Piwi Picker, the browser extension, sends the locators you pick to the {cursor} and follows the runs this {window} starts.",
+  "howToPair": "To pair, click Pair under Editor in Piwi Picker's settings, then type here the code it shows.",
+  "notACode": "Type the eight letters Piwi Picker shows, such as BCDF-GHJK.",
+  "request": {
+    "client": "Chrome on macOS",
+    "title": "Chrome on macOS asks to pair",
+    "prompt": "Piwi Picker in Chrome on macOS asks to pair with this {editor}, to send it the locators you pick and follow its runs. If you just clicked Pair in Piwi Picker, type the code it shows."
+  },
+  "cases": [
+    {
+      "name": "never paired",
+      "paired": null,
+      "heard": null,
+      "port": "pairing",
+      "rows": []
+    },
+    {
+      "name": "paired by code, heard two minutes ago, on the first port Piwi Picker looks at",
+      "paired": { "at": "2026-11-03T10:00:00Z", "client": "Firefox on Linux" },
+      "heard": "2026-11-19T14:58:00Z",
+      "port": "pairing",
+      "rows": [
+        ["Paired with Piwi Picker in Firefox on Linux", "since Nov 3"],
+        ["Last heard 2 min ago", ""],
+        ["Listening on 127.0.0.1:{port}", ""]
+      ]
+    },
+    {
+      "name": "paired with an address, heard five seconds ago",
+      "paired": null,
+      "heard": "2026-11-19T14:59:55Z",
+      "port": "pairing",
+      "rows": [
+        ["Paired with Piwi Picker", ""],
+        ["Last heard 5 s ago", ""],
+        ["Listening on 127.0.0.1:{port}", ""]
+      ]
+    },
+    {
+      "name": "paired last year, never heard from, on a port Piwi Picker does not look at",
+      "paired": { "at": "2025-12-30T10:00:00Z", "client": "Edge on Windows" },
+      "heard": null,
+      "port": 8080,
+      "rows": [
+        ["Paired with Piwi Picker in Edge on Windows", "since Dec 30, 2025"],
+        ["Not heard from yet", ""],
+        ["Listening on 127.0.0.1:8080", "not where Piwi Picker looks"]
+      ]
+    }
+  ]
+}

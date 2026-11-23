@@ -69,12 +69,19 @@ responsibilities.
      worker answers what the editor asks (`takes` and `features` in its `run-attach`). Three limits hold: a frame
      goes to the editor service alone, never stored nor attached, its secret fields painted over, and a headed stop's
      pause bar where `page-view.ts` can paint it; trusted input plays only while that stop's view, or the lane view
-     showing it, is watched; and every call's and stop's title goes through `hideTypedText` and `hideSecretsInText`
-     ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
+     showing it, is watched; and every call's and stop's title a worker sends goes through `shownTitle`
+     (`lane-layers.ts`: `hideTypedText`, `hideSecretsInText`, then `hideKnownValues` with the values the attempt knows
+     as it is sent) ([each message and its test](ARCHITECTURE.md#side-effects), under **The editor's run connection**);
    - with `PIWI_LIVE_VIEW` (set in `onBegin`; outside CI, `none:<why>` for a run without one), each worker's event
      stream to the instance (`internal/capture/live-view.ts`, framed as `@piwitests/core/live-view`): opened in the
      background in a CI run, and outside CI only while the run channel shares the run (**Share live**) or, for a run no
-     run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. Four limits hold:
+     run channel follows, with `PIWI_SHARE_LIVE=1`, an environment variable alone, never an option. In a CI run, a
+     test that fails while its project holds failing tests (`hold` on the stream) and a controller watches its worker
+     in full waits at its failure, its timeout held, until the hold's length, **Let it go** or no controller watching
+     (`tests/live-view-hold.spec.ts`); with the project's pause setting on too (`hold`'s `pause`), a controller's
+     **Pause** on that stream stops the test at its next call through the local run's pause, until **Resume**, **End
+     the test** (which fails the test there, the stopped call never running) or a hold's ends
+     (`tests/live-view-pause.spec.ts`, `tests/live-view-pause-end.spec.ts`). Four limits hold:
      never a frame while nobody watches, never stored, nothing from a run outside CI unless it is shared; each frame
      goes with the page's secret fields (`SECRET_FIELD_SELECTOR`) and the project's `masks` painted over, or does not
      go (`live-mask.ts`); the key is out of the worker's `process.env` from the fixture's setup to its teardown; and
@@ -155,6 +162,17 @@ responsibilities.
   (`runTokenHeaders`, `internal/transport/http-client.ts`), the setup token to `/begin`, the stream token to `/events`,
   `/finish` and `/live-resources`. The dashboard refuses a run of this reporter (the `reporterVersion` `/setup` and
   `/start` send, 0.65.0 and later) without the header, and an older dashboard reads the body's: drop neither.
+- **A text cut before the attempt's known secrets are hidden in it is cut with `cutText`** (`@piwitests/core/mask`),
+  never `.slice`: its mark makes `hideKnownValues` hide the start of a value the cut left at its end (the call log's
+  title, lines and error, `shownTitle`; `tests/lane-layers.spec.ts`).
+- **The attempt's known values are hidden in a text once, as it is sent, never in a text kept**: kept, a call's title
+  is `keptTitle`'s, shown with `shownTitle` (`lane-layers.ts`); hidden twice, a value that holds one hidden before
+  shows its rest (`tests/lane-layers.spec.ts`, `tests/live-view-worker.spec.ts`). A stop's `locator` and `error` go
+  with them hidden too, so a locator that holds one is not the call's own and matches nothing on the page.
+- **A view's images of its page go through Playwright's screenshot (`internalCall`), never a DevTools session of
+  Piwi's own**: a scaled `Page.captureScreenshot` there resets the page's device emulation (its device scale factor,
+  screen and a phone's layout) for the test to see, and runs alongside the test's own screenshots.
+  `tests/page-view-still.spec.ts` checks the page sees nothing change.
 - **A private temp file goes through `internal/support/private-file.ts`**: in `privateTempDir()`, never `os.tmpdir()`
   itself (on Windows, `%LOCALAPPDATA%\piwi\tmp`: a service account's `os.tmpdir()` is shared), written and read with
   `writePrivateFile`, `appendPrivateFile` and `readPrivateFile`; or it lives in a `fs.mkdtempSync` folder. Owner-only,

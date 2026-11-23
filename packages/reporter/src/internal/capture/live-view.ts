@@ -10,9 +10,12 @@ import {
   LIVE_FRAME_TYPE,
   LIVE_FRAME_WIDTH,
   LIVE_SHARE_MISSING,
+  LIVE_HOLD_FEATURE,
+  LIVE_PAUSE_FEATURE,
   LIVE_SHARE_UNKNOWN,
   LIVE_VIEW_AFTER_PARAM,
   LIVE_VIEW_ENV,
+  LIVE_VIEW_FEATURES_PARAM,
   MAX_LIVE_FRAME,
   encodeLiveMessage,
   liveFrameHeader,
@@ -32,7 +35,6 @@ import {
   liveThumbHeader,
 } from '@piwitests/core/live-view';
 import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
-import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import type { RunLiveState } from '@piwitests/core/run-channel';
 import { PIWI_RUN_LOG_ENV, PIWI_SHARE_LIVE_ENV } from '../config/env.js';
 import { detectCi } from '../support/ci.js';
@@ -47,6 +49,8 @@ import {
   followTraceText,
   knownSecrets,
   layersTitleOf,
+  shownThumb,
+  shownTitle,
   subscribePageEvents,
   takeLaneText,
   type KeptThumb,
@@ -104,6 +108,24 @@ import type { PageFrame } from './page-view.js';
  * go too (`live-inspect.ts`), sharing the frames' bytes a second (`LiveByteBudget`: each of its posts waits once, a
  * second at most, and the frames after it are spaced by its bytes, a second at most), and Inspect opens again as the
  * project's masks change.
+ *
+ * A CI worker says on its stream that it can hold (`LIVE_HOLD_FEATURE`), and hears how long its project holds a
+ * failing CI test for its controllers (`hold`, null while the setting is off) and whether a person who may control
+ * the run watches it in full (`view`'s `controller`). A test that fails while both stand waits at its failure
+ * (`liveViewHold`, which the capture fixtures' held failure takes), and ends that wait at the hold's length, at
+ * **Let it go** (`let-go`, taken on its own stream alone and only while the setting is on), as the instance says no
+ * controller watches it in full any more, as the setting turns off, as the stream that opens again is answered that
+ * the run's live view is not there now (404, 409), and as its stream closes for good. A new length applies to the
+ * hold that runs, its held stop posted again with its new end.
+ *
+ * It says it can pause too (`LIVE_PAUSE_FEATURE`), and hears whether its project lets its controllers pause a CI test
+ * (`hold`'s `pause`); while it does, the call log comes from the instrumentation (`liveViewMayPause`), as in a run a
+ * person may pause. Only then, on its own stream open now, and while a controller watches it in full, **Pause**
+ * (`pause`) asks the running test to stop at its next call (`onLiveViewPause`), the worker saying it took it or why
+ * not (`pause-asked`): the stop that comes waits (`liveViewPause`), as a hold does and with the same length, posted as
+ * a stop of kind `pause` with its end, until **Resume** (`resume`), **End the test** (`end-test`, with who asked),
+ * which fails the test there, or any of a hold's ends. A Pause no call took yet is dropped, saying why, at those ends,
+ * at a Resume, and as its test's function ends.
  */
 
 /** How long the worker waits before it opens its stream again, after each failure in a row. */
@@ -137,6 +159,8 @@ const GIVE_UP = new Set([403, 410]);
  * live view off.
  */
 const NOT_NOW = new Set([401, 404]);
+/** The answers that say the run's live view is not there now: the project's live view off, the run not live. */
+const GONE_NOW = new Set([404, 409]);
 
 const TOO_HEAVY =
   `This page is too heavy for the live view: each image of it is over ${MAX_LIVE_FRAME / 1024} KB, ` +
@@ -200,6 +224,70 @@ interface Link {
    * says it, which takes frames in base64 inside JSON alone, and shows the worker in full alone.
    */
   asked: Extract<InstanceToWorker, { type: 'view' }> | null;
+  /** How long its project holds a failing CI test for its controllers, in ms, as the instance said; null for not. */
+  hold: number | null;
+  /** Whether its project lets its controllers pause a CI test, as the instance said beside `hold`. */
+  pause: boolean;
+  /** A controller asked to pause the running test, and no call took the Pause yet. */
+  pauseAsked: boolean;
+}
+
+/** How a CI test's wait for its controllers ended: **End the test** (`end`), or any other way (`resume`). */
+export type LiveWaitEnd = 'resume' | 'end';
+
+/** Why a worker drops a Pause it was asked, as the instance tells the person who asked. */
+export const PAUSE_DROPPED = {
+  noTest: 'No test runs on this worker now.',
+  stopped: "This worker's test stands at a stop.",
+  left: 'Nobody who may control the run watches this worker in full now.',
+  off: "The project's setting is off.",
+  resumed: 'Resume came before the test paused.',
+  ended: 'The test ended before its next call.',
+  functionEnded: "The test's function ended before its next call.",
+} as const;
+
+/**
+ * A CI test waiting for its controllers, held at its failure or paused at a call: when it ends at the latest, what
+ * resolves as it ends, for whichever reason, who ended it at **End the test** (`by`, null when the instance named
+ * nobody), and what ends it now (as on Resume).
+ */
+export interface LiveWait {
+  /** When the wait ends at the latest, in epoch ms. */
+  until: number;
+  ended: Promise<LiveWaitEnd>;
+  readonly by: string | null;
+  end: () => void;
+}
+
+/** A failing CI test's hold. */
+export type LiveHold = LiveWait;
+
+/** The running test's wait, while it waits: held at its failure (`held`) or paused (`pause`). */
+let waiting: {
+  kind: 'held' | 'pause';
+  began: number;
+  until: number;
+  timer: ReturnType<typeof setTimeout>;
+  end: (how?: LiveWaitEnd, by?: string | null) => void;
+  ended: Promise<LiveWaitEnd>;
+  by: string | null;
+  over: boolean;
+} | null = null;
+
+/**
+ * What the capture fixtures do as a controller pauses the running test (`pause`: why it cannot take it, null when it
+ * took it), and as a Pause no call took is dropped.
+ */
+export interface LivePauseHandlers {
+  pause: () => string | null;
+  drop: () => void;
+}
+
+let pauseHandlers: LivePauseHandlers | null = null;
+
+/** Hear each Pause a controller asks of the running test, and each drop of one no call took; null hears none. */
+export function onLiveViewPause(handlers: LivePauseHandlers | null): void {
+  pauseHandlers = handlers;
 }
 
 /**
@@ -312,9 +400,12 @@ export function liveViewOpen(): boolean {
   return link !== null;
 }
 
-/** Whether the worker holds a key of a run outside CI: one a person may pause, whose call log the listener follows. */
+/**
+ * Whether the worker holds a key of a run a person may pause, whose call log the listener follows: outside CI, or in a
+ * CI run whose project lets its controllers pause a CI test.
+ */
 export function liveViewMayPause(): boolean {
-  return link !== null && !link.ci;
+  return link !== null && (!link.ci || (link.hold !== null && link.pause));
 }
 
 /** Whether the worker's stream is wanted now and may open: it holds a key the instance takes, and the run is shared. */
@@ -407,6 +498,9 @@ export function openLiveView(
     logRefused: false,
     masks: [],
     asked: null,
+    hold: null,
+    pause: false,
+    pauseAsked: false,
   };
   if (link.sharing) connect(link);
   unhearLane = onLanePage(lanePageChanged);
@@ -423,6 +517,7 @@ export function openLiveView(
 
 /** Close the worker's connection, as the worker ends. */
 export function closeLiveView(): void {
+  letWaitGo(PAUSE_DROPPED.noTest);
   const own = link;
   link = null;
   running = null;
@@ -519,6 +614,7 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
   if (!running) return;
   const ended = running;
   running = null;
+  if (link) dropPause(link, PAUSE_DROPPED.ended);
   const outcome = status ? { test: ended.title, status, ms: Math.max(0, Date.now() - ended.began) } : null;
   await stopView();
   const own = link;
@@ -534,21 +630,22 @@ export async function liveViewTestEnded(status?: LiveTestOutcome['status']): Pro
 export function liveViewStopped(stop: LiveStop): () => void {
   const own = link;
   if (!own || own.ended) return () => undefined;
-  const shown = { ...stop, call: hideCallSecrets(stop.call) };
-  own.stop = shown;
-  postState(own, { type: 'stop', ...own.id, stop: shown });
+  own.stop = stop;
+  postState(own, { type: 'stop', ...own.id, stop: shownStop(stop) });
   return () => {
-    if (own.stop === shown) own.stop = null;
+    if (own.stop === stop) own.stop = null;
     postState(own, { type: 'stop', ...own.id, stop: null });
   };
 }
 
-/**
- * A call as the run page shows it: its title without the text a fill, a typing or an insert types (`hideTypedText`),
- * and through `hideSecretsInText`, which a URL or a token may hold.
- */
+/** A call as the run page shows it: its kept title shown as `shownTitle` shows it, with the values the attempt knows now. */
 function hideCallSecrets(call: LiveCall): LiveCall {
-  return { ...call, title: hideSecretsInText(hideTypedText(call.title)) };
+  return { ...call, title: shownTitle(call.title) };
+}
+
+/** A stop as the run page shows it, kept as given: its call's title hidden as `hideCallSecrets` hides it, as it is posted. */
+function shownStop(stop: LiveStop): LiveStop {
+  return { ...stop, call: hideCallSecrets(stop.call) };
 }
 
 /** Post a stop's start or end after the ones before it, a few waiting at most, while the run is shared. */
@@ -570,6 +667,7 @@ function connect(own: Link): void {
   if (own.id.shard !== null) url.searchParams.set('shard', String(own.id.shard));
   if (own.id.slot !== undefined) url.searchParams.set('slot', String(own.id.slot));
   if (own.after !== null) url.searchParams.set(LIVE_VIEW_AFTER_PARAM, String(own.after));
+  if (own.ci) url.searchParams.set(LIVE_VIEW_FEATURES_PARAM, `${LIVE_HOLD_FEATURE},${LIVE_PAUSE_FEATURE}`);
   let openedAt: number | null = null;
   let dropped = false;
   /**
@@ -587,6 +685,8 @@ function connect(own: Link): void {
     if (openedAt !== null && Date.now() - openedAt >= STEADY_MS) own.retries = 0;
     if (status !== null) own.answered = status;
     if (status !== null && GIVE_UP.has(status)) return void refuse(own, status);
+    // The run's live view is not there now (the project's live view off, the run not live): no controller can see a wait.
+    if (status !== null && GONE_NOW.has(status) && own === link) letWaitGo(PAUSE_DROPPED.left);
     retry(own, status !== null && NOT_NOW.has(status));
   };
   const request = own.client.request(url, {
@@ -625,7 +725,7 @@ function connect(own: Link): void {
       own.backTimer.unref?.();
     }
     // The instance forgets a stream's stop as it closes: a stream opened again hears it again.
-    if (own.stop) postState(own, { type: 'stop', ...own.id, stop: own.stop });
+    if (own.stop) postState(own, { type: 'stop', ...own.id, stop: shownStop(own.stop) });
     response.setEncoding('utf8');
     let text = '';
     response.on('data', (chunk: string) => {
@@ -645,7 +745,12 @@ function connect(own: Link): void {
         else if (message?.type === 'view') setAsked(own, message);
         else if (message?.type === 'resend') resendView(own);
         else if (message?.type === 'text') sendText(own);
+        else if (message?.type === 'hold') setHold(own, message.ms, message.pause === true);
+        else if (message?.type === 'let-go' || message?.type === 'pause') control(own, request, message.type);
+        else if (message?.type === 'resume') control(own, request, 'resume');
+        else if (message?.type === 'end-test') control(own, request, 'end-test', message.by ?? null);
         else if (message) setViewers(own, message.count);
+        if (message?.type === 'view' || message?.type === 'viewers') keepHold(own, message);
       }
     });
     response.on('error', () => drop(null));
@@ -716,6 +821,7 @@ function lostCause(status: number | null): string {
 /** The instance refused the key for good (`status`): nothing more is tried for the worker's life; the run says why. */
 function refuse(own: Link, status: number): void {
   if (own.refused !== null) return;
+  if (own === link) letWaitGo(PAUSE_DROPPED.left);
   own.refused = liveShareRefusal(status);
   own.answered = status;
   if (own.ci) goDark(own, 'It stays off for this worker.');
@@ -732,6 +838,7 @@ function refuse(own: Link, status: number): void {
  * share the run again.
  */
 function giveUp(own: Link): void {
+  if (own === link) letWaitGo(PAUSE_DROPPED.left);
   own.sharing = false;
   own.lost = liveShareRefusal(own.answered);
   own.viewers = 0;
@@ -768,6 +875,183 @@ function resendView(own: Link): void {
   view.frames.resend();
   if (own.log && shownInFull(own)) postLog(own, own.log);
   if (layerAsked(own, 'filmstrip')) queueStrip(own);
+}
+
+/**
+ * The project holds a failing CI test for its controllers `ms` long from now on, or not (null), and lets them pause one
+ * (`pause`) or not: off ends a hold, and the pause setting off ends a pause and drops a Pause no call took.
+ */
+function setHold(own: Link, ms: number | null, pause: boolean): void {
+  own.hold = ms;
+  own.pause = ms !== null && pause;
+  if (own !== link) return;
+  if (!own.pause) dropPause(own, PAUSE_DROPPED.off);
+  const wait = waiting;
+  if (!wait) return;
+  if (ms === null || (wait.kind === 'pause' && !own.pause)) return endWait();
+  // A new length applies to the wait that runs: it ends its new length after it began, at once when that is past.
+  const until = wait.began + ms;
+  if (until <= Date.now()) return endWait();
+  clearTimeout(wait.timer);
+  wait.until = until;
+  wait.timer = setTimeout(() => endWait(), until - Date.now());
+  if (own.stop?.reason === wait.kind) {
+    own.stop.until = until;
+    postState(own, { type: 'stop', ...own.id, stop: shownStop(own.stop) });
+  }
+}
+
+/**
+ * A command of a controller, on the stream `request`, taken on a CI worker's own stream open now alone, while the
+ * project holds failing CI tests: **Let it go** ends a hold; with the pause setting on, **Pause** asks the running test
+ * to stop at its next call while a controller watches the worker in full, the worker saying it took it or why not
+ * (`pause-asked`), and **Resume** and **End the test** (`by`, who asked) end a pause, Resume dropping a Pause no call
+ * took.
+ */
+function control(
+  own: Link,
+  request: http.ClientRequest,
+  command: 'let-go' | 'pause' | 'resume' | 'end-test',
+  by: string | null = null,
+): void {
+  if (own !== link || !own.ci || own.stream !== request || own.hold === null) return;
+  if (command === 'let-go') {
+    if (waiting?.kind === 'held') endWait();
+    return;
+  }
+  if (!own.pause) return;
+  if (command === 'pause') {
+    if (own.pauseAsked) return;
+    const why = waiting
+      ? PAUSE_DROPPED.stopped
+      : !running || !active(own)
+        ? PAUSE_DROPPED.noTest
+        : !controllerWatches(own)
+          ? PAUSE_DROPPED.left
+          : pauseHandlers
+            ? pauseHandlers.pause()
+            : PAUSE_DROPPED.noTest;
+    if (why) return void postState(own, { type: 'pause-asked', ...own.id, waiting: false, why });
+    own.pauseAsked = true;
+    postState(own, { type: 'pause-asked', ...own.id, waiting: true });
+  } else if (waiting?.kind === 'pause') {
+    endWait(command === 'end-test' ? 'end' : 'resume', by);
+  } else if (command === 'resume') {
+    dropPause(own, PAUSE_DROPPED.resumed);
+  }
+}
+
+/** Drop a Pause no call took yet, telling the instance why. */
+function dropPause(own: Link, why: string): void {
+  if (!own.pauseAsked) return;
+  own.pauseAsked = false;
+  pauseHandlers?.drop();
+  postState(own, { type: 'pause-asked', ...own.id, waiting: false, why });
+}
+
+/** The running test's function ended: a Pause no call took is dropped, its failure held as any other. */
+export function liveViewTestFunctionEnded(): void {
+  if (link) dropPause(link, PAUSE_DROPPED.functionEnded);
+}
+
+/** Whether a controller watches the worker in full now, as the instance last said. */
+function controllerWatches(own: Link): boolean {
+  return own.viewers > 0 && !!own.asked?.full && own.asked.controller === true;
+}
+
+/**
+ * The instance said who watches: a wait ends, and a Pause no call took is dropped, as it says no controller shows the
+ * worker in full (`view`), or nobody watches it (`viewers`).
+ */
+function keepHold(
+  own: Link,
+  message: Extract<InstanceToWorker, { type: 'view' }> | Extract<InstanceToWorker, { type: 'viewers' }>,
+): void {
+  const left = message.type === 'view' ? !message.full || message.controller !== true : message.count === 0;
+  if (own === link && left) letWaitGo(PAUSE_DROPPED.left);
+}
+
+/** End the running test's wait, if one waits: as on Resume, or as on End the test (`end`), by `by`. */
+function endWait(how: LiveWaitEnd = 'resume', by: string | null = null): void {
+  waiting?.end(how, by);
+}
+
+/** End the running test's wait, if one waits, and drop a Pause no call took (`why`): nobody can see either any more. */
+function letWaitGo(why: string): void {
+  endWait();
+  if (link) dropPause(link, why);
+}
+
+/**
+ * Whether a test failing now would be held for its controllers: in a CI run whose project holds failing tests
+ * (`hold`), while the stream is open, a test runs, and a controller watches the worker in full.
+ */
+export function liveViewMayHold(): boolean {
+  const own = link;
+  return !!own && own.ci && !waiting && !!running && active(own) && own.hold !== null && controllerWatches(own);
+}
+
+/** Start the running test's wait of `kind`, `ms` long at most. */
+function startWait(kind: 'held' | 'pause', ms: number): LiveWait {
+  let resolve!: (how: LiveWaitEnd) => void;
+  const ended = new Promise<LiveWaitEnd>((settle) => (resolve = settle));
+  const began = Date.now();
+  const wait: NonNullable<typeof waiting> = {
+    kind,
+    began,
+    until: began + ms,
+    timer: setTimeout(() => endWait(), ms),
+    ended,
+    by: null,
+    over: false,
+    end: (how = 'resume', by = null) => {
+      // A wait ends once: what ended it first stands.
+      if (wait.over) return;
+      wait.over = true;
+      clearTimeout(wait.timer);
+      if (waiting === wait) waiting = null;
+      wait.by = by;
+      resolve(how);
+    },
+  };
+  waiting = wait;
+  return {
+    get until() {
+      return wait.until;
+    },
+    get by() {
+      return wait.by;
+    },
+    ended,
+    end: () => wait.end(),
+  };
+}
+
+/**
+ * Hold the running test's failure for its controllers, when `liveViewMayHold`; null when it does not hold. The hold
+ * ends at its length, at **Let it go**, as no controller watches any more, as the setting turns off, or as the stream
+ * closes for good, whichever comes first; `ended` resolves then.
+ */
+export function liveViewHold(): LiveHold | null {
+  const own = link;
+  if (!own || own.hold === null || !liveViewMayHold()) return null;
+  return startWait('held', own.hold);
+}
+
+/**
+ * Pause the running test at the call it stopped at, for the Pause a controller asked (`onLiveViewPause`); null when
+ * none waits, or it was dropped, or the test may not wait now (the setting off, no controller watching it in full).
+ * The pause ends at **Resume** and at **End the test** (`ended` resolves with `end`), and at a hold's ends.
+ */
+export function liveViewPause(): LiveWait | null {
+  const own = link;
+  if (!own?.pauseAsked) return null;
+  if (!own.pause || own.hold === null || !liveViewMayHold()) {
+    dropPause(own, controllerWatches(own) ? PAUSE_DROPPED.noTest : PAUSE_DROPPED.left);
+    return null;
+  }
+  own.pauseAsked = false;
+  return startWait('pause', own.hold);
 }
 
 /**
@@ -927,7 +1211,11 @@ function startThumbPosts(own: Link): ReturnType<typeof setInterval> {
     if (thumbPosts.posting || !thumbPosts.queue.length || !own.asked || !layerAsked(own, 'filmstrip')) return;
     const next = thumbPosts.queue.shift()!;
     thumbPosts.posting = true;
-    void postBody(own, encodeLiveMessage(liveThumbHeader(own.id, next.thumb, next.test), next.data), LIVE_FRAME_TYPE)
+    void postBody(
+      own,
+      encodeLiveMessage(liveThumbHeader(own.id, shownThumb(next.thumb), next.test), next.data),
+      LIVE_FRAME_TYPE,
+    )
       .catch(() => undefined)
       .finally(() => {
         thumbPosts.posting = false;
@@ -1014,7 +1302,7 @@ function followCalls(own: Link): void {
   const wanted = !!running && !own.logRefused && shownInFull(own);
   if (wanted && !shown.following) {
     const { page } = shown;
-    const source = own.ci && !running!.mayPause ? 'stream' : 'listener';
+    const source = callSource(own);
     shown.following = followCallLog(
       page,
       running!.began,
@@ -1029,6 +1317,19 @@ function followCalls(own: Link): void {
     shown.following = null;
     forgetLog(own);
   }
+}
+
+/**
+ * Where a CI run's view follows the running test's calls from: Playwright's call stream in a run nothing pauses, the
+ * in-process instrumentation in any other, which moves no stop of the debugger.
+ */
+function callSource(own: Link): 'stream' | 'listener' {
+  return own.ci && !running?.mayPause && !liveViewMayPause() ? 'stream' : 'listener';
+}
+
+/** Where the view of the running test follows its calls from now; null with no key or no test running. */
+export function liveViewCallSource(): 'stream' | 'listener' | null {
+  return link && running ? callSource(link) : null;
 }
 
 /** The call log shown goes, and the one waiting to go. */

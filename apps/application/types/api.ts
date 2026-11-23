@@ -476,6 +476,12 @@ export interface ProjectWithTestRuns {
   askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
+  /** Whether a CI test that fails while someone with `run:control` watches its worker in full waits at its failure. */
+  liveViewHold?: boolean;
+  /** How long such a test waits at most, in minutes: 1 to 15. */
+  liveViewHoldMinutes?: number;
+  /** Whether someone with `run:control` watching a CI worker in full may pause its test, resume and end it. */
+  liveViewPause?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -523,6 +529,12 @@ export interface ProjectDetails {
   askToWatch?: boolean;
   /** Playwright locators of the elements the live view paints over in each image, beside the secret fields. */
   liveViewMasks?: string[] | null;
+  /** Whether a CI test that fails while someone with `run:control` watches its worker in full waits at its failure. */
+  liveViewHold?: boolean;
+  /** How long such a test waits at most, in minutes: 1 to 15. */
+  liveViewHoldMinutes?: number;
+  /** Whether someone with `run:control` watching a CI worker in full may pause its test, resume and end it. */
+  liveViewPause?: boolean;
   /** Test import and bugs folder for specs rendered from bug reports. */
   generatedSpecs?: { testImport?: string | null; bugsFolder?: string | null } | null;
   /** Per-project targets on catalog metrics. */
@@ -955,6 +967,40 @@ export interface TraceSnapshotsResponse {
    * failing step in the timeline. Null when the failing step recorded no aria.
    */
   failingAriaText?: string | null;
+}
+
+/** One image of a page from the trace's screencast. */
+export interface TraceFrame {
+  /** When the trace recorded it, in epoch ms (a few ms after the page painted it): the clock of the timeline's `origin`. */
+  epochMs: number;
+  /** The frame's name in the trace, which `GET /api/test-run-cases/:id/trace-frame?name=` serves. */
+  name: string;
+  /** The image's size in pixels; 0 when the trace did not record it. */
+  width: number;
+  height: number;
+}
+
+/** One page's screencast, its frames in the order the page painted them. */
+export interface TraceFramePage {
+  pageId: string;
+  frames: TraceFrame[];
+}
+
+/** `GET /api/test-run-cases/:id/trace-frames` */
+export interface TraceFramesResponse {
+  /** `no-frames` when the trace recorded no screencast, or none it can place on the clock. */
+  status: 'ok' | 'no-trace' | 'no-frames';
+  /** The pages in the order their first frame was recorded, the first `MAX_TRACE_FRAME_PAGES` of them. */
+  pages: TraceFramePage[];
+  /** How many frames the trace recorded, every page together. */
+  total: number;
+  /** True when the listed pages are an even sample of their frames, past `MAX_TRACE_FRAMES`; `total` also counts unlisted pages. */
+  capped: boolean;
+  /**
+   * When the test started on the trace's clock, in epoch ms: its test runner's header, else its first browser
+   * context's. Null without a trace or a header.
+   */
+  startEpochMs: number | null;
 }
 
 /**

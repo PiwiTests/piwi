@@ -16,8 +16,8 @@ CI run or a run [shared from a developer's machine](./share-live).
 
 ## What a tile shows
 
-- **The page**, as the worker's test sees it: one image a second, 320 pixels wide, the latest alone. A still page sends
-  none until it changes.
+- **The page**, as the worker's test sees it: one image a second, 320 pixels wide, the latest alone. A still page shows
+  as the tile opens, then sends none until it changes.
 - **The worker**, by its lane (`Worker 2`, as the rows and the Timeline name it), the test it runs and its step.
 - **What its test needs attention for**: where it stands [stopped](./watch-a-run#where-a-test-stopped)
   (`Stopped at a breakpoint`), or **Stuck?** once the dashboard marks it ([Stuck tests](./stuck-tests)).
@@ -56,6 +56,10 @@ reads nothing for 5 seconds is cut off, then connects again. A tile carries no c
 a worker someone else watches in full at a large size says so in its tile. In a tab hidden for 10 minutes, the page
 stops asking for tiles, and asks again as you come back. An older reporter sends its images at 640 by 400 pixels, four a
 second, whatever the view asks; the dashboard passes one a second of them to a tile.
+
+A CI run's workers keep their own connections through an outage or a restart of the dashboard: each tries again after
+1, 2, 4, 8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out says so once
+in the run's log, with the cause, and once more as it is back.
 
 ## In the demo
 

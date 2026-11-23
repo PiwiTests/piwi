@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'vitest';
 import {
+  CUT_MARK,
   HIDDEN_VALUE,
+  cutText,
   hideKnownValues,
+  knownValuesHider,
   hideSecretsInText,
   hideSecretsInUrl,
   hideTypedText,
@@ -14,8 +17,10 @@ import {
   isSecretAutocomplete,
   isSecretName,
   isSecretValue,
+  maskAriaSnapshot,
   maskUrlFragment,
   SECRET_SHAPE_STARTS,
+  withoutFieldSecrets,
 } from '../src/mask';
 import { extractErrorSignature } from '../src/error-signature';
 
@@ -647,11 +652,107 @@ describe('hideKnownValues', () => {
     expect(hideKnownValues('a <b>1234567</b> and abc', ['1234567', 'abc'])).toBe('a <b>1234567</b> and abc');
   });
 
+  test('hides a text that is one of the values whole, spaces around it aside, whatever its length', () => {
+    expect(hideKnownValues('1234', ['1234'])).toBe(HIDDEN_VALUE);
+    expect(hideKnownValues(' 1234 ', [' 1234'])).toBe(HIDDEN_VALUE);
+    expect(hideKnownValues('1234 5678', ['1234'])).toBe('1234 5678');
+    expect(hideKnownValues('  ', ['  '])).toBe('  ');
+    expect(hideKnownValues('a        b', ['        '])).toBe('a        b');
+  });
+
+  test('hides as `knownValuesHider` of the same values does, text by text', () => {
+    const values = ['SAMPLE-SECRET-VALUE', 'say "hello" now', '12345678', '12345678-abcdefgh', '1234'];
+    const hide = knownValuesHider(values);
+    for (const text of [
+      'got SAMPLE-SECRET-VALUE and say \\"hello\\" now',
+      'tok 12345678-abcdefgh',
+      ` 1234 `,
+      cutText('waiting for SAMPLE-SECRET-VALUE', 18),
+      'nothing here',
+    ]) {
+      expect(hide(text), text).toBe(hideKnownValues(text, values));
+    }
+    expect(hide('tok 12345678-abcdefgh')).toBe(`tok ${HIDDEN_VALUE}`);
+  });
+
   test('hides each of several values, and leaves the text as it is with none, or empty ones', () => {
     expect(hideKnownValues('one-AAAAAAAA two-BBBBBBBB', ['AAAAAAAA', 'BBBBBBBB'])).toBe(
       `one-${HIDDEN_VALUE} two-${HIDDEN_VALUE}`,
     );
     expect(hideKnownValues('unchanged AAAAAAAA', [])).toBe('unchanged AAAAAAAA');
     expect(hideKnownValues('unchanged', [''])).toBe('unchanged');
+  });
+
+  test('hides each start of 4 characters or more of a value a cut left at the end, the text no longer than it was', () => {
+    const value = 'SAMPLE-SECRET-VALUE';
+    const text = `locator resolved to <div id="out">${value}</div>`;
+    const at = text.indexOf(value);
+    for (let kept = 1; kept < value.length; kept++) {
+      const cut = cutText(text, at + kept + 1);
+      expect(cut.endsWith(`${value.slice(0, kept)}${CUT_MARK}`)).toBe(true);
+      const hidden = hideKnownValues(cut, [value]);
+      if (kept < 4) {
+        expect(hidden).toBe(cut);
+        continue;
+      }
+      expect(hidden.endsWith(`${HIDDEN_VALUE}${CUT_MARK}`), hidden).toBe(true);
+      expect(hidden).not.toContain(value.slice(0, 4));
+      expect(hidden.length).toBeLessThanOrEqual(cut.length);
+    }
+  });
+
+  test('hides the start of a value at a cut as a quoted value escapes it, and the longest start of several', () => {
+    const escaped = cutText('- textbox: "say \\"hel', 19);
+    expect(hideKnownValues(escaped, ['say "hello" now'])).toBe(`- textbox:${HIDDEN_VALUE}${CUT_MARK}`);
+    const both = cutText('one xyzABCDEFG and more', 15);
+    expect(hideKnownValues(both, ['ABCDEFGHIJ', 'xyzABCDEFGH'])).toBe(`one ${HIDDEN_VALUE}${CUT_MARK}`);
+  });
+
+  test('hides a value that holds another whole, cut or not, whichever is known first', () => {
+    const line = '  - locator resolved to <div id="out">Secret-Pass-123</div>';
+    for (const values of [
+      ['Secret-Pa', 'Secret-Pass-123'],
+      ['Secret-Pass-123', 'Secret-Pa'],
+    ]) {
+      expect(hideKnownValues(line, values)).toBe(`  - locator resolved to <div id="out">${HIDDEN_VALUE}</div>`);
+      expect(hideKnownValues(cutText(line, 52), values)).toBe(
+        `  - locator resolved to <div id="out">${HIDDEN_VALUE}${CUT_MARK}`,
+      );
+      expect(withoutFieldSecrets('- paragraph: Your new password is Secret-Pass-123', values)).toBe(
+        `- paragraph: Your new password is ${HIDDEN_VALUE}`,
+      );
+    }
+    expect(hideKnownValues('tok 12345678-abcdefgh', ['12345678', '12345678-abcdefgh'])).toBe(`tok ${HIDDEN_VALUE}`);
+  });
+
+  test('hides the start of a value before a cut mark inside a text, as Playwright cuts an element it previews', () => {
+    const line = `  - locator resolved to <div id="out">${'x'.repeat(40)}SAMPLE-SE${CUT_MARK}</div>`;
+    expect(hideKnownValues(line, ['SAMPLE-SECRET-VALUE'])).toBe(
+      `  - locator resolved to <div id="out">${'x'.repeat(40)}${HIDDEN_VALUE}${CUT_MARK}</div>`,
+    );
+  });
+
+  test('leaves a start under 4 characters at a mark, the end of a text not cut, and a value under 8 characters', () => {
+    const page = `- heading "Cart"\n- paragraph: Loading g${CUT_MARK}`;
+    expect(withoutFieldSecrets(page, ['gh-token-abcdef'])).toBe(page);
+    expect(hideKnownValues(`waiting for SAM${CUT_MARK}`, ['SAMPLE-SECRET-VALUE'])).toBe(`waiting for SAM${CUT_MARK}`);
+    expect(hideKnownValues(`waiting for SAMP${CUT_MARK}`, ['SAMPLE-SECRET-VALUE'])).toBe(
+      `waiting ${HIDDEN_VALUE}${CUT_MARK}`,
+    );
+    expect(
+      maskAriaSnapshot(`- paragraph: Read more about Secret${CUT_MARK}`, { secrets: ['Secret-Pass-123'], masks: [] }),
+    ).toBe(`- paragraph: Read more abou${HIDDEN_VALUE}${CUT_MARK}`);
+    expect(hideKnownValues('waiting for SAMPLE-SEC', ['SAMPLE-SECRET-VALUE'])).toBe('waiting for SAMPLE-SEC');
+    const cut = cutText('waiting for 1234567', 15);
+    expect(hideKnownValues(cut, ['1234567'])).toBe(cut);
+    expect(hideKnownValues(cutText('no value here at all', 10), ['SAMPLE-SECRET-VALUE'])).toBe(`no value ${CUT_MARK}`);
+  });
+});
+
+describe('cutText', () => {
+  test('keeps a text that fits, and cuts a longer one to its bound with the cut mark last', () => {
+    expect(cutText('short', 5)).toBe('short');
+    expect(cutText('longer text', 6)).toBe(`longe${CUT_MARK}`);
+    expect(cutText('longer text', 6)).toHaveLength(6);
   });
 });

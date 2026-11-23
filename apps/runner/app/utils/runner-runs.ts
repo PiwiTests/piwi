@@ -5,6 +5,13 @@
  */
 import type { RunPage } from '@piwitests/core/run-channel';
 import type { RunRequestTest } from '@piwitests/core/run-request';
+import {
+  runOutputLine,
+  runOutputSummary,
+  type RunOutputLine,
+  type RunOutputResult,
+  type RunResultRow,
+} from '@piwitests/run-ui/run-output';
 
 export type RunnerRunStatus = 'running' | 'passed' | 'failed' | 'stopped' | 'error';
 
@@ -25,6 +32,8 @@ export interface RunnerRun {
   shellId: number | null;
   status: RunnerRunStatus;
   stopRequested: boolean;
+  /** When the person asked the run to stop, in ms since the epoch: Force stop waits a moment after it. */
+  stopRequestedAt?: number | null;
   /**
    * **Hold failures**: a failure no pause bar shows waits in the window for an answer while the run shows there, as a
    * `page.pause()` does. Off until the person turns it on.
@@ -36,8 +45,10 @@ export interface RunnerRun {
    * kept after the run ended; null until then.
    */
   page: RunPage | null;
-  /** The last `RUNNER_MAX_LINES` lines of output. */
-  lines: string[];
+  /** The last `RUNNER_MAX_LINES` lines of output, numbered from 1 in the run. */
+  lines: RunOutputLine[];
+  /** The lines the run printed so far, its first ones dropped from `lines` included. */
+  linesTotal: number;
 }
 
 /** One `piwi:local-run` event: a line of output, an error line, or the exit of the run. */
@@ -122,9 +133,15 @@ export function applyRunEvent(run: RunnerRun, event: RunnerRunEvent, at: number 
     (event.kind === 'stdout' || event.kind === 'stderr' || event.kind === 'error') &&
     typeof event.line === 'string'
   ) {
-    run.lines.push(event.line);
-    if (run.lines.length > RUNNER_MAX_LINES) run.lines.splice(0, run.lines.length - RUNNER_MAX_LINES);
+    pushRunnerLine(run, event.line, event.kind !== 'stdout');
   }
+}
+
+/** Adds a line to a run's output, keeping its last `RUNNER_MAX_LINES`. */
+function pushRunnerLine(run: RunnerRun, printed: string, error: boolean): void {
+  run.linesTotal = (run.linesTotal ?? 0) + 1;
+  run.lines.push(runOutputLine(run.linesTotal, printed, error));
+  if (run.lines.length > RUNNER_MAX_LINES) run.lines.splice(0, run.lines.length - RUNNER_MAX_LINES);
 }
 
 /** The runs that ended, the last to end first. */
@@ -140,6 +157,61 @@ export function runnerUnlistedSessions<S extends { ref: string; ended: boolean }
   runs: readonly RunnerRun[],
 ): S[] {
   return sessions.filter((session) => !session.ended && !runs.some((run) => isRunnerRunRef(session.ref, run.shellId)));
+}
+
+/** A spec path with POSIX separators and no leading `./`. */
+const posixPath = (file: string) => file.replaceAll('\\', '/').replace(/^\.\//, '');
+
+/**
+ * How closely the output's result is the requested test, 0 when it is not: same file (its very path counts more than a
+ * path ending in it), then same line or same title (a run that selects by title, as lines moved, prints another
+ * line), then same project (a request may run its tests in another one).
+ */
+function requestedTestScore(result: RunOutputResult, test: RunRequestTest): number {
+  const [printed, asked] = [posixPath(result.file), posixPath(test.filePath)];
+  const samePath = printed === asked;
+  if (!samePath && !printed.endsWith(`/${asked}`) && !asked.endsWith(`/${printed}`)) return 0;
+  const sameLine = test.line != null && result.line === test.line;
+  const sameTitle = result.title === test.title || result.title.endsWith(` › ${test.title}`);
+  if (!sameLine && !sameTitle) return 0;
+  const sameProject = !test.projectName || !result.project || test.projectName === result.project;
+  return (samePath ? 8 : 0) + (sameLine ? 4 : 0) + (sameTitle ? 2 : 0) + (sameProject ? 1 : 0);
+}
+
+/** The output's result that is most closely the requested test; none when none is. */
+function resultOfTest(results: readonly RunOutputResult[], test: RunRequestTest): RunOutputResult | null {
+  let best: RunOutputResult | null = null;
+  let bestScore = 0;
+  for (const result of results) {
+    const score = requestedTestScore(result, test);
+    if (score > bestScore) [best, bestScore] = [result, score];
+  }
+  return best;
+}
+
+/**
+ * How each test the request asked for came out, as the run's output tells it (`runOutputSummary`, the closest result
+ * by `resultOfTest`): failed, flaky or interrupted with the first lines of its error, passed or skipped by the list
+ * reporter's result lines. A test the
+ * output names no result for passed when the run passed and skipped none, else its result is unknown. Null while the run
+ * goes on, and when its output holds no summary.
+ */
+export function runnerTestResults(run: Pick<RunnerRun, 'status' | 'tests' | 'lines'>): RunResultRow[] | null {
+  if (run.status === 'running') return null;
+  const summary = runOutputSummary(run.lines);
+  if (!summary) return null;
+  return run.tests.map((test, index): RunResultRow => {
+    const result = resultOfTest(summary.results, test);
+    const passed = run.status === 'passed' && summary.counts.skipped === 0;
+    return {
+      key: String(index),
+      status: result?.status ?? (passed ? 'passed' : 'unknown'),
+      title: test.title,
+      place: test.line != null ? `${test.filePath}:${test.line}` : test.filePath,
+      project: test.projectName,
+      error: result?.error ?? [],
+    };
+  });
 }
 
 /** How long a run took, or has taken so far at `now`, in ms. */
@@ -194,6 +266,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
       exitCode: null,
       page: null,
       lines: [],
+      linesTotal: 0,
     });
     const run = runs[0]!;
     try {
@@ -203,7 +276,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
       waiting = waiting.filter((event) => event.id !== id);
       for (const event of mine) applyRunEvent(run, event, now());
     } catch (error) {
-      run.lines.push(error instanceof Error ? error.message : String(error));
+      pushRunnerLine(run, error instanceof Error ? error.message : String(error), true);
       run.status = 'error';
       run.endedAt = now();
     }
@@ -217,6 +290,7 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
    */
   async function stop(run: RunnerRun): Promise<void> {
     if (run.status !== 'running' || run.shellId === null) return;
+    if (!run.stopRequested) run.stopRequestedAt = now();
     run.stopRequested = true;
     try {
       await backend.invoke('desktop_stop_local_tests', { runId: run.shellId });

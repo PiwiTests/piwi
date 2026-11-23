@@ -37,15 +37,7 @@
   },
   "runner_stopping": {
     "message": "Stopping…",
-    "description": "Badge of a run, and label of its Stop button, once Stop was clicked and the run has not ended yet."
-  },
-  "runner_stop": {
-    "message": "Stop",
-    "description": "Button: stops a run."
-  },
-  "runner_stopNow": {
-    "message": "Stop now",
-    "description": "Button, once Stop was clicked and the run has not ended yet: ends it at once."
+    "description": "Badge of a run once Stop was clicked and the run has not ended yet."
   },
   "runner_holdFailures": {
     "message": "Hold failures",
@@ -57,7 +49,7 @@
   },
   "runner_output": {
     "message": "Output",
-    "description": "Summary of the collapsed block that shows a run's terminal output."
+    "description": "Heading of the block that shows a run's terminal output, above it."
   },
   "runner_stillRunning": {
     "message": "Still running from before the window reloaded",
@@ -193,7 +185,7 @@
   },
   "runner_clearFinished": {
     "message": "Clear finished",
-    "description": "Button beside runner_finishedHeading: removes the runs that ended from the list."
+    "description": "Button beside runner_finishedHeading in the list of runs: removes the runs that ended from the list."
   },
   "runner_openInstance": {
     "message": "Open $host$",
@@ -217,7 +209,7 @@
   },
   "runner_outputLines_one": {
     "message": "$count$ line",
-    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), singular.",
+    "description": "Beside runner_output: how many lines the run printed, singular.",
     "placeholders": {
       "count": {
         "content": "$1",
@@ -227,17 +219,13 @@
   },
   "runner_outputLines_other": {
     "message": "$count$ lines",
-    "description": "Beside runner_output: how many lines of the run's output the window keeps (its last 2,000), plural.",
+    "description": "Beside runner_output: how many lines the run printed, plural.",
     "placeholders": {
       "count": {
         "content": "$1",
         "example": "24"
       }
     }
-  },
-  "runner_copyOutput": {
-    "message": "Copy output",
-    "description": "Button of a run's output: copies all of it, without its colors, to the clipboard."
   },
   "runner_aboutHeading": {
     "message": "About",
@@ -279,11 +267,11 @@
   },
   "runner_runningHeading": {
     "message": "Running now",
-    "description": "Heading of the runs going on, above their cards."
+    "description": "Heading of the runs going on, in the list of runs and the select that names the run shown."
   },
   "runner_finishedHeading": {
     "message": "Finished",
-    "description": "Heading of the runs that ended, above their list. runner_clearFinished empties it."
+    "description": "Heading of the runs that ended, in the list of runs and the select that names the run shown. runner_clearFinished empties it."
   },
   "runner_foldersHint": {
     "message": "Each project's tests run in the folder linked to it, with your own tools and environment.",

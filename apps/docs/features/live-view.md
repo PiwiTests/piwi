@@ -36,10 +36,6 @@ has no view: the log names the first one. A CI run without a view logs why inste
 Turning it off ends every view at once. Turned on again, a run that had a view and still runs gets it back within a
 minute.
 
-A CI run's workers keep their view through an outage or a restart of the dashboard: each tries again after 1, 2, 4,
-8 and 16 seconds, then every 30 to 60 seconds while the run lasts. A worker whose view stays out says so once in the
-run's log, with the cause, and once more as it is back.
-
 ## Check availability
 
 A running run's **Tests** tab says **Live view available**, or what is missing, its help giving the step:
@@ -57,14 +53,16 @@ A running run's **Tests** tab says **Live view available**, or what is missing, 
 
 On the run page's **Tests** tab, **Watch** at the end of a running test's row opens its worker's view, docked beside
 the page (a sheet on a smaller screen): the test's page as the browser paints it, under it the call the image was
-taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page sends no new image, so the
-caption names the step the test began since. Widen the panel or open it full screen; a click on the image zooms.
+taken at (`Click getByRole('button', { name: 'Pay' }) · checkout.spec.ts:30`). A still page shows as the view opens,
+then sends no new image, so the caption names the step the test began since. Widen the panel or open it full
+screen; a click on the image zooms.
 Under it, the page's [events, text and filmstrip](./live-view-layers) and [Inspect](./live-inspect); [Watch all](./watch-all)
 shows every worker at once.
 
-The view follows that call: how long it has run, Playwright's log of it as a failed call's error prints it, and while
-it waits, what its locator matches (no element yet, several, or one not enabled), outlined on the image, with the point
-a click acts on; **Zoom to the element** crops the image around it. In a CI run this needs Playwright 1.64 (1.63
+The view follows that call: how long it has run (while its test stands at a [stop](./watch-a-run#where-a-test-stopped),
+the stop in its row's words, **Paused**), Playwright's log of it as a failed call's error prints it, and while it
+waits, what its locator matches (no element yet, several, or one not enabled), outlined on the image, with the point a
+click acts on; **Zoom to the element** crops the image around it. In a CI run this needs Playwright 1.64 (1.63
 shows the log without the matches, an older one the call alone); a shared run reads it inside the worker, pausing
 nothing.
 
@@ -106,20 +104,22 @@ never the key, so a dashboard that restarts takes it back from the workers while
 
 ## Limits
 
-- **Watch only.** No input and no controls: a test is stepped from the [editor](./editor-run-control) or the
+- **Watch only.** No input, and no control but **Let it go** on a [held CI failure](./hold-ci-failure) and, where
+  the project allows it, [Pause a CI test](./pause-ci-test): a test is stepped from the [editor](./editor-run-control) or the
   [Runs window](./runs-window).
 - **One page at a time**: the `page` fixture's, else the page of the test's latest call
   ([which](/guide/capture-fixtures#where-capture-works)).
 - **Sixteen pages watching a run at a time**, four of them one person's with authentication on: a fifth closes
   that person's oldest. Its workers send 4 MB of images a second at most together.
 - **One dashboard server.** The view is relayed in the memory of one server, so it needs a deployment of one server
-  ([Resource requirements](/operate/deployment#resource-requirements)). Sticky sessions do not make up for it: the
-  run's setup, its CI workers and the people watching are separate clients.
+  ([Resource requirements](/operate/deployment#resource-requirements)), which sticky sessions do not make up for.
 
 ## Related
 
 - [Page events, text and filmstrip](./live-view-layers): what the page and its requests said, beside the image
 - [Watch all workers](./watch-all): every worker's page at once, and following what needs attention
+- [Hold a failing CI test](./hold-ci-failure): a CI failure waits while someone who may control the run watches it
+- [Pause a CI test](./pause-ci-test): pause, resume and end a CI test you watch
 - [Stuck tests](./stuck-tests): a test past its usual time
 - [Capture fixtures](/guide/capture-fixtures): the worker side of the view
 - [Share a local run live](./share-live): let a teammate watch a run on your machine

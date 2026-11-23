@@ -1434,8 +1434,8 @@
     "description": "Heading of the settings section that pairs Piwi Picker with an editor on this computer, for Send to editor and the Runs window."
   },
   "options_editorHint": {
-    "message": "In VS Code or a JetBrains IDE with the Piwi extension, run “Piwi: Pair with Piwi Picker” and paste the address it copies here. Picked locators and recorded steps can then be sent to that editor, on this computer only, and are inserted at its cursor. The runs it starts then show in the Runs window (Runs, in the popup), where you pause, step and watch them.",
-    "description": "Explains how to pair with an editor and what is sent. Piwi: Pair with Piwi Picker is the editor command’s name, in English."
+    "message": "Paired with VS Code or a JetBrains IDE on this computer that has Piwi’s extension, Piwi Picker sends the locators you pick and the steps you record to its cursor, and shows the runs it starts in the Runs window (Runs, in the popup), where you pause, step and watch them.",
+    "description": "Settings page, Editor card: what pairing with an editor gives, above the Pair button."
   },
   "options_editorAddress": {
     "message": "Pairing address",
@@ -1443,11 +1443,117 @@
   },
   "options_editorPair": {
     "message": "Pair",
-    "description": "Button that saves the pairing address."
+    "description": "Settings page, Editor card: the button that finds the editors on this computer and asks the one chosen to pair."
   },
   "options_editorUnpair": {
     "message": "Unpair",
     "description": "Button that forgets the paired editor."
+  },
+  "options_editorPairHint": {
+    "message": "Pair finds the editors open on this computer and asks the one you choose: type there the code Piwi Picker shows.",
+    "description": "Settings page, Editor card, under the Pair button: what Pair does."
+  },
+  "options_editorChoose": {
+    "message": "Pair with which editor?",
+    "description": "Settings page, Editor card: above the buttons of the editors Pair found, when there is more than one."
+  },
+  "options_editorChoice": {
+    "message": "$product$: $windows$",
+    "description": "Settings page, Editor card: one editor Pair found, on its button. $product$ is the editor's name (Visual Studio Code, WebStorm), $windows$ the folders or projects it has open, comma-separated.",
+    "placeholders": {
+      "product": {
+        "content": "$1",
+        "example": "Visual Studio Code"
+      },
+      "windows": {
+        "content": "$2",
+        "example": "shop, api"
+      }
+    }
+  },
+  "options_editorFinding": {
+    "message": "Looking for the editors on this computer…",
+    "description": "Settings page, Editor card: status while Pair asks the ports of this computer which editors listen there."
+  },
+  "options_editorNoneFound": {
+    "message": "No editor with Piwi’s extension answered on this computer. Open VS Code or a JetBrains IDE with an up-to-date Piwi and click Pair again, or, for a remote window, pair with an address.",
+    "description": "Settings page, Editor card: no editor answered Pair. Pair is options_editorPair; pair with an address is options_editorManual."
+  },
+  "options_editorPairStarting": {
+    "message": "Asking $editor$…",
+    "description": "Settings page, Editor card: status while Pair asks the editor to show its request. $editor$ is options_editorChoice or the editor's name.",
+    "placeholders": {
+      "editor": {
+        "content": "$1",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairCode": {
+    "message": "Type this code in $editor$ when it asks: $code$.",
+    "description": "Settings page, Editor card: while the editor asks for the code. $code$ is the code Piwi Picker made and shows (BCDF-GHJK), which the person types in the editor; $editor$ is options_editorChoice or the editor's name.",
+    "placeholders": {
+      "code": {
+        "content": "$1",
+        "example": "BCDF-GHJK"
+      },
+      "editor": {
+        "content": "$2",
+        "example": "Visual Studio Code: shop"
+      }
+    }
+  },
+  "options_editorPairDenied": {
+    "message": "The editor said no: nothing was paired.",
+    "description": "Settings page, Editor card: the person said no in the editor."
+  },
+  "options_editorPairWrongCode": {
+    "message": "The code typed in the editor is not the one shown here: nothing was paired. Click Pair to try again.",
+    "description": "Settings page, Editor card: the editor handed over a pairing whose proof is not of the code shown here (another code was typed, or another program answered on the editor's port), so nothing was kept. Pair is options_editorPair."
+  },
+  "options_editorPairExpired": {
+    "message": "The request expired before it was allowed in the editor. Click Pair to ask again.",
+    "description": "Settings page, Editor card: nobody answered the request in the editor in time. Pair is options_editorPair."
+  },
+  "options_editorPairCancelled": {
+    "message": "Pairing cancelled.",
+    "description": "Settings page, Editor card: the person clicked Cancel while the editor's request waited."
+  },
+  "options_editorPairTooMany": {
+    "message": "Three pairing requests wait in the editor already: answer them there first.",
+    "description": "Settings page, Editor card: the editor refuses a fourth request while three wait for an answer."
+  },
+  "options_editorPairUnsupported": {
+    "message": "The editor at $url$ cannot pair by code: update Piwi there, or pair with an address.",
+    "description": "Settings page, Editor card: the editor answered but cannot pair by code (an older Piwi). $url$ is its local address.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorPairUnreachable": {
+    "message": "The editor at $url$ stopped answering.",
+    "description": "Settings page, Editor card: the editor Pair found stopped answering. $url$ is its local address.",
+    "placeholders": {
+      "url": {
+        "content": "$1",
+        "example": "http://127.0.0.1:7247/piwi"
+      }
+    }
+  },
+  "options_editorManual": {
+    "message": "Pair with an address",
+    "description": "Settings page, Editor card: the folded section to pair with an address an editor copies."
+  },
+  "options_editorManualHint": {
+    "message": "For a remote window (SSH, WSL, a dev container), or an editor Pair does not find: run “Piwi: Copy the pairing address for Piwi Picker” in it and paste the address here.",
+    "description": "Settings page, Editor card, under the address field. “Piwi: Copy the pairing address for Piwi Picker” is the editor command's name, in English."
+  },
+  "options_editorAddressPair": {
+    "message": "Use this address",
+    "description": "Settings page, Editor card: the button that pairs with the address pasted."
   },
   "options_siteAccessHeading": {
     "message": "Sites Piwi Picker may run on",
@@ -1526,16 +1632,20 @@
     }
   },
   "options_editorInvalid": {
-    "message": "This is not a pairing address. It looks like http://127.0.0.1:47211/piwi/send#… and comes from the editor’s “Pair with Piwi Picker” command.",
-    "description": "Error when the pasted text is not a pairing address."
+    "message": "This is not a pairing address. It looks like http://127.0.0.1:7247/piwi/send#… and comes from the editor’s “Copy the pairing address for Piwi Picker” command.",
+    "description": "Error when the pasted text is not a pairing address. “Copy the pairing address for Piwi Picker” is the editor command’s name, in English."
   },
   "options_editorPermission": {
     "message": "Piwi Picker needs permission to reach the editor on this computer.",
     "description": "Error when the user declines the permission to reach the editor’s local address."
   },
+  "options_editorPairPermission": {
+    "message": "Piwi Picker needs permission to reach the editors on this computer.",
+    "description": "Settings page, Editor card: the user declined the permission Pair asks for, to reach the ports the editors of this computer listen on."
+  },
   "options_editorNotProven": {
-    "message": "Paired with $url$, but the program on that port does not prove it is your editor, so nothing goes to it: run “Piwi: Pair with Piwi Picker” in your editor again and pair with the address it copies, or update Piwi there.",
-    "description": "Settings page, the Editor card's status line when the program on the paired editor's port does not prove it holds the pairing's token (another program took the port, or the editor's Piwi is older than the proof). $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "message": "Paired with $url$, but the program on that port does not prove it is your editor, so nothing goes to it: click Pair to pair again, or update Piwi in your editor.",
+    "description": "Settings page, the Editor card's status line when the program on the paired editor's port does not prove it holds the pairing's token (another program took the port, or the editor's Piwi is older than the proof). $url$ is the editor’s local address. Pair is options_editorPair.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1544,8 +1654,8 @@
     }
   },
   "options_editorUnreachable": {
-    "message": "Paired with $url$, but nothing answers there now: open your editor with Piwi’s extension. If its “Piwi: Pair with Piwi Picker” copies another address, pair with that one.",
-    "description": "Settings page, the Editor card's status line when nothing answers at the paired editor's address. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "message": "Paired with $url$, but nothing answers there now: open your editor with Piwi’s extension. If it listens on another port now, click Pair to pair again.",
+    "description": "Settings page, the Editor card's status line when nothing answers at the paired editor's address. $url$ is the editor’s local address. Pair is options_editorPair.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -1554,8 +1664,8 @@
     }
   },
   "options_editorNoAccess": {
-    "message": "Paired with $url$, but the browser took back Piwi Picker’s access to it: run “Piwi: Pair with Piwi Picker” in your editor again and pair with the address it copies.",
-    "description": "Settings page, the Editor card's status line when the permission to reach the paired editor's address was taken back. $url$ is the editor’s local address. Piwi: Pair with Piwi Picker is the editor command’s name, in English.",
+    "message": "Paired with $url$, but the browser took back Piwi Picker’s access to it: click Pair to pair again.",
+    "description": "Settings page, the Editor card's status line when the permission to reach the paired editor's address was taken back. $url$ is the editor’s local address. Pair is options_editorPair.",
     "placeholders": {
       "url": {
         "content": "$1",
@@ -7542,8 +7652,8 @@
     "description": "Runs window, when the program on the paired editor’s port does not prove it holds the pairing’s token: another program took the port, or the editor moved to another one. Nothing was sent to it."
   },
   "runs_statusNotEditor": {
-    "message": "The program on the paired port is not your editor’s Piwi extension, or one too old to prove it: Piwi Picker sent it nothing. Open your editor, run “Piwi: Pair with Piwi Picker” again and paste the address it copies in the settings.",
-    "description": "Runs window, when the program on the paired editor’s port answers with no proof and no live page: another program took the port, or an editor too old to prove it holds the pairing’s token. Nothing was sent to it. Piwi: Pair with Piwi Picker is the editor command’s name, in English."
+    "message": "The program on the paired port is not your editor’s Piwi extension, or one too old to prove it: Piwi Picker sent it nothing. Update Piwi in your editor, or pair again from the settings.",
+    "description": "Runs window, when the program on the paired editor’s port answers with no proof and no live page: another program took the port, or an editor too old to prove it holds the pairing’s token. Nothing was sent to it."
   },
   "runs_statusNoHub": {
     "message": "Your editor answers, but none of its windows shares its runs: update Piwi’s extension there.",
@@ -8060,6 +8170,98 @@
   "runs_stateFailed": {
     "message": "Failed, held at its line",
     "description": "Runs window, the tooltip of a worker’s tab while its failed test is held at its line."
+  },
+  "runs_heldFor": {
+    "message": "Held for $names$ · until $time$",
+    "description": "Run page and Runs window, beside a failed CI test held at its line for the people who may control the run. $names$ lists who watches it, $time$ is when the hold ends at the latest.",
+    "placeholders": {
+      "names": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_heldUntil": {
+    "message": "Held · until $time$",
+    "description": "Run page and Runs window, beside a failed CI test held at its line, when nobody watching it is named. $time$ is when the hold ends at the latest.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_letGo": {
+    "message": "Let it go",
+    "description": "Run page and Runs window, the button that ends the hold of a failed CI test held at its line."
+  },
+  "runs_letGoTitle": {
+    "message": "End the hold: the test tears down as it would have, its result unchanged",
+    "description": "Run page and Runs window, the tooltip of Let it go on a failed CI test held at its line."
+  },
+  "runs_heldJobTimeout": {
+    "message": "The CI job’s own timeout still runs.",
+    "description": "Run page and Runs window, beside a failed CI test held at its line: the hold stops the test’s timeout, not the CI job’s."
+  },
+  "runs_pausedBy": {
+    "message": "Paused by $name$ · until $time$",
+    "description": "Run page and Runs window, beside a CI test paused for the people who may control the run. $name$ is who paused it, $time$ is when the pause ends at the latest.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      },
+      "time": {
+        "content": "$2",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_pausedUntil": {
+    "message": "Paused · until $time$",
+    "description": "Run page and Runs window, beside a CI test paused for the people who may control the run, when the instance names nobody. $time$ is when the pause ends at the latest.",
+    "placeholders": {
+      "time": {
+        "content": "$1",
+        "example": "12:05"
+      }
+    }
+  },
+  "runs_ciResumeTitle": {
+    "message": "Let the test go on from where it is paused",
+    "description": "Run page and Runs window, the tooltip of Resume on a CI test paused for the people who may control the run."
+  },
+  "runs_pauseAsked": {
+    "message": "Pause asked",
+    "description": "Run page and Runs window, beside a CI lane's controls while a Pause waits for its test's next call."
+  },
+  "runs_pauseAskedBy": {
+    "message": "Pause asked by $name$",
+    "description": "Run page and Runs window, beside a CI lane's controls while a Pause waits for its test's next call. $name$ is who asked it.",
+    "placeholders": {
+      "name": {
+        "content": "$1",
+        "example": "Ana"
+      }
+    }
+  },
+  "runs_pauseDropped": {
+    "message": "The Pause was dropped: $why$",
+    "description": "Run page and Runs window, beside a CI lane's controls once the worker dropped the Pause it was asked. $why$ is the worker's reason, in English.",
+    "placeholders": {
+      "why": {
+        "content": "$1",
+        "example": "No test runs on this worker now."
+      }
+    }
+  },
+  "runs_ciCancelPauseTitle": {
+    "message": "Take the Pause back: the test goes on without stopping",
+    "description": "Run page and Runs window, the tooltip of Resume on a CI lane while a Pause waits for its test's next call: it takes the Pause back."
   },
   "runs_stateRunning": {
     "message": "Running",
@@ -8787,8 +8989,8 @@
     }
   },
   "runs_ciReadOnly": {
-    "message": "Read-only: these run on CI, so nothing here pauses or steers them. Watch shows a running test’s page here.",
-    "description": "Runs window, under the list of CI runs in progress: they are read-only, and Watch (runs_watch) on a running test shows its page in the window."
+    "message": "Watched only: these run on CI, so nothing here steers them, except Pause, Resume, End the test and Let it go, for those who may control them. Watch shows a running test’s page here.",
+    "description": "Runs window, under the list of CI runs in progress: they are only watched, but for Pause, Resume, End the test and Let it go (runs_pause, runs_resume, runs_end, runs_letGo), offered to the people who may control the run, and Watch (runs_watch) on a running test shows its page in the window."
   },
   "runs_ciTests": {
     "message": "Tests running now",
@@ -8858,6 +9060,26 @@
   "runs_ciRefusedNoTest": {
     "message": "No test ran in this worker’s lane yet.",
     "description": "Runs window, why a CI run’s worker could not be watched: no test ran in its lane yet."
+  },
+  "runs_ciLetGoUnwatched": {
+    "message": "Let it go goes on this window’s watch of the worker: watch it again first.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the window no longer watches its worker."
+  },
+  "runs_ciNotController": {
+    "message": "You may watch this run, not control it.",
+    "description": "Runs window, why Let it go did not reach a CI run’s held test: the instance did not say this connection may control the project’s runs."
+  },
+  "runs_ciNotHeld": {
+    "message": "This worker holds no failing test now.",
+    "description": "Runs window, why Let it go did not reach a CI run’s worker: its test is no longer held."
+  },
+  "runs_ciControlUnwatched": {
+    "message": "The controls go on this window’s watch of the worker: watch it again first.",
+    "description": "Runs window, why Pause, Resume or End the test did not reach a CI run’s test: the window no longer watches its worker."
+  },
+  "runs_ciNoWorker": {
+    "message": "No worker runs in this lane now.",
+    "description": "Runs window, why Pause, Resume or End the test did not reach a CI run’s test: no worker of the run’s live view is in its lane now."
   },
   "runs_ciRefusedOffline": {
     "message": "The instance did not answer.",

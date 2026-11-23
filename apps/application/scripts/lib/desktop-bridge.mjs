@@ -133,6 +133,14 @@ export function bridgeScript(shape = {}) {
               });
             case 'desktop_mcp_clients':
               return Promise.resolve([]);
+            // The project sets no run variables, and the environment a run is for reads back unprotected, as it was.
+            case 'desktop_environment_run_settings':
+              return Promise.resolve({
+                runVariables: [],
+                environment: args?.environment
+                  ? { id: args.environment.id, protected: false, requiredTags: [], envFile: null }
+                  : null,
+              });
             case 'desktop_run_local_tests':
               window.__runArgs = args;
               return Promise.resolve(localRunIds[Math.min(localRunsStarted++, localRunIds.length - 1)]);

@@ -29,12 +29,6 @@
   "runner_stopping": {
     "message": "Deteniendo…"
   },
-  "runner_stop": {
-    "message": "Detener"
-  },
-  "runner_stopNow": {
-    "message": "Detener ahora"
-  },
   "runner_holdFailures": {
     "message": "Retener fallos"
   },
@@ -190,9 +184,6 @@
         "example": "24"
       }
     }
-  },
-  "runner_copyOutput": {
-    "message": "Copiar la salida"
   },
   "runner_aboutHeading": {
     "message": "Acerca de"

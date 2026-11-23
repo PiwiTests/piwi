@@ -148,7 +148,8 @@ import { contextStalenessHash } from '#shared/diagnosis-staleness';
 import { getEnvironmentDiff } from '~~/server/utils/environment-diff';
 import { getPageDiff } from '~~/server/utils/page-diff';
 import { apiGetDemoDomSnapshot } from './dom-snapshot';
-import { apiGetDemoLiveSnapshot } from './live-view';
+import { apiDemoControl, apiDemoLetGo, apiGetDemoLiveSnapshot, apiPostDemoLiveStop } from './live-view';
+import { findDemoUser } from '../demo-users';
 import {
   apiExecutionBugReport,
   apiExecutionReplaySteps,
@@ -190,6 +191,8 @@ import {
   apiGetDemoTraceNetworkBody,
   apiGetDemoTraceSnapshots,
   apiGetDemoTraceSnapshot,
+  apiGetDemoTraceFrames,
+  apiGetDemoTraceFrame,
 } from './trace-insights';
 import {
   listProjects,
@@ -205,6 +208,8 @@ import {
   getProjectFailureClusters,
   INVALID_COVERAGE_AREAS,
   INVALID_LIVE_VIEW_MASKS,
+  INVALID_LIVE_VIEW_HOLD_MINUTES,
+  LIVE_VIEW_PAUSE_NEEDS_HOLD,
   INVALID_REPOSITORY_URL,
   INVALID_COVERAGE_SCOPE,
   InvalidRunVariablesError,
@@ -1118,6 +1123,8 @@ const routes: RouteEntry[] = [
           (e.message === INVALID_COVERAGE_SCOPE ||
             e.message === INVALID_COVERAGE_AREAS ||
             e.message === INVALID_LIVE_VIEW_MASKS ||
+            e.message === INVALID_LIVE_VIEW_HOLD_MINUTES ||
+            e.message === LIVE_VIEW_PAUSE_NEEDS_HOLD ||
             e.message === INVALID_REPOSITORY_URL)
         )
           throw demoHttpError(400, e.message);
@@ -1506,6 +1513,38 @@ const routes: RouteEntry[] = [
     method: 'POST',
     pattern: /^\/api\/test-runs\/(\d+)\/live-resources$/,
     handler: (m, body) => apiLiveResourcesTestRun(+m[1]!, body as Parameters<typeof apiLiveResourcesTestRun>[1]),
+  },
+  // A simulated CI worker's held failure and its end, which the run page hears as the instance tells it; the demo
+  // names who it is held for: the person acting, when they may control the run.
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view$/,
+    handler: async (m, body, _query, ctx) => {
+      const projectId = await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
+      const controls = demoCan(ctx, 'run:control', projectId ?? undefined);
+      return apiPostDemoLiveStop(+m[1]!, body, { controls, heldFor: controls && acting ? [acting.name] : [] });
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/let-go$/,
+    permission: 'run:control',
+    handler: async (m, body, _query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      return apiDemoLetGo(+m[1]!, body);
+    },
+  },
+  // **Pause**, **Resume** and **End the test** of a simulated CI worker's test, named by who asked.
+  {
+    method: 'POST',
+    pattern: /^\/api\/test-runs\/(\d+)\/live-view\/control$/,
+    permission: 'run:control',
+    handler: async (m, body, _query, ctx) => {
+      await assertDemoEntityScope(ctx, 'run', +m[1]!);
+      const acting = ctx?.actingUserId ? findDemoUser(ctx.actingUserId) : null;
+      return apiDemoControl(+m[1]!, body, acting?.name ?? '');
+    },
   },
   // The page of a simulated worker at a call, for Inspect: a moment of the committed checkout trace, as the server
   // serves a live page. The rest of the live view runs in the page (`app/demo/live-watch.ts`).
@@ -2314,6 +2353,21 @@ const routes: RouteEntry[] = [
       throw demoHttpError(401, 'This endpoint takes the token of a running answer');
     },
   },
+  // It takes POST alone, as the server's does.
+  {
+    method: 'GET',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(405, 'The MCP endpoint takes POST alone.');
+    },
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/assistant\/conversations\/(\d+)\/mcp$/,
+    handler: () => {
+      throw demoHttpError(405, 'The MCP endpoint takes POST alone.');
+    },
+  },
   {
     method: 'GET',
     pattern: /^\/api\/settings\/ai\/limits$/,
@@ -2808,6 +2862,22 @@ const routes: RouteEntry[] = [
     handler: async (m, _body, query, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return apiGetDemoTraceSnapshot(+m[1]!, query);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-frames$/,
+    handler: async (m, _b, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceFrames(+m[1]!);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/test-run-cases\/(\d+)\/trace-frame$/,
+    handler: async (m, _body, query, ctx) => {
+      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
+      return apiGetDemoTraceFrame(+m[1]!, query);
     },
   },
   // The demo cannot pixel-diff in the browser — it serves the overlay the

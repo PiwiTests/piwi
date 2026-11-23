@@ -94,7 +94,7 @@ export const HELP_TOPICS = {
   },
   'home.failure-inbox': {
     title: 'Failure inbox',
-    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, o open.",
+    text: "A queue of the failures you still owe a decision. Switch queues to focus — new since you last looked, mine, needing a ticket, regressions, fixes that didn't hold, quarantines ready to release, merge suggestions. Failures seen in developers' local runs and never in CI stay out until you show them. Triage from the row or the keyboard: j / k move, x select, r resolve, i ignore, q quarantine, a assign, s snooze, l link, c create issue, o open.",
     doc: 'features/failure-inbox',
   },
   'home.flake-lab': {
@@ -158,7 +158,7 @@ export const HELP_TOPICS = {
   },
   'analytics.flaky-leaderboard': {
     title: 'Flakiest tests',
-    text: 'The worst flaky tests across all projects, using the same scoring as each project’s Flaky tests tab, sorted by wasted-CI impact.',
+    text: 'The worst flaky tests across all projects, using the same scoring as the Flaky view of each project’s Failures tab, sorted by wasted-CI impact.',
     doc: 'features/flaky-tests#flaky-test-detection',
   },
   'analytics.cluster-landscape': {
@@ -317,7 +317,7 @@ export const HELP_TOPICS = {
   },
   'reports.schedule': {
     title: 'Report schedule',
-    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
+    text: 'A quality report sent on a schedule, daily, weekly, every other week or monthly, to email, Slack, Microsoft Teams, webhook or browser channels. Each firing covers the whole days since the previous one, compared with the period before or a year earlier, and is kept as a snapshot. A period with no run still sends, so a stopped pipeline shows. Team sends the engineering report for one owner’s tests; Gaps digest is the Test Map’s weekly digest.',
     doc: 'features/quality-reports#report-schedules',
     envVars: ['PIWI_TIME_ZONE'],
   },
@@ -328,7 +328,7 @@ export const HELP_TOPICS = {
   },
   'reports.share-link': {
     title: 'Share link per report',
-    text: 'Each report this schedule generates gets its own read-only share link, which the email and the Slack message carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack also shows the trend as an image through it. Needs share links enabled on the instance.',
+    text: 'Each report this schedule generates gets its own read-only share link, which the email, the Slack and Microsoft Teams messages and the webhook’s body carry, so a reader without an account opens the report in one click. The link expires a week after the next report arrives. Slack and Teams also show the trend as an image through it. Needs share links enabled on the instance.',
     doc: 'features/share-links#report-share-links',
     envVars: ['PIWI_SHARE_LINKS_ENABLED', 'PIWI_SHARE_LINK_MAX_TTL_DAYS'],
   },
@@ -387,7 +387,7 @@ export const HELP_TOPICS = {
   'analytics.slow-endpoints': {
     title: 'Slow endpoints',
     text: 'Backend calls captured during tests, aggregated across all projects by route: p50/p90 latency, error rate, and how many projects hit each one — a shared endpoint regressing shows up here first.',
-    doc: 'guide/capture-fixtures',
+    doc: 'features/slow-tests#network-and-web-vitals',
   },
 
   // ── Projects list ─────────────────────────────────────────────────────
@@ -551,6 +551,8 @@ export const HELP_TOPICS = {
       '- **Masked** — in the worker: password fields, fields whose `autocomplete` asks for a one-time code or a card’s number or security code, and the **Masked elements** listed here (Playwright locators), painted over in the images by `@piwitests/reporter` 0.64.0 or later (an older one masks nothing); the secret fields’ values removed from the text and Inspect’s pages, the masked elements from the text, and credentials hidden in addresses and the call’s log, typed text too. A secret the page writes as its own text is not masked. A project with masked elements gets no Inspect page.',
       '- **Kept** — Inspect’s pages and what they name stay in the instance’s memory while their test runs, and go with the run at the latest. The rest is relayed and dropped. None of it reaches the database, the logs or an export.',
       '- **Ask to watch** — with sign-in on, a reader of a running local run nobody shares asks its developer to share it, once per 5 minutes; the developer sees who asks. On by default.',
+      '- **Hold a failing CI test** — a CI test that fails while a Maintainer or Project admin watches its worker in full waits at its failure, for **Inspect**, until **Let it go**, the longest hold (1 to 15 minutes, 5 by default) or nobody who may control the run watches it. Its result is unchanged; the CI job’s own timeout still runs. Off by default; `@piwitests/reporter` 0.75.0 or later.',
+      '- **Let controllers pause a CI test** — with the hold on, the same people may pause a CI test they watch in full before its next call, then **Resume** it or **End the test**, from the run page, as long as a hold at most. Off by default; it goes off with the hold.',
       '',
       'Enable it before starting the run. The reporter’s global setup (`wrapConfig`) must register it, streaming must be on, and its specs must import `test` from the capture fixtures. A local run sends nothing unless its developer chooses Share live. Turning it off ends every view at once; turned back on, a run still going gets its view back.',
     ].join('\n'),
@@ -684,7 +686,7 @@ export const HELP_TOPICS = {
       'This run is on a developer’s machine: its workers send nothing until the developer shares it, and its running tests then offer **Watch**. Sharing is theirs to start:',
       '',
       '- **VS Code** — `Piwi: Share the run live on the team instance`, or the status bar’s broadcast icon.',
-      '- **JetBrains IDEs** — **Tools → Piwi → Share the run live on the team instance**.',
+      '- **JetBrains IDEs** — **Tools → Piwi → Run control → Share the run live on the team instance**.',
       '- **Piwi Picker** — **Share live** under the run’s name, in the Runs window.',
       '- **Desktop app** — **Share live** above the run’s workers, in the Local runs tray.',
       '- **Terminal** — `PIWI_SHARE_LIVE=1` shares a run from its start.',
@@ -868,12 +870,12 @@ export const HELP_TOPICS = {
   'setup.presets': {
     title: 'What you want Piwi for',
     text: 'The coarse choice of which capability groups this instance uses. Unchecking a group declines its capabilities everywhere — the pages, panels, settings and MCP tools they own stop showing until you reconsider on this page. Seeing why tests fail is always on.',
-    doc: 'guide/getting-started',
+    doc: 'operate/capabilities',
   },
   'project.capabilities': {
     title: 'Capabilities',
     text: 'Override the instance default for this project. Leave a capability on the instance default, decline it for this project, or enable it here even when the instance declined it. A declined capability drops its evidence tabs, panels and actions for this project.',
-    doc: 'guide/getting-started',
+    doc: 'operate/capabilities#declining-a-capability',
   },
   'cluster.activity': {
     title: 'Activity',
@@ -895,7 +897,7 @@ export const HELP_TOPICS = {
     text: [
       'The code this test ran, as its coverage recorded it: the backend files with their lines, and the browser files.',
       '',
-      '- **Server** — files of a backend built with Piwi’s coverage package (ASP.NET Core today), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
+      '- **Server** — files of a backend built for coverage with Piwi’s instrumentation (ASP.NET Core or Nitro), the most lines first. Open one to read its source at the version the test ran, the lines it ran marked in teal, and the executable lines it did not run in slate when the run sent its own coverage.',
       '- **Browser** — the application files whose functions ran in Chromium, by path, or with the functions that ran when the reporter recorded them; such a file opens to its source too.',
       '- **Precision** — by line, by function, or by file, as the reporter’s `coverage` option recorded it.',
       '- **suspect lines** — the changed lines this failing test ran, and **changed** a file changed since the last passing run; both open the cluster’s What changed card.',
@@ -1044,7 +1046,9 @@ export const HELP_TOPICS = {
     text: [
       'One time axis that places this execution’s steps, console entries, network requests and backend log entries on the same clock, with a marker at the moment of failure.',
       '',
-      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything.',
+      '- **Window** — the default view is the window around the failed step (10s before, 2s after); switch to **Whole test** to see everything, or drag across the axis to zoom to a range (**Reset zoom** or a double-click gives the window back).',
+      '- **Screen** — with a trace, the page as its screencast recorded it, one lane per page: hover it to see the page at that moment and the step running then, click to open the frames full screen there. A dimmed tile shows the same frame as the one before. On while the trace has frames; turning it off takes the page out of the list too, and the choice is remembered in this browser.',
+      '- **Show the page** — with the Screen lane, three ways for the list: **Side panel** beside the table, the page after the step you hover or picked by its time (the failing step before it ran, until you pick another; **Before** and **After** switch), and a request, console entry or dialog when it happened; **Hover card**, the page before and after the row under the pointer; **Thumbnails**, a column of the page after each row. A row’s time opens the page under that row where no side panel shows. The choice is remembered in this browser, and hovering a row marks its bar on the axis.',
       '- **Type chips** hide or show the steps, requests, console entries, dialogs and backend logs in the window. **Only** or Alt-click shows just one type; the failing step and the last shown type always stay. The line beside them says what is hidden, and the choice is remembered in this browser.',
       '- **The table below** reads it in time order: a step with parameters opens them from its title, and a request or console entry opens on its own tab.',
       '- **The failed step** is the one that raised the test’s own error. An error the test caught and went on from (a probe in a try/catch, a retried `toPass` attempt) is greyed out and marked as caught.',
@@ -1433,9 +1437,9 @@ export const HELP_TOPICS = {
   },
   'settings.auto-diagnose': {
     title: 'Auto-diagnose',
-    text: 'When a run finishes, up to 3 new failure clusters are diagnosed automatically — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
+    text: 'When a run finishes, up to 3 of the failure clusters that failed in it and have no completed diagnosis yet are diagnosed automatically (`PIWI_AI_AUTO_DIAGNOSE_MAX` changes the cap) — each diagnosis is one research call (with two-stage diagnosis on) plus one diagnosis call — and new clusters get human-readable titles in one batched call. Requires a provider.',
     doc: 'guide/ai-provider#enabling-ai-diagnosis',
-    envVars: ['PIWI_AI_AUTO_DIAGNOSE'],
+    envVars: ['PIWI_AI_AUTO_DIAGNOSE', 'PIWI_AI_AUTO_DIAGNOSE_MAX'],
   },
   'settings.ai-notifications': {
     title: 'Diagnosis notifications',

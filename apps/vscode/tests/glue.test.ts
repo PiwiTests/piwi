@@ -200,6 +200,7 @@ describe('statusMenu', () => {
       '— Connection',
       'piwi.refresh',
       'piwi.connect',
+      'piwi.pairPicker',
       'piwi.openSettings',
     ]);
     expect(statusMenu(idle)[0]).toEqual({ command: 'piwi.refreshRun', label: 'Refresh the latest run' });
@@ -258,6 +259,7 @@ describe('statusMenu', () => {
       '— Connection',
       'piwi.refresh',
       'piwi.connect',
+      'piwi.pairPicker',
       'piwi.openSettings',
     ]);
     // A held failure takes no Step, and a run another window or a terminal started is theirs to stop.
@@ -533,6 +535,11 @@ describe('statusBarView', () => {
     expect(statusBarView(connected, live({ own: false, failed: 0 }))).toMatchObject({
       text: '$(loading~spin) Piwi: run #124 · 4 of 9',
       tooltip: expect.stringContaining('\n\nRun #124 is running: 4 of 9\n\n'),
+    });
+    // Another's run says where it comes from in the tooltip alone.
+    expect(statusBarView(connected, live({ own: false, failed: 0, from: 'from the desktop app' }))).toMatchObject({
+      text: '$(loading~spin) Piwi: run #124 · 4 of 9',
+      tooltip: expect.stringContaining('\n\nRun #124 (from the desktop app) is running: 4 of 9\n\n'),
     });
     // Another's run names its branch, the developer's own the short form.
     expect(statusBarView(connected, live({ own: false, ci: true, failed: 0, branch: 'feature-x' }))).toMatchObject({

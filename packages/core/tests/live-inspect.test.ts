@@ -24,6 +24,7 @@ import {
   type LiveSnapshot,
   type SnapshotResolver,
 } from '../src/live-inspect';
+import { CUT_MARK, hideKnownValues } from '../src/mask';
 import {
   LIVE_WORKER_POST_LIMITS,
   MAX_LIVE_FRAME,
@@ -500,6 +501,40 @@ describe('the secrets a snapshot shows', () => {
     ]);
     expect(snapshotNodes(hidden)!.length).toBe(snapshotNodes(html)!.length);
     expect(JSON.stringify(hidden)).not.toContain(SECRET);
+  });
+
+  test('hide the values the attempt knows as `hideKnownValues` does, in a text and an attribute', () => {
+    const cases: Array<[string, string[]]> = [
+      ['Your password is S3cr3t!Pw-9x.', ['S3cr3t!Pw-9x']],
+      ['S3cr3t!Pw-9x, then S3cr3t!Pw-9x again', ['S3cr3t!Pw-9x']],
+      ['tok 12345678-abcdefgh', ['12345678', '12345678-abcdefgh']],
+      ['said S3cr3t\\"Pw here', ['S3cr3t"Pw']],
+      [`cut at S3cr3t!P${CUT_MARK}`, ['S3cr3t!Pw-9x']],
+      ['1234', ['1234']],
+      [' 1234 ', ['1234', ' ']],
+      ['1234 5678', ['1234']],
+      ['Ada', ['S3cr3t!Pw-9x']],
+    ];
+    for (const [text, secrets] of cases) {
+      const shown = hideKnownValues(text, secrets);
+      expect(hideSnapshotSecrets(['DIV', { title: text }, text], { secrets }), text).toEqual([
+        'DIV',
+        { title: shown },
+        shown,
+      ]);
+    }
+  });
+
+  test('hide the values the attempt knows in a large snapshot without reading them again for each string', () => {
+    const secrets = Array.from({ length: 256 }, (_, i) => `secretvalue-${String(i).padStart(6, '0')}${'x'.repeat(40)}`);
+    const rows = Array.from({ length: 20_000 }, (_, i) => [
+      'SPAN',
+      { class: `c${i}`, title: `item ${i}` },
+      `Some text of the row number ${i}`,
+    ]);
+    const started = performance.now();
+    hideSnapshotSecrets(['DIV', {}, ...rows], { secrets });
+    expect(performance.now() - started).toBeLessThan(2000);
   });
 
   test('are the values of the fields it hides, read from the snapshot alone, its labels followed', () => {

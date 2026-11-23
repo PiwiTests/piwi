@@ -185,6 +185,21 @@ describe('the agents’ router', () => {
     expect(a.calls.map((one) => one.name)).toEqual(['run_list', 'page_snapshot']);
   });
 
+  it('answers initialize with the version asked when it serves it, else 2025-11-25', async () => {
+    const router = new McpRouter({ hosts: async () => [] });
+    const versionOf = async (protocolVersion: string) =>
+      (
+        (await router.handle({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion } })) as {
+          result: { protocolVersion: string };
+        }
+      ).result.protocolVersion;
+    for (const version of ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05']) {
+      expect(await versionOf(version)).toBe(version);
+    }
+    expect(await versionOf('2026-07-28')).toBe('2025-11-25');
+    expect(await versionOf('1900-01-01')).toBe('2025-11-25');
+  });
+
   it('starts a run on the editor whose workspace holds the spec, named after the agent, and follows it there', async () => {
     const router = new McpRouter({ hosts: async () => hosts, cwd: folder });
     await router.handle({

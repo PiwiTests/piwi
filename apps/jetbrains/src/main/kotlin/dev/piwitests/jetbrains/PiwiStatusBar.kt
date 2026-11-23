@@ -265,7 +265,7 @@ class PiwiStatusBarWidget(private val project: Project) : CustomStatusBarWidget 
             addSeparator()
             addAll(registered("Piwi.RunTestAtCursor", "Piwi.RecordHere"))
             addSeparator()
-            addAll(registered("Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings"))
+            addAll(registered("Piwi.Refresh", "Piwi.Connect", "Piwi.PairPicker", "Piwi.OpenSettings"))
         }
     }
 

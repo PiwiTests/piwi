@@ -1,45 +1,63 @@
 <script setup lang="ts">
 import { DESKTOP_APP_NAME } from '#shared/piwi-ecosystem';
 /**
- * Desktop shell only: a local run's output in a window of its own, which the Local runs tray has the shell open on
- * this page (`DesktopRunOutputWindow`), named by `?name=`. The tray feeds it over `RUN_OUTPUT_CHANNEL`: the run's
- * header, then its new lines; Stop asks the tray to stop the run. It outlives a reload of the dashboard window, whose
- * next page asks whether it is still there and feeds it again from the last line it has. A window of its own: no
- * layout.
+ * Desktop shell only: a local run in a window of its own, which the Local runs tray has the shell open on this page
+ * (`DesktopRunOutputWindow`), named by `?name=`. The tray feeds it over `RUN_OUTPUT_CHANNEL`: the run's header, what it
+ * offers and its new lines. It shows the whole run, as the tray does: its command, Stop then Force stop
+ * (`DesktopRunStopButton`) or Run again, its Hold failures, its pages (Open the failure, Open run #N, Compare), its
+ * workers live (`DesktopRunSession`), what it failed on once it ended, each test to open or run again
+ * (`DesktopRunResults`), and its output (`DesktopRunOutputPane`). What only the dashboard window does, it asks over the
+ * channel, of the run it shows by its key: a page opens there, a link of the live view to a page of this app included,
+ * a Run again's run shows here in its place, and **Show in the tray** brings the run back there and closes this window.
+ *
+ * The window holds the runs' hub stream itself (`useDesktopRunHub`) while its run goes on, present on the runs while it
+ * is not hidden, and says `show` for its run while the person has its Hold failures on, as the tray does, whether the
+ * window is hidden or not; it lets the stream go once the run ended. It outlives a reload of the dashboard window, whose next page asks whether it is still there
+ * and feeds it again from the last line it has. A window of its own: no layout.
  */
-import { LOCAL_RUN_MAX_LINES, localRunDuration, type LocalRunLine } from '~/composables/useDesktopLocalRuns';
+import type { HubSession } from '@piwitests/core/run-hub';
+import { LOCAL_RUN_MAX_LINES, localRunDuration } from '~/composables/useDesktopLocalRuns';
+import type { RunOutputLine, RunResultRow } from '@piwitests/run-ui/run-output';
+import { desktopRunOf } from '~/utils/desktop-run-view';
 import {
+  isAppPath,
   mergeRunOutputLines,
   RUN_OUTPUT_CHANNEL,
   type RunOutputMessage,
   type RunOutputState,
+  type RunWindowPage,
+  type RunWindowRow,
 } from '~/utils/run-output-channel';
 
 definePageMeta({ layout: false });
 
 const name = String(useRoute().query.name ?? '');
 const header = shallowRef<Omit<RunOutputState, 'lines'> | null>(null);
-const lines = shallowRef<LocalRunLine[]>([]);
+const lines = shallowRef<RunOutputLine[]>([]);
 let channel: BroadcastChannel | null = null;
 
-/** Says the window is ready for the run's state, from the line after the last one it has. */
-function ready() {
-  channel?.postMessage({ type: 'ready', name, through: lines.value.at(-1)?.id ?? 0 } satisfies RunOutputMessage);
+/** Says something to the dashboard window, which does what only it does. */
+function post(message: RunOutputMessage) {
+  channel?.postMessage(message);
 }
 
-function stop() {
-  channel?.postMessage({ type: 'stop', name } satisfies RunOutputMessage);
+/** Says the window is ready for the run's state, from the line after the last one it has of the run it shows. */
+function ready() {
+  post({ type: 'ready', name, key: header.value?.key, through: lines.value.at(-1)?.id ?? 0 });
 }
+
+/** The run the window shows, which every ask names: the dashboard window does nothing it asks of another run. */
+const key = computed(() => header.value?.key ?? -1);
 
 onMounted(() => {
   channel = new BroadcastChannel(RUN_OUTPUT_CHANNEL);
   channel.onmessage = ({ data }: MessageEvent<RunOutputMessage>) => {
-    if (data?.name !== name) return;
+    if (!data || !('name' in data) || data.name !== name) return;
     if (data.type === 'ask') return ready();
     if (data.type !== 'state') return;
     const { lines: sent, ...rest } = data;
+    lines.value = mergeRunOutputLines(lines.value, header.value?.key ?? null, data, LOCAL_RUN_MAX_LINES);
     header.value = rest;
-    lines.value = mergeRunOutputLines(lines.value, { ...rest, lines: sent }, LOCAL_RUN_MAX_LINES);
   };
   ready();
 });
@@ -48,36 +66,232 @@ onBeforeUnmount(() => channel?.close());
 
 const now = useTimestamp({ scheduler: (update) => useIntervalFn(update, 1000) });
 
-useHead(() => ({ title: `${header.value?.title ?? 'Run output'} · ${DESKTOP_APP_NAME}` }));
+useHead(() => ({ title: `${header.value?.title ?? 'Local run'} · ${DESKTOP_APP_NAME}` }));
+
+// ── Its workers live ──────────────────────────────────────────────────────────────────────────────────────────────
+
+const hub = useDesktopRunHub();
+const visibility = useDocumentVisibility();
+const running = computed(() => !!header.value?.running);
+const visible = computed(() => visibility.value === 'visible');
+
+/** The hub's live runs of the run: its steps'. */
+const sessions = computed(() => {
+  const refs = header.value?.refs ?? [];
+  return (Object.values(hub.state.sessions) as HubSession[]).filter((session) =>
+    refs.includes(desktopRunOf(session.ref)),
+  );
+});
+
+onMounted(() => {
+  watch(running, (on) => hub.want(on), { immediate: true });
+  watch(
+    () => running.value && visible.value,
+    (on) => hub.present(on),
+    { immediate: true },
+  );
+  watch(
+    () => (running.value && header.value?.hold?.chosen ? (header.value?.refs ?? []) : []).join(' '),
+    (refs) => hub.show(refs ? refs.split(' ') : []),
+    { immediate: true },
+  );
+});
+onBeforeUnmount(() => {
+  hub.show([]);
+  hub.present(false);
+  hub.want(false);
+});
+
+/** What the live region reads out: what a command answered. */
+const announcement = ref('');
+function announce(text: string) {
+  announcement.value = '';
+  requestAnimationFrame(() => {
+    announcement.value = text;
+  });
+}
+
+// ── What it asks the dashboard window ─────────────────────────────────────────────────────────────────────────────
+
+function stop() {
+  post({ type: 'stop', name, key: key.value });
+}
+
+function setHold(on: boolean) {
+  post({ type: 'hold', name, key: key.value, on });
+}
+
+function open(page: RunWindowPage) {
+  post({ type: 'open', name, key: key.value, page });
+}
+
+/** A link of the live view to a page of this app (its run's page) opens in the dashboard window, never in this one. */
+function openLinkThere(event: MouseEvent) {
+  const link = (event.target as Element | null)?.closest('a');
+  if (!link || link.target === '_blank') return;
+  const url = new URL(link.href, window.location.href);
+  if (url.origin !== window.location.origin) return;
+  event.preventDefault();
+  const path = `${url.pathname}${url.search}`;
+  if (isAppPath(path)) open({ path });
+}
+
+/** What a row's buttons say of its test: its title, and its project when it has one. */
+const named = (row: RunResultRow) => (row.project ? `${row.title} in ${row.project}` : row.title);
+
+function runTestAgain(row: RunResultRow, hold: boolean) {
+  post({ type: 'rerun-test', name, key: key.value, row: row.key, hold });
+}
 </script>
 
 <template>
-  <section aria-label="Run output" class="flex h-dvh flex-col gap-2 bg-default p-3">
-    <header class="flex min-w-0 items-center gap-2">
+  <main aria-label="Local run" class="flex h-dvh flex-col bg-default">
+    <header class="flex shrink-0 flex-col gap-1 border-b border-default px-3 py-2">
+      <div class="flex min-w-0 flex-wrap items-center gap-2">
+        <template v-if="header">
+          <UBadge :color="header.status.color" variant="subtle" size="sm" class="shrink-0">
+            {{ header.status.label }}
+          </UBadge>
+          <h1 class="min-w-0 flex-1 basis-48 truncate text-sm font-semibold text-highlighted" :title="header.title">
+            {{ header.title }}
+          </h1>
+          <span class="shrink-0 text-xs text-muted tabular-nums">
+            {{ localRunDuration(header.startedAt, header.finishedAt, now) }}
+          </span>
+          <div class="flex shrink-0 items-center gap-1">
+            <DesktopRunStopButton
+              v-if="header.running"
+              :stopping="header.stopRequested"
+              :since="header.stopRequestedAt"
+              @stop="stop"
+              @force="stop"
+            />
+            <UTooltip v-else-if="header.rerunnable" :text="`Run again: ${header.title}, with the same options`">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="outline"
+                icon="i-lucide-rotate-ccw"
+                aria-label="Run again"
+                :loading="header.startingAgain"
+                :disabled="header.startingAgain"
+                @click="post({ type: 'rerun', name, key })"
+              />
+            </UTooltip>
+            <UTooltip text="Show the run in the tray and close this window">
+              <UButton
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                icon="i-lucide-panel-bottom-open"
+                aria-label="Show in the tray"
+                @click="post({ type: 'back', name, key })"
+              />
+            </UTooltip>
+          </div>
+        </template>
+        <h1 v-else class="text-sm font-semibold text-highlighted">Local run</h1>
+      </div>
       <template v-if="header">
-        <UBadge :color="header.status.color" variant="subtle" size="sm" class="shrink-0">
-          {{ header.status.label }}
-        </UBadge>
-        <h1 class="min-w-0 flex-1 truncate text-sm font-semibold text-highlighted" :title="header.title">
-          {{ header.title }}
-        </h1>
-        <span class="shrink-0 text-xs text-muted tabular-nums">
-          {{ localRunDuration(header.startedAt, header.finishedAt, now) }}
-        </span>
-        <UButton
-          v-if="header.running"
-          size="xs"
-          color="error"
-          :variant="header.stopRequested ? 'solid' : 'soft'"
-          icon="i-lucide-square"
-          @click="stop"
-        >
-          {{ header.stopRequested ? 'Force stop' : 'Stop' }}
-        </UButton>
+        <p class="truncate font-mono text-xs text-muted" :title="header.detail">{{ header.detail }}</p>
+        <p v-if="header.note" class="text-xs text-warning">{{ header.note }}</p>
       </template>
-      <h1 v-else class="text-sm font-semibold text-highlighted">Run output</h1>
     </header>
-    <p v-if="header" class="truncate font-mono text-xs text-muted" :title="header.detail">{{ header.detail }}</p>
-    <DesktopLocalRunConsole :lines="lines" fill class="min-h-0 flex-1" />
-  </section>
+
+    <div
+      v-if="header"
+      class="flex min-h-0 flex-1 flex-col gap-3 overflow-y-auto px-3 py-2"
+      @click.capture="openLinkThere"
+    >
+      <div v-if="header.hold" class="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-1">
+        <USwitch
+          :model-value="header.hold.on"
+          :disabled="!!header.hold.refusal"
+          label="Hold failures"
+          size="sm"
+          aria-describedby="run-window-hold"
+          :ui="{ label: 'text-xs font-medium' }"
+          @update:model-value="(on: boolean) => setHold(on)"
+        />
+        <p id="run-window-hold" class="min-w-0 text-xs text-muted">
+          {{ header.hold.refusal ?? 'A failing test waits at its line for you to look at it and resume.' }}
+        </p>
+      </div>
+      <div v-if="header.piwiRunId != null" class="flex shrink-0 flex-wrap items-center gap-2">
+        <UButton
+          v-if="header.failed"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-external-link"
+          @click="open('failure')"
+        >
+          Open the failure
+        </UButton>
+        <UButton size="xs" color="neutral" variant="outline" icon="i-lucide-external-link" @click="open('run')">
+          Open run #{{ header.piwiRunId }}
+        </UButton>
+        <UButton
+          v-if="header.sourceRunId != null"
+          size="xs"
+          color="neutral"
+          variant="outline"
+          icon="i-lucide-git-compare"
+          :title="`What changed between run #${header.sourceRunId}, where these tests come from, and this one`"
+          @click="open('compare')"
+        >
+          Compare with run #{{ header.sourceRunId }}
+        </UButton>
+      </div>
+      <DesktopRunSession v-for="session in sessions" :key="session.ref" :session="session" @announce="announce" />
+      <DesktopRunResults v-if="header.rows.length > 0" :rows="header.rows" class="shrink-0">
+        <template #place="{ row }">
+          <OpenInIdeLink
+            v-if="row.place"
+            :location="row.place"
+            :project-key="header.projectId"
+            :project-name="header.projectLabel"
+            class="text-xs"
+          />
+        </template>
+        <template #actions="{ row }">
+          <UButton
+            v-if="(row as RunWindowRow).executionId != null"
+            size="xs"
+            color="neutral"
+            variant="ghost"
+            icon="i-lucide-external-link"
+            :aria-label="`Open ${named(row)}`"
+            title="Open its execution in the dashboard window"
+            @click="open({ execution: (row as RunWindowRow).executionId! })"
+          />
+          <template v-if="(row as RunWindowRow).rerunnable">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-rotate-ccw"
+              :aria-label="`Run ${named(row)} again`"
+              :disabled="header.startingAgain"
+              title="Run this test again, as the run ran it, in this window"
+              @click="runTestAgain(row, false)"
+            />
+            <UButton
+              v-if="header.rowsHold"
+              size="xs"
+              color="neutral"
+              variant="ghost"
+              icon="i-lucide-circle-pause"
+              :aria-label="`Run ${named(row)} again with Hold failures`"
+              :disabled="header.startingAgain"
+              title="Run this test again, waiting at its failure for you to look"
+              @click="runTestAgain(row, true)"
+            />
+          </template>
+        </template>
+      </DesktopRunResults>
+      <DesktopRunOutputPane :lines="lines" fill class="min-h-48 flex-1" />
+    </div>
+    <p role="status" aria-live="polite" class="sr-only">{{ announcement }}</p>
+  </main>
 </template>

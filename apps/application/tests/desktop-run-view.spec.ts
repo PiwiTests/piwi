@@ -312,14 +312,13 @@ test.describe('Desktop run live view', () => {
     await expect(worker.getByText('Running', { exact: true })).toBeVisible();
     await expect(worker.getByText('checkout › pays')).toBeVisible();
     await expect(worker.getByText('chromium · attempt 1')).toBeVisible();
-    // Hold failures is off: the run is not shown live, and a failure no pause bar shows would go on. Opening or closing
-    // its part of the tray changes nothing; the switch does.
+    // Hold failures is off: the run is not shown live, and a failure no pause bar shows would go on. Choosing its line in
+    // the tray's list changes nothing; the switch does.
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'false');
     await expect(holdSwitch(page)).toHaveAccessibleDescription(
       'A failing test waits at its line for you to look at it and resume.',
     );
-    await tray(page).getByRole('button', { name: 'Collapse output' }).click();
-    await tray(page).getByRole('button', { name: 'Expand output' }).click();
+    await tray(page).locator('[data-run-line]').first().click();
     expect(commands.filter((c) => c.type === 'show')).toEqual([]);
     await holdSwitch(page).click();
     await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
@@ -1902,7 +1901,7 @@ test.describe('Desktop run live view', () => {
     await kept.evaluate((element) => element.setAttribute('data-kept', ''));
     await send(sessionOf([secondAt('s5')]));
     await expect(tabs).toHaveCount(0);
-    await expect(tray(page).getByRole('listitem')).toContainText('checkout › refunds');
+    await expect(tray(page).locator('article[data-run]').getByRole('listitem')).toContainText('checkout › refunds');
     await expect(tray(page).locator('[data-kept]')).toHaveCount(1);
     await send(sessionOf([first, secondAt('s5')]));
     await expect(tab2).toHaveAttribute('aria-selected', 'true');
@@ -1956,7 +1955,7 @@ test.describe('Desktop run live view', () => {
     }
   });
 
-  test('keeps its own run, its Hold failures and its separate output window through a reload of the window', async ({
+  test('keeps its own run, its Hold failures and its separate window through a reload of the window', async ({
     page,
   }) => {
     await installBridge(page);
@@ -1970,23 +1969,22 @@ test.describe('Desktop run live view', () => {
     await holdSwitch(page).click();
     await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
     await page.evaluate(() => window.__printLine('Running 1 test using 1 worker'));
-    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
-    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the run in a separate window' }).click();
+    await expect(tray(page).getByText('The run is in a separate window.')).toBeVisible();
     const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
     const outputPage = await page.context().newPage();
     await outputPage.goto(`/desktop/run-output?name=piwi-run-output-${key}`);
     await waitForHydration(outputPage);
-    const output = outputPage.getByRole('region', { name: 'Run output' });
+    const output = outputPage.getByRole('main', { name: 'Local run' });
     await expect(output.getByText('Running 1 test using 1 worker')).toBeVisible();
 
-    // Reloaded: the tray opens on the run as its own, with its Stop, its Hold failures and its output still apart.
+    // Reloaded: the tray opens on the run as its own, with its Stop, and the run still in its own window.
     const shows = commands.filter((c) => c.type === 'show' && c.on).length;
     await page.reload();
     await waitForHydration(page);
     await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
-    await expect(holdSwitch(page)).toHaveAttribute('aria-checked', 'true');
-    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
-    await expect(tray(page).getByRole('region', { name: 'Other runs of the desktop app' })).toHaveCount(0);
+    await expect(tray(page).getByText('The run is in a separate window.')).toBeVisible();
+    await expect(tray(page).getByRole('region', { name: 'Started in another window' })).toHaveCount(0);
     // The hub's stream opens again, and the run holds its failures again.
     await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
     await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
@@ -2003,14 +2001,14 @@ test.describe('Desktop run live view', () => {
     await expect(tray(page).getByText('Passed', { exact: true })).toBeVisible();
   });
 
-  test('closes a separate output window that does not answer after a reload, and keeps no other', async ({ page }) => {
+  test('closes a separate window that does not answer after a reload, and keeps no other', async ({ page }) => {
     await installBridge(page);
     await playHub(page);
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
     await rerunFailed(page);
-    await tray(page).getByRole('button', { name: 'Open the output in a separate window' }).click();
-    await expect(tray(page).getByText('The output is in a separate window.')).toBeVisible();
+    await tray(page).getByRole('button', { name: 'Open the run in a separate window' }).click();
+    await expect(tray(page).getByText('The run is in a separate window.')).toBeVisible();
     const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
     const name = `piwi-run-output-${key}`;
 
@@ -2026,10 +2024,125 @@ test.describe('Desktop run live view', () => {
         timeout: 10_000,
       })
       .toEqual([{ cmd: 'desktop_close_output_window', args: { name } }]);
-    await expect(tray(page).getByText('The output is in a separate window.')).toHaveCount(0);
+    await expect(tray(page).getByText('The run is in a separate window.')).toHaveCount(0);
     expect(await page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_open_output_window'))).toEqual(
       [],
     );
+  });
+
+  test('shows a run whole in its own window: its worker live, its Hold failures, Stop, and back to the tray', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    const commands = await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await rerunFailed(page);
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await page.evaluate(() => window.__printLine('Running 1 test using 1 worker'));
+    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toBeVisible();
+
+    // In its own window, the tray keeps the run's command and actions, and says where the rest is.
+    await tray(page).getByRole('button', { name: 'Open the run in a separate window' }).click();
+    await expect(tray(page).getByText('The run is in a separate window.')).toBeVisible();
+    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toHaveCount(0);
+    await expect(holdSwitch(page)).toHaveCount(0);
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+
+    // The window holds the hub's stream for its run itself, and shows its worker live and its output.
+    const key = await tray(page).locator('article[data-run]').first().getAttribute('data-run');
+    const runPage = await page.context().newPage();
+    const windowCommands = await playHub(runPage);
+    await runPage.goto(`/desktop/run-output?name=piwi-run-output-${key}`);
+    await waitForHydration(runPage);
+    const runWindow = runPage.getByRole('main', { name: 'Local run' });
+    await expect(runWindow.getByText('Running 1 test using 1 worker')).toBeVisible();
+    await expect.poll(() => runPage.evaluate(() => window.__hub.open())).toBe(1);
+    await runPage.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    // The run names a page of this app (its run's page, here another): its link opens in the dashboard window.
+    const named = session(RUNNING);
+    const named99 = { id: 99_999, url: new URL('/projects', page.url()).href };
+    await runPage.evaluate((event) => window.__hub.send(event), {
+      ...named,
+      session: { ...named.session, page: named99 },
+    });
+    await expect(runWindow.locator('[data-shot="desktop-run-worker"]')).toBeVisible();
+    await expect.poll(() => windowCommands.find((c) => c.type === 'follow')).toMatchObject({ on: true });
+    await runWindow.getByTestId('desktop-run-page').getByRole('link').click();
+    await expect(page).toHaveURL(/\/projects$/);
+    await expect(runPage).toHaveURL(/\/desktop\/run-output\?name=/);
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.some((i) => i.cmd === 'desktop_bring_to_front')))
+      .toBe(true);
+    await page.goBack();
+    await waitForHydration(page);
+
+    // Its Hold failures turns over in the dashboard window, and the run's window shows the run so.
+    const hold = runWindow.getByRole('switch', { name: 'Hold failures' });
+    await expect(hold).toHaveAttribute('aria-checked', 'false');
+    await hold.click();
+    await expect(hold).toHaveAttribute('aria-checked', 'true');
+    await expect.poll(() => windowCommands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+    await expect.poll(() => commands.find((c) => c.type === 'show')).toMatchObject({ ref: REF, on: true });
+
+    // Stop asks the dashboard window, which has the shell stop the run.
+    await runWindow.getByRole('button', { name: 'Stop', exact: true }).click();
+    await expect(runWindow.getByRole('button', { name: 'Force stop' })).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_stop_local_tests').length))
+      .toBe(1);
+
+    // Show in the tray: the run shows there whole again, and the window closes.
+    await runWindow.getByRole('button', { name: 'Show in the tray' }).click();
+    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toBeVisible();
+    await expect(tray(page).getByText('The run is in a separate window.')).toHaveCount(0);
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.filter((i) => i.cmd === 'desktop_close_output_window')))
+      .toEqual([{ cmd: 'desktop_close_output_window', args: { name: `piwi-run-output-${key}` } }]);
+  });
+
+  test('says in a worker’s window how its run came out once it ended, and shows the run in Local runs', async ({
+    page,
+  }) => {
+    await installBridge(page);
+    await playHub(page);
+    await page.goto(`/test-runs/${runId}`);
+    await waitForHydration(page);
+    await rerunFailed(page);
+    await expect.poll(() => page.evaluate(() => window.__hub.open())).toBe(1);
+    await page.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await page.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await tray(page).getByRole('button', { name: 'Close local runs' }).click();
+    await expect(tray(page)).toHaveCount(0);
+
+    const workerPage = await page.context().newPage();
+    await playHub(workerPage);
+    await workerPage.goto(`/desktop/run-worker?ref=${REF}&lane=0`);
+    await waitForHydration(workerPage);
+    await expect.poll(() => workerPage.evaluate(() => window.__hub.open())).toBe(1);
+    await workerPage.evaluate((viewer) => window.__hub.send({ type: 'hello', viewer }), VIEWER);
+    await workerPage.evaluate((event) => window.__hub.send(event), session(RUNNING));
+    await workerPage.evaluate(() => window.__hub.send({ type: 'listed' }));
+    await expect(workerPage.locator('[data-shot="desktop-run-worker"]')).toBeVisible();
+
+    // The run ends, failed: the window says so, as the run's own process counted it.
+    const ended = session(RUNNING, true);
+    const progress = { total: 1, done: 1, failed: 1, flaky: 0, skipped: 0, status: 'failed', failure: null };
+    await workerPage.evaluate((event) => window.__hub.send(event), {
+      ...ended,
+      session: { ...ended.session, workers: [], progress },
+    });
+    await expect(workerPage.getByTestId('run-worker-outcome')).toHaveText(/^This run ended: Failed · .*1 failed\.$/);
+
+    // Show in Local runs opens the dashboard window's tray on the run, and brings that window to the front.
+    await workerPage.getByRole('button', { name: 'Show in Local runs' }).click();
+    await expect(tray(page)).toBeVisible();
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+    await expect
+      .poll(() => page.evaluate(() => window.__invoked.some((i) => i.cmd === 'desktop_bring_to_front')))
+      .toBe(true);
   });
 
   test('counts a running run’s tests as its own process does, a test held at its failure among the failed', async ({
@@ -2140,14 +2253,14 @@ test.describe('Desktop run live view', () => {
     });
     await page.evaluate((event) => window.__hub.send(event), ended);
     await page.evaluate(() => window.__exitRun(1));
-    await expect(tray(page).getByText('Failed (exit 1)')).toBeVisible();
+    await expect(tray(page).getByText('Failed', { exact: true })).toBeVisible();
     await expect(tray(page).getByRole('button', { name: 'Open the failure' })).toBeVisible();
     const toast = page.locator('li', { hasText: 'Local run failed' });
     await toast.getByRole('button', { name: 'Open the failure' }).click();
     await expect(page).toHaveURL(new RegExp(`/test-run-cases/${pays}$`));
   });
 
-  test('shows each run as one line in the compact list, with the one action it needs now, whole on a click', async ({
+  test('lists the runs on the left and shows the one chosen, a run waiting at a stop marked and shown at its stop', async ({
     page,
   }) => {
     await installBridge(page);
@@ -2169,37 +2282,27 @@ test.describe('Desktop run live view', () => {
     };
     await page.evaluate((event) => window.__hub.send(event), withProgress(RUNNING));
 
-    const compact = tray(page).getByRole('button', { name: 'Compact list' });
-    await compact.click();
-    await expect(compact).toHaveAttribute('aria-pressed', 'true');
-    const line = tray(page).locator('[data-shot="desktop-run-line"]');
+    const runs = tray(page).getByRole('navigation', { name: 'Runs' });
+    const line = runs.locator('[data-run-line]');
     await expect(line).toHaveCount(1);
-    await expect(line).toContainText('Running');
-    await expect(line).toContainText('3 of 9 tests');
-    await expect(line.getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
-    await expect(tray(page).locator('[data-shot="desktop-run-worker"]')).toHaveCount(0);
-
-    // A stop shows the run whole, as the tray opens on it; back to one line, the line says the run waits, and its one
-    // action shows the stop again, its worker focused.
-    await page.evaluate((event) => window.__hub.send(event), withProgress(stopped('s1')));
-    await expect(line).toHaveCount(0);
-    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeVisible();
-    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
-    await expect(line).toContainText('Waiting');
-    await line.getByRole('button', { name: 'Show the stop' }).click();
-    await expect(line).toHaveCount(0);
-    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeFocused();
-
-    // Back to one line, as the tray remembers after a reload.
-    await tray(page).getByRole('button', { name: 'Show as one line' }).click();
-    await expect(line).toHaveCount(1);
-    await page.reload();
-    await waitForHydration(page);
-    await expect(tray(page).getByRole('button', { name: 'Compact list' })).toHaveAttribute('aria-pressed', 'true');
-    await expect(tray(page).locator('[data-shot="desktop-run-line"]')).toHaveCount(1);
-
-    // A click on the line shows the run whole.
-    await tray(page).locator('[data-shot="desktop-run-line"]').getByRole('button', { expanded: false }).click();
+    await expect(line).toHaveAttribute('aria-current', 'true');
+    await expect(runs.getByRole('region', { name: 'Running now' })).toContainText('3 of 9 tests');
     await expect(tray(page).locator('article[data-run]')).toHaveCount(1);
+    await expect(tray(page).getByRole('button', { name: 'Stop', exact: true })).toBeVisible();
+
+    // A stop marks the run's line, and the right side shows its worker at the stop.
+    await page.evaluate((event) => window.__hub.send(event), withProgress(stopped('s1')));
+    await expect(line).toContainText('A test waits at a stop');
+    await expect(tray(page).locator(`[data-worker="${REF}|0"]`)).toBeVisible();
+
+    // The tray's height: its top edge moves with the keyboard, and Maximize gives it most of the window.
+    const edge = tray(page).getByRole('separator', { name: 'Resize local runs' });
+    const before = Number(await edge.getAttribute('aria-valuenow'));
+    await edge.focus();
+    await page.keyboard.press('ArrowUp');
+    await expect(edge).toHaveAttribute('aria-valuenow', String(before + 40));
+    await tray(page).getByRole('button', { name: 'Maximize local runs' }).click();
+    await expect(tray(page).getByRole('button', { name: 'Restore local runs' })).toBeVisible();
+    await expect(edge).toHaveAttribute('aria-valuenow', String(await edge.getAttribute('aria-valuemax')));
   });
 });

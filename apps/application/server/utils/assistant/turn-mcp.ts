@@ -1,25 +1,61 @@
 /**
  * The MCP server of one assistant turn (Streamable HTTP, JSON-RPC over POST),
- * which the Claude Code CLI running the turn calls its tools on. It serves
- * that turn's toolbox and nothing else: `tools/list` is what the turn offers
- * now (its read tools, `find_tools`, `get_instance_config`, `find_anchors`
- * and the block tools), and `tools/call` runs through the turn's answer, so a
- * read is made with the asking user's context and counted against the turn's
- * limit, and a block tool's checked block is sent to the browser. When a call
- * changes what is offered (`find_tools` added tools), the answer comes as an
- * event stream that announces it first (`notifications/tools/list_changed`).
+ * which the Claude Code CLI running the turn calls its tools on, as a legacy or
+ * a modern client (`../mcp/protocol.ts`). It serves that turn's toolbox and
+ * nothing else: `tools/list` is what the turn offers now (its read tools,
+ * `find_tools`, `get_instance_config`, `find_anchors` and the block tools), and
+ * `tools/call` runs through the turn's answer, so a read is made with the asking
+ * user's context and counted against the turn's limit, and a block tool's
+ * checked block is sent to the browser. When a call changes what is offered
+ * (`find_tools` added tools), a legacy client hears it on that call's answer,
+ * which comes as an event stream that announces it first
+ * (`notifications/tools/list_changed`); a modern client hears it on the stream
+ * it opened with `subscriptions/listen`, which ends with the turn.
  */
 import type { AiToolCall } from '../ai-tool-calls';
-import { RPC, negotiateProtocolVersion, ok, rpcErr, type JsonRpcRequest } from '../mcp/protocol';
+import {
+  RPC,
+  checkMcpRequest,
+  discoverResult,
+  emptyBatchAnswer,
+  honoredListenFilter,
+  isListenRequest,
+  isRefusal,
+  negotiateProtocolVersion,
+  ok,
+  postAnswer,
+  rpcErr,
+  servedResponse,
+  type JsonRpcRequest,
+  type JsonRpcResponse,
+  type McpAnswer,
+  type McpEra,
+  type McpHeaders,
+  type McpListenFilter,
+} from '../mcp/protocol';
 import type { AssistantTurnTools } from './turn-token';
 
-/** The reply to one POST: nothing (notifications only), JSON, or an event stream. */
-export type TurnMcpReply = { kind: 'none' } | { kind: 'json'; body: unknown } | { kind: 'stream'; body: string };
+/**
+ * The reply to one POST: nothing (notifications only, a 202), JSON with its
+ * HTTP status, an event stream, or a `subscriptions/listen` stream to open for
+ * the request `id`, acknowledging `honored`.
+ */
+export type TurnMcpReply =
+  | { kind: 'none' }
+  | { kind: 'json'; status: number; body: unknown }
+  | { kind: 'stream'; body: string }
+  | { kind: 'listen'; id: string | number; honored: McpListenFilter };
 
 const MAX_BATCH_REQUESTS = 20;
 
 const INSTRUCTIONS =
   "The tools of this answer: Piwi's read tools, run with the asking user's access, and the blocks the answer is made of besides text. find_tools adds read tools for the rest of the conversation.";
+
+const CAPABILITIES = { tools: { listChanged: true } };
+
+export function serverInfo(version: string) {
+  return { name: 'piwi-assistant', version };
+}
 
 function sseFrame(message: unknown): string {
   return `event: message\ndata: ${JSON.stringify(message)}\n\n`;
@@ -27,53 +63,88 @@ function sseFrame(message: unknown): string {
 
 const toolNames = (turn: AssistantTurnTools) => turn.definitions().map((d) => d.name);
 
+const TOOLS_CHANGED = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' } as const;
+
 export async function answerTurnMcp(
   turn: AssistantTurnTools,
   body: unknown,
-  opts: { version: string; acceptsStream: boolean },
+  opts: {
+    version: string;
+    acceptsStream: boolean;
+    /** The request's mirroring headers; null outside HTTP. */
+    headers?: McpHeaders | null;
+    /** Tells the turn's `subscriptions/listen` streams that a call changed its tools. */
+    toolsChanged?: () => void;
+  },
 ): Promise<TurnMcpReply> {
   const batch = Array.isArray(body);
   const requests = (batch ? body : [body]) as JsonRpcRequest[];
+  if (requests.length === 0) {
+    const empty = emptyBatchAnswer();
+    return { kind: 'json', status: empty.status, body: empty.response };
+  }
   if (requests.length > MAX_BATCH_REQUESTS) {
     return {
       kind: 'json',
+      status: 400,
       body: rpcErr(null, RPC.INVALID_REQUEST, `A batch holds at most ${MAX_BATCH_REQUESTS} requests`),
     };
   }
 
   const before = toolNames(turn).join(',');
-  const responses = [];
+  const answers: Array<McpAnswer | null> = [];
+  let legacyAnswered = false;
   for (const req of requests) {
-    const response = await dispatch(turn, req, opts.version);
-    if (response) responses.push(response);
+    if (!req || typeof req !== 'object' || req.jsonrpc !== '2.0' || !req.method) {
+      answers.push({ status: 200, response: rpcErr(req?.id, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request') });
+      continue;
+    }
+    const era = checkMcpRequest(req, opts.headers ?? null);
+    if (isRefusal(era)) {
+      answers.push(era);
+      continue;
+    }
+    // Notifications have no response.
+    if (req.id === undefined || req.id === null) {
+      answers.push(null);
+      continue;
+    }
+    if (!batch && isListenRequest(era, req)) {
+      return { kind: 'listen', id: req.id, honored: honoredListenFilter(req.params, { toolsListChanged: true }) };
+    }
+    if (!era.modern) legacyAnswered = true;
+    const response = await dispatch(turn, { ...req, id: req.id }, era, opts.version);
+    answers.push(servedResponse(era, req.method, response, serverInfo(opts.version)));
   }
-  if (responses.length === 0) return { kind: 'none' };
-  if (batch) return { kind: 'json', body: responses };
 
-  if (opts.acceptsStream && toolNames(turn).join(',') !== before) {
-    const changed = { jsonrpc: '2.0', method: 'notifications/tools/list_changed' };
-    return { kind: 'stream', body: sseFrame(changed) + sseFrame(responses[0]) };
+  const changed = toolNames(turn).join(',') !== before;
+  if (changed) opts.toolsChanged?.();
+  const post = postAnswer(batch, answers);
+  if (!post) return { kind: 'none' };
+  if (!batch && changed && legacyAnswered && opts.acceptsStream) {
+    return { kind: 'stream', body: sseFrame(TOOLS_CHANGED) + sseFrame(post.body) };
   }
-  return { kind: 'json', body: responses[0] };
+  return { kind: 'json', status: post.status, body: post.body };
 }
 
 let callCount = 0;
 
-async function dispatch(turn: AssistantTurnTools, req: JsonRpcRequest, version: string) {
-  if (!req || typeof req !== 'object' || req.jsonrpc !== '2.0' || !req.method) {
-    return rpcErr(req?.id, RPC.INVALID_REQUEST, 'Invalid JSON-RPC request');
-  }
-  // Notifications have no response.
-  if (req.id === undefined || req.id === null) return null;
-
+async function dispatch(
+  turn: AssistantTurnTools,
+  req: JsonRpcRequest & { id: string | number },
+  era: McpEra,
+  version: string,
+): Promise<JsonRpcResponse> {
   switch (req.method) {
     case 'initialize':
       return ok(req.id, {
         protocolVersion: negotiateProtocolVersion((req.params as { protocolVersion?: unknown })?.protocolVersion),
-        capabilities: { tools: { listChanged: true } },
-        serverInfo: { name: 'piwi-assistant', version },
+        capabilities: CAPABILITIES,
+        serverInfo: serverInfo(version),
         instructions: INSTRUCTIONS,
       });
+    case 'server/discover':
+      return ok(req.id, discoverResult(CAPABILITIES, INSTRUCTIONS));
     case 'ping':
       return ok(req.id, {});
     case 'tools/list':
@@ -98,6 +169,13 @@ async function dispatch(turn: AssistantTurnTools, req: JsonRpcRequest, version: 
       const result = await turn.call(call);
       return ok(req.id, { content: [{ type: 'text', text: result.content }], isError: result.isError });
     }
+    case 'subscriptions/listen':
+      // A modern request is answered with its stream before it gets here.
+      return rpcErr(
+        req.id,
+        era.modern ? RPC.INVALID_REQUEST : RPC.METHOD_NOT_FOUND,
+        era.modern ? 'subscriptions/listen is sent alone, not in a batch' : `Method not found: ${req.method}`,
+      );
     default:
       return rpcErr(req.id, RPC.METHOD_NOT_FOUND, `Method not found: ${req.method}`);
   }

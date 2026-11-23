@@ -2,6 +2,7 @@
 // editor through its public commands, as a user's actions would.
 const assert = require('node:assert/strict');
 const path = require('node:path');
+const fs = require('node:fs');
 const vscode = require('vscode');
 
 const workspace = process.env.PIWI_TEST_WORKSPACE;
@@ -177,6 +178,60 @@ const tests = {
     }
   },
 
+  async 'the spec’s marks and lenses from the service’s answer, which the JetBrains plugin draws from it too'() {
+    const api = vscode.extensions.getExtension('piwitests.piwi').exports;
+    const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts'));
+    const document = await vscode.workspace.openTextDocument(spec);
+    await vscode.window.showTextDocument(document);
+    let computed;
+    try {
+      const summary = await waitFor(() => api.fileSummary(spec.toString()), 'the file summary of checkout.spec.ts');
+      const marks = await waitFor(() => {
+        const tests = api.gutter(spec.toString());
+        return tests.length ? tests : null;
+      }, 'the gutter of checkout.spec.ts');
+      // Piwi's lenses alone, each title without its codicon, as the JetBrains plugin's Code Vision writes it.
+      const lenses = await waitFor(async () => {
+        const found = await vscode.commands.executeCommand('vscode.executeCodeLensProvider', spec);
+        const piwi = (found ?? []).filter((l) => l.command?.command?.startsWith('piwi.'));
+        return piwi.length ? piwi : null;
+      }, 'the CodeLens of checkout.spec.ts');
+      const rows = new Map();
+      for (const lens of lenses) {
+        const line = lens.range.start.line;
+        rows.set(line, [...(rows.get(line) ?? []), lens.command.title.replace(/^\$\([^)]+\)\s*/, '')]);
+      }
+      // The places of this run's workspace and stub instance, as the golden file names them.
+      const portable = (value) =>
+        JSON.parse(
+          JSON.stringify(value)
+            .replaceAll(vscode.Uri.file(workspace).toString(), 'file:///workspace')
+            .replace(/http:\/\/127\.0\.0\.1:\d+/g, 'http://piwi.test'),
+        );
+      // A mark's hover as Markdown shows it, as `tests/golden.test.ts` reads it.
+      const hoverWords = (hover) => hover.replace(/\\(.)|<[^>]*>|[*_]/g, (whole, escaped) => escaped ?? '');
+      computed = portable({
+        spec: { file: 'tests/checkout.spec.ts', text: document.getText() },
+        summary,
+        marks: marks.map((t) => [t.line, t.status, hoverWords(t.hover)]),
+        failing:
+          marks
+            .filter((t) => t.failingUntil !== null)
+            .map((t) => ({ test: [t.line, t.failingUntil], line: t.failingLine }))[0] ?? null,
+        lenses: [...rows].sort(([a], [b]) => a - b),
+      });
+    } finally {
+      await vscode.commands.executeCommand('workbench.action.closeAllEditors');
+    }
+    const golden = path.resolve(__dirname, '..', '..', '..', '..', 'packages', 'editor', 'tests', 'golden');
+    const file = path.join(golden, 'vscode-spec.json');
+    if (process.env.PIWI_GOLDEN_WRITE) {
+      fs.writeFileSync(file, `${JSON.stringify(computed, null, 2)}\n`);
+      return;
+    }
+    assert.deepEqual(computed, JSON.parse(fs.readFileSync(file, 'utf8')));
+  },
+
   async 'the Testing view lists the tests Piwi knows, with their latest result'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const spec = vscode.Uri.file(path.join(workspace, 'tests', 'checkout.spec.ts')).toString();
@@ -258,8 +313,54 @@ const tests = {
     await vscode.commands.executeCommand('workbench.action.revertAndCloseActiveEditor');
   },
 
-  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+  async 'Piwi Picker pairs by code, once the person allows it'() {
+    // Pair with Piwi Picker listens where Piwi Picker looks: the first pairing port free, 7247 to 7251.
     await vscode.commands.executeCommand('piwi.pairPicker');
+    const base = await waitFor(async () => {
+      for (const port of [7247, 7248, 7249, 7250, 7251]) {
+        const hello = await fetch(`http://127.0.0.1:${port}/piwi/hello`).catch(() => null);
+        const body = hello?.ok ? await hello.json() : null;
+        if (body?.editor === 'vscode') return `http://127.0.0.1:${port}/piwi`;
+      }
+      return null;
+    }, 'the hello on a pairing port');
+    const origin = `chrome-extension://${'a'.repeat(32)}`;
+    const started = await fetch(`${base}/pairings`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ browser: 'Chrome', os: 'Linux' }),
+    });
+    assert.equal(started.status, 201);
+    const { id, secret, code } = await started.json();
+    // The editor makes no code: Piwi Picker shows one of its own, which the person types here.
+    assert.equal(code, undefined);
+    const poll = async () =>
+      (await fetch(`${base}/pairings/${id}`, { headers: { Origin: origin, 'x-pairing-secret': secret } })).json();
+    assert.deepEqual(await poll(), { status: 'waiting' });
+    // The view's Allow on the request's row, with the code typed.
+    await vscode.commands.executeCommand('piwi.allowPickerPairing', { requestId: id, code: 'bcdf ghjk' });
+    const answer = await poll();
+    assert.equal(answer.status, 'allowed');
+    // The proof Piwi Picker checks against its own code.
+    const proof = require('node:crypto')
+      .createHmac('sha256', 'BCDFGHJK')
+      .update(`piwi-editor-pairing:${id}:${answer.token}`)
+      .digest('hex');
+    assert.equal(answer.proof, proof);
+    // The token sends to the address Piwi Picker asked: `…/send` beside `…/pairings`.
+    const refused = await fetch(`${base}/send`, {
+      method: 'POST',
+      headers: { Authorization: 'Bearer nope' },
+      body: '{}',
+    });
+    assert.equal(refused.status, 401);
+    const live = await fetch(`${base}/live`, { headers: { Authorization: `Bearer ${answer.token}` } });
+    assert.equal(live.status, 200);
+    assert.deepEqual(await poll(), { status: 'claimed' });
+  },
+
+  async 'Piwi Picker sends a locator and a recorded flow to the cursor'() {
+    await vscode.commands.executeCommand('piwi.copyPickerAddress');
     const pairing = await vscode.env.clipboard.readText();
     const [url, token] = pairing.split('#');
     assert.match(url, /^http:\/\/127\.0\.0\.1:\d+\/piwi\/send$/);
@@ -338,7 +439,7 @@ const tests = {
     assert.match(hub.url, /^ws:\/\/127\.0\.0\.1:\d+\/piwi\/hub$/);
     // Its own discovery file, in the folder the run names, readable by this user alone.
     const file = path.join(process.env.PIWI_EDITORS_DIR, `${hub.pid}.json`);
-    if (process.platform !== 'win32') assert.equal(require('node:fs').statSync(file).mode & 0o777, 0o600);
+    if (process.platform !== 'win32') assert.equal(fs.statSync(file).mode & 0o777, 0o600);
     // The hub takes an extension's handshake at that address, and refuses a page's.
     const handshake = (origin) =>
       new Promise((resolve, reject) => {
@@ -386,7 +487,7 @@ const tests = {
   async 'the failures view lists the latest run’s failure under the run and its spec'() {
     const api = vscode.extensions.getExtension('piwitests.piwi').exports;
     const roots = await waitFor(async () => {
-      const found = await api.failureChildren();
+      const found = (await api.failureChildren()).filter((n) => n.kind !== 'link');
       return found.length ? found : null;
     }, 'the failures view');
     assert.equal(roots.length, 1);
@@ -1556,6 +1657,10 @@ const tests = {
       'piwi.copyAgentContext',
       'piwi.copyMcpConfiguration',
       'piwi.pairPicker',
+      'piwi.copyPickerAddress',
+      'piwi.allowPickerPairing',
+      'piwi.denyPickerPairing',
+      'piwi.unpairPicker',
       'piwi.runCommand',
       'piwi.copyText',
       'piwi.runSelection',
@@ -1747,7 +1852,7 @@ const tests = {
     await waitFor(() => api.statusItem().text !== '$(warning) Piwi: not running', 'the service to start again');
     // The service answers again: the failures view reads its tree from it.
     const roots = await waitFor(async () => {
-      const nodes = await api.failureChildren();
+      const nodes = (await api.failureChildren()).filter((n) => n.kind !== 'link');
       return nodes.length ? nodes : null;
     }, 'the failures tree from the started service');
     assert.ok(roots.length > 0);

@@ -1,6 +1,7 @@
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
+import { CiAsks } from '@piwitests/run-model/ci';
 import {
   CiSessions,
   MAX_CI_RUNS,
@@ -115,6 +116,7 @@ describe('the CI sessions', () => {
   let sessions: CiSessions | null = null;
 
   afterEach(() => {
+    vi.useRealTimers();
     sessions?.dispose();
     followed.clear();
     follows.clear();
@@ -149,9 +151,16 @@ describe('the CI sessions', () => {
     skippedTests: 0,
   });
 
-  function start(contexts: PiwiContext[]) {
+  function start(contexts: PiwiContext[], more: Partial<ConstructorParameters<typeof CiSessions>[0]> = {}) {
     const heard: CiSession[] = [];
-    sessions = new CiSessions({ contexts: () => contexts, streams, changed: (s) => heard.push(s), exists, pushMs: 0 });
+    sessions = new CiSessions({
+      contexts: () => contexts,
+      streams,
+      changed: (s) => heard.push(s),
+      exists,
+      pushMs: 0,
+      ...more,
+    });
     return heard;
   }
 
@@ -304,6 +313,267 @@ describe('the CI sessions', () => {
     expect(sessions!.watchTarget(ROOT, 78, null, 3)).toMatchObject({ worker: null });
     expect(sessions!.watchTarget('/work/other', 78, null, 2)).toBeNull();
     expect(sessions!.watchTarget(ROOT, 79, null, 2)).toBeNull();
+  });
+
+  test('say a lane’s test paused for its controllers, a Pause asked or dropped, and the controls a controller’s watch offers', async () => {
+    const c = context();
+    let watching: { shard: number | null; lane: number; controller: boolean } | null = null;
+    const heard = start([c], {
+      clock: (time) => (time === 1_763_727_900_000 ? '12:05' : '?'),
+      watching: () => watching,
+    });
+    sessions!.offer(c, ciRun(78));
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 4,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    });
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true, pauses: true, paused: null };
+    send(78, 'live-worker', worker);
+    await settle();
+    const last = () => heard[heard.length - 1]!.tests[0]!;
+    // Nobody's watch, or another lane's, or a Viewer's: no control, and nothing said of a running test.
+    expect(last()).not.toHaveProperty('controls');
+    expect(last()).not.toHaveProperty('paused');
+    watching = { shard: null, lane: 2, controller: false };
+    sessions!.watchChanged();
+    await settle();
+    expect(last()).not.toHaveProperty('controls');
+    watching = { shard: null, lane: 2, controller: true };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().controls).toEqual({
+      id: expect.stringMatching(/^:4:.+:0:running:$/),
+      offered: [{ command: 'pause', label: 'Pause', title: 'Stop the test before its next call' }],
+    });
+    // A Pause waits for the test's next call: Resume takes it back.
+    send(78, 'live-worker', { ...worker, pauseAsked: { by: 'Ana' } });
+    await settle();
+    expect(last().pauseAsk).toBe('Pause asked by Ana');
+    expect(last().controls).toEqual({
+      id: expect.stringMatching(/^:4:.+:0:asked$/),
+      offered: [
+        { command: 'resume', label: 'Resume', title: 'Take the Pause back: the test goes on without stopping' },
+      ],
+    });
+    // Paused: by whom and until when, the call, its place, the job's timeout, Resume and End the test.
+    const paused = {
+      reason: 'pause',
+      call: { title: "Click getByRole('button', { name: 'Pay' })", file: 'tests/checkout.spec.ts', line: 7 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    };
+    send(78, 'live-worker', { ...worker, paused, pausedBy: 'Ana' });
+    await settle();
+    expect(last().paused).toEqual({
+      state: 'Paused',
+      pausedBy: 'Paused by Ana · until 12:05',
+      call: "Click getByRole('button', { name: 'Pay' })",
+      place: 'tests/checkout.spec.ts:7',
+      at: { uri: uri('tests/checkout.spec.ts'), line: 6 },
+      note: 'The CI job’s own timeout still runs.',
+    });
+    expect(last()).not.toHaveProperty('pauseAsk');
+    expect(last().controls).toEqual({
+      id: expect.stringMatching(/^:4:.+:0:paused:1763727900000$/),
+      offered: [
+        { command: 'resume', label: 'Resume', title: 'Let the test go on from where it is paused' },
+        { command: 'end', label: 'End the test', title: 'End the test here: the rest of it is skipped' },
+      ],
+    });
+    expect(sessions!.laneWorker(ROOT, 78, null, 2)).toEqual({ shard: null, worker: 4, slot: 1 });
+    expect(sessions!.laneWorker(ROOT, 78, null, 1)).toBeNull();
+    // The worker dropped a Pause: why, with Pause offered again.
+    send(78, 'live-worker', { ...worker, pauseDropped: 'No test runs on this worker now.' });
+    await settle();
+    expect(last()).not.toHaveProperty('paused');
+    expect(last().pauseAsk).toBe('The Pause was dropped: No test runs on this worker now.');
+    expect(last().controls?.offered.map((control) => control.command)).toEqual(['pause']);
+    // A worker that cannot pause offers nothing.
+    send(78, 'live-worker', { ...worker, pauses: undefined });
+    await settle();
+    expect(last()).not.toHaveProperty('controls');
+    expect(last()).not.toHaveProperty('pauseAsk');
+  });
+
+  test('name a lane’s state by its test and the instance’s pause sequence: a Pause dropped again within one push is another', async () => {
+    vi.useFakeTimers();
+    const c = context();
+    const heard = start([c], { pushMs: 500, watching: () => ({ shard: null, lane: 2, controller: true }) });
+    sessions!.offer(c, ciRun(78));
+    const begin = (title: string) => ({
+      title,
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 4,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    });
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', begin('pays'));
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true, pauses: true, paused: null };
+    const why = 'No test runs on this worker now.';
+    send(78, 'live-worker', { ...worker, pauseDropped: why, pauseSeq: 2 });
+    await vi.advanceTimersByTimeAsync(700);
+    const id = () => heard[heard.length - 1]!.tests[0]!.controls?.id ?? null;
+    const asked = id()!;
+    const asks = new CiAsks();
+    expect(asks.ask('lane', asked)).toBe(true);
+    const before = heard.length;
+    // The Pause is asked, then dropped again for the same reason, within one push.
+    send(78, 'live-worker', { ...worker, pauseAsked: { by: 'Ana' }, pauseSeq: 3 });
+    send(78, 'live-worker', { ...worker, pauseDropped: why, pauseSeq: 4 });
+    await vi.advanceTimersByTimeAsync(1_200);
+    expect(heard.length).toBeGreaterThan(before);
+    for (const session of heard.slice(before)) asks.seen('lane', session.tests[0]!.controls?.id ?? null);
+    expect(id()).not.toBe(asked);
+    expect(asks.asked('lane', asked)).toBe(false);
+    // The worker's next test, the pause state the same: another state too.
+    const dropped = id();
+    send(78, 'test-completed', { ...begin('pays'), status: 'passed' });
+    send(78, 'test-begin', { ...begin('refunds'), location: 'tests/checkout.spec.ts:9:1' });
+    await vi.advanceTimersByTimeAsync(700);
+    expect(id()).not.toBe(dropped);
+    vi.useRealTimers();
+  });
+
+  test('say a lane’s failure held for its controllers in the run page’s words, Let it go only on a controller’s watch of it', async () => {
+    const c = context();
+    /** The lane the client's watch shows, and whether it counts as a controller's, as the CI watch says it. */
+    let watching: { root: string; runId: number; shard: number | null; lane: number; controller: boolean } | null =
+      null;
+    const heard = start([c], {
+      clock: (time) => (time === 1_763_727_900_000 ? '12:05' : '?'),
+      watching: (root, runId) => (watching?.root === root && watching.runId === runId ? watching : null),
+    });
+    sessions!.offer(c, ciRun(78));
+    const begin = {
+      title: 'pays',
+      filePath: 'tests/checkout.spec.ts',
+      location: 'tests/checkout.spec.ts:3:1',
+      workerIndex: 4,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    };
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', begin);
+    const worker = { shard: null, worker: 4, slot: 1, connected: true, holds: true };
+    const held = {
+      reason: 'held',
+      call: { title: 'Expected "Paid", received "Pending"', file: 'tests/checkout.spec.ts', line: 7 },
+      test: 'pays',
+      until: 1_763_727_900_000,
+    };
+    send(78, 'live-worker', { ...worker, paused: held, heldFor: ['Ana'] });
+    await settle();
+    const last = () => heard[heard.length - 1]!.tests[0]!;
+    expect(last().held).toEqual({
+      id: ':4:1763727900000',
+      state: 'Failed, held at its line',
+      heldFor: 'Held for Ana · until 12:05',
+      error: 'Expected "Paid", received "Pending"',
+      place: 'tests/checkout.spec.ts:7',
+      at: { uri: uri('tests/checkout.spec.ts'), line: 6 },
+      note: 'The CI job’s own timeout still runs.',
+      letGo: false,
+      letGoLabel: 'Let it go',
+      letGoTitle: 'End the hold: the test tears down as it would have, its result unchanged',
+    });
+    expect(sessions!.heldWorker(ROOT, 78, null, 2)).toEqual({ shard: null, worker: 4, slot: 1 });
+    // The client's watch of the lane counts as a controller's: Let it go is offered there alone.
+    watching = { root: ROOT, runId: 78, shard: null, lane: 2, controller: true };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().held).toMatchObject({ letGo: true });
+    watching = { root: ROOT, runId: 78, shard: null, lane: 2, controller: false };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().held).toMatchObject({ letGo: false });
+    watching = { root: ROOT, runId: 78, shard: null, lane: 1, controller: true };
+    sessions!.watchChanged();
+    await settle();
+    expect(last().held).toMatchObject({ letGo: false });
+    // A hold of another lane, a stop of another kind and a worker that cannot hold say nothing of this one.
+    send(78, 'live-worker', { ...worker, slot: 0, worker: 3, paused: held });
+    send(78, 'live-worker', { ...worker, paused: { ...held, reason: 'pause' } });
+    await settle();
+    expect(last().held).toBeUndefined();
+    send(78, 'live-worker', { ...worker, holds: undefined, paused: held });
+    await settle();
+    expect(last().held).toBeUndefined();
+    // The hold ends as its worker goes on, or leaves.
+    send(78, 'live-worker', { ...worker, paused: held, heldFor: [] });
+    await settle();
+    expect(last().held).toMatchObject({ heldFor: 'Held · until 12:05' });
+    send(78, 'live-worker', { ...worker, connected: false, paused: null });
+    await settle();
+    expect(last().held).toBeUndefined();
+    expect(sessions!.heldWorker(ROOT, 78, null, 2)).toBeNull();
+  });
+
+  test('forget a hold as the run’s stream opens again, whose worker left meanwhile, nor give it to the lane’s next test', async () => {
+    const c = context();
+    const heard = start([c], { watching: () => ({ shard: null, lane: 2, controller: true }) });
+    sessions!.offer(c, ciRun(78));
+    const test = (title: string, workerIndex: number, line: number) => ({
+      title,
+      filePath: 'tests/checkout.spec.ts',
+      location: `tests/checkout.spec.ts:${line}:1`,
+      workerIndex,
+      parallelIndex: 1,
+      shardIndex: null,
+      retries: 0,
+    });
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'test-begin', test('pays', 4, 3));
+    const held = {
+      reason: 'held',
+      call: { title: 'boom', file: 'tests/checkout.spec.ts', line: 7 },
+      until: 1_763_727_900_000,
+    };
+    send(78, 'live-worker', {
+      shard: null,
+      worker: 4,
+      slot: 1,
+      connected: true,
+      holds: true,
+      heldFor: ['Ana'],
+      paused: held,
+    });
+    await settle();
+    expect(heard[heard.length - 1]!.tests[0]!.held).toBeDefined();
+    // The stream opens again: worker 4 left meanwhile, worker 5 runs the lane's next test, and its catch-up names no
+    // worker that left.
+    send(78, 'init', { id: 78, status: 'running', totalTests: 4, passedTests: 0, failedTests: 1, skippedTests: 0 });
+    send(78, 'live-view', { enabled: true, keyed: true });
+    send(78, 'live-worker', {
+      shard: null,
+      worker: 5,
+      slot: 1,
+      connected: true,
+      holds: true,
+      paused: null,
+      heldFor: [],
+    });
+    await settle();
+    expect(heard[heard.length - 1]!.tests[0]!.held).toBeUndefined();
+    send(78, 'test-completed', { ...test('pays', 4, 3), status: 'failed' });
+    send(78, 'test-begin', test('refunds', 5, 9));
+    await settle();
+    const refunds = heard[heard.length - 1]!.tests.find((t) => t.title[t.title.length - 1] === 'refunds')!;
+    expect(refunds.held).toBeUndefined();
+    expect(sessions!.heldWorker(ROOT, 78, null, 2)).toBeNull();
+    // Even unheard, a hold of the worker that left is none of the next worker's test.
+    send(78, 'live-worker', { shard: null, worker: 4, slot: 1, connected: true, holds: true, paused: held });
+    await settle();
+    expect(heard[heard.length - 1]!.tests.find((t) => t.title[t.title.length - 1] === 'refunds')!.held).toBeUndefined();
   });
 
   test('follow only a CI run of the branch read or checked out, while it runs', async () => {

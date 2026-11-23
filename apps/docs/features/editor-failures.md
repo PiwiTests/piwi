@@ -120,8 +120,9 @@ settings and **Open the documentation**. The tree is read again when a run ends 
 
 With no failure to list, the view says why, in both editors: no failure in the run read; no run yet, or none for the
 baseline chosen, with **Compare with…**; an instance that does not answer, naming it and why, with **Retry** (also retried on
-its own); a desktop app to restart or update; an instance still being read; or no connection, with
-**Connect**. **Re-run the failing tests** stays while failures are listed, the instance answering or not.
+its own); a desktop app to restart or update; an API key refused or missing, or no project, with **Connect…** and
+**Open settings**; an instance still being read; or no connection, with **Connect…**. **Re-run the failing tests**
+stays while failures are listed, the instance answering or not.
 
 ## Related
 

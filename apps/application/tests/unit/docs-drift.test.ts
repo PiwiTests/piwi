@@ -25,6 +25,7 @@ import {
   sidebars,
   toolPages,
 } from '../../../docs/.vitepress/navigation';
+import { MOVED_PAGES } from '../../../docs/.vitepress/moved-pages';
 import { QUOTED_DOCS_SECTIONS } from '#shared/piwi-ecosystem';
 import { buildDocsCorpus } from '#shared/docs-corpus';
 import { GENERATED_DOCS_PAGES } from '#shared/docs-generated-pages';
@@ -95,7 +96,7 @@ const POSITIONING = [
   'groups the failures by root cause',
   'scores the flaky tests',
   'finds the locator you should have used',
-  'Self-hosted, zero telemetry',
+  'Free, self-hosted, zero telemetry',
 ];
 
 const POSITIONING_SURFACES = [
@@ -215,6 +216,27 @@ describe('docs pages the app deep-links into', () => {
     if (!anchor) return;
 
     expect(anchorsOf(path), `apps/docs/${page}.md has no heading anchored #${anchor}`).toContain(anchor);
+  });
+});
+
+describe('moved docs pages', () => {
+  // The build writes a redirect page at each old URL (.vitepress/moved-pages.ts):
+  // its target must be a page, and its old URL must not be one.
+  const pageOf = (path: string) =>
+    join(repoRoot, 'apps/docs', `${path.replace(/^\//, '').replace(/\/$/, '/index') || 'index'}.md`);
+
+  test.each(Object.entries(MOVED_PAGES))('%s redirects to %s, a page and heading', (from, target) => {
+    expect(from, `${from}: a key names the URL without .html`).not.toMatch(/\.html$/);
+    // A key without a trailing slash also answers as a directory.
+    for (const old of from.endsWith('/') ? [from] : [from, `${from}/`]) {
+      expect(existsSync(pageOf(old)), `${old} is a docs page: remove ${from} from MOVED_PAGES`).toBe(false);
+    }
+
+    const [page, anchor] = target.split('#');
+    const path = pageOf(page!);
+    if (GENERATED_PAGES.has(page!.slice(1)) && generatedPageMissing(path)) return;
+    expect(existsSync(path), `${target} is not a docs page`).toBe(true);
+    if (anchor) expect(anchorsOf(path), `${target}: no heading anchored #${anchor}`).toContain(anchor);
   });
 });
 

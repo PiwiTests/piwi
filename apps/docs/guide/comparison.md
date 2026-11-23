@@ -1,6 +1,7 @@
 ---
 title: Why Piwi?
-description: "How Piwi compares with the Playwright HTML report, Allure, ReportPortal, Currents and Fault0, and when another tool fits better."
+titleTemplate: "Playwright dashboards compared: :title | Piwi"
+description: "How Piwi, a free, self-hosted Playwright dashboard, compares with the HTML report, Allure, ReportPortal, Currents and Fault0, and when another tool fits better."
 lang: en-US
 ---
 

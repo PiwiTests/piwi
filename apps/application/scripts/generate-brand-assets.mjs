@@ -393,7 +393,7 @@ function socialCard() {
 <div class="text">${words}
   <h1>Your Playwright results, <span>kept and explained.</span></h1>
   <p>CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests and finds the locator you should have used.</p>
-  <div class="foot"><b>Self-hosted, zero telemetry</b> · piwitests.dev</div>
+  <div class="foot"><b>Free, self-hosted, zero telemetry</b> · piwitests.dev</div>
 </div>${big}</body></html>`;
 }
 

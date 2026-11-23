@@ -13,9 +13,17 @@ import {
   newEditorChallenge,
   type EditorSendPayload,
 } from '@piwitests/core/editor-send';
+import {
+  EditorPairingRequests,
+  allowEditorPairing,
+  editorPairingProof,
+  type EditorPairingStart,
+} from '@piwitests/core/editor-pairing';
 import { liveUrlOf } from '@piwitests/core/run-hub';
 import { readLiveHubs } from '@piwitests/editor/discovery';
 import {
+  helloAt,
+  holdsToken,
   liveHubsHere,
   loopbackPort,
   onLoopback,
@@ -109,7 +117,7 @@ describe('the send listener', () => {
     const res = await fetch(listener.url, { method: 'OPTIONS', headers: { Origin: 'moz-extension://x' } });
     expect(res.status).toBe(204);
     expect(res.headers.get('access-control-allow-headers')).toBe(
-      'Authorization, Content-Type, x-piwi-editor-challenge',
+      'Authorization, Content-Type, x-piwi-editor-challenge, x-pairing-secret',
     );
     expect(res.headers.get('access-control-allow-methods')).toBe('GET, POST, OPTIONS');
     expect(res.headers.get('access-control-expose-headers')).toBe('x-piwi-editor-proof');
@@ -252,6 +260,114 @@ describe('the send listener', () => {
   });
 });
 
+describe('pairing by code', () => {
+  const CHROME = `chrome-extension://${'b'.repeat(32)}`;
+  let pairingListener: SendListener;
+  let heard = 0;
+  const requests = new EditorPairingRequests();
+
+  beforeAll(async () => {
+    pairingListener = await startSendListener({
+      port: 0,
+      token: () => TOKEN,
+      onPayload: async () => ({ inserted: true, file: null }),
+      live: () => [],
+      pairing: { hello: () => ({ editor: 'vscode', product: 'Visual Studio Code', windows: ['shop'] }), requests },
+      heard: () => void heard++,
+    });
+  });
+  afterAll(() => pairingListener.close());
+
+  const base = () => pairingListener.url.replace(/\/send$/, '');
+  const start = (origin: string, body = '{"browser":"Chrome","os":"macOS"}') =>
+    fetch(`${base()}/pairings`, {
+      method: 'POST',
+      headers: { Origin: origin, 'Content-Type': 'application/json' },
+      body,
+    });
+
+  test('says which editor listens, with no token, to an extension', async () => {
+    const res = await fetch(`${base()}/hello`, { headers: { Origin: CHROME } });
+    expect(res.status).toBe(200);
+    expect(res.headers.get('access-control-allow-origin')).toBe(CHROME);
+    expect(await res.json()).toEqual({ editor: 'vscode', product: 'Visual Studio Code', windows: ['shop'] });
+    expect(await helloAt(pairingListener.port)).toEqual({
+      editor: 'vscode',
+      product: 'Visual Studio Code',
+      windows: ['shop'],
+    });
+    expect(await helloAt(listener.port)).toBeNull();
+  });
+
+  test('hands the token to the extension that asked, once the person allows it', async () => {
+    const res = await start(CHROME);
+    expect(res.status).toBe(201);
+    const started = (await res.json()) as EditorPairingStart;
+    expect(requests.waiting()).toEqual([expect.objectContaining({ id: started.id, client: 'Chrome on macOS' })]);
+    const poll = () =>
+      fetch(`${base()}/pairings/${started.id}`, { headers: { Origin: CHROME, 'x-pairing-secret': started.secret } });
+    expect(await (await poll()).json()).toEqual({ status: 'waiting' });
+    expect(await allowEditorPairing(requests, started.id, TOKEN, 'BCDF-GHJK')).toBe('allowed');
+    expect(await (await poll()).json()).toEqual({
+      status: 'allowed',
+      token: TOKEN,
+      proof: await editorPairingProof('BCDF-GHJK', started.id, TOKEN),
+    });
+    expect(await (await poll()).json()).toEqual({ status: 'claimed' });
+    const wrong = await fetch(`${base()}/pairings/${started.id}`, { headers: { 'x-pairing-secret': 'nope' } });
+    expect(wrong.status).toBe(404);
+  });
+
+  test('asks the person only for an extension’s JSON, and reads a small body alone', async () => {
+    expect((await start('https://evil.test')).status).toBe(403);
+    const plain = await fetch(`${base()}/pairings`, {
+      method: 'POST',
+      headers: { Origin: CHROME, 'Content-Type': 'text/plain' },
+      body: '{}',
+    });
+    expect(plain.status).toBe(415);
+    expect((await start(CHROME, 'not json')).status).toBe(400);
+    expect((await start(CHROME, JSON.stringify({ browser: 'x'.repeat(10_000) }))).status).toBe(413);
+    expect(requests.waiting()).toEqual([]);
+    // A page reached under another name is refused before anything.
+    const rebound = await new Promise<number>((resolve) => {
+      const req = http.request(
+        { host: '127.0.0.1', port: pairingListener.port, path: '/piwi/hello', headers: { Host: 'evil.test' } },
+        (r) => resolve(r.statusCode ?? 0),
+      );
+      req.end();
+    });
+    expect(rebound).toBe(403);
+  });
+
+  test('hears Piwi Picker when the token lets an extension’s request through, and nothing else', async () => {
+    const before = heard;
+    await fetch(`${base()}/live`, { headers: { Authorization: `Bearer ${TOKEN}`, Origin: CHROME } });
+    expect(heard).toBe(before + 1);
+    // A run's reporter, which sends no Origin, and a request without the token are not Piwi Picker.
+    await fetch(`${base()}/live`, { headers: { Authorization: `Bearer ${TOKEN}` } });
+    await fetch(`${base()}/live`, { headers: { Authorization: 'Bearer wrong', Origin: CHROME } });
+    expect(heard).toBe(before + 1);
+  });
+
+  test('tells another window of this editor, which proves it holds the same token, from any other listener', async () => {
+    expect(await holdsToken(pairingListener.port, TOKEN)).toBe(true);
+    // Another user's editor, or a program that answers as an editor: it proves no token of this one.
+    expect(await holdsToken(pairingListener.port, 'another-users-token-0123')).toBe(false);
+    expect(await holdsToken(pairingListener.port, '')).toBe(false);
+    const free = http.createServer();
+    await new Promise<void>((resolve) => free.listen(0, '127.0.0.1', resolve));
+    const port = (free.address() as AddressInfo).port;
+    await new Promise((resolve) => free.close(resolve));
+    expect(await holdsToken(port, TOKEN)).toBe(false);
+  });
+
+  test('leaves the routes unanswered without the pairing by code', async () => {
+    const res = await fetch(liveUrlOf(listener.url)!.replace(/\/live$/, '/hello'));
+    expect(res.status).toBe(404);
+  });
+});
+
 describe('the window’s pairing', () => {
   /** A pairing kept in memory, with the ports it saved, and the listeners it started. */
   function harness(port: number | undefined) {
@@ -300,6 +416,44 @@ describe('the window’s pairing', () => {
       expect(saved).toEqual([Number(new URL(run.url).port)]);
     } finally {
       await close();
+      await new Promise((resolve) => other.close(resolve));
+    }
+  });
+
+  test('gives Piwi Picker the first pairing port free, and saves it', async () => {
+    const other = http.createServer();
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const taken = (other.address() as AddressInfo).port;
+    const spare = http.createServer();
+    await new Promise<void>((resolve) => spare.listen(0, '127.0.0.1', resolve));
+    const free = (spare.address() as AddressInfo).port;
+    await new Promise((resolve) => spare.close(resolve));
+    const saved: number[] = [];
+    let running: SendListener | null = null;
+    const store: PairingStore = {
+      token: '',
+      port: undefined,
+      saveToken: async () => {},
+      savePort: async (p) => void saved.push(p),
+    };
+    const pairing = sendPairing({
+      store,
+      listener: () => running,
+      listen: async (p) =>
+        (running = await startSendListener({
+          port: p,
+          token: () => store.token,
+          onPayload: async () => ({ inserted: false, file: null }),
+          live: () => [],
+        })),
+      mint: () => 'minted-token-0123456789',
+      ports: [taken, free],
+    });
+    try {
+      expect(new URL((await pairing(true)).url).port).toBe(String(free));
+      expect(saved).toEqual([free]);
+    } finally {
+      await (running as SendListener | null)?.close();
       await new Promise((resolve) => other.close(resolve));
     }
   });
@@ -369,6 +523,9 @@ describe('the saved port, held by another window', () => {
     let running: SendListener | null = null;
     const take = takeSavedPort({
       saved: async () => saved,
+      // No pairing port free: only the saved port is tried.
+      ports: [],
+      held: async () => false,
       listener: () => running,
       listen: async (p) => {
         running = await startSendListener({
@@ -427,21 +584,43 @@ describe('the saved port, held by another window', () => {
     expect(starts).toBe(2);
   });
 
-  test('is never tried without a pairing saved', async () => {
-    let asked = 0;
+  test('without a pairing saved, is the first pairing port free, past another program’s, up to another window’s', async () => {
+    const asked: number[] = [];
+    const started: number[] = [];
+    // 1 is another program's, 2 another window's of this editor, which keeps the pairing: 3 is never tried.
     const take = takeSavedPort({
       saved: () => ({ port: undefined, token: '' }),
+      ports: [1, 2, 3],
+      held: async (port) => port === 2,
       listener: () => null,
-      listen: async () => {
-        asked++;
-        throw new Error('no');
+      listen: async (port) => {
+        asked.push(port);
+        throw new Error('EADDRINUSE');
       },
-      everyMs: 20,
+      started: (l) => void started.push(l.port),
+      everyMs: 1_000_000,
     });
     await take.ready;
-    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(asked).toEqual([1, 2]);
+    // With none held, the first free one is taken, and no token is needed for it.
+    let running: SendListener | null = null;
+    const free = takeSavedPort({
+      saved: () => ({ port: undefined, token: '' }),
+      ports: [1, 2, 3],
+      held: async () => false,
+      listener: () => running,
+      listen: async (port) => {
+        if (port < 3) throw new Error('EADDRINUSE');
+        running = { port, url: `http://127.0.0.1:${port}/piwi/send`, close: async () => {} };
+        return running;
+      },
+      started: (l) => void started.push(l.port),
+      everyMs: 1_000_000,
+    });
+    await free.ready;
     take.dispose();
-    expect(asked).toBe(0);
+    free.dispose();
+    expect(started).toEqual([3]);
   });
 });
 

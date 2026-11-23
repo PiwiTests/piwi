@@ -15,6 +15,7 @@ import { runSummaryText, runVerdictText } from '~/utils/run-summary';
 import { NO_WORKER_GRACE_MS } from '~/utils/run-live-view-status';
 import { stallWatch, STREAM_RECONNECT_STALL_MS } from '~/utils/stream-stall';
 import { AttentionFollower, attentionSignals, attentionWords } from '~/utils/live-attention';
+import { watchedStop } from '~/utils/stop-words';
 import { PRESSED_TOGGLE_CLASS } from '@piwitests/run-ui/ui-classes';
 import { useLiveWatch } from '~/composables/useLiveWatch';
 import { streamReopener } from '~/utils/stream-reopen';
@@ -266,6 +267,13 @@ const watching = ref<{
   executionId: number | null;
 } | null>(null);
 const watchOpen = ref(false);
+/** The worker the lane panel shows, as the run's live view says it stands: its lane's newest when it names one. */
+const watchedWorker = computed<LiveWorkerState | null>(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  if (typeof shown.slot === 'number') return laneWorker({ shard: shown.shard, slot: shown.slot });
+  return liveWorkers.value[liveWorkerKey(shown)] ?? null;
+});
 /** Whether the view opened from a row's Watch, which gives it the focus; the page's address opens it without. */
 const watchAsked = ref(false);
 // The lane a `?watch=` address names, until a worker of it joins the run's live view: the view then opens on it.
@@ -414,6 +422,16 @@ function dedupeFinalAttempts(cases: TestCaseResult[]): TestCaseResult[] {
 }
 
 const dedupedDisplayCases = computed(() => dedupeFinalAttempts(displayTestCases.value));
+/**
+ * The stop the watched worker's test stands at, read as its row reads it (`watchedStop`): of the worker now in the
+ * view's lane, or of the worker watched when it says no lane.
+ */
+const watchedTestStop = computed(() => {
+  const shown = watching.value;
+  if (!shown) return null;
+  const worker = (shown.slot === undefined ? null : laneWorker({ shard: shown.shard, slot: shown.slot })) ?? shown;
+  return watchedStop(dedupedDisplayCases.value, liveWorkers.value, worker);
+});
 
 // The page's one watch of the run: the lane panel's full view and Watch all's tiles, on one connection.
 const live = useLiveWatch(() => Number(runId));
@@ -427,7 +445,7 @@ watch(liveWorkers, (workers) => live.keep(Object.keys(workers)));
 // the lane panel, with its call log and Inspect's pages, and no image.
 if (isDemoMode) {
   watch(liveLanes, (lanes) => {
-    const workers = demoLaneWorkers(Object.values(lanes));
+    const workers = demoLaneWorkers(Object.values(lanes), liveWorkers.value);
     const keys = Object.keys(workers).sort().join();
     if (keys !== Object.keys(liveWorkers.value).sort().join()) liveWorkers.value = workers;
   });
@@ -441,7 +459,9 @@ const offersWatchAll = computed(
 );
 const runningRows = computed(() => dedupedDisplayCases.value.filter((row) => row.status === 'running'));
 /** What each lane needs attention for now: its rows' failures and Stuck? marks, and its stop. */
-const attentionNow = computed(() => attentionSignals(displayTestCases.value, lanesNow.value));
+const attentionNow = computed(() =>
+  attentionSignals(displayTestCases.value, lanesNow.value, Object.values(liveWorkers.value)),
+);
 /** **Follow what needs attention**: the lane panel moves on its own to a lane whose test failed, got stuck or stopped. */
 const followAttention = ref(false);
 /** Why the lane panel moved where it is, while it shows that lane. */
@@ -1764,7 +1784,10 @@ const moreMenuItems = computed(() => {
         :project-key="testRun?.projectId"
         :project-name="testRun?.project?.name"
         :live="live"
+        :worker-state="watchedWorker"
+        :project-id="testRun?.projectId ?? null"
         :moved-why="movedWhy"
+        :stop="watchedTestStop"
         v-model:attention="followAttention"
       />
     </ClientOnly>

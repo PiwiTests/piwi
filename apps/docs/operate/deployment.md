@@ -184,7 +184,7 @@ spec:
         fsGroup: 1001   # the image's non-root user, so it can write the volume
       containers:
       - name: piwi-dashboard
-        image: phenx/piwitests-server:0.73.0 # x-release-please-version
+        image: phenx/piwitests-server:0.75.0 # x-release-please-version
         ports:
         - containerPort: 3000
         envFrom:
@@ -350,7 +350,7 @@ Piwi is a single Node.js process and runs comfortably on small machines:
 | RAM | ~300 MB idle; 1 GB is comfortable headroom for large uploads and AI diagnosis |
 | CPU | 1 vCPU is enough for a team; ingest is I/O-bound |
 | Disk | The real variable — traces and HTML reports dominate. Budget by retention: e.g. ~50–200 MB per run with traces enabled. Prune old runs from **Settings → Storage** |
-| Scaling | Run a single replica. SQLite requires it; with PostgreSQL the SSE event bus is still in-process, and so is whether a [Run on my machine](/features/run-on-my-machine) app is online, so keep one instance |
+| Scaling | Run a single replica. SQLite requires it; with PostgreSQL the SSE event bus is still in-process, and so is whether a [Run on my machine](/features/run-on-my-machine) app is online and the [live view](/features/live-view)'s relay (sticky sessions do not help: a run's setup, its CI workers and its viewers are separate clients), so keep one instance |
 
 ## Security
 

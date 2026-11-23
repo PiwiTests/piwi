@@ -62,8 +62,8 @@ the report was generated with, whatever retention deleted since, and answers 404
 (`PIWI_RETENTION_REPORT_DAYS`).
 
 A [report schedule](./quality-reports#report-schedules) can mint one per report: turn on **Share link** in the
-schedule form. Each report then gets its own link, which the email and the Slack message carry beside the button to
-the snapshot, so a stakeholder without an account reads the report in one click. The link expires a week after the
+schedule form. Each report then gets its own link, which the email, the Slack and Microsoft Teams messages and the webhook's
+body carry beside the link to the snapshot, so a stakeholder without an account reads the report in one click. The link expires a week after the
 schedule's next report, within `PIWI_SHARE_LINK_MAX_TTL_DAYS`. The token travels encrypted with `PIWI_SECRET_KEY`
 from the schedule to the delivery, and is shown to nobody.
 

@@ -27,9 +27,10 @@ shell and are feature-equivalent.
     (`proof_holds`), and a restart's splash text never shows a hidden window.
   - The main window may only navigate to its bundled pages and the sidecar's exact origin
     (`main_window_may_navigate` in `src-tauri/src/lib.rs`).
-  - A run's output window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
+  - A run's window (`desktop_open_output_window`, labeled `output-<name>_<n>`) shows the dashboard's
     `/desktop/run-output` page, stays on the sidecar's origin and holds no IPC grant: the dashboard window feeds it
-    over a `BroadcastChannel` (`app/utils/run-output-channel.ts`). Never give it the opener link of `window.open()`:
+    over a `BroadcastChannel` (`app/utils/run-output-channel.ts`) and does what it asks there, and the page reads the
+    runs' hub through the routes behind the desktop guard. Never give it the opener link of `window.open()`:
     on macOS the new web view then shares the main window's script handlers, and closing it drops the main window's
     IPC. A reload of the dashboard window closes none: its next page asks for them, and closes those no run of it
     shows (`desktop_close_other_output_windows`); the dashboard window's end closes all.

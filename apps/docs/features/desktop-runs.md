@@ -132,7 +132,7 @@ which nobody attends, only one that knows such runs too.
 ## Related
 
 - [Desktop app](./desktop): what it runs, and how it links a project to its folder.
-- [Local runs tray](./local-runs-tray): the tray's runs, their progress, their output and a compact list.
+- [Local runs tray](./local-runs-tray): the tray's runs, their progress, their output and the runs list.
 - [Pause and step from the editor](./editor-run-control): the same stops, in VS Code and the JetBrains IDEs.
 - [Code from a pause](./editor-stop-code): what each action writes.
 - [Runs window](./runs-window#the-desktop-app-s-runs): Piwi Picker's window, paired with the app, for the same runs;

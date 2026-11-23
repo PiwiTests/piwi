@@ -1142,5 +1142,155 @@
   "runui_connectionKeepKeyFailed": {
     "message": "Could not keep the key: disconnected",
     "description": "Title of an error notice: the system's keychain refused to keep the key the team instance gave this app, so the app disconnected from the instance. One short line."
+  },
+  "runui_runStop": {
+    "message": "Stop",
+    "description": "Button that stops a run of tests on this machine as Ctrl+C would in a terminal: Playwright winds down and writes its report. One short word."
+  },
+  "runui_runForceStop": {
+    "message": "Force stop",
+    "description": "Button shown in place of runui_runStop while a run winds down: it kills the run’s process at once. Two short words."
+  },
+  "runui_runForceStopHint": {
+    "message": "Kill the process now: Playwright may not write its report",
+    "description": "Tooltip of runui_runForceStop: what killing the process costs."
+  },
+  "runui_runStopsWithin": {
+    "message": "Ends within $seconds$ s",
+    "description": "Beside runui_runForceStop while a run winds down: at most how many seconds remain before it ends, since the app kills a process that still runs then. Short.",
+    "placeholders": {
+      "seconds": {
+        "content": "$1",
+        "example": "7"
+      }
+    }
+  },
+  "runui_runStopsWithinHint": {
+    "message": "Playwright is winding down and writing its report. A process still running then is killed.",
+    "description": "Tooltip of runui_runStopsWithin."
+  },
+  "runui_outputWaiting": {
+    "message": "Waiting for output…",
+    "description": "In a run’s output pane before the run printed its first line."
+  },
+  "runui_outputFilter": {
+    "message": "Filter the output",
+    "description": "Placeholder and label of the field above a run’s output that keeps only the lines holding its text. A few words."
+  },
+  "runui_outputMatches_one": {
+    "message": "$shown$ of $count$ line",
+    "description": "Beside the output filter: how many lines hold its text, of the lines the pane keeps. Singular form, on the lines kept.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputMatches_other": {
+    "message": "$shown$ of $count$ lines",
+    "description": "Beside the output filter: how many lines hold its text, of the lines the pane keeps. Plural form, on the lines kept.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "214"
+      },
+      "shown": {
+        "content": "$2",
+        "example": "12"
+      }
+    }
+  },
+  "runui_outputNoMatch": {
+    "message": "No line holds this text",
+    "description": "In a run’s output pane when no line holds the filter’s text."
+  },
+  "runui_outputWrap": {
+    "message": "Wrap long lines",
+    "description": "Toggle button of a run’s output pane, shown as an icon: long lines wrap instead of scrolling sideways."
+  },
+  "runui_outputFirstError": {
+    "message": "Go to the first error",
+    "description": "Button of a run’s output pane, shown as an icon: scrolls to the first error the run printed."
+  },
+  "runui_outputLatest": {
+    "message": "Go to the latest line",
+    "description": "Button over a run’s output once the person scrolled up: scrolls back to the newest line and follows the output again."
+  },
+  "runui_outputCopy": {
+    "message": "Copy output",
+    "description": "Button of a run’s output pane: copies every line it keeps, without colors."
+  },
+  "runui_outputLabel": {
+    "message": "Output",
+    "description": "Accessible name of a run’s output pane, the scrolling text the run printed. One short word."
+  },
+  "runui_resultsLabel": {
+    "message": "Results",
+    "description": "Accessible name of the list of a finished run’s tests and how each came out."
+  },
+  "runui_resultPassed": {
+    "message": "Passed",
+    "description": "How a test of a finished run came out: it passed. One word."
+  },
+  "runui_resultFailed": {
+    "message": "Failed",
+    "description": "How a test of a finished run came out: it failed. One word."
+  },
+  "runui_resultFlaky": {
+    "message": "Flaky",
+    "description": "How a test of a finished run came out: it failed, then passed on a retry. One word."
+  },
+  "runui_resultSkipped": {
+    "message": "Skipped",
+    "description": "How a test of a finished run came out: it was skipped. One word."
+  },
+  "runui_resultInterrupted": {
+    "message": "Interrupted",
+    "description": "How a test of a finished run came out: the run was stopped while it ran. One word."
+  },
+  "runui_resultDidNotRun": {
+    "message": "Did not run",
+    "description": "How a test of a finished run came out: the run ended before it started. A few words."
+  },
+  "runui_resultUnknown": {
+    "message": "No result in the output",
+    "description": "How a test of a finished run came out when its output does not say: the reporter printed no line for it. A few words."
+  },
+  "runui_resultsMore_one": {
+    "message": "Show $count$ more",
+    "description": "Button under the list of a finished run’s tests: shows the one it leaves out. Singular form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_resultsMore_other": {
+    "message": "Show $count$ more",
+    "description": "Button under the list of a finished run’s tests: shows those it leaves out. Plural form.",
+    "placeholders": {
+      "count": {
+        "content": "$1",
+        "example": "3"
+      }
+    }
+  },
+  "runui_runsLabel": {
+    "message": "Runs",
+    "description": "Accessible name of the list of a window’s runs, beside the run it shows. One word."
+  },
+  "runui_runsShown": {
+    "message": "Run shown",
+    "description": "Accessible name of the select that names the run shown, in place of the list of runs on a narrow window. A few words."
+  },
+  "runui_runsWaiting": {
+    "message": "A test waits at a stop",
+    "description": "Read by a screen reader on a run’s line in the list of runs, beside a pause mark: a test of the run stands stopped at a line, waiting for an answer."
   }
 }

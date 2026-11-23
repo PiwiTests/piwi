@@ -1,7 +1,7 @@
 {
   "name": "@piwitests/server",
-  "version": "0.73.0",
-  "description": "Self-hosted dashboard that keeps and explains your Playwright test results — run with npx @piwitests/server",
+  "version": "0.75.0",
+  "description": "Free, self-hosted dashboard that keeps and explains your Playwright test results — run with npx @piwitests/server",
   "type": "module",
   "bin": {
     "piwi-server": "bin/piwi-server.mjs"

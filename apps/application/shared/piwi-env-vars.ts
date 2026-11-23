@@ -549,6 +549,16 @@ export const PIWI_ENV_VARS = {
     relevantWhen: { PIWI_SHARE_LINKS_ENABLED: 'true' },
     since: '0.26.0',
   },
+  PIWI_MCP_CLIENT_METADATA_DOCUMENTS: {
+    description:
+      'Set to "true" to accept MCP clients that sign in with a client ID metadata document: an HTTPS URL as their `client_id`, naming the JSON document that describes them, which the server then fetches from a public address when the client asks for authorization, and advertises in the authorization server metadata. Off by default: the instance then makes no such request, and clients register on their own (dynamic client registration), which stays on either way. Turn it on only for an instance that can reach the internet: a client that sees it advertised signs in through it alone.',
+    category: 'auth',
+    type: 'boolean',
+    default: 'false',
+    relevantWhen: { PIWI_AUTH_ENABLED: 'true' },
+    since: '0.75.0',
+    docs: 'features/mcp#authentication',
+  },
   PIWI_TRUST_PROXY: {
     description:
       'Set to "true" when a reverse proxy sits in front of Piwi, so per-IP rate limits on the auth endpoints key on the client address your proxy appends to X-Forwarded-For instead of on the proxy\'s own address (which would pool every client into one bucket). Leave off when clients connect directly: the header is client-controlled then, and trusting it would let a caller choose its own bucket.',

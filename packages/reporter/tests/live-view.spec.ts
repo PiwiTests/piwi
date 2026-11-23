@@ -428,7 +428,7 @@ describe('the live view of a run on the instance', () => {
     expect(on.output).toContain('Live view on');
     // One worker a project: one stream each, naming it and its lane, with the run's key.
     expect(on.heard.streams.length).toBeGreaterThanOrEqual(2);
-    expect(on.heard.streams[0]!.url).toMatch(/\/api\/test-runs\/41\/live-view\?worker=0&slot=0$/);
+    expect(on.heard.streams[0]!.url).toMatch(/\/api\/test-runs\/41\/live-view\?worker=0&slot=0&features=hold%2Cpause$/);
     expect(on.heard.streams[0]!.authorization).toBe(`Bearer ${KEY}`);
   });
 

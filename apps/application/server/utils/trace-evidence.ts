@@ -29,12 +29,15 @@ import {
   buildActionCallsites,
   buildTraceBodyPreview,
   buildTraceCallStack,
+  buildTraceFrames,
   buildTraceNetwork,
   buildTraceSnapshots,
   matchNetworkBodySha1,
   parseNetworkTexts,
   parseStacksTexts,
   resolveSnapshotFile,
+  traceFrameSource,
+  traceImageContentType,
   type ActionCallsite,
   type TraceResourceReader,
   type TraceResourceSnapshot,
@@ -44,6 +47,7 @@ import type { DbClient } from '../database';
 import type {
   TraceBodyResponse,
   TraceCallStackResponse,
+  TraceFramesResponse,
   TraceNetworkResponse,
   TraceSnapshotsResponse,
 } from '../../types/api';
@@ -68,8 +72,10 @@ interface TraceBundle {
   resourcesByUrl: Map<string, TraceResource>;
   /** The `aria/*` and `screenshots/*` entries the archive holds, still compressed. */
   snapshotEntries: Map<string, PackedEntry>;
+  /** The names of the `screencast/` entries the archive holds itself (read by `inlineScreencastEntries`). */
+  inlineScreencastNames: Set<string>;
   readResource: TraceResourceReader;
-  /** A screenshot the slim blob left in the project pool, by its entry name; null when there is none. */
+  /** A screenshot or frame the slim blob left in the project pool, by its entry name; null when there is none. */
   readPooledEntry: (entryName: string) => Promise<Buffer | null>;
   /** About how much memory the bundle holds: its parsed streams and the entries it keeps compressed. */
   retainedBytes: number;
@@ -198,8 +204,8 @@ function pooledEntryReader(
  *
  * Only the event streams (`.trace`, `.stacks`, `.network`) are inflated. The
  * aria snapshots, and any screenshots the archive holds, stay compressed until
- * a view reads one; a screencast in the archive, which no view reads, is
- * dropped with it.
+ * a view reads one; a `screencast/` frame the archive holds is read only when
+ * the frame route asks for one (`inlineScreencastEntries`).
  */
 async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
   const archive = await readTraceArchive(blobPath);
@@ -221,6 +227,7 @@ async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
   const snapshotEntries = packEntries(zip, metas, (name) =>
     name.startsWith('aria/') || name.startsWith('screenshots/') ? name : null,
   );
+  const inlineScreencastNames = new Set(metas.filter((m) => m.name.startsWith('screencast/')).map((m) => m.name));
   const inlineResources = packEntries(zip, metas, (name) =>
     name.startsWith('resources/') ? name.slice('resources/'.length) : null,
   );
@@ -237,6 +244,7 @@ async function readTraceBundle(blobPath: string): Promise<TraceBundle | null> {
     network: networkTexts.length > 0 ? parseNetworkTexts(networkTexts) : [],
     resourcesByUrl: parseResourceSnapshots(networkTexts),
     snapshotEntries,
+    inlineScreencastNames,
     readResource: traceResourceReader(blobPath, inlineResources, manifest),
     readPooledEntry: pooledEntryReader(blobPath, manifest),
     // The parsed events take a few times their text in memory.
@@ -514,6 +522,100 @@ export async function getTraceSnapshotResourceFromBlob(
   const bytes = await readSnapshot(bundle, file);
   if (!bytes) return null;
   return { bytes, contentType: kind === 'aria' ? 'application/json' : 'image/png' };
+}
+
+/** The trace's screencast, page by page, on the timeline's clock. Feeds the timeline's Screen lane. */
+export async function getTraceFramesFromBlob(blobPath: string): Promise<TraceFramesResponse> {
+  const bundle = await loadTraceBundle(blobPath);
+  if (!bundle) return { status: 'no-trace', pages: [], total: 0, capped: false, startEpochMs: null };
+  return buildTraceFrames(bundle.parsed);
+}
+
+/** How many blobs' inline screencast frames stay read at once, the last asked for. */
+const INLINE_SCREENCAST_BLOBS = 2;
+interface CachedScreencast {
+  entries: Promise<Map<string, PackedEntry> | null>;
+  timer: ReturnType<typeof setTimeout> | null;
+}
+const inlineScreencasts = new Map<string, CachedScreencast>();
+
+function forgetScreencast(blobPath: string, cached: CachedScreencast): void {
+  if (inlineScreencasts.get(blobPath) !== cached) return;
+  if (cached.timer) clearTimeout(cached.timer);
+  inlineScreencasts.delete(blobPath);
+}
+
+/**
+ * The `screencast/` entries a blob holds itself (a blob stored before frames
+ * were pooled, or as uploaded), still compressed: read when the frame route
+ * first asks for one, never with the trace's other views, and kept for the
+ * last {@link INLINE_SCREENCAST_BLOBS} content-addressed blobs only, each until
+ * it goes unread as long as a loaded trace does.
+ */
+function inlineScreencastEntries(blobPath: string): Promise<Map<string, PackedEntry> | null> {
+  const read = () =>
+    readTraceArchive(blobPath).then((archive) =>
+      archive
+        ? packEntries(archive.zip, archive.metas, (name) => (name.startsWith('screencast/') ? name : null))
+        : null,
+    );
+  if (!CONTENT_ADDRESSED_BLOB.test(blobPath)) return read();
+  let cached = inlineScreencasts.get(blobPath);
+  if (cached) {
+    inlineScreencasts.delete(blobPath);
+    inlineScreencasts.set(blobPath, cached);
+  } else {
+    const entry: CachedScreencast = { entries: Promise.resolve(null), timer: null };
+    entry.entries = read().then((entries) => {
+      if (!entries) forgetScreencast(blobPath, entry);
+      return entries;
+    });
+    cached = entry;
+    inlineScreencasts.set(blobPath, cached);
+    for (const [path, other] of inlineScreencasts) {
+      if (inlineScreencasts.size <= INLINE_SCREENCAST_BLOBS) break;
+      forgetScreencast(path, other);
+    }
+  }
+  const kept = cached;
+  if (kept.timer) clearTimeout(kept.timer);
+  kept.timer = setTimeout(() => forgetScreencast(blobPath, kept), BUNDLE_IDLE_MS);
+  kept.timer.unref?.();
+  return kept.entries;
+}
+
+/**
+ * A `screencast/` frame: from the blob itself when its archive holds the entry,
+ * else from the project pool, where ingestion moved it.
+ */
+async function readScreencastFrame(bundle: TraceBundle, blobPath: string, name: string): Promise<Buffer | null> {
+  if (!bundle.inlineScreencastNames.has(name)) return bundle.readPooledEntry(name);
+  const entry = (await inlineScreencastEntries(blobPath))?.get(name);
+  if (!entry) return null;
+  try {
+    return await decompressEntry(entry.data, entry.meta);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * One screencast frame, by the name the frame list gives it: a name the trace's
+ * events list, read from its `resources/` body or its `screencast/` entry, and
+ * served only when it is an image.
+ */
+export async function getTraceFrameFromBlob(blobPath: string, name: string): Promise<TraceSnapshotResource | null> {
+  const bundle = await loadTraceBundle(blobPath);
+  const source = traceFrameSource(bundle?.parsed ?? null, name);
+  if (!bundle || !source) return null;
+  const bytes =
+    source.kind === 'resource'
+      ? await bundle.readResource(source.name)
+      : await readScreencastFrame(bundle, blobPath, source.name);
+  const contentType = bytes ? traceImageContentType(bytes) : null;
+  return bytes && contentType
+    ? { bytes: Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength), contentType }
+    : null;
 }
 
 /**

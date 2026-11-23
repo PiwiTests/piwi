@@ -3,7 +3,7 @@ import type { Browser, Page, WorkerInfo } from '@playwright/test';
 import { RECORD_CHANNEL_ENV, lineReader, parseRecordChannel } from '@piwitests/core/ide-recorder';
 import { LANE_THUMBS_PER_SECOND, MAX_FILMSTRIP, type LaneLayer } from '@piwitests/core/live-layers';
 import { LIVE_CALL_LOGS_PER_SECOND, type LiveCallLog } from '@piwitests/core/live-view';
-import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
+import { hideKnownValues, hideSecretsInText } from '@piwitests/core/mask';
 import {
   MAX_RUN_EVENT_RATE,
   RUN_CHANNEL_ENV,
@@ -76,6 +76,8 @@ import {
   layersTest,
   knownSecrets,
   layersTitleOf,
+  shownThumb,
+  shownTitle,
   subscribePageEvents,
   takeLaneText,
   type KeptThumb,
@@ -568,7 +570,8 @@ export function positionsWanted(): boolean {
 
 /**
  * Tell the editor where a call of the running test began, at most `POSITIONS_PER_SECOND` a second: a call begun within
- * the while after the last one told waits for its end, and only the latest of them is told.
+ * the while after the last one told waits for its end, and only the latest of them is told. `title` is kept as
+ * `keptTitle` keeps it, and shown as it is told (`shownTitle`).
  */
 export function tellPosition(title: string, place: Place): void {
   if (!positionsWanted()) return;
@@ -588,7 +591,7 @@ function sendPendingPosition(): void {
   pendingPosition = null;
   if (!position || !positionsWanted()) return;
   positionToldAt = performance.now();
-  tellHub({ type: 'position', testId: runningTestId!, title: position.title, place: position.place });
+  tellHub({ type: 'position', testId: runningTestId!, title: shownTitle(position.title), place: position.place });
 }
 
 function dropPendingPosition(): void {
@@ -662,16 +665,17 @@ export function holdStop(
     browser: stop.browser ?? null,
   };
   held = holding;
+  const known = knownSecrets();
   tellHub({
     type: 'stopped',
     stop: id,
     reason: stop.reason,
-    // The text the stopped call types stays in the worker, as on every surface.
-    title: hideSecretsInText(hideTypedText(stop.title)),
+    // The text the stopped call types, and each value the attempt knows, stay in the worker, as on every surface.
+    title: shownTitle(stop.title),
     place: stop.place,
-    locator: stop.locator,
+    locator: stop.locator === null ? null : hideKnownValues(stop.locator, known),
     bar: stop.bar,
-    ...(stop.error ? { error: stop.error } : {}),
+    ...(stop.error ? { error: hideKnownValues(stop.error, known) } : {}),
   });
   // After the hub heard the stop: the lane's latest frame goes again at once, named for it.
   laneStopped(id, stop.page);
@@ -972,7 +976,7 @@ function startLaneStrip(): void {
     const next = strip.queue.shift();
     const now = laneAt().test;
     if (next && (now === null || next.test === now)) {
-      tellLayer({ layer: 'filmstrip', thumb: next.thumb, data: next.data.toString('base64') }, next.test);
+      tellLayer({ layer: 'filmstrip', thumb: shownThumb(next.thumb), data: next.data.toString('base64') }, next.test);
     }
   }, 1000 / LANE_THUMBS_PER_SECOND);
   send.unref?.();

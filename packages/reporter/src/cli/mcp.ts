@@ -19,7 +19,7 @@ import { PIWI_DESKTOP_CONFIG_ENV } from '../internal/config/env.js';
 import { getReporterVersion } from '../internal/support/reporter-version.js';
 
 /** The MCP versions the router speaks, the newest first. */
-const PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'];
+const PROTOCOL_VERSIONS = ['2025-11-25', '2025-06-18', '2025-03-26', '2024-11-05'];
 /** The tools of a host the router forwards: the run tools, never another tool a host serves. */
 const RUN_TOOL = /^(?:run_[a-z]+|page_[a-z]+|code_write)$/;
 /** How long a host has to answer a list, and a tool call (a long poll waits a minute at most). */

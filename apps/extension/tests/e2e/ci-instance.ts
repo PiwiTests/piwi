@@ -20,6 +20,16 @@ export interface CiInstance {
   watches: Array<{ query: URLSearchParams; key: unknown; res: ServerResponse; closed: boolean }>;
   /** What the extension posted to change a watch, with its key. */
   posts: Array<{ body: Record<string, unknown>; key: unknown }>;
+  /** Whether a watch's hello says it counts as a controller's. */
+  controller: boolean;
+  /** What the extension posted to let a held test go, with its key; the instance answers with `letGoAnswer`. */
+  letGos: Array<{ body: Record<string, unknown>; key: unknown }>;
+  letGoAnswer: { status: number; body: Record<string, unknown> };
+  /** What the extension posted to pause, resume or end a test, with its key; answered with `controlAnswer`. */
+  controls: Array<{ body: Record<string, unknown>; key: unknown }>;
+  controlAnswer: { status: number; body: Record<string, unknown> };
+  /** Send a `live-worker` event on the run's streams: a worker's held stop, or its end. */
+  worker(state: Record<string, unknown>): void;
   /** Send a live message on the latest watch. */
   live(message: LiveViewerMessage): void;
   close(): Promise<void>;
@@ -56,6 +66,14 @@ export async function startCiInstance(): Promise<CiInstance> {
     runStreams: [],
     watches: [],
     posts: [],
+    controller: false,
+    letGos: [],
+    controls: [],
+    controlAnswer: { status: 200, body: { success: true, message: 'The test pauses before its next call.' } },
+    letGoAnswer: {
+      status: 200,
+      body: { success: true, message: 'The test goes on: it tears down as it would have, its result unchanged.' },
+    },
   } as unknown as CiInstance;
   const server = createServer((req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
@@ -99,7 +117,29 @@ export async function startCiInstance(): Promise<CiInstance> {
       const watch = { query: new URLSearchParams(search), key: req.headers['x-api-key'], res, closed: false };
       instance.watches.push(watch);
       req.on('close', () => (watch.closed = true));
-      res.write(encodeLiveViewerMessage({ type: 'hello', watch: 'watch-0123456789ab' }));
+      res.write(
+        encodeLiveViewerMessage({
+          type: 'hello',
+          watch: 'watch-0123456789ab',
+          ...(instance.controller ? { controller: true as const } : {}),
+        }),
+      );
+      return;
+    }
+    if (path === '/api/test-runs/78/live-view/control' && req.method === 'POST') {
+      void readBody(req).then((body) => {
+        instance.controls.push({ body, key: req.headers['x-api-key'] });
+        res.writeHead(instance.controlAnswer.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(instance.controlAnswer.body));
+      });
+      return;
+    }
+    if (path === '/api/test-runs/78/live-view/let-go' && req.method === 'POST') {
+      void readBody(req).then((body) => {
+        instance.letGos.push({ body, key: req.headers['x-api-key'] });
+        res.writeHead(instance.letGoAnswer.status, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify(instance.letGoAnswer.body));
+      });
       return;
     }
     if (path === '/api/test-runs/78/live-view/watch' && req.method === 'POST') {
@@ -115,6 +155,9 @@ export async function startCiInstance(): Promise<CiInstance> {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   instance.url = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  instance.worker = (state) => {
+    for (const res of instance.runStreams) sse(res, 'live-worker', state);
+  };
   instance.live = (message) =>
     instance.watches[instance.watches.length - 1]!.res.write(encodeLiveViewerMessage(message));
   instance.close = async () => {

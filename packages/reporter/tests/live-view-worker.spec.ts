@@ -14,7 +14,10 @@ import {
   readWorkerToInstance,
   type WorkerToInstance,
 } from '@piwitests/core/live-view';
+import { HIDDEN_VALUE } from '@piwitests/core/mask';
 import { PIWI_RUN_LOG_ENV } from '../src/internal/config/env.js';
+import { layersTestBegan, layersTestEnded } from '../src/internal/capture/lane-layers.js';
+import { trackCalls } from '../src/internal/capture/live-call-log.js';
 import {
   closeLiveView,
   liveViewState,
@@ -178,6 +181,11 @@ function fakePage(shot: Buffer = SHOT): { page: Page; paint: (data: string) => v
 
 const SECRET_CALL = { title: 'Navigate to "/reset?token=abc123def456"', file: 'tests/a.spec.ts', line: 4 };
 const HIDDEN_CALL = { ...SECRET_CALL, title: 'Navigate to "/reset?token=<hidden>"' };
+/** Values the attempt knows are secrets, which no other rule finds, the longer one holding the shorter. */
+const KNOWN = '12345678-abcdefgh';
+const KNOWN_START = '12345678';
+const KNOWN_CALL = { title: `Click getByText('${KNOWN}')`, file: 'tests/a.spec.ts', line: 5 };
+const KNOWN_SHOWN = { ...KNOWN_CALL, title: `Click getByText('${HIDDEN_VALUE}')` };
 
 describe("the worker's live view connection", () => {
   it('names its lane on its stream and in each message, and says how its test ended', async () => {
@@ -224,6 +232,45 @@ describe("the worker's live view connection", () => {
     goneOn();
     await waitFor(() => posts.length === 3);
     expect(posts[2]).toEqual({ type: 'stop', shard: null, worker: 0, stop: null });
+  });
+
+  it('hides each value the attempt knows in the call of a stop and of each frame, one known after the stop too', async () => {
+    const hooks: Array<Record<string, (...args: unknown[]) => void>> = [];
+    trackCalls({ _instrumentation: { addListener: (listener: (typeof hooks)[number]) => hooks.push(listener) } });
+    const type = (text: string) => hooks[0]!.onApiCallBegin!({}, { method: 'keyboardType', params: { text } });
+    layersTestBegan({ id: 'pays-1', began: Date.now(), titleOf: () => null, fixtureCall: () => false, trace: null });
+    try {
+      await open();
+      // The keyboard types them: values the attempt knows from then on.
+      type(KNOWN_START);
+      const goneOn = liveViewStopped({ reason: 'page-pause', call: KNOWN_CALL, test: 'pays' });
+      await waitFor(() => posts.length === 1);
+      type(KNOWN);
+      // The stream opens again: the stop goes again, as it is shown now.
+      streams[0]!.destroy();
+      await waitFor(() => streams.length === 2 && posts.length === 2);
+      const stop = { reason: 'page-pause', test: 'pays' };
+      const started = { ...KNOWN_CALL, title: `Click getByText('${HIDDEN_VALUE}-abcdefgh')` };
+      expect(posts[0]).toEqual({ type: 'stop', shard: null, worker: 0, stop: { ...stop, call: started } });
+      expect(posts[1]).toEqual({ type: 'stop', shard: null, worker: 0, stop: { ...stop, call: KNOWN_SHOWN } });
+      goneOn();
+      await waitFor(() => posts.length === 3);
+      streams[1]!.write(`data: ${JSON.stringify({ type: 'viewers', count: 1 })}\n\n`);
+      laneTestBegan('pays-1');
+      liveViewTestBegan('pays', () => KNOWN_CALL);
+      const { page, paint } = fakePage();
+      lanePage(page);
+      await waitFor(() => {
+        paint('a frame of the page');
+        return posts.some((p) => p.type === 'frame' && 'data' in p);
+      });
+      const framed = posts.filter((p) => p.type === 'frame' && 'data' in p);
+      expect(framed.map((p) => (p as { call: unknown }).call)).toEqual(framed.map(() => KNOWN_SHOWN));
+      await liveViewTestEnded();
+      await laneTestEnded();
+    } finally {
+      layersTestEnded();
+    }
   });
 
   it('names its test on each frame, the secrets of its call hidden, and says why none shows between tests', async () => {
@@ -302,7 +349,9 @@ describe("the worker's live view connection", () => {
         second.paint('a frame of the second portal');
         return framesOf(secondShot) > before;
       });
-      expect(posts.filter((p) => p.type === 'frame' && 'data' in p).every((p) => 'test' in p && p.test === 'two portals')).toBe(true);
+      expect(
+        posts.filter((p) => p.type === 'frame' && 'data' in p).every((p) => 'test' in p && p.test === 'two portals'),
+      ).toBe(true);
     } finally {
       await liveViewTestEnded();
       await laneTestEnded();

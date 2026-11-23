@@ -10,7 +10,8 @@ import { join } from 'node:path';
  * selections: a failure in the status palette's rose, a duration that stands out
  * in the one tone of `app/utils/duration-tone.ts`, a selected tab or row in the
  * neutral classes of `app/utils/index.ts` (`SELECTED_TAB_CLASS`,
- * `SEGMENTED_SELECTED_CLASS`, `SELECTED_ROW_CLASS`). This scan keeps the
+ * `SEGMENTED_SELECTED_CLASS`) and the layer's `ui-classes.ts`
+ * (`SELECTED_ROW_CLASS`). This scan keeps the
  * components that draw them free of the raw Tailwind reds, oranges and greens
  * that bypass the palette, and of any primary-colored class outside a hover or a
  * focus ring. The E2E `tests/failure-page-accent.spec.ts` checks the same rule
@@ -23,6 +24,8 @@ const APP_ROOT = fileURLToPath(new URL('../..', import.meta.url));
 const FILES = [
   'app/components/test-case/EvidenceTabs.vue',
   'app/components/test-case/DebugInEditorButton.vue',
+  'app/components/test-case/TimelinePagePanel.vue',
+  'app/components/test-case/TimelineToggle.vue',
   'app/components/test-case/FailureTimelineCard.vue',
   'app/components/test-case/TimelineTypeFilter.vue',
   'app/components/test-case/TimelineDuration.vue',
@@ -73,7 +76,10 @@ describe('the evidence card and the affected tests keep the accent to the primar
     const hits = [...source.matchAll(PRIMARY_RE)]
       .filter((m) => !ALLOWED_PRIMARY_VARIANTS.some((variant) => m[1]!.includes(variant)))
       .map((m) => `${file}:${lineOf(source, m.index!)} ${m[0]}`);
-    expect(hits, 'mark a selection with the neutral classes of app/utils/index.ts').toEqual([]);
+    expect(
+      hits,
+      'mark a selection with the neutral classes of app/utils/index.ts or the layer’s ui-classes.ts',
+    ).toEqual([]);
   });
 
   test('the patterns catch what they are meant to', () => {

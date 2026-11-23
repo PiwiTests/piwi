@@ -56,6 +56,7 @@ Terms used in this file:
   mappings and the active project, what is read and what is sent, the desktop app, Share result, the requests and who
   makes them, connection health, cache freshness, host permissions for the instance, and the Test functions panel.
 - [The editor's runs](#the-editors-runs): following and steering the runs the paired editor starts.
+  - [Pairing with an editor](#pairing-with-an-editor): Pair, the editors found on their ports, and the code.
   - [Finding the hubs](#finding-the-hubs): the live endpoint beside Send to editor, the editor's proof, and when the
     hubs are found again.
   - [A connection per hub](#a-connection-per-hub): the WebSocket, its messages and commands, silence, and what keeps
@@ -257,7 +258,7 @@ connected or paired. The cards:
   - the patterns kept in this browser, a table whose **Save** keeps only them;
   - a folded **Add a site** form.
 - **Desktop app** (see "The desktop app").
-- **Editor**: the pairing that Send to editor and the Runs window use.
+- **Editor**: the pairing that Send to editor and the Runs window use (see "Pairing with an editor").
 - **Sites Piwi Picker may run on**: every host permission granted (`chrome.permissions.getAll`), each with a **Revoke**
   button. The list is redrawn on `chrome.permissions.onAdded` / `onRemoved` and when the recording's or the replay's
   state changes. `site-grants.ts` (pure) keeps the site of a running recording or replay, and the origins the instance
@@ -799,6 +800,31 @@ counted among the failed, whether or not its hub answers, until a Runs window ta
 window that long, past the ten minutes and the five runs an ended run is kept, then ten minutes more. It lives in the
 worker alone, so a restart of the worker forgets it.
 
+### Pairing with an editor
+
+The Editor card's **Pair** pairs by code, as the desktop app does (`@piwitests/core/editor-pairing`):
+
+1. Inside the click, before anything is awaited, it reads the grants held (`chrome.permissions.getAll`) and asks for
+   the origins of every port an editor of this computer listens on (`editorPairingBases`: VS Code's 7247 to 7251, a
+   JetBrains IDE's built-in server's 63342 to 63361). Each pattern comes from `hostPattern`, so Firefox asks for
+   `http://127.0.0.1/*` once; Chrome names the host once in its prompt.
+2. `findEditors` (`piwi-client.ts`) asks `GET …/hello` at each, at once, with a short timeout; an answer
+   `parseEditorHello` refuses is no editor. With more than one found, the card lists them, one button each.
+3. `startEditorPairing` posts `{ browser, os }` (`describeClient`, nothing else) to `…/pairings`, and the card shows
+   a code of its own (`newEditorPairingCode`), which never leaves the page: the person types it in the editor.
+   `pollEditorPairing` waits through `waitForApproval`, Cancel aborting it. The token the editor hands over comes
+   with `editorPairingProof` of the code typed; the card keeps it only when the proof is its own code's (`wrong-code`
+   otherwise, a typo or another program on the port), with `…/send` beside the routes it asked
+   (`EDITOR_SEND_PATH`), never with an address the editor names.
+4. While it waits, its grants are held (`holdGrants`), as Connect's and the desktop app's Pair hold theirs: no
+   `releaseGrant` gives one back meanwhile, which Firefox's one loopback pattern for every port needs, and the sites
+   card leaves them out. At the end, whatever came of it, the grants it asked for and nothing holds are given back,
+   those held before the click kept; a pairing that replaced another gives back the other's. **Use this address**
+   ends a Pair in progress.
+
+**Pair with an address**, folded under it, takes the address an editor's **Copy the pairing address for Piwi Picker**
+copies (`parseEditorPairing`), the way to pair a remote window, whose forwarded port Pair does not look at.
+
 ### Finding the hubs
 
 `RunHubs` (`background/run-hubs.ts`) asks the paired editor for its hubs:
@@ -942,8 +968,10 @@ words through its catalogs (`runsSpeaker`, `src/shared/run-words.ts`). The worke
 - The window talks only to the worker, through the port `RUNS_PORT`. The worker takes that port from `runs.html` alone
   (`fromRunsPage`: the extension's id and the page's address), and reads its messages with `parseRunsRequest`. The
   state the worker posts (`RunsState`) carries no token, and the window makes no network call.
-- Every control but Pause, Share live and End the test while a Pause waits for a call (`give-up`, naming the worker)
-  names the stop shown (`since`), so a click made twice never answers the next stop.
+- Every control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the trace so far
+  (`trace`) and End the test while a Pause waits for a call (`give-up`, naming the worker) names the stop shown
+  (`since`), so a click made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share
+  live, Hold failures, Stop the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`).
 - At a stop, the test's controls are Resume, Step and Finish, and End the test where the stop's `intents` list `end`
   (the hub's `runControl` `end`: the test ends there, skipped); Resume alone where it failed (`reason: 'failure'`, its
   state line **Failed at** and the place, the error under it: the stop's `error`, its lines kept, else, from a service
@@ -1152,6 +1180,25 @@ share, hold, input or pick, since they run on CI; a running test's **Watch** sho
   ends it, after 45 s of silence or on an error, each window hearing why (`ci-ended`, `CiWatchEnd`), shown in the view
   with **Watch on the dashboard**; a refusal (`RunsAnswer.ci`) is said there too, the instance's own sentence when it
   gave one. The view is read-only: no Interact, input, pick or control.
+- **Held**: a run's `live-worker` events say a worker's test held at its failure for the run's controllers
+  (`readCiHold`, kept by shard and worker, forgotten as the run's stream opens again, and a test's only from its own
+  worker), listed on its test (`RunsCiTest.held`, **Failed, held at its line**) and
+  shown above the lane watched in the run page's words (`ciHoldWords`). The watch's `hello` says whether it counts as
+  a controller's, which its windows hear (`ci-controller`); only then, and only on the lane the window watches
+  (`offersLetGo`), **Let it go** sends `ci-let-go` once per hold (`LetGoAsks`, its button off until the hold ends or is refused), which the worker posts on that watch with the held worker
+  (`CiRunsWatch.held`, `letGoCiTest`), saying why not (`unwatched`, `uncontrolled`, `unheld`) or the instance's
+  sentence.
+- **Paused**: each connected worker's latest `live-worker` event is kept too (forgotten as the stream opens again) and
+  listed on its lane's test (`RunsCiTest.live`, `ciWorkerStateOf`): a test paused for the run's controllers shows
+  above the lane in the run page's words (`readCiPause`, `ciPauseWords`, **Paused** in the list), a Pause waiting or
+  dropped under the controls (`ciPauseAskWords`). On a controller's watch of the lane the window offers what
+  `ciControlsOffered` decides (**Pause**, **Resume**, **End the test**), each sending `ci-control` with its command,
+  which the worker posts on that watch for the lane's worker (`CiRunsWatch.laneWorker`, `controlCiTest`), saying why
+  not (`unwatched`, `uncontrolled`, `no-worker`) or the instance's sentence. Let it go and the controls are asked once
+  in each state of the lane (`CiAsks`, `ciStateKey`: its hold, or its test and the instance's `pauseSeq`), their
+  buttons off until it changes, the lane shows anything new after the instance took the ask (`ciShown`), or the ask is
+  refused; what the ask came to shows under them in that state alone (`ciNote.state`), and the box is drawn again as
+  the state changes.
 
 ### Run-level controls, keys and the window's place
 

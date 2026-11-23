@@ -80,7 +80,7 @@ A run Piwi starts follows your config, headless by default, unless you turn
 [headed runs](./editor-runs#how-a-run-starts) on or an [older reporter](./editor-breakpoints#what-it-needs) needs it. A headless stop opens its worker's page (`Piwi: worker 1` beside VS Code's editor, the JetBrains tool window's
 **Worker 1** tab) with the line's controls, unless that worker's [watch](./watch-running-test) shows it. It keeps its
 stop until it goes on, after a **Step** or **Run to the cursor** from the editor waits up to 10 seconds for the next,
-and **Piwi: Show the paused page** (**Tools → Piwi → Show the paused page**) opens it at any stop.
+and **Piwi: Show the paused page** (**Tools → Piwi → Run control**) opens it at any stop.
 
 <figure>
   <img src="/screenshots/vscode-run-control-paused-page.png" alt="VS Code: a headless test paused before it clicks Apply, and beside the editor the Piwi: worker 1 tab showing the cart page with the coupon typed in">
@@ -97,7 +97,7 @@ It needs no Piwi Picker ([remote development](/guide/remote-development)), and o
 ## Share with Playwright tools
 
 At a stop, **Share with Playwright tools** (the stop's hover and **Piwi: Share the stopped test's browser with
-Playwright tools** in VS Code; the stop's menu and **Tools → Piwi** in a JetBrains IDE) binds the test's browser for
+Playwright tools** in VS Code; the stop's menu and **Tools → Piwi → Run control** in a JetBrains IDE) binds the test's browser for
 Playwright's own tools, so `npx playwright cli attach piwi-<run>-w<worker>` and Playwright's dashboard can join it.
 It is off until you ask, and asks first each time: any process of yours can then read the browser's pages and run code
 in them. It stays shared until the test ends; no agent can share it.

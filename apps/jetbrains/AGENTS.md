@@ -38,18 +38,21 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
 - **A change to `protocol.ts` updates `Protocol.kt` in the same change.** `Protocol.kt` mirrors
   `packages/editor/src/protocol.ts` for lsp4j; `testTheBundledServiceAnswersThroughTheDescriptor` (`PiwiPluginTest`)
   reads the bundled service's answers with it.
-- **A change to `@piwitests/core/editor-send` or `@piwitests/core/editor-discovery` updates `Glue.kt` in the same
-  change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof` mirror the first,
-  `Glue.parseEditorDiscovery` and `Glue.liveHubs` the second; `GlueTest` checks them.
+- **A change to `@piwitests/core/editor-send`, `@piwitests/core/editor-pairing` or `@piwitests/core/editor-discovery`
+  updates `Glue.kt` in the same change.** `Glue.parseSendPayload`, `Glue.sendAuthorized` and `Glue.editorTokenProof`
+  mirror the first, `Glue.EditorPairingRequests` and `Glue.editorHello` the second, `Glue.parseEditorDiscovery` and
+  `Glue.liveHubs` the third; `GlueTest` checks them.
   ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **A word both editors write themselves comes from `packages/editor/src/words.json`, restated in `EditorWords.WORDS`**
   (a stop's controls and code actions, a recording's states, a worker's name, the choices of Hold failures), and a change
   to the file updates the copy in the same change; `GlueTest` holds the two equal.
 - **The words both editors compute from the same answer are held equal by the golden fixtures**
-  (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, a spec's test marks and lens rows): `GlueTest`
+  (`packages/editor/tests/golden/`: the status bar's text, the Runs rows, a spec's test marks and lens rows, the Piwi
+  Picker tab's words, the Failures tab's empty text in each state): `GlueTest`
   (the marks and rows: `PiwiPluginTest`, drawn by `PiwiTestAnnotator` and `PiwiCodeVisionProvider`) and the VS Code
   extension's `tests/golden.test.ts` read the same file, so a change to either side's words changes the fixture and the
-  other side.
+  other side. `vscode-spec.json` is the service's answer for a spec with the marks and lens rows VS Code computes from
+  it, recorded by VS Code's integration suite: `PiwiPluginTest` draws the same from it.
 - **The settings page's group titles and choice labels are the editor service's settings registry**
   (`packages/editor/src/settings.json`), restated in `SettingsWords`, and each option lives where its scope says, with
   its default: `team` in `PiwiSettings`, `project` in `PiwiLocalSettings`, `user` in `PiwiUserSettings` (the IDE's
@@ -117,8 +120,9 @@ each feature works is in [`ARCHITECTURE.md`](ARCHITECTURE.md); the protocol is i
   given twice, `PiwiOpenHandler` checks both files again by their canonical paths (`Glue.debugFileRefusal`), and the
   service builds the run. Checked by `GlueTest`. ([Open in IDE](ARCHITECTURE.md#open-in-ide))
 - **The Send to editor endpoint proves it holds the token on every answer to a challenge, and `GET /api/piwi/live`
-  lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`
-  and `/api/piwi/live` alone, and leaves the platform's `isAccessible` its check of `Host`. Checked by `PiwiPluginTest`
+  lists hubs only, never a run channel's token.** `isOriginAllowed` allows an extension's origin on `/api/piwi/send`,
+  `/api/piwi/live`, `/api/piwi/hello` and `/api/piwi/pairings` alone, and leaves the platform's `isAccessible` its check
+  of `Host`. The token goes to Piwi Picker by code only once the person types the code it shows (`PiwiPickerPairing.allow`), with its proof. Checked by `PiwiPluginTest`
   (`testPiwiPickersChallengeAloneIsAnsweredWithTheProofOnTheLiveEndpoint`,
   `testPiwiPickerListsTheLiveHubsThroughThePairing`). ([Send to editor](ARCHITECTURE.md#send-to-editor))
 - **The runs' MCP server's token lives in the `PasswordSafe`, one per project, and a stop's browser is shared only
@@ -267,6 +271,7 @@ All under `src/main/kotlin/dev/piwitests/jetbrains/` unless noted.
 - `PiwiRecordingActions.kt`, `PiwiRecording.kt`, `PiwiRecordingViews.kt`, `RecordHereIntention.kt`: recording.
 - `PiwiRunLineMarker.kt`: Piwi's entries in the IDE run icon's menu, and the Gutter Icons switch of the result icon.
 - `PiwiSendHandler.kt`, `PiwiOpenHandler.kt`, `OpenOrigins.kt`: the built-in server's endpoints.
+  `PiwiPickerPairing.kt`: Piwi Picker's pairing by code and the **Piwi Picker** tab.
 - `PiwiConnect.kt`, `PiwiConnectPanel.kt`, `PiwiConfigurable.kt`, `PiwiColorSettingsPage.kt`: Connect, its panel and the
   settings pages.
 - `PiwiLog.kt`: the editor service's log and the tool window's **Log** tab.

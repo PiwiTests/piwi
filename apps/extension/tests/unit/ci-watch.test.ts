@@ -33,11 +33,13 @@ function liveStream() {
 function viewer() {
   const frames: RunsCiFrame[] = [];
   const ended: Array<RunsCiLane & { why: CiWatchEnd }> = [];
+  const controls: Array<RunsCiLane & { on: boolean }> = [];
   const it: CiViewer = {
     frame: (frame) => frames.push(frame),
     ended: (lane, why) => ended.push({ ...lane, why }),
+    controller: (lane, on) => controls.push({ ...lane, on }),
   };
-  return { it, frames, ended };
+  return { it, frames, ended, controls };
 }
 
 const JPEG = new Uint8Array([0xff, 0xd8, 0xff, 0xe0, 1, 2, 3]);
@@ -50,6 +52,15 @@ function watcher() {
     stream: ReturnType<typeof liveStream>;
   }> = [];
   const posted: Array<{ runId: number; body: Record<string, unknown> }> = [];
+  const letGos: Array<{ runId: number; body: Record<string, unknown> }> = [];
+  const controls: Array<{ runId: number; body: Record<string, unknown> }> = [];
+  let controlAnswer: () => Promise<Response> = async () =>
+    Response.json({ success: true, message: 'The test pauses before its next call.' });
+  let letGoAnswer: () => Promise<Response> = async () =>
+    Response.json({
+      success: true,
+      message: 'The test goes on: it tears down as it would have, its result unchanged.',
+    });
   let target: { followed?: boolean; watchable: boolean; worker: number | null } | null = { watchable: true, worker: 3 };
   let answer: () => Promise<Response> = async () => new Response(null, { status: 204 });
   const watch = new CiLaneWatch({
@@ -64,12 +75,24 @@ function watcher() {
       posted.push({ runId, body });
       return answer();
     },
+    letGo: async (_settings, runId, body) => {
+      letGos.push({ runId, body });
+      return letGoAnswer();
+    },
+    control: async (_settings, runId, body) => {
+      controls.push({ runId, body });
+      return controlAnswer();
+    },
     idleMs: 5_000,
   });
   return {
     watch,
     opened,
     posted,
+    letGos,
+    setLetGo: (next: () => Promise<Response>) => (letGoAnswer = next),
+    controls,
+    setControl: (next: () => Promise<Response>) => (controlAnswer = next),
     setTarget: (next: typeof target) => (target = next),
     setAnswer: (next: () => Promise<Response>) => (answer = next),
   };
@@ -80,6 +103,101 @@ const LANE: RunsCiLane = { runId: 78, shard: null, lane: 1 };
 describe('the watch of a CI lane', () => {
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  it('says to its windows whether it counts as a controller’s, and lets a held test go on it alone', async () => {
+    vi.useFakeTimers();
+    const { watch, opened, letGos, setLetGo } = watcher();
+    const a = viewer();
+    const held = { shard: null, worker: 3, slot: 1 };
+    // No watch of the lane: nothing reaches the instance.
+    expect(await watch.letGo(LANE, held)).toEqual({ ok: false, message: '', ci: 'unwatched' });
+    await watch.watch(a.it, LANE, true);
+    opened[0]!.stream.send({ type: 'hello', watch: 'watch-0123456789ab', controller: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(a.controls).toEqual([{ ...LANE, on: true }]);
+    // A window that joins later hears it too.
+    const b = viewer();
+    await watch.watch(b.it, LANE, true);
+    expect(b.controls).toEqual([{ ...LANE, on: true }]);
+    expect(await watch.letGo(LANE, null)).toEqual({ ok: false, message: '', ci: 'unheld' });
+    expect(await watch.letGo({ ...LANE, lane: 2 }, held)).toEqual({ ok: false, message: '', ci: 'unwatched' });
+    expect(letGos).toEqual([]);
+    expect(await watch.letGo(LANE, held)).toEqual({
+      ok: true,
+      message: 'The test goes on: it tears down as it would have, its result unchanged.',
+    });
+    expect(letGos).toEqual([{ runId: 78, body: { watch: 'watch-0123456789ab', shard: null, worker: 3, slot: 1 } }]);
+    // The instance's refusal, in its own words, else its status.
+    setLetGo(async () => Response.json({ message: 'This worker holds no failing test now' }, { status: 409 }));
+    expect(await watch.letGo(LANE, held)).toEqual({
+      ok: false,
+      message: 'This worker holds no failing test now.',
+      ci: 'refused',
+    });
+    setLetGo(async () => new Response(null, { status: 403 }));
+    expect(await watch.letGo(LANE, held)).toEqual({ ok: false, message: '', ci: 'refused', status: 403 });
+  });
+
+  it('asks a control of the lane’s worker on its own watch, for a controller alone, in the instance’s words', async () => {
+    vi.useFakeTimers();
+    const { watch, opened, controls, setControl } = watcher();
+    const a = viewer();
+    const worker = { shard: null, worker: 3, slot: 1 };
+    expect(await watch.control(LANE, worker, 'pause')).toEqual({ ok: false, message: '', ci: 'unwatched' });
+    await watch.watch(a.it, LANE, true);
+    opened[0]!.stream.send({ type: 'hello', watch: 'watch-0123456789ab', controller: true });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await watch.control(LANE, null, 'pause')).toEqual({ ok: false, message: '', ci: 'no-worker' });
+    expect(await watch.control({ ...LANE, lane: 2 }, worker, 'pause')).toEqual({
+      ok: false,
+      message: '',
+      ci: 'unwatched',
+    });
+    expect(controls).toEqual([]);
+    expect(await watch.control(LANE, worker, 'pause')).toEqual({
+      ok: true,
+      message: 'The test pauses before its next call.',
+    });
+    expect(controls).toEqual([
+      { runId: 78, body: { watch: 'watch-0123456789ab', shard: null, worker: 3, slot: 1, command: 'pause' } },
+    ]);
+    setControl(async () => Response.json({ message: 'A Pause is already asked by Bo' }, { status: 409 }));
+    expect(await watch.control(LANE, worker, 'pause')).toEqual({
+      ok: false,
+      message: 'A Pause is already asked by Bo.',
+      ci: 'refused',
+    });
+  });
+
+  it('refuses the controls on a watch the instance did not say is a controller’s', async () => {
+    vi.useFakeTimers();
+    const { watch, opened, controls } = watcher();
+    await watch.watch(viewer().it, LANE, true);
+    opened[0]!.stream.send({ type: 'hello', watch: 'watch-0123456789ab' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(await watch.control(LANE, { shard: null, worker: 3, slot: 1 }, 'end')).toEqual({
+      ok: false,
+      message: '',
+      ci: 'uncontrolled',
+    });
+    expect(controls).toEqual([]);
+  });
+
+  it('refuses Let it go on a watch the instance did not say is a controller’s', async () => {
+    vi.useFakeTimers();
+    const { watch, opened, letGos } = watcher();
+    const a = viewer();
+    await watch.watch(a.it, LANE, true);
+    opened[0]!.stream.send({ type: 'hello', watch: 'watch-0123456789ab' });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(a.controls).toEqual([]);
+    expect(await watch.letGo(LANE, { shard: null, worker: 3, slot: 1 })).toEqual({
+      ok: false,
+      message: '',
+      ci: 'uncontrolled',
+    });
+    expect(letGos).toEqual([]);
   });
 
   it('opens one watch of the run on the lane’s worker, its images going to the windows that watch it', async () => {

@@ -49,7 +49,8 @@ each rule below ends with the section to read there.
   `<all_urls>`, no remote code; anything more (`contextMenus`, `sidePanel`, a broader host grant) is a deliberate,
   reviewed decision. (see "The manifest and its permissions")
 - **Request a host permission for one origin, inside the user's click, before any `await`.** Firefox shows no prompt
-  after an `await`, and a service worker can never ask. (see "Host permissions for the instance")
+  after an `await`, and a service worker can never ask. Editor's **Pair** alone asks for the editors' ports, giving
+  back the unused. (see "Host permissions for the instance", "Pairing with an editor")
 - **The recorder's grant comes from the popup's Record click, per origin and per recording, never pre-granted.** It
   cannot move to the worker (`requestRecording` in `src/popup/main.ts`); on a site not granted yet the popup closes
   once the prompt shows, and `decideRecordIntent` starts the recording when the grant lands (`record-intent.spec.ts`).
@@ -67,16 +68,13 @@ each rule below ends with the section to read there.
   `scripts/build.mjs`, `build-manifests.test.ts`). `background.js` stays both `service_worker` and `scripts`; `dist/`
   drops `scripts`. (see "The manifest and its permissions")
 - **The Firefox manifest's `extension_pages` policy never carries `upgrade-insecure-requests`** (`firefoxManifest`,
-  `build-manifests.test.ts`): it upgrades the run services' `ws://127.0.0.1` and an `http://` instance, which answer
-  neither. No CI run exercises Firefox, so that test is the only guard. (see "The manifest and its permissions")
+  `build-manifests.test.ts`), the only guard: no CI run exercises Firefox. (see "The manifest and its permissions")
 - **`gecko.data_collection_permissions` is `{ "required": ["none"] }`: nothing may go anywhere but the user's instance,
   the paired editor (Send to editor and its run hubs) and the desktop app paired on loopback.** A feature that sends
   data elsewhere changes this key and the store disclosures (`PUBLISHING.md` §4). (see "The manifest and its
   permissions")
 - **The run shortcut (`run-pause-resume`) stays `"global": true` with no `suggested_key`, and `firefoxManifest` leaves
-  `global` out** (`build-manifests.test.ts`). A global key is taken from every application on the computer, and the
-  only keys Chrome binds a global command to at install (`Ctrl+Shift+[0-9]`) are JetBrains' numbered bookmarks and
-  macOS screenshots. (see "The manifest and its permissions")
+  `global` out** (`build-manifests.test.ts`). (see "The manifest and its permissions")
 - **The manifest's `description` and shortcut labels are `__MSG_*__` strings.** The description stays within 132
   characters in every language, and a new language needs `public/_locales/` and `store/` (`store-listing.test.ts`).
   (see "The manifest and its permissions")
@@ -121,6 +119,8 @@ each rule below ends with the section to read there.
 
 ### The editor's runs
 
+- **Pair keeps a token only if its proof is of the code shown (never sent), at `…/send` beside the routes asked, and
+  sends `{ browser, os }` only** (`piwi-client.test.ts`, `editor-pairing-code.spec.ts`). (see "Pairing with an editor")
 - **The pairing's token goes to the editor only once the program on the paired port proves it holds it**
   (`proveEditor`, `src/shared/editor-proof.ts`): before Send to editor's post (`postToEditor`) and before the run
   hubs' `GET …/live`. Without the proof no hub kept is connected (`editor-pairing.test.ts`, `run-hubs.test.ts`). (see
@@ -131,11 +131,9 @@ each rule below ends with the section to read there.
 - **The Runs window talks only to the worker, through the port `RUNS_PORT`:** the worker takes the port from
   `runs.html` alone (`fromRunsPage`) and reads its messages with `parseRunsRequest`. The state the worker posts
   (`RunsState`) carries no token. (see "The Runs window")
-- **Every Runs window control but Pause, Share live, Hold failures, Stop the run, Watch the lane (`watch`), Open the
-  trace so far (`trace`) and End the test while a Pause waits (`give-up`) names the stop shown (`since`),** so a click
-  made twice never answers the next stop; `parseRunsRequest` refuses one without it, and Share live, Hold failures, Stop
-  the run, `watch`, `trace` and `give-up` with one (`runs.test.ts`). Share live asks first, the first time in a window,
-  and Stop sharing every time (`runs.spec.ts`). (see "The Runs window")
+- **A Runs window control names the stop shown (`since`), the run-wide and lane ones aside,** so a click made twice
+  never answers the next stop (`parseRunsRequest`, `runs.test.ts`). Share live asks first, the first time in a
+  window, and Stop sharing every time (`runs.spec.ts`). (see "The Runs window")
 - **What a hub sends is shown as text (a call's title through `richText`), and its image only as a `data:` JPEG whose
   base64 is checked again.** (see "The Runs window")
 - **The Runs window draws a part again only when what it shows changes (`part`, `place`); a button waiting for its
@@ -160,9 +158,9 @@ each rule below ends with the section to read there.
   copy it here. The window says its words through `runsSpeaker` (`src/shared/run-words.ts`), and `run-words.test.ts`
   holds the model's English words to the catalogs. (see "The Runs window")
 - **The Runs window's CI runs are read-only, read from the connected instance only while a window is open**
-  (`CiRunsWatch`, `src/background/ci-runs.ts`): no control, input or pick reaches them, and the worker holds one CI
-  watch at a time (`CiLaneWatch`), its images kept in memory alone. Checked by `ci-runs.test.ts`, `ci-watch.test.ts`
-  and `runs-ci.spec.ts`. (see "The CI runs in progress")
+  (`CiRunsWatch`, `src/background/ci-runs.ts`): only Pause, Resume, End the test and Let it go reach them, on the
+  worker's one CI watch (`CiLaneWatch`) once its `hello` says controller, and its images are kept in memory alone.
+  Checked by `ci-runs.test.ts`, `ci-watch.test.ts` and `runs-ci.spec.ts`. (see "The CI runs in progress")
 - **No code from a stop comes to the Runs window:** it goes to the editor, which writes it, or to the desktop app's
   window, which offers it to copy, and the window shows the hub's sentence that it was sent (`.note.sent`), never that
   it was written. (see "The Runs window")

@@ -36,7 +36,11 @@ need the detail behind one of them.
   (`write_keeping_mode_checked`), so a change in between is not overwritten. Connect and Disconnect pass the text they
   read for the same check and report a file that changed meanwhile.
 - **The bridge.** `piwi-desktop mcp-stdio` sends the token only through `connect_proving_token`, and only to
-  `127.0.0.1`.
+  `127.0.0.1`. It carries a client of any MCP revision: a `2026-07-28` request, which names its version in `_meta`, goes
+  out with the headers that mirror its body (`mirrored_headers`: `MCP-Protocol-Version`, `Mcp-Method`, `Mcp-Name` in
+  base64 when a header cannot carry it as it is), a 4xx that carries a JSON-RPC error reaches the client as `/mcp` wrote
+  it, and a `subscriptions/listen` is acknowledged by the bridge itself, with no notification, since `/mcp` sends none
+  and its stream would hold the one connection the bridge reads each answer from.
 
 ## Server session
 

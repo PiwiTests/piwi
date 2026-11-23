@@ -98,9 +98,15 @@ class PiwiPluginTest : BasePlatformTestCase() {
         fun ids(group: String) = (actions.getAction(group) as com.intellij.openapi.actionSystem.DefaultActionGroup)
             .childActionsOrStubs.map { if (it is com.intellij.openapi.actionSystem.Separator) null else actions.getId(it) }
         assertTrue(actions.getAction("Piwi.Actions") is com.intellij.openapi.actionSystem.CompactActionGroup)
-        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControl", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
+        val sections = listOf("Piwi.Run", "Piwi.Record", "Piwi.RunControlMenu", "Piwi.Dashboard", "Piwi.Agents", "Piwi.Connection")
         assertEquals(sections.flatMap { listOf(it, null) }.dropLast(1), ids("Piwi.Actions"))
         for (section in sections) assertTrue(section, actions.getAction(section) is com.intellij.openapi.actionSystem.CompactActionGroup)
+        // The run's controls are a submenu, shown while one of them applies: sharing the project's runs from now on too.
+        val runControlMenu = actions.getAction("Piwi.RunControlMenu")
+        assertTrue(runControlMenu.templatePresentation.isPopupGroup)
+        assertEquals("Run control", runControlMenu.templatePresentation.text)
+        assertEquals(listOf("Piwi.RunControl"), ids("Piwi.RunControlMenu"))
+        assertTrue(actions.getAction("Piwi.RunControl") is com.intellij.openapi.actionSystem.CompactActionGroup)
         val popup = actions.getAction("Piwi.EditorPopup") as com.intellij.openapi.actionSystem.DefaultActionGroup
         assertTrue(popup is com.intellij.openapi.actionSystem.CompactActionGroup)
         assertEquals(
@@ -296,6 +302,75 @@ class PiwiPluginTest : BasePlatformTestCase() {
             val rest = proper.fold(sentence.substringAfter(' ', "")) { s, noun -> s.replace(Regex("(?<!\\w)${Regex.escape(noun)}(?!\\w)"), "") }
             val capitals = rest.split(' ').filter { word -> word.trimStart('(', '\'', '"').firstOrNull()?.isUpperCase() == true }
             assertTrue("$id: $text", capitals.isEmpty())
+        }
+    }
+
+    /**
+     * The Failures tab in each state of the failures view the golden fixture holds
+     * (`packages/editor/tests/golden/failures-view.json`): pushed as the service pushes it, with the baseline that found
+     * no run, its tree's empty text says the state's sentence and its links, each a registered action, as VS Code's view
+     * does; the service's read, with no server, leaves no status and no failures again.
+     */
+    fun testTheFailuresTabSaysEachStateOfTheViewAsTheGoldenFixtureHoldsIt() {
+        val service = project.service<PiwiProjectService>()
+        val manager = com.intellij.openapi.wm.ToolWindowManager.getInstance(project)
+        val window = manager.registerToolWindow(com.intellij.openapi.wm.RegisterToolWindowTask.notClosable(PiwiFailuresToolWindowFactory.ID))
+        val golden = com.google.gson.JsonParser.parseString(
+            File("../../packages/editor/tests/golden/failures-view.json").readText(),
+        ).asJsonObject
+        fun readDone() {
+            val until = System.currentTimeMillis() + 10_000
+            while (service.readingStatus && System.currentTimeMillis() < until) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(10)
+            }
+            assertFalse("the service's read", service.readingStatus)
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+        }
+        try {
+            PiwiFailuresToolWindowFactory().createToolWindowContent(project, window)
+            readDone()
+            val tab = window.contentManager.findContent(PiwiFailuresToolWindowFactory.TAB_NAME)!!
+            fun all(c: java.awt.Container): List<java.awt.Component> = c.components.flatMap { listOf(it) + if (it is java.awt.Container) all(it) else emptyList() }
+            val tree = all(tab.component).filterIsInstance<com.intellij.ui.treeStructure.Tree>().first()
+            val actions = ActionManager.getInstance()
+            for (case in golden.getAsJsonArray("cases").map { it.asJsonObject }) {
+                val name = case.get("name").asString
+                val view = com.google.gson.Gson().fromJson(case.get("view"), FailuresView::class.java)
+                if (view.state == "failures") continue
+                val noRun = case.getAsJsonArray("contexts").firstOrNull()?.asJsonObject?.get("baseline")
+                    ?.takeUnless { it.isJsonNull }?.asString?.takeIf { it.endsWith("(no run)") }
+                val shown = case.getAsJsonObject("shown")
+                val expected = shown.get("text").asString
+                // The service's state moves under the test as the earlier tests' services stop and reads end: push the
+                // state again until the tab, drawn on the event thread, shows it, then hold it to the fixture.
+                (1..20).any {
+                    readDone()
+                    service.statusChanged(StatusResult(listOf(ContextStatus(root = project.basePath!!))))
+                    service.failuresChanged(FailuresResult(view = view, baseline = noRun?.let { Baseline(label = it) }))
+                    val until = System.currentTimeMillis() + 2_000
+                    do {
+                        com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                        if (tree.emptyText.text == expected) break
+                        Thread.sleep(20)
+                    } while (System.currentTimeMillis() < until)
+                    service.status != null && service.failuresResult?.view == view && tree.emptyText.text == expected
+                }
+                assertEquals(name, expected, tree.emptyText.text)
+                val fragments = buildList {
+                    val each = tree.emptyText.secondaryComponent.iterator()
+                    while (each.hasNext()) {
+                        each.next()
+                        if (each.fragment.isNotBlank()) add(each.fragment)
+                    }
+                }
+                assertEquals(name, shown.getAsJsonArray("links").map { it.asString }, fragments)
+                for (link in view.links) assertNotNull("$name: ${link.jetbrains}", actions.getAction(link.jetbrains))
+            }
+        } finally {
+            manager.unregisterToolWindow(PiwiFailuresToolWindowFactory.ID)
+            service.refreshStatus()
+            readDone()
         }
     }
 
@@ -793,9 +868,18 @@ class PiwiPluginTest : BasePlatformTestCase() {
      * tooltip, its backgrounds, and each line's entries, the words VS Code's `tests/golden.test.ts` holds its test
      * decorations and lenses to. A line with no result draws no icon.
      */
-    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() {
+    fun testTheGutterDrawsASpecsTestsAsTheGoldenFixtureHoldsThem() = drawsAsGolden("test-lines.json")
+
+    /**
+     * The spec of VS Code's integration fixture, drawn from the answer the editor service gave VS Code there, as VS Code
+     * computes its marks and lens rows from it: its integration suite records both in the golden fixture
+     * `vscode-spec.json`, and fails when they change.
+     */
+    fun testTheGutterDrawsTheSpecAsVsCodeComputesItFromTheServicesAnswer() = drawsAsGolden("vscode-spec.json")
+
+    private fun drawsAsGolden(name: String) {
         val golden = com.google.gson.JsonParser.parseString(
-            File("../../packages/editor/tests/golden/test-lines.json").readText(),
+            File("../../packages/editor/tests/golden/$name").readText(),
         ).asJsonObject
         val summary = com.google.gson.Gson().fromJson(golden.get("summary"), FileSummary::class.java)
         val spec = golden.getAsJsonObject("spec")
@@ -850,11 +934,16 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     .flatMap { (document.getLineNumber(it.startOffset)..document.getLineNumber(it.endOffset - 1)).toList() }
                     .sorted()
             }
-            val failing = golden.getAsJsonObject("failing")
-            val test = failing.getAsJsonArray("test").map { it.asInt }
-            val failedAt = failing.get("line").asInt
-            assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
-            assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            val failing = golden.get("failing").takeIf { it.isJsonObject }?.asJsonObject
+            if (failing == null) {
+                assertEquals(emptyList<Int>(), linesOf(PiwiTestAnnotator.FAILING_LINE))
+                assertEquals(emptyList<Int>(), linesOf(PiwiTestAnnotator.FAILING_TEST))
+            } else {
+                val test = failing.getAsJsonArray("test").map { it.asInt }
+                val failedAt = failing.get("line").asInt
+                assertEquals(listOf(failedAt), linesOf(PiwiTestAnnotator.FAILING_LINE))
+                assertEquals((test[0]..test[1]).filter { it != failedAt }, linesOf(PiwiTestAnnotator.FAILING_TEST))
+            }
             // The rows above the lines, as the registered Code Vision providers draw them, each slot after the one before.
             val providers = DaemonBoundCodeVisionProvider.extensionPoint.extensionList.filterIsInstance<PiwiCodeVisionProvider>()
             assertEquals((0 until Glue.CODE_VISION_SLOTS).map(PiwiCodeVisionProvider::providerId), providers.map { it.id })
@@ -1274,7 +1363,7 @@ class PiwiPluginTest : BasePlatformTestCase() {
                     "Piwi.RefreshRun", "Piwi.PauseRecording", "Piwi.ResumeRecording", "Piwi.StopRecording", "-",
                     "Piwi.RerunFailing", "Piwi.OpenFailures", "Piwi.ShowFlakyTests", "Piwi.OpenLatestRun", "Piwi.CompareWith", "-",
                     "Piwi.RunTestAtCursor", "Piwi.RecordHere", "-",
-                    "Piwi.Refresh", "Piwi.Connect", "Piwi.OpenSettings",
+                    "Piwi.Refresh", "Piwi.Connect", "Piwi.PairPicker", "Piwi.OpenSettings",
                 ),
                 entries,
             )
@@ -1585,6 +1674,87 @@ class PiwiPluginTest : BasePlatformTestCase() {
         } finally {
             System.setProperty("user.home", saved)
         }
+    }
+
+    /** Unpair renews this IDE's own token: the entry every JetBrains IDE shared before, which others may read, stays. */
+    fun testUnpairRenewsThisIdesTokenAloneNotTheOneJetBrainsIdesShared() {
+        val shared = PiwiCredentials.attributes(com.intellij.credentialStore.generateServiceName("Piwi", "sendToken"))
+        com.intellij.ide.passwordSafe.PasswordSafe.instance.setPassword(shared, "shared-token-0123456789")
+        val before = PiwiSendToken.ensure()
+        val after = PiwiSendToken.renew()
+        assertFalse(before == after)
+        assertEquals(after, PiwiSendToken.current())
+        assertEquals("shared-token-0123456789", com.intellij.ide.passwordSafe.PasswordSafe.instance.getPassword(shared))
+    }
+
+    /** A request of Piwi Picker's pairing by code to the built-in server, the event queue run while it waits. */
+    private fun pickerRequest(
+        method: String,
+        path: String,
+        origin: String,
+        body: String? = null,
+        secret: String? = null,
+    ): java.net.http.HttpResponse<String> {
+        val port = org.jetbrains.ide.BuiltInServerManager.getInstance().waitForStart().port
+        val request = java.net.http.HttpRequest.newBuilder(java.net.URI("http://127.0.0.1:$port$path"))
+            .header("Origin", origin)
+            .method(
+                method,
+                if (body == null) java.net.http.HttpRequest.BodyPublishers.noBody() else java.net.http.HttpRequest.BodyPublishers.ofString(body),
+            )
+        if (body != null) request.header("Content-Type", "application/json")
+        if (secret != null) request.header(Glue.EDITOR_PAIRING_SECRET_HEADER, secret)
+        val future = java.net.http.HttpClient.newHttpClient().sendAsync(request.build(), java.net.http.HttpResponse.BodyHandlers.ofString())
+        val deadline = System.currentTimeMillis() + 20_000
+        while (!future.isDone && System.currentTimeMillis() < deadline) {
+            com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+            Thread.sleep(20)
+        }
+        return future.get(1, TimeUnit.SECONDS)
+    }
+
+    /** Piwi Picker's Pair: the hello, the code the person types, and the token with its proof to the next poll, once. */
+    fun testPiwiPickerPairsByCodeOnceThePersonAllowsIt() {
+        val origin = "chrome-extension://" + "a".repeat(32)
+        val hello = pickerRequest("GET", PiwiSendHandler.HELLO_PATH, origin)
+        assertEquals(hello.body(), 200, hello.statusCode())
+        assertEquals(origin, hello.headers().firstValue("Access-Control-Allow-Origin").orElse(null))
+        val said = com.google.gson.JsonParser.parseString(hello.body()).asJsonObject
+        assertEquals("jetbrains", said.get("editor").asString)
+        assertTrue(said.getAsJsonArray("windows").map { it.asString }.contains(project.name))
+        try {
+            // Another origin is asked nothing: no request waits for it.
+            assertFalse(pickerRequest("POST", PiwiSendHandler.PAIRINGS_PATH, "https://evil.test", "{}").statusCode() == 201)
+            assertEquals(emptyList<Glue.PairingRequestView>(), PiwiPickerPairing.requests.waiting())
+            val started = pickerRequest("POST", PiwiSendHandler.PAIRINGS_PATH, origin, """{"browser":"Chrome","os":"Linux"}""")
+            assertEquals(started.body(), 201, started.statusCode())
+            val answer = com.google.gson.JsonParser.parseString(started.body()).asJsonObject
+            val id = answer.get("id").asString
+            val secret = answer.get("secret").asString
+            assertEquals(listOf("Chrome on Linux"), PiwiPickerPairing.requests.waiting().map { it.client })
+            val poll = { pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = secret).body() }
+            assertEquals("""{"status":"waiting"}""", poll())
+            assertEquals(404, pickerRequest("GET", "${PiwiSendHandler.PAIRINGS_PATH}/$id", origin, secret = "nope").statusCode())
+
+            // The code typed: Piwi Picker's own, which it checks the proof against.
+            PiwiPickerPairing.allow(project, id, "bcdf ghjk")
+            val deadline = System.currentTimeMillis() + 10_000
+            var allowed = poll()
+            while (allowed.contains("waiting") && System.currentTimeMillis() < deadline) {
+                com.intellij.testFramework.PlatformTestUtil.dispatchAllEventsInIdeEventQueue()
+                Thread.sleep(20)
+                allowed = poll()
+            }
+            val token = com.google.gson.JsonParser.parseString(allowed).asJsonObject
+            assertEquals(allowed, "allowed", token.get("status").asString)
+            assertEquals(PiwiSendToken.current(), token.get("token").asString)
+            assertEquals(Glue.editorPairingProof("BCDF-GHJK", id, token.get("token").asString), token.get("proof").asString)
+            assertEquals("""{"status":"claimed"}""", poll())
+            assertEquals("Chrome on Linux", PiwiPickerPairing.paired()?.client)
+        } finally {
+            PiwiPickerPairing.unpair()
+        }
+        assertNull(PiwiPickerPairing.paired())
     }
 
     /** Every answer to Piwi Picker's challenge proves this IDE holds the pairing's token, paired or not, for its port. */

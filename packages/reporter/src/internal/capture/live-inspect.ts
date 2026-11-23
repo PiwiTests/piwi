@@ -32,9 +32,16 @@ import {
   liveSnapshotRefusalHeader,
   type LiveWorkerId,
 } from '@piwitests/core/live-view';
-import { hideSecretsInText, hideTypedText } from '@piwitests/core/mask';
 import { RateWindow } from '@piwitests/core/run-view';
-import { TraceTail, attemptFiles, attemptSecrets, knownSecrets, layersTest, layersTitleOf } from './lane-layers.js';
+import {
+  TraceTail,
+  attemptFiles,
+  attemptSecrets,
+  knownSecrets,
+  layersTest,
+  layersTitleOf,
+  shownTitle,
+} from './lane-layers.js';
 import { callMethod, internalCall } from './quiet-capture.js';
 
 /**
@@ -842,18 +849,23 @@ export class LiveInspect {
       const shownUrl = this.link.sent.has(sha1) ? hideResourceUrl(url, secrets) : null;
       if (shownUrl) named.push({ url: shownUrl, sha1 });
     }
-    const live: LiveSnapshot = { ...fields, title: this.titleOf(fields.call, snapshot.callId), resources: named };
+    const live: LiveSnapshot = {
+      ...fields,
+      title: this.titleOf(fields.call, snapshot.callId, secrets),
+      resources: named,
+    };
     const body = encodeLiveMessage(liveSnapshotHeader(this.link.id, live, this.link.test()), data);
     this.link.budget.spend(body.length);
     await this.link.post(body);
   }
 
-  /** The call's title: the runner's, else the trace's own; the text it types and its credentials hidden. */
-  private titleOf(step: string, callId: unknown): string {
-    const runner = layersTitleOf(step);
-    if (runner) return runner;
+  /**
+   * The call's title: the runner's, else the trace's own, shown as `shownTitle` shows it with the attempt's `secrets`,
+   * 300 characters at most.
+   */
+  private titleOf(step: string, callId: unknown, secrets: readonly string[]): string {
     const own = typeof callId === 'string' ? this.calls.get(callId)?.title : undefined;
-    return hideSecretsInText(hideTypedText(own ?? 'Call')).slice(0, 300);
+    return shownTitle(layersTitleOf(step) || (own ?? 'Call'), { max: 300, secrets });
   }
 
   /**

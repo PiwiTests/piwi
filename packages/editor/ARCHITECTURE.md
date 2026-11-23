@@ -165,7 +165,8 @@ own requests and notifications (`piwi/…`) for what each editor draws natively.
 - `src/debug-run.ts`: a run that debugs a failure (**Debug in my editor**): its test, its one-shot stop and the
   suggested locator outlined there.
 - `src/agent-server.ts`, `src/run-agent.ts`: the MCP server for the agents of this machine, and its tools.
-- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces, shared with the instance's MCP server.
+- `src/mcp-protocol.ts`: MCP's JSON-RPC pieces and each request's era (legacy or `2026-07-28`), shared with the
+  instance's MCP server.
 - `src/run-host.ts`: the run control another host builds on, the desktop app's server.
 - `src/shell-runs.ts`, `src/shell-run-events.ts`: the hub of the runs a desktop shell starts, built on it, which the
   desktop app's server and Piwi Runner's host run, and what its window reads and sends.
@@ -229,7 +230,7 @@ the custom messages of `src/protocol.ts`:
     `piwi/coverageFiles`, `piwi/coverageTests`;
   - runs: `piwi/runArgs`, `piwi/runSelection`, `piwi/followCommand`, `piwi/selections`, `piwi/runStatus`,
     `piwi/refreshRun`, `piwi/runId`, `piwi/environments`, `piwi/setEnvironment`;
-  - CI runs: `piwi/ciWatch`;
+  - CI runs: `piwi/ciWatch`, `piwi/ciLetGo`, `piwi/ciControl`;
   - run control: `piwi/runControl`, `piwi/pausedPage`, `piwi/pageView`, `piwi/laneView`, `piwi/pageInput`,
     `piwi/driveStop`, `piwi/pickAt`, `piwi/stopAction`, `piwi/stopRequests`, `piwi/locatorAtCaret`, `piwi/hub`, `piwi/stopBind`,
     `piwi/shareRun`, `piwi/answerAsk`, `piwi/agents`;
@@ -286,8 +287,9 @@ a test's action list (`piwi.copyAgentContext`) names once picked.
 
 `piwi/failures` says which state the view is in, with its sentence (`view`, `failuresView`): failures; none in a run
 read (`clear`); an instance that does not answer (`unreachable`); a desktop app that did not prove it holds the token
-(`desktop-unproven`); an instance named and not read yet (`loading`); no run for a connected context, the project's or
-the baseline chosen (`norun`); no connection (`disconnected`), in that order, so a workspace with one context down still
+(`desktop-unproven`); an instance that refused the key or asked for one (`refused`); an instance named and not read yet
+(`loading`); no run for a connected context, the project's or the baseline chosen (`norun`); no project chosen or found
+(`no-project`); no connection (`disconnected`), in that order, so a workspace with one context down still
 reads clear when another read its run. Both clients show the sentence and link their actions for the state.
 
 Each item of `piwi/failures` carries:
@@ -641,7 +643,9 @@ A run in progress is `live` in `piwi/runStatus` when it runs on the branch the c
 branch, or when it is the editor's own, wherever it runs. It is counted through its own stream
 (`GET /api/test-runs/:id/stream`). The client hears of it at most once every 300 ms, and that notification places no
 failure again (`progressed` in `RunWatchOptions`). `live` goes back to null in the notification that brings the
-failures read once the run ended.
+failures read once the run ended. A run the editor did not start says where it comes from, by its origin's kind
+(`LiveRun.from`, `FROM_WORDS` in `src/run-watch.ts`: `from the desktop app`, `on a developer's machine`), which both
+clients put in the status item's tooltip; a CI run and one that names no origin say nothing.
 
 Until then, the tests its stream begins (`test-begin`) and ends (`test-completed`) are kept in
 `PiwiContext.liveTests`. An event names its test by its id, else by its title and suite path in its spec, looked up in
@@ -713,7 +717,8 @@ once per stop while it is out of sight.
 
 A CI run of the branch a context reads, or of the checked-out branch, is a read-only session while it runs
 (`src/ci-sessions.ts`, `piwi/ciSessionChanged`): the clients list it beside their own runs, and mark the call each of
-its running tests is at as a CI position, never as a stop. No request acts on it: no control, share or hold.
+its running tests is at as a CI position, never as a stop. No request acts on it but **Let it go** on a test held at
+its failure ([Watching a CI lane](#watching-a-ci-lane)): no control, share or hold.
 
 - **Found** as the instance's stream announces it (`RunWatchOptions.runStarted`), and as the context reads it in
   progress: its latest run (`origin` `ci` or `ci-rerun`), its run in progress (`LiveRun.ci`). A run is a CI run's by its
@@ -730,7 +735,8 @@ its running tests is at as a CI position, never as a stop. No request acts on it
   500 ms, only when it differs from the last one sent.
 - **Read** from the run's stream, shared with the context's run in progress: `test-begin` and `test-completed` (a
   time-out as `timedOut` live and `timedout` from the catch-up), `live-view` (`watchable`: the project's live view is
-  on and the run holds a key), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
+  on and the run holds a key), `live-worker` (a worker's test held at its failure for the project's controllers,
+  `readCiHold` of `@piwitests/run-model/ci`), and its tally from `init`, `run-progress` and the instance's `run-progress`. Opening
   the stream needs what opening the run needs (`project:read`, a run that is not another person's private one).
 - **Positions** come from the steps the run's reporter streams while someone has the run's stream open, the service
   among them (`step-begin`, `step-end`): each worker's innermost open step, a fixture's left out. A step names its file
@@ -740,6 +746,20 @@ its running tests is at as a CI position, never as a stop. No request acts on it
 - **Watch**: a running test of a `watchable` run can be watched in the client's worker panel, read-only
   ([Watching a CI lane](#watching-a-ci-lane)), and carries its lane's view on the run's page (`watch`,
   `?watch=<shard>.<lane>`), which the clients offer beside it.
+- **Held**: a running test whose lane's worker holds it at its failure (`ciHoldOf`: by its lane, else its worker)
+  carries `held`, in the run page's words (`ciHoldWords`: `Failed, held at its line`, `Held for Ana · until 12:05` in
+  the person's clock, the error, its place, `The CI job’s own timeout still runs.`), and `letGo` while the client's
+  watch shows its lane as a controller's (`watching`, `offersLetGo`); the session is pushed again as the watch changes
+  (`watchChanged`). A hold is its own worker's test's alone, and its `id` (`ciHoldKey`) and the button's words
+  (`letGoLabel`, `letGoTitle`) come with it, so neither client writes them. The holds heard go at each `init`: a stream
+  opened again names only the workers connected now, never one that left meanwhile.
+- **Paused**: each connected worker's latest `live-worker` event (`states`, forgotten at each `init`, a test's only from
+  its own worker: `ciWorkerStateOf`) gives its running test `paused` (`readCiPause`, `ciPauseWords`: `Paused by Ana ·
+  until 12:05`, the call, its place, the job's timeout), `pauseAsk` (`ciPauseAskWords`: `Pause asked by Ana`, or why a
+  Pause was dropped), and, while the client's watch shows its lane as a controller's, `controls`: what
+  `ciControlsOffered` decides, each with its label and title in the run page's words, and the state they follow
+  (`ciControlStateKey`: the worker, its test and the instance's `pauseSeq`, so a state that comes back reads as
+  another), which a client asks one of once.
 - **Ends** with its run (`run-finished` with a final status, or the instance's `run-finished`, `run-submitted`,
   `run-cancelled`), when its context reads another instance, key, project or branch, or when a newer run takes its
   place: the last notification says `ended`, and the run's stream is let go.
@@ -778,8 +798,20 @@ instance's bound of watches per person).
 - **Ends** as the client asks (`on: false`, or another lane: no word), and otherwise with `ended` saying why: the
   instance ends the watch or the lane's view (`end`), its session ends (`sessionChanged`: the run ended, or the service
   follows it no more), the stream closes or breaks, or it brings nothing, heartbeat included, for 45 s.
+- **Counts** on the instance as a full view of the lane, a controller's when the key's owner may control the project's
+  runs (`run:control`), which its `hello` says (`controller`): a test that fails in the lane then waits for its
+  controllers when the project holds failing CI tests.
+- **Let it go** (`piwi/ciLetGo { root?, runId, shard, lane }`, `CiWatch.letGo`) goes on this watch alone
+  (`PiwiClient.letGo`, `POST …/live-view/let-go` with the watch's id and the held worker, `CiSessions.heldWorker`), and
+  only once its `hello` said it counts as a controller's: refused before asking the instance for another lane, a watch
+  of someone who may not control the run, or a lane that holds nothing; then in the instance's own words.
+- **Pause, Resume, End the test** (`piwi/ciControl { root?, runId, shard, lane, command }`, `CiWatch.control`) go on
+  this watch the same way (`PiwiClient.liveControl`, `POST …/live-view/control` with the watch's id, the lane's worker,
+  `CiSessions.laneWorker`, and the command): refused before asking the instance for another lane, a watch of someone
+  who may not control the run, or a lane naming no worker; then in the instance's own words.
 
-Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POST.
+Checked by `tests/ci-watch.test.ts`, against a stub instance that serves the live stream and takes the POSTs, and
+`tests/ci-sessions.test.ts`.
 
 ### The editor's own run
 
@@ -1501,7 +1533,12 @@ A failure held at its line ([Stops no pause bar shows](#stops-no-pause-bar-shows
 
 `src/agent-server.ts` (`AgentServer`) serves the runs the service built to the agents of this machine as an MCP
 server of its own, over MCP's streamable HTTP transport (one POST per request, answered with JSON; a notification
-alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`). It listens only once the
+alone with a 202), its JSON-RPC pieces those of the instance's server (`src/mcp-protocol.ts`): a legacy client opens
+with `initialize` and names its version in the `MCP-Protocol-Version` header, a `2026-07-28` client names it in each
+request's `_meta` and its headers, and `checkMcpRequest` refuses with a 400 a version none serves or headers that do
+not match the body. A modern `subscriptions/listen` gets a stream (`openListenStream`) that acknowledges no
+notification, since the server sends none, and stays open until its client closes it or the server closes:
+`MAX_AGENT_LISTENS` at once, apart from the requests answered. It listens only once the
 client turns it on, as the service starts (`InitializationOptions.agents.enabled`) or later (`piwi/agents { enabled }`,
 answered with its address and token), and closes as the client turns it off or the service stops.
 

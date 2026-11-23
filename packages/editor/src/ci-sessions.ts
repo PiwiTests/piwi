@@ -6,14 +6,46 @@
  * whether its live view can be watched, and the call each running test is at, from the steps its reporter streams
  * while someone follows the run. Its tally also comes from the instance's stream (`run-progress`). At most
  * `MAX_CI_RUNS` runs of one branch are followed, the newest, each once whatever reads it, in the context whose folder
- * holds its specs. Nothing here steers a run: no control, share or hold.
+ * holds its specs. Nothing here steers a run: no control, share or hold. A running test its project holds at its
+ * failure for its controllers (the run's `live-worker` events, `readCiHold`) says so in the run page's words
+ * (`CiTest.held`), with **Let it go** offered while the client's CI watch shows its lane as a controller's
+ * (`watching`), which the CI watch then asks the instance for (`heldWorker`).
  */
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import {
+  CI_CANCEL_PAUSE_TITLE,
+  CI_CONTROL_WORDS,
+  ciControlStateKey,
+  ciControlsOffered,
+  ciHoldKey,
+  ciHoldOf,
+  ciHoldWords,
+  ciPauseAskWords,
+  ciPauseWords,
+  ciWorkerStateOf,
+  offersLetGo,
+  readCiHold,
+  readCiPause,
+  readCiPauseAsk,
+  type CiHold,
+  type CiPause,
+} from '@piwitests/run-model/ci';
+import { englishRunSpeaker } from '@piwitests/run-model/words';
+import { readLiveWorkerId, type LiveWorkerId } from '@piwitests/core/live-view';
 import type { PiwiContext } from './context.js';
 import type { PiwiClient, RunDetails } from './piwi-client.js';
-import { MAX_CI_TESTS, type CiPosition, type CiSession, type CiTest, type LiveTestStatus } from './protocol.js';
+import {
+  MAX_CI_TESTS,
+  type CiControl,
+  type CiHeld,
+  type CiPaused,
+  type CiPosition,
+  type CiSession,
+  type CiTest,
+  type LiveTestStatus,
+} from './protocol.js';
 import type { InstanceEvent, RunEvent, RunStreams } from './run-stream.js';
 import { countsOf, endedStatus, isCiRun } from './run-watch.js';
 
@@ -45,6 +77,13 @@ export interface CiSessionsOptions {
   exists?: (file: string) => boolean;
   /** How often a session's changes reach the client, at most. */
   pushMs?: number;
+  /**
+   * The lane of a run the client's CI watch shows (`lane` from 1, as `CiTest.lane`), and whether the instance said the
+   * watch counts as a controller's; null while it shows none of the run.
+   */
+  watching?: (root: string, runId: number) => { shard: number | null; lane: number; controller: boolean } | null;
+  /** A time of day as the person's clock reads it, for when a hold ends. */
+  clock?: (time: number) => string;
 }
 
 /** A test of a followed run, as its stream names it. */
@@ -98,6 +137,10 @@ interface Followed {
    */
   ciBase: string | null;
   watchable: boolean;
+  /** The workers whose test is held at its failure for the project's controllers, by `shard:worker`. */
+  holds: Map<string, CiHold>;
+  /** Each connected worker's latest `live-worker` event, by `shard:worker`: its pause, its Pause asked, its controls. */
+  states: Map<string, Record<string, unknown>>;
   /** Whether a test of the run named a spec its context's folder holds: the session stays with that context. */
   placed: boolean;
   seq: number;
@@ -209,6 +252,16 @@ export function listedTests<
   return [...running, ...[...failures, ...others].sort((a, b) => b.seq - a.seq)];
 }
 
+/**
+ * A control of a CI lane in the run page's words: Resume takes back a Pause that waits (`paused` false), and lets a
+ * paused test go on.
+ */
+function controlOf(command: CiControl['command'], paused: boolean): CiControl {
+  const words = CI_CONTROL_WORDS[command];
+  const title = command === 'resume' && !paused ? CI_CANCEL_PAUSE_TITLE : words.title;
+  return { command, label: englishRunSpeaker.say(words.label.key), title: englishRunSpeaker.say(title.key) };
+}
+
 /** One per service: the CI sessions of every context. */
 export class CiSessions {
   private readonly followed = new Map<string, Followed>();
@@ -262,6 +315,8 @@ export class CiSessions {
       steps: new Map(),
       ciBase: null,
       watchable: false,
+      holds: new Map(),
+      states: new Map(),
       placed: false,
       seq: 0,
       unfollow: () => {},
@@ -322,6 +377,38 @@ export class CiSessions {
         this.end(f, true);
         break;
     }
+  }
+
+  /**
+   * The worker whose test is held at its failure in a lane of a followed run (`lane` from 1, as `CiTest.lane`), for
+   * **Let it go**; null for none, of `root` when it is named.
+   */
+  heldWorker(root: string | undefined, runId: number, shard: number | null, lane: number): LiveWorkerId | null {
+    const f = [...this.followed.values()].find(
+      (each) => each.runId === runId && (root === undefined || each.context.root === root),
+    );
+    if (!f) return null;
+    const latest = this.watchTarget(f.context.root, runId, shard, lane)?.worker ?? null;
+    return ciHoldOf(f.holds.values(), { shard, slot: lane - 1 }, latest)?.worker ?? null;
+  }
+
+  /**
+   * The worker in a lane of a followed run (`lane` from 1, as `CiTest.lane`), for its controls: the lane's running
+   * test's, else its latest test's, as the run's live view names it; null for none, of `root` when it is named.
+   */
+  laneWorker(root: string | undefined, runId: number, shard: number | null, lane: number): LiveWorkerId | null {
+    const f = [...this.followed.values()].find(
+      (each) => each.runId === runId && (root === undefined || each.context.root === root),
+    );
+    if (!f) return null;
+    const latest = this.watchTarget(f.context.root, runId, shard, lane)?.worker ?? null;
+    const state = ciWorkerStateOf(f.states.values(), { shard, slot: lane - 1 }, latest);
+    return state ? readLiveWorkerId(state.shard, state.worker, state.slot) : null;
+  }
+
+  /** The client's CI watch changed what it shows or what the instance said of it: **Let it go** follows. */
+  watchChanged(): void {
+    for (const f of this.followed.values()) this.push(f);
   }
 
   /** The sessions followed now, as the client last heard them or is about to. */
@@ -387,6 +474,11 @@ export class CiSessions {
     switch (event.type) {
       case 'init':
       case 'run-progress':
+        // A stream opened again names only the workers connected now: a hold heard before goes with its connection.
+        if (event.type === 'init') {
+          f.holds.clear();
+          f.states.clear();
+        }
         this.count(f, data);
         if (typeof data.status === 'string' && ACTIVE.has(data.status)) f.status = data.status;
         break;
@@ -404,6 +496,17 @@ export class CiSessions {
       case 'live-view':
         f.watchable = data.enabled === true && data.keyed === true;
         break;
+      case 'live-worker': {
+        const worker = count(data.worker);
+        if (worker === null) return;
+        const key = workerKey(count(data.shard), worker);
+        const hold = readCiHold(data);
+        if (hold) f.holds.set(key, hold);
+        else f.holds.delete(key);
+        if (data.connected === true) f.states.set(key, data);
+        else f.states.delete(key);
+        break;
+      }
       case 'test-begin':
       case 'test-completed':
         this.testEvent(f, event.type, data);
@@ -572,11 +675,36 @@ export class CiSessions {
       }
       return specs.get(file)!;
     };
+    const watching = this.options.watching?.(root, f.runId) ?? null;
     const tests = listedTests(f.tests.values()).map((t): CiTest => {
       const running = t.status === 'running' && !ended;
       const at = running && t.worker !== null ? this.positionOf(f, t, exists) : null;
       const uri = specUri(t.file);
+      const hold =
+        running && t.lane !== null ? ciHoldOf(f.holds.values(), { shard: t.shard, slot: t.lane - 1 }, t.worker) : null;
+      const shows = !!watching && watching.shard === t.shard && watching.lane === t.lane;
+      const held = hold
+        ? this.heldOf(root, hold, offersLetGo(hold, { shows, controller: !!watching?.controller }), exists)
+        : null;
+      const state =
+        running && t.lane !== null
+          ? ciWorkerStateOf(f.states.values(), { shard: t.shard, slot: t.lane - 1 }, t.worker)
+          : null;
+      const pause = state ? readCiPause(state) : null;
+      const pauseAsk = state ? ciPauseAskWords(readCiPauseAsk(state), englishRunSpeaker) : null;
+      const offered = state
+        ? ciControlsOffered(state, { shows, controller: !!watching?.controller }, t.status === 'running')
+        : [];
+      const id = state
+        ? ciControlStateKey(state, `${t.file}\x1f${t.title.join('\x1f')}\x1f${t.project}\x1f${t.retry}`)
+        : null;
       return {
+        ...(held ? { held } : {}),
+        ...(pause ? { paused: this.pausedOf(root, pause, exists) } : {}),
+        ...(pauseAsk && !pause ? { pauseAsk } : {}),
+        ...(id && offered.length
+          ? { controls: { id, offered: offered.map((command) => controlOf(command, !!pause)) } }
+          : {}),
         title: t.title,
         uri,
         line: uri && t.line !== null ? t.line - 1 : null,
@@ -604,6 +732,38 @@ export class CiSessions {
       tests,
       watchable: f.watchable && !ended,
       ended,
+    };
+  }
+
+  /** A held failure in the run page's words, its place in the workspace when it holds the file. */
+  private heldOf(root: string, hold: CiHold, letGo: boolean, exists: (file: string) => boolean): CiHeld {
+    const words = ciHoldWords(hold, englishRunSpeaker, this.options.clock);
+    const file = hold.call.file ? workspaceFile(root, hold.call.file, exists) : null;
+    return {
+      id: ciHoldKey(hold),
+      state: words.state,
+      heldFor: words.heldFor,
+      error: hold.call.title,
+      place: words.place,
+      at: file ? { uri: pathToFileURL(file).href, line: Math.max(0, (hold.call.line ?? 1) - 1) } : null,
+      note: words.note,
+      letGo,
+      letGoLabel: englishRunSpeaker.say('runs_letGo'),
+      letGoTitle: englishRunSpeaker.say('runs_letGoTitle'),
+    };
+  }
+
+  /** A paused test in the run page's words, its place in the workspace when it holds the file. */
+  private pausedOf(root: string, pause: CiPause, exists: (file: string) => boolean): CiPaused {
+    const words = ciPauseWords(pause, englishRunSpeaker, this.options.clock);
+    const file = pause.call.file ? workspaceFile(root, pause.call.file, exists) : null;
+    return {
+      state: words.state,
+      pausedBy: words.pausedBy,
+      call: pause.call.title,
+      place: words.place,
+      at: file ? { uri: pathToFileURL(file).href, line: Math.max(0, (pause.call.line ?? 1) - 1) } : null,
+      note: words.note,
     };
   }
 

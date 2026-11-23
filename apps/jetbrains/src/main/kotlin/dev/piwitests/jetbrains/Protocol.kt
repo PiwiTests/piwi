@@ -509,6 +509,11 @@ data class LiveRun(
     val ci: Boolean = false,
     /** The branch it runs on, as it reported it; null for a run that names none. */
     val branch: String? = null,
+    /**
+     * Where a run the IDE did not start comes from, by its origin, for the tooltip (`from the desktop app`); null for the
+     * IDE's own, a CI run, an imported one and one that names no origin.
+     */
+    val from: String? = null,
     /** Who started an own run when a person did not (`Started by Claude Code`); null for a person's run. */
     val label: String? = null,
     /** How many of its tests run much longer than they pass (`LiveTest.stuck`); null for none. */
@@ -590,7 +595,8 @@ data class UnreadRunTests(val root: String = "", val tests: List<RunLineTest> = 
 
 /**
  * `piwi/ciSessionChanged`: a CI run of the branch a context reads, or of the checked-out branch, while it runs,
- * read-only: no control, share or hold reaches it, and its tests never stop. `name` (`CI run #78`) and `summary`
+ * read-only: no control, share or hold reaches it, and its tests never stop, but a test held at its failure for its
+ * project's controllers (`CiTest.held`), which **Let it go** ends (`piwi/ciLetGo`). `name` (`CI run #78`) and `summary`
  * (`12 of 40 tests · 1 failed`) are the words the IDE shows; `tests` lists the running ones, then the latest that
  * ended; `watchable` says a running test's lane can be watched in the IDE (`piwi/ciWatch`) or on the dashboard, from
  * its `watch` address. The last of a run says `ended`. The plugin keeps the latest of each `root` and `runId` until then.
@@ -623,7 +629,8 @@ data class CiProgress(
  * A test of a CI run: its describe blocks' titles then its own, its spec in the project and the 0-based line of its
  * `test(…)` call (null when the project holds no such spec), its Playwright project, `running` or its result, its
  * attempt, its worker's lane from 1 and its shard (null when the run names none); while it runs, the call it is at (`at`,
- * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched).
+ * a CI position, never a stop) and its lane's view on the dashboard (`watch`, while the run can be watched), and while
+ * it waits at its failure for the people who may control the run, its hold (`held`).
  */
 data class CiTest(
     val title: List<String>? = null,
@@ -636,7 +643,71 @@ data class CiTest(
     val shard: Int? = null,
     val at: CiPosition? = null,
     val watch: String? = null,
+    val held: CiHeld? = null,
+    val paused: CiPaused? = null,
+    val pauseAsk: String? = null,
+    val controls: CiControls? = null,
 )
+
+/**
+ * A running CI test paused for the people who may control its project's runs, in the run page's words: where it stands
+ * (`state`), by whom and until when (`pausedBy`, null when its worker names no end), the call it stopped before, its
+ * place as the run names it (`place`) and in the project (`at`, which the place opens; null when the project holds no
+ * such file), and that the CI job's own timeout still runs (`note`).
+ */
+data class CiPaused(
+    val state: String = "",
+    val pausedBy: String? = null,
+    val call: String = "",
+    val place: String? = null,
+    val at: CiHeldAt? = null,
+    val note: String = "",
+)
+
+/**
+ * The controls the IDE offers on a CI lane (`piwi/ciControl`), as the service decides them for its watch of the lane:
+ * `id` names the lane's state they follow, in which the IDE asks one, again only after a refusal; each `offered` one its
+ * command (`pause`, `resume`, `end`), label and tooltip.
+ */
+data class CiControls(val id: String = "", val offered: List<CiControl>? = null)
+
+data class CiControl(val command: String = "", val label: String = "", val title: String = "")
+
+/**
+ * `piwi/ciControl`: **Pause**, **Resume** or **End the test** (`command`) on the CI lane the IDE watches; the service
+ * asks the instance on its watch of the lane, and answers with the instance's sentence or why not.
+ */
+data class CiControlParams(val root: String?, val runId: Int, val shard: Int?, val lane: Int, val command: String)
+
+/**
+ * A running CI test held at its failure for the people who may control its project's runs, in the run page's words:
+ * which hold it is (`id`), where it stands (`state`), for whom and until when (`heldFor`, null when its worker names no
+ * end), its error, its place as the run names it (`place`) and in the project (`at`, which the place opens; null when
+ * the project holds no such file), that the CI job's own timeout still runs (`note`), and whether the IDE offers
+ * **Let it go** (`letGo`: its watch shows the lane as a controller's), in the service's words (`letGoLabel`, and
+ * `letGoTitle` its tooltip). The IDE asks it once per hold (`id`), again only after a refusal.
+ */
+data class CiHeld(
+    val id: String = "",
+    val state: String = "",
+    val heldFor: String? = null,
+    val error: String = "",
+    val place: String? = null,
+    val at: CiHeldAt? = null,
+    val note: String = "",
+    val letGo: Boolean = false,
+    val letGoLabel: String = "",
+    val letGoTitle: String = "",
+)
+
+/** Where a held CI failure is in the project: its file and 0-based line. */
+data class CiHeldAt(val uri: String = "", val line: Int = 0)
+
+/**
+ * `piwi/ciLetGo`: **Let it go** on the CI lane the IDE watches, whose test is held at its failure; the service asks the
+ * instance on its watch of the lane, and answers with the instance's sentence or why not.
+ */
+data class CiLetGoParams(val root: String?, val runId: Int, val shard: Int?, val lane: Int)
 
 /** Where a running test of a CI run is: the call it runs (`title`), its file and 0-based line, and the words to show there. */
 data class CiPosition(
@@ -870,8 +941,8 @@ data class FailureTreeNode(
 data class FailuresParams(val grouping: String? = null)
 
 /**
- * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, loading, disconnected)
- * and the sentence it shows for it; null beside failures.
+ * What a failures view shows (`state`: failures, clear, norun, unreachable, desktop-unproven, refused, no-project,
+ * loading, disconnected) and the sentence it shows for it; null beside failures.
  */
 data class FailuresView(
     val state: String = "failures",
@@ -1884,6 +1955,12 @@ interface PiwiLanguageServer : LanguageServer {
 
     @JsonRequest("piwi/ciWatch")
     fun ciWatch(params: CiWatchParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciControl")
+    fun ciControl(params: CiControlParams): CompletableFuture<RunControlResult?>
+
+    @JsonRequest("piwi/ciLetGo")
+    fun ciLetGo(params: CiLetGoParams): CompletableFuture<RunControlResult?>
 
     @JsonRequest("piwi/openTrace")
     fun openTrace(params: OpenTraceParams): CompletableFuture<RunControlResult?>

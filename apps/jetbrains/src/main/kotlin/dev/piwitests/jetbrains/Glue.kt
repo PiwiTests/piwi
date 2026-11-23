@@ -427,14 +427,15 @@ object Glue {
     }
 
     /**
-     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, or `Run #124 (Started by
-     * Claude Code) is running: …` for one a person did not start, as VS Code's `liveLine`.
+     * The tooltip's line on a run in progress: `Your run #124 is running: 4 of 9 · 1 failed`, `Run #124 (Started by
+     * Claude Code) is running: …` for one a person did not start, and another's where it comes from (`Run #131 on
+     * feature-x (from the desktop app) is running: …`), as VS Code's `liveLine`.
      */
     private fun liveLine(live: LiveRun): String {
         val run = when {
             live.own && live.label != null -> "Run #${live.runId} (${live.label})"
             live.own -> "Your run #${live.runId}"
-            else -> othersRun(live, "Run")
+            else -> othersRun(live, "Run") + (live.from?.let { " ($it)" } ?: "")
         }
         return "\n$run is running: ${liveCount(live)}"
     }
@@ -896,6 +897,27 @@ object Glue {
         runs?.copy(contexts = runs.contexts?.map { it.copy(live = null, stream = null, updatedAt = null) })
 
     /**
+     * One call queued on the event thread for a burst of changes, run for every change made until it runs. A call still
+     * queued `staleMillis` after it was queued is queued again, so one the queue never runs holds no later change back.
+     */
+    class QueuedOnce(private val staleMillis: Long) {
+        /** When the call waiting was queued (a clock in milliseconds), 0 with none waiting. */
+        private val queuedAt = java.util.concurrent.atomic.AtomicLong()
+
+        /** Whether to queue a call `now`: none waits, or the one waiting was queued `staleMillis` ago or more. */
+        fun take(now: Long): Boolean {
+            while (true) {
+                val at = queuedAt.get()
+                if (at != 0L && now - at < staleMillis) return false
+                if (queuedAt.compareAndSet(at, now)) return true
+            }
+        }
+
+        /** The queued call runs: the next change queues another. */
+        fun ran() = queuedAt.set(0)
+    }
+
+    /**
      * `piwi/fileSummary` answers by file URI, each for one state of the file's text (`stamp`) and one count of the changes
      * the service pushed (`pushed`): the gutter and Code Vision of one highlighting pass share one request. An answer
      * older than `ttlMillis`, or one that failed, is asked for again; past `max` files, all are.
@@ -1350,8 +1372,10 @@ object Glue {
     /**
      * The tool window's empty text, from the state the service says the view is in (`view`), in its words, with the
      * actions the service links for that state (`FailuresView.links`): an instance that does not answer, a desktop app
-     * that did not prove its token, an instance still being read, no run yet or none for the baseline chosen
-     * (`baselineNoRun`), no connection; else no failure in the run read (`runId`).
+     * that did not prove its token, an instance that refused the key, no project chosen or found, an instance still
+     * being read, no run yet or none for the baseline chosen, no connection, no failure in the run read; else, from a
+     * service that names no state or no sentence, the baseline that found no run (`baselineNoRun`) or no failure in the
+     * run read (`runId`).
      */
     fun failuresEmpty(view: FailuresView?, baselineNoRun: String?, runId: Int?): EmptyText {
         val links = view?.links.orEmpty().map { Link(it.label, it.jetbrains) }
@@ -1360,7 +1384,10 @@ object Glue {
             "loading" -> EmptyText(view.message ?: "Piwi is reading the instance…", links)
             "unreachable" -> EmptyText(view.message ?: "The instance does not answer.", links)
             "desktop-unproven" -> EmptyText(view.message ?: "Restart or update the desktop app.", links)
-            "norun" -> EmptyText(baselineNoRun ?: view.message ?: "No run of this branch yet.", links)
+            "refused" -> EmptyText(view.message ?: "The instance refused the API key.", links)
+            "no-project" -> EmptyText(view.message ?: "No project chosen.", links)
+            "norun" -> EmptyText(view.message ?: baselineNoRun ?: "No run of this branch yet.", links)
+            "clear" -> EmptyText(view.message ?: baselineNoRun ?: runId?.let { "No failure in run #$it" } ?: "No failure in the latest run", links)
             else -> EmptyText(
                 when {
                     baselineNoRun != null -> baselineNoRun
@@ -3209,7 +3236,7 @@ object Glue {
     /**
      * The links of the inlay above a stop, after its paused text, as VS Code's row (`stopLensControls`): Resume, Step and
      * Finish (Resume alone at a failure), then Write code… while the stop offers a code action. Run to the caret, End the
-     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi.
+     * test and each code action are in the inlay's context menu, the editor's and Tools → Piwi → Run control.
      */
     fun stopInlayLinks(stop: ShownStop): List<StopLink> =
         stopControls(stop).filter { it != StopControl.RUN_TO_CARET && it != StopControl.END } +
@@ -3221,7 +3248,7 @@ object Glue {
     /**
      * The code actions at a stop, in the order it offers them (`piwi/stopAction`): the pause bar's Pick a locator and
      * Record, and Assert and Assert a region, in the test's window (`inPage`), so at a stop the bar shows; Mock a
-     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi**;
+     * request at any stop. Each needs its reporter to take what `takes` names, and has its action under **Tools → Piwi → Run control**;
      * the inlay names it shorter, beside the controls.
      */
     enum class StopAction(
@@ -3656,6 +3683,358 @@ object Glue {
         val given = Regex("^Bearer\\s+(\\S+)$", RegexOption.IGNORE_CASE).find(header ?: "")?.groupValues?.get(1) ?: return false
         return token.isNotEmpty() && java.security.MessageDigest.isEqual(given.toByteArray(), token.toByteArray())
     }
+
+    /**
+     * The password-safe user of this IDE's Send to editor token: one per product (`WS`, `IU`, `RD`), so an IDE's Unpair
+     * changes no other JetBrains IDE's pairing, and a new version of the same IDE keeps it.
+     */
+    fun sendTokenUser(productCode: String): String = "sendToken ${productCode.ifBlank { "IDE" }}"
+
+    /**
+     * This IDE's Send to editor token: its own entry's (`own`), else the one every JetBrains IDE shared before
+     * (`shared`), copied to its own (`keep`), so a Piwi Picker paired with it stays paired; empty before any.
+     */
+    fun ownSendToken(own: String?, shared: String?, keep: (String) -> Unit): String {
+        if (!own.isNullOrEmpty()) return own
+        val earlier = shared.orEmpty()
+        if (earlier.isNotEmpty()) keep(earlier)
+        return earlier
+    }
+
+    /** The header Piwi Picker polls a pairing request with (`@piwitests/core/editor-pairing`). */
+    const val EDITOR_PAIRING_SECRET_HEADER = "x-pairing-secret"
+
+    /** How long a pairing request waits for the person's answer. */
+    const val EDITOR_PAIRING_TTL_MILLIS = 5 * 60_000L
+
+    /** Seconds Piwi Picker waits between polls. */
+    const val EDITOR_PAIRING_POLL_SECONDS = 2
+
+    /** Requests waiting at once; one more is refused (429) until one is answered or expires. */
+    const val MAX_WAITING_EDITOR_PAIRINGS = 3
+
+    /** How long a request answered or expired is still told as such to a poll, before it is forgotten (404). */
+    private const val ANSWERED_KEPT_MILLIS = 60_000L
+
+    /** The most windows a hello names, and the longest name of one, or of the product. */
+    private const val MAX_HELLO_WINDOWS = 8
+    private const val MAX_HELLO_TEXT = 80
+
+    /** A name as the hello gives it: no control character, one space between words, cut to its limit. */
+    private fun shownName(value: String): String =
+        value.replace(Regex("\\p{Cntrl}"), " ").replace(Regex("\\s+"), " ").trim().take(MAX_HELLO_TEXT)
+
+    /**
+     * What `GET /api/piwi/hello` answers, with no token: this is a JetBrains IDE, which product, and the projects it has
+     * open, as `editorHello` in `@piwitests/core/editor-pairing` writes it.
+     */
+    fun editorHello(product: String, projects: List<String>): Map<String, Any> = mapOf(
+        "editor" to "jetbrains",
+        "product" to shownName(product).ifEmpty { "jetbrains" },
+        "windows" to projects.map(::shownName).filter { it.isNotEmpty() }.take(MAX_HELLO_WINDOWS),
+    )
+
+    private val CHROME_EXTENSION = Regex("^chrome-extension://[a-p]{32}$")
+    private val FIREFOX_EXTENSION = Regex("^moz-extension://[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$", RegexOption.IGNORE_CASE)
+
+    /** Whether an `Origin` is a browser extension's (`isExtensionOrigin` in `@piwitests/core/run-hub`); never a page's. */
+    fun isExtensionOrigin(origin: String?): Boolean =
+        origin != null && (CHROME_EXTENSION.matches(origin) || FIREFOX_EXTENSION.matches(origin))
+
+    /** The letters of a pairing code: consonants alone, none read as another. */
+    private const val CODE_LETTERS = "BCDFGHJKLMNPQRSTVWXZ"
+
+    /**
+     * A code as the person typed it (`normalizeEditorPairingCode` in `@piwitests/core/editor-pairing`): its eight
+     * letters in capitals, `BCDFGHJK`, whatever their case and the spaces or dashes between them; null for anything else.
+     */
+    fun normalizeEditorPairingCode(typed: String): String? {
+        val letters = typed.uppercase().replace(Regex("[\\s-]"), "")
+        return letters.takeIf { it.length == 8 && it.all { letter -> letter in CODE_LETTERS } }
+    }
+
+    /**
+     * The proof handed over with the token (`editorPairingProof` in `@piwitests/core/editor-pairing`): HMAC-SHA256 keyed
+     * by the code typed, normalized, over `piwi-editor-pairing:<id>:<token>`, lowercase hex. Piwi Picker keeps the token
+     * only when its own code makes the same proof. Null for a typed text that is no code.
+     */
+    fun editorPairingProof(code: String, id: String, token: String): String? {
+        val key = normalizeEditorPairingCode(code) ?: return null
+        val mac = javax.crypto.Mac.getInstance("HmacSHA256")
+        mac.init(javax.crypto.spec.SecretKeySpec(key.toByteArray(Charsets.UTF_8), "HmacSHA256"))
+        return mac.doFinal("piwi-editor-pairing:$id:$token".toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+    }
+
+    /** How the person's typed code ended: handed over, no code (the request still waits), or no request waiting. */
+    enum class Allowed { ALLOWED, NOT_A_CODE, GONE }
+
+    /** The person typed the code Piwi Picker shows for request `id`: the token goes to it with the proof of that code. */
+    fun allowEditorPairing(requests: EditorPairingRequests, id: String, token: String, typed: String): Allowed {
+        val proof = editorPairingProof(typed, id, token) ?: return Allowed.NOT_A_CODE
+        return if (requests.answer(id, token to proof)) Allowed.ALLOWED else Allowed.GONE
+    }
+
+    /** The message for a typed text that is no code. */
+    const val NOT_A_CODE = "Type the eight letters Piwi Picker shows, such as BCDF-GHJK."
+
+    /** One word of what Piwi Picker says it runs in: letters, digits, spaces, dots and dashes, 40 characters at most. */
+    private fun clientWord(value: com.google.gson.JsonElement?): String {
+        val text = value?.takeIf { it.isJsonPrimitive && it.asJsonPrimitive.isString }?.asString ?: return ""
+        return text.replace(Regex("[^\\p{L}\\p{N} .-]"), "").replace(Regex("\\s+"), " ").trim().take(40)
+    }
+
+    /** "Chrome on macOS", from the start's `{ browser, os }`; "a browser" when it names none. */
+    fun editorPairingClient(body: com.google.gson.JsonObject?): String {
+        val browser = clientWord(body?.get("browser")).ifEmpty { "a browser" }
+        val os = clientWord(body?.get("os"))
+        return if (os.isEmpty()) browser else "$browser on $os"
+    }
+
+    /** The id a poll's path names (`/api/piwi/pairings/<id>`): 16 lowercase hex characters; null for any other path. */
+    fun editorPairingIdOf(path: String, prefix: String): String? {
+        if (!path.startsWith("$prefix/")) return null
+        return path.removePrefix("$prefix/").takeIf { Regex("^[0-9a-f]{16}$").matches(it) }
+    }
+
+    /** What a route answers: the status code and the JSON body. */
+    data class PairingAnswer(val status: Int, val body: Map<String, Any?>)
+
+    /** What the IDE shows of a request waiting for the person's answer. */
+    data class PairingRequestView(val id: String, val client: String, val createdAt: Long, val expiresAt: Long)
+
+    /**
+     * The pairing requests of this IDE, as `EditorPairingRequests` of `@piwitests/core/editor-pairing` keeps them:
+     * started by Piwi Picker, answered by the person, polled until Piwi Picker has the token or hears no. `changed`
+     * hears every change of the requests waiting. Safe from any thread.
+     */
+    class EditorPairingRequests(
+        private val now: () -> Long = System::currentTimeMillis,
+        private val changed: () -> Unit = {},
+    ) {
+        private class Stored(
+            val view: PairingRequestView,
+            /** The extension that asked: one request of it waits at a time. */
+            val origin: String,
+            val secret: String,
+            var status: String = "waiting",
+            /** The token and the proof of the code typed, from the person's answer until the first poll takes them. */
+            var allowed: Pair<String, String>? = null,
+            var endedAt: Long? = null,
+        )
+
+        private val requests = LinkedHashMap<String, Stored>()
+        private val random = java.security.SecureRandom()
+
+        private fun hex(bytes: Int): String =
+            ByteArray(bytes).also(random::nextBytes).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+        /** Expires the requests past their time and forgets those answered long enough ago; true when one expired. */
+        private fun sweep(): Boolean {
+            val at = now()
+            var expired = false
+            val each = requests.values.iterator()
+            while (each.hasNext()) {
+                val request = each.next()
+                if (request.status == "waiting" && request.view.expiresAt <= at) {
+                    request.status = "expired"
+                    request.endedAt = at
+                    expired = true
+                }
+                val ended = request.endedAt
+                if (ended != null && at - ended > ANSWERED_KEPT_MILLIS) each.remove()
+            }
+            return expired
+        }
+
+        /**
+         * `POST …/pairings`: a new request, from a browser extension's `Origin` and a JSON object alone (403, 415 and
+         * 400 otherwise). It takes the place of a request the same extension made before and nobody answered yet; an
+         * extension the person denied waits a minute before it asks again, and none asks while
+         * [MAX_WAITING_EDITOR_PAIRINGS] wait (429 both). `body` is the text as it came.
+         */
+        fun start(origin: String?, contentType: String?, body: String?): PairingAnswer {
+            if (origin == null || !isExtensionOrigin(origin)) {
+                return PairingAnswer(403, mapOf("error" to "only a browser extension can ask to pair"))
+            }
+            if (contentType?.lowercase()?.startsWith("application/json") != true) {
+                return PairingAnswer(415, mapOf("error" to "the body must be application/json"))
+            }
+            val json = runCatching { JsonParser.parseString(body ?: "") }.getOrNull() as? JsonObject
+                ?: return PairingAnswer(400, mapOf("error" to "the body must be a JSON object"))
+            val request = synchronized(this) {
+                val expired = sweep()
+                val at = now()
+                val own = requests.values.filter { it.origin == origin }
+                if (own.any { it.status == "denied" }) {
+                    if (expired) changed()
+                    return PairingAnswer(429, mapOf("error" to "the person said no a moment ago"))
+                }
+                for (earlier in own.filter { it.status == "waiting" }) {
+                    earlier.status = "expired"
+                    earlier.endedAt = at
+                }
+                if (waitingNow().size >= MAX_WAITING_EDITOR_PAIRINGS) {
+                    changed()
+                    return PairingAnswer(429, mapOf("error" to "too many pairing requests wait already"))
+                }
+                Stored(
+                    PairingRequestView(hex(8), editorPairingClient(json), at, at + EDITOR_PAIRING_TTL_MILLIS),
+                    origin,
+                    hex(32),
+                ).also { requests[it.view.id] = it }
+            }
+            changed()
+            return PairingAnswer(
+                201,
+                mapOf(
+                    "id" to request.view.id,
+                    "secret" to request.secret,
+                    "interval" to EDITOR_PAIRING_POLL_SECONDS,
+                    "expiresIn" to EDITOR_PAIRING_TTL_MILLIS / 1000,
+                ),
+            )
+        }
+
+        /**
+         * `GET …/pairings/<id>` with the start's secret: the request's status, and the token the first time it is
+         * polled allowed, after which it is `claimed`. An unknown id or a wrong secret is a 404 alike.
+         */
+        fun poll(id: String, secret: String?): PairingAnswer {
+            val (answer, expired) = synchronized(this) {
+                val expired = sweep()
+                val request = requests[id]
+                if (request == null || secret == null ||
+                    !java.security.MessageDigest.isEqual(secret.toByteArray(), request.secret.toByteArray())
+                ) {
+                    return@synchronized PairingAnswer(404, mapOf("error" to "no such pairing request")) to expired
+                }
+                val allowed = request.allowed
+                if (request.status == "allowed" && allowed != null) {
+                    request.status = "claimed"
+                    request.allowed = null
+                    PairingAnswer(200, mapOf("status" to "allowed", "token" to allowed.first, "proof" to allowed.second)) to expired
+                } else {
+                    PairingAnswer(200, mapOf("status" to request.status)) to expired
+                }
+            }
+            if (expired) changed()
+            return answer
+        }
+
+        /**
+         * The person's answer to a waiting request: the token to hand over with the proof of the code typed
+         * ([allowEditorPairing] makes both), or null for no. False when none waits.
+         */
+        fun answer(id: String, allowed: Pair<String, String>?): Boolean {
+            val (answered, expired) = synchronized(this) {
+                val expired = sweep()
+                val request = requests[id]?.takeIf { it.status == "waiting" } ?: return@synchronized false to expired
+                val given = allowed?.takeIf { it.first.isNotEmpty() }
+                request.status = if (given == null) "denied" else "allowed"
+                request.allowed = given
+                request.endedAt = now()
+                true to expired
+            }
+            if (answered || expired) changed()
+            return answered
+        }
+
+        /** Unpair: the requests allowed and not polled yet hand over nothing, as if they had expired. */
+        fun forgetTokens() {
+            synchronized(this) {
+                val at = now()
+                for (request in requests.values.filter { it.status == "allowed" }) {
+                    request.status = "expired"
+                    request.allowed = null
+                    request.endedAt = at
+                }
+            }
+        }
+
+        private fun waitingNow(): List<PairingRequestView> {
+            val at = now()
+            return requests.values.filter { it.status == "waiting" && it.view.expiresAt > at }.map { it.view }
+        }
+
+        /** The requests waiting for the person's answer, oldest first. */
+        fun waiting(): List<PairingRequestView> = synchronized(this) { waitingNow() }
+
+        /** Ends the waits past their time; true when one ended, for the IDE to draw them again. */
+        fun expire(): Boolean {
+            val expired = synchronized(this) { sweep() }
+            if (expired) changed()
+            return expired
+        }
+    }
+
+    /** The pairing kept: when, and the browser of a pairing by code (null for one by address). */
+    data class PickerPaired(val at: Long, val client: String?)
+
+    /** What the Piwi Picker tab shows the pairing from. `port` is the built-in server's. */
+    data class PickerState(
+        val waiting: List<PairingRequestView>,
+        val paired: PickerPaired?,
+        val heard: Long?,
+        val port: Int,
+    )
+
+    /** A line of the Piwi Picker tab: what it says, a comment beside it, and whether it says all is well. */
+    data class PickerLine(val label: String, val description: String, val ok: Boolean)
+
+    /** The ports Piwi Picker looks for a JetBrains IDE on: the built-in server's, 63342 and the 19 after it. */
+    val PICKER_BUILT_IN_PORTS = 63342..63361
+
+    const val PICKER_INTRO =
+        "Piwi Picker, the browser extension, sends the locators you pick to the caret and follows the runs this project starts."
+    const val PICKER_HOW_TO_PAIR =
+        "To pair, click Pair under Editor in Piwi Picker's settings, then type here the code it shows."
+    const val PICKER_ADDRESS_HINT =
+        "With JetBrains Gateway, or when Piwi Picker does not find this IDE, copy the pairing address instead, and " +
+            "paste it in Piwi Picker's settings under Editor, Pair with an address."
+
+    /** The date a pairing was made: `Nov 19` this year, `Nov 19, 2025` another. */
+    private fun pairedDay(at: Long, now: Long): String {
+        val zone = java.time.ZoneId.systemDefault()
+        val date = java.time.Instant.ofEpochMilli(at).atZone(zone)
+        val sameYear = date.year == java.time.Instant.ofEpochMilli(now).atZone(zone).year
+        val pattern = if (sameYear) "MMM d" else "MMM d, yyyy"
+        return date.format(java.time.format.DateTimeFormatter.ofPattern(pattern, java.util.Locale.US))
+    }
+
+    /**
+     * The Piwi Picker tab's lines once paired, or Piwi Picker heard from: who it is paired with and since when, when it
+     * was last heard from, and where it reaches this IDE; none before, the tab saying how to pair instead. The words of
+     * the VS Code extension's Piwi Picker view (`pickerRows` in `apps/vscode/src/picker-pairing.ts`), both held to the
+     * golden fixture `packages/editor/tests/golden/picker-pairing.json`.
+     */
+    fun pickerRows(state: PickerState, now: Long): List<PickerLine> {
+        if (state.paired == null && state.heard == null) return emptyList()
+        val paired = state.paired
+        val heard = state.heard
+        val found = state.port in PICKER_BUILT_IN_PORTS
+        return listOf(
+            PickerLine(
+                if (paired?.client != null) "Paired with Piwi Picker in ${paired.client}" else "Paired with Piwi Picker",
+                if (paired != null) "since ${pairedDay(paired.at, now)}" else "",
+                true,
+            ),
+            PickerLine(
+                if (heard == null) "Not heard from yet" else "Last heard ${relativeTime(java.time.Instant.ofEpochMilli(heard).toString(), now)}",
+                "",
+                heard != null,
+            ),
+            PickerLine("Listening on 127.0.0.1:${state.port}", if (found) "" else "not where Piwi Picker looks", found),
+        )
+    }
+
+    /** A request's title, in the Piwi Picker tab: who asks. */
+    fun pairingRequestTitle(client: String): String = "$client asks to pair"
+
+    /** The notification of a pairing request: who asks, and what to type to allow it. */
+    fun pairingPrompt(client: String): String =
+        "Piwi Picker in $client asks to pair with this IDE, to send it the locators you pick and follow its runs. " +
+            "If you just clicked Pair in Piwi Picker, type the code it shows."
 
     /**
      * What the dashboard's Open in IDE asks (`/api/piwi/open`): a file of a run, as a path relative to the
@@ -4150,18 +4529,142 @@ object Glue {
 
     /**
      * What the Worker tab says above a CI lane it watches, from the run's session (`sessions` by `ciKey`): the test
-     * running in the lane and the call it is at, else that the lane is between tests, else that the run ended; always
-     * read-only.
+     * running in the lane and the call it is at, or where it stands while held at its failure, else that the lane is
+     * between tests, else that the run ended; read-only but for a held failure.
      */
     fun ciLaneCaption(sessions: Map<String, CiSession>, lane: CiLane): String {
         val name = ciLaneTitle(lane)
         val session = sessions[ciKey(lane.root, lane.runId)] ?: return "$name · the run ended."
-        val test = session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
-            ?: return "$name · between tests · read-only"
+        val test = ciLaneTest(session, lane) ?: return "$name · between tests · read-only"
         val title = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
+        (test.held?.state ?: test.paused?.state)?.let { return "$name · $it: $title" }
         val at = test.at?.let { " · ${it.title}" }.orEmpty()
         return "$name · Running $title$at · read-only"
     }
+
+    private fun ciLaneTest(session: CiSession, lane: CiLane): CiTest? =
+        session.tests.orEmpty().firstOrNull { it.status == "running" && it.lane == lane.lane && it.shard == lane.shard }
+
+    /** A button of a CI lane as the service offers it: Let it go (`let-go`), Pause, Resume or End the test. */
+    data class CiButton(val command: String, val label: String, val title: String)
+
+    /**
+     * A CI lane's test held at its failure or paused for the run's controllers, and the controls of the lane, as the
+     * service says them (the mirror of VS Code's `ciLaneStop`): where it stands and by or for whom, its call and place
+     * (`at`, where the project holds it), the job's timeout note, the buttons the service offers (Let it go on a held
+     * failure, else its `controls`), the lane's state they follow (`id`, which an ask is kept by: `CiAsks`), and a Pause
+     * waiting or dropped (`ask`). `state` is empty while neither held nor paused.
+     */
+    data class CiStop(
+        val id: String?,
+        val held: Boolean,
+        val state: String,
+        val by: String?,
+        val call: String,
+        val place: String?,
+        val at: CiHeldAt?,
+        val note: String,
+        val buttons: List<CiButton>,
+        val ask: String?,
+    )
+
+    /** The CI lane's running test held or paused, its controls and its Pause asked, as the service says them; null for none. */
+    fun ciLaneStop(sessions: Map<String, CiSession>, lane: CiLane): CiStop? {
+        val test = sessions[ciKey(lane.root, lane.runId)]?.let { ciLaneTest(it, lane) } ?: return null
+        test.held?.let { held ->
+            val buttons = if (held.letGo) listOf(CiButton("let-go", held.letGoLabel, held.letGoTitle)) else emptyList()
+            return CiStop(held.id, true, held.state, held.heldFor, held.error, held.place, held.at, held.note, buttons, null)
+        }
+        val paused = test.paused
+        if (paused == null && test.controls == null && test.pauseAsk == null) return null
+        val buttons = test.controls?.offered.orEmpty().map { CiButton(it.command, it.label, it.title) }
+        return CiStop(
+            test.controls?.id,
+            false,
+            // `Paused by Ana · until 12:05` says the state itself, as the run page says it.
+            paused?.let { it.pausedBy ?: it.state }.orEmpty(),
+            null,
+            paused?.call.orEmpty(),
+            paused?.place,
+            paused?.at,
+            paused?.note.orEmpty(),
+            buttons,
+            test.pauseAsk,
+        )
+    }
+
+    /**
+     * What the Worker tab shows of a CI lane's held or paused test: its lines (where it stands and by or for whom, its
+     * call, the job's timeout note, none while neither), its place (which opens its line where the project holds it:
+     * `placeOpens`), whether it is held (drawn as a failure), the service's buttons, off once one was asked in the
+     * lane's state (`asking`), and a Pause waiting or dropped (`ask`).
+     */
+    data class CiStopShown(
+        val lines: List<String>,
+        val place: String?,
+        val placeOpens: Boolean,
+        val held: Boolean,
+        val buttons: List<CiButton>,
+        val asking: Boolean,
+        val ask: String?,
+    )
+
+    fun ciStopShown(stop: CiStop, asking: Boolean): CiStopShown {
+        val lines = if (stop.state.isEmpty()) emptyList() else listOf(
+            listOfNotNull(stop.state, stop.by).joinToString(" · "),
+            stop.call,
+            stop.note,
+        ).filter { it.isNotBlank() }
+        return CiStopShown(lines, stop.place, stop.at != null, stop.held, stop.buttons, asking, stop.ask)
+    }
+
+    /**
+     * A CI lane's buttons asked in each state of the lane (`CiStop.id`), as `CiAsks` of `@piwitests/run-model/ci` keeps
+     * them for VS Code and the Runs window: one asked in a state, the buttons off until it changes (`seen`), asked again
+     * after a refusal, and, once the instance took the ask (`took`), as soon as the lane shows anything new (`shown`,
+     * whatever its state). On the event thread.
+     */
+    class CiAsks {
+        private class Ask(val state: String, var shown: String? = null)
+
+        private val asks = HashMap<CiLane, Ask>()
+
+        fun asked(lane: CiLane, state: String): Boolean = asks[lane.copy(dashboard = null)]?.state == state
+
+        fun ask(lane: CiLane, state: String): Boolean {
+            if (asked(lane, state)) return false
+            asks[lane.copy(dashboard = null)] = Ask(state)
+            return true
+        }
+
+        fun refused(lane: CiLane, state: String) {
+            if (asked(lane, state)) asks.remove(lane.copy(dashboard = null))
+        }
+
+        fun took(lane: CiLane, state: String, shown: String) {
+            asks[lane.copy(dashboard = null)]?.takeIf { it.state == state }?.shown = shown
+        }
+
+        fun seen(lane: CiLane, state: String?, shown: String? = null) {
+            val key = lane.copy(dashboard = null)
+            val ask = asks[key] ?: return
+            if (ask.state != state || (ask.shown != null && shown != null && ask.shown != shown)) asks.remove(key)
+        }
+    }
+
+    /**
+     * Whether what a button of a CI lane came to (said under the caption) still stands: while the lane stands in the state
+     * it was asked in (`noteState`; null for a note no button gave).
+     */
+    fun ciNoteStands(noteState: String?, state: String?): Boolean = noteState == null || noteState == state
+
+    /** What a control asks of the service for the CI lane the Worker tab shows (`piwi/ciControl`). */
+    fun ciControlParams(lane: CiLane, command: String): CiControlParams =
+        CiControlParams(lane.root, lane.runId, lane.shard, lane.lane, command)
+
+    /** What **Let it go** asks of the service for the CI lane the Worker tab shows (`piwi/ciLetGo`). */
+    fun ciLetGoParams(lane: CiLane): CiLetGoParams = CiLetGoParams(lane.root, lane.runId, lane.shard, lane.lane)
+
 
     /**
      * The CI Runs tab: each CI run of the branch, newest first, named as other runs are (`CI run #78`) with its
@@ -4184,7 +4687,7 @@ object Glue {
                 test.project,
                 if (test.retry > 0) "retry ${test.retry}" else "",
                 if (running) ciLane(test) else test.status,
-                if (running) test.at?.title.orEmpty() else "",
+                if (running) test.held?.state ?: test.paused?.state ?: test.at?.title.orEmpty() else "",
             ).filter { it.isNotEmpty() }.joinToString(" · ")
             val name = test.title.orEmpty().joinToString(" › ").replace(Regex("\\s+"), " ")
             var testKey = "$key\n${test.uri.orEmpty()}\n${test.title.orEmpty().joinToString("\u001f")}\n${test.project}"
@@ -4200,7 +4703,7 @@ object Glue {
                     CiRow(
                         "ci-watch",
                         "Watch",
-                        "${ciLane(test)} · read-only",
+                        "${ciLane(test)} · ${test.held?.state ?: test.paused?.state ?: "read-only"}",
                         lane = CiLane(session.root.orEmpty(), session.runId, test.shard, lane, url),
                         key = "$testKey\nwatch-here",
                     )

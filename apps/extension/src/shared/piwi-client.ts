@@ -1,4 +1,13 @@
 import { proveDesktopServer, type DesktopProof } from '@piwitests/core/desktop-proof';
+import {
+  EDITOR_HELLO_PATH,
+  EDITOR_PAIRING_SECRET_HEADER,
+  EDITOR_PAIRINGS_PATH,
+  editorPairingProof,
+  parseEditorHello,
+  type EditorPairingStart,
+  type FoundEditor,
+} from '@piwitests/core/editor-pairing';
 import type { EditorPairing, EditorSendPayload } from '@piwitests/core/editor-send';
 import type { TestFunctionEntry } from '@piwitests/core/function-match';
 import type { LocatorIndex } from '@piwitests/core/locator-index';
@@ -31,7 +40,7 @@ import { t } from './i18n.js';
  * preview, `piwi-desktop-repro-status`, and the hub of its runs for the Runs
  * window, `fetchDesktopHubs`; and the CI runs in progress the Runs window lists
  * while it is open, `fetchActiveRuns`, `fetchRunMetadata` and `openRunStream`, and
- * the CI lane it watches, `openLiveWatch` and `changeLiveWatch`) only,
+ * the CI lane it watches, `openLiveWatch`, `changeLiveWatch`, `letGoCiTest` and `controlCiTest`) only,
  * never from a content script, so the API key is never reachable from a web
  * page's JS context (matches `extension/AGENTS.md`'s standalone stance:
  * connected mode is opt-in and clearly separated). The key is read here from
@@ -267,6 +276,42 @@ export async function changeLiveWatch(
 ): Promise<Response> {
   const headers = await authHeaders(settings);
   return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/watch`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
+}
+
+/**
+ * **Let it go** on a CI test held at its failure (`POST /api/test-runs/:id/live-view/let-go`), on the watch of its lane
+ * `body` names.
+ */
+export async function letGoCiTest(
+  settings: ConnectionSettings,
+  runId: number,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/let-go`, {
+    method: 'POST',
+    headers: { ...headers, 'Content-Type': 'application/json' },
+    body: JSON.stringify(body),
+    signal: timeout(),
+  });
+}
+
+/**
+ * **Pause**, **Resume** or **End the test** of a CI test (`POST /api/test-runs/:id/live-view/control`), on the watch of
+ * its lane `body` names.
+ */
+export async function controlCiTest(
+  settings: ConnectionSettings,
+  runId: number,
+  body: Record<string, unknown>,
+): Promise<Response> {
+  const headers = await authHeaders(settings);
+  return request(`${normalizeBaseUrl(settings.instanceUrl)}/api/test-runs/${runId}/live-view/control`, {
     method: 'POST',
     headers: { ...headers, 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
@@ -883,6 +928,39 @@ export async function testDesktop(desktop: DesktopSettings): Promise<ConnectionC
   }
 }
 
+/** A pairing's start as the desktop app or an editor answers it: the request and its secret; null for anything else. */
+function pairingStartOf(body: unknown): EditorPairingStart | null {
+  const b = (body ?? {}) as Partial<EditorPairingStart>;
+  if (typeof b.id !== 'string' || !/^[0-9a-f]{16}$/.test(b.id) || typeof b.secret !== 'string') return null;
+  return {
+    id: b.id,
+    secret: b.secret,
+    interval: typeof b.interval === 'number' && b.interval > 0 ? b.interval : 2,
+    expiresIn: typeof b.expiresIn === 'number' && b.expiresIn > 0 ? b.expiresIn : 300,
+  };
+}
+
+/**
+ * One poll's answer of a pairing, the desktop app's or an editor's, in the shape the connect flow waits on: `approved`
+ * carries the token as `apiKey`. Null for an answer that is none of its statuses.
+ */
+function pairingPollOf(body: unknown): ConnectPoll | null {
+  const b = (body ?? {}) as { status?: unknown; token?: unknown };
+  switch (b.status) {
+    case 'waiting':
+      return { status: 'pending' };
+    case 'denied':
+      return { status: 'denied' };
+    case 'expired':
+    case 'claimed':
+      return { status: 'expired' };
+    case 'allowed':
+      return typeof b.token === 'string' && b.token ? { status: 'approved', apiKey: b.token, user: null } : null;
+    default:
+      return null;
+  }
+}
+
 /** A pairing the desktop app started: the code both sides show, and the secret only this extension polls with. */
 export interface DesktopPairingStart {
   id: string;
@@ -907,23 +985,10 @@ export async function startDesktopPairing(url: string, client: ClientInfo): Prom
   }
   if (res.status === 429) throw new Error(t('options_desktopPairTooMany'));
   if (!res.ok) throw new Error(t('options_desktopPairUnsupported', { url }));
-  const body = (await res.json().catch(() => ({}))) as Partial<DesktopPairingStart>;
-  if (
-    typeof body.id !== 'string' ||
-    !/^[0-9a-f]{16}$/.test(body.id) ||
-    typeof body.secret !== 'string' ||
-    typeof body.code !== 'string'
-  ) {
-    throw new Error(t('options_desktopPairUnsupported', { url }));
-  }
-  return {
-    id: body.id,
-    secret: body.secret,
-    code: body.code,
-    interval: typeof body.interval === 'number' && body.interval > 0 ? body.interval : 2,
-    expiresIn: typeof body.expiresIn === 'number' && body.expiresIn > 0 ? body.expiresIn : 300,
-    windowOpen: body.windowOpen !== false,
-  };
+  const body = (await res.json().catch(() => ({}))) as { windowOpen?: unknown; code?: unknown };
+  const start = pairingStartOf(body);
+  if (!start || typeof body.code !== 'string') throw new Error(t('options_desktopPairUnsupported', { url }));
+  return { ...start, code: body.code, windowOpen: body.windowOpen !== false };
 }
 
 /**
@@ -939,21 +1004,90 @@ export async function pollDesktopPairing(url: string, pairing: DesktopPairingSta
   // Gone: the app restarted and lost it, as good as expired.
   if (res.status === 404) return { status: 'expired' };
   if (!res.ok) throw new Error(t('common_desktopStatus', { status: res.status }));
-  const body = ((await desktopJson(res)) ?? {}) as { status?: unknown; token?: unknown };
-  switch (body.status) {
-    case 'waiting':
-      return { status: 'pending' };
-    case 'denied':
-      return { status: 'denied' };
-    case 'expired':
-    case 'claimed':
-      return { status: 'expired' };
-    case 'allowed':
-      if (typeof body.token !== 'string' || !body.token) throw new Error(t('options_desktopPairUnsupported', { url }));
-      return { status: 'approved', apiKey: body.token, user: null };
-    default:
-      throw new Error(t('options_desktopPairUnsupported', { url }));
+  const poll = pairingPollOf(await desktopJson(res));
+  if (!poll) throw new Error(t('options_desktopPairUnsupported', { url }));
+  return poll;
+}
+
+/** How long an editor may take to say what it is, on one of the ports Piwi Picker looks at. */
+const EDITOR_HELLO_TIMEOUT_MS = 1500;
+
+/**
+ * The editors of this computer that answer `…/hello` at `bases` (`editorPairingBases()`, with the paired editor's),
+ * each base once, in their order. Nothing answering, or something that is not an editor, is left out. Needs the host
+ * permission for their origins, asked inside Pair's click.
+ */
+export async function findEditors(bases: readonly string[]): Promise<FoundEditor[]> {
+  const found = await Promise.all(
+    [...new Set(bases)].map(async (base): Promise<FoundEditor | null> => {
+      try {
+        const res = await request(`${base}${EDITOR_HELLO_PATH}`, {
+          signal: AbortSignal.timeout(EDITOR_HELLO_TIMEOUT_MS),
+        });
+        const hello = res.ok ? parseEditorHello(await res.json()) : null;
+        return hello ? { ...hello, base } : null;
+      } catch {
+        return null;
+      }
+    }),
+  );
+  return found.filter((editor): editor is FoundEditor => editor !== null);
+}
+
+/**
+ * Asks the editor at `base` to pair: it shows the request with the code this answers, which the person allows there.
+ * Throws a message to show when it cannot.
+ */
+export async function startEditorPairing(base: string, client: ClientInfo): Promise<EditorPairingStart> {
+  let res: Response;
+  try {
+    res = await postJson(`${base}${EDITOR_PAIRINGS_PATH}`, client);
+  } catch {
+    throw new Error(t('options_editorPairUnreachable', { url: base }));
   }
+  if (res.status === 429) throw new Error(t('options_editorPairTooMany'));
+  if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  const start = pairingStartOf(await res.json().catch(() => null));
+  if (!start) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  return start;
+}
+
+/** One poll of an editor's pairing request: the connect flow's answers, or a token whose proof is not of the code. */
+export type EditorPairingPollAnswer = ConnectPoll | { status: 'wrong-code' };
+
+/**
+ * One poll of an editor's pairing request. `approved` carries the Send to editor token as `apiKey`, once its proof is
+ * the one `code`, shown here and typed in the editor, makes (`editorPairingProof`); `wrong-code` when it is not, the
+ * token then dropped. Throws on a network error or an unexpected answer, which the caller retries.
+ */
+export async function pollEditorPairing(
+  base: string,
+  pairing: EditorPairingStart,
+  code: string,
+): Promise<EditorPairingPollAnswer> {
+  const res = await request(`${base}${EDITOR_PAIRINGS_PATH}/${pairing.id}`, {
+    headers: { [EDITOR_PAIRING_SECRET_HEADER]: pairing.secret },
+    signal: timeout(),
+  });
+  // Gone: the editor restarted and lost it, as good as expired.
+  if (res.status === 404) return { status: 'expired' };
+  if (!res.ok) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  const body = (await res.json().catch(() => null)) as { proof?: unknown } | null;
+  const poll = pairingPollOf(body);
+  if (!poll) throw new Error(t('options_editorPairUnsupported', { url: base }));
+  if (poll.status !== 'approved') return poll;
+  const expected = await editorPairingProof(code, pairing.id, poll.apiKey);
+  return typeof body?.proof === 'string' && expected !== null && sameText(body.proof, expected)
+    ? poll
+    : { status: 'wrong-code' };
+}
+
+/** Whether two texts are the same, taking as long whatever character differs. */
+function sameText(a: string, b: string): boolean {
+  if (a.length !== b.length) return false;
+  let differ = 0;
+  for (let i = 0; i < a.length; i++) differ |= a.charCodeAt(i) ^ b.charCodeAt(i);
+  return differ === 0;
 }
 
 export interface ReproRequestSend {

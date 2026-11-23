@@ -143,10 +143,11 @@ views are exempt only where a rule says so.
   action, and the one exception is a card's header icon (`CARD_ICON_CLASS`, marked `data-card-icon`). On the failure
   pages, `tests/unit/evidence-accent.test.ts` scans the evidence card's and the affected tests' components (add a new
   one to its list) and `tests/failure-page-accent.spec.ts` checks the rendered pages.
-- **A selection is neutral too**: `SELECTED_TAB_CLASS` (a tab strip), `SEGMENTED_SELECTED_CLASS` (a segmented control),
-  `SELECTED_ROW_CLASS` (the row that picks what the page shows), `CURRENT_ITEM_RING_CLASS` (the current item in a strip
-  of status-colored marks) and `PRESSED_TOGGLE_CLASS` (a toggle button that is on), in `app/utils/index.ts` and, for
-  the last two, the layer's `ui-classes.ts`; `tests/unit/evidence-accent.test.ts` holds the failure pages to them.
+- **A selection is neutral too**: `SELECTED_TAB_CLASS` (a tab strip) and `SEGMENTED_SELECTED_CLASS` (a segmented
+  control) in `app/utils/index.ts`, and `SELECTED_ROW_CLASS` (the row that picks what the page shows),
+  `CURRENT_ITEM_RING_CLASS` (the current item in a strip of status-colored marks) and `PRESSED_TOGGLE_CLASS` (a toggle
+  button that is on) in the layer's `ui-classes.ts`; `tests/unit/evidence-accent.test.ts` holds the failure pages to
+  them.
 - **A link inside a sentence keeps the sentence's color**:
   `underline decoration-dotted underline-offset-2 hover:decoration-solid`. `text-primary` links are for navigation lists
   and tables.
@@ -281,7 +282,8 @@ views are exempt only where a rule says so.
   [`ARCHITECTURE.md`](../ARCHITECTURE.md#route-families) (`tests/desktop-run-view.spec.ts`,
   `tests/unit/desktop-run-hub-plugin.test.ts`).
 - **A reload of the desktop window keeps its Local runs** (`plugins/desktop-local-runs.client.ts`): a field added to
-  `LocalRun` is plain JSON, since the store writes the runs to session storage, and a separate output window is fed by
+  `LocalRun` is plain JSON, since the store writes the runs to session storage and its finished ones to local storage
+  for the next start (`keepFinished`), and a run's separate window is fed by
   `DesktopRunOutputWindows` in `app.vue`, never by the tray, so it outlives the tray and the reload
   (`tests/unit/desktop-local-runs-reload.test.ts`, `tests/desktop-run-view.spec.ts`).
 - **Every raw `<form>` carries `method="post"`**, so a submit before hydration sends its fields in the body to the

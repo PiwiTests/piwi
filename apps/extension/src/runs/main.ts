@@ -23,7 +23,24 @@ import {
   runLevelControls,
   type Control,
 } from '@piwitests/run-model/controls';
-import { CI_READ_ONLY, ciRunName, ciRunWhere } from '@piwitests/run-model/ci';
+import {
+  CI_CANCEL_PAUSE_TITLE,
+  CI_CONTROL_WORDS,
+  CI_READ_ONLY,
+  CiAsks,
+  ciControlStateKey,
+  ciControlsOffered,
+  ciHoldKey,
+  ciHoldWords,
+  ciPauseAskWords,
+  ciPauseWords,
+  ciRunName,
+  ciRunWhere,
+  offersLetGo,
+  readCiPause,
+  readCiPauseAsk,
+} from '@piwitests/run-model/ci';
+import type { LiveControlCommand } from '@piwitests/core/live-view';
 import {
   asksLaneTextAgain,
   callWait,
@@ -268,6 +285,8 @@ function connect(): void {
       heardCiFrame(event);
     } else if (event?.type === 'ci-ended') {
       heardCiEnded(event);
+    } else if (event?.type === 'ci-controller') {
+      heardCiController(event);
     } else if (event?.type === 'answer') {
       const { id, type: _type, ...answer } = event;
       waiting.get(id)?.(answer);
@@ -1293,6 +1312,10 @@ interface CiView extends RunsCiLane {
   refused: string;
   test: string | null;
   call: string | null;
+  /** The instance said this window's watch of the lane counts as a controller's: **Let it go** may be offered. */
+  controller: boolean;
+  /** What **Let it go** or a control came to, in the lane's state it was asked in (`state`), dropped once it changes. */
+  ciNote: { ok: boolean; text: string; state: string } | null;
 }
 
 let ciView: CiView | null = null;
@@ -1333,6 +1356,8 @@ function toggleCi(lane: RunsCiLane): void {
     refused: '',
     test: null,
     call: null,
+    controller: false,
+    ciNote: null,
   };
   askCi(ciView);
   render();
@@ -1442,12 +1467,85 @@ function heardCiEnded(ended: RunsCiLane & { why: CiWatchEnd }): void {
   render();
 }
 
+function heardCiController(heard: RunsCiLane & { controller: boolean }): void {
+  const view = ciView;
+  if (!isCiLive(view) || ciLaneKey(view) !== ciLaneKey(heard) || view.controller === heard.controller) return;
+  view.controller = heard.controller;
+  render();
+}
+
+/**
+ * **Let it go** and the controls asked of each CI lane, one in each state of the lane (`ciStateKey`): its buttons off
+ * from the ask until the state changes, and on again after a refusal.
+ */
+const ciAsks = new CiAsks();
+
+/** The state of a CI lane its buttons follow: its hold, else its worker's pause, Pause asked or running; null for none. */
+function ciStateKey(test: RunsCiTest | undefined): string | null {
+  if (!test) return null;
+  if (test.held) return `held:${ciHoldKey(test.held)}`;
+  const state = test.live ? ciControlStateKey(test.live, `${test.title}\x1f${test.retry}`) : null;
+  return state ? `control:${state}` : null;
+}
+
+/** What the window shows of each CI lane's state, as text, by `ciLaneKey`: an ask the instance took goes as it changes. */
+const ciShown = new Map<string, string>();
+
+/** A CI lane's state as the window shows it, as text: its hold, its worker's pause state, its test. */
+function ciShownOf(test: RunsCiTest | undefined): string {
+  return JSON.stringify(test ? [test.title, test.retry, test.held ?? null, test.live ?? null] : null);
+}
+
+/** A button of a CI lane: **Let it go**, else a control. */
+type CiButton = 'let-go' | LiveControlCommand;
+
+/**
+ * **Let it go** or a control (**Pause**, **Resume**, **End the test**) of the CI lane watched, one in each state of the
+ * lane (`ciAsks`): the instance's sentence, or why not, under the lane's stop; a refusal lets it be asked again.
+ */
+async function askCiLane(view: CiView, button: CiButton, state: string): Promise<void> {
+  if (!ciAsks.ask(ciLaneKey(view), state)) return;
+  render();
+  const lane = { runId: view.runId, shard: view.shard, lane: view.lane };
+  const answer = await answered(
+    (id) =>
+      button === 'let-go' ? { type: 'ci-let-go', id, ...lane } : { type: 'ci-control', id, ...lane, command: button },
+    { ok: false, message: '', ci: 'offline' },
+    { ok: false, message: '', ci: 'late' },
+  );
+  if (!answer.ok) ciAsks.refused(ciLaneKey(view), state);
+  else ciAsks.took(ciLaneKey(view), state, ciShown.get(ciLaneKey(view)) ?? '');
+  if (ciView !== view) return;
+  const text = answer.ok ? answer.message : ciAskRefusalText(answer, button);
+  view.ciNote = text ? { ok: answer.ok, text, state } : null;
+  if (text) announce(text);
+  render();
+}
+
+/** Why **Let it go** or a control did not reach the test, in the window's words, or the instance's own sentence. */
+function ciAskRefusalText(answer: RunsAnswer, button: CiButton): string {
+  if (answer.message) return answer.message;
+  switch (answer.ci) {
+    case 'unwatched':
+      return t(button === 'let-go' ? 'runs_ciLetGoUnwatched' : 'runs_ciControlUnwatched');
+    case 'uncontrolled':
+      return t('runs_ciNotController');
+    case 'unheld':
+      return t('runs_ciNotHeld');
+    case 'no-worker':
+      return t('runs_ciNoWorker');
+    default:
+      return ciRefusalText(answer);
+  }
+}
+
 /** The CI lane is let go while the window hides or its port is down, and asked again as it shows. */
 function idleCi(tell: boolean): void {
   if (!isCiLive(ciView)) return;
   const view = ciView;
   view.status = 'idle';
   view.asks++;
+  view.controller = false;
   if (tell) void ciCommand({ runId: view.runId, shard: view.shard, lane: view.lane }, false);
 }
 
@@ -2640,7 +2738,8 @@ function renderCi(current: RunsState): void {
 
 /**
  * A CI run in progress: its name, where it runs, its page, its tally, and the tests it runs now with **Watch** and
- * **Watch on the dashboard**; the lane watched under them. No control, since it runs on CI.
+ * **Watch on the dashboard**; the lane watched under them. No control, since it runs on CI, but **Let it go** on a
+ * test held at its failure (`renderCiHeld`).
  */
 function renderCiRun(run: RunsCiRun, several: boolean): HTMLElement {
   const key = `ci|${run.url}`;
@@ -2717,6 +2816,9 @@ function renderCiTest(run: RunsCiRun, test: RunsCiTest, lane: RunsCiLane, watche
     element('span', 'ci-lane', ciLaneName(test)),
     element('span', 'ci-title', test.title),
   );
+  if (test.held) item.append(element('span', 'ci-held', runsSpeaker.say('runs_stateFailed')));
+  else if (test.live && readCiPause(test.live))
+    item.append(element('span', 'ci-paused', runsSpeaker.say('runs_stoppedPause')));
   const actions = element('div', 'piwi-actions');
   const focus = `ci|${ciLaneKey(lane)}`;
   if (run.watchable) {
@@ -2751,6 +2853,17 @@ function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
     return made;
   });
   const children: HTMLElement[] = [caption];
+  const test = run.tests.find((t) => t.shard === view.shard && t.lane === view.lane);
+  const state = ciStateKey(test);
+  const shown = ciShownOf(test);
+  ciShown.set(ciLaneKey(view), shown);
+  ciAsks.seen(ciLaneKey(view), state, shown);
+  // What the last ask came to stands in the state it was asked in alone.
+  if (view.ciNote && view.ciNote.state !== state) view.ciNote = null;
+  const stop =
+    test && state && view.status !== 'ended' && view.status !== 'refused' ? renderCiStop(view, test, state) : null;
+  if (stop) children.push(stop);
+  else view.ciNote = null;
   const live = view.status === 'on' && !view.refused && view.shown;
   if (view.shown) {
     view.img.classList.toggle('stale', !live);
@@ -2785,6 +2898,79 @@ function renderCiView(run: RunsCiRun, view: CiView): HTMLElement {
   }
   place(figure, children);
   return figure;
+}
+
+/** The glyph of each button of a CI lane. */
+const CI_BUTTON_ICONS: Record<CiButton, IconName> = { 'let-go': 'play', pause: 'pause', resume: 'play', end: 'stop' };
+
+/**
+ * The CI lane's test held at its failure or paused for the run's controllers, in the run page's words (`ciHoldWords`,
+ * `ciPauseWords`): where it stands, for or by whom and until when, its call and place, and that the CI job's own timeout
+ * still runs; then the buttons this window's watch of the lane offers as a controller's (`offersLetGo`,
+ * `ciControlsOffered`), off once one was asked in the lane's state, a Pause waiting or dropped (`ciPauseAskWords`), and
+ * what the last ask came to. Null for a lane with nothing to say.
+ */
+function renderCiStop(view: CiView, test: RunsCiTest, state: string): HTMLElement | null {
+  const key = `ci|${ciLaneKey(view)}|stop`;
+  const watch = { shows: view.status === 'on', controller: view.controller };
+  const hold = test.held ?? null;
+  const pause = !hold && test.live ? readCiPause(test.live) : null;
+  const buttons: CiButton[] = hold
+    ? offersLetGo(hold, watch)
+      ? ['let-go']
+      : []
+    : test.live
+      ? ciControlsOffered(test.live, watch, test.state === 'running')
+      : [];
+  const ask = !hold && !pause && test.live ? ciPauseAskWords(readCiPauseAsk(test.live), runsSpeaker) : null;
+  if (!hold && !pause && !buttons.length && !ask && !view.ciNote) return null;
+  const asked = ciAsks.asked(ciLaneKey(view), state);
+  return part(key, [state, hold, pause, buttons, ask, asked, view.ciNote], () => {
+    const box = element('div', hold ? 'ci-held-box' : pause ? 'ci-held-box ci-paused-box' : 'ci-controls');
+    box.setAttribute('role', 'status');
+    if (hold || pause) {
+      const words = hold ? ciHoldWords(hold, runsSpeaker) : ciPauseWords(pause!, runsSpeaker);
+      const by = hold
+        ? (words as ReturnType<typeof ciHoldWords>).heldFor
+        : (words as ReturnType<typeof ciPauseWords>).pausedBy;
+      // `Paused by Ana · until 12:05` says the state itself, as the run page says it.
+      const line = element('p', 'ci-held-state', element('strong', undefined, pause && by ? by : words.state));
+      if (by && !pause) line.append(' · ', by);
+      box.append(line, element('p', hold ? 'error' : 'call', ...richText((hold ?? pause)!.call.title)));
+      if (words.place) box.append(element('p', 'place', words.place));
+      box.append(element('p', 'note', words.note));
+    }
+    if (buttons.length) {
+      const line = element('div', 'piwi-actions');
+      for (const button of buttons) {
+        const words =
+          button === 'let-go'
+            ? { label: runsSpeaker.say('runs_letGo'), title: runsSpeaker.say('runs_letGoTitle') }
+            : {
+                label: runsSpeaker.say(CI_CONTROL_WORDS[button].label.key),
+                title: runsSpeaker.say(
+                  (button === 'resume' && !pause ? CI_CANCEL_PAUSE_TITLE : CI_CONTROL_WORDS[button].title).key,
+                ),
+              };
+        const made = makeButton(
+          words.label,
+          (event) => {
+            if (!pressedHeld(event)) void askCiLane(view, button, state);
+          },
+          { icon: CI_BUTTON_ICONS[button], small: true, title: words.title },
+        );
+        made.dataset.focus = `ci|${ciLaneKey(view)}|${button}`;
+        if (asked) made.setAttribute('aria-disabled', 'true');
+        line.append(made);
+      }
+      box.append(line);
+    }
+    if (ask) box.append(element('p', 'note', ask));
+    if (view.ciNote) {
+      box.append(iconText(element('p', 'note'), view.ciNote.ok ? 'check' : 'alert', view.ciNote.text));
+    }
+    return box;
+  });
 }
 
 /** The run's page on the instance, as its own process named it: `Run #77`, **Open** and **Copy**, ended or not. */
