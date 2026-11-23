@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Uploads the Git LFS objects the pushed commits point to (the showcase's videos, see .gitattributes), as the hook
+# `git lfs install` would write if husky did not own the hooks folder. Without git-lfs there is nothing to upload: the
+# filter that writes the pointers is git-lfs's own.
+command -v git-lfs >/dev/null 2>&1 || exit 0
+git lfs pre-push "$@"

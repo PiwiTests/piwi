@@ -20,3 +20,7 @@
 *.db binary
 *.webm binary
 *.mp4 binary
+
+# The showcase's videos, filmed again for each release, live in Git LFS: each take adds a pointer to the history, not
+# the video. The docs deploy checks them out (`lfs: true`), and .husky/pre-push uploads them.
+apps/docs/public/videos/showcase-*.mp4 filter=lfs diff=lfs merge=lfs -text
