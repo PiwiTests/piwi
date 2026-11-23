@@ -51,18 +51,42 @@ const DEBUG_AT_CURSOR = 'Piwi: Debug the test at the cursor';
 /** The command that gives an agent the runs' MCP server. */
 const COPY_RUNS_MCP = "Piwi: Copy the runs' MCP server configuration for agents";
 
-/** Opens `file` in VS Code at the start of `line`, as a person does with Ctrl+P and Ctrl+G. */
-async function goTo(vscode, gesture, file, line) {
-  await gesture.click('vscode', vscode.locator('.editor-group-container.active .monaco-editor .view-lines'));
-  await gesture.press('vscode', 'Control+P');
-  await gesture.type('vscode', vscode.locator('.quick-input-widget input'), file);
+/**
+ * Brings `file` up in VS Code's editor, focused, as a person does: a click on its tab when it has one, else Quick Open
+ * on its name (`shop.spec`), Enter once its row leads the list.
+ */
+async function openFile(vscode, gesture, file) {
   const name = file.split('/').pop();
-  await gesture.click('vscode', vscode.locator('.quick-input-list .monaco-list-row', { hasText: name }).first());
-  await vscode.locator('.tab.active', { hasText: name }).waitFor();
-  await gesture.press('vscode', 'Control+G');
-  // Go to Line opens with its colon typed.
-  await gesture.type('vscode', vscode.locator('.quick-input-widget input'), `${line}:1`);
-  await gesture.press('vscode', 'Enter');
+  const tab = vscode.locator('.editor-group-container.active .tab', { hasText: name }).first();
+  if (await tab.count()) await gesture.click('vscode', tab);
+  else {
+    await gesture.press('vscode', 'Control+P');
+    await gesture.type('vscode', vscode.locator('.quick-input-widget input'), name.replace(/\.[^.]+$/, ''));
+    await vscode.locator('.quick-input-list .monaco-list-row').first().filter({ hasText: name }).waitFor();
+    await gesture.press('vscode', 'Enter');
+  }
+  await vscode.locator('.editor-group-container.active .tab.active', { hasText: name }).waitFor();
+}
+
+/**
+ * Puts the active editor's cursor on `line`, as a person does: a click on the line when the editor shows it whole,
+ * else Go to Line (Ctrl+G) and its number.
+ */
+async function goToLine(vscode, gesture, line) {
+  const editor = vscode.locator('.editor-group-container.active .monaco-editor').first();
+  const number = editor.locator('.line-numbers', { hasText: new RegExp(`^\\s*${line}\\s*$`) }).first();
+  const view = await editor.locator('.editor-scrollable').first().boundingBox();
+  const box = (await number.count()) ? await number.boundingBox() : null;
+  if (box && view && box.y >= view.y && box.y + 2 * box.height <= view.y + view.height) {
+    const lines = editor.locator('.view-lines').first();
+    const area = await lines.boundingBox();
+    const x = view.x - area.x + Math.min(240, view.width / 3);
+    await gesture.click('vscode', lines, { position: { x, y: box.y - area.y + box.height / 2 } });
+  } else {
+    await gesture.press('vscode', 'Control+G');
+    await gesture.type('vscode', vscode.locator('.quick-input-widget input'), String(line));
+    await gesture.press('vscode', 'Enter');
+  }
   await cursorLine(vscode, line).waitFor();
 }
 
@@ -439,7 +463,8 @@ export const STORY = [
     async run({ runs, vscode, testPage, gesture, palette }) {
       await gesture.click('runs', runCard(runs).getByRole('button', { name: 'End the test' }));
       await runEnded(runs);
-      await goTo(vscode, gesture, SPEC, SUMMARY_LINE);
+      await openFile(vscode, gesture, SPEC);
+      await goToLine(vscode, gesture, SUMMARY_LINE);
       await gesture.press('vscode', 'F9');
       // Debug with Piwi runs the test headed and stops at the editor's breakpoints, which a plain run passes.
       await palette(DEBUG_AT_CURSOR);
@@ -529,7 +554,8 @@ export const STORY = [
       // The Testing view the last beat opened gives its room back to the code and the worker's panel.
       await palette('View: Close Primary Side Bar');
       await slowedDown(repo.shop, async () => {
-        await goTo(vscode, gesture, SPEC, testLine(repo, 'places an order'));
+        await openFile(vscode, gesture, SPEC);
+        await goToLine(vscode, gesture, testLine(repo, 'places an order'));
         await gesture.press('vscode', 'Control+Shift+Alt+K');
         // The editor marks the line of the call the test is in, once the test reaches the spec's own calls.
         state.runningLines = await runningLineShown(vscode);
@@ -687,8 +713,10 @@ export const STORY = [
     },
     async run({ editor, vscode, runs, gesture, palette, repo }) {
       await editor.copy(NEW_TEST);
-      const close = read(repo.shop, SPEC).trimEnd().split('\n').length;
-      await goTo(vscode, gesture, SPEC, close);
+      // The new test goes at the end of the spec's describe, before its closing line, the file's last.
+      await openFile(vscode, gesture, SPEC);
+      await gesture.press('vscode', 'Control+End');
+      await goToLine(vscode, gesture, read(repo.shop, SPEC).trimEnd().split('\n').length);
       await gesture.press('vscode', 'Home');
       await gesture.press('vscode', 'Control+V');
       await palette('File: Save All');
@@ -696,7 +724,7 @@ export const STORY = [
         read(repo.shop, SPEC)
           .split('\n')
           .findIndex((line) => line.includes(NEW_TEST_LAST)) + 1;
-      await goTo(vscode, gesture, SPEC, last);
+      await goToLine(vscode, gesture, last);
       await gesture.press('vscode', 'F9');
       await palette(DEBUG_AT_CURSOR);
       await runCard(runs).getByText(`${SPEC}:${last}`).waitFor({ timeout: 120_000 });
@@ -706,10 +734,11 @@ export const STORY = [
         .first()
         .waitFor({ timeout: 30_000 });
 
-      // The command asks which agent's format: the first, VS Code's, as Claude Code reads it too.
+      // The command asks which agent's format: the first, VS Code's, as Claude Code reads it too. A few of its words
+      // find it in the palette.
       await gesture.press('vscode', 'F1');
       const input = vscode.locator('.quick-input-widget input');
-      await gesture.type('vscode', input, `>${COPY_RUNS_MCP}`);
+      await gesture.type('vscode', input, '>copy runs mcp');
       const row = vscode.locator('.quick-input-list .monaco-list-row').filter({
         has: vscode.locator('.label-name', { hasText: new RegExp(`^${escaped(COPY_RUNS_MCP)}`) }),
       });
