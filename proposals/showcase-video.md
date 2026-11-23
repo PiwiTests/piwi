@@ -30,15 +30,12 @@ the editor's breakpoints), where **Assert a region** reads the order's card. Bea
 test and runs it to its last line, and the agent, a client of the runs' MCP server configured from **Copy the runs' MCP
 server configuration**, clicks **Orders** by its ref, writes the steps and a check and resumes. The watch beats show the
 live view where each person meets it: `watch-running` runs the fixed test headless from VS Code, which marks the line it
-runs, and watches it in the editor's own worker panel to its end; `shared-pause` shares a run live from VS Code and
-pauses it, the run's page on the instance shows the team the paused test and VS Code counts their view, and `resumed`
-resumes it with F5 as the team's view follows it to its end (a CI run itself takes no pause: run control's D8, which
-[`live-view-next.md`](live-view-next.md) Part 8 would narrow for a held failure); `back-on-the-team` runs the fix's CI
-on three workers, **Watch all** shows each worker's page, and one tile in full names the call its test is in until the
-run is green. One product bug found on the way is skipped where the check meets it, and only there
-([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)): the running line of a worker the
-editor does not watch names its call as Playwright's API does, its selector raw
-([#1564](https://github.com/PiwiTests/piwi/issues/1564)). Nothing here is on [`ROADMAP.md`](../ROADMAP.md).
+runs, and watches it in the editor's own worker panel to its end; `back-on-the-team` runs the fix's CI on three workers,
+**Watch all** shows each worker's page, and one tile in full is paused from the run page
+([`ci-run-control.md`](../adr/ci-run-control.md), its project's `liveViewHold` and `liveViewPause` on), and `resumed`
+resumes it until the run is green. No assertion is skipped: the bugs found on the way are fixed or filed
+([`apps/showcase/ARCHITECTURE.md`](../apps/showcase/ARCHITECTURE.md#known-bugs)). Nothing here is on
+[`ROADMAP.md`](../ROADMAP.md).
 
 **V2, as built.** `--take virtual` (`npm run showcase:film`) films the story on the same set, and `--cut` (`npm run
 showcase:cut`) renders the cut and Part 6's outputs but the voice: the full cut in MP4 and WebM with and without burned

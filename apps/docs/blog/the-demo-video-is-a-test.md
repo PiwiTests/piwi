@@ -22,18 +22,18 @@ renders the video from the recording. Played without the camera, the same script
   <figcaption>The teaser, cut from the latest take: from a red CI run to a fixed test, without leaving the tools.</figcaption>
 </figure>
 
-## One story, thirteen beats
+## One story, twelve beats
 
 The story is a small shop whose checkout was redesigned: **Place order** became **Pay now**, and a box to tick was
-added. CI went red on `main`. From there the script plays thirteen beats:
+added. CI went red on `main`. From there the script plays twelve beats:
 
 1. The failure page names the locator that broke, and the one that replaces it.
 2. **Debug in my editor** opens VS Code at the failing line and runs the test there, headed.
 3. The run stops at that line: VS Code, the test's page and Piwi Picker show the same place.
 4. A pick on the page writes the right locator into the code, and a recording adds the missing step.
-5. The fixed test runs again, watched in VS Code's own panel, then shared live with the team and paused, while the
-   team's run page shows where it waits.
-6. The fix is pushed, CI runs it on three workers, and **Watch all** shows each one live until the run is green.
+5. The fixed test runs again, watched in VS Code's own panel, the editor marking the line it runs.
+6. The fix is pushed, CI runs it on three workers, and **Watch all** shows each one live. One is paused from the run
+   page, waits there for a look, and is resumed until the run is green.
 7. A coding agent finishes a new test through Piwi's run tools.
 
 Everything on screen is real: this commit's dashboard on a seeded database, the reporter built from source, VS Code
@@ -91,7 +91,7 @@ the editor spelled a spec by its whole path. Each was a deliberate change, and e
 quietly wrong.
 
 It also found what no unit test would: a pairing step that passed by accident, because a check for the word *Paired*
-also matched *Not paired*; and four real bugs, each now an issue:
+also matched *Not paired*; and four real bugs, each filed, two of them fixed since:
 
 - the running line of a worker nobody watches named its call with Playwright's internal selector
   ([#1564](https://github.com/PiwiTests/piwi/issues/1564));

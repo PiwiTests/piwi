@@ -29,14 +29,18 @@ export class Instance {
     return text ? JSON.parse(text) : null;
   }
 
-  /** The shop's project, created with its live view on. */
+  /**
+   * The shop's project, created with its live view on, and its CI tests held at a failure and paused at a call for the
+   * people who may control its runs (`liveViewHold`, then `liveViewPause`, which needs the hold).
+   */
   async createProject() {
     const project = await this.api('/api/projects', {
       method: 'POST',
       body: { name: PROJECT_NAME, label: 'Acme Shop', description: 'The Acme Shop storefront and its checkout.' },
     });
     const id = project.id ?? project.project?.id;
-    await this.api(`/api/projects/${id}`, { method: 'PATCH', body: { liveView: true } });
+    await this.api(`/api/projects/${id}`, { method: 'PATCH', body: { liveView: true, liveViewHold: true } });
+    await this.api(`/api/projects/${id}`, { method: 'PATCH', body: { liveViewPause: true } });
     this.projectId = id;
     return id;
   }
