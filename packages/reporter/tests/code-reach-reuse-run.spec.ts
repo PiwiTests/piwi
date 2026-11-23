@@ -6,9 +6,10 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { startServer, type FakeServer, withoutCi } from './_helpers.js';
 
 /**
- * A real Playwright run through the built package, with browser coverage on and Playwright's `reuseContext`: one
- * worker hands the same page to each test, resetting it to `about:blank` between them. Every test sets up, and each
- * records the coverage of its own navigation.
+ * Real Playwright runs through the built package, with browser coverage on: one closing each test's context, and one
+ * with Playwright's `reuseContext`, where the worker hands the same page to each test and resets it to `about:blank`
+ * between them. Every test sets up and records its own navigation, and a fixture on the context alone that navigates
+ * as it ends (`logout`) still counts for its test where the context closes.
  */
 
 const pkgRoot = path.join(import.meta.dirname, '..');
@@ -18,20 +19,34 @@ const project = path.join(pkgRoot, 'tests', `.code-reach-reuse-run-${process.pid
 
 const PAGE = `<!doctype html><title>shop</title>
 <button id="pay">Pay</button><script src="/src/pay.js"></script>`;
-const SCRIPT = `function pay() {
+const PAY = `function pay() {
   document.body.dataset.paid = 'yes';
 }
 document.querySelector('#pay').addEventListener('click', () => pay());
 `;
-
-const SPEC = `const { test, expect } = require('../fixture.cjs');
-for (const name of ['first', 'second', 'third']) {
-  test(name, async ({ page }) => {
-    await page.goto('/');
-    await page.click('#pay');
-    await expect(page.locator('body')).toHaveAttribute('data-paid', 'yes');
-  });
+const BYE_PAGE = `<!doctype html><title>bye</title><script src="/src/bye.js"></script>`;
+const BYE = `function bye() {
+  document.body.dataset.bye = 'yes';
 }
+bye();
+`;
+
+const SPEC = `const { test: base, expect } = require('../fixture.cjs');
+const test = base.extend({
+  // Torn down after the page fixture, as it was set up before it.
+  logout: async ({ context }, use) => {
+    await use();
+    await context.pages()[0].goto('/bye');
+  },
+});
+async function pay(page) {
+  await page.goto('/');
+  await page.click('#pay');
+  await expect(page.locator('body')).toHaveAttribute('data-paid', 'yes');
+}
+test('pays', async ({ page }) => pay(page));
+test('logs out', async ({ logout, page }) => pay(page));
+test('pays again', async ({ page }) => pay(page));
 `;
 
 /** Each test's status and the files of its `piwi-code-reach` attachment, as the run's own reporter writes them. */
@@ -54,21 +69,73 @@ interface DumpedTest {
   files: string[];
 }
 
+interface Run {
+  tests: DumpedTest[];
+  output: string;
+}
+
 let server: FakeServer;
-let tests: DumpedTest[] = [];
-let output = '';
+let closing: Run = { tests: [], output: '' };
+let reusing: Run = { tests: [], output: '' };
 
 function write(file: string, text: string): void {
   fs.mkdirSync(path.dirname(path.join(project, file)), { recursive: true });
   fs.writeFileSync(path.join(project, file), text);
 }
 
+/** A config of the suite, with its own results file and outputDir (Playwright's default is the package's test-results/). */
+function config(name: string, use: string): string {
+  return `const { defineConfig } = require('@playwright/test');
+module.exports = defineConfig({
+  testDir: './tests',
+  outputDir: './test-results-${name}',
+  timeout: 10000,
+  workers: 1,
+  reporter: [['./reach-reporter.cjs', { outputFile: 'results-${name}.json' }]],
+  use: { headless: true, baseURL: ${JSON.stringify(server.url)}${use} },
+});
+`;
+}
+
+async function run(name: string, extraEnv: NodeJS.ProcessEnv): Promise<Run> {
+  const env: NodeJS.ProcessEnv = {
+    ...process.env,
+    PIWI_COVERAGE_BROWSER: 'lines',
+    PIWI_CAPTURE_LOCATORS: 'false',
+    ...extraEnv,
+  };
+  for (const key of [
+    'PWDEBUG',
+    'PW_TEST_REUSE_CONTEXT',
+    'PIWI_DASHBOARD_URL',
+    'PIWI_PAUSE_AT',
+    'PIWI_RUN_CHANNEL',
+    'PIWI_EDITOR_SEND',
+    'PIWI_CAPTURE_CODE_REACH',
+    'PIWI_CODE_REACH_ROOTS',
+  ]) {
+    if (!(key in extraEnv)) delete env[key];
+  }
+  withoutCi(env);
+  const output = await new Promise<string>((resolve) => {
+    execFile(
+      process.execPath,
+      [createRequire(import.meta.url).resolve('@playwright/test/cli'), 'test', '--config', `${name}.config.cjs`],
+      { cwd: project, env, timeout: 120_000 },
+      (_error, stdout, stderr) => resolve(`${stdout}\n${stderr}`),
+    );
+  });
+  const results = path.join(project, `results-${name}.json`);
+  const tests = fs.existsSync(results) ? (JSON.parse(fs.readFileSync(results, 'utf8')) as DumpedTest[]) : [];
+  return { tests, output };
+}
+
 beforeAll(async () => {
   if (!fs.existsSync(dist)) throw new Error(`${dist} is missing: run \`npm run reporter:build\` before this spec`);
   server = await startServer((req, res) => {
-    const script = req.url.startsWith('/src/pay.js');
+    const script = req.url.startsWith('/src/pay.js') ? PAY : req.url.startsWith('/src/bye.js') ? BYE : null;
     res.writeHead(200, { 'content-type': script ? 'text/javascript' : 'text/html' });
-    res.end(script ? SCRIPT : PAGE);
+    res.end(script ?? (req.url.startsWith('/bye') ? BYE_PAGE : PAGE));
   });
 
   write(
@@ -80,76 +147,59 @@ exports.expect = expect;
 `,
   );
   write('reach-reporter.cjs', REACH_REPORTER);
-  write('src/pay.js', SCRIPT);
-  // Its own outputDir: Playwright defaults to the package's test-results/, which every spawned run clears on start.
-  write(
-    'playwright.config.cjs',
-    `const { defineConfig } = require('@playwright/test');
-module.exports = defineConfig({
-  testDir: './tests',
-  outputDir: './test-results',
-  timeout: 10000,
-  workers: 1,
-  reporter: [['./reach-reporter.cjs', { outputFile: 'results.json' }]],
-  use: { headless: true, baseURL: ${JSON.stringify(server.url)}, reuseContext: true },
-});
-`,
-  );
+  write('src/pay.js', PAY);
+  write('src/bye.js', BYE);
   write('tests/shop.spec.cjs', SPEC);
+  write('closing.config.cjs', config('closing', ''));
+  write('reusing.config.cjs', config('reusing', ', reuseContext: true'));
 
-  const env: NodeJS.ProcessEnv = {
-    ...process.env,
-    PIWI_COVERAGE_BROWSER: 'lines',
-    PIWI_CAPTURE_LOCATORS: 'false',
-    // A Playwright without the `reuseContext` option reuses its context through this variable.
-    PW_TEST_REUSE_CONTEXT: '1',
-  };
-  for (const name of [
-    'PWDEBUG',
-    'PIWI_DASHBOARD_URL',
-    'PIWI_PAUSE_AT',
-    'PIWI_RUN_CHANNEL',
-    'PIWI_EDITOR_SEND',
-    'PIWI_CAPTURE_CODE_REACH',
-    'PIWI_CODE_REACH_ROOTS',
-  ])
-    delete env[name];
-  withoutCi(env);
-  await new Promise<void>((resolve) => {
-    execFile(
-      process.execPath,
-      [createRequire(import.meta.url).resolve('@playwright/test/cli'), 'test'],
-      { cwd: project, env, timeout: 120_000 },
-      (_error, stdout, stderr) => {
-        output = `${stdout}\n${stderr}`;
-        resolve();
-      },
-    );
-  });
-  const results = path.join(project, 'results.json');
-  tests = fs.existsSync(results) ? (JSON.parse(fs.readFileSync(results, 'utf8')) as DumpedTest[]) : [];
-}, 150_000);
+  closing = await run('closing', {});
+  // A Playwright without the `reuseContext` option reuses its context through this variable.
+  reusing = await run('reusing', { PW_TEST_REUSE_CONTEXT: '1' });
+}, 300_000);
 
 afterAll(async () => {
   fs.rmSync(project, { recursive: true, force: true });
   await server?.close();
 });
 
+/** The test's files, each from its `src/` folder on. */
+function filesOf(run: Run, title: string): string[] {
+  const found = run.tests.find((t) => t.title === title);
+  if (!found) throw new Error(`no result for "${title}":\n${run.output}`);
+  return found.files.map((file) => file.replace(/^.*\/(?=src\/)/, ''));
+}
+
+function statuses(run: Run): string[][] {
+  return run.tests.map((t) => [t.title, t.status, t.errors.join('\n')]);
+}
+
+const PASSED = [
+  ['pays', 'passed', ''],
+  ['logs out', 'passed', ''],
+  ['pays again', 'passed', ''],
+];
+
+describe('browser coverage on a context that closes after each test', () => {
+  it('sets up every test', () => {
+    expect(statuses(closing), closing.output).toEqual(PASSED);
+  });
+
+  it('counts what a fixture on the context runs as it ends', () => {
+    expect(filesOf(closing, 'pays')).toEqual(['src/pay.js']);
+    expect(filesOf(closing, 'logs out')).toEqual(['src/bye.js', 'src/pay.js']);
+    expect(filesOf(closing, 'pays again')).toEqual(['src/pay.js']);
+  });
+});
+
 describe('browser coverage on a page the worker reuses', () => {
   it('sets up every test', () => {
-    expect(
-      tests.map((t) => [t.title, t.status, t.errors.join('\n')]),
-      output,
-    ).toEqual([
-      ['first', 'passed', ''],
-      ['second', 'passed', ''],
-      ['third', 'passed', ''],
-    ]);
+    expect(statuses(reusing), reusing.output).toEqual(PASSED);
   });
 
   it('records the navigation of each test', () => {
-    for (const test of tests) {
-      expect(test.files, test.title).toEqual([expect.stringMatching(/(^|\/)src\/pay\.js$/)]);
+    for (const title of ['pays', 'logs out', 'pays again']) {
+      expect(filesOf(reusing, title), title).toContain('src/pay.js');
     }
   });
 });
