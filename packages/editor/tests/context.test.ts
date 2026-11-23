@@ -26,7 +26,7 @@ import {
   withServerUrl,
   keptEnvironmentOf,
 } from '../src/context';
-import { PiwiClient } from '../src/piwi-client';
+import { PiwiClient, type BranchFailures, type CatalogCase } from '../src/piwi-client';
 import { environmentChoices, ownCommandEnv, statusEnvironment } from '../src/server';
 
 const dirs: string[] = [];
@@ -68,6 +68,99 @@ describe('the files at the commit of a run', () => {
     const again = files.map((file) => context.textAtCommit(commit, file));
     expect(again.filter((entry, i) => entry !== first[i])).toEqual([]);
     expect(again[0]!.text).toBe(`test('case ${files[0]}', async () => {});\n`);
+  });
+});
+
+describe('the catalog of a spec', () => {
+  /** A finished CI run of `main` that ran three tests, the answer of `branch-failures` with its failures. */
+  const latest = (id: number, failures: BranchFailures['failures']): BranchFailures => ({
+    run: {
+      id,
+      status: failures.length ? 'failed' : 'passed',
+      branch: 'main',
+      startTime: '2026-11-20T10:00:00.000Z',
+      origin: 'ci',
+      totalTests: 3,
+      passedTests: 3 - failures.length,
+      failedTests: failures.length,
+      flakyTests: 0,
+      skippedTests: 0,
+    },
+    overlays: [],
+    failures,
+    resolved: [],
+    flaky: [],
+  });
+  const ORDER_FAILURE = {
+    executionId: 790,
+    testCaseId: 3,
+    title: 'places an order',
+    file: 'tests/shop.spec.ts',
+    line: 4,
+    status: 'failed',
+    headline: 'Pay is disabled',
+    location: null,
+    traces: [],
+    screenshot: null,
+  };
+  /**
+   * A context reading an instance that answers `runs.answer`, and the catalog's status of `places an order` as
+   * `catalog.status` says when the read is let go (`catalog.held`, else at once).
+   */
+  function reading(runs: { answer: BranchFailures }, catalog: { status: string; reads: number; held?: Promise<void> }) {
+    const context = new PiwiContext(workspace());
+    const cases = async (): Promise<CatalogCase[]> => {
+      catalog.reads++;
+      await catalog.held;
+      return [{ id: 3, title: 'places an order', filePath: 'tests/shop.spec.ts', status: catalog.status }];
+    };
+    context.client = {
+      branchFailures: async () => structuredClone(runs.answer),
+      testCases: cases,
+      allTestCases: cases,
+    } as unknown as PiwiClient;
+    context.project = { id: 7, name: 'shop' };
+    return context;
+  }
+  const statusIn = async (context: PiwiContext) => (await context.casesOf('tests/shop.spec.ts'))[0]!.status;
+
+  test('is read again once a newer run is read, and kept while the runs read stay the same', async () => {
+    const runs = { answer: latest(79, [ORDER_FAILURE]) };
+    const catalog = { status: 'failed', reads: 0 };
+    const context = reading(runs, catalog);
+    await context.refreshRun();
+    expect(await statusIn(context)).toBe('failed');
+    expect((await context.allCases())[0]!.status).toBe('failed');
+    // The fix's CI run passes the test.
+    runs.answer = latest(84, []);
+    catalog.status = 'passed';
+    expect(await context.refreshRun()).toBe(true);
+    expect(await statusIn(context)).toBe('passed');
+    expect((await context.allCases())[0]!.status).toBe('passed');
+    // The same run read again: the catalog is not.
+    const reads = catalog.reads;
+    await context.refreshRun();
+    expect(await statusIn(context)).toBe('passed');
+    expect((await context.allCases())[0]!.status).toBe('passed');
+    expect(catalog.reads).toBe(reads);
+  });
+
+  test('a read on its way while a newer run is read keeps nothing', async () => {
+    const runs = { answer: latest(79, [ORDER_FAILURE]) };
+    let letGo = () => {};
+    const catalog = { status: 'failed', reads: 0, held: new Promise<void>((resolve) => (letGo = resolve)) };
+    const context = reading(runs, catalog);
+    await context.refreshRun();
+    const before = statusIn(context);
+    const all = context.allCases();
+    runs.answer = latest(84, []);
+    await context.refreshRun();
+    letGo();
+    expect(await before).toBe('failed');
+    expect((await all)[0]!.status).toBe('failed');
+    catalog.status = 'passed';
+    expect(await statusIn(context)).toBe('passed');
+    expect((await context.allCases())[0]!.status).toBe('passed');
   });
 });
 

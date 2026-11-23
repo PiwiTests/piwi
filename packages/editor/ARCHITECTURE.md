@@ -2223,10 +2223,12 @@ computed once per index (`callSitesOf`, `stabilityOf` in `src/analysis.ts`).
 
 What belongs to one file (a spec's cases, a file's stored alternatives) or to one failure (its healing, fix plan, linked
 issues, evidence) is fetched once, when first needed, and kept: a file's for five minutes and until the next refresh, a
-failure's healing, fix plan and issues while the latest run stays the same. Only the diagnostics or the quick fix that
-need it wait for it, and a quick fix or a hover waits 1.5 s at most (`within`, `LOOKUP_WAIT_MS`); the fetch goes on for
-the next ask. A fetch that failed without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again
-next time (`once` in `src/context.ts`). A canceled quick fix or hover is not answered further.
+spec's cases also until a run the service had not read (the baseline or a run laid over it), whose results change the
+catalog's statuses (`dropCatalog`: a read on its way then keeps nothing), and a failure's healing, fix plan and issues
+while the latest run stays the same. Only the diagnostics or the quick fix that need it wait for it, and a quick fix or
+a hover waits 1.5 s at most (`within`, `LOOKUP_WAIT_MS`); the fetch goes on for the next ask. A fetch that failed
+without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in
+`src/context.ts`). A canceled quick fix or hover is not answered further.
 
 Other reads:
 
