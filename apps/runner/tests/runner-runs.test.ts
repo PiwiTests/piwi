@@ -70,6 +70,14 @@ describe('a run', () => {
     expect(runnerRunDuration(run, 60_000)).toBe(3_500);
   });
 
+  test('a request the requester stopped before its run started ends stopped, with no run', async () => {
+    const { book, spy } = setup(async () => null as never);
+    const run = await book.start(input);
+    expect(run).toMatchObject({ status: 'stopped', shellId: null, stopRequested: true, endedAt: 1_000 });
+    await book.stop(run);
+    expect(spy).toHaveBeenCalledTimes(1);
+  });
+
   test('a run that cannot start ends when the shell refuses it', async () => {
     const { book } = setup(async () => {
       throw new Error('No folder is linked to this project');

@@ -1158,13 +1158,23 @@ pub fn desktop_local_runs(app: AppHandle) -> LocalRunsState {
 /// `interrupt.rs`): Playwright stops its workers and the reporter still sends
 /// the run's end. A process still running `STOP_GRACE` later — or asked to stop
 /// a second time, or one that cannot be interrupted — is killed with its process
-/// tree (the test may have spawned browsers or a webServer).
+/// tree (the test may have spawned browsers or a webServer). With `graceful`, a
+/// stop asked while one goes on does nothing ([`stop_local_run`]).
 ///
 /// For a reproduce/bisect job the stop flag is raised first, so its driver
 /// starts no further step once the current child exits, then resets any bisect
 /// and removes the worktree. A run that already exited is a no-op.
 #[tauri::command]
-pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(), String> {
+pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32, graceful: Option<bool>) -> Result<(), String> {
+    stop_local_run(&app, run_id, graceful.unwrap_or(false));
+    Ok(())
+}
+
+/// Ask run `run_id` to stop ([`desktop_stop_local_tests`]), saying so with a
+/// `stopping` event the first time. Asked again, it is killed at once, unless
+/// `graceful`: a stop nobody pressed twice (a team instance's, or one the
+/// window asks as the run starts) leaves a stop that goes on to wind down.
+pub(crate) fn stop_local_run(app: &AppHandle, run_id: u32, graceful: bool) {
     let state = app.state::<LocalRuns>();
     let job = state.jobs.lock().unwrap().get(&run_id).map(|job| {
         (
@@ -1177,30 +1187,35 @@ pub async fn desktop_stop_local_tests(app: AppHandle, run_id: u32) -> Result<(),
             let _ = app.emit(RUN_EVENT, &RunEventPayload::stopping(run_id));
         }
         let Some(child) = child else {
-            return Ok(());
+            return;
         };
+        if already_stopping && graceful {
+            return;
+        }
         if already_stopping || !child.interruptible || !crate::interrupt::interrupt(child.pid) {
             state.kill_job_child(run_id, child.pid);
         } else {
-            after_grace(&app, move |runs| runs.kill_job_child(run_id, child.pid));
+            after_grace(app, move |runs| runs.kill_job_child(run_id, child.pid));
         }
-        return Ok(());
+        return;
     }
 
     let pid = state.children.lock().unwrap().get(&run_id).map(|c| c.pid());
     let Some(pid) = pid else {
-        return Ok(());
+        return;
     };
     let already_stopping = !state.stopping.lock().unwrap().insert(run_id);
     if !already_stopping {
         let _ = app.emit(RUN_EVENT, &RunEventPayload::stopping(run_id));
     }
+    if already_stopping && graceful {
+        return;
+    }
     if already_stopping || !crate::interrupt::interrupt(pid) {
         state.kill_child(run_id);
     } else {
-        after_grace(&app, move |runs| runs.kill_child(run_id));
+        after_grace(app, move |runs| runs.kill_child(run_id));
     }
-    Ok(())
 }
 
 /// Run `force` once `STOP_GRACE` has passed — on a plain thread, since the wait

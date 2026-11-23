@@ -726,7 +726,8 @@ export function useDesktopLocalRuns() {
    * exit code. Buffered events that arrived before the id was known are
    * replayed in the same tick the id is registered, so none can slip through.
    * Used for a test step (`desktop_run_local_tests`) and for the single
-   * reproduce/bisect drivers alike.
+   * reproduce/bisect drivers alike. A team request the requester stopped
+   * before its run started starts nothing (a null id): the run is stopped.
    */
   async function spawnCommand(run: LocalRun, cmd: string, invokeArgs: Record<string, unknown>): Promise<number | null> {
     const core = tauriCore();
@@ -734,26 +735,34 @@ export function useDesktopLocalRuns() {
     startingSteps += 1;
     run.stepStarting = true;
     if (pageGone) keepForReload();
-    let shellId: number;
+    let shellId: number | null;
     try {
-      shellId = await core.invoke<number>(cmd, invokeArgs);
+      shellId = await core.invoke<number | null>(cmd, invokeArgs);
     } catch (error) {
       startingSteps -= 1;
       run.stepStarting = false;
       throw error;
     }
+    run.stepStarting = false;
+    if (shellId === null) {
+      releaseBuffer();
+      noteStop(run);
+      if (pageGone) keepForReload();
+      return null;
+    }
     // Same tick as the invoke resolution: register the id, replay buffered
     // events for it, then release the buffer — no event can slip through.
-    run.stepStarting = false;
     nameStep(run, shellId);
-    // A Stop asked here while the step started reaches its process now, its wind-down counted from here; one the shell
-    // began meanwhile comes among the step's events.
-    const stopAsked = run.stopRequested;
+    // A Stop asked here while the step started reaches its process now, its wind-down counted from here, unless the
+    // shell already began one (a team instance's stop, among the buffered events). It is sent graceful: a stop the
+    // shell begins as the id comes back still goes on to wind down, where a second stop would kill.
+    const stopBegan = pendingEvents.some((p) => p.id === shellId && p.kind === 'stopping');
+    const stopAsked = run.stopRequested && !stopBegan;
     const exit = adopt(run, shellId);
     releaseBuffer();
     if (stopAsked) {
       run.stopRequestedAt = Date.now();
-      void askToStop(shellId);
+      void askToStop(shellId, { graceful: true });
     }
     if (pageGone) keepForReload();
     return exit;
@@ -1857,10 +1866,16 @@ export function useDesktopLocalRuns() {
     if (run.shellId != null) await askToStop(run.shellId);
   }
 
-  /** Asks the shell to stop process `shellId`, which kills it if asked before; its step ends even with no exit event. */
-  async function askToStop(shellId: number) {
+  /**
+   * Asks the shell to stop process `shellId`, which kills it if asked before, unless `graceful`; its step ends even with
+   * no exit event.
+   */
+  async function askToStop(shellId: number, { graceful = false } = {}) {
     try {
-      await tauriCore()?.invoke('desktop_stop_local_tests', { runId: shellId });
+      await tauriCore()?.invoke(
+        'desktop_stop_local_tests',
+        graceful ? { runId: shellId, graceful } : { runId: shellId },
+      );
     } catch {
       // The process already exited between the check and the stop.
     }

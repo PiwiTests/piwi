@@ -285,7 +285,10 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
     if (waiting.length > MAX_WAITING_EVENTS) waiting.splice(0, waiting.length - MAX_WAITING_EVENTS);
   }
 
-  /** Starts the run the person confirmed; the shell takes its command and its request token from the host. */
+  /**
+   * Starts the run the person confirmed; the shell takes its command and its request token from the host. A request
+   * the requester stopped before its run started starts nothing (a null id), and the run ends stopped.
+   */
   async function start(input: RunnerRunStart): Promise<RunnerRun> {
     runs.unshift({
       key: nextKey++,
@@ -308,11 +311,17 @@ export function createRunnerRuns(runs: RunnerRun[], backend: RunnerRunBackend, n
     });
     const run = runs[0]!;
     try {
-      const id = await backend.invoke<number>('desktop_run_requested_tests', { requestId: input.requestId });
-      run.shellId = id;
-      const mine = waiting.filter((event) => event.id === id);
-      waiting = waiting.filter((event) => event.id !== id);
-      for (const event of mine) applyRunEvent(run, event, now());
+      const id = await backend.invoke<number | null>('desktop_run_requested_tests', { requestId: input.requestId });
+      if (id === null) {
+        noteStop(run, now());
+        run.status = 'stopped';
+        run.endedAt = now();
+      } else {
+        run.shellId = id;
+        const mine = waiting.filter((event) => event.id === id);
+        waiting = waiting.filter((event) => event.id !== id);
+        for (const event of mine) applyRunEvent(run, event, now());
+      }
     } catch (error) {
       pushRunnerLine(run, error instanceof Error ? error.message : String(error), true);
       run.status = 'error';

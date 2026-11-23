@@ -591,6 +591,60 @@ describe('a stop the shell begins itself', () => {
     return pageWith(storage, shellRuns);
   };
 
+  /**
+   * Has the shell record each command in `invoked` and answer the start of a request with `started` (its run's id, or
+   * null when the requester stopped it first), anything else with nothing.
+   */
+  const shellStarting = (
+    invoked: Array<{ cmd: string; args?: Record<string, unknown> }>,
+    started: Promise<number | null>,
+  ) =>
+    vi.stubGlobal('tauriCore', () => ({
+      invoke: (cmd: string, args?: Record<string, unknown>) => {
+        invoked.push({ cmd, args });
+        return cmd === 'desktop_run_requested_tests' ? started : Promise.resolve(null);
+      },
+    }));
+
+  test('ends a team request stopped when the requester stopped it before its run started', async () => {
+    const { store } = await page();
+    const invoked: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+    shellStarting(invoked, Promise.resolve(null));
+    const run = store.startTeamRequest(request)!;
+    await until(() => run.status === 'stopped');
+    expect(run.shellId).toBeNull();
+    expect(stops(invoked)).toEqual([]);
+  });
+
+  test('sends no second stop when the shell began one as the run started, after a Stop pressed meanwhile', async () => {
+    const { store, shell } = await page();
+    const invoked: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+    let started!: (id: number) => void;
+    shellStarting(invoked, new Promise<number>((resolve) => (started = resolve)));
+    const run = store.startTeamRequest(request)!;
+    await until(() => invoked.some((call) => call.cmd === 'desktop_run_requested_tests'));
+    await store.stopRun(run);
+    shell({ id: 41, kind: 'stopping', line: null, code: null });
+    started(41);
+    await until(() => run.shellId === 41);
+    expect(run.stopRequested).toBe(true);
+    expect(stops(invoked)).toEqual([]);
+  });
+
+  test('sends a Stop pressed as the run started once its id is known, as a graceful one', async () => {
+    const { store } = await page();
+    const invoked: Array<{ cmd: string; args?: Record<string, unknown> }> = [];
+    let started!: (id: number) => void;
+    shellStarting(invoked, new Promise<number>((resolve) => (started = resolve)));
+    const run = store.startTeamRequest(request)!;
+    await until(() => invoked.some((call) => call.cmd === 'desktop_run_requested_tests'));
+    await store.stopRun(run);
+    expect(stops(invoked)).toEqual([]);
+    started(41);
+    await until(() => stops(invoked).length === 1);
+    expect(stops(invoked)).toEqual([{ cmd: 'desktop_stop_local_tests', args: { runId: 41, graceful: true } }]);
+  });
+
   test('ends a team request’s run stopped when the shell says it ended stopped as the window reloaded', async () => {
     const storage = new Map<string, string>();
     const before = await page(storage);
