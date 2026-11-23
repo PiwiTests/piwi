@@ -195,6 +195,14 @@ const TAGS = [
 /** The Jenkins credential the re-run jobs of every project but API Integration name (`CREDENTIALS`). */
 const QA_BOT_CREDENTIAL_ID = 6;
 
+/** A Jenkins job's page (`api/integration` → `https://jenkins.example.com/job/api/job/integration/`). */
+function jenkinsJobUrl(job) {
+  return `https://jenkins.example.com/${job
+    .split('/')
+    .map((name) => `job/${name}`)
+    .join('/')}/`;
+}
+
 /**
  * The CI actions of a project whose tests run in one Jenkins job: a single action, the default for re-runs (the
  * failure pages' Re-run in CI) and for Run on CI, that dispatches under the qa-bot credential's destination.
@@ -1504,13 +1512,14 @@ for (const proj of DEMO_PROJECTS) {
     const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
     const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
     if (baseUrls) RUN_BASE_URLS.set(runId, baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length]);
+    // Every project's suite runs in the Jenkins job its CI action re-runs failures in.
+    const job = PROJECTS.find((p) => p.id === proj.id).ci_rerun.actions[0].target.fields.job;
     const metadata = {
       ci: {
-        provider: 'GitHub Actions',
+        provider: 'Jenkins',
         buildNumber: String(1200 - i),
-        jobName: 'test',
-        workflow: 'CI',
-        buildUrl: `https://github.com/${SCM_REPOS[proj.id].repositoryUrl.split('/').slice(-2).join('/')}/actions/runs/${5100 + proj.id * 100 - i}`,
+        jobName: job,
+        buildUrl: `${jenkinsJobUrl(job)}${1200 - i}/`,
       },
       scm: {
         commit: commit.sha,
@@ -3267,10 +3276,7 @@ const CI_DISPATCHES = [];
       : clusterStats[clusterId].failedRuns.find((r) => r.startMs <= newestRunMs - 8 * 60 * 60 * 1000);
     if (!run && !failed) throw new Error(`Cluster ${clusterId} has no failure eight hours before the newest run`);
     const at = run ? run.start_time * 1000 - 20 * 60 * 1000 : failed.startMs + 30 * 60 * 1000;
-    const jobPage = `https://jenkins.example.com/${action.target.fields.job
-      .split('/')
-      .map((name) => `job/${name}`)
-      .join('/')}/`;
+
     return {
       id,
       project_id: story.projectId,
@@ -3288,7 +3294,8 @@ const CI_DISPATCHES = [];
       args: `${story.failingCases.map((c) => `"/${story.specFile}:${c.failingLine}"`).join(' ')} --project="chromium"`,
       files: JSON.stringify([story.specFile]),
       tests: story.failingCases.length,
-      url: jobPage,
+      // Once matched, the build the run recorded, as the server links it; before, the job's page.
+      url: run?.metadata?.ci?.buildUrl ?? jenkinsJobUrl(action.target.fields.job),
       provider_run_id: null,
       state: run ? 'ended' : 'unreported',
       detail: null,
