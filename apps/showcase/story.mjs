@@ -158,6 +158,7 @@ export const STORY = [
   beat({
     id: 'red-run',
     title: 'The red run',
+    part: { title: 'CI is red', what: 'The failure page names the locator that broke.' },
     seconds: 22,
     focus: ['dashboard'],
     lines: {
@@ -226,6 +227,7 @@ export const STORY = [
   beat({
     id: 'to-the-editor',
     title: 'To the editor',
+    part: { title: 'Debug in VS Code', what: 'The test runs in the editor and stops at its line.' },
     seconds: 14,
     focus: ['dashboard', 'vscode'],
     lines: {
@@ -363,6 +365,7 @@ export const STORY = [
   beat({
     id: 'right-locator',
     title: 'The right locator',
+    part: { title: 'Fix the test', what: 'Pick the locator, record a step, check the order.' },
     seconds: 18,
     focus: ['runs', 'test-browser', 'vscode'],
     lines: {
@@ -510,7 +513,8 @@ export const STORY = [
 
   beat({
     id: 'watch-running',
-    title: 'Watch it run',
+    title: 'In the editor',
+    part: { title: 'Watch it run', what: 'Each worker’s page, live: in the editor, then on CI.' },
     seconds: 14,
     focus: ['vscode'],
     budget: 240_000,
@@ -569,7 +573,7 @@ export const STORY = [
 
   beat({
     id: 'back-on-the-team',
-    title: 'Back on the team',
+    title: 'On CI, paused',
     seconds: 22,
     focus: ['dashboard'],
     budget: 240_000,
@@ -670,6 +674,7 @@ export const STORY = [
   beat({
     id: 'coda',
     title: 'The coding agent',
+    part: { title: 'Hand it to an agent', what: 'A coding agent finishes a test with Piwi’s run tools.' },
     seconds: 18,
     focus: ['vscode', 'test-browser', 'runs', 'vscode'],
     budget: 240_000,

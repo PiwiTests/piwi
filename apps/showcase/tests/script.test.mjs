@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { Gestures, contentOnScreen } from '../lib/script.mjs';
+import { Gestures, contentOnScreen, lintLines } from '../lib/script.mjs';
 
 describe('a page’s content on the screen', () => {
   // As Chromium told them on a 3840 × 2160 screen at scale 2, its toolbar 87 CSS pixels high.
@@ -56,5 +56,27 @@ describe('a gesture’s point', () => {
       x: 210,
       y: 412,
     });
+  });
+});
+
+describe('the parts’ lint', () => {
+  const played = (id, part) => ({ id, title: id, seconds: 10, lines: { en: ['A line.'] }, run: () => {}, part });
+  const card = { id: 'title', title: 'Piwi', seconds: 4, lines: { en: ['Hello.'] } };
+
+  test('passes a story whose first beat opens a part', () => {
+    const part = { title: 'CI is red', what: 'The failure page names the locator that broke.' };
+    assert.deepEqual(lintLines([card, played('a', part), played('b')]), []);
+  });
+
+  test('names a first beat that opens no part, and a part too long for the rail or its card', () => {
+    const problems = lintLines([
+      played('a'),
+      played('b', { title: 'A part whose title runs on', what: 'Short.' }),
+      played('c', { title: 'Short', what: 'x'.repeat(61) }),
+    ]);
+    assert.equal(problems.length, 3, problems.join('\n'));
+    assert.match(problems[0], /^a: no part/);
+    assert.match(problems[1], /^b: its part's title/);
+    assert.match(problems[2], /^c: its part's line/);
   });
 });

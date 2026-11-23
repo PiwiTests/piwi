@@ -1,6 +1,6 @@
 /* The stage the cut is drawn on, 1920 × 1080 CSS pixels (a 4K cut renders it at device scale 2): Piwi's dark
-   background, the windows cut from the master in frames of the stage's own, the pointer, the key strip, the chapter's
-   label, the cards, the subtitle plate and the contact sheet. Everything moves from what `stage.js` is given per
+   background, the windows cut from the master in frames of the stage's own, the pointer, the key strip, the parts'
+   rail, the cards, the subtitle plate and the contact sheet. Everything moves from what `stage.js` is given per
    frame: nothing here animates on its own. */
 :root {
   --violet: #7c3aed;
@@ -121,39 +121,113 @@ html.plate #stage {
   stroke-linejoin: round;
 }
 
-#chapter {
+#rail {
   position: absolute;
   z-index: 102;
   left: 40px;
-  top: 34px;
+  right: 40px;
+  top: 14px;
   display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 18px 9px 10px;
-  border-radius: 999px;
+  gap: 18px;
+  padding: 9px 18px 11px;
+  border-radius: 14px;
   background: rgb(10 13 26 / 0.72);
   border: 1px solid rgb(255 255 255 / 0.12);
-  font-size: 21px;
-  font-weight: 600;
   backdrop-filter: blur(6px);
 }
 
-#chapter .number {
+#rail .part {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+#rail .part.current {
+  flex-grow: 2.2;
+}
+
+#rail .label {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 600;
+  white-space: nowrap;
+  color: rgb(244 243 255 / 0.45);
+}
+
+#rail .n {
+  flex: none;
   display: grid;
   place-items: center;
-  width: 30px;
-  height: 30px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  background: var(--violet);
-  font-size: 16px;
+  border: 1.5px solid rgb(255 255 255 / 0.28);
+  font-size: 12px;
   font-weight: 700;
+}
+
+#rail .name {
+  flex: none;
+}
+
+#rail .beat {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--muted);
+  font-weight: 500;
+}
+
+#rail .beat::before {
+  content: '·';
+  margin-right: 9px;
+}
+
+#rail .done .label {
+  color: var(--muted);
+}
+
+#rail .done .n {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+#rail .current .label {
+  color: var(--text);
+}
+
+#rail .current .n {
+  background: var(--violet);
+  border-color: var(--violet);
+  color: #fff;
+}
+
+#rail .bar {
+  height: 4px;
+  border-radius: 2px;
+  background: rgb(255 255 255 / 0.14);
+  overflow: hidden;
+}
+
+#rail .fill {
+  height: 100%;
+  background: var(--violet-light);
+}
+
+#rail .done .fill {
+  background: var(--teal);
 }
 
 #fast {
   position: absolute;
   z-index: 102;
   right: 40px;
-  top: 34px;
+  top: 92px;
   padding: 9px 16px;
   border-radius: 999px;
   background: rgb(10 13 26 / 0.72);
@@ -268,6 +342,92 @@ html.plate #stage {
   font-size: 46px;
   font-weight: 700;
   color: var(--teal);
+}
+
+#card-part .block {
+  display: grid;
+  gap: 40px;
+}
+
+#card-part .eyebrow {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+  color: var(--teal);
+}
+
+#card-part .contents {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 22px;
+  min-width: 920px;
+}
+
+#card-part li {
+  display: grid;
+  grid-template-columns: 52px auto;
+  column-gap: 26px;
+  align-items: center;
+  color: rgb(244 243 255 / 0.4);
+}
+
+#card-part li .n {
+  grid-row: 1 / span 2;
+  align-self: start;
+  display: grid;
+  place-items: center;
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 2px solid rgb(255 255 255 / 0.25);
+  font-size: 22px;
+  font-weight: 700;
+}
+
+#card-part li .name {
+  font-size: 36px;
+  font-weight: 600;
+  line-height: 52px;
+}
+
+#card-part li .what {
+  display: none;
+  margin: 2px 0 0;
+  font-size: 29px;
+  font-weight: 500;
+  color: var(--muted);
+}
+
+#card-part li.done {
+  color: var(--muted);
+}
+
+#card-part li.done .n {
+  border-color: var(--teal);
+  color: var(--teal);
+}
+
+#card-part li.current {
+  color: var(--text);
+}
+
+#card-part li.current .n {
+  background: var(--violet);
+  border-color: var(--violet);
+  color: #fff;
+}
+
+#card-part li.current .name {
+  font-size: 48px;
+  font-weight: 700;
+}
+
+#card-part li.current .what {
+  display: block;
 }
 
 #plate {

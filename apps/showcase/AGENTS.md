@@ -27,6 +27,9 @@ script, the beats, the take and the cut work is in [`ARCHITECTURE.md`](ARCHITECT
   listed in [Known bugs](ARCHITECTURE.md#known-bugs).
 - **A line is at most two rows of 42 characters, and a beat's lines read at 17 characters a second at most**
   (`lintLines`; `node showcase.mjs --lint`). The lines are the subtitles, and every beat has a `title`, its chapter.
+- **The story is cut into parts, and its first beat opens one** (`part: { title, what }` on the beat that opens it,
+  `lintLines`): the cut's chapters, the part cards and the rail across the top come from them, so a new beat joins
+  the part it belongs to, or opens one.
 - **A take's holds are the take's, named, never a beat's**: a beat is held until its lines are read (`lineMs`: 15
   characters a second, then 0.4 s) and its end has shown for `SETTLE_MS` (`hooks.ended` in `lib/take.mjs`). Check mode
   has none, and a beat still waits on state, whatever the mode.

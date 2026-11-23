@@ -22,10 +22,13 @@ export function union(rects) {
   return { x, y, width: right - x, height: bottom - y };
 }
 
-/** The view (`{ cx, cy, width }`) that shows `rect` whole with a margin of `pad` of its size on each side. */
-export function fit(rect, pad = 0.04) {
-  const width = Math.max(rect.width * (1 + 2 * pad), rect.height * (1 + 2 * pad) * ASPECT);
-  return { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2, width };
+/**
+ * The view (`{ cx, cy, width }`) that shows `rect` whole with a margin of `pad` of its size on each side, below a band
+ * of `top` of the view's height left free at its top.
+ */
+export function fit(rect, pad = 0.04, top = 0) {
+  const width = Math.max(rect.width * (1 + 2 * pad), (rect.height * (1 + 2 * pad) * ASPECT) / (1 - top));
+  return { cx: rect.x + rect.width / 2, cy: rect.y + rect.height / 2 - (top * width) / ASPECT / 2, width };
 }
 
 /** The view `around` a point, `width` wide. */

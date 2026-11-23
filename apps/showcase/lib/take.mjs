@@ -172,6 +172,7 @@ export async function startFilming({ set, out, story, scale, width, height, take
         id: b.id,
         title: b.title,
         card: !b.run,
+        part: b.part ?? null,
         seconds: b.seconds,
         focus: b.focus,
         lines: b.lines.en,

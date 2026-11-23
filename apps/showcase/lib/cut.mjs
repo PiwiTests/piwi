@@ -206,11 +206,11 @@ function serve() {
   });
 }
 
-/** A stage page of renderer `id`, set up for `plan`'s title. */
-async function stagePage(browser, server, id, { dpr, title }) {
+/** A stage page of renderer `id`, set up with `setup` (the title card's line and the story's parts). */
+async function stagePage(browser, server, id, { dpr, setup }) {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1080 }, deviceScaleFactor: dpr });
   await page.goto(`${server.url}/r${id}/stage.html`);
-  await page.evaluate((setup) => window.stage.setup(setup), { title, frame: { bar: TITLE_BAR } });
+  await page.evaluate((given) => window.stage.setup(given), { ...setup, frame: { bar: TITLE_BAR } });
   return { page };
 }
 
@@ -220,8 +220,8 @@ async function stagePage(browser, server, id, { dpr, title }) {
  * throwing, once `halt.reason` is set (another range failed, or the cut was stopped), and returns only once its
  * encoder has ended.
  */
-async function renderRange({ browser, server, plan, id, from, to, master, frames, fps, dpr, title, file, halt }) {
-  const { page } = await stagePage(browser, server, id, { dpr, title });
+async function renderRange({ browser, server, plan, id, from, to, master, frames, fps, dpr, setup, file, halt }) {
+  const { page } = await stagePage(browser, server, id, { dpr, setup });
   const cdp = await page.context().newCDPSession(page);
   const first = plan.frames.slice(from, to).find((s) => s.frame !== null)?.frame ?? 0;
   const decoder = new Decoder(master, first, fps, frames);
@@ -327,7 +327,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
   if (flashFrame === null) throw new Error(`no frame of ${master} shows the sync flash`);
   const dpr = size / 1080;
   const plan = planCut(log, { flashFrame, frames, dpr, only: beats });
-  const title = log.story[0].lines[0];
+  const setup = { title: log.story[0].lines[0], parts: plan.parts };
   for (const family of ['Inter', 'JetBrains Mono']) {
     const found = String(execFileSync('fc-match', ['-f', '%{family}', family])).split(',')[0];
     if (found !== family) say(`  ${family} is not installed: the stage draws in ${found} instead`);
@@ -369,7 +369,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
     const fps = log.master.fps;
     const settled = await Promise.allSettled(
       ranges.map(([from, to], id) =>
-        renderRange({ browser, server, plan, id, from, to, master, frames, dpr, title, halt, fps, file: parts[id] }),
+        renderRange({ browser, server, plan, id, from, to, master, frames, dpr, setup, halt, fps, file: parts[id] }),
       ),
     );
     const failed = settled.find((r) => r.status === 'rejected');
@@ -390,7 +390,7 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
 
     // The subtitles' plates, burned into the subtitled cut and the teaser: the cards show their lines themselves.
     const burned = plan.cues.filter((cue) => !cue.card);
-    const { page } = await stagePage(browser, server, 'plates', { dpr, title });
+    const { page } = await stagePage(browser, server, 'plates', { dpr, setup });
     const plates = path.join(work, 'plates');
     await page.evaluate(() => window.stage.plate([]));
     await page.screenshot({ path: path.join(plates, 'blank.png'), omitBackground: true });
@@ -513,9 +513,11 @@ export async function cut({ take, out, size = 1080, renderers = 2, beats = null,
       );
     }
 
-    // The contact sheet: a frame of the subtitled cut per beat and card, at the middle of its lines.
+    // The contact sheet: a frame of the subtitled cut per beat and card, at the middle of its lines; the parts' cards
+    // left out.
     const sheet = [];
     for (const [i, s] of plan.segments.entries()) {
+      if (s.kind === 'part') continue;
       const at = (s.linesStart + s.linesEnd) / 2;
       const file = path.join(work, `sheet-${i}.jpg`);
       await ffmpeg([

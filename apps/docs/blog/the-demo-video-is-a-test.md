@@ -22,19 +22,20 @@ renders the video from the recording. Played without the camera, the same script
   <figcaption>The teaser, cut from the latest take: from a red CI run to a fixed test, without leaving the tools.</figcaption>
 </figure>
 
-## One story, twelve beats
+## One story in five parts
 
 The story is a small shop whose checkout was redesigned: **Place order** became **Pay now**, and a box to tick was
-added. CI went red on `main`. From there the script plays twelve beats:
+added. CI went red on `main`. From there the script plays twelve beats, in five parts:
 
-1. The failure page names the locator that broke, and the one that replaces it.
-2. **Debug in my editor** opens VS Code at the failing line and runs the test there, headed.
-3. The run stops at that line: VS Code, the test's page and Piwi Picker show the same place.
-4. A pick on the page writes the right locator into the code, and a recording adds the missing step.
-5. The fixed test runs again, watched in VS Code's own panel, the editor marking the line it runs.
-6. The fix is pushed, CI runs it on three workers, and **Watch all** shows each one live. One is paused from the run
-   page, waits there for a look, and is resumed until the run is green.
-7. A coding agent finishes a new test through Piwi's run tools.
+1. **CI is red.** The failure page names the locator that broke, and the one that replaces it.
+2. **Debug in VS Code.** **Debug in my editor** opens VS Code at the failing line and runs the test there, headed,
+   until it stops at that line: VS Code, the test's page and Piwi Picker show the same place.
+3. **Fix the test.** A pick on the page writes the right locator into the code, a recording adds the missing step, and
+   the fixed test passes.
+4. **Watch it run.** The test runs again, watched in VS Code's own panel, the editor marking the line it runs. The fix
+   is pushed, CI runs it on three workers, and **Watch all** shows each one live. One is paused from the run page,
+   waits there for a look, and is resumed until the run is green.
+5. **Hand it to an agent.** A coding agent finishes a new test through Piwi's run tools.
 
 Everything on screen is real: this commit's dashboard on a seeded database, the reporter built from source, VS Code
 with the packaged extension, Chromium with the built Piwi Picker, and a real Playwright suite against a real app. The
@@ -105,6 +106,11 @@ A check never skips an assertion unconditionally. It skips one for a known bug o
 so the skip disappears by itself when the bug is fixed, and the video shows the fix at the next take.
 
 ## Making it readable
+
+A video that moves between this many tools is easy to get lost in, so it carries its own table of contents. A card
+before each part lists them all, ticks the ones done and names the next with a line on what it shows; a rail across
+the top keeps the parts in view through the beats, the current one filling as it plays, with the beat's name beside
+it. The same parts are the video's chapters, written in the form a video site reads from a description.
 
 A 1080p video of a 4K screen leaves little room for chrome, so the showcase's VS Code shows the code and Piwi's marks,
 little else: no activity bar, menu or breadcrumbs, no squiggles, Piwi's item alone in the status bar, the terminal

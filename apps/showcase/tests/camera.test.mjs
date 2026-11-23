@@ -45,6 +45,14 @@ describe('a shot', () => {
     assert.ok(rect.width >= 1600 * 1.1 && rect.height >= 1000 * 1.1);
   });
 
+  test('leaves a band at the top free, the window below it with its margin', () => {
+    const view = fit({ x: 0, y: 0, width: 1600, height: 1000 }, 0.05, 0.1);
+    const rect = viewRect(view);
+    assert.ok(rect.y + rect.height * 0.1 + 1000 * 0.05 <= 0 + 1e-9, `the window's top under the band (${rect.y})`);
+    assert.ok(rect.y + rect.height >= 1000 * 1.05 - 1e-9, 'its bottom margin');
+    assert.ok(rect.x <= -80 + 1e-9 && rect.x + rect.width >= 1680 - 1e-9, 'its side margins');
+  });
+
   test('of several windows holds them all', () => {
     const all = union([
       { x: 0, y: 0, width: 100, height: 100 },

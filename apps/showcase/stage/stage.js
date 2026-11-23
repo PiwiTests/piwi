@@ -1,6 +1,6 @@
 // The stage: draws one frame of the cut from what the renderer computed for it (`lib/cut-plan.mjs`), the windows cut
-// from the master's frame on Piwi's background, the pointer, the click rings, the key strip, the chapter's label and
-// the cards; and, in the renderer's other passes, a subtitle's plate alone or the contact sheet.
+// from the master's frame on Piwi's background, the pointer, the click rings, the key strip, the parts' rail and the
+// cards; and, in the renderer's other passes, a subtitle's plate alone or the contact sheet.
 (() => {
   /** The stage's frame bar, a window's corner and its label, in master pixels (the plan's `TITLE_BAR`). */
   let sizes = { bar: 64, radius: 24, label: 26 };
@@ -140,29 +140,84 @@
     Object.assign(keys.style, { display: 'flex', opacity: String(state.keys.opacity) });
   }
 
+  /** Where part `number` stands against the part shown, `current`: done, current or next. */
+  const place = (number, current) => (number < current ? 'done' : number === current ? 'current' : 'next');
+
+  /** Marks each of `items` (one a part, in order) done, current or next against the part `current`. */
+  function markParts(items, current) {
+    [...items].forEach((item, i) => {
+      const where = place(i + 1, current);
+      item.className = `part ${where}`;
+      item.querySelector('.n').textContent = where === 'done' ? '✓' : String(i + 1);
+    });
+  }
+
+  function drawRail(state) {
+    const rail = $('rail');
+    if (!state.rail) {
+      rail.style.display = 'none';
+      return;
+    }
+    const { part, progress, beat, opacity } = state.rail;
+    markParts(rail.children, part);
+    [...rail.children].forEach((item, i) => {
+      const where = place(i + 1, part);
+      item.querySelector('.fill').style.width = `${where === 'done' ? 100 : where === 'current' ? progress * 100 : 0}%`;
+      const title = item.querySelector('.beat');
+      if (where === 'current' && beat) {
+        title.textContent = beat.title;
+        Object.assign(title.style, { display: 'block', opacity: String(beat.opacity) });
+      } else title.style.display = 'none';
+    });
+    Object.assign(rail.style, { display: 'flex', opacity: String(opacity) });
+  }
+
   function drawLabels(state) {
-    const chapter = $('chapter');
-    if (state.chapter) {
-      chapter.querySelector('.number').textContent = String(state.chapter.number);
-      chapter.querySelector('.title').textContent = state.chapter.title;
-      Object.assign(chapter.style, { display: 'flex', opacity: String(state.chapter.opacity) });
-    } else chapter.style.display = 'none';
+    drawRail(state);
     const fast = $('fast');
     if (state.fast) {
       fast.textContent = `▶▶ ×${state.fast.rate}`;
       Object.assign(fast.style, { display: 'block', opacity: String(state.fast.opacity) });
     } else fast.style.display = 'none';
-    for (const id of ['title', 'end']) {
+    for (const id of ['title', 'end', 'part']) {
       const card = $(`card-${id}`);
-      const opacity = state.card?.id === id ? state.card.opacity : 0;
+      const shown = state.cards.find((c) => c.id === id);
+      const opacity = shown?.opacity ?? 0;
       Object.assign(card.style, { display: opacity > 0 ? 'flex' : 'none', opacity: String(opacity) });
+      if (id === 'part' && shown) {
+        const items = card.querySelector('.contents').children;
+        card.querySelector('.eyebrow').textContent = `Part ${shown.part} of ${items.length}`;
+        markParts(items, shown.part);
+      }
     }
   }
 
   window.stage = {
-    /** The title card's line, and the sizes of the stage's frames. */
-    setup({ title, frame }) {
+    /** The title card's line, the story's parts (`{ title, what }`) for the rail and their card, and the sizes of the stage's frames. */
+    setup({ title, frame, parts = [] }) {
       $('card-title').querySelector('.line').textContent = title;
+      const element = (tag, className, text = '') =>
+        Object.assign(document.createElement(tag), { className, textContent: text });
+      $('rail').replaceChildren(
+        ...parts.map((part) => {
+          const item = element('div', 'part');
+          const label = element('div', 'label');
+          label.append(element('span', 'n'), element('span', 'name', part.title), element('span', 'beat'));
+          const bar = element('div', 'bar');
+          bar.append(element('div', 'fill'));
+          item.append(label, bar);
+          return item;
+        }),
+      );
+      $('card-part')
+        .querySelector('.contents')
+        .replaceChildren(
+          ...parts.map((part) => {
+            const item = element('li', 'part');
+            item.append(element('span', 'n'), element('span', 'name', part.title), element('p', 'what', part.what));
+            return item;
+          }),
+        );
       sizes = { ...sizes, ...frame };
       return document.fonts.ready;
     },

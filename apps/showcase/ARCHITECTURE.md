@@ -48,7 +48,11 @@ windows' stacking and the pointer's place, in VS Code, the developer's browser a
 ## The script
 
 A beat (`beat` in `lib/script.mjs`) has an `id`, its chapter's `title`, its `lines` by language, its `seconds` in the
-cut, its `focus`, a `budget`, and, unless it is a card, a `run` and a `check`. `play` runs the beats in order: it calls
+cut, its `focus`, a `budget`, and, unless it is a card, a `run` and a `check`. A beat that names a `part`
+(`{ title, what }`) opens a part of the story, which the beats after it join until the next; the story's first beat
+opens one (`lintLines`). The five parts are the video's contents: **CI is red** (`red-run`), **Debug in VS Code**
+(`to-the-editor` to `paused`), **Fix the test** (`right-locator` to `green`), **Watch it run** (`watch-running` to
+`resumed`) and **Hand it to an agent** (`coda`). `play` runs the beats in order: it calls
 `hooks.started`, raises the beat's first window, runs the beat, its check, then `hooks.ended`, all within the budget;
 check mode has no hooks, and a take's hold its lines there. A failure
 writes `results/failed-<beat>/` (`keepEvidence` in `showcase.mjs`: the screen from ImageMagick's `import`, the VS Code
@@ -146,7 +150,7 @@ an error, or a master holding fewer than 95 % of the frames of the time since it
 | `master`   | the file, its `fps`, when ffmpeg was `spawned`, `running` (its first frame) and `stopped`, whether it was `raised`, its counts (`frames` written, `dup` repeated, `drop`), its exit (`code`, `signal`, `error`, `early`) and `problem` |
 | `flash`    | `t`, the frame after the one that drew the square, and the square's `box`                                                                                                                                                              |
 | `beats`    | each beat played: `id`, `start`, `end` (after its hold), its `lines` with their `text`, `start` and length (`ms`)                                                                                                                      |
-| `story`    | every beat of the story, cards included: `id`, `title`, `card`, `seconds`, `focus`, its lines' texts                                                                                                                                   |
+| `story`    | every beat of the story, cards included: `id`, `title`, `card`, `part`, `seconds`, `focus`, its lines' texts                                                                                                                           |
 | `gestures` | the gestures' log (`t`, `act`, `beat`, `kind`, `window`, `box`, `point`, and the `key`, `text`, `title`, or a note's `what` and an agent's `call`)                                                                                     |
 | `raises`   | `{ t, up, window }`: the layer raised (`dashboard` or `tiles`) and the window it was raised for                                                                                                                                        |
 | `presence` | `{ t, window, open }`: the test's browser's window coming up or going                                                                                                                                                                  |
@@ -156,25 +160,27 @@ an error, or a master holding fewer than 95 % of the frames of the time since it
 
 `--cut <take's results>` (`npm run showcase:cut`) renders the video into `<take>/cut/`, or `--out`. `--size 2160`
 renders the 4K cut (the camera then never zooms: the master's own pixels are the limit), `--renderers` the number of
-stage pages side by side (2), `--beats a,b` those beats alone, without the cards. The cut refuses an `--out` that is,
-or holds, the take it reads (`refusal`, `lib/results.mjs`), and a master that ends before the take's last beat. A
-signal stops it: every ffmpeg ends, the browser closes and its work folder goes; a renderer that fails stops the
-others, and the work folder goes once their encoders have ended.
+stage pages side by side (2), `--beats a,b` those beats alone, without the cards (the parts' included). The cut
+refuses an `--out` that is, or holds, the take it reads (`refusal`, `lib/results.mjs`), and a master that ends before
+the take's last beat. A signal stops it: every ffmpeg ends, the browser closes and its work folder goes; a renderer
+that fails stops the others, and the work folder goes once their encoders have ended.
 
 `planCut` (`lib/cut-plan.mjs`) reads the take log, pure, and gives every output frame its state:
 
 - **The clock.** The flash's frame in the master (`findFlash`: a 3 × 3 grid of the square and its surround, the square
   white and the rest black) ties the wall clock to the master's frames. The cut is the title card, each beat played
-  from its start to its end, and the end card, each card as long as its `seconds` or its lines. A quiet stretch of a
-  beat (no line read, no gesture, no window coming or going) longer than 3 s plays at 4×, but for 0.6 s at each end,
-  with a `▶▶ ×4` badge (`FAST`, `pieces`). Output frame `i` (30 a second) shows the master's frame nearest its time
-  (`masterFrame`).
+  from its start to its end, each part's card before the first of its beats, and the end card, each card as long as
+  its `seconds` or its lines, a part's as its line's reading (the first, which lists them all, longer: `PART_CARD`).
+  A quiet stretch of a beat (no line read, no gesture, no window coming or going) longer than 3 s plays at 4×, but for
+  0.6 s at each end, with a `▶▶ ×4` badge (`FAST`, `pieces`). Output frame `i` (30 a second) shows the master's frame
+  nearest its time (`masterFrame`).
 - **The world.** Each window is drawn at its place on the screen, in a frame of the stage's own (a bar naming it, its
   corners rounded, a shadow): the right column moved off VS Code and the Runs window off the test's browser by a gap
   (`world`). VS Code keeps its own title bar: its command center drops Quick Open and the command palette over it. A beat shows the windows of its focus and
   of its gestures, each while the master shows it (its layer raised, the test's browser up), fading in and out.
 - **The camera** (`lib/camera.mjs`): a view of the world at 16:9, eased (cubic, in and out) over 0.6 to 0.9 s from
-  wherever it is, never closer than one output pixel a master pixel. A beat starts on its first window; a raise brings
+  wherever it is, never closer than one output pixel a master pixel, a window shown whole framed below the parts'
+  rail (`RAIL_BAND`). A beat starts on its first window, moved to under a part's card before it; a raise brings
   it to the window raised (before the gesture that needs it waits for its element); a gesture in another window moves it
   there (with the other tiles that gestures act in within 2.5 s); a gesture in a window shown smaller than 0.7 zooms in
   on its point and back out 1.4 s after it acts; a window that comes up brings the camera to it and the beat's other
@@ -187,8 +193,11 @@ others, and the work folder goes once their encoders have ended.
 - **The pointer and the keys** (`lib/cursor.mjs`): the pointer leaves for a gesture's point when it starts, along an
   arc, arrives within 0.65 s and before it acts, a ring grows where it clicks, and it fades after 2.5 s idle. The key
   strip shows a key's caps, a palette command (`F1` and its title), an agent's tool call or a note, for 1.6 s.
-- **The cards and the labels**: the title card (the logo and the first line), the end card (the install lines and
-  `piwitests.dev`), each beat's chapter label, top left.
+- **The cards and the rail**: the title card (the logo and the first line); each part's card, the story's contents
+  with the parts done ticked, the part to come named large with its line, the rest dimmed, fading in over the beat
+  before it (the first lies under the title card) and out over its first beat, which it holds until then; the end card
+  (the install lines and `piwitests.dev`); and the parts' rail across the top through the beats, each part done
+  ticked, the one shown with its progress through its beats and the beat's title.
 
 The stage (`stage/`) is a page of 1920 × 1080 CSS pixels (at device scale 2 for 4K) that draws a state and nothing
 else: each window's content drawn on a canvas from the master's frame, cropped and scaled (`imageSmoothingQuality:
@@ -203,11 +212,11 @@ which ffmpeg makes the outputs; the subtitles are the stage's plates (PNG with t
 | `piwi-showcase.mp4`, `piwi-showcase-subtitled.mp4`   | the full cut, H.264 (CRF 20), without and with the subtitles burned in                                         |
 | `piwi-showcase.webm`, `piwi-showcase-subtitled.webm` | the same, VP9 (CRF 34)                                                                                         |
 | `piwi-showcase.en.vtt`, `.en.srt`                    | every line, the cards' too (the burned subtitles leave those to the cards)                                     |
-| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the chapters as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">`    |
+| `piwi-showcase.chapters.txt`, `.chapters.vtt`        | the parts as video sites read them, none under 10 s (`foldChapters`), and as a `<track kind="chapters">`       |
 | `teaser.mp4`, `teaser.webm`                          | the story from the red run to the green test (`TEASER_BEATS`), about 45 s, subtitled, 1920 × 1080, within 7 MB |
 | `clips/<nn>-<beat>.mp4`                              | each beat, muted, without subtitles                                                                            |
 | `posters/`                                           | the title card's, the teaser's first frame, each clip's at the middle of its lines                             |
-| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card, at the middle of its lines                                     |
+| `contact-sheet.jpg`                                  | a frame of the subtitled cut per beat and card but the parts', at the middle of its lines                      |
 | `cut.json`                                           | the summary: the render's time, each output's size and encoding time, the segments                             |
 
 The teaser takes each of its beats from its start through its lines and 0.6 s more, grown or shrunk evenly to about

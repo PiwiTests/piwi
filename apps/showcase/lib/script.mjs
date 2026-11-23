@@ -7,6 +7,9 @@ import * as path from 'node:path';
 /** A subtitle row's width, and how many rows a line may take. */
 export const ROW_CHARS = 42;
 export const MAX_ROWS = 2;
+/** The longest a part's title and its line may be, in characters: the rail and the part's card show them on one row. */
+export const PART_TITLE_CHARS = 22;
+export const PART_LINE_CHARS = 60;
 /** The fastest a line may be read, in characters a second. */
 export const MAX_READING_CPS = 17;
 
@@ -14,7 +17,8 @@ export const MAX_READING_CPS = 17;
  * A beat of the story. `title` names its chapter; `lines` are its subtitles, by language; `focus` the windows the
  * camera moves through, in order (`vscode`, `test-browser`, `runs`, `dashboard`, `card`); `seconds` its length in the
  * cut; `run` plays it through the gestures; `check` asserts what it left. A card has no `run`. `budget` bounds `run`
- * and `check` together, in ms.
+ * and `check` together, in ms. `part` (`{ title, what }`) opens a part of the story there, which the beats after it
+ * join until the next: the cut opens it with its card and keeps the parts in a rail at the top.
  */
 export function beat(definition) {
   return { focus: [], budget: 180_000, ...definition };
@@ -63,6 +67,16 @@ export function wrap(line, width = ROW_CHARS) {
 /** What is wrong with the lines of `beats` in `language`: a line over two rows, a beat whose lines read too fast. */
 export function lintLines(beats, language = 'en') {
   const problems = [];
+  const played = beats.filter((b) => b.run);
+  if (played.length && !played[0].part) problems.push(`${played[0].id}: no part, which the story's first beat opens`);
+  for (const b of played.filter((p) => p.part)) {
+    if (!b.part.title || b.part.title.length > PART_TITLE_CHARS) {
+      problems.push(`${b.id}: its part's title takes 1 to ${PART_TITLE_CHARS} characters: "${b.part.title ?? ''}"`);
+    }
+    if (!b.part.what || b.part.what.length > PART_LINE_CHARS) {
+      problems.push(`${b.id}: its part's line takes 1 to ${PART_LINE_CHARS} characters: "${b.part.what ?? ''}"`);
+    }
+  }
   for (const b of beats) {
     const lines = b.lines?.[language] ?? [];
     if (!b.title) problems.push(`${b.id}: no title, which names its chapter`);

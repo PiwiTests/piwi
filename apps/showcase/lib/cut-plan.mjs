@@ -1,6 +1,7 @@
-// The cut's plan, without I/O: from a take's log, the cut's timeline (the title card, each beat the take played, the
-// end card), each window's place on the stage, the camera's shots, the pointer's moves, the key strip, the cues and
-// the chapters; and, for every output frame, what the stage draws and which master frame it draws from.
+// The cut's plan, without I/O: from a take's log, the cut's timeline (the title card, each part's card before its
+// beats, each beat the take played, the end card), each window's place on the stage, the camera's shots, the pointer's
+// moves, the key strip, the parts' rail, the cues and the chapters; and, for every output frame, what the stage draws
+// and which master frame it draws from.
 import { CALM, around, calmShots, clamp, fit, union, viewAt, viewRect } from './camera.mjs';
 import { keyCaps, keysAt, pointerAt, ringsAt } from './cursor.mjs';
 import { OUTPUT_FPS, frameCount, lineMs, masterFrame } from './timeline.mjs';
@@ -17,8 +18,17 @@ export const WINDOW_NAMES = {
   runs: 'Piwi Picker · Runs',
 };
 
-/** Fades, in seconds: a window coming or going, a card, a chapter's label, the fast-forward badge. */
+/** Fades, in seconds: a window coming or going, a card, a beat's title in the rail, the fast-forward badge. */
 const FADE = { window: 0.35, card: 0.6, chapter: 0.4, fast: 0.2 };
+
+/**
+ * A part's card lasts its line's reading (`lineMs`) and `hold`, `min` seconds at least; the first, which opens the
+ * story's contents, `perPart` more for each part it lists.
+ */
+export const PART_CARD = { min: 3, hold: 0.3, perPart: 0.6 };
+
+/** The band at the top of the output the parts' rail takes, in output pixels of 1080: the camera frames below it. */
+export const RAIL_BAND = 78;
 
 /** A window shown whole smaller than `below` (output pixels a master pixel) zooms in on a gesture, to `scale`. */
 const ZOOM = { below: 0.7, scale: 0.75, holdS: 1.4 };
@@ -124,6 +134,26 @@ function wallAt(segment, t) {
   return { w: Math.min(piece.b, piece.a + (t - piece.cut) * piece.rate * 1000), rate: piece.rate };
 }
 
+/**
+ * The story's parts (`{ number, title, what, beats }`) from a take log's `story`: a beat that names a `part`
+ * (`{ title, what }`) opens one, and the beats after it join it until the next. None when no beat names one.
+ */
+export function partsOf(story) {
+  const parts = [];
+  for (const s of story) {
+    if (s.card) continue;
+    if (s.part) parts.push({ number: parts.length + 1, title: s.part.title, what: s.part.what, beats: [] });
+    parts.at(-1)?.beats.push(s.id);
+  }
+  return parts;
+}
+
+/** How long `part`'s card lasts, of `count` parts, in seconds (`PART_CARD`). */
+export function partCardSeconds(part, count) {
+  const list = part.number === 1 ? count * PART_CARD.perPart : 0;
+  return Math.max(PART_CARD.min, list + lineMs(part.what) / 1000 + PART_CARD.hold);
+}
+
 /** The windows a beat shows: those of its focus, then those its gestures act in. */
 function beatWindows(story, gestures) {
   const ids = [...story.focus, ...gestures.map((g) => g.window)].filter((id) => id && id !== 'card');
@@ -165,7 +195,11 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
     id === 'dashboard'
       ? layerAt(w) === 'dashboard'
       : layerAt(w) === 'tiles' && (id !== 'test-browser' || openAt(id, w));
-  const fitOf = (ids) => fit(union(ids.map((id) => placed[id].frame)));
+  const parts = partsOf(log.story);
+  const partOf = new Map(parts.flatMap((part) => part.beats.map((id) => [id, part])));
+  // The rail's band, which the camera leaves free above the windows it frames whole.
+  const band = parts.length ? RAIL_BAND / 1080 : 0;
+  const fitOf = (ids) => fit(union(ids.map((id) => placed[id].frame)), undefined, band);
   const toWorld = (g) => ({ x: g.point.x + placed[g.window].offset.x, y: g.point.y + placed[g.window].offset.y });
 
   // The timeline.
@@ -182,14 +216,34 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
     segments.push({ kind: 'card', id: story.id, title: story.title, start: t, end: t + seconds, lines });
     t += seconds;
   };
+  const partCard = (part) => {
+    const end = t + partCardSeconds(part, parts.length);
+    segments.push({
+      kind: 'part',
+      id: `part-${part.number}`,
+      title: part.title,
+      part: part.number,
+      start: t,
+      end,
+      lines: [],
+    });
+    t = end;
+  };
   const cards = only ? [] : log.story.filter((s) => s.card);
   if (cards[0] && cards[0] === log.story[0]) card(cards[0]);
+  const opened = new Set();
   let number = 0;
   for (const story of log.story) {
     if (story.card) continue;
     number++;
     const beat = log.beats.find((b) => b.id === story.id);
     if (!beat?.end || (only && !only.includes(story.id))) continue;
+    // A part's card comes before the first of its beats the take played.
+    const part = partOf.get(story.id) ?? null;
+    if (part && !only && !opened.has(part)) {
+      opened.add(part);
+      partCard(part);
+    }
     const gestures = log.gestures.filter((g) => g.beat === story.id);
     const changes = [...raises, ...presence].filter((e) => e.t > beat.start && e.t < beat.end);
     const busy = [
@@ -200,6 +254,7 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
       ...changes.map((e) => [e.t - 400, e.t + 1600]),
     ];
     const segment = { kind: 'beat', id: story.id, title: story.title, number, story, beat, gestures, start: t };
+    segment.part = part?.number ?? null;
     segment.wall = { start: beat.start, end: beat.end };
     segment.pieces = pieces(beat.start, beat.end, busy);
     for (const p of segment.pieces) {
@@ -219,6 +274,14 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   if (last && last === log.story.at(-1)) card(last);
   const duration = t;
   const beats = segments.filter((s) => s.kind === 'beat');
+  // Each part's span in the cut: from its first beat's start to its last's end, its card left out.
+  const spans = new Map();
+  for (const segment of beats) {
+    if (!segment.part) continue;
+    const known = spans.get(segment.part);
+    if (known) known.end = segment.end;
+    else spans.set(segment.part, { start: segment.start, end: segment.end });
+  }
   // A master that stopped early would freeze the cut on its last frame: it is refused.
   const needed = beats.length ? masterSeconds(beats.at(-1).wall.end) * fps : 0;
   if (needed > frames + 1) {
@@ -247,7 +310,9 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
       const rect = view.key ? viewRect(view) : union(ids.map((id) => placed[id].frame));
       shots.push({ t: time, view, rect, ids, beat: segment.id });
     };
-    const start = segment === beats[0] ? 0 : segment.start;
+    // A beat after a part's card is framed once the card covers the stage.
+    const before = segments[segments.indexOf(segment) - 1];
+    const start = segment === beats[0] ? 0 : before?.kind === 'part' ? before.start + FADE.card : segment.start;
     shots.push({ t: start, view: fitOf([first]), rect: placed[first].frame, ids: [first], beat: segment.id });
 
     // What a beat's camera follows: its gestures, the window a raise brings up (before the gesture that needs it
@@ -342,16 +407,28 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
   const states = [];
   const titleCard = segments.find((s) => s.kind === 'card' && s === segments[0]);
   const endCard = segments.findLast((s) => s.kind === 'card' && s === segments.at(-1));
+  const partCards = segments.filter((s) => s.kind === 'part');
   for (let i = 0; i < count; i++) {
     const time = i / OUTPUT_FPS;
     const segment = segments.findLast((s) => s.start <= time) ?? segments[0];
-    // A card shows over the beat next to it, held at its first or last frame.
-    const beat = segment.kind === 'beat' ? segment : segment === titleCard ? beats[0] : beats.at(-1);
+    // A card shows over the beat next to it, held at its first or last frame: a part's card over the beat before it
+    // for its first half, the beat after it for the rest.
+    const previous = beats.findLast((b) => b.end <= segment.start);
+    const next = beats.find((b) => b.start >= segment.start);
+    const firstHalf = time < (segment.start + segment.end) / 2;
+    const beat =
+      segment.kind === 'beat'
+        ? segment
+        : segment === titleCard
+          ? beats[0]
+          : segment.kind === 'part' && !(firstHalf && previous)
+            ? next
+            : (previous ?? beats[0]);
     let wall = null;
     let rate = 1;
     if (beat) {
       if (segment.kind === 'beat') ({ w: wall, rate } = wallAt(beat, time));
-      else wall = segment === titleCard ? beat.wall.start : beat.wall.end;
+      else wall = beat === next ? beat.wall.start : beat.wall.end;
     }
     const view = viewAt(camera, time, { limits, span });
     const fastStep = 1 / OUTPUT_FPS / FADE.fast;
@@ -376,23 +453,44 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
         });
       }
     }
-    let cardShown = null;
+    // The cards shown: each fades out over what comes after it; the end card and a part's card after a beat fade in
+    // over it. A part's card after the title card lies under it, shown whole, as the title card fades out.
+    const cardsShown = [];
     if (titleCard && time < titleCard.end + FADE.card) {
-      cardShown = { id: titleCard.id, opacity: Math.min(1, 1 - (time - titleCard.end) / FADE.card) };
-    } else if (endCard && time >= endCard.start) {
-      cardShown = { id: endCard.id, opacity: Math.min(1, (time - endCard.start) / FADE.card) };
+      cardsShown.push({ id: titleCard.id, opacity: Math.min(1, 1 - (time - titleCard.end) / FADE.card) });
     }
-    const under = 1 - (cardShown?.opacity ?? 0);
+    for (const card of partCards) {
+      if (time < card.start || time >= card.end + FADE.card) continue;
+      const before = segments[segments.indexOf(card) - 1];
+      const fadeIn = before?.kind === 'beat' ? (time - card.start) / FADE.card : 1;
+      const opacity = Math.max(0, Math.min(1, fadeIn, 1 - (time - card.end) / FADE.card));
+      cardsShown.push({ id: 'part', part: card.part, opacity });
+    }
+    if (endCard && time >= endCard.start) {
+      cardsShown.push({ id: endCard.id, opacity: Math.min(1, (time - endCard.start) / FADE.card) });
+    }
+    const under = 1 - Math.max(0, ...cardsShown.map((c) => c.opacity));
     const pointer = pointerAt(moves, time);
-    const chapter =
-      segment.kind === 'beat'
+    // The rail: the part of the beat shown, or of the beat a card holds, its progress, and the beat's title.
+    const railBeat = segment === titleCard ? null : beat;
+    const railPart = segment.kind === 'part' && beat === next ? segment.part : (railBeat?.part ?? null);
+    const partSpan = spans.get(railPart);
+    const rail =
+      railPart && partSpan && under > 0
         ? {
-            number: segment.number,
-            title: segment.title,
-            opacity: Math.max(
-              0,
-              Math.min(1, (time - segment.start) / FADE.chapter, (segment.end - time) / FADE.chapter),
-            ),
+            part: railPart,
+            progress: Math.max(0, Math.min(1, (time - partSpan.start) / (partSpan.end - partSpan.start))),
+            beat:
+              segment.kind === 'beat'
+                ? {
+                    title: segment.title,
+                    opacity: Math.max(
+                      0,
+                      Math.min(1, (time - segment.start) / FADE.chapter, (segment.end - time) / FADE.chapter),
+                    ),
+                  }
+                : null,
+            opacity: under,
           }
         : null;
     const toOut = (p) => ({ x: (p.x - rect.x) * s, y: (p.y - rect.y) * s });
@@ -405,22 +503,26 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
         pointer && under > 0 ? { ...toOut(pointer), opacity: pointer.opacity * under, pressed: pointer.pressed } : null,
       rings: ringsAt(moves, time).map((r) => ({ ...toOut(r), progress: r.progress, opacity: r.opacity * under })),
       keys: segment.kind === 'beat' ? keysAt(keys, time) : null,
-      chapter,
+      rail,
       fast: fast > 0 ? { rate: FAST.rate, opacity: fast } : null,
-      card: cardShown,
+      cards: cardsShown,
     });
   }
   const cues = segments.flatMap((segment) =>
     segment.lines.map((line) => ({ ...line, card: segment.kind === 'card', beat: segment.id })),
   );
-  const chapters = segments.map((segment) => ({
-    start: segment.start,
-    title: segment.title,
-    id: segment.id,
-    card: segment.kind === 'card',
-  }));
+  // The chapters: the parts, each from its card, when the cut has their cards; else the beats.
+  const chapters = segments
+    .filter((segment) => (partCards.length ? segment.kind !== 'beat' : segment.kind !== 'part'))
+    .map((segment) => ({
+      start: segment.start,
+      title: segment.title,
+      id: segment.id,
+      card: segment.kind === 'card',
+    }));
   return {
     duration,
+    parts: parts.map(({ number, title, what }) => ({ number, title, what })),
     frames: states,
     moves: { planned: movesOf(shots), kept: movesOf(camera) },
     cues,
@@ -429,6 +531,7 @@ export function planCut(log, { flashFrame, frames, width = 1920, dpr = 1, only =
       kind: segment.kind,
       id: segment.id,
       number: segment.number ?? null,
+      part: segment.part ?? null,
       title: segment.title,
       start: segment.start,
       end: segment.end,

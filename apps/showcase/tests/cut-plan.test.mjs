@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { FAST, TITLE_BAR, pieces, planCut, world } from '../lib/cut-plan.mjs';
+import { FAST, RAIL_BAND, TITLE_BAR, partCardSeconds, partsOf, pieces, planCut, world } from '../lib/cut-plan.mjs';
 
 const WINDOWS = {
   vscode: { x: 0, y: 0, width: 2160, height: 1440 },
@@ -110,18 +110,20 @@ describe('the plan', () => {
   test('draws the pointer to the click, a ring as it clicks, and the window over the card’s fade', () => {
     assert.ok(at(5).pointer, 'the pointer');
     assert.equal(at(5.1).rings.length, 1);
-    assert.equal(at(1).card.id, 'title');
+    assert.deepEqual(
+      at(1).cards.map((c) => c.id),
+      ['title'],
+    );
     assert.deepEqual(
       at(5).windows.map((w) => w.id),
       ['dashboard'],
     );
   });
 
-  test('badges the fast stretch, and the chapter of the beat', () => {
+  test('badges the fast stretch, and draws no rail without parts', () => {
     assert.equal(at(8).fast?.rate, FAST.rate);
     assert.equal(at(4.5).fast, null);
-    assert.equal(at(5).chapter.title, 'The red run');
-    assert.equal(at(1).chapter, null);
+    assert.equal(at(5).rail, null);
   });
 
   test('refuses a master that ends before the take’s last beat', () => {
@@ -141,5 +143,109 @@ describe('the plan', () => {
     const line = plan.cues[1];
     assert.equal(line.start, 4);
     assert.ok(Math.abs(line.end - (4 + 0.867 - 0.1)) < 1e-9);
+  });
+});
+
+describe('the parts', () => {
+  const CI_IS_RED = { title: 'CI is red', what: 'A short line.' };
+  const FIX_IT = { title: 'Fix it', what: 'Another short line.' };
+  /** The take of one beat, then a second on the dashboard, each opening a part. */
+  const parted = () => {
+    const log = take();
+    const fixed = { id: 'fixed', title: 'Fixed', card: false, seconds: 10, focus: ['dashboard'], lines: ['More.'] };
+    log.story = [log.story[0], { ...log.story[1], part: CI_IS_RED }, { ...fixed, part: FIX_IT }, log.story[2]];
+    log.beats.push({ id: 'fixed', start: 13_000, end: 23_000, lines: [{ text: 'More.', start: 13_000, ms: 733 }] });
+    return log;
+  };
+  const plan = planCut(parted(), { flashFrame: 24, frames: 10_000 });
+  const segment = (id) => plan.segments.find((s) => s.id === id);
+  const at = (t) => plan.frames[Math.round(t * 30)];
+  const [title, first, red, second, fixed, end] = ['title', 'part-1', 'red-run', 'part-2', 'fixed', 'end'].map(segment);
+
+  test('are the beats from one that names a part to the next, cards and beats before any part left out', () => {
+    const story = [
+      { id: 'title', card: true },
+      { id: 'warm-up' },
+      { id: 'a', part: CI_IS_RED },
+      { id: 'b' },
+      { id: 'c', part: FIX_IT },
+    ];
+    assert.deepEqual(partsOf(story), [
+      { number: 1, ...CI_IS_RED, beats: ['a', 'b'] },
+      { number: 2, ...FIX_IT, beats: ['c'] },
+    ]);
+  });
+
+  test('each open with their card, the first longer as it lists them all', () => {
+    assert.deepEqual(
+      plan.segments.map((s) => [s.kind, s.id]),
+      [
+        ['card', 'title'],
+        ['part', 'part-1'],
+        ['beat', 'red-run'],
+        ['part', 'part-2'],
+        ['beat', 'fixed'],
+        ['card', 'end'],
+      ],
+    );
+    assert.equal(first.end - first.start, partCardSeconds({ number: 1, ...CI_IS_RED }, 2));
+    assert.ok(partCardSeconds({ number: 1, ...FIX_IT }, 5) > partCardSeconds({ number: 2, ...FIX_IT }, 5));
+  });
+
+  test('show a part’s card under the fading title card, and fade the next in over the beat before it', () => {
+    const crossing = at(title.end + 0.3).cards;
+    assert.deepEqual(
+      crossing.map((c) => [c.id, c.part ?? null]),
+      [
+        ['title', null],
+        ['part', 1],
+      ],
+    );
+    assert.equal(crossing[1].opacity, 1);
+    assert.ok(at(second.start + 0.3).cards[0].opacity < 0.6, 'the second part’s card fades in');
+    assert.equal(at((second.start + second.end) / 2).cards[0].opacity, 1);
+    assert.ok(at(fixed.start + 0.3).cards[0].opacity < 0.6, 'and fades out over its beat');
+  });
+
+  test('hold the beat before a part’s card for its first half, the beat after it for the rest', () => {
+    assert.equal(at(second.start + 0.1).frame, at(second.start + 0.4).frame);
+    assert.ok(at(second.start + 0.1).frame >= at(second.start - 0.1).frame);
+    assert.equal(at(second.end - 0.1).frame, at(fixed.start).frame);
+    assert.ok(at(second.end - 0.1).frame > at(second.start + 0.1).frame);
+  });
+
+  test('keep the rail on screen through the beats, the part’s progress and the beat’s title in it', () => {
+    assert.equal(at(1).rail, null, 'none over the title card');
+    const shown = at(red.start + 1).rail;
+    assert.equal(shown.part, 1);
+    assert.equal(shown.beat.title, 'The red run');
+    assert.ok(shown.progress > 0 && shown.progress < 1, `its progress (${shown.progress})`);
+    assert.equal(at((second.start + second.end) / 2).rail, null, 'none under a card shown whole');
+    assert.equal(at(fixed.start + 1).rail.part, 2);
+    assert.ok(at(fixed.end - 0.1).rail.progress > 0.95);
+    const fading = at(end.start + 0.3).rail;
+    assert.equal(fading.part, 2);
+    assert.ok(fading.opacity < 0.6, 'fades out under the end card');
+  });
+
+  test('frame the windows below the rail', () => {
+    const [dashboard] = at(red.start + 0.2).windows;
+    assert.ok(dashboard.frame.y >= RAIL_BAND, `the dashboard's top at ${dashboard.frame.y}`);
+  });
+
+  test('are the chapters, from each part’s card', () => {
+    assert.deepEqual(
+      plan.chapters.map((c) => [c.title, c.card, c.start]),
+      [
+        ['Piwi', true, 0],
+        ['CI is red', false, first.start],
+        ['Fix it', false, second.start],
+        ['Get Piwi', true, end.start],
+      ],
+    );
+    assert.deepEqual(plan.parts, [
+      { number: 1, ...CI_IS_RED },
+      { number: 2, ...FIX_IT },
+    ]);
   });
 });
