@@ -65,6 +65,7 @@ export const PROJECT = {
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
   DESKTOP_RUN_VIEW: 'desktop-run-view-test',
+  DESKTOP_SKILLS: 'desktop-skills-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
   DOM_SNAPSHOT_STATE: 'dom-snapshot-state-test',
   DOWNLOAD_TEST: 'download-test-project',
