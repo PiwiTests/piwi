@@ -3736,9 +3736,8 @@ const SCENES = [
     viewport: { width, height },
     of: '[data-shot="ci-action-scm-credential"]',
     async run({ page, shoot, settle }) {
-      // Project 1 has no CI action yet: turn them on (nothing is saved) to add one.
-      await page.getByTestId('ci-actions-enabled').click({ timeout: 90000 });
-      await page.getByTestId('ci-action-add').click();
+      // A new action, added in the form and never saved.
+      await page.getByTestId('ci-action-add').click({ timeout: 90000 });
       await page.locator('[data-shot="ci-action-scm-credential"]').waitFor({ timeout: 30000 });
       await settle();
       await shoot();
@@ -11110,7 +11109,7 @@ const SCENES = [
       "A failure's Reproduce section in the desktop shell, for a linked folder whose Playwright config starts no app (desktop shell)",
     tags: ['desktop'],
     mode: 'desktop',
-    route: '/test-run-cases/682',
+    route: '/test-run-cases/705',
     viewport: { width: 1280, height: 1000 },
     link: { path: READY_INSPECTION.path, exists: true },
     inspection: { ...READY_INSPECTION, webServer: false },

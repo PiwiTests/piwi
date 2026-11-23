@@ -192,7 +192,36 @@ const TAGS = [
   { id: 4, text: 'performance', color: '#f59e0b', created_at: ts('2025-04-01'), updated_at: ts('2025-04-01') },
 ];
 
-// Projects
+/** The Jenkins credential the re-run jobs of every project but API Integration name (`CREDENTIALS`). */
+const QA_BOT_CREDENTIAL_ID = 6;
+
+/**
+ * The CI actions of a project whose tests run in one Jenkins job: a single action, the default for re-runs (the
+ * failure pages' Re-run in CI) and for Run on CI, that dispatches under the qa-bot credential's destination.
+ */
+function jenkinsRerun(actionId, job) {
+  return {
+    enabled: true,
+    actions: [
+      {
+        id: actionId,
+        name: 'Re-run failed tests',
+        target: {
+          type: 'ci-server',
+          preset: 'jenkins',
+          credentialId: QA_BOT_CREDENTIAL_ID,
+          fields: { job, ref: 'main' },
+        },
+        inputs: [],
+        accepts: ['tests', 'suite'],
+      },
+    ],
+    defaults: { rerun: actionId, suite: actionId },
+  };
+}
+
+// Projects. Every project re-runs its failed tests in CI: API Integration through several Jenkins jobs, the others
+// through one job each (`jenkinsRerun`).
 const PROJECTS = [
   {
     id: 1,
@@ -203,6 +232,7 @@ const PROJECTS = [
     updated_at: ts('2025-04-25T08:30:00'),
     // Targets the checkout suite misses, so the demo report has missed targets in its risks.
     targets: { testPassRate: 99, maxFlakyTests: 2, maxMedianTimeToFixDays: 3 },
+    ci_rerun: jenkinsRerun('rerun-checkout', 'checkout'),
     // The checkout tests' IDs (`demoExternalId`) open in the demo's test management tool.
     external_id_url: 'https://tcm.example.com/case/{id}',
     // Keys in test tags: the checkout tests carry a story key (SHOP-1234) and a test case key (SHOP-T123). The issue
@@ -283,6 +313,7 @@ const PROJECTS = [
     updated_at: ts('2025-04-24T16:45:00'),
     // Targets the component suite meets.
     targets: { testPassRate: 60, maxOpenClusterAgeDays: 400 },
+    ci_rerun: jenkinsRerun('rerun-components', 'design-system/components'),
     // The latest runs are on feature/new-ui: the status filter keeps the
     // project's status on its default branch's full runs.
     status_filter: { environments: [], branches: [], allBranches: false, fullRunsOnly: true },
@@ -299,6 +330,7 @@ const PROJECTS = [
     // with no graph rows the Test Map decline hides the Gaps tab (server probes
     // ride it, so they go too).
     capabilities: { markers: 'declined', 'test-map': 'declined' },
+    ci_rerun: jenkinsRerun('rerun-mobile-safari', 'mobile-web/safari'),
   },
   {
     id: 5,
@@ -307,6 +339,7 @@ const PROJECTS = [
     description: 'Cross-browser tests for the SaaS admin dashboard',
     created_at: ts('2025-02-20'),
     updated_at: ts('2025-04-25T09:10:00'),
+    ci_rerun: jenkinsRerun('rerun-dashboard', 'admin-dashboard/e2e'),
   },
 ];
 
@@ -3913,11 +3946,12 @@ const CONNECTED_APP_KEYS = [
     last_used_at: ts('2025-04-25T08:00:00'),
   },
 ];
-// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project that
-// no action names yet, whose secret is read from a server variable, the GitHub token of every example repository the
-// instance's source control lists, the shop-web one the checkout project names, and the Zephyr Scale token of the
-// canned connection. The demo stores no secret. Its log: dispatches, a refusal, the Check reads of one hour,
-// repository reads, a commit status, a pull request comment, and the connection's reads and results upload.
+// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project, which
+// no action names yet and whose secret is read from a server variable, the GitHub token of every example repository
+// the instance's source control lists, the shop-web one the checkout project names, the Zephyr Scale token of the
+// canned connection, and the Jenkins user the other projects' re-run jobs name. The demo stores no secret. Its log:
+// dispatches, a refusal, the Check reads of one hour, repository reads, a commit status, a pull request comment, and
+// the connection's reads and results upload.
 const CREDENTIALS = [
   {
     id: 1,
@@ -4010,10 +4044,32 @@ const CREDENTIALS = [
     rotated_at: ts('2025-04-10T09:00:00') * 1000,
     last_used_at: ts('2025-04-25T08:15:00') * 1000,
   },
+  {
+    id: QA_BOT_CREDENTIAL_ID,
+    name: 'Jenkins · qa-bot',
+    description: 'The Jenkins user allowed to build the web, mobile and component test jobs.',
+    service: 'ci-server',
+    user_name: 'qa-bot',
+    destination: 'https://jenkins.example.com/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-24T09:30:00') * 1000,
+    rotated_at: ts('2025-04-24T09:30:00') * 1000,
+    last_used_at: null,
+  },
 ];
 const CREDENTIAL_PROJECTS = [
   { credential_id: 1, project_id: 2 },
   { credential_id: 4, project_id: 1 },
+  // qa-bot builds the jobs of every project whose CI actions `jenkinsRerun` writes.
+  ...PROJECTS.filter((p) => p.ci_rerun?.actions.some((a) => a.target.credentialId === QA_BOT_CREDENTIAL_ID)).map(
+    (p) => ({ credential_id: QA_BOT_CREDENTIAL_ID, project_id: p.id }),
+  ),
 ];
 /** The SCM credential each project names; the others read with the instance's. */
 const PROJECT_SCM_CREDENTIALS = { 1: 4 };
