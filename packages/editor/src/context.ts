@@ -1146,12 +1146,16 @@ export class PiwiContext {
     return null;
   }
 
-  /** Forget the catalog read so far, and keep nothing of a read on its way. */
+  /**
+   * Forget the catalog read so far, keep nothing of a read on its way, and share no read of it asked before with the
+   * contexts' reads after (`forgetCatalog`).
+   */
   private dropCatalog(): void {
     this.catalogDrops++;
     this.catalog.clear();
     this.allCatalog = null;
     this.allCatalogRead = null;
+    if (this.project) this.client?.forgetCatalog(this.project.id);
   }
 
   /** The catalog's cases defined in a spec file (its path relative to the config). */

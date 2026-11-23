@@ -11,9 +11,11 @@ import {
   utimesSync,
   writeFileSync,
 } from 'node:fs';
+import * as http from 'node:http';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import {
   evidenceRoot,
   linkedDesktopProject,
@@ -26,7 +28,7 @@ import {
   withServerUrl,
   keptEnvironmentOf,
 } from '../src/context';
-import { PiwiClient, type BranchFailures, type CatalogCase } from '../src/piwi-client';
+import { PiwiClient, type BranchFailures, type CatalogCase, type ResponseCache } from '../src/piwi-client';
 import { environmentChoices, ownCommandEnv, statusEnvironment } from '../src/server';
 
 const dirs: string[] = [];
@@ -118,6 +120,7 @@ describe('the catalog of a spec', () => {
       branchFailures: async () => structuredClone(runs.answer),
       testCases: cases,
       allTestCases: cases,
+      forgetCatalog: () => {},
     } as unknown as PiwiClient;
     context.project = { id: 7, name: 'shop' };
     return context;
@@ -161,6 +164,84 @@ describe('the catalog of a spec', () => {
     catalog.status = 'passed';
     expect(await statusIn(context)).toBe('passed');
     expect((await context.allCases())[0]!.status).toBe('passed');
+  });
+
+  /**
+   * An instance whose latest run is `state.run`, failing `places an order` while `state.status` is `failed`, read by a
+   * context through a client that shares its answers (`ResponseCache`), as the configs of one service do. A catalog
+   * read answers the status as it stood when the read arrived, at once, or once let go while `state.hold` is set.
+   */
+  async function sharedInstance(state: { run: number; status: string; hold: boolean }) {
+    const held: Array<() => void> = [];
+    let reads = 0;
+    const server = http.createServer((req, res) => {
+      res.setHeader('Content-Type', 'application/json');
+      const url = req.url ?? '';
+      if (url.startsWith('/api/projects/7/branch-failures?')) {
+        return res.end(JSON.stringify(latest(state.run, state.status === 'failed' ? [ORDER_FAILURE] : [])));
+      }
+      if (url.startsWith('/api/projects/7/test-cases?')) {
+        reads++;
+        const items = [{ id: 3, title: 'places an order', filePath: 'tests/shop.spec.ts', status: state.status }];
+        const answer = () => res.end(JSON.stringify({ items }));
+        return state.hold ? void held.push(answer) : answer();
+      }
+      res.statusCode = 404;
+      res.end('{}');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    const answers: ResponseCache = new Map();
+    const context = new PiwiContext(workspace(), answers);
+    const serverUrl = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    context.client = new PiwiClient({ serverUrl, apiKey: 'pk_test', project: 'shop' }, answers);
+    context.project = { id: 7, name: 'shop' };
+    return {
+      context,
+      reads: () => reads,
+      held: () => held.length,
+      letGo: () => held.splice(0).forEach((answer) => answer()),
+      close: () => new Promise<void>((resolve) => server.close(() => resolve())),
+    };
+  }
+
+  test('an answer shared for a moment before a newer run is read is not the read after it', async () => {
+    const state = { run: 79, status: 'failed', hold: false };
+    const instance = await sharedInstance(state);
+    try {
+      await instance.context.refreshRun();
+      expect(await statusIn(instance.context)).toBe('failed');
+      Object.assign(state, { run: 84, status: 'passed' });
+      // As the run watch reads a run that ended, without forgetting the answers shared for a moment.
+      await instance.context.refreshRun(true);
+      expect(await statusIn(instance.context)).toBe('passed');
+      expect(await statusIn(instance.context)).toBe('passed');
+      expect(instance.reads()).toBe(2);
+    } finally {
+      await instance.close();
+    }
+  });
+
+  test('a read on its way before a newer run is read is not joined by the read after it', async () => {
+    const state = { run: 79, status: 'failed', hold: true };
+    const instance = await sharedInstance(state);
+    try {
+      await instance.context.refreshRun();
+      const before = statusIn(instance.context);
+      await vi.waitFor(() => expect(instance.held()).toBe(1));
+      Object.assign(state, { run: 84, status: 'passed' });
+      await instance.context.refreshRun(true);
+      const after = statusIn(instance.context);
+      await vi.waitFor(() => expect(instance.held()).toBe(2));
+      instance.letGo();
+      expect(await before).toBe('failed');
+      expect(await after).toBe('passed');
+      state.hold = false;
+      expect(await statusIn(instance.context)).toBe('passed');
+      expect(instance.reads()).toBe(2);
+    } finally {
+      instance.letGo();
+      await instance.close();
+    }
   });
 });
 
