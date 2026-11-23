@@ -30,6 +30,8 @@ describe('assessLocator', () => {
     ["locator('.css-1q2w3e')", 'brittle', ['css-class:brittle']],
     ["locator('.a1b2c3d4e5')", 'brittle', ['css-class:brittle']],
     ["locator('.product-card')", 'watch', ['css-class:watch']],
+    ["locator('.Panel_body__x7k2p')", 'brittle', ['css-class:brittle']],
+    ["locator('.ng-valid')", 'brittle', ['css-class:brittle']],
     ["locator('.btn-primary').nth(1)", 'brittle', ['position:brittle', 'css-class:watch']],
     // css-structure
     ["locator('form > div:nth-child(2) input')", 'brittle', ['css-structure:brittle', 'css-structure:brittle']],
@@ -50,6 +52,10 @@ describe('assessLocator', () => {
     ["locator('#reka-select-item-text-v-0-0-22-55')", 'brittle', ['generated-id:brittle']],
     ["locator('#v-0-0-22')", 'brittle', ['generated-id:brittle']],
     ["locator('#el-id-4127-12')", 'brittle', ['generated-id:brittle']],
+    ['locator(\'[id="_R_0H1_"]\')', 'brittle', ['generated-id:brittle']],
+    ['locator(\'[id="base-ui-:r2:"]\')', 'brittle', ['generated-id:brittle']],
+    ["locator('#v-1')", 'brittle', ['generated-id:brittle']],
+    ["locator('#mat-select-value-1')", 'brittle', ['generated-id:brittle']],
     // style-attribute
     ['locator(\'[style*="display: block"]\')', 'brittle', ['style-attribute:brittle']],
     ['locator(\'div[class="card active"]\')', 'brittle', ['style-attribute:brittle']],
