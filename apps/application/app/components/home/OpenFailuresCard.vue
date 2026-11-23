@@ -492,6 +492,9 @@ function snoozeItems(cluster: OpenFailureCluster) {
 
 function onKeydown(e: KeyboardEvent): void {
   const target = e.target as HTMLElement | null;
+  // A key a shortcut already took is not the inbox's: `a` and `s` right after `g` complete the go-to chords of
+  // `useDashboard`, whose listener the layout registers before this card mounts.
+  if (e.defaultPrevented) return;
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (target && (target.isContentEditable || /^(INPUT|TEXTAREA|SELECT)$/.test(target.tagName))) return;
   const list = visibleRows.value;

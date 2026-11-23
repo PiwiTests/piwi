@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext } from './fixtures';
-import { waitForHydration } from './utils';
+import { pressChord, waitForHydration } from './utils';
 import { PROJECT } from '#shared/test-project-names';
 
 /**
@@ -96,6 +96,34 @@ test.describe.serial('Home — failure inbox', () => {
     await expect(card.locator('[aria-current="true"]')).toBeVisible();
     await page.keyboard.press('o');
     await page.waitForURL(/\/failure-clusters\/\d+/);
+  });
+
+  test('keyboard: the go-to chords g a and g s leave the row alone', async ({ page }) => {
+    await page.clock.install();
+    for (const [key, path] of [
+      ['a', '/analytics'],
+      ['s', '/settings'],
+    ] as const) {
+      await page.goto('/');
+      await waitForHydration(page);
+      const row = await revealRow(page);
+      await row.hover();
+      await expect(row).toHaveAttribute('aria-current', 'true');
+      // Records any of the row's menus (Assign, Snooze) opening before the page changes.
+      await row.evaluate((el) => {
+        const opened: string[] = [];
+        Object.assign(window, { __inboxOpened: opened });
+        new MutationObserver(() => {
+          for (const trigger of el.querySelectorAll('[aria-expanded="true"]')) {
+            opened.push(trigger.getAttribute('title') ?? '');
+          }
+        }).observe(el, { attributes: true, subtree: true, attributeFilter: ['aria-expanded'] });
+      });
+
+      await pressChord(page, 'g', key);
+      await page.waitForURL(new RegExp(`${path}$`));
+      expect(await page.evaluate(() => (window as unknown as { __inboxOpened: string[] }).__inboxOpened)).toEqual([]);
+    }
   });
 
   test('selecting a row shows the bulk bar', async ({ page }) => {
