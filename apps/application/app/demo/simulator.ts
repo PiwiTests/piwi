@@ -1250,7 +1250,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         branch: 'main',
         author: 'Fiona Mehta',
         commitMessage: 'feat: deploy pipeline v2',
-        ciInfo: { provider: 'Jenkins', job: 'checkout', build: '1401' },
+        ciInfo: { provider: 'Jenkins', job: 'checkout' },
       }),
     tests: () => baseTests({ durationFactor: 0.8 }),
   },
@@ -1274,7 +1274,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         branch: 'main',
         author: 'Fiona Mehta',
         commitMessage: 'ci: run the checkout suite in Firefox too',
-        ciInfo: { provider: 'Jenkins', job: 'checkout', build: '1402' },
+        ciInfo: { provider: 'Jenkins', job: 'checkout' },
       }),
     // Playwright hands each shard a contiguous slice of the run's tests, project by project, so two projects of the
     // same size give each shard one browser. Interleaved, the round-robin split does the same: shard 1 runs every

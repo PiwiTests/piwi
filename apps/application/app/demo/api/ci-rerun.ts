@@ -257,7 +257,9 @@ async function dispatch(
     byUserId: userId,
     byName: await actorName(db, userId),
   });
-  if (!claim.claimed) throw demoHttpError(409, 'The same dispatch was sent a moment ago.');
+  if (!claim.claimed) {
+    throw demoHttpError(409, 'The same dispatch was sent a moment ago.', undefined, { dispatch: claim.existing });
+  }
   await settleCiDispatch(db, id, { url: prepared.link, ref: values.ref || null, providerRunId: null });
   return { ok: true, demo: true, dispatch: await getCiDispatch(db, id) };
 }

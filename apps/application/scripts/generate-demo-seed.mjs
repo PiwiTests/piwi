@@ -228,6 +228,20 @@ function jenkinsRerun(actionId, job) {
   };
 }
 
+/**
+ * The CI action a re-run of a project's run picks, as `pickCiAction` does for a run of that environment: the action
+ * of its environment that accepts tests, else the project's default for re-runs.
+ */
+function rerunActionOf(projectId, environment) {
+  const { actions, defaults } = PROJECTS.find((p) => p.id === projectId).ci_rerun;
+  const accepting = actions.filter((a) => a.accepts.includes('tests'));
+  return (
+    accepting.find((a) => a.environment && a.environment.toLowerCase() === environment?.toLowerCase()) ??
+    accepting.find((a) => a.id === defaults.rerun) ??
+    accepting[0]
+  );
+}
+
 // Projects. Every project re-runs its failed tests in CI: API Integration through several Jenkins jobs, the others
 // through one job each (`jenkinsRerun`).
 const PROJECTS = [
@@ -1512,8 +1526,8 @@ for (const proj of DEMO_PROJECTS) {
     const environment = ENVIRONMENTS[i % ENVIRONMENTS.length];
     const baseUrls = proj.id === 1 ? CHECKOUT_BASE_URLS[environment] : null;
     if (baseUrls) RUN_BASE_URLS.set(runId, baseUrls[Math.floor(i / ENVIRONMENTS.length) % baseUrls.length]);
-    // Every project's suite runs in the Jenkins job its CI action re-runs failures in.
-    const job = PROJECTS.find((p) => p.id === proj.id).ci_rerun.actions[0].target.fields.job;
+    // Every run comes from the Jenkins job a re-run of its failures goes to.
+    const job = rerunActionOf(proj.id, environment).target.fields.job;
     const metadata = {
       ci: {
         provider: 'Jenkins',
@@ -3256,62 +3270,6 @@ for (const story of FAILURE_STORIES) {
     snoozed.snoozed_until = Math.floor(Date.UTC(9999, 0, 1) / 1000);
     snoozed.snooze_mode = 'until-recurs';
   }
-}
-
-// ── CI dispatches ──────────────────────────────────────────────────────────
-// Two clusters' Re-run in CI, as the cluster page's "Last re-run" line shows them. Cluster 6's went to its project's
-// Jenkins job twenty minutes before the run its spec fix landed in, a run that passed and answered it: the line links
-// that run with its result. Cluster 3's went to the API job half an hour after a failure more than eight hours before
-// the newest run, and no run answered it within the matching window.
-const CI_DISPATCHES = [];
-{
-  const newestRunMs = Math.max(...TEST_RUNS.map((r) => r.start_time)) * 1000;
-  const dispatchOf = (clusterId, id, answeredBy) => {
-    const story = FAILURE_STORIES.find((s) => s.clusterId === clusterId);
-    const cluster = FAILURE_CLUSTERS.find((c) => c.id === clusterId);
-    const action = PROJECTS.find((p) => p.id === story.projectId).ci_rerun.actions[0];
-    const run = answeredBy ? TEST_RUNS.find((r) => r.id === answeredBy) : null;
-    const failed = run
-      ? null
-      : clusterStats[clusterId].failedRuns.find((r) => r.startMs <= newestRunMs - 8 * 60 * 60 * 1000);
-    if (!run && !failed) throw new Error(`Cluster ${clusterId} has no failure eight hours before the newest run`);
-    const at = run ? run.start_time * 1000 - 20 * 60 * 1000 : failed.startMs + 30 * 60 * 1000;
-
-    return {
-      id,
-      project_id: story.projectId,
-      action_id: action.id,
-      action_name: action.name,
-      origin: 'page',
-      kind: 'tests',
-      source_run_id: failed?.runId ?? cluster.last_seen_run_id,
-      cluster_id: clusterId,
-      test_case_id: null,
-      provider: 'ci-server',
-      preset: 'jenkins',
-      ref: 'main',
-      inputs: JSON.stringify({}),
-      args: `${story.failingCases.map((c) => `"/${story.specFile}:${c.failingLine}"`).join(' ')} --project="chromium"`,
-      files: JSON.stringify([story.specFile]),
-      tests: story.failingCases.length,
-      // Once matched, the build the run recorded, as the server links it; before, the job's page.
-      url: run?.metadata?.ci?.buildUrl ?? jenkinsJobUrl(action.target.fields.job),
-      provider_run_id: null,
-      state: run ? 'ended' : 'unreported',
-      detail: null,
-      run_id: run?.id ?? null,
-      by_user_id: DEFAULT_DEMO_USER.id,
-      by_name: DEFAULT_DEMO_USER.name,
-      created_at: at,
-      matched_at: run ? run.start_time * 1000 : null,
-      updated_at: run ? run.start_time * 1000 : at + 6 * 3600 * 1000,
-    };
-  };
-  const fixed = FAILURE_CLUSTERS.find((c) => c.id === 6);
-  CI_DISPATCHES.push(
-    dispatchOf(6, '5d1c0a0000000006', fixed.fix_landed_run_id),
-    dispatchOf(3, '5d1c0a0000000003', null),
-  );
 }
 
 // ── Demo merge suggestions ─────────────────────────────────────────────────
@@ -7724,6 +7682,145 @@ const REUSED_RESULTS = [];
         },
       });
     }
+  }
+}
+
+// ── CI dispatches ──────────────────────────────────────────────────────────
+// Two clusters' Re-run in CI, as the cluster page's "Last re-run" line shows them: each through the action the server
+// picks for the run it re-runs (`rerunActionOf`), on that run's branch, with the arguments a dispatch builds from its
+// failures there. Cluster 6's went out two hours after its fix landed, and the one-test re-run it started passed: it
+// carries the dispatch id as its origin ref, as a job that passes `PIWI_ORIGIN_REF` on reports it. Cluster 3's went out
+// half an hour after a failure more than eight hours before the newest run, and no run answered it within the window.
+const CI_DISPATCHES = [];
+{
+  const newestRunMs = Math.max(...TEST_RUNS.map((r) => r.start_time)) * 1000;
+  const fileOf = new Map(TEST_CASES.map((c) => [c.id, c.file_path]));
+  /** The arguments a dispatch builds from a cluster's failures in a run: each test at its line, then its projects. */
+  const rerunArgs = (clusterId, sourceRunId) => {
+    const failures = TEST_RUNS_CASES.filter(
+      (c) => c.test_run_id === sourceRunId && c.failure_cluster_id === clusterId,
+    ).sort((a, b) => b.id - a.id);
+    const latest = new Map();
+    for (const c of failures) {
+      const key = `${c.test_case_id}|${c.browser_name ?? ''}`;
+      if (!latest.has(key)) latest.set(key, c);
+    }
+    const cases = [...latest.values()];
+    const specs = [...new Set(cases.map((c) => `"/${fileOf.get(c.test_case_id)}:${c.line}"`))];
+    const projects = [...new Set(cases.map((c) => c.browser_name).filter(Boolean))];
+    return {
+      args: specs.join(' ') + projects.map((p) => ` --project="${p}"`).join(''),
+      files: [...new Set(cases.map((c) => fileOf.get(c.test_case_id)))].sort(),
+      tests: cases.length,
+      cases,
+    };
+  };
+  const dispatchOf = (clusterId, id, source, at) => {
+    const project = PROJECTS.find((p) => p.id === source.project_id);
+    const action = rerunActionOf(project.id, source.environment);
+    const named = rerunArgs(clusterId, source.id);
+    return {
+      row: {
+        id,
+        project_id: project.id,
+        action_id: action.id,
+        action_name: action.name,
+        origin: 'page',
+        kind: 'tests',
+        source_run_id: source.id,
+        cluster_id: clusterId,
+        test_case_id: null,
+        provider: 'ci-server',
+        preset: 'jenkins',
+        ref: source.branch,
+        inputs: JSON.stringify(
+          Object.fromEntries(action.inputs.map((i) => [i.name, i.kind === 'fixed' ? i.value : i.default])),
+        ),
+        args: named.args,
+        files: JSON.stringify(named.files),
+        tests: named.tests,
+        url: jenkinsJobUrl(action.target.fields.job),
+        provider_run_id: null,
+        state: 'unreported',
+        detail: null,
+        run_id: null,
+        by_user_id: DEFAULT_DEMO_USER.id,
+        by_name: DEFAULT_DEMO_USER.name,
+        created_at: at,
+        matched_at: null,
+        updated_at: at + 6 * 3600 * 1000,
+      },
+      action,
+      named,
+    };
+  };
+
+  // Cluster 6: re-run from its last failing run two hours after its fix landed, answered by a one-test run.
+  {
+    const cluster = FAILURE_CLUSTERS.find((c) => c.id === 6);
+    const source = TEST_RUNS.find((r) => r.id === cluster.last_seen_run_id);
+    const landed = TEST_RUNS.find((r) => r.id === cluster.fix_landed_run_id);
+    const at = landed.start_time * 1000 + 2 * 3600 * 1000;
+    const { row, action, named } = dispatchOf(6, '5d1c0a0000000006', source, at);
+    if (at + 10 * 60 * 1000 > newestRunMs) throw new Error('Cluster 6’s re-run would start after the newest run');
+    // Past every run and execution the generator made, so no other id moves.
+    const rerunId = Math.max(...TEST_RUNS.map((r) => r.id)) + 1;
+    let executionId = Math.max(...TEST_RUNS_CASES.map((c) => c.id));
+    const startTime = Math.floor((at + 4 * 60 * 1000) / 1000);
+    const buildNumber = String(1300 + rerunId);
+    const buildUrl = `${jenkinsJobUrl(action.target.fields.job)}${buildNumber}/`;
+    const executions = named.cases.map((failed) => {
+      // A pass of the same test in the same project, as the re-run's own execution.
+      const pass = TEST_RUNS_CASES.find(
+        (c) =>
+          c.test_case_id === failed.test_case_id &&
+          c.browser_name === failed.browser_name &&
+          c.status === 'passed' &&
+          !c.retries,
+      );
+      if (!pass) throw new Error(`No passing execution of test ${failed.test_case_id} to re-run`);
+      return { ...pass, id: ++executionId, test_run_id: rerunId };
+    });
+    const duration = executions.reduce((sum, e) => sum + (e.duration ?? 0), 0) + 4000;
+    const metadata = {
+      ...source.metadata,
+      ci: { ...source.metadata.ci, buildNumber, buildUrl },
+      piwiOrigin: { kind: 'ci-rerun', ref: row.id },
+    };
+    TEST_RUNS.push({
+      ...source,
+      id: rerunId,
+      status: 'passed',
+      start_time: startTime,
+      duration,
+      total_tests: executions.length,
+      passed_tests: executions.length,
+      failed_tests: 0,
+      skipped_tests: 0,
+      did_not_run_tests: 0,
+      flaky_tests: 0,
+      label: null,
+      metadata,
+      origin: 'ci-rerun',
+      is_full_run: 0,
+    });
+    TEST_RUNS_CASES.push(...executions);
+    CI_DISPATCHES.push({
+      ...row,
+      url: buildUrl,
+      state: 'ended',
+      run_id: rerunId,
+      matched_at: startTime * 1000,
+      updated_at: startTime * 1000 + duration,
+    });
+  }
+
+  // Cluster 3: re-run from a failure more than eight hours before the newest run; nothing answered it.
+  {
+    const failed = clusterStats[3].failedRuns.find((r) => r.startMs <= newestRunMs - 8 * 60 * 60 * 1000);
+    if (!failed) throw new Error('Cluster 3 has no failure eight hours before the newest run');
+    const source = TEST_RUNS.find((r) => r.id === failed.runId);
+    CI_DISPATCHES.push(dispatchOf(3, '5d1c0a0000000003', source, failed.startMs + 30 * 60 * 1000).row);
   }
 }
 
