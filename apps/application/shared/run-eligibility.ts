@@ -368,6 +368,19 @@ export function carryRequestOrigin(
   return requestStamped(next, parsed);
 }
 
+/**
+ * Metadata replacing a CI run's stored metadata, with the `ci-rerun` stamp the server gave the run when it matched it
+ * to its dispatch kept over the reporter's `ci`, which does not know of the match.
+ */
+export function carryCiRerunOrigin(
+  next: Record<string, unknown> | null,
+  stored: unknown,
+): Record<string, unknown> | null {
+  const kept = parseRunOrigin(record(stored)?.[RUN_ORIGIN_METADATA_KEY]);
+  if (kept?.kind !== 'ci-rerun' || !next || runOrigin(next) !== 'ci') return next;
+  return { ...next, [RUN_ORIGIN_METADATA_KEY]: kept };
+}
+
 /** What launched a run, read from its metadata. */
 export function runOrigin(metadata: unknown): RunOriginRead {
   const meta = record(metadata);

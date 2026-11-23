@@ -375,6 +375,19 @@ describe('runFinalizeSideEffects', () => {
     for (const fn of allEffects) expect(fn).not.toHaveBeenCalled();
   });
 
+  test('every run, a flake-lab run too, first ends the CI dispatch it answers', async () => {
+    await runFinalizeSideEffects(db, 42, {
+      projectId: 1,
+      metadata: { piwiFlakeLab: { experimentId: 'exp-1', armId: 'control' } },
+    });
+    expect(matchRunToCiDispatch).toHaveBeenCalledWith(db, 42, 'finish');
+    matchRunToCiDispatch.mockClear();
+    await runFinalizeSideEffects(db, 42, { projectId: 1 });
+    expect(matchRunToCiDispatch.mock.invocationCallOrder[0]!).toBeLessThan(
+      recordRunHealth.mock.invocationCallOrder[0]!,
+    );
+  });
+
   test('a run with no metadata still finalizes', async () => {
     runFinalizeSideEffects(db, 42, { projectId: 1 });
     await everyEffectOnce();

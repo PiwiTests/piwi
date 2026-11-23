@@ -338,15 +338,18 @@ async function dispatchWithAction(
     if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
       throw new Error('No supported repository to dispatch to');
     }
-    const scm = await createScmProvider(repositoryUrl, db, input.projectId, {
-      actor: credentialActor,
-      credentialId: target.credentialId ?? null,
-      strict: true,
-    });
-    if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
-    ref = input.runId ? await rerunRef(db, input.runId) : null;
+    const runRef = input.runId ? await rerunRef(db, input.runId) : null;
+    // The branch it goes to: the run's, else the target's own; Bitbucket's default branch is known only once sent.
+    ref = runRef ?? (target.type === 'bitbucket' ? null : target.ref);
     send = async () => {
-      const sent = await scm.dispatchRerun(target, args, { ref, dispatchId: id, inputs, actionId: action.id });
+      // The credential opens only for a dispatch that goes out, never for a refused repeat.
+      const scm = await createScmProvider(repositoryUrl, db, input.projectId, {
+        actor: credentialActor,
+        credentialId: target.credentialId ?? null,
+        strict: true,
+      });
+      if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
+      const sent = await scm.dispatchRerun(target, args, { ref: runRef, dispatchId: id, inputs, actionId: action.id });
       return {
         url: sent.url,
         ref: sent.ref ?? ref,
@@ -635,8 +638,8 @@ export async function flakeLabCiAvailability(
 /**
  * Run a test's Flake Lab experiment in CI: the Flake Lab action receives the
  * `piwi flake` arguments, through the same dispatch as a cluster's re-run, on
- * the branch of the test's newest run. The experiment the command records is
- * the trace; nothing else is stored.
+ * the branch of the test's newest run. The dispatch is stored with the test,
+ * and the experiment the command records is matched to it by that test.
  */
 export async function runFlakeLabInCi(
   db: DbClient,

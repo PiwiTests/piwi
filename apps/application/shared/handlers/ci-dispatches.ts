@@ -57,7 +57,7 @@ const epoch = (d: Date | number | null | undefined) => (d instanceof Date ? d.ge
 
 /**
  * Store a dispatch about to be sent, unless the same one (action, kind,
- * arguments, branch and inputs) was stored less than {@link CI_DISPATCH_GUARD_MS}
+ * arguments, branch, a branch left to the target counting as any, and inputs) was stored less than {@link CI_DISPATCH_GUARD_MS}
  * before, refused ones aside: the row is then removed and the earlier dispatch
  * returned. The row goes in first, so of two requests that race, the earlier
  * one alone is sent.
@@ -86,7 +86,8 @@ export async function claimCiDispatch(
     .filter(
       (d) =>
         d.args === row.args &&
-        (d.ref ?? null) === row.ref &&
+        // A dispatch with no branch goes to the target's default, which the provider names once it answers.
+        (row.ref == null || d.ref == null || d.ref === row.ref) &&
         inputsKey(d.inputs) === key &&
         (epoch(d.createdAt) < now.getTime() || (epoch(d.createdAt) === now.getTime() && d.id < row.id)),
     )

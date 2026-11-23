@@ -42,7 +42,7 @@ const { matchRunToCiDispatch } = await import('../../server/utils/ci-dispatches'
 const { resolveCiRerunSettings } = await import('#shared/ci-rerun');
 const { matchCiDispatch, CI_DISPATCH_CLOCK_SLACK_MS, CI_DISPATCH_MATCH_WINDOW_MS } =
   await import('#shared/ci-dispatches');
-const { runOrigin } = await import('#shared/run-eligibility');
+const { carryCiRerunOrigin, runOrigin } = await import('#shared/run-eligibility');
 const { ciActionsFromLegacy, pickCiAction } = await import('#shared/ci-actions');
 const { insertCredential, updateCredential } = await import('#shared/handlers/credentials');
 const { sealCredentialSecret } = await import('../../server/utils/credentials');
@@ -282,6 +282,37 @@ describe('the dispatch record', () => {
     expect(await lastDispatch()).toMatchObject({ runId: 2, state: 'ended' });
   });
 
+  test('keeps the ci-rerun stamp when the reporter’s last metadata says ci', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    // What /finish writes: the reporter's metadata, through the carry of the server's stamp.
+    const [stored] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, 2));
+    const reported = { scm: { branch: 'feature/coupon' }, piwiOrigin: { kind: 'ci', ref: id } };
+    expect(carryCiRerunOrigin(reported, stored!.metadata)).toMatchObject({ piwiOrigin: { kind: 'ci-rerun', ref: id } });
+    // A write that dropped it is stamped again when the run finishes.
+    await db.update(schema.testRuns).set({ metadata: reported, origin: 'ci' }).where(eq(schema.testRuns.id, 2));
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
+    expect(await originOf(2)).toEqual({ kind: 'ci-rerun', ref: id });
+    expect(await lastDispatch()).toMatchObject({ state: 'ended', runId: 2 });
+  });
+
+  test('lets a retry of the job answer a dispatch whose run was cancelled', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    await finishedRun(3, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 120_000);
+    // While the first run lives, the dispatch is its.
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBeNull();
+    await db.update(schema.testRuns).set({ status: 'cancelled' }).where(eq(schema.testRuns.id, 2));
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBe(id);
+    expect(await lastDispatch()).toMatchObject({ state: 'running', runId: 3 });
+  });
+
   test('matches a GitHub run as it starts by the run id GitHub answered, and links it', async () => {
     await seed(GITHUB);
     answer = { runId: '555', url: 'https://github.com/acme/shop/actions/runs/555' };
@@ -318,6 +349,36 @@ describe('the dispatch record', () => {
     expect(await db.select().from(schema.ciDispatches)).toHaveLength(1);
   });
 
+  test('refuses a dispatch left to the target’s branch while the same one waits on a named branch', async () => {
+    await seed(GITHUB);
+    const { claimCiDispatch } = await import('#shared/handlers/ci-dispatches');
+    const row = {
+      id: 'aaaaaaaaaaaaaaa1',
+      projectId: 1,
+      actionId: 'gh',
+      actionName: 'gh',
+      origin: 'page' as const,
+      kind: 'tests' as const,
+      sourceRunId: 1,
+      clusterId: 1,
+      testCaseId: null,
+      provider: 'github' as const,
+      preset: null,
+      ref: 'main',
+      inputs: {},
+      args: 'a',
+      files: null,
+      tests: 1,
+      byUserId: null,
+      byName: null,
+    };
+    expect(await claimCiDispatch(db as never, row)).toEqual({ claimed: true });
+    const again = await claimCiDispatch(db as never, { ...row, id: 'aaaaaaaaaaaaaaa2', ref: null });
+    expect(again).toMatchObject({ claimed: false, existing: { id: 'aaaaaaaaaaaaaaa1' } });
+    const other = await claimCiDispatch(db as never, { ...row, id: 'aaaaaaaaaaaaaaa3', ref: 'release' });
+    expect(other).toEqual({ claimed: true });
+  });
+
   test('stores the dispatch of one execution with its cluster', async () => {
     await seed(GITHUB);
     const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));
@@ -351,10 +412,13 @@ describe('the dispatch record', () => {
     expect(await lastDispatch()).toMatchObject({ kind: 'flakeLab', testCaseId: 1, files: null });
     await db.insert(schema.flakeExperiments).values({ id: 31, projectId: 1, testCaseId: 1, kind: 'reproduce' });
     const lab = { piwiOrigin: { kind: 'flake-lab', ref: '31' }, piwiFlakeLab: { experimentId: 31, armId: 1 } };
-    await finishedRun(2, lab, [], at + 60_000);
-    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    // The same experiment on a developer's machine reports no CI: it never answers the dispatch.
+    await finishedRun(2, lab, [], at + 30_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBeNull();
+    await finishedRun(3, { ...lab, ci: { provider: 'GitHub Actions', runId: '9' } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBe(id);
     // A lab run keeps its own origin.
-    expect(await originOf(2)).toEqual({ kind: 'flake-lab', ref: '31' });
+    expect(await originOf(3)).toEqual({ kind: 'flake-lab', ref: '31' });
   });
 
   test('picks the action that started the failed run, and sends the values that run was sent with', async () => {
@@ -425,8 +489,8 @@ describe('matchCiDispatch', () => {
 
   test("matches Bitbucket's build number, GitLab's pipeline id and GitHub's run id, before the files are known", () => {
     const bitbucket = { ...base, provider: 'bitbucket' as const, id: 'x', at: 0, providerRunId: '42' };
-    expect(matchCiDispatch({ ...run, files: null, buildNumber: '42' }, [bitbucket])).toBe(bitbucket);
-    expect(matchCiDispatch({ ...run, buildNumber: '41' }, [bitbucket])).toBeNull();
+    expect(matchCiDispatch({ ...run, files: null, bitbucketBuildNumber: '42' }, [bitbucket])).toBe(bitbucket);
+    expect(matchCiDispatch({ ...run, bitbucketBuildNumber: '41' }, [bitbucket])).toBeNull();
     const gitlab = { ...base, provider: 'gitlab' as const, id: 'y', at: 0, providerRunId: '9001' };
     expect(matchCiDispatch({ ...run, files: null, pipelineId: '9001' }, [gitlab])).toBe(gitlab);
     const github = { ...base, id: 'z', at: 0, providerRunId: '555', kind: 'suite' as const };
@@ -450,15 +514,26 @@ describe('matchCiDispatch', () => {
     expect(matchCiDispatch(run, [{ ...rerun, kind: 'flakeLab' as const }])).toMatchObject({ id: 'x' });
   });
 
-  test("matches a Flake Lab run by its experiment's test, on its branch, before the files are known", () => {
+  test("matches a Flake Lab run by its experiment's test and kind, made after the dispatch, on its branch", () => {
     const lab = { ...base, provider: 'ci-server' as const, kind: 'flakeLab' as const, id: 'lab', at: 900_000 };
-    const ofTest = { ...lab, testCaseId: 12, ref: 'main' };
-    const labRun = { ...run, files: null, flakeLabTestCaseId: 12 };
+    const ofTest = { ...lab, testCaseId: 12, ref: 'main', flakeLabKind: 'reproduce' as const };
+    const experiment = { testCaseId: 12, kind: 'reproduce' as const, at: 950_000 };
+    const labRun = { ...run, files: null, flakeLab: experiment };
     expect(matchCiDispatch(labRun, [ofTest])).toBe(ofTest);
-    expect(matchCiDispatch({ ...labRun, flakeLabTestCaseId: 13 }, [ofTest])).toBeNull();
+    expect(matchCiDispatch({ ...labRun, flakeLab: { ...experiment, testCaseId: 13 } }, [ofTest])).toBeNull();
     expect(matchCiDispatch({ ...labRun, branch: 'release' }, [ofTest])).toBeNull();
+    // A verify run never answers a reproduce dispatch, nor an experiment planned before the dispatch.
+    expect(matchCiDispatch({ ...labRun, flakeLab: { ...experiment, kind: 'verify' } }, [ofTest])).toBeNull();
+    expect(matchCiDispatch({ ...labRun, flakeLab: { ...experiment, at: 800_000 } }, [ofTest])).toBeNull();
     // A re-run of the same test is not the experiment's dispatch.
     expect(matchCiDispatch(labRun, [{ ...ofTest, kind: 'tests' as const }])).toBeNull();
+  });
+
+  test("matches each CI's run id only from a run that CI reported", () => {
+    const bitbucket = { ...base, provider: 'bitbucket' as const, id: 'b', at: 0, providerRunId: '17' };
+    // A Jenkins build #17 reports a build number, not Bitbucket's.
+    expect(matchCiDispatch({ ...run, files: null, buildNumber: '17' }, [bitbucket])).toBeNull();
+    expect(matchCiDispatch({ ...run, files: null, bitbucketBuildNumber: '17' }, [bitbucket])).toBe(bitbucket);
   });
 
   test("matches a CI server's build number with its branch and files, and its branch, time and files without one", () => {

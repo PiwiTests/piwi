@@ -74,22 +74,31 @@ function patchTargetFile(patch: string): { filePath: string; line: number | null
 async function runFlakeLabInCi(testCaseId: number, kind: string) {
   const toast = useToast();
   try {
-    const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string } }>(
+    const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string | null } }>(
       `/api/test-cases/${testCaseId}/flake-lab-ci`,
       { method: 'POST', body: { kind } },
     );
     if (res.ok && res.dispatch) {
+      const watch = res.dispatch.url;
       toast.add({
         title: 'Flake Lab dispatched to CI',
         description: 'The experiment shows on the Flakiness tab when it finishes.',
         color: 'success',
-        actions: [{ label: 'Watch it', to: res.dispatch.url, target: '_blank', color: 'neutral', variant: 'outline' }],
+        ...(watch
+          ? { actions: [{ label: 'Watch it', to: watch, target: '_blank', color: 'neutral', variant: 'outline' }] }
+          : {}),
       });
     } else {
       toast.add({ title: 'Flake Lab not started', description: res.message ?? 'Not available.', color: 'warning' });
     }
   } catch (e: unknown) {
-    const message = (e as { data?: { message?: string } })?.data?.message ?? 'Dispatch failed.';
+    const error = e as { statusCode?: number; data?: { message?: string } };
+    const message = error?.data?.message ?? 'Dispatch failed.';
+    // The same experiment sent a moment ago went out: this one is the repeat.
+    if (error?.statusCode === 409) {
+      toast.add({ title: 'Flake Lab already dispatched', description: message, color: 'neutral' });
+      return;
+    }
     toast.add({ title: 'Flake Lab dispatch failed', description: message, color: 'error' });
   }
 }

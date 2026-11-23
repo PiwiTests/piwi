@@ -46,7 +46,8 @@ async function readDispatchedRun(res: Response, runsUrl: string): Promise<{ runI
   const id = body?.workflow_run_id;
   const runId = typeof id === 'number' && Number.isSafeInteger(id) && id > 0 ? String(id) : null;
   const url = typeof body?.html_url === 'string' ? body.html_url : null;
-  if (!runId || !url?.startsWith(runsUrl)) return null;
+  // GitHub may spell the repository in another case than the project pinned it.
+  if (!runId || !url?.toLowerCase().startsWith(runsUrl.toLowerCase())) return null;
   return { runId, url };
 }
 

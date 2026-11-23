@@ -1345,6 +1345,13 @@
       "when": 1795472940614,
       "tag": "0191_drop_last_rerun_dispatch",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "7",
+      "when": 1795475572888,
+      "tag": "0192_drop_ci_dispatches_provider_run_index",
+      "breakpoints": true
     }
   ]
 }

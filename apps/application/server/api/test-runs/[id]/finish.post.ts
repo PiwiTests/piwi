@@ -7,7 +7,7 @@ import { carryIngestHealth } from '#shared/ingest-health';
 import { carryExternalIdDuplicates } from '#shared/external-id-duplicates';
 import { carryTagsTruncated } from '#shared/tags-truncated';
 import { resolveRunBranch } from '../../../utils/run-branch';
-import { carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
+import { carryCiRerunOrigin, carryRequestOrigin, runCommit, runOrigin } from '#shared/run-eligibility';
 import { validateAndReviveRun } from '../../../utils/revive-run';
 import { matchesShardToken, readShardTokensFromMeta, withoutShardToken } from '../../../utils/shard-tokens';
 import { finalizeShardedRun, publishShardProgress } from '../../../utils/sharded-runs';
@@ -177,14 +177,17 @@ export default eventHandler(async (event) => {
     : testRun.failedTests;
 
   // The reporter's final metadata, when it sends one, replaces the stored one
-  // and keeps the incident flag and the ingest health the server recorded.
+  // and keeps the incident flag, the ingest health and the origin the server recorded.
   const reportedMetadata = body.metadata
     ? keepIncidentMetadata(
         testRun.metadata,
-        carryRequestOrigin(
-          carryTagsTruncated(
-            carryExternalIdDuplicates(
-              carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+        carryCiRerunOrigin(
+          carryRequestOrigin(
+            carryTagsTruncated(
+              carryExternalIdDuplicates(
+                carryIngestHealth(sanitizeMetadata(body.metadata), testRun.metadata),
+                testRun.metadata,
+              ),
               testRun.metadata,
             ),
             testRun.metadata,

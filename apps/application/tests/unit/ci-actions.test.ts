@@ -584,7 +584,16 @@ describe('a GitHub dispatch links the run it created', () => {
       ref: 'main',
     });
     answers = [json({ workflow_run_id: 9, html_url: 'https://github.com/evil/repo/actions/runs/9' }, 200)];
-    expect((await dispatch()).runId).toBeUndefined();
+    expect(await dispatch()).toEqual({
+      url: 'https://github.com/acme/shop/actions/workflows/e2e.yml?query=branch%3Amain',
+      ref: 'main',
+    });
+  });
+
+  test('keeps the run of the repository GitHub spells in another case', async () => {
+    const page = 'https://github.com/Acme/Shop/actions/runs/7';
+    answers = [json({ workflow_run_id: 7, html_url: page }, 200)];
+    expect(await dispatch()).toEqual({ url: page, ref: 'main', runId: '7' });
   });
 
   test('sends again without the parameter to a GitHub that does not know it', async () => {

@@ -3298,7 +3298,6 @@ export const ciDispatches = sqliteTable(
     testCaseIdx: index('idx_ci_dispatches_test_case').on(t.testCaseId),
     byUserIdx: index('idx_ci_dispatches_by_user').on(t.byUserId),
     runIdx: index('idx_ci_dispatches_run').on(t.runId),
-    providerRunIdx: index('idx_ci_dispatches_provider_run').on(t.providerRunId),
   }),
 );
 
