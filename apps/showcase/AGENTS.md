@@ -35,7 +35,7 @@ script, the beats, the take and the cut work is in [`ARCHITECTURE.md`](ARCHITECT
   timer in the stage. The plan's pure parts are tested (`npm run showcase:test`, run by `ci.yml`).
 - **A master is never decoded to files**: the cut streams its frames in order to the stage (`Decoder` in
   `lib/cut.mjs`); 4K frames on disk are gigabytes. Nothing a take or a cut makes is committed (`results/` is
-  gitignored); publishing the teaser, the clips and the posters is the design's next step.
+  gitignored) but the teaser and its poster, in `apps/docs/public/` (how: [`apps/docs/AGENTS.md`](../docs/AGENTS.md#marketing-screenshots)).
 - **The set lives in a new folder of the temporary directory, which every app's temporary files, the editors'
   discovery files and the desktop app's file go into (`TMPDIR`, `PIWI_EDITORS_DIR`, `PIWI_DESKTOP_CONFIG`), and the
   take removes it with every process still working there or started with them** (`createSet` and `endStrays` in

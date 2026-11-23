@@ -1216,7 +1216,7 @@ function sceneMode(scene) {
  *     `apps/runner/tests/e2e/docs-screenshots.spec.ts` with `PIWI_DOCS_SHOTS=1`.
  */
 const EXTERNAL_DOCS_IMAGES = new Set(['demo-live-run-poster.png', 'tested-elements-overlay.png']);
-const EXTERNAL_DOCS_IMAGE_PREFIXES = ['picker-', 'vscode-', 'jetbrains-', 'runner-'];
+const EXTERNAL_DOCS_IMAGE_PREFIXES = ['picker-', 'vscode-', 'jetbrains-', 'runner-', 'showcase-'];
 
 /** The steps of the coupon report the repro-request scene shows. */
 const REPRO_SCENE_STEPS = (() => {
