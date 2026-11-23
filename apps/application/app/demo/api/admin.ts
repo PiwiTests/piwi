@@ -31,7 +31,16 @@ export async function apiGetStorageAnalysis() {
   };
 }
 
-/** GET /api/admin/activity: the demo's runs in progress; the in-browser demo receives no upload and holds no stream. */
+/**
+ * GET /api/admin/activity: the demo's runs in progress. The in-browser demo has no server to restart, so it counts no
+ * request, diagnosis, answer or stream.
+ */
 export async function apiGetAdminActivity(): Promise<InstanceActivity> {
-  return { runsInProgress: await getRunsInProgress(await getDemoDb()), uploadsInProgress: 0, openEventStreams: 0 };
+  return {
+    runsInProgress: await getRunsInProgress(await getDemoDb()),
+    requestsInProgress: 0,
+    diagnosesInProgress: 0,
+    assistantAnswersInProgress: 0,
+    openEventStreams: 0,
+  };
 }

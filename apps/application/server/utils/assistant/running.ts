@@ -14,6 +14,11 @@ export function startAssistantAnswer(conversationId: number): AbortController | 
   return controller;
 }
 
+/** How many answers this process is writing. */
+export function assistantAnswersInProgress(): number {
+  return running.size;
+}
+
 /** The conversation's answer has ended: it takes questions again. */
 export function endAssistantAnswer(conversationId: number, controller: AbortController): void {
   if (running.get(conversationId) === controller) running.delete(conversationId);

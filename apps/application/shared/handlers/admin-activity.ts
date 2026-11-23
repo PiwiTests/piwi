@@ -14,8 +14,12 @@ interface RunInProgress {
 export interface InstanceActivity {
   /** Runs initializing, running or finalizing, most recently active first. */
   runsInProgress: RunInProgress[];
-  /** Requests receiving a run's results or files. */
-  uploadsInProgress: number;
+  /** Requests receiving a run's results or files, or ending a run. */
+  requestsInProgress: number;
+  /** AI diagnoses running: streamed, asked for, or started by a run's end. */
+  diagnosesInProgress: number;
+  /** Answers the assistant is writing. */
+  assistantAnswersInProgress: number;
   /** Event streams held open: pages, live views and connected apps, which reconnect on their own. */
   openEventStreams: number;
 }

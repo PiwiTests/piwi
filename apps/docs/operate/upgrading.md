@@ -7,24 +7,38 @@ lang: en-US
 # Upgrading
 
 Piwi is pre-1.0. Minor releases can carry breaking changes, and the database schema moves
-with them. Upgrading is normally a one-line change, but a one-way door: know what happens before you pull a new tag.
+with them. Upgrading is normally a one-line change — but it's a one-way door, so it's worth knowing
+what happens before you pull a new tag.
 
 ## The short version
 
 1. Read the [changelog](https://github.com/PiwiTests/piwi/blob/main/CHANGELOG.md) for the versions
    you're skipping, looking for **⚠ BREAKING CHANGES**.
-2. **Back up** the database and file storage ([how](./backup-restore)).
-3. **Wait until no run is in progress**: a run that ends while the server is down loses its end. **Settings → About**
-   shows an administrator the count; a script asks with an administrator's API key, until `runsInProgress` is empty
-   and `uploadsInProgress` is 0:
-
-   ```bash
-   node -e "fetch('http://localhost:3000/api/admin/activity',{headers:{'X-API-Key':'pd_your_key'}}).then(r=>r.text()).then(console.log)"
-   ```
-
+2. **Wait until nothing is in progress** ([what to wait for](#wait-for-the-runs-in-progress)): a run that ends
+   while the server is down loses its end.
+3. **Back up** the database and file storage ([how](./backup-restore)).
 4. Pull the new tag and restart.
 5. Check the logs for `migrations completed successfully`, then confirm the version at
    **Settings → About**.
+
+## Wait for the runs in progress
+
+A restart cuts what is in flight: the end of a run, an upload, an AI diagnosis, an assistant answer. **Settings →
+About** shows an administrator the runs in progress. A script asks the instance with an administrator's API key:
+
+```bash
+node -e "fetch('http://localhost:3000/api/admin/activity',{headers:{'X-API-Key':'pd_your_key'}}).then(r=>r.text()).then(console.log)"
+```
+
+Nothing is left to wait for once `runsInProgress` is empty and `requestsInProgress`, `diagnosesInProgress` and
+`assistantAnswersInProgress` are 0. `openEventStreams` is for information: browser tabs, live views and connected apps
+reconnect on their own. The work a run's end leaves running in the background (notifications, issue tracker
+automation, pull-request feedback, auto-heal) is not counted.
+
+A streaming reporter is heard at least every 15 seconds, so a run whose `lastActivityAt` is minutes old was probably
+abandoned, its CI job cancelled. The instance interrupts it 2 minutes after its last activity, or after an hour for
+a run in its global setup (`initializing`) or a sharded run waiting for a shard, which stay quiet while they wait. It
+settles a `finalizing` run after 10 minutes.
 
 ## What happens when a new version starts
 
@@ -33,7 +47,7 @@ On boot, before any request can touch the database (requests that need it wait f
 1. **Database migrations run automatically** — SQLite or PostgreSQL, whichever you're on. There is no
    separate migrate command and nothing to run by hand. Before migrating, Piwi compares the migrations
    the database has recorded with the ones this version ships (see
-   [A database that ran another build](#a-database-that-ran-another-build)).
+   [A database that ran another build](./database#a-database-that-ran-another-build)).
 2. **Failure clusters are re-fingerprinted** if the fingerprint algorithm changed in this release.
    This is non-destructive: existing clusters are updated in place, and clusters that now collide are
    merged into the one first seen earliest rather than dropped, so your triage statuses and notes
@@ -70,28 +84,6 @@ its address.
 
 The same upgrade refuses invite, password reset and verification links emailed before it: send them again.
 
-## A database that ran another build
-
-Releases only ever add migrations, in date order. A database that also ran a build from outside the
-releases (a development branch, a preview image) can hold migrations this version does not ship, and
-be missing some it does. On startup Piwi logs `The migration history of this database does not match
-this build`, lists what differs, and repairs it in a single transaction:
-
-- the migrations the database lacks are applied, including any dated before the latest one it ran;
-- tables, columns, indexes and constraints the other build already created are kept, completed with
-  the columns this version declares, and indexes are rebuilt from this version's definition;
-- a unique index this version does not declare is dropped, since it would reject rows Piwi writes;
-- the result is checked against the schema this version expects, then the migrations the other build
-  recorded are removed from the history.
-
-The log ends with `Migration history repaired` and the next start is a normal one. If the result would
-still differ from the expected schema — a column only the other build has, `NOT NULL` without a
-default, for instance — nothing is changed, and it fails like any migration (see above) with `Migration
-history repair failed` and the difference it found: restore a backup, or start from an empty database.
-
-A database that is only **ahead** of this version, as after starting an older version on it, gets a
-single warning, `applied migration(s) are not in this build`, and nothing else: see below.
-
 ## Downgrading is not supported
 
 Migrations are **forward-only** — there are no down migrations. Once a new version has migrated your
@@ -104,7 +96,7 @@ So the rollback path is not "pull the old tag", it's **restore your backup**:
    [Backup & restore → Restoring](./backup-restore#restoring) describes.
 3. Start the previous version's tag, with the same `PIWI_SECRET_KEY`.
 
-This is the entire reason step 2 of the short version isn't optional.
+This is the entire reason step 3 of the short version isn't optional.
 
 ## Pin a version
 
@@ -134,12 +126,12 @@ Three ways, in increasing order of automation:
   curl -s http://localhost:3000/api/version
   ```
 
-- `GET /api/health` is the readiness probe for a container orchestrator: it returns 503 while the database isn't
-  reachable.
+- `GET /api/health` is the readiness probe — it verifies database connectivity and returns 503 when
+  the database isn't reachable, which is what you want a container orchestrator watching.
 
 In the startup logs, the lines worth grepping for are `Running <dialect> migrations from …` and
 `migrations completed successfully` — plus `Migration history repaired` after a
-[repair](#a-database-that-ran-another-build).
+[repair](./database#a-database-that-ran-another-build).
 
 ## Upgrading the reporter
 
@@ -150,7 +142,9 @@ lockstep:
   streaming, the reporter falls back to batch submission on its own.
 - An **older reporter against a newer server** keeps working; wire fields are added, not repurposed.
 
-A feature can need both, as locator healing does: if a new capability doesn't appear, match the two versions first.
+That said, features land in pairs. Locator healing needs both a reporter that captures snapshots and a
+server that ranks them, so if a new capability doesn't appear, matching the two versions is the first
+thing to try.
 
 ```bash
 npm install --save-dev @piwitests/reporter@latest
@@ -171,14 +165,14 @@ progress bar.
 the logs for `Migration error`. The schema is mid-flight or incompatible; restore your backup and open an
 [issue](https://github.com/PiwiTests/piwi/issues) with the error. If the error starts with
 `Migration history repair failed`, the database ran another build and could not be brought in line
-automatically ([details](#a-database-that-ran-another-build)); it was left as it was.
+automatically ([details](./database#a-database-that-ran-another-build)); it was left as it was.
 
 **Every page answers `403` and lists the dashboard's local addresses.** With authentication off, name the hosts
 clients use, a container's name included, in `PIWI_SITE_URL` or `PIWI_ALLOWED_HOSTS`, or turn authentication on
 ([why](./authentication#disabling-authentication)).
 
 **The dashboard loads but data looks wrong.** Don't downgrade — restore the backup instead, then
-report what you saw.
+report what you saw. Downgrading on a migrated database compounds the problem.
 
 **The Windows desktop installer says "Error opening file for writing".** Up to version 0.37, an
 in-app update could leave the app's bundled server running — a `node.exe` in the install folder,

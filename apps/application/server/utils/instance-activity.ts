@@ -20,24 +20,35 @@ function openCount() {
 }
 
 /**
- * The requests of this process receiving a run's results or files: the reporter's submit, its uploads, its case files
- * and coverage, and an import. A restart cuts them.
+ * The requests of this process that receive a run's results or files, or end a run, until they answer
+ * (`RUN_REQUEST_ROUTES`). A restart cuts them.
  */
-export const runUploads = openCount();
+export const runRequests = openCount();
 
-/** The event streams this process holds open: pages, live views and connected apps, which reconnect after a restart. */
+/**
+ * The event streams this process holds open through `openStream` and `createSSEEndpoint`: the streams of pages, live
+ * views, connected apps and the desktop app, which reconnect after a restart.
+ */
 export const eventStreams = openCount();
 
-const RUN_UPLOAD_ROUTES: Array<{ method: string; path: RegExp }> = [
+/**
+ * The routes counted in `runRequests`: the reporter's submit, uploads, case files, coverage and end (`/finish`, which
+ * answers once the run's end-of-run work is done), an import, a local import in the desktop app, a project's coverage
+ * report and a bug report.
+ */
+const RUN_REQUEST_ROUTES: Array<{ method: string; path: RegExp }> = [
   { method: 'POST', path: /^\/api\/test-runs\/submit$/ },
   { method: 'POST', path: /^\/api\/test-runs\/upload(?:\/results)?$/ },
   { method: 'POST', path: /^\/api\/test-runs\/import$/ },
   { method: 'POST', path: /^\/api\/test-runs\/[^/]+\/case-files$/ },
   { method: 'PUT', path: /^\/api\/test-runs\/[^/]+\/coverage$/ },
+  { method: 'POST', path: /^\/api\/test-runs\/[^/]+\/finish$/ },
+  { method: 'POST', path: /^\/api\/desktop\/import-(?:local|bug-report)$/ },
+  { method: 'POST', path: /^\/api\/projects\/[^/]+\/(?:coverage-reports|bug-reports)$/ },
 ];
 
-/** Whether a request receives a run's results or files, counted in `runUploads` while it lasts. */
-export function receivesRunUpload(method: string, path: string): boolean {
+/** Whether a request is counted in `runRequests` while it lasts. */
+export function isRunRequest(method: string, path: string): boolean {
   const route = routePath(path);
-  return RUN_UPLOAD_ROUTES.some((upload) => upload.method === method.toUpperCase() && upload.path.test(route));
+  return RUN_REQUEST_ROUTES.some((counted) => counted.method === method.toUpperCase() && counted.path.test(route));
 }

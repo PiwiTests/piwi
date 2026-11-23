@@ -62,10 +62,17 @@ const { data: activity } = useFetch<ApiResponse<typeof import('~~/server/api/adm
   { server: false, lazy: true, immediate: canSeeActivity },
 );
 const activityHint = computed(() => {
-  if (!activity.value) return undefined;
-  const uploads = activity.value.uploadsInProgress;
-  if (uploads > 0) return `${uploads} ${uploads === 1 ? 'upload' : 'uploads'} being received`;
-  return activity.value.runsInProgress.length > 0 ? 'Wait for them before a restart' : 'Nothing to wait for';
+  const current = activity.value;
+  if (!current) return undefined;
+  const count = (n: number, one: string, many: string) => (n > 0 ? [`${n} ${n === 1 ? one : many}`] : []);
+  const work = [
+    ...count(current.requestsInProgress, 'run request', 'run requests'),
+    ...count(current.diagnosesInProgress, 'AI diagnosis', 'AI diagnoses'),
+    ...count(current.assistantAnswersInProgress, 'assistant answer', 'assistant answers'),
+  ];
+  const runs = current.runsInProgress.length > 0;
+  if (work.length > 0) return `${runs ? 'Also ' : ''}${work.join(', ')} in progress`;
+  return runs ? 'Wait for them before a restart' : 'Nothing to wait for';
 });
 
 /** Where a version tile's value comes from, and whether the reporter is behind this dashboard. */
