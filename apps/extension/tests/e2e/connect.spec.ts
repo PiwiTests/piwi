@@ -677,9 +677,9 @@ test('the worker moves secrets kept in chrome.storage.local to its own IndexedDB
       },
       { baseUrl, apiKey: API_KEY },
     );
-    expect(await localStorageText(page)).toContain(API_KEY);
 
-    // Reloading the extension starts a new worker.
+    // Reloading the extension starts a new worker, which moves the secrets. A worker the write above wakes can move
+    // them first, so storage is read only once the reloaded worker has started.
     const restarted = context.waitForEvent('serviceworker');
     await page.evaluate(() => chrome.runtime.reload()).catch(() => undefined);
     await restarted;
