@@ -69,6 +69,13 @@ const { data, status, error, refresh } = await useFetch<QuarantineResponse>(
 );
 
 watch(data, (d) => emit('count', d?.debt.active ?? 0));
+
+// A verified fix's age reads the browser's clock, so its title shows once the table is mounted.
+const mounted = ref(false);
+onMounted(() => {
+  mounted.value = true;
+});
+
 // A run that starts or ends reads the list again, as it does the project page's counts, and so does a read asked from
 // outside the page (the assistant, once a proposal is applied).
 useRunStream(() => refresh());
@@ -166,7 +173,11 @@ async function release(testCaseId: number) {
                 color="success"
                 variant="soft"
                 size="xs"
-                :title="`Flake Lab verified the fix ${formatRelativeTime(entry.verifiedFix!.verifiedAt)}`"
+                :title="
+                  mounted
+                    ? `Flake Lab verified the fix ${formatRelativeTime(entry.verifiedFix!.verifiedAt)}`
+                    : undefined
+                "
                 data-testid="quarantine-verified-fix"
               >
                 Verified fixed{{ entry.verifiedFix?.commit ? ` on ${entry.verifiedFix.commit.slice(0, 7)}` : '' }} —

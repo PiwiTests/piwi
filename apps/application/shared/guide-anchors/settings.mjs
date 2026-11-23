@@ -916,7 +916,7 @@ export const SETTINGS_ANCHORS = [
     kind: 'page',
     pages: ['/settings/about'],
     describes:
-      'Settings → About: the version and build, the Node.js, database and platform, the reporter and Playwright of the latest run, and docs links.',
+      'Settings → About: the version and build, the Node.js, database and platform, the latest run’s reporter and Playwright, the runs in progress, docs links.',
     doc: 'operate/upgrading#verifying-the-upgrade-landed',
     sample: { route: '/settings/about' },
   },

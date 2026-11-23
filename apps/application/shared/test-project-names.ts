@@ -13,6 +13,7 @@
  */
 
 export const PROJECT = {
+  ADMIN_ACTIVITY: 'admin-activity-test',
   ANALYTICS_TEST: 'analytics-widgets-test',
   ANALYTICS_SCOPE_TEST: 'analytics-scope-test',
   ANALYTICS_TREND_DEPTH: 'analytics-trend-depth-test',
@@ -65,6 +66,7 @@ export const PROJECT = {
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
   DESKTOP_RUN_VIEW: 'desktop-run-view-test',
+  DESKTOP_SKILLS: 'desktop-skills-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
   DOM_SNAPSHOT_STATE: 'dom-snapshot-state-test',
   DOWNLOAD_TEST: 'download-test-project',
@@ -171,6 +173,7 @@ export const PROJECT = {
   QUALITY_REPORT_SCHEDULES: 'quality-report-schedules-test',
   QUALITY_REPORT: 'quality-report-test',
   QUARANTINE: 'quarantine-test',
+  RELATIVE_TIMES: 'relative-times-test',
   REPORTER_API_KEY_E2E: 'reporter-api-key-e2e-test',
   REPORTER_API_KEY_LIB: 'reporter-api-key-lib-test',
   REPORTER_AUTH_LIB: 'reporter-auth-lib-test',

@@ -118,8 +118,13 @@ fn url_pattern(url: &str) -> String {
         .collect()
 }
 
+/// A `.` of the app's filter in its `file:` URL. `specPattern` writes a `.` for a `.` and for each character it cannot
+/// keep: `$` and `!`, which the URL keeps, `%`, `^`, a backtick and `"`, which Node writes as one percent-encoded byte,
+/// and the curly quotes `“ ” „`, as three.
+const URL_ANY_CHAR: &str = "(?:.|%[0-9A-F]{2}|%E2%80%9[CDE])";
+
 /// The app's relative filter (`specPattern`'s regular expression) as a regular expression of its `file:` URL: each
-/// literal character as [`url_char`] writes it, each `[c]` class as its character.
+/// literal character as [`url_char`] writes it, each `[c]` class as its character, each `.` as [`URL_ANY_CHAR`].
 fn url_file(filter: &str) -> String {
     let chars: Vec<char> = filter.chars().collect();
     let mut out = String::new();
@@ -129,14 +134,12 @@ fn url_file(filter: &str) -> String {
             let c = chars[i + 1];
             out.push_str(&url_char(c, &format!("[{c}]")));
             i += 3;
+        } else if chars[i] == '.' {
+            out.push_str(URL_ANY_CHAR);
+            i += 1;
         } else {
             let c = chars[i];
-            let literal = c.to_string();
-            out.push_str(&if c == ' ' || !c.is_ascii() {
-                url_char(c, &literal)
-            } else {
-                literal
-            });
+            out.push_str(&url_char(c, &c.to_string()));
             i += 1;
         }
     }
@@ -200,12 +203,20 @@ mod tests {
         assert_eq!(anchored_filters("/repo", &given, false), given);
     }
 
+    /// A spec's file name in a `file:` URL filter: each `.` as [`URL_ANY_CHAR`].
+    fn url_name(name: &str) -> String {
+        name.replace('.', URL_ANY_CHAR)
+    }
+
     #[test]
     fn on_windows_the_file_url_is_an_alternative() {
         assert_eq!(
             one(r"C:\Users\Jo Ann\shop", "my tests/a.spec.ts:3", true),
-            "^(?:C:/Users/Jo Ann/shop/my tests/a.spec.ts\
-             |file:///C:/Users/Jo(?: |%20)Ann/shop/my(?: |%20)tests/a.spec.ts)$:3"
+            format!(
+                "^(?:C:/Users/Jo Ann/shop/my tests/a.spec.ts\
+                 |file:///C:/Users/Jo(?: |%20)Ann/shop/my(?: |%20)tests/{})$:3",
+                url_name("a.spec.ts")
+            )
         );
     }
 
@@ -213,8 +224,11 @@ mod tests {
     fn on_windows_a_non_ascii_character_is_its_bytes_and_a_class_either_way() {
         assert_eq!(
             one(r"C:\w\é", "tests/[{]x[}] ü.spec.ts", true),
-            "^(?:C:/w/é/tests/[{]x[}] ü.spec.ts\
-             |file:///C:/w/%C3%A9/tests/(?:[{]|%7B)x(?:[}]|%7D)(?: |%20)%C3%BC.spec.ts)$"
+            format!(
+                "^(?:C:/w/é/tests/[{{]x[}}] ü.spec.ts\
+                 |file:///C:/w/%C3%A9/tests/(?:[{{]|%7B)x(?:[}}]|%7D)(?: |%20)%C3%BC{})$",
+                url_name(".spec.ts")
+            )
         );
     }
 
@@ -222,8 +236,45 @@ mod tests {
     fn on_windows_a_share_is_a_url_of_its_host() {
         assert_eq!(
             one(r"\\host\share\shop", "a.spec.ts", true),
-            "^(?://host/share/shop/a.spec.ts|file://host/share/shop/a.spec.ts)$"
+            format!(
+                "^(?://host/share/shop/a.spec.ts|file://host/share/shop/{})$",
+                url_name("a.spec.ts")
+            )
         );
+    }
+
+    /// Whether the filter the shell makes of `filter` in `C:\r` takes the spec at `url`, as Playwright tests a filter's
+    /// regular expression, its `:line` set apart. JavaScript reads the class `[[]` as the character `[`, which Rust's
+    /// `regex` writes `[\[]`.
+    fn takes_url(filter: &str, url: &str) -> bool {
+        let anchored = one(r"C:\r", filter, true);
+        let (pattern, _) = split_location(&anchored);
+        regex::Regex::new(&pattern.replace("[[]", r"[\[]")).unwrap().is_match(url)
+    }
+
+    #[test]
+    fn on_windows_the_file_url_matches_each_character_node_encodes() {
+        // `specPattern`'s filter of each spec, and the URL `pathToFileURL(p, { windows: true })` writes for it in `C:\r`.
+        let cases = [
+            ("tests/[[]id].spec.ts:4", "file:///C:/r/tests/%5Bid%5D.spec.ts"),
+            ("tests/#1.spec.ts", "file:///C:/r/tests/%231.spec.ts"),
+            ("tests/100..spec.ts", "file:///C:/r/tests/100%25.spec.ts"),
+            ("tests/a.b.c~d.spec.ts", "file:///C:/r/tests/a%5Eb%60c%7Ed.spec.ts"),
+            ("tests/.q..spec.ts", "file:///C:/r/tests/%E2%80%9Cq%E2%80%9D.spec.ts"),
+            ("my tests/[{]a[}] é.spec.ts", "file:///C:/r/my%20tests/%7Ba%7D%20%C3%A9.spec.ts"),
+            ("tests/.x..spec.ts", "file:///C:/r/tests/$x!.spec.ts"),
+        ];
+        for (filter, url) in cases {
+            assert!(takes_url(filter, url), "{filter} misses {url}");
+        }
+    }
+
+    #[test]
+    fn on_windows_the_file_url_takes_no_other_spec() {
+        assert!(!takes_url("tests/#1.spec.ts", "file:///C:/r/e2e/tests/%231.spec.ts"));
+        assert!(!takes_url("tests/#1.spec.ts", "file:///C:/r/tests/%231.spec.tsx"));
+        assert!(!takes_url("tests/[[]id].spec.ts", "file:///C:/r/tests/%5Bid%5D%5D.spec.ts"));
+        assert!(!takes_url("tests/100..spec.ts", "file:///C:/r/tests/100%25%25.spec.ts"));
     }
 
     #[test]

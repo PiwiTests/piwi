@@ -803,6 +803,15 @@ function pageContext(page: Page): BrowserContext | null {
   }
 }
 
+/**
+ * Whether Playwright hands this context to the worker's next test instead of closing it: its `context` fixture made
+ * it for reuse (`reuseContext`, `PW_TEST_REUSE_CONTEXT`, with video off), which its client marks `_forReuse`
+ * (feature-checked: false where the mark is missing).
+ */
+function isReusedContext(context: BrowserContext): boolean {
+  return (context as BrowserContext & { _forReuse?: unknown })._forReuse === true;
+}
+
 /** The evaluate's raw result: navigation/paint plus raw core-vitals entries. */
 interface WebVitalsProbeResult {
   navigation: WebVitals['navigation'];
@@ -4310,7 +4319,14 @@ export const piwiFixtures: Fixtures<
     // The test function and its hooks are done, every fixture built on the page torn down: a failure holds its page
     // now, before the page's context closes.
     const sink = currentSink;
-    if (sink) await holdFailure(sink, page);
+    if (!sink) return;
+    await holdFailure(sink, page);
+    // A context Playwright hands to the next test ends its code reach here, before the `context` fixture keeps it and
+    // this page: still recording, the page would stop that test's reset to `about:blank` at its `beforeunload`
+    // breakpoint, with no session left to resume it. A context that closes ends it as it closes, after every fixture
+    // on it.
+    const context = pageContext(page);
+    if (context && isReusedContext(context)) await stopSinkCodeReach(sink, { page, context });
   },
 
   // Auto, test-scoped: open a capture sink for the running test and flush it

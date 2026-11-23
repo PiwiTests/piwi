@@ -22,7 +22,7 @@ export const POSITIONING = {
     'Free, self-hosted, zero telemetry. CI throws away every report it makes. Piwi keeps them, then groups the failures by root cause, scores the flaky tests, and finds the locator you should have used.',
 } as const;
 
-const REPOSITORY = 'https://github.com/piwitests/piwi';
+const REPOSITORY = 'https://github.com/PiwiTests/piwi';
 
 export const PROJECT_LINKS = {
   docs: 'https://piwitests.dev',

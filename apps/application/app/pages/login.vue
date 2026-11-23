@@ -336,7 +336,7 @@ definePageMeta({
 
     <div class="flex items-center gap-4 text-sm text-muted">
       <a
-        href="https://github.com/piwitests/piwi"
+        href="https://github.com/PiwiTests/piwi"
         target="_blank"
         rel="noopener"
         class="flex items-center gap-1.5 hover:text-default transition-colors"

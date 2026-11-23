@@ -54,6 +54,27 @@ const playwrightVersion = computed(
   () => recentRuns.value?.items.find((run) => run.playwrightVersion)?.playwrightVersion ?? null,
 );
 
+// What a restart would cut, for an administrator. Loaded after the page shows.
+const { can } = useAuth();
+const canSeeActivity = can('settings:manage');
+const { data: activity } = useFetch<ApiResponse<typeof import('~~/server/api/admin/activity.get').default>>(
+  '/api/admin/activity',
+  { server: false, lazy: true, immediate: canSeeActivity },
+);
+const activityHint = computed(() => {
+  const current = activity.value;
+  if (!current) return undefined;
+  const count = (n: number, one: string, many: string) => (n > 0 ? [`${n} ${n === 1 ? one : many}`] : []);
+  const work = [
+    ...count(current.requestsInProgress, 'run request', 'run requests'),
+    ...count(current.diagnosesInProgress, 'AI diagnosis', 'AI diagnoses'),
+    ...count(current.assistantAnswersInProgress, 'assistant answer', 'assistant answers'),
+  ];
+  const runs = current.runsInProgress.length > 0;
+  if (work.length > 0) return `${runs ? 'Also ' : ''}${work.join(', ')} in progress`;
+  return runs ? 'Wait for them before a restart' : 'Nothing to wait for';
+});
+
 /** Where a version tile's value comes from, and whether the reporter is behind this dashboard. */
 function runVersionHint(version: string | null, comparedToApp: boolean): string | undefined {
   if (!runsLoaded.value) return undefined;
@@ -97,8 +118,9 @@ const dbBackendLabel = computed(() => {
             <span class="font-mono" :title="buildSha">{{ shortSha }}</span>
           </template>
         </p>
-        <p v-if="buildTime" class="mt-0.5">
-          <ClientOnly fallback-tag="span" :fallback="`Built ${formatRelativeTime(buildTime)}`">
+        <!-- Relative to the browser's clock, so the server renders only the line's height. -->
+        <p v-if="buildTime" class="mt-0.5 min-h-5">
+          <ClientOnly>
             <span :title="prettyDateFormat(buildTime)">Built {{ formatRelativeTime(buildTime) }}</span>
           </ClientOnly>
         </p>
@@ -133,6 +155,13 @@ const dbBackendLabel = computed(() => {
           :hint="runVersionHint(playwrightVersion, false)"
         />
         <StatTile v-if="!isDesktop" label="Authentication" :value="authEnabled ? 'Enabled' : 'Disabled'" />
+        <StatTile
+          v-if="canSeeActivity"
+          label="Runs in progress"
+          :value="activity?.runsInProgress.length"
+          :hint="activityHint"
+          data-testid="about-activity"
+        />
       </StatTileGrid>
     </SectionCard>
 
@@ -182,7 +211,7 @@ const dbBackendLabel = computed(() => {
           API reference
         </ULink>
         <ULink
-          to="https://github.com/piwitests/piwi"
+          to="https://github.com/PiwiTests/piwi"
           target="_blank"
           rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-primary hover:underline"

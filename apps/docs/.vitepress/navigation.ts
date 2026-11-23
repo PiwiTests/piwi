@@ -53,6 +53,7 @@ export interface LandingCard {
 export const RECIPES_BY_GROUP: Record<string, SidebarItem[]> = {
   'Explain the failures': [
     { text: 'Regression or flake?', link: '/recipes/regression-or-flaky' },
+    { text: 'Fails on CI, passes locally', link: '/recipes/fails-on-ci' },
     { text: 'Triage a run gone red', link: '/recipes/mass-failure' },
     { text: 'Cut costly flakiness', link: '/recipes/flaky-cleanup' },
   ],

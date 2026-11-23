@@ -19,7 +19,7 @@ if (config.public.demoMode) {
   });
 }
 
-const DEPLOY_URL = 'https://github.com/piwitests/piwi';
+const DEPLOY_URL = 'https://github.com/PiwiTests/piwi';
 </script>
 
 <template>

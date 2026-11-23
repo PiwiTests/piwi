@@ -71,7 +71,8 @@ Each run Piwi Runner starts shows in its window live, as the desktop app's runs 
 a step or a breakpoint waits in the window until you answer it, and the window comes to the front, on its runs. [**Hold failures**](./watch-a-run#hold-failures),
 a switch on each running run you attend, off until you turn it on, keeps a failing test at its line too, until you
 resume it. Once the run reported to the instance, it shows **Run #78 · Open**, which opens its page there, and keeps
-it after the run ended. A run that goes on while the window reloads shows again, with **Stop**.
+it after the run ended. A run that goes on while the window reloads shows again, with **Stop**, or **Force stop**
+while it winds down.
 **Assert a region** and **Mock a request** make their code in the window, to copy: Piwi Runner has no editor and
 writes no file. A requested run cannot be [shared live](./share-live): the instance gives it no [live view](./live-view) key, since it
 [shows to you alone](./run-on-my-machine#a-requested-run-is-yours-alone). **Inspect** of a watched worker, which reads the test's pages from its trace, is the desktop app's alone.
@@ -81,8 +82,8 @@ right, and a select that names it in a narrow window. **Running now** lists the 
 that ended, the last to end first, each line saying how its run stands, whether a test of it waits at a stop, and how
 long it ran. A run you confirm shows at once, and a test that stops shows its run, unless you are working in the run
 shown. The run shown has its project, when it started and how long it has run, **Stop**, which gives way to
-**Force stop** while the run winds down, as in the [desktop app](./local-runs-tray#each-run), its workers live, the
-tests the request asked for and its output.
+**Force stop** while the run winds down, whether you or the instance stopped it, as in the
+[desktop app](./local-runs-tray#each-run), its workers live, the tests the request asked for and its output.
 
 <figure>
   <img src="/screenshots/runner-runs.png" alt="Piwi Runner's runs: on the left, one run under Running now and two under Finished, one failed and one passed; on the right, the run going on, its worker running, with Pause, Watch, Hold failures and Stop">

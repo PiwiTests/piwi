@@ -174,9 +174,7 @@ const sourceNote = computed(() => {
         return '';
     }
   })();
-  // Stored snapshots age — surface when the data was last captured.
-  const captured = props.healing?.capturedAt;
-  return captured ? `${note} · captured ${formatRelativeTime(captured)}` : note;
+  return note;
 });
 
 // Subtitle color: green for pre-captured (high confidence), primary for a
@@ -377,8 +375,10 @@ defineExpose({
       <span v-else>{{ alternatives.length }} alternative{{ alternatives.length === 1 ? '' : 's' }}</span>
     </template>
     <template #subtitle>
+      <!-- Stored snapshots age: when they were captured reads the browser's clock. -->
       <span :class="sourceClass">
-        {{ sourceNote }}
+        {{ sourceNote
+        }}<ClientOnly v-if="healing?.capturedAt"> · captured {{ formatRelativeTime(healing.capturedAt) }}</ClientOnly>
       </span>
     </template>
     <template v-if="pickTraceUrl || healing?.failingLocator" #actions>

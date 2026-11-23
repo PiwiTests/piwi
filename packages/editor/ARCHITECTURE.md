@@ -2002,7 +2002,7 @@ runtime.
 The launcher (`launcher.ts`):
 
 - resolves the project's Playwright at run time, never bundled (`playwright.ts`: in the project's own `node_modules`,
-  the test runner's package first, as for the CLI);
+  a package linked there from elsewhere included, the test runner's package first, as for the CLI);
 - opens the browser with the project's options (`context-options.ts`): `headless: false` unless
   `PIWI_RECORDER_HEADLESS=1`, Chromium's translation feature disabled, an explicit allowlist of context options, and a
   missing `storageState` file left out and said so;
@@ -2223,10 +2223,13 @@ computed once per index (`callSitesOf`, `stabilityOf` in `src/analysis.ts`).
 
 What belongs to one file (a spec's cases, a file's stored alternatives) or to one failure (its healing, fix plan, linked
 issues, evidence) is fetched once, when first needed, and kept: a file's for five minutes and until the next refresh, a
-failure's healing, fix plan and issues while the latest run stays the same. Only the diagnostics or the quick fix that
-need it wait for it, and a quick fix or a hover waits 1.5 s at most (`within`, `LOOKUP_WAIT_MS`); the fetch goes on for
-the next ask. A fetch that failed without the instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again
-next time (`once` in `src/context.ts`). A canceled quick fix or hover is not answered further.
+spec's cases also until a run the service had not read (the baseline or a run laid over it), whose results change the
+catalog's statuses (`dropCatalog`: a read on its way then keeps nothing, and the reads after it share no read asked
+before, on its way or answered, `PiwiClient.forgetCatalog`), and a failure's healing, fix plan and issues while the
+latest run stays the same. Only the diagnostics or the quick fix that need it wait for it, and a quick fix or a hover
+waits 1.5 s at most (`within`, `LOOKUP_WAIT_MS`); the fetch goes on for the next ask. A fetch that failed without the
+instance refusing it (no answer, a 5xx, a 408 or a 429) is asked again next time (`once` in `src/context.ts`). A
+canceled quick fix or hover is not answered further.
 
 Other reads:
 
@@ -2290,6 +2293,8 @@ The shared answers give way as follows:
 - A read that failed is shared only by the callers that joined it.
 - A run as it moves (`runDetails`, `latestRunByRef`, a desktop job) keeps no answer, and the read after a run ended
   takes none (`refreshRun(true)`); an answer with an `ETag` is asked with it all the same.
+- A context that reads a run it had not read drops the project's catalog reads, on their way or answered
+  (`forgetCatalog`): a test's status there is its latest result.
 - The map keeps 16 indexes and 64 plain answers at most; the plain answers past their time without an `ETag` go first
   (`trim`).
 

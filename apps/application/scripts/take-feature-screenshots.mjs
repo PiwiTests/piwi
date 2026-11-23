@@ -7008,6 +7008,7 @@ const SCENES = [
                 status: 'passed',
                 duration: 8_400,
                 workerIndex: 0,
+                parallelIndex: 0,
                 startedAt: now - 16_000,
                 browser,
               },
@@ -7016,6 +7017,7 @@ const SCENES = [
                 title: 'pays with a saved card',
                 location: 'tests/checkout.spec.ts:24:3',
                 workerIndex: 0,
+                parallelIndex: 0,
                 startedAt: now - 7_000,
                 browser,
               },
@@ -7027,12 +7029,13 @@ const SCENES = [
                 stepCategory: 'pw:api',
                 parentTitle: 'pays with a saved card',
                 workerIndex: 0,
+                parallelIndex: 0,
                 startedAt: now - 6_400,
               },
             ],
           },
         });
-        closeStream = holdLiveWorkerStream(base, run.id, run.key);
+        closeStream = holdLiveWorkerStream(base, run.id, run.key, null, 0);
 
         // The image the worker sends: the checkout as the test's page shows it, its button's box measured there.
         const viewport = { width: 1280, height: 800 };
@@ -7049,7 +7052,7 @@ const SCENES = [
           request
             .post(`${base}/api/test-runs/${run.id}/live-view`, {
               headers: { Authorization: `Bearer ${run.key}` },
-              data: { shard: null, worker: 0, ...message },
+              data: { shard: null, worker: 0, slot: 0, ...message },
             })
             .catch(() => undefined);
         const send = () =>
@@ -7073,18 +7076,22 @@ const SCENES = [
           ]);
         sending = setInterval(send, 400);
         await goto(`/test-runs/${run.id}`);
-        await page.getByRole('button', { name: 'Watch worker 0 live' }).first().click({ timeout: 60_000 });
-        const dialog = page.getByRole('dialog');
-        await dialog.getByTestId('live-frame').waitFor({ timeout: 30_000 });
-        await dialog.getByTestId('live-target-box').waitFor({ state: 'attached', timeout: 30_000 });
-        await dialog.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
+        await page.getByRole('button', { name: 'Watch worker 1 live' }).first().click({ timeout: 60_000 });
+        /** The live view in the lane panel: docked beside the run page when wide, a sheet (a dialog) when narrow. */
+        const liveViewIn = async (panel) => {
+          await panel.getByTestId('live-frame').waitFor({ timeout: 30_000 });
+          await panel.getByTestId('live-target-box').waitFor({ state: 'attached', timeout: 30_000 });
+          await panel.getByTestId('live-call-log').waitFor({ timeout: 30_000 });
+        };
+        await liveViewIn(page.getByTestId('lane-panel'));
         // The worker's sends stop, so every image is of the same call log.
         clearInterval(sending);
         await send();
         await settle();
-        await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+        await shoot(undefined, { of: '[data-testid="lane-panel"]', pad: 0 });
         await page.setViewportSize({ width: 390, height: 844 });
         await send();
+        await liveViewIn(page.getByRole('dialog'));
         await settle();
         await shoot('narrow', { of: '[role="dialog"]', pad: 0 });
       } finally {

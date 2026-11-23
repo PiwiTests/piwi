@@ -81,7 +81,8 @@ In the [assistant](/features/assistant#asking-a-question)'s question field:
 ## Failure inbox
 
 On the [failure inbox](/features/failure-inbox#triage-from-the-row-or-the-keyboard), the keys act on the selected
-row. The triage actions need the Maintainer role or above on the project.
+row. The triage actions need the Maintainer role or above on the project. Right after `g`, `a` and `s` complete the
+go-to chords and leave the row alone.
 
 | Keys | Action |
 |---|---|

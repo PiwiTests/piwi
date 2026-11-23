@@ -1,5 +1,6 @@
 import type { H3Event } from 'h3';
 import { streamHeaders } from '#shared/stream-headers';
+import { eventStreams } from './instance-activity';
 
 const HEARTBEAT_INTERVAL_MS = 15000;
 
@@ -17,6 +18,7 @@ export function createSSEEndpoint(
         return;
       }
       const unsubscribe = onSubscribe(controller, encoder) ?? (() => {});
+      const uncount = eventStreams.open();
 
       const heartbeatInterval = setInterval(() => {
         try {
@@ -28,6 +30,7 @@ export function createSSEEndpoint(
       }, HEARTBEAT_INTERVAL_MS);
 
       event.node.req.on('close', () => {
+        uncount();
         clearInterval(heartbeatInterval);
         unsubscribe();
         try {

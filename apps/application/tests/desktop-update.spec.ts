@@ -246,7 +246,7 @@ test.describe('Desktop update card', () => {
     await expect(dialog).toBeVisible();
     await expect(dialog.getByRole('link', { name: 'Full diff on GitHub' })).toHaveAttribute(
       'href',
-      'https://github.com/piwitests/piwi/compare/v96.0.0...v99.0.0',
+      'https://github.com/PiwiTests/piwi/compare/v96.0.0...v99.0.0',
     );
 
     const breaking = dialog.getByTestId('release-notes-breaking');
@@ -285,7 +285,7 @@ test.describe('Desktop update card', () => {
     ).toBeVisible();
     await expect(page.getByRole('link', { name: 'Read the release notes on GitHub' })).toHaveAttribute(
       'href',
-      'https://github.com/piwitests/piwi/releases',
+      'https://github.com/PiwiTests/piwi/releases',
     );
     await page.getByRole('button', { name: 'Install update' }).click();
     await expect(page.getByRole('button', { name: 'Restart now' })).toBeVisible();

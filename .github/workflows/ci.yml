@@ -74,7 +74,8 @@ jobs:
       # `app` is what the dashboard's build, E2E, package smoke and demo jobs depend on: the server bundles the docs
       # pages and the changelog for its MCP tools. `js` is every workspace the five check jobs (`lint`, `app-unit`,
       # `reporter`, `reporter-floor`, `packages`) format, lint and test, and what knip reads besides them (its config, the
-      # configs of the tools it knows, the git hooks).
+      # configs of the tools it knows, the git hooks), and the `playwright-cli` skill copy an `app-unit` test
+      # compares.
       - name: Read the areas the change touches
         id: filter
         uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
@@ -130,6 +131,7 @@ jobs:
               - 'commitlint.config.js'
               - '.husky/**'
               - '.editorconfig'
+              - '.claude/skills/playwright-cli/**'
             extension:
               - 'apps/extension/**'
               - 'packages/core/**'

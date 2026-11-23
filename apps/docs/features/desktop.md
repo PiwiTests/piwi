@@ -110,8 +110,8 @@ A run, an execution, a cluster or a test runs again here with the folder's own P
 
 ### Reproducing a failure and finding the breaking commit
 
-A fix plan's [reproduce and bisect](/features/fix-plans#reproduce-and-bisect) recipe can run here, against the linked
-folder, **without touching your checkout**:
+A fix plan's [reproduce and bisect](/features/fix-plans#reproduce-and-bisect) recipe can run here **without touching
+your checkout**:
 
 - **Reproduce here** checks out the failing commit in a throwaway
   [`git worktree`](https://git-scm.com/docs/git-worktree), installs its dependencies (reusing yours on an
@@ -155,8 +155,8 @@ The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-check
 
 - **One machine, one user.** It accepts results only from this machine; a team needs the
   [Docker image](/operate/deployment).
-- **Local runs need the checkout**: a linked folder with Playwright installed, plus `git` and your package manager for
-  reproduce, bisect (one repository) and the lab.
+- **Local runs need the checkout**: a linked folder (a monorepo's subfolder works) with Playwright installed, plus `git`
+  and your package manager for reproduce, bisect (one repository) and the lab.
 - **No public address**: no [pull-request feedback](/features/pr-feedback), [auto-heal](/features/auto-heal),
   [share links](/features/share-links) or Jira webhook; email only with SMTP set.
 

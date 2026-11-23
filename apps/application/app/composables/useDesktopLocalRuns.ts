@@ -473,9 +473,12 @@ interface BisectEventPayload {
 
 interface LocalRunEventPayload {
   id: number;
-  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'phase' | 'bisect' | 'repro' | 'lab';
+  /** `stopping`: the shell began to stop the process, whoever asked (the team instance stops a request's run). */
+  kind: 'stdout' | 'stderr' | 'error' | 'exit' | 'stopping' | 'phase' | 'bisect' | 'repro' | 'lab';
   line: string | null;
   code: number | null;
+  /** For kind === 'exit': whether the process was stopped, whoever asked. */
+  stopped?: boolean;
   /** For kind === 'phase': which phase the run entered. */
   phase?: LocalRunPhase | null;
   /** For kind === 'bisect': the bisect progress event. */
@@ -528,13 +531,15 @@ interface KeptForReload {
 }
 
 /**
- * The shell's runs as `desktop_local_runs` answers: those still going, the latest that ended, each with its code and
- * the events that carried its verdict (what a repro spec recorded, a lab's report, a bisect's result), and the origin
- * reference this window gave each plain run it started.
+ * The shell's runs as `desktop_local_runs` answers: those still going and which of them were asked to stop (by the team
+ * instance that requested one, say), the latest that ended, each with its code, whether it was stopped and the events
+ * that carried its verdict (what a repro spec recorded, a lab's report, a bisect's result), and the origin reference this
+ * window gave each plain run it started.
  */
 interface ShellLocalRuns {
   running: number[];
-  ended: Array<{ id: number; code: number | null; events?: LocalRunEventPayload[] }>;
+  stopping?: number[];
+  ended: Array<{ id: number; code: number | null; stopped?: boolean; events?: LocalRunEventPayload[] }>;
   origins?: Array<{ id: number; originRef: string }>;
 }
 
@@ -665,8 +670,20 @@ export function useDesktopLocalRuns() {
     }
   }
 
+  /** The run was asked to stop, here or by the shell: it shows stopping, then ends stopped. */
+  function noteStop(run: LocalRun) {
+    if (run.status !== 'running') return;
+    if (!run.stopRequested) run.stopRequestedAt = Date.now();
+    run.stopRequested = true;
+  }
+
   function dispatch(run: LocalRun, payload: LocalRunEventPayload) {
+    if (payload.kind === 'stopping') {
+      noteStop(run);
+      return;
+    }
     if (payload.kind === 'exit') {
+      if (payload.stopped) noteStop(run);
       exitResolvers.get(payload.id)?.(payload.code);
       return;
     }
@@ -709,7 +726,8 @@ export function useDesktopLocalRuns() {
    * exit code. Buffered events that arrived before the id was known are
    * replayed in the same tick the id is registered, so none can slip through.
    * Used for a test step (`desktop_run_local_tests`) and for the single
-   * reproduce/bisect drivers alike.
+   * reproduce/bisect drivers alike. A team request the requester stopped
+   * before its run started starts nothing (a null id): the run is stopped.
    */
   async function spawnCommand(run: LocalRun, cmd: string, invokeArgs: Record<string, unknown>): Promise<number | null> {
     const core = tauriCore();
@@ -717,24 +735,34 @@ export function useDesktopLocalRuns() {
     startingSteps += 1;
     run.stepStarting = true;
     if (pageGone) keepForReload();
-    let shellId: number;
+    let shellId: number | null;
     try {
-      shellId = await core.invoke<number>(cmd, invokeArgs);
+      shellId = await core.invoke<number | null>(cmd, invokeArgs);
     } catch (error) {
       startingSteps -= 1;
       run.stepStarting = false;
       throw error;
     }
+    run.stepStarting = false;
+    if (shellId === null) {
+      releaseBuffer();
+      noteStop(run);
+      if (pageGone) keepForReload();
+      return null;
+    }
     // Same tick as the invoke resolution: register the id, replay buffered
     // events for it, then release the buffer — no event can slip through.
-    run.stepStarting = false;
     nameStep(run, shellId);
+    // A Stop asked here while the step started reaches its process now, its wind-down counted from here, unless the
+    // shell already began one (a team instance's stop, among the buffered events). It is sent graceful: a stop the
+    // shell begins as the id comes back still goes on to wind down, where a second stop would kill.
+    const stopBegan = pendingEvents.some((p) => p.id === shellId && p.kind === 'stopping');
+    const stopAsked = run.stopRequested && !stopBegan;
     const exit = adopt(run, shellId);
     releaseBuffer();
-    // A Stop asked while the step started reaches its process now, its wind-down counted from here.
-    if (run.stopRequested) {
+    if (stopAsked) {
       run.stopRequestedAt = Date.now();
-      void askToStop(shellId);
+      void askToStop(shellId, { graceful: true });
     }
     if (pageGone) keepForReload();
     return exit;
@@ -1834,15 +1862,20 @@ export function useDesktopLocalRuns() {
    */
   async function stopRun(run: LocalRun) {
     if (run.status !== 'running') return;
-    if (!run.stopRequested) run.stopRequestedAt = Date.now();
-    run.stopRequested = true;
+    noteStop(run);
     if (run.shellId != null) await askToStop(run.shellId);
   }
 
-  /** Asks the shell to stop process `shellId`, which kills it if asked before; its step ends even with no exit event. */
-  async function askToStop(shellId: number) {
+  /**
+   * Asks the shell to stop process `shellId`, which kills it if asked before, unless `graceful`; its step ends even with
+   * no exit event.
+   */
+  async function askToStop(shellId: number, { graceful = false } = {}) {
     try {
-      await tauriCore()?.invoke('desktop_stop_local_tests', { runId: shellId });
+      await tauriCore()?.invoke(
+        'desktop_stop_local_tests',
+        graceful ? { runId: shellId, graceful } : { runId: shellId },
+      );
     } catch {
       // The process already exited between the check and the stop.
     }
@@ -2034,10 +2067,12 @@ export function useDesktopLocalRuns() {
       if (id != null && ended) {
         nameStep(run, id);
         replayEnded(run, id, ended.events ?? []);
+        if (ended.stopped) noteStop(run);
         run.shellId = null;
         resumed = Promise.resolve(ended.code);
       } else if (id != null && shell?.running.includes(id)) {
         nameStep(run, id);
+        if (shell.stopping?.includes(id)) noteStop(run);
         resumed = adopt(run, id);
       } else {
         run.shellId = null;

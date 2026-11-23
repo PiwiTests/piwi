@@ -46,7 +46,7 @@ const STREAMED_MULTIPART_PATHS = [
 const BODY_METHODS = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** The path Nitro's router dispatches a request on: its query left out, and one trailing `/`. */
-function routePath(path: string): string {
+export function routePath(path: string): string {
   return path.split('?')[0]!.replace(/(.)\/$/, '$1');
 }
 

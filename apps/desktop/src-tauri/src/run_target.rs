@@ -1017,9 +1017,10 @@ fn tell_started(server: &ServerInfo, request_id: &str, error: Option<&str>) {
 
 /// Start the run of a request after **Run** in the window: the command and the
 /// request token come from the server, the folder from this machine's links.
-/// Returns the run id; its output arrives as `piwi:local-run` events.
+/// Returns the run id, whose output arrives as `piwi:local-run` events; `None`
+/// when the requester stopped the request before its run started.
 #[tauri::command]
-pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> Result<u32, String> {
+pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> Result<Option<u32>, String> {
     if !valid_request_id(&request_id) {
         return Err("invalid request id".into());
     }
@@ -1091,7 +1092,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
                 log(&app, &format!("could not tell the server a requested run ended: {e}"));
             }
         }
-        return Err("the request was stopped before its run started".into());
+        return Ok(None);
     }
 
     let envs = vec![
@@ -1141,14 +1142,12 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
                     _ => false,
                 }
             });
+            // Before the window hears the id, so the `stopping` event comes first.
             if stop_now {
-                let app = app.clone();
-                tauri::async_runtime::spawn(async move {
-                    let _ = crate::runner::desktop_stop_local_tests(app, id).await;
-                });
+                crate::runner::stop_local_run(&app, id, true);
             }
             std::thread::spawn(move || tell_started(&server, &request_id, None));
-            Ok(id)
+            Ok(Some(id))
         }
         Err(e) => {
             forget(&app, &request_id);
@@ -1202,16 +1201,15 @@ fn prepare(app: &AppHandle, launch: &Launch) -> Result<(PathBuf, PathBuf, PathBu
     Ok((folder, cli, dir, token_file))
 }
 
-/// The requester stopped a request from the dashboard: stop the run it started.
+/// The requester stopped a request from the dashboard: stop the run it started,
+/// gracefully, so a stop that goes on is never turned into a kill.
 pub(crate) fn stop_requested_run(app: &AppHandle, request_id: &str) {
     if !valid_request_id(request_id) {
         return;
     }
     if let Some(run_id) = app.try_state::<RequestedRuns>().and_then(|runs| runs.stop(request_id)) {
         let app = app.clone();
-        tauri::async_runtime::spawn(async move {
-            let _ = crate::runner::desktop_stop_local_tests(app, run_id).await;
-        });
+        tauri::async_runtime::spawn(async move { crate::runner::stop_local_run(&app, run_id, true) });
     }
 }
 
