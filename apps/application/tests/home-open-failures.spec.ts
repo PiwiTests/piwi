@@ -100,9 +100,10 @@ test.describe.serial('Home — failure inbox', () => {
 
   test('keyboard: the go-to chords g a and g s leave the row alone', async ({ page }) => {
     await page.clock.install();
-    for (const [key, path] of [
-      ['a', '/analytics'],
-      ['s', '/settings'],
+    // `/settings` opens its first page at once.
+    for (const [key, url] of [
+      ['a', /\/analytics$/],
+      ['s', /\/settings(\/|$)/],
     ] as const) {
       await page.goto('/');
       await waitForHydration(page);
@@ -121,7 +122,7 @@ test.describe.serial('Home — failure inbox', () => {
       });
 
       await pressChord(page, 'g', key);
-      await page.waitForURL(new RegExp(`${path}$`));
+      await page.waitForURL(url);
       expect(await page.evaluate(() => (window as unknown as { __inboxOpened: string[] }).__inboxOpened)).toEqual([]);
     }
   });
