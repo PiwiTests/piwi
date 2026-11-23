@@ -3674,11 +3674,12 @@ const SCENES = [
     },
   })),
   ...[
-    { name: 'cluster-last-rerun', cluster: 6, width: 1280, height: 1400 },
+    { name: 'ci-rerun-last-run', cluster: 6, width: 1280, height: 1400, docs: true },
     { name: 'cluster-last-rerun-mobile', cluster: 6, width: 390, height: 2400 },
     { name: 'cluster-last-rerun-unreported', cluster: 3, width: 1280, height: 1400 },
-  ].map(({ name, cluster, width, height }) => ({
+  ].map(({ name, cluster, width, height, docs }) => ({
     name,
+    ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
     description: `Failure cluster → More ways to fix → Verify: the last re-run in CI, ${
       cluster === 6 ? 'with the run that answered it and its result' : 'that no run answered'
     }, at ${width} px`,

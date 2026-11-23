@@ -120,6 +120,11 @@ When a run executes every test of a cluster and all pass, Piwi records the fix (
   [suggested patch](./ai-diagnosis#validated-patches) named.
 - **Regressed**: a fix was recorded, and the cluster fails again.
 
+<figure>
+  <img src="/screenshots/ci-rerun-last-run.png" alt="A cluster's Verify section: its last re-run, dispatched to Jenkins, links the run that answered it, which passed">
+  <figcaption>The Verify section: the last re-run in CI and the run that answered it.</figcaption>
+</figure>
+
 **A fix needs every affected test to pass** in the Playwright projects it last failed in that the run ran (a `--grep`
 over them is enough), in a run started after the last failing run, at another commit (a pass at the failing commit,
 such as a CI retry, is flake evidence the state line names), on the cluster's last failing branch or the default
