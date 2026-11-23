@@ -196,8 +196,8 @@ const TAGS = [
 const QA_BOT_CREDENTIAL_ID = 6;
 
 /**
- * The CI actions of a project whose tests run in one Jenkins job: a single action, named by both the failure pages'
- * Re-run in CI and a whole-suite run, that dispatches under the qa-bot credential's destination.
+ * The CI actions of a project whose tests run in one Jenkins job: a single action, the default for re-runs (the
+ * failure pages' Re-run in CI) and for Run on CI, that dispatches under the qa-bot credential's destination.
  */
 function jenkinsRerun(actionId, job) {
   return {
@@ -3946,12 +3946,12 @@ const CONNECTED_APP_KEYS = [
     last_used_at: ts('2025-04-25T08:00:00'),
   },
 ];
-// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project that no
-// action names yet, whose secret is read from a server variable, the GitHub token of every example repository the
-// instance's source control lists, the shop-web one the checkout project names, the Zephyr Scale token of the canned
-// connection, and the Jenkins user the other projects' re-run jobs name, added the day the log refused the checkout's
-// re-run under the API project's. The demo stores no secret. Its log: dispatches, a refusal, the Check reads of one
-// hour, repository reads, a commit status, a pull request comment, and the connection's reads and results upload.
+// Settings → Credentials: the Jenkins user the API project's CI actions name, one shared with every project, which
+// no action names yet and whose secret is read from a server variable, the GitHub token of every example repository
+// the instance's source control lists, the shop-web one the checkout project names, the Zephyr Scale token of the
+// canned connection, and the Jenkins user the other projects' re-run jobs name. The demo stores no secret. Its log:
+// dispatches, a refusal, the Check reads of one hour, repository reads, a commit status, a pull request comment, and
+// the connection's reads and results upload.
 const CREDENTIALS = [
   {
     id: 1,

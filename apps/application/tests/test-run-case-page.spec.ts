@@ -473,7 +473,7 @@ async function nextChangeRows(page: import('@playwright/test').Page): Promise<st
 /**
  * The story line, the line under the headline and the next step read from the
  * deterministic demo seed: #37 chains the blocked-by-pending-request story and
- * proposes the diagnosed patch, #587 replaces a locator, #682 reproduces, #768
+ * proposes the diagnosed patch, #587 replaces a locator, #705 reproduces, #768
  * and #21 passed on retry and lead with their failed attempt, #748 never ran. These
  * run only when the seeded cases are present (a demo-seeded server). A bare test
  * DB can still have an execution #37 once other specs have streamed enough cases,
@@ -764,9 +764,9 @@ test.describe('Situation block on seeded cases', () => {
     expect(healingFetches).toEqual([]);
   });
 
-  test('#682 proposes reproducing locally and opens the Reproduce section, run line first', async ({ page }) => {
-    test.skip(!(await (await page.request.get('/api/test-run-cases/682')).ok()), 'no #682');
-    await page.goto('/test-run-cases/682');
+  test('#705 proposes reproducing locally and opens the Reproduce section, run line first', async ({ page }) => {
+    test.skip(!(await (await page.request.get('/api/test-run-cases/705')).ok()), 'no #705');
+    await page.goto('/test-run-cases/705');
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Reproduce locally');

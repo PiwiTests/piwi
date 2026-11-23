@@ -11,7 +11,7 @@ it is needed: a CI server action, [source control](/guide/source-control), an AI
 connection or a Slack channel. A rotation is one change, and every use is logged.
 
 <figure>
-  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: two Jenkins and two GitHub credentials, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
+  <img src="/screenshots/credentials-settings.png" alt="Settings → Credentials: three Jenkins, two GitHub and a Zephyr Scale credential, a Jenkins one open in a panel with its user, destination, projects, the three CI actions that name it and its log of dispatches and checks">
   <figcaption>Settings → Credentials: a credential's panel, with the CI actions that name it and its log.</figcaption>
 </figure>
 
