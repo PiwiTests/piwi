@@ -183,7 +183,7 @@ const dbBackendLabel = computed(() => {
           API reference
         </ULink>
         <ULink
-          to="https://github.com/piwitests/piwi"
+          to="https://github.com/PiwiTests/piwi"
           target="_blank"
           rel="noopener noreferrer"
           class="inline-flex items-center gap-1 text-primary hover:underline"
