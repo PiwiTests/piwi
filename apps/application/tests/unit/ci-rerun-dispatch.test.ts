@@ -325,6 +325,38 @@ describe('the dispatch record', () => {
     expect(await lastDispatch()).toMatchObject({ kind: 'tests', clusterId: 1, origin: 'page', tests: 1 });
   });
 
+  test("matches a Flake Lab experiment's run by the test it is about, whose ref names the experiment", async () => {
+    await seed(GITHUB);
+    // A dispatch GitHub answered with no run id, whose run cannot carry the dispatch id either.
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'lab',
+              name: 'Flake Lab',
+              target: { type: 'github', workflow: 'lab.yml', ref: 'main', argsInput: 'args' },
+              inputs: [],
+              accepts: ['flakeLab'],
+            },
+          ],
+          defaults: { flakeLab: 'lab' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect((await runFlakeLabInCi(db as never, 1, 'reproduce', { id: 1, name: 'Ada' })).ok).toBe(true);
+    const { id, at } = await lastDispatch();
+    expect(await lastDispatch()).toMatchObject({ kind: 'flakeLab', testCaseId: 1, files: null });
+    await db.insert(schema.flakeExperiments).values({ id: 31, projectId: 1, testCaseId: 1, kind: 'reproduce' });
+    const lab = { piwiOrigin: { kind: 'flake-lab', ref: '31' }, piwiFlakeLab: { experimentId: 31, armId: 1 } };
+    await finishedRun(2, lab, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    // A lab run keeps its own origin.
+    expect(await originOf(2)).toEqual({ kind: 'flake-lab', ref: '31' });
+  });
+
   test('picks the action that started the failed run, and sends the values that run was sent with', async () => {
     await seed(GITHUB);
     const action = (id: string) => ({
@@ -377,6 +409,7 @@ describe('matchCiDispatch', () => {
     ref: null,
     files: null,
     providerRunId: null,
+    testCaseId: null,
     state: 'dispatched' as const,
     runId: null,
   };
@@ -415,6 +448,17 @@ describe('matchCiDispatch', () => {
     expect(matchCiDispatch(run, [{ ...rerun, kind: 'suite' as const }])).toBeNull();
     expect(matchCiDispatch(run, [{ ...rerun, providerRunId: '555' }])).toBeNull();
     expect(matchCiDispatch(run, [{ ...rerun, kind: 'flakeLab' as const }])).toMatchObject({ id: 'x' });
+  });
+
+  test("matches a Flake Lab run by its experiment's test, on its branch, before the files are known", () => {
+    const lab = { ...base, provider: 'ci-server' as const, kind: 'flakeLab' as const, id: 'lab', at: 900_000 };
+    const ofTest = { ...lab, testCaseId: 12, ref: 'main' };
+    const labRun = { ...run, files: null, flakeLabTestCaseId: 12 };
+    expect(matchCiDispatch(labRun, [ofTest])).toBe(ofTest);
+    expect(matchCiDispatch({ ...labRun, flakeLabTestCaseId: 13 }, [ofTest])).toBeNull();
+    expect(matchCiDispatch({ ...labRun, branch: 'release' }, [ofTest])).toBeNull();
+    // A re-run of the same test is not the experiment's dispatch.
+    expect(matchCiDispatch(labRun, [{ ...ofTest, kind: 'tests' as const }])).toBeNull();
   });
 
   test("matches a CI server's build number with its branch and files, and its branch, time and files without one", () => {

@@ -107,6 +107,8 @@ export interface CiDispatchCandidate {
   files: string[] | null;
   /** GitHub's run id, GitLab's pipeline id, Bitbucket's or the CI server's build number. */
   providerRunId: string | null;
+  /** The test of a Flake Lab dispatch. */
+  testCaseId: number | null;
   state: CiDispatchState;
   runId: number | null;
   /** Epoch ms of the dispatch. */
@@ -126,6 +128,8 @@ export interface CiDispatchRunFacts {
   startedAt: number;
   /** The spec files the run executed, POSIX separators; null when the run has just started and they are not known. */
   files: string[] | null;
+  /** For a Flake Lab run, the test its experiment is about: `piwi flake` names the run after the experiment. */
+  flakeLabTestCaseId?: number | null;
 }
 
 const sameFiles = (d: CiDispatchCandidate, runFiles: string) => !!d.files?.length && d.files.join('\n') === runFiles;
@@ -135,7 +139,8 @@ const sameFiles = (d: CiDispatchCandidate, runFiles: string) => !!d.files?.lengt
  *
  * 1. the dispatch id the run carries;
  * 2. the provider's id for the run: GitHub's run id (when the dispatch answered one), GitLab's pipeline id,
- *    Bitbucket's build number;
+ *    Bitbucket's build number; then, for a Flake Lab run, the newest Flake Lab dispatch of its experiment's test, on
+ *    the run's branch;
  * 3. once the run's files are known, for a re-run or a Flake Lab experiment (never a whole suite): a CI server's
  *    build number on the dispatch's branch, with exactly its spec files; else the newest CI server dispatch, or
  *    GitHub dispatch that answered no run id, on the run's branch, started before the run, whose spec files the run
@@ -162,6 +167,17 @@ export function matchCiDispatch<T extends CiDispatchCandidate>(run: CiDispatchRu
         (d.provider === 'bitbucket' && d.providerRunId === run.buildNumber)),
   );
   if (byProviderId) return byProviderId;
+  if (run.flakeLabTestCaseId != null) {
+    const byTest = open
+      .filter(
+        (d) =>
+          d.kind === 'flakeLab' &&
+          d.testCaseId === run.flakeLabTestCaseId &&
+          (d.ref == null || run.branch == null || d.ref === run.branch),
+      )
+      .sort((a, b) => b.at - a.at)[0];
+    if (byTest) return byTest;
+  }
   if (run.files == null) return null;
 
   const runFiles = [...new Set(run.files)].sort().join('\n');

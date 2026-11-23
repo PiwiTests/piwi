@@ -6,7 +6,7 @@
  * `#shared/handlers/ci-dispatches`.
  */
 import { and, eq, gte, isNull, lt, lte } from 'drizzle-orm';
-import { ciDispatches, testCases, testRuns, testRunsCases } from '../database/schema';
+import { ciDispatches, flakeExperiments, testCases, testRuns, testRunsCases } from '../database/schema';
 import {
   CI_DISPATCH_CLOCK_SLACK_MS,
   CI_DISPATCH_MATCH_WINDOW_MS,
@@ -17,7 +17,12 @@ import {
 import type { CiActionKind } from '#shared/ci-actions';
 import type { CiRerunProvider } from '#shared/ci-rerun';
 import { toPosixPath } from '#shared/retry-command';
-import { RUN_ORIGIN_METADATA_KEY, runOriginRef, type RunOriginKind } from '#shared/run-eligibility';
+import {
+  FLAKE_LAB_RUN_METADATA_KEY,
+  RUN_ORIGIN_METADATA_KEY,
+  runOriginRef,
+  type RunOriginKind,
+} from '#shared/run-eligibility';
 import { safeHttpUrl } from '#shared/utils/safe-url';
 import { resolveRunBranch } from './run-branch';
 import { updateRunMetadata } from './run-metadata';
@@ -42,9 +47,24 @@ async function runFiles(db: DbClient, runId: number): Promise<string[]> {
   return executed.map((r) => toPosixPath(r.filePath));
 }
 
+/** The test a Flake Lab run's experiment is about, from the experiment the run names; null for any other run. */
+async function flakeLabTestCaseId(db: DbClient, projectId: number, metadata: unknown): Promise<number | null> {
+  const stamp = (metadata as Record<string, unknown> | null)?.[FLAKE_LAB_RUN_METADATA_KEY] as
+    | { experimentId?: unknown }
+    | undefined;
+  const experimentId = Number(stamp?.experimentId);
+  if (!Number.isSafeInteger(experimentId) || experimentId <= 0) return null;
+  const [experiment] = await db
+    .select({ testCaseId: flakeExperiments.testCaseId })
+    .from(flakeExperiments)
+    .where(and(eq(flakeExperiments.id, experimentId), eq(flakeExperiments.projectId, projectId)));
+  return experiment?.testCaseId ?? null;
+}
+
 /**
  * Match a run to the dispatch that started it (`matchCiDispatch`), when it
- * starts (`start`: by the dispatch id or the provider's id for the run) and
+ * starts (`start`: by the dispatch id, the provider's id for the run, or a
+ * Flake Lab experiment's test) and
  * when it finishes (`finish`: by those, then by its spec files). A match
  * records the run on the dispatch, which becomes `running`, or `ended` once the
  * run finished, and whose link becomes the build the run recorded
@@ -108,6 +128,7 @@ export async function matchRunToCiDispatch(
     ref: d.ref ?? null,
     files: Array.isArray(d.files) ? (d.files as string[]) : null,
     providerRunId: d.providerRunId ?? null,
+    testCaseId: d.testCaseId ?? null,
     state: d.state as CiDispatchState,
     runId: d.runId ?? null,
     at: epoch(d.createdAt),
@@ -121,6 +142,7 @@ export async function matchRunToCiDispatch(
       branch: run.branch ?? resolveRunBranch(run.metadata) ?? null,
       startedAt,
       files: phase === 'finish' ? await runFiles(db, runId) : null,
+      flakeLabTestCaseId: run.origin === 'flake-lab' ? await flakeLabTestCaseId(db, run.projectId, run.metadata) : null,
     },
     candidates,
   );
