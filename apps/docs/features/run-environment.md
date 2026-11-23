@@ -75,7 +75,9 @@ $env:TZ='UTC'; $env:LANG='en_US.UTF-8'; npx playwright test
 
 :::
 
-Browsers on Windows may not follow `TZ`: set `use.timezoneId` in the Playwright config instead.
+On Windows, `LANG` changes the locale of neither Node.js nor the browser, and a browser may not follow `TZ`, so the
+PowerShell command reproduces neither reliably: set `use.timezoneId` and `use.locale` in the Playwright config
+instead.
 [Fails on CI, passes locally](/recipes/fails-on-ci) walks through it from the run page to the fix.
 
 ## Related

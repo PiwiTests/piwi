@@ -88,8 +88,9 @@ $env:TZ='UTC'; $env:LANG='en_US.UTF-8'; npx playwright test
 
 :::
 
-An `LC_ALL` set on your machine wins over `LANG`. A browser on Windows may not follow `TZ`: pin it in the config
-instead, the next step.
+An `LC_ALL` set on your machine wins over `LANG`. On Windows, `LANG` changes the locale of neither Node.js nor the
+browser, and a browser may not follow `TZ`: the PowerShell command reproduces neither reliably. Pin
+`use.timezoneId` and `use.locale` in the config instead, the next step.
 
 ## 4. Fix it for good
 
