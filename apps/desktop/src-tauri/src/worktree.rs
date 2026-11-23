@@ -795,11 +795,24 @@ fn link_node_modules(folder: &Path, worktree: &Path) -> Result<(), String> {
     }
 }
 
+/// The `node_modules` links a job borrowed in `worktree` from the checkout at
+/// `root` ([`link_node_modules`]): one in `sub`, the linked folder's place, or
+/// in a folder above it up to the root, that points at the checkout's
+/// `node_modules` of the same folder.
+pub(crate) fn borrowed_links(root: &Path, worktree: &Path, sub: &Path) -> Vec<PathBuf> {
+    sub.ancestors()
+        .map(|rel| (worktree.join(rel).join("node_modules"), root.join(rel).join("node_modules")))
+        .filter(|(link, target)| is_link(link) && std::fs::read_link(link).is_ok_and(|to| &to == target))
+        .map(|(link, _)| link)
+        .collect()
+}
+
 /// Install dependencies in the worktree of the repository at `root`, in the
 /// folder that holds the lockfile ([`install_folder`], from `sub`, the linked
-/// folder's place). Prefers linking the checkout's `node_modules` of that folder
-/// when the lockfile is byte-identical; otherwise runs the package manager the
-/// lockfile names. Returns whether the step succeeded.
+/// folder's place). Every link an earlier step borrowed goes first
+/// ([`borrowed_links`]). Prefers linking the checkout's `node_modules` of that
+/// folder when the lockfile is byte-identical; otherwise runs the package
+/// manager the lockfile names. Returns whether the step succeeded.
 fn install_worktree(
     app: &AppHandle,
     id: u32,
@@ -808,6 +821,19 @@ fn install_worktree(
     sub: &Path,
     stop: &AtomicBool,
 ) -> bool {
+    // This step's lockfile may sit in another folder than the last one's: an install there would run with a borrowed
+    // link in its tree, writing through it into the checkout's own `node_modules`, and a test would read the checkout's.
+    for link in borrowed_links(root, worktree, sub) {
+        if let Err(e) = remove_link(&link) {
+            emit_line(
+                app,
+                id,
+                "error",
+                format!("Could not remove the borrowed {} link ({e}): not installing.", link.display()),
+            );
+            return false;
+        }
+    }
     let rel = install_folder(worktree, sub);
     let (folder, worktree) = (root.join(&rel), worktree.join(&rel));
     let (folder, worktree) = (folder.as_path(), worktree.as_path());
@@ -818,8 +844,8 @@ fn install_worktree(
     let folder_modules = folder.join("node_modules").is_dir();
     let worktree_modules = worktree.join("node_modules");
 
-    // The checkout's `node_modules` is borrowed only when nothing else is there yet, or the borrowed link is: a
-    // workspace root's links its packages to the checkout's own folders, which a step at another commit must not run.
+    // The checkout's `node_modules` is borrowed only when nothing is installed there yet, and never a workspace root's:
+    // it links its packages to the checkout's own folders, which a step at another commit must not run.
     let installed_here = worktree_modules.exists() && !is_link(&worktree_modules);
     if folder_modules
         && !installed_here
@@ -845,10 +871,10 @@ fn install_worktree(
         }
     }
 
-    // An install through a borrowed link would rewrite the checkout's own `node_modules`: the link goes first.
+    // An install through a link would write where it points: the link goes first.
     if is_link(&worktree_modules) {
         if let Err(e) = remove_link(&worktree_modules) {
-            emit_line(app, id, "error", format!("Could not remove the borrowed node_modules link ({e}): not installing through it."));
+            emit_line(app, id, "error", format!("Could not remove the node_modules link ({e}): not installing through it."));
             return false;
         }
     }
@@ -1076,10 +1102,15 @@ pub(crate) struct RepoPlace {
 }
 
 /// Where `folder` sits in its git repository, as `git rev-parse --show-toplevel
-/// --show-prefix` says; an error for a folder in no repository.
-pub(crate) fn repo_place(git: &Path, folder: &Path) -> Result<RepoPlace, String> {
+/// --show-prefix` says. An error for a folder in no project's repository below
+/// `home` ([`crate::folder_search::git_root_below`]), and git's own message when
+/// it cannot read the repository.
+pub(crate) fn repo_place(git: &Path, folder: &Path, home: Option<&Path>) -> Result<RepoPlace, String> {
     const NO_REPO: &str = "the linked folder is in no git repository: a reproduction, a bisect and the lab check out \
                            its commits";
+    if crate::folder_search::git_root_below(folder, home).is_none() {
+        return Err(NO_REPO.into());
+    }
     let out = console_command(git)
         .arg("-C")
         .arg(folder)
@@ -1087,7 +1118,12 @@ pub(crate) fn repo_place(git: &Path, folder: &Path) -> Result<RepoPlace, String>
         .output()
         .map_err(|e| e.to_string())?;
     if !out.status.success() {
-        return Err(NO_REPO.into());
+        let said = String::from_utf8_lossy(&out.stderr).trim().to_string();
+        return Err(if said.is_empty() || said.contains("not a git repository") {
+            NO_REPO.into()
+        } else {
+            said
+        });
     }
     let stdout = String::from_utf8_lossy(&out.stdout);
     let mut lines = stdout.lines();
@@ -1119,7 +1155,7 @@ fn resolve_repo(app: &AppHandle, project_id: &str) -> Result<(PathBuf, PathBuf, 
         return Err("the linked folder no longer exists — pick it again".into());
     }
     let git = resolve_tool(app, "git").ok_or("git was not found — install it and try again")?;
-    let place = repo_place(&git, &folder)?;
+    let place = repo_place(&git, &folder, crate::folder_search::home_folder().as_deref())?;
     Ok((folder, git, place))
 }
 
@@ -2655,9 +2691,9 @@ mod tests {
         repo.run(&["-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "e2e"]);
         let head = repo.run(&["rev-parse", "HEAD"]).trim().to_string();
 
-        let at_root = repo_place(&repo.git, &repo.folder()).unwrap();
+        let at_root = repo_place(&repo.git, &repo.folder(), None).unwrap();
         assert_eq!(at_root.sub, PathBuf::new());
-        let place = repo_place(&repo.git, &e2e).unwrap();
+        let place = repo_place(&repo.git, &e2e, None).unwrap();
         assert_eq!(place.sub, Path::new("e2e").join("web"));
         assert_eq!(
             crate::runner::real_path(&place.root),
@@ -2723,8 +2759,66 @@ mod tests {
         };
         let outside = repo.dir.join("outside");
         std::fs::create_dir_all(&outside).unwrap();
-        let err = repo_place(&repo.git, &outside).err().unwrap();
+        let err = repo_place(&repo.git, &outside, None).err().unwrap();
         assert!(err.contains("no git repository"), "{err}");
+    }
+
+    #[test]
+    fn a_home_tracked_for_its_dotfiles_is_no_projects_repository() {
+        let Some(repo) = Repo::new("home") else {
+            return;
+        };
+        let home = repo.dir.join("home");
+        let shop = home.join("projects").join("shop");
+        let app = home.join("projects").join("app");
+        std::fs::create_dir_all(&shop).unwrap();
+        std::fs::create_dir_all(&app).unwrap();
+        for dir in [&home, &app] {
+            let out = Command::new(&repo.git).arg("-C").arg(dir).args(["init", "-q"]).output().unwrap();
+            assert!(out.status.success());
+        }
+        let err = repo_place(&repo.git, &shop, Some(&home)).err().unwrap();
+        assert!(err.contains("no git repository"), "{err}");
+        assert!(repo_place(&repo.git, &shop, None).is_ok(), "the home's repository, without the rule");
+        let place = repo_place(&repo.git, &app, Some(&home)).unwrap();
+        assert_eq!(crate::runner::real_path(&place.root), crate::runner::real_path(&app));
+    }
+
+    #[test]
+    fn a_repository_git_cannot_read_is_said_in_gits_words() {
+        let Some(repo) = Repo::new("unreadable") else {
+            return;
+        };
+        repo.run(&["config", "core.repositoryformatversion", "99"]);
+        let err = repo_place(&repo.git, &repo.folder(), None).err().unwrap();
+        assert!(!err.contains("no git repository"), "{err}");
+        assert!(err.contains("99"), "{err}");
+    }
+
+    #[test]
+    fn every_link_a_job_borrowed_along_the_linked_folder_is_found_and_no_other() {
+        let dir = std::env::temp_dir().join(format!("piwi-borrowed-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let (root, worktree) = (dir.join("checkout"), dir.join("worktree"));
+        let sub = Path::new("e2e").join("web");
+        for rel in [Path::new(""), Path::new("e2e"), Path::new("other")] {
+            std::fs::create_dir_all(root.join(rel).join("node_modules").join("pkg")).unwrap();
+            std::fs::create_dir_all(worktree.join(rel)).unwrap();
+            link_node_modules(&root.join(rel), &worktree.join(rel)).unwrap();
+        }
+        // A link that points elsewhere is no borrowed one.
+        std::fs::create_dir_all(worktree.join(&sub)).unwrap();
+        link_node_modules(&root.join("other"), &worktree.join(&sub)).unwrap();
+
+        let links = borrowed_links(&root, &worktree, &sub);
+        assert_eq!(links, [worktree.join("e2e").join("node_modules"), worktree.join("node_modules")]);
+        for link in &links {
+            remove_link(link).unwrap();
+        }
+        assert!(borrowed_links(&root, &worktree, &sub).is_empty());
+        assert!(root.join("e2e").join("node_modules").join("pkg").is_dir());
+        assert!(root.join("node_modules").join("pkg").is_dir());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
