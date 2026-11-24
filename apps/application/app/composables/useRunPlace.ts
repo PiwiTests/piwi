@@ -160,16 +160,16 @@ export async function useRunPlace(options: RunPlaceOptions) {
   // ── What each destination offers ──────────────────────────────────────────
   const requestFetch = useRequestFetch();
   /** The offer of the What the page opens with, read with the page: one read, for what the button says. */
-  const firstWhat = options.whats()[0];
+  const openingWhat = options.whats()[0];
   const firstOffer = useAsyncData(
-    `run-place-offered-${projectId}-${firstWhat?.key}-${JSON.stringify(firstWhat?.ci?.source ?? null)}`,
+    `run-place-offered-${projectId}-${openingWhat?.key}-${JSON.stringify(openingWhat?.ci?.source ?? null)}`,
     async () => {
-      if (!mayDispatch.value || !firstWhat?.ci) return null;
-      const source = firstWhat.ci.source;
+      if (!mayDispatch.value || !openingWhat?.ci) return null;
+      const source = openingWhat.ci.source;
       const offer = await requestFetch<CiOffered>(`/api/projects/${projectId}/ci-actions/offered`, {
         query: source,
       }).catch(() => null);
-      return { key: firstWhat.key, source: JSON.stringify(source), offer };
+      return { key: openingWhat.key, source: JSON.stringify(source), offer };
     },
     { default: () => null },
   );
