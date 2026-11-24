@@ -166,3 +166,6 @@ function statusOf(error: unknown): number | undefined {
     (error as { statusCode?: number; status?: number } | null)?.statusCode ?? (error as { status?: number })?.status
   );
 }
+
+/** A project's Run on my machine, as `useRunOnMyMachine` answers it. */
+export type RunOnMyMachine = Awaited<ReturnType<typeof useRunOnMyMachine>>;
