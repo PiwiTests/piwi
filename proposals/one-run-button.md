@@ -14,11 +14,12 @@ repeat within 10 seconds answered 409 with the first (D13); matching at `/start`
 provider's id (a Flake Lab run by its experiment's test), and at finish by those or the files (D10, D11); GitHub's run
 id (D12); the `unreported` sweep and the 90-day retention (D18); the action that started the failed run picked first,
 with the values it was sent with (D2); and "Last re-run" linking the run with its result. The demo seeds a matched and
-an unreported re-run, and its runs report the Jenkins job their project re-runs in. PR 3 is built on the server and
-demo side: one dispatch route for every source (D15), with the branch checked against git's rules and the target's
+an unreported re-run, and its runs report the Jenkins job their project re-runs in. PR 3 is built on the server, MCP
+and demo side: one dispatch route for every source (D15), with the branch checked against git's rules and the target's
 branch mode (D6) and the choice inputs against the action (D7); the reads of a dispatch and of a project's dispatches;
 the actions offered for a place, with each one's branch mode, inputs and readiness, the D2 default and the place's last
-dispatch; the branches an action may run on. The per-place routes are gone (Q5), and the cluster and execution pages, and the Flake Lab next step, dispatch through
+dispatch; the branches an action may run on; `rerun_cluster_in_ci`'s `ref` and `inputs`, and `get_ci_dispatch` (D16).
+The per-place routes are gone (Q5), and the cluster and execution pages, and the Flake Lab next step, dispatch through
 the new route with the toasts they had. `RunFollowUp`, which replaces those toasts, moves to PR 4 with the dialog. PR 4
 and the rest remain. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379)
 and is recorded in [ci-actions.md](../adr/ci-actions.md).

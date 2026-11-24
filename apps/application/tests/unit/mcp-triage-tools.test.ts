@@ -345,9 +345,12 @@ describe('rerun_cluster_in_ci', () => {
     rerun.fn.mockResolvedValue({
       ok: true,
       dispatch: {
+        id: 'a1b2c3d4e5f60718',
+        state: 'dispatched',
         provider: 'github',
         url: 'https://github.com/acme/shop/actions',
         args: 'tests/cart.spec.ts',
+        ref: 'main',
         at: Date.UTC(2026, 9, 2),
         byName: 'Robin',
         byUserId: 2,
@@ -356,16 +359,19 @@ describe('rerun_cluster_in_ci', () => {
     const result = await tool('rerun_cluster_in_ci')(db as never, { clusterId: 1 }, maintainer);
     expect(result).toEqual({
       clusterId: 1,
+      dispatchId: 'a1b2c3d4e5f60718',
+      state: 'dispatched',
       provider: 'github',
       url: 'https://github.com/acme/shop/actions',
       args: 'tests/cart.spec.ts',
+      ref: 'main',
       dispatchedAt: '2026-10-02T00:00:00.000Z',
     });
     expect(rerun.fn).toHaveBeenCalledWith(
       db,
       1,
       { id: 2, name: 'Robin', apiKeyId: null },
-      { actionId: undefined, origin: 'mcp' },
+      { actionId: undefined, origin: 'mcp', ref: null, inputs: null },
     );
   });
 
@@ -390,8 +396,30 @@ describe('rerun_cluster_in_ci', () => {
       db,
       1,
       { id: 2, name: 'Robin', apiKeyId: null },
-      { actionId: 'Smoke · staging', origin: 'mcp' },
+      { actionId: 'Smoke · staging', origin: 'mcp', ref: null, inputs: null },
     );
+  });
+
+  test('passes on the branch and the choices the agent names, checked as the route checks them', async () => {
+    rerun.fn.mockResolvedValue({ ok: true, dispatch: { id: 'a1b2c3d4e5f60718', state: 'dispatched', at: 0 } });
+    await tool('rerun_cluster_in_ci')(
+      db as never,
+      { clusterId: 1, ref: 'release/2.0', inputs: { SUITE: 'smoke' } },
+      maintainer,
+    );
+    expect(rerun.fn).toHaveBeenLastCalledWith(
+      db,
+      1,
+      { id: 2, name: 'Robin', apiKeyId: null },
+      { actionId: undefined, origin: 'mcp', ref: 'release/2.0', inputs: { SUITE: 'smoke' } },
+    );
+    await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 1, ref: 'a..b' }, maintainer)).rejects.toThrow(
+      '"a..b" is not a branch name',
+    );
+    await expect(
+      tool('rerun_cluster_in_ci')(db as never, { clusterId: 1, inputs: { SUITE: 2 } }, maintainer),
+    ).rejects.toThrow('inputs must be an object of input names and their values.');
+    expect(rerun.fn).toHaveBeenCalledTimes(1);
   });
 
   test('passes on why the re-run is not available', async () => {
@@ -415,6 +443,57 @@ describe('rerun_cluster_in_ci', () => {
     await expect(tool('rerun_cluster_in_ci')(db as never, { clusterId: 'latest' }, maintainer)).rejects.toThrow(
       'clusterId',
     );
+  });
+});
+
+describe('get_ci_dispatch', () => {
+  beforeEach(async () => {
+    const row = (id: string, projectId: number) => ({
+      id,
+      projectId,
+      actionId: 'gh',
+      actionName: 'Smoke',
+      origin: 'mcp',
+      kind: 'tests',
+      provider: 'github',
+      args: 'tests/cart.spec.ts',
+      ref: 'main',
+      tests: 1,
+      inputs: {},
+      clusterId: projectId === 1 ? 1 : 3,
+      state: 'running',
+      runId: projectId === 1 ? 1 : null,
+      byName: 'Robin',
+      byUserId: 2,
+      createdAt: new Date(Date.UTC(2026, 9, 2)),
+    });
+    await db.insert(schema.ciDispatches).values([row('a1b2c3d4e5f60718', 1), row('ffffffffffffffff', 2)]);
+  });
+
+  test('reads a dispatch, its state and its run, to a reader of its project', async () => {
+    expect(await tool('get_ci_dispatch')(db as never, { dispatchId: 'a1b2c3d4e5f60718' }, viewer)).toEqual({
+      id: 'a1b2c3d4e5f60718',
+      projectId: 1,
+      state: 'running',
+      kind: 'tests',
+      origin: 'mcp',
+      actionId: 'gh',
+      actionName: 'Smoke',
+      provider: 'github',
+      args: 'tests/cart.spec.ts',
+      ref: 'main',
+      tests: 1,
+      runId: 1,
+      run: { status: 'failed', totalTests: 0, passedTests: 0, failedTests: 0 },
+      dispatchedAt: '2026-10-02T00:00:00.000Z',
+      byName: 'Robin',
+    });
+  });
+
+  test('answers null for an unknown dispatch and one of a project outside the scope, and refuses a bad id', async () => {
+    expect(await tool('get_ci_dispatch')(db as never, { dispatchId: '0000000000000000' }, viewer)).toBeNull();
+    expect(await tool('get_ci_dispatch')(db as never, { dispatchId: 'ffffffffffffffff' }, maintainer)).toBeNull();
+    await expect(tool('get_ci_dispatch')(db as never, { dispatchId: 'latest' }, viewer)).rejects.toThrow('dispatchId');
   });
 });
 
