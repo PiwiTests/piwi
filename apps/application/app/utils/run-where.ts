@@ -1,6 +1,7 @@
 /**
  * The last Where a person sent a run to, kept per browser and per project, which the run dialog picks first when it
- * opens. A Where is `app:<target id>` for one of the person's apps, or `ci:<action id>` for a CI action.
+ * opens. A Where is `app:<target id>` for one of the person's apps, `ci:<action id>` for a CI action, or `local` for
+ * This computer, in the desktop window.
  */
 const RUN_WHERE_KEY = 'piwi-run-where';
 
@@ -16,7 +17,7 @@ function readAll(): Record<string, string> {
 /** The Where last sent to in this project, from this browser; null when none, or storage cannot be read. */
 export function keptRunWhere(projectId: number): string | null {
   const kept = readAll()[String(projectId)];
-  return typeof kept === 'string' && /^(app|ci):./.test(kept) ? kept : null;
+  return typeof kept === 'string' && /^(?:(?:app|ci):.|local$)/.test(kept) ? kept : null;
 }
 
 /** Keep the Where just sent to, for this project, in this browser. */
