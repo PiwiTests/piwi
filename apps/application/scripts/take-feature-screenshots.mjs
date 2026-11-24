@@ -2999,7 +2999,7 @@ const SCENES = [
     name: 'run-on-my-machine',
     mode: 'demo',
     description:
-      'Run on my machine on an execution of the live demo: the menu (what, where, options) at 1280 and 390 px, the request followed while the seeded desktop app runs it and once it passed, the window opened again on that outcome, and Settings → Account → Your runs on my machine',
+      'The run dialog of an execution of the live demo with the seeded desktop app picked: what, where and the run options at 1280 and 390 px, the request followed while the app runs it and once it passed, the dialog opened again on that outcome, and Settings → Account → Your runs on my machine',
     route: '/test-run-cases/37',
     viewport: { width: 1280, height: 860 },
     async run({ page, shoot, settle }) {
@@ -3008,11 +3008,13 @@ const SCENES = [
         localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
       );
       await page.reload({ waitUntil: 'domcontentloaded' });
-      const button = page.getByRole('button', { name: 'Run on my machine' });
+      const button = page.getByRole('button', { name: 'Run on my machine or CI' });
       await button.waitFor({ timeout: 90_000 });
       await button.click();
       const dialog = page.getByRole('dialog');
-      await dialog.getByRole('radio').first().waitFor({ timeout: 15_000 });
+      // A re-run opens on the project's CI action: this scene is about the app.
+      await dialog.getByTestId('run-dialog-apps').getByRole('radio').first().click({ timeout: 15_000 });
+      await dialog.getByTestId('run-dialog-environment').waitFor();
       await settle();
       await shoot('menu', { of: '[role="dialog"]', pad: 0 });
       await page.setViewportSize({ width: 390, height: 1000 });
@@ -3020,7 +3022,7 @@ const SCENES = [
       await shoot('menu-phone', { of: '[role="dialog"]', pad: 0 });
       await page.setViewportSize({ width: 1280, height: 860 });
       await dialog.getByRole('button', { name: 'Send' }).click();
-      const state = dialog.getByTestId('run-request-state');
+      const state = dialog.getByTestId('run-follow-up-state');
       await state.filter({ hasText: 'Running in' }).waitFor({ timeout: 20_000 });
       await settle();
       await shoot('running', { of: '[role="dialog"]', pad: 0 });
@@ -3031,7 +3033,7 @@ const SCENES = [
       await page.keyboard.press('Escape');
       await dialog.waitFor({ state: 'hidden' });
       await button.click();
-      await dialog.getByTestId('run-request-state').filter({ hasText: 'Ended' }).waitFor();
+      await dialog.getByTestId('run-follow-up-state').filter({ hasText: 'Ended' }).waitFor();
       await settle();
       await shoot('reopened', { of: '[role="dialog"]', pad: 0 });
       await page.keyboard.press('Escape');
@@ -3048,7 +3050,7 @@ const SCENES = [
         .click();
       await page
         .locator('[data-shot="run-header"]')
-        .getByRole('button', { name: 'Run on my machine' })
+        .getByRole('button', { name: 'Run on my machine or CI' })
         .waitFor({ timeout: 90_000 });
       await settle();
       await shoot('run-header', { of: '[data-shot="run-header"]', pad: 0 });
@@ -3061,6 +3063,68 @@ const SCENES = [
       'run-on-my-machine-ended.png',
       'run-on-my-machine-reopened.png',
       'run-on-my-machine-list.png',
+    ],
+  },
+  {
+    name: 'run-button',
+    mode: 'demo',
+    description:
+      'The run button and its dialog in the live demo: an execution’s dialog on its CI action at 1280 and 390 px and the dispatch followed once sent, a run’s failed tests listed under What, a test’s Flake Lab experiment with the action that takes none disabled, and the project page’s one-click runs',
+    route: '/test-run-cases/37',
+    viewport: { width: 1280, height: 860 },
+    async run({ page, shoot, settle, goto }) {
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const dialog = page.getByRole('dialog');
+      const openDialog = async (scope = page) => {
+        await scope.getByRole('button', { name: /^Run on (my machine|CI)( or CI)?$/ }).click({ timeout: 90_000 });
+        await dialog.getByRole('radio').first().waitFor({ timeout: 30_000 });
+        await settle();
+      };
+      await openDialog();
+      await shoot('execution', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 900 });
+      await settle();
+      await shoot('phone', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 860 });
+      await dialog.getByRole('button', { name: 'Send' }).click();
+      await dialog.locator('[data-shot="run-follow-up"]').waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('follow-up', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+
+      const runLink = await page
+        .getByRole('link', { name: /^Run #\d+$/ })
+        .first()
+        .getAttribute('href');
+      await goto(runLink.replace(/^\/demo/, ''));
+      await openDialog(page.locator('[data-shot="run-header"]'));
+      await shoot('run', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+
+      await goto('/test-cases/9');
+      await openDialog();
+      await dialog.getByRole('radio', { name: 'Flake Lab: reproduce the flake' }).click();
+      await settle();
+      await shoot('flake-lab', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+
+      await goto('/projects/2');
+      await page.getByRole('button', { name: 'One-click runs' }).click({ timeout: 90_000 });
+      await page.getByRole('menu').waitFor();
+      await settle();
+      await shoot('menu', { clip: { x: 640, y: 40, width: 640, height: 180 } });
+    },
+    outputs: [
+      'run-button-execution.png',
+      'run-button-phone.png',
+      'run-button-follow-up.png',
+      'run-button-run.png',
+      'run-button-flake-lab.png',
+      'run-button-menu.png',
     ],
   },
   {
@@ -3673,6 +3737,24 @@ const SCENES = [
       await shoot();
     },
   })),
+  {
+    name: 'run-dialog',
+    tags: ['docs'],
+    out: 'docs',
+    description:
+      'The run dialog of a failed run of API Integration: its failed tests or every test under What, the project’s CI actions under Where, the one that takes no re-runs disabled with the reason, and the picked action’s branch and inputs',
+    route: '/test-runs/26',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page
+        .locator('[data-shot="run-header"]')
+        .getByRole('button', { name: 'Run on CI' })
+        .click({ timeout: 90_000 });
+      await page.getByRole('dialog').getByTestId('run-dialog-ci').waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
   ...[
     { name: 'ci-rerun-last-run', cluster: 6, width: 1600, height: 1400, docs: true },
     { name: 'cluster-last-rerun-mobile', cluster: 6, width: 390, height: 2400 },
@@ -3680,7 +3762,7 @@ const SCENES = [
   ].map(({ name, cluster, width, height, docs }) => ({
     name,
     ...(docs ? { tags: ['docs'], out: 'docs' } : {}),
-    description: `Failure cluster → More ways to fix → Verify: the last re-run in CI, ${
+    description: `Failure cluster → More ways to fix → Verify: the run button and the last re-run in CI, ${
       cluster === 6 ? 'with the run that answered it and its result' : 'that no run answered'
     }, at ${width} px`,
     route: `/failure-clusters/${cluster}`,
