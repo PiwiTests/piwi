@@ -221,7 +221,7 @@ Each entry names folders under `server/api/`.
     `[id]/resource-timeline`.
   - CI: `[id]/gate` (a gate policy's verdict) and `[id]/incident` (an environment incident).
 - **`test-cases/`**: one test across runs: detail, history, stability trend, coverage reach, path variation, merge,
-  and the Flake Lab (`flake-plan`, `flake-experiments`, `flake-lab-ci`, `flake-profile`).
+  and the Flake Lab (`flake-plan`, `flake-experiments`, `flake-profile`).
 - **`test-run-cases/`**: one execution: detail, steps, timeline, the trace views, DOM snapshots, page and visual
   diffs, the attempt diff, clues, coverage and its divergence, suspect lines, execution-scoped diagnosis (`diagnose`,
   `diagnosis`, `diagnosis-context`), locator healing (`locator-healing`, `locator-pick`, `locators`), the export, the
@@ -229,12 +229,13 @@ Each entry names folders under `server/api/`.
 - **`projects/`**: the list with stats (`projects.get.ts`), `menu` (the sidebar's short list, one SELECT),
   `overview` (per-project trends), create, detail, update, delete. Under `projects/[id]/`: members, flaky and slow
   tests, failure clusters, the test catalog, coverage, the locator index, the Test Map (`graph`, `feature-map`,
-  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, and the families
-  listed below.
+  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, CI (`ci-dispatches`
+  to send one and list them, `ci-actions/offered`, an action's `branches` and `check`; `ci-dispatches/[id]` reads one,
+  through `server/utils/ci-rerun.ts`), and the families listed below.
 - **`failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/`**: cluster list, detail and triage
   (status, assignee, snooze, bulk, quarantine, extract cases), AI diagnosis (`diagnose`, `context`, `commits`,
   `commit-diff`, `base-commit`), the diagnosis version history (`diagnoses`), suspect lines, fix plan, fixed-before
-  matches, occurrence trend, rerun, bisect, export; semantic merge suggestions (approve, reject); diagnosis feedback.
+  matches, occurrence trend, bisect, export; semantic merge suggestions (approve, reject); diagnosis feedback.
 - **`widgets/`, `dashboards/`**: the cross-project analytics behind `/analytics`.
   - `widgets/[widget]` answers one widget; `widgets/preview` answers the editor's unsaved widget. `analytics/[widget]`
     is the former path of `widgets/[widget]`, kept for scripts: ad blockers refuse an address containing "analytics".
