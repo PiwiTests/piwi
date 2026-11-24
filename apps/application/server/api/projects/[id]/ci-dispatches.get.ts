@@ -1,7 +1,10 @@
 import { getDatabase } from '../../../database';
 import { requireProjectAccess, requireRouteId } from '../../../utils/project-access';
 import { optionalIntQuery } from '../../../utils/query-params';
+import { getRequestAccess } from '../../../utils/auth';
 import { listCiDispatches } from '#shared/handlers/ci-dispatches';
+import { ciDispatchForReader } from '#shared/ci-dispatches';
+import { can } from '#shared/permissions';
 import { parseRouteId } from '#shared/route-id';
 
 defineRouteMeta({
@@ -9,7 +12,7 @@ defineRouteMeta({
     tags: ['CI dispatches'],
     summary: "List a project's CI dispatches",
     description:
-      "The project's CI dispatches, newest first: who dispatched what, through which action, on which branch, and the run that answered each. `state=open` keeps those still waiting for their run (`dispatched` within the six-hour matching window) and those whose run is going on (`running`); `state=all`, the default, keeps every state, `ended`, `unreported` and `refused` included. `clusterId` keeps a cluster's dispatches, `testCaseId` a test's Flake Lab dispatches. `limit` is 20 by default, at most 100. Each item is a dispatch as `GET /api/ci-dispatches/{id}` answers it. Readable by anyone who reads the project.",
+      "The project's CI dispatches, newest first: who dispatched what, through which action, on which branch, and the run that answered each. `state=open` keeps those still waiting for their run (`dispatched` within the six-hour matching window) and those whose run is going on (`running`); `state=all`, the default, keeps every state, `ended`, `unreported` and `refused` included. `clusterId` keeps a cluster's dispatches, `testCaseId` a test's Flake Lab dispatches. `limit` is 20 by default, at most 100. Each item is a dispatch as `GET /api/ci-dispatches/{id}` answers it, `detail` included only for a caller who holds `run:control`. Readable by anyone who reads the project.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'state', in: 'query', required: false, schema: { type: 'string', enum: ['open', 'all'] } },
@@ -45,5 +48,6 @@ export default eventHandler(async (event) => {
     testCaseId: idQuery(query.testCaseId, 'testCaseId'),
     limit: optionalIntQuery(event, 'limit', { default: 20, min: 1, max: 100 }),
   });
-  return { items };
+  const mayDispatch = can(await getRequestAccess(event), 'run:control', projectId);
+  return { items: items.map((d) => ciDispatchForReader(d, mayDispatch)) };
 });

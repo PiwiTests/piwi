@@ -75,7 +75,7 @@ export interface CiDispatchView {
   /** How many tests the arguments name. */
   tests: number | null;
   state: CiDispatchState;
-  /** The provider's error, for a refused dispatch. */
+  /** The provider's error, for a refused dispatch, shown only to whoever may dispatch ({@link ciDispatchForReader}). */
   detail: string | null;
   /** The run matched to it, and that run as it stands. */
   runId: number | null;
@@ -90,6 +90,15 @@ export interface CiDispatchView {
 /** The state a dispatch reads as: a dispatch still open past the matching window is `unreported`. */
 export function ciDispatchState(state: CiDispatchState, at: number, now = Date.now()): CiDispatchState {
   return state === 'dispatched' && now - at > CI_DISPATCH_MATCH_WINDOW_MS ? 'unreported' : state;
+}
+
+/**
+ * A dispatch as a reader sees it: a refused dispatch's `detail` can name a
+ * credential and where it may be sent, so it reaches only a reader who may
+ * dispatch (`run:control` on the project).
+ */
+export function ciDispatchForReader<T extends { detail: string | null }>(view: T, mayDispatch: boolean): T {
+  return mayDispatch || view.detail == null ? view : { ...view, detail: null };
 }
 
 /** Whether a dispatch can still be matched to a run. */

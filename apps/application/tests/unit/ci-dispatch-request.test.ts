@@ -108,6 +108,8 @@ describe('a dispatch request', () => {
       ok: true,
       value: { source: { from: 'project' }, action: null, ref: null, inputs: null },
     });
+    // An empty branch is none, as an empty action is.
+    expect(parseCiDispatchRequest({ source: {}, ref: '' })).toMatchObject({ ok: true, value: { ref: null } });
   });
 
   test('refuses a kind its source does not start', () => {
@@ -151,6 +153,7 @@ describe('a branch name', () => {
     const refused = [
       '',
       '@',
+      'HEAD',
       '-main',
       'feature x',
       'a\tb',

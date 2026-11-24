@@ -19,7 +19,7 @@ import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { failureClusters } from '../database/schema';
 import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
-import { readProjectRepositoryUrl } from './scm/project-repository';
+import { projectRepositoryFor, readProjectRepositoryUrl } from './scm/project-repository';
 import { NO_RETRY_ARGS } from '#shared/retry-command';
 import {
   ciPlaceLastDispatch,
@@ -200,22 +200,31 @@ async function readiness(
   if (action.target.type === 'ci-server') {
     ready = await ciServerReadiness(db, place, { ...action, target: action.target }, ref);
   } else {
-    const hasToken = await hasScmCredential(
-      db,
-      place.projectId,
-      await readProjectRepositoryUrl(db, place.projectId),
-      action.target.credentialId ?? null,
-    );
-    ready = hasToken
-      ? { available: true, reason: null }
-      : {
-          available: false,
-          reason: `No SCM credential is set to dispatch the ${DISPATCH_NOUN[place.kind]}: pick one in the project’s Source control settings.`,
-        };
+    // An SCM credential reaches only the project's repository, where the place's must be.
+    const repositoryUrl = await projectRepositoryFor(db, place.projectId, place.repositoryUrl);
+    if (!repositoryUrl) ready = { available: false, reason: repositoryReason(place) };
+    else if (await hasScmCredential(db, place.projectId, repositoryUrl, action.target.credentialId ?? null)) {
+      ready = { available: true, reason: null };
+    } else {
+      ready = {
+        available: false,
+        reason: `No SCM credential is set to dispatch the ${DISPATCH_NOUN[place.kind]}: pick one in the project’s Source control settings.`,
+      };
+    }
   }
   // Empty arguments would run the whole suite.
   if (ready.available && place.kind === 'tests' && !place.args) return { available: false, reason: NO_RETRY_ARGS };
   return ready;
+}
+
+/** Why a repository host's action cannot dispatch from a place whose repository is not the project's. */
+function repositoryReason(place: CiDispatchPlace): string {
+  if (!place.repositoryUrl) {
+    return place.runId == null
+      ? 'The project has no repository to dispatch to: set it in the project’s Source control settings.'
+      : 'Its run reported no repository to dispatch to.';
+  }
+  return `Its run reported ${place.repositoryUrl}, not the project’s repository, the only one its SCM credentials reach.`;
 }
 
 /** A second dispatch of the same action, arguments, branch and inputs within the guard: the earlier one. */
@@ -226,8 +235,9 @@ class DuplicateDispatchError extends Error {
 }
 
 /**
- * Send a place's dispatch through an action, on `ref` (the target's configured
- * ref when null), with these input values beside the arguments, never in
+ * Send a place's dispatch through an action {@link readiness} found ready
+ * (no reserved input name), on `ref` (the target's configured ref when null),
+ * with these input values beside the arguments, never in
  * them. A repository host's action dispatches on the place's repository. The
  * dispatch is stored before it is sent ({@link claimCiDispatch}, which refuses
  * the same one twice), then settled with the provider's answer, or as refused
@@ -246,9 +256,6 @@ async function dispatchWithAction(
 ): Promise<CiDispatchView> {
   const { place, action, inputs } = input;
   const id = randomBytes(8).toString('hex');
-  const reserved = reservedInputName(action);
-  if (reserved)
-    throw new Error(reservedInputMessage(reserved, action.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'));
   const target = action.target;
   // The virtual administrator of an instance without sign-in is id 0, no user row.
   const credentialActor: CredentialActor = { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null };
@@ -472,10 +479,11 @@ export async function ciOffered(
 
 /**
  * The branches an action may run on in a project: the branches its runs
- * reported, most recent first, then, for a repository host's action, the live
- * branches of the project's pinned repository, read with the action's SCM
- * credential. A CI server action, whose branch is typed or fixed, gets the run
- * branches only. Null when the project has no such action.
+ * reported, most recent first, then, for a repository host's action while CI
+ * actions are on, the live branches of the project's pinned repository, read
+ * with the action's SCM credential. A CI server action, whose branch is typed
+ * or fixed, gets the run branches only. Null when the project has no such
+ * action.
  */
 export async function ciActionBranches(
   db: DbClient,
@@ -484,12 +492,13 @@ export async function ciActionBranches(
   q: string | null,
   actor: CredentialActor,
 ): Promise<CiBranchOption[] | null> {
-  const action = (await getCiActionsSettings(db, projectId)).actions.find((a) => a.id === actionId);
+  const settings = await getCiActionsSettings(db, projectId);
+  const action = settings.actions.find((a) => a.id === actionId);
   if (!action) return null;
   const runBranches = await projectRunBranches(db, projectId);
   const target = action.target;
   let repositoryBranches: string[] = [];
-  if (target.type !== 'ci-server' && ciBranchMode(target) === 'list') {
+  if (settings.enabled && target.type !== 'ci-server' && ciBranchMode(target) === 'list') {
     const pinned = await readProjectRepositoryUrl(db, projectId);
     if (pinned && detectScmProvider(pinned) === target.type) {
       try {

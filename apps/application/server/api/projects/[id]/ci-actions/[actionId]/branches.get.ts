@@ -7,7 +7,7 @@ defineRouteMeta({
     tags: ['CI dispatches'],
     summary: 'The branches a CI action may run on',
     description:
-      "The branches a dispatch through this action may name as its `ref`, as `{ items: [{ name, source }] }`, at most 50: first the branches the project's runs reported, the most recently run first (`source: 'runs'`), then, for a GitHub, GitLab or Bitbucket action, the live branches of the project's pinned repository read with the action's SCM credential, else the project's (`source: 'repository'`), each name once. An action whose branch is typed or fixed (a CI server action) gets the run branches only, as suggestions. `q` keeps the names that hold it, ignoring case and accents. A repository that cannot be read leaves the run branches. An unknown action answers 404.",
+      "The branches a dispatch through this action may name as its `ref`, as `{ items: [{ name, source }] }`, at most 50: first the branches the project's runs reported, the most recently run first (`source: 'runs'`), then, for a GitHub, GitLab or Bitbucket action while CI actions are on, the live branches of the project's pinned repository read with the action's SCM credential, else the project's (`source: 'repository'`), each name once. An action whose branch is typed or fixed (a CI server action) gets the run branches only, as suggestions. `q` keeps the names that hold it, ignoring case and accents. A repository that cannot be read leaves the run branches. An unknown action answers 404.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'actionId', in: 'path', required: true, schema: { type: 'string' } },

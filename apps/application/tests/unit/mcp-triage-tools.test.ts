@@ -490,6 +490,17 @@ describe('get_ci_dispatch', () => {
     });
   });
 
+  test('gives a refusal’s words to a caller who may dispatch alone', async () => {
+    const detail = 'The credential "Team Jenkins" is sent only under https://jenkins.internal/.';
+    await db
+      .update(schema.ciDispatches)
+      .set({ state: 'refused', detail, runId: null })
+      .where(eq(schema.ciDispatches.id, 'a1b2c3d4e5f60718'));
+    const read = (ctx: typeof viewer) => tool('get_ci_dispatch')(db as never, { dispatchId: 'a1b2c3d4e5f60718' }, ctx);
+    expect(await read(viewer)).not.toHaveProperty('detail');
+    expect(await read(maintainer)).toMatchObject({ state: 'refused', detail });
+  });
+
   test('answers null for an unknown dispatch and one of a project outside the scope, and refuses a bad id', async () => {
     expect(await tool('get_ci_dispatch')(db as never, { dispatchId: '0000000000000000' }, viewer)).toBeNull();
     expect(await tool('get_ci_dispatch')(db as never, { dispatchId: 'ffffffffffffffff' }, maintainer)).toBeNull();

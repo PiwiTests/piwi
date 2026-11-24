@@ -143,7 +143,7 @@ export const MAX_CI_REF_BYTES = 255;
 
 /**
  * Why a branch name cannot be sent, or null: the rules of
- * `git check-ref-format --branch`. Not empty, not `@`, at most
+ * `git check-ref-format --branch`. Not empty, not `@` or `HEAD`, at most
  * {@link MAX_CI_REF_BYTES} bytes, no leading `-` or `/`, no trailing `/` or
  * `.`, no `..`, `//` or `@{`, no space, control character or any of
  * `~ ^ : ? * [ \`, and no part between `/` that starts with `.` or ends with
@@ -155,7 +155,7 @@ export function ciRefProblem(ref: string): string | null {
   if (new TextEncoder().encode(ref).length > MAX_CI_REF_BYTES) {
     return `A branch name is at most ${MAX_CI_REF_BYTES} bytes.`;
   }
-  if (ref === '@') return 'A branch cannot be named "@".';
+  if (ref === '@' || ref === 'HEAD') return `A branch cannot be named ${name}.`;
   if (ref.startsWith('-')) return `${name} is not a branch name: it starts with "-".`;
   // eslint-disable-next-line no-control-regex
   if (/[\x00-\x20\x7f~^:?*[\\]/.test(ref)) {
@@ -335,7 +335,8 @@ export function ciDispatchRequestOf(
     action = raw.action.trim() || null;
   }
   let ref: string | null = null;
-  if (raw.ref != null) {
+  // An empty branch is none, as an empty action is.
+  if (raw.ref != null && raw.ref !== '') {
     if (typeof raw.ref !== 'string') return { ok: false, message: 'ref must be a branch name.' };
     const problem = ciRefProblem(raw.ref);
     if (problem) return { ok: false, message: problem };

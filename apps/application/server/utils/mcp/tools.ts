@@ -85,6 +85,7 @@ import {
 import { approveSuggestedMerge } from '../merge-suggestion-approve';
 import { rerunClusterInCi } from '../ci-rerun';
 import { findCiDispatch } from '#shared/handlers/ci-dispatches';
+import { ciDispatchForReader } from '#shared/ci-dispatches';
 import { ciDispatchRequestOf } from '#shared/ci-dispatch-request';
 import { createEnrichedLink } from '../integrations/link-create';
 import { computeRunInsights } from '#shared/handlers/run-insights';
@@ -3076,7 +3077,7 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
       args: d.args,
       ref: d.ref,
       tests: d.tests,
-      detail: d.detail,
+      detail: ciDispatchForReader(d, can(ctx.access, 'run:control', found.projectId)).detail,
       runId: d.runId,
       run: d.run && {
         status: d.run.status,

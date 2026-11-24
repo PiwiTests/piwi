@@ -73,6 +73,8 @@ async function seed(remoteUrl: string) {
   await db.insert(schema.projects).values({
     id: 1,
     name: 'shop',
+    // The run's repository, which the run pins as it starts.
+    repositoryUrl: remoteUrl,
     ciRerun: {
       enabled: true,
       github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args', dispatchIdInput: 'piwi_dispatch' },
@@ -1222,7 +1224,7 @@ describe('an action input a repository host reserves', () => {
     expect(dispatched).toHaveLength(0);
   });
 
-  test('is refused whatever its case, from every place, and nothing is sent', async () => {
+  test('is refused whatever its case, for an execution’s test too, and nothing is sent', async () => {
     await seed(GITLAB);
     await use([{ name: 'bitbucket_branch', kind: 'fixed', value: 'x' }], 'gitlab');
     const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));

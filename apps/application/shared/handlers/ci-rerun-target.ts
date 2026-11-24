@@ -17,6 +17,7 @@ import { flakeLabCiArgs } from '#shared/ci-rerun';
 import type { CiDispatchView } from '#shared/ci-dispatches';
 import {
   ciDispatchSourceKind,
+  ciRefProblem,
   ciServerTakesBranch,
   type CiDispatchSource,
   type CiDispatchStart,
@@ -110,6 +111,12 @@ async function latestTestRunId(db: DrizzleDB, testCaseId: number): Promise<numbe
     .orderBy(desc(testRunsCases.id))
     .limit(1);
   return row?.testRunId ?? null;
+}
+
+/** A branch a run or a project names, when git takes it as one ({@link ciRefProblem}), else null. */
+function sendableBranch(branch: string | null | undefined): string | null {
+  const name = branch?.trim();
+  return name && !ciRefProblem(name) ? name : null;
 }
 
 /** The place a source names, and what a dispatch from it follows. */
@@ -258,7 +265,7 @@ export async function resolveCiDispatchPlace(
     place.repositoryUrl = normalizeGitUrl(remoteUrl ?? null);
     place.environmentId = run?.environmentId ?? null;
     place.environment = run?.environment?.trim() || null;
-    place.branch = run ? (run.branch ?? resolveRunBranch(run.metadata) ?? null) : null;
+    place.branch = sendableBranch(run ? (run.branch ?? resolveRunBranch(run.metadata)) : null);
     place.commit = run ? (runCommit(run.metadata) ?? null) : null;
     place.started = await runDispatchAction(db, runId);
   } else if (source.from === 'project') {
@@ -267,7 +274,7 @@ export async function resolveCiDispatchPlace(
       .from(projects)
       .where(eq(projects.id, projectId));
     place.repositoryUrl = repositoryUrlFromRemote(project?.repositoryUrl);
-    place.branch = project?.defaultBranch?.trim() || (await mostCommonRunBranch(db, projectId));
+    place.branch = sendableBranch(project?.defaultBranch?.trim() || (await mostCommonRunBranch(db, projectId)));
   }
   return { ok: true, place };
 }
@@ -282,7 +289,11 @@ export async function ciPlaceLastDispatch(db: DrizzleDB, place: CiDispatchPlace)
 /** How many of a project's run branches a branch list reads. */
 const RUN_BRANCHES_READ = 500;
 
-/** The branches a project's runs reported, the most recently run first; another person's private run left out. */
+/**
+ * The branches a project's runs reported that git takes as branch names
+ * ({@link ciRefProblem}), the most recently run first; another person's
+ * private run left out.
+ */
 export async function projectRunBranches(db: DrizzleDB, projectId: number): Promise<string[]> {
   const rows = await db
     .select({ branch: testRuns.branch })
@@ -298,7 +309,7 @@ export async function projectRunBranches(db: DrizzleDB, projectId: number): Prom
     .groupBy(testRuns.branch)
     .orderBy(sql`max(${testRuns.id}) desc`)
     .limit(RUN_BRANCHES_READ);
-  return rows.map((r) => r.branch?.trim() ?? '').filter(Boolean);
+  return rows.map((r) => sendableBranch(r.branch)).filter((name): name is string => name != null);
 }
 
 /**

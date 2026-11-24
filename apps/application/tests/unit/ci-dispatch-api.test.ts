@@ -371,6 +371,15 @@ describe('the branch of a dispatch', () => {
     expect(await dispatch({ from: 'project' }, { ref: 'a..b' })).toMatchObject({ ok: false, error: 'invalid' });
     expect(scm.dispatched).toHaveLength(0);
   });
+
+  test('is the target’s when the run reported one git refuses', async () => {
+    await db
+      .update(schema.testRuns)
+      .set({ branch: 'HEAD', metadata: { scm: { remoteUrl: GITHUB, branch: 'HEAD' } } })
+      .where(eq(schema.testRuns.id, 1));
+    expect(await dispatch({ from: 'cluster', clusterId: 1 })).toMatchObject({ ok: true, dispatch: { ref: 'main' } });
+    expect(sent().request.ref).toBeNull();
+  });
 });
 
 describe('the inputs and the action of a dispatch', () => {
@@ -461,6 +470,22 @@ describe('what a place is offered', () => {
     expect(offered!.actions[2]!.environment).toBe('staging');
   });
 
+  test('no repository host’s action for a run of a repository other than the project’s', async () => {
+    const fork = 'https://github.com/someone/shop';
+    await db
+      .update(schema.testRuns)
+      .set({ metadata: { scm: { remoteUrl: fork, branch: 'feature/coupon' } } })
+      .where(eq(schema.testRuns.id, 1));
+    const result = await ciOffered(db as never, 1, { from: 'cluster', clusterId: 1 }, 2);
+    const gh = result.ok ? result.offered.actions.find((a) => a.id === 'gh') : null;
+    expect(gh).toMatchObject({
+      available: false,
+      reason: `Its run reported ${fork}, not the project’s repository, the only one its SCM credentials reach.`,
+    });
+    expect(await dispatch({ from: 'cluster', clusterId: 1 })).toMatchObject({ ok: false, error: 'unavailable' });
+    expect(scm.dispatched).toHaveLength(0);
+  });
+
   test('its last dispatch: a cluster’s last re-run, a test’s last Flake Lab run, none for a run', async () => {
     const rerun = await dispatch({ from: 'cluster', clusterId: 1 });
     const lab = await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' });
@@ -526,6 +551,32 @@ describe('the branches an action may run on', () => {
     expect(scm.listed).toHaveLength(0);
     expect(await ciActionBranches(db as never, 1, 'missing', null, actor)).toBeNull();
   });
+
+  test('leave out a run branch git refuses, and read no repository while CI actions are off', async () => {
+    await db.insert(schema.testRuns).values(
+      ['HEAD', 'feature x'].map((branch, i) => ({
+        id: 10 + i,
+        projectId: 1,
+        status: 'failed',
+        branch,
+        startTime: new Date(Date.UTC(2026, 8, 2, 10, i)),
+        origin: 'ci',
+      })),
+    );
+    expect((await ciActionBranches(db as never, 1, 'branch-job', null, actor))?.map((b) => b.name)).toEqual([
+      'main',
+      'feature/coupon',
+    ]);
+    await db
+      .update(schema.projects)
+      .set({ ciRerun: { enabled: false, actions, defaults: { rerun: 'gh' } } })
+      .where(eq(schema.projects.id, 1));
+    expect(await ciActionBranches(db as never, 1, 'gh', null, actor)).toEqual([
+      { name: 'main', source: 'runs' },
+      { name: 'feature/coupon', source: 'runs' },
+    ]);
+    expect(scm.listed).toHaveLength(0);
+  });
 });
 
 describe('the dispatch record', () => {
@@ -542,7 +593,7 @@ describe('the dispatch record', () => {
     expect(await listCiDispatches(db as never, 2, { state: 'all', limit: 20 })).toEqual([]);
     await db.update(schema.ciDispatches).set({ state: 'ended' }).where(eq(schema.ciDispatches.id, labId));
     expect(ids(await listCiDispatches(db as never, 1, { state: 'open', limit: 20 }))).toEqual([rerunId]);
-    // Past the matching window, a dispatch no run answered is no longer open.
+    // Past the matching window, a dispatch no run answered is not open.
     const later = Date.now() + 7 * 60 * 60 * 1000;
     expect(await listCiDispatches(db as never, 1, { state: 'open', limit: 20 }, later)).toEqual([]);
     expect(await findCiDispatch(db as never, rerunId)).toMatchObject({ projectId: 1, dispatch: { id: rerunId } });
@@ -622,6 +673,18 @@ describe('the routes', () => {
       status: 400,
     });
     expect(await call(readDispatch, { context: {}, params: { id: 'not-an-id' } })).toMatchObject({ status: 404 });
+    // A refusal can name a credential and where it may be sent: only whoever may dispatch reads it.
+    const detail = 'The credential "Team Jenkins" is sent only under https://jenkins.internal/.';
+    await db.update(schema.ciDispatches).set({ state: 'refused', detail }).where(eq(schema.ciDispatches.id, id));
+    expect(await call(readDispatch, { context: {}, params: { id } })).toMatchObject({ body: { detail: null } });
+    expect(await call(listDispatches, { context: {}, params: project() })).toMatchObject({
+      body: { items: [{ id, detail: null }] },
+    });
+    state.caller = asRole(ProjectRole.MAINTAINER);
+    expect(await call(readDispatch, { context: {}, params: { id } })).toMatchObject({ body: { detail } });
+    expect(await call(listDispatches, { context: {}, params: project() })).toMatchObject({
+      body: { items: [{ id, detail }] },
+    });
     state.caller = {
       ...asRole(ProjectRole.VIEWER),
       access: buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 2, role: ProjectRole.MAINTAINER }]),
