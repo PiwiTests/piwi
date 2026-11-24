@@ -1,6 +1,6 @@
 ---
 title: CI actions
-description: "The named ways a project starts CI from the dashboard: a GitHub workflow, a GitLab or Bitbucket pipeline, a Jenkins job or a Custom request, with their inputs, credential and Check."
+description: "The named ways a project starts CI from the dashboard: a GitHub workflow, a GitLab or Bitbucket pipeline, a Jenkins job or a Custom request, with the jobs and inputs read from the target, their credential and Check."
 lang: en-US
 ---
 
@@ -33,8 +33,9 @@ server action serves any run. Settings saved before CI
 actions existed were converted when read.
 
 **Check** reads an action's target without starting it and says whether it declares every name a dispatch sends, the
-inputs included. It reads a GitHub workflow file and a Jenkins job; GitLab and Bitbucket pipelines and Custom requests
-cannot be read, and Check says so.
+inputs included, and, on GitHub, whether the action sends every input the workflow requires with no default. It reads a
+GitHub workflow file, a Jenkins job, and a Bitbucket custom pipeline on the default branch, whose undeclared variables
+it names as a warning. GitLab pipelines and Custom requests cannot be checked, and Check says so.
 
 Two actions on one workflow, one per environment, differ only in their inputs:
 
@@ -58,6 +59,30 @@ jobs:
 *Smoke · staging* and *Smoke · production* both target `e2e.yml`, each with one fixed input, `TARGET_ENV=staging` or
 `TARGET_ENV=production`.
 
+## Picking from what the target declares
+
+The action editor reads the target without starting it and offers what it finds, as the issue tracker binding offers a
+Jira project's fields. Any name can still be typed, for a job the listing does not reach.
+
+| Target | The jobs it lists | The fields of a job |
+|---|---|---|
+| **GitHub** | The workflow files at the ref with a `workflow_dispatch` trigger, by their `name` | The trigger's inputs, with their type, default, options and whether they are required |
+| **GitLab** | None: a pipeline runs the CI file of its ref | The variables `.gitlab-ci.yml` sets, at its top level and in each job |
+| **Bitbucket** | The `custom:` pipelines on the default branch | The pipeline's `variables`, with their default and allowed values |
+| **Jenkins** | The jobs under the base URL, folders three levels deep, a multibranch pipeline as `path/{branch}` | The job's parameters, with their type, default and choices |
+
+The arguments input and the dispatch id input are picked from the job's fields, and **Add a declared input** (a
+variable on GitLab and Bitbucket, a parameter on Jenkins) adds one of the others: a choice or a boolean as a choice, any
+other field as a fixed value holding its default. Picking a GitHub workflow adds the inputs it requires with no default,
+and the editor names what a workflow, a custom pipeline or a Jenkins job does not declare. GitLab takes any variable a
+pipeline is created with, so its variables are suggestions; the files a CI file `include`s are not read.
+
+The files are read with the action's credential, else the repository's. A Jenkins listing carries the credential a
+dispatch would, whose user needs the Overall/Read and Job/Read permissions, and is logged; read with a credential other
+projects share (the instance's, or one shared with several projects), it leaves out a parameter's free-text default and
+its description. A branch is read at its latest commit; what was listed is kept five minutes, and the refresh button
+beside the listing reads again.
+
 ## Repository host
 
 Choose the provider of the action:
@@ -68,8 +93,9 @@ Choose the provider of the action:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch, and a GitHub action's **Check**, carry the action's **Credential**, else the repository's
-[SCM credential](/guide/source-control#set-the-credential), with the scope above.
+The dispatch carries the action's **Credential**, else the repository's
+[SCM credential](/guide/source-control#set-the-credential), with the scope above. **Check** and the editor's listings
+carry the same credential to read the repository's files, which takes read access to its contents as well.
 
 On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the
 quoted arguments without a shell:

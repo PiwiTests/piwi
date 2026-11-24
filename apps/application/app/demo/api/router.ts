@@ -533,6 +533,8 @@ import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiActions,
   demoCiActionCheck,
+  demoCiJobFields,
+  demoCiJobs,
   demoCiBranches,
   demoCiOffered,
   demoDispatchCi,
@@ -1056,7 +1058,7 @@ const routes: RouteEntry[] = [
         ciServerToken: _ciServerToken,
         ...rest
       } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
-      return { ...rest, ciServerInstanceUrl: null };
+      return { ...rest, ciServerInstanceUrl: null, ciServerInstanceAllowedInputs: null };
     },
   },
   {
@@ -1450,6 +1452,25 @@ const routes: RouteEntry[] = [
         decodeURIComponent(m[2]!),
         body as { action?: unknown } | null,
       );
+    },
+  },
+  {
+    method: 'POST',
+    // A Jenkins target's jobs from the demo's catalog; a repository host has no files to read.
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/jobs$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiJobs(await getDemoDb(), +m[1]!, body);
+    },
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/fields$/,
+    permission: 'project:manage',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      return demoCiJobFields(await getDemoDb(), +m[1]!, body);
     },
   },
   {

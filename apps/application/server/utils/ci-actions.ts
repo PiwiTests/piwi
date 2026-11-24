@@ -4,23 +4,19 @@
  * The settings live on the project row (`projects.ciRerun`) as a list of named
  * actions (`shared/ci-actions.ts`); a value with no `actions` list is
  * converted when read. Check says whether an action's target takes what a
- * dispatch sends, without starting anything.
+ * dispatch sends, without starting anything: each kind of target's provider
+ * reads it (`./ci-providers/`).
  */
 import { eq } from 'drizzle-orm';
-import { parse as parseYaml } from 'yaml';
 import { projects } from '../database/schema';
-import { checkCiServerTarget, type CiServerUse } from './ci-server-dispatch';
-import { createScmProvider } from './scm';
-import { CredentialRefusedError } from './credentials';
-import { readProjectRepositoryUrl } from './scm/project-repository';
+import { ciProvider } from './ci-providers';
 import {
-  ciActionSentNames,
-  ciServerTargetOf,
   resolveCiActionsSettings,
   type CiAction,
   type CiActionCheckResult,
   type CiActionsSettings,
 } from '#shared/ci-actions';
+import type { CiServerUse } from './ci-server-dispatch';
 import type { DbClient } from '../database';
 
 /** The project's CI actions (disabled and empty when unset). */
@@ -29,151 +25,17 @@ export async function getCiActionsSettings(db: DbClient, projectId: number): Pro
   return resolveCiActionsSettings(project?.ciRerun ?? null);
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
 /**
- * What a workflow file's `workflow_dispatch` trigger declares: null when the
- * file has no such trigger, else the names of its inputs. `on` may be the
- * event name, a list of events, or a map of them.
+ * Check an action before its first dispatch, through its kind's provider: a
+ * GitHub workflow file, a Bitbucket pipelines file or a Jenkins job is read; a
+ * GitLab pipeline and a Custom request declare nothing Piwi can read without
+ * starting them.
  */
-export function workflowDispatchInputs(workflowYaml: string): string[] | null {
-  const document: unknown = parseYaml(workflowYaml);
-  const on = isRecord(document) ? document.on : undefined;
-  if (on === 'workflow_dispatch') return [];
-  if (Array.isArray(on)) return on.includes('workflow_dispatch') ? [] : null;
-  if (!isRecord(on) || !('workflow_dispatch' in on)) return null;
-  const trigger = on.workflow_dispatch;
-  const inputs = isRecord(trigger) && isRecord(trigger.inputs) ? Object.keys(trigger.inputs) : [];
-  return inputs;
-}
-
-/** Check a GitHub action: its workflow file, read at the action's ref, must declare every input a dispatch sends. */
-async function checkGithubAction(
-  db: DbClient,
-  projectId: number,
-  action: CiAction & { target: { type: 'github' } },
-  use: CiServerUse,
-): Promise<CiActionCheckResult> {
-  const { workflow, ref } = action.target;
-  if (/^\d+$/.test(workflow)) {
-    return {
-      ok: null,
-      missing: [],
-      message: `A workflow named by its numeric id (${workflow}) can't be checked by id: name its file, such as e2e.yml.`,
-    };
-  }
-  if (!/^[\w.-]+\.ya?ml$/i.test(workflow)) {
-    return { ok: null, missing: [], message: `"${workflow}" is not a workflow file name, such as e2e.yml.` };
-  }
-  const repositoryUrl = await readProjectRepositoryUrl(db, projectId);
-  // The action's own credential is the one its dispatch carries: a refusal is the answer, never a public read.
-  const credentialId = action.target.credentialId ?? null;
-  let scm: Awaited<ReturnType<typeof createScmProvider>>;
-  try {
-    scm = repositoryUrl
-      ? await createScmProvider(repositoryUrl, db, projectId, {
-          actor: use.actor,
-          credentialId,
-          strict: !!credentialId,
-        })
-      : null;
-  } catch (e) {
-    if (!(e instanceof CredentialRefusedError)) throw e;
-    return { ok: null, missing: [], message: e.message };
-  }
-  if (!scm || scm.provider !== 'github') {
-    return {
-      ok: null,
-      missing: [],
-      message: "This project's repository is not on GitHub, so its workflow can't be read.",
-    };
-  }
-  const path = `.github/workflows/${workflow}`;
-  let file: Awaited<ReturnType<typeof scm.fetchFileAtRef>>;
-  try {
-    file = await scm.fetchFileAtRef(path, ref);
-  } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    return { ok: null, missing: [], message: `${path} could not be read at ${ref}: ${reason}.` };
-  }
-  if (!file) {
-    return {
-      ok: null,
-      missing: [],
-      message: `${path} could not be read at ${ref}: it is missing there, or the SCM credential cannot read it.`,
-    };
-  }
-  let declared: string[] | null;
-  try {
-    declared = workflowDispatchInputs(file.content);
-  } catch {
-    return { ok: null, missing: [], message: `${path} is not valid YAML at ${ref}.` };
-  }
-  if (!declared) {
-    return {
-      ok: false,
-      missing: [],
-      message: `The workflow has no workflow_dispatch trigger, so GitHub rejects a dispatch of ${workflow}.`,
-    };
-  }
-  const missing = ciActionSentNames(action).filter((name) => !declared.includes(name));
-  if (missing.length === 0) {
-    return { ok: true, missing, message: `The workflow declares ${ciActionSentNames(action).join(', ')}.` };
-  }
-  return {
-    ok: false,
-    missing,
-    message: `The workflow does not declare ${missing.join(', ')}: GitHub rejects a dispatch that sends an input the workflow does not declare.`,
-  };
-}
-
-/**
- * Check an action before its first dispatch. A GitHub action reads its
- * workflow file; a CI server preset reads its job; GitLab, Bitbucket and a
- * Custom request name nothing Piwi can read without starting a pipeline.
- */
-export async function checkCiAction(
+export function checkCiAction(
   db: DbClient,
   projectId: number,
   action: CiAction,
   use: CiServerUse,
 ): Promise<CiActionCheckResult> {
-  const target = action.target;
-  switch (target.type) {
-    case 'github':
-      return checkGithubAction(db, projectId, { ...action, target }, use);
-    case 'gitlab':
-      return {
-        ok: null,
-        missing: [],
-        message:
-          "GitLab pipelines can't be checked: GitLab reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
-      };
-    case 'bitbucket':
-      return {
-        ok: null,
-        missing: [],
-        message:
-          "Bitbucket pipelines can't be checked: Bitbucket reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
-      };
-    case 'ci-server': {
-      if (target.preset === 'custom') {
-        return {
-          ok: null,
-          missing: [],
-          message: "A Custom request can't be checked: it names no job Piwi can read.",
-        };
-      }
-      const [result] = await checkCiServerTarget(
-        db,
-        projectId,
-        ciServerTargetOf(target),
-        action.inputs.map((i) => i.name),
-        { ...use, actionId: action.id },
-      );
-      return result
-        ? { ok: result.ok, missing: result.missing, message: result.message }
-        : { ok: null, missing: [], message: 'Nothing was checked.' };
-    }
-  }
+  return ciProvider(action.target.type).check(db, projectId, action, use);
 }

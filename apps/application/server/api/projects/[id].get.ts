@@ -4,6 +4,7 @@ import { parseProjectRunScope } from '#shared/project-run-scope';
 import { optionalIntQuery } from '../../utils/query-params';
 import { holdsProjectPermission, requireProjectAccess, requireRouteId } from '../../utils/project-access';
 import { instanceCiServerUrl } from '../../utils/ci-server-dispatch';
+import { instanceCiServerAllowedInputs } from '../../utils/credentials';
 import { runViewerOf } from '../../utils/run-viewer';
 
 defineRouteMeta({
@@ -11,7 +12,7 @@ defineRouteMeta({
     tags: ['Projects'],
     summary: 'Get project details',
     description:
-      'Returns the project with its most recent runs (`testRuns`). With a run scope (any of `environments`, `branches` or `allBranches`), `testRuns` holds the most recent runs within it, `unscopedRuns` the most recent runs of any scope with their environment, branch and run kind, and `ownRuns` the caller’s own most recent runs in the scope’s environments that `testRuns` does not hold, which the project page lists whatever its filters say. Each run carries `environmentKey`, the key of the environment its label resolves to (null for none). A run that is the caller’s own says `mine: true` (any other says nothing): a run outside CI they reported, or, with sign-in off, any such run; lab runs and imports are nobody’s. No token is returned: `hasScmToken` says whether one is stored, and, for a caller with `project:manage` on the project (null for anyone else), `ciServerInstanceUrl` names the instance’s CI server. The CI server credentials an action may name are listed by `GET /api/credentials?projectId=`. `runVariables` lists the project’s run variables, `{ name, value }`, the environment variables every run Piwi starts for it gets (an empty list for none).',
+      'Returns the project with its most recent runs (`testRuns`). With a run scope (any of `environments`, `branches` or `allBranches`), `testRuns` holds the most recent runs within it, `unscopedRuns` the most recent runs of any scope with their environment, branch and run kind, and `ownRuns` the caller’s own most recent runs in the scope’s environments that `testRuns` does not hold, which the project page lists whatever its filters say. Each run carries `environmentKey`, the key of the environment its label resolves to (null for none). A run that is the caller’s own says `mine: true` (any other says nothing): a run outside CI they reported, or, with sign-in off, any such run; lab runs and imports are nobody’s. No token is returned: `hasScmToken` says whether one is stored, and, for a caller with `project:manage` on the project (null for anyone else), `ciServerInstanceUrl` names the instance’s CI server and `ciServerInstanceAllowedInputs` the action inputs a request carrying its credential may send (`PIWI_CI_SERVER_ALLOWED_INPUTS`; null without an instance CI server). The CI server credentials an action may name are listed by `GET /api/credentials?projectId=`. `runVariables` lists the project’s run variables, `{ name, value }`, the environment variables every run Piwi starts for it gets (an empty list for none).',
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       {
@@ -83,6 +84,7 @@ export default eventHandler(async (event) => {
     return {
       ...rest,
       ciServerInstanceUrl: managesProject ? instanceCiServerUrl() : null,
+      ciServerInstanceAllowedInputs: managesProject && instanceCiServerUrl() ? instanceCiServerAllowedInputs() : null,
     };
   } catch (e: any) {
     if (e?.message === 'Project not found') {

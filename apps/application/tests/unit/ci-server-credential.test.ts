@@ -280,6 +280,7 @@ describe('the credential a target’s requests carry', () => {
       user: 'team-bot',
       allowedInputs: ['SUITE'],
       source: 'action',
+      projects: 'all',
     });
   });
 

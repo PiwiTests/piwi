@@ -10,14 +10,22 @@ import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import type { CredentialOption, CredentialSummary } from '#shared/credentials';
 import type { ApiResponse } from '~~/types/api';
 import { ciServerRequestPreview, customizeCiServerForm, type CiServerFormState } from '~/utils/ci-server-form';
+import type { CiDeclaredItem } from '~/utils/ci-action-form';
 
 const props = defineProps<{
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
+  /** The action inputs a request carrying the instance's credential may send; null when unknown. */
+  instanceAllowedInputs?: string[] | null;
   /** The project the action belongs to, whose credentials the picker lists. */
   projectId: number;
   /** The action's inputs as name and value pairs, shown in the request preview. */
   inputs?: [string, string][];
+  /** The jobs the CI server lists, offered for the job; null while it lists none. */
+  jobItems?: CiDeclaredItem[] | null;
+  /** The parameters the job declares, offered for the arguments and dispatch id parameters; null while unknown. */
+  fieldItems?: CiDeclaredItem[] | null;
+  jobsLoading?: boolean;
 }>();
 const state = defineModel<CiServerFormState>({ required: true });
 /** Why a save of the project would refuse this target's credential, or null: the editor refuses it first. */
@@ -58,9 +66,14 @@ const credentialValue = computed({
 
 const previewOpts = computed(() => ({
   instanceUrl: props.instanceUrl,
+  instanceAllowedInputs: props.instanceAllowedInputs ?? null,
   credential: chosen.value,
   inputs: props.inputs,
 }));
+/** What the preview calls the credential that leaves inputs out. */
+const droppingCredential = computed(() =>
+  preview.value.credential === 'instance' ? 'The instance credential' : `“${chosen.value?.name ?? ''}”`,
+);
 const preview = computed(() => ciServerRequestPreview(state.value, 'rerun', previewOpts.value));
 /** The preview waits for the list when the action names a credential, whose destination may be its base URL. */
 const previewReady = computed(() => listedOk.value || state.value.credentialId === null);
@@ -178,34 +191,45 @@ function customize() {
     <template v-if="state.preset === 'jenkins'">
       <div class="space-y-2">
         <p class="text-xs text-muted">
-          Job, as Jenkins shows its path (<code class="font-mono">polaris/e2e</code>;
-          <code class="font-mono">polaris/e2e/{branch}</code> for a multibranch pipeline)
+          The job as Jenkins shows its path (<code class="font-mono">polaris/e2e</code>;
+          <code class="font-mono">polaris/e2e/{branch}</code> for a multibranch pipeline, read on its default branch)
         </p>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <UInput
-            v-model="state.rerun.job"
-            placeholder="job, e.g. polaris/e2e"
-            aria-label="Jenkins job"
-            class="font-mono"
-          />
-          <UInput
-            v-model="state.rerun.ref"
-            placeholder="default branch, e.g. main"
-            aria-label="Jenkins default branch"
-            class="font-mono"
-          />
-          <UInput
-            v-model="state.rerun.argsParameter"
-            placeholder="arguments parameter: PIWI_RERUN_ARGS"
-            aria-label="Jenkins arguments parameter"
-            class="font-mono"
-          />
-          <UInput
-            v-model="state.rerun.dispatchParameter"
-            placeholder="dispatch id parameter: PIWI_ORIGIN_REF"
-            aria-label="Jenkins dispatch id parameter"
-            class="font-mono"
-          />
+        <div class="grid gap-3 sm:grid-cols-2">
+          <UFormField label="Job" name="ciServerJob">
+            <CiDeclaredValueInput
+              v-model="state.rerun.job"
+              :items="jobItems ?? null"
+              :loading="jobsLoading"
+              placeholder="e.g. polaris/e2e"
+              aria-label="Jenkins job"
+            />
+          </UFormField>
+          <UFormField label="Default branch" name="ciServerRef">
+            <UInput
+              v-model="state.rerun.ref"
+              placeholder="e.g. main"
+              aria-label="Jenkins default branch"
+              class="w-full font-mono"
+            />
+          </UFormField>
+          <UFormField label="Arguments parameter" name="ciServerArgs">
+            <CiDeclaredValueInput
+              v-model="state.rerun.argsParameter"
+              :items="fieldItems ?? null"
+              optional
+              placeholder="PIWI_RERUN_ARGS"
+              aria-label="Jenkins arguments parameter"
+            />
+          </UFormField>
+          <UFormField label="Dispatch id parameter" name="ciServerDispatchId">
+            <CiDeclaredValueInput
+              v-model="state.rerun.dispatchParameter"
+              :items="fieldItems ?? null"
+              optional
+              placeholder="PIWI_ORIGIN_REF"
+              aria-label="Jenkins dispatch id parameter"
+            />
+          </UFormField>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">
@@ -240,7 +264,13 @@ function customize() {
     <div class="space-y-1">
       <p class="text-xs text-muted">The request this action sends, with sample values</p>
       <template v-if="previewReady">
-        <CodeBlock v-if="preview.text" :code="preview.text" lang="text" />
+        <template v-if="preview.text">
+          <CodeBlock :code="preview.text" lang="text" />
+          <p v-if="preview.droppedInputs.length" class="text-xs text-warning" data-testid="ci-server-dropped-inputs">
+            {{ droppingCredential }} does not allow {{ preview.droppedInputs.join(', ') }}: a dispatch leaves
+            {{ preview.droppedInputs.length > 1 ? 'them' : 'it' }} out.
+          </p>
+        </template>
         <p v-else class="text-xs text-error">{{ preview.error }}</p>
       </template>
       <p v-else class="text-xs text-muted">Reading the credential…</p>

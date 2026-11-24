@@ -12,6 +12,13 @@
 /** The SCM hosts Piwi builds links for. */
 export type ScmProviderName = 'github' | 'gitlab' | 'bitbucket';
 
+/** How a sentence names each repository host. */
+export const SCM_PROVIDER_LABELS: Record<ScmProviderName, string> = {
+  github: 'GitHub',
+  gitlab: 'GitLab',
+  bitbucket: 'Bitbucket',
+};
+
 /**
  * Host names a Git host serves SSH on besides its own (SSH over port 443, an
  * alternate SSH host), with the host they stand for. A remote on one of them

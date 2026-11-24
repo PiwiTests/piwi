@@ -33,6 +33,7 @@ export const SLACK_POST_MESSAGE_URL = `${SLACK_API_ENDPOINT}chat.postMessage`;
 export const CREDENTIAL_FEATURES = [
   'ci-dispatch',
   'ci-check',
+  'ci-list',
   'scm-read',
   'scm-comment',
   'scm-status',
@@ -47,6 +48,7 @@ export type CredentialFeature = (typeof CREDENTIAL_FEATURES)[number];
 export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
   'ci-dispatch': 'CI dispatch',
   'ci-check': 'CI check',
+  'ci-list': 'CI listing',
   'scm-read': 'Repository read',
   'scm-comment': 'Pull request comment',
   'scm-status': 'Commit status',
@@ -63,6 +65,7 @@ export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
  */
 export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = [
   'ci-check',
+  'ci-list',
   'scm-read',
   'ai-call',
   'integration-read',

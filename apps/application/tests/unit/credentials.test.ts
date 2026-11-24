@@ -66,7 +66,7 @@ const {
 } = await import('../../server/utils/credentials');
 const { encryptSecret } = await import('../../server/utils/crypto');
 const { ciServerBaseUrl, ciServerCredential } = await import('../../server/utils/ci-server-dispatch');
-const { ciServerTargetOf } = await import('#shared/ci-actions');
+const { ciServerTargetOf } = await import('#shared/ci-targets');
 
 type Handler = (event: FakeEvent) => Promise<{ credential: Record<string, unknown> } & Record<string, unknown>>;
 const patchCredential = underRoutePermission(

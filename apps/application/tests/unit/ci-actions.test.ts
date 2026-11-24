@@ -39,7 +39,7 @@ vi.mock('../../server/utils/scm', () => ({
   },
 }));
 
-const { checkCiAction, workflowDispatchInputs } = await import('../../server/utils/ci-actions');
+const { checkCiAction } = await import('../../server/utils/ci-actions');
 const { GitHubProvider } = await import('../../server/utils/scm/GitHubProvider');
 const { GitLabProvider } = await import('../../server/utils/scm/GitLabProvider');
 const { BitbucketProvider } = await import('../../server/utils/scm/BitbucketProvider');
@@ -644,29 +644,6 @@ describe('a GitHub dispatch links the run it created', () => {
   });
 });
 
-describe('workflowDispatchInputs', () => {
-  test('reads the inputs of a workflow_dispatch map', () => {
-    expect(
-      workflowDispatchInputs(
-        'on:\n  workflow_dispatch:\n    inputs:\n      args:\n        type: string\n      env: {}\n',
-      ),
-    ).toEqual(['args', 'env']);
-  });
-
-  test('accepts the event as a name or a list, with no inputs', () => {
-    expect(workflowDispatchInputs('on: workflow_dispatch\n')).toEqual([]);
-    expect(workflowDispatchInputs('on: [push, workflow_dispatch]\n')).toEqual([]);
-    expect(workflowDispatchInputs('on:\n  workflow_dispatch:\n')).toEqual([]);
-  });
-
-  test('is null for a workflow that cannot be dispatched', () => {
-    expect(workflowDispatchInputs('on: push\n')).toBeNull();
-    expect(workflowDispatchInputs('on: [push]\n')).toBeNull();
-    expect(workflowDispatchInputs('on:\n  push:\n')).toBeNull();
-    expect(workflowDispatchInputs('name: x\n')).toBeNull();
-  });
-});
-
 describe('Check on a GitHub action', () => {
   const db = {} as never;
   const use = { actor: { userId: null, apiKeyId: null } };
@@ -693,6 +670,15 @@ describe('Check on a GitHub action', () => {
     expect(result.ok).toBe(false);
     expect(result.missing).toEqual(['SUITE']);
     expect(result.message).toContain('does not declare SUITE');
+  });
+
+  test('fails when the workflow requires an input, with no default, that the action does not send', async () => {
+    fileAt.result = {
+      content: 'on:\n  workflow_dispatch:\n    inputs:\n      args: {}\n      TARGET_ENV: { required: true }\n',
+    };
+    const result = await checkCiAction(db, 1, github(), use);
+    expect(result).toMatchObject({ ok: false, missing: [] });
+    expect(result.message).toContain('requires TARGET_ENV');
   });
 
   test('fails a workflow with no workflow_dispatch trigger', async () => {

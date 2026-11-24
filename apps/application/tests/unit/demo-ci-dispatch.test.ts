@@ -287,3 +287,52 @@ describe('loadRerunInfo', () => {
     expect(await loadRerunInfo(fetcher, { ...noCluster, mayDispatch: false })).toMatchObject({ lastDispatch: null });
   });
 });
+
+describe('the CI action editor’s listings in the demo', () => {
+  const jenkinsTarget = (job = '') => ({
+    type: 'ci-server',
+    preset: 'jenkins',
+    baseUrl: 'https://jenkins.example.com/',
+    fields: { job, ref: 'main' },
+  });
+
+  test('lists the Jenkins jobs and a job’s parameters, through the server’s readers', async () => {
+    const listing = await handleDemoRequest('/api/projects/1/ci-actions/jobs', 'POST', { target: jenkinsTarget() });
+    expect(listing).toMatchObject({ truncated: false, message: null });
+    expect((listing as { jobs: Array<{ id: string }> }).jobs.map((j) => j.id)).toContain('api/nightly');
+    const fields = await handleDemoRequest('/api/projects/1/ci-actions/fields', 'POST', {
+      target: jenkinsTarget('api/nightly'),
+    });
+    expect((fields as { fields: Array<{ name: string }> }).fields.map((f) => f.name)).toEqual([
+      'PIWI_RERUN_ARGS',
+      'PIWI_ORIGIN_REF',
+      'TEST_SUITE',
+      'HEADED',
+    ]);
+  });
+
+  test('answers a job its Jenkins does not hold as the server does', async () => {
+    expect(
+      await handleDemoRequest('/api/projects/1/ci-actions/fields', 'POST', { target: jenkinsTarget('api/gone') }),
+    ).toEqual({ fields: null, message: expect.stringContaining('No job at this path') });
+  });
+
+  test('has no repository to read, and refuses what names nothing to read', async () => {
+    expect(
+      await handleDemoRequest('/api/projects/1/ci-actions/jobs', 'POST', {
+        target: { type: 'github', ref: 'main', workflow: '' },
+      }),
+    ).toMatchObject({ jobs: null, message: expect.stringContaining('no repository') });
+    await expect(
+      handleDemoRequest('/api/projects/1/ci-actions/jobs', 'POST', { target: { type: 'ci-server', preset: 'custom' } }),
+    ).rejects.toMatchObject({ statusCode: 400 });
+  });
+
+  test('refuses a base URL that is not https, as the server does', async () => {
+    expect(
+      await handleDemoRequest('/api/projects/1/ci-actions/jobs', 'POST', {
+        target: { ...jenkinsTarget(), baseUrl: 'http://jenkins.internal/' },
+      }),
+    ).toMatchObject({ jobs: null, message: expect.stringContaining('https') });
+  });
+});
