@@ -77,6 +77,13 @@ test.describe.serial('Run button', () => {
     return dialog;
   }
 
+  test('each place renders its button on the server, as the browser shows it', async ({ request }) => {
+    for (const route of [`/projects/${projectId}`, `/test-runs/${runId}`, `/failure-clusters/${clusterId}`]) {
+      const html = await (await request.get(route)).text();
+      expect(html, route).toContain('data-testid="run-button"');
+    }
+  });
+
   test('a cluster runs its affected tests on the action that takes re-runs', async ({ page }) => {
     const dialog = await openDialog(page, `/failure-clusters/${clusterId}`);
     await expect(dialog.getByText('Its affected tests')).toBeVisible();
