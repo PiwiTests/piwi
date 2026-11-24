@@ -173,15 +173,13 @@ export async function useRunPlace(options: RunPlaceOptions) {
     },
     { default: () => null },
   );
-  watch(
-    firstOffer.data,
-    (read) => {
-      if (!read || offered[read.key] !== undefined) return;
-      offeredFor[read.key] = read.source;
-      offered[read.key] = read.offer;
-    },
-    { immediate: true },
-  );
+  /** Keeps the opening What's offer the page read, once, as the offer of that What. */
+  function takeFirstOffer(read: typeof firstOffer.data.value) {
+    if (!read || offered[read.key] !== undefined) return;
+    offeredFor[read.key] = read.source;
+    offered[read.key] = read.offer;
+  }
+  watch(firstOffer.data, takeFirstOffer, { immediate: true });
 
   async function readOffered(list: RunWhat[]) {
     if (!mayDispatch.value) return;
@@ -563,6 +561,8 @@ export async function useRunPlace(options: RunPlaceOptions) {
   }
 
   await firstOffer;
+  // A watcher runs once on the server, before the read ends: the button the server renders takes the offer here.
+  takeFirstOffer(firstOffer.data.value);
   return reactive({
     projectId,
     visible,
