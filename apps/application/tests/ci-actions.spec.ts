@@ -287,6 +287,28 @@ test.describe.serial('CI actions', () => {
     await expect(page.getByTestId('ci-action-row').filter({ hasText: 'Declared inputs' })).toContainText('e2e.yml');
   });
 
+  test('the CI server form follows the target type, and a customized request makes it a Custom request', async ({
+    page,
+  }) => {
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
+    await waitForHydration(page);
+    await page.getByTestId('ci-action-add').click();
+    const editor = page.getByTestId('ci-action-editor');
+    const type = editor.getByTestId('ci-action-type');
+    await type.click();
+    await page.getByRole('option', { name: 'Custom request' }).click();
+    await expect(editor.getByLabel('Custom CI server request')).toBeVisible();
+    await expect(editor.getByLabel('Jenkins job')).toHaveCount(0);
+
+    await type.click();
+    await page.getByRole('option', { name: 'Jenkins job' }).click();
+    await editor.getByLabel('CI server base URL').fill('https://ci.example.com/');
+    await editor.getByLabel('Jenkins job').fill('qa/e2e');
+    await editor.getByRole('button', { name: 'Customize the request' }).click();
+    await expect(type).toContainText('Custom request');
+    await expect(editor.getByLabel('Custom CI server request')).toHaveValue(/job\/qa\/job\/e2e\/buildWithParameters/);
+  });
+
   test('a CI server action names a credential shared with the project, and the editor says it is sent', async ({
     page,
     request,

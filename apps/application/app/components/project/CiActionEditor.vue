@@ -82,6 +82,19 @@ watch(
     if (current === previous && type !== previousType) current.scmCredentialId = null;
   },
 );
+// The CI server form draws the preset it holds: it follows the target type, and Customize the request makes it Custom.
+watch(
+  () => draft.value.type,
+  (type) => {
+    if (type === 'jenkins' || type === 'custom') draft.value.ciServer.preset = type;
+  },
+);
+watch(
+  () => draft.value.ciServer.preset,
+  (preset) => {
+    if (isCiServer.value && draft.value.type !== preset) draft.value.type = preset;
+  },
+);
 const sendsInputs = computed(() => draft.value.type !== 'custom');
 
 const listing = useCiJobListing(
