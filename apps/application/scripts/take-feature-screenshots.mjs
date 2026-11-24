@@ -3128,6 +3128,47 @@ const SCENES = [
     ],
   },
   {
+    name: 'project-waiting-rows',
+    mode: 'demo',
+    description:
+      'The runs of API Integration in the live demo with what no run answered yet: its whole suite dispatched to its CI action from the project page, which the demo never sends, and a run request sent to the seeded desktop app from an execution, which only its sender sees, at 1280 and 390 px',
+    route: '/projects/2',
+    viewport: { width: 1280, height: 1100 },
+    async run({ page, shoot, settle, goto }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the runs list.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      const dialog = page.getByRole('dialog');
+      const send = async () => {
+        await dialog.getByRole('button', { name: 'Send' }).click();
+        await dialog.getByTestId('run-follow-up-state').waitFor({ timeout: 30_000 });
+        await page.keyboard.press('Escape');
+        await dialog.waitFor({ state: 'hidden' });
+      };
+      await page.getByRole('button', { name: 'Run on CI' }).click({ timeout: 90_000 });
+      await dialog.getByTestId('run-dialog-ci').waitFor({ timeout: 30_000 });
+      await send();
+      await page.locator('[data-testid="waiting-dispatch"]').waitFor({ timeout: 30_000 });
+
+      // The seeded desktop app answers a request within 15 seconds: the runs are captured before it ends.
+      await goto('/test-run-cases/320');
+      await page.getByRole('button', { name: 'Run on my machine or CI' }).click({ timeout: 90_000 });
+      await dialog.getByTestId('run-dialog-apps').getByRole('radio').first().click({ timeout: 15_000 });
+      await send();
+      await goto('/projects/2');
+      const runs = '[data-shot="runs-table"]';
+      await page.locator(`${runs} [data-testid="waiting-request"]`).waitFor({ timeout: 10_000 });
+      await settle();
+      await shoot('wide', { of: runs, pad: 8 });
+      await page.setViewportSize({ width: 390, height: 1600 });
+      await settle();
+      await shoot('phone', { of: runs, pad: 0 });
+    },
+    outputs: ['project-waiting-rows-wide.png', 'project-waiting-rows-phone.png'],
+  },
+  {
     name: 'demo-simulator',
     mode: 'demo',
     description:
