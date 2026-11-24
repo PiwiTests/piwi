@@ -101,7 +101,10 @@ export interface RunPlaceOptions {
   machine: RunOnMyMachine;
   /** The environment of the run the page shows, which a request starts on (`useCommandEnvironment`). */
   shownEnvironment?: () => number | ShownEnvironment | null | undefined;
-  /** Hears each CI dispatch sent from here, so the page reads its last re-run again. */
+  /**
+   * Hears each CI dispatch sent from here, so the page reads its last re-run again: the new one, or the one the same
+   * send made a moment ago, which the repeat follows instead.
+   */
   onDispatched?: (dispatch: CiDispatchView) => void;
   /** What the runs on this computer share, in the desktop window (`useThisComputer`). */
   thisComputer?: ThisComputerPlace;
@@ -519,6 +522,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
         ?.data?.dispatch;
       if (earlier) {
         followUp.follow({ kind: 'dispatch', view: earlier });
+        options.onDispatched?.(earlier);
         lastSent = sent;
       } else sendError.value = errorMessage(error);
     } finally {
