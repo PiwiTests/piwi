@@ -153,7 +153,7 @@ tools, the `agent-diagnoses` capability and "Paused by the agent".
 
 | Piece | Where | What this plan takes |
 | --- | --- | --- |
-| Run locally | `DesktopRunLocallyButton.vue`, `useDesktopLocalRuns.ts`, `runner.rs` | The plan per Playwright project (`buildLocalRunPlan`), the allowed flags (`validate_args`), the stop with a grace period (`interrupt.rs`), the checks for the folder, the specs and Playwright. Missing: a check of the browsers and of the branch. |
+| Run locally | `useThisComputer.ts` (the run button's This computer), `useDesktopLocalRuns.ts`, `runner.rs` | The plan per Playwright project (`buildLocalRunPlan`), the allowed flags (`validate_args`), the stop with a grace period (`interrupt.rs`), the checks for the folder, the specs and Playwright. Missing: a check of the browsers and of the branch. |
 | Copy retry command | `RunHeader.vue`, `useRunRetryCommand.ts`, `TestCasesList.vue`, `test-run-cases/[id].vue`, `retry-command.ts` | A copyable `npx playwright test` command for a run's failures, an execution or a selection, by line or by title. Missing: the run options (headed, trace, repeat). |
 | Test selection by title | `buildBisectArgs` in `local-run-args.ts` | The files and an escaped `--grep` of the titles, so a test whose line moved still matches. |
 | Folder links | `projectLinks` in the shell's `settings.json` | Links stay on the machine. They are keyed by the bundled server's project ids, so they need the instance in their key. |

@@ -183,8 +183,8 @@ seconds, the way the demo's seeded app answers run requests.
 - **Q1. The desktop window's run button.** It runs at once, doubles as the status of a run of the same tests, and its
   menu holds one-off runs, option toggles and fixes. Run on my machine is hidden in the desktop window, so the window
   would show only _CI_ under Where. Settled: a _This computer_ row in Where folds that button in, built on its own
-  (PR 5). Until then, the button stays beside the new one in the desktop window, and so does each row of the run's
-  test list.
+  (PR 5, built as the Status paragraph says). Before it, the button stayed beside the new one in the desktop window,
+  and so did the run's test list's own.
 - **Q2. Copy retry command.** It copies a command and runs nothing, it is the run page's primary action on a red run,
   and a guide anchor points at it (`run-retry-command`). Settled: it stays its own button.
 - **Q3. "Every test" on the run page.** An app runs the run's own tests (capped at 200). Settled: CI runs the action's
