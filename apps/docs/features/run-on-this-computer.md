@@ -14,6 +14,11 @@ the app's bundled Node. Its dialog's **Where** lists **This computer** in place 
 ([Run on my machine](./run-on-my-machine), which a browser offers), before the project's [CI actions](./ci-actions).
 The run streams into the [Local runs tray](./local-runs-tray), keeps going while you browse, and reports to the app.
 
+<figure>
+  <img src="/screenshots/run-on-this-computer.png" alt="The run dialog of a failed run in the desktop app: the failed tests, the flaky ones or every test under What; This computer picked under Where, in the linked folder, above a CI action; then the linked folder, the run options and the environment">
+  <figcaption>A failed run's dialog in the desktop app, on This computer.</figcaption>
+</figure>
+
 ## One click
 
 The button says what it runs, and runs it here in one click:
