@@ -28,10 +28,16 @@ app's environment and run options, a CI action's branch by its mode, its choices
 holds the D3 one-click runs, and the Next actions `rerun-in-ci` and `flake-lab-ci` open the dialog on CI.
 `RunFollowUp` shows a request and a dispatch through one view (`#shared/run-follow-up`), after Send and in "Last
 re-run", reading a dispatch every 5 then 30 seconds, with the likely causes after 30 minutes and a toast when its run
-reports while the dialog is closed. The docs moved the CI actions' configuration to a page of its own. Remain: PR 5
-(_This computer_), PR 6 (the waiting row) and PR 7 (tags), and a demo dispatch moving to `running` and `ended` against
-a seeded run, which stays `dispatched`. Step 1 of #1292, the CI actions, shipped in
-[#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in [ci-actions.md](../adr/ci-actions.md).
+reports while the dialog is closed. The docs moved the CI actions' configuration to a page of its own. PR 5 is built:
+in the desktop window, **Where** lists _This computer_ in place of the apps, first; the button runs its first What
+there in one click, unless the last Where is a CI action that takes it ("Run on this computer or CI", which opens the
+dialog), and shows a run of those tests while it goes on; its menu keeps the desktop button's command, one-off runs,
+options and fixes, with the one-click runs on CI; **Run with options…** opens the dialog on This computer, whose
+fields are the ones of the dialog it replaces; a selection of a run's tests has a button of its own, on This computer
+alone; the run page offers the flaky tests there; and the desktop button and its dialog are gone. Remain: PR 6 (the
+waiting row) and PR 7 (tags), and a demo dispatch moving to `running` and `ended` against a seeded run, which stays
+`dispatched`. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is
+recorded in [ci-actions.md](../adr/ci-actions.md).
 
 ## What existed
 

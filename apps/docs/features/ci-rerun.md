@@ -41,7 +41,8 @@ Playwright takes.
 
 - **Where** opens on the one you last sent to in this project, from this browser. Otherwise a re-run picks the action
   that started its run, else the one of its environment, else the default for re-runs; the project page picks its
-  default for Run on CI, and the test page your first online app.
+  default for Run on CI, and the test page your first online app. In the desktop app, **This computer** takes your
+  apps' place and comes first: [Run on this computer](./run-on-this-computer).
 - A CI row shows its target and environment. It is disabled, with the reason, when the action does not take the
   chosen **What** or cannot be sent. Picked, the dialog says what a team run is: it counts in the project's history,
   sends notifications and pull-request feedback, and spends CI minutes. A Flake Lab experiment is a lab run instead,

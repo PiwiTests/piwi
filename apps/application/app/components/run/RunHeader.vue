@@ -18,7 +18,7 @@ import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
 import type { RunWhat } from '~/composables/useRunPlace';
-import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
+import { retryProjects as retryProjectsOf, type RetryCase } from '~/utils/retry-command';
 import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
 import { commitUrl } from '#shared/scm-urls';
@@ -259,12 +259,21 @@ const retryShown = computed(() => retryIsPrimary.value || (!runEnded.value && fa
 /** Past this many tests, a re-run of the whole run runs their files rather than naming every test. */
 const MAX_TESTS_IN_A_WHOLE_RUN = 200;
 
-// What the desktop app re-runs: the failed tests, else the flaky ones, else every test; its menu offers the others.
-const rerunSets = computed<LocalRunSet[]>(() => {
+const desktopBridge = ref(false);
+onMounted(() => {
+  desktopBridge.value = !!tauriCore();
+});
+
+/** What a run on this computer runs of the run's tests: by `file:line`, or past 200 tests by their files. */
+const localSets = computed(() => {
   const runLabel = `run #${props.testRun?.id}`;
   const count = (n: number, what: string) => `${n} ${what}${n === 1 ? '' : 's'}`;
+  const set = (cases: RetryCase[], what: string): LocalRunSet | null =>
+    cases.length
+      ? { label: `Re-run ${count(cases.length, what)}`, cases, runTitle: `${count(cases.length, what)} of ${runLabel}` }
+      : null;
   const files = new Set(allCases.value.map((c) => c.filePath)).size;
-  const whole: LocalRunSet =
+  const whole: LocalRunSet | null =
     allCases.value.length > MAX_TESTS_IN_A_WHOLE_RUN
       ? {
           label: `Re-run the ${count(files, 'file')} of the run`,
@@ -272,32 +281,21 @@ const rerunSets = computed<LocalRunSet[]>(() => {
           runTitle: `The ${count(files, 'file')} of ${runLabel}`,
           options: { mode: 'file' },
         }
-      : {
-          label: `Re-run all ${count(allCases.value.length, 'test')}`,
-          cases: allCases.value,
-          runTitle: `All ${count(allCases.value.length, 'test')} of ${runLabel}`,
-        };
-  const sets: LocalRunSet[] = [
-    {
-      label: `Re-run ${count(failedCases.value.length, 'failed test')}`,
-      cases: failedCases.value,
-      runTitle: `${count(failedCases.value.length, 'failed test')} of ${runLabel}`,
-    },
-    {
-      label: `Re-run ${count(flakyCases.value.length, 'flaky test')}`,
-      cases: flakyCases.value,
-      runTitle: `${count(flakyCases.value.length, 'flaky test')} of ${runLabel}`,
-    },
-    whole,
-  ];
-  return sets.filter((set) => set.cases.length > 0);
+      : allCases.value.length
+        ? {
+            label: `Re-run all ${count(allCases.value.length, 'test')}`,
+            cases: allCases.value,
+            runTitle: `All ${count(allCases.value.length, 'test')} of ${runLabel}`,
+          }
+        : null;
+  return { failed: set(failedCases.value, 'failed test'), flaky: set(flakyCases.value, 'flaky test'), whole };
 });
-const rerunMain = computed(() => rerunSets.value[0] ?? null);
 
 /**
  * What the run button runs from a run: its failed tests when it has some (a re-run, which picks CI's default action
  * first), and every test. An app runs the run's own tests, at most `RUN_REQUEST_LIMITS.tests.max`; CI runs the
- * action's whole suite on the run's branch.
+ * action's whole suite on the run's branch. In the desktop window, this computer runs them too, and its flaky tests,
+ * before every test.
  */
 const runWhats = computed<RunWhat[]>(() => {
   const runId = props.testRun?.id;
@@ -314,6 +312,19 @@ const runWhats = computed<RunWhat[]>(() => {
       tests: failed.map((c) => c.title),
       app: failed.length <= max ? { source: { runId, tests: 'failed' }, projects: retryProjects.value } : tooMany,
       ci: { source: { runId, tests: 'failed' } },
+      local: localSets.value.failed,
+    });
+  }
+  const flaky = localSets.value.flaky;
+  if (flaky && desktopBridge.value) {
+    whats.push({
+      key: 'flaky',
+      label: 'The flaky tests',
+      count: flaky.cases.length,
+      tests: flaky.cases.map((c) => c.title),
+      app: { reason: 'A request to your app names a run’s failed tests or all of them.' },
+      ci: null,
+      local: flaky,
     });
   }
   const every = everyCase.value;
@@ -327,6 +338,7 @@ const runWhats = computed<RunWhat[]>(() => {
         source: { runId },
         note: 'On CI, the action’s whole suite runs on the run’s branch: it differs from this run’s tests when the run ran some of them only.',
       },
+      local: localSets.value.whole,
     });
   }
   return whats;
@@ -337,11 +349,11 @@ const runPlace = await useRunPlace({
   whats: () => runWhats.value,
   prefersCi: () => failedCases.value.length > 0,
   shownEnvironment: () => shownEnvironment.value,
-});
-
-const desktopBridge = ref(false);
-onMounted(() => {
-  desktopBridge.value = !!tauriCore();
+  thisComputer: {
+    projectLabel: () => props.testRun?.project?.label ?? props.testRun?.project?.name,
+    sourceRunId: () => props.testRun?.id,
+    environmentId: () => props.testRun?.environmentId ?? null,
+  },
 });
 
 // ── Label editor ──────────────────────────────────────────────────────────
@@ -459,9 +471,9 @@ function onLabelKeydown(e: KeyboardEvent) {
     </template>
 
     <template #primary>
-      <!-- Copy retry command (with a mode picker) leads on a red run, Re-run N failed
-           tests in the desktop app; the report leads on a green one, where the desktop
-           app offers to re-run the flaky tests, else all of them. -->
+      <!-- Copy retry command (with a mode picker) leads on a red run, the run button in the
+           desktop app, which re-runs the failed tests there; the report leads on a green one,
+           where the desktop app's run button re-runs the flaky tests, else all of them. -->
       <!-- The copy's fallback selects a hidden textarea: focus leaving the menu keeps it open. -->
       <UPopover v-if="retryShown && !desktopBridge" :content="KEEP_OPEN_ON_FOCUS_OUT">
         <UButton
@@ -485,21 +497,7 @@ function onLabelKeydown(e: KeyboardEvent) {
         </template>
       </UPopover>
 
-      <DesktopRunLocallyButton
-        v-if="rerunMain"
-        :primary="retryIsPrimary"
-        :project-id="testRun?.project?.id"
-        :project-label="testRun?.project?.label ?? testRun?.project?.name"
-        :cases="rerunMain.cases"
-        :label="rerunMain.label"
-        :run-title="rerunMain.runTitle"
-        :preset-options="rerunMain.options"
-        :source-run-id="testRun?.id"
-        :environment-id="testRun?.environmentId ?? null"
-        :other-sets="rerunSets.slice(1)"
-      />
-
-      <RunButton :place="runPlace" />
+      <RunButton :place="runPlace" :primary="retryIsPrimary && desktopBridge" />
       <RunDialog :place="runPlace" />
 
       <UButton

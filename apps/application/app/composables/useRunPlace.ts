@@ -9,6 +9,7 @@ import {
 import type { CiDispatchView } from '#shared/ci-dispatches';
 import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 import type { RunOnMyMachine, RunRequestSourceChoice } from '~/composables/useRunOnMyMachine';
+import { localSetOf, type ThisComputerPlace, type ThisComputerWhat } from '~/composables/useThisComputer';
 import { keepRunWhere, keptRunWhere } from '~/utils/run-where';
 
 /** One thing a place can run, as the run dialog lists it under **What**. */
@@ -25,13 +26,15 @@ export interface RunWhat {
   app: { source: RunRequestSourceChoice; projects?: readonly string[] } | { reason: string } | null;
   /** What a CI dispatch sends, with a line said under **What** when CI is picked; null when CI does not run it. */
   ci: { source: CiDispatchSourceInput; note?: string } | null;
+  /** What a run on this computer runs, in the desktop window; a reason when it cannot; absent when not offered. */
+  local?: ThisComputerWhat;
 }
 
 /** How the run dialog opens: on a What (the place's first by default), on CI, or on Whats of its own (a Next action). */
 export interface RunDialogOpening {
   whats?: RunWhat[];
   what?: string;
-  where?: 'ci';
+  where?: 'ci' | 'local';
 }
 
 /** A one-click run of the button's menu: the place's first What, to one CI action or one online app. */
@@ -100,6 +103,8 @@ export interface RunPlaceOptions {
   shownEnvironment?: () => number | ShownEnvironment | null | undefined;
   /** Hears each CI dispatch sent from here, so the page reads its last re-run again. */
   onDispatched?: (dispatch: CiDispatchView) => void;
+  /** What the runs on this computer share, in the desktop window (`useThisComputer`). */
+  thisComputer?: ThisComputerPlace;
 }
 
 /**
@@ -227,13 +232,48 @@ export async function useRunPlace(options: RunPlaceOptions) {
     () => machine.shown.value && options.whats().some((w) => w.app != null && 'source' in w.app),
   );
   const ciAvailable = computed(() => mayDispatch.value && options.whats().some(ciTakes));
-  const visible = computed(() => appsAvailable.value || ciAvailable.value);
+  // ── This computer, in the desktop window ─────────────────────────────────
+  /** The Where last sent to here, which the button's face follows. */
+  const keptWhere = ref<string | null>(null);
+  onMounted(() => (keptWhere.value = keptRunWhere(projectId)));
+  function keep(sentTo: string) {
+    keepRunWhere(projectId, sentTo);
+    keptWhere.value = sentTo;
+  }
+  const here = useThisComputer({
+    projectId,
+    place: options.thisComputer,
+    main: () => localSetOf(options.whats()[0]?.local),
+    others: () =>
+      options
+        .whats()
+        .slice(1)
+        .flatMap((w) => localSetOf(w.local) ?? []),
+    onRun: () => keep('local'),
+  });
+  const hereTakes = (list: RunWhat[]) => here.available && list.some((w) => localSetOf(w.local));
+  /** The button runs its first What here at once, unless the last Where is a CI action that takes it. */
+  const mainHere = computed(() => {
+    const first = options.whats()[0];
+    if (!here.takesMain) return false;
+    const kept = keptWhere.value;
+    const offer = first ? offered[first.key] : undefined;
+    return !(
+      kept?.startsWith('ci:') &&
+      mayDispatch.value &&
+      offer?.enabled &&
+      offer.actions.some((a) => `ci:${a.id}` === kept && a.available)
+    );
+  });
+
+  const visible = computed(() => appsAvailable.value || ciAvailable.value || hereTakes(options.whats()));
   /** The destinations a list of Whats can go to, as the button and the dialog name them. */
   function runLabel(list: RunWhat[]): string {
     const apps = machine.shown.value && list.some((w) => w.app != null && 'source' in w.app);
     const ci = mayDispatch.value && list.some(ciTakes);
-    if (apps && ci) return 'Run on my machine or CI';
-    return ci ? 'Run on CI' : 'Run on my machine';
+    const mine = apps ? 'my machine' : hereTakes(list) ? 'this computer' : null;
+    if (mine && ci) return `Run on ${mine} or CI`;
+    return ci ? 'Run on CI' : `Run on ${mine ?? 'my machine'}`;
   }
   const label = computed(() => runLabel(options.whats()));
 
@@ -296,8 +336,12 @@ export async function useRunPlace(options: RunPlaceOptions) {
     });
   });
 
+  const localShown = computed(() => here.available && whats.value.some((w) => w.local != null));
+  const localRows = computed<RunWhereRow[]>(() => (localShown.value ? [here.whereRow(what.value?.local)] : []));
   const row = (key: string | null | undefined) =>
-    [...appRows.value, ...ciRows.value].find((r) => r.value === key && !r.disabled);
+    [...appRows.value, ...localRows.value, ...ciRows.value].find((r) => r.value === key && !r.disabled);
+  /** The tests the dialog runs on this computer, when it is picked. */
+  const localPick = computed(() => (where.value === 'local' && row('local') ? localSetOf(what.value?.local) : null));
   /** The CI action picked, as the picked What is offered it. */
   const ciPick = computed(() => {
     const key = where.value;
@@ -324,6 +368,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
   function defaultWhere(w: RunWhat, useKept: boolean): string | null {
     const kept = useKept ? keptRunWhere(projectId) : null;
     if (kept && row(kept)) return kept;
+    if (row('local')) return 'local';
     const ci = ciDefault(w);
     const apps = appRows.value.filter((r) => !r.disabled);
     const online = apps.find((r) =>
@@ -424,8 +469,14 @@ export async function useRunPlace(options: RunPlaceOptions) {
     const w = what.value;
     if (!w) return;
     where.value =
-      (opening.where === 'ci' ? (ciDefault(w) ?? defaultWhere(w, false)) : defaultWhere(w, true)) ?? undefined;
+      (opening.where === 'ci'
+        ? (ciDefault(w) ?? defaultWhere(w, false))
+        : opening.where === 'local' && row('local')
+          ? 'local'
+          : defaultWhere(w, true)) ?? undefined;
   }
+  // The dialog's fields of This computer follow the What it runs here.
+  watch([open, localPick], () => here.showInDialog(open.value ? localPick.value : null));
 
   /** Back to the form, on the What and Where of the last run while the dialog still offers them. */
   async function newRun() {
@@ -492,13 +543,19 @@ export async function useRunPlace(options: RunPlaceOptions) {
     return { kind: 'ci', body };
   }
 
-  const canSend = computed(() => ready.value && Boolean(formRun(true)) && !refProblem.value);
+  const canSend = computed(() =>
+    localPick.value ? ready.value && here.dialog.canRun : ready.value && Boolean(formRun(true)) && !refProblem.value,
+  );
 
   async function send() {
+    if (localPick.value) {
+      if (here.runFromDialog()) open.value = false;
+      return;
+    }
     const sent = formRun(true);
     if (!sent || sending.value || refProblem.value) return;
     await sendRun(sent);
-    if (where.value && followUp.view.value) keepRunWhere(projectId, where.value);
+    if (where.value && followUp.view.value) keep(where.value);
   }
 
   async function runAgain() {
@@ -559,7 +616,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
     const sent = formRun(false);
     if (!sent) return;
     await sendRun(sent);
-    if (followUp.view.value) keepRunWhere(projectId, shortcut.where);
+    if (followUp.view.value) keep(shortcut.where);
   }
 
   await firstOffers;
@@ -577,6 +634,11 @@ export async function useRunPlace(options: RunPlaceOptions) {
     ciOffer,
     appsShown,
     appRows,
+    localShown,
+    localRows,
+    localPick,
+    here,
+    mainHere,
     ciShown,
     ciRows,
     ciPick,

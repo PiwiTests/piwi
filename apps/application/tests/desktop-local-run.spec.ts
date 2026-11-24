@@ -1009,7 +1009,7 @@ test.describe('Desktop local run', () => {
     await linkDialog.getByRole('button', { name: 'Choose folder…' }).click();
     await expect(linkDialog).toBeHidden();
 
-    await expect(dialog.getByText('/home/dev/acme')).toBeVisible();
+    await expect(dialog.getByText('/home/dev/acme', { exact: true })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeEnabled();
 
     const invocations = await page.evaluate(() => window.__piwiFakeTauri.invocations);

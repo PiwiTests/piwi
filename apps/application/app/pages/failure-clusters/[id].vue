@@ -333,19 +333,33 @@ const rerunPlace = computed(() =>
 const { rerunInfo, refreshRerun } = await useRerunInfo(`failure-cluster-rerun-${clusterId}`, () =>
   rerunPlace.value ? { ...rerunPlace.value, clusterId, mayDispatch: canRerun.value } : null,
 );
-// The run button, in the navbar and in Verify: the affected tests, which CI re-runs.
+// The run button, in the navbar and in Verify: the affected tests, which CI re-runs, and this computer in the desktop
+// window, by the verify command's selection.
 const runPlace = await useRunPlace({
   projectId: clusterProjectId.value ?? 0,
   machine: await useRunOnMyMachine(clusterProjectId.value ?? 0),
   whats: () => [
-    clusterTestsWhat(
-      'Its affected tests',
-      { clusterId },
-      affectedCases.value.map((c) => c.title),
-    ),
+    {
+      ...clusterTestsWhat(
+        'Its affected tests',
+        { clusterId },
+        affectedCases.value.map((c) => c.title),
+      ),
+      local: affectedRetryCases.value.length
+        ? {
+            label: `Re-run the ${affectedTestsLabel.value}`,
+            cases: affectedRetryCases.value,
+            runTitle: `${affectedTestsLabel.value} of cluster #${clusterId}`,
+          }
+        : { reason: 'No affected test has a file path Playwright takes.' },
+    },
   ],
   prefersCi: () => true,
   onDispatched: () => refreshRerun(),
+  thisComputer: {
+    projectLabel: () => cluster.value?.project?.label ?? cluster.value?.project?.name,
+    sourceRunId: () => cluster.value?.lastSeenRunId,
+  },
 });
 
 function refresh() {
@@ -995,14 +1009,6 @@ const breadcrumbItems = computed(() => [
               </p>
               <p class="text-xs text-muted">{{ fixPlan.verify.expectation }}</p>
               <div class="flex flex-wrap items-center gap-2">
-                <DesktopRunLocallyButton
-                  :project-id="cluster.project?.id"
-                  :project-label="cluster.project?.label ?? cluster.project?.name"
-                  :cases="affectedRetryCases"
-                  :label="`Re-run the ${affectedTestsLabel}`"
-                  :run-title="`${affectedTestsLabel} of cluster #${cluster.id}`"
-                  :source-run-id="cluster.lastSeenRunId"
-                />
                 <RunButton :place="runPlace" />
                 <ClientOnly>
                   <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />

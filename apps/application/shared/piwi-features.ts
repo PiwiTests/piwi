@@ -986,6 +986,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/desktop',
       },
       {
+        title: 'Run on this computer',
+        summary:
+          "The run button in the desktop app's window: a run's, an execution's, a cluster's or a test's tests run in the project's linked folder in one click, or from the run dialog with their options, beside the project's CI actions.",
+        needs: ['desktop'],
+        where: 'Desktop app → the run button of a run, an execution, a cluster or a test',
+        doc: 'features/run-on-this-computer',
+      },
+      {
         title: 'Desktop app runs',
         summary:
           "The tests the desktop app runs, paused, stepped and watched live from its window, with a pick on the stopped page's image and the code a stop makes, to copy.",

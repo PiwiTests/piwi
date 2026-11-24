@@ -6,7 +6,7 @@
  * sidecar and streams output back as `piwi:local-run` events; each spawned step
  * carries a shell-assigned id so concurrent runs stay apart. Runs live here —
  * not in any component — so they survive navigation and dialog closes; the
- * runs tray and the run-locally button both render from this store. Stopping a
+ * runs tray and the run button's This computer both render from this store. Stopping a
  * run is always an explicit action, never a side effect of closing UI.
  *
  * A run's plan can have several steps (one per Playwright project); they run

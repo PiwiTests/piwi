@@ -91,19 +91,14 @@ links against it when no workspace root is set; and a clone serves its git histo
 
 ## Running tests from the app
 
-A run, an execution, a cluster or a test runs again here with the folder's own Playwright, and its button says what:
-**Re-run 3 failed tests**, **Re-run this test**, or **Run this test** (×20 until a failure, traced) on a test case.
+A run, an execution, a cluster or a test runs again here with the folder's own Playwright: its run button lists
+**This computer** under **Where**, and says what one click runs, such as **Re-run 3 failed tests** or **Run this
+test** (×20 until a failure, traced) on a test case. Its arrow, its options and its dialog:
+[Run on this computer](./run-on-this-computer).
 
-- **The arrow** shows the command, runs it once headed, in the inspector or UI mode, and sets its
-  options: tests by `file:line`, title or file, a trace, `--repeat-each` without retries (up to 1,000 in **Run with
-  options…**), stopping at the first failing repetition, and [**Hold failures**](/features/watch-a-run#hold-failures).
-  The button names what differs from Playwright's defaults (**· headed · ×5**); set the project's in
-  **Project → Settings → Local folder**.
-- **On a run**, the arrow also re-runs its flaky tests or all of them, and the **Tests** tab a selection.
 - **Runs keep going while you browse**, in the **Local runs** tray, each under what it runs; results come here, with
   **Compare with run #N**. A [bug report](/features/replay-a-bug-report#running-it-with-playwright)
   from Piwi Picker runs there too.
-- **Wrong folder?** With none of the tests in it, the button opens the link's dialog.
 - **Watch, pause and step** each worker from the Local runs tray, running or stopped: [Desktop app
   runs](/features/desktop-runs). While it goes on, the run's own page shows the same (**On your machine**), with its
   **Stop**, **Hold failures** and output.
@@ -164,5 +159,6 @@ The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-check
 
 - [Reporter](/guide/reporter#finding-the-desktop-app-automatically)
 - [MCP server](/features/mcp)
+- [Run on this computer](/features/run-on-this-computer)
 - [Desktop app runs](/features/desktop-runs)
 - [Write, run and fix a test](./write-run-fix)

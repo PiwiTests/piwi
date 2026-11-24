@@ -651,9 +651,6 @@ const selectedRetryCases = computed(() => {
   }
   return [...byKey.values()];
 });
-const selectedTestsLabel = computed(
-  () => `${selectedRetryCases.value.length} selected test${selectedRetryCases.value.length === 1 ? '' : 's'}`,
-);
 const { mode: retryMode, optionsFor: retryOptionsFor } = useRetryOptions();
 /** The Playwright projects the selected tests ran in, the ones the command can name. */
 const selectedProjects = computed(() => retryProjects(selectedRetryCases.value));
@@ -886,14 +883,12 @@ defineExpose({ scrollToCase });
     >
       <span class="text-sm font-medium" aria-live="polite">{{ selectedCount }} selected</span>
       <div class="flex flex-wrap items-center gap-2 ml-auto">
-        <DesktopRunLocallyButton
-          v-if="desktopBridge"
-          :project-id="projectKey"
+        <TestSelectionRunButton
+          v-if="desktopBridge && projectKey != null"
+          :project-id="Number(projectKey)"
           :project-label="projectName"
           :cases="selectedRetryCases"
-          :label="`Re-run ${selectedTestsLabel}`"
-          :run-title="`${selectedTestsLabel} of run #${runId}`"
-          :source-run-id="runId"
+          :run-id="runId"
           :environment-id="environmentId"
         />
         <UPopover v-else :content="KEEP_OPEN_ON_FOCUS_OUT">

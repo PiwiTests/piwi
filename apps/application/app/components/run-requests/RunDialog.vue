@@ -4,7 +4,9 @@
  * place's choices, with the tests a choice names, not editable), **Where** (the person's apps and the project's CI
  * actions, a row that cannot take the chosen What disabled with the reason), and the fields of the pick: the
  * environment and the run options of Copy retry command for an app, the branch and the choice inputs for a CI action.
- * After **Send**, the same window follows what was sent (`RunFollowUp`) until **New run**.
+ * After **Send**, the same window follows what was sent (`RunFollowUp`) until **New run**. In the desktop window,
+ * **Where** has _This computer_ instead of the person's apps, whose fields are `RunThisComputerFields`: **Run** starts
+ * the run in the Local runs tray, which follows it, and closes the dialog.
  */
 import { MAX_RERUN_TESTS } from '#shared/ci-dispatch-request';
 import type { RunPlace, RunWhat } from '~/composables/useRunPlace';
@@ -66,7 +68,11 @@ const instanceAddress = computed(() => {
       />
 
       <div v-else class="space-y-4" data-shot="run-dialog">
-        <p v-if="place.appPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
+        <p v-if="place.localPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
+          Runs in the project's linked folder on this computer, with its own Playwright. The run streams into the Local
+          runs tray and keeps going while you browse; with the Piwi reporter set up, it reports to this app.
+        </p>
+        <p v-else-if="place.appPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
           Your app shows the request with its checks and the command; nothing runs until you click
           <strong>Run</strong> there. The run reports here, and only you see it.
         </p>
@@ -139,6 +145,16 @@ const instanceAddress = computed(() => {
                 <DocLink to="features/run-on-my-machine" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
               </p>
             </div>
+            <div v-if="place.localShown" class="space-y-1">
+              <div class="text-xs text-muted">This computer</div>
+              <URadioGroup
+                v-model="place.where"
+                :items="place.localRows"
+                size="sm"
+                aria-label="This computer"
+                data-testid="run-dialog-local"
+              />
+            </div>
             <div v-if="place.ciShown" class="space-y-1">
               <div class="text-xs text-muted">CI</div>
               <URadioGroup
@@ -152,7 +168,9 @@ const instanceAddress = computed(() => {
           </template>
         </div>
 
-        <template v-if="place.appPick">
+        <RunThisComputerFields v-if="place.localPick" :here="place.here" />
+
+        <template v-else-if="place.appPick">
           <div v-if="place.environmentOffered" class="space-y-1" data-testid="run-dialog-environment">
             <div class="text-sm font-semibold text-highlighted">Environment</div>
             <EnvironmentPicker v-model="place.environmentId" :project-id="place.projectId" class="w-full sm:w-64" />
@@ -233,8 +251,12 @@ const instanceAddress = computed(() => {
         </template>
         <template v-else>
           <UButton color="neutral" variant="ghost" @click="place.open = false">Cancel</UButton>
-          <UButton icon="i-lucide-send" :disabled="!place.canSend" :loading="place.sending" @click="place.send()"
-            >Send</UButton
+          <UButton
+            :icon="place.localPick ? 'i-lucide-play' : 'i-lucide-send'"
+            :disabled="!place.canSend"
+            :loading="place.sending"
+            @click="place.send()"
+            >{{ place.localPick ? 'Run' : 'Send' }}</UButton
           >
         </template>
       </div>

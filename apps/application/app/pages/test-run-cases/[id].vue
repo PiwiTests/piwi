@@ -34,6 +34,7 @@ import type { SuspectLinesAnswer } from '#shared/suspect-lines';
 import { suspectLinesSentence } from '~/utils/suspect-lines';
 import { coverageLossPreview } from '~/utils/coverage-insights';
 import { refetchKeeping } from '~/utils/refetch-keeping';
+import type { RunWhat } from '~/composables/useRunPlace';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -347,22 +348,48 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
-// The run button: this test, and every test of its cluster, which CI re-runs; a request to an app names the test only.
+// This one test, as the retry command and a run on this computer name it: in the next-step line's overflow menu, the
+// More menu, the Verify section and the run button.
+const retryCases = computed(() => [
+  {
+    filePath: testCase.value?.filePath ?? '',
+    title: testCase.value?.title ?? '',
+    line: testCase.value?.line ?? null,
+    projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
+  },
+]);
+
+// The run button: this test, and every test of its cluster, which CI re-runs; a request to an app and a run on this
+// computer name the test only.
 const runPlace = await useRunPlace({
   projectId: executionProjectId.value ?? 0,
   machine: await useRunOnMyMachine(executionProjectId.value ?? 0),
   whats: () => {
     const tc = testCase.value;
     if (!tc) return [];
-    const whats = [executionTestWhat(tc.id, testLabel(tc))];
+    const test = executionTestWhat(tc.id, testLabel(tc));
+    const whats: RunWhat[] = [
+      {
+        ...test,
+        local: tc.filePath ? { label: 'Re-run this test', cases: retryCases.value, runTitle: testLabel(tc) } : null,
+      },
+    ];
     if (failureCluster.value) {
-      whats.push(clusterTestsWhat('Every test of its cluster', { executionId: tc.id, scope: 'cluster' }));
+      whats.push({
+        ...clusterTestsWhat('Every test of its cluster', { executionId: tc.id, scope: 'cluster' }),
+        local: { reason: 'Runs this test here; the cluster’s page runs every test of it.' },
+      });
     }
     return whats;
   },
   prefersCi: () => true,
   shownEnvironment: () => testCase.value?.testRun?.environmentId ?? null,
   onDispatched: () => refreshRerun(),
+  thisComputer: {
+    projectLabel: () => testCase.value?.testRun?.project?.label ?? testCase.value?.testRun?.project?.name,
+    sourceRunId: () => testCase.value?.testRun?.id,
+    environmentId: () => testCase.value?.testRun?.environmentId ?? null,
+  },
 });
 
 /** The Verify section shows the cluster's last re-run in CI, to every viewer; the run button starts one. */
@@ -468,15 +495,6 @@ const headerBadges = computed(() => {
 });
 
 // ── Retry command ────────────────────────────────────────────────────────────
-// In the next-step line's overflow menu, the More menu and the Verify section.
-const retryCases = computed(() => [
-  {
-    filePath: testCase.value?.filePath ?? '',
-    title: testCase.value?.title ?? '',
-    line: testCase.value?.line ?? null,
-    projectName: (testCase.value?.browser as { projectName?: string } | null)?.projectName ?? null,
-  },
-]);
 // This one test by its file and line, with the run options the browser remembers from the run page.
 const { optionsFor: retryOptionsFor } = useRetryOptions();
 // The environment the commands and run requests are for: the run's, unless protected or archived.
@@ -854,18 +872,6 @@ const { handle: handleNextStepAction } = useNextStepActions({
         </template>
         <template #right>
           <div class="flex items-center gap-1 shrink-0 min-w-0">
-            <!-- Desktop app only: runs this test again in the project's linked folder -->
-            <DesktopRunLocallyButton
-              v-if="testCase?.filePath"
-              class="mr-2"
-              :project-id="testCase?.testRun?.project?.id"
-              :project-label="testCase?.testRun?.project?.label ?? testCase?.testRun?.project?.name"
-              :cases="retryCases"
-              label="Re-run this test"
-              :run-title="testLabel(testCase)"
-              :source-run-id="testCase?.testRun?.id"
-              :environment-id="testCase?.testRun?.environmentId ?? null"
-            />
             <RunButton :place="runPlace" class="mr-2" />
             <NuxtLink
               v-if="testCase?.testCaseId"

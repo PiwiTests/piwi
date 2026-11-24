@@ -4,6 +4,7 @@ import { describeCluster } from '#shared/describe-cluster';
 import type { ApiResponse, TestCaseHistoryPoint, MarkerInfo, MarkersResponse } from '~~/types/api';
 import { CASE_STATUS_SERIES, legendOf } from '~/utils/chart';
 import { refetchKeeping } from '~/utils/refetch-keeping';
+import type { RunWhat } from '~/composables/useRunPlace';
 
 const route = useRoute();
 const testCaseId = route.params.id;
@@ -57,7 +58,7 @@ useHead(
 
 const passRate = computed<number | null>(() => testCase.value?.passRate ?? null);
 
-/** The desktop app's run of this test: by its title, up to 20 times with a trace, until the failure that comes and goes. */
+/** A run of this test on this computer: by its title, up to 20 times with a trace, until the failure that comes and goes. */
 const REPEAT_PRESET = { mode: 'grep', repeatEach: 20, stopAtFirstFailure: true, trace: true } as const;
 const reproduceCases = computed(() =>
   testCase.value?.filePath ? [{ filePath: testCase.value.filePath, title: testCase.value.title, line: null }] : [],
@@ -88,18 +89,29 @@ const showPathVariation = computed(
 const showFlakiness = computed(() => (testCase.value?.flakyRuns ?? 0) > 0 && !capabilityHidden('flake-lab'));
 const visibleTabs = computed(() => TABS.filter((t) => t.value !== 'flakiness' || showFlakiness.value));
 
-// The run button: this test by its newest execution, and for a flaky test its Flake Lab experiments, which CI runs.
+// The run button: this test by its newest execution, and for a flaky test its Flake Lab experiments, which CI runs. In
+// the desktop window, this computer runs the test until it fails, and the Flakiness tab its Flake Lab.
 const runPlace = await useRunPlace({
   projectId: testCase.value?.project?.id ?? 0,
   machine: await useRunOnMyMachine(testCase.value?.project?.id ?? 0),
   whats: () => {
     const tc = testCase.value;
     if (!tc?.lastExecutionId) return [];
-    const whats = [executionTestWhat(tc.lastExecutionId, testLabel(tc))];
-    if (showFlakiness.value) whats.push(flakeLabWhat(tc.id, 'reproduce'), flakeLabWhat(tc.id, 'verify'));
+    const local = reproduceCases.value.length
+      ? { label: 'Run this test', cases: reproduceCases.value, runTitle: testLabel(tc) }
+      : null;
+    const whats: RunWhat[] = [{ ...executionTestWhat(tc.lastExecutionId, testLabel(tc)), local }];
+    if (showFlakiness.value) {
+      const lab = { reason: 'The Flakiness tab runs Flake Lab on this computer.' };
+      whats.push({ ...flakeLabWhat(tc.id, 'reproduce'), local: lab }, { ...flakeLabWhat(tc.id, 'verify'), local: lab });
+    }
     return whats;
   },
   prefersCi: () => false,
+  thisComputer: {
+    projectLabel: () => testCase.value?.project?.label ?? testCase.value?.project?.name,
+    presetOptions: REPEAT_PRESET,
+  },
 });
 
 const router = useRouter();
@@ -214,16 +226,7 @@ useViewScroll(
           </div>
 
           <div class="flex flex-wrap items-center gap-2 shrink-0">
-            <DesktopRunLocallyButton
-              data-tour="test-reproduce-locally"
-              :project-id="testCase?.project?.id"
-              :project-label="testCase?.project?.label ?? testCase?.project?.name"
-              :cases="reproduceCases"
-              label="Run this test"
-              :run-title="testCase ? testLabel(testCase) : null"
-              :preset-options="REPEAT_PRESET"
-            />
-            <RunButton :place="runPlace" />
+            <RunButton :place="runPlace" data-tour="test-run-button" />
             <RunDialog :place="runPlace" />
             <TestCaseMergeButton
               v-if="testCase?.project"
