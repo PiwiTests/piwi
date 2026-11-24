@@ -11361,14 +11361,10 @@ const SCENES = [
       await wide();
       await goto('/test-runs/2');
       await page.getByRole('checkbox', { name: 'Select all failing tests' }).click({ timeout: 60_000 });
-      const selected = page.getByRole('button', { name: /^Re-run \d+ selected tests?/ }).first();
-      await selected.waitFor();
+      const bar = page.locator('[data-shot="test-selection-bar"]');
+      await bar.getByRole('button', { name: /^Re-run \d+ selected tests?/ }).waitFor();
       await settle();
-      const bar = await selected.locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]').boundingBox();
-      await shoot('selection', {
-        of: false,
-        clip: { x: bar.x - 8, y: bar.y - 8, width: bar.width + 16, height: bar.height + 16 },
-      });
+      await shoot('selection', { of: '[data-shot="test-selection-bar"]', pad: 8 });
       await page.getByRole('checkbox', { name: 'Deselect all failing tests' }).click();
 
       // Sent to a CI action last, the button opens the dialog on it.
@@ -11414,7 +11410,7 @@ const SCENES = [
     out: 'docs',
     mode: 'desktop',
     route: '/test-runs/2',
-    viewport: { width: 1280, height: 1100 },
+    viewport: { width: 1280, height: 1500 },
     link: { path: READY_INSPECTION.path, exists: true },
     async run({ page, settle, shoot }) {
       await page

@@ -880,6 +880,7 @@ defineExpose({ scrollToCase });
     <div
       v-if="selectionEnabled && selectedCount > 0"
       class="mb-3 shrink-0 flex flex-wrap items-center gap-2 rounded-lg border border-primary/40 bg-primary/5 px-3 py-2"
+      data-shot="test-selection-bar"
     >
       <span class="text-sm font-medium" aria-live="polite">{{ selectedCount }} selected</span>
       <div class="flex flex-wrap items-center gap-2 ml-auto">

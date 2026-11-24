@@ -64,6 +64,7 @@ export const PROJECT = {
   DESKTOP_LOCAL_RUN_UNNAMED: 'desktop-local-run-unnamed-test',
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
+  DESKTOP_RUN_BUTTON: 'desktop-run-button-test',
   DESKTOP_RUN_VIEW: 'desktop-run-view-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
   DOM_SNAPSHOT_STATE: 'dom-snapshot-state-test',

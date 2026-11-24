@@ -19,7 +19,7 @@ const FAILED_OUTPUT = [
 ];
 
 /**
- * The desktop-only "Run locally" flow, driven against the regular web build
+ * The run button's This computer in the desktop window, driven against the regular web build
  * with a faked Tauri IPC bridge. The UI gates itself purely on the bridge's
  * presence, so installing `window.__TAURI__` before the app boots exercises the
  * real components, composables and event plumbing end to end — everything but
@@ -205,9 +205,7 @@ async function submitFailedRun(request: APIRequestContext, testCases: ReturnType
     },
   });
   expect(res.ok()).toBeTruthy();
-  const data = await res.json();
-  const proj = await (await request.get(`/api/projects/${data.projectId}`)).json();
-  return proj.testRuns[0].id as number;
+  return ((await res.json()) as { runId: number }).runId;
 }
 
 test.describe('Desktop local run', () => {
@@ -253,10 +251,7 @@ test.describe('Desktop local run', () => {
       },
     });
     expect(res.ok()).toBeTruthy();
-    const data = await res.json();
-    const proj = await (await request.get(`/api/projects/${data.projectId}`)).json();
-    runId = proj.testRuns[0].id;
-    projectId = data.projectId;
+    ({ runId, projectId } = (await res.json()) as { runId: number; projectId: number });
     const cases = await (await request.get(`/api/projects/${projectId}/test-cases`)).json();
     caseId = cases.items.find((c: { title: string; id: number }) => c.title === 'checkout completes')!.id;
     const run = await (await request.get(`/api/test-runs/${runId}`)).json();
@@ -969,13 +964,13 @@ test.describe('Desktop local run', () => {
       .toMatchObject({ title: 'Local run failed' });
   });
 
-  test('the copy-only Retry button yields to the split button inside the shell', async ({ page }) => {
+  test('the copy-only Copy retry command yields to the split button inside the shell', async ({ page }) => {
     await installFakeBridge(page, { linked: true });
     await page.goto(`/test-runs/${runId}`);
     await waitForHydration(page);
 
     await expect(page.getByRole('button', { name: RERUN_FAILED })).toBeVisible();
-    await expect(page.getByRole('button', { name: 'Retry', exact: true })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Copy retry command' })).toHaveCount(0);
   });
 
   test('warns when the linked folder has no Playwright installation', async ({ page }) => {
@@ -1017,5 +1012,183 @@ test.describe('Desktop local run', () => {
     expect(checked!.args!.specs).toEqual(['tests/checkout.spec.ts']);
     const setInvocation = invocations.find((i) => i.cmd === 'desktop_set_project_link');
     expect(setInvocation!.args!.path).toBe('/home/dev/acme');
+  });
+});
+
+/**
+ * The run button of the desktop window on a project with a CI action that re-runs tests: This computer and CI in one
+ * dialog, a green run's flaky tests, a selection's own button, and the face once a CI action was the last Where. The
+ * action's base URL is this machine, so a dispatch is refused before anything is sent.
+ */
+test.describe('Desktop run button beside CI', () => {
+  let projectId: number;
+  let redRunId: number;
+  let greenRunId: number;
+
+  const result = (title: string, location: string, status: 'passed' | 'failed', retries = 0) => ({
+    title,
+    status,
+    duration: 1000,
+    location,
+    browser: { name: 'chromium', projectName: 'chromium' },
+    ...(status === 'failed' ? { error: 'Error: boom' } : {}),
+    retries,
+    workerIndex: 0,
+    startedAt: Date.now(),
+  });
+
+  async function submit(request: APIRequestContext, status: 'passed' | 'failed', testCases: unknown[]) {
+    const res = await retryPost(request, '/api/test-runs/submit', {
+      data: {
+        projectName: PROJECT.DESKTOP_RUN_BUTTON,
+        status,
+        startTime: new Date().toISOString(),
+        duration: 3000,
+        totalTests: testCases.length,
+        passedTests: 0,
+        failedTests: 0,
+        skippedTests: 0,
+        testCases,
+      },
+    });
+    expect(res.ok()).toBeTruthy();
+    return (await res.json()) as { runId: number; projectId: number };
+  }
+
+  test.beforeAll(async ({ request }) => {
+    ({ runId: redRunId, projectId } = await submit(request, 'failed', [
+      result('pays by card', 'tests/pay.spec.ts:12:5', 'failed'),
+      result('pays by voucher', 'tests/pay.spec.ts:30:5', 'passed', 1),
+      result('home loads', 'tests/home.spec.ts:5:1', 'passed'),
+    ]));
+    ({ runId: greenRunId } = await submit(request, 'passed', [
+      result('pays by voucher', 'tests/pay.spec.ts:30:5', 'passed', 1),
+      result('home loads', 'tests/home.spec.ts:5:1', 'passed'),
+    ]));
+    const saved = await request.patch(`/api/projects/${projectId}`, {
+      data: {
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'rerun',
+              name: 'Re-run e2e',
+              target: { type: 'ci-server', preset: 'jenkins', baseUrl: 'https://localhost:9/', fields: { job: 'e2e' } },
+              inputs: [],
+              accepts: ['tests'],
+            },
+          ],
+          defaults: { rerun: 'rerun' },
+        },
+      },
+    });
+    expect(saved.ok(), await saved.text()).toBeTruthy();
+  });
+
+  /** Opens the dialog of the run header's button on This computer, from its menu. */
+  async function runWithOptions(page: Page) {
+    await page.locator('[data-shot="run-header"]').getByRole('button', { name: 'Run options' }).click();
+    await page.getByRole('menuitem', { name: 'Run with options…' }).click();
+    const dialog = page.getByRole('dialog');
+    // The dialog reads what each CI action takes before it shows the fields of its pick.
+    await expect(dialog.getByTestId('run-dialog-local-fields')).toBeVisible({ timeout: 30_000 });
+    return dialog;
+  }
+
+  test('the dialog lists This computer before CI, and its fields follow the Where', async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-runs/${redRunId}`);
+    await waitForHydration(page);
+
+    const dialog = await runWithOptions(page);
+    await expect(dialog.getByTestId('run-dialog-local').getByRole('radio', { name: /Piwi Desktop/ })).toBeChecked();
+    await expect(dialog.getByTestId('run-dialog-ci')).toContainText('Re-run e2e');
+    await expect(dialog.getByRole('button', { name: 'Run', exact: true })).toBeVisible();
+
+    await dialog
+      .getByTestId('run-dialog-ci')
+      .getByRole('radio', { name: /Re-run e2e/ })
+      .click();
+    await expect(dialog.getByTestId('run-dialog-local-fields')).toHaveCount(0);
+    await expect(dialog.getByTestId('run-dialog-sentence')).toContainText('A team run');
+    await expect(dialog.getByRole('button', { name: 'Send' })).toBeVisible();
+
+    await dialog
+      .getByTestId('run-dialog-local')
+      .getByRole('radio', { name: /Piwi Desktop/ })
+      .click();
+    await dialog.getByRole('spinbutton', { name: 'Repeat each' }).fill('3');
+    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await processStarted(page);
+    expect((await runInvocations(page))[0]!.args!.args).toEqual([
+      'tests/pay.spec.ts:12',
+      '--project=chromium',
+      '--repeat-each=3',
+      '--retries=0',
+    ]);
+  });
+
+  test('a green run re-runs its flaky tests here, which no CI action takes', async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-runs/${greenRunId}`);
+    await waitForHydration(page);
+
+    const dialog = await runWithOptions(page);
+    await expect(dialog.getByRole('radio', { name: /The flaky tests/ })).toBeChecked();
+    await expect(dialog.getByTestId('run-dialog-local').getByRole('radio', { name: /Piwi Desktop/ })).toBeChecked();
+    // The project's one action re-runs tests: it takes neither the flaky tests nor a whole suite.
+    await expect(dialog.getByTestId('run-dialog-ci')).toHaveCount(0);
+    await page.keyboard.press('Escape');
+
+    await page.getByRole('button', { name: 'Re-run 1 flaky test', exact: true }).click();
+    await processStarted(page);
+    expect((await runInvocations(page))[0]!.args!.args).toEqual(['tests/pay.spec.ts:30', '--project=chromium']);
+  });
+
+  test("a selection's button and its dialog run on this computer alone", async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.goto(`/test-runs/${redRunId}`);
+    await waitForHydration(page);
+
+    await page.getByRole('checkbox', { name: 'Select all failing tests' }).check();
+    const bar = page.locator('[data-shot="test-selection-bar"]');
+    await expect(bar.getByRole('button', { name: 'Re-run 1 selected test', exact: true })).toBeVisible();
+    await bar.getByRole('button', { name: 'Run options' }).click();
+    await page.getByRole('menuitem', { name: 'Run with options…' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByTestId('run-dialog-local-fields')).toBeVisible({ timeout: 30_000 });
+    await expect(dialog).toContainText('The selected tests');
+    await expect(dialog.getByTestId('run-dialog-local')).toBeVisible();
+    await expect(dialog.getByTestId('run-dialog-ci')).toHaveCount(0);
+  });
+
+  test('sent to a CI action last, the button opens the dialog on it until a run here', async ({ page }) => {
+    await installFakeBridge(page, { linked: true });
+    await page.addInitScript((id) => {
+      localStorage.setItem('piwi-run-where', JSON.stringify({ [String(id)]: 'ci:rerun' }));
+    }, projectId);
+    await page.goto(`/test-runs/${redRunId}`);
+    await waitForHydration(page);
+
+    const header = page.locator('[data-shot="run-header"]');
+    await header.getByRole('button', { name: 'Run on this computer or CI' }).click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByTestId('run-dialog-ci').getByRole('radio', { name: /Re-run e2e/ })).toBeChecked({
+      timeout: 30_000,
+    });
+    await expect(dialog.getByTestId('run-dialog-sentence')).toContainText('A team run');
+
+    await dialog
+      .getByTestId('run-dialog-local')
+      .getByRole('radio', { name: /Piwi Desktop/ })
+      .click();
+    await dialog.getByRole('button', { name: 'Run', exact: true }).click();
+    await expect(dialog).toHaveCount(0);
+    await processStarted(page);
+    await expect(header.getByRole('button', { name: 'Run on this computer or CI' })).toHaveCount(0);
+    expect(await page.evaluate(() => localStorage.getItem('piwi-run-where'))).toBe(
+      JSON.stringify({ [String(projectId)]: 'local' }),
+    );
   });
 });
