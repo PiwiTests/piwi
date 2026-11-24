@@ -106,8 +106,8 @@ export interface RunPlaceOptions {
  * One place's run: the split button's face and shortcuts, and the run dialog's What, Where, fields, Send and
  * follow-up, which `RunButton` and `RunDialog` render. The person's apps come from `useRunOnMyMachine`, which the page
  * awaits in its own setup and hands in, and the CI actions each What is offered from
- * `GET /api/projects/:id/ci-actions/offered`, read for a person who holds `run:control`: the place's first Whats with
- * the page, so the button renders on the server as it stays, and any other in the browser. Awaited in the page's
+ * `GET /api/projects/:id/ci-actions/offered`, read for a person who holds `run:control`: the place's first What with
+ * the page, so the button renders on the server as it stays, and the others in the browser. Awaited in the page's
  * setup, and returned reactive, so a component reads its fields as values.
  */
 export async function useRunPlace(options: RunPlaceOptions) {
@@ -159,33 +159,26 @@ export async function useRunPlace(options: RunPlaceOptions) {
 
   // ── What each destination offers ──────────────────────────────────────────
   const requestFetch = useRequestFetch();
-  /** The offers of the Whats the page opens with, read with the page. */
-  const firstOffers = useAsyncData(
-    `run-place-offered-${projectId}-${JSON.stringify(options.whats().map((w) => [w.key, w.ci?.source ?? null]))}`,
+  /** The offer of the What the page opens with, read with the page: one read, for what the button says. */
+  const firstWhat = options.whats()[0];
+  const firstOffer = useAsyncData(
+    `run-place-offered-${projectId}-${firstWhat?.key}-${JSON.stringify(firstWhat?.ci?.source ?? null)}`,
     async () => {
-      if (!mayDispatch.value) return [];
-      return Promise.all(
-        options.whats().flatMap((w) => {
-          if (!w.ci) return [];
-          const source = w.ci.source;
-          return [
-            requestFetch<CiOffered>(`/api/projects/${projectId}/ci-actions/offered`, { query: source })
-              .catch(() => null)
-              .then((offer) => ({ key: w.key, source: JSON.stringify(source), offer })),
-          ];
-        }),
-      );
+      if (!mayDispatch.value || !firstWhat?.ci) return null;
+      const source = firstWhat.ci.source;
+      const offer = await requestFetch<CiOffered>(`/api/projects/${projectId}/ci-actions/offered`, {
+        query: source,
+      }).catch(() => null);
+      return { key: firstWhat.key, source: JSON.stringify(source), offer };
     },
-    { default: () => [] },
+    { default: () => null },
   );
   watch(
-    firstOffers.data,
+    firstOffer.data,
     (read) => {
-      for (const { key, source, offer } of read ?? []) {
-        if (offered[key] !== undefined) continue;
-        offeredFor[key] = source;
-        offered[key] = offer;
-      }
+      if (!read || offered[read.key] !== undefined) return;
+      offeredFor[read.key] = read.source;
+      offered[read.key] = read.offer;
     },
     { immediate: true },
   );
@@ -562,7 +555,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
     if (followUp.view.value) keepRunWhere(projectId, shortcut.where);
   }
 
-  await firstOffers;
+  await firstOffer;
   return reactive({
     projectId,
     visible,
