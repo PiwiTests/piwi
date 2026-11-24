@@ -203,19 +203,24 @@ export async function useRunPlace(options: RunPlaceOptions) {
     );
   }
 
-  onMounted(() => {
-    watch(
-      () => JSON.stringify(options.whats().map((w) => [w.key, w.ci?.source ?? null])),
-      () => void readOffered(options.whats()),
-      { immediate: true },
-    );
-  });
-
   /** Whether a What's CI has an action that can be sent. */
   const ciTakes = (w: RunWhat) => {
     const offer = offered[w.key];
     return Boolean(w.ci && offer?.enabled && offer.actions.some((a) => a.available));
   };
+
+  // The first What says what the button shows; the others are read when it cannot go to CI, else when the dialog opens.
+  onMounted(() => {
+    watch(
+      () => JSON.stringify(options.whats().map((w) => [w.key, w.ci?.source ?? null])),
+      async () => {
+        const [first, ...others] = options.whats();
+        if (first) await readOffered([first]);
+        if (!first || !ciTakes(first)) await readOffered(others);
+      },
+      { immediate: true },
+    );
+  });
   const appsAvailable = computed(
     () => machine.shown.value && options.whats().some((w) => w.app != null && 'source' in w.app),
   );
