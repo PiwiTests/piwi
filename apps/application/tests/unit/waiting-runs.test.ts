@@ -72,9 +72,12 @@ describe('waitingDispatchRow', () => {
     });
   });
 
-  test('a re-run counts its tests; a job on its own branch names none', () => {
+  test('a re-run counts its tests, a Flake Lab experiment says so, a job on its own branch names none', () => {
     expect(waitingDispatchRow(dispatch({ kind: 'tests', tests: 1 }), AT)?.facts).toBe(
       '1 test · Smoke · staging on main',
+    );
+    expect(waitingDispatchRow(dispatch({ kind: 'flakeLab', tests: 1 }), AT)?.facts).toBe(
+      'Flake Lab · Smoke · staging on main',
     );
     expect(waitingDispatchRow(dispatch({ kind: 'tests', tests: 3, ref: null }), AT)?.facts).toBe(
       '3 tests · Smoke · staging',

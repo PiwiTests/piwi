@@ -25,6 +25,8 @@ export interface RunFollowUpView {
   tests: number | null;
   /** The one test it runs, by its title, when it runs one. */
   testTitle: string | null;
+  /** A dispatch of a Flake Lab experiment, which its facts name in place of its test count. */
+  flakeLab: boolean;
   /** Where it went: the app's machine, or the CI (`Jenkins`). */
   target: string | null;
   /** The CI action it went through. */
@@ -122,6 +124,7 @@ export function runRequestFollowUp(request: RunRequestView): RunFollowUpView {
     sentence: runRequestSentence(request),
     tests: request.tests.length,
     testTitle: request.tests.length === 1 ? request.tests[0]!.title : null,
+    flakeLab: false,
     target: request.target?.deviceName ?? null,
     action: null,
     ref: null,
@@ -231,6 +234,7 @@ export function ciDispatchFollowUp(dispatch: CiDispatchView, now = Date.now()): 
     sentence: ciDispatchSentence(dispatch, now),
     tests: dispatch.tests,
     testTitle: null,
+    flakeLab: dispatch.kind === 'flakeLab',
     target: ciDispatchTargetName(dispatch),
     action: dispatch.actionName,
     ref: dispatch.ref,
@@ -247,13 +251,14 @@ export function ciDispatchFollowUp(dispatch: CiDispatchView, now = Date.now()): 
 const testCount = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
 
 /**
- * What a follow-up runs, through what and on which branch, as one line of facts: `3 tests · Smoke · staging on main`.
- * A dispatch names its action, else its CI; a request its tests alone.
+ * What a follow-up runs, through what and on which branch, as one line of facts: `3 tests · Smoke · staging on main`,
+ * `Flake Lab · Smoke · staging on main`. A dispatch names its action, else its CI; a request its tests alone.
  */
 export function runFollowUpFacts(
-  followUp: Pick<RunFollowUpView, 'kind' | 'tests' | 'testTitle' | 'action' | 'target' | 'ref'>,
+  followUp: Pick<RunFollowUpView, 'kind' | 'tests' | 'testTitle' | 'flakeLab' | 'action' | 'target' | 'ref'>,
 ): string {
-  const what = followUp.testTitle ?? (followUp.tests ? testCount(followUp.tests) : null);
+  const what =
+    followUp.testTitle ?? (followUp.flakeLab ? 'Flake Lab' : followUp.tests ? testCount(followUp.tests) : null);
   const through = followUp.kind === 'dispatch' ? (followUp.action ?? followUp.target) : null;
   const where = through && followUp.ref ? `${through} on ${followUp.ref}` : through;
   return [what, where].filter(Boolean).join(' · ');
