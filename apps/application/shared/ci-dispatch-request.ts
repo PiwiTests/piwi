@@ -17,7 +17,6 @@ import {
   CI_ACTION_KINDS,
   ciActionInputValues,
   ciActionTargetSummary,
-  ciServerTargetOf,
   type CiAction,
   type CiActionInput,
   type CiActionKind,
@@ -26,11 +25,12 @@ import {
   type CiActionsSettings,
 } from '#shared/ci-actions';
 import {
+  BRANCH_PLACEHOLDER,
   ciServerRequestTemplate,
   segmentClimbsWhenDecoded,
   type CiRequestTemplate,
-  type CiServerTarget,
 } from '#shared/ci-server';
+import { ciServerTargetOf, ciTargetDefinition } from '#shared/ci-targets';
 import type { CiDispatchView, FlakeLabKind } from '#shared/ci-dispatches';
 import { parseRouteId } from '#shared/route-id';
 import { parseCiTags, type CiTagMatch } from '#shared/ci-tags';
@@ -220,48 +220,20 @@ export function ciRefProblem(ref: string): string | null {
  */
 export type CiBranchMode = 'list' | 'typed' | 'fixed';
 
-const BRANCH_PLACEHOLDER = /\{\{\s*(?:ref|branchJob)\s*\}\}/;
-
 /** The request a CI server action sends, or null when it builds none. */
 function ciServerRequestOf(target: CiActionTarget): CiRequestTemplate | null {
   if (target.type !== 'ci-server') return null;
   return ciServerRequestTemplate(ciServerTargetOf(target), 'rerun')?.template ?? null;
 }
 
-/** The texts of a request a dispatch fills: its path, query, headers and body. */
-function requestTexts(template: CiRequestTemplate): string[] {
-  const body = template.body;
-  return [
-    template.path,
-    ...(template.query ?? []).map(([, value]) => value),
-    ...(template.headers ?? []).map(([, value]) => value),
-    ...(body?.type === 'json' ? [body.template] : (body?.fields ?? []).map(([, value]) => value)),
-  ];
-}
-
-/** Whether a CI server's re-run request names the branch: `{{ref}}` or `{{branchJob}}` in its path, query, headers or body. */
-export function ciServerTakesBranch(server: CiServerTarget): boolean {
-  const request = ciServerRequestTemplate(server, 'rerun')?.template;
-  return Boolean(request && requestTexts(request).some((text) => BRANCH_PLACEHOLDER.test(text)));
-}
-
 /** The branch mode of a target ({@link CiBranchMode}). */
 export function ciBranchMode(target: CiActionTarget): CiBranchMode {
-  if (target.type !== 'ci-server') return 'list';
-  return ciServerTakesBranch(ciServerTargetOf(target)) ? 'typed' : 'fixed';
+  return ciTargetDefinition(target.type).branchMode(target);
 }
 
 /** The branch a target runs when a dispatch names none; null when the target leaves it to the CI (Bitbucket, a fixed job). */
 export function ciTargetRef(target: CiActionTarget): string | null {
-  switch (target.type) {
-    case 'github':
-    case 'gitlab':
-      return target.ref;
-    case 'bitbucket':
-      return null;
-    case 'ci-server':
-      return target.fields.ref?.trim() || null;
-  }
+  return ciTargetDefinition(target.type).defaultRef(target);
 }
 
 /**

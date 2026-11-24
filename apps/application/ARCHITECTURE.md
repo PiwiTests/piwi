@@ -232,7 +232,8 @@ Each entry names folders under `server/api/`.
   `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, CI dispatches
   (`ci-dispatches` to send one and list them, `ci-actions/offered`, an action's `branches` and `check`, through
   `server/utils/ci-rerun.ts`; the action editor's `ci-actions/jobs` and `ci-actions/fields`, what a target declares,
-  through `server/utils/ci-jobs.ts` and the readers of `shared/ci-job-fields.ts`), and the families listed below. The top-level `ci-dispatches/[id]` reads one dispatch.
+  through `server/utils/ci-jobs.ts` and the readers of `shared/ci-job-fields.ts`; each kind of target's provider in
+  `server/utils/ci-providers/`), and the families listed below. The top-level `ci-dispatches/[id]` reads one dispatch.
 - **`failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/`**: cluster list, detail and triage
   (status, assignee, snooze, bulk, quarantine, extract cases), AI diagnosis (`diagnose`, `context`, `commits`,
   `commit-diff`, `base-commit`), the diagnosis version history (`diagnoses`), suspect lines, fix plan, fixed-before
@@ -923,6 +924,14 @@ Where to add things in subsystems whose wiring spans several files:
   `import/check.post.ts`; the page `projects/[id]/import.vue` with `useBlobReportImport`.
 - **Trace-file import**: `server/utils/trace-import.ts` rebuilds an execution from a trace's `context-options` and
   `error` events. The `importGroup` field of `test-runs/import.post.ts` gathers several traces into one run.
+- **A kind of CI target** (a CI action dispatches to it):
+  - its type in `CiActionTarget` (`shared/ci-actions.ts`), and its listing target in `CiListingTarget`;
+  - its definition in `CI_TARGETS` (`shared/ci-targets.ts`): label, summary, the names it sends, the posted target and
+    listing target it reads, its default branch and branch mode;
+  - its provider in `CI_PROVIDERS` (`server/utils/ci-providers/`): readiness, dispatch, repository branches, Check, the
+    job and field listings (a repository host's builds on `repositoryHostProvider`);
+  - the editor's draft in `app/utils/ci-action-form.ts` (`CI_ACTION_TARGET_ITEMS`), and the demo's answers in
+    `app/demo/api/ci-rerun.ts`.
 - **Quality report language**:
   - its code in `shared/reports/languages.ts`;
   - the `lang` enum of `server/api/reports/preview.get.ts` (a literal the test checks);

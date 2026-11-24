@@ -2,7 +2,8 @@
  * The CI server part of a CI action's form: the editable state a stored target
  * opens as, the target a save sends, and the request preview the form shows.
  */
-import { ciServerTargetOf, type CiActionTarget } from '#shared/ci-actions';
+import { type CiActionTarget } from '#shared/ci-actions';
+import { ciServerTargetOf } from '#shared/ci-targets';
 import {
   CiTemplateError,
   CI_SERVER_PRESET_REGISTRY,

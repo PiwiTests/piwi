@@ -10,7 +10,8 @@
  * dispatch follows. The project's CI actions (`server/utils/ci-actions.ts`) say
  * where a dispatch goes: each action names a repository host's CI (a GitHub
  * workflow, a GitLab or Bitbucket pipeline, which use the project's SCM token
- * on its pinned repository) or a CI server (`server/utils/ci-server-dispatch.ts`).
+ * on its pinned repository) or a CI server, and the provider of its kind
+ * (`server/utils/ci-providers/`) says whether it can go and sends it.
  * `pickCiAction` chooses the action. The availability a place is offered and
  * the dispatch run the same checks, so a page never offers an action the
  * dispatch would refuse.
@@ -18,12 +19,10 @@
 import { randomBytes } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { failureClusters } from '../database/schema';
-import { createScmProvider, detectScmProvider, hasScmCredential } from './scm';
-import { projectRepositoryFor, readProjectRepositoryUrl } from './scm/project-repository';
+import { detectScmProvider } from './scm';
 import { NO_RETRY_ARGS } from '#shared/retry-command';
 import {
   ciPlaceLastDispatch,
-  ciServerTemplateValues,
   projectRunBranches,
   rerunFiles,
   resolveCiDispatchPlace,
@@ -32,13 +31,10 @@ import {
 import { claimCiDispatch, getCiDispatch, settleCiDispatch } from '#shared/handlers/ci-dispatches';
 import type { CiDispatchOrigin, CiDispatchView } from '#shared/ci-dispatches';
 import {
-  ciActionInputValues,
-  ciServerTargetOf,
   pickCiAction,
   reservedInputMessage,
   reservedInputName,
   type CiAction,
-  type CiActionKind,
   type CiActionPick,
   type CiActionsSettings,
 } from '#shared/ci-actions';
@@ -55,18 +51,8 @@ import {
   type CiOffered,
 } from '#shared/ci-dispatch-request';
 import { getCiActionsSettings } from './ci-actions';
-import { ciServerRequestTemplate } from '#shared/ci-server';
-import {
-  ciServerBaseUrl,
-  ciServerBaseUrlProblem,
-  ciServerCredential,
-  dispatchToCiServer,
-  prepareCiServerRequest,
-  type CiServerCredential,
-} from './ci-server-dispatch';
-import { loadCredentialRecord } from '#shared/handlers/credentials';
-import { credentialRefusal } from '#shared/credentials';
-import { CredentialRefusedError, credentialEnvRefusal, type CredentialActor } from './credentials';
+import { ciProvider, type CiReadiness } from './ci-providers';
+import { CredentialRefusedError, type CredentialActor } from './credentials';
 import { apiError } from './api-error';
 import type { DbClient } from '../database';
 
@@ -100,22 +86,6 @@ export function ciDispatchError(outcome: Extract<CiDispatchOutcome, { ok: false 
   });
 }
 
-/** Whether a dispatch can be sent, and why not. */
-interface Readiness {
-  available: boolean;
-  reason: string | null;
-  /** Unavailable only because the action's credential refuses the request, which a dispatch then logs. */
-  credentialRefused?: boolean;
-}
-
-/** What a dispatch of each kind is called, in a sentence about what it lacks. */
-const DISPATCH_NOUN: Record<CiActionKind, string> = {
-  tests: 're-run',
-  suite: 'run',
-  tags: 'run',
-  flakeLab: 'experiment',
-};
-
 /** The action a place uses: the one `actionId` names, else its default (`pickCiAction`). */
 function pickFor(settings: CiActionsSettings, place: CiDispatchPlace, actionId?: string | null): CiActionPick {
   return pickCiAction(settings, place.kind, {
@@ -125,56 +95,6 @@ function pickFor(settings: CiActionsSettings, place: CiDispatchPlace, actionId?:
     actionId,
     startedBy: place.started?.actionId,
   });
-}
-
-/**
- * Whether a CI server action can be dispatched on this branch, and whether it
- * would carry a credential: a request its target builds, a base URL that is
- * https (or http on a listed place), a request its values fill, built as the
- * dispatch builds it, and a credential that allows it. DNS is checked at
- * dispatch.
- */
-async function ciServerReadiness(
-  db: DbClient,
-  place: CiDispatchPlace,
-  action: CiAction & { target: { type: 'ci-server' } },
-  ref: string | null,
-): Promise<Readiness> {
-  const target = ciServerTargetOf(action.target);
-  if (!ciServerRequestTemplate(target, 'rerun')) {
-    return { available: false, reason: 'No CI server is configured for this project.' };
-  }
-  let credential: CiServerCredential | null;
-  try {
-    credential = await ciServerCredential(db, target);
-  } catch (e) {
-    return { available: false, reason: e instanceof Error ? e.message : 'The credential cannot be read.' };
-  }
-  const baseUrl = ciServerBaseUrl(target, credential);
-  const problem = ciServerBaseUrlProblem(baseUrl);
-  if (problem || !baseUrl) return { available: false, reason: problem };
-  try {
-    const request = prepareCiServerRequest({
-      target,
-      kind: 'rerun',
-      baseUrl,
-      values: ciServerTemplateValues(target, 'args', 'dispatch', ref, place.commit),
-      inputs: ciActionInputValues(action),
-      credential,
-    });
-    if (request.credential?.source === 'action') {
-      const record = await loadCredentialRecord(db, request.credential.id);
-      const refusal = record
-        ? (credentialRefusal(record, { projectId: place.projectId, url: request.url, custom: request.custom }) ??
-          credentialEnvRefusal(record))
-        : 'The credential this CI action names does not exist: pick another one.';
-      // A dispatch still goes to `withCredential`, which refuses it again and logs the refusal.
-      if (refusal) return { available: false, reason: refusal, credentialRefused: Boolean(record) };
-    }
-    return { available: true, reason: null };
-  } catch (e) {
-    return { available: false, reason: e instanceof Error ? e.message : 'The CI server request cannot be built.' };
-  }
 }
 
 /**
@@ -190,7 +110,7 @@ async function readiness(
   place: CiDispatchPlace,
   pick: CiActionPick,
   ref: string | null,
-): Promise<Readiness> {
+): Promise<CiReadiness> {
   if (!settings.enabled) return { available: false, reason: 'CI re-run is off for this project.' };
   const action = pick.action;
   if (!action) return { available: false, reason: pick.reason };
@@ -201,35 +121,10 @@ async function readiness(
       reason: reservedInputMessage(reserved, action.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'),
     };
   }
-  let ready: Readiness;
-  if (action.target.type === 'ci-server') {
-    ready = await ciServerReadiness(db, place, { ...action, target: action.target }, ref);
-  } else {
-    // An SCM credential reaches only the project's repository, where the place's must be.
-    const repositoryUrl = await projectRepositoryFor(db, place.projectId, place.repositoryUrl);
-    if (!repositoryUrl) ready = { available: false, reason: repositoryReason(place) };
-    else if (await hasScmCredential(db, place.projectId, repositoryUrl, action.target.credentialId ?? null)) {
-      ready = { available: true, reason: null };
-    } else {
-      ready = {
-        available: false,
-        reason: `No SCM credential is set to dispatch the ${DISPATCH_NOUN[place.kind]}: pick one in the project’s Source control settings.`,
-      };
-    }
-  }
+  const ready = await ciProvider(action.target.type).readiness(db, place, action, ref);
   // Empty arguments would run the whole suite.
   if (ready.available && place.kind === 'tests' && !place.args) return { available: false, reason: NO_RETRY_ARGS };
   return ready;
-}
-
-/** Why a repository host's action cannot dispatch from a place whose repository is not the project's. */
-function repositoryReason(place: CiDispatchPlace): string {
-  if (!place.repositoryUrl) {
-    return place.runId == null
-      ? 'The project has no repository to dispatch to: set it in the project’s Source control settings.'
-      : 'Its run reported no repository to dispatch to.';
-  }
-  return `Its run reported ${place.repositoryUrl}, not the project’s repository, the only one its SCM credentials reach.`;
 }
 
 /** A second dispatch of the same action, arguments, branch and inputs within the guard: the earlier one. */
@@ -265,47 +160,14 @@ async function dispatchWithAction(
   // The virtual administrator of an instance without sign-in is id 0, no user row.
   const credentialActor: CredentialActor = { userId: input.actor.id || null, apiKeyId: input.actor.apiKeyId ?? null };
 
-  let send: () => Promise<{ url: string; ref: string | null; providerRunId: string | null }>;
-  let ref: string | null;
-  if (target.type === 'ci-server') {
-    const server = ciServerTargetOf(target);
-    const values = ciServerTemplateValues(server, place.args, id, input.ref, place.commit);
-    ref = values.ref || null;
-    send = async () => {
-      const sent = await dispatchToCiServer(db, place.projectId, server, 'rerun', values, inputs, {
-        actor: credentialActor,
-        actionId: action.id,
-      });
-      return { url: sent.url, ref, providerRunId: sent.buildNumber ?? null };
-    };
-  } else {
-    const repositoryUrl = place.repositoryUrl;
-    if (!repositoryUrl || detectScmProvider(repositoryUrl) !== target.type) {
-      throw new Error('No supported repository to dispatch to');
-    }
-    // The branch it goes to: the one asked, else the target's own; Bitbucket's default branch is known only once sent.
-    ref = input.ref ?? (target.type === 'bitbucket' ? null : target.ref);
-    send = async () => {
-      // The credential opens only for a dispatch that goes out, never for a refused repeat.
-      const scm = await createScmProvider(repositoryUrl, db, place.projectId, {
-        actor: credentialActor,
-        credentialId: target.credentialId ?? null,
-        strict: true,
-      });
-      if (!scm?.provider) throw new Error('Could not build an SCM client for this repository');
-      const sent = await scm.dispatchRerun(target, place.args, {
-        ref: input.ref,
-        dispatchId: id,
-        inputs,
-        actionId: action.id,
-      });
-      return {
-        url: sent.url,
-        ref: sent.ref ?? ref,
-        providerRunId: sent.runId ?? sent.pipelineId ?? sent.buildNumber ?? null,
-      };
-    };
-  }
+  const { ref, send } = ciProvider(target.type).prepareDispatch(db, {
+    place,
+    action,
+    id,
+    ref: input.ref,
+    inputs,
+    actor: credentialActor,
+  });
 
   const claim = await claimCiDispatch(db, {
     id,
@@ -502,20 +364,9 @@ export async function ciActionBranches(
   if (!action) return null;
   const runBranches = await projectRunBranches(db, projectId);
   const target = action.target;
-  let repositoryBranches: string[] = [];
-  if (settings.enabled && target.type !== 'ci-server' && ciBranchMode(target) === 'list') {
-    const pinned = await readProjectRepositoryUrl(db, projectId);
-    if (pinned && detectScmProvider(pinned) === target.type) {
-      try {
-        const scm = await createScmProvider(pinned, db, projectId, {
-          actor,
-          credentialId: target.credentialId ?? null,
-        });
-        repositoryBranches = scm ? await scm.listBranches() : [];
-      } catch {
-        // A repository that cannot be read leaves the run branches.
-      }
-    }
-  }
+  const repositoryBranches =
+    settings.enabled && ciBranchMode(target) === 'list'
+      ? await ciProvider(target.type).repositoryBranches(db, projectId, action, actor)
+      : [];
   return ciBranchOptions(runBranches, repositoryBranches, q);
 }

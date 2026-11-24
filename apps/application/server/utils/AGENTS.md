@@ -290,6 +290,12 @@ runs (`@piwitests/editor/run-host`), plus these:
   copy (`pick`), and a pick on the image answers that it goes there (`ShellRunsWords.picked`). The guard takes that token
   on that route alone (`presentsDesktopPicksToken`).
 
+## CI targets
+
+- **What reaches a CI action's target goes through its kind's provider** (`ciProvider(target.type)`, `ci-providers/`),
+  never a `target.type` switch in `ci-rerun.ts`, `ci-actions.ts` or `ci-jobs.ts`; what is known without reaching it,
+  through its definition in `shared/ci-targets.ts`. Adding a kind: `ARCHITECTURE.md`, _Extension points_.
+
 ## Credentials
 
 - **A credential's secret is opened only by `withCredential`** (`credentials.ts`), which checks the credential's rules

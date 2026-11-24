@@ -12,8 +12,6 @@ import { projects, users } from '~~/server/database/schema.sqlite';
 import {
   ciActionInputValues,
   ciActionsProblem,
-  ciServerTargetOf,
-  ciServerTargetOfListing,
   resolveCiListingTarget,
   type CiListingTarget,
   pickCiAction,
@@ -23,6 +21,7 @@ import {
   type CiActionPick,
   type CiActionsSettings,
 } from '#shared/ci-actions';
+import { ciServerTargetOf, ciServerTargetOfListing } from '#shared/ci-targets';
 import {
   CI_SERVER_HTTPS_PROBLEM,
   ciServerCheckFinding,

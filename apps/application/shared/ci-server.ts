@@ -669,6 +669,26 @@ export function ciServerCheckPlans(
   });
 }
 
+/** A placeholder that names the branch in a request: `{{ref}}` or `{{branchJob}}`. */
+export const BRANCH_PLACEHOLDER = /\{\{\s*(?:ref|branchJob)\s*\}\}/;
+
+/** The texts of a request a dispatch fills: its path, query, headers and body. */
+function requestTexts(template: CiRequestTemplate): string[] {
+  const body = template.body;
+  return [
+    template.path,
+    ...(template.query ?? []).map(([, value]) => value),
+    ...(template.headers ?? []).map(([, value]) => value),
+    ...(body?.type === 'json' ? [body.template] : (body?.fields ?? []).map(([, value]) => value)),
+  ];
+}
+
+/** Whether a CI server's re-run request names the branch: `{{ref}}` or `{{branchJob}}` in its path, query, headers or body. */
+export function ciServerTakesBranch(server: CiServerTarget): boolean {
+  const request = ciServerRequestTemplate(server, 'rerun')?.template;
+  return Boolean(request && requestTexts(request).some((text) => BRANCH_PLACEHOLDER.test(text)));
+}
+
 /** The read that lists the jobs under a target's base URL, and how to read its answer. */
 export interface CiServerListPlan {
   url: string;

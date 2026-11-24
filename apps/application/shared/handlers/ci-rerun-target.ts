@@ -11,7 +11,7 @@ import { failureClusters, projects, testCases, testRuns, testRunsCases } from '.
 import { resolveRunBranch } from '../../server/utils/run-branch';
 import { normalizeGitUrl, repositoryUrlFromRemote } from '../../server/utils/scm/git-url';
 import { mostCommonRunBranch } from '../../server/utils/scm/stored-default-branch';
-import type { CiServerTarget, CiTemplateValues } from '#shared/ci-server';
+import { ciServerTakesBranch, type CiServerTarget, type CiTemplateValues } from '#shared/ci-server';
 import type { CiActionKind } from '#shared/ci-actions';
 import { flakeLabCiArgs } from '#shared/ci-rerun';
 import { ciTagsArgs } from '#shared/ci-tags';
@@ -19,7 +19,6 @@ import type { CiDispatchView } from '#shared/ci-dispatches';
 import {
   ciDispatchSourceKind,
   ciRefProblem,
-  ciServerTakesBranch,
   type CiDispatchSource,
   type CiDispatchStart,
 } from '#shared/ci-dispatch-request';
