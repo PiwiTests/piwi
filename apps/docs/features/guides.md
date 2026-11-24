@@ -44,7 +44,7 @@ popover, and pointing at a line enlarges its number on the page.
 | **Report a first run** | Install the reporter, send a run, and find it in its project | Administrators |
 | **Configure AI** | Choose where the AI runs and what it does | Administrators |
 | **Add the SCM credential** | Let Piwi read the commits behind a failure | Project admins |
-| **Set up CI and sharding** | Report from CI, merge shards into one run, re-run from a cluster | Administrators |
+| **Set up CI and sharding** | Report from CI, merge shards into one run, start tests in CI | Administrators |
 | **Turn on pull-request feedback** | Post each run's result on its pull request | Administrators |
 | **Connect Jira** | File issues from failures and keep them in sync | Administrators |
 | **Set up notifications** | Send failures to email, Slack, Teams or a webhook | Everyone |

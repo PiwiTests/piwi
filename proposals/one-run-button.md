@@ -28,10 +28,10 @@ app's environment and run options, a CI action's branch by its mode, its choices
 holds the D3 one-click runs, and the Next actions `rerun-in-ci` and `flake-lab-ci` open the dialog on CI.
 `RunFollowUp` shows a request and a dispatch through one view (`#shared/run-follow-up`), after Send and in "Last
 re-run", reading a dispatch every 5 then 30 seconds, with the likely causes after 30 minutes and a toast when its run
-reports. The docs moved the CI actions' configuration to a page of its own. A dispatch in the demo stays `dispatched`:
-moving it to `running` and `ended` against a seeded run remains for a later pull request. Step 1 of #1292, the CI actions,
-shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in
-[ci-actions.md](../adr/ci-actions.md).
+reports while the dialog is closed. The docs moved the CI actions' configuration to a page of its own. Remain: PR 5
+(_This computer_), PR 6 (the waiting row) and PR 7 (tags), and a demo dispatch moving to `running` and `ended` against
+a seeded run, which stays `dispatched`. Step 1 of #1292, the CI actions, shipped in
+[#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in [ci-actions.md](../adr/ci-actions.md).
 
 ## What existed
 

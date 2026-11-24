@@ -66,7 +66,7 @@ describe('evaluateBudgets', () => {
     expect(cluster).toMatchObject({ value: 14, max: 13, verdict: 'fail' });
   });
 
-  it('counts at most 26 controls in the navbar and the block of an execution and 25 of a cluster', () => {
+  it('counts at most 26 controls in the navbar and the block of an execution', () => {
     const execution = evaluateBudgets(
       measured('/test-run-cases/37', { navbarControls: 9, blockControls: 17 }),
       AT_BUDGET,

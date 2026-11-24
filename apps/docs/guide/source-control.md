@@ -42,9 +42,9 @@ GitLab (`https://gitlab.com/api/v4/projects/acme%2Fweb/`). Then pick it:
   for every project that picks none. It lists credentials shared with all projects; for each repository, the one
   whose destination holds the repository's API applies, the narrowest first, so one instance can hold a GitHub and a
   GitLab token.
-- **Per CI action**: a GitHub, GitLab or Bitbucket action of [Re-run in CI](/features/ci-rerun) may name its own, so a
-  token scoped to CI dispatches (on GitHub, **Actions: write**, and **Contents: read** for the action's **Check**),
-  and the project's keeps reading and writing feedback.
+- **Per CI action**: a GitHub, GitLab or Bitbucket [CI action](/features/ci-actions#repository-host) may name its
+  own, so a token scoped to CI dispatches (on GitHub, **Actions: write**, and **Contents: read** for the action's
+  **Check**), and the project's keeps reading and writing feedback.
 
 The token is encrypted with [`PIWI_SECRET_KEY`](/reference/configuration#general), never returned by the API, sent
 only to its destination, and each use is in the credential's log. A token saved on a project or the instance before

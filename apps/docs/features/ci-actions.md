@@ -27,9 +27,9 @@ A CI action has:
   picks first;
 - the kinds it is the **default** for.
 
-A dispatch uses the action that started the run it re-runs, else the one of the run's environment, else the project's
-default. A repository action
-serves only a run whose repository is on that host; a CI server action serves any run. Settings saved before CI
+Unless you pick another, a dispatch uses the action that started the run it re-runs, else the one of the run's
+environment, else the project's default. A repository action serves only a run whose repository is on that host; a CI
+server action serves any run. Settings saved before CI
 actions existed were converted when read.
 
 **Check** reads an action's target without starting it and says whether it declares every name a dispatch sends, the

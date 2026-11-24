@@ -527,7 +527,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
-      'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests, with inputs and defaults, that re-run tests or a Flake Lab experiment.',
+      'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests that re-run tests, run the whole suite or a Flake Lab experiment.',
     help: 'project.ci-rerun',
     doc: 'features/ci-actions',
     requires: { permission: 'project:manage' },

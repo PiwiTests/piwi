@@ -76,7 +76,7 @@ project, and holding the request's URL under its destination, and allowing a Cus
 ## What names a credential
 
 - **A CI action**: a CI server action's requests, or the dispatch and the **Check** of a GitHub, GitLab or Bitbucket
-  action ([Re-run in CI](/features/ci-rerun)).
+  action ([CI actions](/features/ci-actions)).
 - **Source control**: a project's repository calls, else the instance's, with a GitHub, GitLab or Bitbucket token sent
   to the host's API ([Source control](/guide/source-control#set-the-credential)).
 - **An AI role**: the key of a role of **Settings → AI**, sent to its provider ([AI provider](/guide/ai-provider#api-keys)).
@@ -135,7 +135,7 @@ page's **Log**, under its name, until then.
 
 ## Related
 
-- [Re-run in CI](/features/ci-rerun): the CI actions that name a credential
+- [CI actions](/features/ci-actions): the CI actions that name a credential
 - [Source control](/guide/source-control): what reads and writes a repository with an SCM credential
 - [Jira Cloud](./integrations) and [Zephyr Scale](./zephyr-scale): the connections that name a credential
 - [Access, roles and groups](./project-access): who holds `credentials:manage` and `project:manage`

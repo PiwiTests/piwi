@@ -21,8 +21,8 @@ that run in CI, and others: a page's **run button** opens a dialog whose **Where
 | Test | The test, or a [Flake Lab](./flake-lab#run-it-in-ci) experiment |
 | Failure cluster, and its Verify section | Its affected tests |
 
-A re-run sends each test's `file:line` from its latest failure and the projects it failed in, on the branch of the run
-it comes from. The **Re-run in CI** next step, and a Flake Lab one, open the dialog on CI.
+A re-run sends each test's `file:line` from its latest failure and the projects it failed in, at most 100 tests, on
+the branch of the run it comes from. The **Re-run in CI** next step, and a Flake Lab one, open the dialog on CI.
 
 CI is **off by default**: a project starts it through the [CI actions](./ci-actions) of its **Settings**, each saying
 where Piwi starts CI and what it sends. The dialog, MCP and the API can name another action than the default, a branch
@@ -41,19 +41,20 @@ Playwright takes.
 
 - **Where** opens on the one you last sent to in this project, from this browser. Otherwise a re-run picks the action
   that started its run, else the one of its environment, else the default for re-runs; the project page picks its
-  default for Run on CI.
+  default for Run on CI, and the test page your first online app.
 - A CI row shows its target and environment. It is disabled, with the reason, when the action does not take the
   chosen **What** or cannot be sent. Picked, the dialog says what a team run is: it counts in the project's history,
-  sends notifications and pull-request feedback, and spends CI minutes.
+  sends notifications and pull-request feedback, and spends CI minutes. A Flake Lab experiment is a lab run instead,
+  kept out of the history.
 - **Branch**: a GitHub, GitLab or Bitbucket action offers the branches the project's runs reported, then the
   repository's; a Jenkins job with `{branch}` in its path, or a Custom request naming the branch, takes a typed name;
   any other CI server job runs its configured branch. A name git refuses is not sent.
 - Each choice input offers its options; the fixed ones are listed.
-- The button's menu sends the page's first **What** in one click, to one action or app, with the default branch and
-  choices.
+- The button's menu sends the page's first **What** in one click, to one action or app, on the branch the dialog
+  would pick, with the default choices.
 
 After **Send** the dialog follows the dispatch: *waiting for the run to report*, with **Open in CI**, then the run and
-its result once [matched](#matching-the-run), which a toast also says while the page is open. With no run after 30
+its result once [matched](#matching-the-run), which a toast says if you closed the dialog. With no run after 30
 minutes, it lists the likely causes. **Run again** sends it again; a CI run is cancelled in the CI. The Verify section
 of a cluster and of its executions shows the cluster's last re-run.
 

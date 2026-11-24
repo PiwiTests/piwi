@@ -599,18 +599,18 @@ export const HELP_TOPICS = {
   'project.ci-rerun': {
     title: 'CI actions',
     text: [
-      'A CI action is a named way to start CI: where it sends the request, the inputs it adds, what it accepts and the environment it runs in. A Maintainer, Project admin or administrator uses one to re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input or variable you name:',
+      'A CI action is a named way to start CI: where it sends the request, the inputs it adds, what it accepts and the environment it runs in. A Maintainer, Project admin or administrator uses one from the run button of a run, an execution, a test, a cluster or the project: to re-run tests, run the whole suite or a Flake Lab experiment, on the branch the run dialog picks, passing the tests’ files and lines through the input or variable you name:',
       '',
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
       '- **Jenkins or a Custom request** — one request to the CI server, recognized by the dispatch id the job passes on as `PIWI_ORIGIN_REF`.',
       '',
-      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The run dialog opens on the action that started the run, else the one of the run’s environment, else the default for what it starts. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
+      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The run dialog opens on what was last sent to from that browser; otherwise a re-run picks the action that started the run, else the one of the run’s environment, else the default for what it starts. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run once Piwi matches it. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
+      'Once Piwi matches its run, a re-run’s run is recorded as a CI re-run; a whole suite stays a CI run, and a Flake Lab experiment a lab run. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
     ].join('\n'),
     doc: 'features/ci-actions',
     envVars: [

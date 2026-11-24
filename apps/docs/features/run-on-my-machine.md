@@ -51,7 +51,7 @@ in your code folders; a picked folder without the tests gets a better one offere
 
 The run button of a run (its failed tests, or all of them), an execution or a test (that test) lists your apps under
 **Where** where the capability is on and you may ask: **Run on my machine**, or **Run on my machine or CI** with
-[CI actions](./ci-rerun). With an app picked, the dialog offers the run options of **Copy retry command**: headed,
+[CI actions](./ci-actions). With an app picked, the dialog offers the run options of **Copy retry command**: headed,
 trace, repeat each, workers and, when the tests ran in more than one, the Playwright project. A request holds at most
 200 tests; a test with no recorded line is left out, and the dialog says how many. Nobody else's app receives it.
 
