@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * Desktop shell only: the folder on this machine linked to this project, shown
- * on the project page as status — the link powers "run locally" and IDE links.
+ * on the project page as status — the link powers the run button's This computer and IDE links.
  * Managing the link (choose, change, unlink) lives with the rest of the
  * project settings in the Settings tab; this card only reports and points there.
  * Renders nothing without the IPC bridge, so the page mounts it unconditionally.

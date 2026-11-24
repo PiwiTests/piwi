@@ -8,6 +8,8 @@
 
 import { mergeTestCases } from '#shared/handlers/test-case-merge';
 import { resolveCiActionsSettings } from '#shared/ci-actions';
+import { parseCiDispatchRequest, parseCiDispatchSource } from '#shared/ci-dispatch-request';
+import { findCiDispatch, listCiDispatches } from '#shared/handlers/ci-dispatches';
 import { and, eq, inArray } from 'drizzle-orm';
 import { z, type ZodType } from 'zod';
 import {
@@ -531,10 +533,10 @@ import { apiCheckDemoImport, apiDemoImport } from './import';
 import {
   assertDemoCiActions,
   demoCiActionCheck,
-  demoClusterRerunInfo,
-  demoExecutionRerunInfo,
-  demoRerunCluster,
-  demoRerunExecution,
+  demoCiBranches,
+  demoCiOffered,
+  demoDispatchCi,
+  demoQueryRecord,
 } from './ci-rerun';
 import {
   demoAllCredentialUses,
@@ -1451,6 +1453,83 @@ const routes: RouteEntry[] = [
     },
   },
   {
+    method: 'GET',
+    // What a place is offered: CI server actions as the server offers them, a repository host's with why the demo cannot.
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/offered$/,
+    permission: 'run:control',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const source = parseCiDispatchSource(demoQueryRecord(q));
+      if (!source.ok) throw demoHttpError(400, source.message);
+      return demoCiOffered(await getDemoDb(), +m[1]!, source.value, ctx?.actingUserId ?? null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/ci-actions\/([^/]+)\/branches$/,
+    permission: 'run:control',
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const search = q?.get('q') ?? null;
+      if (search != null && search.length > 200) {
+        throw demoHttpError(400, 'q must be text of at most 200 characters');
+      }
+      return demoCiBranches(await getDemoDb(), +m[1]!, decodeURIComponent(m[2]!), search);
+    },
+  },
+  {
+    method: 'POST',
+    // A CI server action's dispatch is recorded without sending anything; a repository host's answers 400.
+    pattern: /^\/api\/projects\/(\d+)\/ci-dispatches$/,
+    permission: 'run:control',
+    handler: async (m, body, _q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const request = parseCiDispatchRequest(body ?? null);
+      if (!request.ok) throw demoHttpError(400, request.message);
+      return demoDispatchCi(await getDemoDb(), +m[1]!, request.value, ctx?.actingUserId ?? null);
+    },
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/projects\/(\d+)\/ci-dispatches$/,
+    handler: async (m, _b, q, ctx) => {
+      await assertDemoEntityScope(ctx, 'project', +m[1]!);
+      const state = q?.get('state') || 'all';
+      if (state !== 'open' && state !== 'taken' && state !== 'all') {
+        throw demoHttpError(400, 'state must be open, taken or all');
+      }
+      const idOf = (name: string) => {
+        const raw = q?.get(name);
+        if (raw == null || raw === '') return null;
+        const id = parseRouteId(raw);
+        if (id === null) throw demoHttpError(400, `${name} must be a positive integer`);
+        return id;
+      };
+      // As the server: an empty value is none.
+      const limit = Number(q?.get('limit') || 20);
+      if (!Number.isInteger(limit)) throw demoHttpError(400, 'Invalid query parameter "limit": expected an integer');
+      return {
+        items: await listCiDispatches(await getDemoDb(), +m[1]!, {
+          state,
+          clusterId: idOf('clusterId'),
+          testCaseId: idOf('testCaseId'),
+          limit: Math.min(100, Math.max(1, limit)),
+        }),
+      };
+    },
+  },
+  {
+    method: 'GET',
+    // A dispatch of a project the acting user cannot read answers as missing, as the server's does.
+    pattern: /^\/api\/ci-dispatches\/([^/]+)$/,
+    handler: async (m, _b, _q, ctx) => {
+      const id = m[1]!;
+      const found = /^[0-9a-f]{16}$/.test(id) ? await findCiDispatch(await getDemoDb(), id) : null;
+      if (!found || !demoCan(ctx, 'project:read', found.projectId)) throw demoHttpError(404, 'CI dispatch not found');
+      return found.dispatch;
+    },
+  },
+  {
     method: 'POST',
     pattern: /^\/api\/projects\/(\d+)\/flaky-classify$/,
     permission: 'triage:write',
@@ -2171,35 +2250,6 @@ const routes: RouteEntry[] = [
     },
   },
   {
-    method: 'GET',
-    // CI re-run availability: on for a project that dispatches to a CI server,
-    // off with a clear reason for every other project.
-    pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      return demoClusterRerunInfo(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'POST',
-    // A CI server dispatch is recorded without sending anything; other projects answer not available.
-    pattern: /^\/api\/failure-clusters\/(\d+)\/rerun$/,
-    permission: 'run:control',
-    handler: async (m, b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'cluster', +m[1]!);
-      const action = (b as { action?: unknown } | null)?.action;
-      if (action != null && (typeof action !== 'string' || action.length > 100)) {
-        throw demoHttpError(400, 'action must be a CI action id or name');
-      }
-      return demoRerunCluster(
-        await getDemoDb(),
-        +m[1]!,
-        ctx?.actingUserId ?? null,
-        typeof action === 'string' && action.trim() ? action.trim() : null,
-      );
-    },
-  },
-  {
     method: 'POST',
     pattern: /^\/api\/test-cases\/(\d+)\/merge$/,
     permission: 'project:manage',
@@ -2215,16 +2265,6 @@ const routes: RouteEntry[] = [
         );
       }
       return outcome;
-    },
-  },
-  {
-    method: 'POST',
-    // No-op dispatch: the demo has no CI to run the lab in.
-    pattern: /^\/api\/test-cases\/(\d+)\/flake-lab-ci$/,
-    permission: 'run:control',
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'case', +m[1]!);
-      return { ok: false, demo: true, message: 'Flake Lab in CI is not available in the demo.' };
     },
   },
   {
@@ -2779,25 +2819,6 @@ const routes: RouteEntry[] = [
     handler: async (m, _b, _q, ctx) => {
       await assertDemoEntityScope(ctx, 'execution', +m[1]!);
       return buildExecutionReproduce(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'GET',
-    // CI re-run of one execution's test, available as a cluster's is.
-    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return demoExecutionRerunInfo(await getDemoDb(), +m[1]!);
-    },
-  },
-  {
-    method: 'POST',
-    // A CI server dispatch is recorded without sending anything; other projects answer not available.
-    pattern: /^\/api\/test-run-cases\/(\d+)\/rerun$/,
-    permission: 'run:control',
-    handler: async (m, _b, _q, ctx) => {
-      await assertDemoEntityScope(ctx, 'execution', +m[1]!);
-      return demoRerunExecution(await getDemoDb(), +m[1]!, ctx?.actingUserId ?? null);
     },
   },
   {

@@ -146,7 +146,7 @@ export function canBisect(cases: RetryCase[], flakeTestCaseId?: number | null): 
   return flakeTestCaseId != null || buildBisectArgs(cases).length > 0;
 }
 
-/** The options of a local run as a copied command carries them, so the copy runs what Run locally runs. */
+/** The options of a local run as a copied command carries them, so the copy runs what This computer runs. */
 export function localRunCopyOptions(options: LocalRunOptions): RetryRunOptions {
   return {
     runMode: options.runMode ?? 'normal',

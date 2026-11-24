@@ -20,6 +20,8 @@ import { pruneOutcomesOlderThan } from '../../utils/outcomes';
 import { pruneMcpToolCalls } from '../../utils/mcp/write-log';
 import { pruneMcpOAuth } from '../../utils/mcp-oauth';
 import { endStaleRequests, pruneRunRequests } from '../../utils/run-requests';
+import { endUnreportedCiDispatches, pruneCiDispatches } from '../../utils/ci-dispatches';
+import { CI_DISPATCH_RETENTION_DAYS } from '#shared/ci-dispatches';
 import { DEFAULT_CREDENTIAL_LOG_DAYS, pruneCredentialUses } from '../../utils/credentials';
 
 /** Days of retained rollup rows the sweep recomputes before pruning. */
@@ -36,7 +38,7 @@ export default defineTask({
   meta: {
     name: 'retention:sweep',
     description:
-      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_RETENTION_CREDENTIAL_LOG_DAYS, run requests that ended or expired, trace blobs no execution has linked for a day, and expired MCP OAuth connections',
+      'Reconcile the recent daily rollups, prune old test runs and hand-back outcomes (opt-in via PIWI_RETENTION_DAYS; kept runs and the newest PIWI_RETENTION_MIN_RUNS per project stay, and the pruned numbers stay in the rollups), settled notification deliveries, stored test cases of a test management project no binding names any more, report snapshots older than PIWI_RETENTION_REPORT_DAYS, assistant conversations idle for PIWI_ASSISTANT_RETENTION_DAYS, excess diagnosis versions, the credential log older than PIWI_RETENTION_CREDENTIAL_LOG_DAYS, run requests that ended or expired, CI dispatches older than 90 days (and those no run answered, marked unreported), trace blobs no execution has linked for a day, and expired MCP OAuth connections',
   },
   async run() {
     const db = await getDatabase();
@@ -139,6 +141,12 @@ export default defineTask({
       const pruned = await pruneRunRequests(db, notificationDays);
       if (pruned > 0) result.runRequestsPruned = pruned;
     }
+
+    // …and for CI dispatches: those no run answered, then the ones past their retention.
+    const unreported = await endUnreportedCiDispatches(db);
+    if (unreported > 0) result.ciDispatchesUnreported = unreported;
+    const dispatchesPruned = await pruneCiDispatches(db, CI_DISPATCH_RETENTION_DAYS);
+    if (dispatchesPruned > 0) result.ciDispatchesPruned = dispatchesPruned;
 
     // MCP clients' OAuth connections whose refresh token expired, with their API keys.
     const oauthEnded = await pruneMcpOAuth(db);

@@ -1,0 +1,1 @@
+ALTER TABLE `failure_clusters` DROP COLUMN `last_rerun_dispatch`;

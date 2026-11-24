@@ -66,7 +66,15 @@ describe('evaluateBudgets', () => {
     expect(cluster).toMatchObject({ value: 14, max: 13, verdict: 'fail' });
   });
 
-  it('counts at most 25 controls in the navbar and the block and one solid primary above the fold on both pages', () => {
+  it('counts at most 26 controls in the navbar and the block of an execution', () => {
+    const execution = evaluateBudgets(
+      measured('/test-run-cases/37', { navbarControls: 9, blockControls: 17 }),
+      AT_BUDGET,
+    );
+    expect(byId(execution, 'navbar-block-controls')).toMatchObject({ value: 26, max: 26, verdict: 'pass' });
+  });
+
+  it('counts at most 25 controls in the navbar and the block and one solid primary above the fold on a cluster', () => {
     const verdicts = evaluateBudgets(
       measured('/failure-clusters/10', { navbarControls: 7, blockControls: 19, solidPrimaryAboveFold: 2 }),
       AT_BUDGET,
@@ -175,7 +183,7 @@ describe('evaluateBudgets', () => {
     );
     expect(verdicts.map(budgetText)).toEqual([
       '✓ text styles 14 ≤ 15',
-      '✗ controls in the navbar and block 27 > 25',
+      '✗ controls in the navbar and block 27 > 26',
       '✗ next-step content not on the page',
       '✓ solid primary buttons 1 ≤ 1',
     ]);

@@ -68,6 +68,8 @@ export interface RunMetadata {
   defaultBranch?: string | null;
   ci?: {
     provider?: string | null;
+    /** GitHub Actions' id for the workflow run (`GITHUB_RUN_ID`). */
+    runId?: string | null;
     pipelineId?: string | null;
     buildNumber?: string | null;
     /** The build's page (Jenkins' `BUILD_URL`). */

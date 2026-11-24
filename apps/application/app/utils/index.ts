@@ -77,7 +77,7 @@ export function reproduceSectionSummary(steps: number, bisectAvailable: boolean)
 /** The cluster Toolbox's one-line Verify summary: how many tests the command runs, then whether CI can re-run them. */
 export function verifySectionSummary(testCount: number, rerunAvailable: boolean): string {
   const parts = [`Runs the ${testCount} affected test${testCount === 1 ? '' : 's'}`];
-  if (rerunAvailable) parts.push('Re-run in CI');
+  if (rerunAvailable) parts.push('Run on CI');
   return parts.join(' · ');
 }
 

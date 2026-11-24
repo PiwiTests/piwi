@@ -17,7 +17,6 @@ import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import { commandWithRunVariables } from '#shared/run-variables';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import type { RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi, stripAnsi } from '@piwitests/run-ui/ansi';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
 import { escapeHtml } from '#shared/markdown-to-html';
@@ -328,10 +327,40 @@ const verifyForms = computed(() => {
 const shellKey = COMMAND_SHELL_KEY;
 const { copy: copyRetry } = useCopy();
 
-const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
-  `/api/failure-clusters/${clusterId}/rerun`,
+const rerunPlace = computed(() =>
+  clusterProjectId.value ? { projectId: clusterProjectId.value, source: { clusterId } } : null,
 );
-const { rerunning, triggerRerun } = useCiRerun(`/api/failure-clusters/${clusterId}/rerun`, refreshRerun);
+const { rerunInfo, refreshRerun } = await useRerunInfo(`failure-cluster-rerun-${clusterId}`, () =>
+  rerunPlace.value ? { ...rerunPlace.value, clusterId, mayDispatch: canRerun.value } : null,
+);
+// The run button, in the navbar and in Verify: the affected tests, which CI re-runs, and this computer in the desktop
+// window, by the verify command's selection.
+const runPlace = await useRunPlace({
+  projectId: clusterProjectId.value ?? 0,
+  machine: await useRunOnMyMachine(clusterProjectId.value ?? 0),
+  whats: () => [
+    {
+      ...clusterTestsWhat(
+        'Its affected tests',
+        { clusterId },
+        affectedCases.value.map((c) => c.title),
+      ),
+      local: affectedRetryCases.value.length
+        ? {
+            label: `Re-run the ${affectedTestsLabel.value}`,
+            cases: affectedRetryCases.value,
+            runTitle: `${affectedTestsLabel.value} of cluster #${clusterId}`,
+          }
+        : { reason: 'No affected test has a file path Playwright takes.' },
+    },
+  ],
+  prefersCi: () => true,
+  onDispatched: () => refreshRerun(),
+  thisComputer: {
+    projectLabel: () => cluster.value?.project?.label ?? cluster.value?.project?.name,
+    sourceRunId: () => cluster.value?.lastSeenRunId,
+  },
+});
 
 function refresh() {
   void reloadCluster();
@@ -514,12 +543,6 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       'data-tour': 'quarantine-all-tests',
       onSelect: () => quarantineAll.value?.trigger(),
     });
-  if (canRerun.value && rerunInfo.value?.available)
-    testActions.push({
-      label: 'Re-run in CI',
-      icon: 'i-lucide-refresh-cw',
-      onSelect: () => void triggerRerun(),
-    });
 
   const copies: DropdownMenuItem[] = [
     { label: 'Copy summary', icon: 'i-lucide-clipboard-list', onSelect: copyCluster },
@@ -636,7 +659,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
       if (ok) refresh();
     }
   },
-  rerunInCi: () => triggerRerun(),
+  rerunInCi: () => runPlace.openDialog({ where: 'ci' }),
+  flakeLabInCi: (id, kind) => runPlace.openDialog({ whats: [flakeLabWhat(id, kind)], where: 'ci' }),
   whatChanged: () => scrollToEl(scmEl.value ?? whatChangedLine.value?.$el ?? null),
   reDiagnose: () => onDiagnosisPanel((panel) => panel.reDiagnose?.(), true),
 });
@@ -685,6 +709,7 @@ const breadcrumbItems = computed(() => [
           <BreadcrumbNav :items="breadcrumbItems" />
         </template>
         <template #right>
+          <RunButton :place="runPlace" />
           <ShareLinksModal
             v-if="cluster && offersShareLinks"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
@@ -984,14 +1009,7 @@ const breadcrumbItems = computed(() => [
               </p>
               <p class="text-xs text-muted">{{ fixPlan.verify.expectation }}</p>
               <div class="flex flex-wrap items-center gap-2">
-                <DesktopRunLocallyButton
-                  :project-id="cluster.project?.id"
-                  :project-label="cluster.project?.label ?? cluster.project?.name"
-                  :cases="affectedRetryCases"
-                  :label="`Re-run the ${affectedTestsLabel}`"
-                  :run-title="`${affectedTestsLabel} of cluster #${cluster.id}`"
-                  :source-run-id="cluster.lastSeenRunId"
-                />
+                <RunButton :place="runPlace" />
                 <ClientOnly>
                   <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
@@ -1064,6 +1082,8 @@ const breadcrumbItems = computed(() => [
     :known-issue-key="knownIssue?.key ?? null"
     @linked="onIssueChanged"
   />
+
+  <RunDialog :place="runPlace" />
 
   <!-- Bulk actions triggered from the More menu. -->
   <QuarantineAllButton

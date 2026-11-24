@@ -417,7 +417,7 @@ describe('running the suite in CI', () => {
     const answer = await ask('How do I set up sharding?', '/projects/5');
     const question = only(answer, 'question')[0]!;
     expect(question.multiple).toBe(false);
-    expect(question.choices.find((c) => c.checked)?.label).toBe('GitHub Actions');
+    expect(question.choices.find((c) => c.checked)?.label).toBe('Jenkins');
     expect(textOf(answer)).toMatch(/ran as 2 shards/);
 
     const steps = await pick(answer, 'ci-provider', ['github-actions'], '/projects/5');

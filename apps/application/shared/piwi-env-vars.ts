@@ -1414,7 +1414,7 @@ export const PIWI_ENV_VARS = {
     type: 'url',
     example: 'https://jenkins.example.com/',
     since: '0.67.0',
-    docs: 'features/ci-rerun',
+    docs: 'features/ci-actions',
   },
   PIWI_CI_SERVER_USER: {
     description:
@@ -1440,7 +1440,7 @@ export const PIWI_ENV_VARS = {
     type: 'list',
     example: 'jenkins.internal:8080',
     since: '0.67.0',
-    docs: 'features/ci-rerun',
+    docs: 'features/ci-actions',
   },
   PIWI_CI_SERVER_ALLOWED_INPUTS: {
     description:
@@ -1450,7 +1450,7 @@ export const PIWI_ENV_VARS = {
     example: 'TARGET_ENV,SUITE',
     since: '0.70.0',
     relevantWhen: { PIWI_CI_SERVER_URL: '*' },
-    docs: 'features/ci-rerun',
+    docs: 'features/ci-actions',
   },
   PIWI_JIRA_BASE_URL: {
     description: 'Base URL of the Jira Cloud site to connect (e.g. https://your-team.atlassian.net).',

@@ -106,8 +106,8 @@ Open in IDE link) does not.
 
 Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
 at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution
-page's block and 13 on the cluster page's, at most 25 controls in the navbar and the situation
-block, at most one solid primary button above the fold, and a Next step that copies a code change
+page's block and 13 on the cluster page's, at most 26 controls in the navbar and the situation
+block on the execution page and 25 on the cluster page's, at most one solid primary button above the fold, and a Next step that copies a code change
 (`copy-git-apply`, `copy-locator`) shows that change in the block. The controls below the block
 that reach the fold (the evidence card's tabs, the affected tests, the history) are reported, not
 budgeted. The script finds the action by `data-next-action` and the content by `data-copies`, never

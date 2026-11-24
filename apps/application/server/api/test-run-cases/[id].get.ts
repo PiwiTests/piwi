@@ -10,8 +10,7 @@ import {
 import { resolveWastedSettings } from '../../utils/wasted-settings';
 import { codeownersOwnerResolver } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
-import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
-import { executionRerunTarget } from '#shared/handlers/ci-rerun-target';
+import { ciDispatchAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -26,7 +25,12 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'test run case ID');
-  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveTestRunCaseProjectId, 'Test run case');
+  const { db, projectId, user } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveTestRunCaseProjectId,
+    'Test run case',
+  );
 
   // Only custom patterns force a recompute; with the defaults the stored
   // wasted_time_ms is served as-is.
@@ -43,13 +47,17 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun, flakeLabCi] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     row && mayDispatch
-      ? ciRerunAvailability(db, projectId, row.testRunId, null, async () => {
-          const target = await executionRerunTarget(db, id);
-          return target ? [target.rerunCase] : [];
-        }).catch(() => null)
+      ? ciDispatchAvailability(db, projectId, { from: 'execution', executionId: id, scope: 'test' }, user.id).catch(
+          () => null,
+        )
       : Promise.resolve(null),
     row?.testCaseId != null && mayDispatch
-      ? flakeLabCiAvailability(db, projectId, row.testCaseId).catch(() => null)
+      ? ciDispatchAvailability(
+          db,
+          projectId,
+          { from: 'flake-lab', testCaseId: row.testCaseId, flakeLab: 'reproduce' },
+          user.id,
+        ).catch(() => null)
       : Promise.resolve(null),
   ]);
 

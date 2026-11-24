@@ -599,20 +599,20 @@ export const HELP_TOPICS = {
   'project.ci-rerun': {
     title: 'CI actions',
     text: [
-      'A CI action is a named way to start CI: where it sends the request, the inputs it adds, what it accepts and the environment it runs in. A Maintainer, Project admin or administrator uses one to re-run a cluster’s affected tests in CI straight from its page, on the branch of the cluster’s latest run, passing each affected test’s file and line through the input or variable you name:',
+      'A CI action is a named way to start CI: where it sends the request, the inputs it adds, what it accepts and the environment it runs in. A Maintainer, Project admin or administrator uses one from the run button of a run, an execution, a test, a cluster or the project: to re-run tests, run the whole suite, the tests carrying some tags or a Flake Lab experiment, on the branch the run dialog picks, passing the tests’ files and lines, or a `--grep`, through the input or variable you name:',
       '',
       '- **GitHub** — a `workflow_dispatch`; the run is recognized by the optional dispatch id input.',
       '- **GitLab** — a pipeline, recognized by its pipeline id.',
       '- **Bitbucket** — a custom pipeline, recognized by its build number.',
       '- **Jenkins or a Custom request** — one request to the CI server, recognized by the dispatch id the job passes on as `PIWI_ORIGIN_REF`.',
       '',
-      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The buttons use the default action for what they start, unless an action names the run’s environment, one of the project’s. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
+      'An input is a fixed value or a choice, sent beside the arguments and never inside them; its name is letters, digits and `_`, and on GitLab and Bitbucket it cannot start with `CI_`, `GITLAB_` or `BITBUCKET_`. The run dialog opens on what was last sent to from that browser; otherwise a re-run picks the action that started the run, else the one of the run’s environment, else the default for what it starts. **Check** reads the target without starting it: a GitHub workflow, or a Jenkins job; GitLab and Bitbucket pipelines cannot be read.',
       '',
       'On GitLab, Bitbucket and a CI server, set the variable or parameter name to `PIWI_RERUN_ARGS` and run `npx @piwitests/reporter rerun` in the job: it reads the quoted arguments without a shell. It fails while the variable is unset, so give the job an empty default.',
       '',
-      'The run it starts is recorded as a CI re-run when it finishes. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
+      'Once Piwi matches its run, a re-run’s run is recorded as a CI re-run; a whole suite and tagged tests stay a CI run, and a Flake Lab experiment a lab run. Through the repository it uses the action’s SCM credential, else the project’s (its token needs write scope); a CI server action names a **credential** (Settings → Credentials), which holds the user, the secret and the base URL it may be sent under, and sends only the inputs the credential allows. An action that names none carries the operator’s instance credential under `PIWI_CI_SERVER_URL`, with no input the operator did not list in `PIWI_CI_SERVER_ALLOWED_INPUTS`. Off until you add an action.',
     ].join('\n'),
-    doc: 'features/ci-rerun',
+    doc: 'features/ci-actions',
     envVars: [
       'PIWI_CI_SERVER_URL',
       'PIWI_CI_SERVER_USER',
@@ -637,7 +637,7 @@ export const HELP_TOPICS = {
   },
   'project.local-folder': {
     title: 'Linked local folder',
-    text: 'The folder on this machine that holds this project’s Playwright config, where Playwright runs and the test paths of its runs start: in a monorepo, the config’s subfolder, not the repository root.\n\n- **Choose folder…** — offers the folders found on this machine and checks the one you pick against the project’s tests\n- **Once linked** — the app runs its tests and opens its files in your IDE; each Re-run button of the project starts from its default run options\n\nThe link and the options stay on this machine, never on the server.',
+    text: 'The folder on this machine that holds this project’s Playwright config, where Playwright runs and the test paths of its runs start: in a monorepo, the config’s subfolder, not the repository root.\n\n- **Choose folder…** — offers the folders found on this machine and checks the one you pick against the project’s tests\n- **Once linked** — the app runs its tests from each run button of the project, which starts from its default run options, and opens its files in your IDE\n\nThe link and the options stay on this machine, never on the server.',
     doc: 'features/desktop#projects-from-local-folders',
   },
 
@@ -826,7 +826,7 @@ export const HELP_TOPICS = {
       '- **Leaks** — under each worker row, a red tail runs from the end of the test that left a browser, context or page open to its close or the worker’s end, and an amber one from an object’s last use to its close, in its own test. Hover one for where it was opened and the line that last used it, where its close belongs; click it to open the test. **Show leaks** turns them off.',
       '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Over the timeline, a line follows the pointer, the test bars included, with each track’s value beside it. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
-    doc: 'features/ui-overview#test-run-detail',
+    doc: 'features/slow-tests#the-run-s-timeline',
   },
   'run.resource-findings': {
     title: 'Resource findings',

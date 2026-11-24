@@ -3,7 +3,7 @@ import type { AddressInfo } from 'node:net';
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
-import { eq } from 'drizzle-orm';
+import { desc, eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 
@@ -30,23 +30,34 @@ vi.mock('../../server/utils/scm', () => ({
   },
 }));
 
-const {
-  dispatchClusterRerun,
-  rerunClusterInCi,
-  rerunExecutionInCi,
-  matchCiRerunRun,
-  runFlakeLabInCi,
-  flakeLabCiAvailability,
-  ciRerunAvailability,
-} = await import('../../server/utils/ci-rerun');
-const { matchRerunDispatch, resolveCiRerunSettings, RERUN_CLOCK_SLACK_MS, RERUN_MATCH_WINDOW_MS } =
-  await import('#shared/ci-rerun');
+const { ciDispatchAvailability, dispatchCi, rerunClusterInCi } = await import('../../server/utils/ci-rerun');
+const { matchRunToCiDispatch } = await import('../../server/utils/ci-dispatches');
+const { resolveCiRerunSettings } = await import('#shared/ci-rerun');
+const { matchCiDispatch, CI_DISPATCH_CLOCK_SLACK_MS, CI_DISPATCH_MATCH_WINDOW_MS } =
+  await import('#shared/ci-dispatches');
+const { carryCiRerunOrigin, runOrigin } = await import('#shared/run-eligibility');
 const { ciActionsFromLegacy, pickCiAction } = await import('#shared/ci-actions');
 const { insertCredential, updateCredential } = await import('#shared/handlers/credentials');
 const { sealCredentialSecret } = await import('../../server/utils/credentials');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
+
+type Source = Parameters<typeof dispatchCi>[2]['source'];
+type Actor = Parameters<typeof dispatchCi>[3];
+
+/** Whether a place of project 1 (its first cluster by default) can dispatch, and the action it would use. */
+async function availability(source: Source = { from: 'cluster', clusterId: 1 }) {
+  return (await ciDispatchAvailability(db as never, 1, source, null))!;
+}
+
+/** A dispatch from a place of project 1, as a page sends it. */
+function dispatch(source: Source, actor: Actor = { id: null, name: null }) {
+  return dispatchCi(db as never, 1, { source, action: null, ref: null, inputs: null }, actor, {
+    origin: 'page',
+    viewerId: null,
+  });
+}
 
 const GITHUB = 'https://github.com/acme/shop.git';
 const GITLAB = 'https://gitlab.com/acme/shop.git';
@@ -62,6 +73,8 @@ async function seed(remoteUrl: string) {
   await db.insert(schema.projects).values({
     id: 1,
     name: 'shop',
+    // The run's repository, which the run pins as it starts.
+    repositoryUrl: remoteUrl,
     ciRerun: {
       enabled: true,
       github: { workflow: 'e2e.yml', ref: 'main', inputName: 'args', dispatchIdInput: 'piwi_dispatch' },
@@ -96,8 +109,9 @@ async function seed(remoteUrl: string) {
   ]);
 }
 
-/** A finished CI run of the given tests, started `afterMs` after the dispatch. */
+/** A CI run of the given tests (none for a run that has just started), started at `at`. */
 async function finishedRun(id: number, metadata: Record<string, unknown>, testCaseIds: number[], at: number) {
+  const runMetadata = { scm: { branch: 'feature/coupon' }, ...metadata };
   await db.insert(schema.testRuns).values({
     id,
     projectId: 1,
@@ -105,16 +119,19 @@ async function finishedRun(id: number, metadata: Record<string, unknown>, testCa
     branch: 'feature/coupon',
     isFullRun: 0,
     startTime: new Date(at),
-    metadata: { scm: { branch: 'feature/coupon' }, ...metadata },
+    metadata: runMetadata,
+    origin: runOrigin(runMetadata),
   });
+  if (testCaseIds.length === 0) return;
   await db
     .insert(schema.testRunsCases)
     .values(testCaseIds.map((testCaseId) => ({ testRunId: id, testCaseId, status: 'passed' })));
 }
 
+/** The newest dispatch stored, with its time as `at`. */
 async function lastDispatch() {
-  const [row] = await db.select().from(schema.failureClusters).where(eq(schema.failureClusters.id, 1));
-  return row!.lastRerunDispatch as Record<string, any>;
+  const [row] = await db.select().from(schema.ciDispatches).orderBy(desc(schema.ciDispatches.createdAt)).limit(1);
+  return { ...row!, at: row!.createdAt.getTime() } as Record<string, any>;
 }
 
 async function originOf(runId: number) {
@@ -175,12 +192,12 @@ describe('a CI re-run dispatch', () => {
 
   test('is unavailable before the click when no affected test has a file path it can name', async () => {
     await seed(GITHUB);
-    const nameless = [{ filePath: '', title: 'pays', line: 12, projectName: 'chromium' }];
-    expect(await ciRerunAvailability(db as never, 1, 1, null, async () => nameless)).toMatchObject({
+    expect((await availability()).available).toBe(true);
+    await db.update(schema.testCases).set({ filePath: '' });
+    expect(await availability()).toMatchObject({
       available: false,
       reason: 'None of these tests has a file path a re-run can name.',
     });
-    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(true);
   });
 
   test('dispatches nothing when no affected test has a file path the arguments can name', async () => {
@@ -199,7 +216,7 @@ describe('a CI re-run dispatch', () => {
     await seed(GITLAB);
     answer = { pipelineId: '9001' };
     await rerunClusterInCi(db as never, 1, { id: null, name: null });
-    expect(await lastDispatch()).toMatchObject({ provider: 'gitlab', pipelineId: '9001' });
+    expect(await lastDispatch()).toMatchObject({ provider: 'gitlab', providerRunId: '9001' });
   });
 });
 
@@ -209,7 +226,7 @@ describe('the run a CI re-run started', () => {
     await rerunClusterInCi(db as never, 1, { id: null, name: null });
     const { id, at } = await lastDispatch();
     await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id } }, [1], at + 60_000);
-    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
     expect(await originOf(2)).toEqual({ kind: 'ci-rerun', ref: id });
     expect((await lastDispatch()).runId).toBe(2);
   });
@@ -218,11 +235,11 @@ describe('the run a CI re-run started', () => {
     await seed(GITLAB);
     answer = { pipelineId: '9001' };
     await rerunClusterInCi(db as never, 1, { id: null, name: null });
-    const { at } = await lastDispatch();
+    const { id, at } = await lastDispatch();
     await finishedRun(2, { piwiOrigin: { kind: 'ci' }, ci: { provider: 'GitLab CI', pipelineId: '9000' } }, [1, 2], at);
-    expect(await matchCiRerunRun(db as never, 2)).toBeNull();
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBeNull();
     await finishedRun(3, { piwiOrigin: { kind: 'ci' }, ci: { provider: 'GitLab CI', pipelineId: '9001' } }, [1, 2], at);
-    expect(await matchCiRerunRun(db as never, 3)).toBe(1);
+    expect(await matchRunToCiDispatch(db as never, 3, 'finish')).toBe(id);
     expect((await originOf(3)).kind).toBe('ci-rerun');
   });
 
@@ -232,7 +249,7 @@ describe('the run a CI re-run started', () => {
     const { id, at } = await lastDispatch();
     const ci = { provider: 'GitHub Actions', buildUrl: 'https://github.com/acme/shop/actions/runs/77' };
     await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id }, ci }, [1], at + 60_000);
-    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
     expect((await lastDispatch()).url).toBe('https://github.com/acme/shop/actions/runs/77');
   });
 
@@ -241,32 +258,241 @@ describe('the run a CI re-run started', () => {
     await rerunClusterInCi(db as never, 1, { id: null, name: null });
     const { id, at } = await lastDispatch();
     await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id }, ci: { buildUrl: 'javascript:alert(1)' } }, [1], at);
-    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
     expect((await lastDispatch()).url).toBe('https://ci.example/runs');
   });
 
   test('without an id, by its branch, start time and test files', async () => {
     await seed(GITHUB);
     await rerunClusterInCi(db as never, 1, { id: null, name: null });
-    const { at } = await lastDispatch();
+    const { id, at } = await lastDispatch();
     // Another file ran too: not the re-run.
     await finishedRun(2, { piwiOrigin: { kind: 'ci' } }, [1, 3], at + 60_000);
-    expect(await matchCiRerunRun(db as never, 2)).toBeNull();
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBeNull();
     // A local run of the same tests: not a CI run.
     await finishedRun(3, { piwiOrigin: { kind: 'local' } }, [1, 2], at + 60_000);
-    expect(await matchCiRerunRun(db as never, 3)).toBeNull();
+    expect(await matchRunToCiDispatch(db as never, 3, 'finish')).toBeNull();
     await finishedRun(4, { piwiOrigin: { kind: 'ci' } }, [1, 2], at + 120_000);
-    expect(await matchCiRerunRun(db as never, 4)).toBe(1);
+    expect(await matchRunToCiDispatch(db as never, 4, 'finish')).toBe(id);
     // Matched once only.
     await finishedRun(5, { piwiOrigin: { kind: 'ci' } }, [1, 2], at + 180_000);
-    expect(await matchCiRerunRun(db as never, 5)).toBeNull();
+    expect(await matchRunToCiDispatch(db as never, 5, 'finish')).toBeNull();
   });
 });
 
-describe('matchRerunDispatch', () => {
-  const base = { provider: 'github' as const, url: '', args: '', byName: null, byUserId: null };
+describe('the dispatch record', () => {
+  test('matches a run as it starts, by the dispatch id it carries, and ends with it', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    expect(await lastDispatch()).toMatchObject({ runId: 2, state: 'running' });
+    expect(await originOf(2)).toEqual({ kind: 'ci-rerun', ref: id });
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
+    expect(await lastDispatch()).toMatchObject({ runId: 2, state: 'ended' });
+  });
+
+  test('keeps the ci-rerun stamp when the reporter’s last metadata says ci', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    // What /finish writes: the reporter's metadata, through the carry of the server's stamp.
+    const [stored] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, 2));
+    const reported = { scm: { branch: 'feature/coupon' }, piwiOrigin: { kind: 'ci', ref: id } };
+    expect(carryCiRerunOrigin(reported, stored!.metadata)).toMatchObject({ piwiOrigin: { kind: 'ci-rerun', ref: id } });
+    // A write that dropped it is stamped again when the run finishes.
+    await db.update(schema.testRuns).set({ metadata: reported, origin: 'ci' }).where(eq(schema.testRuns.id, 2));
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
+    expect(await originOf(2)).toEqual({ kind: 'ci-rerun', ref: id });
+    expect(await lastDispatch()).toMatchObject({ state: 'ended', runId: 2 });
+  });
+
+  test('lets a retry of the job answer a dispatch whose run was cancelled', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBe(id);
+    await finishedRun(3, { piwiOrigin: { kind: 'ci', ref: id } }, [], at + 120_000);
+    // While the first run lives, the dispatch is its.
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBeNull();
+    await db.update(schema.testRuns).set({ status: 'cancelled' }).where(eq(schema.testRuns.id, 2));
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBe(id);
+    expect(await lastDispatch()).toMatchObject({ state: 'running', runId: 3 });
+  });
+
+  test('matches a GitHub run as it starts by the run id GitHub answered, and links it', async () => {
+    await seed(GITHUB);
+    answer = { runId: '555', url: 'https://github.com/acme/shop/actions/runs/555' };
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    expect(await lastDispatch()).toMatchObject({
+      providerRunId: '555',
+      url: 'https://github.com/acme/shop/actions/runs/555',
+    });
+    await finishedRun(2, { piwiOrigin: { kind: 'ci' }, ci: { provider: 'GitHub Actions', runId: '554' } }, [], at);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBeNull();
+    await finishedRun(3, { piwiOrigin: { kind: 'ci' }, ci: { provider: 'GitHub Actions', runId: '555' } }, [], at);
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBe(id);
+  });
+
+  test('leaves the file match to the run’s finish', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    await finishedRun(2, { piwiOrigin: { kind: 'ci' } }, [1, 2], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBeNull();
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
+    expect(await lastDispatch()).toMatchObject({ runId: 2, state: 'ended' });
+  });
+
+  test('refuses the same dispatch sent again within ten seconds, and answers the first', async () => {
+    await seed(GITHUB);
+    const first = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' });
+    const again = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' });
+    expect(first.ok).toBe(true);
+    expect(again).toMatchObject({ ok: false, error: 'duplicate' });
+    expect(again.ok === false && again.error === 'duplicate' && again.dispatch.id).toBe(first.ok && first.dispatch.id);
+    expect(dispatched).toHaveLength(1);
+    expect(await db.select().from(schema.ciDispatches)).toHaveLength(1);
+  });
+
+  test('refuses a dispatch left to the target’s branch while the same one waits on a named branch', async () => {
+    await seed(GITHUB);
+    const { claimCiDispatch } = await import('#shared/handlers/ci-dispatches');
+    const row = {
+      id: 'aaaaaaaaaaaaaaa1',
+      projectId: 1,
+      actionId: 'gh',
+      actionName: 'gh',
+      origin: 'page' as const,
+      kind: 'tests' as const,
+      sourceRunId: 1,
+      clusterId: 1,
+      testCaseId: null,
+      provider: 'github' as const,
+      preset: null,
+      ref: 'main',
+      inputs: {},
+      args: 'a',
+      files: null,
+      tests: 1,
+      byUserId: null,
+      byName: null,
+    };
+    expect(await claimCiDispatch(db as never, row)).toEqual({ claimed: true });
+    const again = await claimCiDispatch(db as never, { ...row, id: 'aaaaaaaaaaaaaaa2', ref: null });
+    expect(again).toMatchObject({ claimed: false, existing: { id: 'aaaaaaaaaaaaaaa1' } });
+    const other = await claimCiDispatch(db as never, { ...row, id: 'aaaaaaaaaaaaaaa3', ref: 'release' });
+    expect(other).toEqual({ claimed: true });
+  });
+
+  test('stores the dispatch of one execution with its cluster', async () => {
+    await seed(GITHUB);
+    const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));
+    expect((await dispatch({ from: 'execution', executionId: execution!.id, scope: 'test' })).ok).toBe(true);
+    expect(await lastDispatch()).toMatchObject({ kind: 'tests', clusterId: 1, origin: 'page', tests: 1 });
+  });
+
+  test("matches a Flake Lab experiment's run by the test it is about, whose ref names the experiment", async () => {
+    await seed(GITHUB);
+    // A dispatch GitHub answered with no run id, whose run cannot carry the dispatch id either.
+    await db
+      .update(schema.projects)
+      .set({
+        ciRerun: {
+          enabled: true,
+          actions: [
+            {
+              id: 'lab',
+              name: 'Flake Lab',
+              target: { type: 'github', workflow: 'lab.yml', ref: 'main', argsInput: 'args' },
+              inputs: [],
+              accepts: ['flakeLab'],
+            },
+          ],
+          defaults: { flakeLab: 'lab' },
+        },
+      })
+      .where(eq(schema.projects.id, 1));
+    expect(
+      (await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' }, { id: 1, name: 'Ada' })).ok,
+    ).toBe(true);
+    const { id, at } = await lastDispatch();
+    expect(await lastDispatch()).toMatchObject({ kind: 'flakeLab', testCaseId: 1, files: null });
+    await db.insert(schema.flakeExperiments).values({ id: 31, projectId: 1, testCaseId: 1, kind: 'reproduce' });
+    const lab = { piwiOrigin: { kind: 'flake-lab', ref: '31' }, piwiFlakeLab: { experimentId: 31, armId: 1 } };
+    // The same experiment on a developer's machine reports no CI: it never answers the dispatch.
+    await finishedRun(2, lab, [], at + 30_000);
+    expect(await matchRunToCiDispatch(db as never, 2, 'start')).toBeNull();
+    await finishedRun(3, { ...lab, ci: { provider: 'GitHub Actions', runId: '9' } }, [], at + 60_000);
+    expect(await matchRunToCiDispatch(db as never, 3, 'start')).toBe(id);
+    // A lab run keeps its own origin.
+    expect(await originOf(3)).toEqual({ kind: 'flake-lab', ref: '31' });
+  });
+
+  test('picks the action that started the failed run, and sends the values that run was sent with', async () => {
+    await seed(GITHUB);
+    const action = (id: string) => ({
+      id,
+      name: id,
+      target: { type: 'github', workflow: `${id}.yml`, ref: 'main', argsInput: 'args' },
+      inputs: [{ name: 'TARGET', kind: 'choice', options: ['staging', 'prod'], default: 'staging' }],
+      accepts: ['tests'],
+    });
+    await db
+      .update(schema.projects)
+      .set({ ciRerun: { enabled: true, actions: [action('main'), action('nightly')], defaults: { rerun: 'main' } } })
+      .where(eq(schema.projects.id, 1));
+    // Run 1, the cluster's last run, was started by a dispatch of `nightly` on prod.
+    await db.insert(schema.ciDispatches).values({
+      id: 'aaaaaaaaaaaaaaaa',
+      projectId: 1,
+      actionId: 'nightly',
+      origin: 'page',
+      kind: 'suite',
+      provider: 'github',
+      args: '',
+      inputs: { TARGET: 'prod' },
+      state: 'ended',
+      runId: 1,
+      createdAt: new Date('2026-09-01T09:59:00Z'),
+    });
+    expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
+    expect(dispatched.at(-1)!.request.inputs).toEqual({ TARGET: 'prod' });
+    expect(await lastDispatch()).toMatchObject({ actionId: 'nightly', actionName: 'nightly' });
+  });
+
+  test('marks the dispatches no run answered within the window, and prunes the old ones', async () => {
+    await seed(GITHUB);
+    await rerunClusterInCi(db as never, 1, { id: null, name: null });
+    const { id, at } = await lastDispatch();
+    const { endUnreportedCiDispatches, pruneCiDispatches } = await import('../../server/utils/ci-dispatches');
+    expect(await endUnreportedCiDispatches(db as never, new Date(at + 60_000))).toBe(0);
+    expect(await endUnreportedCiDispatches(db as never, new Date(at + CI_DISPATCH_MATCH_WINDOW_MS + 1))).toBe(1);
+    expect(await lastDispatch()).toMatchObject({ id, state: 'unreported' });
+    expect(await pruneCiDispatches(db as never, 90, new Date(at + 89 * 86_400_000))).toBe(0);
+    expect(await pruneCiDispatches(db as never, 90, new Date(at + 91 * 86_400_000))).toBe(1);
+  });
+});
+
+describe('matchCiDispatch', () => {
+  const base = {
+    provider: 'github' as const,
+    kind: 'tests' as const,
+    ref: null,
+    files: null,
+    providerRunId: null,
+    testCaseId: null,
+    state: 'dispatched' as const,
+    runId: null,
+  };
   const run = {
     originRef: null,
+    githubRunId: null,
     pipelineId: null,
     buildNumber: null,
     branch: 'main',
@@ -274,10 +500,54 @@ describe('matchRerunDispatch', () => {
     files: ['tests/a.spec.ts'],
   };
 
-  test("matches Bitbucket's build number", () => {
-    const d = { ...base, provider: 'bitbucket' as const, id: 'x', at: 0, buildNumber: '42' };
-    expect(matchRerunDispatch({ ...run, buildNumber: '42' }, [d])).toBe(d);
-    expect(matchRerunDispatch({ ...run, buildNumber: '41' }, [d])).toBeNull();
+  test("matches Bitbucket's build number, GitLab's pipeline id and GitHub's run id, before the files are known", () => {
+    const bitbucket = { ...base, provider: 'bitbucket' as const, id: 'x', at: 0, providerRunId: '42' };
+    expect(matchCiDispatch({ ...run, files: null, bitbucketBuildNumber: '42' }, [bitbucket])).toBe(bitbucket);
+    expect(matchCiDispatch({ ...run, bitbucketBuildNumber: '41' }, [bitbucket])).toBeNull();
+    const gitlab = { ...base, provider: 'gitlab' as const, id: 'y', at: 0, providerRunId: '9001' };
+    expect(matchCiDispatch({ ...run, files: null, pipelineId: '9001' }, [gitlab])).toBe(gitlab);
+    const github = { ...base, id: 'z', at: 0, providerRunId: '555', kind: 'suite' as const };
+    expect(matchCiDispatch({ ...run, files: null, githubRunId: '555' }, [github])).toBe(github);
+    expect(matchCiDispatch({ ...run, files: null, githubRunId: '556' }, [github])).toBeNull();
+  });
+
+  test('matches by the dispatch id first, and never a dispatch already matched or refused', () => {
+    const open = { ...base, id: 'open', at: 900_000, ref: 'main', files: run.files };
+    expect(matchCiDispatch({ ...run, files: null, originRef: 'open' }, [open])).toBe(open);
+    expect(matchCiDispatch({ ...run, originRef: 'open' }, [{ ...open, runId: 3 }])).toBeNull();
+    expect(matchCiDispatch({ ...run, originRef: 'open' }, [{ ...open, state: 'refused' as const }])).toBeNull();
+  });
+
+  test('matches by files only once they are known, never a whole suite or tagged tests, nor a GitHub dispatch that has its run id', () => {
+    const rerun = { ...base, id: 'x', at: 900_000, ref: 'main', files: run.files };
+    expect(matchCiDispatch({ ...run, files: null }, [rerun])).toBeNull();
+    expect(matchCiDispatch(run, [rerun])).toBe(rerun);
+    expect(matchCiDispatch(run, [{ ...rerun, kind: 'suite' as const }])).toBeNull();
+    expect(matchCiDispatch(run, [{ ...rerun, kind: 'tags' as const }])).toBeNull();
+    expect(matchCiDispatch(run, [{ ...rerun, providerRunId: '555' }])).toBeNull();
+    expect(matchCiDispatch(run, [{ ...rerun, kind: 'flakeLab' as const }])).toMatchObject({ id: 'x' });
+  });
+
+  test("matches a Flake Lab run by its experiment's test and kind, made after the dispatch, on its branch", () => {
+    const lab = { ...base, provider: 'ci-server' as const, kind: 'flakeLab' as const, id: 'lab', at: 900_000 };
+    const ofTest = { ...lab, testCaseId: 12, ref: 'main', flakeLabKind: 'reproduce' as const };
+    const experiment = { testCaseId: 12, kind: 'reproduce' as const, at: 950_000 };
+    const labRun = { ...run, files: null, flakeLab: experiment };
+    expect(matchCiDispatch(labRun, [ofTest])).toBe(ofTest);
+    expect(matchCiDispatch({ ...labRun, flakeLab: { ...experiment, testCaseId: 13 } }, [ofTest])).toBeNull();
+    expect(matchCiDispatch({ ...labRun, branch: 'release' }, [ofTest])).toBeNull();
+    // A verify run never answers a reproduce dispatch, nor an experiment planned before the dispatch.
+    expect(matchCiDispatch({ ...labRun, flakeLab: { ...experiment, kind: 'verify' } }, [ofTest])).toBeNull();
+    expect(matchCiDispatch({ ...labRun, flakeLab: { ...experiment, at: 800_000 } }, [ofTest])).toBeNull();
+    // A re-run of the same test is not the experiment's dispatch.
+    expect(matchCiDispatch(labRun, [{ ...ofTest, kind: 'tests' as const }])).toBeNull();
+  });
+
+  test("matches each CI's run id only from a run that CI reported", () => {
+    const bitbucket = { ...base, provider: 'bitbucket' as const, id: 'b', at: 0, providerRunId: '17' };
+    // A Jenkins build #17 reports a build number, not Bitbucket's.
+    expect(matchCiDispatch({ ...run, files: null, buildNumber: '17' }, [bitbucket])).toBeNull();
+    expect(matchCiDispatch({ ...run, files: null, bitbucketBuildNumber: '17' }, [bitbucket])).toBe(bitbucket);
   });
 
   test("matches a CI server's build number with its branch and files, and its branch, time and files without one", () => {
@@ -287,14 +557,25 @@ describe('matchRerunDispatch', () => {
       id: 'x',
       at: 0,
       ref: 'main',
-      buildNumber: '42',
+      providerRunId: '42',
       files: run.files,
     };
-    expect(matchRerunDispatch({ ...run, buildNumber: '42' }, [numbered])).toBe(numbered);
-    expect(matchRerunDispatch({ ...run, branch: 'release', buildNumber: '42' }, [numbered])).toBeNull();
+    expect(matchCiDispatch({ ...run, buildNumber: '42' }, [numbered])).toBe(numbered);
+    expect(matchCiDispatch({ ...run, branch: 'release', buildNumber: '42' }, [numbered])).toBeNull();
     const unnumbered = { ...base, provider: 'ci-server' as const, id: 'y', at: 999_000, ref: 'main', files: run.files };
-    expect(matchRerunDispatch(run, [unnumbered])).toBe(unnumbered);
-    expect(matchRerunDispatch({ ...run, branch: 'other' }, [unnumbered])).toBeNull();
+    expect(matchCiDispatch(run, [unnumbered])).toBe(unnumbered);
+    expect(matchCiDispatch({ ...run, branch: 'other' }, [unnumbered])).toBeNull();
+  });
+
+  test('matches a CI server dispatch whose job runs its configured branch on any branch, and no other with none', () => {
+    const fixed = { ...base, provider: 'ci-server' as const, id: 'x', at: 0, providerRunId: '42', files: run.files };
+    expect(matchCiDispatch({ ...run, branch: 'release', buildNumber: '42' }, [fixed])).toBe(fixed);
+    expect(matchCiDispatch({ ...run, branch: 'release' }, [{ ...fixed, providerRunId: null }])).toMatchObject({
+      id: 'x',
+    });
+    // Bitbucket learns its branch only once sent, and a GitHub dispatch always names one.
+    expect(matchCiDispatch(run, [{ ...fixed, provider: 'github' as const, providerRunId: null }])).toBeNull();
+    expect(matchCiDispatch(run, [{ ...fixed, provider: 'bitbucket' as const, providerRunId: null }])).toBeNull();
   });
 
   test("leaves another job's build of the same number, and a build started before the dispatch", () => {
@@ -304,13 +585,13 @@ describe('matchRerunDispatch', () => {
       id: 'x',
       at: 1_000_000,
       ref: 'main',
-      buildNumber: '57',
+      providerRunId: '57',
       files: ['tests/a.spec.ts'],
     };
     const nightly = { ...run, files: ['tests/a.spec.ts', 'tests/b.spec.ts'], buildNumber: '57' };
-    expect(matchRerunDispatch(nightly, [d])).toBeNull();
-    const early = { ...run, buildNumber: '57', startedAt: 1_000_000 - RERUN_CLOCK_SLACK_MS - 1 };
-    expect(matchRerunDispatch(early, [d])).toBeNull();
+    expect(matchCiDispatch(nightly, [d])).toBeNull();
+    const early = { ...run, buildNumber: '57', startedAt: 1_000_000 - CI_DISPATCH_CLOCK_SLACK_MS - 1 };
+    expect(matchCiDispatch(early, [d])).toBeNull();
   });
 
   test('picks, by its build number, the dispatch a run answers among those of the same branch and files', () => {
@@ -320,21 +601,21 @@ describe('matchRerunDispatch', () => {
       id: 'older',
       at: 900_000,
       ref: 'main',
-      buildNumber: '57',
+      providerRunId: '57',
       files: ['tests/a.spec.ts'],
     };
-    const newer = { ...older, id: 'newer', at: 950_000, buildNumber: '58' };
-    expect(matchRerunDispatch({ ...run, buildNumber: '57' }, [older, newer])).toBe(older);
-    expect(matchRerunDispatch({ ...run, buildNumber: null }, [older, newer])).toBe(newer);
+    const newer = { ...older, id: 'newer', at: 950_000, providerRunId: '58' };
+    expect(matchCiDispatch({ ...run, buildNumber: '57' }, [older, newer])).toBe(older);
+    expect(matchCiDispatch({ ...run, buildNumber: null }, [older, newer])).toBe(newer);
     // A CI clock a few seconds behind Piwi's still matches the build.
-    expect(matchRerunDispatch({ ...run, buildNumber: '57', startedAt: 895_000 }, [older])).toBe(older);
+    expect(matchCiDispatch({ ...run, buildNumber: '57', startedAt: 895_000 }, [older])).toBe(older);
   });
 
   test('leaves a run started outside the window or before the dispatch', () => {
     const d = { ...base, id: 'x', at: 1_000_000, ref: 'main', files: ['tests/a.spec.ts'] };
-    expect(matchRerunDispatch({ ...run, startedAt: 999_000 }, [d])).toBeNull();
-    expect(matchRerunDispatch({ ...run, startedAt: 1_000_000 + RERUN_MATCH_WINDOW_MS + 1 }, [d])).toBeNull();
-    expect(matchRerunDispatch({ ...run, startedAt: 1_000_500 }, [d])).toBe(d);
+    expect(matchCiDispatch({ ...run, startedAt: 999_000 }, [d])).toBeNull();
+    expect(matchCiDispatch({ ...run, startedAt: 1_000_000 + CI_DISPATCH_MATCH_WINDOW_MS + 1 }, [d])).toBeNull();
+    expect(matchCiDispatch({ ...run, startedAt: 1_000_500 }, [d])).toBe(d);
   });
 });
 
@@ -396,8 +677,12 @@ describe('the Flake Lab target', () => {
   test('is unavailable until configured, then dispatches the flake command on the test’s branch', async () => {
     await seed(GITHUB);
     dispatched.length = 0;
-    expect(await flakeLabCiAvailability(db as never, 1, 1)).toMatchObject({ available: false });
-    expect(await runFlakeLabInCi(db as never, 1, 'verify', { id: 1, name: 'Ada' })).toMatchObject({
+    expect(await availability({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' })).toMatchObject({
+      available: false,
+    });
+    expect(
+      await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'verify' }, { id: 1, name: 'Ada' }),
+    ).toMatchObject({
       ok: false,
       error: 'unavailable',
     });
@@ -413,13 +698,12 @@ describe('the Flake Lab target', () => {
         },
       })
       .where(eq(schema.projects.id, 1));
-    expect(await flakeLabCiAvailability(db as never, 1, 1)).toEqual({
+    expect(await availability({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' })).toEqual({
       available: true,
       reason: null,
-      provider: 'github',
       action: { id: 'flakelab-github', name: 'Flake Lab' },
     });
-    const outcome = await runFlakeLabInCi(db as never, 1, 'verify', { id: 1, name: 'Ada' });
+    const outcome = await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'verify' }, { id: 1, name: 'Ada' });
     expect(outcome).toMatchObject({
       ok: true,
       dispatch: { provider: 'github', args: 'flake verify 1', ref: 'feature/coupon', byName: 'Ada' },
@@ -433,7 +717,9 @@ describe('the Flake Lab target', () => {
       ref: 'main',
       argsInput: 'piwi_flake',
     });
-    expect(await runFlakeLabInCi(db as never, 404, 'reproduce', { id: 1, name: 'Ada' })).toMatchObject({
+    expect(
+      await dispatch({ from: 'flake-lab', testCaseId: 404, flakeLab: 'reproduce' }, { id: 1, name: 'Ada' }),
+    ).toMatchObject({
       error: 'not-found',
     });
   });
@@ -515,26 +801,23 @@ describe('a CI server dispatch', () => {
   test('is available without an SCM repository target, and names what is missing', async () => {
     await seed(GITHUB);
     await useCiServer(null);
-    expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
+    expect(await availability()).toMatchObject({
       available: false,
       reason: 'No CI action re-runs tests for this project.',
     });
     await useCiServer({ preset: 'jenkins', rerun: { job: 'polaris/e2e' } }, false);
-    expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
+    expect(await availability()).toMatchObject({
       available: false,
       reason: 'CI re-run is off for this project.',
     });
     await useCiServer({ preset: 'jenkins', rerun: { job: 'polaris/e2e' } });
-    expect(await ciRerunAvailability(db as never, 1, 1)).toEqual({
+    expect(await availability()).toEqual({
       available: true,
       reason: null,
-      provider: 'ci-server',
-      enabled: true,
-      hasToken: true,
       action: { id: 'rerun-ci-server', name: 'Re-run failed tests' },
     });
     delete process.env.PIWI_CI_SERVER_URL;
-    expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({
+    expect(await availability()).toMatchObject({
       available: false,
       reason: 'No CI server is configured for this project.',
     });
@@ -547,15 +830,15 @@ describe('a CI server dispatch', () => {
       .set({ branch: null, metadata: { scm: { remoteUrl: GITHUB }, piwiOrigin: { kind: 'ci' } } })
       .where(eq(schema.testRuns.id, 1));
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e/{branch}' } });
-    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe('The path placeholder {{branchJob}} is empty');
+    expect((await availability()).reason).toBe('The path placeholder {{branchJob}} is empty');
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e/{branch}', ref: 'main' } });
-    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(true);
+    expect((await availability()).available).toBe(true);
   });
 
   test('refuses an http base URL on a host nobody listed', async () => {
     await seed(GITHUB);
     await useCiServer({ preset: 'jenkins', baseUrl: 'http://jenkins.example.com/', rerun: { job: 'e2e' } });
-    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toContain('https');
+    expect((await availability()).reason).toContain('https');
   });
 
   test('sends the Jenkins request with the instance credential, and records it', async () => {
@@ -580,7 +863,8 @@ describe('a CI server dispatch', () => {
       provider: 'ci-server',
       preset: 'jenkins',
       url: `${base}job/polaris/job/e2e/`,
-      ref: 'feature/coupon',
+      // The job runs its configured branch, whatever the cluster's.
+      ref: null,
       files: ['tests/checkout.spec.ts'],
       tests: 2,
       byName: 'Ada',
@@ -659,7 +943,7 @@ describe('a CI server dispatch', () => {
     await useStagingAction({ credentialId: id });
     process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
     try {
-      expect(await ciRerunAvailability(db as never, 1, 1)).toMatchObject({ available: true, hasToken: true });
+      expect(await availability()).toMatchObject({ available: true });
       expect((await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).ok).toBe(true);
     } finally {
       delete process.env.PIWI_SECRET_KEY;
@@ -697,13 +981,14 @@ describe('a CI server dispatch', () => {
     await seed(GITHUB);
     const id = await teamCredential({ destination: 'https://ci.other.example/' });
     await useStagingAction({ credentialId: id, baseUrl: base });
-    const availability = await ciRerunAvailability(db as never, 1, 1);
-    expect(availability).toMatchObject({ available: false, hasToken: false });
-    expect(availability.reason).toContain('is sent only under https://ci.other.example/');
-    const cluster = { id: 1, projectId: 1, lastSeenRunId: 1 };
-    await expect(dispatchClusterRerun(db as never, cluster, { id: 7, name: 'Ada' })).rejects.toThrow(
-      'is sent only under https://ci.other.example/',
-    );
+    const before = await availability();
+    expect(before).toMatchObject({ available: false });
+    expect(before.reason).toContain('is sent only under https://ci.other.example/');
+    expect(await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada' })).toMatchObject({
+      ok: false,
+      error: 'unavailable',
+      message: expect.stringContaining('is sent only under https://ci.other.example/'),
+    });
     expect(received).toHaveLength(0);
     expect(await uses()).toEqual([
       expect.objectContaining({
@@ -720,11 +1005,9 @@ describe('a CI server dispatch', () => {
     const id = await teamCredential();
     await useStagingAction({ credentialId: id });
     await updateCredential(db as never, id, { disabled: true });
-    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe('The credential "Team Jenkins" is disabled.');
+    expect((await availability()).reason).toBe('The credential "Team Jenkins" is disabled.');
     await updateCredential(db as never, id, { disabled: false, scope: { allProjects: false, projectIds: [] } });
-    expect((await ciRerunAvailability(db as never, 1, 1)).reason).toBe(
-      'The credential "Team Jenkins" is not shared with this project.',
-    );
+    expect((await availability()).reason).toBe('The credential "Team Jenkins" is not shared with this project.');
 
     // A re-run asked for anyway, as a route or the MCP tool asks for it, is refused by the credential and logged.
     const outcome = await rerunClusterInCi(db as never, 1, { id: 7, name: 'Ada', apiKeyId: null });
@@ -760,9 +1043,9 @@ describe('a CI server dispatch', () => {
         },
       })
       .where(eq(schema.projects.id, 1));
-    expect((await ciRerunAvailability(db as never, 1, 1)).action).toEqual({ id: 'main', name: 'main' });
+    expect((await availability()).action).toEqual({ id: 'main', name: 'main' });
     await db.update(schema.testRuns).set({ environment: 'staging' }).where(eq(schema.testRuns.id, 1));
-    expect((await ciRerunAvailability(db as never, 1, 1)).action).toEqual({ id: 'staging', name: 'staging' });
+    expect((await availability()).action).toEqual({ id: 'staging', name: 'staging' });
     expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
     expect(received[0]!.url).toBe('/job/staging-job/buildWithParameters');
   });
@@ -804,7 +1087,7 @@ describe('a CI server dispatch', () => {
       .update(schema.testRuns)
       .set({ environment: 'EU', environmentId: environment!.id })
       .where(eq(schema.testRuns.id, 1));
-    expect((await ciRerunAvailability(db as never, 1, 1)).action).toEqual({ id: 'eu', name: 'eu' });
+    expect((await availability()).action).toEqual({ id: 'eu', name: 'eu' });
   });
 
   test('sends the action the caller names instead of the default', async () => {
@@ -828,9 +1111,10 @@ describe('a CI server dispatch', () => {
       .where(eq(schema.projects.id, 1));
     expect((await rerunClusterInCi(db as never, 1, { id: null, name: null }, { actionId: 'nightly' })).ok).toBe(true);
     expect(received[0]!.url).toBe('/job/nightly-job/buildWithParameters');
-    expect(await rerunClusterInCi(db as never, 1, { id: null, name: null }, { actionId: 'missing' })).toMatchObject({
+    expect(await rerunClusterInCi(db as never, 1, { id: null, name: null }, { actionId: 'missing' })).toEqual({
       ok: false,
-      error: 'unavailable',
+      error: 'not-found',
+      message: 'This project has no CI action "missing".',
     });
   });
 
@@ -839,7 +1123,6 @@ describe('a CI server dispatch', () => {
     const other = base.replace('127.0.0.1', 'localhost');
     process.env.PIWI_CI_SERVER_HOSTS = 'localhost';
     await useCiServer({ preset: 'jenkins', baseUrl: other, rerun: { job: 'e2e' } });
-    expect((await ciRerunAvailability(db as never, 1, 1)).hasToken).toBe(false);
     expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
     expect(received[0]!.authorization).toBeUndefined();
     delete process.env.PIWI_CI_SERVER_HOSTS;
@@ -877,33 +1160,35 @@ describe('a CI server dispatch', () => {
     expect(await uses()).toEqual([
       expect.objectContaining({ userId: null, result: 'failed', reason: 'The CI server answered 404' }),
     ]);
+    // The refusal is stored, with the server's words.
+    expect(await lastDispatch()).toMatchObject({ state: 'refused', detail: 'The CI server answered 404: No such job' });
   });
 
   test('re-runs one execution, and the run it starts is matched and linked to its build', async () => {
     await seed(GITHUB);
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
     const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));
-    expect((await rerunExecutionInCi(db as never, execution!.id, { id: null, name: null })).ok).toBe(true);
+    expect((await dispatch({ from: 'execution', executionId: execution!.id, scope: 'test' })).ok).toBe(true);
     expect(new URLSearchParams(received[0]!.body).get('PIWI_RERUN_ARGS')).toBe(
       '"/tests/checkout.spec.ts:12" --project="chromium"',
     );
     const { id, at } = await lastDispatch();
     const ci = { provider: 'Jenkins', buildNumber: '88', buildUrl: `${base}job/e2e/88/` };
     await finishedRun(2, { piwiOrigin: { kind: 'ci', ref: id }, ci }, [1], at + 60_000);
-    expect(await matchCiRerunRun(db as never, 2)).toBe(1);
+    expect(await matchRunToCiDispatch(db as never, 2, 'finish')).toBe(id);
     expect(await lastDispatch()).toMatchObject({ runId: 2, url: `${base}job/e2e/88/` });
   });
 
   test('runs Flake Lab on its own job', async () => {
     await seed(GITHUB);
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' } });
-    expect(await flakeLabCiAvailability(db as never, 1, 1)).toMatchObject({
+    expect(await availability({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' })).toMatchObject({
       available: false,
       reason: 'No CI action runs Flake Lab for this project.',
       action: null,
     });
     await useCiServer({ preset: 'jenkins', rerun: { job: 'e2e' }, flakeLab: { job: 'flake-lab' } });
-    const outcome = await runFlakeLabInCi(db as never, 1, 'reproduce', { id: 1, name: 'Ada' });
+    const outcome = await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' }, { id: 1, name: 'Ada' });
     expect(outcome).toMatchObject({ ok: true, dispatch: { provider: 'ci-server', args: 'flake 1' } });
     expect(received[0]!.url).toBe('/job/flake-lab/buildWithParameters');
     expect(new URLSearchParams(received[0]!.body).get('PIWI_RERUN_ARGS')).toBe('flake 1');
@@ -930,9 +1215,9 @@ describe('an action input a repository host reserves', () => {
   test('is refused at dispatch and reported as unavailable, and nothing is sent', async () => {
     await seed(GITLAB);
     await use([{ name: 'CI_JOB_TOKEN', kind: 'fixed', value: 'x' }], 'gitlab');
-    const availability = await ciRerunAvailability(db as never, 1, 1);
-    expect(availability.available).toBe(false);
-    expect(availability.reason).toContain('CI_JOB_TOKEN');
+    const before = await availability();
+    expect(before.available).toBe(false);
+    expect(before.reason).toContain('CI_JOB_TOKEN');
     expect(await rerunClusterInCi(db as never, 1, { id: null, name: null })).toMatchObject({
       ok: false,
       error: 'unavailable',
@@ -940,20 +1225,22 @@ describe('an action input a repository host reserves', () => {
     expect(dispatched).toHaveLength(0);
   });
 
-  test('is refused by the dispatch itself, which sends nothing, whoever calls it', async () => {
+  test('is refused whatever its case, for an execution’s test too, and nothing is sent', async () => {
     await seed(GITLAB);
     await use([{ name: 'bitbucket_branch', kind: 'fixed', value: 'x' }], 'gitlab');
-    const cluster = { id: 1, projectId: 1, lastSeenRunId: 1 };
-    await expect(dispatchClusterRerun(db as never, cluster, { id: null, name: null })).rejects.toThrow(
-      /bitbucket_branch/,
-    );
+    const [execution] = await db.select().from(schema.testRunsCases).where(eq(schema.testRunsCases.testCaseId, 1));
+    expect(await dispatch({ from: 'execution', executionId: execution!.id, scope: 'test' })).toMatchObject({
+      ok: false,
+      error: 'unavailable',
+      message: expect.stringMatching(/bitbucket_branch/),
+    });
     expect(dispatched).toHaveLength(0);
   });
 
   test('is refused whatever its case, and a name that merely contains the prefix is sent', async () => {
     await seed(GITLAB);
     await use([{ name: 'gitlab_user_login', kind: 'fixed', value: 'x' }], 'gitlab');
-    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(false);
+    expect((await availability()).available).toBe(false);
     await use([{ name: 'MY_CI_NAME', kind: 'fixed', value: 'x' }], 'gitlab');
     expect((await rerunClusterInCi(db as never, 1, { id: null, name: null })).ok).toBe(true);
     expect(dispatched[0]!.request.inputs).toEqual({ MY_CI_NAME: 'x' });
@@ -962,6 +1249,6 @@ describe('an action input a repository host reserves', () => {
   test('is allowed on GitHub, which reserves no names', async () => {
     await seed(GITHUB);
     await use([{ name: 'CI_ENV', kind: 'fixed', value: 'x' }], 'github');
-    expect((await ciRerunAvailability(db as never, 1, 1)).available).toBe(true);
+    expect((await availability()).available).toBe(true);
   });
 });

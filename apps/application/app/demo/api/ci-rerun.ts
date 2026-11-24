@@ -1,13 +1,14 @@
 /**
- * CI actions in the browser demo. A project whose re-run action targets a CI
- * server re-runs as the server does, up to the request: the demo has no CI to
- * reach, so the dispatch is recorded with the link the preset names (the job's
- * page) and nothing is sent. An action that targets a repository host's CI
- * (GitHub, GitLab, Bitbucket) answers that the demo cannot dispatch it.
+ * CI actions in the browser demo. A dispatch through an action that targets a
+ * CI server goes as the server's does, up to the request: the demo has no CI
+ * to reach, so it is recorded with the link the preset names (the job's page)
+ * and nothing is sent. An action that targets a repository host's CI (GitHub,
+ * GitLab, Bitbucket) answers that the demo cannot dispatch it. The places,
+ * the requests and what a place is offered are read as the server reads them
+ * (`#shared/ci-dispatch-request`, `#shared/handlers/ci-rerun-target`).
  */
 import { eq } from 'drizzle-orm';
-import { failureClusters, projects, testRuns, users } from '~~/server/database/schema.sqlite';
-import type { ClusterRerunDispatch } from '#shared/ci-rerun';
+import { projects, users } from '~~/server/database/schema.sqlite';
 import {
   ciActionInputValues,
   ciActionsProblem,
@@ -16,6 +17,7 @@ import {
   resolveCiActionsSettings,
   type CiAction,
   type CiActionCheckResult,
+  type CiActionPick,
   type CiActionsSettings,
 } from '#shared/ci-actions';
 import {
@@ -30,15 +32,28 @@ import {
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
-import { buildRetryArgs, NO_RETRY_ARGS, withRetryCases, type RetryCase } from '#shared/retry-command';
-import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
+import { NO_RETRY_ARGS } from '#shared/retry-command';
 import {
-  ciServerValues,
-  clusterLastDispatch,
-  executionRerunTarget,
-  recordClusterDispatch,
+  ciPlaceLastDispatch,
+  ciServerTemplateValues,
+  projectRunBranches,
   rerunFiles,
+  resolveCiDispatchPlace,
+  type CiDispatchPlace,
 } from '#shared/handlers/ci-rerun-target';
+import { claimCiDispatch, getCiDispatch, settleCiDispatch } from '#shared/handlers/ci-dispatches';
+import {
+  ciBranchOptions,
+  ciDispatchInputValues,
+  ciDispatchRequestProblem,
+  offeredCiAction,
+  unknownCiActionMessage,
+  type CiBranchOption,
+  type CiDispatchRequest,
+  type CiDispatchSource,
+  type CiOffered,
+} from '#shared/ci-dispatch-request';
+import type { CiDispatchView } from '#shared/ci-dispatches';
 import { ciActionsCredentialProblem, loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
 import { credentialRefusal } from '#shared/credentials';
 import type { getDemoDb } from '../db.client';
@@ -46,22 +61,14 @@ import { demoHttpError } from './http-error';
 
 type DemoDB = Awaited<ReturnType<typeof getDemoDb>>;
 
-const UNAVAILABLE = 'CI re-run is not available in the demo.';
 const OFF_REASON = 'CI re-run is off for this project.';
 const NO_TARGET = 'No CI server is configured for this project.';
+/** Why the demo dispatches no repository host's action. */
+const HOST_REASON = 'The demo has no repository to dispatch to: it runs only CI server actions.';
 
-interface DemoRerunAvailability {
-  available: boolean;
-  reason: string | null;
-  provider: 'ci-server' | null;
-  enabled: boolean;
-  hasToken: boolean;
-  action: { id: string; name: string } | null;
-}
-
-async function projectCiActions(db: DemoDB, projectId: number) {
+async function projectCiActions(db: DemoDB, projectId: number): Promise<CiActionsSettings> {
   const [row] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
-  return { settings: resolveCiActionsSettings(row?.ciRerun ?? null) };
+  return resolveCiActionsSettings(row?.ciRerun ?? null);
 }
 
 /**
@@ -77,23 +84,25 @@ async function targetCredential(
   return { credential, baseUrl: target.baseUrl ?? credential?.destination ?? null };
 }
 
-/** The action a re-run uses: the demo reaches only CI servers, so a repository host's action is not served. */
-function pickRerunAction(settings: CiActionsSettings, environment: RunEnvironment, actionId?: string | null) {
-  return pickCiAction(settings, 'tests', { provider: null, ...environment, actionId });
-}
-
-interface RunEnvironment {
-  environmentId: number | null;
-  environment: string | null;
-}
-
-/** The environment of a run, as the server reads it: the one its label resolved to, and the label. */
-async function runEnvironment(db: DemoDB, runId: number): Promise<RunEnvironment> {
-  const [run] = await db
-    .select({ environment: testRuns.environment, environmentId: testRuns.environmentId })
-    .from(testRuns)
-    .where(eq(testRuns.id, runId));
-  return { environmentId: run?.environmentId ?? null, environment: run?.environment?.trim() || null };
+/**
+ * The action a place uses, as the server picks it, among the CI server
+ * actions: the demo has no repository, so a repository host's action, named
+ * or the only kind of action that accepts the place's kind, answers
+ * {@link HOST_REASON}.
+ */
+function demoPick(settings: CiActionsSettings, place: CiDispatchPlace, actionId?: string | null): CiActionPick {
+  const pick = pickCiAction(settings, place.kind, {
+    provider: null,
+    environmentId: place.environmentId,
+    environment: place.environment,
+    actionId,
+    startedBy: place.started?.actionId,
+  });
+  if (pick.action) return pick;
+  const accepting = settings.actions.filter((a) => a.accepts.includes(place.kind));
+  const named = actionId ? accepting.find((a) => a.id === actionId || a.name === actionId) : undefined;
+  const hostOnly = actionId ? named != null && named.target.type !== 'ci-server' : accepting.length > 0;
+  return hostOnly ? { action: null, reason: HOST_REASON } : pick;
 }
 
 /**
@@ -106,7 +115,7 @@ function prepare(
   values: CiTemplateValues,
   inputs: [string, string][],
 ): { link: string; url: string; sendsCredential: boolean } | { error: string } {
-  const spec = target ? ciServerRequestTemplate(target, 'rerun') : null;
+  const spec = ciServerRequestTemplate(target, 'rerun');
   if (!spec || !baseUrl) return { error: NO_TARGET };
   if (!baseUrl.startsWith('https:')) {
     return { error: CI_SERVER_HTTPS_PROBLEM };
@@ -120,80 +129,96 @@ function prepare(
   }
 }
 
-async function availability(
+/** Whether a place's dispatch can be recorded through the action picked for it, on this branch, as the server decides. */
+async function readiness(
   db: DemoDB,
-  projectId: number,
-  runId: number,
-  actionId?: string | null,
-): Promise<DemoRerunAvailability> {
-  const { settings } = await projectCiActions(db, projectId);
-  const pick = pickRerunAction(settings, await runEnvironment(db, runId), actionId);
+  settings: CiActionsSettings,
+  place: CiDispatchPlace,
+  pick: CiActionPick,
+  ref: string | null,
+): Promise<{ available: boolean; reason: string | null }> {
+  if (!settings.enabled) return { available: false, reason: OFF_REASON };
   const action = pick.action;
-  const ref = action ? { id: action.id, name: action.name } : null;
-  if (!settings.enabled) {
-    return { available: false, reason: OFF_REASON, provider: null, enabled: false, hasToken: false, action: ref };
-  }
-  if (!action || action.target.type !== 'ci-server') {
-    // Only a repository host's action is left: the demo has no repository to dispatch to.
-    const reason = pick.reason ?? UNAVAILABLE;
-    const hasHostAction = settings.actions.some((a) => a.accepts.includes('tests') && a.target.type !== 'ci-server');
-    return {
-      available: false,
-      reason: !action && hasHostAction ? UNAVAILABLE : reason,
-      provider: null,
-      enabled: true,
-      hasToken: false,
-      action: ref,
-    };
-  }
+  if (!action) return { available: false, reason: pick.reason };
+  if (action.target.type !== 'ci-server') return { available: false, reason: HOST_REASON };
   const target = ciServerTargetOf(action.target);
   const { credential, baseUrl } = await targetCredential(db, target);
   const prepared = prepare(
     target,
     baseUrl,
-    await ciServerValues(db, runId, target, 'args', 'dispatch'),
+    ciServerTemplateValues(target, 'args', 'dispatch', ref, place.commit),
     Object.entries(ciActionInputValues(action)),
   );
   // As the server: a request whose auth is `none` carries no credential, and one its credential refuses is unavailable.
   let reason = 'error' in prepared ? prepared.error : null;
   if (!reason && target.credentialId && 'url' in prepared && prepared.sendsCredential) {
     reason = credential
-      ? credentialRefusal(credential, { projectId, url: prepared.url, custom: target.preset === 'custom' })
+      ? credentialRefusal(credential, {
+          projectId: place.projectId,
+          url: prepared.url,
+          custom: target.preset === 'custom',
+        })
       : 'The credential this CI action names does not exist: pick another one.';
   }
-  const hasToken = !reason && !!credential && 'url' in prepared && prepared.sendsCredential;
-  return { available: !reason, reason, provider: 'ci-server', enabled: true, hasToken, action: ref };
+  if (!reason && place.kind === 'tests' && !place.args) reason = NO_RETRY_ARGS;
+  return { available: !reason, reason };
 }
 
-async function clusterTarget(db: DemoDB, clusterId: number) {
-  const [row] = await db
-    .select({ projectId: failureClusters.projectId, runId: failureClusters.lastSeenRunId })
-    .from(failureClusters)
-    .where(eq(failureClusters.id, clusterId));
-  return row ?? null;
+/** A place in the demo, or the error the server answers for its source. */
+async function demoPlace(
+  db: DemoDB,
+  projectId: number,
+  source: CiDispatchSource,
+  viewerId: number | null,
+): Promise<CiDispatchPlace> {
+  const found = await resolveCiDispatchPlace(db, projectId, source, viewerId);
+  if (!found.ok) throw demoHttpError(found.error === 'not-found' ? 404 : 400, found.message);
+  return found.place;
 }
 
-/** `GET /api/failure-clusters/:id/rerun` in the demo. */
-export async function demoClusterRerunInfo(db: DemoDB, clusterId: number, actionId?: string | null) {
-  const target = await clusterTarget(db, clusterId);
-  if (!target) throw demoHttpError(404, 'Failure cluster not found');
+/** A request's query keys as the server reads them: a key given more than once (`tags`) is a list. */
+export function demoQueryRecord(q: URLSearchParams | undefined): Record<string, string | string[]> {
+  const record: Record<string, string | string[]> = {};
+  for (const key of new Set(q?.keys() ?? [])) {
+    const values = q!.getAll(key);
+    record[key] = values.length > 1 ? values : values[0]!;
+  }
+  return record;
+}
+
+/** `GET /api/projects/:id/ci-actions/offered` in the demo. */
+export async function demoCiOffered(
+  db: DemoDB,
+  projectId: number,
+  source: CiDispatchSource,
+  viewerId: number | null,
+): Promise<CiOffered> {
+  const place = await demoPlace(db, projectId, source, viewerId);
+  const settings = await projectCiActions(db, projectId);
+  const actions = [];
+  for (const action of settings.actions.filter((a) => a.accepts.includes(place.kind))) {
+    const ready = await readiness(db, settings, place, demoPick(settings, place, action.id), place.branch);
+    actions.push(offeredCiAction(action, place, ready));
+  }
   return {
-    ...withRetryCases(
-      await availability(db, target.projectId, target.runId, actionId),
-      await clusterRerunCases(db, clusterId),
-    ),
-    lastDispatch: await clusterLastDispatch(db, clusterId),
+    enabled: settings.enabled,
+    kind: place.kind,
+    actions,
+    defaultActionId: demoPick(settings, place).action?.id ?? null,
+    lastDispatch: await ciPlaceLastDispatch(db, place),
   };
 }
 
-/** `GET /api/test-run-cases/:id/rerun` in the demo. */
-export async function demoExecutionRerunInfo(db: DemoDB, executionId: number) {
-  const target = await executionRerunTarget(db, executionId);
-  if (!target) throw demoHttpError(404, 'Test run case not found');
-  return {
-    ...withRetryCases(await availability(db, target.projectId, target.runId), [target.rerunCase]),
-    lastDispatch: await clusterLastDispatch(db, target.clusterId),
-  };
+/** `GET /api/projects/:id/ci-actions/:actionId/branches` in the demo: the run branches, the demo having no repository. */
+export async function demoCiBranches(
+  db: DemoDB,
+  projectId: number,
+  actionId: string,
+  q: string | null,
+): Promise<{ items: CiBranchOption[] }> {
+  const settings = await projectCiActions(db, projectId);
+  if (!settings.actions.some((a) => a.id === actionId)) throw demoHttpError(404, 'CI action not found');
+  return { items: ciBranchOptions(await projectRunBranches(db, projectId), [], q) };
 }
 
 function randomId(): string {
@@ -207,58 +232,60 @@ async function actorName(db: DemoDB, userId: number | null): Promise<string | nu
   return row ? row.name || row.username || null : null;
 }
 
-/** Record a re-run as the server dispatches it, without sending anything. */
-async function dispatch(
+/**
+ * `POST /api/projects/:id/ci-dispatches` in the demo: the request is checked
+ * as the server checks it, and a CI server action's dispatch is recorded as
+ * the server records it, without sending anything.
+ */
+export async function demoDispatchCi(
   db: DemoDB,
-  input: { projectId: number; runId: number; clusterId: number | null; cases: RetryCase[]; actionId?: string | null },
+  projectId: number,
+  request: CiDispatchRequest,
   userId: number | null,
-) {
-  const ready = withRetryCases(await availability(db, input.projectId, input.runId, input.actionId), input.cases);
-  if (!ready.available) throw demoHttpError(400, ready.reason ?? UNAVAILABLE);
-  const { settings } = await projectCiActions(db, input.projectId);
-  const action = pickRerunAction(settings, await runEnvironment(db, input.runId), input.actionId).action as
-    | (CiAction & { target: { type: 'ci-server' } })
-    | null;
-  if (!action) throw demoHttpError(400, NO_TARGET);
+): Promise<CiDispatchView> {
+  const place = await demoPlace(db, projectId, request.source, userId);
+  const settings = await projectCiActions(db, projectId);
+  const unknown = unknownCiActionMessage(settings, request.action);
+  if (unknown) throw demoHttpError(404, unknown);
+  const pick = demoPick(settings, place, request.action);
+  const problem = ciDispatchRequestProblem(pick, request);
+  if (problem) throw demoHttpError(400, problem);
+  const ref = request.ref ?? place.branch;
+  const ready = await readiness(db, settings, place, pick, ref);
+  const action = pick.action as (CiAction & { target: { type: 'ci-server' } }) | null;
+  if (!ready.available || !action) throw demoHttpError(400, ready.reason ?? NO_TARGET);
   const target = ciServerTargetOf(action.target);
-  const args = buildRetryArgs(input.cases);
-  if (!args) throw demoHttpError(400, NO_RETRY_ARGS);
   const id = randomId();
-  const values = await ciServerValues(db, input.runId, target, args, id);
+  const values = ciServerTemplateValues(target, place.args, id, ref, place.commit);
   const { baseUrl } = await targetCredential(db, target);
-  const prepared = prepare(target, baseUrl, values, Object.entries(ciActionInputValues(action)));
+  const inputs = ciDispatchInputValues(action, request.inputs, place.started);
+  const prepared = prepare(target, baseUrl, values, Object.entries(inputs));
   if ('error' in prepared) throw demoHttpError(400, prepared.error);
-  const record: ClusterRerunDispatch = {
+  const claim = await claimCiDispatch(db, {
     id,
+    projectId,
     actionId: action.id,
+    actionName: action.name,
+    origin: 'page',
+    kind: place.kind,
+    sourceRunId: place.runId,
+    clusterId: place.clusterId,
+    testCaseId: place.testCaseId,
     provider: 'ci-server',
     preset: target.preset,
-    url: prepared.link,
-    args,
     ref: values.ref || null,
-    files: rerunFiles(input.cases),
-    tests: input.cases.length,
-    at: Date.now(),
-    byName: await actorName(db, userId),
+    inputs,
+    args: place.args,
+    files: place.cases ? rerunFiles(place.cases) : null,
+    tests: place.cases ? place.cases.length : null,
     byUserId: userId,
-  };
-  if (input.clusterId != null) await recordClusterDispatch(db, input.clusterId, record);
-  return { ok: true, demo: true, dispatch: record };
-}
-
-/** `POST /api/failure-clusters/:id/rerun` in the demo. */
-export async function demoRerunCluster(db: DemoDB, clusterId: number, userId: number | null, actionId?: string | null) {
-  const target = await clusterTarget(db, clusterId);
-  if (!target) throw demoHttpError(404, 'Failure cluster not found');
-  return dispatch(db, { ...target, clusterId, cases: await clusterRerunCases(db, clusterId), actionId }, userId);
-}
-
-/** `POST /api/test-run-cases/:id/rerun` in the demo. */
-export async function demoRerunExecution(db: DemoDB, executionId: number, userId: number | null) {
-  const target = await executionRerunTarget(db, executionId);
-  if (!target) throw demoHttpError(404, 'Test run case not found');
-  const { projectId, runId, clusterId, rerunCase } = target;
-  return dispatch(db, { projectId, runId, clusterId, cases: [rerunCase] }, userId);
+    byName: await actorName(db, userId),
+  });
+  if (!claim.claimed) {
+    throw demoHttpError(409, 'The same dispatch was sent a moment ago.', undefined, { dispatch: claim.existing });
+  }
+  await settleCiDispatch(db, id, { url: prepared.link, ref: values.ref || null, providerRunId: null });
+  return (await getCiDispatch(db, id))!;
 }
 
 /** Refuse, as the server does, a save whose CI actions cannot dispatch. */
@@ -312,8 +339,7 @@ export async function demoCiActionCheck(
       : null;
     if (credentialProblem) throw demoHttpError(400, credentialProblem);
   } else {
-    const { settings } = await projectCiActions(db, projectId);
-    action = settings.actions.find((a) => a.id === actionId);
+    action = (await projectCiActions(db, projectId)).actions.find((a) => a.id === actionId);
   }
   if (!action) throw demoHttpError(404, 'CI action not found');
   const target = action.target;

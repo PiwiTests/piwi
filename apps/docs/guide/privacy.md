@@ -23,7 +23,7 @@ Every outbound call the server makes is listed below; all but two are opt-in.
 | A URL you attach as a link | When someone adds a link to a run, test or cluster | A request for its title (the git host's API for an issue or PR link) |
 | Your issue tracker (Jira) | Only if you [connect it](/features/issue-tracking) | Issue reads, and the issues and comments you file; avatars Jira names, fetched from Gravatar or Atlassian with no credentials |
 | Zephyr Scale Cloud | Only if you [connect it](/features/test-management) | A run's results |
-| Your CI server | Only if you [connect one](/features/ci-rerun) | The re-run or Flake Lab request |
+| Your CI server | Only if you [connect one](/features/ci-actions#ci-server) | The re-run or Flake Lab request |
 | Your SMTP server | Only if you configure [email notifications](/features/notifications) | Notification and account emails |
 | Slack, Teams or your webhook URLs | Only for subscriptions you create, and [report schedules](/features/quality-reports#report-schedules) that name the channel | The event payload (run status, cluster, test names, file paths, short error excerpts), or the quality report |
 | Your S3 endpoint | Only if you switch [storage](/operate/storage) to S3 | Trace files, HTML reports, attachments |

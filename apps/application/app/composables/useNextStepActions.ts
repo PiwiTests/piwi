@@ -5,11 +5,12 @@
  * its locator panel, its scroll anchors, how it sets the cluster status,
  * quarantines, re-runs) as callbacks, and the composable owns the shared
  * plumbing — the change's apply command, locator, download and open-in-IDE,
- * the recipe copy, the AI-prompt copy, the Flake Lab command and its CI
- * dispatch, the navigation (to an execution, a run and its tab) — so the
- * execution page and the cluster page never duplicate the switch.
+ * the recipe copy, the AI-prompt copy, the Flake Lab command, the navigation
+ * (to an execution, a run and its tab) — so the execution page and the cluster
+ * page never duplicate the switch.
  */
 import { reproScript, type ReproRecipe } from '#shared/reproduce';
+import type { FlakeLabKind } from '#shared/ci-dispatches';
 import type { NextStepChange } from '~/utils/next-step-change';
 
 /** The locator healing panel's exposed actions (see `LocatorHealingPanel`). */
@@ -52,8 +53,10 @@ export interface NextStepActionHandlers {
   setClusterStatus: (status: 'open' | 'resolved') => void | Promise<void>;
   /** Quarantine the (selected) test. */
   quarantine: (payload?: Record<string, unknown>) => void | Promise<void>;
-  /** Re-run the cluster's tests in CI. */
+  /** Open the run dialog on the page's tests, with CI picked. */
   rerunInCi: () => void | Promise<void>;
+  /** Open the run dialog on a test's Flake Lab experiment, with CI picked. */
+  flakeLabInCi: (testCaseId: number, kind: FlakeLabKind) => void | Promise<void>;
   /** Open the execution the payload names; defaults to navigating to its page. */
   openExecution?: (executionId: number) => void | Promise<void>;
   /** "What changed" — the cluster page scrolls, the execution page navigates. */
@@ -68,30 +71,6 @@ function patchTargetFile(patch: string): { filePath: string; line: number | null
   if (!file?.[1]) return null;
   const hunk = patch.match(/^@@ -\d+(?:,\d+)? \+(\d+)/m);
   return { filePath: file[1].trim(), line: hunk ? Number(hunk[1]) : null };
-}
-
-/** Dispatch a test's Flake Lab experiment to the project's Flake Lab CI target, and say how it went. */
-async function runFlakeLabInCi(testCaseId: number, kind: string) {
-  const toast = useToast();
-  try {
-    const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string } }>(
-      `/api/test-cases/${testCaseId}/flake-lab-ci`,
-      { method: 'POST', body: { kind } },
-    );
-    if (res.ok && res.dispatch) {
-      toast.add({
-        title: 'Flake Lab dispatched to CI',
-        description: 'The experiment shows on the Flakiness tab when it finishes.',
-        color: 'success',
-        actions: [{ label: 'Watch it', to: res.dispatch.url, target: '_blank', color: 'neutral', variant: 'outline' }],
-      });
-    } else {
-      toast.add({ title: 'Flake Lab not started', description: res.message ?? 'Not available.', color: 'warning' });
-    }
-  } catch (e: unknown) {
-    const message = (e as { data?: { message?: string } })?.data?.message ?? 'Dispatch failed.';
-    toast.add({ title: 'Flake Lab dispatch failed', description: message, color: 'error' });
-  }
 }
 
 export function useNextStepActions(handlers: NextStepActionHandlers) {
@@ -219,7 +198,9 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
         if (typeof payload?.command === 'string') copyPlain(payload.command, { toast: 'Lab command copied' });
         break;
       case 'flake-lab-ci':
-        if (typeof payload?.testCaseId === 'number') await runFlakeLabInCi(payload.testCaseId, String(payload.kind));
+        if (typeof payload?.testCaseId === 'number') {
+          await handlers.flakeLabInCi(payload.testCaseId, payload.kind === 'verify' ? 'verify' : 'reproduce');
+        }
         break;
       case 'flakiness-tab': {
         if (typeof payload?.testCaseId !== 'number') break;

@@ -78,7 +78,7 @@ just not aggregated across the suite.
 
 ## 6. Spend the parallelism you already have
 
-- **Worker imbalance** is called out in a run's [Timeline](/features/ui-overview#test-run-detail) tab, under the worker
+- **Worker imbalance** is called out in a run's [Timeline](/features/slow-tests#the-run-s-timeline) tab, under the worker
   distribution: if one worker finishes long after the others, the suite is as slow as its unluckiest shard, and no
   amount of per-test tuning fixes that.
 - **Sharding** is Playwright's own `--shard`; Piwi merges the shards back into [one

@@ -17,7 +17,8 @@
  *
  * The budgets (`scripts/lib/detail-page-budgets.mjs`) hold at 1280×800: at most
  * 15 text styles in the execution page's situation block and 13 in the cluster
- * page's, at most 25 controls in the navbar and the situation block, at most
+ * page's, at most 26 controls in the navbar and the situation block on the
+ * execution page and 25 on the cluster page's, at most
  * one solid primary button above the fold, and a Next step that copies a code
  * change shows that change in the block (distance 0). The script finds the Next
  * action by `data-next-action` and what it copies by `data-copies`, never by a

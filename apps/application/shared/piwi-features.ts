@@ -445,10 +445,19 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
       {
         title: 'Re-run in CI',
         summary:
-          'A cluster’s affected tests re-run in CI from its page: a GitHub, GitLab or Bitbucket pipeline, or a Jenkins job or any CI server one request reaches.',
+          'A cluster’s, a run’s or a test’s tests, or the whole suite, run in CI from the page’s run button: a GitHub, GitLab or Bitbucket pipeline, or a Jenkins job or any CI server one request reaches.',
+        needs: [],
+        where: 'The run button of a project, run, execution, test or cluster',
+        doc: 'features/ci-rerun',
+      },
+      {
+        title: 'CI actions',
+        summary:
+          'The named workflows, pipelines and jobs a project starts CI through, with their inputs, credential and a Check that reads the target without starting it.',
         needs: [],
         where: 'Project → Settings → CI',
-        doc: 'features/ci-rerun',
+        doc: 'features/ci-actions',
+        parent: 'Re-run in CI',
       },
       {
         title: 'CI merge gate',
@@ -975,6 +984,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         needs: ['desktop'],
         where: 'Desktop app',
         doc: 'features/desktop',
+      },
+      {
+        title: 'Run on this computer',
+        summary:
+          "The run button in the desktop app's window: a run's, an execution's, a cluster's or a test's tests run in the project's linked folder in one click, or from the run dialog with their options, beside the project's CI actions.",
+        needs: ['desktop'],
+        where: 'Desktop app → the run button of a run, an execution, a cluster or a test',
+        doc: 'features/run-on-this-computer',
       },
       {
         title: 'Desktop app runs',

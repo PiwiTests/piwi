@@ -45,6 +45,7 @@ describe('MCP tool modules', () => {
       set_test_quarantine: 'quarantine',
       get_repo_commits: 'scm',
       rerun_cluster_in_ci: 'scm',
+      get_ci_dispatch: 'scm',
       get_repo_diff: 'scm',
       get_network_requests: 'fixtures',
       get_slow_tests: 'fixtures',

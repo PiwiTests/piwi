@@ -36,9 +36,10 @@ const DEFAULT_BADGES: Record<CiActionKind, string> = {
   tests: 'Default for re-runs',
   flakeLab: 'Default for Flake Lab',
   suite: 'Default for Run on CI',
+  tags: 'Default for tagged tests',
 };
-/** The badges in the order the editor lists the defaults. */
-const BADGE_KINDS: CiActionKind[] = ['tests', 'flakeLab', 'suite'];
+/** The order the badges show in. */
+const BADGE_KINDS: CiActionKind[] = ['tests', 'flakeLab', 'suite', 'tags'];
 
 const { byId: environmentById } = useProjectEnvironments(() => props.projectId);
 

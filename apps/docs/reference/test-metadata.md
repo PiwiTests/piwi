@@ -209,7 +209,7 @@ test.describe('payments', { lock: ['database', 'external-api'] }, () => { /* eve
 
 The reporter reads the lock names and sends them as `locks`, stored on the execution (`test_runs_cases.locks`) and
 denormalized onto the test case (`test_cases.locks`, the latest declaration) — the same treatment as tags. They power
-the [Timeline tab's lock lanes and *Locks* table](/features/ui-overview#test-run-detail), the `lock:` search qualifier on
+the [Timeline tab's lock lanes and *Locks* table](/features/slow-tests#the-run-s-timeline), the `lock:` search qualifier on
 the Tests tabs and *Group by lock* on a run's, lock badges on every test row, and two [clues](/features/evidence#clues) (a lock's previous holder failed;
 a lock was held on two shards at once).
 

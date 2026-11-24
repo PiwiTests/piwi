@@ -65,6 +65,7 @@ export const PROJECT = {
   DESKTOP_LOCAL_RUN_UNNAMED: 'desktop-local-run-unnamed-test',
   DESKTOP_REPRO: 'desktop-repro-test',
   DESKTOP_REPRODUCE: 'desktop-reproduce-test',
+  DESKTOP_RUN_BUTTON: 'desktop-run-button-test',
   DESKTOP_RUN_VIEW: 'desktop-run-view-test',
   DESKTOP_SKILLS: 'desktop-skills-test',
   DIAGNOSE_STREAM: 'diagnose-stream-test',
@@ -184,9 +185,11 @@ export const PROJECT = {
   REPORT_SHARE_LINKS: 'report-share-links-test',
   REPORTS_DETAILS: 'reports-details-project',
   REVOKED_KEY: 'revoked-key-test',
+  RUN_BUTTON: 'run-button-test',
   RUN_CHANGES_FALLBACK: 'run-changes-fallback-test',
   RUN_COMPARE: 'run-compare',
   RUN_DELETE_MANY: 'run-delete-many-test',
+  RUN_DIALOG_TAGS: 'run-dialog-tags-test',
   RUN_ERRORS_COLLAPSE: 'run-errors-collapse-test',
   RUN_GOES_LIVE: 'run-goes-live-test',
   RUN_KEEP_OTHER: 'run-keep-other-test',
@@ -243,6 +246,8 @@ export const PROJECT = {
   VIDEO_CHECKLIST_SEARCH: 'video-checklist-search-test',
   VIDEO_MAXIMIZE: 'video-maximize-test',
   VIDEO_REVIEW_FIT: 'video-review-fit-test',
+  WAITING_RUNS_AUTH: 'waiting-runs-auth-test',
+  WAITING_RUNS: 'waiting-runs-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];

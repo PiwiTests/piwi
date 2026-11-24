@@ -915,12 +915,12 @@ function buildMetadata(opts: {
 }): Record<string, unknown> {
   const buildNumber = String(1340 + Math.floor(Math.random() * 60));
   return {
+    // The checkout suite runs in the Jenkins job its CI action re-runs failures in, as the seeded runs do.
     ci: {
-      provider: 'GitHub Actions',
+      provider: 'Jenkins',
       buildNumber,
-      jobName: 'e2e-checkout',
-      workflow: 'CI',
-      buildUrl: `https://github.com/acme/shop/actions/runs/${buildNumber}`,
+      jobName: 'checkout',
+      buildUrl: `https://jenkins.example.com/job/checkout/${buildNumber}/`,
     },
     scm: {
       commit: randomCommitSha(),
@@ -1250,7 +1250,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         branch: 'main',
         author: 'Fiona Mehta',
         commitMessage: 'feat: deploy pipeline v2',
-        ciInfo: { provider: 'GitHub Actions', runId: '12345678', workflow: 'ci.yml' },
+        ciInfo: { provider: 'Jenkins', job: 'checkout' },
       }),
     tests: () => baseTests({ durationFactor: 0.8 }),
   },
@@ -1274,7 +1274,7 @@ export const DEMO_SCENARIOS: DemoScenario[] = [
         branch: 'main',
         author: 'Fiona Mehta',
         commitMessage: 'ci: run the checkout suite in Firefox too',
-        ciInfo: { provider: 'GitHub Actions', runId: '12345702', workflow: 'ci.yml' },
+        ciInfo: { provider: 'Jenkins', job: 'checkout' },
       }),
     // Playwright hands each shard a contiguous slice of the run's tests, project by project, so two projects of the
     // same size give each shard one browser. Interleaved, the round-robin split does the same: shard 1 runs every

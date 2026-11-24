@@ -160,7 +160,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'runs' } }],
     describes:
-      'The runs table of the Runs tab: tick two runs and Compare to see what changed between them, or tick any number to delete them.',
+      'The Runs tab’s runs table, below a row for each CI dispatch or own run request still going: tick two runs to Compare what changed, or any to delete them.',
     doc: 'features/run-changes',
     sample: { route: '/projects/1?tab=runs', expect: PROJECT_1 },
   },
@@ -517,7 +517,7 @@ export const PROJECTS_ANCHORS = [
     reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
       'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, each CI server one naming its credential.',
-    doc: 'features/ci-rerun',
+    doc: 'features/ci-actions',
     requires: { permission: 'project:manage' },
     sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
   },
@@ -527,9 +527,9 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
-      'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests, with inputs and defaults, that re-run tests or a Flake Lab experiment.',
+      'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests that re-run tests, run the suite, tagged tests or a Flake Lab experiment.',
     help: 'project.ci-rerun',
-    doc: 'features/ci-rerun',
+    doc: 'features/ci-actions',
     requires: { permission: 'project:manage' },
     sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
   },
@@ -753,7 +753,7 @@ export const PROJECTS_ANCHORS = [
       'The Local folder section of the desktop app: the checkout on this machine that runs the project’s tests and opens its files in your IDE.',
     requires: { desktop: true },
     help: 'project.local-folder',
-    doc: 'features/desktop#running-tests-from-the-app',
+    doc: 'features/desktop#projects-from-local-folders',
     sample: { route: '/projects/1?tab=settings&section=local-folder', expect: PROJECT_1, surface: 'desktop' },
   },
 

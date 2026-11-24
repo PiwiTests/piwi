@@ -84,6 +84,9 @@ import {
 } from '#shared/handlers/cluster-merge-suggestions';
 import { approveSuggestedMerge } from '../merge-suggestion-approve';
 import { rerunClusterInCi } from '../ci-rerun';
+import { findCiDispatch } from '#shared/handlers/ci-dispatches';
+import { ciDispatchForReader } from '#shared/ci-dispatches';
+import { ciDispatchRequestOf } from '#shared/ci-dispatch-request';
 import { createEnrichedLink } from '../integrations/link-create';
 import { computeRunInsights } from '#shared/handlers/run-insights';
 import { searchProjectsTestRunsCases } from '#shared/handlers/search';
@@ -3032,19 +3035,59 @@ const HANDLERS: Record<McpToolName, McpToolHandler> = {
   async rerun_cluster_in_ci(db, params, ctx) {
     const id = numericParam(params.clusterId, 'clusterId');
     if ((await checkEntityScope(db, ctx, id, resolveClusterProjectId, 'run:control')) === 'not-found') return null;
-    const action = typeof params.action === 'string' ? params.action.trim().slice(0, 100) : '';
+    const action = typeof params.action === 'string' ? params.action.trim().slice(0, 100) : params.action;
+    // The branch and the inputs are read as `POST /api/projects/:id/ci-dispatches` reads them.
+    const request = ciDispatchRequestOf({ from: 'cluster', clusterId: id }, { ...params, action });
+    if (!request.ok) throw new Error(request.message);
     const outcome = await rerunClusterInCi(
       db,
       id,
       { id: ctx.user?.id || null, name: ctx.user?.name || ctx.user?.username || null, apiKeyId: ctx.apiKeyId ?? null },
-      { actionId: action || undefined },
+      {
+        actionId: request.value.action ?? undefined,
+        origin: 'mcp',
+        ref: request.value.ref,
+        inputs: request.value.inputs,
+      },
     );
-    if (!outcome.ok) {
-      if (outcome.error === 'not-found') return null;
-      throw new Error(outcome.message);
-    }
-    const { provider, url, args, at, actionId } = outcome.dispatch;
-    return dropNulls({ clusterId: id, actionId, provider, url, args, dispatchedAt: iso(at) });
+    if (!outcome.ok) throw new Error(outcome.message);
+    const { id: dispatchId, state, provider, url, args, ref, at, actionId } = outcome.dispatch;
+    return dropNulls({ clusterId: id, dispatchId, state, actionId, provider, url, args, ref, dispatchedAt: iso(at) });
+  },
+
+  // ── get_ci_dispatch ────────────────────────────────────────────────────────
+  async get_ci_dispatch(db, params, ctx) {
+    const dispatchId = typeof params.dispatchId === 'string' ? params.dispatchId.trim() : '';
+    if (!/^[0-9a-f]{16}$/.test(dispatchId)) throw new Error('dispatchId must be the 16 hex digits of a dispatch id');
+    const found = await findCiDispatch(db, dispatchId);
+    // A dispatch of a project outside the caller's scope answers as one that does not exist.
+    if (!found || !scopeAllows(ctx.scope, found.projectId)) return null;
+    const d = found.dispatch;
+    return dropNulls({
+      id: d.id,
+      projectId: found.projectId,
+      state: d.state,
+      kind: d.kind,
+      origin: d.origin,
+      actionId: d.actionId,
+      actionName: d.actionName,
+      provider: d.provider,
+      preset: d.preset,
+      url: d.url,
+      args: d.args,
+      ref: d.ref,
+      tests: d.tests,
+      detail: ciDispatchForReader(d, can(ctx.access, 'run:control', found.projectId)).detail,
+      runId: d.runId,
+      run: d.run && {
+        status: d.run.status,
+        totalTests: d.run.totalTests,
+        passedTests: d.run.passedTests,
+        failedTests: d.run.failedTests,
+      },
+      dispatchedAt: iso(d.at),
+      byName: d.byName,
+    });
   },
 
   // ── set_cluster_bisect ─────────────────────────────────────────────────────
