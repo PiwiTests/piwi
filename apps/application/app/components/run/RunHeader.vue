@@ -17,7 +17,7 @@ import { runStartedFrom } from '#shared/run-started-from';
 import { readRunCoverageGaps } from '#shared/run-coverage-gaps';
 import { coverageGapDetail } from '~/utils/combined-coverage';
 import type { LocalRunSet } from '~/composables/useDesktopLocalRuns';
-import type { RunOnMyMachineChoice } from '~/composables/useRunOnMyMachine';
+import type { RunWhat } from '~/composables/useRunPlace';
 import { retryProjects as retryProjectsOf } from '~/utils/retry-command';
 import { RUN_REQUEST_LIMITS } from '@piwitests/core/run-request';
 import { disagreeingFields, serverWarnings } from '#shared/environment-snapshots';
@@ -294,31 +294,49 @@ const rerunSets = computed<LocalRunSet[]>(() => {
 });
 const rerunMain = computed(() => rerunSets.value[0] ?? null);
 
-/** What Run on my machine sends from a run: its failed tests when it has some, and all its tests. */
-const machineChoices = computed<RunOnMyMachineChoice[]>(() => {
+/**
+ * What the run button runs from a run: its failed tests when it has some (a re-run, which picks CI's default action
+ * first), and every test. An app runs the run's own tests, at most `RUN_REQUEST_LIMITS.tests.max`; CI runs the
+ * action's whole suite on the run's branch.
+ */
+const runWhats = computed<RunWhat[]>(() => {
   const runId = props.testRun?.id;
   if (!runId) return [];
   const max = RUN_REQUEST_LIMITS.tests.max;
-  const choices: RunOnMyMachineChoice[] = [];
-  const failed = failedCases.value.length;
-  if (failed && failed <= max) {
-    choices.push({
+  const tooMany = { reason: `A request holds at most ${max} tests.` };
+  const whats: RunWhat[] = [];
+  const failed = failedCases.value;
+  if (failed.length) {
+    whats.push({
+      key: 'failed',
       label: 'The failed tests',
-      count: failed,
-      source: { runId, tests: 'failed' },
-      projects: retryProjects.value,
+      count: failed.length,
+      tests: failed.map((c) => c.title),
+      app: failed.length <= max ? { source: { runId, tests: 'failed' }, projects: retryProjects.value } : tooMany,
+      ci: { source: { runId, tests: 'failed' } },
     });
   }
-  const all = everyCase.value.length;
-  if (all && all <= max) {
-    choices.push({
-      label: 'All the tests of the run',
-      count: all,
-      source: { runId, tests: 'all' },
-      projects: retryProjectsOf(everyCase.value),
+  const every = everyCase.value;
+  if (every.length) {
+    whats.push({
+      key: 'all',
+      label: 'Every test',
+      count: every.length,
+      app: every.length <= max ? { source: { runId, tests: 'all' }, projects: retryProjectsOf(every) } : tooMany,
+      ci: {
+        source: { runId },
+        note: 'On CI, the action’s whole suite runs on the run’s branch: it differs from this run’s tests when the run ran some of them only.',
+      },
     });
   }
-  return choices;
+  return whats;
+});
+const runPlace = useRunPlace({
+  projectId: props.testRun.projectId,
+  machine: await useRunOnMyMachine(props.testRun.projectId, props.testRun.machineRuns ?? false),
+  whats: () => runWhats.value,
+  prefersCi: () => failedCases.value.length > 0,
+  shownEnvironment: () => shownEnvironment.value,
 });
 
 const desktopBridge = ref(false);
@@ -481,14 +499,8 @@ function onLabelKeydown(e: KeyboardEvent) {
         :other-sets="rerunSets.slice(1)"
       />
 
-      <RunOnMyMachineButton
-        v-if="testRun?.projectId && machineChoices.length"
-        :project-id="testRun.projectId"
-        :machine-runs="testRun.machineRuns ?? false"
-        :choices="machineChoices"
-        :shown-environment-id="testRun.environmentId ?? null"
-        :shown-environment="shownEnvironment"
-      />
+      <RunButton :place="runPlace" />
+      <RunDialog :place="runPlace" />
 
       <UButton
         v-if="primaryReport"

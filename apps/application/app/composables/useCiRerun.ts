@@ -1,4 +1,3 @@
-import type { MaybeRefOrGetter } from 'vue';
 import type { CiDispatchView } from '#shared/ci-dispatches';
 import type { CiDispatchSourceInput, CiOffered } from '#shared/ci-dispatch-request';
 
@@ -72,56 +71,4 @@ export async function useRerunInfo(key: string, place: () => RerunInfoPlace | nu
     { default: (): RerunInfo | null => null },
   );
   return { rerunInfo: data, refreshRerun: refresh };
-}
-
-/**
- * Dispatch a place's CI re-run (a cluster's affected tests, or one
- * execution's test) through `POST /api/projects/:id/ci-dispatches`, with the
- * place's default action. The failure pages read the `RerunInfo` with
- * {@link useRerunInfo} and share this POST and its toasts, which say what
- * re-runs (`started`, one sentence) and link to the provider's runs; the
- * caller refreshes the info afterwards.
- */
-export function useCiRerun(
-  place: MaybeRefOrGetter<CiRerunPlace | null | undefined>,
-  refreshRerun: () => unknown,
-  started: MaybeRefOrGetter<string> = 'The affected tests are re-running in CI.',
-) {
-  const toast = useToast();
-  const rerunning = ref(false);
-
-  async function triggerRerun() {
-    const target = toValue(place);
-    if (!target || rerunning.value) return;
-    rerunning.value = true;
-    try {
-      const dispatch = await $fetch<CiDispatchView>(`/api/projects/${target.projectId}/ci-dispatches`, {
-        method: 'POST',
-        body: { source: target.source },
-      });
-      const watch = dispatch.url;
-      toast.add({
-        title: 'CI re-run dispatched',
-        description: toValue(started),
-        color: 'success',
-        ...(watch
-          ? { actions: [{ label: 'Watch it', to: watch, target: '_blank', color: 'neutral', variant: 'outline' }] }
-          : {}),
-      });
-      await refreshRerun();
-    } catch (e: unknown) {
-      const error = e as { statusCode?: number; data?: { message?: string }; message?: string };
-      const message = error?.data?.message ?? 'Dispatch failed.';
-      if (error?.statusCode === 409) {
-        toast.add({ title: 'CI re-run already dispatched', description: message, color: 'neutral' });
-        await refreshRerun();
-        return;
-      }
-      toast.add({ title: 'CI re-run failed', description: message, color: 'error' });
-    } finally {
-      rerunning.value = false;
-    }
-  }
-
-  return { rerunning, triggerRerun };
 }

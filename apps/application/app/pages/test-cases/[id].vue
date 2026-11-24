@@ -88,6 +88,20 @@ const showPathVariation = computed(
 const showFlakiness = computed(() => (testCase.value?.flakyRuns ?? 0) > 0 && !capabilityHidden('flake-lab'));
 const visibleTabs = computed(() => TABS.filter((t) => t.value !== 'flakiness' || showFlakiness.value));
 
+// The run button: this test by its newest execution, and for a flaky test its Flake Lab experiments, which CI runs.
+const runPlace = useRunPlace({
+  projectId: testCase.value?.project?.id ?? 0,
+  machine: await useRunOnMyMachine(testCase.value?.project?.id ?? 0),
+  whats: () => {
+    const tc = testCase.value;
+    if (!tc?.lastExecutionId) return [];
+    const whats = [executionTestWhat(tc.lastExecutionId, testLabel(tc))];
+    if (showFlakiness.value) whats.push(flakeLabWhat(tc.id, 'reproduce'), flakeLabWhat(tc.id, 'verify'));
+    return whats;
+  },
+  prefersCi: () => false,
+});
+
 const router = useRouter();
 const activeTab = computed<TabValue>({
   get: () => {
@@ -209,11 +223,8 @@ useViewScroll(
               :run-title="testCase ? testLabel(testCase) : null"
               :preset-options="REPEAT_PRESET"
             />
-            <RunOnMyMachineButton
-              v-if="testCase?.project?.id && testCase.lastExecutionId"
-              :project-id="testCase.project.id"
-              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.lastExecutionId } }]"
-            />
+            <RunButton :place="runPlace" />
+            <RunDialog :place="runPlace" />
             <TestCaseMergeButton
               v-if="testCase?.project"
               :test-case-id="testCase.id"

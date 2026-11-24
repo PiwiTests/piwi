@@ -333,7 +333,20 @@ const rerunPlace = computed(() =>
 const { rerunInfo, refreshRerun } = await useRerunInfo(`failure-cluster-rerun-${clusterId}`, () =>
   rerunPlace.value ? { ...rerunPlace.value, clusterId, mayDispatch: canRerun.value } : null,
 );
-const { rerunning, triggerRerun } = useCiRerun(rerunPlace, refreshRerun);
+// The run button, in the navbar and in Verify: the affected tests, which CI re-runs.
+const runPlace = useRunPlace({
+  projectId: clusterProjectId.value ?? 0,
+  machine: await useRunOnMyMachine(clusterProjectId.value ?? 0),
+  whats: () => [
+    clusterTestsWhat(
+      'Its affected tests',
+      { clusterId },
+      affectedCases.value.map((c) => c.title),
+    ),
+  ],
+  prefersCi: () => true,
+  onDispatched: () => refreshRerun(),
+});
 
 function refresh() {
   void reloadCluster();
@@ -516,12 +529,6 @@ const moreMenuItems = computed<DropdownMenuItem[][]>(() => {
       'data-tour': 'quarantine-all-tests',
       onSelect: () => quarantineAll.value?.trigger(),
     });
-  if (canRerun.value && rerunInfo.value?.available)
-    testActions.push({
-      label: 'Re-run in CI',
-      icon: 'i-lucide-refresh-cw',
-      onSelect: () => void triggerRerun(),
-    });
 
   const copies: DropdownMenuItem[] = [
     { label: 'Copy summary', icon: 'i-lucide-clipboard-list', onSelect: copyCluster },
@@ -624,7 +631,6 @@ const { setClusterStatus } = useClusterTriage(clusterId, { onSaved: () => refres
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => clusterId,
-  projectId: () => clusterProjectId.value,
   change: () => nextStepChange.value,
   ideProject: () => cluster.value?.project ?? null,
   locatorPanel: () => clusterLocatorPanel.value,
@@ -639,7 +645,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
       if (ok) refresh();
     }
   },
-  rerunInCi: () => triggerRerun(),
+  rerunInCi: () => runPlace.openDialog({ where: 'ci' }),
+  flakeLabInCi: (id, kind) => runPlace.openDialog({ whats: [flakeLabWhat(id, kind)], where: 'ci' }),
   whatChanged: () => scrollToEl(scmEl.value ?? whatChangedLine.value?.$el ?? null),
   reDiagnose: () => onDiagnosisPanel((panel) => panel.reDiagnose?.(), true),
 });
@@ -688,6 +695,7 @@ const breadcrumbItems = computed(() => [
           <BreadcrumbNav :items="breadcrumbItems" />
         </template>
         <template #right>
+          <RunButton :place="runPlace" />
           <ShareLinksModal
             v-if="cluster && offersShareLinks"
             :endpoint="`/api/failure-clusters/${cluster.id}/share-links`"
@@ -995,6 +1003,7 @@ const breadcrumbItems = computed(() => [
                   :run-title="`${affectedTestsLabel} of cluster #${cluster.id}`"
                   :source-run-id="cluster.lastSeenRunId"
                 />
+                <RunButton :place="runPlace" />
                 <ClientOnly>
                   <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
                 </ClientOnly>
@@ -1067,6 +1076,8 @@ const breadcrumbItems = computed(() => [
     :known-issue-key="knownIssue?.key ?? null"
     @linked="onIssueChanged"
   />
+
+  <RunDialog :place="runPlace" />
 
   <!-- Bulk actions triggered from the More menu. -->
   <QuarantineAllButton

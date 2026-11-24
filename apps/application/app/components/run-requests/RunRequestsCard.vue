@@ -113,7 +113,8 @@ function what(request: RunRequestView): string {
       </div>
     </div>
     <p v-else class="text-center text-muted py-6 text-sm">
-      None yet. Open a run or a test and click <strong>Run on my machine</strong>.
+      None yet. Open a run, an execution or a test, click its <strong>Run on my machine</strong> button and pick one of
+      your apps.
     </p>
   </SectionCard>
 </template>

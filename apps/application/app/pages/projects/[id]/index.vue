@@ -74,6 +74,14 @@ const { can } = useAuth();
 // Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
+// The run button: the project's whole suite on its default branch, which only CI runs.
+const runPlace = useRunPlace({
+  projectId: Number(projectId),
+  machine: await useRunOnMyMachine(Number(projectId)),
+  whats: () => [{ key: 'suite', label: 'The whole suite', wholeSuite: true, app: null, ci: { source: {} } }],
+  prefersCi: () => true,
+});
+
 // *Quality report*: this project as a quality report over the last 30 days, the project page's own window.
 const reportOpen = ref(false);
 const reportQuery = computed(() => ({ projects: String(projectId), period: 'last-30d' }));
@@ -1001,6 +1009,8 @@ const moreMenuItems = computed(() => {
         </template>
         <template #right>
           <div class="flex items-center gap-1.5 shrink-0">
+            <RunButton :place="runPlace" size="sm" />
+            <RunDialog :place="runPlace" />
             <SubscribeBell
               v-if="!projCapHidden('notifications')"
               :project-id="parseInt(projectId)"

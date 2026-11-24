@@ -347,28 +347,26 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
   onApplied: () => Promise.all([refresh(), refreshFixedBefore()]),
 });
 
-const { rerunning: rerunningTest, triggerRerun: triggerTestRerun } = useCiRerun(
-  testRerunPlace,
-  refreshRerun,
-  'This test is re-running in CI.',
-);
-const { rerunning, triggerRerun } = useCiRerun(
-  () =>
-    failureCluster.value && executionProjectId.value
-      ? { projectId: executionProjectId.value, source: { clusterId: failureCluster.value.id } }
-      : null,
-  refreshRerun,
-  "The cluster's tests are re-running in CI.",
-);
+// The run button: this test, and every test of its cluster, which CI re-runs; a request to an app names the test only.
+const runPlace = useRunPlace({
+  projectId: executionProjectId.value ?? 0,
+  machine: await useRunOnMyMachine(executionProjectId.value ?? 0),
+  whats: () => {
+    const tc = testCase.value;
+    if (!tc) return [];
+    const whats = [executionTestWhat(tc.id, testLabel(tc))];
+    if (failureCluster.value) {
+      whats.push(clusterTestsWhat('Every test of its cluster', { executionId: tc.id, scope: 'cluster' }));
+    }
+    return whats;
+  },
+  prefersCi: () => true,
+  shownEnvironment: () => testCase.value?.testRun?.environmentId ?? null,
+  onDispatched: () => refreshRerun(),
+});
 
-/** Whether this viewer can start a CI re-run from here: they may, and one can be sent. */
-const canSendRerun = computed(() => canRerun.value && Boolean(rerunInfo.value?.available));
-
-/**
- * The Verify section shows when this viewer can start a CI re-run, and to every viewer once a re-run happened; the
- * desktop app re-runs the test from the navbar.
- */
-const showVerify = computed(() => canSendRerun.value || Boolean(rerunInfo.value?.lastDispatch));
+/** The Verify section shows the cluster's last re-run in CI, to every viewer; the run button starts one. */
+const showVerify = computed(() => Boolean(rerunInfo.value?.lastDispatch));
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -402,10 +400,7 @@ const reproduceSummary = computed(() =>
     Boolean(reproduceData.value?.bisect?.available),
   ),
 );
-const verifySummary = computed(() => {
-  if (!canSendRerun.value) return 'When CI last re-ran it';
-  return failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI';
-});
+const verifySummary = 'When CI last re-ran its cluster, and the run that answered';
 
 // ── Header: identity, exceptional badges ─────────────────────────────────────
 /** The execution was ended at a stop (End the test): its status chip says so, in place of Skipped. */
@@ -808,7 +803,6 @@ const { setClusterStatus } = useClusterTriage(() => failureCluster.value?.id ?? 
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => failureCluster.value?.id ?? null,
-  projectId: () => executionProjectId.value,
   change: () => nextStepChange.value,
   ideProject: () => testCase.value?.testRun?.project ?? null,
   locatorPanel: () => locatorPanel.value,
@@ -821,7 +815,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
   },
   setClusterStatus,
   quarantine: () => toggleQuarantine(),
-  rerunInCi: () => triggerTestRerun(),
+  rerunInCi: () => runPlace.openDialog({ what: 'test', where: 'ci' }),
+  flakeLabInCi: (id, kind) => runPlace.openDialog({ whats: [flakeLabWhat(id, kind)], where: 'ci' }),
   whatChanged: () => {
     if (failureCluster.value) navigateTo(`/failure-clusters/${failureCluster.value.id}`);
   },
@@ -871,13 +866,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
               :source-run-id="testCase?.testRun?.id"
               :environment-id="testCase?.testRun?.environmentId ?? null"
             />
-            <RunOnMyMachineButton
-              v-if="testCase?.testRun?.project?.id"
-              class="mr-2"
-              :project-id="testCase.testRun.project.id"
-              :choices="[{ label: 'This test', count: 1, source: { executionId: testCase.id } }]"
-              :shown-environment-id="testCase.testRun.environmentId ?? null"
-            />
+            <RunButton :place="runPlace" class="mr-2" />
             <NuxtLink
               v-if="testCase?.testCaseId"
               :to="`/test-cases/${testCase.testCaseId}`"
@@ -1171,37 +1160,11 @@ const { handle: handleNextStepAction } = useNextStepActions({
               />
             </template>
 
-            <!-- Re-run this test, or its cluster's tests, in CI -->
+            <!-- The cluster's last re-run in CI -->
             <template v-if="showVerify" #verify>
-              <div class="flex flex-wrap items-center gap-2">
-                <UButton
-                  v-if="canSendRerun"
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-refresh-cw"
-                  title="Dispatches CI to run this test at its line, in its Playwright project, on the branch of its run"
-                  :loading="rerunningTest"
-                  @click="triggerTestRerun"
-                >
-                  Re-run this test in CI
-                </UButton>
-                <UButton
-                  v-if="canSendRerun && failureCluster"
-                  size="xs"
-                  color="neutral"
-                  variant="outline"
-                  icon="i-lucide-refresh-cw"
-                  title="Dispatches CI to run each test of this failure's cluster at the line of its latest failure"
-                  :loading="rerunning"
-                  @click="triggerRerun"
-                >
-                  Re-run the cluster in CI
-                </UButton>
-                <ClientOnly>
-                  <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
-                </ClientOnly>
-              </div>
+              <ClientOnly>
+                <CiRerunLastDispatch v-if="rerunInfo?.lastDispatch" :dispatch="rerunInfo.lastDispatch" />
+              </ClientOnly>
             </template>
 
             <!-- Reproduce locally, then bisect the regression -->
@@ -1250,6 +1213,8 @@ const { handle: handleNextStepAction } = useNextStepActions({
       </div>
     </template>
   </UDashboardPanel>
+
+  <RunDialog :place="runPlace" />
 
   <!-- Link an issue to the execution's cluster: its known issue, on every execution of it. -->
   <LinkIssueModal

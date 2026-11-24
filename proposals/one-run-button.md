@@ -20,10 +20,18 @@ branch mode (D6) and the choice inputs against the action (D7); the reads of a d
 the actions offered for a place, with each one's branch mode, inputs and readiness, the D2 default and the place's last
 dispatch; the branches an action may run on; `rerun_cluster_in_ci`'s `ref` and `inputs`, and `get_ci_dispatch` (D16).
 The per-place routes are gone (Q5), and the cluster and execution pages, and the Flake Lab next step, dispatch through
-the new route with the toasts they had. `RunFollowUp`, which replaces those toasts, moves to PR 4 with the dialog. A
-dispatch in the demo stays `dispatched`: moving it to `running` and `ended` against a seeded run remains, with PR 4
-and the rest. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379)
-and is recorded in [ci-actions.md](../adr/ci-actions.md).
+the new route. PR 4 is built: `RunButton` and `RunDialog` on every place under [Per place](#per-place), Run on my
+machine's modal folded into the dialog, the cluster's ⋮ entry and the execution's Verify buttons gone. The dialog
+opens on the last Where, kept per browser and per project, else the D2 default; lists the person's apps and the
+project's CI actions, a row that cannot take the What disabled with the reason; and shows the fields of the pick (an
+app's environment and run options, a CI action's branch by its mode, its choices and its fixed inputs). The chevron
+holds the D3 one-click runs, and the Next actions `rerun-in-ci` and `flake-lab-ci` open the dialog on CI.
+`RunFollowUp` shows a request and a dispatch through one view (`#shared/run-follow-up`), after Send and in "Last
+re-run", reading a dispatch every 5 then 30 seconds, with the likely causes after 30 minutes and a toast when its run
+reports. The docs moved the CI actions' configuration to a page of its own. A dispatch in the demo stays `dispatched`:
+moving it to `running` and `ended` against a seeded run remains for a later pull request. Step 1 of #1292, the CI actions,
+shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in
+[ci-actions.md](../adr/ci-actions.md).
 
 ## What existed
 
