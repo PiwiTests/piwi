@@ -127,7 +127,7 @@ describe('GitHub', () => {
     for (let i = 0; i < 45; i++) repo.files[`.github/workflows/w${String(i).padStart(2, '0')}.yml`] = 'on: push\n';
     const listing = await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
     expect(listing).toMatchObject({ jobs: [], truncated: true, message: expect.stringContaining('first 40') });
-    expect(repo.asked.filter(([path]) => path.startsWith('.github/'))).toHaveLength(40);
+    expect(repo.asked.filter(([path]) => path?.startsWith('.github/'))).toHaveLength(40);
   });
 
   test('lists and reads a workflow whose file name holds a space', async () => {
