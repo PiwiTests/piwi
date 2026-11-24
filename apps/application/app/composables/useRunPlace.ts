@@ -233,12 +233,14 @@ export async function useRunPlace(options: RunPlaceOptions) {
   );
   const ciAvailable = computed(() => mayDispatch.value && options.whats().some(ciTakes));
   // ── This computer, in the desktop window ─────────────────────────────────
-  /** The Where last sent to here, which the button's face follows. */
-  const keptWhere = ref<string | null>(null);
-  onMounted(() => (keptWhere.value = keptRunWhere(projectId)));
+  /** The Where last sent to in each project, from any place of the window, which the button's face follows. */
+  const keptWhere = useState<Record<number, string | null>>('run-place-kept-where', () => ({}));
+  onMounted(() => {
+    if (keptWhere.value[projectId] === undefined) keptWhere.value[projectId] = keptRunWhere(projectId);
+  });
   function keep(sentTo: string) {
     keepRunWhere(projectId, sentTo);
-    keptWhere.value = sentTo;
+    keptWhere.value[projectId] = sentTo;
   }
   const here = useThisComputer({
     projectId,
@@ -249,6 +251,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
         .whats()
         .slice(1)
         .flatMap((w) => localSetOf(w.local) ?? []),
+    offered: () => options.whats().some((w) => w.local != null),
     onRun: () => keep('local'),
   });
   const hereTakes = (list: RunWhat[]) => here.available && list.some((w) => localSetOf(w.local));
@@ -256,7 +259,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
   const mainHere = computed(() => {
     const first = options.whats()[0];
     if (!here.takesMain) return false;
-    const kept = keptWhere.value;
+    const kept = keptWhere.value[projectId];
     const offer = first ? offered[first.key] : undefined;
     return !(
       kept?.startsWith('ci:') &&
@@ -476,7 +479,13 @@ export async function useRunPlace(options: RunPlaceOptions) {
           : defaultWhere(w, true)) ?? undefined;
   }
   // The dialog's fields of This computer follow the What it runs here.
-  watch([open, localPick], () => here.showInDialog(open.value ? localPick.value : null));
+  watch([open, localPick], () =>
+    here.showInDialog(
+      open.value ? localPick.value : null,
+      what.value?.key ?? null,
+      what.value?.key === options.whats()[0]?.key,
+    ),
+  );
 
   /** Back to the form, on the What and Where of the last run while the dialog still offers them. */
   async function newRun() {

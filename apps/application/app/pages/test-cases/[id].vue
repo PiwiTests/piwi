@@ -96,11 +96,16 @@ const runPlace = await useRunPlace({
   machine: await useRunOnMyMachine(testCase.value?.project?.id ?? 0),
   whats: () => {
     const tc = testCase.value;
-    if (!tc?.lastExecutionId) return [];
+    if (!tc) return [];
     const local = reproduceCases.value.length
       ? { label: 'Run this test', cases: reproduceCases.value, runTitle: testLabel(tc) }
       : null;
-    const whats: RunWhat[] = [{ ...executionTestWhat(tc.lastExecutionId, testLabel(tc)), local }];
+    // A test with no execution to name runs on this computer alone, by its file and title.
+    const test: RunWhat | null = tc.lastExecutionId
+      ? executionTestWhat(tc.lastExecutionId, testLabel(tc))
+      : local && { key: 'test', label: 'This test', count: 1, tests: [testLabel(tc)], app: null, ci: null };
+    if (!test) return [];
+    const whats: RunWhat[] = [{ ...test, local }];
     if (showFlakiness.value) {
       const lab = { reason: 'The Flakiness tab runs Flake Lab on this computer.' };
       whats.push({ ...flakeLabWhat(tc.id, 'reproduce'), local: lab }, { ...flakeLabWhat(tc.id, 'verify'), local: lab });

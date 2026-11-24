@@ -92,7 +92,7 @@ const attention = computed(() => hereFirst.value && here.value.linkLoaded && her
         :color="face.color"
         :variant="face.variant"
         :icon="face.icon"
-        :loading="face.status && !face.icon"
+        :ui="face.spinning ? { leadingIcon: 'animate-spin' } : undefined"
         :disabled="!face.status && place.mainHere && here.waiting"
         :aria-label="faceRunsHere ? undefined : face.label"
         :title="faceRunsHere ? undefined : face.label"
@@ -112,6 +112,7 @@ const attention = computed(() => hereFirst.value && here.value.linkLoaded && her
         :color="face.color"
         :variant="face.variant"
         icon="i-lucide-chevron-down"
+        square
         :aria-label="menuLabel"
         :title="menuLabel"
         :disabled="hereFirst && !here.linkLoaded"

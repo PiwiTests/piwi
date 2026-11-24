@@ -13,7 +13,8 @@
  * The button's menu (`menuGroups`) shows the command (at most four steps, the dialog has it whole) and holds the
  * one-off runs (a browser mode, the place's other Whats), the fix-it entries, the options of the button, Run with
  * options…, Copy as command and the linked folder. The options start from the project's defaults (its Local folder
- * settings) and the place's preset; a choice in the menu applies to the place's runs alone. A run of the button is for
+ * settings), what the tests need (whole files for a large run) and the place's preset; a choice in the menu applies to
+ * the place's runs alone. A run of the button is for
  * the environment of the run its tests come from (`environmentId`, else read from `sourceRunId`), unless that one is
  * protected: it then runs for none, and the dialog picks another.
  *
@@ -69,6 +70,8 @@ export interface ThisComputerFace {
   color: 'primary' | 'neutral' | 'info' | 'success' | 'error';
   variant: 'solid' | 'outline' | 'subtle';
   icon?: string;
+  /** The icon turns: a run of these tests goes on. */
+  spinning?: boolean;
   tooltip: string;
   /** A run of these tests goes on or just ended: a click opens the Local runs tray. */
   status: boolean;
@@ -89,6 +92,8 @@ export function useThisComputer(input: {
   main: () => LocalRunSet | null;
   /** The place's other Whats' tests, which the menu runs once. */
   others: () => LocalRunSet[];
+  /** Some What of the place runs here, or says why it does not: This computer is read only then. */
+  offered: () => boolean;
   /** Hears each run started here, so the place keeps This computer as its last Where. */
   onRun: () => void;
 }) {
@@ -97,7 +102,9 @@ export function useThisComputer(input: {
   onMounted(() => {
     available.value = !!tauriCore();
   });
-  const projectId = computed(() => (available.value && input.projectId ? input.projectId : null));
+  /** The window has the bridge and the place offers This computer: the folder, the checks and the environments are read. */
+  const active = computed(() => available.value && input.offered());
+  const projectId = computed(() => (active.value && input.projectId ? input.projectId : null));
   const projectLabel = () => place.projectLabel?.() ?? null;
   const sourceRunId = () => place.sourceRunId?.() ?? null;
 
@@ -116,8 +123,8 @@ export function useThisComputer(input: {
   /** The folder needs a fix before a run: the menu and the dialog hold it. */
   const attention = computed(() => !linked.value || wrongFolder.value || playwrightMissing.value);
 
-  watch([available, () => link.value?.path, linked], () => {
-    if (!available.value) return;
+  watch([active, () => link.value?.path, linked], () => {
+    if (!active.value) return;
     void checkSpecs(linked.value);
     void checkEnv();
   });
@@ -125,7 +132,7 @@ export function useThisComputer(input: {
   watch(
     () => [...new Set(cases.value.map((c) => c.filePath))].sort().join('\n'),
     () => {
-      if (available.value) void checkSpecs(linked.value);
+      if (active.value) void checkSpecs(linked.value);
     },
   );
 
@@ -135,9 +142,19 @@ export function useThisComputer(input: {
   }
 
   // ── The button's options ──────────────────────────────────────────────────
-  /** The button's own options, on top of the project's defaults: its menu edits these, the dialog starts from them. */
+  /**
+   * The button's own options, on top of the project's defaults and of the options its tests need (whole files for a
+   * large run): its menu edits these, the dialog starts from them.
+   */
   const overrides = ref<LocalRunOptions>({ ...place.presetOptions });
-  const options = computed(() => ({ ...store.getProjectOptions(input.projectId), ...overrides.value }));
+  /** What a run of `set` takes on top of the project's defaults: another set's own options win over the button's. */
+  function runOptions(set: LocalRunSet | null, main: boolean): LocalRunOptions {
+    return main ? { ...set?.options, ...overrides.value } : { ...overrides.value, ...set?.options };
+  }
+  const options = computed(() => ({
+    ...store.getProjectOptions(input.projectId),
+    ...runOptions(main.value, true),
+  }));
   function setOption(patch: LocalRunOptions) {
     overrides.value = { ...overrides.value, ...patch };
   }
@@ -146,7 +163,7 @@ export function useThisComputer(input: {
   /** The environment of the run the tests come from, as the page names it or the run reported it. */
   const sourceEnvironmentId = ref<number | null>(null);
   watch(
-    [available, () => place.environmentId?.(), sourceRunId],
+    [active, () => place.environmentId?.(), sourceRunId],
     async () => {
       if (place.environmentId) {
         sourceEnvironmentId.value = place.environmentId();
@@ -154,7 +171,7 @@ export function useThisComputer(input: {
       }
       sourceEnvironmentId.value = null;
       const runId = sourceRunId();
-      if (!available.value || runId == null) return;
+      if (!active.value || runId == null) return;
       try {
         const reported = await $fetch<{ label: string | null; environmentId: number | null }>(
           `/api/desktop/test-runs/${runId}/environment`,
@@ -222,6 +239,8 @@ export function useThisComputer(input: {
         label: localRunProgressLabel(run, runCount(run)),
         color: 'info',
         variant: 'subtle',
+        icon: 'i-lucide-loader-circle',
+        spinning: true,
         tooltip: 'A local run of these tests is going — view its output',
         status: true,
       };
@@ -283,7 +302,7 @@ export function useThisComputer(input: {
       cases: runSet.cases,
       title: runSet.runTitle,
       sourceRunId: sourceRunId(),
-      options: { ...overrides.value, ...runSet.options, ...patch },
+      options: { ...runOptions(runSet, !set), ...patch },
       environment: runEnvironment.value,
     });
     if (started) input.onRun();
@@ -613,17 +632,27 @@ export function useThisComputer(input: {
       !dialogSettingsProblem.value,
   );
 
-  /** Show `set` in the dialog's fields, with the button's options; null when the dialog shows another Where. */
-  function showInDialog(set: LocalRunSet | null) {
-    const shown = dialogSet.value;
+  /** The What the dialog shows here, by its key: its options start again only when it changes. */
+  let dialogKey: string | null = null;
+  /**
+   * Show `set`, the tests of the What `key` (the button's own when `main`), in the dialog's fields, with the button's
+   * options; null when the dialog is closed or shows another Where. The same What again, as a run that goes on reports
+   * more results, keeps what the form holds.
+   */
+  function showInDialog(set: LocalRunSet | null, key: string | null = null, main = false) {
     dialogSet.value = set;
-    if (!set || set === shown) return;
-    dialogOptions.value = { ...store.getProjectOptions(input.projectId), ...overrides.value, ...set.options };
+    if (!set) {
+      dialogKey = null;
+      return;
+    }
+    if (key === dialogKey) return;
+    dialogKey = key;
+    dialogOptions.value = { ...store.getProjectOptions(input.projectId), ...runOptions(set, main) };
     void refresh();
     void dialogSpecs.checkSpecs(linked.value);
     void checkEnv();
   }
-  watch([() => link.value?.path, linked], () => {
+  watch([() => link.value?.path, linked, () => [...dialogSpecs.specFiles.value].sort().join('\n')], () => {
     if (dialogSet.value) void dialogSpecs.checkSpecs(linked.value);
   });
 
