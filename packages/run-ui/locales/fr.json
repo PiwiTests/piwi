@@ -1134,7 +1134,7 @@
     "message": "Rechercher à nouveau"
   },
   "runui_updateUnpublished": {
-    "message": "La dernière version publiée n’a pas encore de paquet pour ce système : elle est peut-être encore en cours de publication. Réessayez dans quelques minutes."
+    "message": "La dernière version publiée n’a pas encore de paquet pour ce système. Réessayez plus tard."
   },
   "runui_updateAvailable": {
     "message": "La version $version$ est disponible",
@@ -1173,7 +1173,7 @@
     "message": "Impossible d’enregistrer le réglage de la notification de mise à jour"
   },
   "runui_startOnLoginOffer": {
-    "message": "Lancez $app$ à l’ouverture de session, pour que l’instance puisse encore le joindre après un redémarrage de votre ordinateur.",
+    "message": "Lancez $app$ à l’ouverture de session sur votre ordinateur, pour que l’instance puisse encore le joindre après un redémarrage.",
     "placeholders": {
       "app": {
         "content": "$1",

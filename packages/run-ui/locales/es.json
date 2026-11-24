@@ -1134,7 +1134,7 @@
     "message": "Buscar de nuevo"
   },
   "runui_updateUnpublished": {
-    "message": "La última versión publicada todavía no tiene un paquete para este sistema: quizá aún se está publicando. Vuelve a intentarlo en unos minutos."
+    "message": "La última versión publicada todavía no tiene un paquete para este sistema. Vuelve a intentarlo más tarde."
   },
   "runui_updateAvailable": {
     "message": "La versión $version$ está disponible",
@@ -1173,7 +1173,7 @@
     "message": "No se pudo guardar el ajuste de la notificación de actualizaciones"
   },
   "runui_startOnLoginOffer": {
-    "message": "Abre $app$ al iniciar sesión, para que la instancia pueda seguir alcanzándolo después de reiniciar la máquina.",
+    "message": "Abre $app$ al iniciar sesión en esta máquina, para que la instancia pueda seguir llegando a él después de reiniciarla.",
     "placeholders": {
       "app": {
         "content": "$1",
@@ -1188,6 +1188,6 @@
     "message": "Ahora no"
   },
   "runui_startOnLoginFailed": {
-    "message": "No se pudo activar la apertura al iniciar sesión"
+    "message": "No se pudo activar Abrir al iniciar sesión"
   }
 }

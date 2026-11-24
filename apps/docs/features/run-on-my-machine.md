@@ -39,10 +39,10 @@ Turned off or declined, the instance refuses every request for that project, and
 In Piwi Desktop, open **Settings → Desktop app → Run on my machine**, enter the instance's address and click
 **Connect**. The app opens the instance's page, which asks you to allow **Piwi Desktop** with the code the app shows.
 Once allowed, the app keeps its key in the operating system's keychain (Keychain on macOS, Credential Manager on
-Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs, and
-offers **Start on login** when off. An app connects to one instance at a time. **Disconnect** removes the key from the
-keychain; the app stays listed in the instance's Connected apps until you revoke it there. A key the instance revoked
-leaves the keychain too.
+Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs.
+Right after, it offers **Start on login** if that is off. An app connects to one instance at a time. **Disconnect**
+removes the key from the keychain; the app stays listed in the instance's Connected apps until you revoke it there. A
+key the instance revoked leaves the keychain too.
 
 Each project's folder is linked on this machine, per instance, when its first request asks; **Settings → Desktop
 app** lists them, with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
@@ -83,7 +83,7 @@ the app's Local runs while it goes on.
 Once sent, the same window follows the request: waiting for your app, shown in the app, running, ended with its outcome,
 and a link to its run. **Stop** ends it from the page: the app stops the run, or drops a request it has not run. **Run
 again** sends the same tests with the same options. **Settings → Account → Your runs on my machine** lists your last 20
-requests and their project, with **Stop** for one still going on. Quitting the app stops its requested runs. A run
+requests and their project, with **Stop** for those still going. Quitting the app stops its requested runs. A run
 that ends while the app's server restarts keeps its outcome. After a crash, the app ends the requests it lost:
 unanswered ones are refused, runs end as errors.
 
@@ -100,11 +100,11 @@ the run, and it says why; on macOS and Linux, so does a file others can read.
 
 ## Connected apps
 
-**Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor,
-Piwi Desktop, Piwi Runner. Each shows when it connected and, for an app that runs tests, **Online now** while its connection is open
-and it called the instance within the last two minutes, or else when it was last seen. **Revoke** disconnects one: the
-instance closes the connection of an app that runs tests at once, and refuses its next call. An administrator sees the
-same list for any user in **Settings → Users → API keys**. The keys these apps hold are not listed under API keys.
+**Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor, Piwi
+Desktop, Piwi Runner. Each shows when it connected and, for an app that runs tests, **Online now** while its connection
+is open and it called the instance within the last two minutes, or else when it was last seen. **Revoke** disconnects
+one: the instance closes the connection of an app that runs tests at once, and refuses its next call. An administrator
+sees the same list for any user in **Settings → Users → API keys**. Their keys are not listed under API keys.
 
 The instance sends a connected app each request as it is made, with the time it stops waiting, and the requests still
 waiting each time the app connects again. When a waiting request is stopped, or another of your apps takes it, the

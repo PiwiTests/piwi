@@ -23,13 +23,13 @@ unsigned first start: [the desktop app's installers](./desktop#where-it-is).
 ## Updates
 
 Piwi Runner updates the way the [desktop app](./desktop#updates) does, from the same releases, which reach both apps at
-once. It checks the latest release when it starts, and a notification says when a newer version is out, unless you turn
-that off in **Settings → About**. There, **Check for updates** checks again, and **Install update** downloads the new
-version, checks its signature and installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`
-or `.rpm`); **Restart now** starts it, after asking to stop the runs still going. On Windows, where the install ends
-the app, it asks before installing. The tray's **Check for updates…** does both in one step, **Install and restart**.
-Your connection and linked folders stay. When the latest release has no package for this system yet, as while it
-publishes, the check says so: try again a few minutes later.
+once. When it starts, it checks the latest release and a notification says when a newer version is out, unless you turn
+both off in **Settings → About**. There, **Check for updates** checks again, and **Install update** downloads the new
+version, checks its signature and installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb` or
+`.rpm`); **Restart now** starts it, after asking to stop the runs still going. On Windows, where the install ends the
+app, it asks before installing. The tray's **Check for updates…** does both in one step, **Install and restart**. Your
+connection and linked folders stay. When the latest release has no package for this system yet (its build failed and
+waits for a new attempt), the check says so rather than failing.
 
 **Settings → About** also shows the version installed, links this page, the release notes and the page to report a
 problem, and says where the tray's **Show logs** is.

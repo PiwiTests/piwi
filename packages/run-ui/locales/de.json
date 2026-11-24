@@ -1116,7 +1116,7 @@
     "message": "Nach Updates suchen"
   },
   "runui_updateUnsupported": {
-    "message": "Dieser Build hat keinen Update-Kanal: Entwicklungs-Builds und Versionen, die ohne den Signaturschlüssel für Updates erstellt wurden, können sich nicht selbst aktualisieren. Neue Versionen gibt es unter $release$.",
+    "message": "Dieser Build hat keinen Update-Kanal: Entwicklungs-Builds und Versionen, die ohne den Signaturschlüssel für Updates erstellt wurden, können sich nicht selbst aktualisieren. Laden Sie neue Versionen aus der $release$ herunter.",
     "placeholders": {
       "release": {
         "content": "$1",
@@ -1125,7 +1125,7 @@
     }
   },
   "runui_updateLatestRelease": {
-    "message": "Neueste Version"
+    "message": "neuesten Version"
   },
   "runui_updateLatest": {
     "message": "Sie haben die neueste Version."
@@ -1134,7 +1134,7 @@
     "message": "Erneut suchen"
   },
   "runui_updateUnpublished": {
-    "message": "Die neueste Version enthält noch kein Paket für dieses System: Sie wird vielleicht gerade veröffentlicht. Versuchen Sie es in ein paar Minuten erneut."
+    "message": "Die neueste Version enthält noch kein Paket für dieses System. Versuchen Sie es später erneut."
   },
   "runui_updateAvailable": {
     "message": "Version $version$ ist verfügbar",
@@ -1173,7 +1173,7 @@
     "message": "Die Einstellung der Update-Benachrichtigung konnte nicht gespeichert werden"
   },
   "runui_startOnLoginOffer": {
-    "message": "Starten Sie $app$ bei der Anmeldung, damit die Instanz es auch nach einem Neustart Ihres Computers erreicht.",
+    "message": "Starten Sie $app$ bei der Anmeldung am Computer, damit die Instanz es auch nach einem Neustart erreicht.",
     "placeholders": {
       "app": {
         "content": "$1",
@@ -1188,6 +1188,6 @@
     "message": "Nicht jetzt"
   },
   "runui_startOnLoginFailed": {
-    "message": "Starten bei Anmeldung konnte nicht eingeschaltet werden"
+    "message": "„Bei Anmeldung starten“ konnte nicht eingeschaltet werden"
   }
 }

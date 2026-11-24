@@ -1134,7 +1134,7 @@
     "message": "Procurar de novo"
   },
   "runui_updateUnpublished": {
-    "message": "A versão mais recente publicada ainda não tem um pacote para este sistema: talvez ela ainda esteja sendo publicada. Tente de novo em alguns minutos."
+    "message": "A versão mais recente publicada ainda não tem um pacote para este sistema. Tente de novo mais tarde."
   },
   "runui_updateAvailable": {
     "message": "A versão $version$ está disponível",
@@ -1173,7 +1173,7 @@
     "message": "Não foi possível salvar a configuração da notificação de atualização"
   },
   "runui_startOnLoginOffer": {
-    "message": "Inicie o $app$ ao fazer login, para que a instância ainda consiga alcançá-lo depois que o computador reiniciar.",
+    "message": "Inicie o $app$ ao fazer login no computador, para que a instância ainda consiga alcançá-lo depois que ele reiniciar.",
     "placeholders": {
       "app": {
         "content": "$1",

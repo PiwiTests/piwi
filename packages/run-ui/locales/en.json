@@ -1330,8 +1330,8 @@
     "description": "Button beside runui_updateLatest: checks for a newer version again. A few words."
   },
   "runui_updateUnpublished": {
-    "message": "The latest release has no package for this system yet: it may still be publishing. Try again in a few minutes.",
-    "description": "The updates panel, after a check: the latest release has no update for this system yet, as happens while it is being published."
+    "message": "The latest release has no package for this system yet. Try again later.",
+    "description": "The updates panel, after a check: the latest release has no update for this system yet, as when its package failed to publish and waits for a new attempt."
   },
   "runui_updateAvailable": {
     "message": "Version $version$ is available",
@@ -1380,8 +1380,8 @@
     "description": "Title of a notification: the checkbox runui_updateNotify could not be saved. Its reason shows under it."
   },
   "runui_startOnLoginOffer": {
-    "message": "Start $app$ when you sign in, so the instance can still reach it after your computer restarts.",
-    "description": "Shown once the app has just connected to a team instance, while Start on login is off: why to turn it on. $app$ is the app’s name (Piwi Desktop, Piwi Runner).",
+    "message": "Start $app$ when you sign in to your computer, so the instance can still reach it after a restart.",
+    "description": "Shown once the app has just connected to a team instance, while Start on login is off: why to turn it on. \"Sign in\" is to the operating system session, not to the instance. $app$ is the app’s name (Piwi Desktop, Piwi Runner).",
     "placeholders": {
       "app": {
         "content": "$1",

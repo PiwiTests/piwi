@@ -91,8 +91,8 @@ async function revoke() {
             class="text-xs text-muted mt-1"
             data-testid="connected-app-offline"
           >
-            Run requests wait for it while it is open and connected: start it on that machine, or turn on its
-            <strong>Start on login</strong> there.
+            It takes run requests only while it is open and connected, and a request waits 2 minutes for it: start it on
+            that machine, or turn on its <strong>Start on login</strong> there.
           </p>
         </div>
         <UButton

@@ -387,7 +387,7 @@
     }
   },
   "shell_updateUnpublished": {
-    "message": "Die neueste Version enthält noch kein Paket von $app$ für dieses System: Sie wird vielleicht gerade veröffentlicht. Versuchen Sie es in ein paar Minuten erneut.",
+    "message": "Die neueste Version enthält noch kein Paket von $app$ für dieses System. Versuchen Sie es später erneut.",
     "placeholders": {
       "app": {
         "content": "$1",
@@ -561,7 +561,7 @@
     }
   },
   "shell_updateInstallFrom": {
-    "message": "Installieren Sie sie über $about$ in den Einstellungen des Fensters oder über $menu$ im Menü des Symbols im Infobereich.",
+    "message": "Installieren Sie sie in den Einstellungen des Fensters unter „$about$“ oder im Menü des Symbols im Infobereich über „$menu$“.",
     "placeholders": {
       "about": {
         "content": "$1",

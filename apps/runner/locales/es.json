@@ -387,7 +387,7 @@
     }
   },
   "shell_updateUnpublished": {
-    "message": "La última versión publicada todavía no tiene un paquete de $app$ para este sistema: quizá aún se está publicando. Vuelve a intentarlo en unos minutos.",
+    "message": "La última versión publicada todavía no tiene un paquete de $app$ para este sistema. Vuelve a intentarlo más tarde.",
     "placeholders": {
       "app": {
         "content": "$1",

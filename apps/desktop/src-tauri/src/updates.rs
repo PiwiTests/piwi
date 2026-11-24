@@ -428,9 +428,9 @@ async fn check(app: &AppHandle) -> Result<UpdateStatus, String> {
     }
 }
 
-/// Whether the check failed because the latest release has no manifest, or none for this system: the release is
-/// still being published, or one of its packages failed to. Both apps' manifests sit on the latest release
-/// (`releases/latest/download/`), so the next release fixes it, or the same one once its packages are on it.
+/// Whether the check failed because the latest release has no manifest, or none for this system: one of its packages
+/// failed to publish and waits for a new attempt, or GitHub did not serve the manifest. Both apps' manifests sit on the
+/// latest release (`releases/latest/download/`), so a later check finds the package once it is there.
 fn not_published(error: &tauri_plugin_updater::Error) -> bool {
     matches!(
         error,
