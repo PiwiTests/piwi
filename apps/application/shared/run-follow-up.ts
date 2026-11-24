@@ -244,6 +244,21 @@ export function ciDispatchFollowUp(dispatch: CiDispatchView, now = Date.now()): 
   };
 }
 
+const testCount = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
+
+/**
+ * What a follow-up runs, through what and on which branch, as one line of facts: `3 tests · Smoke · staging on main`.
+ * A dispatch names its action, else its CI; a request its tests alone.
+ */
+export function runFollowUpFacts(
+  followUp: Pick<RunFollowUpView, 'kind' | 'tests' | 'testTitle' | 'action' | 'target' | 'ref'>,
+): string {
+  const what = followUp.testTitle ?? (followUp.tests ? testCount(followUp.tests) : null);
+  const through = followUp.kind === 'dispatch' ? (followUp.action ?? followUp.target) : null;
+  const where = through && followUp.ref ? `${through} on ${followUp.ref}` : through;
+  return [what, where].filter(Boolean).join(' · ');
+}
+
 /** How many ms until a follow-up is read again: a request every 2 s, a dispatch every 5 s until matched, then every 30 s; null once final. */
 export function runFollowUpPollMs(followUp: Pick<RunFollowUpView, 'kind' | 'final' | 'run'>): number | null {
   if (followUp.final) return null;

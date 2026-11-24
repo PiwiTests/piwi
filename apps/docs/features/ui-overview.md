@@ -59,8 +59,8 @@ palette lists its tabs and the pages of this menu. The tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 to a page; select two and **Compare** [what changed](./run-changes) between them, or select any
-  number, page by page, and [delete them](/operate/storage#storage-management). Above it wait the CI dispatches no run
-  has answered yet, and your own run requests ([Waiting rows](./ci-rerun#waiting-rows)).
+  number, page by page, and [delete them](/operate/storage#storage-management). Above it wait the CI dispatches whose
+  run has not reported or still runs, and your own run requests ([Waiting rows](./ci-rerun#waiting-rows)).
 - **Tests**: every test case with its pass rate and last run, in file order, with the
   [test search](/reference/test-search) and a status filter, groupable by file, or by file and describe block.
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the

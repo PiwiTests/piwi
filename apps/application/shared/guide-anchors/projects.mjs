@@ -160,7 +160,7 @@ export const PROJECTS_ANCHORS = [
     pages: ['/projects/[id]'],
     reveal: [{ query: { tab: 'runs' } }],
     describes:
-      'The runs table of the Runs tab: tick two runs and Compare to see what changed between them, or tick any number to delete them.',
+      'The Runs tab’s runs table, below a row for each CI dispatch or own run request still going: tick two runs to Compare what changed, or any to delete them.',
     doc: 'features/run-changes',
     sample: { route: '/projects/1?tab=runs', expect: PROJECT_1 },
   },

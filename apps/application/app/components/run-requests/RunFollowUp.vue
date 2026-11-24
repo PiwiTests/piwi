@@ -6,7 +6,7 @@
  * style headed by it, as a failure page's "Last re-run" reads.
  */
 import { safeHttpUrl } from '#shared/utils/safe-url';
-import type { RunFollowUpView } from '#shared/run-follow-up';
+import { runFollowUpFacts, type RunFollowUpView } from '#shared/run-follow-up';
 
 const props = defineProps<{
   followUp: RunFollowUpView;
@@ -20,11 +20,7 @@ const props = defineProps<{
 const ciLink = computed(() => safeHttpUrl(props.followUp.ciUrl));
 const testCount = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
 /** What it runs, through what and on which branch, without the time, which renders in the browser. */
-const facts = computed(() => {
-  const f = props.followUp;
-  const what = f.testTitle ?? (f.tests ? testCount(f.tests) : null);
-  return [what, f.action, f.ref ? `on ${f.ref}` : null].filter(Boolean).join(' · ');
-});
+const facts = computed(() => runFollowUpFacts(props.followUp));
 const causesTitle = computed(() => props.followUp.causes.join(' '));
 </script>
 

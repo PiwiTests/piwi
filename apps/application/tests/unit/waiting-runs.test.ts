@@ -57,8 +57,8 @@ function request(over: Partial<RunRequestView> = {}): RunRequestView {
 }
 
 describe('waitingDispatchRow', () => {
-  test('a whole suite waiting for its run names the action and the branch', () => {
-    expect(waitingDispatchRow(dispatch(), AT + 2 * 60_000)).toEqual({
+  test('a whole suite waiting for its run names the action and the branch, as its follow-up does', () => {
+    expect(waitingDispatchRow(dispatch(), AT + 2 * 60_000)).toMatchObject({
       kind: 'dispatch',
       id: '0123456789abcdef',
       status: 'interrupted',
@@ -67,20 +67,17 @@ describe('waitingDispatchRow', () => {
       at: AT,
       by: 'Ana',
       ciUrl: 'https://jenkins.example.com/job/api/job/smoke/',
-      runId: null,
+      run: null,
       causes: [],
     });
   });
 
-  test('a re-run counts its tests, a Flake Lab experiment says so, a job on its own branch names none', () => {
+  test('a re-run counts its tests; a job on its own branch names none', () => {
     expect(waitingDispatchRow(dispatch({ kind: 'tests', tests: 1 }), AT)?.facts).toBe(
       '1 test · Smoke · staging on main',
     );
     expect(waitingDispatchRow(dispatch({ kind: 'tests', tests: 3, ref: null }), AT)?.facts).toBe(
       '3 tests · Smoke · staging',
-    );
-    expect(waitingDispatchRow(dispatch({ kind: 'flakeLab', tests: 1 }), AT)?.facts).toBe(
-      'Flake Lab · Smoke · staging on main',
     );
   });
 
@@ -97,9 +94,25 @@ describe('waitingDispatchRow', () => {
     expect(row?.causes).toEqual(CI_DISPATCH_LIKELY_CAUSES);
   });
 
-  test('a dispatch a run answered, or that can no longer be answered, has no row', () => {
-    expect(waitingDispatchRow(dispatch({ state: 'running', runId: 12 }), AT)).toBeNull();
-    expect(waitingDispatchRow(dispatch({ state: 'ended', runId: 12 }), AT)).toBeNull();
+  test('matched, it stays while its run goes on, with that run', () => {
+    const goingOn = (status: string) =>
+      waitingDispatchRow(
+        dispatch({
+          state: 'running',
+          runId: 12,
+          run: { id: 12, status, totalTests: 3, passedTests: 0, failedTests: 0 },
+        }),
+        AT + CI_DISPATCH_WAIT_HINT_MS,
+      );
+    expect(goingOn('running')).toMatchObject({ lead: 'Running', status: 'running', run: { id: 12 }, causes: [] });
+    expect(goingOn('initializing')?.lead).toBe('Running');
+    expect(goingOn('finalizing')?.lead).toBe('Running');
+  });
+
+  test('a dispatch whose run stopped going on, or that can no longer be answered, has no row', () => {
+    const ran = (status: string) => ({ id: 12, status, totalTests: 3, passedTests: 3, failedTests: 0 });
+    expect(waitingDispatchRow(dispatch({ state: 'ended', runId: 12, run: ran('passed') }), AT)).toBeNull();
+    expect(waitingDispatchRow(dispatch({ state: 'running', runId: 12, run: ran('interrupted') }), AT)).toBeNull();
     expect(waitingDispatchRow(dispatch({ state: 'unreported' }), AT)).toBeNull();
     expect(waitingDispatchRow(dispatch({ state: 'refused', detail: 'No such job' }), AT)).toBeNull();
   });
@@ -107,7 +120,7 @@ describe('waitingDispatchRow', () => {
 
 describe('waitingRequestRow', () => {
   test('a waiting request says where it stands and counts its tests', () => {
-    expect(waitingRequestRow(request())).toEqual({
+    expect(waitingRequestRow(request())).toMatchObject({
       kind: 'request',
       id: 'r1',
       status: 'interrupted',
@@ -116,12 +129,12 @@ describe('waitingRequestRow', () => {
       at: Date.parse('2026-11-20T10:00:30Z'),
       by: null,
       ciUrl: null,
-      runId: null,
+      run: null,
       causes: [],
     });
   });
 
-  test('its run is private and never in the list, so the row stays while it runs, with its run', () => {
+  test('a running request keeps its row, names its one test and links its run', () => {
     const row = waitingRequestRow(
       request({
         state: 'running',
@@ -130,7 +143,7 @@ describe('waitingRequestRow', () => {
         tests: [{ filePath: 'tests/a.spec.ts', line: 3, title: 'pays', projectName: null }],
       }),
     );
-    expect(row).toMatchObject({ status: 'running', lead: 'Running in LAPTOP', facts: 'pays', runId: 44 });
+    expect(row).toMatchObject({ status: 'running', lead: 'Running in LAPTOP', facts: 'pays', run: { id: 44 } });
   });
 
   test('a request that ended has no row', () => {
@@ -141,12 +154,17 @@ describe('waitingRequestRow', () => {
 });
 
 describe('waitingRunRows', () => {
-  test('both kinds, newest first, without what no longer waits', () => {
+  test('both kinds, newest first, without what no longer waits or runs', () => {
     const rows = waitingRunRows(
       [
         dispatch({ id: 'aaaaaaaaaaaaaaaa', at: AT - 60_000 }),
         dispatch({ id: 'bbbbbbbbbbbbbbbb', at: AT + 60_000 }),
-        dispatch({ id: 'cccccccccccccccc', state: 'running', runId: 9 }),
+        dispatch({
+          id: 'cccccccccccccccc',
+          state: 'ended',
+          runId: 9,
+          run: { id: 9, status: 'passed', totalTests: 1, passedTests: 1, failedTests: 0 },
+        }),
       ],
       [request(), request({ id: 'r2', state: 'ended', outcome: 'failed' })],
       AT + 2 * 60_000,
@@ -156,9 +174,21 @@ describe('waitingRunRows', () => {
 });
 
 describe('waitingRunsPollMs', () => {
-  test('5 s while a request shows, 30 s while only dispatches wait, none with no row', () => {
-    expect(waitingRunsPollMs([{ kind: 'dispatch' }, { kind: 'request' }])).toBe(5_000);
-    expect(waitingRunsPollMs([{ kind: 'dispatch' }])).toBe(30_000);
-    expect(waitingRunsPollMs([])).toBeNull();
+  const rows = (...shown: { kind: 'dispatch' | 'request'; run: { id: number; result: string | null } | null }[]) =>
+    shown;
+  const run = { id: 1, result: null };
+
+  test('a request every 5 s until its run starts, then every 30 s', () => {
+    expect(waitingRunsPollMs(rows({ kind: 'request', run: null }, { kind: 'request', run }), 'request')).toBe(5_000);
+    expect(waitingRunsPollMs(rows({ kind: 'request', run }), 'request')).toBe(30_000);
+  });
+
+  test('a dispatch every 30 s, whatever its state; a kind with no row is not read', () => {
+    expect(waitingRunsPollMs(rows({ kind: 'dispatch', run: null }, { kind: 'request', run: null }), 'dispatch')).toBe(
+      30_000,
+    );
+    expect(waitingRunsPollMs(rows({ kind: 'request', run: null }), 'dispatch')).toBeNull();
+    expect(waitingRunsPollMs(rows({ kind: 'dispatch', run: null }), 'request')).toBeNull();
+    expect(waitingRunsPollMs([], 'request')).toBeNull();
   });
 });

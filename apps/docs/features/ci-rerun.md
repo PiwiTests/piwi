@@ -70,17 +70,20 @@ shows the GitHub workflow, and [Flake Lab on Jenkins](./ci-actions#flake-lab-on-
 ## Waiting rows
 
 A project's runs list shows each dispatch no run has answered yet as a row above its runs, to everyone who reads the
-project: *Waiting for CI*, what it runs, the action and its branch, when and by whom it was dispatched, and **Open in
-CI**. After 30 minutes it reads *No run reported yet*, its likely causes on hover. The row leaves once its run is
-[matched](#matching-the-run), and the run takes its place in the list, under the filters like any run; it leaves too
-once the six hours have passed.
+project: *Waiting for CI*, what it runs, its action and the branch it names, when and by whom it was dispatched, and
+**Open in CI**. After 30 minutes it reads *No run reported yet*, with the likely causes under **Why?**. Once a run is
+[matched](#matching-the-run) to it, the row reads *Running* with **Open run #N** while that run goes on, since the
+list's filters may leave the run out (a re-run is a partial run), and leaves when the run ends. A dispatch no run is
+matched to within six hours leaves then.
 
 Your own [run requests](./run-on-my-machine) wait there as well, seen by you alone. A requested run is never in the
 list, so its row stays while the run goes on, with a link to it, and leaves once the request ends.
 
 The rows show whatever the filters say, five at a time with **Show all**, but not under **Kept runs only** or a period
-opened from Analytics, nor for a project whose CI actions are off. The page reads them again when a run starts, and
-while one shows, every 5 seconds with a request, else every 30 seconds.
+opened from Analytics; dispatches show while the project's CI actions are on. The page reads the dispatches with
+itself, your requests once it has loaded, and both again on each run event of the project and when the browser tab
+shows again; while a row shows, a dispatch every 30 seconds, a request every 5 seconds until its run starts, then every
+30.
 
 ## Matching the run
 

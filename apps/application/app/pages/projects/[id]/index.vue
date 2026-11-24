@@ -595,6 +595,16 @@ watch(activeTab, (tab) => {
   void replaceQuery(router, patch);
 });
 
+// === RUNS TAB: waiting rows ===
+// What no run has answered yet, above the runs whatever the filters: the list of kept runs, or of a period from
+// Analytics, has none.
+const { rows: waitingRows } = await useWaitingRuns(Number(projectId), {
+  dispatches: () => !!project.value?.ciRerun?.enabled,
+  requests: () => machine.shown.value,
+  shown: () => activeTab.value === 'runs' && !keptOnly.value && !drill.value?.period,
+  sent: () => sentDispatch.value,
+});
+
 // The page scrolls inside its own body; each tab keeps its position for when
 // the user comes back to the project.
 const scrollEl = ref<HTMLElement | null>(null);
@@ -1215,14 +1225,7 @@ const moreMenuItems = computed(() => {
               <HelpHint topic="run.keep" />
             </div>
 
-            <!-- What no run has answered yet, whatever the filters; the list of kept runs or of a period has none -->
-            <ProjectWaitingRuns
-              v-if="!keptOnly && !drill?.period"
-              :project-id="Number(projectId)"
-              :dispatches="!!project?.ciRerun?.enabled"
-              :requests="machine.shown.value"
-              :sent="sentDispatch"
-            />
+            <ProjectWaitingRuns v-if="!keptOnly && !drill?.period" :rows="waitingRows" />
 
             <!-- md+ : the runs table; below md a card list keeps it scroll-free -->
             <div class="hidden md:block">

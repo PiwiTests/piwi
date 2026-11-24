@@ -37,11 +37,13 @@ fields are the ones of the dialog it replaces; a selection of a run's tests has 
 alone; the run page offers the flaky tests there; and the desktop button and its dialog are gone. PR 6 is built: a
 project's runs list shows, above its runs, each dispatch no run has answered yet ("Waiting for CI · Smoke · staging on
 main · dispatched 2 minutes ago by Ana · Open in CI") to everyone who reads the project, and the viewer's own run
-requests still going on, to them alone. A dispatch's row leaves once its run is matched; a request's run is never in
-the list, so its row links that run and leaves once the request ends. The rows show whatever the filters say, five
-before **Show all**, but not under **Kept runs only** or a period from Analytics, nor while the project's CI actions are
-off. The page reads them in the browser, on the Runs tab, again when a run starts and, while a row shows, every 5
-seconds with a request, else every 30. Remain: PR 7 (tags), and a demo dispatch moving to `running` and `ended`
+requests still going on, to them alone. A matched dispatch's row reads "Running · Open run #N" until its run ends,
+since the list's scope may leave a partial run out; a request's run is never in the list, so its row links that run and
+leaves once the request ends. The rows show whatever the filters say, five before **Show all**, but not under **Kept
+runs only** or a period from Analytics; dispatch rows only while the project's CI actions are on. The dispatches are
+read with the page's server render, the viewer's requests in the browser, and both again on each run event of the
+project and when the tab shows again; while a row shows, a dispatch every 30 seconds, a request every 5 seconds until
+its run starts, then every 30. Remain: PR 7 (tags), and a demo dispatch moving to `running` and `ended`
 against a seeded run: it stays `dispatched`, and so does its row. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is
 recorded in [ci-actions.md](../adr/ci-actions.md).
 
