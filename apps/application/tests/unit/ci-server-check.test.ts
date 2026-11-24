@@ -10,10 +10,13 @@ import {
   type CiServerCheckPlan,
   type CiServerTarget,
 } from '#shared/ci-server';
+import { JENKINS_PARAMETERS_TREE } from '#shared/ci-job-fields';
 import { insertCredential } from '#shared/handlers/credentials';
 import {
   checkCiServerTarget,
+  listCiServerJobs,
   prepareCiServerCheck,
+  readCiServerJobFields,
   prepareCiServerRequest,
   type CiServerCredential,
 } from '../../server/utils/ci-server-dispatch';
@@ -32,7 +35,7 @@ const ENV = [
   'PIWI_CI_SERVER_TOKEN',
   'PIWI_CI_SERVER_HOSTS',
 ];
-const TREE = 'tree=property%5BparameterDefinitions%5Bname%5D%5D';
+const TREE = new URLSearchParams([['tree', JENKINS_PARAMETERS_TREE]]).toString();
 
 afterEach(() => {
   for (const name of ENV) delete process.env[name];
@@ -232,6 +235,48 @@ describe('checking a job on a CI server', () => {
     '/job/good/api/json': (res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
       res.end(JSON.stringify(jobJson('PIWI_RERUN_ARGS', 'PIWI_ORIGIN_REF', 'SUITE')));
+    },
+    '/api/json': (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          jobs: [
+            { _class: 'hudson.model.FreeStyleProject', name: 'good', buildable: true },
+            { _class: 'hudson.model.FreeStyleProject', name: 'retired', buildable: false },
+            {
+              _class: 'com.cloudbees.hudson.plugins.folder.Folder',
+              name: 'polaris',
+              jobs: [{ _class: 'org.jenkinsci.plugins.workflow.multibranch.WorkflowMultiBranchProject', name: 'e2e' }],
+            },
+          ],
+        }),
+      );
+    },
+    '/job/rich/api/json': (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          property: [
+            {
+              parameterDefinitions: [
+                { name: 'PIWI_RERUN_ARGS', type: 'StringParameterDefinition', defaultParameterValue: { value: '' } },
+                {
+                  name: 'TARGET_ENV',
+                  type: 'ChoiceParameterDefinition',
+                  description: 'Where the suite runs',
+                  choices: ['staging', 'production'],
+                  defaultParameterValue: { value: 'staging' },
+                },
+                {
+                  name: 'DEPLOY_TOKEN',
+                  type: 'PasswordParameterDefinition',
+                  defaultParameterValue: { value: 'hunter2' },
+                },
+              ],
+            },
+          ],
+        }),
+      );
     },
     '/job/bare/api/json': (res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -444,6 +489,67 @@ describe('checking a job on a CI server', () => {
     expect(await uses()).toEqual([
       expect.objectContaining({ feature: 'ci-check', subjectType: 'ci-action', subjectId: 'nightly', result: 'ok' }),
     ]);
+  });
+
+  test('lists the jobs under the base URL for the editor, logged as a listing', async () => {
+    useInstance();
+    const listing = await listCiServerJobs(db as never, 1, target({ preset: 'jenkins', rerun: { job: 'x' } }), USE);
+    expect(listing).toEqual({
+      jobs: [
+        { id: 'good', label: 'good' },
+        { id: 'polaris/e2e/{branch}', label: 'polaris/e2e/{branch}' },
+      ],
+      truncated: false,
+      message: null,
+    });
+    expect(seen[0]).toMatchObject({ method: 'GET', url: expect.stringMatching(/^\/api\/json\?tree=jobs/) });
+    expect(await uses()).toEqual([expect.objectContaining({ feature: 'ci-list', result: 'ok' })]);
+  });
+
+  test('reads the parameters of a job, never a password’s default', async () => {
+    useInstance();
+    const fields = await readCiServerJobFields(
+      db as never,
+      1,
+      target({ preset: 'jenkins', rerun: { job: 'rich' } }),
+      USE,
+    );
+    expect(fields).toEqual({
+      fields: [
+        { name: 'PIWI_RERUN_ARGS', type: 'string', required: false, default: '' },
+        {
+          name: 'TARGET_ENV',
+          type: 'choice',
+          required: false,
+          default: 'staging',
+          description: 'Where the suite runs',
+          options: ['staging', 'production'],
+        },
+        { name: 'DEPLOY_TOKEN', type: 'secret', required: false },
+      ],
+      message: null,
+    });
+    expect(JSON.stringify(fields)).not.toContain('hunter2');
+  });
+
+  test('says why a job or a listing cannot be read', async () => {
+    useInstance();
+    const locked = await readCiServerJobFields(
+      db as never,
+      1,
+      target({ preset: 'jenkins', rerun: { job: 'locked' } }),
+      USE,
+    );
+    expect(locked).toEqual({ fields: null, message: expect.stringContaining('(401)') });
+    const missing = await readCiServerJobFields(
+      db as never,
+      1,
+      target({ preset: 'jenkins', rerun: { job: 'gone' } }),
+      USE,
+    );
+    expect(missing).toEqual({ fields: null, message: expect.stringContaining('No job at this path') });
+    const elsewhere = target({ preset: 'jenkins', baseUrl: `${base}job/good/`, rerun: { job: 'x' } });
+    expect(await listCiServerJobs(db as never, 1, elsewhere, USE)).toMatchObject({ jobs: null });
   });
 
   test('reaches no private address the operator did not list', async () => {

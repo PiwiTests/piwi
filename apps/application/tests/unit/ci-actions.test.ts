@@ -695,6 +695,15 @@ describe('Check on a GitHub action', () => {
     expect(result.message).toContain('does not declare SUITE');
   });
 
+  test('fails when the workflow requires an input, with no default, that the action does not send', async () => {
+    fileAt.result = {
+      content: 'on:\n  workflow_dispatch:\n    inputs:\n      args: {}\n      TARGET_ENV: { required: true }\n',
+    };
+    const result = await checkCiAction(db, 1, github(), use);
+    expect(result).toMatchObject({ ok: false, missing: [] });
+    expect(result.message).toContain('requires TARGET_ENV');
+  });
+
   test('fails a workflow with no workflow_dispatch trigger', async () => {
     fileAt.result = { content: 'on: push\n' };
     expect(await checkCiAction(db, 1, github(), use)).toMatchObject({ ok: false, missing: [] });

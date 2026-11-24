@@ -13,6 +13,9 @@ import {
   ciActionInputValues,
   ciActionsProblem,
   ciServerTargetOf,
+  ciServerTargetOfListing,
+  resolveCiListingTarget,
+  type CiListingTarget,
   pickCiAction,
   resolveCiActionsSettings,
   type CiAction,
@@ -24,6 +27,7 @@ import {
   CI_SERVER_HTTPS_PROBLEM,
   ciServerCheckFinding,
   ciServerCheckPlans,
+  ciServerListPlan,
   ciServerRequestTemplate,
   DEFAULT_ARGS_PARAMETER,
   DEFAULT_DISPATCH_PARAMETER,
@@ -32,6 +36,7 @@ import {
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
+import { GITLAB_NO_JOBS, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import { NO_RETRY_ARGS } from '#shared/retry-command';
 import {
   ciPlaceLastDispatch,
@@ -294,10 +299,76 @@ export function assertDemoCiActions(body: { ciRerun?: unknown } | null): void {
   if (problem) throw demoHttpError(400, problem);
 }
 
-/** The answer the demo's Jenkins jobs give Check: each declares the reporter's default parameters. */
-const DEMO_JOB_JSON = {
-  property: [{ parameterDefinitions: [{ name: DEFAULT_ARGS_PARAMETER }, { name: DEFAULT_DISPATCH_PARAMETER }] }],
+/** A Jenkins job of the demo's listing. */
+const demoJob = (name: string) => ({ _class: 'org.jenkinsci.plugins.workflow.job.WorkflowJob', name, buildable: true });
+const demoFolder = (name: string, jobs: unknown[]) => ({
+  _class: 'com.cloudbees.hudson.plugins.folder.Folder',
+  name,
+  jobs,
+});
+
+/** What the demo's Jenkins answers a job listing: the jobs the seeded CI actions name. */
+const DEMO_JENKINS_JOBS = {
+  jobs: [
+    demoJob('checkout'),
+    demoFolder('api', [demoJob('integration'), demoJob('smoke'), demoJob('nightly')]),
+    demoFolder('design-system', [demoJob('components')]),
+    demoFolder('mobile-web', [demoJob('safari')]),
+    demoFolder('admin-dashboard', [demoJob('e2e')]),
+  ],
 };
+
+const stringParameter = (name: string, description: string) => ({
+  name,
+  type: 'StringParameterDefinition',
+  description,
+  defaultParameterValue: { value: '' },
+});
+const choiceParameter = (name: string, description: string, choices: string[]) => ({
+  name,
+  type: 'ChoiceParameterDefinition',
+  description,
+  choices,
+  defaultParameterValue: { value: choices[0] },
+});
+
+/**
+ * The parameters each demo job declares beside the reporter's two, by job
+ * path. The nightly job calls its suite `TEST_SUITE`, where the seeded
+ * Nightly action sends `SUITE`: its Check and its editor show the mismatch.
+ */
+const DEMO_JOB_PARAMETERS: Record<string, unknown[]> = {
+  'api/smoke': [
+    choiceParameter('TARGET_ENV', 'The environment the smoke suite runs against', ['staging', 'production']),
+  ],
+  'api/nightly': [
+    choiceParameter('TEST_SUITE', 'Which suite the nightly build runs', ['regression', 'smoke', 'full']),
+    {
+      name: 'HEADED',
+      type: 'BooleanParameterDefinition',
+      description: 'Run the browsers headed',
+      defaultParameterValue: { value: false },
+    },
+  ],
+};
+
+/**
+ * What the demo's Jenkins answers a job read: the reporter's default
+ * parameters, and the ones {@link DEMO_JOB_PARAMETERS} lists for the job.
+ */
+function demoJobJson(job: string | undefined) {
+  return {
+    property: [
+      {
+        parameterDefinitions: [
+          stringParameter(DEFAULT_ARGS_PARAMETER, 'Playwright arguments of a re-run'),
+          stringParameter(DEFAULT_DISPATCH_PARAMETER, 'The dispatch Piwi matches the run to'),
+          ...(DEMO_JOB_PARAMETERS[job ?? ''] ?? []),
+        ],
+      },
+    ],
+  };
+}
 
 const CANNOT_CHECK = {
   gitlab:
@@ -312,8 +383,8 @@ const CANNOT_CHECK = {
  * `POST /api/projects/:id/ci-actions/:actionId/check` in the demo: an action
  * the request carries (else the saved one) is checked as the server checks it,
  * up to the request. A Jenkins job answers as one that declares the default
- * parameters, so a renamed parameter or an input shows as missing. Nothing is
- * sent.
+ * parameters and those {@link DEMO_JOB_PARAMETERS} lists, so a renamed
+ * parameter or another input shows as missing. Nothing is sent.
  */
 export async function demoCiActionCheck(
   db: DemoDB,
@@ -364,7 +435,7 @@ export async function demoCiActionCheck(
   const notSent = allowed ? inputNames.filter((name) => !allowed.includes(name)) : [];
   const finding = ciServerCheckFinding(
     notSent.length > 0 ? { ...plan, required: plan.required.filter((name) => !notSent.includes(name)) } : plan,
-    DEMO_JOB_JSON,
+    demoJobJson(target.fields.job),
   );
   if (notSent.length === 0) return { ok: finding.ok, missing: finding.missing, message: finding.message };
   return {
@@ -372,4 +443,93 @@ export async function demoCiActionCheck(
     missing: finding.missing,
     message: `${finding.message} Not sent: ${notSent.join(', ')}, because the credential "${credential!.name}" does not allow these inputs.`,
   };
+}
+
+/** Why the demo lists nothing from a repository host. */
+const NO_REPOSITORY = 'The demo has no repository to read: it lists only a Jenkins job’s.';
+
+/**
+ * A listing request's target, as the server resolves it: refused with a 400
+ * when it names nothing to read, or a credential the project may not name.
+ */
+async function demoListingTarget(db: DemoDB, projectId: number, body: unknown): Promise<CiListingTarget> {
+  const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
+  const resolved = resolveCiListingTarget(raw.target);
+  if ('error' in resolved) throw demoHttpError(400, resolved.error);
+  const name = typeof raw.name === 'string' && raw.name.trim() ? raw.name.trim() : 'This CI action';
+  const problem = await ciActionsCredentialProblem(
+    db as never,
+    projectId,
+    { actions: [{ name, target: resolved.target }] },
+    [],
+    new Set(),
+    (await db.select({ url: projects.repositoryUrl }).from(projects).where(eq(projects.id, projectId)))[0]?.url ?? null,
+  );
+  if (problem) throw demoHttpError(400, problem);
+  return resolved.target;
+}
+
+/** The base URL a CI server target reads under, and its credential: the server's checks, with no instance CI server and no listed hosts. */
+async function demoCiServerBase(
+  db: DemoDB,
+  target: CiServerTarget,
+): Promise<{ baseUrl: string; credential: CredentialRecord | null } | { message: string }> {
+  const { credential, baseUrl } = await targetCredential(db, target);
+  if (!baseUrl) return { message: NO_TARGET };
+  if (!baseUrl.startsWith('https:')) return { message: CI_SERVER_HTTPS_PROBLEM };
+  return { baseUrl, credential };
+}
+
+/** Why the credential a target names refuses a read of `url`, as the server's credential rules refuse it. */
+function demoReadRefusal(
+  target: CiServerTarget,
+  credential: CredentialRecord | null,
+  projectId: number,
+  url: string,
+): string | null {
+  if (!target.credentialId) return null;
+  return credential
+    ? credentialRefusal(credential, { projectId, url, custom: false })
+    : 'The credential this CI action names does not exist: pick another one.';
+}
+
+/**
+ * `POST /api/projects/:id/ci-actions/jobs` in the demo: a Jenkins target lists
+ * the jobs the seeded CI actions name, read as the server reads a listing; a
+ * repository host has nothing to read. Nothing is sent.
+ */
+export async function demoCiJobs(db: DemoDB, projectId: number, body: unknown): Promise<CiJobListing> {
+  const target = await demoListingTarget(db, projectId, body);
+  const none = (message: string): CiJobListing => ({ jobs: null, truncated: false, message });
+  if (target.type === 'gitlab') return none(GITLAB_NO_JOBS);
+  if (target.type !== 'ci-server') return none(NO_REPOSITORY);
+  const server = ciServerTargetOfListing(target);
+  const base = await demoCiServerBase(db, server);
+  if ('message' in base) return none(base.message);
+  const plan = ciServerListPlan(server, base.baseUrl);
+  if ('error' in plan) return none(plan.error);
+  const refusal = demoReadRefusal(server, base.credential, projectId, plan.url);
+  if (refusal) return none(refusal);
+  const found = plan.jobs(DEMO_JENKINS_JOBS);
+  return found ? { jobs: found.jobs, truncated: found.truncated, message: null } : none('The answer lists no jobs.');
+}
+
+/**
+ * `POST /api/projects/:id/ci-actions/fields` in the demo: a Jenkins job's
+ * parameters as Check reads them; a repository host has nothing to read.
+ * Nothing is sent.
+ */
+export async function demoCiJobFields(db: DemoDB, projectId: number, body: unknown): Promise<CiJobFieldListing> {
+  const target = await demoListingTarget(db, projectId, body);
+  if (target.type !== 'ci-server') return { fields: null, message: NO_REPOSITORY };
+  if (!target.job) return { fields: null, message: 'Pick a job first.' };
+  const server = ciServerTargetOfListing(target);
+  const base = await demoCiServerBase(db, server);
+  if ('message' in base) return { fields: null, message: base.message };
+  const [plan] = ciServerCheckPlans(server, base.baseUrl);
+  if (!plan) return { fields: null, message: 'This target names no job to read.' };
+  if ('error' in plan) return { fields: null, message: plan.error };
+  const refusal = demoReadRefusal(server, base.credential, projectId, plan.url);
+  if (refusal) return { fields: null, message: refusal };
+  return { fields: plan.fields(demoJobJson(target.job)), message: null };
 }

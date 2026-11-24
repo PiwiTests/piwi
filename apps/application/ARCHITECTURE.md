@@ -231,7 +231,8 @@ Each entry names folders under `server/api/`.
   tests, failure clusters, the test catalog, coverage, the locator index, the Test Map (`graph`, `feature-map`,
   `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, CI dispatches
   (`ci-dispatches` to send one and list them, `ci-actions/offered`, an action's `branches` and `check`, through
-  `server/utils/ci-rerun.ts`), and the families listed below. The top-level `ci-dispatches/[id]` reads one dispatch.
+  `server/utils/ci-rerun.ts`; the action editor's `ci-actions/jobs` and `ci-actions/fields`, what a target declares,
+  through `server/utils/ci-jobs.ts` and the readers of `shared/ci-job-fields.ts`), and the families listed below. The top-level `ci-dispatches/[id]` reads one dispatch.
 - **`failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/`**: cluster list, detail and triage
   (status, assignee, snooze, bulk, quarantine, extract cases), AI diagnosis (`diagnose`, `context`, `commits`,
   `commit-diff`, `base-commit`), the diagnosis version history (`diagnoses`), suspect lines, fix plan, fixed-before

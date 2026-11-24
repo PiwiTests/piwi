@@ -34,6 +34,7 @@ import {
   CI_SERVER_HTTPS_PROBLEM,
   ciServerCheckFinding,
   ciServerCheckPlans,
+  ciServerListPlan,
   ciServerRequestTemplate,
   CI_SERVER_PRESET_REGISTRY,
   isUnderBaseUrl,
@@ -46,12 +47,15 @@ import {
   type CiTemplateValues,
 } from '#shared/ci-server';
 import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
+import { MAX_CI_JOBS, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
 /** How long a CI server has to answer a dispatch. */
 const CI_SERVER_TIMEOUT_MS = 10_000;
 /** The most of an answer read: enough for its link, build number or error message. */
 const MAX_ANSWER_BYTES = 64 * 1024;
+/** The most of a listing's answer read: a CI server's jobs and folders, or a job's parameters. */
+const MAX_LISTING_ANSWER_BYTES = 2 * 1024 * 1024;
 /** The most of a CI server's error message shown. */
 const MAX_ERROR_MESSAGE = 200;
 
@@ -187,6 +191,8 @@ export interface OutgoingCiRequest {
   custom: boolean;
   /** The action inputs left off because the credential it carries does not allow them. */
   droppedInputs: string[];
+  /** The most of the answer read; absent, {@link MAX_ANSWER_BYTES}. */
+  maxAnswerBytes?: number;
 }
 
 /**
@@ -265,25 +271,34 @@ export function prepareCiServerRequest(input: {
 export interface CiServerAnswer {
   status: number;
   header: (name: string) => string | null;
-  /** The answer's first {@link MAX_ANSWER_BYTES} bytes. */
+  /** The answer's first bytes, up to the request's limit. */
   text: string;
+  /** Whether the answer was longer than the request's limit. */
+  truncated: boolean;
 }
 
 let publicOnlyAgent: Agent | null = null;
 
-async function readLimited(body: ReadableStream<Uint8Array> | null): Promise<string> {
-  if (!body) return '';
+async function readLimited(
+  body: ReadableStream<Uint8Array> | null,
+  limit: number,
+): Promise<{ text: string; truncated: boolean }> {
+  if (!body) return { text: '', truncated: false };
   const reader = body.getReader();
   const chunks: Uint8Array[] = [];
   let size = 0;
-  while (size < MAX_ANSWER_BYTES) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    chunks.push(value);
-    size += value.byteLength;
+  let done = false;
+  while (size <= limit) {
+    const chunk = await reader.read();
+    if (chunk.done) {
+      done = true;
+      break;
+    }
+    chunks.push(chunk.value);
+    size += chunk.value.byteLength;
   }
   await reader.cancel().catch(() => {});
-  return Buffer.concat(chunks).subarray(0, MAX_ANSWER_BYTES).toString('utf8');
+  return { text: Buffer.concat(chunks).subarray(0, limit).toString('utf8'), truncated: !done && size > limit };
 }
 
 /**
@@ -307,8 +322,11 @@ export async function sendCiServerRequest(request: OutgoingCiRequest): Promise<C
     signal: AbortSignal.timeout(CI_SERVER_TIMEOUT_MS),
     ...(dispatcher ? { dispatcher } : {}),
   });
-  const text = await readLimited(res.body as unknown as ReadableStream<Uint8Array> | null);
-  return { status: res.status, header: (name) => res.headers.get(name), text };
+  const { text, truncated } = await readLimited(
+    res.body as unknown as ReadableStream<Uint8Array> | null,
+    request.maxAnswerBytes ?? MAX_ANSWER_BYTES,
+  );
+  return { status: res.status, header: (name) => res.headers.get(name), text, truncated };
 }
 
 const parseJson = (text: string): unknown => {
@@ -354,7 +372,7 @@ async function sendWithCredential(
   db: DbClient,
   request: OutgoingCiRequest,
   rebuild: (credential: CiServerCredential) => OutgoingCiRequest,
-  use: { projectId: number; feature: 'ci-dispatch' | 'ci-check' } & CiServerUse,
+  use: { projectId: number; feature: 'ci-dispatch' | 'ci-check' | 'ci-list' } & CiServerUse,
 ): Promise<CiServerAnswer> {
   const credential = request.credential;
   if (!credential) return sendCiServerRequest(request);
@@ -526,4 +544,152 @@ export async function checkCiServerTarget(
     }
   }
   return results;
+}
+
+/** The base URL and credential a target's requests use, or why it has none, for the user. */
+async function ciServerReadContext(
+  db: DbClient,
+  target: CiServerTarget,
+): Promise<{ credential: CiServerCredential | null; baseUrl: string } | { message: string }> {
+  let credential: CiServerCredential | null;
+  try {
+    credential = await ciServerCredential(db, target);
+  } catch (e) {
+    return { message: e instanceof Error ? e.message : String(e) };
+  }
+  const baseUrl = ciServerBaseUrl(target, credential);
+  const problem = ciServerBaseUrlProblem(baseUrl);
+  if (problem || !baseUrl) return { message: problem ?? 'No CI server is configured for this project.' };
+  return { credential, baseUrl };
+}
+
+/** What a non-2xx answer to a listing read means, for the user; `notFound` for a 404. */
+function listingAnswerMessage(answer: CiServerAnswer, sentCredential: boolean, notFound: string): string {
+  if (answer.status === 404) return notFound;
+  if (answer.status === 401) {
+    return sentCredential
+      ? 'The CI server refused the credential (401): check its user and secret.'
+      : 'The CI server asks for a credential (401): pick one for this action.';
+  }
+  if (answer.status === 403) {
+    return sentCredential
+      ? 'The CI server answered 403: the credential’s user cannot read it.'
+      : 'The CI server answered 403 to a request without a credential: pick a credential.';
+  }
+  return `${ciServerAnswerError(answer).message}.`;
+}
+
+/**
+ * Read `url` under a target's base URL with the credential a dispatch under it
+ * would carry, logged as a listing use: the answer's JSON, or why it could not
+ * be read, for the user. Nothing is started.
+ */
+async function readForListing(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+  credential: CiServerCredential | null,
+  url: string,
+  use: CiServerUse,
+  notFound: string,
+): Promise<{ json: unknown } | { message: string }> {
+  try {
+    const prepare = (withSecret: CiServerCredential | null): OutgoingCiRequest => ({
+      ...prepareCiServerCheck({ target, url, credential: withSecret }),
+      maxAnswerBytes: MAX_LISTING_ANSWER_BYTES,
+    });
+    const request = prepare(credential);
+    const answer = await sendWithCredential(db, request, prepare, { projectId, feature: 'ci-list', ...use });
+    if (answer.status < 200 || answer.status >= 300) {
+      return { message: listingAnswerMessage(answer, !!request.credential, notFound) };
+    }
+    if (answer.truncated) {
+      return {
+        message: `The CI server's answer is larger than ${MAX_LISTING_ANSWER_BYTES / 1024 / 1024} MB: type the job instead.`,
+      };
+    }
+    const json = parseJson(answer.text);
+    return json === null ? { message: 'The CI server did not answer JSON.' } : { json };
+  } catch (e) {
+    const reason = e instanceof Error ? e.message : String(e);
+    return { message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.` };
+  }
+}
+
+/**
+ * The jobs under a CI server target's base URL, for the action editor: read
+ * with the credential a dispatch would carry, and logged. Nothing is started.
+ */
+export async function listCiServerJobs(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+  use: CiServerUse,
+): Promise<CiJobListing> {
+  const none = (message: string): CiJobListing => ({ jobs: null, truncated: false, message });
+  const context = await ciServerReadContext(db, target);
+  if ('message' in context) return none(context.message);
+  const plan = ciServerListPlan(target, context.baseUrl);
+  if ('error' in plan) return none(plan.error);
+  const read = await readForListing(
+    db,
+    projectId,
+    target,
+    context.credential,
+    plan.url,
+    use,
+    'Nothing at the base URL lists jobs (404): use the CI server’s root, such as https://ci.example.com/.',
+  );
+  if ('message' in read) return none(read.message);
+  const found = plan.jobs(read.json);
+  if (!found) return none('The answer lists no jobs: is the base URL the CI server’s root?');
+  return {
+    jobs: found.jobs,
+    truncated: found.truncated,
+    message: found.truncated
+      ? `Folders more than three levels deep, and jobs past the first ${MAX_CI_JOBS}, are not listed: type the job’s path.`
+      : null,
+  };
+}
+
+/**
+ * The parameters a CI server target's job declares, for the action editor: the
+ * job Check reads (a multibranch job on its default branch), with the same
+ * credential, logged as a listing. Nothing is started.
+ */
+export async function readCiServerJobFields(
+  db: DbClient,
+  projectId: number,
+  target: CiServerTarget,
+  use: CiServerUse,
+): Promise<CiJobFieldListing> {
+  const context = await ciServerReadContext(db, target);
+  if ('message' in context) return { fields: null, message: context.message };
+  const [plan] = ciServerCheckPlans(target, context.baseUrl);
+  if (!plan) return { fields: null, message: 'This target names no job to read.' };
+  if ('error' in plan) return { fields: null, message: plan.error };
+  const read = await readForListing(
+    db,
+    projectId,
+    target,
+    context.credential,
+    plan.url,
+    use,
+    'No job at this path, or the credential’s user cannot see it (404).',
+  );
+  if ('message' in read) return { fields: null, message: read.message };
+  const fields = plan.fields(read.json);
+  if (!fields) {
+    return {
+      fields: null,
+      message: 'The answer does not describe a job: is the path a folder, or a multibranch pipeline without /{branch}?',
+    };
+  }
+  return {
+    fields,
+    message:
+      fields.length === 0
+        ? 'The job declares no parameters. A Pipeline job declares those of its Jenkinsfile on its first build: run it once.'
+        : null,
+  };
 }

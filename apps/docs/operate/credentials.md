@@ -119,12 +119,12 @@ connection's token moves to a credential of its own, and equal tokens of global 
 A credential's panel lists its uses, newest first, and the page's **Log**, for an administrator, those of every
 credential, a deleted one and the environment's included:
 
-- **What**: a CI dispatch or a Check, with the CI action it was for; a repository read, a commit status, a
+- **What**: a CI dispatch, Check or job listing, with the CI action it was for; a repository read, a commit status, a
   pull-request comment or an auto-heal write, with its commit, pull request or branch; an AI model call; a read or a
   write of a Jira or Zephyr Scale connection; a Slack message, with its channel.
 - **Where**: the project, and the request's origin and path (never its query).
 - **Who**: the user who started it, and the API key when it came through one (an MCP tool, a script); for counted
-  Checks, the last of the hour.
+  Checks and listings, the last of the hour.
 - **How it ended**: `sent` until the service answers, then `ok` or `failed` with the reason; `refused` when the
   credential's rules stopped it before anything was sent, with the reason.
 

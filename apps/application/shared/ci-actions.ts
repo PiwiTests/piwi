@@ -19,7 +19,9 @@ import type { ScmProviderName } from '#shared/scm-urls';
 import { resolveCiRerunSettings, type CiRerunSettings } from '#shared/ci-rerun';
 import {
   CI_SERVER_PRESET_REGISTRY,
+  CI_SERVER_PRESETS,
   ciServerTargetProblem,
+  normalizeCiServerBaseUrl,
   DEFAULT_ARGS_PARAMETER,
   DEFAULT_DISPATCH_PARAMETER,
   resolveCiServerTarget,
@@ -48,6 +50,9 @@ const ACTION_ID = /^[a-z0-9][a-z0-9-]{0,31}$/;
 export const CI_INPUT_NAME = /^[A-Za-z_][A-Za-z0-9_]{0,99}$/;
 /** The variable names GitLab and Bitbucket reserve for the CI itself: an input may not set them. */
 const RESERVED_VARIABLE_NAME = /^(CI_|GITLAB_|BITBUCKET_)/i;
+
+/** Whether GitLab and Bitbucket reserve a variable name for the CI itself, so an input may not set it. */
+export const isReservedVariableName = (name: string): boolean => RESERVED_VARIABLE_NAME.test(name);
 
 /** An input an action sends beside the Playwright arguments: a fixed value, or one of a few options. */
 export type CiActionInput =
@@ -666,6 +671,73 @@ export interface CiActionCheckResult {
   /** The names a dispatch sends that the target does not declare. */
   missing: string[];
   message: string;
+}
+
+/**
+ * A target to list jobs or fields from, as the action editor posts it: an
+ * action's target whose job (a workflow, a custom pipeline, a Jenkins job) may
+ * still be empty, and whose arguments input is not needed.
+ */
+export type CiListingTarget =
+  | { type: 'github'; ref: string; workflow: string; credentialId?: number }
+  | { type: 'gitlab'; ref: string; credentialId?: number }
+  | { type: 'bitbucket'; pipeline: string; credentialId?: number }
+  | {
+      type: 'ci-server';
+      preset: Exclude<CiServerPreset, 'custom'>;
+      baseUrl?: string;
+      credentialId?: number;
+      user?: string;
+      /** The Jenkins job path, empty to list the jobs. */
+      job: string;
+      /** The default branch a multibranch job is read on. */
+      ref: string;
+    };
+
+/** A target to list from, from an untrusted payload, or why it cannot be listed from, for the user. */
+export function resolveCiListingTarget(input: unknown): { target: CiListingTarget } | { error: string } {
+  if (!isRecord(input)) return { error: 'The request names no target.' };
+  const credential = credentialIdOf(input.credentialId);
+  if (input.type === 'github' || input.type === 'gitlab') {
+    const ref = str(input.ref);
+    if (!ref) return { error: 'Fill in the ref the files are read at.' };
+    return input.type === 'github'
+      ? { target: { type: 'github', ref, workflow: str(input.workflow), ...credential } }
+      : { target: { type: 'gitlab', ref, ...credential } };
+  }
+  if (input.type === 'bitbucket')
+    return { target: { type: 'bitbucket', pipeline: str(input.pipeline), ...credential } };
+  if (input.type !== 'ci-server') return { error: 'The target type is not one Piwi dispatches to.' };
+  if (input.preset === 'custom') return { error: 'A Custom request names no job to list.' };
+  if (!(CI_SERVER_PRESETS as readonly unknown[]).includes(input.preset)) {
+    return { error: 'The CI server preset is not one Piwi knows.' };
+  }
+  const baseUrl = normalizeCiServerBaseUrl(input.baseUrl);
+  if (str(input.baseUrl) && !baseUrl) return { error: 'The CI server base URL must be an http(s) URL.' };
+  const fields = isRecord(input.fields) ? input.fields : {};
+  const user = str(input.user);
+  return {
+    target: {
+      type: 'ci-server',
+      preset: input.preset as Exclude<CiServerPreset, 'custom'>,
+      ...(baseUrl ? { baseUrl } : {}),
+      ...credential,
+      ...(user ? { user } : {}),
+      job: str(fields.job),
+      ref: str(fields.ref),
+    },
+  };
+}
+
+/** The CI server target a listing target reads through, in the shape the CI server code reads. */
+export function ciServerTargetOfListing(target: Extract<CiListingTarget, { type: 'ci-server' }>): CiServerTarget {
+  return {
+    preset: target.preset,
+    ...(target.baseUrl ? { baseUrl: target.baseUrl } : {}),
+    ...(target.credentialId ? { credentialId: target.credentialId } : {}),
+    ...(target.user ? { user: target.user } : {}),
+    rerun: { job: target.job, ...(target.ref ? { ref: target.ref } : {}) },
+  };
 }
 
 /** The input and argument names a dispatch of this action sends, which the target must declare. */

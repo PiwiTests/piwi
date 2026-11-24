@@ -10,9 +10,7 @@ import { eq } from 'drizzle-orm';
 import { parse as parseYaml } from 'yaml';
 import { projects } from '../database/schema';
 import { checkCiServerTarget, type CiServerUse } from './ci-server-dispatch';
-import { createScmProvider } from './scm';
-import { CredentialRefusedError } from './credentials';
-import { readProjectRepositoryUrl } from './scm/project-repository';
+import { actionScmProvider, readGithubWorkflow } from './ci-jobs';
 import {
   ciActionSentNames,
   ciServerTargetOf,
@@ -21,6 +19,7 @@ import {
   type CiActionCheckResult,
   type CiActionsSettings,
 } from '#shared/ci-actions';
+import { githubDispatchFields, missingRequiredFields } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
 /** The project's CI actions (disabled and empty when unset). */
@@ -29,25 +28,20 @@ export async function getCiActionsSettings(db: DbClient, projectId: number): Pro
   return resolveCiActionsSettings(project?.ciRerun ?? null);
 }
 
-const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
-
 /**
  * What a workflow file's `workflow_dispatch` trigger declares: null when the
- * file has no such trigger, else the names of its inputs. `on` may be the
- * event name, a list of events, or a map of them.
+ * file has no such trigger, else the names of its inputs. Throws on a file
+ * that is not valid YAML.
  */
 export function workflowDispatchInputs(workflowYaml: string): string[] | null {
-  const document: unknown = parseYaml(workflowYaml);
-  const on = isRecord(document) ? document.on : undefined;
-  if (on === 'workflow_dispatch') return [];
-  if (Array.isArray(on)) return on.includes('workflow_dispatch') ? [] : null;
-  if (!isRecord(on) || !('workflow_dispatch' in on)) return null;
-  const trigger = on.workflow_dispatch;
-  const inputs = isRecord(trigger) && isRecord(trigger.inputs) ? Object.keys(trigger.inputs) : [];
-  return inputs;
+  return githubDispatchFields(parseYaml(workflowYaml))?.map((f) => f.name) ?? null;
 }
 
-/** Check a GitHub action: its workflow file, read at the action's ref, must declare every input a dispatch sends. */
+/**
+ * Check a GitHub action: its workflow file, read at the action's ref, must
+ * declare every input a dispatch sends, and a dispatch must send every input
+ * the workflow requires without a default.
+ */
 async function checkGithubAction(
   db: DbClient,
   projectId: number,
@@ -55,76 +49,37 @@ async function checkGithubAction(
   use: CiServerUse,
 ): Promise<CiActionCheckResult> {
   const { workflow, ref } = action.target;
-  if (/^\d+$/.test(workflow)) {
-    return {
-      ok: null,
-      missing: [],
-      message: `A workflow named by its numeric id (${workflow}) can't be checked by id: name its file, such as e2e.yml.`,
-    };
-  }
-  if (!/^[\w.-]+\.ya?ml$/i.test(workflow)) {
-    return { ok: null, missing: [], message: `"${workflow}" is not a workflow file name, such as e2e.yml.` };
-  }
-  const repositoryUrl = await readProjectRepositoryUrl(db, projectId);
   // The action's own credential is the one its dispatch carries: a refusal is the answer, never a public read.
-  const credentialId = action.target.credentialId ?? null;
-  let scm: Awaited<ReturnType<typeof createScmProvider>>;
-  try {
-    scm = repositoryUrl
-      ? await createScmProvider(repositoryUrl, db, projectId, {
-          actor: use.actor,
-          credentialId,
-          strict: !!credentialId,
-        })
-      : null;
-  } catch (e) {
-    if (!(e instanceof CredentialRefusedError)) throw e;
-    return { ok: null, missing: [], message: e.message };
-  }
-  if (!scm || scm.provider !== 'github') {
+  const opened = await actionScmProvider(
+    db,
+    projectId,
+    'github',
+    action.target.credentialId ?? null,
+    use.actor,
+    'its workflow',
+  );
+  if ('message' in opened) return { ok: null, missing: [], message: opened.message };
+  const read = await readGithubWorkflow(opened.scm, workflow, ref);
+  if (!('fields' in read)) return { ok: read.refused ? false : null, missing: [], message: read.message };
+  const sent = ciActionSentNames(action);
+  const declared = read.fields.map((f) => f.name);
+  const missing = sent.filter((name) => !declared.includes(name));
+  const required = missingRequiredFields(read.fields, sent).map((f) => f.name);
+  if (missing.length > 0) {
     return {
-      ok: null,
-      missing: [],
-      message: "This project's repository is not on GitHub, so its workflow can't be read.",
+      ok: false,
+      missing,
+      message: `The workflow does not declare ${missing.join(', ')}: GitHub rejects a dispatch that sends an input the workflow does not declare.`,
     };
   }
-  const path = `.github/workflows/${workflow}`;
-  let file: Awaited<ReturnType<typeof scm.fetchFileAtRef>>;
-  try {
-    file = await scm.fetchFileAtRef(path, ref);
-  } catch (e) {
-    const reason = e instanceof Error ? e.message : String(e);
-    return { ok: null, missing: [], message: `${path} could not be read at ${ref}: ${reason}.` };
-  }
-  if (!file) {
-    return {
-      ok: null,
-      missing: [],
-      message: `${path} could not be read at ${ref}: it is missing there, or the SCM credential cannot read it.`,
-    };
-  }
-  let declared: string[] | null;
-  try {
-    declared = workflowDispatchInputs(file.content);
-  } catch {
-    return { ok: null, missing: [], message: `${path} is not valid YAML at ${ref}.` };
-  }
-  if (!declared) {
+  if (required.length > 0) {
     return {
       ok: false,
       missing: [],
-      message: `The workflow has no workflow_dispatch trigger, so GitHub rejects a dispatch of ${workflow}.`,
+      message: `The workflow requires ${required.join(', ')}, with no default, which this action does not send: add ${required.length > 1 ? 'them' : 'it'} as inputs, or GitHub rejects the dispatch.`,
     };
   }
-  const missing = ciActionSentNames(action).filter((name) => !declared.includes(name));
-  if (missing.length === 0) {
-    return { ok: true, missing, message: `The workflow declares ${ciActionSentNames(action).join(', ')}.` };
-  }
-  return {
-    ok: false,
-    missing,
-    message: `The workflow does not declare ${missing.join(', ')}: GitHub rejects a dispatch that sends an input the workflow does not declare.`,
-  };
+  return { ok: true, missing, message: `The workflow declares ${sent.join(', ')}.` };
 }
 
 /**

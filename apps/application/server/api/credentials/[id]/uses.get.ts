@@ -18,7 +18,27 @@ defineRouteMeta({
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
       { name: 'projectId', in: 'query', required: false, schema: { type: 'integer' } },
-      { name: 'feature', in: 'query', required: false, schema: { type: 'string', enum: ['ci-dispatch', 'ci-check'] } },
+      {
+        name: 'feature',
+        in: 'query',
+        required: false,
+        schema: {
+          type: 'string',
+          enum: [
+            'ci-dispatch',
+            'ci-check',
+            'ci-list',
+            'scm-read',
+            'scm-comment',
+            'scm-status',
+            'scm-pull-request',
+            'ai-call',
+            'integration-read',
+            'integration-write',
+            'notification',
+          ],
+        },
+      },
       {
         name: 'result',
         in: 'query',
