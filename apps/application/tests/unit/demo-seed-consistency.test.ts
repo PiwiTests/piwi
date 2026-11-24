@@ -29,7 +29,8 @@ import type { WireResourceFinding } from '#shared/types';
 import { GATEWAY_STATUSES, classifyRunHealth } from '#shared/handlers/run-health';
 import { isEligibleRun } from '#shared/run-eligibility';
 import { matchCiDispatch, type CiDispatchState } from '#shared/ci-dispatches';
-import { pickCiAction, resolveCiActionsSettings, type CiActionKind } from '#shared/ci-actions';
+import { ciServerTargetOf, pickCiAction, resolveCiActionsSettings, type CiActionKind } from '#shared/ci-actions';
+import { ciServerTemplateValues } from '#shared/handlers/ci-rerun-target';
 import { buildRetryArgs } from '#shared/retry-command';
 import type { CiRerunProvider } from '#shared/ci-rerun';
 import { runBaseUrls } from '#shared/graph';
@@ -1390,7 +1391,18 @@ describe('CI dispatches hold as the server stores them', () => {
         environmentId: (run!.environment_id as number | null) ?? null,
       });
       expect(pick.action?.id, `dispatch ${d.id}`).toBe(d.action_id);
-      expect(d.ref, `dispatch ${d.id}`).toBe(run!.branch);
+      const target = pick.action!.target;
+      expect(target.type, `dispatch ${d.id}`).toBe('ci-server');
+      if (target.type !== 'ci-server') continue;
+      // The branch the request sends: none for a job that runs its configured branch.
+      const sent = ciServerTemplateValues(
+        ciServerTargetOf(target),
+        String(d.args),
+        String(d.id),
+        run!.branch as string,
+        null,
+      );
+      expect(d.ref, `dispatch ${d.id}`).toBe(sent.ref || null);
       const cases = q(
         `SELECT tc.file_path, trc.line, trc.browser_name FROM test_runs_cases trc JOIN test_cases tc ON tc.id = trc.test_case_id
          WHERE trc.test_run_id = ${d.source_run_id} AND trc.failure_cluster_id = ${d.cluster_id} ORDER BY trc.id DESC`,

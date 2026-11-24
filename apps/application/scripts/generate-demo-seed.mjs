@@ -7687,8 +7687,8 @@ const REUSED_RESULTS = [];
 
 // ── CI dispatches ──────────────────────────────────────────────────────────
 // Two clusters' Re-run in CI, as the cluster page's "Last re-run" line shows them: each through the action the server
-// picks for the run it re-runs (`rerunActionOf`), on that run's branch, with the arguments a dispatch builds from its
-// failures there. Cluster 6's went out two hours after its fix landed, and the one-test re-run it started passed: it
+// picks for the run it re-runs (`rerunActionOf`), whose job runs its configured branch, with the arguments a dispatch
+// builds from its failures there. Cluster 6's went out two hours after its fix landed, and the one-test re-run it started passed: it
 // carries the dispatch id as its origin ref, as a job that passes `PIWI_ORIGIN_REF` on reports it. Cluster 3's went out
 // half an hour after a failure more than eight hours before the newest run, and no run answered it within the window.
 const CI_DISPATCHES = [];
@@ -7732,7 +7732,7 @@ const CI_DISPATCHES = [];
         test_case_id: null,
         provider: 'ci-server',
         preset: 'jenkins',
-        ref: source.branch,
+        ref: null,
         inputs: JSON.stringify(
           Object.fromEntries(action.inputs.map((i) => [i.name, i.kind === 'fixed' ? i.value : i.default])),
         ),

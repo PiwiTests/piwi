@@ -24,7 +24,12 @@ import {
   type CiActionTarget,
   type CiActionsSettings,
 } from '#shared/ci-actions';
-import { ciServerRequestTemplate, segmentClimbsWhenDecoded, type CiRequestTemplate } from '#shared/ci-server';
+import {
+  ciServerRequestTemplate,
+  segmentClimbsWhenDecoded,
+  type CiRequestTemplate,
+  type CiServerTarget,
+} from '#shared/ci-server';
 import type { CiDispatchView, FlakeLabKind } from '#shared/ci-dispatches';
 import { parseRouteId } from '#shared/route-id';
 import { foldText } from '#shared/utils/fold-text';
@@ -196,11 +201,16 @@ function requestTexts(template: CiRequestTemplate): string[] {
   ];
 }
 
+/** Whether a CI server's re-run request names the branch: `{{ref}}` or `{{branchJob}}` in its path, query, headers or body. */
+export function ciServerTakesBranch(server: CiServerTarget): boolean {
+  const request = ciServerRequestTemplate(server, 'rerun')?.template;
+  return Boolean(request && requestTexts(request).some((text) => BRANCH_PLACEHOLDER.test(text)));
+}
+
 /** The branch mode of a target ({@link CiBranchMode}). */
 export function ciBranchMode(target: CiActionTarget): CiBranchMode {
   if (target.type !== 'ci-server') return 'list';
-  const request = ciServerRequestOf(target);
-  return request && requestTexts(request).some((text) => BRANCH_PLACEHOLDER.test(text)) ? 'typed' : 'fixed';
+  return ciServerTakesBranch(ciServerTargetOf(target)) ? 'typed' : 'fixed';
 }
 
 /** The branch a target runs when a dispatch names none; null when the target leaves it to the CI (Bitbucket, a fixed job). */

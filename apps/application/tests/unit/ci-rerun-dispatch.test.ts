@@ -564,6 +564,17 @@ describe('matchCiDispatch', () => {
     expect(matchCiDispatch({ ...run, branch: 'other' }, [unnumbered])).toBeNull();
   });
 
+  test('matches a CI server dispatch whose job runs its configured branch on any branch, and no other with none', () => {
+    const fixed = { ...base, provider: 'ci-server' as const, id: 'x', at: 0, providerRunId: '42', files: run.files };
+    expect(matchCiDispatch({ ...run, branch: 'release', buildNumber: '42' }, [fixed])).toBe(fixed);
+    expect(matchCiDispatch({ ...run, branch: 'release' }, [{ ...fixed, providerRunId: null }])).toMatchObject({
+      id: 'x',
+    });
+    // Bitbucket learns its branch only once sent, and a GitHub dispatch always names one.
+    expect(matchCiDispatch(run, [{ ...fixed, provider: 'github' as const, providerRunId: null }])).toBeNull();
+    expect(matchCiDispatch(run, [{ ...fixed, provider: 'bitbucket' as const, providerRunId: null }])).toBeNull();
+  });
+
   test("leaves another job's build of the same number, and a build started before the dispatch", () => {
     const d = {
       ...base,
@@ -849,7 +860,8 @@ describe('a CI server dispatch', () => {
       provider: 'ci-server',
       preset: 'jenkins',
       url: `${base}job/polaris/job/e2e/`,
-      ref: 'feature/coupon',
+      // The job runs its configured branch, whatever the cluster's.
+      ref: null,
       files: ['tests/checkout.spec.ts'],
       tests: 2,
       byName: 'Ada',

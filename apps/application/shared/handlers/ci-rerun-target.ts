@@ -15,9 +15,14 @@ import type { CiServerTarget, CiTemplateValues } from '#shared/ci-server';
 import type { CiActionKind } from '#shared/ci-actions';
 import { flakeLabCiArgs } from '#shared/ci-rerun';
 import type { CiDispatchView } from '#shared/ci-dispatches';
-import { ciDispatchSourceKind, type CiDispatchSource, type CiDispatchStart } from '#shared/ci-dispatch-request';
+import {
+  ciDispatchSourceKind,
+  ciServerTakesBranch,
+  type CiDispatchSource,
+  type CiDispatchStart,
+} from '#shared/ci-dispatch-request';
 import { buildRetryArgs, toPosixPath, type RetryCase } from '#shared/retry-command';
-import { isVisibleRun, notPrivateRun, runCommit } from '#shared/run-eligibility';
+import { isVisibleRun, notLabRun, notPrivateRun, runCommit } from '#shared/run-eligibility';
 import { FAILED_STATUS_KEYS } from '#shared/utils/test-counts';
 import { clusterRerunCases, MAX_RERUN_TESTS } from './cluster-rerun-cases';
 import { clusterLastDispatch, runDispatchAction, testLastFlakeLabDispatch } from './ci-dispatches';
@@ -92,12 +97,16 @@ export async function runFailedRerunCases(db: DrizzleDB, runId: number): Promise
   return [...cases.values()];
 }
 
-/** The run of a test's newest execution, whose repository and branch a Flake Lab dispatch uses. */
+/**
+ * The run of a test's newest execution in a team run, whose repository and
+ * branch a Flake Lab dispatch uses: a lab run and a private run are left out.
+ */
 async function latestTestRunId(db: DrizzleDB, testCaseId: number): Promise<number | null> {
   const [row] = await db
     .select({ testRunId: testRunsCases.testRunId })
     .from(testRunsCases)
-    .where(eq(testRunsCases.testCaseId, testCaseId))
+    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+    .where(and(eq(testRunsCases.testCaseId, testCaseId), notLabRun(testRuns.origin)))
     .orderBy(desc(testRunsCases.id))
     .limit(1);
   return row?.testRunId ?? null;
@@ -292,7 +301,11 @@ export async function projectRunBranches(db: DrizzleDB, projectId: number): Prom
   return rows.map((r) => r.branch?.trim() ?? '').filter(Boolean);
 }
 
-/** The values a CI server template is filled with: the branch asked, else the target's `ref` field. */
+/**
+ * The values a CI server template is filled with: the branch asked, else the
+ * target's `ref` field; none for a request that names no branch, whose job
+ * runs its configured branch, so its dispatch records none.
+ */
 export function ciServerTemplateValues(
   target: CiServerTarget,
   args: string,
@@ -300,7 +313,8 @@ export function ciServerTemplateValues(
   ref: string | null,
   commit: string | null,
 ): CiTemplateValues {
-  return { args, dispatchId, ref: ref ?? target.rerun.ref ?? '', commit: commit ?? '' };
+  const branch = ciServerTakesBranch(target) ? (ref ?? target.rerun.ref ?? '') : '';
+  return { args, dispatchId, ref: branch, commit: commit ?? '' };
 }
 
 /** The spec files a dispatch re-runs, as its record lists them. */

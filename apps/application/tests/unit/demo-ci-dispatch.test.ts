@@ -95,7 +95,7 @@ describe('the demo’s CI dispatch', () => {
       origin: 'page',
       provider: 'ci-server',
       preset: 'jenkins',
-      ref: 'main',
+      ref: null,
       args: '"/tests/checkout.spec.ts:12" --project="chromium"',
       state: 'dispatched',
       byName: 'Avery',

@@ -161,7 +161,7 @@ const sameFiles = (d: CiDispatchCandidate, runFiles: string) => !!d.files?.lengt
  * 3. once the run's files are known, for a re-run or a Flake Lab experiment (never a whole suite): a CI server's
  *    build number on the dispatch's branch, with exactly its spec files; else the newest CI server dispatch, or
  *    GitHub dispatch that answered no run id, on the run's branch, started before the run, whose spec files the run
- *    executed exactly.
+ *    executed exactly. A CI server dispatch whose job runs its configured branch names none, and matches on any.
  *
  * A dispatch already matched, refused or past its window is never matched.
  */
@@ -201,7 +201,9 @@ export function matchCiDispatch<T extends CiDispatchCandidate>(run: CiDispatchRu
   if (run.files == null) return null;
 
   const runFiles = [...new Set(run.files)].sort().join('\n');
-  const byFiles = open.filter((d) => d.kind !== 'suite' && d.ref != null && d.ref === run.branch);
+  const byFiles = open.filter(
+    (d) => d.kind !== 'suite' && (d.ref == null ? d.provider === 'ci-server' : d.ref === run.branch),
+  );
   const byBuild = byFiles.find(
     (d) =>
       d.provider === 'ci-server' &&

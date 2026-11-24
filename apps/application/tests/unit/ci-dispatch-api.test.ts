@@ -286,6 +286,27 @@ describe('a dispatch from every source', () => {
     expect(sent().args).toBe('');
   });
 
+  test("a test's Flake Lab experiment on the branch of its newest team run, never a private or lab run", async () => {
+    await db.insert(schema.testRuns).values({
+      id: 5,
+      projectId: 1,
+      status: 'failed',
+      branch: 'my-lab',
+      startTime: new Date(Date.UTC(2026, 8, 1, 11)),
+      metadata: { scm: { remoteUrl: GITHUB, branch: 'my-lab' } },
+      origin: 'flake-lab',
+    });
+    await db
+      .insert(schema.testRunsCases)
+      .values({ id: 16, testRunId: 5, testCaseId: 1, status: 'failed', line: 12, browserName: 'chromium' });
+    expect(await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'verify' })).toMatchObject({
+      ok: true,
+      dispatch: { kind: 'flakeLab', actionId: 'lab', args: 'flake verify 1', ref: 'main' },
+    });
+    const [lab] = await db.select().from(schema.ciDispatches).where(eq(schema.ciDispatches.kind, 'flakeLab'));
+    expect(lab).toMatchObject({ sourceRunId: 2, testCaseId: 1 });
+  });
+
   test("a test's Flake Lab experiment, and the project's whole suite on its default branch", async () => {
     expect(await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'verify' })).toMatchObject({
       ok: true,
