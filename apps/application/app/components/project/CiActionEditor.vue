@@ -117,7 +117,7 @@ const currentFields = computed(() => (listing.fieldsLoading.value ? null : listi
 const declaredByName = computed(() => new Map((currentFields.value ?? []).map((f) => [f.name, f])));
 const listingLoading = computed(() => listing.jobsLoading.value || listing.fieldsLoading.value);
 /** What the listing says, for the line under the target: what is being read, or why something is not listed. */
-const listingStatus = computed(() => {
+const listingMessage = computed(() => {
   if (listingLoading.value) return 'Reading what the target declares…';
   return [...new Set([listing.jobsMessage.value, listing.fieldsMessage.value].filter(Boolean))].join(' ') || null;
 });
@@ -347,7 +347,7 @@ function submit() {
         </div>
         <CiListingStatus
           v-if="repositoryHost"
-          :status="listingStatus"
+          :message="listingMessage"
           :loading="listingLoading"
           @refresh="listing.refresh()"
         />
@@ -383,7 +383,7 @@ function submit() {
         </div>
         <CiListingStatus
           v-if="draft.type === 'jenkins'"
-          :status="listingStatus"
+          :message="listingMessage"
           :loading="listingLoading"
           @refresh="listing.refresh()"
         />

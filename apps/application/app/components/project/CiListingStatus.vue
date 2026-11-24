@@ -6,7 +6,7 @@
  */
 defineProps<{
   /** What the listing says; null when it has nothing to say. */
-  status: string | null;
+  message: string | null;
   loading: boolean;
 }>();
 const emit = defineEmits<{ refresh: [] }>();
@@ -14,7 +14,7 @@ const emit = defineEmits<{ refresh: [] }>();
 
 <template>
   <div class="flex items-start justify-between gap-2" data-testid="ci-action-listing-status">
-    <p class="text-xs text-muted">{{ status }}</p>
+    <p class="text-xs text-muted">{{ message }}</p>
     <UButton
       color="neutral"
       variant="ghost"
