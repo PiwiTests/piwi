@@ -229,9 +229,9 @@ Each entry names folders under `server/api/`.
 - **`projects/`**: the list with stats (`projects.get.ts`), `menu` (the sidebar's short list, one SELECT),
   `overview` (per-project trends), create, detail, update, delete. Under `projects/[id]/`: members, flaky and slow
   tests, failure clusters, the test catalog, coverage, the locator index, the Test Map (`graph`, `feature-map`,
-  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, CI (`ci-dispatches`
-  to send one and list them, `ci-actions/offered`, an action's `branches` and `check`; `ci-dispatches/[id]` reads one,
-  through `server/utils/ci-rerun.ts`), and the families listed below.
+  `gaps/`, `probes/`, `surface/`), quarantine, the Flake Lab, capabilities, markers, share links, CI dispatches
+  (`ci-dispatches` to send one and list them, `ci-actions/offered`, an action's `branches` and `check`, through
+  `server/utils/ci-rerun.ts`), and the families listed below. The top-level `ci-dispatches/[id]` reads one dispatch.
 - **`failure-clusters/`, `cluster-merge-suggestions/`, `failure-diagnoses/`**: cluster list, detail and triage
   (status, assignee, snooze, bulk, quarantine, extract cases), AI diagnosis (`diagnose`, `context`, `commits`,
   `commit-diff`, `base-commit`), the diagnosis version history (`diagnoses`), suspect lines, fix plan, fixed-before

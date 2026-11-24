@@ -191,9 +191,9 @@ Custom request is JSON: `auth` (`none`, `basic`, `bearer`, or `{ "header": "X-To
 | Placeholder | Value |
 |---|---|
 | <code v-pre>{{args}}</code> | The Playwright arguments, or `flake 12` for Flake Lab |
-| <code v-pre>{{dispatchId}}</code> | The dispatch id, which the run hands back as `PIWI_ORIGIN_REF` |
-| <code v-pre>{{ref}}</code> | The branch asked, else the run's, else the default branch you set |
-| <code v-pre>{{commit}}</code> | The commit of that run, else empty |
+| <code v-pre>{{dispatchId}}</code> | The dispatch id the run hands back as `PIWI_ORIGIN_REF` |
+| <code v-pre>{{ref}}</code> | The branch asked, else the run's (the project's for its whole suite), else the action's |
+| <code v-pre>{{commit}}</code> | That run's commit, else empty |
 | <code v-pre>{{branchJob}}</code> | The branch as Jenkins names a branch job (`feature/x` is `feature%2Fx`) |
 
 A placeholder in a path is percent-encoded inside its segment, and a value that would add a `.` or `..` segment is

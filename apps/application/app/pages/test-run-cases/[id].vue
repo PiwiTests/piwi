@@ -16,7 +16,6 @@ import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import { loadRerunInfo, type RerunInfo } from '~/composables/useCiRerun';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
@@ -283,18 +282,15 @@ const canEditLinks = computed(() => can('link:write', executionProjectId.value))
 const canRerun = computed(() => can('run:control', executionProjectId.value));
 
 // CI re-run of this test, or of its cluster's tests, for the Verify section, with the cluster's last re-run.
-const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
-  `test-run-case-rerun-${testCaseId}`,
-  () =>
-    executionProjectId.value
-      ? loadRerunInfo(requestFetch, {
-          projectId: executionProjectId.value,
-          source: { executionId: Number(testCaseId), scope: 'test' },
-          clusterId: failureCluster.value?.id ?? null,
-          mayDispatch: canRerun.value,
-        }).catch(() => null)
-      : Promise.resolve(null),
-  { default: (): RerunInfo | null => null },
+const testRerunPlace = computed(() =>
+  executionProjectId.value
+    ? { projectId: executionProjectId.value, source: { executionId: Number(testCaseId), scope: 'test' as const } }
+    : null,
+);
+const { rerunInfo, refreshRerun } = await useRerunInfo(`test-run-case-rerun-${testCaseId}`, () =>
+  testRerunPlace.value
+    ? { ...testRerunPlace.value, clusterId: failureCluster.value?.id ?? null, mayDispatch: canRerun.value }
+    : null,
 );
 // "Fixed before" for the cluster this failure belongs to.
 const { data: fixedBeforeData, refresh: refreshFixedBefore } = await useAsyncData<FixedBeforeMatch[]>(
@@ -352,10 +348,7 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
 });
 
 const { rerunning: rerunningTest, triggerRerun: triggerTestRerun } = useCiRerun(
-  () =>
-    executionProjectId.value
-      ? { projectId: executionProjectId.value, source: { executionId: Number(testCaseId), scope: 'test' } }
-      : null,
+  testRerunPlace,
   refreshRerun,
   'This test is re-running in CI.',
 );
@@ -368,13 +361,14 @@ const { rerunning, triggerRerun } = useCiRerun(
   "The cluster's tests are re-running in CI.",
 );
 
+/** Whether this viewer can start a CI re-run from here: they may, and one can be sent. */
+const canSendRerun = computed(() => canRerun.value && Boolean(rerunInfo.value?.available));
+
 /**
- * The Verify section shows to a viewer who may start a CI re-run when one can be sent, and to any other viewer once a
- * re-run happened; the desktop app re-runs the test from the navbar.
+ * The Verify section shows when this viewer can start a CI re-run, and to every viewer once a re-run happened; the
+ * desktop app re-runs the test from the navbar.
  */
-const showVerify = computed(() =>
-  canRerun.value ? Boolean(rerunInfo.value?.available) : Boolean(rerunInfo.value?.lastDispatch),
-);
+const showVerify = computed(() => canSendRerun.value || Boolean(rerunInfo.value?.lastDispatch));
 
 /** Reproduce shows for a failing execution once its recipe is available. */
 const showReproduce = computed(() => Boolean(verdict.value) && Boolean(reproduceData.value?.reproduce?.steps?.length));
@@ -409,7 +403,7 @@ const reproduceSummary = computed(() =>
   ),
 );
 const verifySummary = computed(() => {
-  if (!canRerun.value) return 'When CI last re-ran it';
+  if (!canSendRerun.value) return 'When CI last re-ran it';
   return failureCluster.value ? 'Re-run this test, or every test of its cluster, in CI' : 'Re-run this test in CI';
 });
 
@@ -1181,7 +1175,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <template v-if="showVerify" #verify>
               <div class="flex flex-wrap items-center gap-2">
                 <UButton
-                  v-if="canRerun"
+                  v-if="canSendRerun"
                   size="xs"
                   color="neutral"
                   variant="outline"
@@ -1193,7 +1187,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                   Re-run this test in CI
                 </UButton>
                 <UButton
-                  v-if="canRerun && failureCluster"
+                  v-if="canSendRerun && failureCluster"
                   size="xs"
                   color="neutral"
                   variant="outline"

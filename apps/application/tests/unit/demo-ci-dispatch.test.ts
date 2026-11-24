@@ -16,7 +16,7 @@ vi.mock('~~/app/demo/db.client', async (importOriginal) => ({
 
 const { demoCiBranches, demoCiOffered, demoDispatchCi } = await import('~~/app/demo/api/ci-rerun');
 const { handleDemoRequest } = await import('~~/app/demo/api/router');
-const { dispatchRunResult, rerunInfoFromOffered } = await import('~/composables/useCiRerun');
+const { dispatchRunResult, loadRerunInfo, rerunInfoFromOffered } = await import('~/composables/useCiRerun');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -180,6 +180,51 @@ describe('the demo’s CI dispatch', () => {
     await expect(
       handleDemoRequest('/api/projects/1/ci-dispatches', 'POST', { source: { runId: 1 }, kind: 'tests' }),
     ).rejects.toMatchObject({ statusCode: 400 });
+  });
+});
+
+describe('loadRerunInfo', () => {
+  /** `$fetch` as the demo's service worker answers it. */
+  const fetcher = (async (url: string, options?: { query?: Record<string, unknown> }) =>
+    handleDemoRequest(
+      url,
+      'GET',
+      undefined,
+      new URLSearchParams(Object.entries(options?.query ?? {}).map(([k, v]) => [k, String(v)])).toString(),
+    )) as unknown as typeof $fetch;
+  const place = { projectId: 1, source: { clusterId: 1 }, clusterId: 1 };
+
+  test('gives a viewer the cluster’s last dispatch the provider took, and one who may dispatch what it is offered', async () => {
+    const sent = await demoDispatchCi(db as never, 1, request({ from: 'cluster', clusterId: 1 }), 1);
+    // A later refusal is not the last re-run.
+    await db.insert(schema.ciDispatches).values({
+      id: 'ffffffffffffffff',
+      projectId: 1,
+      actionId: 'rerun',
+      actionName: 'Re-run failed tests',
+      origin: 'page',
+      kind: 'tests',
+      provider: 'ci-server',
+      args: 'x',
+      inputs: {},
+      clusterId: 1,
+      state: 'refused',
+      detail: 'No such job',
+      createdAt: new Date(Date.now() + 60_000),
+    });
+    expect(await loadRerunInfo(fetcher, { ...place, mayDispatch: false })).toEqual({
+      available: false,
+      reason: null,
+      action: null,
+      lastDispatch: expect.objectContaining({ id: sent.id }),
+    });
+    expect(await loadRerunInfo(fetcher, { ...place, mayDispatch: true })).toMatchObject({
+      available: true,
+      action: { id: 'rerun' },
+      lastDispatch: { id: sent.id },
+    });
+    const noCluster = { projectId: 1, source: { executionId: 1, scope: 'test' as const }, clusterId: null };
+    expect(await loadRerunInfo(fetcher, { ...noCluster, mayDispatch: false })).toMatchObject({ lastDispatch: null });
   });
 });
 

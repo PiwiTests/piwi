@@ -1487,8 +1487,10 @@ const routes: RouteEntry[] = [
     pattern: /^\/api\/projects\/(\d+)\/ci-dispatches$/,
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const state = q?.get('state') ?? 'all';
-      if (state !== 'open' && state !== 'all') throw demoHttpError(400, 'state must be open or all');
+      const state = q?.get('state') || 'all';
+      if (state !== 'open' && state !== 'taken' && state !== 'all') {
+        throw demoHttpError(400, 'state must be open, taken or all');
+      }
       const idOf = (name: string) => {
         const raw = q?.get(name);
         if (raw == null || raw === '') return null;
@@ -1496,7 +1498,8 @@ const routes: RouteEntry[] = [
         if (id === null) throw demoHttpError(400, `${name} must be a positive integer`);
         return id;
       };
-      const limit = Number(q?.get('limit') ?? 20);
+      // As the server: an empty value is none.
+      const limit = Number(q?.get('limit') || 20);
       if (!Number.isInteger(limit)) throw demoHttpError(400, 'Invalid query parameter "limit": expected an integer');
       return {
         items: await listCiDispatches(await getDemoDb(), +m[1]!, {

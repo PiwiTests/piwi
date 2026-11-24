@@ -20,8 +20,9 @@ branch mode (D6) and the choice inputs against the action (D7); the reads of a d
 the actions offered for a place, with each one's branch mode, inputs and readiness, the D2 default and the place's last
 dispatch; the branches an action may run on; `rerun_cluster_in_ci`'s `ref` and `inputs`, and `get_ci_dispatch` (D16).
 The per-place routes are gone (Q5), and the cluster and execution pages, and the Flake Lab next step, dispatch through
-the new route with the toasts they had. `RunFollowUp`, which replaces those toasts, moves to PR 4 with the dialog. PR 4
-and the rest remain. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379)
+the new route with the toasts they had. `RunFollowUp`, which replaces those toasts, moves to PR 4 with the dialog. A
+dispatch in the demo stays `dispatched`: moving it to `running` and `ended` against a seeded run remains, with PR 4
+and the rest. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379)
 and is recorded in [ci-actions.md](../adr/ci-actions.md).
 
 ## What existed
@@ -126,15 +127,17 @@ The table comes in three generated migrations per dialect: the table, a custom m
 ## API
 
 - `GET /api/projects/:id/ci-actions/offered`, with the place's source as query keys: the actions that take it. Each
-  comes with its target label, environment, kinds, branch mode and default branch, and its inputs. The response also
-  says which action is the default for the place under D2, and gives the place's last dispatch. Needs `run:control`.
+  comes with its target label, environment, branch mode and default branch, its inputs, and whether it can be sent.
+  The response also says which action is the default for the place under D2, and gives the place's last dispatch.
+  Needs `run:control`.
 - `GET /api/projects/:id/ci-actions/:actionId/branches?q=`: the branches of D6, each with where it came from.
-- `POST /api/projects/:id/ci-dispatches` with `{ action, kind, source, ref?, inputs? }`. The source is one of
+- `POST /api/projects/:id/ci-dispatches` with `{ source, action?, kind?, ref?, inputs? }`. The source is one of
   `{ clusterId }`, `{ executionId, scope: 'test' | 'cluster' }`, `{ runId, tests: 'failed' }`, `{ runId }` for a
   whole suite on its branch, `{ testCaseId, flakeLab: 'reproduce' | 'verify' }`, or `{}` for the project's whole suite.
-  Answers 201 with the dispatch, 400 for a bad branch or input, 409 under D13, and 502 with the provider's text for a
-  refused dispatch, which is stored as `refused`.
-- `GET /api/ci-dispatches/:id` and `GET /api/projects/:id/ci-dispatches?state=open|all&clusterId=&testCaseId=&limit=`.
+  Answers 201 with the dispatch, 400 for a bad branch or input, 404 for an id outside the project or an unknown
+  action, 409 under D13, and 502 with the provider's text for a refused dispatch, which is stored as `refused`.
+- `GET /api/ci-dispatches/:id` and
+  `GET /api/projects/:id/ci-dispatches?state=open|taken|all&clusterId=&testCaseId=&limit=`.
 - Removed (Q5): `GET`/`POST /api/failure-clusters/:id/rerun`, `GET`/`POST /api/test-run-cases/:id/rerun` and
   `POST /api/test-cases/:id/flake-lab-ci`.
 

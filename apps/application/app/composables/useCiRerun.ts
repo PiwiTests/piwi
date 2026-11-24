@@ -32,12 +32,12 @@ export function rerunInfoFromOffered(offered: CiOffered): RerunInfo {
 /**
  * A place's `RerunInfo`. A viewer who may dispatch (`run:control`) reads what
  * the place is offered; any other reads only its cluster's last dispatch the
- * provider took, from the project's dispatches.
+ * provider took (`state=taken`), from the project's dispatches.
  */
 export async function loadRerunInfo(
   /** `$fetch`, or the `useRequestFetch()` that carries the request's cookies on the server. */
   fetcher: typeof $fetch,
-  place: CiRerunPlace & { clusterId: number | null; mayDispatch: boolean },
+  place: RerunInfoPlace,
 ): Promise<RerunInfo> {
   if (place.mayDispatch) {
     const offered = await fetcher<CiOffered>(`/api/projects/${place.projectId}/ci-actions/offered`, {
@@ -48,9 +48,30 @@ export async function loadRerunInfo(
   const unavailable = { available: false, reason: null, action: null };
   if (place.clusterId == null) return { ...unavailable, lastDispatch: null };
   const { items } = await fetcher<{ items: CiDispatchView[] }>(`/api/projects/${place.projectId}/ci-dispatches`, {
-    query: { clusterId: place.clusterId, limit: 20 },
+    query: { clusterId: place.clusterId, state: 'taken', limit: 1 },
   });
-  return { ...unavailable, lastDispatch: items.find((d) => d.state !== 'refused') ?? null };
+  return { ...unavailable, lastDispatch: items[0] ?? null };
+}
+
+/** A place whose `RerunInfo` a page reads: its project and source, its cluster, and whether the viewer may dispatch. */
+export type RerunInfoPlace = CiRerunPlace & { clusterId: number | null; mayDispatch: boolean };
+
+/**
+ * A place's `RerunInfo`, loaded with the page under `key` (through
+ * `useRequestFetch`, so the server render carries the request's cookies),
+ * null when the place is not known yet or cannot be read.
+ */
+export async function useRerunInfo(key: string, place: () => RerunInfoPlace | null) {
+  const requestFetch = useRequestFetch();
+  const { data, refresh } = await useAsyncData<RerunInfo | null>(
+    key,
+    () => {
+      const target = place();
+      return target ? loadRerunInfo(requestFetch, target).catch(() => null) : Promise.resolve(null);
+    },
+    { default: (): RerunInfo | null => null },
+  );
+  return { rerunInfo: data, refreshRerun: refresh };
 }
 
 const DISPATCH_TARGETS: Record<string, string> = {
@@ -92,9 +113,9 @@ export function lastRerunScope(dispatch: RerunInfo['lastDispatch']): string {
 /**
  * Dispatch a place's CI re-run (a cluster's affected tests, or one
  * execution's test) through `POST /api/projects/:id/ci-dispatches`, with the
- * place's default action. The failure pages fetch the `RerunInfo` themselves
- * (their SSR strategies differ) but share this POST and its toasts, which say
- * what re-runs (`started`, one sentence) and link to the provider's runs; the
+ * place's default action. The failure pages read the `RerunInfo` with
+ * {@link useRerunInfo} and share this POST and its toasts, which say what
+ * re-runs (`started`, one sentence) and link to the provider's runs; the
  * caller refreshes the info afterwards.
  */
 export function useCiRerun(

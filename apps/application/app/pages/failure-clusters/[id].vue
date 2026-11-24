@@ -17,7 +17,6 @@ import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import { commandWithRunVariables } from '#shared/run-variables';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import { loadRerunInfo, type RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi, stripAnsi } from '@piwitests/run-ui/ansi';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
 import { escapeHtml } from '#shared/markdown-to-html';
@@ -328,23 +327,13 @@ const verifyForms = computed(() => {
 const shellKey = COMMAND_SHELL_KEY;
 const { copy: copyRetry } = useCopy();
 
-const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
-  `failure-cluster-rerun-${clusterId}`,
-  () =>
-    clusterProjectId.value
-      ? loadRerunInfo(requestFetch, {
-          projectId: clusterProjectId.value,
-          source: { clusterId },
-          clusterId,
-          mayDispatch: canRerun.value,
-        }).catch(() => null)
-      : Promise.resolve(null),
-  { default: (): RerunInfo | null => null },
+const rerunPlace = computed(() =>
+  clusterProjectId.value ? { projectId: clusterProjectId.value, source: { clusterId } } : null,
 );
-const { rerunning, triggerRerun } = useCiRerun(
-  () => (clusterProjectId.value ? { projectId: clusterProjectId.value, source: { clusterId } } : null),
-  refreshRerun,
+const { rerunInfo, refreshRerun } = await useRerunInfo(`failure-cluster-rerun-${clusterId}`, () =>
+  rerunPlace.value ? { ...rerunPlace.value, clusterId, mayDispatch: canRerun.value } : null,
 );
+const { rerunning, triggerRerun } = useCiRerun(rerunPlace, refreshRerun);
 
 function refresh() {
   void reloadCluster();

@@ -12,10 +12,10 @@ defineRouteMeta({
     tags: ['CI dispatches'],
     summary: "List a project's CI dispatches",
     description:
-      "The project's CI dispatches, newest first: who dispatched what, through which action, on which branch, and the run that answered each. `state=open` keeps those still waiting for their run (`dispatched` within the six-hour matching window) and those whose run is going on (`running`); `state=all`, the default, keeps every state, `ended`, `unreported` and `refused` included. `clusterId` keeps a cluster's dispatches, `testCaseId` a test's Flake Lab dispatches. `limit` is 20 by default, at most 100. Each item is a dispatch as `GET /api/ci-dispatches/{id}` answers it, `detail` included only for a caller who holds `run:control`. Readable by anyone who reads the project.",
+      "The project's CI dispatches, newest first: who dispatched what, through which action, on which branch, and the run that answered each. `state=open` keeps those still waiting for their run (`dispatched` within the six-hour matching window) and those whose run is going on (`running`); `state=taken` keeps every dispatch the provider took, a refused one left out; `state=all`, the default, keeps every state, `ended`, `unreported` and `refused` included. `clusterId` keeps a cluster's dispatches, `testCaseId` a test's Flake Lab dispatches. `limit` is 20 by default, at most 100. Each item is a dispatch as `GET /api/ci-dispatches/{id}` answers it, `detail` included only for a caller who holds `run:control`. Readable by anyone who reads the project.",
     parameters: [
       { name: 'id', in: 'path', required: true, schema: { type: 'integer' } },
-      { name: 'state', in: 'query', required: false, schema: { type: 'string', enum: ['open', 'all'] } },
+      { name: 'state', in: 'query', required: false, schema: { type: 'string', enum: ['open', 'taken', 'all'] } },
       { name: 'clusterId', in: 'query', required: false, schema: { type: 'integer' } },
       { name: 'testCaseId', in: 'query', required: false, schema: { type: 'integer' } },
       { name: 'limit', in: 'query', required: false, schema: { type: 'integer', minimum: 1, maximum: 100 } },
@@ -40,8 +40,10 @@ export default eventHandler(async (event) => {
   const projectId = requireRouteId(event, 'id', 'project ID');
   await requireProjectAccess(event, projectId);
   const query = getQuery(event);
-  const state = query.state ?? 'all';
-  if (state !== 'open' && state !== 'all') throw apiError({ statusCode: 400, message: 'state must be open or all' });
+  const state = query.state || 'all';
+  if (state !== 'open' && state !== 'taken' && state !== 'all') {
+    throw apiError({ statusCode: 400, message: 'state must be open, taken or all' });
+  }
   const items = await listCiDispatches(await getDatabase(), projectId, {
     state,
     clusterId: idQuery(query.clusterId, 'clusterId'),

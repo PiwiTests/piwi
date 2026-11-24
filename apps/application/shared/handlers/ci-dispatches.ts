@@ -173,10 +173,10 @@ export async function findCiDispatch(
   return row && dispatch ? { projectId: row.projectId, dispatch } : null;
 }
 
-/** Which of a project's dispatches a list answers: the open ones or all, of one cluster or test, at most `limit`. */
+/** Which of a project's dispatches a list answers: the open ones, those taken, or all, of one cluster or test, at most `limit`. */
 export interface CiDispatchListFilter {
-  /** `open`: dispatched and still within the matching window, or running. */
-  state: 'open' | 'all';
+  /** `open`: dispatched and still within the matching window, or running; `taken`: every one but a refused one. */
+  state: 'open' | 'taken' | 'all';
   clusterId?: number | null;
   testCaseId?: number | null;
   limit: number;
@@ -202,6 +202,8 @@ export async function listCiDispatches(
         ),
       )!,
     );
+  } else if (filter.state === 'taken') {
+    conditions.push(ne(ciDispatches.state, 'refused'));
   }
   const rows = await db
     .select()
