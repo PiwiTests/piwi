@@ -59,7 +59,8 @@ palette lists its tabs and the pages of this menu. The tabs:
 
 - **Runs**: the run trend chart, with its [timeline markers](./timeline-markers), over the filtered runs, and the runs table,
   25 to a page; select two and **Compare** [what changed](./run-changes) between them, or select any
-  number, page by page, and [delete them](/operate/storage#storage-management).
+  number, page by page, and [delete them](/operate/storage#storage-management). Above it wait the CI dispatches no run
+  has answered yet, and your own run requests ([Waiting rows](./ci-rerun#waiting-rows)).
 - **Tests**: every test case with its pass rate and last run, in file order, with the
   [test search](/reference/test-search) and a status filter, groupable by file, or by file and describe block.
 - **Failures**: the [failure clusters](./failure-clusters), the [flaky tests](./flaky-tests#flaky-test-detection) and the
@@ -106,20 +107,7 @@ that threw, a spec that did not load) show under the facts line. The tabs:
   [test search](/reference/test-search) as a project's Tests tab and bulk triage.
 - **Changes**: what differs against one baseline run. See [What changed in a run](./run-changes).
 - **Timeline**: each worker's tests on one time axis, with hooks, waits, locks and [breakpoint](./editor-breakpoints)
-  stops, the slowest tests and the worker distribution ([Slow tests & wasted time](./slow-tests)).
-  - **Hooks**: hatched over each test's bar, setup (`beforeAll`, `beforeEach`, fixtures) at the start,
-    teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is dark red and counted in
-    the header, even with **Show hooks** off; hover it for the hooks, times and error,
-    click it for the test's steps on that hook. Playwright leaves `beforeAll` and `afterAll` hooks and worker
-    fixtures out of a test's duration; the bar spans them, and its tooltip gives Playwright's duration.
-    Older reporters send no hook list.
-  - **Gaps**: a lane is one [worker](/reference/test-metadata#worker-lanes). Playwright replaces a worker process
-    after a failed test, so a lane can hold several processes in turn: **↻** marks where a new one took
-    over, and the stretch before it is that replacement. A dashed line is time the
-    worker ran no test; hover either for details.
-  - **Retries**: a retried test has one bar per attempt, the last solid, the earlier ones pale. Hover one to join
-    them with arrows.
-  - **Resources**: the run's CPU, memory and open pages, above the worker rows and under each of them.
+  stops, the slowest tests and the worker distribution ([The run's Timeline](./slow-tests#the-run-s-timeline)).
 - **Video**: the tests' videos in sequence beside a checklist ([Run video](./run-video)).
 - **Resources**, when the run sent a resource report ([CPU, memory & disk](./cpu-memory-disk#in-the-dashboard)).
 

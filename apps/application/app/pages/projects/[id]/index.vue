@@ -22,6 +22,7 @@ import { refetchKeeping } from '~/utils/refetch-keeping';
 import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
+import type { CiDispatchView } from '#shared/ci-dispatches';
 import { projectMenuPageHidden, projectTabHidden } from '~/utils/project-tabs';
 import {
   PROJECT_FAILURE_VIEWS,
@@ -74,12 +75,16 @@ const { can } = useAuth();
 // Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
-// The run button: the project's whole suite on its default branch, which only CI runs.
+// The run button: the project's whole suite on its default branch, which only CI runs. A dispatch sent from it shows
+// at once among the runs list's waiting rows.
+const machine = await useRunOnMyMachine(Number(projectId));
+const sentDispatch = shallowRef<CiDispatchView | null>(null);
 const runPlace = await useRunPlace({
   projectId: Number(projectId),
-  machine: await useRunOnMyMachine(Number(projectId)),
+  machine,
   whats: () => [{ key: 'suite', label: 'The whole suite', wholeSuite: true, app: null, ci: { source: {} } }],
   prefersCi: () => true,
+  onDispatched: (dispatch) => (sentDispatch.value = dispatch),
 });
 
 // *Quality report*: this project as a quality report over the last 30 days, the project page's own window.
@@ -1209,6 +1214,15 @@ const moreMenuItems = computed(() => {
               </label>
               <HelpHint topic="run.keep" />
             </div>
+
+            <!-- What no run has answered yet, whatever the filters; the list of kept runs or of a period has none -->
+            <ProjectWaitingRuns
+              v-if="!keptOnly && !drill?.period"
+              :project-id="Number(projectId)"
+              :dispatches="!!project?.ciRerun?.enabled"
+              :requests="machine.shown.value"
+              :sent="sentDispatch"
+            />
 
             <!-- md+ : the runs table; below md a card list keeps it scroll-free -->
             <div class="hidden md:block">

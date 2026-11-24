@@ -34,9 +34,15 @@ there in one click, unless the last Where is a CI action that takes it ("Run on 
 dialog), and shows a run of those tests while it goes on; its menu keeps the desktop button's command, one-off runs,
 options and fixes, with the one-click runs on CI; **Run with options…** opens the dialog on This computer, whose
 fields are the ones of the dialog it replaces; a selection of a run's tests has a button of its own, on This computer
-alone; the run page offers the flaky tests there; and the desktop button and its dialog are gone. Remain: PR 6 (the
-waiting row) and PR 7 (tags), and a demo dispatch moving to `running` and `ended` against a seeded run, which stays
-`dispatched`. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is
+alone; the run page offers the flaky tests there; and the desktop button and its dialog are gone. PR 6 is built: a
+project's runs list shows, above its runs, each dispatch no run has answered yet ("Waiting for CI · Smoke · staging on
+main · dispatched 2 minutes ago by Ana · Open in CI") to everyone who reads the project, and the viewer's own run
+requests still going on, to them alone. A dispatch's row leaves once its run is matched; a request's run is never in
+the list, so its row links that run and leaves once the request ends. The rows show whatever the filters say, five
+before **Show all**, but not under **Kept runs only** or a period from Analytics, nor while the project's CI actions are
+off. The page reads them in the browser, on the Runs tab, again when a run starts and, while a row shows, every 5
+seconds with a request, else every 30. Remain: PR 7 (tags), and a demo dispatch moving to `running` and `ended`
+against a seeded run: it stays `dispatched`, and so does its row. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is
 recorded in [ci-actions.md](../adr/ci-actions.md).
 
 ## What existed
