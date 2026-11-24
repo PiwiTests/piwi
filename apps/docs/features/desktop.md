@@ -101,7 +101,7 @@ test** (×20 until a failure, traced) on a test case. Its arrow, its options and
   from Piwi Picker runs there too.
 - **Watch, pause and step** each worker from the Local runs tray, running or stopped: [Desktop app
   runs](/features/desktop-runs). While it goes on, the run's own page shows the same (**On your machine**), with its
-  **Stop**, **Hold failures** and output.
+  **Stop**, [**Hold failures**](/features/watch-a-run#hold-failures) and output.
 
 ### Reproducing a failure and finding the breaking commit
 
