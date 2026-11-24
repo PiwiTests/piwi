@@ -3159,11 +3159,14 @@ const SCENES = [
       await send();
       await goto('/projects/2');
       const runs = '[data-shot="runs-table"]';
-      await page.locator(`${runs} [data-testid="waiting-request"]`).waitFor({ timeout: 10_000 });
+      const request = page.locator(`${runs} [data-testid="waiting-request"]`);
+      await request.waitFor({ timeout: 10_000 });
       await settle();
       await shoot('wide', { of: runs, pad: 8 });
       await page.setViewportSize({ width: 390, height: 1600 });
       await settle();
+      // The request leaves once it ends: a shot without it fails here rather than show only the dispatch.
+      await request.waitFor({ timeout: 1_000 });
       await shoot('phone', { of: runs, pad: 0 });
     },
     outputs: ['project-waiting-rows-wide.png', 'project-waiting-rows-phone.png'],

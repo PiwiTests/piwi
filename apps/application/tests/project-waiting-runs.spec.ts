@@ -6,10 +6,12 @@ import { waitForHydration } from './utils';
 import { createMember } from './utils/access';
 
 /**
- * The waiting rows of a project's runs list: a CI dispatch shows as a row once sent, and leaves once its run reports,
- * the run then listed as usual; a run request shows to the person who sent it, and to nobody else. A dispatch the
- * provider took cannot be made on the test server (its CI actions reach no CI), so the page's reads of the dispatch are
- * answered in the browser; the matching of a run to its dispatch is the server's, covered by its unit tests.
+ * The waiting rows of a project's runs list: a CI dispatch shows as a row once sent, links its run while that run goes
+ * on, and leaves once it ends; a run request shows to the person who sent it, and to nobody else. A dispatch the
+ * provider took cannot be made on the test server (its CI actions reach no CI): the page's send and its browser reads
+ * of the dispatches are answered here, so the row changes because the answer turns the dispatch `running`, then
+ * `ended`, read again on each run event of the project. Matching a run to its dispatch is the server's, covered by its
+ * unit tests.
  */
 
 const failedRun = (projectName: string) => ({
@@ -77,27 +79,56 @@ test.describe.serial('Waiting rows, a CI dispatch', () => {
     );
   }
 
-  test('a dispatch sent from the page waits as a row, which leaves once its run reports', async ({ page, request }) => {
-    const sent: CiDispatchView = {
-      id: '00000000feedbeef',
-      actionId: 'nightly',
-      actionName: 'Nightly',
-      kind: 'suite',
-      origin: 'page',
-      provider: 'ci-server',
-      preset: 'jenkins',
-      url: 'https://jenkins.example.com/job/nightly/',
-      args: '',
-      ref: 'main',
-      tests: null,
-      state: 'dispatched',
-      detail: null,
-      runId: null,
-      run: null,
-      at: Date.now(),
-      byName: null,
-      byUserId: null,
-    };
+  /** A whole suite on the Nightly action, as the server answers its send. */
+  const dispatched = (over: Partial<CiDispatchView>): CiDispatchView => ({
+    id: '00000000feedbeef',
+    actionId: 'nightly',
+    actionName: 'Nightly',
+    kind: 'suite',
+    origin: 'page',
+    provider: 'ci-server',
+    preset: 'jenkins',
+    url: 'https://jenkins.example.com/job/nightly/',
+    args: '',
+    ref: 'main',
+    tests: null,
+    state: 'dispatched',
+    detail: null,
+    runId: null,
+    run: null,
+    at: Date.now(),
+    byName: null,
+    byUserId: null,
+    ...over,
+  });
+
+  /** Send the project's whole suite from its run button, and close the dialog on the follow-up. */
+  async function sendFromThePage(page: Page) {
+    await page.getByRole('button', { name: 'Run on CI' }).first().click();
+    const dialog = page.getByRole('dialog');
+    await expect(dialog.getByRole('radio', { name: /Nightly/ })).toBeChecked();
+    await dialog.getByRole('button', { name: 'Send' }).click();
+    await expect(dialog.getByTestId('run-follow-up-state')).toContainText('waiting for the run to report');
+    await page.keyboard.press('Escape');
+    await expect(dialog).toBeHidden();
+  }
+
+  /** Report a finished run of the project, which the page hears as a run event of the project. */
+  async function report(request: import('@playwright/test').APIRequestContext): Promise<number> {
+    const res = await request.post('/api/test-runs/submit', {
+      data: { ...failedRun(PROJECT.WAITING_RUNS), status: 'passed', passedTests: 2, failedTests: 0, testCases: [] },
+    });
+    const body = await res.text();
+    expect(res.ok(), body).toBeTruthy();
+    return (JSON.parse(body) as { runId: number }).runId;
+  }
+
+  test('a dispatch sent from the page waits as a row, links its run while it goes on, and leaves once it ended', async ({
+    page,
+    request,
+  }) => {
+    test.setTimeout(60_000);
+    const sent = dispatched({});
     let open: CiDispatchView[] = [];
     await answerDispatches(page, sent, () => open);
 
@@ -106,74 +137,58 @@ test.describe.serial('Waiting rows, a CI dispatch', () => {
     const runs = page.locator('[data-shot="runs-table"]');
     await expect(runs.getByRole('link', { name: /^Run #\d+$/ }).first()).toBeVisible();
     await expect(page.getByTestId('waiting-runs')).toHaveCount(0);
+    // From the send on, a read of the dispatches finds it too: any run event of the project reads them.
+    open = [sent];
 
-    await page.getByRole('button', { name: 'Run on CI' }).first().click();
-    const dialog = page.getByRole('dialog');
-    await expect(dialog.getByRole('radio', { name: /Nightly/ })).toBeChecked();
-    await dialog.getByRole('button', { name: 'Send' }).click();
-    await expect(dialog.getByTestId('run-follow-up-state')).toContainText('waiting for the run to report');
-    await page.keyboard.press('Escape');
-    await expect(dialog).toBeHidden();
-
+    await sendFromThePage(page);
     const row = runs.getByTestId('waiting-dispatch');
     await expect(row).toHaveCount(1);
     await expect(row).toContainText('Waiting for CI');
     await expect(row).toContainText('Nightly on main');
     await expect(row.getByRole('link', { name: 'Open in CI' })).toHaveAttribute('href', sent.url!);
-    open = [sent];
 
-    // Its run reports: the server matches it and answers the dispatch as running, and the run shows in the list.
-    const reported = await request.post('/api/test-runs/submit', {
-      data: { ...failedRun(PROJECT.WAITING_RUNS), status: 'passed', passedTests: 2, failedTests: 0, testCases: [] },
-    });
-    expect(reported.ok(), await reported.text()).toBeTruthy();
-    const { runId } = (await reported.json()) as { runId: number };
-    open = [
-      {
-        ...sent,
-        state: 'running',
-        runId,
-        run: { id: runId, status: 'passed', totalTests: 2, passedTests: 2, failedTests: 0 },
-      },
-    ];
-    await expect(runs.getByRole('link', { name: `Run #${runId}` })).toBeVisible({ timeout: 20_000 });
+    // A run reports, and the dispatch now reads as running with it: its row links that run.
+    const runId = await report(request);
+    const ran = (status: string) => ({ id: runId, status, totalTests: 2, passedTests: 2, failedTests: 0 });
+    open = [dispatched({ state: 'running', runId, run: ran('running') })];
+    await report(request);
+    await expect(row).toContainText('Running', { timeout: 20_000 });
+    await expect(row.getByRole('link', { name: `Open run #${runId}` })).toBeVisible();
+
+    // Its run ends: the dispatch ends with it, and the row leaves; the run is in the list.
+    open = [dispatched({ state: 'ended', runId, run: ran('passed') })];
+    await report(request);
     await expect(row).toHaveCount(0, { timeout: 20_000 });
+    await expect(runs.getByRole('link', { name: `Run #${runId}`, exact: true })).toBeVisible();
   });
 
-  test('Kept runs only lists kept runs alone: a waiting row leaves with the rest', async ({ page, request }) => {
+  test('Kept runs only lists kept runs alone: a waiting row leaves with the rest, and comes back', async ({
+    page,
+    request,
+  }) => {
     const runs = ((await (await request.get(`/api/projects/${projectId}`)).json()) as { testRuns: { id: number }[] })
       .testRuns;
     const kept = await request.patch(`/api/test-runs/${runs[0]!.id}`, { data: { keep: true } });
     expect(kept.ok(), await kept.text()).toBeTruthy();
-    const waiting: CiDispatchView = {
-      id: '00000000feedcafe',
-      actionId: 'nightly',
-      actionName: 'Nightly',
-      kind: 'suite',
-      origin: 'page',
-      provider: 'ci-server',
-      preset: 'jenkins',
-      url: null,
-      args: '',
-      ref: 'main',
-      tests: null,
-      state: 'dispatched',
-      detail: null,
-      runId: null,
-      run: null,
-      at: Date.now(),
-      byName: 'Ana',
-      byUserId: null,
-    };
+    const waiting = dispatched({ id: '00000000feedcafe', url: null, byName: 'Ana' });
     await answerDispatches(page, waiting, () => [waiting]);
     await page.goto(`/projects/${projectId}`);
     await waitForHydration(page);
+    await sendFromThePage(page);
     const row = page.getByTestId('waiting-dispatch');
     await expect(row).toContainText('dispatched');
     await expect(row).toContainText('by Ana');
     await expect(row.getByRole('link', { name: 'Open in CI' })).toHaveCount(0);
-    await page.getByText('Kept runs only').click();
+    const keptOnly = page.getByText('Kept runs only');
+    await keptOnly.click();
     await expect(row).toHaveCount(0);
+    // Shown again, the rows are read again.
+    const read = page.waitForResponse(
+      (res) => new URL(res.url()).pathname === `/api/projects/${projectId}/ci-dispatches`,
+    );
+    await keptOnly.click();
+    await read;
+    await expect(row).toContainText('by Ana');
   });
 });
 
