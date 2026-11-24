@@ -75,6 +75,8 @@ export interface CiServerCredential {
   allowedInputs: string[] | null;
   /** `action` for the credential the action names, `instance` for the one the environment sets. */
   source: 'action' | 'instance';
+  /** The projects it serves: every project, or these; absent, read as shared with others. */
+  projects?: 'all' | readonly number[];
 }
 
 /** The instance's CI server URL, `PIWI_CI_SERVER_URL`, or null when it sets none. */
@@ -134,7 +136,14 @@ function toCiServerCredential(record: CredentialRecord, source: CiServerCredenti
     user: record.user,
     allowedInputs: record.allowedInputs,
     source,
+    projects: record.allProjects ? 'all' : record.projectIds,
   };
+}
+
+/** Whether a credential serves a project other than `projectId`: the instance's, or one shared with several. */
+function sharedBeyond(credential: CiServerCredential, projectId: number): boolean {
+  const projects = credential.projects;
+  return !projects || projects === 'all' || projects.some((id) => id !== projectId);
 }
 
 /**
@@ -608,7 +617,7 @@ async function readForListing(
   url: string,
   use: CiServerUse,
   notFound: string,
-): Promise<{ json: unknown; carried: CiServerCredential['source'] | null } | { message: string }> {
+): Promise<{ json: unknown; carried: CiServerCredential | null } | { message: string }> {
   try {
     const prepare = (withSecret: CiServerCredential | null) =>
       prepareCiServerCheck({ target, url, credential: withSecret });
@@ -619,9 +628,7 @@ async function readForListing(
     }
     if (answer.truncated) return { message: READ_TOO_LARGE };
     const json = parseJson(answer.text);
-    return json === null
-      ? { message: 'The CI server did not answer JSON.' }
-      : { json, carried: request.credential?.source ?? null };
+    return json === null ? { message: 'The CI server did not answer JSON.' } : { json, carried: request.credential };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     return { message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.` };
@@ -704,12 +711,15 @@ export async function readCiServerJobFields(
         'The job declares no parameters. A Pipeline job declares those of its Jenkinsfile on its first build: run it once.',
     };
   }
-  // The instance's credential serves every project: what a parameter's free text holds stays with the CI server.
-  if (read.carried === 'instance') {
+  // A credential other projects share reads for them too: what a parameter's free text holds stays with the CI server.
+  if (read.carried && sharedBeyond(read.carried, projectId)) {
+    const which =
+      read.carried.source === 'instance'
+        ? 'the instance’s CI server credential, which every project shares'
+        : `“${read.carried.name}”, which other projects share`;
     return {
       fields: withoutFreeText(fields),
-      message:
-        'Read with the instance’s CI server credential, which every project shares: a parameter’s free-text default and its description are left out.',
+      message: `Read with ${which}: a parameter’s free-text default and its description are left out.`,
     };
   }
   return { fields, message: null };

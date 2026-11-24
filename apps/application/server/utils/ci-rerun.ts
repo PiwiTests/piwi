@@ -50,6 +50,7 @@ import {
   type CiDispatchSource,
   type CiOffered,
 } from '#shared/ci-dispatch-request';
+import { ciTargetDefinition } from '#shared/ci-targets';
 import { getCiActionsSettings } from './ci-actions';
 import { ciProvider, type CiReadiness } from './ci-providers';
 import { CredentialRefusedError, type CredentialActor } from './credentials';
@@ -118,7 +119,7 @@ async function readiness(
   if (reserved) {
     return {
       available: false,
-      reason: reservedInputMessage(reserved, action.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'),
+      reason: reservedInputMessage(reserved, action.target),
     };
   }
   const ready = await ciProvider(action.target.type).readiness(db, place, action, ref);
@@ -180,7 +181,7 @@ async function dispatchWithAction(
     clusterId: place.clusterId,
     testCaseId: place.testCaseId,
     provider: target.type,
-    preset: target.type === 'ci-server' ? target.preset : null,
+    preset: ciTargetDefinition(target.type).preset(target),
     ref,
     inputs,
     args: place.args,

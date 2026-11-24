@@ -24,6 +24,7 @@ const { state, dirty } = useStoredForm(() => {
 const { saving, save } = useProjectPatch(() => props.project.id);
 
 const instanceUrl = computed(() => props.project.ciServerInstanceUrl ?? null);
+const instanceAllowedInputs = computed(() => props.project.ciServerInstanceAllowedInputs ?? null);
 
 async function submit() {
   if (await save({ ciRerun: state.value.ciRerun }, 'CI saved')) emit('saved');
@@ -44,6 +45,7 @@ async function submit() {
           :project-id="project.id"
           :repository-url="project.repositoryUrl ?? null"
           :instance-url="instanceUrl"
+          :instance-allowed-inputs="instanceAllowedInputs"
         />
       </FormFieldGroup>
 

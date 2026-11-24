@@ -87,7 +87,7 @@ describe('GitHub', () => {
     expect(repo.asked).toContainEqual(['tree', 'main']);
   });
 
-  test('reads a branch at the commit it names now, so a push is read at once', async () => {
+  test('reads a branch at the commit it names, so a refresh after a push reads the pushed files', async () => {
     repo.heads = { main: 'c0ffee1' };
     repo.files = { '.github/workflows/e2e.yml': 'on: workflow_dispatch\n' };
     await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
@@ -96,6 +96,10 @@ describe('GitHub', () => {
     repo.asked.length = 0;
     await listCiJobFields(db, projectId, { type: 'github', ref: 'main', workflow: 'e2e.yml' }, use);
     expect(repo.asked).toEqual([['.github/workflows/e2e.yml', 'c0ffee1']]);
+    repo.heads = { main: 'beef002' };
+    repo.asked.length = 0;
+    await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use, { refresh: true });
+    expect(repo.asked).toContainEqual(['tree', 'beef002']);
   });
 
   test('names the workflow files it could not read, and keeps no list that may lack one', async () => {
@@ -189,6 +193,19 @@ describe('GitHub', () => {
 });
 
 describe('GitLab', () => {
+  test('reports a CI file whose aliases expand past the limit as unreadable, without failing', async () => {
+    repo.provider = 'gitlab';
+    // Each level doubles the one before it: 20 levels resolve over a million aliases.
+    let file = 'a0: &a0 [x]\n';
+    for (let i = 1; i <= 20; i++) file += `a${i}: &a${i} [*a${i - 1}, *a${i - 1}]\n`;
+    file += 'variables:\n  BOMB: *a20\n';
+    repo.files = { '.gitlab-ci.yml': file };
+    expect(await listCiJobFields(db, projectId, { type: 'gitlab', ref: 'main' }, use)).toEqual({
+      fields: null,
+      message: '.gitlab-ci.yml is not valid YAML at main.',
+    });
+  });
+
   test('reads a CI file that reuses its anchors in every job', async () => {
     repo.provider = 'gitlab';
     let file = '.defaults: &defaults\n  variables:\n    SUITE: smoke\n';
@@ -232,6 +249,15 @@ describe('Bitbucket', () => {
     expect((await listCiJobFields(db, projectId, { type: 'bitbucket', pipeline: 'nightly' }, use)).message).toContain(
       'no custom pipeline named "nightly"',
     );
+  });
+
+  test('knows no variable of a pipeline imported from another repository, so none reads as undeclared', async () => {
+    repo.provider = 'bitbucket';
+    repo.files = { 'bitbucket-pipelines.yml': 'pipelines:\n  custom:\n    shared:\n      import: lib:main:e2e\n' };
+    expect(await listCiJobFields(db, projectId, { type: 'bitbucket', pipeline: 'shared' }, use)).toEqual({
+      fields: null,
+      message: expect.stringContaining('imported from another repository'),
+    });
   });
 });
 

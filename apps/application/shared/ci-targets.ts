@@ -8,8 +8,8 @@
  * (a dispatch, Check, a listing) is the server's provider of the same type
  * (`server/utils/ci-providers/`).
  *
- * A new kind of target adds its type to `CiActionTarget`, a definition here
- * and a provider on the server.
+ * A new kind of target: the steps under _Extension points_ in the app's
+ * `ARCHITECTURE.md`.
  *
  * Pure and dependency-free, as `shared/ci-actions.ts`.
  */
@@ -49,12 +49,16 @@ export interface CiTargetDefinition<K extends CiTargetType> {
   defaultRef(target: CiTargetOf<K>): string | null;
   /** How the target takes a branch ({@link CiBranchMode}). */
   branchMode(target: CiTargetOf<K>): CiBranchMode;
+  /** The CI server preset a dispatch record names; null for a repository host. */
+  preset(target: CiTargetOf<K>): CiServerPreset | null;
   /** The target from an untrusted payload of its type, or null when it cannot dispatch. */
   resolve(input: Record<string, unknown>): CiTargetOf<K> | null;
   /** Why a posted target of its type that does not resolve cannot dispatch; null for the generic reason. */
   problem(input: Record<string, unknown>): string | null;
   /** A target to list jobs or fields from, from an untrusted payload of its type, or why it cannot be listed from. */
   resolveListing(input: Record<string, unknown>): { target: CiListingTargetOf<K> } | { error: string };
+  /** What a job listing depends on: the listing target without the job picked (nor a branch it does not read). */
+  withoutJob(target: CiListingTargetOf<K>): CiListingTargetOf<K>;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -114,6 +118,7 @@ const github: CiTargetDefinition<'github'> = {
   builtInNames: (target) => [target.argsInput, ...(target.dispatchIdInput ? [target.dispatchIdInput] : [])],
   defaultRef: (target) => target.ref,
   branchMode: () => 'list',
+  preset: () => null,
   resolve(input) {
     const workflow = str(input.workflow);
     const ref = str(input.ref);
@@ -135,6 +140,7 @@ const github: CiTargetDefinition<'github'> = {
     if (typeof ref !== 'string') return ref;
     return { target: { type: 'github', ref, workflow: str(input.workflow), ...credentialIdOf(input.credentialId) } };
   },
+  withoutJob: (target) => ({ ...target, workflow: '' }),
 };
 
 const gitlab: CiTargetDefinition<'gitlab'> = {
@@ -145,6 +151,7 @@ const gitlab: CiTargetDefinition<'gitlab'> = {
   builtInNames: (target) => [target.argsVariable],
   defaultRef: (target) => target.ref,
   branchMode: () => 'list',
+  preset: () => null,
   resolve(input) {
     const ref = str(input.ref);
     const argsVariable = str(input.argsVariable);
@@ -156,6 +163,7 @@ const gitlab: CiTargetDefinition<'gitlab'> = {
     if (typeof ref !== 'string') return ref;
     return { target: { type: 'gitlab', ref, ...credentialIdOf(input.credentialId) } };
   },
+  withoutJob: (target) => target,
 };
 
 const bitbucket: CiTargetDefinition<'bitbucket'> = {
@@ -167,6 +175,7 @@ const bitbucket: CiTargetDefinition<'bitbucket'> = {
   // A custom pipeline runs on the repository's default branch, which Bitbucket names once the dispatch is sent.
   defaultRef: () => null,
   branchMode: () => 'list',
+  preset: () => null,
   resolve(input) {
     const pipeline = str(input.pipeline);
     const argsVariable = str(input.argsVariable);
@@ -178,6 +187,7 @@ const bitbucket: CiTargetDefinition<'bitbucket'> = {
   resolveListing: (input) => ({
     target: { type: 'bitbucket', pipeline: str(input.pipeline), ...credentialIdOf(input.credentialId) },
   }),
+  withoutJob: (target) => ({ ...target, pipeline: '' }),
 };
 
 const ciServer: CiTargetDefinition<'ci-server'> = {
@@ -197,6 +207,7 @@ const ciServer: CiTargetDefinition<'ci-server'> = {
         ],
   defaultRef: (target) => target.fields.ref?.trim() || null,
   branchMode: (target) => (ciServerTakesBranch(ciServerTargetOf(target)) ? 'typed' : 'fixed'),
+  preset: (target) => target.preset,
   resolve(input) {
     const resolved = resolveCiServerTarget(rawCiServerTarget(input));
     if (!resolved) return null;
@@ -232,6 +243,8 @@ const ciServer: CiTargetDefinition<'ci-server'> = {
       },
     };
   },
+  // The jobs under the base URL do not depend on the branch a multibranch job is read on.
+  withoutJob: (target) => ({ ...target, job: '', ref: '' }),
 };
 
 /** Every kind of target, by its type. */

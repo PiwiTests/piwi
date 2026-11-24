@@ -451,6 +451,8 @@ export interface ProjectWithTestRuns {
   scmCredentialId?: number | null;
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
+  /** The action inputs a request carrying the instance's CI server credential may send; null unless `ciServerInstanceUrl` is set. */
+  ciServerInstanceAllowedInputs?: string[] | null;
   /** The repository the project's SCM calls read: pinned by its first run that names one, or set by a project admin. */
   repositoryUrl?: string | null;
   defaultBranch?: string | null;
@@ -516,6 +518,8 @@ export interface ProjectDetails {
   scmCredentialId?: number | null;
   /** The instance's CI server (`PIWI_CI_SERVER_URL`), which an action with no base URL and no credential dispatches to; null unless the caller has `project:manage`. */
   ciServerInstanceUrl?: string | null;
+  /** The action inputs a request carrying the instance's CI server credential may send; null unless `ciServerInstanceUrl` is set. */
+  ciServerInstanceAllowedInputs?: string[] | null;
   defaultBranch?: string | null;
   /** The project's CI actions (secrets excluded). */
   ciRerun?: import('#shared/ci-actions').CiActionsSettings | null;

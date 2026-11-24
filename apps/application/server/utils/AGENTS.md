@@ -16,6 +16,7 @@ in-app assistant).
 | `ai-context*.ts`, `integrations/automation.ts`                                                                                                                                        | [Wiring rules](#wiring-rules)                       |
 | `desktop-runs.ts`, `shared/desktop-runs.ts`, the `/api/desktop/run*` routes                                                                                                           | [Desktop runs](#desktop-runs)                       |
 | `credentials.ts`, `ci-server-dispatch.ts`, `shared/credentials.ts`, an SCM token, `ai-credentials.ts`, `integrations/connection-credentials.ts`, `notifications/slack-credentials.ts` | [Credentials](#credentials)                         |
+| `ci-providers/`, `ci-rerun.ts`, `ci-jobs.ts`, `shared/ci-targets.ts`                                                                                                                  | [CI targets](#ci-targets)                           |
 
 ## SCM providers
 
@@ -292,9 +293,9 @@ runs (`@piwitests/editor/run-host`), plus these:
 
 ## CI targets
 
-- **What reaches a CI action's target goes through its kind's provider** (`ciProvider(target.type)`, `ci-providers/`),
-  never a `target.type` switch in `ci-rerun.ts`, `ci-actions.ts` or `ci-jobs.ts`; what is known without reaching it,
-  through its definition in `shared/ci-targets.ts`. Adding a kind: `ARCHITECTURE.md`, _Extension points_.
+- **What reaches a CI action's target goes through its kind's provider** (`ciProvider`), never a `target.type` switch
+  in `ci-rerun.ts`, `ci-actions.ts` or `ci-jobs.ts`; what is known without reaching it, through its definition
+  (`shared/ci-targets.ts`). Adding a kind: `ARCHITECTURE.md`, _Extension points_.
 
 ## Credentials
 

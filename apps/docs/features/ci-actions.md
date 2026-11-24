@@ -77,11 +77,11 @@ other field as a fixed value holding its default. Picking a GitHub workflow adds
 and the editor names what a workflow, a custom pipeline or a Jenkins job does not declare. GitLab takes any variable a
 pipeline is created with, so its variables are suggestions; the files a CI file `include`s are not read.
 
-The files are read with the action's credential, else the repository's, which must also read the repository's files. A
-Jenkins listing carries the credential a dispatch would, whose user needs the Overall/Read and Job/Read permissions, and
-is logged; read with the instance's credential, which every project shares, it leaves out a parameter's free-text
-default and its description. A branch is read at its latest commit; what was listed is kept five minutes, and the
-refresh button beside the listing reads again.
+The files are read with the action's credential, else the repository's. A Jenkins listing carries the credential a
+dispatch would, whose user needs the Overall/Read and Job/Read permissions, and is logged; read with a credential other
+projects share (the instance's, or one shared with several projects), it leaves out a parameter's free-text default and
+its description. A branch is read at its latest commit; what was listed is kept five minutes, and the refresh button
+beside the listing reads again.
 
 ## Repository host
 
@@ -93,8 +93,9 @@ Choose the provider of the action:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch, and a GitHub or Bitbucket action's **Check**, carry the action's **Credential**, else the repository's
-[SCM credential](/guide/source-control#set-the-credential), with the scope above.
+The dispatch carries the action's **Credential**, else the repository's
+[SCM credential](/guide/source-control#set-the-credential), with the scope above. **Check** and the editor's listings
+carry the same credential to read the repository's files, which takes read access to its contents as well.
 
 On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the
 quoted arguments without a shell:

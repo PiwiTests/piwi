@@ -164,6 +164,8 @@ export interface CiServerFormCredential {
   disabled: boolean;
   /** False when the variable its secret is read from is not set on the server. */
   secretEnvSet?: boolean | null;
+  /** The action inputs a request carrying it may send; null for every input. */
+  allowedInputs?: string[] | null;
 }
 
 /**
@@ -185,6 +187,8 @@ export interface CiServerPreviewOptions {
   credential?: CiServerFormCredential | null;
   /** The action's inputs, sent beside the arguments, as name and value pairs. */
   inputs?: [string, string][];
+  /** The inputs a request carrying the instance's credential may send (`PIWI_CI_SERVER_ALLOWED_INPUTS`); null when unknown. */
+  instanceAllowedInputs?: string[] | null;
 }
 
 export function ciServerPreviewCredential(
@@ -219,9 +223,18 @@ export function ciServerRequestPreview(
   kind: 'rerun' | 'flakeLab',
   opts: CiServerPreviewOptions,
 ):
-  | { text: string; url: string; credential: CiServerPreviewCredential; carriesAuth: boolean; error: null }
-  | { text: null; url: null; credential: null; carriesAuth: null; error: string } {
-  const fail = (error: string) => ({ text: null, url: null, credential: null, carriesAuth: null, error }) as const;
+  | {
+      text: string;
+      url: string;
+      credential: CiServerPreviewCredential;
+      carriesAuth: boolean;
+      /** The inputs left off because the credential the request carries does not allow them. */
+      droppedInputs: string[];
+      error: null;
+    }
+  | { text: null; url: null; credential: null; carriesAuth: null; droppedInputs: null; error: string } {
+  const fail = (error: string) =>
+    ({ text: null, url: null, credential: null, carriesAuth: null, droppedInputs: null, error }) as const;
   const resolved = ciServerTargetFromForm(state, { instanceUrl: opts.credential?.destination ?? opts.instanceUrl });
   if (!resolved.target) return fail(resolved.error);
   const spec = ciServerRequestTemplate(resolved.target, kind);
@@ -234,7 +247,26 @@ export function ciServerRequestPreview(
     ref: opts.branch || resolved.target.rerun.ref || 'main',
   };
   try {
-    const request = renderCiRequest(baseUrl, spec.template, values, opts.inputs ?? []);
+    const inputs = opts.inputs ?? [];
+    let request = renderCiRequest(baseUrl, spec.template, values, inputs);
+    const authName = spec.auth === 'none' ? null : typeof spec.auth === 'object' ? spec.auth.header : 'Authorization';
+    const credential = authName ? ciServerPreviewCredential(resolved.target.preset, request.url, opts) : 'none';
+    // As a dispatch: a request carrying a credential sends only the inputs it allows.
+    const allowed =
+      credential === 'credential'
+        ? (opts.credential?.allowedInputs ?? null)
+        : credential === 'instance'
+          ? (opts.instanceAllowedInputs ?? null)
+          : null;
+    const droppedInputs = allowed ? inputs.map(([name]) => name).filter((name) => !allowed.includes(name)) : [];
+    if (droppedInputs.length > 0) {
+      request = renderCiRequest(
+        baseUrl,
+        spec.template,
+        values,
+        inputs.filter(([name]) => allowed!.includes(name)),
+      );
+    }
     const headers: [string, string][] = [];
     const setHeader = (name: string, value: string) => {
       const at = headers.findIndex(([n]) => n.toLowerCase() === name.toLowerCase());
@@ -244,13 +276,18 @@ export function ciServerRequestPreview(
     setHeader('Accept', 'application/json');
     if (request.body) setHeader('Content-Type', request.body.contentType);
     for (const [name, value] of request.headers) setHeader(name, value);
-    const authName = spec.auth === 'none' ? null : typeof spec.auth === 'object' ? spec.auth.header : 'Authorization';
-    const credential = authName ? ciServerPreviewCredential(resolved.target.preset, request.url, opts) : 'none';
     if (authName && credential === 'credential') setHeader(authName, `•••••••• (${opts.credential!.name})`);
     if (authName && credential === 'instance') setHeader(authName, '•••••••• (the instance credential)');
     const lines = [`${request.method} ${request.url}`, ...headers.map(([name, value]) => `${name}: ${value}`)];
     if (request.body) lines.push('', request.body.text);
-    return { text: lines.join('\n'), url: request.url, credential, carriesAuth: authName !== null, error: null };
+    return {
+      text: lines.join('\n'),
+      url: request.url,
+      credential,
+      carriesAuth: authName !== null,
+      droppedInputs,
+      error: null,
+    };
   } catch (e) {
     return fail(e instanceof CiTemplateError ? e.message : 'The request cannot be built.');
   }

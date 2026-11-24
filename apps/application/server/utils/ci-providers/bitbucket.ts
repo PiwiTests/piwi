@@ -120,9 +120,10 @@ export const bitbucketProvider = repositoryHostProvider('bitbucket', {
         message: `${BITBUCKET_PIPELINES_FILE} has no custom pipeline named "${target.pipeline}" at ${read.branch}.`,
       };
     }
+    // Its variables are declared in the other repository: none is known here, so none is named undeclared.
     if (bitbucketPipelineImported(read.document, target.pipeline)) {
       return {
-        fields,
+        fields: null,
         message: `The custom pipeline "${target.pipeline}" is imported from another repository, whose file declares its variables.`,
       };
     }

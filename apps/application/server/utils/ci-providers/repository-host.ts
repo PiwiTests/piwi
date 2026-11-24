@@ -4,7 +4,8 @@
  * SCM provider and its credential (the action's own, else the project's). A
  * dispatch is ready when that credential is set, goes through the SCM
  * provider's `dispatchRerun`, and the branches are the repository's. A file is
- * read at the commit its branch names now, so a push is read at once.
+ * read at the commit its branch names now, past what the SCM provider keeps by
+ * branch name.
  */
 import { parse as parseYaml, parseAllDocuments } from 'yaml';
 import { createScmProvider, detectScmProvider, hasScmCredential } from '../scm';

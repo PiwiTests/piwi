@@ -360,7 +360,7 @@ function inputProblem(raw: unknown, taken: Set<string>, target: CiActionTarget):
   if (taken.has(name.toLowerCase())) return `The input "${name}" is sent twice: names must be unique.`;
   taken.add(name.toLowerCase());
   if (ciTargetDefinition(target.type).reservesCiVariables && RESERVED_VARIABLE_NAME.test(name)) {
-    return reservedInputMessage(name, target.type === 'bitbucket' ? 'bitbucket' : 'gitlab');
+    return reservedInputMessage(name, target);
   }
   if (raw.kind === 'fixed') {
     if (typeof raw.value === 'string' && raw.value.trim().length > MAX_CI_INPUT_VALUE_LENGTH) {
@@ -435,9 +435,9 @@ export function ciActionsProblem(raw: unknown): string | null {
   return null;
 }
 
-/** Why an input name is refused on GitLab or Bitbucket: the CI itself reserves it. */
-export function reservedInputMessage(name: string, provider: 'gitlab' | 'bitbucket' = 'gitlab'): string {
-  return `The input "${name}" is a variable ${SCM_PROVIDER_LABELS[provider]} reserves: names starting with CI_, GITLAB_ or BITBUCKET_ cannot be set.`;
+/** Why an input name is refused on a target whose CI reserves it (`reservesCiVariables` of its definition). */
+export function reservedInputMessage(name: string, target: CiActionTarget): string {
+  return `The input "${name}" is a variable ${ciTargetDefinition(target.type).label(target)} reserves: names starting with CI_, GITLAB_ or BITBUCKET_ cannot be set.`;
 }
 
 /** The first of an action's inputs that GitLab or Bitbucket reserve the name of, or null. */

@@ -26,9 +26,10 @@ export async function getCiActionsSettings(db: DbClient, projectId: number): Pro
 }
 
 /**
- * Check an action before its first dispatch. A GitHub action reads its
- * workflow file; a CI server preset reads its job; GitLab, Bitbucket and a
- * Custom request name nothing Piwi can read without starting a pipeline.
+ * Check an action before its first dispatch, through its kind's provider: a
+ * GitHub workflow file, a Bitbucket pipelines file or a Jenkins job is read; a
+ * GitLab pipeline and a Custom request declare nothing Piwi can read without
+ * starting them.
  */
 export function checkCiAction(
   db: DbClient,

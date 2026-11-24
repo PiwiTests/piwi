@@ -154,11 +154,16 @@ function envCredential(service: CredentialService): {
     destination,
     user: process.env.PIWI_CI_SERVER_USER?.trim() || null,
     secret,
-    allowedInputs: (process.env.PIWI_CI_SERVER_ALLOWED_INPUTS ?? '')
-      .split(',')
-      .map((name) => name.trim())
-      .filter(Boolean),
+    allowedInputs: instanceCiServerAllowedInputs(),
   };
+}
+
+/** The action inputs a request carrying the instance's CI server credential may send (`PIWI_CI_SERVER_ALLOWED_INPUTS`). */
+export function instanceCiServerAllowedInputs(): string[] {
+  return (process.env.PIWI_CI_SERVER_ALLOWED_INPUTS ?? '')
+    .split(',')
+    .map((name) => name.trim())
+    .filter(Boolean);
 }
 
 /**

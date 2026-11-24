@@ -6,7 +6,7 @@
  * Duplicate, Check and Remove. Edits stay in the form until the settings are
  * saved; Check reads the action as it is in the form.
  */
-import { duplicateCiAction } from '~/utils/ci-action-form';
+import { ciCheckResultView, duplicateCiAction } from '~/utils/ci-action-form';
 import {
   CI_ACTION_DEFAULT_KEYS,
   CI_ACTION_KINDS,
@@ -26,6 +26,8 @@ const props = defineProps<{
   repositoryUrl?: string | null;
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
+  /** The action inputs a request carrying the instance's credential may send; null when unknown. */
+  instanceAllowedInputs?: string[] | null;
 }>();
 const settings = defineModel<CiActionsSettings>({ required: true });
 
@@ -137,18 +139,9 @@ async function check(action: CiAction) {
   }
 }
 
-/** How a Check answer reads: a pass, a problem, a warning, or "could not be checked" (not a pass). */
 function resultOf(id: string) {
   const result = results.value[id];
-  if (!result) return null;
-  if ('error' in result) return { tone: 'error' as const, icon: 'i-lucide-circle-alert', message: result.error };
-  if (result.ok === true) return { tone: 'ok' as const, icon: 'i-lucide-circle-check', message: result.message };
-  if (result.ok === false) return { tone: 'error' as const, icon: 'i-lucide-circle-alert', message: result.message };
-  // Read, but not settled: the target does not say what it does with a name it does not declare.
-  if (result.missing.length > 0) {
-    return { tone: 'warning' as const, icon: 'i-lucide-triangle-alert', message: result.message };
-  }
-  return { tone: 'muted' as const, icon: 'i-lucide-circle-help', message: `Not checked: ${result.message}` };
+  return result ? ciCheckResultView(result) : null;
 }
 
 const RESULT_CLASS = {
@@ -281,6 +274,7 @@ const RESULT_CLASS = {
       :default-for="editingDefaults"
       :other-names="otherNames"
       :instance-url="instanceUrl"
+      :instance-allowed-inputs="instanceAllowedInputs ?? null"
       :project-id="projectId"
       :repository-url="repositoryUrl ?? null"
       @save="saveAction"

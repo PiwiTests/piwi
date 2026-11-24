@@ -24,7 +24,7 @@ import {
   CI_ACTION_TARGET_ITEMS,
   ciActionDraft,
   ciActionFromDraft,
-  ciListingTargetOfDraft,
+  ciListingRequestsOfDraft,
   draftJob,
   draftSentNames,
   fieldItem,
@@ -47,6 +47,8 @@ const props = defineProps<{
   /** The names the project's other actions have. */
   otherNames: string[];
   instanceUrl: string | null;
+  /** The action inputs a request carrying the instance's credential may send; null when unknown. */
+  instanceAllowedInputs?: string[] | null;
   /** The project the action belongs to, whose credentials a CI server target picks from. */
   projectId: number;
   /** The project's repository, whose API a GitHub, GitLab or Bitbucket action's credential must hold. */
@@ -65,7 +67,6 @@ watch(open, (isOpen) => {
   draft.value = ciActionDraft(props.action);
   draft.value.defaultFor = [...props.defaultFor];
   error.value = null;
-  jobPicked.value = false;
 });
 
 const isCiServer = computed(() => draft.value.type === 'jenkins' || draft.value.type === 'custom');
@@ -99,7 +100,7 @@ const sendsInputs = computed(() => draft.value.type !== 'custom');
 
 const listing = useCiJobListing(
   () => props.projectId,
-  () => (open.value ? ciListingTargetOfDraft(draft.value) : null),
+  () => (open.value ? ciListingRequestsOfDraft(draft.value) : null),
   () => draft.value.name,
   () => draft.value.id,
 );
@@ -111,7 +112,9 @@ const workflowFile = computed(() => {
   return job && job.label !== job.id ? workflow : undefined;
 });
 const fieldItems = computed(() => listing.fields.value?.map(fieldItem) ?? null);
-const declaredByName = computed(() => new Map((listing.fields.value ?? []).map((f) => [f.name, f])));
+/** The fields of the job the draft names now: none while they are being read, so no warning reads another job's. */
+const currentFields = computed(() => (listing.fieldsLoading.value ? null : listing.fields.value));
+const declaredByName = computed(() => new Map((currentFields.value ?? []).map((f) => [f.name, f])));
 const listingLoading = computed(() => listing.jobsLoading.value || listing.fieldsLoading.value);
 /** What the listing says, for the line under the target: what is being read, or why something is not listed. */
 const listingStatus = computed(() => {
@@ -119,7 +122,7 @@ const listingStatus = computed(() => {
   return [...new Set([listing.jobsMessage.value, listing.fieldsMessage.value].filter(Boolean))].join(' ') || null;
 });
 const fieldsToPick = computed(() =>
-  listing.fields.value ? fieldsToAdd(draft.value, listing.fields.value).map(fieldItem) : [],
+  currentFields.value ? fieldsToAdd(draft.value, currentFields.value).map(fieldItem) : [],
 );
 /** The declared input the add menu shows as picked, cleared once the row is added so the next pick is seen. */
 const declaredPick = ref<string | undefined>(undefined);
@@ -143,22 +146,22 @@ const INPUT_NOUN: Record<CiActionDraft['type'], string> = {
   custom: 'input',
 };
 const undeclared = computed(() =>
-  listing.fields.value && JOB_NOUN[draft.value.type]
-    ? undeclaredNames(listing.fields.value, draftSentNames(draft.value))
+  currentFields.value && JOB_NOUN[draft.value.type]
+    ? undeclaredNames(currentFields.value, draftSentNames(draft.value))
     : [],
 );
 const requiredMissing = computed(() =>
-  listing.fields.value && draft.value.type === 'github'
-    ? missingRequiredFields(listing.fields.value, draftSentNames(draft.value))
+  currentFields.value && draft.value.type === 'github'
+    ? missingRequiredFields(currentFields.value, draftSentNames(draft.value))
     : [],
 );
 /** The required inputs the draft can add: a name Piwi cannot send stays in the warning only. */
 const requiredToAdd = computed(() =>
-  listing.fields.value && draft.value.type === 'github' ? requiredFieldsToAdd(draft.value, listing.fields.value) : [],
+  currentFields.value && draft.value.type === 'github' ? requiredFieldsToAdd(draft.value, currentFields.value) : [],
 );
 
 function addField(name: unknown) {
-  const field = listing.fields.value?.find((f) => f.name === name);
+  const field = currentFields.value?.find((f) => f.name === name);
   if (field) draft.value.inputs.push(inputDraftFromField(field));
   void nextTick(() => (declaredPick.value = undefined));
 }
@@ -167,18 +170,21 @@ function addRequired() {
   for (const field of requiredToAdd.value) draft.value.inputs.push(inputDraftFromField(field));
 }
 
-// A job picked in this editor fills what it declares once its fields are read: never an action opened as saved.
-const jobPicked = ref(false);
+// The job picked in this editor fills what it declares once its own fields are read: never an action opened as saved,
+// nor a job that a change of target type brings back.
+const pickedJob = ref<string | null>(null);
 watch(
-  () => [draft.value, draftJob(draft.value)] as const,
-  ([current, job], [previous, previousJob]) => {
-    if (current === previous && job !== previousJob) jobPicked.value = true;
+  () => [draft.value, draft.value.type, draftJob(draft.value)] as const,
+  ([current, type, job], [previous, previousType, previousJob]) => {
+    if (current !== previous || type !== previousType) pickedJob.value = null;
+    else if (job !== previousJob) pickedJob.value = job || null;
   },
 );
 watch(listing.fieldsLoading, (loading) => {
-  if (loading || !jobPicked.value) return;
-  jobPicked.value = false;
-  if (listing.fields.value) fillFromDeclared(draft.value, listing.fields.value);
+  if (loading || !pickedJob.value) return;
+  const fields = listing.fields.value;
+  if (fields && pickedJob.value === draftJob(draft.value)) fillFromDeclared(draft.value, fields);
+  pickedJob.value = null;
 });
 
 const KIND_HELP: Partial<Record<CiActionKind, string>> = {
@@ -367,6 +373,7 @@ function submit() {
             v-model="draft.ciServer"
             v-model:problem="credentialProblem"
             :instance-url="instanceUrl"
+            :instance-allowed-inputs="instanceAllowedInputs ?? null"
             :project-id="projectId"
             :inputs="inputPairs"
             :job-items="jobItems"
@@ -500,6 +507,13 @@ function submit() {
             </template>
           </div>
         </fieldset>
+        <p
+          v-else-if="draft.inputs.some((row) => row.name.trim())"
+          class="text-xs text-warning"
+          data-testid="ci-action-custom-inputs"
+        >
+          A Custom request sends no inputs: this action's inputs are not saved with it.
+        </p>
 
         <fieldset class="space-y-2">
           <legend class="text-sm text-highlighted">Accepts</legend>

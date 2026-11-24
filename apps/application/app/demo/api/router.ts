@@ -1058,7 +1058,7 @@ const routes: RouteEntry[] = [
         ciServerToken: _ciServerToken,
         ...rest
       } = project as { scmToken?: string | null; ciServerToken?: string | null } & typeof project;
-      return { ...rest, ciServerInstanceUrl: null };
+      return { ...rest, ciServerInstanceUrl: null, ciServerInstanceAllowedInputs: null };
     },
   },
   {

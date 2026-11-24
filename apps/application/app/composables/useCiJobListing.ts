@@ -1,17 +1,18 @@
 import type { CiJob, CiJobField, CiJobFieldListing, CiJobListing } from '#shared/ci-job-fields';
+import type { CiListingRequests } from '~/utils/ci-action-form';
 
 /**
  * What a CI action's target declares, for the action editor: the jobs it can
  * dispatch and the fields of the job picked, read again (after a pause, since
- * a ref or a base URL is typed) whenever the target changes, and cleared while
- * nothing can be read. `target` is what `ciListingTargetOfDraft` posts; null
- * reads nothing (a Custom request, or the editor closed). `name` and
- * `actionId` name the action being edited, in a refusal and in the credential
- * log.
+ * a ref or a base URL is typed) whenever what is posted changes, and cleared
+ * while nothing can be read. `requests` is what `ciListingRequestsOfDraft`
+ * posts; null reads nothing (a Custom request, or the editor closed). `name`
+ * and `actionId` name the action being edited, in a refusal and in the
+ * credential log.
  */
 export function useCiJobListing(
   projectId: () => number,
-  target: () => Record<string, unknown> | null,
+  requests: () => CiListingRequests | null,
   name: () => string,
   actionId: () => string,
 ) {
@@ -25,23 +26,8 @@ export function useCiJobListing(
   let jobsGeneration = 0;
   let fieldsGeneration = 0;
 
-  /** The target a job listing reads: without the job picked, null for GitLab, whose pipeline has no job to pick. */
-  const jobsTarget = computed(() => {
-    const t = target();
-    if (!t || t.type === 'gitlab') return null;
-    if (t.type === 'github') return { ...t, workflow: '' };
-    if (t.type === 'bitbucket') return { ...t, pipeline: '' };
-    return { ...t, fields: { ...(t.fields as Record<string, unknown>), job: '' } };
-  });
-  /** The target a field listing reads: one with its job picked, or a GitLab one (its CI file). */
-  const fieldsTarget = computed(() => {
-    const t = target();
-    if (!t) return null;
-    if (t.type === 'gitlab') return t;
-    const job =
-      t.type === 'github' ? t.workflow : t.type === 'bitbucket' ? t.pipeline : (t.fields as { job?: string }).job;
-    return job ? t : null;
-  });
+  const jobsTarget = computed(() => requests()?.jobs ?? null);
+  const fieldsTarget = computed(() => requests()?.fields ?? null);
 
   const post = <T>(path: 'jobs' | 'fields', body: Record<string, unknown>, refresh: boolean) =>
     $fetch<T>(`/api/projects/${projectId()}/ci-actions/${path}`, {
@@ -103,7 +89,7 @@ export function useCiJobListing(
   const loadFieldsLater = useDebounceFn(() => loadFields(), 400);
   // Another kind of target lists other things: what the last one listed goes at once.
   watch(
-    () => target()?.type,
+    () => requests()?.type,
     () => {
       jobs.value = null;
       jobsMessage.value = null;
@@ -111,12 +97,19 @@ export function useCiJobListing(
       fieldsMessage.value = null;
     },
   );
-  // A changed target is being read from then on: an answer still on its way for the one before is dropped.
+  // A changed target is being read from then on: an answer still on its way for the one before is dropped, and with
+  // nothing left to read the last answer goes at once. While `loading` is false, the answer is the current target's.
   watch(
     jobsKey,
     () => {
       jobsGeneration++;
-      jobsLoading.value = jobsTarget.value !== null;
+      if (jobsTarget.value === null) {
+        jobs.value = null;
+        jobsMessage.value = null;
+        jobsLoading.value = false;
+        return;
+      }
+      jobsLoading.value = true;
       void loadJobsLater();
     },
     { immediate: true },
@@ -125,7 +118,13 @@ export function useCiJobListing(
     fieldsKey,
     () => {
       fieldsGeneration++;
-      fieldsLoading.value = fieldsTarget.value !== null;
+      if (fieldsTarget.value === null) {
+        fields.value = null;
+        fieldsMessage.value = null;
+        fieldsLoading.value = false;
+        return;
+      }
+      fieldsLoading.value = true;
       void loadFieldsLater();
     },
     { immediate: true },

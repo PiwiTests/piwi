@@ -10,6 +10,7 @@ import { TtlCache } from './ttl-cache';
 import { readProjectRepositoryUrl } from './scm/project-repository';
 import { configuredGitlabHosts } from './scm/gitlab-hosts';
 import { ciProvider } from './ci-providers';
+import { ciTargetDefinition } from '#shared/ci-targets';
 import { isCiActionId, resolveCiListingTarget, type CiListingTarget } from '#shared/ci-actions';
 import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
 import { MAX_CI_JOB_FIELDS, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
@@ -20,9 +21,9 @@ const jobsCache = new TtlCache<CiJobListing>(5 * 60 * 1000);
 const fieldsCache = new TtlCache<CiJobFieldListing>(5 * 60 * 1000);
 
 const cacheKey = (projectId: number, target: CiListingTarget) => `${projectId}:${JSON.stringify(target)}`;
-/** What a job listing depends on: the target, whichever job is picked (and, on a CI server, whichever branch). */
+/** What a job listing depends on: the target, whichever job is picked. */
 const jobsKey = (projectId: number, target: CiListingTarget) =>
-  `${projectId}:${JSON.stringify({ ...target, workflow: '', pipeline: '', job: '', ...(target.type === 'ci-server' ? { ref: '' } : {}) })}`;
+  `${projectId}:${JSON.stringify(ciTargetDefinition(target.type).withoutJob(target))}`;
 
 /**
  * The jobs a target lists, for the CI action editor: a repository's

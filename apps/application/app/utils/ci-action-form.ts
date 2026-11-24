@@ -17,6 +17,7 @@ import {
   reservedInputMessage,
   reservedInputName,
   type CiAction,
+  type CiActionCheckResult,
   type CiActionInput,
   type CiActionKind,
   type CiActionTarget,
@@ -142,24 +143,51 @@ export function fieldItem(field: CiJobField): CiDeclaredItem {
   return { label: field.name, value: field.name, description: fieldSummary(field) };
 }
 
-/** What the editor posts to list the draft target's jobs and fields; null for a Custom request, which lists none. */
-export function ciListingTargetOfDraft(draft: CiActionDraft): Record<string, unknown> | null {
+/** The targets the editor posts to read what the draft's target declares. */
+export interface CiListingRequests {
+  /** The draft's target type: another type lists other things. */
+  type: CiActionFormType;
+  /** The target to list the jobs of, without the job picked; null when the target has no job to pick (GitLab). */
+  jobs: Record<string, unknown> | null;
+  /** The target to list the fields of: once a job is picked, and always for GitLab, whose fields are its CI file's. */
+  fields: Record<string, unknown> | null;
+}
+
+/** What the editor posts to read the draft's target; null for a Custom request, which lists nothing. */
+export function ciListingRequestsOfDraft(draft: CiActionDraft): CiListingRequests | null {
   const credentialId = draft.scmCredentialId ?? undefined;
   switch (draft.type) {
-    case 'github':
-      return { type: 'github', ref: draft.github.ref.trim(), workflow: draft.github.workflow.trim(), credentialId };
+    case 'github': {
+      const workflow = draft.github.workflow.trim();
+      const target = { type: 'github', ref: draft.github.ref.trim(), workflow, credentialId };
+      return { type: draft.type, jobs: { ...target, workflow: '' }, fields: workflow ? target : null };
+    }
     case 'gitlab':
-      return { type: 'gitlab', ref: draft.gitlab.ref.trim(), credentialId };
-    case 'bitbucket':
-      return { type: 'bitbucket', pipeline: draft.bitbucket.pipeline.trim(), credentialId };
-    case 'jenkins':
       return {
+        type: draft.type,
+        jobs: null,
+        fields: { type: 'gitlab', ref: draft.gitlab.ref.trim(), credentialId },
+      };
+    case 'bitbucket': {
+      const pipeline = draft.bitbucket.pipeline.trim();
+      const target = { type: 'bitbucket', pipeline, credentialId };
+      return { type: draft.type, jobs: { ...target, pipeline: '' }, fields: pipeline ? target : null };
+    }
+    case 'jenkins': {
+      const job = draft.ciServer.rerun.job.trim();
+      const server = {
         type: 'ci-server',
         preset: 'jenkins',
         baseUrl: draft.ciServer.baseUrl.trim(),
         credentialId: draft.ciServer.credentialId ?? undefined,
-        fields: { job: draft.ciServer.rerun.job.trim(), ref: draft.ciServer.rerun.ref.trim() },
       };
+      return {
+        type: draft.type,
+        // The jobs under the base URL, whichever job and branch are typed.
+        jobs: { ...server, fields: { job: '', ref: '' } },
+        fields: job ? { ...server, fields: { job, ref: draft.ciServer.rerun.ref.trim() } } : null,
+      };
+    }
     case 'custom':
       return null;
   }
@@ -252,8 +280,12 @@ export function fillFromDeclared(draft: CiActionDraft, fields: CiJobField[]): vo
   for (const field of requiredFieldsToAdd(draft, fields)) draft.inputs.push(inputDraftFromField(field));
 }
 
-/** The inputs a request preview shows: each named row with the value a dispatch that picks none sends. */
+/**
+ * The inputs a request preview shows: each named row with the value a
+ * dispatch that picks none sends; none for a Custom request, which sends none.
+ */
 export function previewInputPairs(draft: CiActionDraft): [string, string][] {
+  if (draft.type === 'custom') return [];
   return draft.inputs.flatMap((row): [string, string][] => {
     const name = row.name.trim();
     if (!name) return [];
@@ -454,10 +486,27 @@ export function ciActionFromDraft(
   if (reserved) {
     return {
       action: null,
-      error: reservedInputMessage(reserved, target.target.type === 'bitbucket' ? 'bitbucket' : 'gitlab'),
+      error: reservedInputMessage(reserved, target.target),
     };
   }
   return { action, error: null };
+}
+
+/**
+ * How a Check answer reads in the list: a pass, a problem, a warning (read,
+ * but not settled: the target does not say what it does with a name it does
+ * not declare), or "could not be checked", which is not a pass.
+ */
+export function ciCheckResultView(result: CiActionCheckResult | { error: string }): {
+  tone: 'ok' | 'error' | 'warning' | 'muted';
+  icon: string;
+  message: string;
+} {
+  if ('error' in result) return { tone: 'error', icon: 'i-lucide-circle-alert', message: result.error };
+  if (result.ok === true) return { tone: 'ok', icon: 'i-lucide-circle-check', message: result.message };
+  if (result.ok === false) return { tone: 'error', icon: 'i-lucide-circle-alert', message: result.message };
+  if (result.missing.length > 0) return { tone: 'warning', icon: 'i-lucide-triangle-alert', message: result.message };
+  return { tone: 'muted', icon: 'i-lucide-circle-help', message: `Not checked: ${result.message}` };
 }
 
 /** The name a duplicate of an action gets: `name (copy)`, or `(copy 2)` and up, within the name limit and unlike any taken name. */

@@ -8,6 +8,7 @@
  * does not read, a host that did not answer) is a setup gap: the same on every
  * cluster of the project, so the line keeps only the range and a help hint.
  */
+import { SCM_PROVIDER_LABELS } from '#shared/scm-urls';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import type { HelpTopicKey } from '~/utils/help-content';
 
@@ -59,8 +60,6 @@ export interface ScmStatus {
   errorText: string | null;
 }
 
-const HOST_LABEL: Record<string, string> = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
-
 function hostName(url: string | null | undefined): string | null {
   if (!url) return null;
   try {
@@ -97,7 +96,7 @@ export function describeScmStatus(scm: ScmCoverage | null | undefined): ScmStatu
   };
   if (!scm) return base;
 
-  const host = scm.provider ? (HOST_LABEL[scm.provider] ?? scm.provider) : null;
+  const host = scm.provider ? SCM_PROVIDER_LABELS[scm.provider] : null;
   const known: ScmStatus = {
     ...base,
     compare: scm.compareUrl && host ? { url: scm.compareUrl, label: `Compare on ${host}` } : null,

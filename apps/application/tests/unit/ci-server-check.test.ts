@@ -358,7 +358,9 @@ describe('checking a job on a CI server', () => {
   const uses = () => db.select().from(schema.credentialUses);
 
   /** A credential shared with every project, its secret sealed for its destination. */
-  async function credential(over: { destination?: string; allowedInputs?: string[] | null } = {}) {
+  async function credential(
+    over: { destination?: string; allowedInputs?: string[] | null; projectIds?: number[] } = {},
+  ) {
     process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
     try {
       const destination = over.destination ?? base;
@@ -370,7 +372,7 @@ describe('checking a job on a CI server', () => {
           service: 'ci-server',
           user: 'team-bot',
           destination,
-          scope: { allProjects: true },
+          scope: over.projectIds ? { allProjects: false, projectIds: over.projectIds } : { allProjects: true },
           allowedInputs: over.allowedInputs ?? null,
           customRequests: false,
           disabled: false,
@@ -534,8 +536,8 @@ describe('checking a job on a CI server', () => {
     expect(await uses()).toEqual([expect.objectContaining({ feature: 'ci-list', result: 'ok' })]);
   });
 
-  test('reads the parameters of a job with the credential the action names, never a password’s default', async () => {
-    const id = await credential();
+  test('reads the parameters of a job with a credential its project alone holds, never a password’s default', async () => {
+    const id = await credential({ projectIds: [1] });
     process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
     process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
     try {
@@ -561,6 +563,24 @@ describe('checking a job on a CI server', () => {
         message: null,
       });
       expect(JSON.stringify(fields)).not.toContain('hunter2');
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+  });
+
+  test('leaves out free-text defaults and descriptions read with a credential other projects share', async () => {
+    const id = await credential();
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
+    try {
+      const fields = await readCiServerJobFields(
+        db as never,
+        1,
+        target({ preset: 'jenkins', credentialId: id, rerun: { job: 'rich' } }),
+        USE,
+      );
+      expect(fields.fields?.find((f) => f.name === 'TARGET_ENV')).not.toHaveProperty('description');
+      expect(fields.message).toContain('which other projects share');
     } finally {
       delete process.env.PIWI_SECRET_KEY;
     }

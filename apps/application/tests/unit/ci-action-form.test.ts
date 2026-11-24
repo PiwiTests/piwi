@@ -2,8 +2,9 @@ import { describe, expect, test } from 'vitest';
 import type { CiAction } from '#shared/ci-actions';
 import {
   ciActionDraft,
+  ciCheckResultView,
   ciActionFromDraft,
-  ciListingTargetOfDraft,
+  ciListingRequestsOfDraft,
   draftBuiltInNames,
   draftJob,
   draftSentNames,
@@ -214,27 +215,39 @@ describe('duplicateCiAction', () => {
 });
 
 describe('what the editor reads from the target', () => {
-  test('posts the draft target to list from, none for a Custom request', () => {
+  test('posts the target without its job to list the jobs, and with it to list the fields', () => {
     const draft = githubDraft({ scmCredentialId: 3 });
-    expect(ciListingTargetOfDraft(draft)).toEqual({
+    const github = { type: 'github', ref: 'main', workflow: 'e2e.yml', credentialId: 3 };
+    expect(ciListingRequestsOfDraft(draft)).toEqual({
       type: 'github',
-      ref: 'main',
-      workflow: 'e2e.yml',
-      credentialId: 3,
+      jobs: { ...github, workflow: '' },
+      fields: github,
     });
+    draft.github.workflow = ' ';
+    expect(ciListingRequestsOfDraft(draft)?.fields).toBeNull();
+
     draft.type = 'jenkins';
     draft.ciServer.rerun.job = 'qa/e2e';
+    draft.ciServer.rerun.ref = 'main';
     draft.ciServer.credentialId = 7;
-    expect(ciListingTargetOfDraft(draft)).toEqual({
-      type: 'ci-server',
-      preset: 'jenkins',
-      baseUrl: '',
-      credentialId: 7,
-      fields: { job: 'qa/e2e', ref: '' },
+    const server = { type: 'ci-server', preset: 'jenkins', baseUrl: '', credentialId: 7 };
+    expect(ciListingRequestsOfDraft(draft)).toEqual({
+      type: 'jenkins',
+      jobs: { ...server, fields: { job: '', ref: '' } },
+      fields: { ...server, fields: { job: 'qa/e2e', ref: 'main' } },
     });
     expect(draftJob(draft)).toBe('qa/e2e');
+  });
+
+  test('lists no job for GitLab, whose fields are its CI file’s, and nothing for a Custom request', () => {
+    const draft = githubDraft({ type: 'gitlab' });
+    expect(ciListingRequestsOfDraft(draft)).toEqual({
+      type: 'gitlab',
+      jobs: null,
+      fields: { type: 'gitlab', ref: 'main', credentialId: undefined },
+    });
     draft.type = 'custom';
-    expect(ciListingTargetOfDraft(draft)).toBeNull();
+    expect(ciListingRequestsOfDraft(draft)).toBeNull();
   });
 
   test('adds a declared choice or boolean as a choice, any other field as a fixed value holding its default', () => {
@@ -338,5 +351,30 @@ describe('previewInputPairs', () => {
       ['TIER', 'gold'],
       ['SUITE', 'smoke'],
     ]);
+  });
+});
+
+describe('ciCheckResultView', () => {
+  test('reads a pass, a problem, a warning with names left unsettled, and what could not be checked', () => {
+    expect(ciCheckResultView({ ok: true, missing: [], message: 'Fine.' }).tone).toBe('ok');
+    expect(ciCheckResultView({ ok: false, missing: ['X'], message: 'No.' }).tone).toBe('error');
+    expect(ciCheckResultView({ error: 'The check failed.' }).tone).toBe('error');
+    expect(ciCheckResultView({ ok: null, missing: ['REGION'], message: 'Does not declare REGION.' })).toEqual({
+      tone: 'warning',
+      icon: 'i-lucide-triangle-alert',
+      message: 'Does not declare REGION.',
+    });
+    expect(ciCheckResultView({ ok: null, missing: [], message: 'No file.' })).toMatchObject({
+      tone: 'muted',
+      message: 'Not checked: No file.',
+    });
+  });
+});
+
+describe('the request preview of a Custom request', () => {
+  test('shows no input, since a Custom request sends none', () => {
+    const draft = githubDraft({ type: 'custom' });
+    draft.inputs.push({ ...newInputDraft(), name: 'TARGET_ENV', value: 'staging' });
+    expect(previewInputPairs(draft)).toEqual([]);
   });
 });

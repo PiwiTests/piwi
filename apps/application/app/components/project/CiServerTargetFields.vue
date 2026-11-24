@@ -15,6 +15,8 @@ import type { CiDeclaredItem } from '~/utils/ci-action-form';
 const props = defineProps<{
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
   instanceUrl: string | null;
+  /** The action inputs a request carrying the instance's credential may send; null when unknown. */
+  instanceAllowedInputs?: string[] | null;
   /** The project the action belongs to, whose credentials the picker lists. */
   projectId: number;
   /** The action's inputs as name and value pairs, shown in the request preview. */
@@ -64,9 +66,14 @@ const credentialValue = computed({
 
 const previewOpts = computed(() => ({
   instanceUrl: props.instanceUrl,
+  instanceAllowedInputs: props.instanceAllowedInputs ?? null,
   credential: chosen.value,
   inputs: props.inputs,
 }));
+/** What the preview calls the credential that leaves inputs out. */
+const droppingCredential = computed(() =>
+  preview.value.credential === 'instance' ? 'The instance credential' : `“${chosen.value?.name ?? ''}”`,
+);
 const preview = computed(() => ciServerRequestPreview(state.value, 'rerun', previewOpts.value));
 /** The preview waits for the list when the action names a credential, whose destination may be its base URL. */
 const previewReady = computed(() => listedOk.value || state.value.credentialId === null);
@@ -257,7 +264,13 @@ function customize() {
     <div class="space-y-1">
       <p class="text-xs text-muted">The request this action sends, with sample values</p>
       <template v-if="previewReady">
-        <CodeBlock v-if="preview.text" :code="preview.text" lang="text" />
+        <template v-if="preview.text">
+          <CodeBlock :code="preview.text" lang="text" />
+          <p v-if="preview.droppedInputs.length" class="text-xs text-warning" data-testid="ci-server-dropped-inputs">
+            {{ droppingCredential }} does not allow {{ preview.droppedInputs.join(', ') }}: a dispatch leaves
+            {{ preview.droppedInputs.length > 1 ? 'them' : 'it' }} out.
+          </p>
+        </template>
         <p v-else class="text-xs text-error">{{ preview.error }}</p>
       </template>
       <p v-else class="text-xs text-muted">Reading the credential…</p>

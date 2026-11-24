@@ -68,15 +68,15 @@ Slack channel): the answer lists them.
 
 In **Project → Settings → CI**, a CI server action's editor has a **Credential** picker and a **New credential**
 button. The action's base URL may stay empty: it is then the credential's destination. The request preview shows which
-credential the request carries, and says when the credential would refuse it.
+credential the request carries, the inputs it does not allow, and when it would refuse the request.
 
 Each dispatch and each **Check** checks the credential again before anything is sent: still active, shared with the
 project, and holding the request's URL under its destination, and allowing a Custom request when the action sends one.
 
 ## What names a credential
 
-- **A CI action**: a CI server action's requests, or the dispatch and the **Check** of a GitHub, GitLab or Bitbucket
-  action ([CI actions](/features/ci-actions)).
+- **A CI action**: a CI server action's requests, or the dispatch, **Check** and listings of a GitHub, GitLab or
+  Bitbucket action ([CI actions](/features/ci-actions)).
 - **Source control**: a project's repository calls, else the instance's, with a GitHub, GitLab or Bitbucket token sent
   to the host's API ([Source control](/guide/source-control#set-the-credential)).
 - **An AI role**: the key of a role of **Settings → AI**, sent to its provider ([AI provider](/guide/ai-provider#api-keys)).
