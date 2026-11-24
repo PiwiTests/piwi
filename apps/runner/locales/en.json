@@ -473,6 +473,24 @@
       }
     }
   },
+  "shell_updateManifestUnread": {
+    "message": "GitHub did not serve the latest release's update file (an error, a proxy, or a release without it). Try again later.",
+    "description": "Why a check for updates failed, under the title of the failure: GitHub did not serve the update file of the latest release."
+  },
+  "shell_updateNotPending": {
+    "message": "No update is waiting to install: check for updates again.",
+    "description": "Why an install failed, under the title of the failure: no update found by a check waits to be installed."
+  },
+  "shell_updateBusy": {
+    "message": "$app$ is already checking for or installing an update.",
+    "description": "Why an install failed, under the title of the failure: the tray or the window is already checking for or installing an update. $app$ is the app’s name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
   "shell_updateUnsupported": {
     "message": "This build of $app$ cannot update itself. Get new versions from $page$.",
     "description": "A dialog: this copy of the app has no updater. $page$ is the address of the releases page.",

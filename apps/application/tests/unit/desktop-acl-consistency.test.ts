@@ -117,4 +117,17 @@ describe('Piwi Runner shell ACL wiring', () => {
     const forbidden = ['desktop_set_server_port', 'desktop_open_in_ide', 'desktop_mcp_connect', 'desktop_skills_write'];
     expect(forbidden.filter((cmd) => runnerGrants.includes(cmd))).toEqual([]);
   });
+
+  test('the runner window updates the app as the dashboard does', () => {
+    // Both apps install and update the same way: the window's updates panel calls these, in either app.
+    const updates = [
+      'desktop_get_update_settings',
+      'desktop_set_update_notification',
+      'desktop_check_update',
+      'desktop_install_update',
+      'desktop_restart_app',
+    ];
+    expect(updates.filter((cmd) => !runnerGrants.includes(cmd))).toEqual([]);
+    expect(updates.filter((cmd) => !desktopHandlers.includes(cmd))).toEqual([]);
+  });
 });

@@ -2,26 +2,33 @@
 /**
  * The offer to start the app when the person signs in, shown once the app has just connected to a team instance while
  * Start on login is off (`useStartOnLoginOffer`): **Start on login** turns it on, **Not now** drops the offer. Turned
- * on elsewhere (the settings, the tray), the offer ends too, as the shell announces it (`piwi:background-settings`).
+ * on elsewhere (the settings, the tray), the offer ends too: the shell announces it (`piwi:background-settings`) while
+ * the offer shows, and the setting is read again each time it mounts.
  */
 defineProps<{
   /** The app's name, in the sentence that makes the offer. */
   appName: string;
 }>();
 
-const { offered, busy, turnOn, dismiss } = useStartOnLoginOffer();
+const { offered, busy, turnOn, dismiss, dismissIfOn } = useStartOnLoginOffer();
 const { t } = useRunUiWords();
 
 let unlisten: (() => void) | null = null;
+let disposed = false;
 onMounted(async () => {
-  unlisten =
-    (await tauriEvent()
-      ?.listen<{ start_on_login?: boolean }>('piwi:background-settings', ({ payload }) => {
-        if (payload.start_on_login) dismiss();
-      })
-      .catch(() => null)) ?? null;
+  if (offered.value) void dismissIfOn();
+  const stop = await tauriEvent()
+    ?.listen<{ start_on_login?: boolean }>('piwi:background-settings', ({ payload }) => {
+      if (payload.start_on_login) dismiss();
+    })
+    .catch(() => null);
+  if (disposed) stop?.();
+  else unlisten = stop ?? null;
 });
-onScopeDispose(() => unlisten?.());
+onScopeDispose(() => {
+  disposed = true;
+  unlisten?.();
+});
 </script>
 
 <template>

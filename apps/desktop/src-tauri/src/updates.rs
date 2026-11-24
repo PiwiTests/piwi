@@ -28,9 +28,10 @@
 // Both apps offer the same two ways: Settings → About in the window (the
 // layer's `DesktopUpdatePanel`, through the commands above) and the tray's
 // Check for updates, which runs the same check and asks in native dialogs
-// (`check_from_tray`), then installs and restarts. A release whose manifest has
-// no package for this system yet, or no manifest at all, reads as
-// `unpublished`, never as an error. Piwi Runner reads one manifest,
+// (`check_from_tray`), then installs and restarts. A manifest with no package
+// for this system reads as `unpublished`, never as an error; a manifest GitHub
+// does not serve is an error said in plain words (`shell_updateManifestUnread`).
+// One install runs at a time, from the window or the tray (`TrayUpdateBusy`). Piwi Runner reads one manifest,
 // `latest-runner.json`, keyed by installer (`runner.updater.conf.json`), so each
 // install takes its own kind of package.
 
@@ -424,19 +425,21 @@ async fn check(app: &AppHandle) -> Result<UpdateStatus, String> {
         }
         Ok(None) => Ok(UpdateStatus::bare("uptodate")),
         Err(error) if not_published(&error) => Ok(UpdateStatus::bare("unpublished")),
+        Err(tauri_plugin_updater::Error::ReleaseNotFound) => {
+            Err(crate::shell_words::shell_words(app).say("shell_updateManifestUnread", &[]))
+        }
         Err(error) => Err(error.to_string()),
     }
 }
 
-/// Whether the check failed because the latest release has no manifest, or none for this system: one of its packages
-/// failed to publish and waits for a new attempt, or GitHub did not serve the manifest. Both apps' manifests sit on the
-/// latest release (`releases/latest/download/`), so a later check finds the package once it is there.
+/// Whether the latest release's manifest has no package for this system: one of its packages failed to publish and
+/// waits for a new attempt, and a later check finds it once it is there. A manifest the endpoint does not serve (a
+/// missing file, a server error, a proxy's refusal) is `ReleaseNotFound`, which says nothing of why, so it stays an
+/// error.
 fn not_published(error: &tauri_plugin_updater::Error) -> bool {
     matches!(
         error,
-        tauri_plugin_updater::Error::ReleaseNotFound
-            | tauri_plugin_updater::Error::TargetNotFound(_)
-            | tauri_plugin_updater::Error::TargetsNotFound(_)
+        tauri_plugin_updater::Error::TargetNotFound(_) | tauri_plugin_updater::Error::TargetsNotFound(_)
     )
 }
 
@@ -466,16 +469,23 @@ async fn may_stop_runs_for_update(app: &AppHandle) -> bool {
 /// kept them: nothing was installed, and the update stays on offer.
 #[tauri::command]
 pub async fn desktop_install_update(app: AppHandle) -> Result<bool, String> {
+    let words = crate::shell_words::shell_words(&app);
+    if app.state::<PendingUpdate>().0.lock().unwrap().is_none() {
+        return Err(words.say("shell_updateNotPending", &[]));
+    }
+    let busy = app.state::<TrayUpdateBusy>();
+    if busy.0.swap(true, Ordering::SeqCst) {
+        return Err(words.say("shell_updateBusy", &[("app", APP)]));
+    }
+    let release = || app.state::<TrayUpdateBusy>().0.store(false, Ordering::SeqCst);
     if INSTALL_ENDS_THE_APP && !may_stop_runs_for_update(&app).await {
+        release();
         return Ok(false);
     }
-    let update = app
-        .state::<PendingUpdate>()
-        .0
-        .lock()
-        .unwrap()
-        .take()
-        .ok_or("no update pending — run a check first")?;
+    let Some(update) = app.state::<PendingUpdate>().0.lock().unwrap().take() else {
+        release();
+        return Err(words.say("shell_updateNotPending", &[]));
+    };
 
     let progress_app = app.clone();
     let mut downloaded: u64 = 0;
@@ -491,11 +501,15 @@ pub async fn desktop_install_update(app: AppHandle) -> Result<bool, String> {
             || {},
         )
         .await
-        .map_err(|e| e.to_string())?;
+        .map_err(|e| {
+            release();
+            e.to_string()
+        })?;
+    // Installed: the app restarts into it, so the flag stays set and nothing installs twice meanwhile.
     Ok(true)
 }
 
-/// Set while the tray's check or install runs, so a second click starts nothing.
+/// Set while the tray's check or install runs, or the window's install, so neither starts a second one.
 #[derive(Default)]
 pub struct TrayUpdateBusy(AtomicBool);
 
@@ -710,9 +724,10 @@ mod tests {
     #[test]
     fn a_release_without_this_systems_package_is_not_published_yet() {
         use tauri_plugin_updater::Error;
-        assert!(not_published(&Error::ReleaseNotFound));
         assert!(not_published(&Error::TargetNotFound("linux-x86_64-deb".into())));
         assert!(not_published(&Error::TargetsNotFound(vec!["linux-x86_64".into()])));
+        // A missing manifest, a server error and a proxy's refusal all read as `ReleaseNotFound`: an error.
+        assert!(!not_published(&Error::ReleaseNotFound));
         assert!(!not_published(&Error::Network("connection refused".into())));
         assert!(!not_published(&Error::EmptyEndpoints));
     }

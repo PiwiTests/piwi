@@ -247,6 +247,28 @@ for (const { code, tag, close } of LANGUAGES) {
     expect(await page.evaluate(() => window.__invoked)).toContain('desktop_set_start_on_login');
   });
 
+  test(`the window keeps in ${code} an update it installed while About was away`, async ({ page }) => {
+    const runner = read(`apps/runner/locales/${code}.json`);
+    const layer = read(`packages/run-ui/locales/${code}.json`);
+    await playShell(page, code);
+    await page.goto('/');
+    const header = page.getByTestId('runner-header');
+    await page.getByTestId('runner-status').click();
+    await page.getByTestId('runner-settings').getByRole('tab', { name: said(runner, 'runner_aboutHeading') }).click();
+
+    const about = page.getByTestId('runner-about');
+    await about.getByRole('button', { name: said(layer, 'runui_updateInstall') }).click();
+    await expect(about.getByRole('button', { name: said(layer, 'runui_updateRestart') })).toBeVisible();
+
+    // The runs, then About again: the install the window started is still offered its restart.
+    await header.getByRole('tab', { name: said(runner, 'runner_runsHeading') }).click();
+    await expect(page.getByTestId('runner-settings')).toBeHidden();
+    await header.getByRole('tab', { name: said(runner, 'runner_settingsHeading') }).click();
+    await page.getByTestId('runner-settings').getByRole('tab', { name: said(runner, 'runner_aboutHeading') }).click();
+    await expect(about.getByRole('button', { name: said(layer, 'runui_updateRestart') })).toBeVisible();
+    expect((await page.evaluate(() => window.__invoked)).filter((cmd) => cmd === 'desktop_install_update')).toHaveLength(1);
+  });
+
   test(`the window speaks ${code} while the instance does not answer, with no text cut`, async ({ page }) => {
     const runner = read(`apps/runner/locales/${code}.json`);
     await playShell(page, code, 'offline');

@@ -395,6 +395,21 @@
       }
     }
   },
+  "shell_updateManifestUnread": {
+    "message": "GitHub hat die Update-Datei der neuesten Version nicht geliefert (ein Fehler, ein Proxy oder eine Version ohne diese Datei). Versuchen Sie es später erneut."
+  },
+  "shell_updateNotPending": {
+    "message": "Kein Update wartet auf die Installation: Suchen Sie erneut nach Updates."
+  },
+  "shell_updateBusy": {
+    "message": "$app$ sucht bereits nach einem Update oder installiert eines.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
   "shell_updateUnsupported": {
     "message": "Dieser Build von $app$ kann sich nicht selbst aktualisieren. Neue Versionen gibt es unter $page$.",
     "placeholders": {

@@ -1,9 +1,10 @@
 /**
  * The app's own updates, as the shell checks and installs them (`updates.rs`): what the startup check already found,
  * a check by hand, the download and install with its progress (`piwi:update-progress`), the restart the person asks
- * for, and whether the startup check announces an update with a notification. Each view keeps its own state; without
- * the shell's bridge nothing is read and every action does nothing. A failed action says why in a notification, in
- * the host's words.
+ * for, and whether the startup check announces an update with a notification. The state is the window's, shared by
+ * every view and kept while none shows it, so an install started from Settings → About is still followed, and its
+ * restart offered, after the person goes elsewhere and back. Without the shell's bridge nothing is read and every
+ * action does nothing. A failed action says why in a notification, in the host's words.
  */
 
 /**
@@ -22,27 +23,25 @@ interface DesktopUpdateSettings {
   pending: DesktopUpdateStatus | null;
 }
 
+/** The window's one listener to the download's progress, once an install started. */
+let progressHeard: Promise<unknown> | undefined;
+
 export function useDesktopUpdate() {
   const toast = useToast();
   const { t } = useRunUiWords();
 
-  /** The shell's bridge is there. */
-  const bridged = ref(false);
   /** This build carries an update channel. */
-  const supported = ref(false);
-  const notifyOnStartup = ref(true);
-  const savingNotify = ref(false);
-  const status = ref<DesktopUpdateStatus | null>(null);
-  const checking = ref(false);
-  const installing = ref(false);
-  const installed = ref(false);
-  const progress = ref<{ downloaded: number; total: number | null } | null>(null);
-
-  let unlisten: (() => void) | null = null;
+  const supported = useState('desktop-update-supported', () => false);
+  const notifyOnStartup = useState('desktop-update-notify', () => true);
+  const savingNotify = useState('desktop-update-saving-notify', () => false);
+  const status = useState<DesktopUpdateStatus | null>('desktop-update-status', () => null);
+  const checking = useState('desktop-update-checking', () => false);
+  const installing = useState('desktop-update-installing', () => false);
+  const installed = useState('desktop-update-installed', () => false);
+  const progress = useState<{ downloaded: number; total: number | null } | null>('desktop-update-progress', () => null);
 
   onMounted(async () => {
     const core = tauriCore();
-    bridged.value = !!core;
     if (!core) return;
     try {
       const settings = await core.invoke<DesktopUpdateSettings>('desktop_get_update_settings');
@@ -52,10 +51,6 @@ export function useDesktopUpdate() {
     } catch {
       // Leaves the checkbox hidden; checking by hand still works.
     }
-  });
-
-  onScopeDispose(() => {
-    unlisten?.();
   });
 
   /** The shell answers a failed command with its reason as a string. */
@@ -85,18 +80,19 @@ export function useDesktopUpdate() {
     installing.value = true;
     progress.value = { downloaded: 0, total: null };
     try {
-      if (events && !unlisten) {
-        unlisten = await events.listen<{ downloaded: number; total: number | null }>(
-          'piwi:update-progress',
-          ({ payload }) => {
-            progress.value = payload;
-          },
-        );
-      }
+      // One listener for the window's life: the download goes on whichever view shows it.
+      progressHeard ??= events
+        ?.listen<{ downloaded: number; total: number | null }>('piwi:update-progress', ({ payload }) => {
+          progress.value = payload;
+        })
+        .catch(() => null);
+      await progressHeard;
       // `false`: the person kept the runs going rather than install now.
       installed.value = (await core.invoke<boolean | null>('desktop_install_update')) !== false;
     } catch (error) {
       fail(t('runui_updateFailed'), error);
+      // A failed download leaves no update on offer in the shell: the next step is a check again.
+      status.value = null;
     } finally {
       installing.value = false;
       if (!installed.value) progress.value = null;
@@ -133,7 +129,6 @@ export function useDesktopUpdate() {
   });
 
   return {
-    bridged,
     supported,
     notifyOnStartup,
     savingNotify,

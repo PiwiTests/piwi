@@ -15,12 +15,22 @@ export function useStartOnLoginOffer() {
   const toast = useToast();
   const { t } = useRunUiWords();
 
-  /** Makes the offer when Start on login is off; a shell that cannot say makes none. */
-  async function offerIfOff(): Promise<void> {
+  /** Start on login as the shell has it, or null when the shell cannot say. */
+  async function startsOnLogin(): Promise<boolean | null> {
     const settings = await tauriCore()
       ?.invoke<StartOnLoginSettings>('desktop_get_service_settings')
       .catch(() => null);
-    if (settings && settings.start_on_login === false) offered.value = true;
+    return typeof settings?.start_on_login === 'boolean' ? settings.start_on_login : null;
+  }
+
+  /** Makes the offer when Start on login is off; a shell that cannot say makes none. */
+  async function offerIfOff(): Promise<void> {
+    if ((await startsOnLogin()) === false) offered.value = true;
+  }
+
+  /** Drops the offer once Start on login is on, turned on while no view showed the offer. */
+  async function dismissIfOn(): Promise<void> {
+    if (await startsOnLogin()) offered.value = false;
   }
 
   /** Turns Start on login on, then drops the offer; a refusal says why in a notification, in the host's words. */
@@ -44,5 +54,5 @@ export function useStartOnLoginOffer() {
     offered.value = false;
   }
 
-  return { offered, busy, offerIfOff, turnOn, dismiss };
+  return { offered, busy, offerIfOff, dismissIfOn, turnOn, dismiss };
 }

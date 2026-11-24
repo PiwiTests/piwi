@@ -70,20 +70,25 @@ async function refresh() {
 }
 
 let unlisten: (() => void) | null = null;
+let disposed = false;
 
 onMounted(async () => {
   // The shell announces a change made elsewhere (the tray, the offer to start on login), so the switches follow it.
-  unlisten =
-    (await tauriEvent()
-      ?.listen<{ run_in_background: boolean; start_on_login: boolean }>('piwi:background-settings', ({ payload }) => {
-        runInBackground.value = !!payload.run_in_background;
-        startOnLogin.value = !!payload.start_on_login;
-      })
-      .catch(() => null)) ?? null;
+  const stop = await tauriEvent()
+    ?.listen<{ run_in_background: boolean; start_on_login: boolean }>('piwi:background-settings', ({ payload }) => {
+      runInBackground.value = !!payload.run_in_background;
+      startOnLogin.value = !!payload.start_on_login;
+    })
+    .catch(() => null);
+  if (disposed) stop?.();
+  else unlisten = stop ?? null;
   await refresh();
 });
 
-onScopeDispose(() => unlisten?.());
+onScopeDispose(() => {
+  disposed = true;
+  unlisten?.();
+});
 
 async function setRunInBackground(value: boolean) {
   const core = tauriCore();
