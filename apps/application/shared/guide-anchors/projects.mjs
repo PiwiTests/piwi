@@ -517,7 +517,7 @@ export const PROJECTS_ANCHORS = [
     reveal: [{ query: { tab: 'settings', section: 'ci' } }],
     describes:
       'The CI section of the project’s Settings, in the Integrations group beside the issue tracker: the CI actions, each CI server one naming its credential.',
-    doc: 'features/ci-rerun',
+    doc: 'features/ci-actions',
     requires: { permission: 'project:manage' },
     sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
   },
@@ -529,7 +529,7 @@ export const PROJECTS_ANCHORS = [
     describes:
       'The CI actions setting: named workflows, pipelines, Jenkins jobs or CI server requests, with inputs and defaults, that re-run tests or a Flake Lab experiment.',
     help: 'project.ci-rerun',
-    doc: 'features/ci-rerun',
+    doc: 'features/ci-actions',
     requires: { permission: 'project:manage' },
     sample: { route: '/projects/1?tab=settings&section=ci', expect: PROJECT_1 },
   },

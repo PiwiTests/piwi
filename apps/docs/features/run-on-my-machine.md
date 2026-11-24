@@ -49,11 +49,11 @@ in your code folders; a picked folder without the tests gets a better one offere
 
 ## Ask for a run
 
-**Run on my machine** shows on a run's page (its failed tests, or all of them), on an execution's page and on a test's
-page (that test) while the capability is on for the project and you may ask there. Its window picks what runs, which of
-your apps runs it, and the run options of **Copy retry command**: headed, trace, repeat each, workers and, when the
-tests ran in more than one, the Playwright project. A request holds at most 200 tests; a test with no recorded line is
-left out, and the window says how many. Nobody else's app receives it.
+The run button of a run (its failed tests, or all of them), an execution or a test (that test) lists your apps under
+**Where** where the capability is on and you may ask: **Run on my machine**, or **Run on my machine or CI** with
+[CI actions](./ci-rerun). With an app picked, the dialog offers the run options of **Copy retry command**: headed,
+trace, repeat each, workers and, when the tests ran in more than one, the Playwright project. A request holds at most
+200 tests; a test with no recorded line is left out, and the dialog says how many. Nobody else's app receives it.
 
 ## In the app
 
@@ -79,7 +79,7 @@ the app's Local runs while it goes on.
 
 ## Follow and stop
 
-Once sent, the same window follows the request: waiting for your app, shown in the app, running, ended with its outcome,
+Once sent, the dialog follows the request: waiting for your app, shown in the app, running, ended with its outcome,
 and a link to its run. **Stop** ends it from the page: the app stops the run, or drops a request it has not run. **Run
 again** sends the same tests with the same options. **Settings → Account → Your runs on my machine** lists your last 20
 requests and their project, with **Stop** for one still going on. Quitting the app stops its requested runs. A run
