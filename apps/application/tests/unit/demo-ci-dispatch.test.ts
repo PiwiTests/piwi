@@ -16,7 +16,7 @@ vi.mock('~~/app/demo/db.client', async (importOriginal) => ({
 
 const { demoCiBranches, demoCiOffered, demoDispatchCi } = await import('~~/app/demo/api/ci-rerun');
 const { handleDemoRequest } = await import('~~/app/demo/api/router');
-const { dispatchRunResult, loadRerunInfo, rerunInfoFromOffered } = await import('~/composables/useCiRerun');
+const { loadRerunInfo, rerunInfoFromOffered } = await import('~/composables/useCiRerun');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -225,15 +225,5 @@ describe('loadRerunInfo', () => {
     });
     const noCluster = { projectId: 1, source: { executionId: 1, scope: 'test' as const }, clusterId: null };
     expect(await loadRerunInfo(fetcher, { ...noCluster, mayDispatch: false })).toMatchObject({ lastDispatch: null });
-  });
-});
-
-describe('dispatchRunResult', () => {
-  test('says how the run that answered a dispatch stands', () => {
-    const run = { id: 7, totalTests: 1, passedTests: 1, failedTests: 0 };
-    expect(dispatchRunResult({ ...run, status: 'running' })).toBe('is running');
-    expect(dispatchRunResult({ ...run, status: 'passed' })).toBe('passed');
-    expect(dispatchRunResult({ ...run, status: 'timedout' })).toBe('failed');
-    expect(dispatchRunResult({ ...run, status: 'cancelled' })).toBe('was cancelled');
   });
 });

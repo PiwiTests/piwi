@@ -1,5 +1,5 @@
 import type { MaybeRefOrGetter } from 'vue';
-import type { CiDispatchRun, CiDispatchView } from '#shared/ci-dispatches';
+import type { CiDispatchView } from '#shared/ci-dispatches';
 import type { CiDispatchSourceInput, CiOffered } from '#shared/ci-dispatch-request';
 
 /** A place's CI re-run as the failure pages read it: whether its default action can be sent, and its last dispatch. */
@@ -72,42 +72,6 @@ export async function useRerunInfo(key: string, place: () => RerunInfoPlace | nu
     { default: (): RerunInfo | null => null },
   );
   return { rerunInfo: data, refreshRerun: refresh };
-}
-
-const DISPATCH_TARGETS: Record<string, string> = {
-  github: 'GitHub Actions',
-  gitlab: 'GitLab CI',
-  bitbucket: 'Bitbucket Pipelines',
-  jenkins: 'Jenkins',
-  custom: 'the CI server',
-};
-
-/** Where a re-run was dispatched, for its "dispatched to Jenkins" line. */
-export function rerunDispatchTarget(dispatch: NonNullable<RerunInfo['lastDispatch']>): string {
-  const key = dispatch.provider === 'ci-server' ? (dispatch.preset ?? 'custom') : dispatch.provider;
-  return DISPATCH_TARGETS[key] ?? 'CI';
-}
-
-const RUN_RESULTS: Record<string, string> = {
-  initializing: 'is starting',
-  running: 'is running',
-  finalizing: 'is finishing',
-  passed: 'passed',
-  failed: 'failed',
-  timedout: 'failed',
-  interrupted: 'was interrupted',
-  cancelled: 'was cancelled',
-};
-
-/** How the run that answered a dispatch stands, for its "run #128 passed" line. */
-export function dispatchRunResult(run: CiDispatchRun): string {
-  return RUN_RESULTS[run.status] ?? run.status;
-}
-
-/** What a last re-run ran, for its "Last re-run of 3 tests" line: ` of N tests`, or nothing when it was not recorded. */
-export function lastRerunScope(dispatch: RerunInfo['lastDispatch']): string {
-  const n = dispatch?.tests;
-  return n ? ` of ${n} test${n === 1 ? '' : 's'}` : '';
 }
 
 /**

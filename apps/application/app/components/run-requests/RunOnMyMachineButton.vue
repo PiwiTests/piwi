@@ -10,6 +10,7 @@ import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
  */
 import type { RunRequestOptions } from '@piwitests/core/run-request';
 import type { RunOnMyMachineChoice, RunRequestSourceChoice } from '~/composables/useRunOnMyMachine';
+import { runRequestCanStop, runRequestSentence, runRequestStatusKey } from '#shared/run-follow-up';
 
 defineOptions({ inheritAttrs: false });
 

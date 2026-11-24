@@ -1,6 +1,7 @@
 import { capabilityHidden } from '#shared/capabilities';
 import type { RunRequestOptions } from '@piwitests/core/run-request';
 import type { RunRequestView } from '#shared/handlers/run-requests';
+import { runRequestIsFinal } from '#shared/run-follow-up';
 import type { ConnectedApp, ConnectedAppsResponse } from '~~/types/api';
 
 /** What a request runs, as `POST /api/run-requests` takes it: the instance resolves the tests from it. */
