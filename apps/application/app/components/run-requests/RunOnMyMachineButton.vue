@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 /**
- * **Run on my machine**: asks one of the person's own apps (the desktop app) to run tests of this page. The menu picks
+ * **Run on my machine**: asks one of the person's own apps (Piwi Desktop or Piwi Runner) to run tests of this page. The menu picks
  * what runs, which app, the environment (the page's choice, `useCommandEnvironment`: the run the page shows starts on
  * its own) and the run options of Copy retry command; the app shows the request with its checks and the command, and
  * runs nothing before the person clicks **Run** there. Once sent, the same window follows the request
  * until it ends, with **Stop** while it goes on and **Run again** after; it shows the last request, ended or not, until
- * **New request** or another send.
+ * **New request** or another send. Once its run ended, it says how to show it to a teammate: a share link of one of
+ * its executions, where the instance offers share links. With no app connected, it names both apps.
  */
 import type { RunRequestOptions } from '@piwitests/core/run-request';
 import type { RunOnMyMachineChoice, RunRequestSourceChoice } from '~/composables/useRunOnMyMachine';
@@ -53,11 +54,13 @@ const protectedPick = computed(() => {
   return picked?.protected ? picked : null;
 });
 const config = useRuntimeConfig();
+const { offered: shareLinksOffered, load: loadShareLinks } = useShareLinksOfferedOnOpen();
 
 const open = ref(false);
 // The window's picker offers the project's environments: read them when it opens, unless the page already has.
 watch(open, (isOpen) => {
   if (isOpen && !environmentsLoaded.value) void readEnvironments();
+  if (isOpen) void loadShareLinks();
 });
 const sending = ref(false);
 const stopping = ref(false);
@@ -204,6 +207,14 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
               >open run #{{ request.runId }}</NuxtLink
             >
           </p>
+          <p
+            v-if="request.runId && runRequestIsFinal(request) && shareLinksOffered"
+            class="text-xs text-muted"
+            data-testid="run-request-share-hint"
+          >
+            To show a teammate what happened, open one of its tests and make a share link there.
+            <DocLink to="features/share-links" no-icon :class="SENTENCE_LINK_CLASS">Share links</DocLink>
+          </p>
           <p v-if="progressError" class="text-xs text-error">{{ progressError }}</p>
           <p v-if="sendError" class="text-xs text-error">{{ sendError }}</p>
         </div>
@@ -223,9 +234,13 @@ const canSend = computed(() => !!choice.value && apps.value.length > 0);
             <div class="text-sm font-semibold text-highlighted">Where</div>
             <LoadingState v-if="!appsLoaded" />
             <URadioGroup v-else-if="appItems.length" v-model="targetId" :items="appItems" size="sm" />
-            <p v-else class="text-sm text-highlighted leading-relaxed">
-              No app of yours takes run requests yet. In Piwi Desktop, open <strong>Settings → Desktop app</strong> and
-              connect it to <code class="text-xs">{{ instanceAddress }}</code> under <strong>Run on my machine</strong>.
+            <p v-else class="text-sm text-highlighted leading-relaxed" data-testid="run-on-my-machine-no-app">
+              No app of yours takes run requests yet. Connect either one to
+              <code class="text-xs">{{ instanceAddress }}</code
+              >: <strong>Piwi Desktop</strong>, under <strong>Settings → Desktop app → Run on my machine</strong>, or
+              <strong>Piwi Runner</strong>, which runs what the instance asks without the dashboard.
+              <DocLink to="features/piwi-runner" no-icon :class="SENTENCE_LINK_CLASS">Get Piwi Runner</DocLink>
+              ·
               <DocLink to="features/run-on-my-machine" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
             </p>
           </div>

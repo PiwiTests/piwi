@@ -31,7 +31,7 @@ export function runRequestSentence(request: Pick<RunRequestView, 'state' | 'outc
     case 'expired':
       return request.detail
         ? `None of your apps picked it up within 2 minutes. ${request.detail}`
-        : 'None of your apps picked it up within 2 minutes: is the desktop app open and connected?';
+        : 'None of your apps picked it up within 2 minutes: is Piwi Desktop or Piwi Runner open and connected?';
     case 'refused':
       return request.detail ? `The app could not run it: ${request.detail}` : 'The app could not run it';
     case 'starting':

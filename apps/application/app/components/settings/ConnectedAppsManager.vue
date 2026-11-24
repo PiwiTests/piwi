@@ -2,8 +2,9 @@
 import type { ConnectedApp, ConnectedAppsResponse } from '~~/types/api';
 
 /**
- * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app), each with
- * when it last connected and, for an app that runs tests, whether it is online now; **Revoke** disconnects one. Keyed
+ * The apps a user connected through the device flow (Piwi Picker, an editor, Piwi Desktop, Piwi Runner), each with
+ * when it last connected and, for an app that runs tests, whether it is online now, and what to do while it is not;
+ * **Revoke** disconnects one. Keyed
  * by `userId`, as `ApiKeysManager` is, so it serves the Account page and the administrator's Users page alike.
  */
 const props = defineProps<{ userId: number }>();
@@ -57,8 +58,8 @@ async function revoke() {
 <template>
   <div class="space-y-4">
     <p class="text-sm text-muted">
-      The apps connected to this instance from their own window: Piwi Picker, an editor, the desktop app. Each holds a
-      key of its own; revoke one to disconnect it.
+      The apps connected to this instance from their own window: Piwi Picker, an editor, Piwi Desktop or Piwi Runner.
+      Each holds a key of its own; revoke one to disconnect it.
     </p>
 
     <div v-if="apps.length > 0" class="space-y-2" data-shot="connected-apps">
@@ -85,6 +86,14 @@ async function revoke() {
             /></span>
             <span v-if="app.target?.version">Version {{ app.target.version }}</span>
           </div>
+          <p
+            v-if="app.target && !app.target.online"
+            class="text-xs text-muted mt-1"
+            data-testid="connected-app-offline"
+          >
+            Run requests wait for it while it is open and connected: start it on that machine, or turn on its
+            <strong>Start on login</strong> there.
+          </p>
         </div>
         <UButton
           label="Revoke"
@@ -98,7 +107,7 @@ async function revoke() {
     </div>
 
     <div v-else class="text-center text-muted py-6 text-sm">
-      No connected apps. Connect Piwi Picker, an editor or the desktop app from its own window.
+      No connected apps. Connect Piwi Picker, an editor, Piwi Desktop or Piwi Runner from its own window.
     </div>
 
     <ClientOnly>
