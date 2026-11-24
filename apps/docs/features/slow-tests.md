@@ -1,6 +1,6 @@
 ---
 title: Slow tests & wasted time
-description: "Where the suite's time goes: duration trends, timeout headroom, stale test.slow() marks, wasted wait and retry time, slow endpoints and Web Vitals."
+description: "Where the suite's time goes: duration trends, a run's Timeline of its workers, timeout headroom, stale test.slow() marks, wasted wait and retry time, slow endpoints and Web Vitals."
 lang: en-US
 ---
 
@@ -57,7 +57,8 @@ see [Impact ranking](./flaky-tests#impact-ranking).
 ## The run's Timeline
 
 A run's **Timeline** tab draws each worker's tests on one time axis, with waits, locks and
-[breakpoint](./editor-breakpoints) stops:
+[breakpoint](./editor-breakpoints) stops. Under the lanes it ranks the run's **Slowest tests**, sums each named lock's
+held and serialized time in **Locks**, and shows the **Worker distribution**, how the tests spread across the workers:
 
 - **Hooks**: hatched over each test's bar, setup (`beforeAll`, `beforeEach`, fixtures) at the start,
   teardown (`afterEach`, `afterAll`, worker cleanup) at the end. A failed hook is dark red and counted in

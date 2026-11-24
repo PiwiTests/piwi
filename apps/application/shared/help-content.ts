@@ -826,7 +826,7 @@ export const HELP_TOPICS = {
       '- **Leaks** — under each worker row, a red tail runs from the end of the test that left a browser, context or page open to its close or the worker’s end, and an amber one from an object’s last use to its close, in its own test. Hover one for where it was opened and the line that last used it, where its close belongs; click it to open the test. **Show leaks** turns them off.',
       '- **Resources** — when the reporter measured them, the machine’s CPU, the memory of the run’s processes and the pages open in the workers share the axis above the rows, one set per shard. While the run is open live, they fill in every few seconds as the reporter measures them. Over the timeline, a line follows the pointer, the test bars included, with each track’s value beside it. The Resources menu turns each off, and draws one metric under each worker row: its open pages, the CPU or memory of the worker and the browsers it started, or the share of each test spent waiting for a CPU.',
     ].join('\n'),
-    doc: 'features/ui-overview#test-run-detail',
+    doc: 'features/slow-tests#the-run-s-timeline',
   },
   'run.resource-findings': {
     title: 'Resource findings',
