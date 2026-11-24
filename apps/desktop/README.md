@@ -305,9 +305,10 @@ is not even registered there (see `src-tauri/src/updates.rs`).
 Both endpoints read GitHub's **latest** release, so a release becomes the latest
 only once every leg has attached its installers and manifest: `release-please.yml`
 keeps the previous release the latest when it creates one, and the `latest` job of
-`reusable-publish-desktop.yml` promotes the new one after the four legs pass. While
-a release builds, or when one of its legs failed, the app keeps finding the
-previous release and its complete manifests.
+`release.yml` promotes the new one after the four desktop legs pass and Piwi
+Runner's legs end, so both apps find it at the same time. While a release builds,
+or when one of its desktop legs failed, the app keeps finding the previous release
+and its complete manifests.
 
 **Piwi Runner** updates from a manifest of its own, `latest-runner.json`, in the
 same release. One manifest serves every Runner install, since the updater looks

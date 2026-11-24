@@ -5,8 +5,9 @@ name: Publish desktop installers
 # tag, so they publish alongside the container image and the npm packages
 # (release.yml calls it). The Windows .exe is the NSIS installer in per-user mode
 # (no admin prompt); the .msi installs per machine and needs elevation. Once every
-# leg has attached its installers, the release becomes GitHub's latest. Off a tag
-# it builds the installers and keeps them as the run's artifacts.
+# leg has attached its installers, and Piwi Runner's legs have ended, release.yml
+# makes the release GitHub's latest. Off a tag it builds the installers and keeps
+# them as the run's artifacts.
 on:
   workflow_call:
     inputs:
@@ -314,31 +315,3 @@ jobs:
             apps/desktop/src-tauri/target/**/release/bundle/**/*.AppImage
           if-no-files-found: warn
           retention-days: 7
-
-  # The updater reads its manifests from GitHub's latest release, and the download links open it, so a release becomes
-  # the latest once every leg has uploaded its installers: release-please.yml keeps the previous release the latest
-  # until then. A release older than the newest tag leaves the latest as it is.
-  latest:
-    name: Make the release the latest
-    needs: desktop
-    if: startsWith(github.ref, 'refs/tags/v')
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: write # mark the release as the latest
-    steps:
-      - name: Make the release the latest, when it is the newest
-        env:
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          TAG: ${{ github.ref_name }}
-        run: |
-          refs=$(gh api "repos/$REPO/git/matching-refs/tags/v" --paginate --jq '.[].ref | ltrimstr("refs/tags/")')
-          newest=$( (grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' <<< "$refs" || true) | sort -V | tail -n 1)
-          if [[ "$newest" != "$TAG" ]]; then
-            echo "$TAG is not the newest release ($newest): the latest release stays as it is"
-            exit 0
-          fi
-          id=$(gh api "repos/$REPO/releases/tags/$TAG" --jq .id)
-          gh api --method PATCH "repos/$REPO/releases/$id" -f make_latest=true --silent
-          echo "$TAG is the latest release"

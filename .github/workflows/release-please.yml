@@ -34,9 +34,9 @@ jobs:
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
-      # A new release becomes GitHub's latest, which the desktop updater and the download links read, before any
-      # installer is attached to it: the previous release stays the latest until reusable-publish-desktop.yml has
-      # attached every installer to the new one.
+      # A new release becomes GitHub's latest, which both apps' updaters and the download links read, before any
+      # installer is attached to it: the previous release stays the latest until release.yml's `latest` job, once both
+      # apps' installers are attached to the new one.
       - name: Keep the previous release the latest until the installers are attached
         if: steps.release.outputs.release_created == 'true' && steps.previous.outputs.tag != ''
         env:
