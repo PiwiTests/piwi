@@ -242,6 +242,8 @@ export const PROJECT = {
   VIDEO_CHECKLIST_SEARCH: 'video-checklist-search-test',
   VIDEO_MAXIMIZE: 'video-maximize-test',
   VIDEO_REVIEW_FIT: 'video-review-fit-test',
+  WAITING_RUNS_AUTH: 'waiting-runs-auth-test',
+  WAITING_RUNS: 'waiting-runs-test',
 } as const;
 
 type ProjectValue = (typeof PROJECT)[keyof typeof PROJECT];
