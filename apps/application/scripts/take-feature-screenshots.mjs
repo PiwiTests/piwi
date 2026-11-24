@@ -11270,7 +11270,7 @@ const SCENES = [
   {
     name: 'run-button-desktop',
     description:
-      "The run button in the desktop shell, at 1280 and 390 px: a red run's header, its menu and its dialog on This computer beside the project's CI action, an execution's, a test's and a cluster's buttons, a selection of the run's tests, and the face of a run of the failed tests going on",
+      "The run button in the desktop shell, at 1280 and 390 px: a red run's header, its menu and its dialog on This computer beside the project's CI action, an execution's, a test's and a cluster's buttons, a selection of the run's tests, the button and its dialog once a CI action was the last Where, and the face of a run of the failed tests going on",
     tags: ['desktop'],
     mode: 'desktop',
     route: '/test-runs/2',
@@ -11291,8 +11291,10 @@ const SCENES = [
       'run-button-desktop-cluster-narrow.png',
       'run-button-desktop-selection.png',
       'run-button-desktop-run-running.png',
+      'run-button-desktop-run-ci-kept.png',
+      'run-button-desktop-run-ci-kept-dialog.png',
     ],
-    async run({ page, goto, settle, shoot }) {
+    async run({ page, base, goto, settle, shoot }) {
       const wide = () => page.setViewportSize({ width: 1280, height: 1100 });
       const narrow = () => page.setViewportSize({ width: 390, height: 860 });
       const header = '[data-shot="run-header"]';
@@ -11368,6 +11370,26 @@ const SCENES = [
         clip: { x: bar.x - 8, y: bar.y - 8, width: bar.width + 16, height: bar.height + 16 },
       });
       await page.getByRole('checkbox', { name: 'Deselect all failing tests' }).click();
+
+      // Sent to a CI action last, the button opens the dialog on it.
+      const offered = await (
+        await page.request.get(`${base}/api/projects/1/ci-actions/offered?runId=2&tests=failed`)
+      ).json();
+      const action = offered.actions.find((a) => a.available);
+      if (!action) throw new Error('run-button-desktop needs a CI action that re-runs run #2 (npm run app:seed:dev)');
+      await page.evaluate((id) => localStorage.setItem('piwi-run-where', JSON.stringify({ 1: `ci:${id}` })), action.id);
+      await goto('/test-runs/2');
+      const either = page.locator(header).getByRole('button', { name: 'Run on this computer or CI' });
+      await either.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('run-ci-kept', { of: header, pad: 0 });
+      await either.click();
+      await dialog.getByTestId('run-dialog-branch').waitFor();
+      await settle();
+      await shoot('run-ci-kept-dialog', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+      await page.evaluate(() => localStorage.removeItem('piwi-run-where'));
+      await goto('/test-runs/2');
 
       await page
         .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
