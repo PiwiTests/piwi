@@ -11268,6 +11268,147 @@ const SCENES = [
     },
   },
   {
+    name: 'run-button-desktop',
+    description:
+      "The run button in the desktop shell, at 1280 and 390 px: a red run's header, its menu and its dialog on This computer beside the project's CI action, an execution's, a test's and a cluster's buttons, a selection of the run's tests, and the face of a run of the failed tests going on",
+    tags: ['desktop'],
+    mode: 'desktop',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    localRunId: 61,
+    outputs: [
+      'run-button-desktop-run.png',
+      'run-button-desktop-run-narrow.png',
+      'run-button-desktop-run-menu.png',
+      'run-button-desktop-run-dialog.png',
+      'run-button-desktop-run-dialog-narrow.png',
+      'run-button-desktop-execution.png',
+      'run-button-desktop-execution-narrow.png',
+      'run-button-desktop-test.png',
+      'run-button-desktop-test-narrow.png',
+      'run-button-desktop-cluster.png',
+      'run-button-desktop-cluster-narrow.png',
+      'run-button-desktop-selection.png',
+      'run-button-desktop-run-running.png',
+    ],
+    async run({ page, goto, settle, shoot }) {
+      const wide = () => page.setViewportSize({ width: 1280, height: 1100 });
+      const narrow = () => page.setViewportSize({ width: 390, height: 860 });
+      const header = '[data-shot="run-header"]';
+      const rerun = page.getByRole('button', { name: /^Re-run \d+ failed tests?/ }).first();
+      await rerun.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('run', { of: header, pad: 0 });
+      await page.getByRole('button', { name: 'Run options' }).first().click();
+      const menu = page.getByRole('menu');
+      await menu.waitFor();
+      await settle();
+      const menuBox = await menu.boundingBox();
+      await shoot('run-menu', {
+        of: false,
+        clip: { x: menuBox.x - 12, y: menuBox.y - 12, width: menuBox.width + 24, height: menuBox.height + 24 },
+      });
+      await page.getByRole('menuitem', { name: 'Run with options…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByRole('button', { name: 'Run', exact: true }).waitFor();
+      await settle();
+      await shoot('run-dialog', { of: '[role="dialog"]', pad: 0 });
+      await page.setViewportSize({ width: 390, height: 1400 });
+      await settle();
+      await shoot('run-dialog-narrow', { of: '[role="dialog"]', pad: 0 });
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      await narrow();
+      await settle();
+      await shoot('run-narrow', { of: header, pad: 0 });
+
+      const navbar = async (label, path, button) => {
+        await wide();
+        await goto(path);
+        await page.getByRole('button', { name: button }).first().waitFor({ timeout: 60_000 });
+        await settle();
+        await shoot(label, { clip: { x: 0, y: 0, width: 1280, height: 200 } });
+        await narrow();
+        await settle();
+        await shoot(`${label}-narrow`, { clip: { x: 0, y: 0, width: 390, height: 260 } });
+      };
+      await navbar('execution', '/test-run-cases/13', 'Re-run this test');
+      await navbar('test', '/test-cases/9', 'Run this test');
+
+      for (const [label, width] of [
+        ['cluster', 1280],
+        ['cluster-narrow', 390],
+      ]) {
+        await page.setViewportSize({ width, height: 860 });
+        await goto('/failure-clusters/1');
+        const verify = page.locator('[data-tour="fix-section-verify"]');
+        await verify.waitFor({ timeout: 60_000 });
+        if ((await verify.getAttribute('aria-expanded')) === 'false') await verify.click();
+        const inVerify = page.getByRole('button', { name: /^Re-run the \d+ affected tests?/ }).last();
+        await inVerify.waitFor({ timeout: 60_000 });
+        await inVerify.scrollIntoViewIfNeeded();
+        await settle();
+        const box = await inVerify.boundingBox();
+        await shoot(label, {
+          of: false,
+          clip: { x: 0, y: Math.max(0, box.y - 200), width, height: 280 },
+        });
+      }
+
+      await wide();
+      await goto('/test-runs/2');
+      await page.getByRole('checkbox', { name: 'Select all failing tests' }).click({ timeout: 60_000 });
+      const selected = page.getByRole('button', { name: /^Re-run \d+ selected tests?/ }).first();
+      await selected.waitFor();
+      await settle();
+      const bar = await selected.locator('xpath=ancestor::div[contains(@class, "rounded-lg")][1]').boundingBox();
+      await shoot('selection', {
+        of: false,
+        clip: { x: bar.x - 8, y: bar.y - 8, width: bar.width + 16, height: bar.height + 16 },
+      });
+      await page.getByRole('checkbox', { name: 'Deselect all failing tests' }).click();
+
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .click();
+      await page.getByRole('region', { name: 'Local runs' }).waitFor();
+      await page.getByRole('button', { name: 'Close local runs' }).click();
+      await page
+        .locator(header)
+        .getByRole('button', { name: /Running/ })
+        .first()
+        .waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('run-running', { of: header, pad: 0 });
+    },
+  },
+  {
+    name: 'run-on-this-computer',
+    description:
+      "The run dialog of a failed run in the desktop shell, opened by the run button's Run with options…: its failed tests, flaky tests or every test, This computer picked above the project's CI action, and the linked folder's run options and environment",
+    tags: ['docs', 'desktop'],
+    out: 'docs',
+    mode: 'desktop',
+    route: '/test-runs/2',
+    viewport: { width: 1280, height: 1100 },
+    link: { path: READY_INSPECTION.path, exists: true },
+    async run({ page, settle, shoot }) {
+      await page
+        .getByRole('button', { name: /^Re-run \d+ failed tests?/ })
+        .first()
+        .waitFor({ timeout: 60_000 });
+      await page.getByRole('button', { name: 'Run options' }).first().click();
+      await page.getByRole('menuitem', { name: 'Run with options…' }).click();
+      const dialog = page.getByRole('dialog');
+      await dialog.getByTestId('run-dialog-local-fields').waitFor();
+      await dialog.getByTestId('run-dialog-ci').waitFor();
+      await settle();
+      await shoot('', { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
     name: 'desktop-run-output',
     description:
       "A local run in the desktop shell: Playwright's list output in its colors in the tray, then the whole run in a separate window, its worker live and its Hold failures, and once it failed, what it failed on with Run again",
