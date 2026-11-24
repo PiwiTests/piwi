@@ -49,6 +49,8 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
 
 const { ciActionBranches, ciOffered, dispatchCi } = await import('../../server/utils/ci-rerun');
 const { findCiDispatch, listCiDispatches } = await import('#shared/handlers/ci-dispatches');
+const { matchRunToCiDispatch } = await import('../../server/utils/ci-dispatches');
+const { ciTagsArgs } = await import('#shared/ci-tags');
 
 interface FakeEvent {
   context: Record<string, unknown>;
@@ -243,6 +245,27 @@ function dispatch(source: Source, request: Partial<Request> = {}, viewerId: numb
 
 const sent = () => scm.dispatched.at(-1)!;
 
+/** The project's actions with one more that takes tagged tests only, the default for them. */
+async function withTaggedAction() {
+  const tagged = {
+    id: 'tagged',
+    name: 'Tagged',
+    target: { type: 'github', workflow: 'tagged.yml', ref: 'main', argsInput: 'args' },
+    inputs: [],
+    accepts: ['tags'],
+  };
+  await db
+    .update(schema.projects)
+    .set({
+      ciRerun: {
+        enabled: true,
+        actions: [...actions, tagged],
+        defaults: { rerun: 'gh', suite: 'gh', flakeLab: 'lab', tags: 'tagged' },
+      },
+    })
+    .where(eq(schema.projects.id, 1));
+}
+
 describe('a dispatch from every source', () => {
   test("a cluster's affected tests, on its last run's branch, recorded with the cluster", async () => {
     const outcome = await dispatch({ from: 'cluster', clusterId: 1 });
@@ -321,6 +344,35 @@ describe('a dispatch from every source', () => {
     });
     const [row] = await db.select().from(schema.ciDispatches).where(eq(schema.ciDispatches.ref, 'trunk'));
     expect(row).toMatchObject({ sourceRunId: null, clusterId: null, testCaseId: null, files: null });
+  });
+
+  test("the project's tests carrying some tags, as one --grep on its default branch, naming no test or file", async () => {
+    await withTaggedAction();
+    const outcome = await dispatch({ from: 'tags', tags: ['smoke', 'checkout'], match: 'all' });
+    const args = ciTagsArgs(['smoke', 'checkout'], 'all');
+    expect(outcome).toMatchObject({
+      ok: true,
+      dispatch: { kind: 'tags', actionId: 'tagged', args, ref: 'main', tests: null, runId: null },
+    });
+    expect(sent()).toMatchObject({ args, target: { workflow: 'tagged.yml' }, request: { ref: 'main' } });
+    const [row] = await db.select().from(schema.ciDispatches);
+    expect(row).toMatchObject({ kind: 'tags', sourceRunId: null, clusterId: null, testCaseId: null, files: null });
+    // A branch asked for runs there; an action that takes no tags is refused, and no tag at all sends nothing.
+    expect(await dispatch({ from: 'tags', tags: ['smoke'], match: 'any' }, { ref: 'release/2.0' })).toMatchObject({
+      ok: true,
+      dispatch: { ref: 'release/2.0', args: ciTagsArgs(['smoke'], 'any') },
+    });
+    expect(await dispatch({ from: 'tags', tags: ['smoke'], match: 'any' }, { action: 'gh' })).toEqual({
+      ok: false,
+      error: 'unavailable',
+      message: 'The CI action "Smoke" does not accept Tagged tests.',
+    });
+    expect(await dispatch({ from: 'tags', tags: [], match: 'any' })).toEqual({
+      ok: false,
+      error: 'invalid',
+      message: 'A dispatch of tagged tests names at least one tag.',
+    });
+    expect(scm.dispatched).toHaveLength(2);
   });
 
   test('finds no id of another project, and no private run of another person', async () => {
@@ -512,6 +564,16 @@ describe('what a place is offered', () => {
     expect(offered!.actions.every((a) => a.available)).toBe(true);
   });
 
+  test('tagged tests: the actions that take them, before any tag is picked, on the project’s branch', async () => {
+    await withTaggedAction();
+    const result = await ciOffered(db as never, 1, { from: 'tags', tags: [], match: 'any' }, 2);
+    const offered = result.ok ? result.offered : null;
+    expect(offered).toMatchObject({ enabled: true, kind: 'tags', defaultActionId: 'tagged', lastDispatch: null });
+    expect(offered!.actions.map((a) => [a.id, a.available, a.branch])).toEqual([
+      ['tagged', true, { mode: 'list', default: 'main' }],
+    ]);
+  });
+
   test('with CI actions off, every action unavailable, and with a source of another project, not found', async () => {
     await db.update(schema.projects).set({ ciRerun: { enabled: false, actions, defaults: {} } });
     const off = await ciOffered(db as never, 1, { from: 'cluster', clusterId: 1 }, 2);
@@ -580,6 +642,32 @@ describe('the branches an action may run on', () => {
 });
 
 describe('the dispatch record', () => {
+  test('of tagged tests answers the run that carries its id, which keeps the origin ci, and no run that carries none', async () => {
+    await withTaggedAction();
+    const outcome = await dispatch({ from: 'tags', tags: ['smoke'], match: 'any' });
+    const { id, at } = outcome.ok ? outcome.dispatch : { id: '', at: 0 };
+    const tagRun = async (runId: number, metadata: Record<string, unknown>) => {
+      await db.insert(schema.testRuns).values({
+        id: runId,
+        projectId: 1,
+        status: 'passed',
+        branch: 'main',
+        isFullRun: 0,
+        startTime: new Date(at + 60_000),
+        metadata: { scm: { remoteUrl: GITHUB, branch: 'main' }, ...metadata },
+        origin: 'ci',
+      });
+      await db.insert(schema.testRunsCases).values({ testRunId: runId, testCaseId: 3, status: 'passed' });
+    };
+    await tagRun(7, {});
+    expect(await matchRunToCiDispatch(db as never, 7, 'finish')).toBeNull();
+    await tagRun(8, { piwiOrigin: { kind: 'ci', ref: id } });
+    expect(await matchRunToCiDispatch(db as never, 8, 'start')).toBe(id);
+    const [run] = await db.select().from(schema.testRuns).where(eq(schema.testRuns.id, 8));
+    expect((run!.metadata as { piwiOrigin: unknown }).piwiOrigin).toEqual({ kind: 'ci', ref: id });
+    expect(await findCiDispatch(db as never, id)).toMatchObject({ dispatch: { state: 'running', runId: 8 } });
+  });
+
   test('is listed newest first, open ones alone, by cluster or test', async () => {
     const rerun = await dispatch({ from: 'cluster', clusterId: 1 });
     const lab = await dispatch({ from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' });
@@ -659,6 +747,24 @@ describe('the routes', () => {
     expect(await call(branchesRoute, { context: {}, params: { id: '1', actionId: 'nope' } })).toMatchObject({
       status: 404,
     });
+  });
+
+  test('tagged tests: the offered actions with an empty tags key, and a dispatch of the tags in the body', async () => {
+    await withTaggedAction();
+    expect(await call(offeredRoute, { context: {}, params: project(), query: { tags: '' } })).toMatchObject({
+      status: 200,
+      body: { kind: 'tags', defaultActionId: 'tagged' },
+    });
+    const post = (source: unknown) => call(postDispatch, { context: {}, params: project(), body: { source } });
+    expect(await post({ tags: ['@smoke', 'checkout'], match: 'all' })).toMatchObject({
+      status: 201,
+      body: { kind: 'tags', args: ciTagsArgs(['smoke', 'checkout'], 'all') },
+    });
+    expect(await post({ tags: [] })).toMatchObject({
+      status: 400,
+      body: { message: 'A dispatch of tagged tests names at least one tag.' },
+    });
+    expect(await post({ tags: ['$(id)'] })).toMatchObject({ status: 400, body: { message: /cannot be sent to CI/ } });
   });
 
   test('a Viewer reads a dispatch and the list; a caller who cannot read the project gets 404', async () => {

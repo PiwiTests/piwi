@@ -23,6 +23,7 @@ import { sortRows, type SortValue } from '~/utils/table-sort';
 import type { ProjectHeaderTarget } from '~/components/project/ProjectHeader.vue';
 import { COVERAGE_VIEW_KEYS } from '~/utils/coverage-tab';
 import type { CiDispatchView } from '#shared/ci-dispatches';
+import type { RunWhat } from '~/composables/useRunPlace';
 import { projectMenuPageHidden, projectTabHidden } from '~/utils/project-tabs';
 import {
   PROJECT_FAILURE_VIEWS,
@@ -75,14 +76,17 @@ const { can } = useAuth();
 // Coverage tab and the Timeline's add-marker control.
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
-// The run button: the project's whole suite on its default branch, which only CI runs. A dispatch sent from it shows
-// at once among the runs list's waiting rows.
+// The run button: the project's whole suite, or its tests carrying the tags picked in the dialog, on its default
+// branch, which only CI runs. A dispatch sent from it shows at once among the runs list's waiting rows.
 const machine = await useRunOnMyMachine(Number(projectId));
 const sentDispatch = shallowRef<CiDispatchView | null>(null);
 const runPlace = await useRunPlace({
   projectId: Number(projectId),
   machine,
-  whats: () => [{ key: 'suite', label: 'The whole suite', wholeSuite: true, app: null, ci: { source: {} } }],
+  whats: (): RunWhat[] => [
+    { key: 'suite', label: 'The whole suite', wholeSuite: true, app: null, ci: { source: {} } },
+    { key: 'tags', label: 'Tests tagged…', app: null, ci: { source: { tags: [] } } },
+  ],
   prefersCi: () => true,
   onDispatched: (dispatch) => (sentDispatch.value = dispatch),
 });

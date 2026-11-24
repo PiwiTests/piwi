@@ -205,7 +205,8 @@ function jenkinsJobUrl(job) {
 
 /**
  * The CI actions of a project whose tests run in one Jenkins job: a single action, the default for re-runs (the
- * failure pages' Re-run in CI) and for Run on CI, that dispatches under the qa-bot credential's destination.
+ * failure pages' Re-run in CI), for Run on CI and for tagged tests, that dispatches under the qa-bot credential's
+ * destination.
  */
 function jenkinsRerun(actionId, job) {
   return {
@@ -221,10 +222,10 @@ function jenkinsRerun(actionId, job) {
           fields: { job, ref: 'main' },
         },
         inputs: [],
-        accepts: ['tests', 'suite'],
+        accepts: ['tests', 'suite', 'tags'],
       },
     ],
-    defaults: { rerun: actionId, suite: actionId },
+    defaults: { rerun: actionId, suite: actionId, tags: actionId },
   };
 }
 
@@ -279,6 +280,8 @@ const PROJECTS = [
     run_variables: [{ name: 'TENANT', value: 'acme' }],
     // Re-runs go to a Jenkins job, so its failure pages offer Re-run in CI and
     // the CI settings list its CI actions, each naming the Jenkins credential.
+    // Nightly runs tagged tests and Smoke does not, so the project page's run
+    // dialog shows Smoke disabled for them, with the reason.
     ci_rerun: {
       enabled: true,
       actions: [
@@ -320,10 +323,15 @@ const PROJECTS = [
             fields: { job: 'api/nightly', ref: 'main' },
           },
           inputs: [{ name: 'SUITE', kind: 'choice', options: ['smoke', 'regression', 'full'], default: 'regression' }],
-          accepts: ['suite', 'flakeLab'],
+          accepts: ['suite', 'tags', 'flakeLab'],
         },
       ],
-      defaults: { rerun: 'rerun-failed-tests', suite: 'smoke-staging', flakeLab: 'nightly-jenkins' },
+      defaults: {
+        rerun: 'rerun-failed-tests',
+        suite: 'smoke-staging',
+        tags: 'nightly-jenkins',
+        flakeLab: 'nightly-jenkins',
+      },
     },
   },
   {

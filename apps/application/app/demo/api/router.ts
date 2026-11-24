@@ -530,7 +530,14 @@ import {
   updateBugReport,
 } from '#shared/handlers/bug-reports';
 import { apiCheckDemoImport, apiDemoImport } from './import';
-import { assertDemoCiActions, demoCiActionCheck, demoCiBranches, demoCiOffered, demoDispatchCi } from './ci-rerun';
+import {
+  assertDemoCiActions,
+  demoCiActionCheck,
+  demoCiBranches,
+  demoCiOffered,
+  demoDispatchCi,
+  demoQueryRecord,
+} from './ci-rerun';
 import {
   demoAllCredentialUses,
   demoCreateCredential,
@@ -1452,7 +1459,7 @@ const routes: RouteEntry[] = [
     permission: 'run:control',
     handler: async (m, _b, q, ctx) => {
       await assertDemoEntityScope(ctx, 'project', +m[1]!);
-      const source = parseCiDispatchSource(Object.fromEntries(q ?? []));
+      const source = parseCiDispatchSource(demoQueryRecord(q));
       if (!source.ok) throw demoHttpError(400, source.message);
       return demoCiOffered(await getDemoDb(), +m[1]!, source.value, ctx?.actingUserId ?? null);
     },

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 /**
  * The run dialog of one place (`useRunPlace`): from top to bottom, a sentence that follows the pick, **What** (the
- * place's choices, with the tests a choice names, not editable), **Where** (the person's apps and the project's CI
- * actions, a row that cannot take the chosen What disabled with the reason), and the fields of the pick: the
- * environment and the run options of Copy retry command for an app, the branch and the choice inputs for a CI action.
+ * place's choices, with the tests a choice names, not editable, and for tagged tests the tags to pick), **Where** (the
+ * person's apps and the project's CI actions, a row that cannot take the chosen What disabled with the reason), and
+ * the fields of the pick: the environment and the run options of Copy retry command for an app, the branch and the
+ * choice inputs for a CI action.
  * After **Send**, the same window follows what was sent (`RunFollowUp`) until **New run**. In the desktop window,
  * **Where** has _This computer_ instead of the person's apps, whose fields are `RunThisComputerFields`: **Run** starts
  * the run in the Local runs tray, which follows it, and closes the dialog.
  */
 import { MAX_RERUN_TESTS } from '#shared/ci-dispatch-request';
+import { ciTagsPhrase, MAX_CI_TAGS } from '#shared/ci-tags';
 import type { RunPlace, RunWhat } from '~/composables/useRunPlace';
 
 const props = defineProps<{ place: RunPlace }>();
@@ -48,6 +50,38 @@ const choiceInputs = computed(() => ciInputs.value.filter((i) => i.kind === 'cho
 const fixedInputs = computed(() => ciInputs.value.flatMap((i) => (i.kind === 'fixed' ? [`${i.name}=${i.value}`] : [])));
 /** The environment the picked CI action's team run is against. */
 const ciEnvironment = computed(() => props.place.ciPick?.environment ?? null);
+
+/**
+ * The project's tags to pick from, each with how many of the tests run in the catalog's window carry it; the rest
+ * disabled once the most are picked.
+ */
+const tagItems = computed(() =>
+  (props.place.tagOptions ?? []).map((option) => ({
+    value: option.value,
+    label: `@${option.value}`,
+    description: testCount(option.count),
+    disabled: props.place.tags.length >= MAX_CI_TAGS && !props.place.tags.includes(option.value),
+  })),
+);
+const TAG_MATCH_ITEMS = [
+  { value: 'any', label: 'Any of them' },
+  { value: 'all', label: 'All of them' },
+];
+/** Why no tag can be picked: no test run in the window carries one, or none of them can be sent to CI. */
+const noTags = computed(() => {
+  if (props.place.tagsRefused > 0) {
+    return "None of this project's tags can be sent to CI: each holds a space, a double quote or a character a command line changes ($ ` \\ % !).";
+  }
+  return props.place.tagDays
+    ? `No test of this project run in the last ${props.place.tagDays} days carries a tag.`
+    : 'No test of this project carries a tag yet.';
+});
+/** What the picked tags run, under the picker. */
+const tagsLine = computed(() =>
+  props.place.tags.length === 0
+    ? `Pick up to ${MAX_CI_TAGS} tags: CI runs the tests tagged with them, through one --grep.`
+    : `CI runs the tests tagged ${ciTagsPhrase(props.place.tags, props.place.tagMatch)}, through one --grep.`,
+);
 
 const config = useRuntimeConfig();
 const instanceAddress = computed(() => {
@@ -122,6 +156,39 @@ const instanceAddress = computed(() => {
               <li v-if="moreTests">and {{ moreTests }} more</li>
             </ul>
             <p v-if="ciNote" class="text-xs text-muted">{{ ciNote }}</p>
+          </template>
+        </div>
+
+        <div v-if="place.tagsShown" class="space-y-1" data-testid="run-dialog-tags">
+          <div class="text-sm font-semibold text-highlighted">Tags</div>
+          <p v-if="place.tagsError" class="text-xs text-error">{{ place.tagsError }}</p>
+          <p
+            v-else-if="place.tagOptions?.length === 0"
+            class="text-sm text-highlighted"
+            data-testid="run-dialog-no-tags"
+          >
+            {{ noTags }}
+          </p>
+          <template v-else>
+            <USelectMenu
+              v-model="place.tags"
+              :items="tagItems"
+              value-key="value"
+              multiple
+              :loading="!place.tagOptions"
+              placeholder="Pick tags"
+              aria-label="Tags"
+              class="w-full sm:w-64"
+            />
+            <URadioGroup
+              v-if="place.tags.length > 1"
+              v-model="place.tagMatch"
+              :items="TAG_MATCH_ITEMS"
+              orientation="horizontal"
+              size="sm"
+              aria-label="Tests carrying"
+            />
+            <p class="text-xs text-muted">{{ tagsLine }}</p>
           </template>
         </div>
 

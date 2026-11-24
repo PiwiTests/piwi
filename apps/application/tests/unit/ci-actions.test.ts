@@ -303,6 +303,24 @@ describe('resolveCiActionsSettings', () => {
     expect(resolved.defaults).toEqual({ rerun: 'smoke', suite: 'gl' });
   });
 
+  test('keeps an action that accepts tagged tests, and its default for them', () => {
+    const resolved = resolveCiActionsSettings({
+      enabled: true,
+      actions: [github(), { ...gitlab(), accepts: ['tags', 'suite', 'nope'] }],
+      defaults: { rerun: 'smoke', tags: 'gl' },
+    });
+    expect(resolved.actions[1]!.accepts).toEqual(['suite', 'tags']);
+    expect(resolved.defaults).toEqual({ rerun: 'smoke', tags: 'gl' });
+    // A default for tagged tests that takes none of them points at the first action that does.
+    expect(
+      resolveCiActionsSettings({
+        enabled: true,
+        actions: [github(), gitlab({ accepts: ['tags'] })],
+        defaults: { tags: 'smoke' },
+      }).defaults,
+    ).toEqual({ tags: 'gl' });
+  });
+
   test('an action that accepts nothing accepts re-runs', () => {
     const resolved = resolveCiActionsSettings({ enabled: true, actions: [{ ...github(), accepts: [] }] });
     expect(resolved.actions[0]!.accepts).toEqual(['tests']);
@@ -452,6 +470,20 @@ describe('pickCiAction', () => {
     );
     expect(pickCiAction(settings([github()]), 'tests', { provider: null }).reason).toBe(
       'Its run has no supported repository to dispatch to.',
+    );
+  });
+
+  test('picks the default for tagged tests among the actions that take them', () => {
+    const tagged = github({ id: 'tagged', name: 'Tagged', accepts: ['suite', 'tags'] });
+    const nightly = github({ id: 'nightly', name: 'Nightly', accepts: ['tags'] });
+    const project = settings([plain, tagged, nightly], { suite: 'tagged', tags: 'nightly' });
+    expect(pickCiAction(project, 'tags', { provider: 'github' }).action?.id).toBe('nightly');
+    expect(pickCiAction(settings([plain, tagged, nightly]), 'tags', { provider: 'github' }).action?.id).toBe('tagged');
+    expect(pickCiAction(settings([plain]), 'tags', { provider: 'github' }).reason).toBe(
+      'No CI action runs tagged tests for this project.',
+    );
+    expect(pickCiAction(project, 'tags', { provider: 'github', actionId: 'plain' }).reason).toBe(
+      'The CI action "Plain" does not accept Tagged tests.',
     );
   });
 

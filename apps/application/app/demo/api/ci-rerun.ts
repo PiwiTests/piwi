@@ -176,6 +176,16 @@ async function demoPlace(
   return found.place;
 }
 
+/** A request's query keys as the server reads them: a key given more than once (`tags`) is a list. */
+export function demoQueryRecord(q: URLSearchParams | undefined): Record<string, string | string[]> {
+  const record: Record<string, string | string[]> = {};
+  for (const key of new Set(q?.keys() ?? [])) {
+    const values = q!.getAll(key);
+    record[key] = values.length > 1 ? values : values[0]!;
+  }
+  return record;
+}
+
 /** `GET /api/projects/:id/ci-actions/offered` in the demo. */
 export async function demoCiOffered(
   db: DemoDB,

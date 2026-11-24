@@ -167,10 +167,11 @@ const sameFiles = (d: CiDispatchCandidate, runFiles: string) => !!d.files?.lengt
  * 2. the provider's id for the run: GitHub's run id (when the dispatch answered one), GitLab's pipeline id,
  *    Bitbucket's build number; then, for a Flake Lab run in CI, the newest Flake Lab dispatch of its experiment's test
  *    and kind made before the experiment, on the run's branch;
- * 3. once the run's files are known, for a re-run or a Flake Lab experiment (never a whole suite): a CI server's
- *    build number on the dispatch's branch, with exactly its spec files; else the newest CI server dispatch, or
- *    GitHub dispatch that answered no run id, on the run's branch, started before the run, whose spec files the run
- *    executed exactly. A CI server dispatch whose job runs its configured branch names none, and matches on any.
+ * 3. once the run's files are known, for a re-run or a Flake Lab experiment (never a whole suite or tagged tests,
+ *    which name no files): a CI server's build number on the dispatch's branch, with exactly its spec files; else the
+ *    newest CI server dispatch, or GitHub dispatch that answered no run id, on the run's branch, started before the
+ *    run, whose spec files the run executed exactly. A CI server dispatch whose job runs its configured branch names
+ *    none, and matches on any.
  *
  * A dispatch already matched, refused or past its window is never matched.
  */
@@ -211,7 +212,9 @@ export function matchCiDispatch<T extends CiDispatchCandidate>(run: CiDispatchRu
 
   const runFiles = [...new Set(run.files)].sort().join('\n');
   const byFiles = open.filter(
-    (d) => d.kind !== 'suite' && (d.ref == null ? d.provider === 'ci-server' : d.ref === run.branch),
+    (d) =>
+      (d.kind === 'tests' || d.kind === 'flakeLab') &&
+      (d.ref == null ? d.provider === 'ci-server' : d.ref === run.branch),
   );
   const byBuild = byFiles.find(
     (d) =>

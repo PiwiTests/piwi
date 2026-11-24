@@ -99,7 +99,8 @@ async function stampCiRerun(db: DbClient, runId: number, dispatchId: string): Pr
  * `running`, or `ended` once the run finished, and whose link becomes the
  * build the run recorded (`ci.buildUrl`) when it has one. A run matched to a
  * re-run of tests is stamped `ci-rerun`, with the dispatch id as its ref, and
- * stamped again at finish when the reporter's last metadata dropped the stamp.
+ * stamped again at finish when the reporter's last metadata dropped the stamp;
+ * a whole suite's run, and a run of tagged tests, keep the origin `ci`.
  * A dispatch whose run was cancelled or interrupted is open again. Returns the
  * dispatch the run answers, or null.
  */

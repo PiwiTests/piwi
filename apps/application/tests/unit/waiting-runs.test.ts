@@ -2,6 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { waitingDispatchRow, waitingRequestRow, waitingRunRows, waitingRunsPollMs } from '../../app/utils/waiting-runs';
 import { CI_DISPATCH_LIKELY_CAUSES, CI_DISPATCH_WAIT_HINT_MS } from '#shared/run-follow-up';
 import type { CiDispatchView } from '#shared/ci-dispatches';
+import { ciTagsArgs } from '#shared/ci-tags';
 import type { RunRequestView } from '#shared/handlers/run-requests';
 
 const AT = Date.parse('2026-11-20T10:00:00Z');
@@ -70,6 +71,16 @@ describe('waitingDispatchRow', () => {
       run: null,
       causes: [],
     });
+  });
+
+  test('tagged tests name their tags, read back from the grep they were sent as', () => {
+    const tagged = (tags: string[], match: 'any' | 'all') =>
+      waitingDispatchRow(dispatch({ kind: 'tags', args: ciTagsArgs(tags, match), actionName: 'Nightly' }), AT)?.facts;
+    expect(tagged(['smoke'], 'any')).toBe('Tagged @smoke · Nightly on main');
+    expect(tagged(['smoke', 'checkout'], 'all')).toBe('Tagged @smoke and @checkout · Nightly on main');
+    expect(waitingDispatchRow(dispatch({ kind: 'tags', args: '--grep="smoke"' }), AT)?.facts).toBe(
+      'Tagged tests · Smoke · staging on main',
+    );
   });
 
   test('a re-run counts its tests, a Flake Lab experiment says so, a job on its own branch names none', () => {

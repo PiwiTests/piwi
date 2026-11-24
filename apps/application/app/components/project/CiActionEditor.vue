@@ -68,12 +68,14 @@ const sendsInputs = computed(() => draft.value.type !== 'custom');
 
 const KIND_HELP: Partial<Record<CiActionKind, string>> = {
   tests: 'Re-run the failed tests of a cluster or one test',
+  tags: 'Run the tests carrying the tags picked on the project page, as one --grep',
   flakeLab: 'Run a Flake Lab experiment for a flaky test',
 };
 const kindItems = CI_ACTION_KINDS.map((kind) => ({ kind, label: CI_ACTION_KIND_LABELS[kind], help: KIND_HELP[kind] }));
 const defaultLabels: Record<CiActionKind, string> = {
   tests: 'Default for re-runs',
   suite: `Default for ${CI_ACTION_KIND_LABELS.suite}`,
+  tags: 'Default for tagged tests',
   flakeLab: 'Default for Flake Lab',
 };
 

@@ -4,10 +4,12 @@ import {
   CI_DISPATCH_WAIT_HINT_MS,
   ciDispatchFollowUp,
   dispatchRunResult,
+  runFollowUpFacts,
   runFollowUpPollMs,
   runRequestFollowUp,
 } from '#shared/run-follow-up';
 import type { CiDispatchView } from '#shared/ci-dispatches';
+import { ciTagsArgs } from '#shared/ci-tags';
 import type { RunRequestView } from '#shared/handlers/run-requests';
 
 const AT = Date.parse('2026-11-20T10:00:00Z');
@@ -112,6 +114,25 @@ describe('ciDispatchFollowUp', () => {
     expect(ciDispatchFollowUp(dispatch({ state: 'refused', provider: 'github', preset: undefined }), AT).sentence).toBe(
       'GitHub Actions refused the dispatch',
     );
+  });
+});
+
+describe('runFollowUpFacts', () => {
+  test('names a re-run’s tests, tagged tests’ tags and a whole suite’s action alone, with the branch', () => {
+    expect(runFollowUpFacts(ciDispatchFollowUp(dispatch(), AT))).toBe('3 tests · Smoke · staging on main');
+    const tagged = (over: Partial<CiDispatchView>) =>
+      ciDispatchFollowUp(dispatch({ kind: 'tags', tests: null, actionName: 'Nightly', ...over }), AT);
+    expect(tagged({ args: ciTagsArgs(['smoke', 'checkout'], 'any') })).toMatchObject({
+      tagged: '@smoke or @checkout',
+    });
+    expect(runFollowUpFacts(tagged({ args: ciTagsArgs(['smoke', 'checkout'], 'all') }))).toBe(
+      'Tagged @smoke and @checkout · Nightly on main',
+    );
+    expect(runFollowUpFacts(tagged({ args: '--grep="smoke"', ref: null }))).toBe('Tagged tests · Nightly');
+    expect(runFollowUpFacts(ciDispatchFollowUp(dispatch({ kind: 'suite', tests: null }), AT))).toBe(
+      'Smoke · staging on main',
+    );
+    expect(ciDispatchFollowUp(dispatch(), AT).tagged).toBeNull();
   });
 });
 

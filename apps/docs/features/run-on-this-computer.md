@@ -72,8 +72,8 @@ the button opens the arrow, which says why.
 ## Limits
 
 - **The desktop app only.** A browser has no This computer: its run button asks your own apps instead.
-- **A run's tests, one test, a cluster's tests or a selection.** A project's whole suite and a Flake Lab experiment
-  run on CI from the run button; Flake Lab also runs here from a test's **Flakiness** tab.
+- **A run's tests, one test, a cluster's tests or a selection.** A project's whole suite, its tagged tests and a Flake
+  Lab experiment run on CI from the run button; Flake Lab also runs here from a test's **Flakiness** tab.
 
 ## Related
 

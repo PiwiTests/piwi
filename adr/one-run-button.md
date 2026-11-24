@@ -1,8 +1,11 @@
 # One run button
 
+- Status: accepted
+- Date: 2026-11-24
+
 A plan to give every page that runs or re-runs tests the same split button and the same dialog. The dialog's
-**Where** lists both the person's own apps ([Run on my machine](run-on-my-machine.md)) and the project's
-[CI actions](../adr/ci-actions.md). The plan also records every CI dispatch, matches the run it starts as soon as that
+**Where** lists both the person's own apps ([Run on my machine](../proposals/run-on-my-machine.md)) and the project's
+[CI actions](ci-actions.md). The plan also records every CI dispatch, matches the run it starts as soon as that
 run starts, and lets a project start its whole suite on CI. It builds steps 2 to 5 of
 [#1292](https://github.com/PiwiTests/piwi/issues/1292), with a wider scope than the issue: there the dialog was for CI
 only, a main click dispatched at once, and the run page was not one of the places.
@@ -43,9 +46,21 @@ leaves once the request ends. The rows show whatever the filters say, five befor
 runs only** or a period from Analytics; dispatch rows only while the project's CI actions are on. The dispatches are
 read with the page's server render, the viewer's requests in the browser, and both again on each run event of the
 project and when the tab shows again; while a row shows, a dispatch every 30 seconds, a request every 5 seconds until
-its run starts, then every 30. Remain: PR 7 (tags), and a demo dispatch moving to `running` and `ended`
-against a seeded run: it stays `dispatched`, and so does its row. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is
-recorded in [ci-actions.md](../adr/ci-actions.md).
+its run starts, then every 30. PR 7 is built: a CI action accepts `tags`, with a default of its own (`defaults.tags`),
+and the project page's dialog gains **Tests tagged…** under What: up to 10 of the tags of the tests run in the test
+catalog's 30 days, read from its facets with how many tests carry each, spellings that differ in case as one, and for
+two or more whether a test carrying any of them or all of them runs. The source `{ tags, match? }` dispatches them on
+the project's pinned repository and default branch as one double-quoted `--grep` over the titles and tags Playwright
+greps, ignoring case: each tag after any character, as Playwright reads a tag from a title, and up to a space or the
+end, a tag of 60 characters (the most Piwi keeps) as a tag's start. A tag holding a space, a double quote or a
+character a shell expands is not offered and is refused. The dispatch records `kind: 'tags'` and the grep as
+its `args`, with no files, test count, run, cluster or test; it is matched by its id or the provider's run id, never by
+files, and its run keeps the origin `ci`, as a whole suite's does (Q4). Its row and its follow-up name the tags
+("Tagged @smoke or @checkout"). Only the project page offers it, and `rerun_cluster_in_ci` takes no tags (D16). Left
+out: a demo dispatch moving to `running` and `ended` against a seeded run, which the API section describes. The demo
+has no CI, so its dispatch stays `dispatched`, and so does its row; it is planned nowhere else. Step 1 of #1292, the CI
+actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in
+[ci-actions.md](ci-actions.md).
 
 ## What existed
 

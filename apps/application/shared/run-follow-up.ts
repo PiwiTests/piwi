@@ -11,6 +11,7 @@ import { FINAL_RUN_REQUEST_STATES, type RunRequestState } from '@piwitests/core/
 import type { StatusPaletteKey } from '@piwitests/run-ui/status-palette';
 import type { RunRequestView } from '#shared/handlers/run-requests';
 import type { CiDispatchRun, CiDispatchView } from '#shared/ci-dispatches';
+import { ciTagsOfArgs, ciTagsPhrase } from '#shared/ci-tags';
 
 /** One run request or CI dispatch, as the follow-up view shows it. */
 export interface RunFollowUpView {
@@ -27,6 +28,8 @@ export interface RunFollowUpView {
   testTitle: string | null;
   /** A dispatch of a Flake Lab experiment, which its facts name in place of its test count. */
   flakeLab: boolean;
+  /** The tags a dispatch of tagged tests names, as a phrase (`@smoke or @checkout`); null for any other. */
+  tagged: string | null;
   /** Where it went: the app's machine, or the CI (`Jenkins`). */
   target: string | null;
   /** The CI action it went through. */
@@ -125,6 +128,7 @@ export function runRequestFollowUp(request: RunRequestView): RunFollowUpView {
     tests: request.tests.length,
     testTitle: request.tests.length === 1 ? request.tests[0]!.title : null,
     flakeLab: false,
+    tagged: null,
     target: request.target?.deviceName ?? null,
     action: null,
     ref: null,
@@ -225,6 +229,13 @@ export function ciDispatchSentence(
   }
 }
 
+/** The tags a dispatch of tagged tests names, read back from its `--grep`, as a phrase; null for any other dispatch. */
+function dispatchTagged(dispatch: Pick<CiDispatchView, 'kind' | 'args'>): string | null {
+  if (dispatch.kind !== 'tags') return null;
+  const tagged = ciTagsOfArgs(dispatch.args);
+  return tagged ? ciTagsPhrase(tagged.tags, tagged.match) : 'tests';
+}
+
 /** A CI dispatch as the follow-up view shows it. */
 export function ciDispatchFollowUp(dispatch: CiDispatchView, now = Date.now()): RunFollowUpView {
   return {
@@ -235,6 +246,7 @@ export function ciDispatchFollowUp(dispatch: CiDispatchView, now = Date.now()): 
     tests: dispatch.tests,
     testTitle: null,
     flakeLab: dispatch.kind === 'flakeLab',
+    tagged: dispatchTagged(dispatch),
     target: ciDispatchTargetName(dispatch),
     action: dispatch.actionName,
     ref: dispatch.ref,
@@ -252,13 +264,21 @@ const testCount = (n: number) => `${n} test${n === 1 ? '' : 's'}`;
 
 /**
  * What a follow-up runs, through what and on which branch, as one line of facts: `3 tests · Smoke · staging on main`,
- * `Flake Lab · Smoke · staging on main`. A dispatch names its action, else its CI; a request its tests alone.
+ * `Flake Lab · Smoke · staging on main`, `Tagged @smoke · Nightly on main`. A dispatch names its action, else its CI;
+ * a request its tests alone.
  */
 export function runFollowUpFacts(
-  followUp: Pick<RunFollowUpView, 'kind' | 'tests' | 'testTitle' | 'flakeLab' | 'action' | 'target' | 'ref'>,
+  followUp: Pick<RunFollowUpView, 'kind' | 'tests' | 'testTitle' | 'flakeLab' | 'tagged' | 'action' | 'target' | 'ref'>,
 ): string {
   const what =
-    followUp.testTitle ?? (followUp.flakeLab ? 'Flake Lab' : followUp.tests ? testCount(followUp.tests) : null);
+    followUp.testTitle ??
+    (followUp.flakeLab
+      ? 'Flake Lab'
+      : followUp.tagged
+        ? `Tagged ${followUp.tagged}`
+        : followUp.tests
+          ? testCount(followUp.tests)
+          : null);
   const through = followUp.kind === 'dispatch' ? (followUp.action ?? followUp.target) : null;
   const where = through && followUp.ref ? `${through} on ${followUp.ref}` : through;
   return [what, where].filter(Boolean).join(' · ');

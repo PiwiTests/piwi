@@ -14,9 +14,11 @@ vi.mock('~~/app/demo/db.client', async (importOriginal) => ({
   getDemoDb: async () => state.db,
 }));
 
-const { demoCiBranches, demoCiOffered, demoDispatchCi } = await import('~~/app/demo/api/ci-rerun');
+const { demoCiBranches, demoCiOffered, demoDispatchCi, demoQueryRecord } = await import('~~/app/demo/api/ci-rerun');
+const { parseCiDispatchSource } = await import('#shared/ci-dispatch-request');
 const { handleDemoRequest } = await import('~~/app/demo/api/router');
 const { loadRerunInfo, rerunInfoFromOffered } = await import('~/composables/useCiRerun');
+const { ciTagsArgs } = await import('#shared/ci-tags');
 
 type Db = ReturnType<typeof drizzle<typeof schema>>;
 let db: Db;
@@ -45,8 +47,8 @@ beforeEach(async () => {
     ciRerun: {
       enabled: true,
       actions: [
-        jenkins('rerun', 'Re-run failed tests', 'checkout', ['tests', 'suite']),
-        jenkins('branches', 'Branch jobs', 'checkout/{branch}', ['suite']),
+        jenkins('rerun', 'Re-run failed tests', 'checkout', ['tests', 'suite', 'tags']),
+        jenkins('branches', 'Branch jobs', 'checkout/{branch}', ['suite', 'tags']),
         {
           id: 'gh',
           name: 'GitHub',
@@ -136,6 +138,64 @@ describe('the demo’s CI dispatch', () => {
       statusCode: 400,
       message: 'The demo has no repository to dispatch to: it runs only CI server actions.',
     });
+  });
+
+  test('sends the project’s tagged tests as one --grep, on its default branch to a job that takes one, and refuses no tag, as the server does', async () => {
+    const tagged = await demoDispatchCi(
+      db as never,
+      1,
+      request({ from: 'tags', tags: ['smoke', 'checkout'], match: 'any' }),
+      1,
+    );
+    expect(tagged).toMatchObject({
+      kind: 'tags',
+      actionId: 'rerun',
+      args: ciTagsArgs(['smoke', 'checkout'], 'any'),
+      ref: null,
+      tests: null,
+      state: 'dispatched',
+    });
+    const [row] = await db.select().from(schema.ciDispatches).where(eq(schema.ciDispatches.id, tagged.id));
+    expect(row).toMatchObject({ sourceRunId: null, clusterId: null, files: null, tests: null });
+    // A job that names the branch runs the project's, its runs' most common one here, or the one asked.
+    const onBranch = (ref: string | null) =>
+      demoDispatchCi(
+        db as never,
+        1,
+        request({ from: 'tags', tags: ['slow'], match: 'any' }, { action: 'branches', ref }),
+        1,
+      );
+    expect(await onBranch(null)).toMatchObject({ actionId: 'branches', ref: 'main' });
+    expect(await onBranch('release/2.0')).toMatchObject({ actionId: 'branches', ref: 'release/2.0' });
+    await expect(
+      demoDispatchCi(db as never, 1, request({ from: 'tags', tags: [], match: 'any' }), 1),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'A dispatch of tagged tests names at least one tag.' });
+    await expect(
+      demoDispatchCi(db as never, 1, request({ from: 'tags', tags: ['smoke'], match: 'any' }, { action: 'gh' }), 1),
+    ).rejects.toMatchObject({ statusCode: 400, message: 'The CI action "GitHub" does not accept Tagged tests.' });
+    // Through the router: the offered actions before a tag is picked, and the tags of a query given one key each.
+    expect(await handleDemoRequest('/api/projects/1/ci-actions/offered', 'GET', undefined, 'tags=')).toMatchObject({
+      kind: 'tags',
+      defaultActionId: 'rerun',
+      actions: [
+        { id: 'rerun', available: true },
+        { id: 'branches', available: true },
+      ],
+    });
+    expect(parseCiDispatchSource(demoQueryRecord(new URLSearchParams('tags=smoke&tags=checkout&match=all')))).toEqual({
+      ok: true,
+      value: { from: 'tags', tags: ['smoke', 'checkout'], match: 'all' },
+    });
+    expect(demoQueryRecord(new URLSearchParams('tags=smoke&clusterId=3'))).toEqual({ tags: 'smoke', clusterId: '3' });
+    await expect(
+      handleDemoRequest('/api/projects/1/ci-actions/offered', 'GET', undefined, 'tags=%24x&tags=smoke'),
+    ).rejects.toMatchObject({ statusCode: 400, message: /cannot be sent to CI/ });
+    expect(
+      await handleDemoRequest('/api/projects/1/ci-dispatches', 'POST', {
+        source: { tags: ['@flaky'], match: 'all' },
+        kind: 'tags',
+      }),
+    ).toMatchObject({ kind: 'tags', args: ciTagsArgs(['flaky'], 'any') });
   });
 
   test('offers each action with why the demo cannot send a repository host’s', async () => {

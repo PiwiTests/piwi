@@ -1,11 +1,14 @@
 import type { RunRequestOptions } from '@piwitests/core/run-request';
 import type { CiActionKind } from '#shared/ci-actions';
 import {
+  ciDispatchSourceQuery,
   ciRefProblem,
   type CiDispatchSourceInput,
   type CiOffered,
   type CiOfferedAction,
 } from '#shared/ci-dispatch-request';
+import { ciTagOptions, MAX_CI_TAGS, type CiTagMatch, type CiTagOption } from '#shared/ci-tags';
+import type { TestSearchValue } from '#shared/test-search';
 import type { CiDispatchView } from '#shared/ci-dispatches';
 import type { ShownEnvironment } from '~/composables/useCommandEnvironment';
 import type { RunOnMyMachine, RunRequestSourceChoice } from '~/composables/useRunOnMyMachine';
@@ -24,7 +27,10 @@ export interface RunWhat {
   tests?: readonly string[];
   /** What a run request to one of the person's apps sends; a reason when the apps cannot take it; null when not offered. */
   app: { source: RunRequestSourceChoice; projects?: readonly string[] } | { reason: string } | null;
-  /** What a CI dispatch sends, with a line said under **What** when CI is picked; null when CI does not run it. */
+  /**
+   * What a CI dispatch sends, with a line said under **What** when CI is picked; null when CI does not run it. A source
+   * of tags (`{ tags: [] }`) sends the tags picked in the dialog.
+   */
   ci: { source: CiDispatchSourceInput; note?: string } | null;
   /** What a run on this computer runs, in the desktop window; a reason when it cannot; absent when not offered. */
   local?: ThisComputerWhat;
@@ -52,14 +58,23 @@ export interface RunWhereRow {
 }
 
 /** What a dispatch of each kind is, in "Does not take …". */
-const KIND_NOUNS: Record<CiActionKind, string> = { tests: 're-runs', suite: 'a whole suite', flakeLab: 'Flake Lab' };
+const KIND_NOUNS: Record<CiActionKind, string> = {
+  tests: 're-runs',
+  suite: 'a whole suite',
+  tags: 'tagged tests',
+  flakeLab: 'Flake Lab',
+};
 
 /** What a shortcut of each kind starts, in its menu row. */
 const KIND_SHORTCUTS: Record<CiActionKind, string> = {
   tests: 'Re-run on CI',
   suite: 'Run on CI',
+  tags: 'Run tagged tests on CI',
   flakeLab: 'Flake Lab on CI',
 };
+
+/** The days of runs whose tests' tags a dialog offers, the test catalog's window. */
+const TAG_WINDOW_DAYS = 30;
 
 /** The CI a target is on, as a shortcut names it: `GitHub`, `Jenkins`. */
 function providerOf(action: CiOfferedAction): string {
@@ -175,7 +190,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
       if (!mayDispatch.value || !openingWhat?.ci) return null;
       const source = openingWhat.ci.source;
       const offer = await requestFetch<CiOffered>(`/api/projects/${projectId}/ci-actions/offered`, {
-        query: source,
+        query: ciDispatchSourceQuery(source),
       }).catch(() => null);
       return { key: openingWhat.key, source: JSON.stringify(source), offer };
     },
@@ -199,7 +214,7 @@ export async function useRunPlace(options: RunPlaceOptions) {
         offeredFor[w.key] = source;
         try {
           const read = await $fetch<CiOffered>(`/api/projects/${projectId}/ci-actions/offered`, {
-            query: w.ci.source,
+            query: ciDispatchSourceQuery(w.ci.source),
           });
           if (offeredFor[w.key] === source) offered[w.key] = read;
         } catch {
@@ -270,6 +285,9 @@ export async function useRunPlace(options: RunPlaceOptions) {
     );
   });
 
+  /** Whether a Where takes a What: one of the person's apps, this computer, or a CI action that can be sent. */
+  const whereTakes = (w: RunWhat) =>
+    (machine.shown.value && w.app != null && 'source' in w.app) || hereTakes([w]) || (mayDispatch.value && ciTakes(w));
   const visible = computed(() => appsAvailable.value || ciAvailable.value || hereTakes(options.whats()));
   /** The destinations a list of Whats can go to, as the button and the dialog name them. */
   function runLabel(list: RunWhat[]): string {
@@ -427,6 +445,42 @@ export async function useRunPlace(options: RunPlaceOptions) {
     return ciPick.value && ciPick.value.branch.mode !== 'fixed' && value ? ciRefProblem(value) : null;
   });
 
+  // ── The tags of a What that runs tagged tests ─────────────────────────────
+  /** Whether the picked What runs the tests carrying the tags picked here. */
+  const tagsShown = computed(() => Boolean(what.value?.ci && 'tags' in what.value.ci.source));
+  const tags = ref<string[]>([]);
+  const tagMatch = ref<CiTagMatch>('any');
+  /** The days of runs the tags come from, the test catalog's: every day (0) in the demo, whose seed is fixed in time. */
+  const tagDays = useRuntimeConfig().public.demoMode ? 0 : TAG_WINDOW_DAYS;
+  /**
+   * The tags a dispatch can send, of the tests run in those days, with how many carry each ({@link ciTagOptions}); null
+   * until read.
+   */
+  const tagOptions = ref<CiTagOption[] | null>(null);
+  /** How many of those tags cannot be sent to CI. */
+  const tagsRefused = ref(0);
+  const tagsError = ref<string | null>(null);
+  async function readTags() {
+    if (tagOptions.value) return;
+    tagsError.value = null;
+    try {
+      const { values } = await $fetch<{ values: { tag?: TestSearchValue[] } }>(
+        `/api/projects/${projectId}/test-cases/facets`,
+        { query: { maxAgeDays: tagDays } },
+      );
+      const read = ciTagOptions(values.tag ?? []);
+      tagsRefused.value = read.refused;
+      tagOptions.value = read.options;
+    } catch (error) {
+      tagsError.value = errorMessage(error);
+    }
+  }
+  watch([open, tagsShown], ([isOpen, shown]) => {
+    if (isOpen && shown) void readTags();
+  });
+  /** The tags a dispatch sends: the ones picked, at most the most a dispatch names. */
+  const pickedTags = computed(() => tags.value.slice(0, MAX_CI_TAGS));
+
   // ── The fields of an app pick ─────────────────────────────────────────────
   /** The protected environment picked, whose run keeps to the tests carrying its required tags; null for another pick. */
   const protectedPick = computed(() => {
@@ -470,6 +524,11 @@ export async function useRunPlace(options: RunPlaceOptions) {
     whatKey.value = opening.what ?? whats.value[0]?.key;
     where.value = undefined;
     await prepare();
+    // Opened on no What, it opens on the first one a Where takes (CI, when it opens on CI), else the first.
+    if (opening.what == null) {
+      const takes = opening.where === 'ci' ? (w: RunWhat) => mayDispatch.value && ciTakes(w) : whereTakes;
+      whatKey.value = (whats.value.find(takes) ?? whats.value[0])?.key;
+    }
     const w = what.value;
     if (!w) return;
     where.value =
@@ -545,7 +604,12 @@ export async function useRunPlace(options: RunPlaceOptions) {
     }
     const action = ciOffer.value?.actions.find((a) => `ci:${a.id}` === key);
     if (!action || !w.ci) return null;
-    const body: Extract<SentRun, { kind: 'ci' }>['body'] = { source: w.ci.source, action: action.id };
+    let source = w.ci.source;
+    if ('tags' in source) {
+      if (pickedTags.value.length === 0) return null;
+      source = { tags: [...pickedTags.value], ...(pickedTags.value.length > 1 ? { match: tagMatch.value } : {}) };
+    }
+    const body: Extract<SentRun, { kind: 'ci' }>['body'] = { source, action: action.id };
     if (withFields) {
       const ref = branch.value.trim();
       if (action.branch.mode !== 'fixed' && ref) body.ref = ref;
@@ -660,6 +724,13 @@ export async function useRunPlace(options: RunPlaceOptions) {
     branches,
     inputs,
     refProblem,
+    tagsShown,
+    tags,
+    tagMatch,
+    tagOptions,
+    tagsRefused,
+    tagDays,
+    tagsError,
     environmentId,
     environmentOffered,
     protectedPick,

@@ -6,8 +6,9 @@
  *
  * A source names one place: a failure cluster, an execution (its test, or
  * every test of its cluster), a run (its failed tests, or the whole suite on
- * its branch), a test's Flake Lab experiment, or the project's whole suite.
- * The kind of the dispatch follows from it.
+ * its branch), a test's Flake Lab experiment, the project's whole suite, or
+ * the project's tests carrying some tags. The kind of the dispatch follows
+ * from it.
  *
  * Pure + dependency-free.
  */
@@ -32,6 +33,7 @@ import {
 } from '#shared/ci-server';
 import type { CiDispatchView, FlakeLabKind } from '#shared/ci-dispatches';
 import { parseRouteId } from '#shared/route-id';
+import { parseCiTags, type CiTagMatch } from '#shared/ci-tags';
 import { foldText } from '#shared/utils/fold-text';
 
 /** Where a dispatch's tests come from, as the server reads it. */
@@ -41,7 +43,8 @@ export type CiDispatchSource =
   | { from: 'run-failed'; runId: number }
   | { from: 'run-suite'; runId: number }
   | { from: 'flake-lab'; testCaseId: number; flakeLab: FlakeLabKind }
-  | { from: 'project' };
+  | { from: 'project' }
+  | { from: 'tags'; tags: string[]; match: CiTagMatch };
 
 /** A source as a client sends it, in a body or as query keys. */
 export type CiDispatchSourceInput =
@@ -49,9 +52,20 @@ export type CiDispatchSourceInput =
   | { executionId: number; scope: 'test' | 'cluster' }
   | { runId: number; tests?: 'failed' }
   | { testCaseId: number; flakeLab: FlakeLabKind }
+  | { tags: string[]; match?: CiTagMatch }
   | Record<string, never>;
 
-const SOURCE_KEYS = ['clusterId', 'executionId', 'scope', 'runId', 'tests', 'testCaseId', 'flakeLab'] as const;
+const SOURCE_KEYS = [
+  'clusterId',
+  'executionId',
+  'scope',
+  'runId',
+  'tests',
+  'testCaseId',
+  'flakeLab',
+  'tags',
+  'match',
+] as const;
 const ID_KEYS = ['clusterId', 'executionId', 'runId', 'testCaseId'] as const;
 
 /** The longest action id or name a request may name. */
@@ -71,8 +85,11 @@ function idOf(raw: unknown): number | null {
  * A source from a body's `source` or a request's query keys: exactly one of
  * `clusterId`, `executionId` (with `scope`), `runId` (with `tests: 'failed'`
  * for its failed tests, without for the whole suite) and `testCaseId` (with
- * `flakeLab`), or none of them for the project's whole suite. A key of
- * another shape, or one no shape names, is refused.
+ * `flakeLab`); `tags` (with `match`: `any`, the default, or `all`) for the
+ * project's tests carrying them, a list in a body and one key per tag in a
+ * query, where an empty value names none ({@link parseCiTags}); or none of
+ * them for the project's whole suite. A key of another shape, or one no shape
+ * names, is refused.
  */
 export function parseCiDispatchSource(raw: unknown): Parsed<CiDispatchSource> {
   if (!isRecord(raw)) return { ok: false, message: 'source must be an object, {} for the project’s whole suite.' };
@@ -88,8 +105,9 @@ export function parseCiDispatchSource(raw: unknown): Parsed<CiDispatchSource> {
     executionId: ['executionId', 'scope'],
     runId: ['runId', 'tests'],
     testCaseId: ['testCaseId', 'flakeLab'],
+    tags: ['tags', 'match'],
   };
-  const named = ids[0];
+  const named = ids[0] ?? (keys.includes('tags') ? 'tags' : undefined);
   const extra = keys.find((key) => !(named ? allowed[named]! : []).includes(key));
   if (extra) {
     return {
@@ -98,6 +116,13 @@ export function parseCiDispatchSource(raw: unknown): Parsed<CiDispatchSource> {
     };
   }
   if (!named) return { ok: true, value: { from: 'project' } };
+  if (named === 'tags') {
+    const tags = parseCiTags(raw.tags);
+    if (!tags.ok) return tags;
+    const match = raw.match ?? 'any';
+    if (match !== 'any' && match !== 'all') return { ok: false, message: 'match must be any or all.' };
+    return { ok: true, value: { from: 'tags', tags: tags.tags, match } };
+  }
   const id = idOf(raw[named]);
   if (id === null) return { ok: false, message: `${named} must be a positive integer.` };
   switch (named) {
@@ -123,7 +148,7 @@ export function parseCiDispatchSource(raw: unknown): Parsed<CiDispatchSource> {
   }
 }
 
-/** The kind of dispatch a source starts: its tests, a whole suite, or a Flake Lab experiment. */
+/** The kind of dispatch a source starts: its tests, a whole suite, tagged tests, or a Flake Lab experiment. */
 export function ciDispatchSourceKind(source: CiDispatchSource): CiActionKind {
   switch (source.from) {
     case 'cluster':
@@ -133,9 +158,19 @@ export function ciDispatchSourceKind(source: CiDispatchSource): CiActionKind {
     case 'run-suite':
     case 'project':
       return 'suite';
+    case 'tags':
+      return 'tags';
     case 'flake-lab':
       return 'flakeLab';
   }
+}
+
+/**
+ * A source as the query keys of `GET /api/projects/:id/ci-actions/offered`: as it is, except tagged tests with no tag
+ * picked yet, whose `tags` is an empty value, so the place reads as tagged tests.
+ */
+export function ciDispatchSourceQuery(source: CiDispatchSourceInput): Record<string, unknown> {
+  return 'tags' in source && source.tags.length === 0 ? { ...source, tags: '' } : source;
 }
 
 /** Tests a re-run names at most: a cluster's affected tests, or a run's failed tests. */
@@ -364,10 +399,14 @@ export function unknownCiActionMessage(settings: CiActionsSettings, name: string
 }
 
 /**
- * Why a request cannot go through the action picked for it, or null: a branch
- * git refuses or the action cannot take, an input it does not set.
+ * Why a request cannot go through the action picked for it, or null: tagged
+ * tests that name no tag, a branch git refuses or the action cannot take, an
+ * input it does not set.
  */
 export function ciDispatchRequestProblem(pick: CiActionPick, request: CiDispatchRequest): string | null {
+  if (request.source.from === 'tags' && request.source.tags.length === 0) {
+    return 'A dispatch of tagged tests names at least one tag.';
+  }
   const refProblem =
     request.ref == null
       ? null

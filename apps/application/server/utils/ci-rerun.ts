@@ -1,8 +1,8 @@
 /**
  * CI dispatch: the one flow every place that starts CI goes through, for a
  * cluster's affected tests, an execution's test or its cluster's, a run's
- * failed tests or the whole suite on its branch, a Flake Lab experiment, and
- * the project's whole suite.
+ * failed tests or the whole suite on its branch, a Flake Lab experiment, the
+ * project's whole suite, and the project's tests carrying some tags.
  *
  * A request names its source (`#shared/ci-dispatch-request`), which the
  * shared handler reads as a place (`resolveCiDispatchPlace`): its tests, and
@@ -109,7 +109,12 @@ interface Readiness {
 }
 
 /** What a dispatch of each kind is called, in a sentence about what it lacks. */
-const DISPATCH_NOUN: Record<CiActionKind, string> = { tests: 're-run', suite: 'run', flakeLab: 'experiment' };
+const DISPATCH_NOUN: Record<CiActionKind, string> = {
+  tests: 're-run',
+  suite: 'run',
+  tags: 'run',
+  flakeLab: 'experiment',
+};
 
 /** The action a place uses: the one `actionId` names, else its default (`pickCiAction`). */
 function pickFor(settings: CiActionsSettings, place: CiDispatchPlace, actionId?: string | null): CiActionPick {

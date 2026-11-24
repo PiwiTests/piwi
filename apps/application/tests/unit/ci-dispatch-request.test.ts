@@ -5,7 +5,9 @@ import {
   ciBranchOptions,
   ciDispatchInputsProblem,
   ciDispatchInputValues,
+  ciDispatchRequestProblem,
   ciDispatchSourceKind,
+  ciDispatchSourceQuery,
   ciRefProblem,
   MAX_CI_BRANCHES,
   offeredCiAction,
@@ -44,6 +46,12 @@ describe('a dispatch source', () => {
       [{ runId: 5 }, { from: 'run-suite', runId: 5 }, 'suite'],
       [{ testCaseId: 6, flakeLab: 'verify' }, { from: 'flake-lab', testCaseId: 6, flakeLab: 'verify' }, 'flakeLab'],
       [{}, { from: 'project' }, 'suite'],
+      [{ tags: ['@smoke', 'checkout'] }, { from: 'tags', tags: ['smoke', 'checkout'], match: 'any' }, 'tags'],
+      [
+        { tags: ['smoke', 'checkout'], match: 'all' },
+        { from: 'tags', tags: ['smoke', 'checkout'], match: 'all' },
+        'tags',
+      ],
     ];
     for (const [raw, source, kind] of cases) {
       const parsed = parseCiDispatchSource(raw);
@@ -61,6 +69,34 @@ describe('a dispatch source', () => {
       expect(parseCiDispatchSource({ clusterId: id }), String(id)).toMatchObject({ ok: false });
     }
     expect(parseCiDispatchSource({ clusterId: 1.5 })).toMatchObject({ ok: false });
+  });
+
+  test('reads the tags of a query, a key per tag, and an empty key as none picked yet', () => {
+    expect(parseCiDispatchSource({ tags: 'smoke' })).toEqual({
+      ok: true,
+      value: { from: 'tags', tags: ['smoke'], match: 'any' },
+    });
+    expect(parseCiDispatchSource({ tags: ['smoke', 'checkout'], match: 'all' })).toMatchObject({
+      ok: true,
+      value: { tags: ['smoke', 'checkout'], match: 'all' },
+    });
+    expect(parseCiDispatchSource(ciDispatchSourceQuery({ tags: [] }))).toEqual({
+      ok: true,
+      value: { from: 'tags', tags: [], match: 'any' },
+    });
+    expect(ciDispatchSourceQuery({ tags: ['smoke'] })).toEqual({ tags: ['smoke'] });
+    expect(ciDispatchSourceQuery({ clusterId: 3 })).toEqual({ clusterId: 3 });
+  });
+
+  test('refuses tags beside a place, a match without tags, and a tag no grep can name', () => {
+    expect(parseCiDispatchSource({ runId: 1, tags: ['smoke'] })).toMatchObject({ ok: false, message: /beside runId/ });
+    expect(parseCiDispatchSource({ match: 'all' })).toMatchObject({ ok: false, message: /names no place/ });
+    expect(parseCiDispatchSource({ tags: ['smoke'], match: 'some' })).toEqual({
+      ok: false,
+      message: 'match must be any or all.',
+    });
+    expect(parseCiDispatchSource({ tags: ['$HOME'] })).toMatchObject({ ok: false, message: /cannot be sent to CI/ });
+    expect(parseCiDispatchSource({ tags: [3] })).toMatchObject({ ok: false, message: /list of tag names/ });
   });
 
   test('refuses a key no shape names, two places, and a shape left incomplete', () => {
@@ -119,11 +155,26 @@ describe('a dispatch request', () => {
     });
     expect(parseCiDispatchRequest({ source: { clusterId: 1 }, kind: 'everything' })).toMatchObject({
       ok: false,
-      message: 'kind must be one of tests, suite, flakeLab.',
+      message: 'kind must be one of tests, suite, tags, flakeLab.',
     });
     expect(parseCiDispatchRequest({ source: { testCaseId: 1, flakeLab: 'reproduce' }, kind: 'flakeLab' }).ok).toBe(
       true,
     );
+    expect(parseCiDispatchRequest({ source: { tags: ['smoke'] }, kind: 'tags' }).ok).toBe(true);
+    expect(parseCiDispatchRequest({ source: {}, kind: 'tags' })).toMatchObject({
+      ok: false,
+      message: 'This source starts a suite dispatch, not tags.',
+    });
+  });
+
+  test('of tagged tests is refused with no tag, through any action', () => {
+    const parsed = parseCiDispatchRequest({ source: { tags: [] } });
+    expect(parsed.ok).toBe(true);
+    const request = parsed.ok ? parsed.value : null!;
+    const pick = { action: action(jenkins('e2e')), reason: null } as const;
+    expect(ciDispatchRequestProblem(pick, request)).toBe('A dispatch of tagged tests names at least one tag.');
+    const tagged = parseCiDispatchRequest({ source: { tags: ['smoke'] } });
+    expect(tagged.ok && ciDispatchRequestProblem(pick, tagged.value)).toBeNull();
   });
 
   test('refuses a missing source, an unknown key, a bad action, branch or inputs', () => {

@@ -4,7 +4,8 @@
  * An action has its own target (a GitHub workflow, a GitLab pipeline, a
  * Bitbucket custom pipeline, or a CI server request), the inputs it sends
  * beside the Playwright arguments, what it accepts (re-runs of failed tests,
- * a whole suite, a Flake Lab experiment), an optional environment, and may be
+ * a whole suite, the tests carrying some tags, a Flake Lab experiment), an
+ * optional environment, and may be
  * the default for each kind. The list lives in the project's `ciRerun` column
  * as `{ enabled, actions, defaults }`. A stored value with no `actions` list
  * (`via`, a `ciServer` block, one block per provider) converts when read
@@ -29,11 +30,11 @@ import {
 } from '#shared/ci-server';
 
 /** What an action may be started for. */
-export const CI_ACTION_KINDS = ['tests', 'suite', 'flakeLab'] as const;
+export const CI_ACTION_KINDS = ['tests', 'suite', 'tags', 'flakeLab'] as const;
 export type CiActionKind = (typeof CI_ACTION_KINDS)[number];
 
 /** The kinds a project names a default action for, and the key each is stored under. */
-export const CI_ACTION_DEFAULT_KEYS = { tests: 'rerun', suite: 'suite', flakeLab: 'flakeLab' } as const;
+export const CI_ACTION_DEFAULT_KEYS = { tests: 'rerun', suite: 'suite', tags: 'tags', flakeLab: 'flakeLab' } as const;
 
 export const MAX_CI_ACTIONS = 20;
 export const MAX_CI_ACTION_INPUTS = 20;
@@ -104,7 +105,7 @@ export interface CiActionsSettings {
   enabled: boolean;
   actions: CiAction[];
   /** The action ids buttons use for each kind when no environment decides. */
-  defaults: { rerun?: string; flakeLab?: string; suite?: string };
+  defaults: { rerun?: string; flakeLab?: string; suite?: string; tags?: string };
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -559,6 +560,7 @@ export function ciActionTargetSummary(target: CiActionTarget): string {
 export const CI_ACTION_KIND_LABELS: Record<CiActionKind, string> = {
   tests: 'Re-runs',
   suite: 'Run on CI',
+  tags: 'Tagged tests',
   flakeLab: 'Flake Lab',
 };
 
@@ -593,6 +595,7 @@ function servesProvider(action: CiAction, provider: ScmProviderName | null): boo
 const KIND_PHRASE: Record<CiActionKind, string> = {
   tests: 're-runs tests',
   suite: 'runs the suite',
+  tags: 'runs tagged tests',
   flakeLab: 'runs Flake Lab',
 };
 

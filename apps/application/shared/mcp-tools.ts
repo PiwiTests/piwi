@@ -1526,7 +1526,7 @@ export const MCP_TOOL_DEFS = [
       [
         '`state`: `dispatched` until a run reports, `running` once one is matched, `ended` once it finishes, `unreported` when no run reported within six hours (the job may not pass the dispatch id on as `PIWI_ORIGIN_REF`, the reporter may not be set up there, or the job failed before Playwright started), `refused` when the provider refused it, with its words in `detail` for a caller who holds `run:control` on the project',
         '`runId` and `run`: the matched run, with its `status` (`running`, `passed`, `failed`…) and its `totalTests`, `passedTests` and `failedTests`; read it with `get_run` for its failures',
-        '`kind` (`tests`, `suite`, `flakeLab`), `origin` (`page`, `mcp`, `api`), the action (`actionId`, `actionName`), `provider` and `preset`, `url` (the provider’s run once known, else its runs list), `args` (the arguments handed to CI), `ref` (the branch; absent when the job runs its configured branch), `tests` (how many tests the arguments name), `dispatchedAt` and `byName`',
+        '`kind` (`tests`, `suite`, `tags`, `flakeLab`), `origin` (`page`, `mcp`, `api`), the action (`actionId`, `actionName`), `provider` and `preset`, `url` (the provider’s run once known, else its runs list), `args` (the arguments handed to CI), `ref` (the branch; absent when the job runs its configured branch), `tests` (how many tests the arguments name), `dispatchedAt` and `byName`',
       ],
       'Returns null for an unknown id or a dispatch of a project outside your scope. A run usually reports a few minutes after its dispatch: poll it now and then rather than in a tight loop.',
     ),

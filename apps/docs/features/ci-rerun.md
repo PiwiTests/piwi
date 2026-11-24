@@ -1,6 +1,6 @@
 ---
 title: Re-run in CI
-description: "Run a cluster's, a run's or a test's tests, or the whole suite, in CI from the dashboard's run button: a GitHub workflow, a GitLab or Bitbucket pipeline, or a Jenkins job or any CI server reached by one HTTP request."
+description: "Run a cluster's, a run's or a test's tests, the tests carrying some tags, or the whole suite, in CI from the dashboard's run button: a GitHub workflow, a GitLab or Bitbucket pipeline, or a Jenkins job or any CI server reached by one HTTP request."
 lang: en-US
 ---
 
@@ -16,7 +16,7 @@ runs on [this computer](./run-on-this-computer):
 
 | Page | What CI runs |
 |---|---|
-| Project | The whole suite, on the project's default branch |
+| Project | The whole suite, or the [tests carrying some tags](#tagged-tests), on the project's default branch |
 | Run | Its failed tests, or the action's whole suite on the run's branch |
 | Execution | The test, or every test of its cluster |
 | Test | The test, or a [Flake Lab](./flake-lab#run-it-in-ci) experiment |
@@ -42,8 +42,8 @@ Playwright takes.
 
 - **Where** opens on the one you last sent to in this project, from this browser. Otherwise a re-run picks the action
   that started its run, else the one of its environment, else the default for re-runs; the project page picks its
-  default for Run on CI, and the test page your first online app. In the desktop app, **This computer** takes your
-  apps' place and comes first: [Run on this computer](./run-on-this-computer).
+  default for Run on CI, or for tagged tests, and the test page your first online app. In the desktop app, **This
+  computer** takes your apps' place and comes first: [Run on this computer](./run-on-this-computer).
 - A CI row shows its target and environment. It is disabled, with the reason, when the action does not take the
   chosen **What** or cannot be sent. Picked, the dialog says what a team run is: it counts in the project's history,
   sends notifications and pull-request feedback, and spends CI minutes. A Flake Lab experiment is a lab run instead,
@@ -66,6 +66,31 @@ retries, workers up to 4), and one project the tests ran in.
 
 An action that accepts **Flake Lab** runs `piwi flake` for one flaky test: [Run it in CI](./flake-lab#run-it-in-ci)
 shows the GitHub workflow, and [Flake Lab on Jenkins](./ci-actions#flake-lab-on-jenkins) the Jenkins job.
+
+## Tagged tests
+
+On the project page, **What** also offers **Tests tagged…**. Pick up to 10 of the tags of the tests that ran in the last
+30 days, each listed with how many of those tests carry it, spellings that differ only in case counted as one, and, for
+two or more, whether a test carrying **any of them** or **all of them** runs. Only an action that accepts **Tagged
+tests** takes them; the others are disabled, with the reason. Your apps take no tags: a run request names its tests.
+
+<figure>
+  <img src="/screenshots/run-dialog-tags.png" alt="The project page's run dialog on Tests tagged: @api and @regression picked, All of them chosen, the nightly action picked and the smoke action disabled because it takes no tagged tests">
+  <figcaption>Two tags, a test carrying both: the action that takes no tagged tests is disabled.</figcaption>
+</figure>
+
+CI gets one `--grep` over what Playwright greps, a test's titles and its tags, ignoring case, so `@smoke` in a title
+and in the `tag` option both match. Each tag runs up to a space or the end, after any character, as Playwright reads a
+tag from a title (`@example.com` in `emails user@example.com`); one of 60 characters, the most Piwi keeps of a tag,
+matches as a tag's start. **All of them** for `@smoke` and `@checkout` sends:
+
+```text
+--grep="^(?=[^]*@smoke(?=\s|$))(?=[^]*@checkout(?=\s|$))"
+```
+
+It is double-quoted like every argument Piwi sends, and reads the same in bash, PowerShell, cmd and
+[`rerun`](/reference/cli#rerun). A tag holding a space, a double quote, or one of `$`, `` ` ``, `\`, `%` and `!` is not
+offered.
 
 ## Waiting rows
 
@@ -92,12 +117,13 @@ Piwi matches each dispatch's run as it starts: by the `PIWI_ORIGIN_REF` the run 
 server re-run, or a GitHub one answered without a run, matches by branch, a start within six hours and exactly its spec
 files.
 
-A matched re-run's [origin](/reference/test-metadata#run-origin) is `ci-rerun`; the last re-run links its build and run
-with its result, or reads *no run reported* after six hours. A repeat within ten seconds is refused; dispatches are kept
+A matched re-run's [origin](/reference/test-metadata#run-origin) is `ci-rerun`. The run of a whole suite or of tagged
+tests keeps `ci`, and the grep of tagged tests makes theirs a partial run, as any grep does. The last re-run links its
+build and run with its result, or reads *no run reported* after six hours. A repeat within ten seconds is refused; dispatches are kept
 90 days.
 
 A workflow GitHub answers with its run needs no change; otherwise the dispatch id input, optional since GitHub refuses
-undeclared ones and passed on as `PIWI_ORIGIN_REF`, alone matches a whole suite:
+undeclared ones and passed on as `PIWI_ORIGIN_REF`, alone matches a whole suite or tagged tests:
 
 ```yaml
 on:

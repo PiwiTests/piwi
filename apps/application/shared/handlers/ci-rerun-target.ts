@@ -14,6 +14,7 @@ import { mostCommonRunBranch } from '../../server/utils/scm/stored-default-branc
 import type { CiServerTarget, CiTemplateValues } from '#shared/ci-server';
 import type { CiActionKind } from '#shared/ci-actions';
 import { flakeLabCiArgs } from '#shared/ci-rerun';
+import { ciTagsArgs } from '#shared/ci-tags';
 import type { CiDispatchView } from '#shared/ci-dispatches';
 import {
   ciDispatchSourceKind,
@@ -129,18 +130,21 @@ export interface CiDispatchPlace {
   clusterId: number | null;
   /** The test of a Flake Lab dispatch. */
   testCaseId: number | null;
-  /** The tests a `tests` dispatch runs; null for a whole suite and a Flake Lab experiment. */
+  /** The tests a `tests` dispatch runs; null for a whole suite, tagged tests and a Flake Lab experiment. */
   cases: RetryCase[] | null;
-  /** The arguments handed to CI: the tests' `file:line` and projects, the `piwi flake` command, or none for a whole suite. */
+  /**
+   * The arguments handed to CI: the tests' `file:line` and projects, the `piwi flake` command, the `--grep` of tagged
+   * tests (none while no tag is picked), or none for a whole suite.
+   */
   args: string;
-  /** The repository a repository host's action dispatches to: the run's, else (the project's whole suite) the pinned one. */
+  /** The repository a repository host's action dispatches to: the run's, else (the project's suite or tags) the pinned one. */
   repositoryUrl: string | null;
   /** The environment the run's label resolved to, and the label. */
   environmentId: number | null;
   environment: string | null;
   /** The action whose dispatch started the run, and the values it sent. */
   started: CiDispatchStart | null;
-  /** The branch a dispatch runs on when it names none: the run's, else (the project's whole suite) the project's default. */
+  /** The branch a dispatch runs on when it names none: the run's, else (the project's suite or tags) the project's default. */
   branch: string | null;
   /** The run's commit. */
   commit: string | null;
@@ -170,9 +174,10 @@ async function runInProject(db: DrizzleDB, runId: number, projectId: number, vie
  * The place a source names in a project: a cluster's affected tests on its
  * last run; an execution's test, or its cluster's affected tests, on its run;
  * a run's failed tests, or the whole suite on its branch; a test's Flake Lab
- * experiment on the run of its newest execution; or the project's whole suite
- * on its pinned repository and default branch. An id of another project, and
- * a run `viewerId` does not see, are not found.
+ * experiment on the run of its newest execution; or the project's whole suite,
+ * or its tests carrying some tags, on its pinned repository and default
+ * branch. An id of another project, and a run `viewerId` does not see, are not
+ * found.
  */
 export async function resolveCiDispatchPlace(
   db: DrizzleDB,
@@ -231,6 +236,9 @@ export async function resolveCiDispatchPlace(
       args = flakeLabCiArgs(testCaseId, source.flakeLab);
       break;
     }
+    case 'tags':
+      args = ciTagsArgs(source.tags, source.match);
+      break;
     case 'project':
       break;
   }
@@ -268,7 +276,7 @@ export async function resolveCiDispatchPlace(
     place.branch = sendableBranch(run ? (run.branch ?? resolveRunBranch(run.metadata)) : null);
     place.commit = run ? (runCommit(run.metadata) ?? null) : null;
     place.started = await runDispatchAction(db, runId);
-  } else if (source.from === 'project') {
+  } else if (source.from === 'project' || source.from === 'tags') {
     const [project] = await db
       .select({ repositoryUrl: projects.repositoryUrl, defaultBranch: projects.defaultBranch })
       .from(projects)

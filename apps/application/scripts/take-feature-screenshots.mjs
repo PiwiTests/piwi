@@ -3799,6 +3799,73 @@ const SCENES = [
       await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
     },
   },
+  {
+    name: 'run-dialog-tags',
+    tags: ['docs'],
+    out: 'docs',
+    description:
+      'The project page’s run dialog of API Integration on Tests tagged…: two of the project’s tags picked, a test carrying all of them, the nightly action that takes tagged tests and the smoke action disabled with the reason',
+    route: '/projects/2',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page.getByRole('button', { name: 'Run on CI' }).first().click({ timeout: 90_000 });
+      const dialog = page.getByRole('dialog');
+      await dialog.getByTestId('run-dialog-ci').waitFor({ timeout: 30_000 });
+      await dialog.getByRole('radio', { name: 'Tests tagged…' }).click();
+      const tags = dialog.getByTestId('run-dialog-tags');
+      await tags.getByRole('button', { name: 'Tags' }).click({ timeout: 30_000 });
+      const options = page.getByRole('listbox').getByRole('option');
+      await options.filter({ hasText: '@api' }).click();
+      await options.filter({ hasText: '@regression' }).click();
+      await page.keyboard.press('Escape');
+      await tags.getByRole('radio', { name: 'All of them' }).click();
+      await settle();
+      await shoot(undefined, { of: '[role="dialog"]', pad: 0 });
+    },
+  },
+  {
+    name: 'run-dialog-tags-demo',
+    mode: 'demo',
+    description:
+      'Tests tagged… in the live demo: API Integration’s run dialog with two tags picked at 390 px, then the dispatch sent and waiting as a row of the runs list at 1280 and 390 px',
+    route: '/projects/2',
+    viewport: { width: 390, height: 1100 },
+    async run({ page, shoot, settle }) {
+      // The demo's guided tour asks a first-time visitor their role; this scene is about the run dialog.
+      await page.evaluate(() =>
+        localStorage.setItem('piwi-demo-tour', JSON.stringify({ decision: 'dismissed', decidedAt: Date.now() })),
+      );
+      await page.reload({ waitUntil: 'domcontentloaded' });
+      await page.getByRole('button', { name: 'Run on CI' }).first().click({ timeout: 90_000 });
+      const dialog = page.getByRole('dialog');
+      await dialog.getByTestId('run-dialog-ci').waitFor({ timeout: 30_000 });
+      await dialog.getByRole('radio', { name: 'Tests tagged…' }).click();
+      const tags = dialog.getByTestId('run-dialog-tags');
+      await tags.getByRole('button', { name: 'Tags' }).click({ timeout: 30_000 });
+      const options = page.getByRole('listbox').getByRole('option');
+      await options.filter({ hasText: '@api' }).click();
+      await options.filter({ hasText: '@smoke' }).click();
+      await page.keyboard.press('Escape');
+      await settle();
+      await shoot('phone', { of: '[role="dialog"]', pad: 0 });
+      await dialog.getByRole('button', { name: 'Send' }).click();
+      await dialog.getByTestId('run-follow-up-state').waitFor({ timeout: 30_000 });
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      const runs = '[data-shot="runs-table"]';
+      await page.locator(`${runs} [data-testid="waiting-dispatch"]`).waitFor({ timeout: 30_000 });
+      await settle();
+      await shoot('waiting-phone', { of: runs, pad: 0 });
+      await page.setViewportSize({ width: 1280, height: 1100 });
+      await settle();
+      await shoot('waiting', { of: runs, pad: 8 });
+    },
+    outputs: [
+      'run-dialog-tags-demo-phone.png',
+      'run-dialog-tags-demo-waiting-phone.png',
+      'run-dialog-tags-demo-waiting.png',
+    ],
+  },
   ...[
     { name: 'ci-rerun-last-run', cluster: 6, width: 1600, height: 1400, docs: true },
     { name: 'cluster-last-rerun-mobile', cluster: 6, width: 390, height: 2400 },

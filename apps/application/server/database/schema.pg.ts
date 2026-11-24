@@ -3218,7 +3218,7 @@ export const ciDispatches = pgTable(
     actionId: text('action_id'), // the CI action (`ciRerun.actions[].id`); null for a dispatch stored before CI actions
     actionName: text('action_name'), // the action's name when it was dispatched, kept after a rename or a removal
     origin: text('origin').notNull(), // CiDispatchOrigin: what started it ('page', 'mcp', 'api')
-    kind: text('kind').notNull(), // CiActionKind: 'tests', 'suite' or 'flakeLab'
+    kind: text('kind').notNull(), // CiActionKind: 'tests', 'suite', 'tags' or 'flakeLab'
     sourceRunId: integer('source_run_id'), // the run its tests or its branch came from; no foreign key, so a run's delete never waits on it
     clusterId: integer('cluster_id').references(() => failureClusters.id, { onDelete: 'set null' }), // the cluster it re-ran, or the cluster of the test it re-ran
     testCaseId: integer('test_case_id').references(() => testCases.id, { onDelete: 'set null' }), // the test of a Flake Lab experiment

@@ -22,7 +22,7 @@ A CI action has:
   Playwright arguments, never inside them: as workflow inputs on GitHub, variables on GitLab and Bitbucket, and
   parameters on Jenkins. A name is letters, digits and `_`, and on GitLab and Bitbucket cannot start with `CI_`,
   `GITLAB_` or `BITBUCKET_`. A Custom request sends none;
-- what it **accepts**: re-runs, Run on CI, Flake Lab;
+- what it **accepts**: re-runs, Run on CI, [tagged tests](./ci-rerun#tagged-tests), Flake Lab;
 - an optional **environment**, one of the project's [environments](./environments), which a run of that environment
   picks first;
 - the kinds it is the **default** for.
@@ -172,9 +172,9 @@ Custom request is JSON: `auth` (`none`, `basic`, `bearer`, or `{ "header": "X-To
 
 | Placeholder | Value |
 |---|---|
-| <code v-pre>{{args}}</code> | The Playwright arguments, or `flake 12` for Flake Lab |
+| <code v-pre>{{args}}</code> | The Playwright arguments (tagged tests' `--grep`), or `flake 12` for Flake Lab |
 | <code v-pre>{{dispatchId}}</code> | The dispatch id the run hands back as `PIWI_ORIGIN_REF` |
-| <code v-pre>{{ref}}</code> | The branch asked, else the run's (the project's for its whole suite), else the action's |
+| <code v-pre>{{ref}}</code> | The branch asked, else the run's (the project's for its whole suite or tags), else the action's |
 | <code v-pre>{{commit}}</code> | That run's commit, else empty |
 | <code v-pre>{{branchJob}}</code> | The branch as Jenkins names a branch job (`feature/x` is `feature%2Fx`) |
 

@@ -518,11 +518,12 @@ describe('matchCiDispatch', () => {
     expect(matchCiDispatch({ ...run, originRef: 'open' }, [{ ...open, state: 'refused' as const }])).toBeNull();
   });
 
-  test('matches by files only once they are known, never a whole suite, nor a GitHub dispatch that has its run id', () => {
+  test('matches by files only once they are known, never a whole suite or tagged tests, nor a GitHub dispatch that has its run id', () => {
     const rerun = { ...base, id: 'x', at: 900_000, ref: 'main', files: run.files };
     expect(matchCiDispatch({ ...run, files: null }, [rerun])).toBeNull();
     expect(matchCiDispatch(run, [rerun])).toBe(rerun);
     expect(matchCiDispatch(run, [{ ...rerun, kind: 'suite' as const }])).toBeNull();
+    expect(matchCiDispatch(run, [{ ...rerun, kind: 'tags' as const }])).toBeNull();
     expect(matchCiDispatch(run, [{ ...rerun, providerRunId: '555' }])).toBeNull();
     expect(matchCiDispatch(run, [{ ...rerun, kind: 'flakeLab' as const }])).toMatchObject({ id: 'x' });
   });
