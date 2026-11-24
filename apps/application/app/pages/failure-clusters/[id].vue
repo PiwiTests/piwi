@@ -334,7 +334,7 @@ const { rerunInfo, refreshRerun } = await useRerunInfo(`failure-cluster-rerun-${
   rerunPlace.value ? { ...rerunPlace.value, clusterId, mayDispatch: canRerun.value } : null,
 );
 // The run button, in the navbar and in Verify: the affected tests, which CI re-runs.
-const runPlace = useRunPlace({
+const runPlace = await useRunPlace({
   projectId: clusterProjectId.value ?? 0,
   machine: await useRunOnMyMachine(clusterProjectId.value ?? 0),
   whats: () => [

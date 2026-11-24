@@ -5,8 +5,8 @@ import { waitForHydration } from './utils';
 /**
  * The run button and its dialog on a project whose CI actions are a Jenkins re-run and a nightly job that runs the
  * whole suite: which actions each place offers, the row of an action that cannot take the chosen tests disabled with
- * the reason, the fields of the pick, the menu's one-click runs, and a dispatch the CI server refuses, said in the
- * dialog. The server runs without sign-in, so the person's apps are not offered.
+ * the reason, the fields of the pick, the menu's one-click runs, and a dispatch Piwi refuses before sending it, said in
+ * the dialog. The server runs without sign-in, so the person's apps are not offered.
  */
 test.describe.serial('Run button', () => {
   let projectId: number;
@@ -104,10 +104,10 @@ test.describe.serial('Run button', () => {
     await expect(dialog).toContainText('the action’s whole suite runs on the run’s branch');
   });
 
-  test('a dispatch the CI server refuses is said in the dialog', async ({ page }) => {
+  test('a dispatch Piwi refuses before sending it is said in the dialog', async ({ page }) => {
     const dialog = await openDialog(page, `/failure-clusters/${clusterId}`);
     await dialog.getByRole('button', { name: 'Send' }).click();
-    await expect(dialog.getByTestId('run-dialog-error')).toBeVisible({ timeout: 20_000 });
+    await expect(dialog.getByTestId('run-dialog-error')).toContainText('URL host is not allowed', { timeout: 20_000 });
   });
 
   test('the project page runs the whole suite on its action, with the choice input', async ({ page }) => {
@@ -118,7 +118,7 @@ test.describe.serial('Run button', () => {
     await expect(dialog.getByRole('combobox', { name: 'SUITE' })).toContainText('smoke');
   });
 
-  test('the menu runs the place’s tests in one click on each action that takes them', async ({ page }) => {
+  test('the menu lists a one-click run for each action that takes the place’s tests', async ({ page }) => {
     await page.goto(`/projects/${projectId}`);
     await waitForHydration(page);
     await page.getByRole('button', { name: 'One-click runs' }).click();

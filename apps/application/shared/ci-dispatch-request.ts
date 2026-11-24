@@ -138,6 +138,9 @@ export function ciDispatchSourceKind(source: CiDispatchSource): CiActionKind {
   }
 }
 
+/** Tests a re-run names at most: a cluster's affected tests, or a run's failed tests. */
+export const MAX_RERUN_TESTS = 100;
+
 /** The longest branch name, in UTF-8 bytes, a dispatch sends. */
 export const MAX_CI_REF_BYTES = 255;
 

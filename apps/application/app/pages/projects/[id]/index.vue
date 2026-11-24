@@ -75,7 +75,7 @@ const { can } = useAuth();
 const { isHidden: projCapHidden } = await useProjectCapabilities(Number(projectId));
 
 // The run button: the project's whole suite on its default branch, which only CI runs.
-const runPlace = useRunPlace({
+const runPlace = await useRunPlace({
   projectId: Number(projectId),
   machine: await useRunOnMyMachine(Number(projectId)),
   whats: () => [{ key: 'suite', label: 'The whole suite', wholeSuite: true, app: null, ci: { source: {} } }],

@@ -89,7 +89,7 @@ const showFlakiness = computed(() => (testCase.value?.flakyRuns ?? 0) > 0 && !ca
 const visibleTabs = computed(() => TABS.filter((t) => t.value !== 'flakiness' || showFlakiness.value));
 
 // The run button: this test by its newest execution, and for a flaky test its Flake Lab experiments, which CI runs.
-const runPlace = useRunPlace({
+const runPlace = await useRunPlace({
   projectId: testCase.value?.project?.id ?? 0,
   machine: await useRunOnMyMachine(testCase.value?.project?.id ?? 0),
   whats: () => {

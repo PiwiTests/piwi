@@ -331,7 +331,7 @@ const runWhats = computed<RunWhat[]>(() => {
   }
   return whats;
 });
-const runPlace = useRunPlace({
+const runPlace = await useRunPlace({
   projectId: props.testRun.projectId,
   machine: await useRunOnMyMachine(props.testRun.projectId, props.testRun.machineRuns ?? false),
   whats: () => runWhats.value,

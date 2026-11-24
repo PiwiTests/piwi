@@ -171,7 +171,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
   {
     id: 'set-up-ci',
     title: 'Set up CI and sharding',
-    summary: 'Report from CI, merge shards into one run, re-run from a cluster',
+    summary: 'Report from CI, merge shards into one run, start tests in CI',
     icon: 'i-lucide-workflow',
     keywords: ['ci', 'github actions', 'gitlab', 'pipeline', 'shard', 'sharding', 'api key', 'continuous integration'],
     requires: { permission: 'settings:manage' },
@@ -197,7 +197,7 @@ export const AUTHORED_GUIDES: readonly AuthoredGuide[] = [
         id: 'rerun',
         anchor: 'project-ci-rerun',
         resolve: 'project',
-        title: 'Re-run a cluster’s tests in CI',
+        title: 'Start tests in CI',
         body: 'The **CI** settings hold **CI actions**, which let the run button of a run, an execution, a test, a cluster or the project start tests in CI: a GitHub workflow, a GitLab or Bitbucket pipeline, or a Jenkins job or another CI server. A project can have several, each with its own inputs and environment. It is off by default.',
         side: 'top',
         align: 'start',

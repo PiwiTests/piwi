@@ -106,10 +106,11 @@ export interface RunPlaceOptions {
  * One place's run: the split button's face and shortcuts, and the run dialog's What, Where, fields, Send and
  * follow-up, which `RunButton` and `RunDialog` render. The person's apps come from `useRunOnMyMachine`, which the page
  * awaits in its own setup and hands in, and the CI actions each What is offered from
- * `GET /api/projects/:id/ci-actions/offered`, read in the browser for a person who holds `run:control`. Returned
- * reactive, so a component reads its fields as values.
+ * `GET /api/projects/:id/ci-actions/offered`, read for a person who holds `run:control`: the place's first Whats with
+ * the page, so the button renders on the server as it stays, and any other in the browser. Awaited in the page's
+ * setup, and returned reactive, so a component reads its fields as values.
  */
-export function useRunPlace(options: RunPlaceOptions) {
+export async function useRunPlace(options: RunPlaceOptions) {
   const { projectId, machine } = options;
   const toast = useToast();
   const { can } = useAuth();
@@ -157,6 +158,38 @@ export function useRunPlace(options: RunPlaceOptions) {
   let lastSent: SentRun | null = null;
 
   // ── What each destination offers ──────────────────────────────────────────
+  const requestFetch = useRequestFetch();
+  /** The offers of the Whats the page opens with, read with the page. */
+  const firstOffers = useAsyncData(
+    `run-place-offered-${projectId}-${JSON.stringify(options.whats().map((w) => [w.key, w.ci?.source ?? null]))}`,
+    async () => {
+      if (!mayDispatch.value) return [];
+      return Promise.all(
+        options.whats().flatMap((w) => {
+          if (!w.ci) return [];
+          const source = w.ci.source;
+          return [
+            requestFetch<CiOffered>(`/api/projects/${projectId}/ci-actions/offered`, { query: source })
+              .catch(() => null)
+              .then((offer) => ({ key: w.key, source: JSON.stringify(source), offer })),
+          ];
+        }),
+      );
+    },
+    { default: () => [] },
+  );
+  watch(
+    firstOffers.data,
+    (read) => {
+      for (const { key, source, offer } of read ?? []) {
+        if (offered[key] !== undefined) continue;
+        offeredFor[key] = source;
+        offered[key] = offer;
+      }
+    },
+    { immediate: true },
+  );
+
   async function readOffered(list: RunWhat[]) {
     if (!mayDispatch.value) return;
     await Promise.all(
@@ -195,10 +228,14 @@ export function useRunPlace(options: RunPlaceOptions) {
   );
   const ciAvailable = computed(() => mayDispatch.value && options.whats().some(ciTakes));
   const visible = computed(() => appsAvailable.value || ciAvailable.value);
-  const label = computed(() => {
-    if (appsAvailable.value && ciAvailable.value) return 'Run on my machine or CI';
-    return ciAvailable.value ? 'Run on CI' : 'Run on my machine';
-  });
+  /** The destinations a list of Whats can go to, as the button and the dialog name them. */
+  function runLabel(list: RunWhat[]): string {
+    const apps = machine.shown.value && list.some((w) => w.app != null && 'source' in w.app);
+    const ci = mayDispatch.value && list.some(ciTakes);
+    if (apps && ci) return 'Run on my machine or CI';
+    return ci ? 'Run on CI' : 'Run on my machine';
+  }
+  const label = computed(() => runLabel(options.whats()));
 
   // ── Where ─────────────────────────────────────────────────────────────────
   const appsShown = computed(() => machine.shown.value && whats.value.some((w) => w.app != null));
@@ -222,7 +259,10 @@ export function useRunPlace(options: RunPlaceOptions) {
     });
   });
 
-  /** Every CI action any What of the dialog is offered, each once, in the project's order. */
+  /** The dialog's title: where its Whats, a Next action's included, can go. */
+  const dialogTitle = computed(() => runLabel(whats.value));
+
+  /** Every CI action any What of the dialog is offered, each once, in the order of the Whats and of each offer. */
   const ciActions = computed(() => {
     const seen = new Map<string, CiOfferedAction>();
     for (const w of whats.value) {
@@ -330,6 +370,9 @@ export function useRunPlace(options: RunPlaceOptions) {
     if (branchTimer) clearTimeout(branchTimer);
     branchTimer = setTimeout(() => void readBranches(action, q.trim()), 300);
   }
+  onScopeDispose(() => {
+    if (branchTimer) clearTimeout(branchTimer);
+  });
   const refProblem = computed(() => {
     const value = branch.value.trim();
     return ciPick.value && ciPick.value.branch.mode !== 'fixed' && value ? ciRefProblem(value) : null;
@@ -369,9 +412,10 @@ export function useRunPlace(options: RunPlaceOptions) {
   /** Open the dialog: the last run sent from here while it is shown, else the form on the place's first What. */
   async function openDialog(opening: RunDialogOpening = {}) {
     const fresh = opening.whats != null || opening.what != null || opening.where != null;
-    override.value = opening.whats ?? null;
     open.value = true;
+    // The run shown keeps the Whats it was sent from.
     if (followUp.view.value && !fresh) return;
+    override.value = opening.whats ?? null;
     followUp.reset();
     sendError.value = null;
     whatKey.value = opening.what ?? whats.value[0]?.key;
@@ -383,11 +427,13 @@ export function useRunPlace(options: RunPlaceOptions) {
       (opening.where === 'ci' ? (ciDefault(w) ?? defaultWhere(w, false)) : defaultWhere(w, true)) ?? undefined;
   }
 
-  /** Back to the form, on the What and Where of the last run. */
-  function newRun() {
+  /** Back to the form, on the What and Where of the last run while the dialog still offers them. */
+  async function newRun() {
     followUp.reset();
     sendError.value = null;
-    void prepare();
+    await prepare();
+    if (!whats.value.some((w) => w.key === whatKey.value)) whatKey.value = whats.value[0]?.key;
+    if (what.value && !row(where.value)) where.value = defaultWhere(what.value, false) ?? undefined;
   }
 
   async function sendRun(sent: SentRun) {
@@ -516,10 +562,12 @@ export function useRunPlace(options: RunPlaceOptions) {
     if (followUp.view.value) keepRunWhere(projectId, shortcut.where);
   }
 
+  await firstOffers;
   return reactive({
     projectId,
     visible,
     label,
+    dialogTitle,
     open,
     ready,
     whats,
@@ -562,4 +610,4 @@ export function useRunPlace(options: RunPlaceOptions) {
 }
 
 /** One place's run, as `RunButton` and `RunDialog` take it. */
-export type RunPlace = ReturnType<typeof useRunPlace>;
+export type RunPlace = Awaited<ReturnType<typeof useRunPlace>>;

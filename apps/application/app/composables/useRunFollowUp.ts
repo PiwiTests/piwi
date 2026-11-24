@@ -49,6 +49,10 @@ export function useRunFollowUp(options: { onRun?: (runId: number, followed: Foll
       : `/api/ci-dispatches/${current.view.id}`;
   }
 
+  /** Whether `followed` still follows `current`: the same kind and id, whatever answer it holds now. */
+  const stillFollows = (current: FollowedRun) =>
+    followed.value?.kind === current.kind && followed.value.view.id === current.view.id;
+
   async function read() {
     clear();
     const current = followed.value;
@@ -61,7 +65,7 @@ export function useRunFollowUp(options: { onRun?: (runId: number, followed: Foll
     try {
       const fresh = await $fetch<RunRequestView | CiDispatchView>(urlOf(current));
       // Another one was followed meanwhile, or the page went away.
-      if (disposed || followed.value !== current) return;
+      if (disposed || !stillFollows(current)) return;
       const next = { kind: current.kind, view: fresh } as FollowedRun;
       const before = current.view.runId;
       followed.value = next;
@@ -69,7 +73,7 @@ export function useRunFollowUp(options: { onRun?: (runId: number, followed: Foll
       error.value = null;
       if (before == null && fresh.runId != null) options.onRun?.(fresh.runId, next);
     } catch (e) {
-      if (disposed || followed.value !== current) return;
+      if (disposed || !stillFollows(current)) return;
       error.value = errorMessage(e);
       // Gone for this person (deleted, or its project no longer readable), or they were signed out.
       if ([401, 403, 404].includes(statusOf(e) ?? 0)) return;
@@ -91,7 +95,7 @@ export function useRunFollowUp(options: { onRun?: (runId: number, followed: Foll
     if (current?.kind !== 'request') return;
     try {
       const view = await $fetch<RunRequestView>(`/api/run-requests/${current.view.id}/stop`, { method: 'POST' });
-      if (followed.value === current) followed.value = { kind: 'request', view };
+      if (stillFollows(current)) followed.value = { kind: 'request', view };
       error.value = null;
     } catch (e) {
       error.value = errorMessage(e);

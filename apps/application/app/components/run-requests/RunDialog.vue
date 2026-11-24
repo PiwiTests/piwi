@@ -6,6 +6,7 @@
  * environment and the run options of Copy retry command for an app, the branch and the choice inputs for a CI action.
  * After **Send**, the same window follows what was sent (`RunFollowUp`) until **New run**.
  */
+import { MAX_RERUN_TESTS } from '#shared/ci-dispatch-request';
 import type { RunPlace, RunWhat } from '~/composables/useRunPlace';
 
 const props = defineProps<{ place: RunPlace }>();
@@ -31,8 +32,15 @@ const shownTests = computed(() => {
   return tests.length > 1 ? tests.slice(0, SHOWN_TESTS) : [];
 });
 const moreTests = computed(() => Math.max(0, (what.value?.tests?.length ?? 0) - SHOWN_TESTS));
-/** The line under the chosen What when CI is picked. */
-const ciNote = computed(() => (props.place.ciPick ? what.value?.ci?.note : undefined));
+/** The line under the chosen What when CI is picked, with the most tests a re-run names when it names more. */
+const ciNote = computed(() => {
+  if (!props.place.ciPick) return undefined;
+  const capped =
+    props.place.ciOffer?.kind === 'tests' && (what.value?.count ?? 0) > MAX_RERUN_TESTS
+      ? `A CI re-run names ${MAX_RERUN_TESTS} of them at most.`
+      : null;
+  return [what.value?.ci?.note, capped].filter(Boolean).join(' ') || undefined;
+});
 const ciInputs = computed(() => props.place.ciPick?.inputs ?? []);
 const choiceInputs = computed(() => ciInputs.value.filter((i) => i.kind === 'choice'));
 const fixedInputs = computed(() => ciInputs.value.flatMap((i) => (i.kind === 'fixed' ? [`${i.name}=${i.value}`] : [])));
@@ -48,19 +56,28 @@ const instanceAddress = computed(() => {
 </script>
 
 <template>
-  <UModal v-model:open="place.open" :title="place.label" :ui="{ content: 'max-w-lg' }">
+  <UModal v-model:open="place.open" :title="place.dialogTitle" :ui="{ content: 'max-w-lg' }">
     <template #body>
       <RunFollowUp
         v-if="place.followUp"
         :follow-up="place.followUp"
         :skipped="place.followUp.kind === 'request' ? place.skipped : 0"
-        :error="place.followUpError ?? place.sendError"
+        :error="place.sendError ? `Not sent again: ${place.sendError}` : place.followUpError"
       />
 
       <div v-else class="space-y-4" data-shot="run-dialog">
         <p v-if="place.appPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
           Your app shows the request with its checks and the command; nothing runs until you click
           <strong>Run</strong> there. The run reports here, and only you see it.
+        </p>
+        <p
+          v-else-if="place.ciPick && place.ciOffer?.kind === 'flakeLab'"
+          class="text-sm text-highlighted leading-relaxed"
+          data-testid="run-dialog-sentence"
+        >
+          A lab run: the experiment stays out of the project's history, its notifications and pull-request feedback. It
+          spends CI minutes, and runs against
+          {{ ciEnvironment ? `the ${ciEnvironment} environment` : 'the environment its job sets up' }}.
         </p>
         <p v-else-if="place.ciPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
           A team run: it counts in the project's history, sends its notifications and pull-request feedback, spends CI
@@ -70,7 +87,13 @@ const instanceAddress = computed(() => {
 
         <div v-if="what" class="space-y-1">
           <div class="text-sm font-semibold text-highlighted">What</div>
-          <URadioGroup v-if="whatItems.length > 1" v-model="place.whatKey" :items="whatItems" size="sm">
+          <URadioGroup
+            v-if="whatItems.length > 1"
+            v-model="place.whatKey"
+            :items="whatItems"
+            size="sm"
+            aria-label="What"
+          >
             <template #description="{ item }">
               <span class="break-words">{{ item.description }}</span>
               <template v-if="item.value === what.key">

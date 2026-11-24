@@ -348,7 +348,7 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
 });
 
 // The run button: this test, and every test of its cluster, which CI re-runs; a request to an app names the test only.
-const runPlace = useRunPlace({
+const runPlace = await useRunPlace({
   projectId: executionProjectId.value ?? 0,
   machine: await useRunOnMyMachine(executionProjectId.value ?? 0),
   whats: () => {
