@@ -10,6 +10,7 @@ import { isUnderBaseUrl, normalizeCiServerBaseUrl } from '#shared/ci-server';
 import type { CredentialOption, CredentialSummary } from '#shared/credentials';
 import type { ApiResponse } from '~~/types/api';
 import { ciServerRequestPreview, customizeCiServerForm, type CiServerFormState } from '~/utils/ci-server-form';
+import type { CiDeclaredItem } from '~/utils/ci-action-form';
 
 const props = defineProps<{
   /** The instance's `PIWI_CI_SERVER_URL`, or null when it sets none. */
@@ -18,6 +19,11 @@ const props = defineProps<{
   projectId: number;
   /** The action's inputs as name and value pairs, shown in the request preview. */
   inputs?: [string, string][];
+  /** The jobs the CI server lists, offered for the job; null while it lists none. */
+  jobItems?: CiDeclaredItem[] | null;
+  /** The parameters the job declares, offered for the arguments and dispatch id parameters; null while unknown. */
+  fieldItems?: CiDeclaredItem[] | null;
+  jobsLoading?: boolean;
 }>();
 const state = defineModel<CiServerFormState>({ required: true });
 /** Why a save of the project would refuse this target's credential, or null: the editor refuses it first. */
@@ -178,34 +184,45 @@ function customize() {
     <template v-if="state.preset === 'jenkins'">
       <div class="space-y-2">
         <p class="text-xs text-muted">
-          Job, as Jenkins shows its path (<code class="font-mono">polaris/e2e</code>;
-          <code class="font-mono">polaris/e2e/{branch}</code> for a multibranch pipeline)
+          The job as Jenkins shows its path (<code class="font-mono">polaris/e2e</code>;
+          <code class="font-mono">polaris/e2e/{branch}</code> for a multibranch pipeline, read on its default branch)
         </p>
-        <div class="grid gap-2 sm:grid-cols-2">
-          <UInput
-            v-model="state.rerun.job"
-            placeholder="job, e.g. polaris/e2e"
-            aria-label="Jenkins job"
-            class="font-mono"
-          />
-          <UInput
-            v-model="state.rerun.ref"
-            placeholder="default branch, e.g. main"
-            aria-label="Jenkins default branch"
-            class="font-mono"
-          />
-          <UInput
-            v-model="state.rerun.argsParameter"
-            placeholder="arguments parameter: PIWI_RERUN_ARGS"
-            aria-label="Jenkins arguments parameter"
-            class="font-mono"
-          />
-          <UInput
-            v-model="state.rerun.dispatchParameter"
-            placeholder="dispatch id parameter: PIWI_ORIGIN_REF"
-            aria-label="Jenkins dispatch id parameter"
-            class="font-mono"
-          />
+        <div class="grid gap-3 sm:grid-cols-2">
+          <UFormField label="Job" name="ciServerJob">
+            <CiDeclaredValueInput
+              v-model="state.rerun.job"
+              :items="jobItems ?? null"
+              :loading="jobsLoading"
+              placeholder="e.g. polaris/e2e"
+              aria-label="Jenkins job"
+            />
+          </UFormField>
+          <UFormField label="Default branch" name="ciServerRef">
+            <UInput
+              v-model="state.rerun.ref"
+              placeholder="e.g. main"
+              aria-label="Jenkins default branch"
+              class="w-full font-mono"
+            />
+          </UFormField>
+          <UFormField label="Arguments parameter" name="ciServerArgs">
+            <CiDeclaredValueInput
+              v-model="state.rerun.argsParameter"
+              :items="fieldItems ?? null"
+              optional
+              placeholder="PIWI_RERUN_ARGS"
+              aria-label="Jenkins arguments parameter"
+            />
+          </UFormField>
+          <UFormField label="Dispatch id parameter" name="ciServerDispatchId">
+            <CiDeclaredValueInput
+              v-model="state.rerun.dispatchParameter"
+              :items="fieldItems ?? null"
+              optional
+              placeholder="PIWI_ORIGIN_REF"
+              aria-label="Jenkins dispatch id parameter"
+            />
+          </UFormField>
         </div>
       </div>
       <div class="flex flex-wrap gap-2">

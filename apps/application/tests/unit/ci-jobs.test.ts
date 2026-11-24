@@ -3,6 +3,10 @@ import { beforeEach, describe, expect, test, vi } from 'vitest';
 const repo = vi.hoisted(() => ({
   provider: 'github' as string,
   files: {} as Record<string, string>,
+  /** Files whose read fails. */
+  failing: new Set<string>(),
+  /** The commit each branch names now. */
+  heads: {} as Record<string, string>,
   asked: [] as string[][],
   options: [] as Array<Record<string, unknown> | undefined>,
 }));
@@ -19,19 +23,22 @@ vi.mock('../../server/utils/scm', () => ({
     return {
       provider: repo.provider,
       getDefaultBranch: async () => 'trunk',
+      getBranchHead: async (branch: string) => repo.heads[branch] ?? null,
       fetchTree: async (ref: string) => {
         repo.asked.push(['tree', ref]);
         return Object.keys(repo.files);
       },
       fetchFileAtRef: async (path: string, ref: string) => {
         repo.asked.push([path, ref]);
+        if (repo.failing.has(path)) throw new Error('GitHub answered 403: rate limit exceeded');
         return path in repo.files ? { path, content: repo.files[path], truncated: false } : null;
       },
     };
   },
 }));
 
-const { listCiJobs, listCiJobFields } = await import('../../server/utils/ci-jobs');
+const { listCiJobs, listCiJobFields, resolveCiListingRequest } = await import('../../server/utils/ci-jobs');
+const { openTempDb } = await import('./temp-db');
 
 const db = {} as never;
 const use = { actor: { userId: null, apiKeyId: null } };
@@ -42,6 +49,8 @@ beforeEach(() => {
   projectId++;
   repo.provider = 'github';
   repo.files = {};
+  repo.failing.clear();
+  repo.heads = {};
   repo.asked.length = 0;
 });
 
@@ -67,7 +76,7 @@ describe('GitHub', () => {
     expect(repo.asked).toContainEqual(['.github/workflows/e2e.yml', 'release']);
   });
 
-  test('keeps a listing five minutes, whichever workflow is picked, until a refresh', async () => {
+  test('keeps a listing whichever workflow is picked, until a refresh', async () => {
     repo.files = { '.github/workflows/e2e.yml': 'on: workflow_dispatch\n' };
     await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
     repo.asked.length = 0;
@@ -75,6 +84,54 @@ describe('GitHub', () => {
     expect(repo.asked).toEqual([]);
     await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use, { refresh: true });
     expect(repo.asked).toContainEqual(['tree', 'main']);
+  });
+
+  test('reads a branch at the commit it names now, so a push is read at once', async () => {
+    repo.heads = { main: 'c0ffee1' };
+    repo.files = { '.github/workflows/e2e.yml': 'on: workflow_dispatch\n' };
+    await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
+    expect(repo.asked).toContainEqual(['tree', 'c0ffee1']);
+    expect(repo.asked).toContainEqual(['.github/workflows/e2e.yml', 'c0ffee1']);
+    repo.asked.length = 0;
+    await listCiJobFields(db, projectId, { type: 'github', ref: 'main', workflow: 'e2e.yml' }, use);
+    expect(repo.asked).toEqual([['.github/workflows/e2e.yml', 'c0ffee1']]);
+  });
+
+  test('names the workflow files it could not read, and keeps no list that may lack one', async () => {
+    repo.files = {
+      '.github/workflows/e2e.yml': 'on: workflow_dispatch\n',
+      '.github/workflows/nightly.yml': 'on: workflow_dispatch\n',
+    };
+    repo.failing.add('.github/workflows/nightly.yml');
+    const listing = await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
+    expect(listing).toEqual({
+      jobs: [{ id: 'e2e.yml', label: 'e2e.yml' }],
+      truncated: false,
+      message: 'nightly.yml could not be read, so the list may lack a workflow.',
+    });
+    repo.asked.length = 0;
+    await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
+    expect(repo.asked).toContainEqual(['tree', 'main']);
+    repo.failing.add('.github/workflows/e2e.yml');
+    expect(
+      await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use, { refresh: true }),
+    ).toEqual({ jobs: null, truncated: false, message: expect.stringContaining('rate limit exceeded') });
+  });
+
+  test('reads the first workflow files only, and says so', async () => {
+    for (let i = 0; i < 45; i++) repo.files[`.github/workflows/w${String(i).padStart(2, '0')}.yml`] = 'on: push\n';
+    const listing = await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
+    expect(listing).toMatchObject({ jobs: [], truncated: true, message: expect.stringContaining('first 40') });
+    expect(repo.asked.filter(([path]) => path.startsWith('.github/'))).toHaveLength(40);
+  });
+
+  test('lists and reads a workflow whose file name holds a space', async () => {
+    repo.files = { '.github/workflows/e2e nightly.yml': 'on:\n  workflow_dispatch:\n    inputs:\n      args: {}\n' };
+    const listing = await listCiJobs(db, projectId, { type: 'github', ref: 'main', workflow: '' }, use);
+    expect(listing.jobs).toEqual([{ id: 'e2e nightly.yml', label: 'e2e nightly.yml' }]);
+    expect(
+      await listCiJobFields(db, projectId, { type: 'github', ref: 'main', workflow: 'e2e nightly.yml' }, use),
+    ).toMatchObject({ fields: [{ name: 'args' }] });
   });
 
   test('says when no workflow can be dispatched', async () => {
@@ -131,6 +188,16 @@ describe('GitHub', () => {
 });
 
 describe('GitLab', () => {
+  test('reads a CI file that reuses its anchors in every job', async () => {
+    repo.provider = 'gitlab';
+    let file = '.defaults: &defaults\n  variables:\n    SUITE: smoke\n';
+    for (let i = 0; i < 150; i++) file += `job${i}:\n  <<: *defaults\n  script: [x]\n`;
+    repo.files = { '.gitlab-ci.yml': file };
+    expect(await listCiJobFields(db, projectId, { type: 'gitlab', ref: 'main' }, use)).toMatchObject({
+      fields: [{ name: 'SUITE', default: 'smoke' }],
+    });
+  });
+
   test('has no job to pick, and suggests the variables its CI file sets', async () => {
     repo.provider = 'gitlab';
     repo.files = {
@@ -164,5 +231,27 @@ describe('Bitbucket', () => {
     expect((await listCiJobFields(db, projectId, { type: 'bitbucket', pipeline: 'nightly' }, use)).message).toContain(
       'no custom pipeline named "nightly"',
     );
+  });
+});
+
+describe('a listing request', () => {
+  test('refuses a credential the project may not name, as a save would', async () => {
+    const { db: temp, close } = await openTempDb();
+    try {
+      const refused = await resolveCiListingRequest(temp as never, 1, {
+        target: { type: 'github', ref: 'main', credentialId: 999 },
+        name: 'Smoke',
+      });
+      expect(refused).toEqual({ error: expect.stringContaining('"Smoke": no SCM credential 999') });
+      expect(
+        await resolveCiListingRequest(temp as never, 1, {
+          target: { type: 'github', ref: 'main' },
+          actionId: 'a1b2c3d4',
+          refresh: true,
+        }),
+      ).toEqual({ target: { type: 'github', ref: 'main', workflow: '' }, refresh: true, actionId: 'a1b2c3d4' });
+    } finally {
+      await close();
+    }
   });
 });

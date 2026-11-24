@@ -1,11 +1,11 @@
 /**
  * CI action listings: the jobs a target can dispatch and the fields one job
  * declares, read without starting anything, for the CI action editor. A
- * repository host's come from its workflow or pipeline file, read at the ref
- * with the action's SCM credential, else the project's; a CI server's from the
- * CI server, with the credential a dispatch would carry
- * (`ci-server-dispatch.ts`). An answer that listed something is kept five
- * minutes, by project and target.
+ * repository host's come from its workflow or pipeline file, read at the
+ * commit the ref names now (so a push is read at once) with the action's SCM
+ * credential, else the project's; a CI server's from the CI server, with the
+ * credential a dispatch would carry (`ci-server-dispatch.ts`). An answer whose
+ * reads all succeeded is kept five minutes, by project and target.
  */
 import { parse as parseYaml, parseAllDocuments } from 'yaml';
 import { TtlCache } from './ttl-cache';
@@ -14,7 +14,12 @@ import { CredentialRefusedError, type CredentialActor } from './credentials';
 import { readProjectRepositoryUrl } from './scm/project-repository';
 import { listCiServerJobs, readCiServerJobFields, type CiServerUse } from './ci-server-dispatch';
 import { configuredGitlabHosts } from './scm/gitlab-hosts';
-import { ciServerTargetOfListing, resolveCiListingTarget, type CiListingTarget } from '#shared/ci-actions';
+import {
+  ciServerTargetOfListing,
+  isCiActionId,
+  resolveCiListingTarget,
+  type CiListingTarget,
+} from '#shared/ci-actions';
 import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
 import {
   bitbucketCustomPipelines,
@@ -38,9 +43,17 @@ type ActionScm = NonNullable<Awaited<ReturnType<typeof createScmProvider>>>;
 const HOST_LABEL: Record<ScmProviderName, string> = { github: 'GitHub', gitlab: 'GitLab', bitbucket: 'Bitbucket' };
 const GITLAB_CI_FILE = '.gitlab-ci.yml';
 const BITBUCKET_PIPELINES_FILE = 'bitbucket-pipelines.yml';
-const WORKFLOW_FILE = /^\.github\/workflows\/([^/]+\.ya?ml)$/i;
+/** A workflow file name: what GitHub runs, directly under `.github/workflows/`. */
+const WORKFLOW_FILE_NAME = /^[^/]+\.ya?ml$/i;
+const WORKFLOWS_DIRECTORY = '.github/workflows/';
 /** How many workflow files a GitHub listing reads at once. */
 const WORKFLOW_READS_AT_ONCE = 8;
+/**
+ * How many alias uses a CI file may resolve: a pipeline file reuses its anchors
+ * a lot (`<<: *defaults` in every job), and the limit still stops a file whose
+ * aliases nest to expand without end.
+ */
+const MAX_YAML_ALIASES = 10_000;
 
 const jobsCache = new TtlCache<CiJobListing>(5 * 60 * 1000);
 const fieldsCache = new TtlCache<CiJobFieldListing>(5 * 60 * 1000);
@@ -75,23 +88,54 @@ export async function actionScmProvider(
   return { scm };
 }
 
-/** A file's text at a ref, or why it could not be read, for the user. */
-async function readFile(scm: ActionScm, path: string, ref: string): Promise<{ text: string } | { message: string }> {
+/** Where a read goes: the ref as the user named it, and the commit it names now (the ref itself when not a branch). */
+interface ReadAt {
+  ref: string;
+  commit: string;
+}
+
+/**
+ * The commit a branch names now, so a file is read as it is after the last
+ * push, past what the provider keeps by ref; a tag, a commit or a branch that
+ * cannot be resolved is read as it is named.
+ */
+async function readAt(scm: ActionScm, ref: string): Promise<ReadAt> {
   try {
-    const file = await scm.fetchFileAtRef(path, ref);
-    if (file) return { text: file.content };
-    return {
-      message: `${path} could not be read at ${ref}: it is missing there, or the SCM credential cannot read it.`,
-    };
-  } catch (e) {
-    return { message: `${path} could not be read at ${ref}: ${e instanceof Error ? e.message : String(e)}.` };
+    return { ref, commit: (await scm.getBranchHead(ref)) ?? ref };
+  } catch {
+    return { ref, commit: ref };
   }
 }
 
-/** One YAML document, or undefined when the text is not valid YAML. */
-function yamlDocument(text: string): unknown {
+/** A file's text at a ref, or why it could not be read, for the user. */
+async function readFile(scm: ActionScm, path: string, at: ReadAt): Promise<{ text: string } | { message: string }> {
   try {
-    return parseYaml(text);
+    const file = await scm.fetchFileAtRef(path, at.commit);
+    if (file) return { text: file.content };
+    return {
+      message: `${path} could not be read at ${at.ref}: it is missing there, or the SCM credential cannot read it.`,
+    };
+  } catch (e) {
+    return { message: `${path} could not be read at ${at.ref}: ${e instanceof Error ? e.message : String(e)}.` };
+  }
+}
+
+/** One YAML document, or undefined when the text is not valid YAML or its aliases expand past the limit. */
+export function yamlDocument(text: string): unknown {
+  try {
+    return parseYaml(text, { maxAliasCount: MAX_YAML_ALIASES });
+  } catch {
+    return undefined;
+  }
+}
+
+/** Every YAML document of a file, or undefined when one is not valid YAML or its aliases expand past the limit. */
+function yamlDocuments(text: string): unknown[] | undefined {
+  try {
+    const documents = parseAllDocuments(text);
+    const list = Array.isArray(documents) ? documents : [];
+    if (list.some((d) => d.errors.length > 0)) return undefined;
+    return list.map((d) => d.toJS({ maxAliasCount: MAX_YAML_ALIASES }) as unknown);
   } catch {
     return undefined;
   }
@@ -114,11 +158,11 @@ export async function readGithubWorkflow(
       message: `A workflow named by its numeric id (${workflow}) can't be read by id: name its file, such as e2e.yml.`,
     };
   }
-  if (!/^[\w.-]+\.ya?ml$/i.test(workflow)) {
+  if (!WORKFLOW_FILE_NAME.test(workflow)) {
     return { refused: false, message: `"${workflow}" is not a workflow file name, such as e2e.yml.` };
   }
-  const path = `.github/workflows/${workflow}`;
-  const file = await readFile(scm, path, ref);
+  const path = `${WORKFLOWS_DIRECTORY}${workflow}`;
+  const file = await readFile(scm, path, await readAt(scm, ref));
   if ('message' in file) return { refused: false, message: file.message };
   const document = yamlDocument(file.text);
   if (document === undefined) return { refused: false, message: `${path} is not valid YAML at ${ref}.` };
@@ -134,53 +178,65 @@ export async function readGithubWorkflow(
 
 const noJobs = (message: string): CiJobListing => ({ jobs: null, truncated: false, message });
 
-/** The workflows at a ref that GitHub can dispatch: those with a `workflow_dispatch` trigger. */
-async function listGithubWorkflows(scm: ActionScm, ref: string): Promise<CiJobListing> {
-  const tree = await scm.fetchTree(ref).catch(() => null);
+/** The workflows at a ref that GitHub can dispatch, and whether a file could not be read (so the list may lack one). */
+async function listGithubWorkflows(scm: ActionScm, ref: string): Promise<CiJobListing & { complete: boolean }> {
+  const at = await readAt(scm, ref);
+  const tree = await scm.fetchTree(at.commit).catch(() => null);
   if (!tree) {
-    return noJobs(
-      `The repository's files could not be read at ${ref}: the ref is missing, or the SCM credential cannot read it.`,
-    );
+    return {
+      ...noJobs(
+        `The repository's files could not be read at ${ref}: the ref is missing, or the SCM credential cannot read it.`,
+      ),
+      complete: false,
+    };
   }
   const files = tree
-    .map((path) => WORKFLOW_FILE.exec(path)?.[1])
-    .filter((file): file is string => !!file)
+    .filter((path) => path.startsWith(WORKFLOWS_DIRECTORY))
+    .map((path) => path.slice(WORKFLOWS_DIRECTORY.length))
+    .filter((file) => WORKFLOW_FILE_NAME.test(file))
     .sort();
   const read = files.slice(0, MAX_CI_WORKFLOW_FILES);
   const jobs: CiJob[] = [];
-  for (let at = 0; at < read.length; at += WORKFLOW_READS_AT_ONCE) {
-    const batch = read.slice(at, at + WORKFLOW_READS_AT_ONCE);
-    const texts = await Promise.all(batch.map((file) => readFile(scm, `.github/workflows/${file}`, ref)));
+  const unread: string[] = [];
+  let firstFailure: string | null = null;
+  for (let start = 0; start < read.length; start += WORKFLOW_READS_AT_ONCE) {
+    const batch = read.slice(start, start + WORKFLOW_READS_AT_ONCE);
+    const texts = await Promise.all(batch.map((file) => readFile(scm, `${WORKFLOWS_DIRECTORY}${file}`, at)));
     texts.forEach((text, index) => {
       const file = batch[index]!;
-      const workflow = 'text' in text ? yamlDocument(text.text) : undefined;
+      if ('message' in text) {
+        unread.push(file);
+        firstFailure ??= text.message;
+        return;
+      }
+      const workflow = yamlDocument(text.text);
       if (workflow === undefined || githubDispatchFields(workflow) === null) return;
       const name = githubWorkflowName(workflow);
       jobs.push(name ? { id: file, label: name, description: file } : { id: file, label: file });
     });
   }
-  const truncated = files.length > read.length;
-  let message: string | null = null;
-  if (truncated)
-    message = `Only the first ${MAX_CI_WORKFLOW_FILES} workflow files are read: type the file name of another.`;
-  else if (jobs.length === 0) {
-    message = `No workflow at ${ref} has a workflow_dispatch trigger: GitHub dispatches only such a workflow.`;
+  if (read.length > 0 && unread.length === read.length) {
+    return { ...noJobs(firstFailure ?? `The workflow files could not be read at ${ref}.`), complete: false };
   }
-  return { jobs, truncated, message };
+  const truncated = files.length > read.length;
+  const notes: string[] = [];
+  if (unread.length > 0) notes.push(`${unread.join(', ')} could not be read, so the list may lack a workflow.`);
+  if (truncated)
+    notes.push(`Only the first ${MAX_CI_WORKFLOW_FILES} workflow files are read: type the file name of another.`);
+  else if (jobs.length === 0 && unread.length === 0) {
+    notes.push(`No workflow at ${ref} has a workflow_dispatch trigger: GitHub dispatches only such a workflow.`);
+  }
+  return { jobs, truncated, message: notes.join(' ') || null, complete: unread.length === 0 };
 }
 
 /** The variables a GitLab CI file at a ref sets. */
 async function gitlabFields(scm: ActionScm, ref: string): Promise<CiJobFieldListing> {
-  const file = await readFile(scm, GITLAB_CI_FILE, ref);
+  const file = await readFile(scm, GITLAB_CI_FILE, await readAt(scm, ref));
   if ('message' in file) {
     return { fields: null, message: `${file.message} Piwi reads the CI file at the repository's root only.` };
   }
-  const documents = parseAllDocuments(file.text);
-  const list = Array.isArray(documents) ? documents : [];
-  if (list.some((d) => d.errors.length > 0)) {
-    return { fields: null, message: `${GITLAB_CI_FILE} is not valid YAML at ${ref}.` };
-  }
-  const parsed: unknown[] = list.map((d) => d.toJS());
+  const parsed = yamlDocuments(file.text);
+  if (!parsed) return { fields: null, message: `${GITLAB_CI_FILE} is not valid YAML at ${ref}.` };
   const fields = gitlabVariableFields(parsed);
   const includes = parsed.some((d) => typeof d === 'object' && d !== null && 'include' in d);
   const notes = [
@@ -193,7 +249,7 @@ async function gitlabFields(scm: ActionScm, ref: string): Promise<CiJobFieldList
 /** A Bitbucket Pipelines file, read on the branch a dispatch with no branch runs on. */
 async function bitbucketDocument(scm: ActionScm): Promise<{ document: unknown; branch: string } | { message: string }> {
   const branch = (await scm.getDefaultBranch().catch(() => null)) || 'main';
-  const file = await readFile(scm, BITBUCKET_PIPELINES_FILE, branch);
+  const file = await readFile(scm, BITBUCKET_PIPELINES_FILE, await readAt(scm, branch));
   if ('message' in file) return file;
   const document = yamlDocument(file.text);
   if (document === undefined) return { message: `${BITBUCKET_PIPELINES_FILE} is not valid YAML at ${branch}.` };
@@ -236,9 +292,9 @@ const READ_WHAT: Record<ScmProviderName, string> = {
 };
 
 const cacheKey = (projectId: number, target: CiListingTarget) => `${projectId}:${JSON.stringify(target)}`;
-/** What a job listing depends on: the target, whichever job is picked. */
+/** What a job listing depends on: the target, whichever job is picked (and, on a CI server, whichever branch). */
 const jobsKey = (projectId: number, target: CiListingTarget) =>
-  `${projectId}:${JSON.stringify({ ...target, workflow: '', pipeline: '', job: '' })}`;
+  `${projectId}:${JSON.stringify({ ...target, workflow: '', pipeline: '', job: '', ...(target.type === 'ci-server' ? { ref: '' } : {}) })}`;
 
 /**
  * The jobs a target lists, for the CI action editor: a repository's
@@ -260,6 +316,7 @@ export async function listCiJobs(
   if (hit) return hit;
 
   let listing: CiJobListing;
+  let complete = true;
   if (target.type === 'ci-server') {
     listing = await listCiServerJobs(db, projectId, ciServerTargetOfListing(target), use);
   } else {
@@ -272,10 +329,12 @@ export async function listCiJobs(
       READ_WHAT[target.type],
     );
     if ('message' in opened) listing = noJobs(opened.message);
-    else if (target.type === 'github') listing = await listGithubWorkflows(opened.scm, target.ref);
-    else listing = await listBitbucketPipelines(opened.scm);
+    else if (target.type === 'github') {
+      ({ complete, ...listing } = await listGithubWorkflows(opened.scm, target.ref));
+    } else listing = await listBitbucketPipelines(opened.scm);
   }
-  if (listing.jobs) jobsCache.set(key, listing);
+  // A list some file was missing from is read again next time.
+  if (listing.jobs && complete) jobsCache.set(key, listing);
   return listing;
 }
 
@@ -323,7 +382,7 @@ export async function listCiJobFields(
   if (listing.fields && listing.fields.length > MAX_CI_JOB_FIELDS) {
     listing = {
       fields: listing.fields.slice(0, MAX_CI_JOB_FIELDS),
-      message: `Only the first ${MAX_CI_JOB_FIELDS} fields are listed.`,
+      message: [listing.message, `Only the first ${MAX_CI_JOB_FIELDS} fields are listed.`].filter(Boolean).join(' '),
     };
   }
   if (listing.fields) fieldsCache.set(key, listing);
@@ -331,16 +390,18 @@ export async function listCiJobFields(
 }
 
 /**
- * A listing request's body (`{ target, name?, refresh? }`, the target as an
- * action's, its job optional) as the target to list from, or why it cannot be
- * listed from: a target that names nothing to read, or a credential the
- * project may not name (refused as a save of the action would refuse it).
+ * A listing request's body (`{ target, name?, actionId?, refresh? }`, the
+ * target as an action's, its job optional) as the target to list from, or why
+ * it cannot be listed from: a target that names nothing to read, or a
+ * credential the project may not name (refused as a save of the action would
+ * refuse it). `actionId`, the action being edited, names it in the credential
+ * log.
  */
 export async function resolveCiListingRequest(
   db: DbClient,
   projectId: number,
   body: unknown,
-): Promise<{ target: CiListingTarget; refresh: boolean } | { error: string }> {
+): Promise<{ target: CiListingTarget; refresh: boolean; actionId?: string } | { error: string }> {
   const raw = typeof body === 'object' && body !== null ? (body as Record<string, unknown>) : {};
   const resolved = resolveCiListingTarget(raw.target);
   if ('error' in resolved) return resolved;
@@ -354,5 +415,6 @@ export async function resolveCiListingRequest(
     await readProjectRepositoryUrl(db, projectId),
   );
   if (problem) return { error: problem };
-  return { target: resolved.target, refresh: raw.refresh === true };
+  const actionId = typeof raw.actionId === 'string' && isCiActionId(raw.actionId) ? raw.actionId : undefined;
+  return { target: resolved.target, refresh: raw.refresh === true, ...(actionId ? { actionId } : {}) };
 }

@@ -54,8 +54,10 @@ import type { DbClient } from '../database';
 const CI_SERVER_TIMEOUT_MS = 10_000;
 /** The most of an answer read: enough for its link, build number or error message. */
 const MAX_ANSWER_BYTES = 64 * 1024;
-/** The most of a listing's answer read: a CI server's jobs and folders, or a job's parameters. */
-const MAX_LISTING_ANSWER_BYTES = 2 * 1024 * 1024;
+/** The most of a read's answer read (Check, a listing): a CI server's jobs and folders, or a job's parameters. */
+const MAX_READ_ANSWER_BYTES = 2 * 1024 * 1024;
+/** Why a read's answer is not read, for the user. */
+const READ_TOO_LARGE = `The CI server's answer is larger than ${MAX_READ_ANSWER_BYTES / 1024 / 1024} MB, the most Piwi reads.`;
 /** The most of a CI server's error message shown. */
 const MAX_ERROR_MESSAGE = 200;
 
@@ -446,7 +448,16 @@ export function prepareCiServerCheck(input: {
   const headers: Record<string, string> = { Accept: 'application/json' };
   const header = credential ? authHeader(auth, credential) : null;
   if (header) headers[header[0]] = header[1];
-  return { method: 'GET', url: input.url, headers, body: null, credential, custom: false, droppedInputs: [] };
+  return {
+    method: 'GET',
+    url: input.url,
+    headers,
+    body: null,
+    credential,
+    custom: false,
+    droppedInputs: [],
+    maxAnswerBytes: MAX_READ_ANSWER_BYTES,
+  };
 }
 
 /** What a non-2xx answer to Check means, for the user. */
@@ -516,6 +527,10 @@ export async function checkCiServerTarget(
           missing: [],
           message: checkAnswerMessage(answer, !!request.credential),
         });
+        continue;
+      }
+      if (answer.truncated) {
+        results.push({ kind: plan.kind, ok: false, missing: [], message: READ_TOO_LARGE });
         continue;
       }
       const finding = ciServerCheckFinding(
@@ -594,20 +609,14 @@ async function readForListing(
   notFound: string,
 ): Promise<{ json: unknown } | { message: string }> {
   try {
-    const prepare = (withSecret: CiServerCredential | null): OutgoingCiRequest => ({
-      ...prepareCiServerCheck({ target, url, credential: withSecret }),
-      maxAnswerBytes: MAX_LISTING_ANSWER_BYTES,
-    });
+    const prepare = (withSecret: CiServerCredential | null) =>
+      prepareCiServerCheck({ target, url, credential: withSecret });
     const request = prepare(credential);
     const answer = await sendWithCredential(db, request, prepare, { projectId, feature: 'ci-list', ...use });
     if (answer.status < 200 || answer.status >= 300) {
       return { message: listingAnswerMessage(answer, !!request.credential, notFound) };
     }
-    if (answer.truncated) {
-      return {
-        message: `The CI server's answer is larger than ${MAX_LISTING_ANSWER_BYTES / 1024 / 1024} MB: type the job instead.`,
-      };
-    }
+    if (answer.truncated) return { message: READ_TOO_LARGE };
     const json = parseJson(answer.text);
     return json === null ? { message: 'The CI server did not answer JSON.' } : { json };
   } catch (e) {

@@ -311,6 +311,12 @@ describe('the CI action editor’s listings in the demo', () => {
     ]);
   });
 
+  test('answers a job its Jenkins does not hold as the server does', async () => {
+    expect(
+      await handleDemoRequest('/api/projects/1/ci-actions/fields', 'POST', { target: jenkinsTarget('api/gone') }),
+    ).toEqual({ fields: null, message: expect.stringContaining('No job at this path') });
+  });
+
   test('has no repository to read, and refuses what names nothing to read', async () => {
     expect(
       await handleDemoRequest('/api/projects/1/ci-actions/jobs', 'POST', {

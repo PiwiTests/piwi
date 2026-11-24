@@ -21,7 +21,7 @@ export type CiJobFieldType = (typeof CI_JOB_FIELD_TYPES)[number];
 export interface CiJobField {
   name: string;
   type: CiJobFieldType;
-  /** Whether the CI refuses a dispatch that sends no value and has no default for it (GitHub only). */
+  /** Whether the target marks it required (GitHub only): a dispatch must send it when it has no default. */
   required: boolean;
   /** The value the CI uses when a dispatch sends none; never kept for a secret. */
   default?: string;
@@ -128,13 +128,13 @@ function unique(fields: CiJobField[]): CiJobField[] {
   return out;
 }
 
-const GITHUB_INPUT_TYPES: Record<string, CiJobFieldType> = {
-  string: 'string',
-  boolean: 'boolean',
-  choice: 'choice',
-  number: 'number',
-  environment: 'environment',
-};
+const GITHUB_INPUT_TYPES = new Map<unknown, CiJobFieldType>([
+  ['string', 'string'],
+  ['boolean', 'boolean'],
+  ['choice', 'choice'],
+  ['number', 'number'],
+  ['environment', 'environment'],
+]);
 
 /**
  * The inputs a GitHub workflow's `workflow_dispatch` trigger declares, or null
@@ -151,7 +151,7 @@ export function githubDispatchFields(workflow: unknown): CiJobField[] | null {
   return unique(
     Object.entries(inputs).map(([name, raw]) => {
       const spec = isRecord(raw) ? raw : {};
-      const type = GITHUB_INPUT_TYPES[typeof spec.type === 'string' ? spec.type : 'string'] ?? 'string';
+      const type = GITHUB_INPUT_TYPES.get(spec.type) ?? 'string';
       return field(name, type, spec.required === true || spec.required === 'true', spec);
     }),
   );
@@ -270,13 +270,13 @@ const jenkinsJobsTree = (levels: number): string =>
 /** The `tree` of a Jenkins listing: the jobs under the base URL, folders read three levels deep. */
 export const JENKINS_JOBS_TREE = jenkinsJobsTree(JENKINS_JOB_LEVELS);
 
-const JENKINS_PARAMETER_TYPES: Record<string, CiJobFieldType> = {
-  StringParameterDefinition: 'string',
-  TextParameterDefinition: 'text',
-  ChoiceParameterDefinition: 'choice',
-  BooleanParameterDefinition: 'boolean',
-  PasswordParameterDefinition: 'secret',
-};
+const JENKINS_PARAMETER_TYPES = new Map<unknown, CiJobFieldType>([
+  ['StringParameterDefinition', 'string'],
+  ['TextParameterDefinition', 'text'],
+  ['ChoiceParameterDefinition', 'choice'],
+  ['BooleanParameterDefinition', 'boolean'],
+  ['PasswordParameterDefinition', 'secret'],
+]);
 
 /**
  * The parameters a Jenkins job's JSON (read with {@link JENKINS_PARAMETERS_TREE})
@@ -290,7 +290,7 @@ export function jenkinsParameterFields(json: unknown): CiJobField[] | null {
     const definitions = isRecord(property) ? property.parameterDefinitions : null;
     for (const definition of Array.isArray(definitions) ? definitions : []) {
       if (!isRecord(definition) || typeof definition.name !== 'string') continue;
-      const type = JENKINS_PARAMETER_TYPES[typeof definition.type === 'string' ? definition.type : ''] ?? 'string';
+      const type = JENKINS_PARAMETER_TYPES.get(definition.type) ?? 'string';
       const fallback = isRecord(definition.defaultParameterValue) ? definition.defaultParameterValue.value : undefined;
       fields.push(
         field(definition.name, type, false, {
@@ -320,24 +320,19 @@ export function jenkinsJobs(json: unknown): { jobs: CiJob[]; truncated: boolean 
   if (!isRecord(json) || !Array.isArray(json.jobs)) return null;
   const jobs: CiJob[] = [];
   let truncated = false;
+  const add = (id: string) => {
+    if (jobs.length < MAX_CI_JOBS) jobs.push({ id, label: id });
+    else truncated = true;
+  };
   const visit = (items: unknown[], prefix: string) => {
     for (const item of items) {
-      if (jobs.length >= MAX_CI_JOBS) {
-        truncated = true;
-        return;
-      }
       if (!isRecord(item) || typeof item.name !== 'string' || !item.name) continue;
       const path = `${prefix}${item.name}`;
       const cls = typeof item._class === 'string' ? item._class : '';
-      if (isJenkinsMultibranch(cls)) {
-        jobs.push({ id: `${path}/{branch}`, label: `${path}/{branch}` });
-      } else if (Array.isArray(item.jobs)) {
-        visit(item.jobs, `${path}/`);
-      } else if (isJenkinsFolder(cls)) {
-        truncated = true;
-      } else if (item.buildable !== false) {
-        jobs.push({ id: path, label: path });
-      }
+      if (isJenkinsMultibranch(cls)) add(`${path}/{branch}`);
+      else if (Array.isArray(item.jobs)) visit(item.jobs, `${path}/`);
+      else if (isJenkinsFolder(cls)) truncated = true;
+      else if (item.buildable !== false) add(path);
     }
   };
   visit(json.jobs, '');

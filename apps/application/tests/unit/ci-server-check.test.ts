@@ -10,7 +10,6 @@ import {
   type CiServerCheckPlan,
   type CiServerTarget,
 } from '#shared/ci-server';
-import { JENKINS_PARAMETERS_TREE } from '#shared/ci-job-fields';
 import { insertCredential } from '#shared/handlers/credentials';
 import {
   checkCiServerTarget,
@@ -35,7 +34,9 @@ const ENV = [
   'PIWI_CI_SERVER_TOKEN',
   'PIWI_CI_SERVER_HOSTS',
 ];
-const TREE = new URLSearchParams([['tree', JENKINS_PARAMETERS_TREE]]).toString();
+const TREE = new URLSearchParams([
+  ['tree', 'property[parameterDefinitions[name,type,description,choices,defaultParameterValue[value]]]'],
+]).toString();
 
 afterEach(() => {
   for (const name of ENV) delete process.env[name];
@@ -251,6 +252,28 @@ describe('checking a job on a CI server', () => {
           ],
         }),
       );
+    },
+    '/job/large/api/json': (res) => {
+      // A choice of 1,500 spec paths: past the 64 KB a dispatch's answer is read to.
+      const choices = Array.from({ length: 1500 }, (_, i) => `tests/area-${i}/checkout-flow-${i}.spec.ts`);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(
+        JSON.stringify({
+          property: [
+            {
+              parameterDefinitions: [
+                { name: 'PIWI_RERUN_ARGS', type: 'StringParameterDefinition' },
+                { name: 'PIWI_ORIGIN_REF', type: 'StringParameterDefinition' },
+                { name: 'SPEC', type: 'ChoiceParameterDefinition', choices },
+              ],
+            },
+          ],
+        }),
+      );
+    },
+    '/job/huge/api/json': (res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ property: [{ parameterDefinitions: [{ name: 'x'.repeat(3 * 1024 * 1024) }] }] }));
     },
     '/job/rich/api/json': (res) => {
       res.writeHead(200, { 'Content-Type': 'application/json' });
@@ -502,7 +525,12 @@ describe('checking a job on a CI server', () => {
       truncated: false,
       message: null,
     });
-    expect(seen[0]).toMatchObject({ method: 'GET', url: expect.stringMatching(/^\/api\/json\?tree=jobs/) });
+    expect(seen[0]).toMatchObject({
+      method: 'GET',
+      url: `/api/json?${new URLSearchParams([
+        ['tree', 'jobs[name,_class,buildable,jobs[name,_class,buildable,jobs[name,_class,buildable]]]'],
+      ])}`,
+    });
     expect(await uses()).toEqual([expect.objectContaining({ feature: 'ci-list', result: 'ok' })]);
   });
 
@@ -530,6 +558,22 @@ describe('checking a job on a CI server', () => {
       message: null,
     });
     expect(JSON.stringify(fields)).not.toContain('hunter2');
+  });
+
+  test('checks and reads a job whose parameters answer more than a dispatch reads, and says when one answers too much', async () => {
+    useInstance();
+    const large = target({ preset: 'jenkins', rerun: { job: 'large' } });
+    expect(await check(large)).toEqual([expect.objectContaining({ ok: true })]);
+    const fields = await readCiServerJobFields(db as never, 1, large, USE);
+    expect(fields.fields?.find((f) => f.name === 'SPEC')?.options).toHaveLength(50);
+    const huge = target({ preset: 'jenkins', rerun: { job: 'huge' } });
+    expect(await check(huge)).toEqual([
+      expect.objectContaining({ ok: false, message: expect.stringContaining('2 MB') }),
+    ]);
+    expect(await readCiServerJobFields(db as never, 1, huge, USE)).toEqual({
+      fields: null,
+      message: expect.stringContaining('2 MB'),
+    });
   });
 
   test('says why a job or a listing cannot be read', async () => {

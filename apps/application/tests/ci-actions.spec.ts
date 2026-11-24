@@ -223,6 +223,70 @@ test.describe.serial('CI actions', () => {
     expect(await res.json()).toMatchObject({ ok: null, missing: [] });
   });
 
+  test('the listings answer for a target whose job is not picked yet, and refuse one with nothing to read', async ({
+    request,
+  }) => {
+    const gitlab = await request.post(`/api/projects/${projectId}/ci-actions/jobs`, {
+      data: { target: { type: 'gitlab', ref: 'main' } },
+    });
+    expect(gitlab.ok()).toBeTruthy();
+    expect(await gitlab.json()).toMatchObject({ jobs: null, message: expect.stringContaining('no job to pick') });
+    const custom = await request.post(`/api/projects/${projectId}/ci-actions/fields`, {
+      data: { target: { type: 'ci-server', preset: 'custom' } },
+    });
+    expect(custom.status()).toBe(400);
+  });
+
+  test('the editor offers the workflows and inputs the target declares, and fills the ones it requires', async ({
+    page,
+  }) => {
+    await page.route('**/api/projects/*/ci-actions/jobs', (route) =>
+      route.fulfill({
+        json: { jobs: [{ id: 'e2e.yml', label: 'E2E', description: 'e2e.yml' }], truncated: false, message: null },
+      }),
+    );
+    await page.route('**/api/projects/*/ci-actions/fields', (route) =>
+      route.fulfill({
+        json: {
+          fields: [
+            { name: 'args', type: 'string', required: false, default: '' },
+            { name: 'TARGET_ENV', type: 'choice', required: true, options: ['staging', 'production'] },
+            { name: 'BROWSER', type: 'choice', required: false, default: 'chromium', options: ['chromium', 'webkit'] },
+            { name: 'HEADED', type: 'boolean', required: false, default: 'false', options: ['true', 'false'] },
+          ],
+          message: null,
+        },
+      }),
+    );
+    await page.goto(`/projects/${projectId}?tab=settings&section=ci`);
+    await waitForHydration(page);
+    const listed = page.waitForResponse('**/api/projects/*/ci-actions/jobs');
+    await page.getByTestId('ci-action-add').click();
+    const editor = page.getByTestId('ci-action-editor');
+    await editor.getByTestId('ci-action-name').fill('Declared inputs');
+    // The workflow is a plain input until the listing answers, then a menu.
+    await listed;
+    await expect(editor.locator('input[aria-label="GitHub workflow file"]')).toHaveCount(0);
+    await editor.getByTestId('ci-action-github-workflow').click();
+    await page.getByRole('option', { name: /^E2E/ }).click();
+
+    await expect(editor.getByLabel('Input 1 name')).toHaveValue('TARGET_ENV');
+    await expect(editor.getByLabel('Input 1 options')).toHaveValue('staging\nproduction');
+    await expect(editor.getByTestId('ci-action-declared-warnings')).toHaveCount(0);
+    await editor.getByTestId('ci-action-add-declared-input').click();
+    await page.getByRole('option', { name: /^BROWSER/ }).click();
+    await expect(editor.getByLabel('Input 2 default')).toHaveValue('chromium');
+    // The menu is ready for the next pick: it names no input.
+    await expect(editor.getByTestId('ci-action-add-declared-input')).toContainText('Add a declared input');
+
+    await editor.getByTestId('ci-action-add-input').click();
+    await editor.getByLabel('Input 3 name').fill('SUITE');
+    await expect(editor.getByTestId('ci-action-declared-warnings')).toContainText('does not declare SUITE');
+    await editor.getByRole('button', { name: 'Remove input 3' }).click();
+    await page.getByTestId('ci-action-save').click();
+    await expect(page.getByTestId('ci-action-row').filter({ hasText: 'Declared inputs' })).toContainText('e2e.yml');
+  });
+
   test('a CI server action names a credential shared with the project, and the editor says it is sent', async ({
     page,
     request,

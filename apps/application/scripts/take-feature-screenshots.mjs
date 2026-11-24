@@ -1997,6 +1997,45 @@ const JIRA_SCENE_PEOPLE = [
   { id: 'acct-3', displayName: 'Lee Park', icon: jiraSceneIcon('person') },
 ];
 
+/** What a GitHub repository's workflows declare, as the CI action editor's listing answers it in its scenes. */
+const CI_PICKER_JOBS = {
+  jobs: [
+    { id: 'e2e.yml', label: 'E2E', description: 'e2e.yml' },
+    { id: 'nightly.yml', label: 'Nightly regression', description: 'nightly.yml' },
+    { id: 'release-smoke.yml', label: 'release-smoke.yml' },
+  ],
+  truncated: false,
+  message: null,
+};
+const CI_PICKER_FIELDS = {
+  fields: [
+    { name: 'args', type: 'string', required: false, default: '', description: 'Playwright arguments' },
+    { name: 'dispatch_id', type: 'string', required: false, description: 'The dispatch Piwi matches the run to' },
+    {
+      name: 'TARGET_ENV',
+      type: 'choice',
+      required: true,
+      description: 'Environment under test',
+      options: ['staging', 'production'],
+    },
+    {
+      name: 'BROWSER',
+      type: 'choice',
+      required: false,
+      default: 'chromium',
+      options: ['chromium', 'firefox', 'webkit'],
+    },
+    { name: 'HEADED', type: 'boolean', required: false, default: 'false', options: ['true', 'false'] },
+  ],
+  message: null,
+};
+
+/** Answer the CI action editor's listings in the page: the scene has no repository to read. */
+async function routeCiPickers(page) {
+  await page.route('**/api/projects/*/ci-actions/jobs', (route) => route.fulfill({ json: CI_PICKER_JOBS }));
+  await page.route('**/api/projects/*/ci-actions/fields', (route) => route.fulfill({ json: CI_PICKER_FIELDS }));
+}
+
 async function routeJiraScreen(page) {
   await page.route('**/api/integrations/connections/*/icon*', (route) => {
     const path = new URL(route.request().url()).searchParams.get('path') ?? '';
@@ -3763,6 +3802,23 @@ const SCENES = [
       await shoot();
     },
   },
+  {
+    name: 'project-ci-action-jenkins-fields',
+    description:
+      'Project → Settings → CI: the editor of the nightly Jenkins action, its job picked from the CI server’s jobs, and the input it sends that the job does not declare named beside the one it does',
+    mode: 'demo',
+    route: '/projects/2?tab=settings&section=ci',
+    viewport: { width: 1280, height: 1600 },
+    of: '[data-shot="ci-action-editor"]',
+    async run({ page, shoot, settle }) {
+      const row = page.getByTestId('ci-action-row').filter({ hasText: 'Nightly · Jenkins' });
+      await row.getByTestId('ci-action-edit').click({ timeout: 90000 });
+      const editor = page.locator('[data-shot="ci-action-editor"]');
+      await editor.getByTestId('ci-action-declared-warnings').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
   ...[
     { name: 'project-ci-action-check', width: 1280, height: 800 },
     { name: 'project-ci-action-check-mobile', width: 375, height: 1400 },
@@ -3920,6 +3976,31 @@ const SCENES = [
         .getByTestId('ci-server-credential-description')
         .filter({ hasText: 'is sent' })
         .waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  })),
+  ...[
+    { name: 'project-ci-action-pickers', width: 1280, height: 1400 },
+    { name: 'project-ci-action-pickers-mobile', width: 375, height: 2400 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `Project → Settings → CI: a new GitHub action whose workflow is picked from the ones the repository can dispatch, its arguments input and the input the workflow requires filled from what it declares, at ${width} px`,
+    route: '/projects/1?tab=settings&section=ci',
+    viewport: { width, height },
+    of: '[data-shot="ci-action-editor"]',
+    async run({ page, shoot, settle }) {
+      await routeCiPickers(page);
+      const listed = page.waitForResponse('**/api/projects/*/ci-actions/jobs', { timeout: 90000 });
+      await page.getByTestId('ci-action-add').click({ timeout: 90000 });
+      const editor = page.locator('[data-shot="ci-action-editor"]');
+      await editor.getByTestId('ci-action-name').fill('Smoke · staging');
+      // The workflow is a plain input until the listing answers, then a menu.
+      await listed;
+      await editor.locator('input[aria-label="GitHub workflow file"]').waitFor({ state: 'detached', timeout: 30000 });
+      await editor.getByTestId('ci-action-github-workflow').click({ timeout: 30000 });
+      await page.getByRole('option', { name: /^E2E/ }).click();
+      await editor.getByTestId('ci-action-input-declared').first().waitFor({ timeout: 30000 });
       await settle();
       await shoot();
     },

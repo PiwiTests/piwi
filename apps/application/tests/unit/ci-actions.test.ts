@@ -39,7 +39,7 @@ vi.mock('../../server/utils/scm', () => ({
   },
 }));
 
-const { checkCiAction, workflowDispatchInputs } = await import('../../server/utils/ci-actions');
+const { checkCiAction } = await import('../../server/utils/ci-actions');
 const { GitHubProvider } = await import('../../server/utils/scm/GitHubProvider');
 const { GitLabProvider } = await import('../../server/utils/scm/GitLabProvider');
 const { BitbucketProvider } = await import('../../server/utils/scm/BitbucketProvider');
@@ -641,29 +641,6 @@ describe('a GitHub dispatch links the run it created', () => {
     answers = [json({ message: 'No ref found for: gone' }, 422)];
     await expect(dispatch()).rejects.toThrow('No ref found for: gone');
     expect(sent).toHaveLength(1);
-  });
-});
-
-describe('workflowDispatchInputs', () => {
-  test('reads the inputs of a workflow_dispatch map', () => {
-    expect(
-      workflowDispatchInputs(
-        'on:\n  workflow_dispatch:\n    inputs:\n      args:\n        type: string\n      env: {}\n',
-      ),
-    ).toEqual(['args', 'env']);
-  });
-
-  test('accepts the event as a name or a list, with no inputs', () => {
-    expect(workflowDispatchInputs('on: workflow_dispatch\n')).toEqual([]);
-    expect(workflowDispatchInputs('on: [push, workflow_dispatch]\n')).toEqual([]);
-    expect(workflowDispatchInputs('on:\n  workflow_dispatch:\n')).toEqual([]);
-  });
-
-  test('is null for a workflow that cannot be dispatched', () => {
-    expect(workflowDispatchInputs('on: push\n')).toBeNull();
-    expect(workflowDispatchInputs('on: [push]\n')).toBeNull();
-    expect(workflowDispatchInputs('on:\n  push:\n')).toBeNull();
-    expect(workflowDispatchInputs('name: x\n')).toBeNull();
   });
 });
 

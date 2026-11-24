@@ -7,7 +7,6 @@
  * dispatch sends, without starting anything.
  */
 import { eq } from 'drizzle-orm';
-import { parse as parseYaml } from 'yaml';
 import { projects } from '../database/schema';
 import { checkCiServerTarget, type CiServerUse } from './ci-server-dispatch';
 import { actionScmProvider, readGithubWorkflow } from './ci-jobs';
@@ -19,22 +18,13 @@ import {
   type CiActionCheckResult,
   type CiActionsSettings,
 } from '#shared/ci-actions';
-import { githubDispatchFields, missingRequiredFields } from '#shared/ci-job-fields';
+import { missingRequiredFields } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
 /** The project's CI actions (disabled and empty when unset). */
 export async function getCiActionsSettings(db: DbClient, projectId: number): Promise<CiActionsSettings> {
   const [project] = await db.select({ ciRerun: projects.ciRerun }).from(projects).where(eq(projects.id, projectId));
   return resolveCiActionsSettings(project?.ciRerun ?? null);
-}
-
-/**
- * What a workflow file's `workflow_dispatch` trigger declares: null when the
- * file has no such trigger, else the names of its inputs. Throws on a file
- * that is not valid YAML.
- */
-export function workflowDispatchInputs(workflowYaml: string): string[] | null {
-  return githubDispatchFields(parseYaml(workflowYaml))?.map((f) => f.name) ?? null;
 }
 
 /**

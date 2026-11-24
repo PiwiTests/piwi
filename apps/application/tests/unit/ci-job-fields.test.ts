@@ -50,7 +50,7 @@ on:
     ]);
   });
 
-  test('drops a choice’s default that is not one of its options, and a choice with none is text', () => {
+  test('drops a choice’s default that is not one of its options, and a choice with none is a string', () => {
     const workflow = parseYaml(`
 on:
   workflow_dispatch:
@@ -62,6 +62,20 @@ on:
       { name: 'a', type: 'choice', required: false, options: ['x', 'y'] },
       { name: 'b', type: 'string', required: false },
     ]);
+  });
+
+  test('reads a type it does not know as a string, an inherited object key included', () => {
+    const workflow = parseYaml(`
+on:
+  workflow_dispatch:
+    inputs:
+      a: { type: constructor }
+      b: { type: toString }
+`);
+    expect(githubDispatchFields(workflow)?.map((f) => f.type)).toEqual(['string', 'string']);
+    expect(
+      jenkinsParameterFields({ property: [{ parameterDefinitions: [{ name: 'x', type: 'constructor' }] }] }),
+    ).toEqual([{ name: 'x', type: 'string', required: false }]);
   });
 
   test('is null without a workflow_dispatch trigger, empty with one that declares nothing', () => {
@@ -178,11 +192,28 @@ describe('Jenkins', () => {
   });
 
   test('says when a folder lies deeper than the listing reads', () => {
-    expect(jenkinsJobs({ jobs: [{ _class: 'com.cloudbees.hudson.plugins.folder.Folder', name: 'deep' }] })).toEqual({
-      jobs: [],
-      truncated: true,
+    const folder = (name: string, jobs?: unknown[]) => ({
+      _class: 'com.cloudbees.hudson.plugins.folder.Folder',
+      name,
+      ...(jobs ? { jobs } : {}),
     });
+    // The third level's folder comes back without its jobs, as the listing's tree reads three levels.
+    expect(
+      jenkinsJobs({
+        jobs: [folder('a', [folder('b', [folder('c'), { _class: 'hudson.model.FreeStyleProject', name: 'e2e' }])])],
+      }),
+    ).toEqual({ jobs: [{ id: 'a/b/e2e', label: 'a/b/e2e' }], truncated: true });
     expect(jenkinsJobs({ property: [] })).toBeNull();
+  });
+
+  test('stops at 500 jobs, and says so only when another job is left out', () => {
+    const jobs = (count: number) =>
+      Array.from({ length: count }, (_, i) => ({ _class: 'hudson.model.FreeStyleProject', name: `j${i}` }));
+    const disabled = { _class: 'hudson.model.FreeStyleProject', name: 'off', buildable: false };
+    expect(jenkinsJobs({ jobs: [...jobs(500), disabled] })).toMatchObject({ truncated: false });
+    const more = jenkinsJobs({ jobs: jobs(501) });
+    expect(more?.jobs).toHaveLength(500);
+    expect(more?.truncated).toBe(true);
   });
 
   test('reads parameters, with a boolean’s options and no password default', () => {

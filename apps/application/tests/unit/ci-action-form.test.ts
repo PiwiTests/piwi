@@ -3,10 +3,20 @@ import type { CiAction } from '#shared/ci-actions';
 import {
   ciActionDraft,
   ciActionFromDraft,
+  ciListingTargetOfDraft,
+  draftBuiltInNames,
+  draftJob,
+  draftSentNames,
   duplicateCiAction,
   duplicateCiActionName,
+  fieldsToAdd,
+  fillFromDeclared,
+  inputDraftFromField,
   newInputDraft,
+  previewInputPairs,
+  requiredFieldsToAdd,
 } from '~/utils/ci-action-form';
+import type { CiJobField } from '#shared/ci-job-fields';
 
 const opts = { otherNames: [] as string[], instanceUrl: null as string | null };
 
@@ -200,5 +210,133 @@ describe('duplicateCiAction', () => {
     const copy = duplicateCiAction(action, ['Smoke'], (id) => id === 7);
     expect(copy).not.toHaveProperty('environment');
     expect(copy).not.toHaveProperty('environmentId');
+  });
+});
+
+describe('what the editor reads from the target', () => {
+  test('posts the draft target to list from, none for a Custom request', () => {
+    const draft = githubDraft({ scmCredentialId: 3 });
+    expect(ciListingTargetOfDraft(draft)).toEqual({
+      type: 'github',
+      ref: 'main',
+      workflow: 'e2e.yml',
+      credentialId: 3,
+    });
+    draft.type = 'jenkins';
+    draft.ciServer.rerun.job = 'qa/e2e';
+    draft.ciServer.credentialId = 7;
+    expect(ciListingTargetOfDraft(draft)).toEqual({
+      type: 'ci-server',
+      preset: 'jenkins',
+      baseUrl: '',
+      credentialId: 7,
+      fields: { job: 'qa/e2e', ref: '' },
+    });
+    expect(draftJob(draft)).toBe('qa/e2e');
+    draft.type = 'custom';
+    expect(ciListingTargetOfDraft(draft)).toBeNull();
+  });
+
+  test('adds a declared choice or boolean as a choice, any other field as a fixed value holding its default', () => {
+    expect(
+      inputDraftFromField({ name: 'ENV', type: 'choice', required: true, options: ['a', 'b'], default: 'b' }),
+    ).toMatchObject({ name: 'ENV', kind: 'choice', options: 'a\nb', default: 'b' });
+    expect(
+      inputDraftFromField({ name: 'HEADED', type: 'boolean', required: false, options: ['true', 'false'] }),
+    ).toMatchObject({ kind: 'choice', options: 'true\nfalse', default: '' });
+    expect(inputDraftFromField({ name: 'SHARDS', type: 'number', required: false, default: '4' })).toMatchObject({
+      kind: 'fixed',
+      value: '4',
+    });
+  });
+
+  test('offers the declared fields the draft does not send yet, with valid names the CI does not reserve', () => {
+    const draft = githubDraft();
+    draft.inputs.push({ ...newInputDraft(), name: 'ENV' });
+    const fields = ['args', 'ENV', 'BROWSER', 'log-level', 'CI_DEBUG'].map((name) => ({
+      name,
+      type: 'string' as const,
+      required: false,
+    }));
+    expect(draftSentNames(draft)).toEqual(['args', 'ENV']);
+    expect(fieldsToAdd(draft, fields).map((f) => f.name)).toEqual(['BROWSER', 'CI_DEBUG']);
+    draft.type = 'gitlab';
+    expect(fieldsToAdd(draft, fields).map((f) => f.name)).toEqual(['args', 'BROWSER']);
+  });
+
+  test('names a Jenkins target’s default parameters when its fields are empty', () => {
+    const draft = githubDraft({ type: 'jenkins' });
+    expect(draftBuiltInNames(draft)).toEqual(['PIWI_RERUN_ARGS', 'PIWI_ORIGIN_REF']);
+  });
+});
+
+describe('filling a draft from what a picked job declares', () => {
+  const field = (name: string, over: Partial<CiJobField> = {}): CiJobField => ({
+    name,
+    type: 'string',
+    required: false,
+    ...over,
+  });
+
+  test('names the arguments input the job declares when the draft’s is not one, on every target', () => {
+    const github = githubDraft();
+    github.github.argsInput = 'playwright_args';
+    fillFromDeclared(github, [field('args')]);
+    expect(github.github.argsInput).toBe('args');
+
+    const jenkins = githubDraft({ type: 'jenkins' });
+    fillFromDeclared(jenkins, [field('args')]);
+    expect(jenkins.ciServer.rerun.argsParameter).toBe('args');
+
+    const bitbucket = githubDraft({ type: 'bitbucket' });
+    bitbucket.bitbucket.argsVariable = 'ARGS';
+    fillFromDeclared(bitbucket, [field('PIWI_RERUN_ARGS')]);
+    expect(bitbucket.bitbucket.argsVariable).toBe('PIWI_RERUN_ARGS');
+  });
+
+  test('fills an empty arguments input even when the dispatch id input is one the job declares', () => {
+    const draft = githubDraft();
+    draft.github.argsInput = '';
+    draft.github.dispatchIdInput = 'dispatch_id';
+    fillFromDeclared(draft, [field('args'), field('dispatch_id')]);
+    expect(draft.github.argsInput).toBe('args');
+  });
+
+  test('keeps an arguments input the job declares', () => {
+    const draft = githubDraft();
+    draft.github.argsInput = 'suite_args';
+    fillFromDeclared(draft, [field('args'), field('suite_args')]);
+    expect(draft.github.argsInput).toBe('suite_args');
+  });
+
+  test('adds the required inputs with no default it can send, never one it already sends in another case', () => {
+    const draft = githubDraft();
+    draft.inputs.push({ ...newInputDraft(), name: 'target_env' });
+    fillFromDeclared(draft, [
+      field('args'),
+      field('TARGET_ENV', { required: true }),
+      field('log-level', { required: true }),
+      field('TIER', { required: true, default: 'gold' }),
+      field('REGION', { required: true, type: 'choice', options: ['eu', 'us'] }),
+    ]);
+    expect(draft.inputs.map((row) => row.name)).toEqual(['target_env', 'REGION']);
+    expect(requiredFieldsToAdd(draft, [field('REGION', { required: true })])).toEqual([]);
+  });
+});
+
+describe('previewInputPairs', () => {
+  test('shows a choice with its chosen default, else its first option', () => {
+    const draft = githubDraft();
+    draft.inputs.push(
+      { ...newInputDraft(), name: 'ENV', kind: 'choice', options: 'staging\nproduction', default: 'production' },
+      { ...newInputDraft(), name: 'TIER', kind: 'choice', options: 'gold\nsilver', default: 'bronze' },
+      { ...newInputDraft(), name: 'SUITE', value: ' smoke ' },
+      { ...newInputDraft(), name: ' ' },
+    );
+    expect(previewInputPairs(draft)).toEqual([
+      ['ENV', 'production'],
+      ['TIER', 'gold'],
+      ['SUITE', 'smoke'],
+    ]);
   });
 });

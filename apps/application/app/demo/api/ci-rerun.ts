@@ -36,7 +36,7 @@ import {
   type CiServerTarget,
   type CiTemplateValues,
 } from '#shared/ci-server';
-import { GITLAB_NO_JOBS, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
+import { GITLAB_NO_JOBS, jenkinsJobs, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import { NO_RETRY_ARGS } from '#shared/retry-command';
 import {
   ciPlaceLastDispatch,
@@ -352,11 +352,19 @@ const DEMO_JOB_PARAMETERS: Record<string, unknown[]> = {
   ],
 };
 
+/** The job paths the demo's Jenkins holds, as its listing names them. */
+const DEMO_JOB_PATHS = new Set(jenkinsJobs(DEMO_JENKINS_JOBS)?.jobs.map((job) => job.id) ?? []);
+
+/** What the demo's Jenkins answers a read of a job it does not hold, as a Jenkins does. */
+const DEMO_NO_JOB = 'No job at this path, or the credential’s user cannot see it (404).';
+
 /**
  * What the demo's Jenkins answers a job read: the reporter's default
- * parameters, and the ones {@link DEMO_JOB_PARAMETERS} lists for the job.
+ * parameters, and the ones {@link DEMO_JOB_PARAMETERS} lists for the job;
+ * null for a job it does not hold.
  */
 function demoJobJson(job: string | undefined) {
+  if (!DEMO_JOB_PATHS.has(job ?? '')) return null;
   return {
     property: [
       {
@@ -431,11 +439,21 @@ export async function demoCiActionCheck(
       : 'The credential this CI action names does not exist: pick another one.';
     if (refusal) return { ok: false, missing: [], message: refusal };
   }
+  const job = demoJobJson(target.fields.job);
+  if (!job) {
+    return {
+      ok: false,
+      missing: [],
+      message: credential
+        ? DEMO_NO_JOB
+        : 'No job at this path, or the CI server hides it from a request without a credential (404).',
+    };
+  }
   const allowed = credential?.allowedInputs ?? null;
   const notSent = allowed ? inputNames.filter((name) => !allowed.includes(name)) : [];
   const finding = ciServerCheckFinding(
     notSent.length > 0 ? { ...plan, required: plan.required.filter((name) => !notSent.includes(name)) } : plan,
-    demoJobJson(target.fields.job),
+    job,
   );
   if (notSent.length === 0) return { ok: finding.ok, missing: finding.missing, message: finding.message };
   return {
@@ -531,5 +549,6 @@ export async function demoCiJobFields(db: DemoDB, projectId: number, body: unkno
   if ('error' in plan) return { fields: null, message: plan.error };
   const refusal = demoReadRefusal(server, base.credential, projectId, plan.url);
   if (refusal) return { fields: null, message: refusal };
-  return { fields: plan.fields(demoJobJson(target.job)), message: null };
+  const job = demoJobJson(target.job);
+  return job ? { fields: plan.fields(job), message: null } : { fields: null, message: DEMO_NO_JOB };
 }
