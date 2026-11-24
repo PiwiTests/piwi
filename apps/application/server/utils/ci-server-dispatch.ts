@@ -47,7 +47,7 @@ import {
   type CiTemplateValues,
 } from '#shared/ci-server';
 import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
-import { MAX_CI_JOBS, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
+import { MAX_CI_JOBS, withoutFreeText, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
 /** How long a CI server has to answer a dispatch. */
@@ -596,8 +596,9 @@ function listingAnswerMessage(answer: CiServerAnswer, sentCredential: boolean, n
 
 /**
  * Read `url` under a target's base URL with the credential a dispatch under it
- * would carry, logged as a listing use: the answer's JSON, or why it could not
- * be read, for the user. Nothing is started.
+ * would carry, logged as a listing use: the answer's JSON and whose credential
+ * the read carried (`instance` for the one every project shares), or why it
+ * could not be read, for the user. Nothing is started.
  */
 async function readForListing(
   db: DbClient,
@@ -607,7 +608,7 @@ async function readForListing(
   url: string,
   use: CiServerUse,
   notFound: string,
-): Promise<{ json: unknown } | { message: string }> {
+): Promise<{ json: unknown; carried: CiServerCredential['source'] | null } | { message: string }> {
   try {
     const prepare = (withSecret: CiServerCredential | null) =>
       prepareCiServerCheck({ target, url, credential: withSecret });
@@ -618,7 +619,9 @@ async function readForListing(
     }
     if (answer.truncated) return { message: READ_TOO_LARGE };
     const json = parseJson(answer.text);
-    return json === null ? { message: 'The CI server did not answer JSON.' } : { json };
+    return json === null
+      ? { message: 'The CI server did not answer JSON.' }
+      : { json, carried: request.credential?.source ?? null };
   } catch (e) {
     const reason = e instanceof Error ? e.message : String(e);
     return { message: e instanceof CredentialRefusedError ? reason : `The CI server could not be reached: ${reason}.` };
@@ -694,11 +697,20 @@ export async function readCiServerJobFields(
       message: 'The answer does not describe a job: is the path a folder, or a multibranch pipeline without /{branch}?',
     };
   }
-  return {
-    fields,
-    message:
-      fields.length === 0
-        ? 'The job declares no parameters. A Pipeline job declares those of its Jenkinsfile on its first build: run it once.'
-        : null,
-  };
+  if (fields.length === 0) {
+    return {
+      fields,
+      message:
+        'The job declares no parameters. A Pipeline job declares those of its Jenkinsfile on its first build: run it once.',
+    };
+  }
+  // The instance's credential serves every project: what a parameter's free text holds stays with the CI server.
+  if (read.carried === 'instance') {
+    return {
+      fields: withoutFreeText(fields),
+      message:
+        'Read with the instance’s CI server credential, which every project shares: a parameter’s free-text default and its description are left out.',
+    };
+  }
+  return { fields, message: null };
 }

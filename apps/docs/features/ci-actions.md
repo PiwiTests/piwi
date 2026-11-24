@@ -34,8 +34,8 @@ actions existed were converted when read.
 
 **Check** reads an action's target without starting it and says whether it declares every name a dispatch sends, the
 inputs included, and, on GitHub, whether the action sends every input the workflow requires with no default. It reads a
-GitHub workflow file and a Jenkins job; GitLab and Bitbucket pipelines and Custom requests cannot be checked, and Check
-says so.
+GitHub workflow file, a Jenkins job, and a Bitbucket custom pipeline on the default branch, whose undeclared variables
+it names as a warning. GitLab pipelines and Custom requests cannot be checked, and Check says so.
 
 Two actions on one workflow, one per environment, differ only in their inputs:
 
@@ -79,8 +79,9 @@ pipeline is created with, so its variables are suggestions; the files a CI file 
 
 The files are read with the action's credential, else the repository's, which must also read the repository's files. A
 Jenkins listing carries the credential a dispatch would, whose user needs the Overall/Read and Job/Read permissions, and
-is logged. A branch is read at its latest commit; what was listed is kept five minutes, and the refresh button beside
-the listing reads again.
+is logged; read with the instance's credential, which every project shares, it leaves out a parameter's free-text
+default and its description. A branch is read at its latest commit; what was listed is kept five minutes, and the
+refresh button beside the listing reads again.
 
 ## Repository host
 
@@ -92,7 +93,7 @@ Choose the provider of the action:
 | **GitLab** | A ref and the pipeline variable name that receives the arguments | `api` |
 | **Bitbucket** | The `custom:` pipeline name and the variable name that receives the arguments | `pipeline:write` |
 
-The dispatch, and a GitHub action's **Check**, carry the action's **Credential**, else the repository's
+The dispatch, and a GitHub or Bitbucket action's **Check**, carry the action's **Credential**, else the repository's
 [SCM credential](/guide/source-control#set-the-credential), with the scope above.
 
 On GitLab and Bitbucket, name the variable `PIWI_RERUN_ARGS` and run [`rerun`](/reference/cli#rerun), which reads the

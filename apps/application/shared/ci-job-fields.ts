@@ -259,6 +259,13 @@ export function bitbucketPipelineFields(document: unknown, pipeline: string): Ci
   return unique(fields);
 }
 
+/** Whether a Bitbucket custom pipeline is imported from another repository's file, which declares its variables. */
+export function bitbucketPipelineImported(document: unknown, pipeline: string): boolean {
+  const custom = bitbucketCustom(document);
+  const steps = Object.prototype.hasOwnProperty.call(custom, pipeline) ? custom[pipeline] : null;
+  return isRecord(steps) && 'import' in steps;
+}
+
 /** The `tree` of a Jenkins job read: its parameters, with what the editor shows of each. */
 export const JENKINS_PARAMETERS_TREE =
   'property[parameterDefinitions[name,type,description,choices,defaultParameterValue[value]]]';
@@ -337,6 +344,19 @@ export function jenkinsJobs(json: unknown): { jobs: CiJob[]; truncated: boolean 
   };
   visit(json.jobs, '');
   return { jobs, truncated };
+}
+
+/**
+ * The fields without their free text: no description, and a default only
+ * where it is one of the field's options (a choice, a boolean).
+ */
+export function withoutFreeText(fields: CiJobField[]): CiJobField[] {
+  return fields.map((f) => {
+    const kept: CiJobField = { name: f.name, type: f.type, required: f.required };
+    if (f.options) kept.options = f.options;
+    if (f.options && f.default !== undefined) kept.default = f.default;
+    return kept;
+  });
 }
 
 /** The required fields with no default that `sent` leaves out: a GitHub dispatch without them is refused. */

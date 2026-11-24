@@ -534,7 +534,39 @@ describe('checking a job on a CI server', () => {
     expect(await uses()).toEqual([expect.objectContaining({ feature: 'ci-list', result: 'ok' })]);
   });
 
-  test('reads the parameters of a job, never a password’s default', async () => {
+  test('reads the parameters of a job with the credential the action names, never a password’s default', async () => {
+    const id = await credential();
+    process.env.PIWI_SECRET_KEY = 'a'.repeat(64);
+    process.env.PIWI_CI_SERVER_HOSTS = '127.0.0.1';
+    try {
+      const fields = await readCiServerJobFields(
+        db as never,
+        1,
+        target({ preset: 'jenkins', credentialId: id, rerun: { job: 'rich' } }),
+        USE,
+      );
+      expect(fields).toEqual({
+        fields: [
+          { name: 'PIWI_RERUN_ARGS', type: 'string', required: false, default: '' },
+          {
+            name: 'TARGET_ENV',
+            type: 'choice',
+            required: false,
+            default: 'staging',
+            description: 'Where the suite runs',
+            options: ['staging', 'production'],
+          },
+          { name: 'DEPLOY_TOKEN', type: 'secret', required: false },
+        ],
+        message: null,
+      });
+      expect(JSON.stringify(fields)).not.toContain('hunter2');
+    } finally {
+      delete process.env.PIWI_SECRET_KEY;
+    }
+  });
+
+  test('leaves out free-text defaults and descriptions read with the instance’s credential, which every project shares', async () => {
     useInstance();
     const fields = await readCiServerJobFields(
       db as never,
@@ -544,20 +576,12 @@ describe('checking a job on a CI server', () => {
     );
     expect(fields).toEqual({
       fields: [
-        { name: 'PIWI_RERUN_ARGS', type: 'string', required: false, default: '' },
-        {
-          name: 'TARGET_ENV',
-          type: 'choice',
-          required: false,
-          default: 'staging',
-          description: 'Where the suite runs',
-          options: ['staging', 'production'],
-        },
+        { name: 'PIWI_RERUN_ARGS', type: 'string', required: false },
+        { name: 'TARGET_ENV', type: 'choice', required: false, default: 'staging', options: ['staging', 'production'] },
         { name: 'DEPLOY_TOKEN', type: 'secret', required: false },
       ],
-      message: null,
+      message: expect.stringContaining('instance’s CI server credential'),
     });
-    expect(JSON.stringify(fields)).not.toContain('hunter2');
   });
 
   test('checks and reads a job whose parameters answer more than a dispatch reads, and says when one answers too much', async () => {

@@ -1,10 +1,17 @@
 /**
  * The Bitbucket provider: a custom pipeline, started on the repository's
- * default branch unless a dispatch names one. Nothing it declares can be
- * checked without starting it; the listings read the custom pipelines and
- * their variables from `bitbucket-pipelines.yml` on the default branch.
+ * default branch unless a dispatch names one. Check and the listings read the
+ * custom pipelines and their variables from `bitbucket-pipelines.yml` on the
+ * default branch. Bitbucket's documentation does not say what a pipeline does
+ * with a variable it does not declare, so Check names those without failing.
  */
-import { bitbucketCustomPipelines, bitbucketPipelineFields } from '#shared/ci-job-fields';
+import { ciActionSentNames } from '#shared/ci-actions';
+import {
+  bitbucketCustomPipelines,
+  bitbucketPipelineFields,
+  bitbucketPipelineImported,
+  undeclaredNames,
+} from '#shared/ci-job-fields';
 import {
   actionScmProvider,
   readAt,
@@ -27,12 +34,49 @@ async function pipelinesFile(scm: ActionScm): Promise<{ document: unknown; branc
 }
 
 export const bitbucketProvider = repositoryHostProvider('bitbucket', {
-  check: async () => ({
-    ok: null,
-    missing: [],
-    message:
-      "Bitbucket pipelines can't be checked: Bitbucket reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
-  }),
+  /**
+   * The custom pipeline must be in the pipelines file of the default branch,
+   * where a dispatch with no branch runs it; the names a dispatch sends that it
+   * does not declare are named.
+   */
+  async check(db, projectId, action, use) {
+    const { pipeline } = action.target;
+    const opened = await actionScmProvider(
+      db,
+      projectId,
+      'bitbucket',
+      action.target.credentialId ?? null,
+      use.actor,
+      'its pipelines file',
+    );
+    const read = 'message' in opened ? opened : await pipelinesFile(opened.scm);
+    if ('message' in read) return { ok: null, missing: [], message: read.message };
+    const fields = bitbucketPipelineFields(read.document, pipeline);
+    if (!fields) {
+      return {
+        ok: false,
+        missing: [],
+        message: `${BITBUCKET_PIPELINES_FILE} on ${read.branch}, the default branch, has no custom pipeline named "${pipeline}": Bitbucket cannot start it there.`,
+      };
+    }
+    if (bitbucketPipelineImported(read.document, pipeline)) {
+      return {
+        ok: null,
+        missing: [],
+        message: `The custom pipeline "${pipeline}" is imported from another repository, whose file declares its variables.`,
+      };
+    }
+    const sent = ciActionSentNames(action);
+    const missing = undeclaredNames(fields, sent);
+    if (missing.length === 0) {
+      return { ok: true, missing, message: `The custom pipeline declares ${sent.join(', ')} on ${read.branch}.` };
+    }
+    return {
+      ok: null,
+      missing,
+      message: `The custom pipeline "${pipeline}" does not declare ${missing.join(', ')} on ${read.branch}: declare ${missing.length > 1 ? 'them' : 'it'} under its variables, so the pipeline is sure to receive ${missing.length > 1 ? 'them' : 'it'}.`,
+    };
+  },
 
   async listJobs(db, projectId, target, use) {
     const opened = await actionScmProvider(
@@ -74,6 +118,12 @@ export const bitbucketProvider = repositoryHostProvider('bitbucket', {
       return {
         fields: null,
         message: `${BITBUCKET_PIPELINES_FILE} has no custom pipeline named "${target.pipeline}" at ${read.branch}.`,
+      };
+    }
+    if (bitbucketPipelineImported(read.document, target.pipeline)) {
+      return {
+        fields,
+        message: `The custom pipeline "${target.pipeline}" is imported from another repository, whose file declares its variables.`,
       };
     }
     return { fields, message: null };

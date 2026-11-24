@@ -38,6 +38,7 @@ vi.mock('../../server/utils/scm', () => ({
 }));
 
 const { listCiJobs, listCiJobFields, resolveCiListingRequest } = await import('../../server/utils/ci-jobs');
+const { checkCiAction } = await import('../../server/utils/ci-actions');
 const { openTempDb } = await import('./temp-db');
 
 const db = {} as never;
@@ -231,6 +232,50 @@ describe('Bitbucket', () => {
     expect((await listCiJobFields(db, projectId, { type: 'bitbucket', pipeline: 'nightly' }, use)).message).toContain(
       'no custom pipeline named "nightly"',
     );
+  });
+});
+
+describe('Check on a Bitbucket action', () => {
+  const action = (pipeline: string) => ({
+    id: 'bb',
+    name: 'Re-run on Bitbucket',
+    target: { type: 'bitbucket' as const, pipeline, argsVariable: 'PIWI_RERUN_ARGS' },
+    inputs: [{ name: 'REGION', kind: 'fixed' as const, value: 'eu' }],
+    accepts: ['tests' as const],
+  });
+
+  beforeEach(() => {
+    repo.provider = 'bitbucket';
+  });
+
+  test('passes a custom pipeline that declares every name a dispatch sends, read on the default branch', async () => {
+    repo.files = {
+      'bitbucket-pipelines.yml':
+        'pipelines:\n  custom:\n    rerun:\n      - variables:\n          - name: PIWI_RERUN_ARGS\n          - name: REGION\n      - step: { script: [x] }\n',
+    };
+    expect(await checkCiAction(db, projectId, action('rerun'), use)).toMatchObject({ ok: true, missing: [] });
+    expect(repo.asked).toContainEqual(['bitbucket-pipelines.yml', 'trunk']);
+  });
+
+  test('fails a custom pipeline the default branch does not have', async () => {
+    repo.files = { 'bitbucket-pipelines.yml': 'pipelines:\n  custom:\n    other: []\n' };
+    expect(await checkCiAction(db, projectId, action('rerun'), use)).toMatchObject({
+      ok: false,
+      message: expect.stringContaining('has no custom pipeline named "rerun"'),
+    });
+  });
+
+  test('names the variables it does not declare without failing, and says when the pipeline is imported', async () => {
+    repo.files = {
+      'bitbucket-pipelines.yml':
+        'pipelines:\n  custom:\n    rerun:\n      - variables:\n          - name: PIWI_RERUN_ARGS\n    shared:\n      import: lib:main:e2e\n',
+    };
+    expect(await checkCiAction(db, projectId, action('rerun'), use)).toMatchObject({ ok: null, missing: ['REGION'] });
+    expect(await checkCiAction(db, projectId, action('shared'), use)).toMatchObject({
+      ok: null,
+      missing: [],
+      message: expect.stringContaining('imported from another repository'),
+    });
   });
 });
 

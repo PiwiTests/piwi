@@ -380,8 +380,7 @@ function demoJobJson(job: string | undefined) {
 const CANNOT_CHECK = {
   gitlab:
     "GitLab pipelines can't be checked: GitLab reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
-  bitbucket:
-    "Bitbucket pipelines can't be checked: Bitbucket reports no variable declarations without starting a pipeline. Dispatch it once to confirm.",
+  bitbucket: 'The demo has no repository to read the pipelines file from.',
   github: 'The demo has no repository to read the workflow from.',
   custom: "A Custom request can't be checked: it names no job Piwi can read.",
 };

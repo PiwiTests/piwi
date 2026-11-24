@@ -137,17 +137,26 @@ async function check(action: CiAction) {
   }
 }
 
-/** How a Check answer reads: a pass, a problem, or "could not be checked" (not a pass). */
+/** How a Check answer reads: a pass, a problem, a warning, or "could not be checked" (not a pass). */
 function resultOf(id: string) {
   const result = results.value[id];
   if (!result) return null;
   if ('error' in result) return { tone: 'error' as const, icon: 'i-lucide-circle-alert', message: result.error };
   if (result.ok === true) return { tone: 'ok' as const, icon: 'i-lucide-circle-check', message: result.message };
   if (result.ok === false) return { tone: 'error' as const, icon: 'i-lucide-circle-alert', message: result.message };
+  // Read, but not settled: the target does not say what it does with a name it does not declare.
+  if (result.missing.length > 0) {
+    return { tone: 'warning' as const, icon: 'i-lucide-triangle-alert', message: result.message };
+  }
   return { tone: 'muted' as const, icon: 'i-lucide-circle-help', message: `Not checked: ${result.message}` };
 }
 
-const RESULT_CLASS = { ok: 'text-success', error: 'text-error', muted: 'text-muted' } as const;
+const RESULT_CLASS = {
+  ok: 'text-success',
+  error: 'text-error',
+  warning: 'text-warning',
+  muted: 'text-muted',
+} as const;
 </script>
 
 <template>
