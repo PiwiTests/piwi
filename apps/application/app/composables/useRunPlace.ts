@@ -214,14 +214,16 @@ export async function useRunPlace(options: RunPlaceOptions) {
     return Boolean(w.ci && offer?.enabled && offer.actions.some((a) => a.available));
   };
 
-  // The first What says what the button shows; the others are read when it cannot go to CI, else when the dialog opens.
+  // The first What says what the button shows; with CI actions on, the others are read when it cannot go to CI, else
+  // when the dialog opens.
   onMounted(() => {
     watch(
       () => JSON.stringify(options.whats().map((w) => [w.key, w.ci?.source ?? null])),
       async () => {
         const [first, ...others] = options.whats();
-        if (first) await readOffered([first]);
-        if (!first || !ciTakes(first)) await readOffered(others);
+        if (!first) return;
+        await readOffered([first]);
+        if (offered[first.key]?.enabled && !ciTakes(first)) await readOffered(others);
       },
       { immediate: true },
     );
