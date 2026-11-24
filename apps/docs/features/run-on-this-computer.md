@@ -12,7 +12,8 @@ In the [desktop app](./desktop)'s window, the [run button](./ci-rerun#the-run-di
 failure cluster and a test runs the page's tests in the project's linked folder, with the folder's own Playwright and
 the app's bundled Node. Its dialog's **Where** lists **This computer** in place of your apps
 ([Run on my machine](./run-on-my-machine), which a browser offers), before the project's [CI actions](./ci-actions).
-The run streams into the [Local runs tray](./local-runs-tray), keeps going while you browse, and reports to the app.
+The run streams into the [Local runs tray](./local-runs-tray), keeps going while you browse, and, with the Piwi
+reporter set up, reports to the app.
 
 <figure>
   <img src="/screenshots/run-on-this-computer.png" alt="The run dialog of a failed run in the desktop app: the failed tests, the flaky ones or every test under What; This computer picked under Where, in the linked folder, above a CI action; then the linked folder, the run options and the environment">
@@ -43,7 +44,8 @@ a run here makes This computer its **Where** again. The button remembers the las
 
 ## The arrow
 
-- **Runs this command**: what the button runs, and the tests it leaves out, those with no file path Playwright takes.
+- **Runs this command**: what the button runs, and the tests it leaves out, those with no file path Playwright takes,
+  or no title when it selects them by title.
 - **Run once** headless, headed, in the inspector or in UI mode, and **Run other tests**: the page's other tests.
 - The one-click runs on CI, as in a browser.
 - **Options of this button**: **Record trace**, [**Hold failures**](./watch-a-run#hold-failures), **Repeat each** with

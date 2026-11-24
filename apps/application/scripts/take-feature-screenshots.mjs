@@ -11364,7 +11364,7 @@ const SCENES = [
       const bar = page.locator('[data-shot="test-selection-bar"]');
       await bar.getByRole('button', { name: /^Re-run \d+ selected tests?/ }).waitFor();
       await settle();
-      await shoot('selection', { of: '[data-shot="test-selection-bar"]', pad: 8 });
+      await shoot('selection', { of: '[data-shot="test-selection-bar"]', pad: 0 });
       await page.getByRole('checkbox', { name: 'Deselect all failing tests' }).click();
 
       // Sent to a CI action last, the button opens the dialog on it.

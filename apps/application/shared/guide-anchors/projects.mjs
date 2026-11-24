@@ -753,7 +753,7 @@ export const PROJECTS_ANCHORS = [
       'The Local folder section of the desktop app: the checkout on this machine that runs the project’s tests and opens its files in your IDE.',
     requires: { desktop: true },
     help: 'project.local-folder',
-    doc: 'features/desktop#running-tests-from-the-app',
+    doc: 'features/desktop#projects-from-local-folders',
     sample: { route: '/projects/1?tab=settings&section=local-folder', expect: PROJECT_1, surface: 'desktop' },
   },
 

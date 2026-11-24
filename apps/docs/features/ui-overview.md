@@ -77,7 +77,7 @@ palette lists its tabs and the pages of this menu. The tabs:
   [capabilities](/operate/capabilities), coverage, [targets](./analytics#targets), the
   [issue tracker](./issue-tracking), [CI](./ci-rerun), keys in test tags, [test management](./test-management),
   [URL patterns](./extension-connection#url-patterns) and, in the desktop app, the
-  [local folder](./desktop#running-tests-from-the-app).
+  [local folder](./desktop#projects-from-local-folders).
 
 ## Locators
 

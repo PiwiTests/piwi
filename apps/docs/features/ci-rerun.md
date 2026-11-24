@@ -11,7 +11,8 @@ lang: en-US
 A [filtered run that passes every affected test closes a cluster](./failure-clusters#did-the-fix-work). Piwi can start
 that run in CI, and others: a page's **run button** opens a dialog whose **Where** lists the project's
 [CI actions](./ci-actions) beside your own apps ([Run on my machine](./run-on-my-machine)). It reads **Run on CI**,
-**Run on my machine** or **Run on my machine or CI**, after what you may use there:
+**Run on my machine** or **Run on my machine or CI**, after what you may use there; in the desktop app, it says what it
+runs on [this computer](./run-on-this-computer):
 
 | Page | What CI runs |
 |---|---|
@@ -52,7 +53,7 @@ Playwright takes.
   any other CI server job runs its configured branch. A name git refuses is not sent.
 - Each choice input offers its options; the fixed ones are listed.
 - The button's menu sends the page's first **What** in one click, to one action or app, on the branch the dialog
-  would pick, with the default choices.
+  would pick, with the default choices. In the desktop app, it is This computer's menu, with these runs on CI in it.
 
 After **Send** the dialog follows the dispatch: *waiting for the run to report*, with **Open in CI**, then the run and
 its result once [matched](#matching-the-run), which a toast says if you closed the dialog. With no run after 30

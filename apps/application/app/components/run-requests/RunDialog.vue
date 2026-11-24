@@ -71,6 +71,7 @@ const instanceAddress = computed(() => {
         <p v-if="place.localPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
           Runs in the project's linked folder on this computer, with its own Playwright. The run streams into the Local
           runs tray and keeps going while you browse; with the Piwi reporter set up, it reports to this app.
+          <DocLink to="features/run-on-this-computer" no-icon :class="SENTENCE_LINK_CLASS">How it works</DocLink>
         </p>
         <p v-else-if="place.appPick" class="text-sm text-highlighted leading-relaxed" data-testid="run-dialog-sentence">
           Your app shows the request with its checks and the command; nothing runs until you click
