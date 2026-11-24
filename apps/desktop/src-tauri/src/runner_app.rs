@@ -8,7 +8,8 @@
 // There is no database or reporter discovery file: Runner is not a Piwi server, and nothing on this machine
 // may take it for one. Everything binds 127.0.0.1. Its tray icon keeps it reachable by the team instance once the
 // window closes, while Run in background is on (the default), and Start on login launches it hidden in the tray. A build
-// made with the update signing key checks for updates at startup and from the tray (`updates::check_from_tray`).
+// made with the update signing key checks for updates at startup, from the window's Settings → About and from the tray
+// (`updates::check_from_tray`), as the desktop app does.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -402,7 +403,12 @@ pub(crate) fn run(context: tauri::Context<tauri::Wry>) {
             run_target::desktop_unlink_request_folder,
             run_target::desktop_run_requested_tests,
             shell_words::desktop_get_language,
-            shell_words::desktop_set_language
+            shell_words::desktop_set_language,
+            updates::desktop_get_update_settings,
+            updates::desktop_set_update_notification,
+            updates::desktop_check_update,
+            updates::desktop_install_update,
+            updates::desktop_restart_app
         ])
         .manage(ServerProcess::default())
         .manage(ServerGaveUp::default())

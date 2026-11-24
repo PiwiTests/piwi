@@ -5,7 +5,7 @@ import { waitForHydration } from './utils';
 /**
  * The desktop-only update card on Settings → About, driven against the web
  * build with a faked Tauri bridge. The updater itself lives in the shell;
- * this covers the dashboard side: the three check outcomes render, install
+ * this covers the dashboard side: the four check outcomes render, install
  * streams progress, the restart is only ever user-initiated, an update the
  * startup check found shows without a click, the startup notification
  * checkbox round-trips to the shell, an available update lists the release
@@ -89,7 +89,7 @@ const RELEASE_NOTES = {
 
 async function installFakeBridge(
   page: Page,
-  outcome: 'unsupported' | 'uptodate' | 'available',
+  outcome: 'unsupported' | 'uptodate' | 'available' | 'unpublished',
   options: FakeBridgeOptions = {},
 ) {
   const init = { state: outcome, opts: options, releaseNotes: RELEASE_NOTES };
@@ -178,6 +178,18 @@ test.describe('Desktop update card', () => {
 
     await page.getByRole('button', { name: 'Check for updates' }).click();
     await expect(page.getByText("You're on the latest version.")).toBeVisible();
+  });
+
+  test("says a release without this system's package is not published yet", async ({ page }) => {
+    await installFakeBridge(page, 'unpublished');
+    await page.goto('/settings/about');
+    await waitForHydration(page);
+
+    await page.getByRole('button', { name: 'Check for updates' }).click();
+    await expect(page.getByText('The latest release has no package for this system yet')).toBeVisible();
+    await page.getByRole('button', { name: 'Check again' }).click();
+    const invocations = await page.evaluate(() => window.__piwiUpdateInvocations);
+    expect(invocations.filter((cmd) => cmd === 'desktop_check_update')).toHaveLength(2);
   });
 
   test('opens the changelog shipped with the installed version', async ({ page }) => {

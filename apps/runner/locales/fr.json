@@ -246,15 +246,11 @@
     }
   },
   "runner_trayHint": {
-    "message": "$updates$ et $logs$ se trouvent dans le menu de l’icône de la zone de notification.",
+    "message": "$logs$ se trouve dans le menu de l’icône de la zone de notification.",
     "placeholders": {
       "logs": {
         "content": "$1",
         "example": "Show logs"
-      },
-      "updates": {
-        "content": "$2",
-        "example": "Check for updates…"
       }
     }
   },
@@ -387,6 +383,15 @@
       "error": {
         "content": "$1",
         "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnpublished": {
+    "message": "La dernière version publiée n’a pas encore de paquet de $app$ pour ce système : elle est peut-être encore en cours de publication. Réessayez dans quelques minutes.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
       }
     }
   },
@@ -556,10 +561,14 @@
     }
   },
   "shell_updateInstallFrom": {
-    "message": "Installez-la depuis $menu$ dans le menu de l’icône de la zone de notification, ou téléchargez-la depuis la dernière version publiée.",
+    "message": "Installez-la depuis $about$ dans les réglages de la fenêtre, ou depuis $menu$ dans le menu de l’icône de la zone de notification.",
     "placeholders": {
-      "menu": {
+      "about": {
         "content": "$1",
+        "example": "About"
+      },
+      "menu": {
+        "content": "$2",
         "example": "Check for updates…"
       }
     }

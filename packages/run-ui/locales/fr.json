@@ -1102,5 +1102,92 @@
   },
   "runui_runsWaiting": {
     "message": "Un test attend à un arrêt"
+  },
+  "runui_updateCheckPrompt": {
+    "message": "Rechercher sur GitHub une version plus récente de $app$.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_updateCheck": {
+    "message": "Rechercher des mises à jour"
+  },
+  "runui_updateUnsupported": {
+    "message": "Cette installation n’a pas de canal de mise à jour : les versions de développement et celles publiées sans la clé de signature des mises à jour ne peuvent pas se mettre à jour seules. Téléchargez les nouvelles versions depuis la $release$.",
+    "placeholders": {
+      "release": {
+        "content": "$1",
+        "example": "latest release"
+      }
+    }
+  },
+  "runui_updateLatestRelease": {
+    "message": "dernière version publiée"
+  },
+  "runui_updateLatest": {
+    "message": "Vous avez la dernière version."
+  },
+  "runui_updateCheckAgain": {
+    "message": "Rechercher à nouveau"
+  },
+  "runui_updateUnpublished": {
+    "message": "La dernière version publiée n’a pas encore de paquet pour ce système : elle est peut-être encore en cours de publication. Réessayez dans quelques minutes."
+  },
+  "runui_updateAvailable": {
+    "message": "La version $version$ est disponible",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.75.0"
+      }
+    }
+  },
+  "runui_updateInstall": {
+    "message": "Installer la mise à jour"
+  },
+  "runui_updateInstalling": {
+    "message": "Installation…"
+  },
+  "runui_updateRestart": {
+    "message": "Redémarrer maintenant"
+  },
+  "runui_updateInstalled": {
+    "message": "La mise à jour est installée : elle s’applique au prochain démarrage de l’application."
+  },
+  "runui_updateNotify": {
+    "message": "Afficher une notification au démarrage quand une mise à jour est disponible"
+  },
+  "runui_updateNotifyHint": {
+    "message": "Recherche sur GitHub une version plus récente à chaque démarrage de l’application."
+  },
+  "runui_updateCheckFailed": {
+    "message": "La recherche de mises à jour a échoué"
+  },
+  "runui_updateFailed": {
+    "message": "La mise à jour a échoué"
+  },
+  "runui_updateNotifySaveFailed": {
+    "message": "Impossible d’enregistrer le réglage de la notification de mise à jour"
+  },
+  "runui_startOnLoginOffer": {
+    "message": "Lancez $app$ à l’ouverture de session, pour que l’instance puisse encore le joindre après un redémarrage de votre ordinateur.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_startOnLoginTurnOn": {
+    "message": "Lancer à l’ouverture de session"
+  },
+  "runui_startOnLoginNotNow": {
+    "message": "Pas maintenant"
+  },
+  "runui_startOnLoginFailed": {
+    "message": "Impossible d’activer le lancement à l’ouverture de session"
   }
 }

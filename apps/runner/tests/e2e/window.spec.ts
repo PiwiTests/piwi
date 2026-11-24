@@ -1,12 +1,25 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { expect, test } from '@playwright/test';
-import { ENVIRONMENT, FOLDER, VIEWER, clipped, hubRun, playShell, read, root, runRequest, said } from './shell';
+import {
+  ENVIRONMENT,
+  FOLDER,
+  VIEWER,
+  clipped,
+  connectionView,
+  hubRun,
+  playShell,
+  read,
+  root,
+  runRequest,
+  said,
+} from './shell';
 
 /**
  * Piwi Runner's window in another language than English, at its smallest size: the language the shell answers reaches
  * the page (`lang`), Runner's own words (the header, both views, the welcome, the run shown), the layer's (a run
- * request's confirmation and its checks, by their codes, the runs' list at the window's default size), the run model's
+ * request's confirmation and its checks, by their codes, the update on offer, the runs' list at the window's default
+ * size), the run model's
  * (a stopped worker) and Nuxt UI's (a close button), and no text is cut. The shell's bridge (`window.__TAURI__`) and the host's streams are played by the spec;
  * what each says comes from the catalogs.
  */
@@ -77,7 +90,12 @@ for (const { code, tag, close } of LANGUAGES) {
     await expect(page.getByRole('heading', { name: said(runner, 'runner_languageHeading') })).toBeVisible();
     expect(await clipped(page.locator('main'))).toEqual([]);
     await section('runner_aboutHeading');
-    await expect(page.getByTestId('runner-about').getByText(said(runner, 'runner_tagline'))).toBeVisible();
+    const about = page.getByTestId('runner-about');
+    await expect(about.getByText(said(runner, 'runner_tagline'))).toBeVisible();
+    // The update the startup check found, as Piwi Desktop's About shows it.
+    await expect(about.getByText(said(layer, 'runui_updateAvailable', { version: '0.99.0' }))).toBeVisible();
+    await expect(about.getByRole('button', { name: said(layer, 'runui_updateInstall') })).toBeVisible();
+    await expect(about.getByRole('checkbox', { name: said(layer, 'runui_updateNotify') })).toBeChecked();
     expect(await clipped(page.locator('main'))).toEqual([]);
 
     // A request: its confirmation, its checks said from their codes, and Nuxt UI's own close button.
@@ -205,6 +223,28 @@ for (const { code, tag, close } of LANGUAGES) {
     await expect(page.getByTestId('runner-status')).toHaveText(said(layer, 'runui_connectionStateNone'));
     expect(await clipped(page.getByTestId('runner-header'))).toEqual([]);
     expect(await clipped(page.locator('main'))).toEqual([]);
+  });
+
+  test(`the window offers Start on login in ${code} once a sign-in goes through`, async ({ page }) => {
+    const layer = read(`packages/run-ui/locales/${code}.json`);
+    await playShell(page, code, 'none');
+    await page.goto('/');
+    await expect(page.getByTestId('runner-welcome')).toBeVisible();
+
+    // The sign-in waits on the instance's page, then goes through: the runs show, with the offer above them.
+    const signingIn = { ...connectionView('none'), state: 'signing-in', instance: 'https://piwi.example.com' };
+    await page.evaluate((connection) => window.__events.send('host', { type: 'run-target', connection }), signingIn);
+    await page.evaluate(
+      (connection) => window.__events.send('host', { type: 'run-target', connection }),
+      connectionView('online'),
+    );
+    const offer = page.getByTestId('start-on-login-offer');
+    await expect(offer.getByText(said(layer, 'runui_startOnLoginOffer', { app: 'Piwi Runner' }))).toBeVisible();
+    expect(await clipped(page.locator('main'))).toEqual([]);
+
+    await offer.getByRole('button', { name: said(layer, 'runui_startOnLoginTurnOn') }).click();
+    await expect(offer).toBeHidden();
+    expect(await page.evaluate(() => window.__invoked)).toContain('desktop_set_start_on_login');
   });
 
   test(`the window speaks ${code} while the instance does not answer, with no text cut`, async ({ page }) => {

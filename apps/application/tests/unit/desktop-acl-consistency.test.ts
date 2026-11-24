@@ -112,14 +112,9 @@ describe('Piwi Runner shell ACL wiring', () => {
   });
 
   test('the runner window gets none of the dashboard-only commands', () => {
-    // The dashboard reads and writes its service settings, the project links, the IDE launchers and the update channel; the runner has none of those.
-    const forbidden = [
-      'desktop_set_server_port',
-      'desktop_open_in_ide',
-      'desktop_mcp_connect',
-      'desktop_install_update',
-      'desktop_skills_write',
-    ];
+    // The dashboard reads and writes its server's port, the IDE launchers, the MCP clients and the skills; the runner
+    // has none of those. Both update themselves the same way, so the update commands are the runner's too.
+    const forbidden = ['desktop_set_server_port', 'desktop_open_in_ide', 'desktop_mcp_connect', 'desktop_skills_write'];
     expect(forbidden.filter((cmd) => runnerGrants.includes(cmd))).toEqual([]);
   });
 });

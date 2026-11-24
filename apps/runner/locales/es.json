@@ -246,15 +246,11 @@
     }
   },
   "runner_trayHint": {
-    "message": "$updates$ y $logs$ están en el menú del icono de la bandeja del sistema.",
+    "message": "$logs$ está en el menú del icono de la bandeja del sistema.",
     "placeholders": {
       "logs": {
         "content": "$1",
         "example": "Show logs"
-      },
-      "updates": {
-        "content": "$2",
-        "example": "Check for updates…"
       }
     }
   },
@@ -387,6 +383,15 @@
       "error": {
         "content": "$1",
         "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnpublished": {
+    "message": "La última versión publicada todavía no tiene un paquete de $app$ para este sistema: quizá aún se está publicando. Vuelve a intentarlo en unos minutos.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
       }
     }
   },
@@ -556,10 +561,14 @@
     }
   },
   "shell_updateInstallFrom": {
-    "message": "Instálala desde $menu$ en el menú del icono de la bandeja del sistema, o descárgala de la última versión publicada.",
+    "message": "Instálala desde $about$ en la configuración de la ventana, o desde $menu$ en el menú del icono de la bandeja del sistema.",
     "placeholders": {
-      "menu": {
+      "about": {
         "content": "$1",
+        "example": "About"
+      },
+      "menu": {
+        "content": "$2",
         "example": "Check for updates…"
       }
     }

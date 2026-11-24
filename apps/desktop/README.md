@@ -315,8 +315,13 @@ same release. One manifest serves every Runner install, since the updater looks
 for `{os}-{arch}-{installer}` before `{os}-{arch}`: the `manifest` job of
 `reusable-publish-runner.yml` writes an entry per package from the signatures the
 legs uploaded (`apps/runner/scripts/update-manifest.mjs`). Runner's build merges
-`runner.updater.conf.json`, which holds the same public key, and its tray's
-**Check for updates…** drives the same plugin (`updates::check_from_tray`).
+`runner.updater.conf.json`, which holds the same public key. Both apps check and
+install the same two ways: **Settings → About** in the window (the
+`DesktopUpdatePanel` of `packages/run-ui`) and the tray's **Check for updates…**
+(`updates::check_from_tray`). A latest release whose manifest is missing, or has
+no entry for the install, is reported as not published yet (`unpublished`), never
+as an error. On Windows, where the install ends the app, the window's install asks
+first while runs go on, as the tray's does.
 
 When a check finds an update, the card asks the shell for the notes of every
 release after the installed version up to the offered one

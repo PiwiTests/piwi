@@ -4,7 +4,8 @@ import type { RunRequestPromptView, RunTargetConnectionView } from '@piwitests/e
  * Desktop shell: hear the connection to the team instance and the run requests it sends. A key the device flow just
  * gave goes to the shell, which keeps it in the OS keychain (the window never reads it); a key the instance revoked
  * leaves the keychain. A request the window has not seen yet brings it to the front, where the person runs or
- * declines it; the same request sent again (a reconnect, a new plan) does not. Activates only in the `main` window.
+ * declines it; the same request sent again (a reconnect, a new plan) does not. A sign-in that just went through offers
+ * Start on login while it is off (`useStartOnLoginOffer`). Activates only in the `main` window.
  * What it says is in the host's words (`useRunUiWords`), read as it speaks.
  */
 export default defineNuxtPlugin((nuxtApp) => {
@@ -13,12 +14,15 @@ export default defineNuxtPlugin((nuxtApp) => {
 
   const { connection, add, remove } = useDesktopTeamRequests();
   const { keeping } = useDesktopTeamConnection();
+  const startOnLogin = useStartOnLoginOffer();
   const seen = new Set<string>();
   subscribeDesktopEvents((message) => {
     if (message.type === 'run-target' && message.connection && typeof message.connection === 'object') {
       const next = message.connection as RunTargetConnectionView;
       const wasRevoked = connection.value.state === 'revoked';
+      const wasSigningIn = connection.value.state === 'signing-in';
       connection.value = next;
+      if (wasSigningIn && teamInstanceConnected(next.state)) void startOnLogin.offerIfOff();
       if (next.keyToKeep && !keeping.value) {
         keeping.value = true;
         core

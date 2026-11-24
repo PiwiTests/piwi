@@ -174,6 +174,9 @@ shell and are feature-equivalent.
   updating, the update dialogs) is read through `shell_words(app)`. Runner keeps the language (`ShellLanguage`,
   `desktop_get_language`, `desktop_set_language`), the desktop app keeps none, so it speaks English; the module's
   tests fail on a catalog that lacks a `shell_` message.
+- **Piwi Desktop and Piwi Runner install and update the same way.** Each window's Settings → About shows the layer's
+  `DesktopUpdatePanel`, each tray runs `updates::check_from_tray`, and `release.yml`'s `latest` job lets a release reach
+  both at once; a change to one app's install or update flow is made in both (`desktop-acl-consistency.test.ts`).
 - **Each app bundles Node under its own name** (`NODE_SIDECAR` in `lib.rs`, `externalBin` in each config:
   `piwi-desktop-node`, `piwi-runner-node`): the `.deb` and the `.rpm` install the sidecar in `/usr/bin`, so a plain
   `node` would clash with the other app's package and the distribution's `nodejs`.

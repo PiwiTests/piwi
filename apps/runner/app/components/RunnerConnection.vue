@@ -2,8 +2,9 @@
 /**
  * Piwi Runner's connection to its team instance, in each of its states, from the layer's parts: the instance's address
  * and Connect while it has none, with why the last attempt failed (`DesktopTeamConnectForm`); the code to allow it on
- * the instance's page while the sign-in waits (`DesktopTeamSignIn`); once connected, where it stands, the instance to
- * open, and Disconnect, which asks first. What it does is the layer's (`useDesktopTeamConnection`).
+ * the instance's page while the sign-in waits (`DesktopTeamSignIn`); once connected, where it stands, the offer to
+ * start on login right after the sign-in (`DesktopStartOnLoginOffer`), the instance to open, and Disconnect, which asks
+ * first. What it does is the layer's (`useDesktopTeamConnection`).
  */
 const { connection, connected, busy, keeping, disconnect } = useDesktopTeamConnection();
 const words = useRunUiWords();
@@ -33,6 +34,7 @@ async function confirmDisconnect() {
           <code class="block text-xs break-all text-muted">{{ connection.instance }}</code>
         </div>
       </div>
+      <DesktopStartOnLoginOffer app-name="Piwi Runner" />
       <div class="flex flex-wrap gap-2">
         <UButton
           v-if="connection.instance"

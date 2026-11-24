@@ -246,15 +246,11 @@
     }
   },
   "runner_trayHint": {
-    "message": "$updates$ und $logs$ finden Sie im Menü des Symbols im Infobereich.",
+    "message": "$logs$ finden Sie im Menü des Symbols im Infobereich.",
     "placeholders": {
       "logs": {
         "content": "$1",
         "example": "Show logs"
-      },
-      "updates": {
-        "content": "$2",
-        "example": "Check for updates…"
       }
     }
   },
@@ -387,6 +383,15 @@
       "error": {
         "content": "$1",
         "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnpublished": {
+    "message": "Die neueste Version enthält noch kein Paket von $app$ für dieses System: Sie wird vielleicht gerade veröffentlicht. Versuchen Sie es in ein paar Minuten erneut.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
       }
     }
   },
@@ -556,10 +561,14 @@
     }
   },
   "shell_updateInstallFrom": {
-    "message": "Installieren Sie sie über $menu$ im Menü des Symbols im Infobereich oder laden Sie sie aus der neuesten Version herunter.",
+    "message": "Installieren Sie sie über $about$ in den Einstellungen des Fensters oder über $menu$ im Menü des Symbols im Infobereich.",
     "placeholders": {
-      "menu": {
+      "about": {
         "content": "$1",
+        "example": "About"
+      },
+      "menu": {
+        "content": "$2",
         "example": "Check for updates…"
       }
     }

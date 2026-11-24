@@ -1102,5 +1102,92 @@
   },
   "runui_runsWaiting": {
     "message": "Um teste espera em uma parada"
+  },
+  "runui_updateCheckPrompt": {
+    "message": "Procurar no GitHub uma versão mais recente do $app$.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_updateCheck": {
+    "message": "Procurar atualizações"
+  },
+  "runui_updateUnsupported": {
+    "message": "Esta cópia não tem canal de atualização: as versões de desenvolvimento e as publicadas sem a chave de assinatura das atualizações não podem se atualizar sozinhas. Baixe as novas versões da $release$.",
+    "placeholders": {
+      "release": {
+        "content": "$1",
+        "example": "latest release"
+      }
+    }
+  },
+  "runui_updateLatestRelease": {
+    "message": "versão mais recente publicada"
+  },
+  "runui_updateLatest": {
+    "message": "Você está na versão mais recente."
+  },
+  "runui_updateCheckAgain": {
+    "message": "Procurar de novo"
+  },
+  "runui_updateUnpublished": {
+    "message": "A versão mais recente publicada ainda não tem um pacote para este sistema: talvez ela ainda esteja sendo publicada. Tente de novo em alguns minutos."
+  },
+  "runui_updateAvailable": {
+    "message": "A versão $version$ está disponível",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.75.0"
+      }
+    }
+  },
+  "runui_updateInstall": {
+    "message": "Instalar a atualização"
+  },
+  "runui_updateInstalling": {
+    "message": "Instalando…"
+  },
+  "runui_updateRestart": {
+    "message": "Reiniciar agora"
+  },
+  "runui_updateInstalled": {
+    "message": "A atualização está instalada: ela vale a partir da próxima vez que o aplicativo iniciar."
+  },
+  "runui_updateNotify": {
+    "message": "Mostrar uma notificação ao iniciar quando houver uma atualização disponível"
+  },
+  "runui_updateNotifyHint": {
+    "message": "Procura no GitHub uma versão mais recente cada vez que o aplicativo inicia."
+  },
+  "runui_updateCheckFailed": {
+    "message": "Não foi possível procurar atualizações"
+  },
+  "runui_updateFailed": {
+    "message": "A atualização falhou"
+  },
+  "runui_updateNotifySaveFailed": {
+    "message": "Não foi possível salvar a configuração da notificação de atualização"
+  },
+  "runui_startOnLoginOffer": {
+    "message": "Inicie o $app$ ao fazer login, para que a instância ainda consiga alcançá-lo depois que o computador reiniciar.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_startOnLoginTurnOn": {
+    "message": "Iniciar ao fazer login"
+  },
+  "runui_startOnLoginNotNow": {
+    "message": "Agora não"
+  },
+  "runui_startOnLoginFailed": {
+    "message": "Não foi possível ativar o início ao fazer login"
   }
 }

@@ -19,6 +19,7 @@ bundles the Docker image's server in a native window and adds what only a local 
 - **Reproduces and bisects** a failure, or a flake, in a throwaway worktree, also for your editor.
 - **Imports** a blob report or trace dropped on the window.
 - **Connects AI assistants** to its MCP server by writing their config.
+- **Takes a team instance's [run requests](./run-on-my-machine)**, like [Piwi Runner](./piwi-runner).
 
 Everything binds to `127.0.0.1`.
 
@@ -44,13 +45,13 @@ running test (machine kept awake), **MCP server…**, **Desktop app settings…*
 the window quits), **Start on login**, **Check for updates…**, **Open data folder**, **Show logs**, **Quit Piwi Desktop**. The windows open where you left them, with [keyboard shortcuts](/reference/keyboard-shortcuts#desktop-app)
 and macOS menu items. **Open in a
 window**, on a worker of the [Local runs tray](./desktop-runs), keeps it on top, then says how its run ended.
-While a run reports into the app, from the app, an editor, a terminal or CI, its progress shows on the taskbar button or
+While any run reports into the app, its progress shows on the taskbar button or
 the Dock icon and the window's title (`Running 3/9`), and a dot on the system tray icon (and the taskbar button, on Windows)
 says how it stands: blue while it runs, red once a test failed, violet while a test of the app's runs, or of an
 editor's, waits at a stop for you (`1 test waits for you`). A run from the window's Local runs tray flashes its outcome
 as it ends (slate when interrupted), whatever else runs, and, failed while you look away, bounces the Dock icon or
-flashes the taskbar button, a bisect or a lab only at its verdict; an editor's, a terminal's or CI's run, or one from
-before a reload, never does. On Windows, the taskbar button's thumbnail has **Open**, which restores the window, and
+flashes the taskbar button, a bisect or a lab only at its verdict; any other run, or one from before a reload, never
+does. On Windows, the taskbar button's thumbnail has **Open**, which restores the window, and
 **Stop**, which stops the window's run started last, the next one at a second click. In the background,
 [notifications](/features/notifications#browser) arrive as OS notifications with no setup, plus an unread count on the
 dock icon or system tray tooltip.
@@ -147,9 +148,9 @@ The app serves the [MCP server](/features/mcp) with local tools a hosted instanc
 
 ## Updates
 
-**Settings → About → Updates** checks for a newer release (also at startup), lists what changed since your version,
-breaking changes first, and installs it on restart; the tray's **Check for updates…** installs and restarts.
-The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-checked.
+**Settings → About → Updates** checks for a newer release (also at startup), lists what changed since yours,
+breaking changes first, and installs it on restart; the tray's **Check for updates…** installs and restarts, as in
+[Piwi Runner](./piwi-runner#updates). The `.exe` needs no admin rights; the `.msi` does. Downloads are signature-checked.
 
 ## Limits
 

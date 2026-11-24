@@ -25,10 +25,14 @@
 // announces a found update with a native notification, unless the user turned
 // that off (`desktop_set_update_notification`, stored in the settings file).
 //
-// Piwi Runner has no settings page: its tray's Check for updates runs the same
-// check and asks in native dialogs (`check_from_tray`), then installs and
-// restarts. It reads one manifest, `latest-runner.json`, keyed by installer
-// (`runner.updater.conf.json`), so each install takes its own kind of package.
+// Both apps offer the same two ways: Settings → About in the window (the
+// layer's `DesktopUpdatePanel`, through the commands above) and the tray's
+// Check for updates, which runs the same check and asks in native dialogs
+// (`check_from_tray`), then installs and restarts. A release whose manifest has
+// no package for this system yet, or no manifest at all, reads as
+// `unpublished`, never as an error. Piwi Runner reads one manifest,
+// `latest-runner.json`, keyed by installer (`runner.updater.conf.json`), so each
+// install takes its own kind of package.
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -71,7 +75,11 @@ const APP: &str = if cfg!(feature = "runner") { "Piwi Runner" } else { crate::AP
 
 /// Where the desktop app's startup notification sends the person to install the update; Piwi Runner's is
 /// `shell_updateInstallFrom`, in its language.
-const DESKTOP_INSTALL_FROM: &str = "Install it from Settings → About → Updates.";
+const DESKTOP_INSTALL_FROM: &str =
+    "Install it from Settings → About → Updates, or from Check for updates… in the tray icon's menu.";
+
+/// On Windows the install hands over to the installer, which ends the app and every run it started.
+const INSTALL_ENDS_THE_APP: bool = cfg!(target_os = "windows");
 
 /// The releases page, for what is new in a version the tray offers.
 const RELEASES_PAGE: &str = "https://github.com/PiwiTests/piwi/releases";
@@ -273,7 +281,7 @@ fn is_supported(app: &AppHandle) -> bool {
 
 #[derive(Clone, serde::Serialize)]
 pub struct UpdateStatus {
-    /// `unsupported` | `uptodate` | `available`
+    /// `unsupported` | `uptodate` | `available` | `unpublished` (the latest release has no package for this system yet)
     state: &'static str,
     version: Option<String>,
     date: Option<String>,
@@ -354,7 +362,13 @@ pub async fn notify_if_update_available(app: AppHandle) {
         }) => {
             let words = crate::shell_words::shell_words(&app);
             let install_from = if cfg!(feature = "runner") {
-                words.say("shell_updateInstallFrom", &[("menu", &words.say("shell_checkUpdates", &[]))])
+                words.say(
+                    "shell_updateInstallFrom",
+                    &[
+                        ("about", &words.say("runner_aboutHeading", &[])),
+                        ("menu", &words.say("shell_checkUpdates", &[])),
+                    ],
+                )
             } else {
                 DESKTOP_INSTALL_FROM.to_string()
             };
@@ -397,8 +411,8 @@ async fn check(app: &AppHandle) -> Result<UpdateStatus, String> {
         })
         .build()
         .map_err(|e| e.to_string())?;
-    match updater.check().await.map_err(|e| e.to_string())? {
-        Some(update) => {
+    match updater.check().await {
+        Ok(Some(update)) => {
             let status = UpdateStatus::available(&update);
             remember_offered(app, &update.version);
             app.state::<PendingUpdate>()
@@ -408,16 +422,53 @@ async fn check(app: &AppHandle) -> Result<UpdateStatus, String> {
                 .replace(update);
             Ok(status)
         }
-        None => Ok(UpdateStatus::bare("uptodate")),
+        Ok(None) => Ok(UpdateStatus::bare("uptodate")),
+        Err(error) if not_published(&error) => Ok(UpdateStatus::bare("unpublished")),
+        Err(error) => Err(error.to_string()),
     }
+}
+
+/// Whether the check failed because the latest release has no manifest, or none for this system: the release is
+/// still being published, or one of its packages failed to. Both apps' manifests sit on the latest release
+/// (`releases/latest/download/`), so the next release fixes it, or the same one once its packages are on it.
+fn not_published(error: &tauri_plugin_updater::Error) -> bool {
+    matches!(
+        error,
+        tauri_plugin_updater::Error::ReleaseNotFound
+            | tauri_plugin_updater::Error::TargetNotFound(_)
+            | tauri_plugin_updater::Error::TargetsNotFound(_)
+    )
+}
+
+/// Asks before an install that ends the app while runs go on, as the tray's install does: `true` when nothing runs or
+/// the person agreed.
+async fn may_stop_runs_for_update(app: &AppHandle) -> bool {
+    let (answer, answered) = std::sync::mpsc::channel();
+    let words = crate::shell_words::shell_words(app);
+    crate::ask_stopping_local_runs(
+        app,
+        &words.say("shell_updateQuestion", &[("app", APP)]),
+        crate::StopRunsFor::Update,
+        &words.say("shell_updateButton", &[]),
+        move |go| {
+            let _ = answer.send(go);
+        },
+    );
+    tauri::async_runtime::spawn_blocking(move || answered.recv().unwrap_or(false))
+        .await
+        .unwrap_or(false)
 }
 
 /// Download and install the update found by the last check. Progress streams
 /// as `piwi:update-progress` events; on macOS and Linux the app keeps running
-/// until the dashboard asks for the restart, on Windows it quits into the
-/// installer.
+/// until the window asks for the restart, on Windows it quits into the
+/// installer, once the person agreed to stop the runs going. `false` when they
+/// kept them: nothing was installed, and the update stays on offer.
 #[tauri::command]
-pub async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
+pub async fn desktop_install_update(app: AppHandle) -> Result<bool, String> {
+    if INSTALL_ENDS_THE_APP && !may_stop_runs_for_update(&app).await {
+        return Ok(false);
+    }
     let update = app
         .state::<PendingUpdate>()
         .0
@@ -440,7 +491,8 @@ pub async fn desktop_install_update(app: AppHandle) -> Result<(), String> {
             || {},
         )
         .await
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 /// Set while the tray's check or install runs, so a second click starts nothing.
@@ -463,6 +515,8 @@ enum TrayAnswer {
     Available { installed: String, offered: String },
     /// A build that cannot update itself.
     Unsupported,
+    /// The latest release has no package for this system yet.
+    Unpublished,
 }
 
 fn tray_answer(status: &UpdateStatus, installed: &str) -> TrayAnswer {
@@ -472,6 +526,7 @@ fn tray_answer(status: &UpdateStatus, installed: &str) -> TrayAnswer {
             offered: offered.to_string(),
         },
         ("unsupported", _) => TrayAnswer::Unsupported,
+        ("unpublished", _) => TrayAnswer::Unpublished,
         _ => TrayAnswer::UpToDate(installed.to_string()),
     }
 }
@@ -506,6 +561,10 @@ pub fn check_from_tray(app: &AppHandle, restore_tooltip: fn(&AppHandle)) {
                     MessageDialogKind::Info,
                     &words.say("shell_updateUnsupported", &[("app", APP), ("page", RELEASES_PAGE)]),
                 );
+            }
+            Ok(TrayAnswer::Unpublished) => {
+                done();
+                tell(&app, MessageDialogKind::Info, &words.say("shell_updateUnpublished", &[("app", APP)]));
             }
             Ok(TrayAnswer::UpToDate(version)) => {
                 done();
@@ -624,7 +683,7 @@ pub fn desktop_restart_app(app: AppHandle) {
 
 #[cfg(test)]
 mod tests {
-    use super::{select_releases, tray_answer, GithubRelease, TrayAnswer, UpdateStatus};
+    use super::{not_published, select_releases, tray_answer, GithubRelease, TrayAnswer, UpdateStatus};
 
     #[test]
     fn the_tray_says_what_the_check_found() {
@@ -645,6 +704,17 @@ mod tests {
             TrayAnswer::UpToDate("0.69.0".into())
         );
         assert_eq!(tray_answer(&status("unsupported", None), "0.69.0"), TrayAnswer::Unsupported);
+        assert_eq!(tray_answer(&status("unpublished", None), "0.69.0"), TrayAnswer::Unpublished);
+    }
+
+    #[test]
+    fn a_release_without_this_systems_package_is_not_published_yet() {
+        use tauri_plugin_updater::Error;
+        assert!(not_published(&Error::ReleaseNotFound));
+        assert!(not_published(&Error::TargetNotFound("linux-x86_64-deb".into())));
+        assert!(not_published(&Error::TargetsNotFound(vec!["linux-x86_64".into()])));
+        assert!(!not_published(&Error::Network("connection refused".into())));
+        assert!(!not_published(&Error::EmptyEndpoints));
     }
     use semver::Version;
 

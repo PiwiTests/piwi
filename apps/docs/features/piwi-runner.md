@@ -1,6 +1,6 @@
 ---
 title: Piwi Runner
-description: "Piwi Runner takes Run on my machine requests from a team instance without the dashboard: where to get it, how it installs beside the desktop app, and how it stays in the tray."
+description: "Piwi Runner takes Run on my machine requests from a team instance without the dashboard: where to get it, how it installs and updates beside the desktop app, and how it stays in the tray."
 lang: en-US
 ---
 
@@ -22,14 +22,17 @@ unsigned first start: [the desktop app's installers](./desktop#where-it-is).
 
 ## Updates
 
-Piwi Runner checks the latest release when it starts, and a notification says when a newer version is out. **Check for
-updates…** in the system tray menu checks again; when one is found, **Install and restart** downloads it, checks its
-signature, installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb` or `.rpm`) and starts
-the new version, after asking to stop the runs still going. Your connection and linked folders stay. **Settings → About**
-in its window shows the version installed and where the tray's update and log items are, with links to this page, the
-release notes and the page to report a problem. A new release's Piwi Runner files can reach the release a few minutes after the desktop app's; until then the check finds nothing new
-or fails, and the next one finds them. On a desktop that shows no tray icon, install a new version from the latest release over
-the old one.
+Piwi Runner updates the way the [desktop app](./desktop#updates) does, from the same releases, which reach both apps at
+once. It checks the latest release when it starts, and a notification says when a newer version is out, unless you turn
+that off in **Settings → About**. There, **Check for updates** checks again, and **Install update** downloads the new
+version, checks its signature and installs it the way it was installed (`.exe`, `.msi`, `.dmg`, `.AppImage`, `.deb`
+or `.rpm`); **Restart now** starts it, after asking to stop the runs still going. On Windows, where the install ends
+the app, it asks before installing. The tray's **Check for updates…** does both in one step, **Install and restart**.
+Your connection and linked folders stay. When the latest release has no package for this system yet, as while it
+publishes, the check says so: try again a few minutes later.
+
+**Settings → About** also shows the version installed, links this page, the release notes and the page to report a
+problem, and says where the tray's **Show logs** is.
 
 ## Piwi Runner or the desktop app
 
@@ -46,8 +49,9 @@ folder, Linux package, settings, linked folders and keychain entry. Connected to
 Until it is connected, its window opens on the instance's address, with the three steps from a test there to its run
 here. It connects the way the desktop app does: enter the instance's address and click **Connect**, then allow **Piwi
 Runner** on the instance's page with the code the window shows. Its key stays in the operating system's keychain.
-Each project's folder is linked on the first request for it. The rest, from the confirmation to **Stop**, is described
-in [Run on my machine](./run-on-my-machine#in-the-app).
+Each project's folder is linked on the first request for it. Once connected, while **Start on login** is off, the
+window offers to turn it on: a Runner that is not running takes no requests. The rest, from the confirmation to
+**Stop**, is described in [Run on my machine](./run-on-my-machine#in-the-app).
 
 Once connected, the top of the window says which instance it takes requests from, with a dot of its state: green while
 connected, amber while it connects or the instance does not answer, when a line above the runs also says that its
@@ -117,7 +121,7 @@ window forward. The tray menu has, with the [desktop app](./desktop)'s glyphs an
 - **Quit Piwi Runner**, which stops its runs, after asking.
 
 The **General** section of the window's **Settings** has the same two settings, for a desktop that shows no tray icon (GNOME without an
-AppIndicator extension): turn **Run in background** off there, and closing the window quits.
+AppIndicator extension): turn **Run in background** off there, and closing the window quits. **About** has the updates.
 
 Its icon is the Piwi mark on a teal tile with a play sign, so it reads apart from the desktop app's in the tray and the
 taskbar.

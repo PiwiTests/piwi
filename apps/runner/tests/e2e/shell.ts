@@ -185,7 +185,8 @@ export function connectionView(state: ConnectionState) {
 /**
  * The shell's bridge, answering in `language`, and the window's two streams (the host's events and the runs' hub),
  * which `window.__events.send` speaks on; `window.__events.emit` says a shell event (`piwi:local-run`). A run the
- * person confirms starts as the shell's run 1, the next as run 2, and `window.__invoked` lists the commands called.
+ * person confirms starts as the shell's run 1, the next as run 2, the startup check found version 0.99.0, and
+ * `window.__invoked` lists the commands called.
  */
 export async function playShell(page: Page, language: string, state: ConnectionState = 'online') {
   await page.addInitScript((code) => {
@@ -234,6 +235,12 @@ export async function playShell(page: Page, language: string, state: ConnectionS
                 return { language: code, chosen: code, system: 'en' };
               case 'desktop_get_service_settings':
                 return { run_in_background: true, start_on_login: false };
+              case 'desktop_get_update_settings':
+                return {
+                  supported: true,
+                  notify_on_startup: true,
+                  pending: { state: 'available', version: '0.99.0', date: null },
+                };
               case 'desktop_request_folders':
                 return { '12': '/home/dana/shop' };
               case 'desktop_run_requested_tests':

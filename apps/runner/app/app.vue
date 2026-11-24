@@ -7,7 +7,8 @@ import { de, en, es, fr, pt_br } from '@nuxt/ui/locale';
  * runs. It holds no project data and no account; the shell keeps the instance's key in the OS keychain.
  *
  * Two views under the header (`RunnerHeader`), drawn once the connection is known: the runs, which fill the window
- * below it, with the welcome above them while the window is not connected, and the settings, a section at a time
+ * below it, with the welcome above them while the window is not connected (and the offer to start on login once it
+ * just connected, `DesktopStartOnLoginOffer`), and the settings, a section at a time
  * (`RunnerSettings`). The runs stay drawn while the settings show, so the run shown and its live view go on; the
  * settings come back where they were scrolled, and a confirmed request or a stop brings the runs back.
  */
@@ -96,6 +97,7 @@ onMounted(async () => {
       >
         <div v-show="view === 'runs'" class="flex min-h-0 flex-1 flex-col">
           <RunnerWelcome v-if="!connected" class="mx-auto w-full max-w-3xl shrink-0 p-4 sm:p-6" />
+          <DesktopStartOnLoginOffer v-else app-name="Piwi Runner" class="mx-6 mt-6 shrink-0" />
           <RunnerRunList v-if="connected || anyRun" />
         </div>
         <RunnerSettings v-if="view === 'settings'" v-model:section="section" />

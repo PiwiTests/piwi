@@ -1102,5 +1102,92 @@
   },
   "runui_runsWaiting": {
     "message": "Ein Test wartet an einem Halt"
+  },
+  "runui_updateCheckPrompt": {
+    "message": "Auf GitHub nach einer neueren Version von $app$ suchen.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_updateCheck": {
+    "message": "Nach Updates suchen"
+  },
+  "runui_updateUnsupported": {
+    "message": "Dieser Build hat keinen Update-Kanal: Entwicklungs-Builds und Versionen, die ohne den Signaturschlüssel für Updates erstellt wurden, können sich nicht selbst aktualisieren. Neue Versionen gibt es unter $release$.",
+    "placeholders": {
+      "release": {
+        "content": "$1",
+        "example": "latest release"
+      }
+    }
+  },
+  "runui_updateLatestRelease": {
+    "message": "Neueste Version"
+  },
+  "runui_updateLatest": {
+    "message": "Sie haben die neueste Version."
+  },
+  "runui_updateCheckAgain": {
+    "message": "Erneut suchen"
+  },
+  "runui_updateUnpublished": {
+    "message": "Die neueste Version enthält noch kein Paket für dieses System: Sie wird vielleicht gerade veröffentlicht. Versuchen Sie es in ein paar Minuten erneut."
+  },
+  "runui_updateAvailable": {
+    "message": "Version $version$ ist verfügbar",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.75.0"
+      }
+    }
+  },
+  "runui_updateInstall": {
+    "message": "Update installieren"
+  },
+  "runui_updateInstalling": {
+    "message": "Wird installiert…"
+  },
+  "runui_updateRestart": {
+    "message": "Jetzt neu starten"
+  },
+  "runui_updateInstalled": {
+    "message": "Das Update ist installiert: Es gilt ab dem nächsten Start der App."
+  },
+  "runui_updateNotify": {
+    "message": "Beim Start eine Benachrichtigung zeigen, wenn ein Update verfügbar ist"
+  },
+  "runui_updateNotifyHint": {
+    "message": "Sucht bei jedem Start der App auf GitHub nach einer neueren Version."
+  },
+  "runui_updateCheckFailed": {
+    "message": "Suche nach Updates fehlgeschlagen"
+  },
+  "runui_updateFailed": {
+    "message": "Update fehlgeschlagen"
+  },
+  "runui_updateNotifySaveFailed": {
+    "message": "Die Einstellung der Update-Benachrichtigung konnte nicht gespeichert werden"
+  },
+  "runui_startOnLoginOffer": {
+    "message": "Starten Sie $app$ bei der Anmeldung, damit die Instanz es auch nach einem Neustart Ihres Computers erreicht.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_startOnLoginTurnOn": {
+    "message": "Bei Anmeldung starten"
+  },
+  "runui_startOnLoginNotNow": {
+    "message": "Nicht jetzt"
+  },
+  "runui_startOnLoginFailed": {
+    "message": "Starten bei Anmeldung konnte nicht eingeschaltet werden"
   }
 }

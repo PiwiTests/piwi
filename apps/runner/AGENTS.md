@@ -76,5 +76,5 @@ and attaches them to the tag's GitHub release as `Piwi-Runner_<arch>…` (`scrip
 `gh release upload`, which prints GitHub's answer to a failed upload; tauri-action only builds), beside the desktop
 app's, with
 update signatures and `latest-runner.json` when the signing key is set. They are signed ad hoc on macOS and unsigned on
-Windows. The tray's **Check for updates…** and the startup check are `updates.rs` (`check_from_tray`), with no window
-command and no settings page.
+Windows. The startup check, the About card's updates (the layer's `DesktopUpdatePanel`, as in the desktop app) and the
+tray's **Check for updates…** (`check_from_tray`) are `updates.rs`, the same in both apps.

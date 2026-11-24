@@ -5,7 +5,7 @@
  * connected, the folders linked to the instance's projects are listed here, each by the name the instance gives its
  * project (its id when it gives none); a request for a project with none asks for its folder in its confirmation.
  * Disconnecting removes the key from the keychain; it stays listed in the instance's Connected apps until it is revoked
- * there. Its parts are shared with each host's own views (`DesktopTeamSignIn`, `DesktopTeamConnectForm`,
+ * there. Right after the sign-in, while Start on login is off, it offers to turn it on (`DesktopStartOnLoginOffer`). Its parts are shared with each host's own views (`DesktopTeamSignIn`, `DesktopTeamConnectForm`,
  * `DesktopTeamFolders`), and what they do is `useDesktopTeamConnection`'s.
  */
 /** The app's name, as the instance's page asks the person to allow it. */
@@ -50,6 +50,7 @@ watch(() => [connection.value.state, connection.value.linkedProjectIds.join(',')
     <DesktopTeamSignIn v-if="connection.state === 'signing-in'" :app-name="appName" />
     <DesktopTeamConnectForm v-else-if="!connected" />
     <template v-else>
+      <DesktopStartOnLoginOffer :app-name="appName" />
       <div class="space-y-1">
         <div class="text-muted">{{ t('runui_connectionLinkedFolders') }}</div>
         <DesktopTeamFolders />

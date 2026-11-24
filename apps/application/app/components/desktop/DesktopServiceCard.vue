@@ -4,7 +4,8 @@
  * options, and the port the bundled server listens on, from the app UI.
  *
  * These are OS/tray-level controls, so the card talks to the Tauri shell over
- * the IPC bridge (window.__TAURI__, injected into the desktop webview). When the
+ * the IPC bridge (window.__TAURI__, injected into the desktop webview), and
+ * follow a change the tray or another view makes (`piwi:background-settings`). When the
  * bridge is absent — the same URL opened in a normal browser, or an older shell
  * that predates it — it degrades to tray instructions rather than showing dead
  * switches. A shell that predates the port setting reports no port, and the
@@ -68,7 +69,21 @@ async function refresh() {
   }
 }
 
-onMounted(refresh);
+let unlisten: (() => void) | null = null;
+
+onMounted(async () => {
+  // The shell announces a change made elsewhere (the tray, the offer to start on login), so the switches follow it.
+  unlisten =
+    (await tauriEvent()
+      ?.listen<{ run_in_background: boolean; start_on_login: boolean }>('piwi:background-settings', ({ payload }) => {
+        runInBackground.value = !!payload.run_in_background;
+        startOnLogin.value = !!payload.start_on_login;
+      })
+      .catch(() => null)) ?? null;
+  await refresh();
+});
+
+onScopeDispose(() => unlisten?.());
 
 async function setRunInBackground(value: boolean) {
   const core = tauriCore();

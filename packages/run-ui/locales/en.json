@@ -1292,5 +1292,113 @@
   "runui_runsWaiting": {
     "message": "A test waits at a stop",
     "description": "Read by a screen reader on a run’s line in the list of runs, beside a pause mark: a test of the run stands stopped at a line, waiting for an answer."
+  },
+  "runui_updateCheckPrompt": {
+    "message": "Check GitHub for a newer version of $app$.",
+    "description": "Beside the Check for updates button, before any check: what it does. $app$ is the app’s name (Piwi Desktop, Piwi Runner).",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_updateCheck": {
+    "message": "Check for updates",
+    "description": "Button of the updates panel: asks GitHub whether a newer version is out. A few words."
+  },
+  "runui_updateUnsupported": {
+    "message": "This build has no update channel: dev builds and releases made without the update signing key cannot update themselves. Get new versions from the $release$.",
+    "description": "The updates panel, on a build that cannot update itself. $release$ is a link whose text is runui_updateLatestRelease.",
+    "placeholders": {
+      "release": {
+        "content": "$1",
+        "example": "latest release"
+      }
+    }
+  },
+  "runui_updateLatestRelease": {
+    "message": "latest release",
+    "description": "Text of the link at the end of runui_updateUnsupported: opens the latest release on GitHub."
+  },
+  "runui_updateLatest": {
+    "message": "You're on the latest version.",
+    "description": "The updates panel, after a check: no newer version is out."
+  },
+  "runui_updateCheckAgain": {
+    "message": "Check again",
+    "description": "Button beside runui_updateLatest: checks for a newer version again. A few words."
+  },
+  "runui_updateUnpublished": {
+    "message": "The latest release has no package for this system yet: it may still be publishing. Try again in a few minutes.",
+    "description": "The updates panel, after a check: the latest release has no update for this system yet, as happens while it is being published."
+  },
+  "runui_updateAvailable": {
+    "message": "Version $version$ is available",
+    "description": "The updates panel: a newer version is out. $version$ is its number.",
+    "placeholders": {
+      "version": {
+        "content": "$1",
+        "example": "0.75.0"
+      }
+    }
+  },
+  "runui_updateInstall": {
+    "message": "Install update",
+    "description": "Button of the updates panel: downloads and installs the newer version. A few words."
+  },
+  "runui_updateInstalling": {
+    "message": "Installing…",
+    "description": "Label of the install button while the update downloads and installs. A few words."
+  },
+  "runui_updateRestart": {
+    "message": "Restart now",
+    "description": "Button of the updates panel once the update is installed: restarts the app on the new version. A few words."
+  },
+  "runui_updateInstalled": {
+    "message": "The update is installed: it applies the next time the app starts.",
+    "description": "Under the restart button of the updates panel, once the update is installed."
+  },
+  "runui_updateNotify": {
+    "message": "Show a notification at startup when an update is available",
+    "description": "Checkbox of the updates panel: whether the app shows a system notification at startup when a newer version is out."
+  },
+  "runui_updateNotifyHint": {
+    "message": "Checks GitHub for a newer release each time the app starts.",
+    "description": "Under the checkbox runui_updateNotify: what it does."
+  },
+  "runui_updateCheckFailed": {
+    "message": "Update check failed",
+    "description": "Title of a notification: looking for a newer version failed. Its reason shows under it."
+  },
+  "runui_updateFailed": {
+    "message": "Update failed",
+    "description": "Title of a notification: downloading or installing the update failed. Its reason shows under it."
+  },
+  "runui_updateNotifySaveFailed": {
+    "message": "Could not save the update notification setting",
+    "description": "Title of a notification: the checkbox runui_updateNotify could not be saved. Its reason shows under it."
+  },
+  "runui_startOnLoginOffer": {
+    "message": "Start $app$ when you sign in, so the instance can still reach it after your computer restarts.",
+    "description": "Shown once the app has just connected to a team instance, while Start on login is off: why to turn it on. $app$ is the app’s name (Piwi Desktop, Piwi Runner).",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
+      }
+    }
+  },
+  "runui_startOnLoginTurnOn": {
+    "message": "Start on login",
+    "description": "Button beside runui_startOnLoginOffer: turns Start on login on. A few words, the setting’s own name."
+  },
+  "runui_startOnLoginNotNow": {
+    "message": "Not now",
+    "description": "Button beside runui_startOnLoginOffer: hides the offer and leaves Start on login off. A few words."
+  },
+  "runui_startOnLoginFailed": {
+    "message": "Could not turn on Start on login",
+    "description": "Title of a notification: Start on login could not be turned on. Its reason shows under it."
   }
 }

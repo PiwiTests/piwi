@@ -39,9 +39,10 @@ Turned off or declined, the instance refuses every request for that project, and
 In Piwi Desktop, open **Settings → Desktop app → Run on my machine**, enter the instance's address and click
 **Connect**. The app opens the instance's page, which asks you to allow **Piwi Desktop** with the code the app shows.
 Once allowed, the app keeps its key in the operating system's keychain (Keychain on macOS, Credential Manager on
-Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs.
-An app connects to one instance at a time. **Disconnect** removes the key from the keychain; the app stays listed in
-the instance's Connected apps until you revoke it there. A key the instance revoked leaves the keychain too.
+Windows, the Secret Service on Linux), never in a file, and holds its connection to the instance open while it runs, and
+offers **Start on login** when off. An app connects to one instance at a time. **Disconnect** removes the key from the
+keychain; the app stays listed in the instance's Connected apps until you revoke it there. A key the instance revoked
+leaves the keychain too.
 
 Each project's folder is linked on this machine, per instance, when its first request asks; **Settings → Desktop
 app** lists them, with **Unlink**. **Find it for me** looks where your runs came from, for the repository's clones and
@@ -57,14 +58,14 @@ left out, and the window says how many. Nobody else's app receives it.
 
 ## In the app
 
-The request opens the desktop app's window, in front: the instance that asked, the project, the tests, the checks of
+The request opens the app's window, in front: the instance that asked, the project, the tests, the checks of
 the linked folder, and the exact command. Nothing runs until you click **Run**:
 
 - **The folder**: linked, with a Playwright config and `@playwright/test` installed, and every spec of the request
   inside it.
 - **The commit**: the run's branch and commit against the folder's. On another commit, or with uncommitted changes, the
-  tests are picked by their titles (`--grep`) rather than by their lines, which may have moved.
-- **One run per folder**: while another run goes on in the folder, the request waits, and is checked again once it
+  tests are picked by title (`--grep`) rather than by line, which may have moved.
+- **One run per folder**: while another run goes on there, the request waits, and is checked again once it
   ends. A command takes at most 24,000 characters.
 - **The [environment](./environments)** the request names, which an older app cannot apply, and the
   [run variables](./run-variables) of the project and the environment: listed among the checks; the command starts
@@ -99,8 +100,8 @@ the run, and it says why; on macOS and Linux, so does a file others can read.
 
 ## Connected apps
 
-**Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor, the
-desktop app. Each shows when it connected and, for an app that runs tests, **Online now** while its connection is open
+**Settings → Account → Connected apps** lists the apps you connected from their own window: Piwi Picker, an editor,
+Piwi Desktop, Piwi Runner. Each shows when it connected and, for an app that runs tests, **Online now** while its connection is open
 and it called the instance within the last two minutes, or else when it was last seen. **Revoke** disconnects one: the
 instance closes the connection of an app that runs tests at once, and refuses its next call. An administrator sees the
 same list for any user in **Settings → Users → API keys**. The keys these apps hold are not listed under API keys.
@@ -126,8 +127,7 @@ coverage, and it never sets the project's default branch. It is never kept forev
 delete it yourself from its page.
 Someone who holds `run:delete` on the project can delete it through the API without seeing it.
 
-A [share link](./share-links) you make for one of its executions opens for whoever has the link, as any share link
-does, so you can show a teammate what happened on your machine. It appears in the project's list of share links.
+A [share link](./share-links) you make for one of its executions opens for whoever has it, as any share link does, so you can show a teammate what happened on your machine. It appears in the project's list of share links.
 
 ## Related
 

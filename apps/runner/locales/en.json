@@ -302,16 +302,12 @@
     }
   },
   "runner_trayHint": {
-    "message": "$updates$ and $logs$ are in the tray icon's menu.",
-    "description": "In the About card. $updates$ and $logs$ are the tray menu's items shell_checkUpdates and shell_showLogs.",
+    "message": "$logs$ is in the tray icon's menu.",
+    "description": "In the About card. $logs$ is the tray menu's item shell_showLogs.",
     "placeholders": {
       "logs": {
         "content": "$1",
         "example": "Show logs"
-      },
-      "updates": {
-        "content": "$2",
-        "example": "Check for updates…"
       }
     }
   },
@@ -464,6 +460,16 @@
       "error": {
         "content": "$1",
         "example": "error sending request"
+      }
+    }
+  },
+  "shell_updateUnpublished": {
+    "message": "The latest release has no $app$ package for this system yet: it may still be publishing. Try again in a few minutes.",
+    "description": "A dialog after Check for updates in the tray: the latest release has no update for this system yet, as happens while it is being published. $app$ is the app’s name.",
+    "placeholders": {
+      "app": {
+        "content": "$1",
+        "example": "Piwi Runner"
       }
     }
   },
@@ -656,11 +662,15 @@
     }
   },
   "shell_updateInstallFrom": {
-    "message": "Install it from $menu$ in the tray icon's menu, or download it from the latest release.",
-    "description": "Body of the system notification that a newer version is out. $menu$ is the tray item shell_checkUpdates.",
+    "message": "Install it from $about$ in the window's settings, or from $menu$ in the tray icon's menu.",
+    "description": "Body of the system notification that a newer version is out. $about$ is the settings section runner_aboutHeading, $menu$ the tray item shell_checkUpdates.",
     "placeholders": {
-      "menu": {
+      "about": {
         "content": "$1",
+        "example": "About"
+      },
+      "menu": {
+        "content": "$2",
         "example": "Check for updates…"
       }
     }
