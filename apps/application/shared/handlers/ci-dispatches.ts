@@ -5,13 +5,14 @@
  * provider's answer, and reading dispatches as the API answers them. Matching
  * a run to a dispatch is the server's (`server/utils/ci-dispatches.ts`).
  */
-import { and, desc, eq, gte, inArray, isNull, ne } from 'drizzle-orm';
+import { and, desc, eq, gte, inArray, isNull, ne, or, type SQL } from 'drizzle-orm';
 import { ciDispatches, testRuns, type CiDispatchRow } from '../../server/database/schema';
 import type { CiActionKind } from '#shared/ci-actions';
 import type { CiRerunProvider } from '#shared/ci-rerun';
 import type { CiServerPreset } from '#shared/ci-server';
 import {
   CI_DISPATCH_GUARD_MS,
+  CI_DISPATCH_MATCH_WINDOW_MS,
   ciDispatchState,
   type CiDispatchOrigin,
   type CiDispatchRun,
@@ -159,8 +160,56 @@ export async function ciDispatchViews(
 
 /** One dispatch as the API answers it, or null. */
 export async function getCiDispatch(db: DrizzleDB, id: string): Promise<CiDispatchView | null> {
+  return (await findCiDispatch(db, id))?.dispatch ?? null;
+}
+
+/** One dispatch as the API answers it, with its project, or null. */
+export async function findCiDispatch(
+  db: DrizzleDB,
+  id: string,
+): Promise<{ projectId: number; dispatch: CiDispatchView } | null> {
   const [row] = await db.select().from(ciDispatches).where(eq(ciDispatches.id, id));
-  return row ? ((await ciDispatchViews(db, [row]))[0] ?? null) : null;
+  const dispatch = row ? (await ciDispatchViews(db, [row]))[0] : undefined;
+  return row && dispatch ? { projectId: row.projectId, dispatch } : null;
+}
+
+/** Which of a project's dispatches a list answers: the open ones or all, of one cluster or test, at most `limit`. */
+export interface CiDispatchListFilter {
+  /** `open`: dispatched and still within the matching window, or running. */
+  state: 'open' | 'all';
+  clusterId?: number | null;
+  testCaseId?: number | null;
+  limit: number;
+}
+
+/** A project's dispatches, newest first, as the API answers them. */
+export async function listCiDispatches(
+  db: DrizzleDB,
+  projectId: number,
+  filter: CiDispatchListFilter,
+  now = Date.now(),
+): Promise<CiDispatchView[]> {
+  const conditions: SQL[] = [eq(ciDispatches.projectId, projectId)];
+  if (filter.clusterId != null) conditions.push(eq(ciDispatches.clusterId, filter.clusterId));
+  if (filter.testCaseId != null) conditions.push(eq(ciDispatches.testCaseId, filter.testCaseId));
+  if (filter.state === 'open') {
+    conditions.push(
+      or(
+        eq(ciDispatches.state, 'running'),
+        and(
+          eq(ciDispatches.state, 'dispatched'),
+          gte(ciDispatches.createdAt, new Date(now - CI_DISPATCH_MATCH_WINDOW_MS)),
+        ),
+      )!,
+    );
+  }
+  const rows = await db
+    .select()
+    .from(ciDispatches)
+    .where(and(...conditions))
+    .orderBy(desc(ciDispatches.createdAt), desc(ciDispatches.id))
+    .limit(filter.limit);
+  return ciDispatchViews(db, rows, now);
 }
 
 /** A cluster's last CI re-run that the provider took, or null when it has none (or no cluster is given). */
@@ -170,6 +219,23 @@ export async function clusterLastDispatch(db: DrizzleDB, clusterId: number | nul
     .select()
     .from(ciDispatches)
     .where(and(eq(ciDispatches.clusterId, clusterId), ne(ciDispatches.state, 'refused')))
+    .orderBy(desc(ciDispatches.createdAt))
+    .limit(1);
+  return row ? ((await ciDispatchViews(db, [row]))[0] ?? null) : null;
+}
+
+/** A test's last Flake Lab dispatch that the provider took, or null when it has none. */
+export async function testLastFlakeLabDispatch(db: DrizzleDB, testCaseId: number): Promise<CiDispatchView | null> {
+  const [row] = await db
+    .select()
+    .from(ciDispatches)
+    .where(
+      and(
+        eq(ciDispatches.testCaseId, testCaseId),
+        eq(ciDispatches.kind, 'flakeLab'),
+        ne(ciDispatches.state, 'refused'),
+      ),
+    )
     .orderBy(desc(ciDispatches.createdAt))
     .limit(1);
   return row ? ((await ciDispatchViews(db, [row]))[0] ?? null) : null;

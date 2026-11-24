@@ -9,8 +9,7 @@ import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { failureClusters } from '../../database/schema';
 import { resolveOwners } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
-import { ciRerunAvailability, flakeLabCiAvailability } from '../../utils/ci-rerun';
-import { clusterRerunCases } from '#shared/handlers/cluster-rerun-cases';
+import { ciDispatchAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
   openAPI: {
@@ -25,7 +24,12 @@ defineRouteMeta({
 
 export default eventHandler(async (event) => {
   const id = requireRouteId(event, 'id', 'cluster ID');
-  const { db, projectId } = await requireResolvedProjectAccess(event, id, resolveClusterProjectId, 'Failure cluster');
+  const { db, projectId, user } = await requireResolvedProjectAccess(
+    event,
+    id,
+    resolveClusterProjectId,
+    'Failure cluster',
+  );
 
   // The next-step policy needs to know whether AI diagnosis and a CI re-run are
   // configured — signals only the server can resolve. A CI run is offered only to
@@ -38,9 +42,7 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     clusterRow && mayDispatch
-      ? ciRerunAvailability(db, projectId, clusterRow.lastSeenRunId, null, () => clusterRerunCases(db, id)).catch(
-          () => null,
-        )
+      ? ciDispatchAvailability(db, projectId, { from: 'cluster', clusterId: id }, user.id).catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -48,7 +50,15 @@ export default eventHandler(async (event) => {
     aiConfigured: aiConfig != null,
     ciRerunAvailable: ciRerun?.available ?? false,
     flakeLabCiAvailable: mayDispatch
-      ? async (testCaseId) => (await flakeLabCiAvailability(db, projectId, testCaseId)).available
+      ? async (testCaseId) =>
+          (
+            await ciDispatchAvailability(
+              db,
+              projectId,
+              { from: 'flake-lab', testCaseId, flakeLab: 'reproduce' },
+              user.id,
+            )
+          )?.available ?? false
       : undefined,
   })) as Awaited<ReturnType<typeof getFailureCluster>> & {
     owner: { name: string; source: 'annotation' | 'codeowners' } | null;

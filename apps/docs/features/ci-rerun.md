@@ -45,11 +45,10 @@ A CI action is a named way to start CI. It has:
   picks first;
 - the kinds it is the **default** for.
 
-A button uses the action of the run's environment, else the project's default for what it starts; MCP and the API can
-name another by id or name. A
-repository action serves only a run whose repository is on that host; a CI server action serves any run. Settings
-saved before CI actions existed were converted when read: each configured target is now an action, and nothing needs
-re-entering.
+A dispatch uses the action that started the run it re-runs, else the one of the run's environment, else the project's
+default. MCP and the API can name another action, a branch and a value for each choice input. A repository action
+serves only a run whose repository is on that host; a CI server action serves any run. Settings saved before CI
+actions existed were converted when read.
 
 **Check** reads an action's target without starting it and says whether it declares every name a dispatch sends, the
 inputs included. It reads a GitHub workflow file and a Jenkins job; GitLab and Bitbucket pipelines and Custom requests
@@ -193,7 +192,7 @@ Custom request is JSON: `auth` (`none`, `basic`, `bearer`, or `{ "header": "X-To
 |---|---|
 | <code v-pre>{{args}}</code> | The Playwright arguments, or `flake 12` for Flake Lab |
 | <code v-pre>{{dispatchId}}</code> | The dispatch id, which the run hands back as `PIWI_ORIGIN_REF` |
-| <code v-pre>{{ref}}</code> | The branch of the cluster's latest run, else the default branch you set |
+| <code v-pre>{{ref}}</code> | The branch asked, else the run's, else the default branch you set |
 | <code v-pre>{{commit}}</code> | The commit of that run, else empty |
 | <code v-pre>{{branchJob}}</code> | The branch as Jenkins names a branch job (`feature/x` is `feature%2Fx`) |
 

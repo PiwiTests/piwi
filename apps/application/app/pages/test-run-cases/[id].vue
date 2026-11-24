@@ -16,7 +16,7 @@ import type { FailureCluesResult } from '#shared/handlers/test-cases';
 import { clusterSectionLocatorKey } from '~/composables/useClusterSectionLocator';
 import { EVIDENCE_SECTION_TAB } from '~/utils/evidence-sections';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import type { RerunInfo } from '~/composables/useCiRerun';
+import { loadRerunInfo, type RerunInfo } from '~/composables/useCiRerun';
 import type { BlockedCaseRef } from '~~/types/api';
 import type { ReproRecipe, BisectResult, ReproduceDesktopContext } from '#shared/reproduce';
 import type { FixedBeforeMatch, FixPlan } from '#shared/fix-plan.types';
@@ -273,10 +273,27 @@ const showLocatorFix = computed(
   () => isLocatorFailure.value && locatorHealingHasData.value && !capHidden('locator-healing'),
 );
 
+// ── What the viewer may do on the execution's project ───────────────────────
+const { can } = useAuth();
+const executionProjectId = computed(() => testCase.value?.testRun?.project?.id ?? null);
+const canQuarantine = computed(() => can('quarantine:write', executionProjectId.value));
+const canTriage = computed(() => can('triage:write', executionProjectId.value));
+const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
+const canEditLinks = computed(() => can('link:write', executionProjectId.value));
+const canRerun = computed(() => can('run:control', executionProjectId.value));
+
 // CI re-run of this test, or of its cluster's tests, for the Verify section, with the cluster's last re-run.
 const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
   `test-run-case-rerun-${testCaseId}`,
-  () => requestFetch<RerunInfo>(`/api/test-run-cases/${testCaseId}/rerun`).catch(() => null),
+  () =>
+    executionProjectId.value
+      ? loadRerunInfo(requestFetch, {
+          projectId: executionProjectId.value,
+          source: { executionId: Number(testCaseId), scope: 'test' },
+          clusterId: failureCluster.value?.id ?? null,
+          mayDispatch: canRerun.value,
+        }).catch(() => null)
+      : Promise.resolve(null),
   { default: (): RerunInfo | null => null },
 );
 // "Fixed before" for the cluster this failure belongs to.
@@ -335,22 +352,28 @@ const { applyingId, applyTriage } = useApplyClusterTriage({
 });
 
 const { rerunning: rerunningTest, triggerRerun: triggerTestRerun } = useCiRerun(
-  `/api/test-run-cases/${testCaseId}/rerun`,
+  () =>
+    executionProjectId.value
+      ? { projectId: executionProjectId.value, source: { executionId: Number(testCaseId), scope: 'test' } }
+      : null,
   refreshRerun,
   'This test is re-running in CI.',
 );
 const { rerunning, triggerRerun } = useCiRerun(
-  () => (failureCluster.value ? `/api/failure-clusters/${failureCluster.value.id}/rerun` : null),
+  () =>
+    failureCluster.value && executionProjectId.value
+      ? { projectId: executionProjectId.value, source: { clusterId: failureCluster.value.id } }
+      : null,
   refreshRerun,
   "The cluster's tests are re-running in CI.",
 );
 
 /**
- * The Verify section shows when a CI re-run is configured, to a viewer who may start one or once a re-run happened; the
- * desktop app re-runs the test from the navbar.
+ * The Verify section shows to a viewer who may start a CI re-run when one can be sent, and to any other viewer once a
+ * re-run happened; the desktop app re-runs the test from the navbar.
  */
-const showVerify = computed(
-  () => Boolean(rerunInfo.value?.available) && (canRerun.value || Boolean(rerunInfo.value?.lastDispatch)),
+const showVerify = computed(() =>
+  canRerun.value ? Boolean(rerunInfo.value?.available) : Boolean(rerunInfo.value?.lastDispatch),
 );
 
 /** Reproduce shows for a failing execution once its recipe is available. */
@@ -487,15 +510,6 @@ const { copy: copyRetry } = useCopy();
 onMounted(() => {
   desktopBridge.value = !!tauriCore();
 });
-
-// ── What the viewer may do on the execution's project ───────────────────────
-const { can } = useAuth();
-const executionProjectId = computed(() => testCase.value?.testRun?.project?.id ?? null);
-const canQuarantine = computed(() => can('quarantine:write', executionProjectId.value));
-const canTriage = computed(() => can('triage:write', executionProjectId.value));
-const canCreateIssue = computed(() => can('issue:create', executionProjectId.value));
-const canEditLinks = computed(() => can('link:write', executionProjectId.value));
-const canRerun = computed(() => can('run:control', executionProjectId.value));
 
 // ── Quarantine ──────────────────────────────────────────────────────────────
 const { quarantineOne, releaseOne } = useQuarantine(() => executionProjectId.value);
@@ -800,6 +814,7 @@ const { setClusterStatus } = useClusterTriage(() => failureCluster.value?.id ?? 
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => failureCluster.value?.id ?? null,
+  projectId: () => executionProjectId.value,
   change: () => nextStepChange.value,
   ideProject: () => testCase.value?.testRun?.project ?? null,
   locatorPanel: () => locatorPanel.value,

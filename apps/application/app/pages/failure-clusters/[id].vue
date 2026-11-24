@@ -17,7 +17,7 @@ import { pickMostLikely, nextStepSourceLine } from '#shared/most-likely';
 import { fixPlanToMarkdown } from '#shared/fix-plan-markdown';
 import { commandWithRunVariables } from '#shared/run-variables';
 import type { FixSectionKey } from '~/utils/fix-sections';
-import type { RerunInfo } from '~/composables/useCiRerun';
+import { loadRerunInfo, type RerunInfo } from '~/composables/useCiRerun';
 import { renderAnsi, stripAnsi } from '@piwitests/run-ui/ansi';
 import { richCopyLink, trackedIssueHtml } from '~/utils/rich-copy-html';
 import { escapeHtml } from '#shared/markdown-to-html';
@@ -328,10 +328,23 @@ const verifyForms = computed(() => {
 const shellKey = COMMAND_SHELL_KEY;
 const { copy: copyRetry } = useCopy();
 
-const { data: rerunInfo, refresh: refreshRerun } = await useFetch<RerunInfo>(
-  `/api/failure-clusters/${clusterId}/rerun`,
+const { data: rerunInfo, refresh: refreshRerun } = await useAsyncData<RerunInfo | null>(
+  `failure-cluster-rerun-${clusterId}`,
+  () =>
+    clusterProjectId.value
+      ? loadRerunInfo(requestFetch, {
+          projectId: clusterProjectId.value,
+          source: { clusterId },
+          clusterId,
+          mayDispatch: canRerun.value,
+        }).catch(() => null)
+      : Promise.resolve(null),
+  { default: (): RerunInfo | null => null },
 );
-const { rerunning, triggerRerun } = useCiRerun(`/api/failure-clusters/${clusterId}/rerun`, refreshRerun);
+const { rerunning, triggerRerun } = useCiRerun(
+  () => (clusterProjectId.value ? { projectId: clusterProjectId.value, source: { clusterId } } : null),
+  refreshRerun,
+);
 
 function refresh() {
   void reloadCluster();
@@ -622,6 +635,7 @@ const { setClusterStatus } = useClusterTriage(clusterId, { onSaved: () => refres
 
 const { handle: handleNextStepAction } = useNextStepActions({
   clusterId: () => clusterId,
+  projectId: () => clusterProjectId.value,
   change: () => nextStepChange.value,
   ideProject: () => cluster.value?.project ?? null,
   locatorPanel: () => clusterLocatorPanel.value,

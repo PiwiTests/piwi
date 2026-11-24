@@ -18,8 +18,7 @@ delete process.env.PIWI_DATABASE_URL;
 
 const state = vi.hoisted(() => ({ db: null, caller: null, routePermission: [] }) as RouteAccessState);
 const ci = vi.hoisted(() => ({
-  rerun: vi.fn(async () => ({ available: true, reason: null, provider: 'github', enabled: true, hasToken: true })),
-  flakeLab: vi.fn(async () => ({ available: true, reason: null })),
+  available: vi.fn(async () => ({ available: true, reason: null, action: { id: 'gh', name: 'Smoke' } })),
 }));
 const seen = vi.hoisted(() => ({ cluster: null as unknown, execution: null as unknown }));
 
@@ -30,10 +29,7 @@ vi.mock('../../server/utils/project-access', async (importOriginal) =>
   (await import('./route-access')).projectAccessMock(state, await importOriginal<object>()),
 );
 // CI re-run and a Flake Lab CI target are configured for the project.
-vi.mock('../../server/utils/ci-rerun', () => ({
-  ciRerunAvailability: ci.rerun,
-  flakeLabCiAvailability: ci.flakeLab,
-}));
+vi.mock('../../server/utils/ci-rerun', () => ({ ciDispatchAvailability: ci.available }));
 vi.mock('../../server/utils/ai-provider', () => ({ resolveAiConfig: async () => null }));
 vi.mock('../../server/utils/wasted-settings', () => ({ resolveWastedSettings: async () => ({ isDefault: true }) }));
 vi.mock('../../server/utils/scm/ownership', () => ({
@@ -89,8 +85,7 @@ beforeEach(async () => {
   state.db = db;
   seen.cluster = null;
   seen.execution = null;
-  ci.rerun.mockClear();
-  ci.flakeLab.mockClear();
+  ci.available.mockClear();
   await db.insert(schema.projects).values({ id: 1, name: 'shop' });
   await db.insert(schema.testCases).values({ id: 1, projectId: 1, filePath: 'tests/cart.spec.ts', title: 'totals' });
   await db.insert(schema.testRuns).values({ id: 1, projectId: 1, status: 'failed', startTime: new Date() });
@@ -118,14 +113,13 @@ describe('a Viewer', () => {
   test('is offered no CI run on a failure cluster', async () => {
     await ask(clusterRoute, 1);
     expect(seen.cluster).toMatchObject({ ciRerunAvailable: false, flakeLabCiAvailable: undefined });
-    expect(ci.rerun).not.toHaveBeenCalled();
+    expect(ci.available).not.toHaveBeenCalled();
   });
 
   test('is offered no CI run on an execution', async () => {
     await ask(executionRoute, 1);
     expect(seen.execution).toMatchObject({ ciRerunAvailable: false, flakeLabCiAvailable: false });
-    expect(ci.rerun).not.toHaveBeenCalled();
-    expect(ci.flakeLab).not.toHaveBeenCalled();
+    expect(ci.available).not.toHaveBeenCalled();
   });
 });
 
@@ -139,10 +133,18 @@ describe('a Maintainer', () => {
     const opts = seen.cluster as { ciRerunAvailable: boolean; flakeLabCiAvailable: (id: number) => Promise<boolean> };
     expect(opts.ciRerunAvailable).toBe(true);
     expect(await opts.flakeLabCiAvailable(1)).toBe(true);
+    expect(ci.available.mock.calls.map((c) => (c as unknown[])[2])).toEqual([
+      { from: 'cluster', clusterId: 1 },
+      { from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' },
+    ]);
   });
 
   test('is offered a CI re-run and a Flake Lab CI run on an execution', async () => {
     await ask(executionRoute, 1);
     expect(seen.execution).toMatchObject({ ciRerunAvailable: true, flakeLabCiAvailable: true });
+    expect(ci.available.mock.calls.map((c) => (c as unknown[])[2])).toEqual([
+      { from: 'execution', executionId: 1, scope: 'test' },
+      { from: 'flake-lab', testCaseId: 1, flakeLab: 'reproduce' },
+    ]);
   });
 });

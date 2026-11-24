@@ -14,9 +14,14 @@ repeat within 10 seconds answered 409 with the first (D13); matching at `/start`
 provider's id (a Flake Lab run by its experiment's test), and at finish by those or the files (D10, D11); GitHub's run
 id (D12); the `unreported` sweep and the 90-day retention (D18); the action that started the failed run picked first,
 with the values it was sent with (D2); and "Last re-run" linking the run with its result. The demo seeds a matched and
-an unreported re-run, and its runs report the Jenkins job their project re-runs in. PR 3 and the rest remain. Step 1 of
-#1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379) and is recorded in
-[ci-actions.md](../adr/ci-actions.md).
+an unreported re-run, and its runs report the Jenkins job their project re-runs in. PR 3 is built on the server and
+demo side: one dispatch route for every source (D15), with the branch checked against git's rules and the target's
+branch mode (D6) and the choice inputs against the action (D7); the reads of a dispatch and of a project's dispatches;
+the actions offered for a place, with each one's branch mode, inputs and readiness, the D2 default and the place's last
+dispatch; the branches an action may run on. The per-place routes are gone (Q5), and the cluster and execution pages, and the Flake Lab next step, dispatch through
+the new route with the toasts they had. `RunFollowUp`, which replaces those toasts, moves to PR 4 with the dialog. PR 4
+and the rest remain. Step 1 of #1292, the CI actions, shipped in [#1379](https://github.com/PiwiTests/piwi/pull/1379)
+and is recorded in [ci-actions.md](../adr/ci-actions.md).
 
 ## What existed
 
@@ -128,7 +133,7 @@ The table comes in three generated migrations per dialect: the table, a custom m
   whole suite on its branch, `{ testCaseId, flakeLab: 'reproduce' | 'verify' }`, or `{}` for the project's whole suite.
   Answers 201 with the dispatch, 400 for a bad branch or input, 409 under D13, and 502 with the provider's text for a
   refused dispatch, which is stored as `refused`.
-- `GET /api/ci-dispatches/:id` and `GET /api/projects/:id/ci-dispatches?state=open|all&clusterId=&limit=`.
+- `GET /api/ci-dispatches/:id` and `GET /api/projects/:id/ci-dispatches?state=open|all&clusterId=&testCaseId=&limit=`.
 - Removed (Q5): `GET`/`POST /api/failure-clusters/:id/rerun`, `GET`/`POST /api/test-run-cases/:id/rerun` and
   `POST /api/test-cases/:id/flake-lab-ci`.
 

@@ -10,6 +10,7 @@
  * execution page and the cluster page never duplicate the switch.
  */
 import { reproScript, type ReproRecipe } from '#shared/reproduce';
+import type { CiDispatchView } from '#shared/ci-dispatches';
 import type { NextStepChange } from '~/utils/next-step-change';
 
 /** The locator healing panel's exposed actions (see `LocatorHealingPanel`). */
@@ -24,6 +25,8 @@ type ToolboxSectionKey = 'diagnosis' | 'reproduce' | 'locator-fix';
 export interface NextStepActionHandlers {
   /** The cluster whose fix plan / status the code-change actions target. */
   clusterId: () => number | null | undefined;
+  /** The project the page is about, which a CI dispatch goes through. */
+  projectId: () => number | null | undefined;
   /**
    * The change the Next row shows (`buildNextStepChange`): the copy, download
    * and open-in-IDE actions read it, so they copy what the row shows.
@@ -70,27 +73,23 @@ function patchTargetFile(patch: string): { filePath: string; line: number | null
   return { filePath: file[1].trim(), line: hunk ? Number(hunk[1]) : null };
 }
 
-/** Dispatch a test's Flake Lab experiment to the project's Flake Lab CI target, and say how it went. */
-async function runFlakeLabInCi(testCaseId: number, kind: string) {
+/** Dispatch a test's Flake Lab experiment to the project's Flake Lab CI action, and say how it went. */
+async function runFlakeLabInCi(projectId: number, testCaseId: number, kind: string) {
   const toast = useToast();
   try {
-    const res = await $fetch<{ ok: boolean; message?: string; dispatch?: { url: string | null } }>(
-      `/api/test-cases/${testCaseId}/flake-lab-ci`,
-      { method: 'POST', body: { kind } },
-    );
-    if (res.ok && res.dispatch) {
-      const watch = res.dispatch.url;
-      toast.add({
-        title: 'Flake Lab dispatched to CI',
-        description: 'The experiment shows on the Flakiness tab when it finishes.',
-        color: 'success',
-        ...(watch
-          ? { actions: [{ label: 'Watch it', to: watch, target: '_blank', color: 'neutral', variant: 'outline' }] }
-          : {}),
-      });
-    } else {
-      toast.add({ title: 'Flake Lab not started', description: res.message ?? 'Not available.', color: 'warning' });
-    }
+    const dispatch = await $fetch<CiDispatchView>(`/api/projects/${projectId}/ci-dispatches`, {
+      method: 'POST',
+      body: { source: { testCaseId, flakeLab: kind === 'verify' ? 'verify' : 'reproduce' } },
+    });
+    const watch = dispatch.url;
+    toast.add({
+      title: 'Flake Lab dispatched to CI',
+      description: 'The experiment shows on the Flakiness tab when it finishes.',
+      color: 'success',
+      ...(watch
+        ? { actions: [{ label: 'Watch it', to: watch, target: '_blank', color: 'neutral', variant: 'outline' }] }
+        : {}),
+    });
   } catch (e: unknown) {
     const error = e as { statusCode?: number; data?: { message?: string } };
     const message = error?.data?.message ?? 'Dispatch failed.';
@@ -227,9 +226,13 @@ export function useNextStepActions(handlers: NextStepActionHandlers) {
       case 'copy-flake-command':
         if (typeof payload?.command === 'string') copyPlain(payload.command, { toast: 'Lab command copied' });
         break;
-      case 'flake-lab-ci':
-        if (typeof payload?.testCaseId === 'number') await runFlakeLabInCi(payload.testCaseId, String(payload.kind));
+      case 'flake-lab-ci': {
+        const projectId = handlers.projectId();
+        if (typeof payload?.testCaseId === 'number' && projectId != null) {
+          await runFlakeLabInCi(projectId, payload.testCaseId, String(payload.kind));
+        }
         break;
+      }
       case 'flakiness-tab': {
         if (typeof payload?.testCaseId !== 'number') break;
         const suspect = typeof payload.suspect === 'string' ? payload.suspect : undefined;
