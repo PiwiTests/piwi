@@ -592,7 +592,7 @@ On the execution page:
 **Under the block.** The evidence card comes last on both pages: it is long, so nothing follows it.
 
 - The execution page's block carries the test's history as its History line (`ExecutionHistoryLine`: the
-  `HistoryStrip` as one link to the test's page, then the failing streak and the last pass). Under the block, the
+  `HistoryStrip`, each square opening its execution, then the failing streak and the last pass). Under the block, the
   `Toolbox` (More ways to fix: one line, one button per way to fix, each opening its section in a side panel), then
   `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its Source tab's frame where the
   failure enters the test's code, `failurePlace`, offers Debug in my editor, `DebugInEditorButton`).
@@ -727,7 +727,7 @@ rule):
   - `StoryLine` (Most likely) and `NextStepLine` (the one recommended step; it emits its actions as ids the page
     handles through `useNextStepActions`).
   - `Toolbox` (More ways to fix, one button per way, each opening a side panel) and `HistoryStrip` (a test's recent
-    executions as a row of squares).
+    executions as a row of squares, each opening its execution, one keyboard stop).
 
 ### Composables
 
