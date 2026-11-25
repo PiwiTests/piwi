@@ -3,8 +3,8 @@ name: Playwright next
 # The reporter's suite and its two integration suites on Playwright's next release (`@playwright/test@next`, the daily
 # alpha), every week and on demand. It is no pull request check: Playwright's private APIs the reporter reads (the
 # server-side instrumentation, `_timeoutManager`, `_stepMap`, the API call decorators) move in Playwright's own
-# repository, and a failure here shows the change before a release carries it. Every suite runs, whichever failed
-# before it.
+# repository, and a failure here shows the change before a release carries it. Once the release is installed, every
+# suite runs, whichever failed before it.
 on:
   schedule:
     - cron: '41 4 * * 1'
@@ -27,10 +27,12 @@ jobs:
 
       # The flake-run and build-output specs load the built package.
       - name: Build reporter
+        id: build
         working-directory: packages/reporter
         run: npm run reporter:build
 
       - name: Install Playwright's next release
+        id: install
         run: node scripts/playwright-floor.mjs --install next
 
       - name: Install its Chromium
@@ -41,11 +43,11 @@ jobs:
         run: xvfb-run -a npm run reporter:test
 
       - name: Test the AI steps (integration, drives a real browser)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.install.outcome == 'success' }}
         working-directory: packages/reporter
         run: npm run reporter:test:integration:ai
 
       - name: Test the capture fixtures (integration, drives a real browser)
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.install.outcome == 'success' }}
         working-directory: packages/reporter
         run: npm run reporter:test:integration

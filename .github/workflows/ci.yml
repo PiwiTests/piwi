@@ -211,8 +211,9 @@ jobs:
 
       # Storage and database are independent axes: a pull request runs each implementation once (local + sqlite, on
       # the dashboard's Node 22 engines floor, and s3 + postgres), main runs every pair. Windows and macOS catch what
-      # breaks only on their paths or native binaries, and a Linux leg installs the oldest Playwright the reporter
-      # supports: a pull request runs them when it changes the packages or their dependencies, main always.
+      # breaks only on their paths or native binaries, a Linux leg runs Node 26 (the Node of Playwright's own images),
+      # and two Linux legs install the oldest Playwright the reporter supports and the latest release: a pull request
+      # runs them when it changes the packages or their dependencies, main always.
       - name: Pick the E2E backends and the package smoke systems
         id: matrices
         env:
@@ -537,8 +538,9 @@ jobs:
         run: xvfb-run -a npm run reporter:test
 
   # The reporter's suite and its two integration suites on the latest Playwright release, which the peer range admits
-  # before the lockfile moves to it (scripts/playwright-floor.mjs). While the lockfile holds that release, the
-  # `reporter` job runs them and this one stops after reading the version.
+  # before the lockfile moves to it (scripts/playwright-floor.mjs). It stops after reading the version while the
+  # lockfile holds that release (the `reporter` job runs them) or when the release is outside the peer range (2.0 and
+  # later).
   reporter-latest:
     name: Reporter tests (Playwright latest)
     needs: changes
@@ -550,8 +552,10 @@ jobs:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Set up the workspace
+      - name: Set up Node
         uses: ./.github/actions/setup-workspace
+        with:
+          install: 'false'
 
       - name: Read the latest Playwright release
         id: release
@@ -559,7 +563,15 @@ jobs:
           latest=$(node scripts/playwright-floor.mjs latest)
           locked=$(node -p "require('./package-lock.json').packages['node_modules/@playwright/test'].version")
           echo "Latest: $latest, locked: $locked"
-          if [ "$latest" = "$locked" ]; then echo "newer=false" >> "$GITHUB_OUTPUT"; else echo "newer=true" >> "$GITHUB_OUTPUT"; fi
+          if [ "$latest" = "$locked" ] || [ "${latest%%.*}" != 1 ]; then
+            echo "newer=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "newer=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Set up the workspace
+        if: steps.release.outputs.newer == 'true'
+        uses: ./.github/actions/setup-workspace
 
       # The flake-run and build-output specs load the built package.
       - name: Build reporter

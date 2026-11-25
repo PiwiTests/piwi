@@ -13,8 +13,9 @@ design record these rules follow, with its measurements: [`adr/ci-workflows.md`]
   same commit: branch protection reads the latest run of a check. `pr-lint.yml` runs every job on every event for this
   reason.
 - **Node through `setup-workspace`.** The version comes from the root `.node-version`. A job names another version only
-  to test a floor (`engines`, Node 22) or a bundled runtime (the desktop's: the root `Dockerfile`'s Node, read by
-  `apps/desktop/scripts/node-version.mjs`). `npm ci` runs with `--prefer-offline --no-audit --fund=false`.
+  to test a floor (`engines`, Node 22), a bundled runtime (the desktop's: the root `Dockerfile`'s Node, read by
+  `apps/desktop/scripts/node-version.mjs`) or the Node of Playwright's own images (Node 26, a package smoke leg).
+  `npm ci` runs with `--prefer-offline --no-audit --fund=false`.
 - **Playwright's headless shell is cached by Playwright version** (`playwright: shell`), and saved as soon as it is
   installed, so the cache holds the shell alone. The full Chromium build (`playwright: full`) is installed on every run:
   the workflows that use it run on pull requests, where a cache serves its own pull request alone, or once a night
