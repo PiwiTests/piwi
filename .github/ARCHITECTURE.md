@@ -62,9 +62,9 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 - `changes` also picks two matrices:
   - the dashboard E2E suite, five shards per backend: two backends on a pull request (`local + sqlite` on Node 22, and
     `s3 + postgres`), all four on `main`;
-  - the package smoke test: Linux on a pull request, plus Windows, macOS, Linux on Node 26 and two Linux legs on the
-    reporter's Playwright floor and on the latest Playwright release when it changes the packages or their
-    dependencies, and all six on `main`.
+  - the package smoke test: Linux on a pull request, plus Windows, macOS, Linux on Node 26, two Linux legs on the
+    reporter's Playwright floor and on the latest Playwright release, and a Linux leg that runs the suite on Bun
+    (`--runtime bun`) when it changes the packages or their dependencies, and all seven on `main`.
 - A change to Piwi Runner's host or window, the shared `packages/run-ui` layer, the run model, the editor service,
   core or the catalog and text checks of `shared/` (`runner`) runs the `Piwi Runner` job: the layer's and the app's
   unit tests, the host's bundle and the window's static build, then the built window in French and German

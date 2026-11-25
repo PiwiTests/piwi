@@ -6,11 +6,13 @@
 // and runs this on Linux, macOS and Windows (`package-smoke` in .github/workflows/ci.yml).
 //
 // Usage:
-//   node scripts/package-smoke.mjs <dir> [--playwright <release>]
+//   node scripts/package-smoke.mjs <dir> [--playwright <release>] [--runtime <node|bun>]
 //
 // <dir> holds the two tarballs. The suite runs on the Playwright version the repository locks, or on the release
 // `--playwright` names: `floor`, the oldest one the reporter supports, a dist-tag such as `latest`, or a version
-// (scripts/playwright-floor.mjs). From the repository root, after building the reporter and the application, pack them
+// (scripts/playwright-floor.mjs). It runs on Node, or with `--runtime bun` through `bunx --bun playwright test`, so
+// the runner, the reporter and the workers with the capture fixtures run on the Bun on the PATH; the server and the
+// installs stay on Node and npm. From the repository root, after building the reporter and the application, pack them
 // into an existing <dir>:
 //   npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination <dir>
 //
@@ -24,6 +26,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
+import { parseArgs } from 'node:util';
 import { playwrightRelease } from './playwright-floor.mjs';
 
 const PROJECT_NAME = 'package-smoke';
@@ -34,10 +37,17 @@ const isWindows = process.platform === 'win32';
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
 const usage = `Usage:
-  node scripts/package-smoke.mjs <dir holding piwitests-server-*.tgz and piwitests-reporter-*.tgz> [--playwright <floor|latest|next|x.y.z>]`;
+  node scripts/package-smoke.mjs <dir holding piwitests-server-*.tgz and piwitests-reporter-*.tgz> [--playwright <floor|latest|next|x.y.z>] [--runtime <node|bun>]`;
+
+/** The runtimes the suite runs on, and the command that runs it on each. */
+const RUNTIMES = {
+  node: { label: 'Node', command: 'npx', args: ['--no', 'playwright', 'test'] },
+  bun: { label: 'Bun', command: 'bunx', args: ['--bun', '--no-install', 'playwright', 'test'] },
+};
 
 // The suite: one passing, one failing and one skipped test. The capture fixtures load in
-// the worker, and no test opens a page, so no browser is needed.
+// the worker, and no test opens a page, so no browser is needed. The passing test checks
+// that its worker runs on the runtime the smoke asked for.
 const SPEC = `import { test as base, expect } from '@playwright/test';
 import { piwiFixtures } from '@piwitests/reporter';
 
@@ -45,6 +55,8 @@ const test = base.extend(piwiFixtures);
 
 test('passes', () => {
   expect(1 + 1).toBe(2);
+  const runtime = typeof process.versions.bun === 'string' ? 'bun' : 'node';
+  expect(runtime, 'the runtime the worker runs on').toBe(process.env.PACKAGE_SMOKE_RUNTIME);
 });
 
 test('fails on purpose', () => {
@@ -103,8 +115,8 @@ function cleanEnv(extra = {}) {
 
 // The smoke run's results stay out of the CI job: no step outputs, job summary or
 // annotation from the reporter's GitHub Actions integration.
-function reporterEnv() {
-  const env = cleanEnv();
+function reporterEnv(runtime) {
+  const env = cleanEnv({ PACKAGE_SMOKE_RUNTIME: runtime });
   delete env.GITHUB_ACTIONS;
   delete env.GITHUB_OUTPUT;
   delete env.GITHUB_STEP_SUMMARY;
@@ -235,10 +247,20 @@ function expectEqual(actual, expected, what) {
   }
 }
 
-async function smoke(tarballDir, projectDir, playwright, onServer) {
+// The version of the runtime the suite runs on, which also checks that it is installed.
+function runtimeVersion(runtime) {
+  if (runtime === 'node') return process.versions.node;
+  const result = run('bun', ['--version'], { stdio: 'pipe', encoding: 'utf8' });
+  if (result.status !== 0) throw new Error(`bun --version exited with code ${result.status}: is Bun on the PATH?`);
+  return result.stdout.trim();
+}
+
+async function smoke(tarballDir, projectDir, { playwright, runtime }, onServer) {
   const serverTarball = findTarball(tarballDir, 'piwitests-server-');
   const reporterTarball = findTarball(tarballDir, 'piwitests-reporter-');
   const playwrightVersion = playwright ? playwrightRelease(playwright) : lockedVersion('@playwright/test');
+  const { label, command, args } = RUNTIMES[runtime];
+  const suiteRuntime = `${label} ${runtimeVersion(runtime)}`;
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -279,8 +301,8 @@ async function smoke(tarballDir, projectDir, playwright, onServer) {
   const files = await get(`${baseUrl}/api/files/${PROJECT_NAME}/missing.png`);
   if (files.status >= 500) throw new Error(`the files route answered HTTP ${files.status}; sharp may not load here`);
 
-  log('Running the Playwright suite through the reporter');
-  const tests = run('npx', ['--no', 'playwright', 'test'], { cwd: projectDir, env: reporterEnv() });
+  log(`Running the Playwright suite through the reporter on ${suiteRuntime}`);
+  const tests = run(command, args, { cwd: projectDir, env: reporterEnv(runtime) });
   expectEqual(tests.status, 1, 'the playwright test exit code (the suite has one failing test)');
 
   const output = JSON.parse(fs.readFileSync(path.join(projectDir, 'piwi-run.json'), 'utf8'));
@@ -295,17 +317,30 @@ async function smoke(tarballDir, projectDir, playwright, onServer) {
     throw new Error('the server did not create .data/piwi.db in the directory it was started from');
   }
   log(
-    `Passed: server ${serverVersion} and reporter ${reporterVersion} with Playwright ${playwrightVersion} on ${process.platform}, Node ${process.version}`,
+    `Passed: server ${serverVersion} and reporter ${reporterVersion} with Playwright ${playwrightVersion} on ${process.platform}, Node ${process.version}${runtime === 'node' ? '' : `, the suite on ${suiteRuntime}`}`,
   );
 }
 
+function readArgs() {
+  try {
+    const { positionals, values } = parseArgs({
+      allowPositionals: true,
+      options: { playwright: { type: 'string' }, runtime: { type: 'string', default: 'node' } },
+    });
+    if (positionals.length !== 1 || !Object.hasOwn(RUNTIMES, values.runtime)) return null;
+    return { tarballDir: positionals[0], playwright: values.playwright, runtime: values.runtime };
+  } catch {
+    return null;
+  }
+}
+
 async function main() {
-  const [tarballDir, ...options] = process.argv.slice(2);
-  const playwright = options[0] === '--playwright' ? options[1] : undefined;
-  if (!tarballDir || options.length !== (playwright ? 2 : 0)) {
+  const args = readArgs();
+  if (!args) {
     console.error(usage);
     return 2;
   }
+  const { tarballDir, ...suite } = args;
 
   // The real path: the temp directory is a short 8.3 name on Windows runners and a
   // symlink on macOS, neither of which a project directory usually is.
@@ -317,7 +352,7 @@ async function main() {
   });
 
   try {
-    await smoke(tarballDir, projectDir, playwright, (started) => (server = started));
+    await smoke(tarballDir, projectDir, suite, (started) => (server = started));
   } catch (error) {
     console.error(`[package-smoke] FAILED: ${error.message}`);
     if (error.cause) console.error(`[package-smoke] Cause: ${error.cause}`);
