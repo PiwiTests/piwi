@@ -504,6 +504,57 @@ describe('testCalls', () => {
     ]);
   });
 
+  test('reads test.skip, test.fixme and test.fail as a test only with an argument after its title', () => {
+    const lines = [
+      "test.describe('cart', () => {",
+      "  test.skip('empties it', async () => {});",
+      '  test.fixme(',
+      "    'refunds',",
+      '    async () => {',
+      "      test.slow('the bank takes its time');",
+      '    },',
+      '  );',
+      "  test('pays', async ({ browserName }) => {",
+      "    test.skip('needs a card reader');",
+      '    test.fixme(`fails on ${browserName}`);',
+      '    test.fail("declines the card" );',
+      "    test.skip(browserName === 'webkit', 'no card reader');",
+      '  });',
+      "  test.fail('declines', { tag: '@bug' }, async () => {});",
+      '});',
+    ];
+    expect(testCalls(lines)).toEqual([
+      { line: 1, endLine: 1, title: 'empties it', suite: ['cart'], suiteUnread: false },
+      { line: 2, endLine: 7, title: 'refunds', suite: ['cart'], suiteUnread: false },
+      { line: 8, endLine: 13, title: 'pays', suite: ['cart'], suiteUnread: false },
+      { line: 14, endLine: 14, title: 'declines', suite: ['cart'], suiteUnread: false },
+    ]);
+    // Split over lines: a description alone, then a title and a function.
+    const split = [
+      "test('pays', async () => {",
+      '  test.skip(',
+      "    'needs a card reader',",
+      '  );',
+      '});',
+      'test.skip(',
+      "  'refunds',",
+      '',
+      '  async () => {},',
+      ');',
+    ];
+    expect(testCalls(split)).toEqual([
+      { line: 0, endLine: 4, title: 'pays', suite: [], suiteUnread: false },
+      { line: 5, endLine: 9, title: 'refunds', suite: [], suiteUnread: false },
+    ]);
+    // A description and a test on one line; a declaration not closed yet.
+    expect(
+      testCalls(["test.fixme('later'); test('pays', async () => {});", "test.fail('declines', async () => {"]),
+    ).toEqual([
+      { line: 0, endLine: 0, title: 'pays', suite: [], suiteUnread: false },
+      { line: 1, endLine: 1, title: 'declines', suite: [], suiteUnread: false },
+    ]);
+  });
+
   test('marks the tests of a describe block titled by a template with ${} or by a variable', () => {
     const lines = [
       'test.describe(`by ${method}`, () => {',

@@ -662,9 +662,10 @@ export function timeoutMessage(advice: TimeoutAdvice): string {
 /**
  * The edit a timeout advice suggests in the body of the test declared at
  * `testLine` (0-based), up to the next test `testCalls` reads: remove its
- * `test.slow()`, or set its timeout, replacing a `test.setTimeout(…)` there or
- * adding one as the first statement of its function, which opens on a line
- * ending in `=> {` or `) {`. Null when the body cannot be told apart.
+ * `test.slow()` or `test.slow('reason')`, or set its timeout, replacing a
+ * `test.setTimeout(…)` there or adding one as the first statement of its
+ * function, which opens on a line ending in `=> {` or `) {`. Null when the
+ * body cannot be told apart.
  */
 export function timeoutEdit(
   lines: string[],
@@ -674,7 +675,7 @@ export function timeoutEdit(
   const end = testCalls(lines).find((call) => call.line > testLine)?.line ?? lines.length;
   const body = lines.slice(testLine + 1, end);
   if (advice.kind === 'stale-slow') {
-    const at = body.findIndex((l) => /^\s*test\.slow\(\s*\)\s*;?\s*$/.test(l));
+    const at = body.findIndex((l) => /^\s*test\.slow\(\s*(?:(['"`])(?:\\.|(?!\1)[^\\])*\1\s*)?\)\s*;?\s*$/.test(l));
     return at < 0 ? null : { line: testLine + 1 + at, replace: true, text: '' };
   }
   if (!advice.recommendedTimeout) return null;
@@ -797,9 +798,19 @@ function regexEnd(text: string, from: number): number {
   return -1;
 }
 
-/** A `test(…)` call on a line (`test.only(…)`, `test.skip(…)` and the other modifiers too), its title in group 2. */
+/**
+ * A `test(…)` call on a line (`test.only(…)`, `test.skip(…)`, `test.fixme(…)` and `test.fail(…)` too), its title in
+ * group 2.
+ */
 const TEST_CALL =
-  /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail|slow))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
+  /(?<![\w$.])test(?:\.(?:only|skip|fixme|fail))?\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/g;
+/**
+ * A `test.skip(…)`, `test.fixme(…)` or `test.fail(…)` call, which declares a test only with an argument after its
+ * title: with its title alone (`test.skip('reason')`), it marks the test it is called in.
+ */
+const MARK_CALL = /^test\.(?:skip|fixme|fail)\b/;
+/** A call's arguments from its `(`: a string literal, then another argument. */
+const TITLE_THEN_ARGUMENT = /^\(\s*(['"`])(?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*\1\s*,\s*[^\s)]/;
 /** A `test.describe(…)` call with a title (`test.describe.serial(…)` and the other modifiers too), its title in group 2. */
 const DESCRIBE_CALL =
   /(?<![\w$.])test\.describe(?:\.(?:only|skip|fixme|serial|parallel))*\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
@@ -878,18 +889,24 @@ export function testCalls(lines: string[]): TestCall[] {
         blocks.push({ title: text.slice(from).split(',')[0]!.trim() || match[0], unread: true, endLine });
       }
     }
-    const test = TEST_CALL.exec(text.slice(from));
-    // A call in the line below, joined for its title, is read on its own line.
-    if (!test || from + test.index >= code[i]!.length) return;
-    const open = text.indexOf('(', from + test.index);
-    const endLine = (open >= 0 ? callEndLine(code, i, open) : null) ?? i;
-    calls.push({
-      line: i,
-      endLine,
-      title: unescapedTitle(test[2]!),
-      suite: blocks.map((b) => b.title),
-      suiteUnread: blocks.some((b) => b.unread),
-    });
+    for (const test of text.slice(from).matchAll(TEST_CALL)) {
+      // A call in the line below, joined for its title, is read on its own line.
+      if (from + test.index >= code[i]!.length) return;
+      const open = text.indexOf('(', from + test.index);
+      const end = callEndLine(code, i, open);
+      const endLine = end ?? i;
+      // Its arguments up to its end, or the first lines of a call not closed yet.
+      const args = [code[i]!.slice(open), ...code.slice(i + 1, (end ?? i + 3) + 1)].join('\n');
+      if (MARK_CALL.test(test[0]) && !TITLE_THEN_ARGUMENT.test(args)) continue;
+      calls.push({
+        line: i,
+        endLine,
+        title: unescapedTitle(test[2]!),
+        suite: blocks.map((b) => b.title),
+        suiteUnread: blocks.some((b) => b.unread),
+      });
+      return;
+    }
   });
   return calls;
 }
