@@ -157,7 +157,11 @@ async function remove() {
             </span>
             <span class="text-xs text-muted">
               {{ CREDENTIAL_SERVICE_LABELS[credential.service]
-              }}<template v-if="credential.user"> · {{ credential.user }}</template> · {{ scopeText(credential) }} ·
+              }}<template v-if="credential.perUser">
+                · per user<template v-if="credential.userTokens !== null">
+                  ({{ credential.userTokens }} {{ credential.userTokens === 1 ? 'person' : 'people' }})</template
+                ></template
+              ><template v-else-if="credential.user"> · {{ credential.user }}</template> · {{ scopeText(credential) }} ·
               used in {{ credential.usedBy.length }} {{ credential.usedBy.length === 1 ? 'place' : 'places' }}
             </span>
             <span class="text-xs text-muted font-mono break-all">{{ credential.destination }}</span>
@@ -186,7 +190,11 @@ async function remove() {
           <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-sm">
             <dt class="text-muted">Service</dt>
             <dd class="text-highlighted">{{ CREDENTIAL_SERVICE_LABELS[selected.service] }}</dd>
-            <template v-if="selected.service === 'ci-server' || selected.service === 'jira'">
+            <template v-if="selected.perUser">
+              <dt class="text-muted">Acts as</dt>
+              <dd class="text-highlighted">Whoever starts an action, with their own token</dd>
+            </template>
+            <template v-else-if="selected.service === 'ci-server' || selected.service === 'jira'">
               <dt class="text-muted">{{ selected.service === 'jira' ? 'Account e-mail' : 'User' }}</dt>
               <dd class="text-highlighted font-mono">{{ selected.user ?? '—' }}</dd>
             </template>
@@ -216,6 +224,7 @@ async function remove() {
                 Read from <code class="font-mono">{{ selected.secretEnv }}</code
                 ><template v-if="selected.secretEnvSet === false">, which is not set on the server</template>
               </template>
+              <template v-else-if="selected.perUser">Each person’s own, in their account</template>
               <template v-else>Saved <ClientDate :date="selected.rotatedAt" /></template>
             </dd>
             <dt class="text-muted">State</dt>
@@ -268,6 +277,13 @@ async function remove() {
               Delete
             </UButton>
           </div>
+
+          <CredentialUserTokens
+            v-if="selected.perUser && selected.canManage"
+            :key="`${selected.id}-${selected.destination}-${selected.userTokens}`"
+            :credential-id="selected.id"
+            @changed="refresh"
+          />
 
           <CredentialActivity :credential-id="selected.id" />
         </div>

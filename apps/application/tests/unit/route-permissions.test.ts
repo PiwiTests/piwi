@@ -251,7 +251,7 @@ describe('route permissions', () => {
     const READS_BODY =
       /\b(?:readBody|readRawBody|readMultipartFormData|readFormData|readValidatedBody|getRequestWebStream|readJsonBodyWithin|streamMultipart)(?:<[^()]*>)?\(/;
     const AUTHENTICATES =
-      /\b(?:requireAuth|requireSessionAuth|requireProjectAccess|requireResolvedProjectAccess|requireMcpAuth|getRequestAccess|requireConnectionAccess|requireRunTarget)\(/;
+      /\b(?:requireAuth|requireSessionAuth|requireProjectAccess|requireResolvedProjectAccess|requireMcpAuth|getRequestAccess|requireConnectionAccess|requireRunTarget|requireUserTokenRoute)\(/;
     const problems = routes
       .filter((r) => r.permission)
       .filter((r) => {

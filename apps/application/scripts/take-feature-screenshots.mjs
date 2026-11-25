@@ -4123,6 +4123,22 @@ const SCENES = [
       await shoot();
     },
   },
+  {
+    name: 'credentials-per-user',
+    description:
+      'Settings → Credentials at 1280 px: a per-user Jenkins credential’s panel, with the people who gave their own token, their Jenkins account and its state, and its log',
+    tags: ['docs'],
+    out: 'docs',
+    route: '/settings/credentials',
+    viewport: { width: 1280, height: 900 },
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-7').click({ timeout: 90000 });
+      await page.getByTestId('credential-user-tokens').getByText('quinn', { exact: true }).waitFor({ timeout: 30000 });
+      await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
   ...[
     { name: 'settings-credentials-log', width: 1280, height: 900 },
     { name: 'settings-credentials-log-mobile', width: 375, height: 1400 },

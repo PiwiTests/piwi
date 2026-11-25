@@ -11,18 +11,30 @@
  * `tests/unit/credential-secret-access.test.ts` fails on any other code that
  * reads the secret column.
  */
-import { and, eq, gte, isNotNull, isNull, lt, sql } from 'drizzle-orm';
-import { appSettings, credentialProjects, credentials, credentialUses, projects } from '../database/schema';
+import { and, eq, gte, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
+import {
+  appSettings,
+  credentialProjects,
+  credentials,
+  credentialUserTokens,
+  credentialUses,
+  projects,
+} from '../database/schema';
 import type { DbClient } from '../database';
 import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
+import { isUniqueViolation } from './db-errors';
 import {
   CREDENTIAL_READ_FEATURES,
   credentialLogDestination,
   credentialRefusal,
   isCredentialSecretEnv,
+  userTokenActorRefusal,
+  userTokenMissingMessage,
+  userTokenTestUrl,
   type CredentialFeature,
   type CredentialService,
   type CredentialUseResult,
+  type UserTokenRefusalCode,
 } from '#shared/credentials';
 import {
   freeCredentialName,
@@ -262,6 +274,12 @@ export interface CredentialUse {
   custom: boolean;
   actor: CredentialActor;
   subject?: { type: string; id: string };
+  /**
+   * A token not saved yet, which a test of a per-user credential sends instead
+   * of the actor's stored one (feature `credential-test`, to the one URL the
+   * credential's tokens are tested at).
+   */
+  candidate?: OpenedCredential;
 }
 
 /** What a use opens: the user name and the secret, for this one request. */
@@ -277,8 +295,54 @@ export interface OpenedCredential {
  */
 export type CredentialWriteGate = <T>(run: () => Promise<T>, failure: (value: T) => string | null) => Promise<T>;
 
-/** A use the credential's rules refuse; its message names the credential and the reason, never the secret. */
-export class CredentialRefusedError extends Error {}
+/**
+ * A use the credential's rules refuse; its message names the credential and
+ * the reason, never the secret. A use of a per-user credential refused for who
+ * asked carries a `code` and the credential, so a page can ask the person for
+ * their token.
+ */
+export class CredentialRefusedError extends Error {
+  constructor(
+    message: string,
+    readonly code: UserTokenRefusalCode | null = null,
+    readonly credential: { id: number; name: string } | null = null,
+  ) {
+    super(message);
+  }
+}
+
+/** A person's token sealed with its credential, its person and the destination it may be sent under. */
+export function sealUserToken(
+  token: { credentialId: number; userId: number; destination: string },
+  opened: OpenedCredential,
+): string {
+  return encryptSecret(
+    JSON.stringify({ ...token, user: opened.user ?? '', secret: opened.secret }),
+    getEncryptionKey(),
+  );
+}
+
+/** A sealed user token, opened, or null when its seal does not match its credential, person and destination. */
+function openUserToken(
+  stored: string,
+  token: { credentialId: number; userId: number; destination: string },
+): OpenedCredential | null {
+  try {
+    const value = JSON.parse(decryptSecret(stored, getEncryptionKey())) as Record<string, unknown>;
+    if (
+      value.credentialId !== token.credentialId ||
+      value.userId !== token.userId ||
+      value.destination !== token.destination ||
+      typeof value.secret !== 'string' ||
+      !value.secret
+    ) {
+      return null;
+    }
+    return { user: typeof value.user === 'string' && value.user ? value.user : null, secret: value.secret };
+  } catch {
+    return null;
+  }
+}
 
 /** The text with every occurrence of the secret, and of the Basic pairs it is sent in, replaced by `****`. */
 export function maskCredentialSecret(text: string, opened: OpenedCredential | null): string {
@@ -328,15 +392,23 @@ const cut = (text: string | null): string | null => (text ? text.slice(0, MAX_RE
  * anything is sent. A use that changes something outside Piwi is one log row,
  * written as `sent` before the request and settled after it; a read
  * (`CREDENTIAL_READ_FEATURES`), refused or not, adds to the row of its
- * credential, feature, project, result and hour once it ends. `failure` reads a failure from what
+ * credential, feature, project, result and hour once it ends (and person, for a
+ * per-user credential). `failure` reads a failure from what
  * `send` returned (a refused answer); a throw is a failure too, rethrown with
  * the secret masked.
+ *
+ * A per-user credential sends the token of the use's actor: a person in a
+ * session, never an API key, whose token is `ready`; `unauthorized` reads from
+ * what `send` returned that the service refused it, which marks it `invalid`.
+ * A test sends the token not saved yet (`candidate`) to the one URL tokens are
+ * tested at (`userTokenTestUrl`).
  */
 export async function withCredential<T>(
   db: DbClient,
   use: CredentialUse,
   send: (opened: OpenedCredential) => Promise<T>,
   failure?: (value: T) => string | null,
+  options: { unauthorized?: (value: T) => boolean } = {},
 ): Promise<T> {
   const [row] = await db
     .select({
@@ -349,16 +421,76 @@ export async function withCredential<T>(
     .where(eq(credentials.id, use.credentialId));
   const record = row ? await loadCredentialRecord(db, use.credentialId) : null;
   const name = record?.name ?? `#${use.credentialId}`;
-  let refusal = record ? credentialRefusal(record, use) : 'The credential was deleted: pick another one.';
-  let secret: string | null = null;
+  const testing = use.feature === 'credential-test';
+  let refusal = !record
+    ? 'The credential was deleted: pick another one.'
+    : testing
+      ? // A test serves no project, and goes to the one URL the credential's tokens are tested at,
+        // which a destination narrowed to a folder does not hold.
+        (credentialRefusal({ ...record, allProjects: true }, { ...use, url: record.destination }) ??
+        (record.perUser && use.url === userTokenTestUrl(record.destination)
+          ? null
+          : `The credential "${name}" tests a token only at ${userTokenTestUrl(record.destination)}.`))
+      : credentialRefusal(record, use);
+  let code: UserTokenRefusalCode | null = null;
+  let opened: OpenedCredential | null = null;
+  let userToken: { id: number; remoteUser: string; sealed: string } | null = null;
   if (!refusal && record && row) {
-    if (row.managedBy === 'env') {
-      secret = envSecret(record.service, row.secretEnv ?? null);
-      if (!secret) refusal = `The credential "${name}" is set by environment variables that are unset.`;
+    if (record.perUser) {
+      const actorRefusal = userTokenActorRefusal(name, use.actor);
+      if (actorRefusal) {
+        refusal = actorRefusal.message;
+        code = actorRefusal.code;
+      } else if (use.candidate) {
+        // A typed token is sent only to be tested, never with a request that acts.
+        if (testing) opened = use.candidate;
+        else refusal = `The credential "${name}" sends a typed token only to test it.`;
+      } else {
+        const [token] = await db
+          .select({
+            id: credentialUserTokens.id,
+            secret: credentialUserTokens.secret,
+            state: credentialUserTokens.state,
+            remoteUser: credentialUserTokens.remoteUser,
+          })
+          .from(credentialUserTokens)
+          .where(
+            and(eq(credentialUserTokens.credentialId, record.id), eq(credentialUserTokens.userId, use.actor.userId!)),
+          );
+        // A test sends a token the service refused before, to see whether it is taken again.
+        const unsealed =
+          token && (token.state === 'ready' || testing)
+            ? openUserToken(token.secret, {
+                credentialId: record.id,
+                userId: use.actor.userId!,
+                destination: record.destination,
+              })
+            : null;
+        if (unsealed && token) {
+          opened = unsealed;
+          userToken = { id: token.id, remoteUser: token.remoteUser, sealed: token.secret };
+        } else {
+          // A token that no longer opens (another secret key, another destination) is asked for again.
+          if (token && token.state === 'ready') {
+            await db
+              .update(credentialUserTokens)
+              .set({ state: 'invalid' })
+              .where(and(eq(credentialUserTokens.id, token.id), eq(credentialUserTokens.secret, token.secret)));
+          }
+          refusal = userTokenMissingMessage(name, token ? 'invalid' : 'missing');
+          code = 'user-token-required';
+        }
+      }
+    } else if (use.candidate) {
+      refusal = `The credential "${name}" is shared: it holds its own secret.`;
+    } else if (row.managedBy === 'env') {
+      const secret = envSecret(record.service, row.secretEnv ?? null);
+      if (secret) opened = { user: record.user, secret };
+      else refusal = `The credential "${name}" is set by environment variables that are unset.`;
     } else {
-      const opened = openStoredSecret(row.secret, record.destination, row.secretEnv ?? null, name);
-      if ('secret' in opened) secret = opened.secret;
-      else refusal = opened.refusal;
+      const stored = openStoredSecret(row.secret, record.destination, row.secretEnv ?? null, name);
+      if ('secret' in stored) opened = { user: record.user, secret: stored.secret };
+      else refusal = stored.refusal;
     }
   }
   const base = {
@@ -368,37 +500,48 @@ export async function withCredential<T>(
     projectId: use.projectId,
     userId: use.actor.userId,
     apiKeyId: use.actor.apiKeyId,
+    remoteUser: userToken?.remoteUser ?? null,
     subjectType: use.subject?.type ?? null,
     subjectId: use.subject?.id ?? null,
     destination: credentialLogDestination(use.url),
   };
   const read = CREDENTIAL_READ_FEATURES.includes(use.feature);
-  if (refusal || !secret || !record) {
+  // A per-user credential's reads are counted per person, so a row never names another person's account.
+  const perPerson = record?.perUser === true;
+  if (refusal || !opened || !record) {
     const refused = { ...base, result: 'refused' as const, reason: cut(refusal) };
-    if (read) await countRead(db, refused);
+    if (read) await countRead(db, refused, perPerson);
     else await db.insert(credentialUses).values(refused);
-    throw new CredentialRefusedError(refusal ?? `The credential "${name}" cannot be used.`);
+    throw new CredentialRefusedError(
+      refusal ?? `The credential "${name}" cannot be used.`,
+      code,
+      record ? { id: record.id, name: record.name } : null,
+    );
   }
 
-  const opened: OpenedCredential = { user: record.user, secret };
   const [written] = read
     ? [null]
     : await db
         .insert(credentialUses)
         .values({ ...base, result: 'sent' })
         .returning({ id: credentialUses.id });
-  await db.update(credentials).set({ lastUsedAt: new Date() }).where(eq(credentials.id, record.id));
+  const now = new Date();
+  await db.update(credentials).set({ lastUsedAt: now }).where(eq(credentials.id, record.id));
+  if (userToken) {
+    await db.update(credentialUserTokens).set({ lastUsedAt: now }).where(eq(credentialUserTokens.id, userToken.id));
+  }
 
+  const used = opened;
   const settle = async (result: CredentialUseResult, reason: string | null) => {
     try {
-      const masked = cut(reason ? maskCredentialSecret(reason, opened) : null);
+      const masked = cut(reason ? maskCredentialSecret(reason, used) : null);
       if (written) {
         await db
           .update(credentialUses)
           .set({ result, reason: masked, lastAt: new Date() })
           .where(eq(credentialUses.id, written.id));
       } else {
-        await countRead(db, { ...base, result, reason: masked });
+        await countRead(db, { ...base, result, reason: masked }, perPerson);
       }
     } catch (err) {
       console.error('[credentials] Recording a use failed:', err);
@@ -407,22 +550,117 @@ export async function withCredential<T>(
 
   let value: T;
   try {
-    value = await send(opened);
+    value = await send(used);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
     await settle('failed', message);
-    const masked = maskCredentialSecret(message, opened);
+    const masked = maskCredentialSecret(message, used);
     throw masked === message ? e : new Error(masked);
   }
   const failed = failure?.(value) ?? null;
   await settle(failed ? 'failed' : 'ok', failed);
+  // A person's token the service refuses is not sent again until they give it anew; one saved since stays as it is.
+  if (userToken && options.unauthorized?.(value)) {
+    await db
+      .update(credentialUserTokens)
+      .set({ state: 'invalid' })
+      .where(and(eq(credentialUserTokens.id, userToken.id), eq(credentialUserTokens.secret, userToken.sealed)));
+  }
   return value;
+}
+
+/**
+ * Save a person's tested token for a per-user credential, sealed with the
+ * credential, the person and its destination, in place of the one they had.
+ * Refused when another person already gave a token for the same account
+ * (`remoteUser`, ignoring case), so a shared account is never saved as one
+ * person's own.
+ */
+export async function saveUserToken(
+  db: DbClient,
+  token: { credentialId: number; userId: number; destination: string; remoteUser: string },
+  opened: OpenedCredential,
+): Promise<{ saved: true } | { saved: false; message: string }> {
+  const taken = {
+    saved: false as const,
+    message: `Another person already gave a token for the account "${token.remoteUser}": each person gives their own.`,
+  };
+  // The credential's destination changed while the token was tested: it was tested elsewhere, so it is not saved.
+  const [current] = await db
+    .select({ destination: credentials.destination, perUser: credentials.perUser })
+    .from(credentials)
+    .where(eq(credentials.id, token.credentialId));
+  if (!current?.perUser || current.destination !== token.destination) {
+    return { saved: false, message: 'The credential changed while your token was tested: give it again.' };
+  }
+  const holders = await db
+    .select({ userId: credentialUserTokens.userId, remoteUser: credentialUserTokens.remoteUser })
+    .from(credentialUserTokens)
+    .where(eq(credentialUserTokens.credentialId, token.credentialId));
+  const account = token.remoteUser.toLowerCase();
+  if (holders.some((h) => h.userId !== token.userId && h.remoteUser.toLowerCase() === account)) return taken;
+  const now = new Date();
+  const fields = {
+    remoteUser: token.remoteUser,
+    secret: sealUserToken(token, opened),
+    state: 'ready',
+    testedAt: now,
+  };
+  const own = and(
+    eq(credentialUserTokens.credentialId, token.credentialId),
+    eq(credentialUserTokens.userId, token.userId),
+  );
+  try {
+    if (holders.some((h) => h.userId === token.userId)) {
+      await db.update(credentialUserTokens).set(fields).where(own);
+      return { saved: true };
+    }
+    try {
+      await db
+        .insert(credentialUserTokens)
+        .values({ ...fields, credentialId: token.credentialId, userId: token.userId, createdAt: now });
+    } catch (err) {
+      // Two saves of one person's token at once: the slower one replaces the row the other inserted.
+      if (!isUniqueViolation(err)) throw err;
+      await db.update(credentialUserTokens).set(fields).where(own);
+    }
+  } catch (err) {
+    // Another person saved the same account at the same moment: the account's unique index refuses the slower one.
+    if (isUniqueViolation(err)) return taken;
+    throw err;
+  }
+  return { saved: true };
+}
+
+/**
+ * Record a test of a person's saved token: when it ran and, when the service
+ * refused it, that it is `invalid`. A token saved again since the test started
+ * (`startedAt`) is the person's new one, which the test did not send: it stays
+ * as it is.
+ */
+export async function recordUserTokenTest(
+  db: DbClient,
+  token: { credentialId: number; userId: number },
+  state: 'ready' | 'invalid' | null,
+  startedAt: Date,
+): Promise<void> {
+  await db
+    .update(credentialUserTokens)
+    .set({ testedAt: new Date(), ...(state ? { state } : {}) })
+    .where(
+      and(
+        eq(credentialUserTokens.credentialId, token.credentialId),
+        eq(credentialUserTokens.userId, token.userId),
+        lte(credentialUserTokens.testedAt, startedAt),
+      ),
+    );
 }
 
 /** Add one read to the row of its credential, feature, project, result and hour, or start that row. */
 async function countRead(
   db: DbClient,
   row: typeof credentialUses.$inferInsert & { result: CredentialUseResult },
+  perPerson = false,
 ): Promise<void> {
   const now = new Date();
   const hour = new Date(Math.floor(now.getTime() / HOUR_MS) * HOUR_MS);
@@ -438,6 +676,9 @@ async function countRead(
         row.projectId == null ? isNull(credentialUses.projectId) : eq(credentialUses.projectId, row.projectId),
         eq(credentialUses.result, row.result),
         gte(credentialUses.createdAt, hour),
+        ...(perPerson
+          ? [row.userId == null ? isNull(credentialUses.userId) : eq(credentialUses.userId, row.userId)]
+          : []),
       ),
     )
     .limit(1);
@@ -450,6 +691,7 @@ async function countRead(
         reason: row.reason ?? null,
         userId: row.userId ?? null,
         apiKeyId: row.apiKeyId ?? null,
+        remoteUser: row.remoteUser ?? null,
         subjectType: row.subjectType ?? null,
         subjectId: row.subjectId ?? null,
         destination: row.destination ?? null,

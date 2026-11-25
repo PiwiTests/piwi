@@ -107,6 +107,7 @@ export const {
   credentials,
   credentialProjects,
   credentialUses,
+  credentialUserTokens,
 } = schema;
 
 // TypeScript type exports – always based on SQLite schema (the canonical reference)
@@ -211,4 +212,5 @@ export type {
   CiDispatchRow,
   CredentialRow,
   CredentialUseRow,
+  CredentialUserTokenRow,
 } from './schema.sqlite';

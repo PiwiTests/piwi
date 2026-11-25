@@ -94,7 +94,10 @@ watch([() => props.credentialId, result], () => load(), { immediate: true });
         </div>
         <p class="text-xs text-muted">
           <ClientDate :date="use.lastAt" />
-          · {{ use.actor ?? 'the instance' }}<template v-if="use.apiKey"> (API key “{{ use.apiKey }}”)</template>
+          · {{ use.actor ?? 'the instance'
+          }}<template v-if="use.remoteUser">
+            as <span class="font-mono">{{ use.remoteUser }}</span></template
+          ><template v-if="use.apiKey"> (API key “{{ use.apiKey }}”)</template>
           <template v-if="use.subjectId"> · {{ use.subjectName ?? `action ${use.subjectId}` }}</template>
         </p>
         <p v-if="use.destination" class="text-xs text-muted font-mono break-all">{{ use.destination }}</p>

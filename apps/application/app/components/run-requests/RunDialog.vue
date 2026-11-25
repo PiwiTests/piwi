@@ -255,6 +255,28 @@ const instanceAddress = computed(() => {
         </template>
 
         <template v-else-if="place.ciPick">
+          <div v-if="place.ciPick.credential" class="space-y-2" data-testid="run-dialog-in-your-name">
+            <p class="text-sm text-highlighted">
+              {{ place.ciPick.target.label }} runs in your name<template v-if="place.ciPick.credential.account"
+                >, as <span class="font-mono">{{ place.ciPick.credential.account }}</span></template
+              >, with your own token for “{{ place.ciPick.credential.name }}”: the CI server shows you as who started
+              it.
+            </p>
+            <template v-if="place.ciTokenAsked">
+              <p class="text-sm text-muted">
+                {{
+                  place.ciTokenAsked.state === 'invalid'
+                    ? 'The CI server refused your token: give it again.'
+                    : 'Give your token first.'
+                }}
+              </p>
+              <UserTokenForm
+                :key="place.ciTokenAsked.credential.id"
+                :credential-id="place.ciTokenAsked.credential.id"
+                @saved="place.refreshCiOffer()"
+              />
+            </template>
+          </div>
           <div class="space-y-1" data-testid="run-dialog-branch">
             <div class="text-sm font-semibold text-highlighted">Branch</div>
             <p v-if="place.ciPick.branch.mode === 'fixed'" class="text-sm text-highlighted">

@@ -58,7 +58,7 @@ const epoch = (d: Date | number | null | undefined) => (d instanceof Date ? d.ge
 
 /**
  * Store a dispatch about to be sent, unless the same one (action, kind,
- * arguments, branch, a branch left to the target counting as any, and inputs) was stored less than {@link CI_DISPATCH_GUARD_MS}
+ * arguments, branch, a branch left to the target counting as any, and inputs, and the person with `perPerson`) was stored less than {@link CI_DISPATCH_GUARD_MS}
  * before, refused ones aside: the row is then removed and the earlier dispatch
  * returned. The row goes in first, so of two requests that race, the earlier
  * one alone is sent.
@@ -67,6 +67,7 @@ export async function claimCiDispatch(
   db: DrizzleDB,
   row: NewCiDispatch,
   now = new Date(),
+  options: { perPerson?: boolean } = {},
 ): Promise<{ claimed: true } | { claimed: false; existing: CiDispatchView }> {
   await db.insert(ciDispatches).values({ ...row, state: 'dispatched', createdAt: now, updatedAt: now });
   const recent = await db
@@ -87,6 +88,8 @@ export async function claimCiDispatch(
     .filter(
       (d) =>
         d.args === row.args &&
+        // An action in the name of whoever starts it repeats only the same person's dispatch.
+        (!options.perPerson || (d.byUserId ?? null) === (row.byUserId ?? null)) &&
         // A dispatch with no branch goes to the target's default, which the provider names once it answers.
         (row.ref == null || d.ref == null || d.ref === row.ref) &&
         inputsKey(d.inputs) === key &&
