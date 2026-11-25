@@ -84,6 +84,14 @@ describe('partitionTestsIntoShards', () => {
     expect(shardOf(shards, 3)).not.toBe(shardOf(shards, 1));
   });
 
+  test('places the holders of the -exclusive- lock apart, as tests without a lock', () => {
+    const rows = [t(1, 30, ['-exclusive-']), t(2, 30, ['-exclusive-']), t(3, 20, ['db']), t(4, 20, ['db'])];
+    const shards = partitionTestsIntoShards(rows, 3);
+    expect(shardOf(shards, 1)).not.toBe(shardOf(shards, 2));
+    expect(shardOf(shards, 3)).toBe(shardOf(shards, 4));
+    expect(shards.every((shard) => shard.length > 0)).toBe(true);
+  });
+
   test('total below one yields an empty partition', () => {
     expect(partitionTestsIntoShards([t(1, 10)], 0)).toEqual([]);
   });
@@ -103,6 +111,10 @@ describe('locksSpanningTests', () => {
   test('counts a lock declared twice on one test only once', () => {
     const rows = [t(1, 10, ['db', 'db']), t(2, 10)];
     expect(locksSpanningTests(rows)).toEqual([]);
+  });
+
+  test('never reports the -exclusive- lock, whose holder runs alone in its own shard', () => {
+    expect(locksSpanningTests([t(1, 10, ['-exclusive-']), t(2, 10, ['-exclusive-']), t(3, 10)])).toEqual([]);
   });
 
   test('returns spanning locks sorted, without duplicates', () => {

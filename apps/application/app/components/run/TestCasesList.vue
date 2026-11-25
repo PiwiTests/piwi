@@ -13,6 +13,7 @@ import type { HubSession } from '@piwitests/core/run-hub';
 import { desktopRowWorker, type DesktopRowWorker } from '~/utils/desktop-run-view';
 import { isFlakyExecution, summarizeRunCases } from '#shared/utils/test-counts';
 import { compareWorkers, workerNumber } from '#shared/worker-lane';
+import { lockLabel } from '#shared/test-locks';
 import { isFixmeSkip } from '#shared/utils/skip-kind';
 import { stripAnsi } from '#shared/error-parse';
 import { parseLocation } from '#shared/parse-location';
@@ -493,7 +494,7 @@ const rows = computed<Row[]>(() => {
       out.push({
         kind: 'group',
         key,
-        label: lock,
+        label: lockLabel(lock),
         count: lockCases.length,
         icon: 'i-lucide-lock',
         stats: computeStats(lockCases),

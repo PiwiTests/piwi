@@ -207,6 +207,18 @@ test('writes an order', { lock: 'database' }, async ({ page }) => { /* … */ })
 test.describe('payments', { lock: ['database', 'external-api'] }, () => { /* every test inside inherits both */ })
 ```
 
+Playwright 1.65 adds one built-in lock, `-exclusive-`: a test that holds it runs only while no other test runs, whatever
+locks the others declare.
+
+```typescript
+test('rebuilds the search index', { lock: '-exclusive-' }, async ({ page }) => { /* … */ })
+```
+
+Piwi shows it as **Runs alone** wherever it shows a lock. Within a sharded run, Playwright holds it in each shard's own
+run: a test that holds it runs alone in its shard, while the other shards run their tests on other machines. Piwi's
+[lock-aware sharding](/features/test-selection#print-shard-and-reorder) places its holders as it places tests without a
+lock, and never warns about it.
+
 The reporter reads the lock names and sends them as `locks`, stored on the execution (`test_runs_cases.locks`) and
 denormalized onto the test case (`test_cases.locks`, the latest declaration) — the same treatment as tags. They power
 the [Timeline tab's lock lanes and *Locks* table](/features/slow-tests#the-run-s-timeline), the `lock:` search qualifier on
