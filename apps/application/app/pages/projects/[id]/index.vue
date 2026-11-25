@@ -1622,7 +1622,7 @@ const moreMenuItems = computed(() => {
 
   <!-- Markers slide-over -->
   <ClientOnly>
-    <USlideover v-model:open="markersOpen" title="Timeline markers" :ui="{ content: 'max-w-xl' }">
+    <USlideover v-model:open="markersOpen" title="Timeline markers" :ui="{ content: 'sm:max-w-xl' }">
       <template #body>
         <ProjectTimeline
           :project-id="Number(projectId)"

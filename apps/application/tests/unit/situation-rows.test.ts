@@ -20,7 +20,7 @@ describe('SITUATION_ROWS: explanation, action, context', () => {
   });
 
   test('every context line comes after the next step, the cluster and its ticket first', () => {
-    for (const slot of ['cluster', 'issue', 'occurrences', 'whatChanged', 'suite'] as const) {
+    for (const slot of ['cluster', 'issue', 'occurrences', 'history', 'whatChanged', 'suite'] as const) {
       expect(at(slot), slot).toBeGreaterThan(at('next'));
     }
     // The execution page's Cluster line, else the cluster page's Issue line,

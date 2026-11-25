@@ -83,10 +83,10 @@ Top to bottom:
      set up ([troubleshooting](/guide/source-control#troubleshooting)); **Browse commits** picks a baseline when none
      passed. One commit on both sides: the change is not in the code. A cluster first seen in a
      [deployed environment](./deployed-environments#the-first-failing-deploy) leads with its first failing deploy.
-2. The section **Next** points at (the AI diagnosis, the locator fix…) as its own card.
-3. **Affected tests**, picking whose evidence shows, then that evidence.
-4. [**More ways to fix**](./fix-plans#more-ways-to-fix), then the [occurrence chart](#occurrences-over-time) and the
-   activity, folded.
+2. The [occurrence chart](#occurrences-over-time) and the activity, folded.
+3. The section **Next** points at (the AI diagnosis, the locator fix…) as its own card, then the one line of
+   [**More ways to fix**](./fix-plans#more-ways-to-fix), each other way to fix opening in a side panel.
+4. **Affected tests**, picking whose evidence shows, then that evidence, last: nothing follows it.
 
 ### The state line
 

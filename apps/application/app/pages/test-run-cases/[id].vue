@@ -791,9 +791,19 @@ const evidenceTabs = ref<{
 const toolbox = ref<{
   openSection: (k: FixSectionKey) => Promise<void>;
   scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
+  closePanel: () => void;
 } | null>(null);
 
+// The locator fix sits in the side panel; the page diff it points at is evidence,
+// so the panel closes before the evidence card shows it.
+function showPageDiff() {
+  toolbox.value?.closePanel();
+  evidenceTabs.value?.revealSection('pageDiff');
+}
+
+// A block of the page it scrolls to sits under More ways to fix's side panel: it closes first.
 function scrollToEl(el: HTMLElement | null) {
+  toolbox.value?.closePanel();
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 // The raw error is a disclosure on the facts line; the locator fix lives in the
@@ -808,6 +818,7 @@ provide(clusterSectionLocatorKey, {
   // not only once the evidence card has mounted and registered its ref.
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
   open: (id: string, index?: number) => {
+    toolbox.value?.closePanel();
     if (id in pageSections) pageSections[id]!();
     else evidenceTabs.value?.revealSection(id, index);
   },
@@ -828,6 +839,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
   diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
   scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
   selectAttemptsTab: () => {
+    toolbox.value?.closePanel();
     evidenceTabs.value?.selectTab('attempts');
     nextTick(() => scrollToEl(evidenceEl.value));
   },
@@ -1032,7 +1044,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Line 7: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 7: the test's recent executions, each square opening its execution, then the failing streak and last pass -->
+          <template v-if="historyData?.length" #history>
+            <ExecutionHistoryLine :history="historyData" :current-id="Number(testCaseId)" />
+          </template>
+
+          <!-- Line 8: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"
@@ -1046,26 +1063,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
 
         <AssistantNudge page="/test-run-cases/[id]" :facts="nudgeFacts" class="max-sm:rounded-none max-sm:border-x-0" />
 
-        <!-- ── Evidence ───────────────────────────────────────────────── -->
-        <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
-        <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
-          <EvidenceTabs
-            ref="evidenceTabs"
-            :test-case="testCase"
-            :traces="(traceData as TraceInfo[]) ?? []"
-            :has-trace="hasTrace"
-            :default-hint="defaultHint"
-            :fixtures-state="projectCapState('fixtures')"
-            :coverage-state="projectCapState('coverage')"
-            :suspect-lines="suspectLinesData ?? null"
-            :what-changed-to="failureCluster ? `/failure-clusters/${failureCluster.id}#what-changed` : null"
-            :can-decide-fixtures="canDecideCap"
-            help="case.evidence"
-            @decline-fixtures="declineFixtures"
-          />
-        </div>
-
-        <!-- ── More ways to fix ───────────────────────────────────────── -->
+        <!-- ── More ways to fix: one line, each section in a side panel ── -->
         <div v-if="showFix" class="scroll-mt-4">
           <Toolbox ref="toolbox" :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
             <template #diagnosis-summary>{{ diagnosisSummary }}</template>
@@ -1091,7 +1089,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
                 :ai-intents="aiIntents"
                 :chrome="false"
                 :has-page-diff="true"
-                @show-page-diff="evidenceTabs?.revealSection('pageDiff')"
+                @show-page-diff="showPageDiff"
               />
             </template>
 
@@ -1197,25 +1195,24 @@ const { handle: handleNextStepAction } = useNextStepActions({
           </Toolbox>
         </div>
 
-        <!-- ── History ────────────────────────────────────────────────── -->
-        <SectionCard icon="i-lucide-history" title="History" data-shot="execution-history">
-          <template #actions>
-            <UButton
-              v-if="testCase?.testCaseId"
-              :to="`/test-cases/${testCase.testCaseId}`"
-              size="xs"
-              variant="outline"
-              color="neutral"
-              trailing-icon="i-lucide-arrow-right"
-            >
-              Test history
-            </UButton>
-          </template>
-          <ClientOnly>
-            <HistoryStrip v-if="historyData?.length" :history="historyData" :current-id="Number(testCaseId)" />
-            <p v-else class="text-sm text-muted">No prior executions of this test yet.</p>
-          </ClientOnly>
-        </SectionCard>
+        <!-- ── Evidence, last: it is long, so nothing follows it ──────── -->
+        <!-- Hidden while the card renders nothing (a test that never ran), so it adds no gap. -->
+        <div ref="evidenceEl" class="scroll-mt-4 empty:hidden">
+          <EvidenceTabs
+            ref="evidenceTabs"
+            :test-case="testCase"
+            :traces="(traceData as TraceInfo[]) ?? []"
+            :has-trace="hasTrace"
+            :default-hint="defaultHint"
+            :fixtures-state="projectCapState('fixtures')"
+            :coverage-state="projectCapState('coverage')"
+            :suspect-lines="suspectLinesData ?? null"
+            :what-changed-to="failureCluster ? `/failure-clusters/${failureCluster.id}#what-changed` : null"
+            :can-decide-fixtures="canDecideCap"
+            help="case.evidence"
+            @decline-fixtures="declineFixtures"
+          />
+        </div>
       </div>
     </template>
   </UDashboardPanel>

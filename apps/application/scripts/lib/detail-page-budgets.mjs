@@ -10,10 +10,12 @@
  * solid primary buttons above the fold.
  *
  * The controls budget counts what the page opens on, not what the fold cuts:
- * the blocks under the situation block (the evidence card's tabs, the
- * timeline's toolbar, the affected tests, the history strip) belong on the
- * first screen when the block leaves room for them, so their controls above
- * the fold are reported, not budgeted.
+ * the blocks under the situation block (More ways to fix, the evidence card's
+ * tabs, the timeline's toolbar, the affected tests) belong on the first screen
+ * when the block leaves room for them, so their controls above the fold are
+ * reported, not budgeted. The execution page's History line is a line of the
+ * block: its strip, one keyboard stop, and its link to the last passing run
+ * count.
  */
 
 /** The viewport the budgets are set at; any other viewport is reported without verdicts. */
@@ -92,7 +94,7 @@ export const DETAIL_PAGE_BUDGETS = [
     label: 'controls in the navbar and block',
     pages: ['execution'],
     read: (result) => (result.blockControls == null ? null : result.navbarControls + result.blockControls),
-    max: 26,
+    max: 28,
     missing: 'no situation block',
   },
   {

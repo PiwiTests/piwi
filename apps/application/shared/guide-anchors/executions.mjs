@@ -63,7 +63,7 @@ export const EXECUTIONS_ANCHORS = [
     id: 'locator-fix',
     kind: 'block',
     pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],
-    reveal: [{ unfold: 'fix-section-locator-fix' }],
+    reveal: [{ open: 'fix-section-locator-fix' }],
     describes:
       'The failing locator and the replacements locator healing ranks from the last run where the test passed, the recommended one first.',
     shownWhen: 'When a locator broke and healing has a replacement.',

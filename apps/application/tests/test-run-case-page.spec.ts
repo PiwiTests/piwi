@@ -7,12 +7,12 @@ import { gitApplyCommand } from '#shared/patch';
 
 /**
  * The single-column execution page: one situation block — identity, the failure
- * headline and the line under it, the most likely explanation, the next step and
- * the cluster, with the raw error one click away behind *Raw error* — then one evidence
- * card with content-level tabs (Timeline, Screen, Source, Network, Console,
- * State, Performance), then More ways to fix and the History block. A passing
- * execution shows identity and facts, with the evidence on the Timeline tab and no
- * More ways to fix.
+ * headline and the line under it, the most likely explanation, the next step, the
+ * cluster and the test's history, with the raw error one click away behind *Raw
+ * error* — then More ways to fix on one line, each section opening in a side
+ * panel, then one evidence card with content-level tabs (Timeline, Screen, Source,
+ * Network, Console, State, Performance), last. A passing execution shows identity,
+ * history and facts, with the evidence on the Timeline tab and no More ways to fix.
  */
 test.describe('Test-run-case page', () => {
   test.describe.configure({ mode: 'serial' });
@@ -124,7 +124,7 @@ test.describe('Test-run-case page', () => {
     passedCaseId = run.testCases.find((c: { status: string }) => c.status === 'passed').executionId;
   });
 
-  test('failing execution leads with the situation block, the raw error one click away, then evidence and fix', async ({
+  test('failing execution leads with the situation block, the raw error one click away, then fix and evidence', async ({
     page,
   }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
@@ -177,18 +177,25 @@ test.describe('Test-run-case page', () => {
     // A tab that lists items carries its count as plain text, never a badge.
     await expect(tablist.getByRole('tab', { name: /^Network/ })).toHaveText(/^\s*Network\s*2\s*$/);
 
-    // More ways to fix gathers the other ways to fix (diagnosis, verify, …) below the evidence.
-    // With no AI provider its diagnosis is one line, not a placeholder block.
+    // More ways to fix lists the other ways to fix (diagnosis, verify, …) on one line above
+    // the evidence, each opening in a side panel. With no AI provider its diagnosis is one
+    // line, not a placeholder block.
     const fix = page.locator('[data-shot="fix"]');
     await expect(fix).toBeVisible();
-    await expect(fix.getByText('AI is not configured')).toBeVisible();
+    await page.locator('[data-tour="fix-section-diagnosis"]').click();
+    await expect(page.locator('[data-shot="fix-diagnosis"]').getByText('AI is not configured')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-shot="fix-diagnosis"]')).toHaveCount(0);
 
-    // Reading order: headline → evidence → fix.
+    // Reading order: headline → fix → evidence, last.
     const headlineY = (await headline.boundingBox())!.y;
     const tabsY = (await tablist.boundingBox())!.y;
     const fixY = (await fix.boundingBox())!.y;
-    expect(headlineY).toBeLessThan(tabsY);
-    expect(tabsY).toBeLessThan(fixY);
+    expect(headlineY).toBeLessThan(fixY);
+    expect(fixY).toBeLessThan(tabsY);
+    expect(
+      await page.locator('[data-shot="evidence-card"]').evaluate((el) => el.parentElement!.nextElementSibling),
+    ).toBeNull();
   });
 
   test('passing execution shows identity and facts only, on the Timeline tab', async ({ page }) => {
@@ -438,7 +445,7 @@ test.describe('Test-run-case page', () => {
     await expect(page.getByText('Other clues')).toHaveCount(0);
   });
 
-  test('History block opens populated from the SSR payload, without refetching or a hydration mismatch', async ({
+  test('History line opens populated from the SSR payload, without refetching or a hydration mismatch', async ({
     page,
   }) => {
     // A client-side call to the history endpoint means the rows are missing from
@@ -456,9 +463,13 @@ test.describe('Test-run-case page', () => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
 
-    const historyCard = page.locator('[data-shot="execution-history"]');
-    await expect(historyCard.getByRole('heading', { name: 'History', exact: true })).toBeVisible();
-    await expect(historyCard.getByRole('link', { name: 'Test history' })).toBeVisible();
+    // A line of the situation block: each square opens its execution, this one's ringed; the test's own page
+    // opens from the navbar.
+    const block = page.locator('[data-shot="situation-block"]');
+    await expect(block.getByText('History', { exact: true })).toBeVisible();
+    const strip = block.locator('[data-shot="execution-history"]').getByRole('toolbar');
+    await expect(strip.locator('a[aria-current="true"]')).toHaveAttribute('href', `/test-run-cases/${failedCaseId}`);
+    await expect(page.getByRole('link', { name: 'Test history' })).toHaveAttribute('href', /\/test-cases\/\d+$/);
     expect(historyCalls).toEqual([]);
     expect(hydrationErrors).toEqual([]);
   });
@@ -500,7 +511,7 @@ test.describe('Situation block on seeded cases', () => {
 
     // The block reads the explanation, the action, then the context.
     const labels = (await page.locator('[data-shot="situation-block"] dl > dt').allInnerTexts()).map((t) => t.trim());
-    expect(labels).toEqual(['Most likely', 'Next', 'Cluster']);
+    expect(labels).toEqual(['Most likely', 'Next', 'Cluster', 'History']);
 
     // Most likely — the blocked-by-pending-request story, Strong, 3 clues agree.
     await expect(page.getByText('Most likely', { exact: true })).toBeVisible();
@@ -575,13 +586,12 @@ test.describe('Situation block on seeded cases', () => {
     await page.locator('[data-shot="next-step"]').getByRole('button', { name: 'Copy apply command' }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(gitApplyCommand(patch!));
 
-    // Full patch opens the Diagnosis section at the whole patch.
-    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
-    if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
+    // Full patch opens the Diagnosis section in the side panel, at the whole patch.
+    const diagnosis = page.locator('[data-tour="fix-section-diagnosis"]');
     await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
     await change.getByRole('button', { name: 'Full patch' }).click();
     await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('[data-shot="diagnosis-patch"]')).toBeInViewport();
+    await expect(page.locator('[data-shot="fix-diagnosis"] [data-shot="diagnosis-patch"]')).toBeInViewport();
   });
 
   test('#37 keeps the patch preview inside the page at phone width', async ({ page }) => {
@@ -596,7 +606,7 @@ test.describe('Situation block on seeded cases', () => {
     expect(scrollWidth).toBeLessThanOrEqual(clientWidth + 1);
   });
 
-  test('#37 opens the evidence on the Timeline and the toolbox on Diagnosis', async ({ page }) => {
+  test('#37 opens the evidence on the Timeline, More ways to fix on one line above it', async ({ page }) => {
     await page.goto('/test-run-cases/37');
     await waitForHydration(page);
 
@@ -604,11 +614,15 @@ test.describe('Situation block on seeded cases', () => {
     // is the default tab rather than the single tab the leading clue cites.
     await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
 
-    // The toolbox is "More ways to fix" and opens on the next step's section —
-    // the diagnosed-fix step opens Diagnosis; the others are folded to one line.
+    // The toolbox is "More ways to fix": one button per section, each opening a side
+    // panel. None opens with the page; the Next line acts on the next step's section.
     await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
-    await expect(page.locator('[data-shot="fix-diagnosis"] [aria-expanded="true"]')).toBeVisible();
-    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
+    await expect(page.locator('[data-tour="fix-section-diagnosis"]')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-tour="fix-section-reproduce"]')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-shot="fix-diagnosis"]')).toHaveCount(0);
+    const fixBottom = (await page.locator('[data-shot="fix"]').boundingBox())!;
+    const evidenceTop = (await page.locator('[data-shot="evidence-card"]').boundingBox())!.y;
+    expect(fixBottom.y + fixBottom.height).toBeLessThanOrEqual(evidenceTop);
   });
 
   test('#37 shows the page at the failure as views on the Screen tab and picks from its DOM', async ({ page }) => {
@@ -636,13 +650,64 @@ test.describe('Situation block on seeded cases', () => {
     await expect(dialog.getByText('No DOM snapshot or ARIA data available')).toHaveCount(0);
   });
 
-  test('#533 proposes replacing the locator and opens the Locator fix section', async ({ page }) => {
+  test('#37 History: each square opens its execution, the strip one keyboard stop', async ({ page }) => {
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+    const strip = page.locator('[data-shot="execution-history"]').getByRole('toolbar');
+    const squares = await strip.getByRole('link').count();
+    expect(squares).toBeGreaterThan(2);
+    // Tab reaches this execution's square alone, from the line above; the arrow keys move along the strip.
+    const stop = strip.locator('a[tabindex="0"]');
+    await expect(stop).toHaveCount(1);
+    await expect(strip.locator('a[tabindex="-1"]')).toHaveCount(squares - 1);
+    await expect(stop).toHaveAttribute('aria-current', 'true');
+    await page.locator('[data-shot="cluster-line"] a').last().focus();
+    await page.keyboard.press('Tab');
+    await expect(stop).toBeFocused();
+    await page.keyboard.press('ArrowLeft');
+    await expect(stop).toBeFocused();
+    await expect(stop).not.toHaveAttribute('aria-current', 'true');
+    const href = await stop.getAttribute('href');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`${href}$`));
+  });
+
+  test('#37 folds what passed before the failure under one Passed row, and remembers it open', async ({ page }) => {
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+    const timeline = page.locator('[data-tour="evidence-timeline"]').locator('table');
+    const passed = timeline.getByRole('button', { name: /^Passed/ });
+
+    // Folded by default: the rows that passed early, but not the last three steps before the failure.
+    await expect(passed).toHaveAttribute('aria-expanded', 'false');
+    await expect(passed).toContainText('2 steps · 2 requests');
+    const firstRequest = timeline.getByText('https://shop.example.com/api/cart');
+    await expect(firstRequest).toHaveCount(0);
+    for (const kept of ["getByLabel('Card number')", "getByLabel('Expiry date')", "getByLabel('CVV')"]) {
+      await expect(timeline.getByText(kept)).toBeVisible();
+    }
+    // A row Most likely cites never folds.
+    await expect(timeline.getByText('Cited by Most likely').first()).toBeVisible();
+
+    // Opened, the rows show in place, and stay open on the next visit.
+    await passed.click();
+    await expect(passed).toHaveAttribute('aria-expanded', 'true');
+    await expect(firstRequest).toBeVisible();
+    await page.reload();
+    await waitForHydration(page);
+    await expect(passed).toHaveAttribute('aria-expanded', 'true');
+    await passed.click();
+    await expect(passed).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('#533 proposes replacing the locator, its Locator fix section one click away', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/test-run-cases/533')).ok()), 'no #533');
     await page.goto('/test-run-cases/533');
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Replace the locator');
-    await expect(page.locator('[data-shot="fix-locator-fix"] [aria-expanded="true"]')).toBeVisible();
+    await page.locator('[data-tour="fix-section-locator-fix"]').click();
+    await expect(page.locator('[data-shot="fix-locator-fix"]')).toBeVisible();
   });
 
   // #587 waits for `.modal.is-open`, a modal the app never opens: no element of
@@ -655,7 +720,7 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.locator('[data-shot="next-step"]')).not.toContainText('Replace the locator');
   });
 
-  test('#648 has no line edit, so it shows and copies the recommended locator, even from a folded section', async ({
+  test('#648 has no line edit, so it shows and copies the recommended locator, its section closed', async ({
     page,
     request,
     context,
@@ -683,15 +748,13 @@ test.describe('Situation block on seeded cases', () => {
     expect(rows.some((row) => row.startsWith('-'))).toBe(true);
     expect(rows).toContain(`+${recommended}`);
 
-    // Folding Locator fix unmounts its panel; the copy reads the row's change.
-    const section = page.locator('[data-shot="fix-locator-fix"] button[aria-expanded]').first();
-    if ((await section.getAttribute('aria-expanded')) === 'true') await section.click();
-    await expect(section).toHaveAttribute('aria-expanded', 'false');
+    // Locator fix is closed, so its panel is not mounted; the copy reads the row's change.
+    await expect(page.locator('[data-shot="fix-locator-fix"]')).toHaveCount(0);
     await next.getByRole('button', { name: 'Copy locator' }).click();
     await expect.poll(() => page.evaluate(() => navigator.clipboard.readText())).toBe(recommended);
   });
 
-  test('the replace-locator actions open a folded Locator fix section before acting on its panel', async ({
+  test('the replace-locator actions open the Locator fix section before acting on its panel', async ({
     page,
     request,
     context,
@@ -718,15 +781,16 @@ test.describe('Situation block on seeded cases', () => {
     await page.goto(`/test-run-cases/${target!.id}`);
     await waitForHydration(page);
 
-    // Folding the section unmounts the panel the actions drive; mounting it again
+    // Closing the section unmounts the panel the actions drive; mounting it again
     // renders the page's healing answer without asking for it again.
     const healingFetches: string[] = [];
     page.on('request', (r) => {
       if (/\/locator-healing(\?|$)/.test(r.url())) healingFetches.push(r.url());
     });
-    const section = page.locator('[data-shot="fix-locator-fix"] button[aria-expanded]').first();
+    const section = page.locator('[data-tour="fix-section-locator-fix"]');
+    // The open side panel covers the line's buttons at this width: Escape closes it.
     const fold = async () => {
-      if ((await section.getAttribute('aria-expanded')) === 'true') await section.click();
+      if ((await section.getAttribute('aria-expanded')) === 'true') await page.keyboard.press('Escape');
       await expect(section).toHaveAttribute('aria-expanded', 'false');
     };
     const next = page.locator('[data-shot="next-step"]');
@@ -745,7 +809,7 @@ test.describe('Situation block on seeded cases', () => {
     await expect(section).toHaveAttribute('aria-expanded', 'true');
     await picker.getByRole('button', { name: 'Cancel' }).click();
     await expect(picker).toHaveCount(0);
-    // Scrolling the section into view moves the panel's content, never the
+    // Bringing the section into view scrolls the side panel, never the
     // dashboard: the navbar stays on screen.
     const navbarTop = (await page.getByRole('button', { name: 'More actions' }).boundingBox())?.y ?? -1;
     expect(navbarTop).toBeGreaterThanOrEqual(0);
@@ -764,16 +828,17 @@ test.describe('Situation block on seeded cases', () => {
     expect(healingFetches).toEqual([]);
   });
 
-  test('#705 proposes reproducing locally and opens the Reproduce section, run line first', async ({ page }) => {
+  test('#705 proposes reproducing locally, its Reproduce section run line first', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/test-run-cases/705')).ok()), 'no #705');
     await page.goto('/test-run-cases/705');
     await waitForHydration(page);
     const next = page.locator('[data-shot="next-step"]');
     await expect(next).toContainText('Reproduce locally');
     await expect(next.getByRole('button', { name: 'Copy recipe' })).toBeVisible();
-    // The Reproduce section opens with the page; the run line leads, the full
-    // recipe folds behind "Show the full recipe".
-    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="true"]')).toBeVisible();
+    // The Reproduce section opens in the side panel from its button; the run line
+    // leads, the full recipe folds behind "Show the full recipe".
+    await page.locator('[data-tour="fix-section-reproduce"]').click();
+    await expect(page.locator('[data-shot="fix-reproduce"]')).toBeVisible();
     await expect(page.getByRole('button', { name: /Show the full recipe/ })).toBeVisible();
   });
 

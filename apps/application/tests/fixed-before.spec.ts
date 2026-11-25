@@ -95,8 +95,8 @@ test.describe.serial('Fixed before', () => {
   test('renders the section and applies the earlier triage without resolving', async ({ page, request }) => {
     await page.goto(`/failure-clusters/${openId}`);
     await waitForHydration(page);
-    // Fixed before is a folded section of the "More ways to fix" toolbox (it is
-    // never the next step), so open it before asserting on its content.
+    // Fixed before is a section of "More ways to fix" (it is never the next step),
+    // opening in a side panel from its button, so open it before asserting on its content.
     await page.getByRole('button', { name: /^Fixed before/ }).click();
     const section = page.locator('[data-shot="fixed-before"]');
     await expect(section).toBeVisible();
