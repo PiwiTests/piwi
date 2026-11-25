@@ -2,7 +2,7 @@ import * as http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import { gzipSync } from 'node:zlib';
 import { describe, it, expect, vi, afterAll, afterEach, beforeAll } from 'vitest';
-import { chromium, type Browser, type Locator, type Page } from '@playwright/test';
+import { chromium, type Browser, type Locator, type Page, type Request } from '@playwright/test';
 import {
   ariaSnapshotBestEffort,
   ariaSnapshotJSONBestEffort,
@@ -1850,6 +1850,18 @@ describe('network capture in Chromium', () => {
   /** The recorded requests to `path`. */
   const to = (requests: Array<Record<string, unknown>>, path: string) =>
     requests.filter((r) => r.url === `${origin}${path}`);
+  /** Resolves once the request to `path` finishes or fails, whichever the browser reports. */
+  const requestEnded = (page: Page, path: string) =>
+    new Promise<void>((resolve) => {
+      const onEnd = (request: Request) => {
+        if (!request.url().endsWith(path)) return;
+        page.off('requestfinished', onEnd);
+        page.off('requestfailed', onEnd);
+        resolve();
+      };
+      page.on('requestfinished', onEnd);
+      page.on('requestfailed', onEnd);
+    });
 
   it('records an unread no-store error response, which never finishes, with its logs and span', async (ctx) => {
     if (!browser) return ctx.skip();
@@ -1874,15 +1886,12 @@ describe('network capture in Chromium', () => {
     expect(failing[0]!.duration).toBeLessThan(500);
   });
 
-  it('records unread empty-bodied error responses, which Chromium fails as aborted, with their logs', async (ctx) => {
+  it('records unread empty-bodied error responses, finished or failed as aborted, with their logs', async (ctx) => {
     if (!browser) return ctx.skip();
     const requests = await captureTest(async (page) => {
       await page.goto(origin);
       for (const path of ['/api/empty', '/api/missing']) {
-        await Promise.all([
-          page.waitForEvent('requestfailed', (request) => request.url().endsWith(path)),
-          page.evaluate(`void fetch('${path}')`),
-        ]);
+        await Promise.all([requestEnded(page, path), page.evaluate(`void fetch('${path}')`)]);
       }
     });
     for (const [path, status] of [
