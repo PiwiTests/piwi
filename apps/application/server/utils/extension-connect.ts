@@ -5,6 +5,8 @@ import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
 import { hashToken } from './token-hash';
 import { cleanClientLabel } from './client-label';
+import { getInstanceDecisions } from '#shared/handlers/setup-status';
+import type { CapabilityId, InstanceDecision } from '#shared/capabilities';
 
 /**
  * Connecting the browser extension, the VS Code extension and JetBrains
@@ -72,11 +74,28 @@ const EDITOR_CLIENT_PREFIX = 'Piwi in ';
 /** What connects: Piwi Picker, an editor's extension, or a run target. */
 export type ConnectClientKind = 'picker' | 'editor' | 'desktop' | 'runner';
 
-/** The clients that take run requests: their key holds `run:receive` alone. */
+/** The clients that take run requests: their key holds the run target permissions alone. */
 export const RUN_TARGET_KINDS: ReadonlySet<ConnectClientKind> = new Set(['desktop', 'runner']);
 
-/** The only permissions the key of a run target holds. */
-export const RUN_TARGET_KEY_PERMISSIONS = ['run:receive'] as const;
+/**
+ * The only permissions a run target's key may hold, each opening its own target routes: `run:receive` the run
+ * requests, `project:read` the comparison of a test with the team's CI (Compare with team instance).
+ */
+export const RUN_TARGET_PERMISSIONS = ['run:receive', 'project:read'] as const;
+export type RunTargetPermission = (typeof RUN_TARGET_PERMISSIONS)[number];
+
+/**
+ * The permissions the device flow gives a run target's key: `run:receive`, and `project:read` for the desktop app
+ * while the instance does not decline Compare with team instance. Piwi Runner has no page to compare on.
+ */
+export function runTargetKeyPermissions(
+  kind: ConnectClientKind,
+  decisions: Partial<Record<CapabilityId, InstanceDecision>>,
+): RunTargetPermission[] {
+  return kind === 'desktop' && decisions['team-comparison'] !== 'declined'
+    ? ['run:receive', 'project:read']
+    : ['run:receive'];
+}
 
 export interface ConnectClient {
   browser?: unknown;
@@ -181,6 +200,8 @@ export interface ConnectRequestView {
   clientName: string;
   /** Who asked: Piwi Picker, the Piwi extension of an editor, or a run target. */
   clientKind: ConnectClientKind;
+  /** The key a run target gets also reads its owner's projects to compare a test with the team's CI. */
+  compares: boolean;
   createdAt: string;
   expiresAt: string;
   /** `expired` once past its expiry without being collected; `consumed` once the extension received its key. */
@@ -197,10 +218,15 @@ export async function describeConnectRequest(
   if (!row) return null;
   const status = row.status as DeviceCodeStatus;
   const expired = row.expiresAt.getTime() <= now.getTime() && status !== 'consumed' && status !== 'denied';
+  const clientKind = storedClientKind(row);
+  const compares =
+    RUN_TARGET_KINDS.has(clientKind) &&
+    runTargetKeyPermissions(clientKind, await getInstanceDecisions(db)).includes('project:read');
   return {
     userCode: formatUserCode(normalizeUserCode(userCode)!),
     clientName: row.clientName,
-    clientKind: storedClientKind(row),
+    clientKind,
+    compares,
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     status: expired ? 'expired' : status,
@@ -307,7 +333,7 @@ export async function pollDeviceConnect(
       keyHash: hash,
       keyPrefix: prefix,
       clientKind: kind,
-      permissions: target ? [...RUN_TARGET_KEY_PERMISSIONS] : null,
+      permissions: target ? runTargetKeyPermissions(kind, await getInstanceDecisions(db)) : null,
       createdAt: now,
     })
     .returning({ id: apiKeys.id });

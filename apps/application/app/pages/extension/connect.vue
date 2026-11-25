@@ -28,10 +28,15 @@ const EDITOR = {
   tick: 'Tick the box once your editor shows this same code',
   again: 'Start again from Piwi: Connect in your editor.',
 };
-/** A run target's key receives the run requests you make and reports their runs, and nothing else. */
-function targetWords(app: string) {
+/**
+ * A run target's key receives the run requests you make and reports their runs; the desktop app's also reads how a
+ * test does in your projects' CI to compare it with your machine (`compares`). Nothing else.
+ */
+function targetWords(app: string, compares: boolean) {
   return {
-    grant: 'that sees the tests you ask to run on any of your projects, and reports their results in your name',
+    grant: compares
+      ? 'that sees the tests you ask to run on any of your projects, reports their results in your name, and reads how a test does in your projects’ CI to compare it with a run on your machine'
+      : 'that sees the tests you ask to run on any of your projects, and reports their results in your name',
     title: `Connect ${app}`,
     start: `clicked Connect in ${app}`,
     keyName: 'this computer',
@@ -41,12 +46,6 @@ function targetWords(app: string) {
     again: `Start again from ${app}.`,
   };
 }
-const WORDS = {
-  picker: PICKER,
-  editor: EDITOR,
-  desktop: targetWords('Piwi Desktop'),
-  runner: targetWords('Piwi Runner'),
-};
 
 const route = useRoute();
 const config = useRuntimeConfig();
@@ -69,7 +68,12 @@ const { request, loading, loadError, deciding, decideError, signedInAs, decide }
   answered: (current, reply) => ({ ...current, status: reply.status }),
 });
 
-const words = computed(() => WORDS[request.value?.clientKind ?? 'picker'] ?? PICKER);
+const words = computed(() => {
+  const kind = request.value?.clientKind ?? 'picker';
+  if (kind === 'desktop') return targetWords('Piwi Desktop', request.value?.compares === true);
+  if (kind === 'runner') return targetWords('Piwi Runner', false);
+  return kind === 'editor' ? EDITOR : PICKER;
+});
 
 useHead({ title: () => words.value.title });
 </script>

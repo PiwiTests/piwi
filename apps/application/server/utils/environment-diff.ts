@@ -6,7 +6,7 @@
  * project, the servers under test). Used by the REST endpoint, the AI diagnosis section, and the
  * demo router (browser-safe: drizzle queries only).
  */
-import { and, eq, desc } from 'drizzle-orm';
+import { and, eq, desc, like, type SQL } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
 import { buildEnvironmentSnapshot, computeEnvironmentDiff, type EnvironmentDiffEntry } from '#shared/environment-diff';
 import { loadRunsSnapshots } from '#shared/handlers/environment-snapshots';
@@ -16,7 +16,8 @@ import { baselineEnvironmentNote, rankBaselineCandidates } from '#shared/baselin
 import { resolveRunBranch } from './run-branch';
 import type { BrowserConfig } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
-import { eligibleRunSql } from '#shared/run-eligibility';
+import { CI_RUN_ORIGINS, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
+import type { TestComparisonClosestPass } from '#shared/test-comparison';
 
 /** Passing executions inspected when choosing the baseline. */
 const BASELINE_CANDIDATES = 20;
@@ -45,7 +46,7 @@ export interface EnvironmentDiffResult {
 }
 
 interface RunMetadataLens {
-  scm?: { branch?: string | null } | null;
+  scm?: { branch?: string | null; worktree?: string | null } | null;
   ci?: { provider?: string | null } | null;
 }
 
@@ -66,6 +67,8 @@ function selectExecutionEnvironment(db: DrizzleDB, where: ReturnType<typeof and>
       reporterVersion: testRuns.reporterVersion,
       startTime: testRuns.startTime,
       runBranch: testRuns.branch,
+      runCommit: testRuns.commit,
+      runEnvironmentId: testRuns.environmentId,
     })
     .from(testRunsCases)
     .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
@@ -176,5 +179,69 @@ export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number):
     baselineNote,
     entries,
     serverNotes: serverEnvironmentNotes(executionSnapshots(failing, failingSnapshots).servers),
+  };
+}
+
+/** A run's commit matches `commit`: equal, or starting with it when it is short. */
+export function commitMatches(commit: string): SQL {
+  return commit.length >= 40 ? eq(testRuns.commit, commit) : like(testRuns.commit, `${commit}%`);
+}
+
+/**
+ * The passing CI execution a test that ran elsewhere (a desktop app's run) is compared with: a final attempt of the
+ * test in a CI run (`CI_RUN_ORIGINS`), in the same Playwright project when one is named, on `commit` when the CI ran
+ * the test there, else ranked as the environment diff ranks its baseline (the same environment, then the same branch,
+ * then the most recent). Answers its environment snapshot, which the other side diffs against its own; null when the
+ * CI never passed the test.
+ */
+export async function getClosestCiPass(
+  db: DrizzleDB,
+  opts: {
+    testCaseId: number;
+    playwrightProject: string | null;
+    environment: string | null;
+    branch: string | null;
+    commit: string | null;
+  },
+): Promise<
+  | (Omit<TestComparisonClosestPass, 'path' | 'environment'> & {
+      environmentId: number | null;
+      environmentLabel: string | null;
+    })
+  | null
+> {
+  const conds: SQL[] = [
+    eq(testRunsCases.testCaseId, opts.testCaseId),
+    eq(testRunsCases.status, 'passed'),
+    eq(testRunsCases.finalAttempt, true),
+    runOriginIn(testRuns.origin, CI_RUN_ORIGINS),
+    eligibleRunSql('baseline'),
+  ];
+  if (opts.playwrightProject) conds.push(eq(testRunsCases.browserName, opts.playwrightProject));
+  const onCommit = opts.commit ? await loadExecutionEnvironment(db, and(...conds, commitMatches(opts.commit))) : null;
+  let chosen = onCommit;
+  if (!chosen) {
+    const candidates = await selectExecutionEnvironment(db, and(...conds)).limit(BASELINE_CANDIDATES);
+    chosen =
+      rankBaselineCandidates(
+        { environment: opts.environment, branch: opts.branch },
+        candidates.map((row) => ({ ...scopeOf(row), row })),
+      )[0]?.row ?? null;
+  }
+  if (!chosen) return null;
+  const snapshots = await loadRunsSnapshots(db, [chosen.runId]);
+  const snapshot = toSnapshot(chosen, snapshots.get(chosen.runId) ?? []);
+  const worktree = (chosen.runMetadata as RunMetadataLens | null)?.scm?.worktree;
+  return {
+    executionId: chosen.id,
+    runId: chosen.runId,
+    startTime: chosen.startTime instanceof Date ? chosen.startTime.getTime() : (chosen.startTime ?? null),
+    environmentId: chosen.runEnvironmentId ?? null,
+    environmentLabel: chosen.runEnvironment ?? null,
+    branch: scopeOf(chosen).branch ?? null,
+    commit: chosen.runCommit ?? null,
+    worktree: worktree === 'clean' || worktree === 'dirty' ? worktree : null,
+    sameCommit: onCommit !== null,
+    snapshot: { values: snapshot.values, inferred: [...snapshot.inferred] },
   };
 }

@@ -90,7 +90,9 @@ an icon of its own (the Piwi mark on a teal tile, with a play sign) and a tray w
 default, and **Start on login**. Runner updates itself from
 `latest-runner.json`, one manifest keyed by installer, signed with the desktop app's key, from its tray's **Check for
 updates…** and a startup check. What remains of 4c: signing the installers (a Developer ID on macOS, a certificate on
-Windows) and Runner's own installer art. The instance's side of PR 2 is done. The
+Windows) and Runner's own installer art. The instance's side of PR 2 is done. Since [compare-with-team.md](compare-with-team.md), the key the device flow
+gives the desktop app also holds `project:read` while the instance does not decline Compare with team instance, and
+`requireRunTarget` takes each route's own permission. The
 maintainer settled on 2026-11-06: the desktop app and Piwi Runner
 take run requests, the desktop app first (D7); IDE windows are left to runs-from-the-dashboard (D7); every run is
 confirmed in the target (D2); a request carries resolved tests and is

@@ -134,8 +134,8 @@ export async function listUserApiKeys(db: DrizzleDB, userId: number) {
 
 /**
  * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app, Piwi Runner): each is
- * a key it holds. One that runs tests adds its device and when it was last seen, and `isOnline` says whether it is
- * online now. Revoking the key disconnects the app.
+ * a key it holds. One that runs tests adds its device, when it was last seen, whether its key may compare a test with
+ * the team's CI, and `isOnline` says whether it is online now. Revoking the key disconnects the app.
  */
 export async function listConnectedApps(
   db: DrizzleDB,
@@ -147,6 +147,7 @@ export async function listConnectedApps(
       id: apiKeys.id,
       name: apiKeys.name,
       kind: apiKeys.clientKind,
+      permissions: apiKeys.permissions,
       createdAt: apiKeys.createdAt,
       lastUsedAt: apiKeys.lastUsedAt,
       targetId: runTargets.id,
@@ -172,7 +173,7 @@ export async function listConnectedApps(
       );
     }
   }
-  return rows.map(({ targetId, platform, version, lastSeenAt, projectIds, ...app }) => ({
+  return rows.map(({ targetId, platform, version, lastSeenAt, projectIds, permissions, ...app }) => ({
     ...app,
     kind: app.kind as ConnectedApp['kind'],
     target:
@@ -185,6 +186,7 @@ export async function listConnectedApps(
             projectIds: Array.isArray(projectIds) ? (projectIds as number[]).filter((id) => receivable.get(id)) : [],
             lastSeenAt,
             online: isOnline(targetId, lastSeenAt),
+            compares: Array.isArray(permissions) && (permissions as unknown[]).includes('project:read'),
           },
   }));
 }

@@ -139,6 +139,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/run-targets/requests/:id/folder-hints',
   'GET /api/run-targets/projects/:id/environments',
   'GET /api/run-targets/projects/:id/run-variables',
+  'GET /api/run-targets/projects/:id/test-comparison',
   'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the
   // authorize endpoint stored, and the client redeems a code for tokens. The

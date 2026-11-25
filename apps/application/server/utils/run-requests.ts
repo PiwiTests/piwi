@@ -17,7 +17,7 @@ import { runRequests, runTargets, testRuns, type RunRequestRow, type RunTarget, 
 import { getDatabase, type DbClient } from '../database';
 import { apiError } from './api-error';
 import { extractApiKey, getUserAccessCached, isAuthEnabled, resolveApiKey } from './auth';
-import { RUN_TARGET_KEY_PERMISSIONS } from './extension-connect';
+import { RUN_TARGET_PERMISSIONS, type RunTargetPermission } from './extension-connect';
 import { readProjectRepositoryUrl } from './scm/project-repository';
 import { newRequestToken, REQUEST_TOKEN_LIFETIME_MS } from './request-tokens';
 import { isOptInCapabilityOn } from '#shared/handlers/capabilities';
@@ -87,12 +87,17 @@ export interface RunTargetCaller {
 }
 
 /**
- * Authenticate a target route: a target key (an API key that holds `run:receive` alone, made by the device flow for
- * the desktop app or Piwi Runner) whose target is still connected. Any other credential, a session or a key with its
- * owner's access, is refused: these routes serve connected apps only. Records that the target was seen, unless
- * `seen` is false: a check the instance makes on its own, such as an open stream's, is no sign the app is there.
+ * Authenticate a target route: a target key (an API key that holds some of `RUN_TARGET_PERMISSIONS` and nothing else,
+ * made by the device flow for the desktop app or Piwi Runner) whose target is still connected, and that holds the
+ * route's `permission`: `run:receive` for the run requests, `project:read` for the comparison with the team's CI. Any
+ * other credential, a session or a key with its owner's access, is refused: these routes serve connected apps only.
+ * Records that the target was seen, unless `seen` is false: a check the instance makes on its own, such as an open
+ * stream's, is no sign the app is there.
  */
-export async function requireRunTarget(event: H3Event, { seen = true } = {}): Promise<RunTargetCaller> {
+export async function requireRunTarget(
+  event: H3Event,
+  { seen = true, permission = 'run:receive' }: { seen?: boolean; permission?: RunTargetPermission } = {},
+): Promise<RunTargetCaller> {
   requireSignInForRunRequests(event);
   const value = extractApiKey(event);
   if (!value) throw apiError({ statusCode: 401, message: 'A connected app’s key is required' });
@@ -101,16 +106,22 @@ export async function requireRunTarget(event: H3Event, { seen = true } = {}): Pr
     throw apiError({ statusCode: 401, message: 'Invalid or expired API key', errorCode: 'RUN_TARGET_KEY_REVOKED' });
   }
   const holds = resolved.permissions ?? [];
-  if (
-    holds.length !== RUN_TARGET_KEY_PERMISSIONS.length ||
-    !RUN_TARGET_KEY_PERMISSIONS.every((p) => holds.includes(p))
-  ) {
+  if (holds.length === 0 || !holds.every((p) => (RUN_TARGET_PERMISSIONS as readonly string[]).includes(p))) {
     throw apiError({ statusCode: 403, message: 'Only a connected app that runs tests may call this route' });
   }
   const db = await getDatabase();
   const [target] = await db.select().from(runTargets).where(eq(runTargets.apiKeyId, resolved.keyId));
   if (!target || target.userId !== resolved.user.id) {
     throw apiError({ statusCode: 403, message: 'This app is no longer connected' });
+  }
+  if (!holds.includes(permission)) {
+    throw permission === 'project:read'
+      ? apiError({
+          statusCode: 403,
+          message: 'This app’s key cannot compare with the team instance: connect the app again',
+          errorCode: 'RUN_TARGET_KEY_CANNOT_COMPARE',
+        })
+      : apiError({ statusCode: 403, message: 'This app’s key does not take run requests' });
   }
   event.context.apiKeyId = resolved.keyId;
   const access = await getUserAccessCached(db, resolved.user);
