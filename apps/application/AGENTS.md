@@ -139,7 +139,7 @@ From `apps/application/`:
 
 | Command                                                        | Purpose                                                                          |
 | -------------------------------------------------------------- | -------------------------------------------------------------------------------- |
-| `npm run app:typecheck`                                        | TypeScript check (4 GB heap)                                                     |
+| `npm run app:typecheck`                                        | TypeScript check (6 GB heap)                                                     |
 | `npm run app:typecheck:tests`                                  | TypeScript check of `tests/` (`tests/tsconfig.json`, 6 GB heap)                  |
 | `npm run app:lint` / `app:lint:fix`                            | oxlint                                                                           |
 | `npm run app:format` / `app:format:check`                      | oxfmt, Markdown included                                                         |
@@ -162,9 +162,9 @@ From `apps/application/`:
 
 - **Database locked?** Stop the other processes using `.data/piwi.db`. The dev server holds it, so stop it before
   `app:seed:dev`.
-- **Typecheck out of memory?** `npm run app:typecheck` gives the checker a 4 GB heap. It needs about 3 GB, because the
+- **Typecheck out of memory?** `npm run app:typecheck` gives the checker a 6 GB heap. It needs about 4 GB, because the
   app's program also type-checks the server code that the demo and the typed API responses import. Running
-  `nuxt typecheck` or `vue-tsc` yourself needs the same `NODE_OPTIONS=--max-old-space-size=4096`.
+  `nuxt typecheck` or `vue-tsc` yourself needs the same `NODE_OPTIONS=--max-old-space-size=6144`.
 - **Port 7494 in use?** `PORT=7495 npm run app:dev` (Linux/macOS) or `$env:PORT=7495; npm run app:dev` (PowerShell).
   The dev server's port is `DEV_SERVER_PORT` (`shared/dev-server-port.mjs`), off the desktop app's 3000.
 - **E2E tests failing on every page?** Outside CI, the Playwright config reuses a server already listening on port 7494.
