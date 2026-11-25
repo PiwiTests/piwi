@@ -752,6 +752,18 @@ describe('following the calls a test makes', () => {
     expect(remote.sendMessageToServer).toBe(original);
   });
 
+  it('marks the browser launchPersistentContext opened as its context’s, the context reported while its call is open', async () => {
+    const fake = fakePlaywright();
+    const { ledger, running } = ledgerFor(fake);
+    ledger.install();
+    running(info('t1'));
+    const browser = new fake.FakeBrowser();
+    await fake.apiCall('browserType.launchPersistentContext', () => browser.newContext());
+    const { census, leaks } = await ledger.testEnded(info('t1'));
+    expect(census.born.find((b) => b.kind === 'browser')).toMatchObject({ implicit: true });
+    expect(leaks.map((leak) => leak.kind)).toEqual(['context']);
+  });
+
   it('marks a browser as a persistent context’s only when it first comes with that context', async () => {
     const fake = fakePlaywright();
     const { ledger, running } = ledgerFor(fake);

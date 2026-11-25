@@ -1047,7 +1047,8 @@ export class ResourceLedger {
       const seenBefore = this.byObject.has(browser);
       const browserEntry = this.onBrowser(browser, site);
       // `launchPersistentContext` opens a browser for its context alone, first seen with it: closing the context
-      // closes it. Its call has ended by the time Playwright reports the context.
+      // closes it. Its call is still open as Playwright reports the context (1.65 opens a call as its method is
+      // entered), or has just ended: either one names it.
       const persistent = [zone, this.lastCall].some((call) => PERSISTENT_CALL.test(call?.apiName ?? ''));
       if (persistent && !seenBefore && browserEntry.birth.parent === null && !browserEntry.closed) {
         browserEntry.birth.implicit = true;
