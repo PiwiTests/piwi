@@ -537,6 +537,11 @@ export function generateAlternatives(attrs: ElementAttributes, options: Generate
  *
  * A form field is never named by its own text: a `<select>`'s text is its
  * options and a `<textarea>`'s is its value.
+ *
+ * An approximation: the text is the element's whole `textContent`, so it keeps
+ * text the computation leaves out (hidden descendants, a shadow host's text no
+ * slot takes, a closed `<details>`'s own text outside its `<summary>`) and
+ * misses the text inside a shadow root.
  */
 export function approximateAccessibleName(attrs: ElementAttributes): string | null {
   const a = attrs.attributes;

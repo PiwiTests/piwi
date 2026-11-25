@@ -172,6 +172,25 @@
     <x-fallback id="fb-empty"></x-fallback>
     <x-fallback id="fb-filled"><span>Provided content</span></x-fallback>
 
+    <!-- Text the browser does not render: a shadow host's unassigned text, a closed details' own text -->
+    <button type="button"><span id="unassigned-host">Unassigned words</span> Cart</button>
+    <label
+      >Gift
+      <details>
+        Unrendered aside
+        <summary>message</summary>
+      </details>
+      <input name="gift"
+    /></label>
+    <div id="plan-label">
+      Plan
+      <details>
+        Unrendered fine print
+        <summary>terms</summary>
+      </details>
+    </div>
+    <button type="button" aria-labelledby="plan-label">Accept</button>
+
     <!-- Attribute matching subtleties -->
     <input placeholder="  Spaced placeholder  " />
     <input placeholder="MiXeD CaSe" />
@@ -183,6 +202,7 @@
     <script>
       document.getElementById('host-text').attachShadow({ mode: 'open' }).innerHTML =
         '<span>Shadow</span> <b>words</b>';
+      document.getElementById('unassigned-host').attachShadow({ mode: 'open' }).innerHTML = '<span>Checkout</span>';
       class XFallback extends HTMLElement {
         constructor() {
           super();
