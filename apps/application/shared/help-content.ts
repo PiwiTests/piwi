@@ -851,7 +851,7 @@ export const HELP_TOPICS = {
   // ── Single execution (test-run-case) ──────────────────────────────────
   'case.situation': {
     title: 'Situation',
-    text: "One block, read top to bottom; every clue, the raw error and the rest of the facts are one click away.\n\n- **Headline** — what broke, built from the Playwright error itself, and under it since when, on which commit, and whether a newer execution of the test failed again or passed; for a test that passed on retry, its failed attempt's error, naming that attempt\n- **Most likely** — a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue, as on the cluster page; for a test that did not run, the test that blocked it or where the run stopped\n- **Next** — one action chosen by a policy, with the change it copies and where it comes from\n- **Cluster** — the cluster the failure belongs to, with its issue",
+    text: "One block, read top to bottom; every clue, the raw error and the rest of the facts are one click away.\n\n- **Headline** — what broke, built from the Playwright error itself, and under it since when, on which commit, and whether a newer execution of the test failed again or passed; for a test that passed on retry, its failed attempt's error, naming that attempt\n- **Most likely** — a strong or medium story that chains the deterministic clues, else the cluster's completed diagnosis, else a weak story, else the top clue, as on the cluster page; for a test that did not run, the test that blocked it or where the run stopped\n- **Next** — one action chosen by a policy, with the change it copies and where it comes from\n- **Cluster** — the cluster the failure belongs to, with its issue\n- **History** — the test's recent executions as one strip, this one ringed, with how long it has been failing and the run it last passed in; the strip opens the test's own page",
     doc: 'features/evidence#one-execution-diagnosis-first',
   },
   'case.evidence': {
@@ -884,7 +884,7 @@ export const HELP_TOPICS = {
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, each folded to one line: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). The section the next step points at opens with the page: on an execution in this card, on a cluster as a card of its own under the situation block. Open the others as you need them.',
+    text: 'Every other way to fix, verify or reproduce this failure, one button each, opening in a side panel beside the page: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). A button names its section’s summary on hover. The next step’s actions open its section; on a cluster, that section is a card of its own above this line.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {

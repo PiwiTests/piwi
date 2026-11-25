@@ -92,7 +92,7 @@ export const DETAIL_PAGE_BUDGETS = [
     label: 'controls in the navbar and block',
     pages: ['execution'],
     read: (result) => (result.blockControls == null ? null : result.navbarControls + result.blockControls),
-    max: 26,
+    max: 27,
     missing: 'no situation block',
   },
   {

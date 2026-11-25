@@ -59,6 +59,8 @@ The **Cluster** line names the [failure cluster](/features/failure-clusters) the
 
 With [coverage](/features/server-coverage), a **What changed** line counts the changed lines the test ran and names the first of its [suspect lines](/guide/concepts#suspect-lines).
 
+The **History** line shows this test's recent executions as one strip in the outcome colors, this one ringed, with how long it has been failing and the run it last passed in. The strip opens the test's own page, its [history across runs](/features/evidence#the-test-case-page).
+
 The block closes on a **facts** line, one size smaller: the failing file and line (open it in your IDE), browser and viewport, duration against its average, the attempts, the branch, and the CI build. A **Details** popover holds the rest, and **Raw error** shows the verbatim error with a **Copy failure** action.
 
 ## 5. The evidence: see it
@@ -73,12 +75,11 @@ The error, trace, headline and clustering work with the reporter alone, and an u
 
 ## 6. More ways to fix
 
-Below the evidence, **[More ways to fix](/features/fix-plans#more-ways-to-fix)** is the folded toolbox of every
-*other* way to fix, verify or reproduce, with the section **Next** points at already open: a
-[replacement locator](/features/locator-healing), the [AI diagnosis](/features/ai-diagnosis) and its validated patch,
-verify, reproduce and bisect, fixed before, the tests it blocked.
-
-Below the toolbox, a **history** strip shows this test's recent executions and how long it has been failing.
+Right above the evidence, **[More ways to fix](/features/fix-plans#more-ways-to-fix)** is one line with a button for
+every *other* way to fix, verify or reproduce: a [replacement locator](/features/locator-healing), the
+[AI diagnosis](/features/ai-diagnosis) and its validated patch, verify, reproduce and bisect, fixed before, the tests it
+blocked. A button opens its section in a side panel beside the page, and the **Next** line's actions open the section
+they act on.
 
 ## You're not reading it alone
 

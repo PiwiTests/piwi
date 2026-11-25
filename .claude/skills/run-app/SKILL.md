@@ -23,8 +23,8 @@ npm run app:screens -- --route /test-run-cases/37 --expand --height 2400
 ```
 
 - `--expand` unfolds the collapsed cards first (console, network, test source and the other evidence cards
-  start folded). It leaves the More ways to fix sections as they are: they open one at a time, so open
-  the one you want in a scene's `run`.
+  start folded). It leaves the More ways to fix sections as they are: each opens in a side panel from its
+  button, so open the one you want in a scene's `run`.
 - `--height` is how you see more of a page: the dashboard scrolls inside a panel, so a full-page
   screenshot of the document only ever shows one viewport. Use 2000–3000 for a detail page.
 - `--width` sets the viewport width (default 1280; the height defaults to 860), `--name` the file stem.
@@ -90,10 +90,10 @@ npm run app:measure -- --json                             # one object per route
 cluster page (`/failure-clusters/:id`) after hydration, a bounded settle and the page's last API
 answer. Inside the detail panel it reports:
 
-- the scroll offset of each named block, from the header and the situation block's lines through
-  evidence, the fix sections and what changed to the cluster's affected tests, occurrences trend,
-  activity and the history (the list is `POSITION_LABELS` in the script), and the panel's total
-  scroll height;
+- the scroll offset of each named block, in reading order: the header and the situation block's lines
+  (the history among them), the cluster's occurrences trend and activity, the fix the next step points
+  at, More ways to fix, what changed and the affected tests, then the evidence, last (the list is
+  `POSITION_LABELS` in the script), and the panel's total scroll height;
 - the controls of the navbar and the situation block, and the interactive controls above the fold,
   split into navbar, situation block and below;
 - the solid primary buttons and help hints above the fold, the open code blocks and their height,
@@ -106,7 +106,7 @@ Open in IDE link) does not.
 
 Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
 at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution
-page's block and 13 on the cluster page's, at most 26 controls in the navbar and the situation
+page's block and 13 on the cluster page's, at most 27 controls in the navbar and the situation
 block on the execution page and 25 on the cluster page's, at most one solid primary button above the fold, and a Next step that copies a code change
 (`copy-git-apply`, `copy-locator`) shows that change in the block. The controls below the block
 that reach the fold (the evidence card's tabs, the affected tests, the history) are reported, not
@@ -143,7 +143,7 @@ use the same ones and are the reference when in doubt.
 | A run with insights, failure clusters and a workers timeline | `/test-runs/2` |
 | A project with flaky tests, quarantine and performance tabs | `/projects/1` |
 | A test case's history across runs | `/test-cases/1` |
-| An execution's History block | `/test-run-cases/229` |
+| An execution's History line | `/test-run-cases/229` |
 | An execution that passed on retry | `/test-run-cases/768` |
 | A test that did not run (the run hit its max failures) | `/test-run-cases/748` |
 

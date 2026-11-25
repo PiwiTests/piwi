@@ -54,8 +54,8 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   performance hints and Web Vitals. **Output**: what the test wrote to stdout and stderr
   ([Test output](/reference/test-metadata#test-output)).
 
-Below the evidence sit the folded [**More ways to fix**](./fix-plans#more-ways-to-fix) toolbox and a **history** strip
-of this test's recent executions. A test that **passed on retry** leads with its failed attempt's error and keeps its
+Nothing follows the evidence card: the situation block's **History** line and
+[**More ways to fix**](./fix-plans#more-ways-to-fix) sit above it. A test that **passed on retry** leads with its failed attempt's error and keeps its
 next step; any other passing execution shows identity and facts. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
 Web Vitals, ARIA, focus and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 

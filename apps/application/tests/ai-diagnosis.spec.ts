@@ -445,13 +445,13 @@ test.describe.serial('AI diagnosis endpoints', () => {
     await expect.poll(() => diagnoseRequests.length).toBeGreaterThan(0);
   });
 
-  test('Show context opens a folded Diagnosis section when the next step is not from the diagnosis', async ({
+  test('Show context opens the Diagnosis section when the next step is not from the diagnosis', async ({
     page,
     request,
   }) => {
     // A cluster whose test passed again: the step is Mark resolved, which points at
-    // no section, so Diagnosis is a folded section of More ways to fix and its
-    // panel is not mounted until the section opens.
+    // no section, so Diagnosis is a button of More ways to fix and its panel is not
+    // mounted until the section opens in the side panel.
     const title = 'logout clears the session';
     const location = 'tests/logout.spec.ts:8:3';
     // Letters, not digits: the fingerprint masks numbers, so each attempt gets a cluster of its own.
@@ -488,7 +488,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     await waitForHydration(page);
 
     await expect(page.locator('[data-shot="fix-lead"]')).toHaveCount(0);
-    const diagnosis = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded]').first();
+    const diagnosis = page.locator('[data-shot="fix"] [data-tour="fix-section-diagnosis"]');
     await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('[data-shot="cluster-diagnosis"]')).toHaveCount(0);
 
@@ -498,7 +498,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     const context = page.getByRole('dialog').filter({ hasText: 'Context sent to AI' });
     await expect(context).toBeVisible();
     await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
-    await expect(page.locator('[data-shot="fix"] [data-shot="cluster-diagnosis"]')).toBeVisible();
+    await expect(page.locator('[data-shot="fix-diagnosis"] [data-shot="cluster-diagnosis"]')).toBeVisible();
   });
 
   test('a completed diagnosis stores a context hash matching the current context, so it is not stale', async ({

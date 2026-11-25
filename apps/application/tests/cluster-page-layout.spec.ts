@@ -212,7 +212,8 @@ test.describe('Failure cluster page layout', () => {
   });
 
   // The section the next step points at is a card of its own under the block,
-  // above the affected tests and the evidence; every other way to fix is folded.
+  // above the affected tests and the evidence; every other way to fix is a
+  // closed button of More ways to fix.
   test('the fix section of the next step leads above the affected tests and the evidence', async ({ page }) => {
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
@@ -238,7 +239,7 @@ test.describe('Failure cluster page layout', () => {
     for (const toggle of await toggles.all()) await expect(toggle).toHaveAttribute('aria-expanded', 'false');
   });
 
-  test('the occurrence chart and Activity fold at the foot of the page', async ({ page, request }) => {
+  test('the occurrence chart and Activity fold under the block, the evidence last', async ({ page, request }) => {
     // A reported fix attempt gives the cluster an Activity card.
     const attempt = await request.post(`/api/failure-clusters/${clusterId}/fix-attempts`, {
       data: { kind: 'fix-plan', branch: 'fix/submit-button', channel: 'ui' },
@@ -254,12 +255,25 @@ test.describe('Failure cluster page layout', () => {
     await expect(activity.locator('[role="button"][aria-expanded]').first()).toHaveAttribute('aria-expanded', 'false');
     await expect(activity).toContainText('fix attempt');
 
-    // Below More ways to fix, the chart first, then the activity.
-    const fixBottom = await page.locator('[data-shot="fix"]').evaluate((el) => el.getBoundingClientRect().bottom);
-    const trendTop = await trend.evaluate((el) => el.getBoundingClientRect().top);
-    const activityTop = await activity.evaluate((el) => el.getBoundingClientRect().top);
-    expect(trendTop).toBeGreaterThanOrEqual(fixBottom);
+    // Under the situation block, the chart first, then the activity, then More
+    // ways to fix; the evidence comes last, with nothing after it.
+    const top = (selector: string) =>
+      page
+        .locator(selector)
+        .first()
+        .evaluate((el) => el.getBoundingClientRect().top);
+    const blockBottom = await page
+      .locator('[data-shot="situation-block"]')
+      .evaluate((el) => el.getBoundingClientRect().bottom);
+    const trendTop = await top('[data-shot="cluster-occurrence-trend"]');
+    const activityTop = await top('[data-shot="cluster-activity"]');
+    const fixTop = await top('[data-shot="fix"]');
+    const evidence = page.locator('[data-shot="evidence-card"]');
+    expect(trendTop).toBeGreaterThanOrEqual(blockBottom);
     expect(activityTop).toBeGreaterThan(trendTop);
+    expect(fixTop).toBeGreaterThan(activityTop);
+    expect(await evidence.evaluate((el) => el.getBoundingClientRect().top)).toBeGreaterThan(fixTop);
+    expect(await evidence.evaluate((el) => el.parentElement!.nextElementSibling)).toBeNull();
   });
 
   test('the occurrence sparkline is one control that opens the occurrence chart', async ({ page }) => {
@@ -301,15 +315,14 @@ test.describe('Failure cluster page layout', () => {
     await expect(page.getByRole('heading', { name: 'What changed' })).toHaveCount(0);
   });
 
-  test('More actions › Copy prompt copies with the Diagnosis section folded', async ({ page, context }) => {
+  test('More actions › Copy prompt copies with the Diagnosis section closed', async ({ page, context }) => {
     await context.grantPermissions(['clipboard-read', 'clipboard-write']);
     await page.goto(`/failure-clusters/${clusterId}`);
     await waitForHydration(page);
 
-    // A folded section renders no body, so its diagnosis panel is not mounted.
-    const diagnosis = page.locator('[data-shot="fix-diagnosis"] button[aria-expanded]').first();
-    if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
-    await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
+    // A closed section renders no body, so its diagnosis panel is not mounted.
+    await expect(page.locator('[data-tour="fix-section-diagnosis"]')).toHaveAttribute('aria-expanded', 'false');
+    await expect(page.locator('[data-shot="fix-diagnosis"]')).toHaveCount(0);
 
     await page.getByRole('button', { name: 'More actions' }).click();
     await page.getByRole('menuitem', { name: 'Copy prompt' }).click();
@@ -711,7 +724,7 @@ test.describe('Cluster situation block on seeded clusters', () => {
     await expect(page.locator('[data-shot="fix-locator-fix"]')).toContainText(recommended!);
   });
 
-  // Full patch opens the Diagnosis section at the diagnosis's patch.
+  // Full patch brings the diagnosis's patch into view, in the lead card or the side panel.
   test('an apply step opens the whole patch from Full patch', async ({ page, request }) => {
     let target: number | null = null;
     for (const id of [1, 3, 7, 10]) {
@@ -729,13 +742,9 @@ test.describe('Cluster situation block on seeded clusters', () => {
     const change = page.locator('[data-shot="next-step-change"]');
     await expect(change).toHaveAttribute('data-copies', 'copy-git-apply');
     // On the cluster page Diagnosis leads, open in its own card, when the next step
-    // applies its patch; folded among More ways to fix otherwise. Only that card's
-    // fold toggle counts: the lead card's buttons (its help hint) open popovers.
-    const diagnosis = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded]').first();
-    if (await diagnosis.count()) {
-      if ((await diagnosis.getAttribute('aria-expanded')) === 'true') await diagnosis.click();
-      await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
-    }
+    // applies its patch; a button of More ways to fix otherwise, opening the side panel.
+    const diagnosis = page.locator('[data-shot="fix"] [data-tour="fix-section-diagnosis"]');
+    if (await diagnosis.count()) await expect(diagnosis).toHaveAttribute('aria-expanded', 'false');
     await change.getByRole('button', { name: 'Full patch' }).click();
     if (await diagnosis.count()) await expect(diagnosis).toHaveAttribute('aria-expanded', 'true');
     await expect(page.locator('[data-shot="diagnosis-patch"]')).toBeInViewport();
@@ -766,24 +775,27 @@ test.describe('Cluster situation block on seeded clusters', () => {
     await expect(page.getByRole('tab', { name: /^Timeline/ })).toHaveAttribute('aria-selected', 'true');
 
     // A step from the diagnosis puts Diagnosis in its own card; Mark resolved
-    // leads with no section, and Diagnosis stays folded in "More ways to fix".
+    // leads with no section, and Diagnosis stays a closed button of "More ways to fix".
     await expect(page.getByRole('heading', { name: 'More ways to fix' })).toBeVisible();
     if (fromDiagnosis) {
       await expect(page.locator('[data-shot="fix-lead"] [data-shot="fix-diagnosis"]')).toBeVisible();
     } else {
       await expect(page.locator('[data-shot="fix-lead"]')).toHaveCount(0);
-      await expect(page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] [aria-expanded="false"]')).toBeVisible();
+      await expect(page.locator('[data-shot="fix"] [data-tour="fix-section-diagnosis"]')).toHaveAttribute(
+        'aria-expanded',
+        'false',
+      );
     }
-    await expect(page.locator('[data-shot="fix-reproduce"] [aria-expanded="false"]')).toBeVisible();
+    await expect(page.locator('[data-tour="fix-section-reproduce"]')).toHaveAttribute('aria-expanded', 'false');
 
     // A stored result renders under no provider, so the "AI is not configured"
     // line never appears — the diagnosis header offers Re-diagnose instead.
     await expect(page.getByText('AI is not configured')).toHaveCount(0);
   });
 
-  // The section the next step points at is a card of its own right under the
-  // situation block, above the affected tests and the evidence; every other way
-  // to fix stays folded in "More ways to fix" below them.
+  // The section the next step points at is a card of its own above the affected
+  // tests and the evidence; every other way to fix stays a closed button of
+  // "More ways to fix", right under it.
   test('a step from the diagnosis leads with Diagnosis above the affected tests and the evidence', async ({
     page,
     request,

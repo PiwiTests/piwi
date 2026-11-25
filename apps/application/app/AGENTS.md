@@ -135,6 +135,9 @@ views are exempt only where a rule says so.
   (`app/utils/situation-rows.ts`). A page fills the lines it has; a new line is an entry of that list, never a
   reordering. Facts about the execution itself (since when, whether it is the latest) go in the meta line under the
   headline.
+- **On the two failure pages the evidence card comes last**: it is long, so nothing follows it, and a block a reader
+  needs (the history, More ways to fix) sits above it. `tests/test-run-case-page.spec.ts` and
+  `tests/cluster-page-layout.spec.ts` check it.
 - **The situation block's left edge carries the page's status color** (`SituationBlock :edge`: the execution's outcome,
   the cluster state's dot). Nothing else in the block repeats it.
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated element

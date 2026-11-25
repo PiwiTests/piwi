@@ -303,7 +303,7 @@ useViewScroll(
             <p v-else class="text-center py-4 text-sm text-gray-400">Need at least 2 runs to show a trend.</p>
 
             <template #footer>
-              <HistoryStrip :history="historyData" compact />
+              <HistoryStrip :history="historyData" />
             </template>
           </ChartCard>
 

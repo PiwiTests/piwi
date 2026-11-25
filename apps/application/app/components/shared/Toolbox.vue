@@ -1,19 +1,16 @@
 <script setup lang="ts">
 /**
- * "More ways to fix" — every other way to fix, verify or reproduce a failure,
- * placed after the Evidence card. Each section is folded to one line (a
- * sentence-case label plus a one-line summary the page supplies) except the one
- * the next step points at, which opens with the page. A folded section's body is
- * not rendered, so its code blocks never count against the first screen. The
- * `FixSectionKey` union (`app/utils/fix-sections.ts`) and the per-section slot
- * contract are the same the two pages fill; the card renders the sections it is
- * given in one fixed order.
+ * "More ways to fix": every other way to fix, verify or reproduce a failure, as
+ * one line above the Evidence card. The line holds one button per section, its
+ * one-line summary (which the page supplies) in the button's tooltip; a click
+ * opens the section in a side panel, which closes on Escape or on a click
+ * outside it, and does not hold the focus, so the evidence stays usable beside
+ * it. Only the open section's body is rendered. The `FixSectionKey` union
+ * (`app/utils/fix-sections.ts`) and the per-section slot contract are the same
+ * the two pages fill; the line lists the sections it is given in one fixed order.
  *
- * With `lead`, the section the next step points at is not a fold of the card: it
- * is a card of its own, titled with the section's label and always open, followed
- * by the `between` slot (what the page shows between the fix and the rest), then
- * "More ways to fix" with every other section folded. Without a section for the
- * next step, `lead` renders the `between` slot, then the card.
+ * With `lead`, the section the next step points at is not in the line: it is a
+ * card of its own above it, titled with the section's label and always open.
  */
 import type { HelpTopicKey } from '~/utils/help-content';
 import type { NextStepKind } from '#shared/next-step';
@@ -22,17 +19,17 @@ import { FIX_SECTION_LABELS, FIX_SECTION_ORDER, fixSectionForNextStep, type FixS
 const props = defineProps<{
   /** Which sections have content; the toolbox renders them in its canonical order. */
   sections: FixSectionKey[];
-  /** The next step's kind — decides which section opens with the page. */
+  /** The next step's kind: in `lead` mode, decides which section leads as a card of its own. */
   nextStepKind?: NextStepKind | null;
-  /** The next step's section leads as a card of its own, above the `between` slot. */
+  /** The next step's section leads as a card of its own, above the line. */
   lead?: boolean;
   help?: HelpTopicKey;
 }>();
 
-const defaultOpen = computed<FixSectionKey | null>(() => fixSectionForNextStep(props.nextStepKind, props.sections));
-
 // The section that leads as its own card, in lead mode.
-const leadKey = computed<FixSectionKey | null>(() => (props.lead ? defaultOpen.value : null));
+const leadKey = computed<FixSectionKey | null>(() =>
+  props.lead ? fixSectionForNextStep(props.nextStepKind, props.sections) : null,
+);
 
 const active = computed(() =>
   FIX_SECTION_ORDER.filter((key) => props.sections.includes(key) && key !== leadKey.value).map((key) => ({
@@ -41,17 +38,14 @@ const active = computed(() =>
   })),
 );
 
-// The open section is the next step's, until the user toggles one open — a
-// component-only state, never persisted. In lead mode that section is the lead
-// card, so the card's sections all start folded.
-const initialOpen = () => (props.lead ? null : defaultOpen.value);
-const openKey = ref<FixSectionKey | null>(initialOpen());
-watch([defaultOpen, () => props.lead], () => {
-  openKey.value = initialOpen();
-});
+// The section the side panel shows, and whether it is open: component-only
+// state, never persisted. The key outlives the panel's closing so its leave
+// transition keeps its content.
+const openKey = ref<FixSectionKey | null>(null);
+const panelOpen = ref(false);
 
-// Each section's guide anchor: on its toggle, which a guide clicks to unfold it,
-// or on its card when it leads.
+// Each section's guide anchor: on its button in the line, which opens it in the
+// side panel, or on its card when it leads.
 const SECTION_ANCHORS: Record<FixSectionKey, Record<string, string>> = {
   diagnosis: { 'data-tour': 'fix-section-diagnosis' },
   'locator-fix': { 'data-tour': 'fix-section-locator-fix' },
@@ -62,49 +56,79 @@ const SECTION_ANCHORS: Record<FixSectionKey, Record<string, string>> = {
   'fix-plan': { 'data-tour': 'fix-section-fix-plan' },
 };
 
+const lineEl = ref<HTMLElement | null>(null);
+const leadEl = ref<HTMLElement | null>(null);
+const panelSectionEl = ref<HTMLElement | null>(null);
+
 function toggle(key: FixSectionKey) {
-  openKey.value = openKey.value === key ? null : key;
+  if (panelOpen.value && openKey.value === key) {
+    panelOpen.value = false;
+    return;
+  }
+  openKey.value = key;
+  panelOpen.value = true;
 }
 
-// A folded summary truncates to one line; mirror its text into the element's
-// `title` so the clipped tail stays readable on hover. The summaries are slot
-// content, so read the rendered text rather than threading a second prop.
-const vTitleFromText = {
-  mounted: (el: HTMLElement) => {
-    el.title = el.textContent?.trim() ?? '';
-  },
-  updated: (el: HTMLElement) => {
-    el.title = el.textContent?.trim() ?? '';
-  },
-};
+// The side panel spans the page's height, as the page does: under the demo's
+// banner and above the desktop app's docked Local runs tray, which stays usable.
+// Important, to win over the theme's `inset-y-0`.
+const PANEL_CLASS = 'sm:max-w-3xl top-[var(--demo-banner-height,0px)]! bottom-[var(--desktop-runs-height,0px)]!';
 
-const rootEl = ref<HTMLElement | null>(null);
-const leadEl = ref<HTMLElement | null>(null);
+// A press on the line's buttons is theirs to answer: it switches or closes the
+// panel, so the panel's own outside-press closing does not run first.
+function onInteractOutside(event: Event) {
+  const detail = (event as CustomEvent<{ originalEvent?: Event }>).detail;
+  const target = (detail?.originalEvent?.target ?? event.target) as Node | null;
+  if (target && lineEl.value?.contains(target)) event.preventDefault();
+}
+
+/** Resolves once the side panel shows `key`'s section, or after a few frames without it. */
+async function panelShows(key: FixSectionKey): Promise<HTMLElement | null> {
+  for (let frame = 0; frame < 20; frame++) {
+    await nextTick();
+    const el = panelSectionEl.value;
+    if (el?.isConnected && el.dataset.shot === `fix-${key}`) return el;
+    await new Promise((resolve) => requestAnimationFrame(resolve));
+  }
+  return null;
+}
 
 /**
- * Open a section. Resolves once its body is mounted, so a caller can then act on
- * a panel the section renders. A key the toolbox does not show leaves the open
- * section as it is; the lead section is always open.
+ * Open a section: the side panel on it, or nothing for the lead card, which is
+ * always open. Resolves once its body is mounted, so a caller can then act on a
+ * panel the section renders. A key the toolbox does not show changes nothing.
  */
 async function openSection(key: FixSectionKey): Promise<void> {
   if (!props.sections.includes(key)) return;
-  if (key !== leadKey.value) openKey.value = key;
-  await nextTick();
+  if (key === leadKey.value) {
+    await nextTick();
+    return;
+  }
+  openKey.value = key;
+  panelOpen.value = true;
+  await panelShows(key);
 }
 
 /**
- * Open a section and scroll it into view, at the element whose `data-shot` is
- * `anchor` when the section holds one; resolves once its body is mounted.
+ * Open a section and bring it into view, at the element whose `data-shot` is
+ * `anchor` when the section holds one; resolves once its body is mounted. The
+ * lead card scrolls the page; a section of the side panel scrolls the panel.
  */
 async function scrollToSection(key: FixSectionKey, anchor?: string): Promise<void> {
+  if (!props.sections.includes(key)) return;
   await openSection(key);
-  const scope = key === leadKey.value ? leadEl.value : rootEl.value;
-  const section = scope?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`);
+  const section =
+    key === leadKey.value ? leadEl.value?.querySelector<HTMLElement>(`[data-shot="fix-${key}"]`) : panelSectionEl.value;
   const target = (anchor ? section?.querySelector<HTMLElement>(`[data-shot="${anchor}"]`) : null) ?? section;
   target?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 
-defineExpose({ openSection, scrollToSection });
+/** Close the side panel, as before showing the evidence it points at. */
+function closePanel() {
+  panelOpen.value = false;
+}
+
+defineExpose({ openSection, scrollToSection, closePanel });
 </script>
 
 <template>
@@ -120,43 +144,52 @@ defineExpose({ openSection, scrollToSection });
     </SectionCard>
   </div>
 
-  <slot v-if="lead" name="between" />
-
-  <SectionCard
-    v-if="active.length || !lead"
-    icon="i-lucide-wrench"
-    icon-class="text-primary"
-    title="More ways to fix"
-    :help="help"
-    data-shot="fix"
-  >
-    <div ref="rootEl" class="divide-y divide-default" data-tour="more-ways-to-fix">
-      <section v-for="s in active" :key="s.key" class="first:pt-0 last:pb-0" :data-shot="`fix-${s.key}`">
-        <div class="flex items-center justify-between gap-2 py-3">
-          <button
-            type="button"
-            class="flex min-w-0 flex-1 items-center gap-2 text-left outline-none focus-visible:outline-2 focus-visible:outline-primary"
-            :aria-expanded="openKey === s.key"
-            v-bind="SECTION_ANCHORS[s.key]"
-            @click="toggle(s.key)"
-          >
-            <UIcon
-              :name="openKey === s.key ? 'i-lucide-chevron-down' : 'i-lucide-chevron-right'"
-              class="size-4 shrink-0 text-gray-400"
+  <!-- Every other section, one button each, on one line -->
+  <UCard v-if="active.length" :ui="{ header: 'p-2.5 sm:px-4 sm:py-3' }" data-shot="fix">
+    <template #header>
+      <div ref="lineEl" class="flex flex-wrap items-center gap-x-3 gap-y-2" data-tour="more-ways-to-fix">
+        <div class="flex items-center gap-2 shrink-0">
+          <UIcon name="i-lucide-wrench" class="size-5 shrink-0" :class="CARD_ICON_CLASS" data-card-icon />
+          <h3 class="text-lg font-medium inline-flex items-center gap-1">
+            More ways to fix<HelpHint v-if="help" :topic="help" />
+          </h3>
+        </div>
+        <div class="flex flex-wrap items-center gap-1.5 min-w-0">
+          <UTooltip v-for="s in active" :key="s.key" :ui="{ content: 'h-auto max-w-sm whitespace-normal py-1.5' }">
+            <UButton
+              size="xs"
+              color="neutral"
+              variant="outline"
+              :label="s.label"
+              aria-haspopup="dialog"
+              :aria-expanded="panelOpen && openKey === s.key ? 'true' : 'false'"
+              :class="panelOpen && openKey === s.key ? PRESSED_TOGGLE_CLASS : ''"
+              v-bind="SECTION_ANCHORS[s.key]"
+              @click="toggle(s.key)"
             />
-            <span class="text-sm font-medium shrink-0">{{ s.label }}</span>
-            <span v-if="openKey !== s.key" v-title-from-text class="min-w-0 flex-1 truncate text-sm text-muted">
-              <slot :name="`${s.key}-summary`" />
-            </span>
-          </button>
-          <div v-if="openKey === s.key" class="flex items-center gap-1 shrink-0">
-            <slot :name="`${s.key}-actions`" />
-          </div>
+            <template #content><slot :name="`${s.key}-summary`" /></template>
+          </UTooltip>
         </div>
-        <div v-if="openKey === s.key" class="pb-3 space-y-2">
-          <slot :name="s.key" />
-        </div>
+      </div>
+    </template>
+  </UCard>
+
+  <!-- The open section, beside the page: no overlay and no focus trap -->
+  <USlideover
+    v-model:open="panelOpen"
+    :modal="false"
+    :overlay="false"
+    :title="openKey ? FIX_SECTION_LABELS[openKey] : 'More ways to fix'"
+    :content="{ onInteractOutside }"
+    :ui="{ content: PANEL_CLASS }"
+  >
+    <template v-if="openKey && $slots[`${openKey}-actions`]" #actions>
+      <slot :name="`${openKey}-actions`" />
+    </template>
+    <template #body>
+      <section v-if="openKey" ref="panelSectionEl" :data-shot="`fix-${openKey}`" class="space-y-2">
+        <slot :name="openKey" />
       </section>
-    </div>
-  </SectionCard>
+    </template>
+  </USlideover>
 </template>

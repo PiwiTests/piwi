@@ -117,9 +117,9 @@ function section(page: Page) {
   return page.locator('[data-shot="fix-reproduce-body"]');
 }
 
-// The Reproduce section lives in the folded "More ways to fix" toolbox; open it
-// (it opens on the page only when the next step is to reproduce) before driving
-// the recipe. Idempotent — a no-op when the body is already showing.
+// The Reproduce section opens in a side panel from its button in "More ways to
+// fix"; open it before driving the recipe. Idempotent: a no-op when the body is
+// already showing.
 async function openReproduce(page: Page) {
   const body = section(page);
   if (await body.isVisible()) return;

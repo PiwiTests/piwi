@@ -589,21 +589,22 @@ On the execution page:
 - A test that did not run gives its reason as Most likely instead (`DidNotRunLine`, from `describeDidNotRun` in
   `shared/did-not-run.ts`), and its Next opens the blocking failure or the run (`open-blocker`, `open-run`).
 
-**Under the block.**
+**Under the block.** The evidence card comes last on both pages: it is long, so nothing follows it.
 
-- The execution page shows `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its
-  Source tab's frame where the failure enters the test's code, `failurePlace`, offers Debug in my editor,
-  `DebugInEditorButton`), the `Toolbox` (More ways to fix: one folded section per way to fix, the one the next step
-  points at open) and the history (`HistoryStrip`).
+- The execution page's block carries the test's history as its History line (`ExecutionHistoryLine`: the
+  `HistoryStrip` as one link to the test's page, then the failing streak and the last pass). Under the block, the
+  `Toolbox` (More ways to fix: one line, one button per way to fix, each opening its section in a side panel), then
+  `EvidenceTabs` (opening on the tab `useEvidenceHint` picks from the leading clue; its Source tab's frame where the
+  failure enters the test's code, `failurePlace`, offers Debug in my editor, `DebugInEditorButton`).
 - The cluster page shows, in order:
-  - the section the next step points at, as a card of its own (`Toolbox` with `lead`; the sections, their order and
-    the step each serves are in `app/utils/fix-sections.ts`);
+  - the history, each folded to one line: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`, opened by the
+    occurrence sparkline) and `ClusterActivity`;
+  - the section the next step points at, as a card of its own, then More ways to fix with the other sections
+    (`Toolbox` with `lead`; the sections, their order and the step each serves are in `app/utils/fix-sections.ts`);
   - `ClusterInvestigation` when there is a diff to browse, with the cluster's suspect lines in `SuspectLinesList`,
     marked in its diff;
   - `ClusterAffectedTests`, when the cluster has several tests: its selection picks the execution the evidence shows;
-  - `EvidenceTabs`, then More ways to fix with the other sections folded;
-  - the history, each folded to one line: `ClusterOccurrenceTrend` (a `ChartCard` with `foldKey`, opened by the
-    occurrence sparkline) and `ClusterActivity`.
+  - `EvidenceTabs`.
 
 **Shared by both pages.**
 
@@ -725,8 +726,8 @@ rule):
     block's identity kicker.
   - `StoryLine` (Most likely) and `NextStepLine` (the one recommended step; it emits its actions as ids the page
     handles through `useNextStepActions`).
-  - `Toolbox` (More ways to fix, one folded section per way) and `HistoryStrip` (this test's recent executions as a
-    row of squares).
+  - `Toolbox` (More ways to fix, one button per way, each opening a side panel) and `HistoryStrip` (a test's recent
+    executions as a row of squares).
 
 ### Composables
 

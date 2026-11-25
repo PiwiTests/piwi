@@ -881,67 +881,12 @@ const breadcrumbItems = computed(() => [
           class="max-sm:rounded-none max-sm:border-x-0"
         />
 
-        <!-- ── The fix the next step points at, then the context and the evidence, then More ways to fix ── -->
+        <!-- ── The history first, folded: occurrences over time, then the activity ── -->
+        <ClusterOccurrenceTrend ref="occurrenceTrend" :cluster-id="cluster.id" :first-seen-at="cluster.firstSeenAt" />
+        <ClusterActivity :cluster-id="cluster.id" />
+
+        <!-- ── The fix the next step points at, then More ways to fix on one line ── -->
         <Toolbox ref="toolbox" lead :sections="fixSections" :next-step-kind="nextStep?.kind ?? null" help="fix.toolbox">
-          <template #between>
-            <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
-            <div v-if="hasChangesToShow" ref="scmEl" data-shot="what-changed-card" class="scroll-mt-4">
-              <ClusterInvestigation :project="cluster.project ?? null" />
-            </div>
-
-            <!-- ── Affected tests: the evidence selector, above the evidence, with several tests ── -->
-            <ClusterAffectedTests
-              v-if="!singleTest"
-              v-model:selected-case-id="selectedCaseId"
-              :cluster-id="clusterId"
-              :cases="cluster.affectedTestCases ?? []"
-              :project-id="cluster.project?.id"
-              :project-key="cluster.project?.id"
-              :project-name="cluster.project?.name"
-              @changed="refresh"
-            />
-
-            <!-- ── Evidence ───────────────────────────────────────────────── -->
-            <div v-if="selectedExecId" class="scroll-mt-4">
-              <EvidenceTabs
-                v-if="execution"
-                ref="evidenceTabs"
-                :test-case="execution"
-                :traces="execTraces ?? []"
-                :has-trace="hasTrace"
-                :default-hint="defaultHint"
-                :fixtures-state="clusterCapState('fixtures')"
-                :coverage-state="clusterCapState('coverage')"
-                :suspect-lines="clusterSuspectLines"
-                :can-decide-fixtures="canDecideClusterCap"
-                help="case.evidence"
-                @decline-fixtures="declineClusterFixtures"
-              >
-                <!-- The test (its title path), the run and the occurrence the evidence is of -->
-                <template v-if="selectedCase" #subject>
-                  <TestTitlePath
-                    :file-path="selectedCase.filePath"
-                    :line="selectedLine"
-                    :suite-path="selectedCase.suitePath"
-                    :project-key="cluster.project?.id"
-                    :project-name="cluster.project?.name"
-                    >{{ selectedCase.title }}</TestTitlePath
-                  >
-                  <template v-if="selectedRunId">
-                    ·
-                    <NuxtLink :to="`/test-runs/${selectedRunId}`" :class="SENTENCE_LINK_CLASS"
-                      >run #{{ selectedRunId }}</NuxtLink
-                    >, {{ isLatestOccurrence ? 'latest occurrence' : "this test's latest occurrence" }}
-                  </template>
-                  ·
-                  <NuxtLink :to="`/test-run-cases/${selectedExecId}`" :class="SENTENCE_LINK_CLASS"
-                    >Open execution</NuxtLink
-                  >
-                </template>
-              </EvidenceTabs>
-            </div>
-          </template>
-
           <template #diagnosis-summary>{{ diagnosisSummary }}</template>
           <template #locator-fix-summary>Ranked replacement locators from the failing page</template>
           <template #verify-summary>{{ verifySummary }}</template>
@@ -1050,9 +995,60 @@ const breadcrumbItems = computed(() => [
           </template>
         </Toolbox>
 
-        <!-- ── The history, folded: occurrences over time, then the activity ── -->
-        <ClusterOccurrenceTrend ref="occurrenceTrend" :cluster-id="cluster.id" :first-seen-at="cluster.firstSeenAt" />
-        <ClusterActivity :cluster-id="cluster.id" />
+        <!-- ── What changed, in full: the baseline picker, the commits and the diff — only with something to show ── -->
+        <div v-if="hasChangesToShow" ref="scmEl" data-shot="what-changed-card" class="scroll-mt-4">
+          <ClusterInvestigation :project="cluster.project ?? null" />
+        </div>
+
+        <!-- ── Affected tests: the evidence selector, above the evidence, with several tests ── -->
+        <ClusterAffectedTests
+          v-if="!singleTest"
+          v-model:selected-case-id="selectedCaseId"
+          :cluster-id="clusterId"
+          :cases="cluster.affectedTestCases ?? []"
+          :project-id="cluster.project?.id"
+          :project-key="cluster.project?.id"
+          :project-name="cluster.project?.name"
+          @changed="refresh"
+        />
+
+        <!-- ── Evidence, last: it is long, so nothing follows it ──────── -->
+        <div v-if="selectedExecId" class="scroll-mt-4">
+          <EvidenceTabs
+            v-if="execution"
+            ref="evidenceTabs"
+            :test-case="execution"
+            :traces="execTraces ?? []"
+            :has-trace="hasTrace"
+            :default-hint="defaultHint"
+            :fixtures-state="clusterCapState('fixtures')"
+            :coverage-state="clusterCapState('coverage')"
+            :suspect-lines="clusterSuspectLines"
+            :can-decide-fixtures="canDecideClusterCap"
+            help="case.evidence"
+            @decline-fixtures="declineClusterFixtures"
+          >
+            <!-- The test (its title path), the run and the occurrence the evidence is of -->
+            <template v-if="selectedCase" #subject>
+              <TestTitlePath
+                :file-path="selectedCase.filePath"
+                :line="selectedLine"
+                :suite-path="selectedCase.suitePath"
+                :project-key="cluster.project?.id"
+                :project-name="cluster.project?.name"
+                >{{ selectedCase.title }}</TestTitlePath
+              >
+              <template v-if="selectedRunId">
+                ·
+                <NuxtLink :to="`/test-runs/${selectedRunId}`" :class="SENTENCE_LINK_CLASS"
+                  >run #{{ selectedRunId }}</NuxtLink
+                >, {{ isLatestOccurrence ? 'latest occurrence' : "this test's latest occurrence" }}
+              </template>
+              ·
+              <NuxtLink :to="`/test-run-cases/${selectedExecId}`" :class="SENTENCE_LINK_CLASS">Open execution</NuxtLink>
+            </template>
+          </EvidenceTabs>
+        </div>
       </div>
 
       <ErrorState v-else text="Cluster not found." icon="i-lucide-search-x" class="h-64">
