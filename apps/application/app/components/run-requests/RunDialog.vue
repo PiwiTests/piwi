@@ -266,8 +266,12 @@ const instanceAddress = computed(() => {
               <p class="text-sm text-muted">
                 {{
                   place.ciTokenAsked.state === 'invalid'
-                    ? 'The CI server refused your token: give it again.'
-                    : 'Give your token first.'
+                    ? place.ciTokenAsked.credential.method === 'oauth'
+                      ? 'Your authorization was refused or expired: authorize again.'
+                      : 'The CI server refused your token: give it again.'
+                    : place.ciTokenAsked.credential.method === 'oauth'
+                      ? 'Authorize it first.'
+                      : 'Give your token first.'
                 }}
               </p>
               <UserTokenForm

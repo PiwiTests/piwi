@@ -1352,6 +1352,20 @@
       "when": 1795602859433,
       "tag": "0192_user_token_accounts",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "6",
+      "when": 1795609284721,
+      "tag": "0193_per_user_oauth",
+      "breakpoints": true
+    },
+    {
+      "idx": 194,
+      "version": "6",
+      "when": 1795617103540,
+      "tag": "0194_credential_authorization_indexes",
+      "breakpoints": true
     }
   ]
 }

@@ -28,6 +28,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/ai/deepseek-cli/status', // official local CLI credentials have no browser-demo equivalent
   'GET /api/ai/codex-cli/status', // local CLI authentication has no browser-demo equivalent
   'POST /api/auth/setup', // initial admin setup (server only)
+  'GET /api/credentials/:id/authorize', // sends a person to GitLab or Bitbucket; the demo talks to no host and takes the authorization through its token route
+  'GET /api/credentials/oauth/callback', // where GitLab or Bitbucket sends a person back; the demo talks to no host
   'POST /api/test-runs/submit', // bulk result submission (no server in demo)
   'POST /api/test-runs/upload', // multipart upload (no server in demo)
   'POST /api/test-runs/upload/results', // a run's results ahead of its files (no server in demo)

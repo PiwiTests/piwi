@@ -3321,6 +3321,7 @@ export const credentials = sqliteTable(
     managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
     perUser: integer('per_user', { mode: 'boolean' }).notNull().default(false), // each person gives their own token (credential_user_tokens); no secret here
     tokenHelpUrl: text('token_help_url'), // where a person creates their token, for a per-user credential
+    oauthClientId: text('oauth_client_id'), // the OAuth application a per-user SCM credential authorizes people through; its secret is in `secret`
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -3358,6 +3359,7 @@ export const credentialUserTokens = sqliteTable(
       .notNull()
       .$defaultFn(() => new Date()),
     lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }), // when an OAuth access token expires; null for a token that does not
   },
   (t) => ({
     credentialUserIdx: uniqueIndex('idx_credential_user_tokens_credential_user').on(t.credentialId, t.userId),
@@ -3367,6 +3369,34 @@ export const credentialUserTokens = sqliteTable(
       t.credentialId,
       sql`lower(${t.remoteUser})`,
     ),
+  }),
+);
+
+// An OAuth authorization a person started for a per-user credential: its `state`, single-use, bound to the person and
+// the credential, until the host sends them back or it expires.
+export const credentialAuthorizations = sqliteTable(
+  'credential_authorizations',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    stateHash: text('state_hash').notNull(), // SHA-256 of the state sent to the host
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    verifier: text('verifier').notNull(), // AES-256-GCM PKCE code verifier
+    returnTo: text('return_to'), // the page to go back to, checked by safeReturnPath
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: integer('expires_at', { mode: 'timestamp_ms' }).notNull(),
+  },
+  (t) => ({
+    stateIdx: uniqueIndex('idx_credential_authorizations_state').on(t.stateHash),
+    expiresIdx: index('idx_credential_authorizations_expires').on(t.expiresAt),
+    credentialIdx: index('idx_credential_authorizations_credential').on(t.credentialId),
+    userIdx: index('idx_credential_authorizations_user').on(t.userId),
   }),
 );
 

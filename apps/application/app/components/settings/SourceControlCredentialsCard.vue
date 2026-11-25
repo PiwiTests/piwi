@@ -24,7 +24,7 @@ const {
 /** The credentials the instance may list: source control, set in the database, shared with all projects. */
 const candidates = computed(() =>
   ((listed.value?.credentials ?? []) as CredentialSummary[]).filter(
-    (c) => c.service === 'scm' && c.managedBy === 'db' && c.scope.allProjects,
+    (c) => c.service === 'scm' && c.managedBy === 'db' && c.scope.allProjects && !c.perUser,
   ),
 );
 const items = computed(() => [

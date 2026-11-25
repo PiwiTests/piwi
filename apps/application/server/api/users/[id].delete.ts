@@ -6,6 +6,7 @@ import { requireAuth, isAuthEnabled } from '../../utils/auth';
 import { requireRouteId } from '../../utils/project-access';
 import { deleteUserProfilePictures } from '../../utils/profile-picture';
 import { publishToRunTarget } from '../../utils/run-target-events';
+import { prepareUserTokenRevocation } from '../../utils/credentials';
 
 defineRouteMeta({
   openAPI: {
@@ -26,8 +27,11 @@ export default eventHandler(async (event) => {
   try {
     const db = await getDatabase();
     const targets = await db.select({ id: runTargets.id }).from(runTargets).where(eq(runTargets.userId, id));
+    // Their OAuth tokens are opened while the account exists, and revoked at their hosts once it is gone.
+    const revokeTokens = await prepareUserTokenRevocation(db, id);
     // The lockout guards are only meaningful when authentication is enabled.
     const result = await deleteUserAccount(db, id, currentUser.id, { guard: isAuthEnabled(event) });
+    await revokeTokens();
     // Their connected apps' streams close as their keys go.
     for (const target of targets) publishToRunTarget(target.id, { type: 'revoked' });
     await deleteUserProfilePictures(id);

@@ -1,6 +1,6 @@
 ---
 title: Per-user credentials
-description: "Run a CI action on Jenkins in the name of whoever starts it from Piwi, with their own API token and rights, through one credential an administrator sets up once."
+description: "Run a CI action on Jenkins, GitLab or Bitbucket in the name of whoever starts it from Piwi, with their own token and rights, through one credential an administrator sets up once."
 lang: en-US
 ---
 
@@ -45,6 +45,28 @@ by reading Jenkins' `whoAmI` at the root of the destination, and keeps the accou
 
 **Test** sends the saved token again; **Remove** takes it out of Piwi. A removed token stays valid on Jenkins: revoke
 it there too.
+
+## GitLab and Bitbucket
+
+A per-user **Source control** credential runs a GitLab pipeline or a Bitbucket custom pipeline in the name of whoever
+starts it. Each person authorizes it once at the host, in a popup, instead of typing a token: the host shows the
+pipeline as theirs, and its rights apply. A GitHub destination cannot be per user: the form offers it for GitLab and
+Bitbucket only.
+
+- **Set it up**: register an OAuth application, on GitLab (scope `api`, on gitlab.com or a host
+  `PIWI_SCM_GITLAB_HOSTS` lists) or on Bitbucket (an OAuth consumer with the Account read, Repositories read and
+  Pipelines write permissions), with the callback URL the credential form shows. Then create the credential with
+  service **Source control**, the host's API as destination, **Per user**, and the application's client id and
+  secret. The secret is sealed with the host's token endpoint and sent only to its OAuth endpoints (token and
+  revocation).
+- **Authorize**: **Authorize with GitLab** (or Bitbucket) under **Account → Credentials**, or in the run dialog. The
+  authorization is bound to you and the credential, used once, and expires after 10 minutes; Piwi then reads the
+  account the token belongs to and keeps it.
+- **Refresh and revocation**: an access token is refreshed when it is used within 5 minutes of its expiry, and marked
+  refused when the host refuses the refresh. **Remove**, an administrator's removal and the deletion of an account
+  revoke a GitLab token at GitLab; Bitbucket offers no revocation, so revoke it in Bitbucket's settings.
+
+A per-user source control credential serves CI actions only, never a project's or the instance's source control.
 
 ## What runs in your name
 

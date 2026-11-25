@@ -43,6 +43,7 @@ import {
   type UserTokenStatus,
   type UserTokenView,
   userTokenActorRefusal,
+  userTokenMethod,
   userTokenMissingMessage,
 } from '#shared/credentials';
 import { scmDestinationHost, scmRepositoryApiUrl, shortCommit } from '#shared/scm-urls';
@@ -63,6 +64,8 @@ export interface CredentialRecord extends CredentialRules {
   perUser: boolean;
   /** Where a person creates their token, for a per-user credential. */
   tokenHelpUrl: string | null;
+  /** The OAuth application a per-user SCM credential authorizes people through. */
+  oauthClientId: string | null;
   /** Who created it, while that user exists. */
   createdBy: number | null;
   createdAt: Date;
@@ -92,6 +95,7 @@ const RECORD_COLUMNS = {
   secretEnv: credentials.secretEnv,
   perUser: credentials.perUser,
   tokenHelpUrl: credentials.tokenHelpUrl,
+  oauthClientId: credentials.oauthClientId,
   createdBy: credentials.createdBy,
   createdAt: credentials.createdAt,
   rotatedAt: credentials.rotatedAt,
@@ -113,6 +117,7 @@ interface RecordRow {
   secretEnv: string | null;
   perUser: boolean;
   tokenHelpUrl: string | null;
+  oauthClientId: string | null;
   createdBy: number | null;
   createdAt: Date | number;
   rotatedAt: Date | number;
@@ -139,6 +144,7 @@ function toRecord(row: RecordRow, projectIds: number[]): CredentialRecord {
     secretEnv: row.secretEnv ?? null,
     perUser: Boolean(row.perUser),
     tokenHelpUrl: row.tokenHelpUrl ?? null,
+    oauthClientId: row.oauthClientId ?? null,
     createdBy: row.createdBy ?? null,
     createdAt: toDate(row.createdAt)!,
     rotatedAt: toDate(row.rotatedAt)!,
@@ -376,6 +382,7 @@ export function credentialSummary(
     perUser: record.perUser,
     tokenHelpUrl: record.tokenHelpUrl,
     userTokens: record.perUser && canManage ? (userTokens ?? 0) : null,
+    oauthClientId: record.oauthClientId,
     createdAt: record.createdAt.toISOString(),
     rotatedAt: record.rotatedAt.toISOString(),
     lastUsedAt: iso(record.lastUsedAt),
@@ -414,6 +421,7 @@ export async function listCredentialOptions(
       perUser: record.perUser,
       tokenHelpUrl: record.tokenHelpUrl,
       userTokens: null,
+      oauthClientId: record.oauthClientId,
       rotatedAt: record.rotatedAt.toISOString(),
       lastUsedAt: iso(record.lastUsedAt),
       canManage: canManageCredential(viewer, record),
@@ -473,6 +481,7 @@ export async function insertCredential(
       secretEnv: input.secretEnv ?? null,
       perUser: input.perUser ?? false,
       tokenHelpUrl: input.tokenHelpUrl ?? null,
+      oauthClientId: input.oauthClientId ?? null,
       allProjects: input.scope.allProjects,
       allowedInputs: input.allowedInputs,
       customRequests: input.customRequests,
@@ -511,6 +520,7 @@ export async function updateCredential(
   if (patch.customRequests !== undefined) set.customRequests = patch.customRequests;
   if (patch.disabled !== undefined) set.disabled = patch.disabled;
   if (patch.tokenHelpUrl !== undefined) set.tokenHelpUrl = patch.tokenHelpUrl;
+  if (patch.oauthClientId !== undefined) set.oauthClientId = patch.oauthClientId;
   if (patch.scope !== undefined) set.allProjects = patch.scope.allProjects;
   if (sealed !== undefined) {
     set.secret = sealed;
@@ -796,6 +806,10 @@ export async function projectScmCredentialProblem(
 ): Promise<string | null> {
   const record = (await loadCredentialRecord(db, credentialId)) ?? undefined;
   if (!sharedWith(record, 'scm', projectId)) return `No SCM credential ${credentialId} is shared with this project.`;
+  // Ingest reads, pull-request feedback and statuses have nobody behind them: only a CI action runs in a person's name.
+  if (record!.perUser) {
+    return `The credential "${record!.name}" runs in the name of whoever starts a CI action: name it in a CI action, not as the project's source control.`;
+  }
   if (!scmDestinationHost(record!.destination, gitlabHosts)) {
     return `The credential "${record!.name}" is sent to ${record!.destination}, which is no repository host's API.`;
   }
@@ -822,6 +836,9 @@ export async function instanceScmCredentialsProblem(db: DrizzleDB, ids: readonly
   for (const id of ids) {
     const record = records.get(id);
     if (!record || record.managedBy !== 'db' || record.service !== 'scm') return `No SCM credential ${id} exists.`;
+    if (record.perUser) {
+      return `The credential "${record.name}" runs in the name of whoever starts a CI action: it cannot be the instance's source control.`;
+    }
     if (!record.allProjects) {
       return `The credential "${record.name}" is not shared with all projects, which the instance's credentials serve.`;
     }
@@ -945,6 +962,7 @@ export async function listMyCredentials(
         disabled: record.disabled,
         createdByName: record.createdBy != null ? (creators.get(record.createdBy) ?? null) : null,
         usable,
+        method: userTokenMethod(record.service),
         token: view
           ? {
               remoteUser: view.remoteUser,
@@ -1002,13 +1020,21 @@ export async function actionUserTokenReadiness(
   const refused = userTokenActorRefusal(record.name, actor);
   if (refused) {
     return {
-      perUser: { credential: { id: record.id, name: record.name, account: null }, userToken: null },
+      perUser: {
+        credential: { id: record.id, name: record.name, account: null, method: userTokenMethod(record.service) },
+        userToken: null,
+      },
       code: refused.code,
       reason: refused.message,
     };
   }
   const token = await userTokenStateOf(db, record.id, actor.userId!);
-  const credential = { id: record.id, name: record.name, account: token?.remoteUser ?? null };
+  const credential = {
+    id: record.id,
+    name: record.name,
+    account: token?.remoteUser ?? null,
+    method: userTokenMethod(record.service),
+  };
   const state = token?.state ?? 'missing';
   if (state === 'ready') return { perUser: { credential, userToken: state }, reason: null };
   return {

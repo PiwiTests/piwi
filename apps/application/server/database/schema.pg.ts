@@ -3274,6 +3274,7 @@ export const credentials = pgTable(
     managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
     perUser: boolean('per_user').notNull().default(false), // each person gives their own token (credential_user_tokens); no secret here
     tokenHelpUrl: text('token_help_url'), // where a person creates their token, for a per-user credential
+    oauthClientId: text('oauth_client_id'), // the OAuth application a per-user SCM credential authorizes people through; its secret is in `secret`
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -3311,6 +3312,7 @@ export const credentialUserTokens = pgTable(
       .notNull()
       .$defaultFn(() => new Date()),
     lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+    expiresAt: timestamp('expires_at', { mode: 'date' }), // when an OAuth access token expires; null for a token that does not
   },
   (t) => ({
     credentialUserIdx: uniqueIndex('idx_credential_user_tokens_credential_user').on(t.credentialId, t.userId),
@@ -3320,6 +3322,34 @@ export const credentialUserTokens = pgTable(
       t.credentialId,
       sql`lower(${t.remoteUser})`,
     ),
+  }),
+);
+
+// An OAuth authorization a person started for a per-user credential: its `state`, single-use, bound to the person and
+// the credential, until the host sends them back or it expires.
+export const credentialAuthorizations = pgTable(
+  'credential_authorizations',
+  {
+    id: serial('id').primaryKey(),
+    stateHash: text('state_hash').notNull(), // SHA-256 of the state sent to the host
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    verifier: text('verifier').notNull(), // AES-256-GCM PKCE code verifier
+    returnTo: text('return_to'), // the page to go back to, checked by safeReturnPath
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  },
+  (t) => ({
+    stateIdx: uniqueIndex('idx_credential_authorizations_state').on(t.stateHash),
+    expiresIdx: index('idx_credential_authorizations_expires').on(t.expiresAt),
+    credentialIdx: index('idx_credential_authorizations_credential').on(t.credentialId),
+    userIdx: index('idx_credential_authorizations_user').on(t.userId),
   }),
 );
 

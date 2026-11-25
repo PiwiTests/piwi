@@ -4130,6 +4130,28 @@ const CREDENTIALS = [
     last_used_at: ts('2025-04-24T18:10:00') * 1000,
   },
 ];
+/** A per-user GitLab credential, through an OAuth application each person authorizes; no action names it yet. */
+CREDENTIALS.push({
+  id: 8,
+  name: 'GitLab · in your name',
+  description: 'Runs GitLab pipelines in the name of whoever starts them, once they authorized the Piwi application.',
+  service: 'scm',
+  user_name: null,
+  destination: 'https://gitlab.com/',
+  secret: null,
+  all_projects: 0,
+  allowed_inputs: null,
+  custom_requests: 0,
+  disabled: 0,
+  managed_by: 'db',
+  per_user: 1,
+  token_help_url: null,
+  oauth_client_id: 'piwi-demo-application',
+  created_by: DEFAULT_DEMO_USER.id,
+  created_at: ts('2025-04-23T09:00:00') * 1000,
+  rotated_at: ts('2025-04-23T09:00:00') * 1000,
+  last_used_at: null,
+});
 /** The people who gave their own Jenkins token for the per-user credential; the demo keeps no secret. */
 const CREDENTIAL_USER_TOKENS = [
   { userId: DEFAULT_DEMO_USER.id, remoteUser: DEFAULT_DEMO_USER.username, state: 'ready', at: '2025-04-22T09:05:00' },
@@ -4149,6 +4171,7 @@ const CREDENTIAL_USER_TOKENS = [
 const CREDENTIAL_PROJECTS = [
   { credential_id: 1, project_id: 2 },
   { credential_id: PER_USER_CREDENTIAL_ID, project_id: 2 },
+  { credential_id: 8, project_id: 1 },
   { credential_id: 4, project_id: 1 },
   // qa-bot builds the jobs of every project whose CI actions `jenkinsRerun` writes.
   ...PROJECTS.filter((p) => p.ci_rerun?.actions.some((a) => a.target.credentialId === QA_BOT_CREDENTIAL_ID)).map(

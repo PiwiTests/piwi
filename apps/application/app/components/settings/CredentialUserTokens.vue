@@ -1,16 +1,22 @@
 <script setup lang="ts">
 /**
  * The people who gave their own token for a per-user credential, as its
- * managers see them: who, their account on the CI server, the token's state
- * and dates, never the token. **Remove** takes one person's out of Piwi,
- * **Remove all** everyone's, so each gives theirs again.
+ * managers see them: who, their account on the CI server or the source
+ * control host, the token's state and dates, never the token. **Remove**
+ * takes one person's out of Piwi, **Remove all** everyone's, so each gives
+ * theirs again (or authorizes again, for an OAuth credential).
  */
 import type { UserTokenView } from '#shared/credentials';
 import type { ApiResponse } from '~~/types/api';
 
 type TokensAnswer = ApiResponse<typeof import('~~/server/api/credentials/[id]/tokens/index.get').default>;
 
-const props = defineProps<{ credentialId: number }>();
+const props = defineProps<{
+  credentialId: number;
+  /** Whether people authorize it at a source control host (OAuth) rather than give a token to a CI server. */
+  oauth?: boolean;
+}>();
+const receiver = computed(() => (props.oauth ? 'the source control host' : 'the CI server'));
 const emit = defineEmits<{ changed: [] }>();
 
 const toast = useToast();
@@ -61,8 +67,8 @@ async function remove(userId: number | null) {
       />
     </div>
     <p v-if="tokens.length === 0" class="text-sm text-muted">
-      Nobody yet. Each person gives theirs from their account, or from the run dialog when they first start an action on
-      it.
+      Nobody yet. Each person {{ oauth ? 'authorizes Piwi' : 'gives theirs' }} from their account, or from the run
+      dialog when they first start an action on it.
     </p>
     <ul v-else class="divide-y divide-default rounded-md border border-default">
       <li
@@ -85,7 +91,7 @@ async function remove(userId: number | null) {
           </div>
           <p class="truncate text-xs text-muted">
             <span class="font-mono">{{ token.remoteUser }}</span> ·
-            <template v-if="token.state === 'invalid'">refused by the CI server</template>
+            <template v-if="token.state === 'invalid'">refused by {{ receiver }}</template>
             <ClientOnly v-else-if="token.lastUsedAt">
               <span :title="prettyDateFormat(token.lastUsedAt)">used {{ formatRelativeTime(token.lastUsedAt) }}</span>
             </ClientOnly>
@@ -108,7 +114,11 @@ async function remove(userId: number | null) {
     <UModal
       v-model:open="confirmingAll"
       title="Remove every token?"
-      :description="`The ${tokens.length} people who gave their token give it again before an action on this credential runs in their name. Their tokens stay valid on the CI server.`"
+      :description="
+        oauth
+          ? `The ${tokens.length} people who authorized Piwi authorize it again before an action on this credential runs in their name. Piwi revokes their tokens at the host where the host allows it.`
+          : `The ${tokens.length} people who gave their token give it again before an action on this credential runs in their name. Their tokens stay valid on the CI server.`
+      "
     >
       <template #footer>
         <div class="flex w-full justify-end gap-2">
