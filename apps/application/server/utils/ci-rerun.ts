@@ -39,6 +39,7 @@ import {
   type CiActionsSettings,
 } from '#shared/ci-actions';
 import {
+  ciActionTargetDigest,
   ciBranchMode,
   ciBranchOptions,
   ciDispatchInputValues,
@@ -54,6 +55,8 @@ import { ciTargetDefinition } from '#shared/ci-targets';
 import { getCiActionsSettings } from './ci-actions';
 import { ciProvider, type CiReadiness } from './ci-providers';
 import { CredentialRefusedError, type CredentialActor } from './credentials';
+import { actionUserTokenReadiness } from '#shared/handlers/credentials';
+import type { UserTokenRefusalCode } from '#shared/credentials';
 import { apiError } from './api-error';
 import type { DbClient } from '../database';
 
@@ -67,7 +70,14 @@ export interface CiRerunActor {
 /** What a dispatch from a page, the API or a tool came to: the dispatch, or why there is none (the earlier one for a repeat). */
 export type CiDispatchOutcome =
   | { ok: true; dispatch: CiDispatchView }
-  | { ok: false; error: 'not-found' | 'invalid' | 'unavailable' | 'dispatch-failed'; message: string }
+  | {
+      ok: false;
+      error: 'not-found' | 'invalid' | 'unavailable' | 'dispatch-failed';
+      message: string;
+      /** Why a per-user credential refused who asked, or that the action changed since the page showed it. */
+      code?: UserTokenRefusalCode | 'action-changed';
+      credential?: { id: number; name: string };
+    }
   | { ok: false; error: 'duplicate'; message: string; dispatch: CiDispatchView };
 
 const STATUS_BY_ERROR = {
@@ -78,12 +88,22 @@ const STATUS_BY_ERROR = {
   duplicate: 409,
 } as const;
 
-/** The API error of a dispatch that did not go: a repeat answers 409 with the earlier dispatch as `data.dispatch`. */
+/**
+ * The API error of a dispatch that did not go: a repeat answers 409 with the
+ * earlier dispatch as `data.dispatch`; a refusal of a per-user credential
+ * names its `data.code` and `data.credential`.
+ */
 export function ciDispatchError(outcome: Extract<CiDispatchOutcome, { ok: false }>) {
+  const data =
+    outcome.error === 'duplicate'
+      ? { dispatch: outcome.dispatch }
+      : outcome.code
+        ? { code: outcome.code, ...(outcome.credential ? { credential: outcome.credential } : {}) }
+        : null;
   return apiError({
     statusCode: STATUS_BY_ERROR[outcome.error],
     message: outcome.message,
-    ...(outcome.error === 'duplicate' ? { data: { dispatch: outcome.dispatch } } : {}),
+    ...(data ? { data } : {}),
   });
 }
 
@@ -111,6 +131,7 @@ async function readiness(
   place: CiDispatchPlace,
   pick: CiActionPick,
   ref: string | null,
+  actor: CredentialActor,
 ): Promise<CiReadiness> {
   if (!settings.enabled) return { available: false, reason: 'CI re-run is off for this project.' };
   const action = pick.action;
@@ -125,7 +146,14 @@ async function readiness(
   const ready = await ciProvider(action.target.type).readiness(db, place, action, ref);
   // Empty arguments would run the whole suite.
   if (ready.available && place.kind === 'tests' && !place.args) return { available: false, reason: NO_RETRY_ARGS };
-  return ready;
+  const perUser = await actionUserTokenReadiness(db, action.target, actor);
+  if (!perUser) return ready;
+  const refusal = { available: false, reason: perUser.reason, code: perUser.code, perUser: perUser.perUser };
+  // An API key, or an instance without sign-in, never starts it, whatever else the action needs.
+  if (perUser.code === 'session-required' || perUser.code === 'sign-in-required') return refusal;
+  // A person without a token is asked for it before the dispatch is stored, never refused after.
+  if (!ready.available || !perUser.code) return { ...ready, perUser: perUser.perUser };
+  return refusal;
 }
 
 /** A second dispatch of the same action, arguments, branch and inputs within the guard: the earlier one. */
@@ -153,6 +181,8 @@ async function dispatchWithAction(
     inputs: Record<string, string>;
     actor: CiRerunActor;
     origin: CiDispatchOrigin;
+    /** Whether the action runs in the name of whoever starts it, so a repeat is one of the same person's. */
+    perPerson: boolean;
   },
 ): Promise<CiDispatchView> {
   const { place, action, inputs } = input;
@@ -170,26 +200,31 @@ async function dispatchWithAction(
     actor: credentialActor,
   });
 
-  const claim = await claimCiDispatch(db, {
-    id,
-    projectId: place.projectId,
-    actionId: action.id,
-    actionName: action.name,
-    origin: input.origin,
-    kind: place.kind,
-    sourceRunId: place.runId,
-    clusterId: place.clusterId,
-    testCaseId: place.testCaseId,
-    provider: target.type,
-    preset: ciTargetDefinition(target.type).preset(target),
-    ref,
-    inputs,
-    args: place.args,
-    files: place.cases ? rerunFiles(place.cases) : null,
-    tests: place.cases ? place.cases.length : null,
-    byUserId: input.actor.id || null,
-    byName: input.actor.name,
-  });
+  const claim = await claimCiDispatch(
+    db,
+    {
+      id,
+      projectId: place.projectId,
+      actionId: action.id,
+      actionName: action.name,
+      origin: input.origin,
+      kind: place.kind,
+      sourceRunId: place.runId,
+      clusterId: place.clusterId,
+      testCaseId: place.testCaseId,
+      provider: target.type,
+      preset: ciTargetDefinition(target.type).preset(target),
+      ref,
+      inputs,
+      args: place.args,
+      files: place.cases ? rerunFiles(place.cases) : null,
+      tests: place.cases ? place.cases.length : null,
+      byUserId: input.actor.id || null,
+      byName: input.actor.name,
+    },
+    new Date(),
+    { perPerson: input.perPerson },
+  );
   if (!claim.claimed) throw new DuplicateDispatchError(claim.existing);
   try {
     await settleCiDispatch(db, id, await send());
@@ -209,6 +244,8 @@ function failedDispatch(e: unknown): CiDispatchOutcome {
     ok: false,
     error: e instanceof CredentialRefusedError ? 'unavailable' : 'dispatch-failed',
     message: e instanceof Error ? e.message : 'Dispatch failed',
+    ...(e instanceof CredentialRefusedError && e.code ? { code: e.code } : {}),
+    ...(e instanceof CredentialRefusedError && e.code && e.credential ? { credential: e.credential } : {}),
   };
 }
 
@@ -239,9 +276,26 @@ export async function dispatchCi(
   const problem = ciDispatchRequestProblem(pick, request);
   if (problem) return { ok: false, error: 'invalid', message: problem };
   const ref = request.ref ?? place.branch;
-  const ready = await readiness(db, settings, place, pick, ref);
+  const credentialActor: CredentialActor = { userId: actor.id || null, apiKeyId: actor.apiKeyId ?? null };
+  const ready = await readiness(db, settings, place, pick, ref, credentialActor);
   if (!pick.action || (!ready.available && !ready.credentialRefused)) {
-    return { ok: false, error: 'unavailable', message: ready.reason ?? pick.reason ?? 'CI dispatch is not available' };
+    return {
+      ok: false,
+      error: 'unavailable',
+      message: ready.reason ?? pick.reason ?? 'CI dispatch is not available',
+      ...(ready.code ? { code: ready.code } : {}),
+      ...(ready.perUser ? { credential: ready.perUser.credential } : {}),
+    };
+  }
+  // A dispatch in a person's name goes only to the action the page showed them.
+  if (ready.perUser && request.targetDigest !== ciActionTargetDigest(pick.action)) {
+    return {
+      ok: false,
+      error: 'unavailable',
+      code: 'action-changed',
+      credential: ready.perUser.credential,
+      message: `The action "${pick.action.name}" runs in your name and changed since this page showed it: look at it again, then start it.`,
+    };
   }
   if (place.kind === 'tests' && !place.args) return { ok: false, error: 'unavailable', message: NO_RETRY_ARGS };
   try {
@@ -252,6 +306,7 @@ export async function dispatchCi(
       inputs: ciDispatchInputValues(pick.action, request.inputs, place.started),
       actor,
       origin: options.origin,
+      perPerson: Boolean(ready.perUser),
     });
     return { ok: true, dispatch };
   } catch (e) {
@@ -299,14 +354,16 @@ export async function ciDispatchAvailability(
   projectId: number,
   source: CiDispatchSource,
   viewerId: number | null,
+  actor: CredentialActor = { userId: viewerId || null, apiKeyId: null },
 ): Promise<{ available: boolean; reason: string | null; action: { id: string; name: string } | null } | null> {
   const found = await resolveCiDispatchPlace(db, projectId, source, viewerId);
   if (!found.ok) return null;
   const settings = await getCiActionsSettings(db, projectId);
   const pick = pickFor(settings, found.place);
-  const ready = await readiness(db, settings, found.place, pick, found.place.branch);
+  const ready = await readiness(db, settings, found.place, pick, found.place.branch, actor);
   return {
-    available: ready.available,
+    // A person without a token can still start it: the run dialog asks for the token first.
+    available: ready.available || ready.code === 'user-token-required',
     reason: ready.reason,
     action: pick.action ? { id: pick.action.id, name: pick.action.name } : null,
   };
@@ -323,6 +380,7 @@ export async function ciOffered(
   projectId: number,
   source: CiDispatchSource,
   viewerId: number | null,
+  actor: CredentialActor = { userId: viewerId || null, apiKeyId: null },
 ): Promise<{ ok: true; offered: CiOffered } | { ok: false; error: 'not-found' | 'invalid'; message: string }> {
   const found = await resolveCiDispatchPlace(db, projectId, source, viewerId);
   if (!found.ok) return found;
@@ -330,7 +388,7 @@ export async function ciOffered(
   const settings = await getCiActionsSettings(db, projectId);
   const actions = [];
   for (const action of settings.actions.filter((a) => a.accepts.includes(place.kind))) {
-    const ready = await readiness(db, settings, place, pickFor(settings, place, action.id), place.branch);
+    const ready = await readiness(db, settings, place, pickFor(settings, place, action.id), place.branch, actor);
     actions.push(offeredCiAction(action, place, ready));
   }
   return {

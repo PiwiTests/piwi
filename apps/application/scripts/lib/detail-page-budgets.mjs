@@ -14,7 +14,8 @@
  * tabs, the timeline's toolbar, the affected tests) belong on the first screen
  * when the block leaves room for them, so their controls above the fold are
  * reported, not budgeted. The execution page's History line is a line of the
- * block: its strip and its link to the last passing run count.
+ * block: its strip, one keyboard stop, and its link to the last passing run
+ * count.
  */
 
 /** The viewport the budgets are set at; any other viewport is reported without verdicts. */
@@ -93,7 +94,7 @@ export const DETAIL_PAGE_BUDGETS = [
     label: 'controls in the navbar and block',
     pages: ['execution'],
     read: (result) => (result.blockControls == null ? null : result.navbarControls + result.blockControls),
-    max: 27,
+    max: 28,
     missing: 'no situation block',
   },
   {

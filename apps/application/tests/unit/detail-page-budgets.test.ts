@@ -66,12 +66,12 @@ describe('evaluateBudgets', () => {
     expect(cluster).toMatchObject({ value: 14, max: 13, verdict: 'fail' });
   });
 
-  it('counts at most 27 controls in the navbar and the block of an execution', () => {
+  it('counts at most 28 controls in the navbar and the block of an execution', () => {
     const execution = evaluateBudgets(
-      measured('/test-run-cases/37', { navbarControls: 9, blockControls: 18 }),
+      measured('/test-run-cases/37', { navbarControls: 9, blockControls: 19 }),
       AT_BUDGET,
     );
-    expect(byId(execution, 'navbar-block-controls')).toMatchObject({ value: 27, max: 27, verdict: 'pass' });
+    expect(byId(execution, 'navbar-block-controls')).toMatchObject({ value: 28, max: 28, verdict: 'pass' });
   });
 
   it('counts at most 25 controls in the navbar and the block and one solid primary above the fold on a cluster', () => {
@@ -175,7 +175,7 @@ describe('evaluateBudgets', () => {
   it('prints each verdict as one short phrase', () => {
     const verdicts: Verdict[] = evaluateBudgets(
       measured('/test-run-cases/37', {
-        blockControls: 20,
+        blockControls: 21,
         distinctTextStyles: 14,
         nextStep: { kind: 'apply-patch', action: 'copy-git-apply', copies: 'budgeted', distance: null },
       }),
@@ -183,7 +183,7 @@ describe('evaluateBudgets', () => {
     );
     expect(verdicts.map(budgetText)).toEqual([
       '✓ text styles 14 ≤ 15',
-      '✗ controls in the navbar and block 28 > 27',
+      '✗ controls in the navbar and block 29 > 28',
       '✗ next-step content not on the page',
       '✓ solid primary buttons 1 ≤ 1',
     ]);

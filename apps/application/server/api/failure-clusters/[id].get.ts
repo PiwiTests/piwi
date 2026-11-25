@@ -9,6 +9,7 @@ import { getFailureCluster } from '#shared/handlers/failure-clusters';
 import { failureClusters } from '../../database/schema';
 import { resolveOwners } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
+import { requestCredentialActor } from '../../utils/credentials';
 import { ciDispatchAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
@@ -35,6 +36,8 @@ export default eventHandler(async (event) => {
   // configured — signals only the server can resolve. A CI run is offered only to
   // a viewer who may start one.
   const mayDispatch = await holdsProjectPermission(event, projectId, ['run:control']);
+  // An API key never starts an action on a per-user credential: it is offered as unavailable to one.
+  const actor = requestCredentialActor(event, user);
   const [clusterRow] = await db
     .select({ lastSeenRunId: failureClusters.lastSeenRunId })
     .from(failureClusters)
@@ -42,7 +45,7 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     clusterRow && mayDispatch
-      ? ciDispatchAvailability(db, projectId, { from: 'cluster', clusterId: id }, user.id).catch(() => null)
+      ? ciDispatchAvailability(db, projectId, { from: 'cluster', clusterId: id }, user.id, actor).catch(() => null)
       : Promise.resolve(null),
   ]);
 
@@ -57,6 +60,7 @@ export default eventHandler(async (event) => {
               projectId,
               { from: 'flake-lab', testCaseId, flakeLab: 'reproduce' },
               user.id,
+              actor,
             )
           )?.available ?? false
       : undefined,

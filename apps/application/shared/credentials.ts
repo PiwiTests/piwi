@@ -42,6 +42,7 @@ export const CREDENTIAL_FEATURES = [
   'integration-read',
   'integration-write',
   'notification',
+  'credential-test',
 ] as const;
 export type CredentialFeature = (typeof CREDENTIAL_FEATURES)[number];
 
@@ -57,6 +58,7 @@ export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
   'integration-read': 'Integration read',
   'integration-write': 'Integration write',
   notification: 'Notification',
+  'credential-test': 'Token test',
 };
 
 /**
@@ -69,6 +71,7 @@ export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = [
   'scm-read',
   'ai-call',
   'integration-read',
+  'credential-test',
 ];
 
 /** The features of an SCM provider's writes, each logged as a row of its own. */
@@ -84,6 +87,7 @@ export const MAX_CREDENTIAL_USER_LENGTH = 200;
 export const MAX_CREDENTIAL_SECRET_LENGTH = 8192;
 export const MAX_CREDENTIAL_ALLOWED_INPUTS = 50;
 export const MAX_CREDENTIAL_PROJECTS = 500;
+export const MAX_TOKEN_HELP_URL_LENGTH = 500;
 
 /**
  * The prefix of the variables a credential may read its secret from. The
@@ -158,6 +162,12 @@ export interface CredentialSummary {
   secretEnv: string | null;
   /** Whether that variable is set on the server; null when there is none, or nobody can tell (the demo). */
   secretEnvSet: boolean | null;
+  /** Whether each person gives their own token for it (a per-user credential), which a use then carries. */
+  perUser: boolean;
+  /** Where a person creates their token, for a per-user credential. */
+  tokenHelpUrl: string | null;
+  /** How many people gave a token for a per-user credential, to a caller who manages it; else null. */
+  userTokens: number | null;
   createdAt: string;
   rotatedAt: string;
   lastUsedAt: string | null;
@@ -180,6 +190,8 @@ export interface CredentialUseEntry {
   actor: string | null;
   /** The API key it came through, by name, when it came through one. */
   apiKey: string | null;
+  /** The person's own account on the service, for a use of a per-user credential. */
+  remoteUser: string | null;
   subjectType: string | null;
   subjectId: string | null;
   /** The CI action's name, while its project still has it; for another subject, how the log names it. */
@@ -206,6 +218,9 @@ export interface CredentialInput {
   allowedInputs: string[] | null;
   customRequests: boolean;
   disabled: boolean;
+  /** A per-user credential, set at creation: no user and no secret, each person gives their own token. */
+  perUser?: boolean;
+  tokenHelpUrl?: string | null;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -297,8 +312,10 @@ export function credentialServiceProblem(
  * but the description, the user, the allowed inputs and the two switches, and
  * either a secret or the `PIWI_CREDENTIAL_*` variable it is read from
  * (`secretEnv`), not both; an update (`partial`) reads only the fields it
- * holds. The destination is stored normalized (`https://ci.example.com/`), and
- * a secret holds no line break.
+ * holds. A per-user credential (`perUser`, given at creation only) is a CI
+ * server credential that holds neither a user nor a secret and never goes with
+ * a Custom request. The destination is stored normalized
+ * (`https://ci.example.com/`), and a secret holds no line break.
  */
 export function parseCredentialInput(
   raw: unknown,
@@ -336,6 +353,23 @@ export function parseCredentialInput(
     if (LINE_BREAK.test(user)) return fail('A user name holds no line break.');
     value.user = user || null;
   }
+  if (raw.perUser !== undefined && typeof raw.perUser !== 'boolean') return fail('perUser is true or false.');
+  if (raw.perUser === true) {
+    if (opts.partial) return fail('A credential is shared or per user from its creation: create another one.');
+    if (raw.service !== 'ci-server') return fail('Only a CI server credential is per user.');
+    if (str(raw.user) || str(raw.secret) || str(raw.secretEnv)) {
+      return fail('A per-user credential holds no user and no secret: each person gives their own token.');
+    }
+    if (raw.customRequests === true) return fail('A per-user credential never goes with a Custom request.');
+    value.perUser = true;
+  }
+  if (raw.tokenHelpUrl !== undefined) {
+    const help = str(raw.tokenHelpUrl);
+    if (help && (!/^https?:\/\//i.test(help) || help.length > MAX_TOKEN_HELP_URL_LENGTH || LINE_BREAK.test(help))) {
+      return fail(`The token help link is an http(s) URL of at most ${MAX_TOKEN_HELP_URL_LENGTH} characters.`);
+    }
+    value.tokenHelpUrl = help || null;
+  }
   const secretEnv = str(raw.secretEnv);
   if (secretEnv && typeof raw.secret === 'string' && raw.secret.trim()) {
     return fail('Give the secret or the variable it is read from, not both.');
@@ -347,7 +381,7 @@ export function parseCredentialInput(
       );
     }
     value.secretEnv = secretEnv;
-  } else if (has('secret')) {
+  } else if (has('secret') && !value.perUser) {
     const secret = typeof raw.secret === 'string' ? raw.secret.trim() : '';
     if (!secret) return fail('A credential needs its secret, or the variable it is read from.');
     if (secret.length > MAX_CREDENTIAL_SECRET_LENGTH)
@@ -425,4 +459,142 @@ export function credentialRefusal(
     return `The credential "${rules.name}" does not go with a Custom request: allow it in its settings, or pick another.`;
   }
   return null;
+}
+
+/** The state of a person's token for a per-user credential: only a `ready` one is sent. */
+export const USER_TOKEN_STATES = ['ready', 'invalid'] as const;
+export type UserTokenState = (typeof USER_TOKEN_STATES)[number];
+
+/** A person's token as an offered CI action reports it: `missing` when they gave none; null for a shared credential. */
+export type UserTokenStatus = UserTokenState | 'missing';
+
+/**
+ * Why a use of a per-user credential is refused for who asked: a request
+ * through an API key (`session-required`), an instance without sign-in
+ * (`sign-in-required`), or a person with no `ready` token (`user-token-required`).
+ */
+export type UserTokenRefusalCode = 'session-required' | 'sign-in-required' | 'user-token-required';
+
+/** A per-user credential as an offered CI action names it: with the viewer's own account on the service, once they gave a token. */
+export interface PerUserCredentialRef {
+  id: number;
+  name: string;
+  account: string | null;
+}
+
+/** A person's own token for a per-user credential, as its owner and the credential's managers see it. Never the secret. */
+export interface UserTokenView {
+  userId: number;
+  /** The person's name in Piwi. */
+  userName: string;
+  /** Their account on the service, as the test named it. */
+  remoteUser: string;
+  state: UserTokenState;
+  createdAt: string;
+  testedAt: string;
+  lastUsedAt: string | null;
+}
+
+/** A per-user credential as its Account page lists it for one person, with their token. */
+export interface MyCredentialEntry {
+  id: number;
+  name: string;
+  service: CredentialService;
+  destination: string;
+  tokenHelpUrl: string | null;
+  disabled: boolean;
+  /** Who created it, by name, so a person knows whom they give their token to. */
+  createdByName: string | null;
+  /** Whether a project where the person holds `run:control` may use it; false for a token they still hold. */
+  usable: boolean;
+  token: Omit<UserTokenView, 'userId' | 'userName'> | null;
+}
+
+/** What a token test answers: the account it names, or why it failed, never the service's own text. */
+export type UserTokenTestResult =
+  | { ok: true; remoteUser: string }
+  | { ok: false; reason: 'refused' | 'unreachable' | 'anonymous' };
+
+/** How many tests one person may run on one credential in {@link USER_TOKEN_TEST_WINDOW_MS}. */
+export const USER_TOKEN_TEST_LIMIT = 10;
+export const USER_TOKEN_TEST_WINDOW_MS = 10 * 60 * 1000;
+
+/**
+ * A Jenkins API token: 32 hexadecimal characters, or 34 for one made since
+ * Jenkins 2.129 (`11` and 32). A per-user credential takes nothing else, so an
+ * account password, which Jenkins also takes in a Basic header, is never stored.
+ */
+const JENKINS_API_TOKEN = /^(?:[0-9a-f]{32}|11[0-9a-f]{32})$/i;
+
+/** Why a posted user token cannot be tested, or null: a user name, and a token of an API token's form. */
+export function userTokenInputProblem(user: string, secret: string): string | null {
+  if (!user) return 'Give your user name on the CI server.';
+  if (user.length > MAX_CREDENTIAL_USER_LENGTH)
+    return `A user name is at most ${MAX_CREDENTIAL_USER_LENGTH} characters.`;
+  if (LINE_BREAK.test(user)) return 'A user name holds no line break.';
+  if (!JENKINS_API_TOKEN.test(secret)) {
+    return 'Give an API token, not a password: create one on your user page of the CI server (32 or 34 hexadecimal characters).';
+  }
+  return null;
+}
+
+/**
+ * The root of the Jenkins a destination is under: the destination cut before
+ * its first `job/` segment, so a credential narrowed to a folder
+ * (`https://ci.example.com/job/tests/`) is tested at the server's root.
+ */
+export function jenkinsRoot(destination: string): string {
+  const url = new URL(destination);
+  const at = url.pathname.split('/').indexOf('job');
+  if (at > 0) url.pathname = `${url.pathname.split('/').slice(0, at).join('/')}/`;
+  return url.toString();
+}
+
+/** The one URL a per-user CI server credential's token is tested at: Jenkins' `whoAmI` under its root. */
+export function userTokenTestUrl(destination: string): string {
+  return `${jenkinsRoot(destination)}whoAmI/api/json`;
+}
+
+/** The account a Jenkins `whoAmI` answer names, or why it does not name one. */
+export function readWhoAmI(json: unknown): UserTokenTestResult {
+  const who = (json && typeof json === 'object' ? json : {}) as Record<string, unknown>;
+  const name = typeof who.name === 'string' ? who.name.trim() : '';
+  if (who.anonymous === true || who.authenticated !== true || !name || name === 'anonymous') {
+    return { ok: false, reason: 'anonymous' };
+  }
+  return { ok: true, remoteUser: name.slice(0, MAX_CREDENTIAL_USER_LENGTH) };
+}
+
+/** What a failed token test tells the person. */
+export const USER_TOKEN_TEST_REASONS: Record<Exclude<UserTokenTestResult, { ok: true }>['reason'], string> = {
+  refused: 'The CI server refused this user name and token.',
+  unreachable: 'The CI server could not be reached.',
+  anonymous: 'The CI server did not recognize this token as a signed-in user.',
+};
+
+/** Why a use of a per-user credential is refused for who asked, or null when it may go: a person in a session. */
+export function userTokenActorRefusal(
+  name: string,
+  actor: { userId: number | null; apiKeyId: number | null },
+): { code: UserTokenRefusalCode; message: string } | null {
+  if (actor.apiKeyId != null) {
+    return {
+      code: 'session-required',
+      message: `The credential "${name}" acts in the name of whoever starts it: start it from Piwi's page, not with an API key.`,
+    };
+  }
+  if (!actor.userId) {
+    return {
+      code: 'sign-in-required',
+      message: `The credential "${name}" acts in the name of whoever starts it, which needs sign-in.`,
+    };
+  }
+  return null;
+}
+
+/** What a person is told when they have no usable token for a per-user credential. */
+export function userTokenMissingMessage(name: string, state: 'missing' | 'invalid'): string {
+  return state === 'invalid'
+    ? `Your token for "${name}" was refused: give it again in your account's Credentials.`
+    : `"${name}" runs in your name: give your token for it first.`;
 }

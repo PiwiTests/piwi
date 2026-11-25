@@ -46,7 +46,10 @@ import {
   type CiDispatchPlace,
 } from '#shared/handlers/ci-rerun-target';
 import { claimCiDispatch, getCiDispatch, settleCiDispatch } from '#shared/handlers/ci-dispatches';
+import { actionUserTokenReadiness } from '#shared/handlers/credentials';
+import type { PerUserCredentialRef, UserTokenRefusalCode, UserTokenStatus } from '#shared/credentials';
 import {
+  ciActionTargetDigest,
   ciBranchOptions,
   ciDispatchInputValues,
   ciDispatchRequestProblem,
@@ -140,7 +143,13 @@ async function readiness(
   place: CiDispatchPlace,
   pick: CiActionPick,
   ref: string | null,
-): Promise<{ available: boolean; reason: string | null }> {
+  userId: number | null,
+): Promise<{
+  available: boolean;
+  reason: string | null;
+  code?: UserTokenRefusalCode;
+  perUser?: { credential: PerUserCredentialRef; userToken: UserTokenStatus | null } | null;
+}> {
   if (!settings.enabled) return { available: false, reason: OFF_REASON };
   const action = pick.action;
   if (!action) return { available: false, reason: pick.reason };
@@ -165,7 +174,13 @@ async function readiness(
       : 'The credential this CI action names does not exist: pick another one.';
   }
   if (!reason && place.kind === 'tests' && !place.args) reason = NO_RETRY_ARGS;
-  return { available: !reason, reason };
+  // As the server: a person without a token is asked for it before the dispatch is recorded.
+  const perUser = await actionUserTokenReadiness(db as never, target, { userId, apiKeyId: null });
+  if (!perUser) return { available: !reason, reason };
+  const refusal = { available: false, reason: perUser.reason, code: perUser.code, perUser: perUser.perUser };
+  if (perUser.code === 'session-required' || perUser.code === 'sign-in-required') return refusal;
+  if (reason || !perUser.code) return { available: !reason, reason, perUser: perUser.perUser };
+  return refusal;
 }
 
 /** A place in the demo, or the error the server answers for its source. */
@@ -201,7 +216,7 @@ export async function demoCiOffered(
   const settings = await projectCiActions(db, projectId);
   const actions = [];
   for (const action of settings.actions.filter((a) => a.accepts.includes(place.kind))) {
-    const ready = await readiness(db, settings, place, demoPick(settings, place, action.id), place.branch);
+    const ready = await readiness(db, settings, place, demoPick(settings, place, action.id), place.branch, viewerId);
     actions.push(offeredCiAction(action, place, ready));
   }
   return {
@@ -255,9 +270,22 @@ export async function demoDispatchCi(
   const problem = ciDispatchRequestProblem(pick, request);
   if (problem) throw demoHttpError(400, problem);
   const ref = request.ref ?? place.branch;
-  const ready = await readiness(db, settings, place, pick, ref);
+  const ready = await readiness(db, settings, place, pick, ref, userId);
   const action = pick.action as (CiAction & { target: { type: 'ci-server' } }) | null;
-  if (!ready.available || !action) throw demoHttpError(400, ready.reason ?? NO_TARGET);
+  if (!ready.available || !action) {
+    const data = ready.code
+      ? { code: ready.code, ...(ready.perUser ? { credential: ready.perUser.credential } : {}) }
+      : undefined;
+    throw demoHttpError(400, ready.reason ?? NO_TARGET, undefined, data);
+  }
+  if (ready.perUser && request.targetDigest !== ciActionTargetDigest(action)) {
+    throw demoHttpError(
+      400,
+      `The action "${action.name}" runs in your name and changed since this page showed it: look at it again, then start it.`,
+      undefined,
+      { code: 'action-changed', credential: ready.perUser.credential },
+    );
+  }
   const target = ciServerTargetOf(action.target);
   const id = randomId();
   const values = ciServerTemplateValues(target, place.args, id, ref, place.commit);
@@ -265,26 +293,31 @@ export async function demoDispatchCi(
   const inputs = ciDispatchInputValues(action, request.inputs, place.started);
   const prepared = prepare(target, baseUrl, values, Object.entries(inputs));
   if ('error' in prepared) throw demoHttpError(400, prepared.error);
-  const claim = await claimCiDispatch(db, {
-    id,
-    projectId,
-    actionId: action.id,
-    actionName: action.name,
-    origin: 'page',
-    kind: place.kind,
-    sourceRunId: place.runId,
-    clusterId: place.clusterId,
-    testCaseId: place.testCaseId,
-    provider: 'ci-server',
-    preset: target.preset,
-    ref: values.ref || null,
-    inputs,
-    args: place.args,
-    files: place.cases ? rerunFiles(place.cases) : null,
-    tests: place.cases ? place.cases.length : null,
-    byUserId: userId,
-    byName: await actorName(db, userId),
-  });
+  const claim = await claimCiDispatch(
+    db,
+    {
+      id,
+      projectId,
+      actionId: action.id,
+      actionName: action.name,
+      origin: 'page',
+      kind: place.kind,
+      sourceRunId: place.runId,
+      clusterId: place.clusterId,
+      testCaseId: place.testCaseId,
+      provider: 'ci-server',
+      preset: target.preset,
+      ref: values.ref || null,
+      inputs,
+      args: place.args,
+      files: place.cases ? rerunFiles(place.cases) : null,
+      tests: place.cases ? place.cases.length : null,
+      byUserId: userId,
+      byName: await actorName(db, userId),
+    },
+    new Date(),
+    { perPerson: Boolean(ready.perUser) },
+  );
   if (!claim.claimed) {
     throw demoHttpError(409, 'The same dispatch was sent a moment ago.', undefined, { dispatch: claim.existing });
   }

@@ -28,6 +28,7 @@ defineRouteMeta({
             'integration-read',
             'integration-write',
             'notification',
+            'credential-test',
           ],
         },
       },

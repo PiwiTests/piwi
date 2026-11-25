@@ -47,6 +47,7 @@ import {
   type CiTemplateValues,
 } from '#shared/ci-server';
 import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
+import { jenkinsRoot, readWhoAmI, userTokenTestUrl, type UserTokenTestResult } from '#shared/credentials';
 import { MAX_CI_JOBS, withoutFreeText, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
@@ -404,7 +405,68 @@ async function sendWithCredential(
       return { ...answer, text: maskCredentialAnswer(answer.text, opened) };
     },
     (answer) => (answer.status >= 200 && answer.status < 300 ? null : `The CI server answered ${answer.status}`),
+    { unauthorized: (answer) => answer.status === 401 },
   );
+}
+
+/**
+ * Test a person's token for a per-user CI server credential: Jenkins' `whoAmI`
+ * at the root of the credential's destination, with the token they typed
+ * (`candidate`) or the one they saved, through `withCredential`, which checks,
+ * masks and logs it. The answer names the account, or only why it failed: never
+ * the CI server's text, so the test cannot be used to read what a guessed
+ * password gets.
+ */
+export async function testCiServerUserToken(
+  db: DbClient,
+  credential: { id: number; destination: string },
+  actor: CredentialActor,
+  candidate?: { user: string; secret: string },
+): Promise<UserTokenTestResult> {
+  const url = userTokenTestUrl(credential.destination);
+  // A token goes only where a dispatch would send it: over https, or to a place the operator listed.
+  const problem = ciServerBaseUrlProblem(jenkinsRoot(credential.destination));
+  if (problem) throw new CredentialRefusedError(problem);
+  let answer: CiServerAnswer;
+  try {
+    answer = await withCredential(
+      db,
+      {
+        credentialId: credential.id,
+        feature: 'credential-test',
+        projectId: null,
+        url,
+        custom: false,
+        actor,
+        ...(candidate ? { candidate } : {}),
+      },
+      (opened) =>
+        sendCiServerRequest({
+          method: 'GET',
+          url,
+          headers: {
+            Accept: 'application/json',
+            Authorization: `Basic ${Buffer.from(`${opened.user ?? ''}:${opened.secret}`, 'utf8').toString('base64')}`,
+          },
+          body: null,
+          credential: null,
+          custom: false,
+          droppedInputs: [],
+          maxAnswerBytes: MAX_ANSWER_BYTES,
+        }),
+      (sent) => {
+        if (sent.status < 200 || sent.status >= 300) return `The CI server answered ${sent.status}`;
+        return readWhoAmI(parseJson(sent.text)).ok ? null : 'The CI server named no signed-in user';
+      },
+    );
+  } catch (e) {
+    if (e instanceof CredentialRefusedError) throw e;
+    return { ok: false, reason: 'unreachable' };
+  }
+  if (answer.status === 401 || answer.status === 403) return { ok: false, reason: 'refused' };
+  if (answer.status < 200 || answer.status >= 300) return { ok: false, reason: 'unreachable' };
+  const json = parseJson(answer.text);
+  return json === null ? { ok: false, reason: 'unreachable' } : readWhoAmI(json);
 }
 
 /**

@@ -92,6 +92,9 @@ function providerOf(action: CiOfferedAction): string {
   }
 }
 
+/** Whether an offered action waits only for the person's own token for its per-user credential. */
+const asksToken = (action: CiOfferedAction) => action.code === 'user-token-required';
+
 /** What a sent run was, so **Run again** sends it the same way. */
 type SentRun =
   | {
@@ -103,7 +106,13 @@ type SentRun =
     }
   | {
       kind: 'ci';
-      body: { source: CiDispatchSourceInput; action: string; ref?: string; inputs?: Record<string, string> };
+      body: {
+        source: CiDispatchSourceInput;
+        action: string;
+        ref?: string;
+        inputs?: Record<string, string>;
+        targetDigest?: string;
+      };
     };
 
 export interface RunPlaceOptions {
@@ -224,11 +233,21 @@ export async function useRunPlace(options: RunPlaceOptions) {
     );
   }
 
-  /** Whether a What's CI has an action that can be sent. */
+  /** Whether a What's CI has an action that can be sent, or that waits only for the person's own token. */
   const ciTakes = (w: RunWhat) => {
     const offer = offered[w.key];
-    return Boolean(w.ci && offer?.enabled && offer.actions.some((a) => a.available));
+    return Boolean(w.ci && offer?.enabled && offer.actions.some((a) => a.available || asksToken(a)));
   };
+
+  /**
+   * Read every What's offer again: once the person gave their token, or after a dispatch a per-user credential refused
+   * (a token removed or refused since, an action changed since), its actions and their digests are what the server says.
+   */
+  async function refreshCiOffer() {
+    const list = [...new Map([...options.whats(), ...whats.value].map((w) => [w.key, w])).values()];
+    for (const w of list) delete offeredFor[w.key];
+    await readOffered(list);
+  }
 
   // The first What says what the button shows; with CI actions on, the others are read when it cannot go to CI, else
   // when the dialog opens.
@@ -348,11 +367,13 @@ export async function useRunPlace(options: RunPlaceOptions) {
       else if (ciOffer.value === null) reason = 'CI cannot run this from here.';
       else if (!ciOffer.value.enabled) reason = 'CI actions are off for this project.';
       else if (!here) reason = `Does not take ${KIND_NOUNS[ciOffer.value.kind]}.`;
-      else if (!here.available) reason = here.reason ?? 'It cannot be sent from here.';
+      else if (!here.available && !asksToken(here)) reason = here.reason ?? 'It cannot be sent from here.';
+      // An action on a per-user credential runs in the name of whoever starts it: the dialog asks for their token.
+      const named = here?.credential ? [facts, 'in your name'].filter(Boolean).join(' · ') : facts;
       return {
         value: `ci:${action.id}`,
         label: action.name,
-        description: reason ? `${facts} · ${reason}` : facts,
+        description: reason ? `${named} · ${reason}` : named,
         disabled: reason != null,
       };
     });
@@ -364,6 +385,13 @@ export async function useRunPlace(options: RunPlaceOptions) {
     [...appRows.value, ...localRows.value, ...ciRows.value].find((r) => r.value === key && !r.disabled);
   /** The tests the dialog runs on this computer, when it is picked. */
   const localPick = computed(() => (where.value === 'local' && row('local') ? localSetOf(what.value?.local) : null));
+  /** The per-user credential the picked CI action waits on, until the person gives their token for it. */
+  const ciTokenAsked = computed(() => {
+    const action = ciPick.value;
+    return action && asksToken(action) && action.credential
+      ? { credential: action.credential, state: action.userToken as 'missing' | 'invalid' }
+      : null;
+  });
   /** The CI action picked, as the picked What is offered it. */
   const ciPick = computed(() => {
     const key = where.value;
@@ -581,7 +609,14 @@ export async function useRunPlace(options: RunPlaceOptions) {
         followUp.follow({ kind: 'dispatch', view: earlier });
         options.onDispatched?.(earlier);
         lastSent = sent;
-      } else sendError.value = errorMessage(error);
+      } else {
+        sendError.value = errorMessage(error);
+        // A per-user credential refused it: the offers say again what the person must do (give a token, look again).
+        if ((error as { data?: { data?: { code?: string } } } | null)?.data?.data?.code) {
+          followUp.reset();
+          await refreshCiOffer();
+        }
+      }
     } finally {
       sending.value = false;
     }
@@ -609,7 +644,9 @@ export async function useRunPlace(options: RunPlaceOptions) {
       if (pickedTags.value.length === 0) return null;
       source = { tags: [...pickedTags.value], ...(pickedTags.value.length > 1 ? { match: tagMatch.value } : {}) };
     }
+    if (asksToken(action)) return null;
     const body: Extract<SentRun, { kind: 'ci' }>['body'] = { source, action: action.id };
+    if (action.targetDigest) body.targetDigest = action.targetDigest;
     if (withFields) {
       const ref = branch.value.trim();
       if (action.branch.mode !== 'fixed' && ref) body.ref = ref;
@@ -719,6 +756,8 @@ export async function useRunPlace(options: RunPlaceOptions) {
     ciShown,
     ciRows,
     ciPick,
+    ciTokenAsked,
+    refreshCiOffer,
     appPick,
     branch,
     branches,

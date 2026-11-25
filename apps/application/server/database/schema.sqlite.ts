@@ -3319,6 +3319,8 @@ export const credentials = sqliteTable(
     customRequests: integer('custom_requests', { mode: 'boolean' }).notNull().default(false), // whether a Custom CI server request may carry it
     disabled: integer('disabled', { mode: 'boolean' }).notNull().default(false), // every use is refused
     managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    perUser: integer('per_user', { mode: 'boolean' }).notNull().default(false), // each person gives their own token (credential_user_tokens); no secret here
+    tokenHelpUrl: text('token_help_url'), // where a person creates their token, for a per-user credential
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: integer('created_at', { mode: 'timestamp_ms' })
       .notNull()
@@ -3332,6 +3334,39 @@ export const credentials = sqliteTable(
     // Unique ignoring case, as the routes compare names.
     nameIdx: uniqueIndex('idx_credentials_name_lower').on(sql`lower(${t.name})`),
     createdByIdx: index('idx_credentials_created_by').on(t.createdBy),
+  }),
+);
+
+// A person's own token for a per-user credential, sealed with the credential, the person and the destination.
+export const credentialUserTokens = sqliteTable(
+  'credential_user_tokens',
+  {
+    id: integer('id').primaryKey({ autoIncrement: true }),
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    remoteUser: text('remote_user').notNull(), // the account the service named when the token was tested
+    secret: text('secret').notNull(), // AES-256-GCM JSON { credentialId, userId, destination, user, secret }
+    state: text('state').notNull().default('ready'), // 'ready' | 'invalid'
+    createdAt: integer('created_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    testedAt: integer('tested_at', { mode: 'timestamp_ms' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastUsedAt: integer('last_used_at', { mode: 'timestamp_ms' }),
+  },
+  (t) => ({
+    credentialUserIdx: uniqueIndex('idx_credential_user_tokens_credential_user').on(t.credentialId, t.userId),
+    userIdx: index('idx_credential_user_tokens_user').on(t.userId),
+    // One account on the service serves one person per credential, ignoring case.
+    remoteUserIdx: uniqueIndex('idx_credential_user_tokens_remote_user').on(
+      t.credentialId,
+      sql`lower(${t.remoteUser})`,
+    ),
   }),
 );
 
@@ -3364,6 +3399,7 @@ export const credentialUses = sqliteTable(
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
     userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    remoteUser: text('remote_user'), // the person's own account, for a use of a per-user credential
     subjectType: text('subject_type'), // 'ci-action'
     subjectId: text('subject_id'),
     destination: text('destination'), // the request's origin and path, never its query
@@ -3388,3 +3424,4 @@ export const credentialUses = sqliteTable(
 
 export type CredentialRow = typeof credentials.$inferSelect;
 export type CredentialUseRow = typeof credentialUses.$inferSelect;
+export type CredentialUserTokenRow = typeof credentialUserTokens.$inferSelect;

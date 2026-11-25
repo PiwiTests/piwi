@@ -194,6 +194,8 @@ const TAGS = [
 
 /** The Jenkins credential the re-run jobs of every project but API Integration name (`CREDENTIALS`). */
 const QA_BOT_CREDENTIAL_ID = 6;
+/** The per-user Jenkins credential API Integration's Nightly in your name runs with: each person's own token. */
+const PER_USER_CREDENTIAL_ID = 7;
 
 /** A Jenkins job's page (`api/integration` → `https://jenkins.example.com/job/api/job/integration/`). */
 function jenkinsJobUrl(job) {
@@ -324,6 +326,19 @@ const PROJECTS = [
           },
           inputs: [{ name: 'SUITE', kind: 'choice', options: ['smoke', 'regression', 'full'], default: 'regression' }],
           accepts: ['suite', 'tags', 'flakeLab'],
+        },
+        {
+          // A per-user credential: the build runs in the name of whoever starts it, with their own Jenkins token.
+          id: 'nightly-in-your-name',
+          name: 'Nightly · in your name',
+          target: {
+            type: 'ci-server',
+            preset: 'jenkins',
+            credentialId: PER_USER_CREDENTIAL_ID,
+            fields: { job: 'api/nightly', ref: 'main' },
+          },
+          inputs: [],
+          accepts: ['suite'],
         },
       ],
       defaults: {
@@ -4094,9 +4109,46 @@ const CREDENTIALS = [
     rotated_at: ts('2025-04-24T09:30:00') * 1000,
     last_used_at: null,
   },
+  {
+    id: PER_USER_CREDENTIAL_ID,
+    name: 'Jenkins · in your name',
+    description: 'Builds the API nightly job in the name of whoever starts it, with their own Jenkins API token.',
+    service: 'ci-server',
+    user_name: null,
+    destination: 'https://jenkins.example.com/',
+    secret: null,
+    all_projects: 0,
+    allowed_inputs: null,
+    custom_requests: 0,
+    disabled: 0,
+    managed_by: 'db',
+    per_user: 1,
+    token_help_url: 'https://jenkins.example.com/me/security/',
+    created_by: DEFAULT_DEMO_USER.id,
+    created_at: ts('2025-04-22T09:00:00') * 1000,
+    rotated_at: ts('2025-04-22T09:00:00') * 1000,
+    last_used_at: ts('2025-04-24T18:10:00') * 1000,
+  },
 ];
+/** The people who gave their own Jenkins token for the per-user credential; the demo keeps no secret. */
+const CREDENTIAL_USER_TOKENS = [
+  { userId: DEFAULT_DEMO_USER.id, remoteUser: DEFAULT_DEMO_USER.username, state: 'ready', at: '2025-04-22T09:05:00' },
+  { userId: 6, remoteUser: 'quinn', state: 'ready', at: '2025-04-23T10:20:00', usedAt: '2025-04-24T18:10:00' },
+  { userId: 7, remoteUser: 'jordan', state: 'invalid', at: '2025-04-23T14:00:00', usedAt: '2025-04-24T18:30:00' },
+].map((t, i) => ({
+  id: i + 1,
+  credential_id: PER_USER_CREDENTIAL_ID,
+  user_id: t.userId,
+  remote_user: t.remoteUser,
+  secret: '',
+  state: t.state,
+  created_at: ts(t.at) * 1000,
+  tested_at: ts(t.at) * 1000,
+  last_used_at: t.usedAt ? ts(t.usedAt) * 1000 : null,
+}));
 const CREDENTIAL_PROJECTS = [
   { credential_id: 1, project_id: 2 },
+  { credential_id: PER_USER_CREDENTIAL_ID, project_id: 2 },
   { credential_id: 4, project_id: 1 },
   // qa-bot builds the jobs of every project whose CI actions `jenkinsRerun` writes.
   ...PROJECTS.filter((p) => p.ci_rerun?.actions.some((a) => a.target.credentialId === QA_BOT_CREDENTIAL_ID)).map(
@@ -4236,6 +4288,29 @@ const CREDENTIAL_USES = [
     destination: `${DEMO_TEST_MANAGEMENT_CONNECTION.baseUrl}/`,
     result: 'ok',
     reason: null,
+  }),
+  // The per-user credential: Quinn's own build, then Jordan's, which Jenkins refused (401): his token is marked refused.
+  credentialUse(12, '2025-04-24T18:10:00', {
+    credential_id: PER_USER_CREDENTIAL_ID,
+    credential_name: 'Jenkins · in your name',
+    user_id: 6,
+    remote_user: 'quinn',
+    feature: 'ci-dispatch',
+    subject_id: 'nightly-in-your-name',
+    destination: 'https://jenkins.example.com/job/api/job/nightly/buildWithParameters',
+    result: 'ok',
+    reason: null,
+  }),
+  credentialUse(13, '2025-04-24T18:30:00', {
+    credential_id: PER_USER_CREDENTIAL_ID,
+    credential_name: 'Jenkins · in your name',
+    user_id: 7,
+    remote_user: 'jordan',
+    feature: 'ci-dispatch',
+    subject_id: 'nightly-in-your-name',
+    destination: 'https://jenkins.example.com/job/api/job/nightly/buildWithParameters',
+    result: 'failed',
+    reason: 'The CI server answered 401',
   }),
 ];
 const RUN_TARGETS = [
@@ -6411,6 +6486,7 @@ const REBASE_SQL = [
   // last_used_at is nullable; NULL + delta stays NULL.
   `UPDATE credentials SET created_at = created_at + ${D_MS}, rotated_at = rotated_at + ${D_MS}, last_used_at = last_used_at + ${D_MS};`,
   `UPDATE credential_uses SET created_at = created_at + ${D_MS}, last_at = last_at + ${D_MS};`,
+  `UPDATE credential_user_tokens SET created_at = created_at + ${D_MS}, tested_at = tested_at + ${D_MS}, last_used_at = last_used_at + ${D_MS};`,
   `UPDATE role_bindings SET created_at = created_at + ${D_MS};`,
   `UPDATE project_stars SET created_at = created_at + ${D_MS};`,
   `UPDATE run_targets SET created_at = created_at + ${D_MS}, last_seen_at = last_seen_at + ${D_MS};`,
@@ -8108,6 +8184,7 @@ const lines = [
   '-- Credentials (Settings → Credentials) and their log',
   insert('credentials', CREDENTIALS),
   insert('credential_projects', CREDENTIAL_PROJECTS),
+  insert('credential_user_tokens', CREDENTIAL_USER_TOKENS),
   insert('credential_uses', CREDENTIAL_USES),
   '',
   '-- Starred projects (of the identity the demo opens as)',

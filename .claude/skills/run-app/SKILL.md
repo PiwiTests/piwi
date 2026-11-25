@@ -101,16 +101,17 @@ answer. Inside the detail panel it reports:
 - the active evidence tab, the Most likely grade, the Next step's action and how far below its
   button the content it copies sits, and the text styles of the situation block.
 
-A control counts when the reader sees it: one shown on hover or focus only (the chooser beside an
-Open in IDE link) does not.
+A control counts when the reader sees it and Tab reaches it: one shown on hover or focus only (the
+chooser beside an Open in IDE link) does not, nor does a disabled one, and a row with one keyboard stop
+(the History strip, a tab list) counts once.
 
 Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
 at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution
-page's block and 13 on the cluster page's, at most 27 controls in the navbar and the situation
+page's block and 13 on the cluster page's, at most 28 controls in the navbar and the situation
 block on the execution page and 25 on the cluster page's, at most one solid primary button above the fold, and a Next step that copies a code change
 (`copy-git-apply`, `copy-locator`) shows that change in the block. The controls below the block
 that reach the fold (More ways to fix, the evidence card's tabs, the affected tests) are reported, not
-budgeted; the History line's strip and its last-pass link are in the block and count. The script finds the action by `data-next-action` and the content by `data-copies`, never
+budgeted; the History line's strip (one keyboard stop) and its last-pass link are in the block and count. The script finds the action by `data-next-action` and the content by `data-copies`, never
 by a label. The report ends with every breach; `--check` exits 1 when there is one, and a route that
 answers an error fails it too. CI runs `--build .output --check` on the shared build (`Failure page
 budgets`).

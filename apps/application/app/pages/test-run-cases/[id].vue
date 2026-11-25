@@ -892,6 +892,17 @@ const { handle: handleNextStepAction } = useNextStepActions({
         <template #right>
           <div class="flex items-center gap-1 shrink-0 min-w-0">
             <RunButton :place="runPlace" class="mr-2" />
+            <NuxtLink
+              v-if="testCase?.testCaseId"
+              :to="`/test-cases/${testCase.testCaseId}`"
+              class="text-xs text-gray-500 hover:text-primary mr-2 flex items-center gap-1 shrink-0"
+              title="View this test's history across runs"
+              aria-label="Test history"
+              data-tour="execution-test-history"
+            >
+              <UIcon name="i-lucide-trending-up" class="size-3.5" />
+              <span class="hidden xl:inline">Test history</span>
+            </NuxtLink>
             <ShareLinksModal
               v-if="testCase && offersShareLinks"
               :endpoint="`/api/test-run-cases/${testCase.id}/share-links`"
@@ -1040,13 +1051,9 @@ const { handle: handleNextStepAction } = useNextStepActions({
             </p>
           </template>
 
-          <!-- Line 7: the test's recent executions, one link to its history, then its failing streak and last pass -->
-          <template v-if="testCase?.testCaseId" #history>
-            <ExecutionHistoryLine
-              :history="historyData ?? []"
-              :current-id="Number(testCaseId)"
-              :test-case-id="testCase.testCaseId"
-            />
+          <!-- Line 7: the test's recent executions, each square opening its execution, then the failing streak and last pass -->
+          <template v-if="historyData?.length" #history>
+            <ExecutionHistoryLine :history="historyData" :current-id="Number(testCaseId)" />
           </template>
 
           <!-- Line 8, in the desktop app, for a failure: how the test does in the team instance's CI, and the conclusion -->

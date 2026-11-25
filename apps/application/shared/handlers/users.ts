@@ -1,4 +1,5 @@
 import {
+  credentialUserTokens,
   users,
   apiKeys,
   oauthGrants,
@@ -100,6 +101,7 @@ export async function deleteUserRecord(db: DrizzleDB, id: number) {
   // Deleted explicitly rather than through the foreign keys' cascade, which the demo's database does not enforce.
   await db.delete(roleBindings).where(eq(roleBindings.userId, id));
   await db.delete(groupMembers).where(eq(groupMembers.userId, id));
+  await db.delete(credentialUserTokens).where(eq(credentialUserTokens.userId, id));
   // A user's assistant conversations, dismissed nudges and starred projects are theirs alone, so they go with them.
   await deleteAssistantConversationsOf(db, id);
   await deleteAssistantNudgeDismissalsOf(db, id);

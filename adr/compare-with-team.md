@@ -12,7 +12,7 @@ the team instance for this through the connection **Run on my machine** made, wh
 capability, on by default and declined on Settings → Capabilities or in a project's settings; `project:read` on every
 key the device flow gives a desktop app, the route refusing each comparison an instance or a project declines
 (`TEAM_COMPARISON_OFF`); `requireRunTarget` taking each route's own permission; and `GET
-/api/run-targets/projects/:id/test-comparison`, with register entry D70. PR 2a: the desktop app's server asks the team
+/api/run-targets/projects/:id/test-comparison`, with register entry D71. PR 2a: the desktop app's server asks the team
 instance through the request host (`compare`), checks the answer, keeps it two minutes and answers `GET
 /api/desktop/team/executions/:id/comparison` and `…/test-cases/:id/comparison` with the history in rows by environment,
 the conclusion and the environment diff against the closest CI pass. PR 2b: the device flow connects a desktop app for
@@ -282,7 +282,7 @@ The desktop app's bundled server, behind the desktop guard:
 
 ## What changes in other records
 
-- [`1.0-stabilization.md`](../proposals/1.0-stabilization.md): a new entry, D70, for the route and its answer's fields,
+- [`1.0-stabilization.md`](../proposals/1.0-stabilization.md): a new entry, D71, for the route and its answer's fields,
   the target key's permissions (`run:receive`, `project:read`), the `team-comparison` capability and the 403 error code
   of a key without `project:read`.
 - [`run-on-my-machine.md`](../proposals/run-on-my-machine.md): the connection's key may hold `project:read` beside
@@ -300,7 +300,7 @@ panel). The first two pull requests touch no page and start now; the third waits
 1. **The team instance.** The `team-comparison` capability; `project:read` on the keys the device flow
    makes for a desktop app; `requireRunTarget` taking a list of
    target permissions and each route checking its own; the confirmation page and Connected apps saying what a key may
-   do; the comparison route; the register's D70; the demo's connected app; unit tests for the key rules, the route's
+   do; the comparison route; the register's D71; the demo's connected app; unit tests for the key rules, the route's
    refusals, the test match, the history, the fingerprint lookup and the closest CI pass. The device flow's gate keeps
    asking for `machine-runs`: a desktop app of this release reads a key without `run:receive` as broken.
 2. **The desktop app**, in two parts.
