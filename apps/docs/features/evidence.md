@@ -94,8 +94,8 @@ and reports nodes **added**, **removed**, **renamed**, **changed** (an attribute
 **moved**. The element the failing locator names
 is highlighted: a broken `getByRole('button', { name: 'Pay' })` lands on the button renamed `"Pay now"`.
 
-The baseline is the same test's most recent passing snapshot on the same browser, preferring the same environment then
-the same branch. Green snapshots come from
+The baseline is the same test's latest passing snapshot on the same browser, preferring the same environment, then
+Playwright release, then branch. Green snapshots come from
 [sampling on pass](/guide/capture-fixtures#green-page-sampling-on-pass), about once a day per test; until one exists the
 view says why (*not captured*, *no green sample yet* or *not applicable*). The page-diff summary reaches the
 `explain_failure` [MCP tool](/features/mcp).

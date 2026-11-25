@@ -15,14 +15,21 @@ export interface BaselineScope {
   branch: string | null;
   /**
    * Playwright version of the run, for a diff whose evidence Playwright itself
-   * renders (the ARIA snapshot of the page diff). Left out, it ranks nothing.
+   * renders (the ARIA snapshot of the page diff), compared by its release
+   * (major and minor): a patch release keeps the rules. Left out, it ranks
+   * nothing.
    */
   playwrightVersion?: string | null;
 }
 
+/** A Playwright version's release, its major and minor (`1.65` for `1.65.1`); null when unknown. */
+function playwrightRelease(version: string | null | undefined): string | null {
+  return version ? version.split('.').slice(0, 2).join('.') : null;
+}
+
 /**
  * Order passing candidates, most suitable first: same environment before other
- * environments, then same Playwright version before other versions, then same
+ * environments, then same Playwright release before other releases, then same
  * branch before other branches, and the input order (most recent first) within
  * a tier. An unknown failing environment, version or branch does not rank the
  * candidates on that axis.
@@ -30,8 +37,8 @@ export interface BaselineScope {
 export function rankBaselineCandidates<T extends BaselineScope>(failing: BaselineScope, candidates: T[]): T[] {
   const tier = (c: BaselineScope): number => {
     const otherEnvironment = failing.environment != null && c.environment !== failing.environment ? 4 : 0;
-    const otherVersion =
-      failing.playwrightVersion != null && (c.playwrightVersion ?? null) !== failing.playwrightVersion ? 2 : 0;
+    const release = playwrightRelease(failing.playwrightVersion);
+    const otherVersion = release != null && playwrightRelease(c.playwrightVersion) !== release ? 2 : 0;
     const otherBranch = failing.branch != null && c.branch !== failing.branch ? 1 : 0;
     return otherEnvironment + otherVersion + otherBranch;
   };

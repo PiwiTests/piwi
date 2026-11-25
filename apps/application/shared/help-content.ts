@@ -1711,7 +1711,7 @@ export const HELP_TOPICS = {
   // ── Page diff ────────────────────────────────────────────────────────────
   'case.page-diff': {
     title: 'Page diff',
-    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
+    text: 'Compares the failing page’s ARIA structure against the same test’s last passing (green) sample — same browser, preferring the same environment, then the same Playwright release, then branch. Shows what was added, removed, renamed, changed or moved, with unchanged subtrees collapsed and the failing locator’s element highlighted. A green sample is captured about once a day per test, so a baseline appears after the next passing run.',
   },
 
   // ── Page state ───────────────────────────────────────────────────────────
