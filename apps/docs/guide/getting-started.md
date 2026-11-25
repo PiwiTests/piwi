@@ -51,8 +51,8 @@ it runs the tests a team instance asks for, on a machine without the desktop app
 With the desktop app, keep it running: a reporter with no server configured finds it by itself. Its URL and access
 token, for when you need them, are in its **Settings → Desktop app** under **Send results to this app**.
 
-Your test project is unaffected by these requirements: Node 22 is the dashboard's requirement, not your suite's, whose
-reporter needs Node.js 20 or later ([Reporter](./reporter#installation)). Want to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
+Your test project needs Node.js 22 or later for the reporter ([Reporter](./reporter#installation)), however you run the
+dashboard. Want to look around first? The [live demo](https://piwitests.dev/demo/) runs in your browser on seeded data.
 
 ## 2. Connect your suite
 

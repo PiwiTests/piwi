@@ -10,7 +10,7 @@ shop: sign in, fill a cart, place an order the backend checks and prices.
 
 ## Run it
 
-You need Node.js 20.12 or later, a [Piwi dashboard](https://piwitests.dev/getting-started) (`http://localhost:3000` by
+You need Node.js 22 or later, a [Piwi dashboard](https://piwitests.dev/getting-started) (`http://localhost:3000` by
 default), and the toolchain of the backend: the [.NET 10 SDK](https://dotnet.microsoft.com/download) for ASP.NET Core,
 nothing more for Nitro.
 

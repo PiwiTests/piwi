@@ -63,7 +63,7 @@
     "templates/"
   ],
   "engines": {
-    "node": ">=20"
+    "node": ">=22"
   },
   "peerDependencies": {
     "@playwright/test": ">=1.59.0 <2"
