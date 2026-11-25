@@ -89,6 +89,9 @@ interface DeviceFlow {
   expiresAt: number;
 }
 
+/** Counts the connections: each start of the host with a key, and each end, makes a new one. */
+let generation = 0;
+
 const state: {
   instance: string | null;
   key: string | null;
@@ -358,6 +361,7 @@ function expireLater(id: string, held: HeldRequest, afterMs: number): void {
 
 function startHost(instance: string, key: string): void {
   stopHost();
+  generation++;
   if (state.instance !== instance) state.projectNames.clear();
   state.instance = instance;
   state.key = key;
@@ -521,6 +525,14 @@ export function useLocalRuns(folders: readonly string[]): void {
   if (changed) void planWaiting();
 }
 
+/**
+ * The connection now, as a number that changes on each start with a key and each disconnect or revoke: what the
+ * host keeps of an answer of the instance serves that connection alone.
+ */
+export function runTargetGeneration(): number {
+  return generation;
+}
+
 /** Why the desktop app cannot compare a test with the team instance's CI now. */
 export type TeamComparisonProblem =
   /** No team instance connected, or its key was revoked. */
@@ -529,7 +541,10 @@ export type TeamComparisonProblem =
   | 'no-team-project'
   /** The key was made before it could compare: connect the app again. */
   | 'reconnect'
-  /** The instance or the project declines Compare with team instance, or its owner cannot read the project. */
+  /**
+   * The instance refuses the comparison: it or the project declines Compare with team instance, its owner cannot read
+   * the project, or it refuses the question.
+   */
   | 'refused'
   /** The instance predates the comparison. */
   | 'not-supported'
@@ -588,7 +603,7 @@ export async function compareWithTeam(
     if (error.code === 'RUN_TARGET_KEY_CANNOT_COMPARE')
       return { ok: false, problem: 'reconnect', message: error.message };
     if (error.status === 401) return { ok: false, problem: 'not-connected', message: error.message };
-    if (error.status === 403) return { ok: false, problem: 'refused', message: error.message };
+    if (error.status === 403 || error.status === 400) return { ok: false, problem: 'refused', message: error.message };
     if (error.status === 404 || error.status === 405) {
       return { ok: false, problem: 'not-supported', message: 'The team instance cannot compare yet: update it.' };
     }
@@ -636,6 +651,7 @@ export function keyToKeep(): { instance: string; key: string } | null {
 
 /** Ends the connection, or the sign-in on its way, and forgets its key and its instance. */
 function endConnection(): void {
+  generation++;
   if (state.flowTimer) clearTimeout(state.flowTimer);
   state.flowTimer = null;
   state.flow = null;

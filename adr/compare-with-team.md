@@ -24,8 +24,13 @@ with team instance** (D2); the CI as the only reference, the team's other shared
 the team project listed (D3); sign-in required (D10); all four parts in the first version (D5 to D8); the comparison
 next to the history of the execution page (D9). Two choices changed during the build: every desktop key holds
 `project:read` whatever the instance decides, so a decline holds over every key (D1); and the team's history is its own
-**Team CI** line right under **History**, rather than rows inside it, so the two histories read apart (D9). Left out, as
-**Not in this plan** says: the comparison of a whole local run, an MCP tool, and reading an instance without sign-in.
+**Team CI** line right under **History**, rather than rows inside it, so the two histories read apart (D9). After the
+final review, the conclusion reads the local environment as the team instance resolved its label, rule 1 reads a recent
+sight of the error in that environment, rule 2 the latest CI result on the commit, and the keys that always differ
+between a machine and the CI show as varying naturally. Left out: the desktop end-to-end test against a fake team
+instance that Delivery item 3 lists, since unit tests drive the routes against a fake instance and the screenshot scenes
+render the screens from a canned answer; and, as **Not in this plan** says, the comparison of a whole local run, an MCP
+tool, and reading an instance without sign-in.
 
 ## Summary
 
@@ -98,7 +103,8 @@ way out of one. Piwi Runner's key never holds `project:read`: it has no page to 
   one, and each target route checks the one it needs, declared in its `x-required-permission`. A key with any other
   permission, or with its owner's access, is still refused, and `requireAuth` still refuses a target key everywhere
   else.
-- The confirmation page of the device flow says what the app will be able to do, one line per permission.
+- The confirmation page of the device flow says what the app will do for the person on that instance: take their run
+  requests, compare, or both (`receives`, `compares`).
 - Connected apps (Settings → Account) shows what each key may do.
 - A key made before this plan holds `run:receive` alone. The comparison route answers 403 with its own error code, and
   the desktop app's Settings → Desktop app says **Reconnect to compare**.
@@ -208,8 +214,10 @@ hold what does not fit it:
   teammates' shared runs (D3), each with its pass rate, then **Open on the team instance**.
 - **The environment differences** (D8) open from that line in a side panel of their own, with a link to the closest
   CI pass on the team instance.
-- When the app cannot compare, the line says why in one sentence (a folder not linked, a key to replace, an instance
-  that did not answer), and shows nothing while the app is connected to no team instance.
+- When the app cannot compare, the line says why in one sentence (a key to replace, a comparison refused, an instance
+  that did not answer), and shows nothing while the app is connected to no team instance or the project's folder is
+  linked to no project of it: the comparison is not set up, which is no problem. The line shows on a failed or
+  timed-out execution alone.
 
 The test page (`test-cases/[id]`) shows the team's CI history and the link, with no conclusion: it has no single
 execution to compare. Pages show the comparison only in the desktop shell (`useIsDesktop`), for a project whose folder
@@ -232,8 +240,10 @@ route.
 folder links (`hand_links`, `desktop-links.ts`), and its TypeScript is unit-tested and shared with the conclusion's
 rules. Its route sits behind the desktop guard. Each answer is kept in memory for two minutes per team project, test
 and fingerprint, and never written to disk. When the team instance cannot be reached, refuses, or the key lacks
-`project:read`, the page says why, as the environment pickers do (`teamProblem`). No redirect is followed, and the call
-follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` as the device flow does.
+`project:read`, the page says why, as the environment pickers do (`teamProblem`). A redirect to another origin never
+carries the key, since `fetch` drops the `Authorization` header there, and the call follows `HTTPS_PROXY`,
+`HTTP_PROXY` and `NO_PROXY` as the device flow does. An answer serves the connection that read it alone: a disconnect,
+a revoke or another key forgets it (`runTargetGeneration`).
 
 ## The routes
 

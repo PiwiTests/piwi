@@ -10,11 +10,8 @@ const route = useRoute();
 const testCaseId = route.params.id;
 
 // Compare with team instance (desktop app): the team instance's CI for this test, once the page shows.
-const { comparison: teamComparison } = useTeamComparison('test-case', () => String(testCaseId));
-const teamComparisonShown = computed(
-  () =>
-    teamComparison.value !== null &&
-    (teamComparison.value.status === 'ok' || teamComparison.value.problem !== 'not-connected'),
+const { comparison: teamComparison, shown: teamComparisonShown } = useTeamComparison('test-case', () =>
+  String(testCaseId),
 );
 
 type TestCaseDetail = ApiResponse<typeof import('~~/server/api/test-cases/[id].get').default>;

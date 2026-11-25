@@ -11,6 +11,7 @@ import { eq } from 'drizzle-orm';
 import {
   compareWithTeam,
   runTargetConnection,
+  runTargetGeneration,
   teamProjectOfFolder,
   type TeamComparisonProblem,
 } from '@piwitests/editor/run-target';
@@ -77,10 +78,10 @@ async function askTeam(
   | { ok: true; instance: string; projectId: number; comparison: TestComparison }
   | { ok: false; problem: DesktopTeamComparisonProblem; message: string }
 > {
-  const keyOf = (instance: string | null, projectId: number | null) => JSON.stringify([instance, projectId, query]);
-  const connection = runTargetConnection();
-  const connected = connection.state !== 'none' && connection.state !== 'revoked' && connection.state !== 'signing-in';
-  const hit = connected ? kept.get(keyOf(connection.instance, await teamProjectOfFolder(folder))) : undefined;
+  // An answer serves the connection that read it alone: a disconnect, a revoke or another key makes a new one.
+  const keyOf = (instance: string | null, projectId: number | null) =>
+    JSON.stringify([runTargetGeneration(), instance, projectId, query]);
+  const hit = kept.get(keyOf(runTargetConnection().instance, await teamProjectOfFolder(folder)));
   if (hit && now - hit.at < KEEP_MS) return { ok: true, ...hit.answer };
   const answered = await compareWithTeam(folder, query);
   if (!answered.ok) return answered;
@@ -96,20 +97,62 @@ async function askTeam(
   return { ok: true, ...answer };
 }
 
-/** The question's values, the empty ones left out. */
-function queryOf(values: Record<string, string | number | null | undefined>): Record<string, string> {
-  return Object.fromEntries(
-    Object.entries(values).flatMap(([key, value]) =>
-      value === null || value === undefined || value === '' ? [] : [[key, String(value)]],
-    ),
-  );
+/**
+ * The question as the team instance's query takes it: the test's file and title always, an empty title included; the
+ * other values when they are set and within the instance's bounds, else left out, so the question is never refused.
+ */
+function queryOf(values: {
+  filePath: string;
+  title: string;
+  suitePath?: string | null;
+  externalId?: string | null;
+  playwrightProject?: string | null;
+  environment?: string | null;
+  branch?: string | null;
+  commit?: string | null;
+  fingerprint?: string | null;
+  fingerprintVersion?: number | null;
+}): Record<string, string> {
+  const query: Record<string, string> = { filePath: values.filePath, title: values.title };
+  const within = (key: keyof typeof values, max: number) => {
+    const value = values[key];
+    if (typeof value === 'string' && value.trim() !== '' && value.length <= max) query[key] = value;
+  };
+  if (values.suitePath) query.suitePath = values.suitePath;
+  within('externalId', 200);
+  within('playwrightProject', 200);
+  within('environment', 200);
+  within('branch', 250);
+  if (values.commit && /^[0-9a-f]{7,64}$/i.test(values.commit)) query.commit = values.commit;
+  if (values.fingerprint && values.fingerprintVersion) {
+    query.fingerprint = values.fingerprint;
+    query.fingerprintVersion = String(values.fingerprintVersion);
+  }
+  return query;
 }
 
-const noFolder: DesktopTeamComparison = {
-  status: 'unavailable',
-  problem: 'no-folder',
-  message: 'This project has no folder linked on this machine.',
-};
+/** The environment keys that differ between any local run and the CI by nature, which name no cause. */
+const NATURALLY_APART: ReadonlySet<string> = new Set(['ciProvider', 'scmBranch', 'reporterVersion']);
+
+/**
+ * The folder the desktop app asks about for project `projectId`, or why it cannot ask: the connection to a team
+ * instance first, then the project's folder.
+ */
+function cannotAsk(projectId: number): { folder: string } | DesktopTeamComparison {
+  const connection = runTargetConnection();
+  if (connection.state === 'none' || connection.state === 'revoked' || connection.state === 'signing-in') {
+    return { status: 'unavailable', problem: 'not-connected', message: 'The app is connected to no team instance.' };
+  }
+  const folder = desktopLinkedFolder(projectId);
+  if (!folder) {
+    return {
+      status: 'unavailable',
+      problem: 'no-folder',
+      message: 'This project has no folder linked on this machine.',
+    };
+  }
+  return { folder };
+}
 
 /**
  * The comparison of local execution `executionId` of project `projectId`, a failing one with its conclusion and the
@@ -140,8 +183,8 @@ export async function compareExecutionWithTeam(
     .innerJoin(testCases, eq(testRunsCases.testCaseId, testCases.id))
     .where(eq(testRunsCases.id, executionId));
   if (!row) return null;
-  const folder = desktopLinkedFolder(projectId);
-  if (!folder) return noFolder;
+  const where = cannotAsk(projectId);
+  if (!('folder' in where)) return where;
 
   const [cluster] =
     row.clusterId != null
@@ -154,7 +197,7 @@ export async function compareExecutionWithTeam(
   const branch = row.branch ?? resolveRunBranch(row.metadata);
   const worktree = (row.metadata as { scm?: { worktree?: unknown } } | null)?.scm?.worktree;
   const asked = await askTeam(
-    folder,
+    where.folder,
     queryOf({
       externalId: row.externalId,
       filePath: row.filePath,
@@ -179,20 +222,21 @@ export async function compareExecutionWithTeam(
     instance: asked.instance,
     teamProjectId: asked.projectId,
     comparison,
-    rows: teamHistoryRows(comparison.history, row.environment),
+    rows: teamHistoryRows(comparison, row.environment),
     conclusion: teamConclusion(comparison, {
       status: row.status,
       environment: row.environment,
       commit: row.commit,
       worktree: worktree === 'clean' || worktree === 'dirty' ? worktree : null,
       fingerprinted: fingerprint !== null,
+      now,
     }),
     environmentDiff:
       local && closest
         ? computeEnvironmentDiff(local, {
             values: closest.snapshot.values,
             inferred: new Set(closest.snapshot.inferred),
-          })
+          }).map((entry) => (NATURALLY_APART.has(entry.key) ? { ...entry, informational: true } : entry))
         : null,
   };
 }
@@ -214,16 +258,16 @@ export async function compareTestCaseWithTeam(
     .from(testCases)
     .where(eq(testCases.id, testCaseId));
   if (!row) return null;
-  const folder = desktopLinkedFolder(projectId);
-  if (!folder) return noFolder;
-  const asked = await askTeam(folder, queryOf(row), now);
+  const where = cannotAsk(projectId);
+  if (!('folder' in where)) return where;
+  const asked = await askTeam(where.folder, queryOf(row), now);
   if (!asked.ok) return { status: 'unavailable', problem: asked.problem, message: asked.message };
   return {
     status: 'ok',
     instance: asked.instance,
     teamProjectId: asked.projectId,
     comparison: asked.comparison,
-    rows: teamHistoryRows(asked.comparison.history, null),
+    rows: teamHistoryRows(asked.comparison, null),
     conclusion: null,
     environmentDiff: null,
   };

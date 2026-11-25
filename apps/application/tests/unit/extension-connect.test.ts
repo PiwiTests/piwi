@@ -210,6 +210,16 @@ describe('the flow', () => {
     expect(await targetAbilitiesOf(anyDb(), contributor, false)).toEqual({ receive: false, compare: false });
     await setInstanceDecisions(anyDb(), { 'machine-runs': 'enabled', 'team-comparison': 'declined' });
     expect(await targetAbilitiesOf(anyDb(), contributor, true)).toEqual({ receive: true, compare: false });
+    // A project the person reads that turns it back on for itself opens the comparison there.
+    const { setProjectDecisions } = await import('#shared/handlers/capabilities');
+    const [project] = await db.insert(schema.projects).values({ name: 'shop' }).returning();
+    await setProjectDecisions(anyDb(), project!.id, { 'team-comparison': 'enabled' });
+    const reader = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: project!.id, role: ProjectRole.VIEWER }]);
+    expect(await targetAbilitiesOf(anyDb(), reader, true)).toEqual({ receive: false, compare: true });
+    const elsewhere = buildAccessSummary(InstanceRole.MEMBER, [
+      { projectId: project!.id + 1, role: ProjectRole.VIEWER },
+    ]);
+    expect(await targetAbilitiesOf(anyDb(), elsewhere, true)).toEqual({ receive: false, compare: false });
   });
 
   test('a run target is never connected with authentication off', async () => {

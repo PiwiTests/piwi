@@ -224,13 +224,15 @@ async function historyOf(
 /**
  * The cluster `fingerprint` leads to for the test, as ingestion files a failure: the route a triager gave the test's
  * failures of that fingerprint, else the project's cluster of that fingerprint or an alias of it; with what the
- * reference runs saw of it, every failed attempt counted, retried ones included.
+ * reference runs saw of it and in which environments, every failed attempt counted, retried ones included, the runs
+ * of an environment incident left out.
  */
 async function clusterOf(
   db: DrizzleDB,
   projectId: number,
   fingerprint: string,
   testCaseId: number | null,
+  environmentOf: (id: number | null, label: string | null) => string | null,
 ): Promise<TestComparisonCluster | null> {
   const [routed] =
     testCaseId !== null
@@ -268,16 +270,34 @@ async function clusterOf(
     .from(failureClusters)
     .where(and(eq(failureClusters.id, found.id), eq(failureClusters.projectId, projectId)));
   if (!cluster) return null;
-  const [seen] = await db
-    .select({
-      occurrences: count(),
-      tests: countDistinct(testRunsCases.testCaseId),
-      first: min(testRuns.startTime),
-      last: max(testRuns.startTime),
-    })
-    .from(testRunsCases)
-    .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
-    .where(and(eq(testRunsCases.failureClusterId, cluster.id), runOriginIn(testRuns.origin, CI_RUN_ORIGINS)));
+  const inCi = and(
+    eq(testRunsCases.failureClusterId, cluster.id),
+    runOriginIn(testRuns.origin, CI_RUN_ORIGINS),
+    sql`NOT ${incidentRunSql(testRuns.metadata)}`,
+  );
+  const [[seen], where] = await Promise.all([
+    db
+      .select({
+        occurrences: count(),
+        tests: countDistinct(testRunsCases.testCaseId),
+        first: min(testRuns.startTime),
+        last: max(testRuns.startTime),
+      })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(inCi),
+    db
+      .selectDistinct({ id: testRuns.environmentId, label: testRuns.environment })
+      .from(testRunsCases)
+      .innerJoin(testRuns, eq(testRunsCases.testRunId, testRuns.id))
+      .where(inCi)
+      .limit(200),
+  ]);
+  const ciEnvironments = [
+    ...new Set(
+      where.map((row) => environmentOf(row.id ?? null, row.label ?? null)).filter((key): key is string => !!key),
+    ),
+  ];
   return {
     id: cluster.id,
     title: cluster.title ?? cluster.signature ?? null,
@@ -286,6 +306,7 @@ async function clusterOf(
     ciFirstSeen: epoch(seen?.first as Date | number | null | undefined),
     ciLastSeen: epoch(seen?.last as Date | number | null | undefined),
     ciTests: Number(seen?.tests ?? 0),
+    ciEnvironments,
     path: `/failure-clusters/${cluster.id}`,
   };
 }
@@ -318,12 +339,13 @@ export async function compareTestWithTeam(
   ]);
   const cluster =
     query.fingerprint && fingerprintComparable
-      ? await clusterOf(db, projectId, query.fingerprint, testCase?.id ?? null)
+      ? await clusterOf(db, projectId, query.fingerprint, testCase?.id ?? null, environmentOf)
       : null;
   const answer: TestComparison = {
     testCase: null,
     defaultBranch: defaultBranch || null,
-    playwrightProjectMatched: false,
+    localEnvironment: query.environment ? (resolved?.key ?? query.environment) : null,
+    playwrightProjectMatched: query.playwrightProject ? false : null,
     history: [],
     fingerprintComparable,
     cluster,
@@ -353,7 +375,7 @@ export async function compareTestWithTeam(
     playwrightProject = null;
     rows = await historyOf(db, testCase.id, query, null, localEnvironment);
   }
-  answer.playwrightProjectMatched = playwrightProject !== null;
+  answer.playwrightProjectMatched = query.playwrightProject ? playwrightProject !== null : null;
   answer.history = rows.map((row): TestComparisonResult => ({
     executionId: row.executionId,
     runId: row.runId,

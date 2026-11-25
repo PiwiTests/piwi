@@ -158,6 +158,24 @@ describe('the test', () => {
     ).toBe(true);
   });
 
+  test('reads the local run’s label as a run’s, an alias naming its environment', async () => {
+    await db
+      .update(schema.environments)
+      .set({ aliases: ['int'] })
+      .where(eq(schema.environments.id, integrationId));
+    expect((await compareTestWithTeam(db, shop, query({ environment: 'int' }))).localEnvironment).toBe('integration');
+    expect((await compareTestWithTeam(db, shop, query({ environment: 'recette' }))).localEnvironment).toBe('recette');
+    expect((await compareTestWithTeam(db, shop, query())).localEnvironment).toBeNull();
+  });
+
+  test('says nothing of the Playwright project when none was sent', async () => {
+    await execution(await run({ startTime: new Date(T0) }));
+    expect((await compareTestWithTeam(db, shop, query())).playwrightProjectMatched).toBeNull();
+    expect(
+      (await compareTestWithTeam(db, shop, query({ playwrightProject: 'chromium' }))).playwrightProjectMatched,
+    ).toBe(true);
+  });
+
   test('says whether it is quarantined', async () => {
     await db.insert(schema.quarantinedTests).values({ projectId: shop, testCaseId: checkout });
     expect((await compareTestWithTeam(db, shop, query())).testCase?.quarantined).toBe(true);
@@ -326,6 +344,25 @@ describe('the cluster', () => {
     expect(cluster).toMatchObject({ id: moved!.id, title: 'Moved' });
   });
 
+  test('names the environments the CI saw it in, and leaves out an environment incident', async () => {
+    const outage = await run({
+      status: 'failed',
+      environment: 'mco',
+      startTime: new Date(T0 + 5 * DAY),
+      metadata: { incident: { reason: 'The staging database was down' } },
+    });
+    await execution(outage, { status: 'failed', failureClusterId: clusterId });
+    const inMco = await run({ status: 'failed', environment: 'mco', startTime: new Date(T0 + 2 * DAY) });
+    await execution(inMco, { status: 'failed', failureClusterId: clusterId });
+    const { cluster } = await compareTestWithTeam(
+      db,
+      shop,
+      query({ fingerprint: FINGERPRINT, fingerprintVersion: FINGERPRINT_VERSION }),
+    );
+    expect(cluster).toMatchObject({ ciOccurrences: 3, ciLastSeen: T0 + 2 * DAY });
+    expect(cluster?.ciEnvironments).toContain('mco');
+  });
+
   test('a fingerprint sent without its version is not compared', async () => {
     const answer = await compareTestWithTeam(db, shop, query({ fingerprint: FINGERPRINT }));
     expect(answer.fingerprintComparable).toBe(false);
@@ -433,6 +470,8 @@ describe('the route', () => {
     expect((await self(event(await key(['run:receive', 'project:read']), shop))).compares).toBe(true);
     expect((await self(event(await key(['run:receive']), shop))).compares).toBe(false);
     expect((await self(event(await key(['run:receive'], 'runner'), shop))).compares).toBeNull();
+    await setInstanceDecisions(db as never, { 'team-comparison': 'declined' });
+    expect((await self(event(await key(['run:receive', 'project:read']), shop))).compares).toBeNull();
   });
 
   test('answers a key that may compare, on a project its owner reads', async () => {

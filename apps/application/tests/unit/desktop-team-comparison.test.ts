@@ -12,6 +12,7 @@ import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { drizzle } from 'drizzle-orm/libsql';
 import { createClient } from '@libsql/client';
+import { eq } from 'drizzle-orm';
 import * as schema from '../../server/database/schema.sqlite';
 import { migrateToLatest } from './temp-db';
 
@@ -53,6 +54,7 @@ const comparison = () => ({
     path: '/test-cases/12',
   },
   defaultBranch: 'main',
+  localEnvironment: 'mco',
   playwrightProjectMatched: true,
   history: [
     {
@@ -206,6 +208,49 @@ describe('a failing local execution', () => {
     expect(asked).toHaveLength(1);
     await compareExecutionWithTeam(db as never, projectId, executionId, T0 + 3 * 60_000);
     expect(asked).toHaveLength(2);
+  });
+
+  test('serves an answer to the connection that read it alone', async () => {
+    await compareExecutionWithTeam(db as never, projectId, executionId, T0);
+    void useKeptKey(instanceUrl, `pd_${'b'.repeat(64)}`, new Map([[7, folder]]));
+    await until(() => runTargetConnection().compares === true);
+    await compareExecutionWithTeam(db as never, projectId, executionId, T0 + 1000);
+    expect(asked).toHaveLength(2);
+  });
+
+  test('says nothing of a folder while the app is connected to no team instance', async () => {
+    resetDesktopRunTarget();
+    state.folder = null;
+    expect(await compareExecutionWithTeam(db as never, projectId, executionId, T0)).toMatchObject({
+      status: 'unavailable',
+      problem: 'not-connected',
+    });
+  });
+
+  test('asks about a test with an empty title, and leaves out a value the instance would refuse', async () => {
+    await db.update(schema.testCases).set({ title: '' }).where(eq(schema.testCases.id, testCaseId));
+    await db
+      .update(schema.testRuns)
+      .set({ branch: 'b'.repeat(300), commit: 'not-a-commit' })
+      .where(eq(schema.testRuns.projectId, projectId));
+    await compareExecutionWithTeam(db as never, projectId, executionId, T0);
+    const sent = Object.fromEntries(asked[0]!);
+    expect(sent.title).toBe('');
+    expect(sent).not.toHaveProperty('branch');
+    expect(sent).not.toHaveProperty('commit');
+  });
+
+  test('lists the keys that always differ between a machine and the CI as varying naturally', async () => {
+    answer = {
+      ...comparison(),
+      closestPass: {
+        ...comparison().closestPass,
+        snapshot: { values: { playwrightVersion: '1.58.0', environment: 'mco', ciProvider: 'github' }, inferred: [] },
+      },
+    };
+    const result = await compareExecutionWithTeam(db as never, projectId, executionId, T0);
+    if (result?.status !== 'ok') throw new Error('no comparison');
+    expect(result.environmentDiff?.find((entry) => entry.key === 'ciProvider')?.informational).toBe(true);
   });
 
   test('says when the answer cannot be read, or the project has no folder here', async () => {

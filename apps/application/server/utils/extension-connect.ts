@@ -1,12 +1,20 @@
 import { randomBytes, randomInt } from 'node:crypto';
 import { and, eq, lt } from 'drizzle-orm';
-import { apiKeys, extensionDeviceCodes, runTargets, users, type ExtensionDeviceCode } from '../database/schema';
+import {
+  apiKeys,
+  extensionDeviceCodes,
+  projects,
+  runTargets,
+  users,
+  type ExtensionDeviceCode,
+} from '../database/schema';
 import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
 import { hashToken } from './token-hash';
 import { cleanClientLabel } from './client-label';
 import { getInstanceDecisions } from '#shared/handlers/setup-status';
-import { holdsAnywhere, type AccessSummary } from '#shared/permissions';
+import { can, holdsAnywhere, type AccessSummary } from '#shared/permissions';
+import { parseProjectDecisions } from '#shared/capabilities';
 
 /**
  * Connecting the browser extension, the VS Code extension and JetBrains
@@ -101,7 +109,10 @@ export interface TargetAbilities {
   compare: boolean;
 }
 
-/** What `access` may do with a run target here; nothing with sign-in off, where no account owns a key. */
+/**
+ * What `access` may do with a run target here; nothing with sign-in off, where no account owns a key. A project that
+ * enables Compare with team instance where the instance declines it is compared, as the route reads the decisions.
+ */
 export async function targetAbilitiesOf(
   db: DbClient,
   access: AccessSummary,
@@ -109,10 +120,17 @@ export async function targetAbilitiesOf(
 ): Promise<TargetAbilities> {
   if (!authEnabled) return { receive: false, compare: false };
   const decisions = await getInstanceDecisions(db);
-  return {
-    receive: holdsAnywhere(access, 'run:receive') && decisions['machine-runs'] === 'enabled',
-    compare: holdsAnywhere(access, 'project:read') && decisions['team-comparison'] !== 'declined',
-  };
+  const readsAny = holdsAnywhere(access, 'project:read');
+  let compare = readsAny && decisions['team-comparison'] !== 'declined';
+  if (readsAny && !compare) {
+    const rows = await db.select({ id: projects.id, capabilities: projects.capabilities }).from(projects);
+    compare = rows.some(
+      (row) =>
+        can(access, 'project:read', row.id) &&
+        parseProjectDecisions(row.capabilities ?? null)['team-comparison'] === 'enabled',
+    );
+  }
+  return { receive: holdsAnywhere(access, 'run:receive') && decisions['machine-runs'] === 'enabled', compare };
 }
 
 /** Whether a client of `kind` may connect as a run target with `abilities`: Piwi Runner takes run requests alone. */

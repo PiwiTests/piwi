@@ -2,14 +2,18 @@
 /**
  * Compare with team instance, in the desktop app: how the test does in the CI of the team instance its folder is
  * linked to. A failing execution's conclusion first (`withConclusion`), then the test's results there, one strip per
- * environment the CI ran it in and one for the teammates' shared runs, each with its pass rate, then the links: the
- * test on the team instance, which opens in the browser, and the environment differences from the closest CI pass, in
- * a side panel. When the app cannot compare, one sentence says why.
+ * environment the CI ran it in and one for the teammates' shared runs, each with the pass rate of the results it shows,
+ * then the links, which open in the browser: the test on the team instance, what the conclusion read there, and the
+ * environment differences from the closest CI pass, in a side panel. When the app is connected and cannot compare,
+ * one sentence says why (`teamComparisonProblem`); the page shows nothing when it is not connected or the folder is
+ * linked to no team project.
  */
 import type { DesktopTeamComparison } from '~~/server/utils/desktop-team-comparison';
 import type { TestComparisonResult } from '#shared/test-comparison';
 import type { TeamHistoryRow } from '#shared/test-comparison-conclusion';
 import type { TestCaseHistoryPoint } from '~~/types/api';
+import { flakyRate, passRate } from '#shared/utils/pass-rate';
+import { HISTORY_STRIP_LENGTH } from '~/utils/history-streak';
 
 const props = defineProps<{
   comparison: DesktopTeamComparison;
@@ -40,46 +44,36 @@ function rowLabel(row: TeamHistoryRow): string {
   return row.environment ? `CI, ${row.environment}` : 'CI';
 }
 
+/** The pass rate of the results the row's strip shows, by the one pass rate rule, and its flaky share. */
 function rateOf(row: TeamHistoryRow): string | null {
-  return row.passRate === null ? null : `${Math.round(row.passRate * 100)}% passed`;
+  const shown = row.results.slice(0, HISTORY_STRIP_LENGTH);
+  const counts = {
+    passed: shown.filter((r) => r.status === 'passed').length,
+    failed: shown.filter((r) => r.status === 'failed' || r.status === 'timedOut').length,
+    flaky: shown.filter((r) => r.status === 'passed' && r.flaky).length,
+  };
+  const rate = passRate(counts);
+  if (rate === null) return null;
+  const flaky = flakyRate(counts) ?? 0;
+  return `${Math.round(rate * 100)}% passed${flaky > 0 ? `, ${Math.round(flaky * 100)}% flaky` : ''}`;
 }
 
-/** The page of the team instance the conclusion names: the cluster of the same error, else the CI result. */
+/** The page of the team instance the conclusion read: the cluster of the same error, else the CI execution. */
 const conclusionLink = computed(() => {
   const answer = ok.value;
   const conclusion = answer?.conclusion;
   if (!answer || !conclusion) return null;
   if (conclusion.rule === 'same-error-in-ci' && answer.comparison.cluster) {
-    return { href: onInstance(answer.comparison.cluster.path), label: 'the cluster' };
+    return { href: onInstance(answer.comparison.cluster.path), label: 'Open the cluster on the team instance' };
   }
   return conclusion.result
-    ? { href: onInstance(conclusion.result.path), label: `run #${conclusion.result.runId}` }
+    ? { href: onInstance(conclusion.result.path), label: `Open the CI execution of run #${conclusion.result.runId}` }
     : null;
 });
 
 const differences = computed(() => (ok.value?.environmentDiff ?? []).filter((entry) => !entry.informational).length);
 
-const problem = computed(() => {
-  if (props.comparison.status === 'ok') return null;
-  switch (props.comparison.problem) {
-    case 'not-connected':
-      return null;
-    case 'no-folder':
-      return 'Link this project’s folder on this machine to compare it with the team instance’s CI.';
-    case 'no-team-project':
-      return 'Link this folder to a project of the team instance in Settings → Desktop app to compare it with its CI.';
-    case 'reconnect':
-      return 'The connection to the team instance was made before the app could compare: connect it again in Settings → Desktop app.';
-    case 'not-supported':
-      return 'The team instance cannot compare yet: it needs a newer Piwi.';
-    case 'unreachable':
-      return 'The team instance did not answer.';
-    case 'unreadable':
-      return 'The team instance answered something this app cannot read.';
-    default:
-      return props.comparison.message;
-  }
-});
+const problem = computed(() => teamComparisonProblem(props.comparison));
 
 const panelOpen = ref(false);
 const pass = computed(() => ok.value?.comparison.closestPass ?? null);
@@ -94,15 +88,7 @@ const passFacts = computed(() => {
 <template>
   <div v-if="ok || problem" class="space-y-2" data-shot="team-ci-line">
     <template v-if="ok">
-      <p v-if="withConclusion && ok.conclusion">
-        {{ ok.conclusion.text
-        }}<template v-if="conclusionLink"
-          >,
-          <a :href="conclusionLink.href" target="_blank" rel="noopener" :class="SENTENCE_LINK_CLASS">{{
-            conclusionLink.label
-          }}</a></template
-        >
-      </p>
+      <p v-if="withConclusion && ok.conclusion">{{ ok.conclusion.text }}</p>
       <p v-if="!ok.comparison.testCase" class="text-xs text-muted">
         Not on the team instance: a new test, a renamed one, or a CI that runs another config.
       </p>
@@ -116,6 +102,14 @@ const passFacts = computed(() => {
         <span v-if="rateOf(row)" class="text-xs text-muted">{{ rateOf(row) }}</span>
       </div>
       <p class="text-xs text-muted flex flex-wrap gap-x-3 gap-y-1">
+        <a
+          v-if="withConclusion && conclusionLink"
+          :href="conclusionLink.href"
+          target="_blank"
+          rel="noopener"
+          :class="SENTENCE_LINK_CLASS"
+          >{{ conclusionLink.label }}</a
+        >
         <a
           v-if="ok.comparison.testCase"
           :href="onInstance(ok.comparison.testCase.path)"
@@ -137,8 +131,8 @@ const passFacts = computed(() => {
               : `${differences} environment difference${differences === 1 ? '' : 's'} from the closest CI pass`
           }}
         </button>
-        <span v-if="!ok.comparison.playwrightProjectMatched && ok.rows.length"
-          >Every Playwright project: the CI never ran this test in this one</span
+        <span v-if="ok.comparison.playwrightProjectMatched === false && ok.rows.length"
+          >Results of every Playwright project: the CI never ran this test in this run’s</span
         >
       </p>
     </template>

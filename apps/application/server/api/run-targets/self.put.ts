@@ -3,14 +3,14 @@ import { z } from 'zod';
 import { runTargets } from '../../database/schema';
 import { can } from '#shared/permissions';
 import { requireRunTarget, storedProjectIds, targetProjectNames } from '../../utils/run-requests';
-import { runTargetKeyPermissions } from '../../utils/extension-connect';
+import { runTargetKeyPermissions, targetAbilitiesOf } from '../../utils/extension-connect';
 
 defineRouteMeta({
   openAPI: {
     tags: ['Run requests'],
     summary: 'Describe this connected app to the instance',
     description:
-      'A run target tells the instance its platform, its version and the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run; a project where its owner lacks `run:receive` is left out. Each field is optional; a field left out keeps its value. Authenticated with the target’s key alone. Answers the target as stored, with `projects`, the `id` and `name` (its label, else its name) of each of its `projectIds` where its owner holds `run:receive`, and `compares`: `true` when the key may compare a test with the CI (Compare with team instance), `false` for a desktop app’s key made before it could, which a new connection replaces, `null` for Piwi Runner’s.',
+      'A run target tells the instance its platform, its version and the projects it has a folder for (`projectIds`, at most 200), which the dashboard shows beside it when the person picks where to run; a project where its owner lacks `run:receive` is left out. Each field is optional; a field left out keeps its value. Authenticated with the target’s key alone. Answers the target as stored, with `projects`, the `id` and `name` (its label, else its name) of each of its `projectIds` where its owner holds `run:receive`, and `compares`: `true` when the key may compare a test with the CI (Compare with team instance), `false` for a desktop app’s key made before it could, which a new connection replaces, `null` for Piwi Runner’s and where the instance and every project its owner reads decline it.',
     'x-required-permission': 'run:receive',
     security: [{ bearerAuth: [] }],
     responses: {
@@ -57,10 +57,12 @@ export default eventHandler(async (event) => {
       storedProjectIds(row!).filter((id) => can(access, 'run:receive', id)),
     ),
     lastSeenAt: row!.lastSeenAt?.toISOString() ?? null,
-    compares: permissions.includes('project:read')
-      ? true
-      : runTargetKeyPermissions(row!.kind === 'runner' ? 'runner' : 'desktop').includes('project:read')
+    compares: !runTargetKeyPermissions(row!.kind === 'runner' ? 'runner' : 'desktop').includes('project:read')
+      ? null
+      : !permissions.includes('project:read')
         ? false
-        : null,
+        : (await targetAbilitiesOf(db, access, true)).compare
+          ? true
+          : null,
   };
 });

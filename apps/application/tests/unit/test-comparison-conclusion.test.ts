@@ -1,17 +1,20 @@
 /**
  * Compare with team instance, read on the desktop app: the team history in one row per CI environment, the local
- * run's first, the teammates' runs last; and the conclusion of a failing local execution, each rule in its order.
+ * run's first, the teammates' runs last; and the conclusion of a failing local execution, each rule in its order, the
+ * local environment read as the team instance resolved it.
  */
 import { describe, expect, test } from 'vitest';
 import {
+  SAME_ERROR_WITHIN_MS,
   sameCommit,
   teamConclusion,
   teamHistoryRows,
   type LocalExecutionFacts,
 } from '#shared/test-comparison-conclusion';
-import type { TestComparison, TestComparisonResult } from '#shared/test-comparison';
+import type { TestComparison, TestComparisonCluster, TestComparisonResult } from '#shared/test-comparison';
 
 const COMMIT = 'c0ffee0000000000000000000000000000000001';
+const NOW = Date.parse('2026-11-25T08:00:00Z');
 let nextId = 0;
 
 function result(values: Partial<TestComparisonResult> = {}): TestComparisonResult {
@@ -23,7 +26,7 @@ function result(values: Partial<TestComparisonResult> = {}): TestComparisonResul
     status: 'passed',
     flaky: false,
     incident: false,
-    startTime: 1_000_000 - id,
+    startTime: NOW - id * 1000,
     environment: null,
     branch: 'main',
     commit: null,
@@ -37,6 +40,7 @@ function comparison(values: Partial<TestComparison> = {}): TestComparison {
   return {
     testCase: null,
     defaultBranch: 'main',
+    localEnvironment: null,
     playwrightProjectMatched: true,
     history: [],
     fingerprintComparable: true,
@@ -46,27 +50,44 @@ function comparison(values: Partial<TestComparison> = {}): TestComparison {
   };
 }
 
+const cluster = (values: Partial<TestComparisonCluster> = {}): TestComparisonCluster => ({
+  id: 4,
+  title: null,
+  status: 'open',
+  ciOccurrences: 12,
+  ciFirstSeen: NOW - 5 * 86_400_000,
+  ciLastSeen: NOW - 86_400_000,
+  ciTests: 3,
+  ciEnvironments: ['mco'],
+  path: '/failure-clusters/4',
+  ...values,
+});
+
 const local = (values: Partial<LocalExecutionFacts> = {}): LocalExecutionFacts => ({
   status: 'failed',
   environment: null,
   commit: COMMIT,
   worktree: 'clean',
   fingerprinted: true,
+  now: NOW,
   ...values,
 });
 
 describe('teamHistoryRows', () => {
   test('one row per CI environment, the local run’s first, no environment last, the teammates’ runs apart', () => {
     const rows = teamHistoryRows(
-      [
-        result({ environment: 'mco', status: 'failed' }),
-        result({ environment: 'integration' }),
-        result({ source: 'local' }),
-        result({ environment: null }),
-        result({ environment: 'MCO', flaky: true }),
-        result({ environment: 'integration', status: 'skipped' }),
-      ],
-      'integration',
+      comparison({
+        localEnvironment: 'integration',
+        history: [
+          result({ environment: 'mco', status: 'failed' }),
+          result({ environment: 'integration' }),
+          result({ source: 'local' }),
+          result({ environment: null }),
+          result({ environment: 'MCO', flaky: true }),
+          result({ environment: 'integration', status: 'skipped' }),
+        ],
+      }),
+      'int',
     );
     expect(rows.map((row) => [row.source, row.environment, row.isLocalEnvironment, row.results.length])).toEqual([
       ['ci', 'integration', true, 2],
@@ -74,15 +95,6 @@ describe('teamHistoryRows', () => {
       ['ci', null, false, 1],
       ['local', null, false, 1],
     ]);
-    expect(rows[0]).toMatchObject({ passRate: 1, flakyRate: 0 });
-    expect(rows[1]).toMatchObject({ passRate: 0.5, flakyRate: 0.5 });
-  });
-
-  test('an environment row with no passed or failed result has no rate', () => {
-    expect(teamHistoryRows([result({ status: 'skipped' })], null)[0]).toMatchObject({
-      passRate: null,
-      flakyRate: null,
-    });
   });
 });
 
@@ -91,32 +103,44 @@ describe('teamConclusion', () => {
     expect(teamConclusion(comparison(), local({ status: 'passed' }))).toBeNull();
   });
 
-  test('1. the same error in CI comes first', () => {
-    const cluster = {
-      id: 4,
-      title: null,
-      status: 'open',
-      ciOccurrences: 12,
-      ciFirstSeen: 1,
-      ciLastSeen: 2,
-      ciTests: 3,
-      path: '/failure-clusters/4',
-    };
-    const answer = teamConclusion(comparison({ cluster, history: [result({ commit: COMMIT })] }), local());
-    expect(answer).toMatchObject({
+  test('1. the same error seen recently in CI comes first, in the local run’s environment', () => {
+    const history = [result({ commit: COMMIT, environment: 'mco' })];
+    expect(teamConclusion(comparison({ cluster: cluster(), history }), local())).toMatchObject({
       rule: 'same-error-in-ci',
       text: 'Same error in CI, seen 12 times: not specific to this machine',
     });
-    expect(teamConclusion(comparison({ cluster: { ...cluster, ciOccurrences: 0 } }), local())?.rule).toBe(
-      'no-ci-result',
-    );
+    expect(
+      teamConclusion(
+        comparison({ cluster: cluster(), localEnvironment: 'mco', history }),
+        local({ environment: 'MCO' }),
+      ),
+    ).toMatchObject({
+      rule: 'same-error-in-ci',
+      text: 'Same error in CI (mco), seen 12 times: not specific to this machine',
+    });
+    // Seen in another environment, long ago, or never in CI: the other rules read on.
+    const elsewhere = comparison({ cluster: cluster(), localEnvironment: 'integration', history });
+    expect(teamConclusion(elsewhere, local({ environment: 'integration' }))?.rule).toBe('no-ci-result');
+    const old = comparison({ cluster: cluster({ ciLastSeen: NOW - SAME_ERROR_WITHIN_MS - 1 }), history });
+    expect(teamConclusion(old, local())?.rule).toBe('passes-on-commit');
+    expect(teamConclusion(comparison({ cluster: cluster({ ciOccurrences: 0 }) }), local())?.rule).toBe('no-ci-result');
   });
 
-  test('2. a CI pass on the local commit, said apart for a checkout with uncommitted changes', () => {
+  test('2. the latest CI result on the local commit passed, said apart for a checkout with uncommitted changes', () => {
     const pass = result({ commit: COMMIT.slice(0, 12) });
     const history = [result({ status: 'failed' }), pass];
     expect(teamConclusion(comparison({ history }), local())).toMatchObject({ rule: 'passes-on-commit', result: pass });
     expect(teamConclusion(comparison({ history }), local({ worktree: 'dirty' }))?.rule).toBe('passes-on-commit-dirty');
+  });
+
+  test('3. a newer CI failure on the local commit outweighs an older pass there', () => {
+    const failure = result({ commit: COMMIT, status: 'failed' });
+    const history = [failure, result({ commit: COMMIT })];
+    expect(teamConclusion(comparison({ history }), local())).toMatchObject({
+      rule: 'fails-in-ci-too',
+      text: 'Fails in CI too on this commit, with another error',
+      result: failure,
+    });
   });
 
   test('3. the latest CI result failed: another error only when the fingerprint was compared', () => {
@@ -128,12 +152,15 @@ describe('teamConclusion', () => {
     );
   });
 
-  test('4. the latest CI result passed on another commit', () => {
+  test('4. the latest CI result passed on another commit, or one that cannot be compared', () => {
     const history = [result({ status: 'skipped' }), result({ commit: 'abcdef1234567' })];
     expect(teamConclusion(comparison({ history }), local())).toMatchObject({
       rule: 'passes-on-other-commit',
       text: 'Passes in CI on main, on another commit: the commits differ',
     });
+    expect(teamConclusion(comparison({ history }), local({ commit: null }))?.text).toBe(
+      'Passes in CI on main, but the commits cannot be compared',
+    );
   });
 
   test('a run marked as an environment incident never counts', () => {
@@ -145,20 +172,21 @@ describe('teamConclusion', () => {
     expect(teamConclusion(comparison({ history: [result({ source: 'local' })] }), local())?.rule).toBe('no-ci-result');
   });
 
-  test('reads the local run’s environment alone when it has one', () => {
-    const history = [
-      result({ environment: 'mco', status: 'failed' }),
-      result({ environment: 'integration', commit: COMMIT }),
-    ];
-    expect(teamConclusion(comparison({ history }), local({ environment: 'Integration' }))).toMatchObject({
+  test('reads the local run’s environment as the team instance resolved its label', () => {
+    const history = [result({ environment: 'mco', status: 'failed' }), result({ environment: 'stg', commit: COMMIT })];
+    expect(
+      teamConclusion(comparison({ history, localEnvironment: 'stg' }), local({ environment: 'staging' })),
+    ).toMatchObject({
       rule: 'passes-on-commit',
-      environment: 'Integration',
-      text: 'Passes in CI on this commit (Integration): the failure is likely specific to this machine',
+      environment: 'stg',
+      text: 'Passes in CI on this commit (stg): the failure is likely specific to this machine',
     });
-    expect(teamConclusion(comparison({ history }), local({ environment: 'mco' }))?.rule).toBe('fails-in-ci-too');
-    expect(teamConclusion(comparison({ history }), local({ environment: 'recette' }))?.text).toBe(
-      'No CI result in recette to compare with',
+    expect(teamConclusion(comparison({ history, localEnvironment: 'mco' }), local({ environment: 'mco' }))?.rule).toBe(
+      'fails-in-ci-too',
     );
+    expect(
+      teamConclusion(comparison({ history, localEnvironment: 'recette' }), local({ environment: 'recette' }))?.text,
+    ).toBe('No CI result in recette to compare with');
   });
 });
 

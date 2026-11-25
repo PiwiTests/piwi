@@ -89,13 +89,15 @@ export interface TestComparisonCluster {
   id: number;
   title: string | null;
   status: string;
-  /** The attempts that failed with it in reference runs, retried ones included. */
+  /** The attempts that failed with it in reference runs, retried ones included, environment incidents left out. */
   ciOccurrences: number;
   /** The first and last reference run with an attempt that failed with it, epoch ms; null with no occurrence. */
   ciFirstSeen: number | null;
   ciLastSeen: number | null;
   /** The tests it failed in the reference runs. */
   ciTests: number;
+  /** The environments of the reference runs it failed in: each team environment's key, else the run's label. */
+  ciEnvironments: string[];
   path: string;
 }
 
@@ -131,10 +133,15 @@ export interface TestComparison {
   /** The team project's default branch. */
   defaultBranch: string | null;
   /**
-   * Whether the results are the local Playwright project's. False when the CI ran the test in no such project, or
-   * none was sent: the results are then every project's.
+   * The local run's environment as this instance reads its label: the key of the team environment it resolves to (its
+   * key or an alias), else the label; null when none was sent. The results name environments by the same keys.
    */
-  playwrightProjectMatched: boolean;
+  localEnvironment: string | null;
+  /**
+   * Whether the results are the local Playwright project's: false when the CI ran the test in no such project, and the
+   * results are then every project's; null when none was sent.
+   */
+  playwrightProjectMatched: boolean | null;
   /** The reference and shared local results, newest first, each once. */
   history: TestComparisonResult[];
   /** False when the instance computes fingerprints with another `FINGERPRINT_VERSION`: no cluster can be matched. */
@@ -179,7 +186,8 @@ export const testComparisonSchema = z.object({
     })
     .nullable(),
   defaultBranch: textOrNull,
-  playwrightProjectMatched: z.boolean(),
+  localEnvironment: textOrNull,
+  playwrightProjectMatched: z.boolean().nullable(),
   history: z
     .array(resultSchema)
     .max(
@@ -198,6 +206,7 @@ export const testComparisonSchema = z.object({
       ciFirstSeen: epochOrNull,
       ciLastSeen: epochOrNull,
       ciTests: z.number().int().nonnegative(),
+      ciEnvironments: z.array(z.string().max(200)).max(200),
       path,
     })
     .nullable(),

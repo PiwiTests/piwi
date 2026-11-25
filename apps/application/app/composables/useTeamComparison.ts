@@ -16,15 +16,13 @@ export function useTeamComparison(
     if (!isDesktop || value == null || value === '') return null;
     return `/api/desktop/team/${kind === 'execution' ? 'executions' : 'test-cases'}/${value}/comparison`;
   });
-  const { data, status } = useFetch<DesktopTeamComparison>(() => path.value ?? '', {
+  const { data } = useFetch<DesktopTeamComparison>(() => path.value ?? '', {
     key: computed(() => `team-comparison:${path.value ?? 'none'}`),
     server: false,
     lazy: true,
     immediate: path.value !== null,
     watch: [path],
   });
-  return {
-    comparison: computed(() => (path.value ? (data.value ?? null) : null)),
-    loading: computed(() => path.value !== null && (status.value === 'idle' || status.value === 'pending')),
-  };
+  const comparison = computed(() => (path.value ? (data.value ?? null) : null));
+  return { comparison, shown: computed(() => teamComparisonShown(comparison.value)) };
 }

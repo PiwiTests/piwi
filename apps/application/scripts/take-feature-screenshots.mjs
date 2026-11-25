@@ -2934,10 +2934,6 @@ function teamComparisonAnswer(execution) {
     result({ source: 'local', environment: null, status: 'failed' }),
     result({ source: 'local', environment: null }),
   ];
-  const rate = (results, passed) => ({
-    passRate: passed / results.length,
-    flakyRate: results.filter((r) => r.flaky).length / results.length,
-  });
   const closestPass = {
     executionId: development[0].executionId,
     runId: development[0].runId,
@@ -2965,7 +2961,8 @@ function teamComparisonAnswer(execution) {
         path: '/test-cases/41',
       },
       defaultBranch: 'main',
-      playwrightProjectMatched: true,
+      localEnvironment: execution ? 'development' : null,
+      playwrightProjectMatched: execution ? true : null,
       history: [...development, ...staging, ...teammates],
       fingerprintComparable: true,
       cluster: null,
@@ -2977,10 +2974,9 @@ function teamComparisonAnswer(execution) {
         environment: 'development',
         isLocalEnvironment: true,
         results: development,
-        ...rate(development, 7),
       },
-      { source: 'ci', environment: 'staging', isLocalEnvironment: false, results: staging, ...rate(staging, 4) },
-      { source: 'local', environment: null, isLocalEnvironment: false, results: teammates, ...rate(teammates, 1) },
+      { source: 'ci', environment: 'staging', isLocalEnvironment: false, results: staging },
+      { source: 'local', environment: null, isLocalEnvironment: false, results: teammates },
     ],
     conclusion: execution
       ? {
