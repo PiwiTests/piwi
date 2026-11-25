@@ -131,7 +131,7 @@ Playwright counts a sharded run's tests before it splits them, so a shard left w
 a sharded run fails with `No tests found` when its whole selection is empty, as an unsharded one does, unless it passes
 `--pass-with-no-tests`: `piwi run --plan` passes it to every shard.
 
-Jobs sharded with `piwi run --shard` merge the same way ([details](/features/test-selection#print-shard-and-reorder)).
+Jobs sharded with `piwi run --shard`, or [balanced by duration](/features/test-selection#balanced-playwright-shards), merge the same way.
 
 If your CI isn't detected, set the label yourself to anything common to all shards:
 

@@ -92,6 +92,22 @@ describe('partitionTestsIntoShards', () => {
     expect(shards.every((shard) => shard.length > 0)).toBe(true);
   });
 
+  test('keeps the tests of a group in one shard, and joins a group to a lock one of its tests holds', () => {
+    const rows = [
+      { ...t(1, 30), group: 'serial' },
+      { ...t(2, 30), group: 'serial' },
+      { ...t(3, 10, ['db']), group: 'serial' },
+      t(4, 10, ['db']),
+      t(5, 30),
+      t(6, 30),
+    ];
+    const shards = partitionTestsIntoShards(rows, 3);
+    const home = shardOf(shards, 1);
+    expect([2, 3, 4].map((id) => shardOf(shards, id))).toEqual([home, home, home]);
+    expect(shardOf(shards, 5)).not.toBe(home);
+    expect(shardOf(shards, 6)).not.toBe(home);
+  });
+
   test('total below one yields an empty partition', () => {
     expect(partitionTestsIntoShards([t(1, 10)], 0)).toEqual([]);
   });

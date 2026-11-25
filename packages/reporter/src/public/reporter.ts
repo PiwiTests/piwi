@@ -64,6 +64,23 @@ import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '..
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
 import { isListMode, isMergeReports, runnerArgv } from '../internal/support/run-mode.js';
+import {
+  changeableProjects,
+  changeableTests,
+  deadline,
+  openDashboardAsk,
+  type DashboardAsk,
+} from '../internal/support/test-run-edits.js';
+import { fetchPlanSkipReasons, planToSkip, skipPlannedTests, testListName } from '../internal/support/plan-skip.js';
+import {
+  balancedShardsRefusal,
+  checkoutCommit,
+  fetchShardSplit,
+  keepShardTests,
+  listShardTests,
+  roughDuration,
+  type ShardingTestRun,
+} from '../internal/support/shard-split.js';
 import { peekSetupFailure, peekSetupInfo, readSetupInfo, type SetupInfo } from '../internal/support/setup-file.js';
 import { privateTempDir, readPrivateFile } from '../internal/support/private-file.js';
 import {
@@ -223,6 +240,12 @@ function followedLine(followed: FollowedHub): string {
 }
 
 /**
+ * The part of Playwright's `TestRun` (`preprocess`, Playwright 1.62 and later) the reporter uses, read structurally so
+ * its types hold for every Playwright it supports: each method is feature-checked.
+ */
+type PreprocessTestRun = SuiteModeSource & ShardingTestRun & { skip?: (test: TestCase, reason?: string) => void };
+
+/**
  * Piwi Dashboard Playwright reporter.
  *
  * Collects test results, metadata, performance metrics and trace files, then
@@ -253,6 +276,13 @@ export class PiwiDashboardReporter {
   private plannedTests: TestCase[] = [];
   /** Ids of tests that actually reported via `onTestEnd`, to find the ones that never ran. */
   private reportedTestIds = new Set<string>();
+  /**
+   * Ids of the tests `preprocess` skipped for the run's pass reuse plan: every reporter shows them as skipped, and this
+   * one sends nothing of them, since the dashboard records them as the run's reused results.
+   */
+  private readonly reusedTestIds = new Set<string>();
+  /** The pass reuse plan whose reused tests `preprocess` skipped; null when it skipped none. */
+  private skippedPlan: number | null = null;
   /**
    * The spec files said to have run without the capture fixtures in a run that can stop, or whose workers stream to
    * the instance's live view (`noteUncaptured`).
@@ -433,12 +463,155 @@ export class PiwiDashboardReporter {
 
   /**
    * Playwright reporter hook (Playwright 1.62 and later; 1.59 to 1.61 never call it): the run's suite once Playwright
-   * built it, before `onBegin`, with the `TestRun` that reads and changes what runs, which answers only until this
-   * returns. Reads what the run keeps of it, each read cheap and never throwing, since Playwright fails the run on an
-   * error thrown here: the mode of every suite (`readSuiteModes`). It changes nothing of the run.
+   * built it, unsharded, before `onBegin`, with the `TestRun` that reads and changes what runs, which answers only until
+   * this returns. Reads the mode of every suite (`readSuiteModes`), then, for a run that asks and only then, changes the
+   * run with the dashboard's answers (`editRun`): the tests a pass reuse plan reuses are skipped, and a sharded run with
+   * `balanceShards` is split by recorded duration. Never throws, since Playwright fails the run on an error thrown here.
    */
-  async preprocess(params: { config: FullConfig; suite: Suite; testRun: SuiteModeSource }): Promise<void> {
+  async preprocess(params: { config: FullConfig; suite: Suite; testRun: PreprocessTestRun }): Promise<void> {
     this.metadataCollector.readSuiteModes(params.suite, params.testRun);
+    try {
+      await this.editRun(params.config, params.suite, params.testRun);
+    } catch (error) {
+      this.logger.warn(`Could not prepare the run with the dashboard: ${errorMessage(error)}`);
+    }
+  }
+
+  /**
+   * Skip the tests of the pass reuse plan `PIWI_PLAN` names when `PIWI_PLAN_SKIP` asks (`skipReusedTests`), then
+   * balance a sharded run's shards when `balanceShards` is on (`balanceShards`), asking the dashboard within one
+   * deadline (`PREPROCESS_DEADLINE_MS`). A run that asks neither makes no request, nor does a `--list` run.
+   */
+  private async editRun(config: FullConfig, suite: Suite, testRun: PreprocessTestRun): Promise<void> {
+    const planId = typeof testRun.skip === 'function' ? planToSkip(process.env) : null;
+    const shard = config.shard && config.shard.total > 1 ? config.shard : null;
+    const wantsBalance = this.options.balanceShards === true && shard !== null;
+    if (planId === null && !wantsBalance) return;
+    const argv = runnerArgv(config);
+    if (isListMode(argv)) return;
+    const refusal = wantsBalance ? balancedShardsRefusal(testRun, argv) : null;
+    if (refusal) this.logger.info(refusal);
+    const balance = wantsBalance && refusal === null;
+    if (planId === null && !balance) return;
+
+    if (!this.enabled || this.requestedRun.instance !== null) {
+      if (planId !== null) this.runWithoutPlan(planId, 'no dashboard to ask', testRun, shard);
+      else this.logger.info('balanceShards needs a dashboard to ask: Playwright splits this run.');
+      return;
+    }
+    const time = deadline();
+    try {
+      let ask: DashboardAsk;
+      try {
+        ask = await openDashboardAsk(this.httpClient, this.options, time.signal);
+      } catch (error) {
+        if (planId !== null) this.runWithoutPlan(planId, errorMessage(error), testRun, shard);
+        else this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
+        return;
+      }
+      if (planId !== null && !(await this.skipReusedTests(ask, planId, config, suite, testRun, shard))) return;
+      if (balance && shard) await this.balanceShards(ask, config, suite, testRun as Required<ShardingTestRun>, shard);
+    } finally {
+      time.clear();
+    }
+  }
+
+  /**
+   * Skip each test of the run that pass reuse plan `planId` reuses, naming the run whose pass stands in for it, and
+   * record the plan as the run's. False when the plan cannot be read, and the run executes every test.
+   */
+  private async skipReusedTests(
+    ask: DashboardAsk,
+    planId: number,
+    config: FullConfig,
+    suite: Suite,
+    testRun: PreprocessTestRun,
+    shard: ShardInfo | null,
+  ): Promise<boolean> {
+    let reasons: Map<string, string>;
+    try {
+      reasons = await fetchPlanSkipReasons(ask, planId);
+    } catch (error) {
+      this.runWithoutPlan(planId, errorMessage(error), testRun, shard);
+      return false;
+    }
+    const tests = changeableTests(config, suite).map((test) => ({
+      test,
+      name: testListName(
+        test,
+        config.rootDir,
+        this.metadataCollector.getBrowserConfig(test)?.projectName ?? null,
+        this.metadataCollector.getSuiteInfo(test).suitePath,
+      ),
+    }));
+    const skipped = skipPlannedTests((test, reason) => testRun.skip!(test, reason), tests, reasons);
+    for (const test of skipped) this.reusedTestIds.add(test.id);
+    this.skippedPlan = planId;
+    this.logger.info(
+      `Pass reuse plan ${planId}: skipping ${skipped.length} test${skipped.length === 1 ? '' : 's'} whose code has not changed since an earlier run passed them; the dashboard records them as reused.`,
+    );
+    return true;
+  }
+
+  /**
+   * Say that the run executes every test, plan `planId` unread, and, for a shard, take sharding from Playwright so that
+   * it runs the whole suite: the other shards may be skipping the plan's tests, and Playwright splits a suite with
+   * skipped tests otherwise.
+   */
+  private runWithoutPlan(planId: number, why: string, testRun: PreprocessTestRun, shard: ShardInfo | null): void {
+    let whole = false;
+    if (shard && typeof testRun.skipSharding === 'function') {
+      try {
+        testRun.skipSharding();
+        whole = true;
+      } catch (error) {
+        this.logger.debug(`Sharding left to another reporter: ${errorMessage(error)}`);
+      }
+    }
+    this.logger.warn(
+      `Could not read pass reuse plan ${planId} (${why}): every test runs${whole ? `, the whole suite in this shard (${shard!.current}/${shard!.total})` : ''}.`,
+    );
+  }
+
+  /**
+   * Split a sharded run by the dashboard's answer: list the tests the run can change, ask the dashboard for each one's
+   * shard, take sharding from Playwright and exclude the other shards' tests. Without an answer that covers the listed
+   * tests, Playwright splits the run.
+   */
+  private async balanceShards(
+    ask: DashboardAsk,
+    config: FullConfig,
+    suite: Suite,
+    testRun: Required<ShardingTestRun>,
+    shard: ShardInfo,
+  ): Promise<void> {
+    const base = configDirFromConfig(config);
+    const projects = changeableProjects(config, suite);
+    const { listed, order } = listShardTests(
+      projects.flatMap((project) => project.allTests()),
+      (test) => ({
+        project: this.metadataCollector.getBrowserConfig(test)?.projectName ?? null,
+        file: testFile(test, base),
+        suitePath: this.metadataCollector.getSuiteInfo(test).suitePath,
+        locks: collectTestLocks(test),
+        group: this.metadataCollector.shardGroup(test),
+      }),
+    );
+    if (listed.length === 0) return;
+    let split: Awaited<ReturnType<typeof fetchShardSplit>>;
+    try {
+      split = await fetchShardSplit(ask, { commit: checkoutCommit(base), shardTotal: shard.total, tests: listed });
+      testRun.skipSharding();
+    } catch (error) {
+      this.logger.warn(`Could not balance the shards (${errorMessage(error)}): Playwright splits this run.`);
+      return;
+    }
+    const keep = new Set(order.filter((_, index) => split.shards[index] === shard.current));
+    keepShardTests(testRun, projects, keep);
+    const duration = split.durationsMs?.[shard.current - 1];
+    this.logger.info(
+      `Shard ${shard.current}/${shard.total} runs ${keep.size} of ${listed.length} tests, as the dashboard balanced them by recorded duration${duration ? ` (about ${roughDuration(duration)})` : ''}.`,
+    );
   }
 
   /** Playwright reporter hook: called once at the start of the test run */
@@ -449,6 +622,8 @@ export class PiwiDashboardReporter {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
       return;
     }
+    // The tests a pass reuse plan skipped are the dashboard's reused results, not this run's: none is counted or sent.
+    const tests = suite.allTests().filter((test) => !this.reusedTestIds.has(test.id));
     // The workers, which start after this hook, read the boolean variables as the reporter does.
     normalizeBoolEnv(process.env);
     // A requested run's workers reach neither the config's server nor its credentials.
@@ -460,12 +635,12 @@ export class PiwiDashboardReporter {
     const followed = followHub(dirs, gate);
     if (followed) this.logger.info(followedLine(followed));
     // The hub its workers reach hears how far the run is, from its own process.
-    this.hubLink = RunHubLink.open(process.env, config, suite.allTests().length, getReporterVersion());
+    this.hubLink = RunHubLink.open(process.env, config, tests.length, getReporterVersion());
     // The run the global setup registered names its page now; the stream names the run it opens, another on a refusal.
     const registered = this.enabled && this.hubLink ? peekSetupInfo(this.options.projectName!) : null;
     if (registered) this.hubLink?.page(registered.runId, registered.runUrl);
     if (this.enabled && terminalFeatures(process.env, !!process.stdout.isTTY).progress) {
-      const progress = new TerminalProgress(suite.allTests().length, (text) => process.stdout.write(text));
+      const progress = new TerminalProgress(tests.length, (text) => process.stdout.write(text));
       progress.begin();
       // A run whose process ends before `onEnd` (a second Ctrl+C) takes the bar off too.
       process.once('exit', () => progress.end((text) => fs.writeSync(1, text)));
@@ -547,7 +722,10 @@ export class PiwiDashboardReporter {
     // identity in the environment; stamp it so the dashboard can name the
     // subset and a gate can re-resolve the same definition.
     const selection = readSelectionStamp();
-    if (grep || grepInvert || fileFilters.length > 0 || selection || narrowed) {
+    // A run that skipped a pass reuse plan's tests ran part of the suite, as one that left them out with
+    // `--test-list-invert` does.
+    const reusing = this.skippedPlan !== null;
+    if (grep || grepInvert || fileFilters.length > 0 || selection || narrowed || reusing) {
       this.isFullRun = false;
       this.filterDetails = {
         ...(grep ? { grep } : {}),
@@ -561,6 +739,8 @@ export class PiwiDashboardReporter {
     }
 
     this.metadata = this.metadataCollector.collect(config, suite, this.options);
+    // The run is its pass reuse plan's own: the dashboard records the tests it skipped as reused.
+    if (this.skippedPlan !== null) this.metadata.piwiPlan = { id: this.skippedPlan };
     // A run a hub steers names it: its stops are a person's, at the editor's or the desktop app's breakpoints.
     const interactive = runInteractive(process.env, followed);
     if (interactive) this.metadata[RUN_INTERACTIVE_METADATA_KEY] = interactive;
@@ -591,7 +771,7 @@ export class PiwiDashboardReporter {
     // never ran (e.g. cut short by `maxFailures`) as `didnotrun` cases. The
     // suite is already filtered/sharded, so this matches what this shard
     // attempts.
-    this.plannedTests = suite.allTests();
+    this.plannedTests = tests;
     this.planExternalIds();
     this.noteTagsTruncated();
 
@@ -849,6 +1029,7 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test begins */
   onTestBegin(test: TestCase, result: TestResult): void {
+    if (this.reusedTestIds.has(test.id)) return;
     this.runningTests.set(test.id, { test, result });
     this.lastTestWatch?.begin(test.id);
     const { suitePath, suiteConfig } = this.metadataCollector.getSuiteInfo(test);
@@ -987,6 +1168,7 @@ export class PiwiDashboardReporter {
     // first fixtures and hooks run while `/start` is still in flight, and
     // `queueEvent` holds the events until the stream opens (same as `onTestBegin`).
     if (!this.enabled || !this.streamManager) return;
+    if (test && this.reusedTestIds.has(test.id)) return;
     if (!PiwiDashboardReporter.isLiveStep(step)) return;
     const cat = step.category;
 
@@ -1009,6 +1191,7 @@ export class PiwiDashboardReporter {
   /** Playwright reporter hook: called when a step (including hook/fixture) ends */
   onStepEnd(test: TestCase | undefined, _result: TestResult | undefined, step: any): void {
     if (!this.enabled || !this.streamManager) return;
+    if (test && this.reusedTestIds.has(test.id)) return;
     if (!PiwiDashboardReporter.isLiveStep(step)) return;
     this.openSteps.delete(step);
     const cat = step.category;
@@ -1048,6 +1231,7 @@ export class PiwiDashboardReporter {
 
   /** Playwright reporter hook: called when an individual test finishes */
   onTestEnd(test: TestCase, result: TestResult): void {
+    if (this.reusedTestIds.has(test.id)) return;
     // The worker noted the end of the test's last stop before the test ended: it goes before the test's end.
     this.stopNotes?.read();
     this.runningTests.delete(test.id);

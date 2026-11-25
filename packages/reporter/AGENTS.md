@@ -190,6 +190,9 @@ responsibilities.
 - **`preprocess` never throws, and reads `testRun` before it returns**: Playwright awaits it unguarded, so an error
   thrown there fails the run, and its `TestRun` answers only during the call (`readSuiteModes` in
   `internal/collect/metadata-collector.ts` keeps what it read; `tests/suite-modes-run.spec.ts`).
+- **A shard that cannot read its pass reuse plan runs the whole suite** (`skipSharding` in `runWithoutPlan`,
+  `public/reporter.ts`): Playwright splits a suite holding skipped tests apart from one without, so a shard that skipped
+  none of the plan's tests would not line up with the others (`tests/preprocess-edits-run.spec.ts`).
 
 ## Workflow
 

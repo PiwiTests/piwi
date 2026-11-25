@@ -269,6 +269,33 @@ export class MetadataCollector {
     return 'default';
   }
 
+  /**
+   * The group of tests Playwright runs in one worker, in order, that holds `test`, as a key its tests share: every test
+   * of its file in its Playwright project and repetition, unless a suite above it runs in parallel; then the tests of
+   * its outermost describe or file that sets an ordered mode (`serial`, or `default` under a parallel one), else the
+   * test alone. Read with the modes `suiteMode` reads, by which a suite sets its mode where it differs from its
+   * parent's. A group Playwright keeps whole is never split by this key; it can join tests Playwright would split.
+   */
+  shardGroup(test: TestCase): string {
+    const project = this.getBrowserConfig(test)?.projectName ?? '';
+    const file = [project, test.location.file, test.repeatEachIndex];
+    let parallel = false;
+    let ordered: Suite | undefined;
+    for (let suite: Suite | undefined = test.parent; suite; suite = suite.parent) {
+      const mode = this.suiteMode(suite);
+      if (mode === 'parallel') parallel = true;
+      else if (
+        (suite.type === 'describe' || suite.type === 'file') &&
+        (!suite.parent || this.suiteMode(suite.parent) !== mode)
+      ) {
+        ordered = suite;
+      }
+    }
+    if (!parallel) return JSON.stringify(file);
+    if (ordered) return JSON.stringify([...file, ordered.titlePath(), ordered.location?.line ?? 0]);
+    return JSON.stringify([...file, test.id]);
+  }
+
   /** Collect all available metadata from the environment, config, and suite */
   collect(config: FullConfig, suite: Suite, options: any): Record<string, unknown> {
     const argv = runnerArgv(config);

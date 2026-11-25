@@ -299,6 +299,19 @@ export class HttpClient {
   }
 
   /**
+   * Send a GET request and resolve to the answer's JSON, as `postJSON` does: a non-2xx status or an answer that is not
+   * JSON fails, naming why, and `signal` ends the request.
+   */
+  async readJSON(pathname: string, auth?: string | null, signal?: AbortSignal): Promise<any> {
+    const res = await this.request('GET', pathname, { auth, signal });
+    if (res.status < 200 || res.status >= 300) {
+      this.logger.debugError(`Response: ${res.text}`);
+      throw failedRequest(res);
+    }
+    return parseAnswer(pathname, res);
+  }
+
+  /**
    * Send a JSON POST request. `auth` can be an API key (prefix `pd_`) or a session cookie string. Resolves to the
    * answer's JSON; an answer that is not JSON fails, and `signal` ends the request. With `upload`, the answer may come
    * as late as a multipart upload's: the body is a run's results, which the dashboard stores before it answers.

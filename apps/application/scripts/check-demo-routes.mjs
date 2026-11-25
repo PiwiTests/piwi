@@ -44,6 +44,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/projects/:id/run-plans/sources', // pass reuse — plans need a local git diff the browser demo cannot produce
   'POST /api/projects/:id/run-plans', // pass reuse — needs the diffs `piwi plan` computes from a local checkout
   'GET /api/projects/:id/run-plans/:planId', // pass reuse — reads a plan only `POST /api/projects/:id/run-plans` stores
+  'POST /api/projects/:id/shard-split', // the reporter's balanced sharding — asked by a sharded Playwright run, which the browser demo has none of
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
   'GET /api/desktop/team/executions/:id/comparison', // desktop build only; asks the team instance the app connected to, 404 everywhere else
   'GET /api/desktop/team/test-cases/:id/comparison', // desktop build only; asks the team instance the app connected to, 404 everywhere else

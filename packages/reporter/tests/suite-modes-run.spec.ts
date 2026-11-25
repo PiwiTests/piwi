@@ -14,7 +14,12 @@ import { PLAYWRIGHT_VERSION, playwrightAtLeast } from './_helpers.js';
 describe(`the suite modes of a real run (${PLAYWRIGHT_VERSION})`, () => {
   const pkgRoot = path.join(import.meta.dirname, '..');
   const project = path.join(pkgRoot, 'tests', `.suite-modes-run-${process.pid}`);
-  let result: { preprocessed: boolean; tests: Array<{ project: string; title: string; modes: string[]; marked: string[] }> } | undefined;
+  let result:
+    | {
+        preprocessed: boolean;
+        tests: Array<{ project: string; title: string; modes: string[]; marked: string[]; group: string }>;
+      }
+    | undefined;
   let output = '';
 
   function write(file: string, text: string): void {
@@ -58,6 +63,7 @@ export default class {
       title: test.title,
       modes: this.read.getSuiteInfo(test).suiteConfig.map((level) => level.mode),
       marked: this.marked.getSuiteInfo(test).suiteConfig.map((level) => level.mode),
+      group: this.read.shardGroup(test),
     }));
     fs.writeFileSync(this.file, JSON.stringify({ preprocessed: this.preprocessed, tests }));
   }
@@ -117,6 +123,14 @@ test.describe('inherits', () => {
       ['fully', 'in order', ['default']],
       ['fully', 'as its project', ['parallel']],
     ]);
+  });
+
+  it('groups the tests as Playwright keeps them in one worker: a file not fully parallel, else an ordered describe', () => {
+    const groups = (name: string) => result!.tests.filter((test) => test.project === name).map((test) => test.group);
+    expect(new Set(groups('plain')).size, output).toBe(1);
+    // The serial describe, the describe set to `default` and the test that inherits its project's parallel mode.
+    expect(new Set(groups('fully')).size).toBe(3);
+    expect(groups('fully')).not.toContain(groups('plain')[0]);
   });
 
   it.skipIf(!playwrightAtLeast('1.62.0'))('reads them in preprocess, for the suites onBegin hands over', () => {

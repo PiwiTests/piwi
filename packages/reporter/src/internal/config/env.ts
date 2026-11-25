@@ -38,6 +38,7 @@ const DEFAULTS: PiwiDashboardOptions = {
   maxStreamBufferBytes: 100 * 1024 * 1024,
   submitTimeout: 15 * 60 * 1000,
   failOnFlakyTests: false,
+  balanceShards: false,
   username: null,
   password: null,
   apiKey: null,
@@ -70,6 +71,7 @@ export const PIWI_ENV_KEYS = {
   submitTimeout: 'PIWI_SUBMIT_TIMEOUT',
   liveFileUploads: 'PIWI_LIVE_FILE_UPLOADS',
   failOnFlakyTests: 'PIWI_FAIL_ON_FLAKY_TESTS',
+  balanceShards: 'PIWI_BALANCE_SHARDS',
   uploadTraces: 'PIWI_UPLOAD_TRACES',
   uploadReport: 'PIWI_UPLOAD_REPORT',
   collectEnvironmentInfo: 'PIWI_COLLECT_ENVIRONMENT_INFO',
@@ -198,6 +200,15 @@ export const PIWI_SHARD_ENV = 'PIWI_SHARD';
  * the dashboard records the tests the plan skipped as the run's reused results.
  */
 export const PIWI_PLAN_ENV = 'PIWI_PLAN';
+
+/**
+ * Set to `true` beside `PIWI_PLAN` by `piwi run --plan` / `--reuse` on a
+ * project with Playwright 1.62 or later, which passes Playwright no skip list:
+ * the reporter's `preprocess` reads the plan's reused tests from the dashboard
+ * and skips each one through Playwright's `testRun.skip`
+ * (`internal/support/plan-skip.ts`).
+ */
+export const PIWI_PLAN_SKIP_ENV = 'PIWI_PLAN_SKIP';
 
 /**
  * Env vars a `piwi probe` run sets on the Playwright child process so the
@@ -336,6 +347,7 @@ const ENV_FALLBACK_SPECS: ReadonlyArray<{
   { option: 'submitTimeout', env: PIWI_ENV_KEYS.submitTimeout, kind: 'number' },
   { option: 'liveFileUploads', env: PIWI_ENV_KEYS.liveFileUploads, kind: 'bool' },
   { option: 'failOnFlakyTests', env: PIWI_ENV_KEYS.failOnFlakyTests, kind: 'bool' },
+  { option: 'balanceShards', env: PIWI_ENV_KEYS.balanceShards, kind: 'bool' },
   { option: 'uploadTraces', env: PIWI_ENV_KEYS.uploadTraces, kind: 'bool' },
   { option: 'uploadReport', env: PIWI_ENV_KEYS.uploadReport, kind: 'bool' },
   { option: 'collectEnvironmentInfo', env: PIWI_ENV_KEYS.collectEnvironmentInfo, kind: 'bool' },

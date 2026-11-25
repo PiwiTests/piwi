@@ -830,7 +830,23 @@ Before `onBegin`, Playwright 1.62 and later call the reporter's `preprocess` wit
 `TestRun` that reads and changes what runs, which answers only until the call returns. The reporter reads there what
 it keeps for the rest of the run: each suite's mode (`testRun.mode`, Playwright 1.65 and later), which
 `MetadataCollector.readSuiteModes` keeps by suite, the same objects `onBegin` and `onTestBegin` hand over;
-`getSuiteInfo` and the serial files read it, else `_parallelMode` by the same rule. It changes nothing of the run.
+`getSuiteInfo` and the serial files read it, else `_parallelMode` by the same rule.
+
+It changes the run only when asked, with the dashboard's answers, all asked within one 10-second deadline
+(`internal/support/test-run-edits.ts`, never a setup or teardown project, which `TestRun` refuses to change):
+
+- **Pass reuse** (`PIWI_PLAN` with `PIWI_PLAN_SKIP`, set by `piwi run --plan` on Playwright 1.62 and later,
+  `internal/support/plan-skip.ts`): it reads the plan and skips each reused test with `testRun.skip`, matched by the
+  test list line the plan names it with, its reason the run whose pass stands in for it. The reporter keeps their ids
+  and leaves them out of everything it counts and sends (`reusedTestIds`), and stamps `metadata.piwiPlan`. A plan it
+  cannot read runs every test, and in a shard the whole suite (`skipSharding`): Playwright splits a suite holding
+  skipped tests apart from one without, so a shard that skipped nothing would not line up with the others.
+- **Balanced shards** (`balanceShards`, `internal/support/shard-split.ts`): it lists the tests in a stable order, each
+  with its group (`MetadataCollector.shardGroup`: the tests Playwright keeps in one worker), asks the dashboard for each
+  one's shard, and with an answer that covers them all takes sharding from Playwright and excludes the others, a whole
+  suite at once. The dashboard stores the split by its listing, so every shard reads the same answer. A shard that
+  gets no usable answer lets Playwright split the run, which lines up with the other shards only when they got none
+  either.
 
 ```
             TEST WORKER                                MAIN PROCESS
@@ -1054,6 +1070,7 @@ src/
                 system-readers (`/proc`, cgroup and `ps` readers),
                 cli-filters, setup-file, private-file (the temp files and their
                 folder: owner-only, checked before they are read), source-snippet, worker-index, errors,
+                test-run-edits, plan-skip, shard-split (what `preprocess` changes of the run),
                 selection-client, selection-env, shard-info, aria-sampling,
                 run-mode, test-paths, reporter-version, connection (the
                 commands' dashboard), playwright-spawn (how commands start
