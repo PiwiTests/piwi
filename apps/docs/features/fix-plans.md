@@ -42,9 +42,9 @@ attempts** on a retry pass or a newly flaky test, **re-run in CI** for a crash o
 Both pages carry one **More ways to fix** toolbox, one line right above the evidence: a button each for the diagnosis
 and its patch, the locator fix, verify (re-run in CI or locally), reproduce and bisect, fixed before, the tests it
 blocked and the fix plan. A button names its section's one-line summary on hover and opens the section in a side panel
-beside the page, which closes on Escape or a click outside it, so no code block opens by default. The next step's
-actions open the section they act on; on a cluster, the section the next step points at is a card of its own above the
-line ([the cluster page](./failure-clusters#the-cluster-page)).
+beside the page, so no code block opens by default. The panel stays open while you read the evidence, until its close
+button or Escape. The next step's actions open the section they act on; on a cluster, the section the next step points
+at is a card of its own above the line ([the cluster page](./failure-clusters#the-cluster-page)).
 
 ## Reproduce and bisect
 
