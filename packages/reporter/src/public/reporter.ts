@@ -37,7 +37,7 @@ import { CrashRecovery } from '../internal/streaming/crash-recovery.js';
 import { FileHandler } from '../internal/files/file-handler.js';
 import { htmlReportFolder } from '../internal/files/html-report.js';
 import { ATTACHMENT_NAMES, INTERNAL_ATTACHMENT_NAMES, findPiwiAttachment } from '../internal/capture/attachments.js';
-import { MetadataCollector, resolveScmBranch } from '../internal/collect/metadata-collector.js';
+import { MetadataCollector, resolveScmBranch, type SuiteModeSource } from '../internal/collect/metadata-collector.js';
 import { StreamManager } from '../internal/streaming/stream-manager.js';
 import { RunHubLink, countedOutcome } from '../internal/streaming/run-hub-link.js';
 import { TerminalProgress, terminalFeatures } from '../internal/support/terminal.js';
@@ -63,7 +63,7 @@ import { parallelIndexOf, workerIndexOf } from '../internal/support/worker-index
 import { detectCliFileFilters, detectCliGrep, detectCliNarrowingFlags } from '../internal/support/cli-filters.js';
 import { readSelectionStamp } from '../internal/support/selection-env.js';
 import { resolveShardInfo } from '../internal/support/shard-info.js';
-import { isListMode, isMergeReports } from '../internal/support/run-mode.js';
+import { isListMode, isMergeReports, runnerArgv } from '../internal/support/run-mode.js';
 import { peekSetupFailure, peekSetupInfo, readSetupInfo, type SetupInfo } from '../internal/support/setup-file.js';
 import { privateTempDir, readPrivateFile } from '../internal/support/private-file.js';
 import {
@@ -103,7 +103,7 @@ import {
   type ExternalIdPlan,
 } from '../internal/collect/external-ids.js';
 import { buildErrorText } from '../internal/collect/error-text.js';
-import { runErrorOf } from '../internal/collect/run-errors.js';
+import { runErrorOf, type ErrorWorker } from '../internal/collect/run-errors.js';
 import { testOutputOf } from '../internal/collect/test-output.js';
 import { MAX_RUN_ERRORS } from '@piwitests/core/run-errors';
 import { collectTagsTruncated } from '@piwitests/core/test-meta';
@@ -297,8 +297,9 @@ export class PiwiDashboardReporter {
    * True under `playwright test --list`, where Playwright still constructs this
    * reporter and fires `onBegin`/`onEnd` but runs no tests. Registering and
    * finalizing a run would create an empty phantom run and upload an empty report.
+   * Read in `onBegin`, from the runner's command line (`runnerArgv`).
    */
-  private readonly listMode: boolean;
+  private listMode = false;
   /** True under `playwright merge-reports`, which replays blob reports: no test runs and nothing of the run is live. */
   private readonly mergingReports = isMergeReports();
   /** True when the server URL and API key came from the desktop app, not from config. */
@@ -372,7 +373,6 @@ export class PiwiDashboardReporter {
     this.serverUrlProblem =
       this.options.enabled !== false && this.options.serverUrl ? serverUrlProblem(this.options.serverUrl) : null;
     this.enabled = this.options.enabled !== false && !!this.options.serverUrl && !this.serverUrlProblem;
-    this.listMode = isListMode();
     this.viaDesktopApp = usedDesktopDiscovery();
     this.requestedRun = { instance: requestedRunTarget(), problem: requestedRunProblem() };
     this.desktopReplaced = desktopReplacedServer();
@@ -431,8 +431,20 @@ export class PiwiDashboardReporter {
     return false;
   }
 
+  /**
+   * Playwright reporter hook (Playwright 1.62 and later; 1.59 to 1.61 never call it): the run's suite once Playwright
+   * built it, before `onBegin`, with the `TestRun` that reads and changes what runs, which answers only until this
+   * returns. Reads what the run keeps of it, each read cheap and never throwing, since Playwright fails the run on an
+   * error thrown here: the mode of every suite (`readSuiteModes`). It changes nothing of the run.
+   */
+  async preprocess(params: { config: FullConfig; suite: Suite; testRun: SuiteModeSource }): Promise<void> {
+    this.metadataCollector.readSuiteModes(params.suite, params.testRun);
+  }
+
   /** Playwright reporter hook: called once at the start of the test run */
   onBegin(config: FullConfig, suite: Suite): void {
+    const argv = runnerArgv(config);
+    this.listMode = isListMode(argv);
     if (this.listMode) {
       this.logger.debug('List mode (--list) detected — no run registered or report uploaded.');
       return;
@@ -444,7 +456,7 @@ export class PiwiDashboardReporter {
     // A run started in a terminal attaches to its hub, the editor whose workspace holds it, else the desktop app whose
     // linked folder does: its workers, which start after this hook, inherit the hub's run channel.
     const dirs = [configDirFromConfig(config), process.cwd()];
-    const gate = { env: process.env, argv: process.argv, terminal: !!process.stdout.isTTY || !!process.stderr.isTTY };
+    const gate = { env: process.env, argv, terminal: !!process.stdout.isTTY || !!process.stderr.isTTY };
     const followed = followHub(dirs, gate);
     if (followed) this.logger.info(followedLine(followed));
     // The hub its workers reach hears how far the run is, from its own process.
@@ -524,13 +536,13 @@ export class PiwiDashboardReporter {
     const grepInvertRe = rawConfig.grepInvert instanceof RegExp ? rawConfig.grepInvert : undefined;
     // Playwright's default grep is /.*/ (matches everything): only another pattern is a real filter. A
     // pattern given on the command line reaches the runner, not config.grep, so it is read from there too.
-    const cliGrep = detectCliGrep();
+    const cliGrep = detectCliGrep(argv);
     const grep = (grepRe && grepRe.source !== '.*' ? grepRe.source : undefined) ?? cliGrep.grep;
     const grepInvert = grepInvertRe?.source ?? cliGrep.grepInvert;
     // File/path filters come from the CLI invocation, not config.grep, and so do the flags that run
     // a subset chosen from history, a diff or a list (`--last-failed`, `--only-changed`, `--test-list`).
-    const fileFilters = detectCliFileFilters();
-    const narrowed = detectCliNarrowingFlags().length > 0;
+    const fileFilters = detectCliFileFilters(argv);
+    const narrowed = detectCliNarrowingFlags(argv).length > 0;
     // A run launched by `piwi run <key>` carries the resolved selection's
     // identity in the environment; stamp it so the dashboard can name the
     // subset and a gate can re-resolve the same definition.
@@ -871,11 +883,12 @@ export class PiwiDashboardReporter {
    * Playwright reporter hook: an error outside any test, such as a global setup that threw, a spec file that did not
    * load (`No tests found` and a web server that did not start come the same way, before any test), or a worker
    * fixture whose teardown threw. The run keeps the first `MAX_RUN_ERRORS`, with what may be a secret hidden, and sends
-   * them with its end.
+   * them with its end. An error of a worker names it (`workerInfo`, Playwright 1.60 and later): its lane, its
+   * Playwright project and the run's shard.
    */
-  onError(error: TestError): void {
+  onError(error: TestError, workerInfo?: ErrorWorker): void {
     if (this.listMode || !this.enabled || this.runErrors.length >= MAX_RUN_ERRORS) return;
-    const kept = runErrorOf(error, this.testPathBase);
+    const kept = runErrorOf(error, this.testPathBase, workerInfo, this.shardInfo?.current ?? null);
     if (kept) this.runErrors.push(kept);
   }
 

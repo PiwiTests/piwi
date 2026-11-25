@@ -90,6 +90,15 @@ export interface WireRunError {
   stack?: string | null;
   /** Where it was thrown: the file relative to the Playwright config's folder, with POSIX separators. */
   location?: { file: string; line: number; column: number } | null;
+  /**
+   * The lane of the worker it came from, Playwright's `parallelIndex` from 0 (a worker fixture whose teardown threw),
+   * as Playwright 1.60 and later name it; absent for an error of no worker.
+   */
+  parallelIndex?: number;
+  /** The shard that worker ran in, in a sharded run: a lane names a worker within its shard. */
+  shardIndex?: number;
+  /** The Playwright project that worker ran. */
+  playwrightProject?: string;
 }
 
 /**
