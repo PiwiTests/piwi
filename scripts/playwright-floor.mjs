@@ -20,10 +20,17 @@ import { fileURLToPath } from 'node:url';
 const repoRoot = path.resolve(import.meta.dirname, '..');
 const PLAYWRIGHT_PACKAGES = ['@playwright/test', 'playwright', 'playwright-core'];
 
-/** The lower bound of a `>=x.y.z` or `^x.y.z` range, as `x.y.z`. */
+/**
+ * The lower bound of a `>=x.y.z <2` range, as `x.y.z`. Any other form fails, a caret range included: `^x.y.z` drops
+ * every version below x.y.z, so it is never the reporter's peer range.
+ */
 export function rangeFloor(range) {
-  const match = /^\s*(?:>=\s*|\^)(\d+\.\d+\.\d+)(?:\s|$)/.exec(range);
-  if (!match) throw new Error(`cannot read a lower bound from the range ${JSON.stringify(range)}`);
+  const match = /^>=(\d+\.\d+\.\d+) <2$/.exec(range);
+  if (!match) {
+    throw new Error(
+      `the reporter's peer range on @playwright/test is ${JSON.stringify(range)}: it must read ">=x.y.z <2", the oldest Playwright the reporter supports`,
+    );
+  }
   return match[1];
 }
 
