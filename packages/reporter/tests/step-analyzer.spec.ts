@@ -640,7 +640,7 @@ describe('flattenSteps captures 1.63 subtitle and params', () => {
     expect(locator.endsWith('…')).toBe(true);
   });
 
-  it('masks token-shaped values in params and subtitle', () => {
+  it('hides a test.step param named like a credential, and masks token-shaped values in the others', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123456';
     const hex = 'a'.repeat(40);
     const flat = flattenSteps([
@@ -652,11 +652,12 @@ describe('flattenSteps captures 1.63 subtitle and params', () => {
         params: { token: jwt, sessionId: hex },
         steps: [],
       },
+      { title: 'Click', category: 'pw:api', duration: 1, params: { selector: `#${hex}` }, steps: [] },
     ] as any);
-    expect(flat[0].params!.token).toBe('[masked-token]');
-    expect(flat[0].params!.sessionId).toBe('[masked-hex]');
-    expect(flat[0].subtitle).toContain('[masked-token]');
+    expect(flat[0].params!.token).toBe('<hidden>');
+    expect(flat[0].params!.sessionId).toBe('<hidden>');
     expect(flat[0].subtitle).not.toContain(jwt);
+    expect(flat[1].params!.selector).toBe('#[masked-hex]');
   });
 
   it('leaves 1.61-shaped steps (no subtitle/params) unchanged', () => {

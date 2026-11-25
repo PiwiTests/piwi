@@ -136,7 +136,7 @@ describe('runBug', () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(SPEC), { status: 200 })));
     const cli = path.join(dir, 'node_modules', 'playwright');
     fs.mkdirSync(cli, { recursive: true });
-    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', exports: { './cli': './cli.js' } }));
+    fs.writeFileSync(path.join(cli, 'package.json'), JSON.stringify({ name: 'playwright', bin: { playwright: 'cli.js' } }));
     fs.writeFileSync(path.join(cli, 'cli.js'), "process.kill(process.pid, 'SIGTERM');\nsetTimeout(() => {}, 10000);\n");
     const errors = vi.spyOn(console, 'error').mockImplementation(() => undefined);
     const out = path.join(dir, 'tests', 'bugs', 'coupon.spec.ts');
