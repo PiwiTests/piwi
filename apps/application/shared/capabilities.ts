@@ -349,11 +349,11 @@ export const CAPABILITIES: CapabilityDef[] = [
     module: 'workflow',
     levels: ['instance', 'project'],
     needs: ['desktop'],
-    detection: null,
+    detection: 'team-comparison',
     passiveData: true,
     hiddenOnDesktop: true,
     since: '0.77.0',
-    doc: 'features/desktop',
+    doc: 'features/compare-with-team',
   },
 ];
 

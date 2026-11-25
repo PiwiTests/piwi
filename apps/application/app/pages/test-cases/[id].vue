@@ -9,6 +9,14 @@ import type { RunWhat } from '~/composables/useRunPlace';
 const route = useRoute();
 const testCaseId = route.params.id;
 
+// Compare with team instance (desktop app): the team instance's CI for this test, once the page shows.
+const { comparison: teamComparison } = useTeamComparison('test-case', () => String(testCaseId));
+const teamComparisonShown = computed(
+  () =>
+    teamComparison.value !== null &&
+    (teamComparison.value.status === 'ok' || teamComparison.value.problem !== 'not-connected'),
+);
+
 type TestCaseDetail = ApiResponse<typeof import('~~/server/api/test-cases/[id].get').default>;
 const { data: testCase, error: testCaseError } = await useFetch<TestCaseDetail>(`/api/test-cases/${testCaseId}`);
 if (testCaseError.value) showPageLoadError(testCaseError.value, 'test');
@@ -306,6 +314,17 @@ useViewScroll(
               <HistoryStrip :history="historyData" />
             </template>
           </ChartCard>
+
+          <!-- Desktop app: the test on the team instance its folder is linked to (Compare with team instance) -->
+          <SectionCard
+            v-if="teamComparisonShown"
+            icon="i-lucide-users"
+            title="Team CI"
+            subtitle="This test on the team instance, by the environment its CI ran it in"
+            data-shot="test-case-team-ci"
+          >
+            <TeamComparisonLine :comparison="teamComparison!" />
+          </SectionCard>
 
           <!-- Recent executions -->
           <SectionCard

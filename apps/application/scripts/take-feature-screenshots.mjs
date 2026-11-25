@@ -2888,6 +2888,132 @@ function videoMaximizeScene(width, height, suffix) {
   };
 }
 
+/**
+ * What the desktop app's server answers for Compare with team instance, as a team instance with two CI environments
+ * would make it: the CI passed the test on this commit in `development`, failed it in `staging` with another error,
+ * and teammates ran it too. `execution` adds the conclusion and the environment differences of a failing execution.
+ */
+function teamComparisonAnswer(execution) {
+  const commit = 'a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4';
+  const day = 24 * 60 * 60 * 1000;
+  const now = Date.now();
+  let id = 900;
+  const result = (values) => {
+    id += 1;
+    return {
+      executionId: id,
+      runId: id - 700,
+      source: 'ci',
+      status: 'passed',
+      flaky: false,
+      incident: false,
+      startTime: now - (id - 900) * day,
+      environment: 'development',
+      branch: 'main',
+      commit: 'f00dbabe00000000000000000000000000000000',
+      playwrightProject: 'chromium',
+      path: `/test-run-cases/${id}`,
+      ...values,
+    };
+  };
+  const development = [
+    result({ commit }),
+    result(),
+    result({ status: 'failed' }),
+    result(),
+    result({ flaky: true }),
+    result(),
+    result(),
+    result(),
+  ];
+  const staging = [
+    result({ environment: 'staging', status: 'failed' }),
+    ...[1, 2, 3, 4].map(() => result({ environment: 'staging' })),
+  ];
+  const teammates = [
+    result({ source: 'local', environment: null, status: 'failed' }),
+    result({ source: 'local', environment: null }),
+  ];
+  const rate = (results, passed) => ({
+    passRate: passed / results.length,
+    flakyRate: results.filter((r) => r.flaky).length / results.length,
+  });
+  const closestPass = {
+    executionId: development[0].executionId,
+    runId: development[0].runId,
+    startTime: development[0].startTime,
+    environment: 'development',
+    branch: 'main',
+    commit,
+    worktree: 'clean',
+    sameCommit: true,
+    snapshot: { values: {}, inferred: [] },
+    path: development[0].path,
+  };
+  return {
+    status: 'ok',
+    instance: 'https://piwi.example.com',
+    teamProjectId: 3,
+    comparison: {
+      testCase: {
+        id: 41,
+        title: 'should login with valid credentials',
+        filePath: 'tests/auth.spec.ts',
+        suitePath: '',
+        quarantined: false,
+        flakyRootCause: null,
+        path: '/test-cases/41',
+      },
+      defaultBranch: 'main',
+      playwrightProjectMatched: true,
+      history: [...development, ...staging, ...teammates],
+      fingerprintComparable: true,
+      cluster: null,
+      closestPass,
+    },
+    rows: [
+      {
+        source: 'ci',
+        environment: 'development',
+        isLocalEnvironment: true,
+        results: development,
+        ...rate(development, 7),
+      },
+      { source: 'ci', environment: 'staging', isLocalEnvironment: false, results: staging, ...rate(staging, 4) },
+      { source: 'local', environment: null, isLocalEnvironment: false, results: teammates, ...rate(teammates, 1) },
+    ],
+    conclusion: execution
+      ? {
+          rule: 'passes-on-commit',
+          text: 'Passes in CI on this commit (development): the failure is likely specific to this machine',
+          environment: 'development',
+          result: development[0],
+        }
+      : null,
+    environmentDiff: execution
+      ? [
+          {
+            key: 'runner.timeZone',
+            label: 'Time zone (runner)',
+            group: 'runner',
+            failing: 'Europe/Paris',
+            baseline: 'UTC',
+          },
+          { key: 'runner.locale', label: 'Locale (runner)', group: 'runner', failing: 'fr-FR', baseline: 'en-US' },
+          { key: 'headless', label: 'Headless', group: 'browser', failing: 'no', baseline: 'yes' },
+          {
+            key: 'playwrightVersion',
+            label: 'Playwright version',
+            group: 'run',
+            failing: '1.58.0',
+            baseline: '1.60.0',
+          },
+          { key: 'shardIndex', label: 'Shard index', group: 'run', failing: null, baseline: '2', informational: true },
+        ]
+      : null,
+  };
+}
+
 const SCENES = [
   // ── Report artifacts (gitignored `.screens/`) ─────────────────────────────
   {
@@ -11408,6 +11534,7 @@ const SCENES = [
         keyToKeep: false,
         linkedProjectIds: [1],
         projectNames: { 1: 'Acme Checkout' },
+        compares: true,
       };
       await page.route('**/api/desktop/run-target', (route) => route.fulfill({ json: { connection } }));
       await page.route('**/api/desktop/events', (route) =>
@@ -11422,6 +11549,50 @@ const SCENES = [
       await card.scrollIntoViewIfNeeded();
       await settle();
       await shoot(undefined, { of: '[data-shot="desktop-team-instance-card"]', pad: 16 });
+    },
+  },
+  ...[
+    { name: 'desktop-team-ci', width: 1280, height: 1100 },
+    { name: 'desktop-team-ci-narrow', width: 390, height: 1800 },
+  ].map(({ name, width, height }) => ({
+    name,
+    description: `A failing execution in the desktop app, compared with the team instance's CI: the Team CI line's conclusion, one strip per CI environment and the teammates' runs, and the side panel of what differs from the closest CI pass, at ${width} px (desktop shell)`,
+    mode: 'desktop',
+    route: '/test-run-cases/37',
+    viewport: { width, height },
+    outputs: [`${name}.png`, `${name}-differences.png`],
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/desktop/team/executions/*/comparison', (route) =>
+        route.fulfill({ json: teamComparisonAnswer(true) }),
+      );
+      await page.reload();
+      const line = page.locator('[data-shot="team-ci-line"]');
+      await line.waitFor({ timeout: 60_000 });
+      await settle();
+      await shoot('', { of: '[data-shot="situation-block"]', pad: 12 });
+      await page.locator('[data-shot="team-ci-differences"]').click();
+      await page.locator('[data-shot="team-ci-differences-panel"]').waitFor();
+      await settle();
+      await shoot('differences', { of: '[role="dialog"]', pad: 0 });
+    },
+  })),
+  {
+    name: 'desktop-test-team-ci',
+    description:
+      "A test's page in the desktop app: the Team CI card, the test's results on the team instance by CI environment and the teammates' runs (desktop shell)",
+    mode: 'desktop',
+    route: '/test-cases/1',
+    viewport: { width: 1280, height: 1600 },
+    async run({ page, shoot, settle }) {
+      await page.route('**/api/desktop/team/test-cases/*/comparison', (route) =>
+        route.fulfill({ json: teamComparisonAnswer(false) }),
+      );
+      await page.reload();
+      const card = page.locator('[data-shot="test-case-team-ci"]');
+      await card.waitFor({ timeout: 60_000 });
+      await card.scrollIntoViewIfNeeded();
+      await settle();
+      await shoot(undefined, { of: '[data-shot="test-case-team-ci"]', pad: 12 });
     },
   },
   {
@@ -12125,7 +12296,7 @@ const SCENES = [
       await request.patch(`${base}/api/capabilities`, { data: { decisions: { notifications: 'declined' } } });
     },
     route: '/settings/capabilities',
-    viewport: { width: 1280, height: 3800 },
+    viewport: { width: 1280, height: 4000 },
     async run({ page, shoot, settle }) {
       // Open the folded Declined group so the reconsider control shows.
       await page
@@ -12135,7 +12306,7 @@ const SCENES = [
         .catch(() => {});
       await settle();
       await shoot('wide', { of: '[data-shot="setup-ladder"]', pad: 12 });
-      await page.setViewportSize({ width: 400, height: 4900 });
+      await page.setViewportSize({ width: 400, height: 5200 });
       await settle();
       await shoot('narrow', { of: '[data-shot="setup-ladder"]', pad: 8 });
     },

@@ -1,26 +1,31 @@
 # Compare a local failure with the team instance
 
+- Status: accepted
+- Date: 2026-11-25
+
 A plan to let a person who sees a test fail in the desktop app find out, from the same page, whether the failure comes
 from their machine: how the test does in the team's CI, whether the team instance already knows the same error, and
 what differs between their run and the CI's. It also opens the same test on the team instance in one click. It asks
 the team instance for this through the connection **Run on my machine** made, which today can only receive runs.
 
-**Status.** Proposed 2026-11-25. PR 1 is built: the `team-comparison` capability, enforced on the route and declined
-from a project's settings (the capability ladder of Settings → Capabilities lists it with the pages, in PR 3);
-`project:read` on the key the device flow gives a desktop app, said on the verification page and on Connected apps;
-`requireRunTarget` taking each route's own permission; and `GET /api/run-targets/projects/:id/test-comparison`, with
-register entry D70. PR 2a is built: the desktop app's server asks the team instance through the request host
-(`compare`), checks the answer, keeps it two minutes, and answers `GET /api/desktop/team/executions/:id/comparison` and
-`…/test-cases/:id/comparison` with the history in rows by environment, the conclusion and the environment diff against
-the closest CI pass; Settings → Desktop app says when a connection made before it must be made again. PR 2b is built:
-the device flow connects a desktop app whose owner reads a project where Compare with team instance is not declined,
-even with `machine-runs` off, and its verification page says what the app will do for that person there (`receives`,
-`compares`). PR 3 (the pages) remains. The three parts ship as one pull request. The maintainer settled on 2026-11-25:
-one connection and one key, with a read permission beside `run:receive` (D1); a capability on by default, labeled
-**Compare with team instance** (D2); the CI as the only reference, the team's other shared runs shown apart, every
-environment of the team project listed (D3); sign-in required (D10); all four parts in the first version (D5 to D8); the
-comparison inside the history block of the execution page (D9); the instance's and the desktop server's work first, the
-page's after the execution page's new layout has merged (Delivery). The other decisions are recommendations.
+**Status.** Proposed and settled 2026-11-25, shipped in one pull request in three parts. PR 1: the `team-comparison`
+capability, on by default and declined on Settings → Capabilities or in a project's settings; `project:read` on every
+key the device flow gives a desktop app, the route refusing each comparison an instance or a project declines
+(`TEAM_COMPARISON_OFF`); `requireRunTarget` taking each route's own permission; and `GET
+/api/run-targets/projects/:id/test-comparison`, with register entry D70. PR 2a: the desktop app's server asks the team
+instance through the request host (`compare`), checks the answer, keeps it two minutes and answers `GET
+/api/desktop/team/executions/:id/comparison` and `…/test-cases/:id/comparison` with the history in rows by environment,
+the conclusion and the environment diff against the closest CI pass. PR 2b: the device flow connects a desktop app for
+the comparison alone where `machine-runs` is off, and its verification page says what the app will do there. PR 3: the
+**Team CI** line of the execution page's situation block, its side panel of environment differences, the **Team CI**
+card of the test page, the capability on the ladder, and the docs page. The maintainer settled on 2026-11-25: one
+connection and one key, with a read permission beside `run:receive` (D1); a capability on by default, labeled **Compare
+with team instance** (D2); the CI as the only reference, the team's other shared runs shown apart, every environment of
+the team project listed (D3); sign-in required (D10); all four parts in the first version (D5 to D8); the comparison
+next to the history of the execution page (D9). Two choices changed during the build: every desktop key holds
+`project:read` whatever the instance decides, so a decline holds over every key (D1); and the team's history is its own
+**Team CI** line right under **History**, rather than rows inside it, so the two histories read apart (D9). Left out, as
+**Not in this plan** says: the comparison of a whole local run, an MCP tool, and reading an instance without sign-in.
 
 ## Summary
 
@@ -57,7 +62,7 @@ page's after the execution page's new layout has merged (Delivery). The other de
 | The connection | Device flow (`server/utils/extension-connect.ts`), Settings → Desktop app, `run_target.rs` | One team instance at a time, the key in the OS keychain, handed to the bundled server at each start (`hand_kept_key`), never to the window. |
 | The key's permissions | `RUN_TARGET_KEY_PERMISSIONS` (`['run:receive']`), `requireRunTarget` (`server/utils/run-requests.ts`) | A key holding a list of permissions serves the target routes alone (`requireAuth` refuses it). The check asks for that exact list. |
 | The device flow's gate | `server/api/extension/connect/decision.post.ts` | A target connects only with sign-in on, `run:receive` held somewhere and `machine-runs` on. |
-| A read with the target key | `GET /api/run-targets/projects/:id/environments` and `…/run-variables` | The desktop app already reads its team project's environments this way, at each use, with no copy kept ([environments.md](../adr/environments.md), D13). |
+| A read with the target key | `GET /api/run-targets/projects/:id/environments` and `…/run-variables` | The desktop app already reads its team project's environments this way, at each use, with no copy kept ([environments.md](environments.md), D13). |
 | Folder links | `team_project_of_folder` (`run_target.rs`), `hand_links`, the discovery file's `projects` (`server/utils/desktop-links.ts`) | The bundled server can go from a local project to its folder, and from the folder to the team project. |
 | Test identity | `test_cases`: `externalId`, else `filePath`, `suitePath`, `title` | The rule ingestion matches a test by. Local and CI runs of the same config give the same values. |
 | Error fingerprint | `computeErrorFingerprint`, `FINGERPRINT_VERSION` (`shared/error-fingerprint.ts`), `failure_clusters`, `failure_cluster_aliases` | The same hash on every server of the same version, so a fingerprint finds a cluster without the error's text. |
@@ -195,14 +200,16 @@ facts, never as the cause.
 
 ### D9. Where it shows (settled)
 
-In the execution page's layout the other session is building (history at the top, a side panel):
+In the execution page's layout, where the test's **History** is a line of the situation block and the side panels
+hold what does not fit it:
 
-- **The history block** shows the local history and the team's CI history side by side, and the team's other shared
-  runs as a third row (D3).
-- **The situation block** gets the conclusion as a new entry of `SITUATION_ROWS`.
-- **Beside the occurrences**, the same error in CI (D7).
-- **The side panel** gets a section with the environment differences (D8).
-- **Open on the team instance** sits with the history block's team row.
+- **A Team CI line** (`teamCi`, an entry of `SITUATION_ROWS` right after `history`) holds the conclusion, with a link
+  to the cluster of the same error (D7) or to the CI run it read, then one strip per CI environment and one for the
+  teammates' shared runs (D3), each with its pass rate, then **Open on the team instance**.
+- **The environment differences** (D8) open from that line in a side panel of their own, with a link to the closest
+  CI pass on the team instance.
+- When the app cannot compare, the line says why in one sentence (a folder not linked, a key to replace, an instance
+  that did not answer), and shows nothing while the app is connected to no team instance.
 
 The test page (`test-cases/[id]`) shows the team's CI history and the link, with no conclusion: it has no single
 execution to compare. Pages show the comparison only in the desktop shell (`useIsDesktop`), for a project whose folder
@@ -265,11 +272,11 @@ The desktop app's bundled server, behind the desktop guard:
 
 ## What changes in other records
 
-- [`1.0-stabilization.md`](1.0-stabilization.md): a new entry, D70, for the route and its answer's fields, the target
-  key's permissions (`run:receive`, `project:read`), the `team-comparison` capability and the 403 error code of a key
-  without `project:read`.
-- [`run-on-my-machine.md`](run-on-my-machine.md): the connection's key may hold `project:read` beside `run:receive`,
-  and the device flow's gate accepts either capability.
+- [`1.0-stabilization.md`](../proposals/1.0-stabilization.md): a new entry, D70, for the route and its answer's fields,
+  the target key's permissions (`run:receive`, `project:read`), the `team-comparison` capability and the 403 error code
+  of a key without `project:read`.
+- [`run-on-my-machine.md`](../proposals/run-on-my-machine.md): the connection's key may hold `project:read` beside
+  `run:receive`, and the device flow's gate accepts either capability.
 - `apps/desktop/AGENTS.md`: the rule on the instance's key names the bundled server's comparison routes as its other
   use.
 - The docs: the desktop app's feature page, a section on comparing with the team instance, and the Run on my machine

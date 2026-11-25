@@ -57,6 +57,14 @@ const requestFetch = useRequestFetch();
 
 // The rows ride in the SSR payload, so the server and the client agree on the
 // History block's strip at hydration.
+// Compare with team instance (desktop app): the team instance's CI for this test, once the page shows.
+const { comparison: teamComparison } = useTeamComparison('execution', () => String(testCaseId));
+const teamComparisonShown = computed(
+  () =>
+    teamComparison.value !== null &&
+    (teamComparison.value.status === 'ok' || teamComparison.value.problem !== 'not-connected'),
+);
+
 const { data: historyData } = await useAsyncData(
   `test-run-case-history-${testCaseId}`,
   () => {
@@ -1042,7 +1050,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
             />
           </template>
 
-          <!-- Line 8: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 8, in the desktop app: how the test does in the team instance's CI, and the conclusion of a failure -->
+          <template v-if="teamComparisonShown" #teamCi>
+            <TeamComparisonLine :comparison="teamComparison!" :with-conclusion="isProblem" />
+          </template>
+
+          <!-- Line 9: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"
