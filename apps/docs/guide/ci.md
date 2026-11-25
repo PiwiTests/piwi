@@ -120,6 +120,10 @@ How the merge works:
 
 **All shards must use the same `projectName`.**
 
+Playwright counts a sharded run's tests before it splits them, so a shard left with none passes. From Playwright 1.65,
+a sharded run fails with `No tests found` when its whole selection is empty, as an unsharded one does, unless it passes
+`--pass-with-no-tests`: `piwi run --plan` passes it to every shard.
+
 Jobs sharded with `piwi run --shard` merge the same way ([details](/features/test-selection#print-shard-and-reorder)).
 
 If your CI isn't detected, set the label yourself to anything common to all shards:

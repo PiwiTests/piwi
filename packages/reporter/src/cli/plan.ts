@@ -274,6 +274,17 @@ export function isPlannedRun(argv: string[]): boolean {
   return own.includes('--reuse') || own.some((arg) => arg === '--plan' || arg.startsWith('--plan='));
 }
 
+/**
+ * Playwright's arguments for one shard of a plan: `--shard`, with `--pass-with-no-tests` unless `others` pass it, so a
+ * shard passes when no test the plan names is left (Playwright 1.65 and later fail a sharded run whose whole selection
+ * is empty). None for a run that is not sharded.
+ */
+function planShardArgs(shard: string | null, others: string[]): string[] {
+  if (!shard) return [];
+  const passWithNoTests = others.includes('--pass-with-no-tests') ? [] : ['--pass-with-no-tests'];
+  return [`--shard=${shard.replace(/\s+/g, '')}`, ...passWithNoTests];
+}
+
 /** `argv` without `--reuse`, for the run a failed plan falls back to. */
 function withoutReuse(argv: string[]): string[] {
   const dashIndex = argv.indexOf('--');
@@ -314,7 +325,7 @@ async function runStoredPlan(
   if (planned && named && planned.toLowerCase() !== named.toLowerCase()) {
     throw new Error(`plan ${planId} was made for the environment ${planned}, and this run names ${named}`);
   }
-  const shardArgs = args.shard ? [`--shard=${args.shard.replace(/\s+/g, '')}`] : [];
+  const shardArgs = planShardArgs(args.shard, [...plan.args, ...args.extra]);
   console.error(
     `piwi run: plan ${planId}${args.shard ? ` (shard ${args.shard})` : ''} → ${plan.selection.key}, skipping ${plan.counts.reused} reused test(s)`,
   );
