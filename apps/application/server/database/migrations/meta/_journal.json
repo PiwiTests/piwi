@@ -1366,6 +1366,13 @@
       "when": 1795617103540,
       "tag": "0194_credential_authorization_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 195,
+      "version": "6",
+      "when": 1795637459333,
+      "tag": "0195_unique_black_bird",
+      "breakpoints": true
     }
   ]
 }

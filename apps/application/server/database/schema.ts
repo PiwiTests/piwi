@@ -81,6 +81,7 @@ export const {
   testFunctions,
   testSelections,
   runPlans,
+  shardSplits,
   reusedResults,
   shareLinks,
   graphNodes,

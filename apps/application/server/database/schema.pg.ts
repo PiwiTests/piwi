@@ -1919,6 +1919,37 @@ export const runPlans = pgTable(
   }),
 );
 
+// Shard splits: how the reporter's balanced sharding splits one listing of a
+// run's tests between its shards, keyed by project, commit, shard count and the
+// listing's hash. The first shard to ask stores it and every other shard reads
+// it, so a run landing between two shards' start changes nothing. A split
+// expires after a day; storing one deletes the project's expired ones.
+export const shardSplits = pgTable(
+  'shard_splits',
+  {
+    id: serial('id').primaryKey(),
+    projectId: integer('project_id')
+      .notNull()
+      .references(() => projects.id, { onDelete: 'cascade' }),
+    commitSha: text('commit_sha').notNull(), // the commit the shards run, '' when the reporter names none
+    shardTotal: integer('shard_total').notNull(),
+    testsHash: text('tests_hash').notNull(), // SHA-256 of the listed tests, in the order the reporter lists them
+    split: jsonb('split').notNull(), // StoredShardSplit: each listed test's shard, each shard's duration
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    expiresAt: timestamp('expires_at', { mode: 'date' }).notNull(),
+  },
+  (table) => ({
+    keyUnique: uniqueIndex('idx_shard_splits_key').on(
+      table.projectId,
+      table.commitSha,
+      table.shardTotal,
+      table.testsHash,
+    ),
+  }),
+);
+
 // Share links — read-only capability tokens for handing one execution or one
 // failure cluster to someone without a dashboard account. The token itself is
 // never stored: only its SHA-256 hash (unguessable 256-bit secrets need no
