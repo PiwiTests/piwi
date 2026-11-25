@@ -72,7 +72,7 @@ import {
   browserLinesInWorker,
   cssCoverageInWorker,
 } from '../collect/coverage-settings.js';
-import { internalCall } from './quiet-capture.js';
+import { internalCall, internalCallWithin } from './quiet-capture.js';
 
 /** Largest source map fetched, in bytes. */
 const MAX_MAP_BYTES = 20 * 1024 * 1024;
@@ -752,18 +752,16 @@ const READ_WAIT_MS = 5000;
 
 /**
  * Read the coverage gathered since the last read: V8 resets what it reports at
- * each read. A read that does not answer in time counts as empty.
+ * each read. A read that does not answer in time counts as empty, and ends
+ * there on a Playwright whose DevTools calls take a timeout.
  */
 function readCoverage(page: Page, cdp: CDPSession): Promise<ScriptCoverage[]> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const late = new Promise<ScriptCoverage[]>((resolve) => {
-    timer = setTimeout(() => resolve([]), READ_WAIT_MS);
-  });
-  const taken = internalCall(page, () => cdp.send('Profiler.takePreciseCoverage')).then(
+  return internalCallWithin(page, READ_WAIT_MS, (options) =>
+    cdp.send('Profiler.takePreciseCoverage', undefined, options),
+  ).then(
     (answer) => answer.result as ScriptCoverage[],
     () => [],
   );
-  return Promise.race([taken, late]).finally(() => clearTimeout(timer));
 }
 
 /**

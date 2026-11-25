@@ -133,3 +133,20 @@ export function internalCall<T>(owner: unknown, run: () => Promise<T>): Promise<
   if (typeof wrap !== 'function') return run();
   return wrap.call(owner, run, { internal: true, title: 'Piwi capture' }) as Promise<T>;
 }
+
+/**
+ * {@link internalCall} with a deadline of `ms`: `run` gets it as the `timeout` option of a DevTools session's `send`,
+ * which Playwright 1.65 and later end the call at, and an older Playwright ignores; the promise returned rejects once
+ * `ms` pass, on every version.
+ */
+export function internalCallWithin<T>(
+  owner: unknown,
+  ms: number,
+  run: (options: { timeout: number }) => Promise<T>,
+): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const late = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`no answer within ${ms} ms`)), ms);
+  });
+  return Promise.race([internalCall(owner, () => run({ timeout: ms })), late]).finally(() => clearTimeout(timer));
+}

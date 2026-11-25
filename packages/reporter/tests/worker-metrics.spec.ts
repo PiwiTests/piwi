@@ -94,7 +94,41 @@ describe('PageReader', () => {
     expect(await reader.read(page)).toEqual({ cpuMs: 1250, heapMb: 3, nodes: 420, listeners: 12 });
     await reader.read(page);
     expect(newCDPSession).toHaveBeenCalledTimes(1);
-    expect(send).toHaveBeenCalledWith('Performance.enable', { timeDomain: 'threadTicks' });
+    expect(send).toHaveBeenCalledWith('Performance.enable', { timeDomain: 'threadTicks' }, { timeout: 5000 });
+    expect(send).toHaveBeenCalledWith('Performance.getMetrics', undefined, { timeout: 5000 });
+  });
+
+  it('ends a DevTools call that does not answer within its deadline, and reads null', async () => {
+    vi.useFakeTimers();
+    try {
+      // A Playwright older than 1.65 ignores the timeout: the call stays open, and the read gives up on it.
+      const send = vi.fn((method: string) =>
+        method === 'Performance.getMetrics' ? new Promise<never>(() => {}) : Promise.resolve({}),
+      );
+      const page = { context: () => ({ newCDPSession: async () => ({ send }) }) };
+      const read = new PageReader().read(page);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await read).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('gives up on a page whose Performance.enable never answers, once', async () => {
+    vi.useFakeTimers();
+    try {
+      const send = vi.fn(() => new Promise<never>(() => {}));
+      const newCDPSession = vi.fn(async () => ({ send }));
+      const page = { context: () => ({ newCDPSession }) };
+      const reader = new PageReader();
+      const read = reader.read(page);
+      await vi.advanceTimersByTimeAsync(5000);
+      expect(await read).toBeNull();
+      expect(await reader.read(page)).toBeNull();
+      expect(newCDPSession).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('gives up on a page whose browser has no CDP, once', async () => {

@@ -1,7 +1,7 @@
 import { describe, it, expect, vi } from 'vitest';
 import { createRequire } from 'node:module';
 import * as path from 'node:path';
-import { boxCaptureFrames, internalCall } from '../src/internal/capture/quiet-capture.js';
+import { boxCaptureFrames, internalCall, internalCallWithin } from '../src/internal/capture/quiet-capture.js';
 
 describe('internalCall', () => {
   it('runs the read through the owner as an internal API call', async () => {
@@ -26,6 +26,36 @@ describe('internalCall', () => {
         throw new Error('page closed');
       }),
     ).rejects.toThrow('page closed');
+  });
+});
+
+describe('internalCallWithin', () => {
+  it('hands the deadline to the call as its timeout, through the owner as an internal call', async () => {
+    const wrap = vi.fn(async (run: () => Promise<unknown>, _options: { internal: boolean }) => run());
+    const run = vi.fn(async (options: { timeout: number }) => options.timeout);
+    await expect(internalCallWithin({ _wrapApiCall: wrap }, 250, run)).resolves.toBe(250);
+    expect(run).toHaveBeenCalledWith({ timeout: 250 });
+    expect(wrap.mock.calls[0]![1]).toMatchObject({ internal: true });
+  });
+
+  it('rejects once the deadline passes, when the call ignores its timeout', async () => {
+    vi.useFakeTimers();
+    try {
+      const pending = internalCallWithin({}, 250, () => new Promise<never>(() => {}));
+      const settled = expect(pending).rejects.toThrow('no answer within 250 ms');
+      await vi.advanceTimersByTimeAsync(250);
+      await settled;
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('passes a failed call through unchanged', async () => {
+    await expect(
+      internalCallWithin({}, 250, async () => {
+        throw new Error('Target closed');
+      }),
+    ).rejects.toThrow('Target closed');
   });
 });
 
