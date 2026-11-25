@@ -26,6 +26,7 @@ import {
 import type { PiwiSteps } from '@piwitests/core/steps';
 import { files, locatorSnapshots, networkRequests, testCases, testRunsCases } from '../../server/database/schema';
 import { executionFailed, failurePageScreenshot, isScreenshotFileRow } from '#shared/file-classify';
+import { isConsoleErrorType, isPageErrorType } from '#shared/console-entries';
 import { buildExportZip } from '#shared/export/zip';
 import type { ExportAssetReader } from '#shared/export/types';
 import type { BrowserConfig } from '#shared/types';
@@ -57,15 +58,20 @@ interface ExecutionBugReport {
 
 type ConsoleRow = { type?: unknown; text?: unknown; timestamp?: unknown };
 
-/** The console's errors and warnings, as a report keeps them. */
-function consoleEntries(raw: unknown): Array<{ level: 'error' | 'warn'; message: string; time: number | null }> {
+/** The console's errors and warnings, and the page's uncaught errors, as a report keeps them. */
+function consoleEntries(raw: unknown): Array<{
+  level: 'error' | 'warn';
+  message: string;
+  time: number | null;
+  source: 'console' | 'error';
+}> {
   if (!Array.isArray(raw)) return [];
   return (raw as ConsoleRow[]).flatMap((entry) => {
     const type = typeof entry?.type === 'string' ? entry.type : '';
-    const level =
-      type === 'error' || type === 'pageerror' ? 'error' : type === 'warning' || type === 'warn' ? 'warn' : null;
+    const level = isConsoleErrorType(type) ? 'error' : type === 'warning' || type === 'warn' ? 'warn' : null;
     if (!level || typeof entry.text !== 'string') return [];
-    return [{ level, message: entry.text, time: typeof entry.timestamp === 'number' ? entry.timestamp : null }];
+    const time = typeof entry.timestamp === 'number' ? entry.timestamp : null;
+    return [{ level, message: entry.text, time, source: isPageErrorType(type) ? 'error' : 'console' }];
   });
 }
 

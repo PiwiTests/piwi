@@ -144,7 +144,7 @@ p { margin:.4rem 0; }
 .chip.new { color:var(--fail); border-color:currentColor; font-weight:650; }
 
 /* Matches getStatusColor in app/utils: timed-out reads as failed, interrupted as neutral, didn't run as a warning. */
-.s-failed, .s-timedout, .s-error, .s-open { color:var(--fail); }
+.s-failed, .s-timedout, .s-error, .s-assert, .s-pageerror, .s-open { color:var(--fail); }
 .s-passed, .s-resolved { color:var(--pass); }
 .s-flaky { color:var(--flaky); }
 .s-skipped, .s-interrupted, .s-log, .s-debug, .s-ignored { color:var(--skip); }

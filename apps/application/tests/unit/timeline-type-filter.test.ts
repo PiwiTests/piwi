@@ -160,9 +160,10 @@ describe('countTimelineTypes', () => {
 describe('timelineItemSeverity', () => {
   const base = { lane: 'console' as const };
 
-  test('reads failed items and error or fatal entries as errors', () => {
+  test('reads failed items, error or fatal entries and uncaught page errors as errors', () => {
     expect(timelineItemSeverity({ lane: 'network', status: '504', failed: true })).toBe('error');
     expect(timelineItemSeverity({ ...base, status: 'error' })).toBe('error');
+    expect(timelineItemSeverity({ ...base, status: 'pageerror' })).toBe('error');
     expect(timelineItemSeverity({ lane: 'backend', status: 'FATAL' })).toBe('error');
   });
 

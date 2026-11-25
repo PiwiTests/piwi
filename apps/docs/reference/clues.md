@@ -22,7 +22,7 @@ after it.
 |---|---|---|
 | Failed request before the failure<br>`failed-request-before-failure` | strong | A request returned 5xx, or failed without a response (the clue names the browser's error, such as `net::ERR_CONNECTION_RESET`), in the 10 seconds before the moment of failure. |
 | Slow request overlapping the failure<br>`slow-request-overlapping-failure` | medium | A request slower than `PIWI_AI_SLOW_REQUEST_MS` (default 1,500 ms) was still in flight during the failed step. |
-| Console mentions the target<br>`console-mentions-target` | strong for an error, medium for a warning | A console entry in the failure window names the failing locator or route. |
+| Console mentions the target<br>`console-mentions-target` | strong for an error or an uncaught page error, medium for a warning | A console entry in the failure window names the failing locator or route. |
 | Dialog open at the failure<br>`dialog-open-on-failure` | strong | A browser dialog (`alert`, `confirm`, `prompt`, `beforeunload`) closed in the failure window, so it was open when the action ran. Needs Playwright 1.63 or later. |
 | Backend error attached<br>`backend-error-attached` | strong | A request in the failure window carries an error-level [backend log](/guide/backend-logs). |
 | Element renamed<br>`element-renamed` | strong | [Locator healing](/features/locator-healing) found the element under a new identity, or flagged the stored name as stale while still recommending a fix. |

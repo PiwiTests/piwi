@@ -16,6 +16,7 @@ import type { FailureCluster } from '../database/schema';
 import type { DiagnosisContextCoverage } from '~~/types/api';
 import { stepLabel, orderedStepParams, pausedOverlap, pauseSpans } from '@piwitests/core/step-analysis';
 import { stepFailureRoles, type StepFailureRole } from '#shared/step-tree';
+import { isConsoleErrorType } from '#shared/console-entries';
 import { condenseErrorText, maskVolatile, stripAnsi } from '#shared/error-fingerprint';
 import { DIAGNOSIS_SECTIONS } from '#shared/diagnosis-sections';
 import { evidenceAbsenceReason } from '#shared/evidence-state';
@@ -629,9 +630,10 @@ export function runContextSection(rep: RepresentativeRow): string | null {
   return `## Run Context\n${lines.join('\n')}`;
 }
 
+/** The console errors and uncaught page errors of an execution. */
 function countConsoleErrors(logs: ConsoleLogEntry[] | null): number {
   if (!Array.isArray(logs)) return 0;
-  return logs.filter((l) => l?.type === 'error').length;
+  return logs.filter((l) => isConsoleErrorType(l?.type)).length;
 }
 
 function relativeDays(d: Date): string {
@@ -744,7 +746,9 @@ export async function baselineComparisonSection(
   const failErrors = countConsoleErrors(rep.consoleLogs as ConsoleLogEntry[] | null);
   const passErrors = countConsoleErrors(last.consoleLogs as ConsoleLogEntry[] | null);
   if (failErrors !== passErrors) {
-    lines.push(`- Console errors: ${failErrors} in the failing run vs ${passErrors} when it last passed`);
+    lines.push(
+      `- Console errors (uncaught page errors included): ${failErrors} in the failing run vs ${passErrors} when it last passed`,
+    );
   }
 
   const failSteps = Array.isArray(rep.steps) ? rep.steps.length : null;

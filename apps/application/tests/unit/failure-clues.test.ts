@@ -312,6 +312,16 @@ describe('console-mentions-target', () => {
     expect(clue?.strength).toBe('medium');
   });
 
+  test('an uncaught page error that names the target is strong, and says it is one', () => {
+    const input = baseInput({
+      consoleLogs: [{ type: 'pageerror', text: 'TypeError: Pay quote is undefined', timestamp: T0 + 3_000 }],
+    });
+    const clue = runClues(input).find((c) => c.rule === 'console-mentions-target');
+    expect(clue?.strength).toBe('strong');
+    expect(clue?.title).toBe('Uncaught page error names the failing target');
+    expect(clue?.detail).toMatch(/^An uncaught page error in the failure window mentions "Pay"/);
+  });
+
   test('negative: an unrelated console error does not fire', () => {
     const input = baseInput({
       consoleLogs: [{ type: 'error', text: 'favicon.ico failed to load', timestamp: T0 + 3_000 }],

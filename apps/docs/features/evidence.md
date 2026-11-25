@@ -73,7 +73,7 @@ When a test passed on retry, the **Attempts** tab lists every attempt (status an
 - the **error** present on the failing attempt and gone on the pass;
 - a **request**, keyed by route (`GET /api/cart/:id`), that failed (5xx or no response) on one attempt only, or took
   at least 1 s and twice as long on the failing one;
-- a **console** error or warning logged on one attempt only;
+- a **console** error, warning or page error on one attempt;
 - a **step** that errored, ran much slower, or ran with different **params** on one attempt;
 - a **page-state or URL** difference, including storage keys and cookies;
 - an **ARIA structural** difference at the landmark and heading level.
