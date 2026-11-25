@@ -88,7 +88,7 @@ import {
   type FlakeConditions,
 } from '../flake/mode.js';
 import type { FlakePlan } from '@piwitests/core/flake-plan';
-import { joinErrorMessages } from '@piwitests/core/error-text';
+import { joinErrorMessages, pageErrorStackPlace, pageErrorText } from '@piwitests/core/error-text';
 import { finalizeCodeReach } from '@piwitests/core/code-reach';
 import { SECRET_AUTOCOMPLETE, cutText, hideSecretsInText, maskUrlFragment } from '@piwitests/core/mask';
 import { environmentalSkipReason, inspectionGateFromTestInfo, shouldInspectOnFailure } from './inspect-on-failure.js';
@@ -3141,6 +3141,54 @@ function consoleLocation(location: {
   return `${location.url}:${location.line ?? location.lineNumber}:${location.column ?? location.columnNumber}`;
 }
 
+/** What a context's `weberror` hands its listeners: `location()` from Playwright 1.60. */
+interface WebErrorLike {
+  error(): unknown;
+  location?: () => { url: string; line?: number; column?: number } | null | undefined;
+}
+
+/**
+ * Where each uncaught page error was thrown, as `url:line:column` (0-based), by its error: Playwright hands the
+ * context's `weberror` the error first, then the page's `pageerror` the same one.
+ */
+const PAGE_ERROR_LOCATIONS = new WeakMap<object, string>();
+
+/** Keep the place `WebError.location()` gives each uncaught error of a context's pages. */
+function notePageErrorLocations(context: BrowserContext): void {
+  if (typeof context.on !== 'function') return;
+  (context.on as (event: string, handler: (webError: WebErrorLike) => void) => void)('weberror', (webError) => {
+    try {
+      const error = webError.error();
+      const location = typeof webError.location === 'function' ? webError.location() : null;
+      if (error && typeof error === 'object' && location?.url) {
+        PAGE_ERROR_LOCATIONS.set(error, consoleLocation(location));
+      }
+    } catch {
+      /* a context event handler must never throw */
+    }
+  });
+}
+
+/**
+ * Where an uncaught page error was thrown, as `url:line:column` (0-based): the place its `weberror` gave, else the
+ * first frame of its stack that names a URL.
+ */
+function pageErrorLocation(error: unknown): string | null {
+  if (!error || typeof error !== 'object') return null;
+  return PAGE_ERROR_LOCATIONS.get(error) ?? pageErrorStackPlace((error as { stack?: unknown }).stack);
+}
+
+/** An uncaught page error's text: `TypeError: cart is undefined`, or the value thrown that is no `Error`. */
+function thrownText(error: unknown): string {
+  if (error instanceof Error) return pageErrorText(error) || 'Error';
+  if (typeof error === 'string') return error;
+  try {
+    return JSON.stringify(error) ?? String(error);
+  } catch {
+    return String(error);
+  }
+}
+
 /**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
@@ -3294,11 +3342,23 @@ function instrumentPage(page: Page): void {
     });
   }
 
-  // An exception the page threw and nothing caught once a server probe's fault
-  // was applied: its sign the application did not handle the fault.
-  page.on('pageerror', () => {
+  // An exception the page threw and nothing caught: a console entry of its own, `pageerror`, and once a server probe's
+  // fault was applied, its sign the application did not handle the fault.
+  page.on('pageerror', (error: unknown) => {
     const sink = currentSink;
-    if (sink?.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
+    if (!sink) return;
+    if (sink.probeItem?.level === 'server' && sink.probeInterception?.applied()) sink.probePageErrors++;
+    if (sink.frozenAt !== null) return;
+    try {
+      sink.consoleEntries.push({
+        type: 'pageerror',
+        text: thrownText(error),
+        timestamp: Date.now(),
+        location: pageErrorLocation(error),
+      });
+    } catch {
+      /* a page event handler must never throw */
+    }
   });
 
   page.on('console', (msg: ConsoleMessage) => {
@@ -3566,6 +3626,7 @@ function instrumentContext(context: BrowserContext): void {
     });
   }
   observeOwnApiRequests(context);
+  notePageErrorLocations(context);
   // In a run a person may pause and watch, the context's calls are followed from its start, for a view that comes later.
   if (runChannelOpen() || liveViewMayPause()) listenCalls(context, layersTitleOf);
   // Inspect may trace the context itself: the test's own `tracing.start` stops Piwi's trace first.

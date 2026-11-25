@@ -1510,8 +1510,8 @@ describe('failure ARIA snapshot', () => {
 });
 
 describe('console capture', () => {
-  /** Drive the fixtures against a fake page, fire console messages, read the attachment. */
-  async function runConsole(messages: unknown[]): Promise<Array<Record<string, unknown>> | null> {
+  /** Drive the fixtures against a fake page, fire console messages (or `event`), read the attachment. */
+  async function runConsole(messages: unknown[], event = 'console'): Promise<Array<Record<string, unknown>> | null> {
     const handlers = new Map<string, Array<(arg?: unknown) => void>>();
     const factory = () => ({ click: async () => {}, evaluate: async () => null });
     const fakePage = {
@@ -1546,7 +1546,7 @@ describe('console capture', () => {
       {},
       () =>
         pageFixture({ page: fakePage }, async () => {
-          for (const message of messages) (handlers.get('console') ?? []).forEach((h) => h(message));
+          for (const message of messages) (handlers.get(event) ?? []).forEach((h) => h(message));
         }),
       testInfo,
     );
@@ -1568,6 +1568,96 @@ describe('console capture', () => {
     expect(entries?.map((entry) => [entry.text, entry.location])).toEqual([
       ['current', 'http://shop.test/app.js:11:4'],
       ['older', 'http://shop.test/app.js:7:2'],
+    ]);
+  });
+
+  it('records an uncaught page error, placed by the first frame of its stack that names a URL', async () => {
+    const error = new TypeError('cart is undefined');
+    error.stack = [
+      'TypeError: cart is undefined',
+      '    at new Promise (<anonymous>)',
+      '    at renderCart (http://shop.test/assets/cart.js:12:5)',
+      '    at http://shop.test/assets/app.js:3:1',
+    ].join('\n');
+    const entries = await runConsole([error, 'rejected without an error'], 'pageerror');
+    expect(entries).toEqual([
+      {
+        type: 'pageerror',
+        text: 'TypeError: cart is undefined',
+        timestamp: expect.any(Number),
+        location: 'http://shop.test/assets/cart.js:11:4',
+      },
+      { type: 'pageerror', text: 'rejected without an error', timestamp: expect.any(Number), location: null },
+    ]);
+  });
+});
+
+describe('page error capture in a browser', () => {
+  let server: http.Server;
+  let origin = '';
+  let browser: Browser | null = null;
+
+  beforeAll(async () => {
+    server = http.createServer((req, res) => {
+      if (req.url === '/cart.js') {
+        res.setHeader('Content-Type', 'text/javascript');
+        res.end(
+          "function renderCart() {\n  throw new TypeError('cart is undefined');\n}\nsetTimeout(renderCart, 0);\n",
+        );
+        return;
+      }
+      res.setHeader('Content-Type', 'text/html');
+      res.end('<!doctype html><script src="/cart.js"></script>');
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    origin = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    try {
+      browser = await chromium.launch();
+    } catch {
+      browser = null;
+    }
+  });
+
+  afterAll(async () => {
+    await browser?.close();
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+  });
+
+  it('records the error the page threw with the place it was thrown, beside the console messages', async (ctx) => {
+    if (!browser) return ctx.skip();
+    const context = await browser.newContext();
+    const page = await context.newPage();
+    const testInfo = {
+      status: 'passed',
+      attach: vi.fn(async (_name: string, _body: { body: Buffer }) => {}),
+      annotations: [],
+    };
+    const pageFixture = piwiFixtures.page as unknown as (
+      args: { page: Page },
+      use: (page: Page) => Promise<void>,
+    ) => Promise<void>;
+    const [captureFixture] = piwiFixtures.piwiCapture as unknown as [
+      (args: object, use: () => Promise<void>, info: unknown) => Promise<void>,
+    ];
+    await captureFixture(
+      {},
+      async () => {
+        await pageFixture({ page }, async (p) => {
+          await Promise.all([p.waitForEvent('pageerror'), p.goto(origin)]);
+        });
+        await context.close();
+      },
+      testInfo,
+    );
+    const call = testInfo.attach.mock.calls.find((c) => c[0] === ATTACHMENT_NAMES.console);
+    expect(call && JSON.parse(call[1].body.toString())).toEqual([
+      {
+        type: 'pageerror',
+        text: 'TypeError: cart is undefined',
+        timestamp: expect.any(Number),
+        location: `${origin}/cart.js:1:8`,
+      },
     ]);
   });
 });

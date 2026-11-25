@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { appendErrorLocation, joinErrorMessages, locatedError } from '../src/error-text';
+import {
+  appendErrorLocation,
+  joinErrorMessages,
+  locatedError,
+  pageErrorStackPlace,
+  pageErrorText,
+} from '../src/error-text';
 import { extractErrorSignature } from '../src/error-signature';
 
 describe('the error of a timed-out test', () => {
@@ -65,5 +71,29 @@ describe('the error of a test that threw a value that is not an Error', () => {
   test('prefers the message when there is one', () => {
     expect(joinErrorMessages([{ message: 'Error: boom', value: 'ignored' }])).toBe('Error: boom');
     expect(joinErrorMessages([{}])).toBeNull();
+  });
+});
+
+describe('an uncaught page error', () => {
+  test('reads as the first line of its stack', () => {
+    expect(pageErrorText({ name: 'TypeError', message: 'cart is undefined' })).toBe('TypeError: cart is undefined');
+    expect(pageErrorText({ name: '', message: 'boom' })).toBe('boom');
+    expect(pageErrorText({ name: 'AbortError', message: '' })).toBe('AbortError');
+    expect(pageErrorText({})).toBe('');
+  });
+
+  test('is placed by the first frame of its stack that names a URL, 0-based', () => {
+    const stack = [
+      'TypeError: cart is undefined',
+      '    at new Promise (<anonymous>)',
+      '    at renderCart (https://shop.test/assets/cart.js:12:5)',
+      '    at https://shop.test/assets/app.js:3:1',
+    ].join('\n');
+    expect(pageErrorStackPlace(stack)).toBe('https://shop.test/assets/cart.js:11:4');
+    expect(pageErrorStackPlace('    at http://localhost:5173/src/main.ts?t=1:8:13')).toBe(
+      'http://localhost:5173/src/main.ts?t=1:7:12',
+    );
+    expect(pageErrorStackPlace('Error: boom\n    at eval (<anonymous>)')).toBeNull();
+    expect(pageErrorStackPlace(undefined)).toBeNull();
   });
 });
