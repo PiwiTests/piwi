@@ -61,6 +61,25 @@ describe('a protected environment’s required tags', () => {
     expect(withRequiredTags(['--config', 'other.config.ts'], ['@smoke'])).toBeNull();
   });
 
+  test('read -G as --grep-invert, the last of them the run’s own, and a --shuffle seed as Playwright does', () => {
+    const merged = requiredTagsGrepInvert(['@smoke'], 'slow');
+    expect(withRequiredTags(['-G', 'slow', 'tests/a.spec.ts'], ['@smoke'])).toEqual([
+      'tests/a.spec.ts',
+      '--grep-invert',
+      merged,
+    ]);
+    expect(withRequiredTags(['--grep-invert', 'wip', '-G', 'slow'], ['@smoke'])).toEqual(['--grep-invert', merged]);
+    expect(withRequiredTags(['-G', 'wip', '--grep-invert=slow'], ['@smoke'])).toEqual(['--grep-invert', merged]);
+    // A --shuffle written without a seed takes no option as its seed.
+    expect(withRequiredTags(['--shuffle', '-G', 'slow'], ['@smoke'])).toEqual(['--shuffle', '--grep-invert', merged]);
+    expect(withRequiredTags(['--shuffle', '42', '-G', 'slow'], ['@smoke'])).toEqual([
+      '--shuffle',
+      '42',
+      '--grep-invert',
+      merged,
+    ]);
+  });
+
   test('write a filter every shell reads as it is in double quotes, and nothing else past the usual checks', () => {
     const filter = requiredTagsGrepInvert(['@smoke'], 'slow|wip');
     expect(isRequiredTagsFilter(filter)).toBe(true);
@@ -111,6 +130,19 @@ describe('playwrightTestCommand', () => {
     );
     // A shell operator inside double quotes is a plain character of a test filter.
     expect(playwrightTestCommand(['a.spec.ts; rm -rf ~'])).toBe('npx playwright test "a.spec.ts; rm -rf ~"');
+  });
+
+  test('takes -G, the short form of --grep-invert, and --shuffle with or without a seed', () => {
+    expect(playwrightTestCommand(['-G', 'slow (wip)', 'a.spec.ts'])).toBe(
+      'npx playwright test -G "slow (wip)" a.spec.ts',
+    );
+    expect(playwrightTestCommand(['--shuffle', 'a.spec.ts'])).toBe('npx playwright test --shuffle a.spec.ts');
+    expect(playwrightTestCommand(['a.spec.ts', '--shuffle'])).toBe('npx playwright test a.spec.ts --shuffle');
+    expect(playwrightTestCommand(['--shuffle=1234', '--headed'])).toBe('npx playwright test --shuffle=1234 --headed');
+    expect(playwrightArgsOf('npx playwright test --shuffle -G slow')).toEqual(['--shuffle', '-G', 'slow']);
+    for (const args of [['-G'], ['--shuffle=$(id)'], ['--shuffle', '-5'], ['-Gslow']]) {
+      expect(playwrightTestCommand(args), JSON.stringify(args)).toBeNull();
+    }
   });
 
   test('refuses an option that loads or writes a file, and an argument a shell would expand', () => {
@@ -167,6 +199,13 @@ describe('repeatArgs', () => {
     expect(
       repeatArgs(['--retries', '2', '--grep', '--retries', '--repeat-each=5', '--project=chromium', 'a.spec.ts'], 3),
     ).toEqual(['--grep', '--retries', '--project=chromium', 'a.spec.ts', '--repeat-each=3', '--retries=0']);
+    // A --shuffle written without a seed takes no option as its seed.
+    expect(repeatArgs(['--shuffle', '--retries', '2', 'a.spec.ts'], 3)).toEqual([
+      '--shuffle',
+      'a.spec.ts',
+      '--repeat-each=3',
+      '--retries=0',
+    ]);
   });
 
   test('is null for a repeat that is not a whole number from 1 to 100, or arguments Piwi does not pass', () => {
@@ -266,6 +305,10 @@ describe('runName', () => {
     expect(runName(['(?:tests/my cart.spec.ts|tests/my.20cart.spec.ts):3'])).toBe('my cart.spec.ts:3');
     expect(runName(['(?:/w/a[|]b c|/w/a[|]b.20c)/.'])).toBe('a|b c');
     expect(runName(['--grep=(?:^| )(?:pays|refunds)$'])).toBe('tests by title');
+    // A --shuffle seed, written after it or with `=`, is no filter; an option after it is no seed.
+    expect(runName(['--shuffle', '--grep', 'pays'])).toBe('pays');
+    expect(runName(['--shuffle=7', 'tests/a.spec.ts:3'])).toBe('a.spec.ts:3');
+    expect(runName(['--shuffle', '7', '-G', 'slow'])).toBe('every test');
   });
 
   test('names a command by its words, a chain of playwright test whole, any other up to its first option', () => {
