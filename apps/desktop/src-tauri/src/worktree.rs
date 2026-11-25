@@ -1389,12 +1389,11 @@ async fn selects_a_test(
         "--reporter=json".to_string(),
         "--pass-with-no-tests".to_string(),
     ];
-    list_args.extend(crate::spec_filter::anchored_filters(
+    list_args.extend(settings.args(crate::spec_filter::anchored_filters(
         &cwd,
         args,
         cfg!(windows),
-    ));
-    list_args.extend(settings.args());
+    )));
     let listed = match app.shell().sidecar(crate::NODE_SIDECAR) {
         Ok(command) => {
             command
@@ -1564,8 +1563,7 @@ async fn run_test_phase(
     }
     let mut node_args = vec![node_path(&cli), "test".to_string()];
     let cwd = crate::runner::playwright_folder(dir);
-    node_args.extend(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows)));
-    node_args.extend(settings.args());
+    node_args.extend(settings.args(crate::spec_filter::anchored_filters(&cwd, args, cfg!(windows))));
     let mut env_with_app = lab_env_with_hub(app, id, attended, job.0, job.1).await;
     env_with_app.extend_from_slice(env);
     run_sidecar_streaming(app, id, Some(&cli), dir, node_args, &env_with_app, &settings.envs()).await

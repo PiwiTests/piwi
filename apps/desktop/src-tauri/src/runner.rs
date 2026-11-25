@@ -45,8 +45,11 @@ pub(crate) const COLOR_ENV: [(&str, &str); 2] = [("FORCE_COLOR", "1"), ("NO_COLO
 const MAX_NODE_MODULES_WALK: usize = 12;
 
 /// `playwright test` flags the dashboard may pass. Anything else dash-like is
-/// rejected, so the webview cannot redirect config, output or reporters.
-const ALLOWED_FLAGS: [&str; 12] = [
+/// rejected, so the webview cannot redirect config, output or reporters. `-G`
+/// is the run's own `--grep-invert`, kept in a protected environment's
+/// ([`crate::environments::RunSettings::args`]); only the shell writes
+/// `--grep-invert`.
+const ALLOWED_FLAGS: [&str; 16] = [
     "--headed",
     "--debug",
     "--ui",
@@ -54,11 +57,15 @@ const ALLOWED_FLAGS: [&str; 12] = [
     "--repeat-each",
     "--project",
     "--grep",
+    "-G",
     "--workers",
     "--retries",
     "--max-failures",
+    "-x",
     "--timeout",
     "--last-failed",
+    "--shuffle",
+    "--pass-with-no-tests",
 ];
 
 /// The child a reproduce/bisect job is running right now. A pid rather than a
@@ -786,6 +793,13 @@ pub fn desktop_check_local_env(
     Ok(local_env(&folder))
 }
 
+/// Refuses `args` unless each option is one of [`ALLOWED_FLAGS`], written
+/// `--name`, `--name=value` or `--name value`, a short one (`-G`, `-x`) without
+/// `=`, which Playwright would read as the start of its value. The last
+/// argument is never an option waiting for its value
+/// ([`crate::spec_filter::VALUE_FLAGS`] given apart): Playwright would take the
+/// argument the shell writes after it, such as a protected environment's
+/// `--grep-invert`, as that value.
 pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
     for arg in args {
         if arg.contains('\0') {
@@ -796,7 +810,16 @@ pub(crate) fn validate_args(args: &[String]) -> Result<(), String> {
             if !ALLOWED_FLAGS.contains(&flag) {
                 return Err(format!("flag not allowed: {flag}"));
             }
+            if !flag.starts_with("--") && flag != arg {
+                return Err(format!("write {flag} without '='"));
+            }
         }
+    }
+    if let Some(last) = args
+        .last()
+        .filter(|last| crate::spec_filter::VALUE_FLAGS.contains(&last.as_str()))
+    {
+        return Err(format!("{last} needs a value"));
     }
     Ok(())
 }
@@ -1037,8 +1060,11 @@ pub async fn desktop_run_local_tests(
 
     let settings =
         crate::environments::read_settings_for_run(&app, &project_id, environment).await?;
-    let mut args = crate::spec_filter::anchored_filters(&playwright_folder(&folder), &args, cfg!(windows));
-    args.extend(settings.args());
+    let args = settings.args(crate::spec_filter::anchored_filters(
+        &playwright_folder(&folder),
+        &args,
+        cfg!(windows),
+    ));
     let id = spawn_tests(&app, &folder, &cli, args, settings.envs(), origin, |_, _| {}).await?;
     if let Some(origin_ref) = origin_ref {
         app.state::<LocalRuns>().note_origin(id, origin_ref);
@@ -1322,6 +1348,51 @@ mod tests {
         assert_eq!(others_linked_to_folder(&links, "7"), vec!["3".to_string(), "12".to_string()]);
         assert!(others_linked_to_folder(&links, "9").is_empty());
         assert!(others_linked_to_folder(&links, "4").is_empty());
+    }
+
+    #[test]
+    fn takes_the_allowed_flags_in_the_forms_playwright_reads_as_written() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        for taken in [
+            args(&["tests/a.spec.ts:3", "-G", "@slow", "-x"]),
+            args(&["--shuffle", "--pass-with-no-tests"]),
+            args(&["--shuffle=42", "--grep", "pays"]),
+            args(&["--shuffle", "42", "--max-failures=1"]),
+            args(&["--project", "chromium", "--grep=a=b", "--last-failed"]),
+        ] {
+            assert!(validate_args(&taken).is_ok(), "{taken:?}");
+        }
+        for refused in [
+            args(&["--grep-invert=x"]),
+            args(&["--grep-invert", "x"]),
+            args(&["--config=x"]),
+            args(&["-g", "x"]),
+            args(&["-Gx"]),
+            args(&["-G=x"]),
+            args(&["-x=1"]),
+            args(&["-xG", "x"]),
+            args(&["a\0b"]),
+        ] {
+            assert!(validate_args(&refused).is_err(), "{refused:?}");
+        }
+    }
+
+    #[test]
+    fn the_last_argument_never_waits_for_a_value() {
+        let args = |list: &[&str]| list.iter().map(|a| a.to_string()).collect::<Vec<_>>();
+        // Playwright gives such an option the argument the shell writes next, such as a protected environment's
+        // `--grep-invert`.
+        for refused in [
+            args(&["--grep"]),
+            args(&["tests/a.spec.ts", "-G"]),
+            args(&["--project", "api", "--timeout"]),
+        ] {
+            assert!(validate_args(&refused).is_err(), "{refused:?}");
+        }
+        assert!(validate_args(&args(&["--shuffle"])).is_ok());
+        for flag in crate::spec_filter::VALUE_FLAGS {
+            assert!(ALLOWED_FLAGS.contains(&flag), "{flag}");
+        }
     }
 
     #[test]

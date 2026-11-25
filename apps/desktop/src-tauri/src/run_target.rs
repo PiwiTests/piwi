@@ -1105,8 +1105,7 @@ pub async fn desktop_run_requested_tests(app: AppHandle, request_id: String) -> 
     let ended_dir = dir.clone();
     // A protected environment's run is limited here to the tests carrying one of its required tags, beside the setup
     // and teardown projects they depend on, whatever the command approved.
-    let mut args = launch.args;
-    args.extend(settings.args());
+    let args = settings.args(launch.args);
     // The run's end stays held until the server took it, so a quit in between still sends it (`end_all`), and
     // only the quit sends an end once it began.
     let spawned = crate::runner::spawn_tests(&app, &folder, &cli, args, settings.envs(), envs, move |code, stopped| {
@@ -1705,9 +1704,9 @@ mod tests {
             settings.envs().last().unwrap(),
             &("PIWI_ENVIRONMENT".to_string(), "production".to_string())
         );
-        assert_eq!(settings.args().len(), 1);
+        assert_eq!(settings.args(Vec::new()).len(), 1);
         let none = crate::environments::checked_settings(&json!({ "runVariables": [] })).unwrap();
-        assert!(none.envs().is_empty() && none.args().is_empty());
+        assert!(none.envs().is_empty() && none.args(Vec::new()).is_empty());
         let refused = json!({ "runVariables": [], "environment": { "id": 4, "key": "production", "name": "Production", "protected": true, "requiredTags": [] } });
         assert!(crate::environments::checked_settings(&refused).is_err());
     }
