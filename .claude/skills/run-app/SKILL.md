@@ -102,8 +102,8 @@ answer. Inside the detail panel it reports:
   button the content it copies sits, and the text styles of the situation block.
 
 A control counts when the reader sees it and Tab reaches it: one shown on hover or focus only (the
-chooser beside an Open in IDE link) does not, and a row of links with one keyboard stop (the History
-strip) counts once.
+chooser beside an Open in IDE link) does not, nor does a disabled one, and a row with one keyboard stop
+(the History strip, a tab list) counts once.
 
 Each route then gets a verdict against the budgets of `scripts/lib/detail-page-budgets.mjs`, set
 at 1280×800 (any other viewport reports without verdicts): at most 15 text styles on the execution

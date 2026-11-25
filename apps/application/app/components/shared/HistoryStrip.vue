@@ -4,8 +4,8 @@
  * outcome with the current execution ringed, each naming its run and outcome on
  * hover. Each square links to its execution, unless `linked` is false: then the
  * squares are drawn only. Linked, the row is one keyboard stop, a toolbar: Tab
- * reaches the current execution's square (else the newest), the arrow keys,
- * Home and End move between the squares. No chart, no table: the full history
+ * reaches the current execution's square (else the newest), the Left and Right
+ * arrow keys, Home and End move between the squares. No chart, no table: the full history
  * lives on the test page.
  */
 import type { TestCaseHistoryPoint } from '~~/types/api';
@@ -35,23 +35,25 @@ function pointLabel(point: TestCaseHistoryPoint): string {
   return props.linked ? `Execution in run #${point.runId}: ${outcome}` : `Run #${point.runId}: ${outcome}`;
 }
 
-// The row's one keyboard stop: the square focused last, else the current execution's, else the newest.
-const focused = ref<number | null>(null);
+// The row's one keyboard stop: the execution focused last, else the current one, else the newest.
+const focusedId = ref<number | null>(null);
 const stop = computed(() => {
-  if (focused.value != null && focused.value < strip.value.length) return focused.value;
+  const focused = strip.value.findIndex((point) => point.id === focusedId.value);
+  if (focused >= 0) return focused;
   const current = strip.value.findIndex((point) => point.id === props.currentId);
   return current >= 0 ? current : strip.value.length - 1;
 });
 
 const rowEl = ref<HTMLElement | null>(null);
 
-/** Arrow keys, Home and End move the focus along the row. */
+/** Left and Right, Home and End move the focus along the row; a key held with a modifier is the browser's. */
 function onKeydown(event: KeyboardEvent, index: number): void {
+  if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
   const last = strip.value.length - 1;
   const next =
-    event.key === 'ArrowRight' || event.key === 'ArrowDown'
+    event.key === 'ArrowRight'
       ? Math.min(last, index + 1)
-      : event.key === 'ArrowLeft' || event.key === 'ArrowUp'
+      : event.key === 'ArrowLeft'
         ? Math.max(0, index - 1)
         : event.key === 'Home'
           ? 0
@@ -60,7 +62,7 @@ function onKeydown(event: KeyboardEvent, index: number): void {
             : null;
   if (next == null) return;
   event.preventDefault();
-  focused.value = next;
+  focusedId.value = strip.value[next]!.id;
   rowEl.value?.querySelectorAll<HTMLElement>('a')[next]?.focus();
 }
 </script>
@@ -86,7 +88,7 @@ function onKeydown(event: KeyboardEvent, index: number): void {
           statusPalette(point.status, point.passedAfterFailure).bg,
           point.id === currentId ? CURRENT_ITEM_RING_CLASS : '',
         ]"
-        @focus="focused = index"
+        @focus="focusedId = point.id"
         @keydown="onKeydown($event, index)"
       />
       <span

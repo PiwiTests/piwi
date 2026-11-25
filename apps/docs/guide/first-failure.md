@@ -59,7 +59,7 @@ The **Cluster** line names the [failure cluster](/features/failure-clusters) the
 
 With [coverage](/features/server-coverage), a **What changed** line counts the changed lines the test ran and names the first of its [suspect lines](/guide/concepts#suspect-lines).
 
-The **History** line shows this test's recent executions as one strip in the outcome colors, this one ringed, with how long it has been failing and the run it last passed in. Each square opens its execution; **Test history**, at the top of the page, opens the test's own page, its [history across runs](/features/evidence#the-test-case-page).
+The **History** line shows this test's recent executions as one strip in the outcome colors, this one ringed, with how long it has been failing and the run it last passed in. Each square opens its execution; the **Test history** link at the top of the page opens the test's own page, its [history across runs](/features/evidence#the-test-case-page).
 
 The block closes on a **facts** line, one size smaller: the failing file and line (open it in your IDE), browser and viewport, duration against its average, the attempts, the branch, and the CI build. A **Details** popover holds the rest, and **Raw error** shows the verbatim error with a **Copy failure** action.
 
