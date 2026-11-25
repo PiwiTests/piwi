@@ -64,9 +64,21 @@ function resolveFirst(from: string, ids: string[]): string | null {
   return null;
 }
 
-/** The project's Playwright CLI; null when Playwright is not installed there. */
+/**
+ * The project's Playwright CLI: `@playwright/test/cli`, else the `playwright` bin of the `playwright` package, which
+ * exports no CLI module of its own; null when Playwright is not installed there.
+ */
 export function resolvePlaywrightCli(dir: string): string | null {
-  return resolveFirst(dir, ['@playwright/test/cli', 'playwright/cli', 'playwright/lib/cli/cli']);
+  const cli = resolveFirst(dir, ['@playwright/test/cli']);
+  if (cli) return cli;
+  const manifest = resolveFirst(dir, ['playwright/package.json']);
+  if (!manifest) return null;
+  try {
+    const bin = (JSON.parse(fs.readFileSync(manifest, 'utf8')) as { bin?: { playwright?: unknown } }).bin?.playwright;
+    return typeof bin === 'string' ? path.join(path.dirname(manifest), bin) : null;
+  } catch {
+    return null;
+  }
 }
 
 /** The module of the project's Playwright library (`chromium`, `firefox`, `webkit`, `selectors`); null when none. */
