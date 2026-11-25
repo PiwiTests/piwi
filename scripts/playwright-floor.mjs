@@ -1,13 +1,18 @@
 #!/usr/bin/env node
 // The oldest Playwright the reporter supports: the lower bound of @piwitests/reporter's peer range on
 // @playwright/test. CI tests that version twice: `package-smoke.mjs --playwright floor` installs it next to the packed
-// reporter, the way a user does, and the `reporter-floor` job runs the reporter's suite on it after `--install`.
+// reporter, the way a user does, and the `reporter-floor` job runs the reporter's suite on it after `--install`. The
+// same install puts another release in place: the `reporter-latest` job tests the latest one, and
+// `playwright-next.yml` the next one.
 //
 // Usage:
-//   node scripts/playwright-floor.mjs            prints the version
-//   node scripts/playwright-floor.mjs --install  puts that version of @playwright/test, playwright and playwright-core
-//                                                in the root node_modules, in place of the locked ones, without
-//                                                touching package.json or package-lock.json
+//   node scripts/playwright-floor.mjs                      prints the floor
+//   node scripts/playwright-floor.mjs latest               prints the version a release names: `floor`, a dist-tag
+//                                                          (`latest`, `next`) or a version
+//   node scripts/playwright-floor.mjs --install [release]  puts that version of @playwright/test, playwright and
+//                                                          playwright-core in the root node_modules, in place of the
+//                                                          locked ones, without touching package.json or
+//                                                          package-lock.json (the floor by default)
 //
 // --install unpacks the three packages from the registry: each depends only on the next, so nothing else changes.
 
@@ -40,6 +45,20 @@ export function playwrightFloor() {
   const range = manifest.peerDependencies?.['@playwright/test'];
   if (!range) throw new Error('packages/reporter/package.json has no peer dependency on @playwright/test');
   return rangeFloor(range);
+}
+
+/** The version a release names: `floor`, a dist-tag of @playwright/test (`latest`, `next`) or a version. */
+export function playwrightRelease(release = 'floor') {
+  if (release === 'floor') return playwrightFloor();
+  if (/^\d+\.\d+\.\d+(?:-[\w.-]+)?$/.test(release)) return release;
+  if (!/^[a-z][a-z0-9-]*$/.test(release)) throw new Error(`not a Playwright release: ${JSON.stringify(release)}`);
+  const view = spawnSync('npm', ['view', `@playwright/test@${release}`, 'version'], {
+    encoding: 'utf8',
+    shell: process.platform === 'win32',
+  });
+  const version = view.stdout.trim().split('\n').pop() ?? '';
+  if (view.status !== 0 || !version) throw new Error(`npm view @playwright/test@${release} failed:\n${view.stderr}`);
+  return version;
 }
 
 function install(version) {
@@ -76,7 +95,10 @@ function isMain() {
 }
 
 if (isMain()) {
-  const version = playwrightFloor();
-  if (process.argv.includes('--install')) install(version);
+  const args = process.argv.slice(2);
+  const installing = args[0] === '--install';
+  const release = installing ? args[1] : args[0];
+  const version = playwrightRelease(release);
+  if (installing) install(version);
   else console.log(version);
 }

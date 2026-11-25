@@ -6,11 +6,12 @@
 // and runs this on Linux, macOS and Windows (`package-smoke` in .github/workflows/ci.yml).
 //
 // Usage:
-//   node scripts/package-smoke.mjs <dir> [--playwright floor]
+//   node scripts/package-smoke.mjs <dir> [--playwright <release>]
 //
-// <dir> holds the two tarballs. The suite runs on the Playwright version the repository locks, or with
-// `--playwright floor` on the oldest one the reporter supports (scripts/playwright-floor.mjs). From the repository root, after building the reporter and
-// the application, pack them into an existing <dir>:
+// <dir> holds the two tarballs. The suite runs on the Playwright version the repository locks, or on the release
+// `--playwright` names: `floor`, the oldest one the reporter supports, a dist-tag such as `latest`, or a version
+// (scripts/playwright-floor.mjs). From the repository root, after building the reporter and the application, pack them
+// into an existing <dir>:
 //   npm pack --workspace @piwitests/server --workspace @piwitests/reporter --pack-destination <dir>
 //
 // The project lives in the OS temp directory, so nothing resolves from the workspace's
@@ -23,7 +24,7 @@ import path from 'node:path';
 import readline from 'node:readline';
 import { spawn, spawnSync } from 'node:child_process';
 import { setTimeout as delay } from 'node:timers/promises';
-import { playwrightFloor } from './playwright-floor.mjs';
+import { playwrightRelease } from './playwright-floor.mjs';
 
 const PROJECT_NAME = 'package-smoke';
 const SERVER_READY_TIMEOUT_MS = 180_000;
@@ -33,7 +34,7 @@ const isWindows = process.platform === 'win32';
 const repoRoot = path.resolve(import.meta.dirname, '..');
 
 const usage = `Usage:
-  node scripts/package-smoke.mjs <dir holding piwitests-server-*.tgz and piwitests-reporter-*.tgz> [--playwright floor]`;
+  node scripts/package-smoke.mjs <dir holding piwitests-server-*.tgz and piwitests-reporter-*.tgz> [--playwright <floor|latest|next|x.y.z>]`;
 
 // The suite: one passing, one failing and one skipped test. The capture fixtures load in
 // the worker, and no test opens a page, so no browser is needed.
@@ -237,7 +238,7 @@ function expectEqual(actual, expected, what) {
 async function smoke(tarballDir, projectDir, playwright, onServer) {
   const serverTarball = findTarball(tarballDir, 'piwitests-server-');
   const reporterTarball = findTarball(tarballDir, 'piwitests-reporter-');
-  const playwrightVersion = playwright === 'floor' ? playwrightFloor() : lockedVersion('@playwright/test');
+  const playwrightVersion = playwright ? playwrightRelease(playwright) : lockedVersion('@playwright/test');
   const port = await freePort();
   const baseUrl = `http://127.0.0.1:${port}`;
 
@@ -301,7 +302,7 @@ async function smoke(tarballDir, projectDir, playwright, onServer) {
 async function main() {
   const [tarballDir, ...options] = process.argv.slice(2);
   const playwright = options[0] === '--playwright' ? options[1] : undefined;
-  if (!tarballDir || options.length !== (playwright === 'floor' ? 2 : 0)) {
+  if (!tarballDir || options.length !== (playwright ? 2 : 0)) {
     console.error(usage);
     return 2;
   }
