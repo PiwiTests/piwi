@@ -3,6 +3,7 @@ import * as childProcess from 'node:child_process';
 import { EventEmitter } from 'node:events';
 import * as fs from 'node:fs';
 import * as http from 'node:http';
+import { createRequire } from 'node:module';
 import * as net from 'node:net';
 import * as os from 'node:os';
 import * as path from 'node:path';
@@ -860,6 +861,68 @@ describe('following the calls a test makes', () => {
     expect(contextOpen.listeners).toBeGreaterThanOrEqual(2);
     expect(browserOpen.listeners).toBeGreaterThanOrEqual(2);
   });
+});
+
+describe('the contexts the worker opens', () => {
+  /** Another Playwright client, in a process of its own: it opens a context on the browser at an endpoint and holds it. */
+  const OTHER_CLIENT = `
+const [core, endpoint] = process.argv.slice(1);
+require(core).chromium.connect(endpoint).then(async (browser) => {
+  await browser.newContext();
+  process.stdout.write('opened\\n');
+  process.stdin.on('end', () => browser.close().finally(() => process.exit(0)));
+  process.stdin.resume();
+}, (error) => {
+  process.stderr.write(String(error));
+  process.exit(1);
+});
+`;
+
+  /** Open a context on the browser at `endpoint` from another process; the returned function lets that process go. */
+  async function openElsewhere(endpoint: string): Promise<() => Promise<void>> {
+    const core = createRequire(import.meta.url).resolve('playwright-core');
+    const child = childProcess.spawn(process.execPath, ['-e', OTHER_CLIENT, core, endpoint], { stdio: 'pipe' });
+    const exited = new Promise((resolve) => child.once('exit', resolve));
+    let errors = '';
+    child.stderr.on('data', (chunk: Buffer) => {
+      errors += chunk.toString();
+    });
+    const opened = await Promise.race([
+      new Promise<boolean>((resolve) => child.stdout.on('data', (chunk: Buffer) => chunk.includes('opened') && resolve(true))),
+      exited.then(() => false),
+    ]);
+    if (!opened) throw new Error(`the other client opened no context: ${errors}`);
+    return async () => {
+      child.stdin.end();
+      await exited;
+    };
+  }
+
+  it('counts a context the worker opens, never one another client opens on a browser the worker shares', async () => {
+    const playwright = (chromium as unknown as { _playwright: ConstructorParameters<typeof ResourceLedger>[0] })
+      ._playwright;
+    const ledger = new ResourceLedger(playwright, 3, 'report', null, () => info('t1'));
+    expect(ledger.install()).toBe(true);
+    let browser: Browser | undefined;
+    let letGo: (() => Promise<void>) | undefined;
+    try {
+      browser = await chromium.launch();
+      await browser.newContext();
+      const { endpoint } = await browser.bind('piwi-resource-ledger');
+      letGo = await openElsewhere(endpoint);
+      // The worker's client knows the other client's context too.
+      await expect.poll(() => browser!.contexts().length).toBe(2);
+
+      const { census } = await ledger.testEnded(info('t1'));
+      const contexts = census.born.filter((birth) => birth.kind === 'context');
+      expect(contexts).toEqual([expect.objectContaining({ parent: 1, site: expect.stringMatching(/^tests\/resource-ledger\.spec\.ts:\d+$/) })]);
+      expect(census.open.map((open) => open.id)).toEqual([1, contexts[0]!.id]);
+    } finally {
+      await letGo?.();
+      ledger.uninstall();
+      await browser?.close();
+    }
+  }, 60_000);
 });
 
 describe('leakFailureMessage', () => {

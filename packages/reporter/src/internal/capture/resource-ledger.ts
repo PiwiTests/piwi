@@ -628,6 +628,9 @@ export class ResourceLedger {
       onApiCallEnd: (zone: ApiZone) => {
         this.pendingCalls.delete(zone);
       },
+      // The contexts the worker opens, and no other, each with the line that opened it, from inside the call that
+      // opened it: never `browser.on('context')` (Playwright 1.60), which also reports each context another client
+      // opens on a browser the worker shares (`browser.bind`, a shared browser server), from outside any call.
       runAfterCreateBrowserContext: async (context: BrowserContext) => {
         this.guard(() => this.onContext(context, userSite(new Error().stack)));
       },
@@ -637,6 +640,7 @@ export class ResourceLedger {
       runBeforeCloseRequestContext: async (request: APIRequestContext) => {
         this.guard(() => this.onClosed(request));
       },
+      // A context's `close` event comes once it has closed: this marks when its close began.
       runBeforeCloseBrowserContext: async (context: BrowserContext) => {
         this.guard(() => this.noteClosing(context));
       },
@@ -985,6 +989,10 @@ export class ResourceLedger {
     }
   }
 
+  /**
+   * Track each browser a browser type launches or connects to, with the line that asked for it, as the call returns:
+   * a browser type has no event for the browsers it opens.
+   */
   private wrapBrowserType(type: BrowserTypeLike): void {
     for (const method of ['launch', 'connect', 'connectOverCDP']) {
       const original = type[method];

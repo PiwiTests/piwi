@@ -87,8 +87,13 @@ What the package does to a user's run, process by process.
 - The boxed stack prefix `internal/capture/quiet-capture.ts` adds for this package's
   `dist/`, so a wrapped action is located at the test's line.
 - The resource ledger's listener on the worker's Playwright instrumentation (its
-  `runBeforeCloseBrowserContext` hook marks when a context's close began), its wrappers on
-  the browser types' `launch`/`connect` (and `connectOverCDP`), and its wrapper on the
+  `runAfterCreateBrowserContext` hook reports each context the worker opens, from inside
+  the call that opened it, and no other: `browser.on('context')`, from Playwright 1.60, also
+  reports the contexts another client opens on a browser the worker shares, through
+  `browser.bind` or a shared browser server; its `runBeforeCloseBrowserContext` hook marks
+  when a context's close began, before its `close` event), its wrappers on
+  the browser types' `launch`/`connect` (and `connectOverCDP`), which have no event for the
+  browsers they open, and its wrapper on the
   `sendMessageToServer` of the worker's connection and of each browser it connects to,
   put back as that browser disconnects (internal, feature-checked). The wrapper reads each
   call a test makes to know when and from which line it last used each page, context,
@@ -820,6 +825,12 @@ What the package does to a user's run, process by process.
 
 Playwright runs the **reporter** in the main process and **fixtures** in each test
 worker. They never share memory: they communicate through `piwi-*` testInfo attachments.
+
+Before `onBegin`, Playwright 1.62 and later call the reporter's `preprocess` with the built suite (unsharded) and the
+`TestRun` that reads and changes what runs, which answers only until the call returns. The reporter reads there what
+it keeps for the rest of the run: each suite's mode (`testRun.mode`, Playwright 1.65 and later), which
+`MetadataCollector.readSuiteModes` keeps by suite, the same objects `onBegin` and `onTestBegin` hand over;
+`getSuiteInfo` and the serial files read it, else `_parallelMode` by the same rule. It changes nothing of the run.
 
 ```
             TEST WORKER                                MAIN PROCESS
