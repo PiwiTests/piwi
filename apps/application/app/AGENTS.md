@@ -292,8 +292,9 @@ views are exempt only where a rule says so.
 - **The client bundle never compiles code** (`eval`, `new Function`): the desktop build's CSP
   (`server/utils/desktop-csp.ts`) has no `'unsafe-eval'`. Zod parses without its JIT (`plugins/00.zod-jitless.client.ts`,
   `tests/unit/zod-jitless.test.ts`); a new dependency that evaluates code needs its switch, or another library.
-- **A side panel (`USlideover`) widens with `sm:max-w-*`**, the variant of the theme's own `sm:max-w-md`: a bare
-  `max-w-*` keeps the theme's class beside it, which wins from `sm` up. `tests/unit/slideover-width.test.ts`.
+- **A left or right side panel (`USlideover`) sets its width with `sm:max-w-*`**, the variant of the theme's own
+  `sm:max-w-md`: a bare or wider-variant `max-w-*` keeps the theme's class, which wins from `sm` up.
+  `tests/unit/slideover-width.test.ts`.
 - **Anything opened outside `$fetch` carries `useRuntimeConfig().app.baseURL`** (`window.open`, an `href`, a download
   URL): the demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` 404s there. `fileApiUrl` and `getTraceViewerUrl` do it.
