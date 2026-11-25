@@ -286,6 +286,7 @@ async function remove() {
             v-if="selected.perUser && selected.canManage"
             :key="`${selected.id}-${selected.destination}-${selected.userTokens}`"
             :credential-id="selected.id"
+            :oauth="selected.service === 'scm'"
             @changed="refresh"
           />
 

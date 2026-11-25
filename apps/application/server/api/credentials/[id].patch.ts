@@ -4,13 +4,13 @@ import { requireRouteId } from '../../utils/project-access';
 import { sealCredentialEnv, sealCredentialSecret, withSecretEnvState } from '../../utils/credentials';
 import { isUniqueViolation } from '../../utils/db-errors';
 import { ciServerBaseUrlProblem } from '../../utils/ci-server-dispatch';
+import { revokeUserTokens } from '../../utils/credentials';
 import {
   canManageCredential,
   credentialNameTaken,
   credentialReferences,
   credentialScopeRefusal,
   credentialSummary,
-  deleteUserTokens,
   loadCredentialRecord,
   namedForEveryProject,
   updateCredential,
@@ -26,7 +26,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Update a credential',
     description:
-      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A per-user credential (`perUser`) takes no `user`, `secretEnv` or Custom request (400). A CI server’s takes no `secret`, and only its `tokenHelpUrl` is its own; a source control one rotates its OAuth client secret with `secret`, changes its application with `oauthClientId`, and takes the secret again for a destination on another host. A new destination, or another OAuth application, removes every person’s token. A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage, read no variable and are not per-user. Any other answers 404.',
+      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A per-user credential (`perUser`) takes no `user`, `secretEnv` or Custom request (400). A CI server’s takes no `secret`, and only its `tokenHelpUrl` is its own; a source control one rotates its OAuth client secret with `secret`, changes its application with `oauthClientId` and that application’s `secret` (400 without it), and takes the secret again for a destination on another host. A new destination, or another OAuth application, removes every person’s token. A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage, read no variable and are not per-user. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
@@ -72,6 +72,10 @@ export default eventHandler(async (event) => {
       statusCode: 400,
       message: 'Only a per-user source control credential names an OAuth application.',
     });
+  }
+  // A new OAuth application comes with its own secret: the stored one is the application it leaves.
+  if (oauth && patch.oauthClientId && patch.oauthClientId !== record.oauthClientId && !secret) {
+    throw apiError({ statusCode: 400, message: 'Enter the new OAuth application’s client secret with its client id.' });
   }
   if (oauth && patch.oauthClientId === null) {
     throw apiError({ statusCode: 400, message: 'A per-user source control credential names its OAuth application.' });
@@ -151,10 +155,10 @@ export default eventHandler(async (event) => {
     record.perUser && (moved || (patch.oauthClientId !== undefined && patch.oauthClientId !== record.oauthClientId));
   // A change by an administrator makes the credential theirs: its creator never loosens it afterwards.
   const owner = can(access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
+  // People's OAuth tokens are revoked at the host while the application they were given to still opens.
+  if (forgetsTokens) await revokeUserTokens(db, record, null);
   try {
     await updateCredential(db, id, patch, sealed, owner);
-    // Each person gives theirs again.
-    if (forgetsTokens) await deleteUserTokens(db, id, null);
   } catch (e) {
     // Two renames to one name at once: the database's unique index answers for the slower one.
     if (isUniqueViolation(e))

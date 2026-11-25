@@ -10,7 +10,6 @@
 import { and, eq } from 'drizzle-orm';
 import { can } from '#shared/permissions';
 import { credentialUserTokens, users } from '../../../server/database/schema';
-import { oauthEndpoints } from '#shared/scm-urls';
 import {
   credentialReferenceText,
   parseCredentialInput,
@@ -42,7 +41,7 @@ import {
   updateCredential,
   userTokenCounts,
 } from '#shared/handlers/credentials';
-import { normalizeScmDestination } from '#shared/scm-urls';
+import { normalizeScmDestination, oauthEndpoints } from '#shared/scm-urls';
 import type { getDemoDb } from '../db.client';
 import { demoHttpError } from './http-error';
 
@@ -168,6 +167,15 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (!record.perUser && patch.tokenHelpUrl) {
     throw demoHttpError(400, 'Only a per-user credential links to where a person creates a token.');
   }
+  if (!oauth && patch.oauthClientId) {
+    throw demoHttpError(400, 'Only a per-user source control credential names an OAuth application.');
+  }
+  if (oauth && patch.oauthClientId && patch.oauthClientId !== record.oauthClientId && !secret) {
+    throw demoHttpError(400, 'Enter the new OAuth application’s client secret with its client id.');
+  }
+  if (oauth && patch.oauthClientId === null) {
+    throw demoHttpError(400, 'A per-user source control credential names its OAuth application.');
+  }
   if (record.service !== 'ci-server') {
     const problem = credentialServiceProblem(record.service, {
       destination: patch.destination ?? record.destination,
@@ -187,6 +195,16 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
     );
   }
   const moved = patch.destination !== undefined && patch.destination !== record.destination;
+  const newEndpoints = oauth ? oauthEndpoints(patch.destination ?? record.destination) : null;
+  if (oauth && !newEndpoints) {
+    throw demoHttpError(400, 'A per-user source control credential authorizes people on GitLab or Bitbucket.');
+  }
+  if (oauth && newEndpoints && newEndpoints.token !== oauthEndpoints(record.destination)?.token && !secret) {
+    throw demoHttpError(
+      400,
+      'Enter the OAuth client secret again to change the host: it is sealed with the host’s token endpoint.',
+    );
+  }
   if (moved && !record.perUser && !secret && !patch.secretEnv) {
     throw demoHttpError(
       400,

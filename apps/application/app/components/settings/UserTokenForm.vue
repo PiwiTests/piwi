@@ -58,17 +58,41 @@ const hostLabel = computed(() =>
     : SCM_PROVIDER_LABELS.gitlab,
 );
 
-/** The return page's message, on this site's origin only. */
-function onAuthorized(event: MessageEvent) {
-  const data = event.data as { type?: string; credentialId?: number; ok?: boolean; message?: string | null } | null;
-  if (event.origin !== window.location.origin || data?.type !== 'piwi:credential-authorized') return;
-  if (data.credentialId !== props.credentialId) return;
+/** The popup this form opened, while it waits for its answer. */
+let popup: Window | null = null;
+let watchingPopup: ReturnType<typeof setInterval> | null = null;
+let channel: BroadcastChannel | null = null;
+
+function stopWaiting() {
+  popup = null;
+  if (watchingPopup) clearInterval(watchingPopup);
+  watchingPopup = null;
   saving.value = false;
+}
+
+/** The return page's answer, from this site only: for this credential, or one with none while this form's popup is open. */
+function onAnswer(data: { type?: string; credentialId?: number | null; ok?: boolean; message?: string | null } | null) {
+  if (data?.type !== 'piwi:credential-authorized') return;
+  if (data.credentialId !== props.credentialId && !(data.credentialId == null && popup)) return;
+  stopWaiting();
   if (data.ok) void reread();
   else error.value = data.message ?? 'The authorization did not go through.';
 }
-onMounted(() => window.addEventListener('message', onAuthorized));
-onBeforeUnmount(() => window.removeEventListener('message', onAuthorized));
+function onMessage(event: MessageEvent) {
+  if (event.origin === window.location.origin) onAnswer(event.data);
+}
+onMounted(() => {
+  window.addEventListener('message', onMessage);
+  if (typeof BroadcastChannel !== 'undefined') {
+    channel = new BroadcastChannel('piwi-credential-authorized');
+    channel.onmessage = (event) => onAnswer(event.data);
+  }
+});
+onBeforeUnmount(() => {
+  window.removeEventListener('message', onMessage);
+  channel?.close();
+  stopWaiting();
+});
 
 async function reread() {
   const mine = await $fetch<MineAnswer>('/api/credentials/mine');
@@ -96,17 +120,17 @@ async function authorize() {
     }
     return;
   }
-  const base = `${config.app.baseURL.replace(/\/$/, '')}/api/credentials/${props.credentialId}/authorize`;
-  const popup = window.open(
-    `${base}?returnTo=${encodeURIComponent('/authorized')}`,
-    'piwi-authorize',
-    'width=720,height=780',
-  );
-  if (popup) {
-    saving.value = true;
+  const url = `${config.app.baseURL.replace(/\/$/, '')}/api/credentials/${props.credentialId}/authorize?returnTo=${encodeURIComponent(route.fullPath)}`;
+  popup = window.open(url, 'piwi-authorize', 'width=720,height=780');
+  if (!popup) {
+    window.location.assign(url);
     return;
   }
-  window.location.assign(`${base}?returnTo=${encodeURIComponent(route.fullPath)}`);
+  saving.value = true;
+  // A popup closed before it answered (the person closed it at the host) lets the button be pressed again.
+  watchingPopup = setInterval(() => {
+    if (popup?.closed) stopWaiting();
+  }, 500);
 }
 const secret = ref('');
 const saving = ref(false);

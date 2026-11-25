@@ -90,7 +90,8 @@ export default eventHandler(async (event) => {
     });
   }
   // A per-user source control credential's secret is its OAuth application's, sent only to its host's token endpoint.
-  const tokenEndpoint = input.perUser ? oauthEndpoints(input.destination, configuredGitlabHosts())?.token : null;
+  const tokenEndpoint =
+    input.perUser && input.service === 'scm' ? oauthEndpoints(input.destination, configuredGitlabHosts())?.token : null;
   const sealed = input.perUser
     ? tokenEndpoint
       ? sealCredentialSecret(tokenEndpoint, input.secret!)

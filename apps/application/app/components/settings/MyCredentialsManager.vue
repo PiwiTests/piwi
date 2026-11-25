@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
  * The per-user credentials a person may use, each with their own token's
- * state: **Give token** (or give it again), **Test**, **Remove**. An action on
- * one runs in their name on the CI server, with their rights. A token they
+ * state: **Give token** (or **Authorize** at a source control host), **Test**,
+ * **Remove**. An action on one runs in their name on the CI server or the
+ * source control host, with their rights. A token they
  * hold for a credential they can no longer use stays listed, so they can
  * remove it.
  */
 import type { MyCredentialEntry } from '#shared/credentials';
 import type { ApiResponse } from '~~/types/api';
+
+/** Who receives the token: a CI server, or a source control host. */
+const receiver = (entry: MyCredentialEntry) => (entry.service === 'scm' ? 'The source control host' : 'The CI server');
 
 type MineAnswer = ApiResponse<typeof import('~~/server/api/credentials/mine.get').default>;
 type TestAnswer = ApiResponse<typeof import('~~/server/api/credentials/[id]/token/test.post').default>;
@@ -31,7 +35,7 @@ async function test(entry: MyCredentialEntry) {
     const answer = await $fetch<TestAnswer>(`/api/credentials/${entry.id}/token/test`, { method: 'POST' });
     toast.add(
       answer.ok
-        ? { title: 'The CI server took your token', color: 'success' }
+        ? { title: `${receiver(entry)} took your token`, color: 'success' }
         : { title: 'Your token was not taken', description: answer.message ?? undefined, color: 'error' },
     );
     await refresh();
@@ -63,8 +67,8 @@ async function remove(entry: MyCredentialEntry) {
 <template>
   <div class="space-y-3" data-testid="my-credentials">
     <p class="text-sm text-muted">
-      Credentials that run CI actions in your name, with your own token, so the CI server shows who started each build
-      and applies your rights.
+      Credentials that run CI actions in your name, with your own token, so the CI server or the source control host
+      shows who started each build and applies your rights.
     </p>
     <p v-if="status === 'error'" class="text-sm text-error">Your credentials could not be read: reload the page.</p>
     <p v-else-if="status !== 'success'" class="text-sm text-muted">Reading your credentials…</p>
@@ -91,10 +95,14 @@ async function remove(entry: MyCredentialEntry) {
             </div>
             <p class="truncate text-xs text-muted font-mono">{{ entry.destination }}</p>
             <p class="text-xs text-muted" data-testid="my-credential-state">
-              <template v-if="!entry.token">Its actions are refused to you until you give your token.</template>
-              <template v-else-if="entry.token.state === 'invalid'"
-                >The CI server refused your token: give it again.</template
-              >
+              <template v-if="!entry.token">
+                Its actions are refused to you until you
+                {{ entry.method === 'oauth' ? 'authorize Piwi' : 'give your token' }}.
+              </template>
+              <template v-else-if="entry.token.state === 'invalid'">
+                {{ receiver(entry) }} refused your token:
+                {{ entry.method === 'oauth' ? 'authorize again' : 'give it again' }}.
+              </template>
               <template v-else>
                 As <span class="font-mono">{{ entry.token.remoteUser }}</span
                 >, tested
@@ -126,7 +134,10 @@ async function remove(entry: MyCredentialEntry) {
               data-testid="my-credential-give"
               @click="giving = giving === entry.id ? null : entry.id"
             />
-            <UTooltip v-if="entry.token" text="Test with the CI server">
+            <UTooltip
+              v-if="entry.token"
+              :text="entry.service === 'scm' ? 'Test with the host' : 'Test with the CI server'"
+            >
               <UButton
                 size="xs"
                 color="neutral"

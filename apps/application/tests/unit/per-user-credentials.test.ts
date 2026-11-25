@@ -436,7 +436,11 @@ describe('saving a user token', () => {
     expect(await give(id, 2, 'quinn.qa')).toEqual({ saved: true });
     expect(await give(id, 2, 'quinn.qa', 'd'.repeat(32))).toEqual({ saved: true });
     expect(await listUserTokens(db as never, id)).toHaveLength(1);
-    expect(await give(id, 3, 'Quinn.QA')).toEqual({ saved: false, message: expect.stringMatching(/each person/) });
+    expect(await give(id, 3, 'Quinn.QA')).toEqual({
+      saved: false,
+      reason: 'account-taken',
+      message: expect.stringMatching(/each person/),
+    });
   });
 
   test('is gone with its credential and with its person', async () => {
@@ -457,7 +461,11 @@ describe('saving a user token', () => {
       .update(schema.credentials)
       .set({ destination: 'https://other.example.com/' })
       .where(eq(schema.credentials.id, id));
-    expect(await give(id, 2, 'quinn.qa')).toEqual({ saved: false, message: expect.stringMatching(/changed/) });
+    expect(await give(id, 2, 'quinn.qa')).toEqual({
+      saved: false,
+      reason: 'changed',
+      message: expect.stringMatching(/changed/),
+    });
   });
 
   test('refuses an account another person saved at the same moment, through the account’s unique index', async () => {

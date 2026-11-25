@@ -187,7 +187,7 @@ describe('a person’s authorization', () => {
       scope: 'api',
       code_challenge_method: 'S256',
     });
-    expect(outcome).toEqual({ ok: true, credentialId: id, returnTo: '/x', message: null });
+    expect(outcome).toEqual({ ok: true, credentialId: id, returnTo: '/x', reason: null });
     const exchange = host.calls.find((c) => c.url === 'https://gitlab.com/oauth/token')!;
     expect(exchange.body?.get('code')).toBe('the-code');
     expect(exchange.body?.get('client_secret')).toBe('client-secret');
@@ -201,7 +201,7 @@ describe('a person’s authorization', () => {
   test('is refused to another person’s session, and the state is gone with the refusal', async () => {
     const id = await createOauth();
     const { outcome, state } = await authorize(id, 2, 3);
-    expect(outcome).toMatchObject({ ok: false, message: expect.stringMatching(/someone else/) });
+    expect(outcome).toMatchObject({ ok: false, reason: 'someone-else' });
     expect(host.calls).toEqual([]);
     const again = await finishUserAuthorization(db as never, 2, {
       state,
@@ -209,7 +209,7 @@ describe('a person’s authorization', () => {
       error: null,
       redirectUri: REDIRECT,
     });
-    expect(again).toMatchObject({ ok: false, message: expect.stringMatching(/expired or was already used/) });
+    expect(again).toMatchObject({ ok: false, reason: 'expired' });
     expect(await listUserTokens(db as never, id)).toEqual([]);
   });
 
@@ -218,10 +218,20 @@ describe('a person’s authorization', () => {
     host.grant = () => ({ status: 400, json: { error: 'invalid_grant', error_description: 'secret detail' } });
     const { url, outcome } = await authorize(id);
     expect(url.searchParams.has('code_challenge')).toBe(false);
-    expect(outcome).toMatchObject({ ok: false, message: 'Bitbucket refused the authorization: start it again.' });
+    expect(outcome).toMatchObject({ ok: false, reason: 'refused' });
     const exchange = host.calls.find((c) => c.url.endsWith('/oauth2/access_token'))!;
     expect(exchange.auth).toBe(`Basic ${Buffer.from('client-1:client-secret').toString('base64')}`);
     expect(exchange.body?.has('client_secret')).toBe(false);
+    expect(await listUserTokens(db as never, id)).toEqual([]);
+  });
+});
+
+describe('an authorization the host refuses Piwi’s OAuth application for', () => {
+  test('names the application as the cause, never the person', async () => {
+    const id = await createOauth();
+    host.grant = () => ({ status: 401, json: { error: 'invalid_client' } });
+    const { outcome } = await authorize(id);
+    expect(outcome).toMatchObject({ ok: false, reason: 'client' });
     expect(await listUserTokens(db as never, id)).toEqual([]);
   });
 });
@@ -275,6 +285,14 @@ describe('a person’s OAuth token in use', () => {
     const error = await withCredential(db as never, useOf(id, 2), async () => 'sent').catch((e: unknown) => e);
     expect(error).toBeInstanceOf(CredentialRefusedError);
     expect((error as InstanceType<typeof CredentialRefusedError>).code).toBe('user-token-required');
+  });
+
+  test('stays the person’s when the host refuses Piwi’s OAuth application, which is the administrator’s to fix', async () => {
+    const id = await createOauth();
+    await expiring(id);
+    host.grant = () => ({ status: 401, json: { error: 'invalid_client' } });
+    await withCredential(db as never, useOf(id, 2), async (opened) => opened.secret);
+    expect((await listUserTokens(db as never, id))[0]!.state).toBe('ready');
   });
 
   test('is revoked at GitLab when it is removed, and only removed on Bitbucket, which offers no revocation', async () => {

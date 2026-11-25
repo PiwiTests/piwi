@@ -644,3 +644,23 @@ export function readOAuthUser(host: OAuthEndpoints['host'], json: unknown): stri
   const name = host === 'gitlab' ? pick('username') : pick('username') || pick('nickname') || pick('account_id');
   return name ? name.slice(0, MAX_CREDENTIAL_USER_LENGTH) : null;
 }
+
+/**
+ * Why an authorization at a host saved no token, as the return page says it:
+ * fixed sentences, so a link to that page can show nothing else.
+ */
+export const AUTHORIZATION_FAILURES = {
+  expired: 'This authorization expired or was already used: start it again.',
+  'someone-else': 'This authorization was started by someone else: start your own.',
+  'sign-in': 'An authorization needs sign-in.',
+  unavailable: 'This credential no longer takes an authorization.',
+  disabled: 'This credential is disabled.',
+  denied: 'The host did not authorize Piwi.',
+  refused: 'The host refused the authorization: start it again.',
+  client:
+    'The host refused the credential’s OAuth application: ask an administrator to check its client id and secret.',
+  unreachable: 'The host could not be reached: try again shortly.',
+  'account-taken': 'Another person already gave a token for this account: each person gives their own.',
+  changed: 'The credential changed while you authorized it: start it again.',
+} as const;
+export type AuthorizationFailure = keyof typeof AUTHORIZATION_FAILURES;

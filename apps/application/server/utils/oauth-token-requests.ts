@@ -25,8 +25,14 @@ export interface OAuthTokens {
   expiresAt: number | null;
 }
 
-/** A token request's outcome: the tokens, or whether the host refused (`invalid_grant`, a bad client) or was unreachable. */
-export type OAuthTokenAnswer = { ok: true; tokens: OAuthTokens } | { ok: false; reason: 'refused' | 'unreachable' };
+/**
+ * A token request's outcome: the tokens, or why there are none: the host
+ * refused the grant (a code or a refresh token it no longer takes), refused
+ * the client (the OAuth application's id or secret), or could not be reached.
+ */
+export type OAuthTokenAnswer =
+  | { ok: true; tokens: OAuthTokens }
+  | { ok: false; reason: 'refused' | 'client' | 'unreachable' };
 
 function clientRequest(endpoints: OAuthEndpoints, client: OAuthClient, params: Record<string, string>) {
   const body = new URLSearchParams(params);
@@ -70,6 +76,9 @@ export async function requestOAuthTokens(
     json = null;
   }
   const access = typeof json?.access_token === 'string' ? json.access_token : '';
+  if (res.status === 401 || json?.error === 'invalid_client' || json?.error === 'unauthorized_client') {
+    return { ok: false, reason: 'client' };
+  }
   if (!res.ok || !access) return { ok: false, reason: 'refused' };
   const refresh = typeof json?.refresh_token === 'string' && json.refresh_token ? json.refresh_token : null;
   const seconds = Number(json?.expires_in);

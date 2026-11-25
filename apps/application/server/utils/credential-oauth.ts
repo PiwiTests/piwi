@@ -20,7 +20,7 @@ import {
 } from './credentials';
 import { configuredGitlabHosts } from './scm/gitlab-hosts';
 import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
-import { readOAuthUser, USER_TOKEN_TEST_REASONS, type UserTokenTestResult } from '#shared/credentials';
+import { readOAuthUser, type AuthorizationFailure, type UserTokenTestResult } from '#shared/credentials';
 import { oauthEndpoints } from '#shared/scm-urls';
 
 /** How long a person has to authorize at the host once they started. */
@@ -80,8 +80,8 @@ export interface AuthorizationOutcome {
   ok: boolean;
   credentialId: number | null;
   returnTo: string | null;
-  /** What the person is told when it did not work; never the host's text. */
-  message: string | null;
+  /** Why it did not work, as the return page says it; never the host's text. */
+  reason: AuthorizationFailure | null;
 }
 
 /**
@@ -102,53 +102,47 @@ export async function finishUserAuthorization(
         .where(eq(credentialAuthorizations.stateHash, sha256(answer.state)))
         .returning()
     : [];
-  const fail = (message: string, keep: Partial<AuthorizationOutcome> = {}): AuthorizationOutcome => ({
+  const fail = (reason: AuthorizationFailure, keep: Partial<AuthorizationOutcome> = {}): AuthorizationOutcome => ({
     ok: false,
     credentialId: null,
     returnTo: null,
-    message,
+    reason,
     ...keep,
   });
-  if (!row) return fail('This authorization expired or was already used: start it again.');
+  if (!row) return fail('expired');
   const where = { credentialId: row.credentialId, returnTo: row.returnTo ?? null };
   // A state is the person's who started it: another person's session never saves a token through it.
-  if (row.userId !== userId) return fail('This authorization was started by someone else: start your own.');
-  if (new Date(row.expiresAt).getTime() < now) return fail('This authorization expired: start it again.', where);
+  if (row.userId !== userId) return fail('someone-else');
+  if (new Date(row.expiresAt).getTime() < now) return fail('expired', where);
   const record = await loadCredentialRecord(db, row.credentialId);
-  const endpoints = record ? oauthEndpoints(record.destination, configuredGitlabHosts()) : null;
-  if (!record || !record.perUser || !endpoints) return fail('This credential no longer takes an authorization.', where);
-  if (answer.error || !answer.code) return fail(`${endpoints.label} did not authorize Piwi.`, where);
-  if (record.disabled) return fail(`The credential "${record.name}" is disabled.`, where);
+  if (!record || !record.perUser || !oauthEndpoints(record.destination, configuredGitlabHosts())) {
+    return fail('unavailable', where);
+  }
+  if (answer.error || !answer.code) return fail('denied', where);
+  if (record.disabled) return fail('disabled', where);
 
   let verifier: string | null = null;
   try {
     verifier = decryptSecret(row.verifier, getEncryptionKey()) || null;
   } catch {
-    return fail('This authorization cannot be read: start it again.', where);
+    return fail('expired', where);
   }
   const exchanged = await exchangeOAuthCode(db, record, userId, {
     code: answer.code,
     verifier,
     redirectUri: answer.redirectUri,
   });
-  if (!exchanged.ok) {
-    return fail(
-      exchanged.reason === 'refused'
-        ? `${endpoints.label} refused the authorization: start it again.`
-        : `${endpoints.label} could not be reached.`,
-      where,
-    );
-  }
+  if (!exchanged.ok) return fail(exchanged.reason, where);
   const tokens = exchanged.tokens;
   const tested = await testScmUserToken(db, record, { userId, apiKeyId: null }, { user: null, secret: tokens.access });
-  if (!tested.ok) return fail(USER_TOKEN_TEST_REASONS[tested.reason], where);
+  if (!tested.ok) return fail(tested.reason === 'unreachable' ? 'unreachable' : 'refused', where);
   const saved = await saveUserToken(
     db,
     { credentialId: record.id, userId, destination: record.destination, remoteUser: tested.remoteUser },
     { user: null, secret: tokens.access, refresh: tokens.refresh, expiresAt: tokens.expiresAt },
   );
-  if (!saved.saved) return fail(saved.message, where);
-  return { ok: true, message: null, ...where };
+  if (!saved.saved) return fail(saved.reason, where);
+  return { ok: true, reason: null, ...where };
 }
 
 /**

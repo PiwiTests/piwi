@@ -49,14 +49,15 @@ it there too.
 ## GitLab and Bitbucket
 
 A per-user **Source control** credential runs a GitLab pipeline or a Bitbucket custom pipeline in the name of whoever
-starts it. Each person authorizes it once at the host, in a popup, instead of typing a token: GitLab shows the
-pipeline as theirs, and its rights apply. GitHub is not offered yet.
+starts it. Each person authorizes it once at the host, in a popup, instead of typing a token: the host shows the
+pipeline as theirs, and its rights apply. A GitHub destination cannot be per user: the form offers it for GitLab and
+Bitbucket only.
 
 - **Set it up**: register an OAuth application, on GitLab (scope `api`, on gitlab.com or a host
-  `PIWI_SCM_GITLAB_HOSTS` lists) or on Bitbucket (an OAuth consumer that may read the account and write pipelines),
-  with the callback URL the credential form shows. Then create the credential with service **Source control**, the
-  host's API as destination, **Per user**, and the application's client id and secret. The secret is sealed with the
-  host's token endpoint and sent nowhere else.
+  `PIWI_SCM_GITLAB_HOSTS` lists) or on Bitbucket (an OAuth consumer with the Account read, Repositories read and
+  Pipelines write permissions), with the callback URL the credential form shows. Then create the credential with
+  service **Source control**, the host's API as destination, **Per user**, and the application's client id and
+  secret. The secret is sealed with the host's token endpoint and sent nowhere else.
 - **Authorize**: **Authorize with GitLab** (or Bitbucket) under **Account → Credentials**, or in the run dialog. The
   authorization is bound to you and the credential, used once, and expires after 10 minutes; Piwi then reads the
   account the token belongs to and keeps it.

@@ -125,18 +125,30 @@ const isAi = computed(() => form.value.service === 'ai');
 const isCiServer = computed(() => form.value.service === 'ci-server');
 /** Whether the form may create a per-user credential: a CI server's, by an administrator, while sign-in is on. */
 const offersPerUser = computed(
-  () => !editing.value && (isCiServer.value || isScm.value) && shareAll.value && authEnabled,
+  () =>
+    !editing.value &&
+    (isCiServer.value || (isScm.value && !form.value.destination.startsWith(SCM_API_DESTINATIONS.github))) &&
+    shareAll.value &&
+    authEnabled,
+);
+// A secret typed for one mode is never saved as the other's: an OAuth client secret is no shared token.
+watch(
+  () => form.value.perUser,
+  () => {
+    form.value.secret = '';
+  },
 );
 /** A per-user CI server credential holds no user and no secret: each person gives their own token. */
 const perUser = computed(() => isCiServer.value && form.value.perUser);
 /** A per-user source control credential names the OAuth application each person authorizes on GitLab or Bitbucket. */
 const perUserOauth = computed(() => isScm.value && form.value.perUser);
-/** The one callback the OAuth application registers, on this instance. */
-const callbackUrl = computed(() =>
-  import.meta.client
-    ? `${window.location.origin}${useRuntimeConfig().app.baseURL.replace(/\/$/, '')}/api/credentials/oauth/callback`
-    : '/api/credentials/oauth/callback',
-);
+/** The one callback the OAuth application registers, as the server sends it: on `PIWI_SITE_URL`, else on this origin. */
+const runtime = useRuntimeConfig();
+const callbackUrl = computed(() => {
+  const site = (runtime.public.siteUrl as string | undefined)?.replace(/\/+$/, '');
+  const origin = site || (import.meta.client ? window.location.origin : '');
+  return `${origin}/api/credentials/oauth/callback`;
+});
 const IDENTITY_ITEMS = [
   { label: 'Shared: one secret, sent for everyone', value: false },
   { label: 'Per user: each person gives their own token', value: true },
@@ -219,6 +231,9 @@ function problem(): string | null {
   if (perUserOauth.value) {
     if (!f.oauthClientId.trim()) return 'Enter the OAuth application’s client id.';
     if (!editing.value && !f.secret.trim()) return 'Enter the OAuth application’s client secret.';
+    if (editing.value && f.oauthClientId.trim() !== (props.credential?.oauthClientId ?? '') && !f.secret.trim()) {
+      return 'Enter the new OAuth application’s client secret with its client id.';
+    }
   } else if (perUser.value) {
     const help = f.tokenHelpUrl.trim();
     if (help && !/^https?:\/\//i.test(help)) return 'The token help link is an http(s) URL.';

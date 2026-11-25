@@ -366,6 +366,7 @@ function submit() {
             :repository-url="repositoryUrl ?? null"
             none-label="The project’s SCM credential, else the instance’s"
             label="Dispatch credential"
+            per-user
           />
         </FormFieldGroup>
         <div v-if="isCiServer" class="rounded-md border border-default p-3">

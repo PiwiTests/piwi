@@ -25,6 +25,8 @@ const props = defineProps<{
   noneLabel: string;
   /** The picker's accessible name. */
   label: string;
+  /** Whether it lists per-user credentials, which only a CI action names. */
+  perUser?: boolean;
 }>();
 const model = defineModel<number | null>({ required: true });
 
@@ -43,7 +45,9 @@ const apiUrl = computed(() => scmRepositoryApiUrl(props.repositoryUrl));
 /** Whether a credential would go with the repository's calls. */
 const fits = (c: { destination: string }) =>
   apiUrl.value ? isUnderBaseUrl(c.destination, apiUrl.value) : !props.host || hostOf(c.destination) === props.host;
-const credentials = computed(() => ((data.value?.credentials ?? []) as CredentialOption[]).filter(fits));
+const credentials = computed(() =>
+  ((data.value?.credentials ?? []) as CredentialOption[]).filter((c) => fits(c) && (props.perUser || !c.perUser)),
+);
 const chosen = computed(() => credentials.value.find((c) => c.id === model.value) ?? null);
 
 const NONE = -1;
@@ -52,7 +56,7 @@ const items = computed(() => [
   ...credentials.value.map((c) => ({
     label: c.disabled ? `${c.name} (disabled)` : c.name,
     value: c.id,
-    description: c.destination,
+    description: c.perUser ? `In the name of whoever starts it · ${c.destination}` : c.destination,
   })),
   // The credential named, while it is not among them: named, so the select never shows a bare id.
   ...(model.value !== null && !chosen.value
