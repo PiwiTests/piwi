@@ -2004,7 +2004,7 @@ or when the config's options are not read within 3 s; whole otherwise.
 3. Forks the launcher in the config's folder (`sessions.ts`).
 
 The options reader and the launcher both run with the project's Node (`node.ts`): under an editor's Electron, the first
-`node` on the service's `PATH` when it is Node 20 or later, run without `ELECTRON_RUN_AS_NODE`; else the service's own
+`node` on the service's `PATH` when it is Node 22 or later, run without `ELECTRON_RUN_AS_NODE`; else the service's own
 runtime.
 
 The launcher (`launcher.ts`):
