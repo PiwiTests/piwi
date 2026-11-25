@@ -165,7 +165,7 @@ async function buildCommand() {
   <USlideover
     :open="open"
     title="Who uses this?"
-    :ui="{ content: 'max-w-2xl' }"
+    :ui="{ content: 'sm:max-w-2xl' }"
     @update:open="emit('update:open', $event)"
   >
     <template #body>
