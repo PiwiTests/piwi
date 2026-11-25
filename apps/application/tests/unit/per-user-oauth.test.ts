@@ -37,7 +37,7 @@ const REDIRECT = 'https://piwi.example.com/api/credentials/oauth/callback';
 const host = {
   calls: [] as Array<{ url: string; body: URLSearchParams | null; auth: string | null }>,
   /** The token endpoint's answer for a grant type, or a status to refuse with. */
-  grant: (params: URLSearchParams): { status: number; json: unknown } => ({
+  grant: (params: URLSearchParams): { status: number; json: unknown } | Promise<{ status: number; json: unknown }> => ({
     status: 200,
     json: {
       access_token: `access-${params.get('grant_type')}-${host.calls.length}`,
@@ -56,7 +56,7 @@ vi.stubGlobal('fetch', async (input: string | URL, init: RequestInit = {}) => {
   const json = (status: number, value: unknown) =>
     new Response(JSON.stringify(value), { status, headers: { 'Content-Type': 'application/json' } });
   if (url.endsWith('/oauth/token') || url.endsWith('/oauth2/access_token')) {
-    const answer = host.grant(body!);
+    const answer = await host.grant(body!);
     return json(answer.status, answer.json);
   }
   if (url.endsWith('/api/v4/user') || url.endsWith('/2.0/user')) return json(host.user.status, host.user.json);
@@ -198,19 +198,16 @@ describe('a person’s authorization', () => {
     expect(await db.select().from(schema.credentialAuthorizations)).toEqual([]);
   });
 
-  test('is refused to another person’s session, and the state is gone with the refusal', async () => {
+  test('is refused to another person’s session, which leaves the state to its owner, used once', async () => {
     const id = await createOauth();
     const { outcome, state } = await authorize(id, 2, 3);
     expect(outcome).toMatchObject({ ok: false, reason: 'someone-else' });
     expect(host.calls).toEqual([]);
-    const again = await finishUserAuthorization(db as never, 2, {
-      state,
-      code: 'the-code',
-      error: null,
-      redirectUri: REDIRECT,
-    });
-    expect(again).toMatchObject({ ok: false, reason: 'expired' });
-    expect(await listUserTokens(db as never, id)).toEqual([]);
+    const finish = () =>
+      finishUserAuthorization(db as never, 2, { state, code: 'the-code', error: null, redirectUri: REDIRECT });
+    expect(await finish()).toMatchObject({ ok: true });
+    expect(await finish()).toMatchObject({ ok: false, reason: 'expired' });
+    expect(await listUserTokens(db as never, id)).toHaveLength(1);
   });
 
   test('saves nothing when the host refuses the code, says only that, and sends Bitbucket its client in a header', async () => {
@@ -293,6 +290,21 @@ describe('a person’s OAuth token in use', () => {
     host.grant = () => ({ status: 401, json: { error: 'invalid_client' } });
     await withCredential(db as never, useOf(id, 2), async (opened) => opened.secret);
     expect((await listUserTokens(db as never, id))[0]!.state).toBe('ready');
+  });
+
+  test('is revoked at GitLab when it was removed from Piwi while it was refreshed', async () => {
+    const id = await createOauth();
+    await expiring(id);
+    const grant = host.grant;
+    host.grant = async (params) => {
+      // The person removes their token while the host renews it.
+      await db.delete(schema.credentialUserTokens);
+      return grant(params);
+    };
+    await withCredential(db as never, useOf(id, 2), async (opened) => opened.secret);
+    const revoke = host.calls.find((c) => c.url === 'https://gitlab.com/oauth/revoke');
+    expect(revoke?.body?.get('token')).toMatch(/^refresh-/);
+    expect(revoke?.body?.get('token')).not.toBe('old-refresh');
   });
 
   test('is revoked at GitLab when it is removed, and only removed on Bitbucket, which offers no revocation', async () => {

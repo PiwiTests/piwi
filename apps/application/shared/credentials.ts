@@ -652,7 +652,7 @@ export function readOAuthUser(host: OAuthEndpoints['host'], json: unknown): stri
 export const AUTHORIZATION_FAILURES = {
   expired: 'This authorization expired or was already used: start it again.',
   'someone-else': 'This authorization was started by someone else: start your own.',
-  'sign-in': 'An authorization needs sign-in.',
+  'sign-in': 'Sign in to Piwi, then start the authorization again.',
   unavailable: 'This credential no longer takes an authorization.',
   disabled: 'This credential is disabled.',
   denied: 'The host did not authorize Piwi.',
@@ -662,5 +662,8 @@ export const AUTHORIZATION_FAILURES = {
   unreachable: 'The host could not be reached: try again shortly.',
   'account-taken': 'Another person already gave a token for this account: each person gives their own.',
   changed: 'The credential changed while you authorized it: start it again.',
+  'rate-limited': 'Too many authorizations started: wait a few minutes before you start again.',
+  'no-secret-key': 'Piwi cannot store your token until an administrator sets PIWI_SECRET_KEY.',
+  'cross-site': 'An authorization starts from Piwi’s own pages: start it again from your account.',
 } as const;
 export type AuthorizationFailure = keyof typeof AUTHORIZATION_FAILURES;

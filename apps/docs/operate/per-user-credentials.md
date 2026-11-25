@@ -57,7 +57,8 @@ Bitbucket only.
   `PIWI_SCM_GITLAB_HOSTS` lists) or on Bitbucket (an OAuth consumer with the Account read, Repositories read and
   Pipelines write permissions), with the callback URL the credential form shows. Then create the credential with
   service **Source control**, the host's API as destination, **Per user**, and the application's client id and
-  secret. The secret is sealed with the host's token endpoint and sent nowhere else.
+  secret. The secret is sealed with the host's token endpoint and sent only to its OAuth endpoints (token and
+  revocation).
 - **Authorize**: **Authorize with GitLab** (or Bitbucket) under **Account → Credentials**, or in the run dialog. The
   authorization is bound to you and the credential, used once, and expires after 10 minutes; Piwi then reads the
   account the token belongs to and keeps it.

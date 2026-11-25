@@ -959,7 +959,7 @@ export const SETTINGS_EXEMPTIONS = [
   },
   {
     rule: 'help',
-    key: 'settings.credentials.secret',
+    key: 'settings.credentials.stored-secret',
     reason:
       'The help of the Secret and Variable field of the credential form, a modal its New credential and Edit buttons open.',
   },

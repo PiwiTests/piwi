@@ -1453,7 +1453,7 @@ export const HELP_TOPICS = {
       '- **GitLab**: an application with the `api` scope.',
       '- **Bitbucket**: an OAuth consumer with Account read, Repositories read and Pipelines write.',
       '',
-      'The client secret is encrypted, and sent only to the host’s token endpoint. Another application removes every person’s authorization.',
+      'The client secret is encrypted, and sent only to the host’s OAuth endpoints (token and revocation). Another application removes every person’s authorization.',
     ].join('\n'),
     doc: 'operate/per-user-credentials#gitlab-and-bitbucket',
   },
@@ -1462,7 +1462,7 @@ export const HELP_TOPICS = {
     text: 'Optional. A link the token form shows each person, such as the API token page of the CI server.',
     doc: 'operate/per-user-credentials',
   },
-  'settings.credentials.secret': {
+  'settings.credentials.stored-secret': {
     title: 'Secret',
     text: [
       'Encrypted with `PIWI_SECRET_KEY`, and never shown again. Editing a credential, leave it empty to keep the stored one.',

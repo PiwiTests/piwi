@@ -7,7 +7,7 @@
  * of a saved or new token at the host's user endpoint.
  */
 import { createHash, randomBytes } from 'node:crypto';
-import { eq, lt } from 'drizzle-orm';
+import { and, eq, lt } from 'drizzle-orm';
 import { credentialAuthorizations } from '../database/schema';
 import type { DbClient } from '../database';
 import { decryptSecret, encryptSecret, getEncryptionKey } from './crypto';
@@ -28,6 +28,18 @@ export const OAUTH_STATE_TTL_MS = 10 * 60 * 1000;
 
 /** The one callback every per-user SCM credential's OAuth application registers. */
 export const OAUTH_CALLBACK_PATH = '/api/credentials/oauth/callback';
+
+/**
+ * The return page's address for an authorization's outcome: where the
+ * callback, and the start when it refuses, send the person's window.
+ */
+export function authorizedPagePath(baseURL: string, outcome: AuthorizationOutcome): string {
+  const target = new URLSearchParams({ result: outcome.ok ? 'ok' : 'error' });
+  if (outcome.credentialId != null) target.set('credential', String(outcome.credentialId));
+  if (outcome.reason) target.set('reason', outcome.reason);
+  if (outcome.returnTo) target.set('returnTo', outcome.returnTo);
+  return `${baseURL.replace(/\/$/, '')}/authorized?${target.toString()}`;
+}
 
 /** How long the host has to answer a token test. */
 const TEST_TIMEOUT_MS = 10_000;
@@ -96,12 +108,21 @@ export async function finishUserAuthorization(
   answer: { state: string; code: string | null; error: string | null; redirectUri: string },
   now = Date.now(),
 ): Promise<AuthorizationOutcome> {
-  const [row] = answer.state
+  const stateHash = answer.state ? sha256(answer.state) : null;
+  // Another person's state is refused and left for its owner; the person's own is taken once.
+  const [found] = stateHash
     ? await db
-        .delete(credentialAuthorizations)
-        .where(eq(credentialAuthorizations.stateHash, sha256(answer.state)))
-        .returning()
+        .select({ userId: credentialAuthorizations.userId })
+        .from(credentialAuthorizations)
+        .where(eq(credentialAuthorizations.stateHash, stateHash))
     : [];
+  const [row] =
+    stateHash && found?.userId === userId
+      ? await db
+          .delete(credentialAuthorizations)
+          .where(and(eq(credentialAuthorizations.stateHash, stateHash), eq(credentialAuthorizations.userId, userId)))
+          .returning()
+      : [];
   const fail = (reason: AuthorizationFailure, keep: Partial<AuthorizationOutcome> = {}): AuthorizationOutcome => ({
     ok: false,
     credentialId: null,
@@ -109,10 +130,9 @@ export async function finishUserAuthorization(
     reason,
     ...keep,
   });
+  if (found && found.userId !== userId) return fail('someone-else');
   if (!row) return fail('expired');
   const where = { credentialId: row.credentialId, returnTo: row.returnTo ?? null };
-  // A state is the person's who started it: another person's session never saves a token through it.
-  if (row.userId !== userId) return fail('someone-else');
   if (new Date(row.expiresAt).getTime() < now) return fail('expired', where);
   const record = await loadCredentialRecord(db, row.credentialId);
   if (!record || !record.perUser || !oauthEndpoints(record.destination, configuredGitlabHosts())) {
@@ -134,11 +154,24 @@ export async function finishUserAuthorization(
   });
   if (!exchanged.ok) return fail(exchanged.reason, where);
   const tokens = exchanged.tokens;
-  const tested = await testScmUserToken(db, record, { userId, apiKeyId: null }, { user: null, secret: tokens.access });
+  let tested: UserTokenTestResult;
+  try {
+    tested = await testScmUserToken(db, record, { userId, apiKeyId: null }, { user: null, secret: tokens.access });
+  } catch (e) {
+    // The credential was disabled or changed while the code was exchanged.
+    if (e instanceof CredentialRefusedError) return fail('unavailable', where);
+    throw e;
+  }
   if (!tested.ok) return fail(tested.reason === 'unreachable' ? 'unreachable' : 'refused', where);
   const saved = await saveUserToken(
     db,
-    { credentialId: record.id, userId, destination: record.destination, remoteUser: tested.remoteUser },
+    {
+      credentialId: record.id,
+      userId,
+      destination: record.destination,
+      remoteUser: tested.remoteUser,
+      oauthClientId: record.oauthClientId!,
+    },
     { user: null, secret: tokens.access, refresh: tokens.refresh, expiresAt: tokens.expiresAt },
   );
   if (!saved.saved) return fail(saved.reason, where);

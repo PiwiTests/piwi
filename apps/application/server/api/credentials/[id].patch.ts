@@ -4,7 +4,7 @@ import { requireRouteId } from '../../utils/project-access';
 import { sealCredentialEnv, sealCredentialSecret, withSecretEnvState } from '../../utils/credentials';
 import { isUniqueViolation } from '../../utils/db-errors';
 import { ciServerBaseUrlProblem } from '../../utils/ci-server-dispatch';
-import { revokeUserTokens } from '../../utils/credentials';
+import { openRevocationClient, revokeUserTokens } from '../../utils/credentials';
 import {
   canManageCredential,
   credentialNameTaken,
@@ -155,8 +155,8 @@ export default eventHandler(async (event) => {
     record.perUser && (moved || (patch.oauthClientId !== undefined && patch.oauthClientId !== record.oauthClientId));
   // A change by an administrator makes the credential theirs: its creator never loosens it afterwards.
   const owner = can(access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
-  // People's OAuth tokens are revoked at the host while the application they were given to still opens.
-  if (forgetsTokens) await revokeUserTokens(db, record, null);
+  // The application people's OAuth tokens were given to is opened before the change, to revoke them after it.
+  const revocation = forgetsTokens ? await openRevocationClient(db, record) : null;
   try {
     await updateCredential(db, id, patch, sealed, owner);
   } catch (e) {
@@ -165,6 +165,7 @@ export default eventHandler(async (event) => {
       throw apiError({ statusCode: 409, message: `A credential is already named "${patch.name}".` });
     throw e;
   }
+  if (forgetsTokens) await revokeUserTokens(db, record, null, revocation);
   const updated = (await loadCredentialRecord(db, id))!;
   return {
     credential: withSecretEnvState(

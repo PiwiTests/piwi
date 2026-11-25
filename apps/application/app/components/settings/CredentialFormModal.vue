@@ -131,6 +131,10 @@ const offersPerUser = computed(
     shareAll.value &&
     authEnabled,
 );
+// Per user ends with the choice: a destination it is not offered for (GitHub) takes a shared credential.
+watch(offersPerUser, (offered) => {
+  if (!offered && !editing.value) form.value.perUser = false;
+});
 // A secret typed for one mode is never saved as the other's: an OAuth client secret is no shared token.
 watch(
   () => form.value.perUser,
@@ -465,7 +469,7 @@ async function submit() {
           label="Variable"
           name="credentialSecretEnv"
           required
-          help="settings.credentials.secret"
+          help="settings.credentials.stored-secret"
         >
           <UInput
             v-model="form.secretEnv"
@@ -481,7 +485,7 @@ async function submit() {
           label="Secret"
           name="credentialSecret"
           :required="!editing || destinationMoved || Boolean(credential?.secretEnv)"
-          help="settings.credentials.secret"
+          help="settings.credentials.stored-secret"
         >
           <UInput
             v-model="form.secret"
