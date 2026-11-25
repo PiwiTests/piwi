@@ -4131,6 +4131,21 @@ const SCENES = [
       await shoot();
     },
   },
+  {
+    name: 'credentials-oauth-form',
+    description:
+      'Settings → Credentials at 1280 px: a per-user GitLab credential’s form, with the OAuth application’s client id and secret and the callback URL to register',
+    route: '/settings/credentials',
+    viewport: { width: 1280, height: 1000 },
+    of: '[data-testid="credential-form"]',
+    async run({ page, shoot, settle }) {
+      await page.getByTestId('credential-row-8').click({ timeout: 90000 });
+      await page.getByRole('button', { name: 'Edit or rotate' }).click();
+      await page.getByTestId('credential-oauth-client-id').waitFor({ timeout: 30000 });
+      await settle();
+      await shoot();
+    },
+  },
   ...[
     { name: 'settings-credentials-log', width: 1280, height: 900 },
     { name: 'settings-credentials-log-mobile', width: 375, height: 1400 },

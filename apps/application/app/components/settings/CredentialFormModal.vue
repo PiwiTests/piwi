@@ -77,6 +77,7 @@ const blank = () => ({
   customRequests: false,
   perUser: false,
   tokenHelpUrl: '',
+  oauthClientId: '',
 });
 const form = ref(blank());
 const saving = ref(false);
@@ -104,6 +105,7 @@ watch(open, (isOpen) => {
         customRequests: c.customRequests,
         perUser: c.perUser,
         tokenHelpUrl: c.tokenHelpUrl ?? '',
+        oauthClientId: c.oauthClientId ?? '',
       }
     : {
         ...blank(),
@@ -122,9 +124,19 @@ const isAi = computed(() => form.value.service === 'ai');
 /** A CI server credential's user, inputs and Custom request switch; the other services send the secret alone. */
 const isCiServer = computed(() => form.value.service === 'ci-server');
 /** Whether the form may create a per-user credential: a CI server's, by an administrator, while sign-in is on. */
-const offersPerUser = computed(() => !editing.value && isCiServer.value && shareAll.value && authEnabled);
-/** A per-user credential holds no user and no secret: each person gives their own token. */
+const offersPerUser = computed(
+  () => !editing.value && (isCiServer.value || isScm.value) && shareAll.value && authEnabled,
+);
+/** A per-user CI server credential holds no user and no secret: each person gives their own token. */
 const perUser = computed(() => isCiServer.value && form.value.perUser);
+/** A per-user source control credential names the OAuth application each person authorizes on GitLab or Bitbucket. */
+const perUserOauth = computed(() => isScm.value && form.value.perUser);
+/** The one callback the OAuth application registers, on this instance. */
+const callbackUrl = computed(() =>
+  import.meta.client
+    ? `${window.location.origin}${useRuntimeConfig().app.baseURL.replace(/\/$/, '')}/api/credentials/oauth/callback`
+    : '/api/credentials/oauth/callback',
+);
 const IDENTITY_ITEMS = [
   { label: 'Shared: one secret, sent for everyone', value: false },
   { label: 'Per user: each person gives their own token', value: true },
@@ -204,7 +216,10 @@ function problem(): string | null {
   const destination = credentialDestinationProblem(f.destination.trim());
   if (destination) return destination;
   if (isJira.value && !f.user.trim()) return 'Enter the e-mail of the account the token belongs to.';
-  if (perUser.value) {
+  if (perUserOauth.value) {
+    if (!f.oauthClientId.trim()) return 'Enter the OAuth application’s client id.';
+    if (!editing.value && !f.secret.trim()) return 'Enter the OAuth application’s client secret.';
+  } else if (perUser.value) {
     const help = f.tokenHelpUrl.trim();
     if (help && !/^https?:\/\//i.test(help)) return 'The token help link is an http(s) URL.';
   } else if (readsEnv.value) {
@@ -230,30 +245,39 @@ async function submit() {
     destination: f.destination.trim(),
     scope: f.allProjects ? { allProjects: true } : { allProjects: false, projectIds: f.projectIds },
     ...(isJira.value ? { user: f.user.trim() } : {}),
-    ...(perUser.value
+    ...(perUserOauth.value
       ? {
           ...(editing.value ? {} : { perUser: true }),
-          tokenHelpUrl: f.tokenHelpUrl.trim() || null,
-          allowedInputs: f.everyInput
-            ? null
-            : f.allowedInputs
-                .split(',')
-                .map((name) => name.trim())
-                .filter(Boolean),
+          oauthClientId: f.oauthClientId.trim(),
+          ...(f.secret.trim() ? { secret: f.secret.trim() } : {}),
         }
-      : !isCiServer.value
-        ? {}
-        : {
-            user: f.user.trim() || null,
+      : {}),
+    ...(perUserOauth.value
+      ? {}
+      : perUser.value
+        ? {
+            ...(editing.value ? {} : { perUser: true }),
+            tokenHelpUrl: f.tokenHelpUrl.trim() || null,
             allowedInputs: f.everyInput
               ? null
               : f.allowedInputs
                   .split(',')
                   .map((name) => name.trim())
                   .filter(Boolean),
-            customRequests: f.customRequests,
-          }),
-    ...(perUser.value
+          }
+        : !isCiServer.value
+          ? {}
+          : {
+              user: f.user.trim() || null,
+              allowedInputs: f.everyInput
+                ? null
+                : f.allowedInputs
+                    .split(',')
+                    .map((name) => name.trim())
+                    .filter(Boolean),
+              customRequests: f.customRequests,
+            }),
+    ...(perUser.value || perUserOauth.value
       ? {}
       : readsEnv.value
         ? envChanged.value || destinationMoved.value || !editing.value
@@ -307,7 +331,11 @@ async function submit() {
           v-if="offersPerUser"
           label="Who it acts as"
           name="credentialIdentity"
-          description="A per-user credential runs each action in the name of whoever starts it, on the CI server, with their rights. Each person gives their own API token, tested before it is saved."
+          :description="
+            isScm
+              ? 'A per-user credential runs each GitLab or Bitbucket CI action in the name of whoever starts it, with their rights. Each person authorizes your OAuth application once.'
+              : 'A per-user credential runs each action in the name of whoever starts it, on the CI server, with their rights. Each person gives their own API token, tested before it is saved.'
+          "
         >
           <USelect
             v-model="form.perUser"
@@ -318,8 +346,14 @@ async function submit() {
           />
         </UFormField>
         <p v-else-if="editing && credential?.perUser" class="text-sm text-muted" data-testid="credential-per-user-note">
-          Per user: each person gives their own token, and an action on it runs in their name. A new destination removes
-          every token given for it.
+          <template v-if="credential.service === 'scm'">
+            Per user: each person authorizes the OAuth application, and a CI action on it runs in their name. A new
+            destination or another application removes every authorization.
+          </template>
+          <template v-else>
+            Per user: each person gives their own token, and an action on it runs in their name. A new destination
+            removes every token given for it.
+          </template>
         </p>
         <UFormField label="Name" name="credentialName" required>
           <UInput
@@ -372,6 +406,42 @@ async function submit() {
             class="w-full font-mono"
           />
         </UFormField>
+        <template v-if="perUserOauth">
+          <UFormField
+            label="OAuth client id"
+            name="credentialOauthClientId"
+            required
+            description="The application you registered on GitLab (scope api) or Bitbucket (an OAuth consumer that may read the account and write pipelines)."
+          >
+            <UInput
+              v-model="form.oauthClientId"
+              autocomplete="off"
+              aria-label="OAuth client id"
+              class="w-full font-mono"
+              data-testid="credential-oauth-client-id"
+            />
+          </UFormField>
+          <UFormField
+            label="OAuth client secret"
+            name="credentialOauthClientSecret"
+            :required="!editing"
+            :description="
+              editing ? 'Leave empty to keep the stored one.' : 'Encrypted, and sent only to the host’s token endpoint.'
+            "
+          >
+            <UInput
+              v-model="form.secret"
+              type="password"
+              autocomplete="new-password"
+              aria-label="OAuth client secret"
+              class="w-full font-mono"
+              data-testid="credential-oauth-client-secret"
+            />
+          </UFormField>
+          <p class="text-xs text-muted">
+            Register this callback URL in the application: <code class="font-mono break-all">{{ callbackUrl }}</code>
+          </p>
+        </template>
         <UFormField
           v-if="perUser"
           label="Where a person creates their token"
@@ -387,7 +457,7 @@ async function submit() {
             data-testid="credential-token-help-url"
           />
         </UFormField>
-        <div v-if="!perUser" class="grid gap-4 sm:grid-cols-2">
+        <div v-if="!perUser && !perUserOauth" class="grid gap-4 sm:grid-cols-2">
           <UFormField
             v-if="isCiServer || isJira"
             :label="isJira ? 'Account e-mail' : 'User'"
@@ -421,7 +491,7 @@ async function submit() {
           </UFormField>
         </div>
         <UFormField
-          v-if="!perUser && readsEnv"
+          v-if="!perUser && !perUserOauth && readsEnv"
           label="Variable"
           name="credentialSecretEnv"
           required
@@ -437,7 +507,7 @@ async function submit() {
           />
         </UFormField>
         <UFormField
-          v-else-if="!perUser"
+          v-else-if="!perUser && !perUserOauth"
           label="Secret"
           name="credentialSecret"
           :required="!editing || destinationMoved || Boolean(credential?.secretEnv)"
@@ -467,15 +537,17 @@ async function submit() {
         <FormFieldGroup
           label="Projects"
           :description="
-            isScm
-              ? 'The projects whose source control and CI actions may name it.'
-              : isAi
-                ? 'An AI role serves every project: Settings → AI lists only a key shared with all of them.'
-                : isConnection
-                  ? 'A connection serves every project bound to it: Settings → Integrations lists only a credential shared with all of them.'
-                  : isSlack
-                    ? 'A channel of the instance serves every project: Settings → Notifications lists only a credential shared with all of them.'
-                    : 'The projects whose CI actions may name it.'
+            perUserOauth
+              ? 'The projects whose GitLab or Bitbucket CI actions may name it.'
+              : isScm
+                ? 'The projects whose source control and CI actions may name it.'
+                : isAi
+                  ? 'An AI role serves every project: Settings → AI lists only a key shared with all of them.'
+                  : isConnection
+                    ? 'A connection serves every project bound to it: Settings → Integrations lists only a credential shared with all of them.'
+                    : isSlack
+                      ? 'A channel of the instance serves every project: Settings → Notifications lists only a credential shared with all of them.'
+                      : 'The projects whose CI actions may name it.'
           "
         >
           <div class="space-y-2">

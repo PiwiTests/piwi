@@ -114,7 +114,15 @@ async function remove(entry: MyCredentialEntry) {
               size="xs"
               color="neutral"
               variant="outline"
-              :label="entry.token ? 'Give again' : 'Give token'"
+              :label="
+                entry.method === 'oauth'
+                  ? entry.token
+                    ? 'Authorize again'
+                    : 'Authorize'
+                  : entry.token
+                    ? 'Give again'
+                    : 'Give token'
+              "
               data-testid="my-credential-give"
               @click="giving = giving === entry.id ? null : entry.id"
             />

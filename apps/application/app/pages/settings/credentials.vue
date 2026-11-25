@@ -224,6 +224,10 @@ async function remove() {
                 Read from <code class="font-mono">{{ selected.secretEnv }}</code
                 ><template v-if="selected.secretEnvSet === false">, which is not set on the server</template>
               </template>
+              <template v-else-if="selected.perUser && selected.oauthClientId">
+                OAuth application <code class="font-mono">{{ selected.oauthClientId }}</code
+                >; each person authorizes it
+              </template>
               <template v-else-if="selected.perUser">Each person’s own, in their account</template>
               <template v-else>Saved <ClientDate :date="selected.rotatedAt" /></template>
             </dd>

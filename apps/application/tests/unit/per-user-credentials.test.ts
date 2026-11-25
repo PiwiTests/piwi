@@ -177,8 +177,8 @@ describe('a posted per-user credential', () => {
     }
   });
 
-  test('is a CI server credential only, and is never made per-user by an update', () => {
-    expect(parseCredentialInput({ ...base, service: 'scm' }, { partial: false }).error).toMatch(/CI server/);
+  test('is a CI server or a source control credential only, and is never made per-user by an update', () => {
+    expect(parseCredentialInput({ ...base, service: 'ai' }, { partial: false }).error).toMatch(/CI server or a source/);
     expect(parseCredentialInput({ perUser: true }, { partial: true }).error).toMatch(/creation/);
   });
 
@@ -515,7 +515,10 @@ describe('the readiness of an action on a per-user credential', () => {
     expect(await ready(2)).toMatchObject({ code: 'user-token-required', perUser: { userToken: 'missing' } });
     await give(id, 2, 'quinn.qa');
     expect(await ready(2)).toEqual({
-      perUser: { credential: { id, name: 'Jenkins in your name', account: 'quinn.qa' }, userToken: 'ready' },
+      perUser: {
+        credential: { id, name: 'Jenkins in your name', account: 'quinn.qa', method: 'token' },
+        userToken: 'ready',
+      },
       reason: null,
     });
     expect(await ready(2, 5)).toMatchObject({ code: 'session-required', perUser: { userToken: null } });

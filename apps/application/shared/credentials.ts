@@ -9,7 +9,7 @@
  */
 import { CI_INPUT_NAME } from '#shared/ci-actions';
 import { isUnderBaseUrl, normalizeCiServerBaseUrl, urlPathClimbs } from '#shared/ci-server';
-import { SCM_API_DESTINATIONS, scmDestinationHost } from '#shared/scm-urls';
+import { SCM_API_DESTINATIONS, scmDestinationHost, type OAuthEndpoints } from '#shared/scm-urls';
 
 /** What a credential is for: the pickers that list it and the requests that may carry it. */
 export const CREDENTIAL_SERVICES = ['ci-server', 'scm', 'ai', 'jira', 'zephyr-scale', 'slack'] as const;
@@ -43,6 +43,7 @@ export const CREDENTIAL_FEATURES = [
   'integration-write',
   'notification',
   'credential-test',
+  'credential-oauth',
 ] as const;
 export type CredentialFeature = (typeof CREDENTIAL_FEATURES)[number];
 
@@ -59,6 +60,7 @@ export const CREDENTIAL_FEATURE_LABELS: Record<CredentialFeature, string> = {
   'integration-write': 'Integration write',
   notification: 'Notification',
   'credential-test': 'Token test',
+  'credential-oauth': 'OAuth token exchange',
 };
 
 /**
@@ -72,6 +74,7 @@ export const CREDENTIAL_READ_FEATURES: readonly CredentialFeature[] = [
   'ai-call',
   'integration-read',
   'credential-test',
+  'credential-oauth',
 ];
 
 /** The features of an SCM provider's writes, each logged as a row of its own. */
@@ -88,6 +91,7 @@ export const MAX_CREDENTIAL_SECRET_LENGTH = 8192;
 export const MAX_CREDENTIAL_ALLOWED_INPUTS = 50;
 export const MAX_CREDENTIAL_PROJECTS = 500;
 export const MAX_TOKEN_HELP_URL_LENGTH = 500;
+export const MAX_OAUTH_CLIENT_ID_LENGTH = 200;
 
 /**
  * The prefix of the variables a credential may read its secret from. The
@@ -168,6 +172,8 @@ export interface CredentialSummary {
   tokenHelpUrl: string | null;
   /** How many people gave a token for a per-user credential, to a caller who manages it; else null. */
   userTokens: number | null;
+  /** The OAuth application a per-user SCM credential authorizes people through; null for any other. */
+  oauthClientId: string | null;
   createdAt: string;
   rotatedAt: string;
   lastUsedAt: string | null;
@@ -218,9 +224,14 @@ export interface CredentialInput {
   allowedInputs: string[] | null;
   customRequests: boolean;
   disabled: boolean;
-  /** A per-user credential, set at creation: no user and no secret, each person gives their own token. */
+  /**
+   * A per-user credential, set at creation: each person gives their own token. A CI server's holds no user and no
+   * secret; a repository host's holds the OAuth application people authorize through: its client id, and its client
+   * secret as `secret`.
+   */
   perUser?: boolean;
   tokenHelpUrl?: string | null;
+  oauthClientId?: string | null;
 }
 
 const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === 'object' && v !== null && !Array.isArray(v);
@@ -356,12 +367,27 @@ export function parseCredentialInput(
   if (raw.perUser !== undefined && typeof raw.perUser !== 'boolean') return fail('perUser is true or false.');
   if (raw.perUser === true) {
     if (opts.partial) return fail('A credential is shared or per user from its creation: create another one.');
-    if (raw.service !== 'ci-server') return fail('Only a CI server credential is per user.');
-    if (str(raw.user) || str(raw.secret) || str(raw.secretEnv)) {
-      return fail('A per-user credential holds no user and no secret: each person gives their own token.');
+    if (raw.service !== 'ci-server' && raw.service !== 'scm') {
+      return fail('Only a CI server or a source control credential is per user.');
+    }
+    if (str(raw.user) || str(raw.secretEnv)) {
+      return fail('A per-user credential holds no user: each person gives their own token.');
+    }
+    if (raw.service === 'ci-server' && str(raw.secret)) {
+      return fail('A per-user CI server credential holds no secret: each person gives their own token.');
+    }
+    if (raw.service === 'scm' && (!str(raw.oauthClientId) || !str(raw.secret))) {
+      return fail('A per-user source control credential names its OAuth application: its client id and client secret.');
     }
     if (raw.customRequests === true) return fail('A per-user credential never goes with a Custom request.');
     value.perUser = true;
+  }
+  if (raw.oauthClientId !== undefined) {
+    const clientId = str(raw.oauthClientId);
+    if (clientId.length > MAX_OAUTH_CLIENT_ID_LENGTH || LINE_BREAK.test(clientId)) {
+      return fail(`An OAuth client id is at most ${MAX_OAUTH_CLIENT_ID_LENGTH} characters, on one line.`);
+    }
+    value.oauthClientId = clientId || null;
   }
   if (raw.tokenHelpUrl !== undefined) {
     const help = str(raw.tokenHelpUrl);
@@ -381,7 +407,7 @@ export function parseCredentialInput(
       );
     }
     value.secretEnv = secretEnv;
-  } else if (has('secret') && !value.perUser) {
+  } else if (has('secret') && !(value.perUser && raw.service === 'ci-server')) {
     const secret = typeof raw.secret === 'string' ? raw.secret.trim() : '';
     if (!secret) return fail('A credential needs its secret, or the variable it is read from.');
     if (secret.length > MAX_CREDENTIAL_SECRET_LENGTH)
@@ -480,6 +506,8 @@ export interface PerUserCredentialRef {
   id: number;
   name: string;
   account: string | null;
+  /** How a person gives their token for it: a form, or an OAuth authorization. */
+  method: UserTokenMethod;
 }
 
 /** A person's own token for a per-user credential, as its owner and the credential's managers see it. Never the secret. */
@@ -507,6 +535,8 @@ export interface MyCredentialEntry {
   createdByName: string | null;
   /** Whether a project where the person holds `run:control` may use it; false for a token they still hold. */
   usable: boolean;
+  /** How a person gives their token for it: a form, or an OAuth authorization. */
+  method: UserTokenMethod;
   token: Omit<UserTokenView, 'userId' | 'userName'> | null;
 }
 
@@ -597,4 +627,20 @@ export function userTokenMissingMessage(name: string, state: 'missing' | 'invali
   return state === 'invalid'
     ? `Your token for "${name}" was refused: give it again in your account's Credentials.`
     : `"${name}" runs in your name: give your token for it first.`;
+}
+
+/** How a person gives their own token for a per-user credential: a form (a CI server), or an OAuth authorization (a repository host). */
+export type UserTokenMethod = 'token' | 'oauth';
+
+/** How a person gives their token for a per-user credential of this service. */
+export function userTokenMethod(service: CredentialService): UserTokenMethod {
+  return service === 'scm' ? 'oauth' : 'token';
+}
+
+/** The account a host's user endpoint names: GitLab's `username`, Bitbucket's `username`, else its nickname or account id. */
+export function readOAuthUser(host: OAuthEndpoints['host'], json: unknown): string | null {
+  const who = (json && typeof json === 'object' ? json : {}) as Record<string, unknown>;
+  const pick = (key: string) => (typeof who[key] === 'string' ? (who[key] as string).trim() : '');
+  const name = host === 'gitlab' ? pick('username') : pick('username') || pick('nickname') || pick('account_id');
+  return name ? name.slice(0, MAX_CREDENTIAL_USER_LENGTH) : null;
 }

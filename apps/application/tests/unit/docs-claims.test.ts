@@ -628,6 +628,8 @@ describe('the privacy page lists every destination', () => {
     'server/utils/ai-provider.ts': 'Your AI provider',
     'server/utils/ai-tool-calls.ts': 'Your AI provider',
     'server/utils/ci-server-dispatch.ts': 'Your CI server',
+    'server/utils/credential-oauth.ts': 'Your git host',
+    'server/utils/oauth-token-requests.ts': 'Your git host',
     'server/utils/email.ts': 'Your SMTP server',
     'server/utils/integrations/jira/check.ts': 'Your issue tracker (Jira)',
     'server/utils/integrations/jira/client.ts': 'Your issue tracker (Jira)',

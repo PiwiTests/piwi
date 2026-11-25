@@ -3,7 +3,10 @@
 **Status.** Proposed on 2026-11-25 and reviewed the same day (security, and correctness against the code). Step 1 is
 built: per-user CI server credentials (Jenkins), the token form and its test, Account → Credentials, the run dialog's
 authorization step, the credential's panel, the demo, the docs (`operate/per-user-credentials.md`) and entry D70 of the
-1.0 register. Step 2, OAuth for GitHub, GitLab and Bitbucket, remains, GitHub's part waiting on #1560. It extends
+1.0 register. Step 2 is built for GitLab and Bitbucket: the OAuth application on the credential, the authorization in
+a popup with its single-use state and PKCE, the refresh when a token opens, the revocation at GitLab on every removal
+and an account's deletion. A 401 does not retry from the row read again: the use fails, and the next one opens the
+token the refresh saved. GitHub's part remains, waiting on #1560. It extends
 [credential-manager.md](../adr/credential-manager.md): the store, `withCredential`, the destination binding and the log
 stand as that record wrote them.
 

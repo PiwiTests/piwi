@@ -9,7 +9,8 @@
  */
 import { and, eq } from 'drizzle-orm';
 import { can } from '#shared/permissions';
-import { credentialUserTokens } from '../../../server/database/schema';
+import { credentialUserTokens, users } from '../../../server/database/schema';
+import { oauthEndpoints } from '#shared/scm-urls';
 import {
   credentialReferenceText,
   parseCredentialInput,
@@ -102,8 +103,14 @@ export async function demoCreateCredential(db: DemoDB, viewer: CredentialViewer,
   if (input.perUser && !can(viewer.access, 'credentials:manage')) {
     throw demoHttpError(403, 'A per-user credential takes the credentials:manage permission.');
   }
-  if (!input.perUser && input.tokenHelpUrl) {
-    throw demoHttpError(400, 'Only a per-user credential links to where a person creates a token.');
+  if (!input.perUser && (input.tokenHelpUrl || input.oauthClientId)) {
+    throw demoHttpError(
+      400,
+      'Only a per-user credential links to where a person creates a token, or names an OAuth application.',
+    );
+  }
+  if (input.perUser && input.service === 'scm' && !oauthEndpoints(input.destination)) {
+    throw demoHttpError(400, 'A per-user source control credential authorizes people on GitLab or Bitbucket.');
   }
   const refusal = can(viewer.access, 'credentials:manage') ? null : credentialScopeRefusal(viewer.access, input.scope);
   if (refusal) throw demoHttpError(403, refusal);
@@ -125,6 +132,7 @@ export async function demoCreateCredential(db: DemoDB, viewer: CredentialViewer,
       disabled: input.disabled ?? false,
       perUser: input.perUser ?? false,
       tokenHelpUrl: input.tokenHelpUrl ?? null,
+      oauthClientId: input.perUser && input.service === 'scm' ? (input.oauthClientId ?? null) : null,
     },
     null,
     userId,
@@ -150,7 +158,8 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   if (service !== undefined && service !== record.service) {
     throw demoHttpError(400, 'A credential’s service cannot change: create another one.');
   }
-  if (record.perUser && (patch.user || secret || patch.secretEnv || patch.customRequests)) {
+  const oauth = record.perUser && record.service === 'scm';
+  if (record.perUser && (patch.user || (secret && !oauth) || patch.secretEnv || patch.customRequests)) {
     throw demoHttpError(
       400,
       'A per-user credential holds no user and no secret, each person gives their own token, and never goes with a Custom request.',
@@ -200,7 +209,8 @@ export async function demoUpdateCredential(db: DemoDB, viewer: CredentialViewer,
   const owner =
     can(viewer.access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
   await updateCredential(db as never, id, patch, secret || patch.secretEnv ? '' : undefined, owner);
-  if (moved && record.perUser) await deleteUserTokens(db as never, id, null);
+  const otherApp = patch.oauthClientId !== undefined && patch.oauthClientId !== record.oauthClientId;
+  if (record.perUser && (moved || otherApp)) await deleteUserTokens(db as never, id, null);
   return { credential: await summaryOf(db, viewer, id) };
 }
 
@@ -259,10 +269,16 @@ export async function demoSaveUserToken(db: DemoDB, viewer: CredentialViewer, id
   const { holder, entry } = await myEntry(db, viewer, id);
   if (!entry.usable) throw demoHttpError(404, 'Credential not found');
   const raw = (body ?? {}) as { user?: unknown; secret?: unknown };
-  const user = typeof raw.user === 'string' ? raw.user.trim() : '';
-  const secret = typeof raw.secret === 'string' ? raw.secret.trim() : '';
-  const problem = userTokenInputProblem(user, secret);
-  if (problem) throw demoHttpError(400, problem);
+  // The demo talks to no host: an authorization is taken as given, as the person's own account.
+  let user = typeof raw.user === 'string' ? raw.user.trim() : '';
+  if (entry.method === 'oauth') {
+    const [person] = await db.select({ username: users.username }).from(users).where(eq(users.id, holder.userId));
+    user = person?.username ?? `user${holder.userId}`;
+  } else {
+    const secret = typeof raw.secret === 'string' ? raw.secret.trim() : '';
+    const problem = userTokenInputProblem(user, secret);
+    if (problem) throw demoHttpError(400, problem);
+  }
   if (entry.disabled) throw demoHttpError(400, `The credential "${entry.name}" is disabled.`);
   const others = await listUserTokens(db as never, id);
   if (others.some((t) => t.userId !== holder.userId && t.remoteUser.toLowerCase() === user.toLowerCase())) {

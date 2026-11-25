@@ -18,7 +18,7 @@ import {
 } from '#shared/handlers/credentials';
 import { credentialServiceProblem, jenkinsRoot, parseCredentialInput } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm/gitlab-hosts';
-import { normalizeScmDestination } from '#shared/scm-urls';
+import { normalizeScmDestination, oauthEndpoints } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
 
 defineRouteMeta({
@@ -26,7 +26,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Update a credential',
     description:
-      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A per-user credential (`perUser`) takes no `user`, `secret`, `secretEnv` or Custom request (400), and only its `tokenHelpUrl` is its own; a new destination needs no secret, and removes every person’s token, each sealed with the one it leaves. A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage, read no variable and are not per-user. Any other answers 404.',
+      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A per-user credential (`perUser`) takes no `user`, `secretEnv` or Custom request (400). A CI server’s takes no `secret`, and only its `tokenHelpUrl` is its own; a source control one rotates its OAuth client secret with `secret`, changes its application with `oauthClientId`, and takes the secret again for a destination on another host. A new destination, or another OAuth application, removes every person’s token. A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage, read no variable and are not per-user. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
@@ -56,7 +56,8 @@ export default eventHandler(async (event) => {
   if (service !== undefined && service !== record.service) {
     throw apiError({ statusCode: 400, message: 'A credential’s service cannot change: create another one.' });
   }
-  if (record.perUser && (patch.user || secret || patch.secretEnv || patch.customRequests)) {
+  const oauth = record.perUser && record.service === 'scm';
+  if (record.perUser && (patch.user || (secret && !oauth) || patch.secretEnv || patch.customRequests)) {
     throw apiError({
       statusCode: 400,
       message:
@@ -65,6 +66,15 @@ export default eventHandler(async (event) => {
   }
   if (!record.perUser && patch.tokenHelpUrl) {
     throw apiError({ statusCode: 400, message: 'Only a per-user credential links to where a person creates a token.' });
+  }
+  if (!oauth && patch.oauthClientId) {
+    throw apiError({
+      statusCode: 400,
+      message: 'Only a per-user source control credential names an OAuth application.',
+    });
+  }
+  if (oauth && patch.oauthClientId === null) {
+    throw apiError({ statusCode: 400, message: 'A per-user source control credential names its OAuth application.' });
   }
   if (record.service !== 'ci-server') {
     const problem = credentialServiceProblem(
@@ -90,9 +100,24 @@ export default eventHandler(async (event) => {
     });
   }
   const moved = patch.destination !== undefined && patch.destination !== record.destination;
-  if (moved && record.perUser) {
+  if (moved && record.perUser && !oauth) {
     const unsafe = ciServerBaseUrlProblem(jenkinsRoot(patch.destination!));
     if (unsafe) throw apiError({ statusCode: 400, message: unsafe });
+  }
+  const newEndpoints = oauth ? oauthEndpoints(patch.destination ?? record.destination, configuredGitlabHosts()) : null;
+  if (oauth && !newEndpoints) {
+    throw apiError({
+      statusCode: 400,
+      message: 'A per-user source control credential authorizes people on GitLab or Bitbucket.',
+    });
+  }
+  // The client secret is sealed with the host's token endpoint: a credential moved to another host takes it again.
+  const oldTokenEndpoint = oauth ? oauthEndpoints(record.destination, configuredGitlabHosts())?.token : null;
+  if (oauth && newEndpoints && newEndpoints.token !== oldTokenEndpoint && !secret) {
+    throw apiError({
+      statusCode: 400,
+      message: 'Enter the OAuth client secret again to change the host: it is sealed with the host’s token endpoint.',
+    });
   }
   if (moved && !record.perUser && !secret && !patch.secretEnv) {
     throw apiError({
@@ -119,14 +144,17 @@ export default eventHandler(async (event) => {
   const sealed = patch.secretEnv
     ? sealCredentialEnv(destination, patch.secretEnv)
     : secret
-      ? sealCredentialSecret(destination, secret)
+      ? sealCredentialSecret(newEndpoints ? newEndpoints.token : destination, secret)
       : undefined;
+  // People's tokens were sealed with the destination it leaves, or given to the OAuth application it leaves.
+  const forgetsTokens =
+    record.perUser && (moved || (patch.oauthClientId !== undefined && patch.oauthClientId !== record.oauthClientId));
   // A change by an administrator makes the credential theirs: its creator never loosens it afterwards.
   const owner = can(access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
   try {
     await updateCredential(db, id, patch, sealed, owner);
-    // Each person's token was sealed with the destination it leaves: each gives theirs again.
-    if (moved && record.perUser) await deleteUserTokens(db, id, null);
+    // Each person gives theirs again.
+    if (forgetsTokens) await deleteUserTokens(db, id, null);
   } catch (e) {
     // Two renames to one name at once: the database's unique index answers for the slower one.
     if (isUniqueViolation(e))
