@@ -481,6 +481,27 @@ describe('element-present-but-blocked', () => {
     });
     expect(rules(input)).not.toContain('element-present-but-blocked');
   });
+
+  test('positive: an inert element (Playwright 1.65) in the ARIA snapshot', () => {
+    const inert = [
+      'TimeoutError: locator.click: Timeout 5000ms exceeded.',
+      'Call log:',
+      "  - waiting for getByRole('button', { name: 'Pay' })",
+      '    - locator resolved to <button type="submit">Pay</button>',
+      '  - attempting click action',
+      '    2 × waiting for element to be visible, enabled and stable',
+      '      - element is inert',
+      '    - retrying click action',
+      '    - waiting 20ms',
+    ].join('\n');
+    const input = baseInput({
+      parsedError: parsePlaywrightError(inert),
+      ariaSnapshot: '- dialog "Confirm"\n- button "Pay"',
+    });
+    const clue = runClues(input).find((c) => c.rule === 'element-present-but-blocked');
+    expect(clue?.title).toBe('The element is present but inert');
+    expect(clue!.detail).toContain('the action failed because it was inert');
+  });
 });
 
 describe('wrong-page', () => {

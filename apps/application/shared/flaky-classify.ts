@@ -54,6 +54,7 @@ const TIMING_KEYWORDS = [
   'waitFor',
   'not found within',
   'element is not visible',
+  'element is inert',
 ];
 
 const NETWORK_KEYWORDS = [

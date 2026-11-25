@@ -317,7 +317,7 @@ const RULE_ORDER: FailureClueRule[] = [
 const STRENGTH_RANK: Record<FailureClueStrength, number> = { strong: 0, medium: 1, weak: 2 };
 
 /** Call-log states that mean the element resolved but could not be acted on. */
-const BLOCKED_STATES = new Set<CallLogState>(['not-enabled', 'hidden', 'not-visible', 'intercepts-pointer']);
+const BLOCKED_STATES = new Set<CallLogState>(['not-enabled', 'hidden', 'not-visible', 'inert', 'intercepts-pointer']);
 
 /** Path prefixes that mean the test ended somewhere other than the app it drives. */
 const WRONG_PAGE_PATHS = ['/login', '/signin', '/auth', '/error', '/404', '/not-found'];
@@ -762,6 +762,7 @@ export function buildFailureClues(input: FailureClueInput): FailureCluesReport {
         'not-enabled': 'disabled',
         hidden: 'hidden',
         'not-visible': 'not visible',
+        inert: 'inert',
         'intercepts-pointer': 'covered by another element',
       };
       const label = stateLabel[parsed.lastState] ?? parsed.lastState;
