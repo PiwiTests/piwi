@@ -495,10 +495,15 @@ its stack and the place it was thrown, named relative to the Playwright config's
 - a worker fixture whose teardown threw, with the tests the worker ran;
 - the failure budget (`maxFailures`) that stopped the run.
 
+An error a worker reported, as a worker fixture's teardown, also names that worker, as Playwright 1.60 and later give
+it: its [lane](#worker-lanes), with its shard in a sharded run, and its Playwright project. The run page shows it under
+the error (**Worker 2 · Shard 3 · Playwright project webkit**).
+
 The first 20 go with the run's end, as its `runErrors`, each message and stack cut to 4,000 characters, with what may
 be a secret hidden as in a [test's error](#test-errors), and also a credential in a URL, a cookie or a JSON field, and a
 value shaped like a token. A sharded run adds each shard's to the others'. The run page shows them under its header,
-and the MCP `get_run` tool returns them as `runErrors`. **Collapse** folds them there to one line, the first error's
+and the MCP `get_run` tool returns them as `runErrors`, an error's worker as `worker`, `shardIndex` and
+`playwrightProject`. **Collapse** folds them there to one line, the first error's
 first line, so a long stack leaves its height to the tab below, the Video tab's video among them; **Expand** shows them
 again, and the browser remembers which you chose. A [blob report you import](/guide/importing-runs) keeps them
 the same way.

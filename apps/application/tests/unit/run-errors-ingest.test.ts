@@ -109,6 +109,20 @@ describe('a run’s errors outside any test, on /finish', () => {
     expect(run?.runErrors).toEqual(expected);
   });
 
+  test('keep the worker an error came from, its lane, its shard and its Playwright project', async () => {
+    const teardown = {
+      message: 'Error: worker fixture teardown failed',
+      stack: null,
+      location: null,
+      parallelIndex: 1,
+      shardIndex: 2,
+      playwrightProject: 'webkit',
+    };
+    const runId = await streamedRun({ runErrors: [teardown] });
+    expect(await runErrorsOf(runId)).toEqual([teardown]);
+    expect((await getTestRun(db as never, runId))?.runErrors).toEqual([teardown]);
+  });
+
   test('keep the first ones, each valid and with no NUL character, and are null for none', async () => {
     const many = [
       { message: 'Error: spec \u0000a.spec.ts did not load' },
@@ -209,5 +223,28 @@ describe('the MCP get_run tool', () => {
       column: 9,
     });
     expect(String(answer.runErrors[1]!.message)).toHaveLength(401);
+  });
+
+  test('names the worker an error came from by its lane from 1, with its shard and its Playwright project', async () => {
+    const runId = await streamedRun({
+      runErrors: [
+        {
+          message: 'Error: worker fixture teardown failed',
+          parallelIndex: 1,
+          shardIndex: 2,
+          playwrightProject: 'webkit',
+        },
+      ],
+    });
+    const getRun = MCP_TOOLS.find((tool) => tool.name === 'get_run')!.handler;
+    const ctx = {
+      user: { id: 0, role: InstanceRole.ADMINISTRATOR } as User,
+      access: ADMIN_ACCESS,
+      scope: 'all' as const,
+    };
+    const answer = (await getRun(db as never, { runId }, ctx)) as { runErrors: Array<Record<string, unknown>> };
+    expect(answer.runErrors).toEqual([
+      { message: 'Error: worker fixture teardown failed', worker: 2, shardIndex: 2, playwrightProject: 'webkit' },
+    ]);
   });
 });

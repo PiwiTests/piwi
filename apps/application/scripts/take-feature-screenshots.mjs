@@ -6656,8 +6656,8 @@ const SCENES = [
   {
     name: 'run-errors',
     description:
-      'Run page of a run with errors outside its tests: the failure budget that stopped it and its global teardown, under the facts line, wide then narrow',
-    // Seeded run #4 stopped at its failure budget, and its global teardown threw.
+      'Run page of a run with errors outside its tests: the failure budget that stopped it and a worker fixture’s teardown with its worker, under the facts line, wide then narrow',
+    // Seeded run #4 stopped at its failure budget, then a worker fixture's teardown and its global teardown threw.
     route: '/test-runs/4',
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {

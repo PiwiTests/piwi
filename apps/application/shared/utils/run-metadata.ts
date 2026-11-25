@@ -40,7 +40,11 @@ export interface CommitRange {
 interface RunMetadataLike {
   scm?: { branch?: string | null } | null;
   ci?: { provider?: string | null } | null;
-  htmlReport?: { projects?: Array<{ use?: { browserName?: string | null } | null }> } | null;
+  htmlReport?: {
+    projects?: Array<{ name?: string | null; use?: { browserName?: string | null } | null }>;
+    /** The names of the projects the run ran (`--project` and their dependencies), from reporters that send them. */
+    ranProjects?: unknown;
+  } | null;
   playwrightConfig?: { shuffleSeed?: unknown } | null;
 }
 
@@ -92,11 +96,18 @@ export function buildCommitRange(
   };
 }
 
-/** Comma-separated list of the distinct browser names configured in a run's report. */
+/**
+ * Comma-separated list of the distinct browser names of the Playwright projects a run ran (`htmlReport.ranProjects`),
+ * else, for a run whose reporter names none, of every project its config lists.
+ */
 export function getBrowserList(meta: RunMetadataLike | null | undefined): string {
   const projects = meta?.htmlReport?.projects;
   if (!projects?.length) return '';
-  const names = [...new Set(projects.map((p) => p.use?.browserName).filter(Boolean))] as string[];
+  const ran = meta?.htmlReport?.ranProjects;
+  const ranNames = new Set(Array.isArray(ran) ? ran.filter((name) => typeof name === 'string') : []);
+  const shown =
+    ranNames.size > 0 ? projects.filter((p) => typeof p.name === 'string' && ranNames.has(p.name)) : projects;
+  const names = [...new Set(shown.map((p) => p.use?.browserName).filter(Boolean))] as string[];
   return names.join(', ');
 }
 

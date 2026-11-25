@@ -74,7 +74,7 @@ Two ways to compare against something else:
 - **Commits since the baseline** — the commit range, a copyable `git log` command and, when the SCM host is known, a link to the commits.
 - **Deployed to Staging**, for a run of a [deployed environment](./deployed-environments) — the application's commit
   each run tested, the application's commits between them, and the environment's deploy markers between the two runs.
-- **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns.
+- **Environment changes** — the fields that differ (environment, branch, CI provider, browsers, and the [test order](#shuffled-runs) of a shuffled run), in *This run* / *Baseline* columns. The browsers are those of the Playwright projects each run ran: the ones `--project` selects and the projects they depend on.
 
 <figure>
   <img src="/screenshots/run-changes.png" alt="Run Changes tab showing the baseline selector, the tests that newly started failing, the ones that got fixed, and the commits landed since the baseline">
