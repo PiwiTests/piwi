@@ -3348,6 +3348,8 @@ export const credentialAuthorizations = pgTable(
   (t) => ({
     stateIdx: uniqueIndex('idx_credential_authorizations_state').on(t.stateHash),
     expiresIdx: index('idx_credential_authorizations_expires').on(t.expiresAt),
+    credentialIdx: index('idx_credential_authorizations_credential').on(t.credentialId),
+    userIdx: index('idx_credential_authorizations_user').on(t.userId),
   }),
 );
 

@@ -1373,6 +1373,13 @@
       "when": 1795609288381,
       "tag": "0195_per_user_oauth",
       "breakpoints": true
+    },
+    {
+      "idx": 196,
+      "version": "7",
+      "when": 1795617106595,
+      "tag": "0196_credential_authorization_indexes",
+      "breakpoints": true
     }
   ]
 }

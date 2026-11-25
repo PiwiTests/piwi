@@ -1,0 +1,2 @@
+CREATE INDEX `idx_credential_authorizations_credential` ON `credential_authorizations` (`credential_id`);--> statement-breakpoint
+CREATE INDEX `idx_credential_authorizations_user` ON `credential_authorizations` (`user_id`);
