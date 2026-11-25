@@ -93,8 +93,8 @@ const RULES: Rule[] = [
     id: 'cluster-history-card',
     hint: 'the occurrence sparkline replaced the cluster History card',
     re: /(?<![-\w])(title|label)\s*[:=]\s*(['"])History\2/,
-    // The execution page keeps its own recent-executions history block (plan Appendix A).
-    allow: ({ rel }) => rel.includes('test-run-cases/[id].vue'),
+    // The execution page keeps the test's recent executions: the History line of its situation block.
+    allow: ({ rel }) => rel.endsWith('app/utils/situation-rows.ts'),
   },
   {
     id: 'fix-verified-badge',

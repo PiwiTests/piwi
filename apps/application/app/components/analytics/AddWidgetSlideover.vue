@@ -38,12 +38,7 @@ watch(open, (isOpen) => {
 </script>
 
 <template>
-  <USlideover
-    v-model:open="open"
-    :title="`Add a widget to ${bandTitle}`"
-    :ui="{ content: 'max-w-md' }"
-    @after:leave="emit('closed')"
-  >
+  <USlideover v-model:open="open" :title="`Add a widget to ${bandTitle}`" @after:leave="emit('closed')">
     <template #body>
       <div class="space-y-4" data-testid="add-widget">
         <UInput

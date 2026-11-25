@@ -17,7 +17,7 @@
  *
  * The budgets (`scripts/lib/detail-page-budgets.mjs`) hold at 1280×800: at most
  * 15 text styles in the execution page's situation block and 13 in the cluster
- * page's, at most 26 controls in the navbar and the situation block on the
+ * page's, at most 27 controls in the navbar and the situation block on the
  * execution page and 25 on the cluster page's, at most
  * one solid primary button above the fold, and a Next step that copies a code
  * change shows that change in the block (distance 0). The script finds the Next
@@ -338,20 +338,20 @@ const POSITION_LABELS = [
   ['clusterLine', 'cluster line'],
   ['issue', 'issue'],
   ['whatChanged', 'what changed'],
-  ['fixLead', 'fix (next step)'],
+  ['history', 'history'],
   ['clues', 'clues'],
-  ['changesCard', 'changes card'],
-  ['affectedTests', 'affected tests'],
-  ['evidence', 'evidence'],
   ['occurrenceTrend', 'occurrences trend'],
   ['activity', 'activity'],
-  ['fix', 'fix'],
+  ['fixLead', 'fix (next step)'],
   ['fixLocatorFix', '· locator fix'],
   ['fixFixPlan', '· fix plan'],
   ['fixDiagnosis', '· diagnosis'],
   ['fixVerify', '· verify'],
   ['fixReproduce', '· reproduce'],
-  ['history', 'history'],
+  ['fix', 'more ways to fix'],
+  ['changesCard', 'changes card'],
+  ['affectedTests', 'affected tests'],
+  ['evidence', 'evidence'],
 ];
 
 function nextStepText(next) {

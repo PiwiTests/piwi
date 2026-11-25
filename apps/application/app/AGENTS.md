@@ -135,6 +135,9 @@ views are exempt only where a rule says so.
   (`app/utils/situation-rows.ts`). A page fills the lines it has; a new line is an entry of that list, never a
   reordering. Facts about the execution itself (since when, whether it is the latest) go in the meta line under the
   headline.
+- **On the two failure pages the evidence card comes last**: it is long, so nothing follows it, and a block a reader
+  needs (the history, More ways to fix) sits above it. `tests/test-run-case-page.spec.ts` and
+  `tests/cluster-page-layout.spec.ts` check it.
 - **The situation block's left edge carries the page's status color** (`SituationBlock :edge`: the execution's outcome,
   the cluster state's dot). Nothing else in the block repeats it.
 - **One accent color per screen: the primary action.** The solid `color="primary"` button is the only saturated element
@@ -292,6 +295,9 @@ views are exempt only where a rule says so.
 - **The client bundle never compiles code** (`eval`, `new Function`): the desktop build's CSP
   (`server/utils/desktop-csp.ts`) has no `'unsafe-eval'`. Zod parses without its JIT (`plugins/00.zod-jitless.client.ts`,
   `tests/unit/zod-jitless.test.ts`); a new dependency that evaluates code needs its switch, or another library.
+- **A left or right side panel (`USlideover`) sets its width with `sm:max-w-*`**, the variant of the theme's own
+  `sm:max-w-md`: a bare or wider-variant `max-w-*` keeps the theme's class, which wins from `sm` up.
+  `tests/unit/slideover-width.test.ts`.
 - **Anything opened outside `$fetch` carries `useRuntimeConfig().app.baseURL`** (`window.open`, an `href`, a download
   URL): the demo is served from `/demo/` and its service worker only intercepts that prefix, so a root-relative
   `/api/...` 404s there. `fileApiUrl` and `getTraceViewerUrl` do it.

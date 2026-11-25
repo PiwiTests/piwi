@@ -63,7 +63,7 @@ export const EXECUTIONS_ANCHORS = [
     id: 'locator-fix',
     kind: 'block',
     pages: ['/test-run-cases/[id]', '/failure-clusters/[id]'],
-    reveal: [{ unfold: 'fix-section-locator-fix' }],
+    reveal: [{ open: 'fix-section-locator-fix' }],
     describes:
       'The failing locator and the replacements locator healing ranks from the last run where the test passed, the recommended one first.',
     shownWhen: 'When a locator broke and healing has a replacement.',
@@ -122,7 +122,7 @@ export const EXECUTIONS_ANCHORS = [
     kind: 'action',
     pages: ['/test-run-cases/[id]'],
     describes:
-      'The Test history link, which opens the test’s own page: its results, durations and flakiness across runs.',
+      'The History line’s strip of recent executions, one link to the test’s own page: its results, durations and flakiness across runs.',
     doc: 'features/evidence#the-test-case-page',
     sample: { route: '/test-run-cases/37', expect: CHECKOUT_FAILURE },
   },

@@ -146,7 +146,7 @@ function apply() {
 </script>
 
 <template>
-  <USlideover v-model:open="open" :title="`Configure ${meta?.title ?? 'widget'}`" :ui="{ content: 'max-w-md' }">
+  <USlideover v-model:open="open" :title="`Configure ${meta?.title ?? 'widget'}`">
     <template #body>
       <form v-if="widget && meta" class="space-y-4" data-testid="widget-config" method="post" @submit.prevent="apply">
         <UFormField label="Title">

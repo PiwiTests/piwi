@@ -1,8 +1,9 @@
 /**
  * The execution timeline's step table, read as Playwright's step tree: which
  * steps it lists, how deep each one sits, which step failed (and which errors
- * the test caught), and the setup and teardown sections (hooks and fixtures)
- * that fold around the test body. Also the geometry of its duration bars on the
+ * the test caught), the setup and teardown sections (hooks and fixtures) that
+ * fold around the test body, and the rows that passed before the failure, which
+ * fold under one row. Also the geometry of its duration bars on the
  * test's clock, which edges of the axis window cut a bar, and which rows the
  * Most likely line cites.
  */
@@ -141,6 +142,80 @@ export function groupRowsBySection<R>(rows: R[], stepPhase: (row: R) => StepPhas
     else blocks.push({ section: current, rows: [row] });
   });
   return blocks;
+}
+
+// ── The rows that passed before the failure ──────────────────────────────────
+
+/** How many steps before the failing one stay in view when the passed rows fold. */
+export const KEPT_STEPS_BEFORE_FAILURE = 3;
+
+/** A row of the test body as the passed-rows fold reads it. */
+export interface FoldableRow {
+  /** A step row's place in the step tree; null for any other row (a request, a console entry). */
+  step: {
+    level: number;
+    /** The step passed: no part in the failure and no error the test caught. */
+    passed: boolean;
+    failing: boolean;
+  } | null;
+  /**
+   * The row says something the reader needs: a problem (an error, a warning, a failed request), a duration that
+   * stands out, or what Most likely cites. It never folds.
+   */
+  keep: boolean;
+}
+
+/**
+ * The rows of the test body that fold under one Passed row: before the failing
+ * step, every row that only says something worked, except the last `kept` steps
+ * before the failure and what happened among them. A step stays in view while
+ * one of its own steps does (a kept step, a caught error), so no step loses the
+ * step around it; the steps around the failing one are part of the
+ * failure and never fold. Returns the indexes of the rows that fold, in order:
+ * none without a failing row, and none when fewer than two rows would fold.
+ */
+export function passedRowsToFold(rows: readonly FoldableRow[], kept = KEPT_STEPS_BEFORE_FAILURE): number[] {
+  const failing = rows.findIndex((row) => row.step?.failing);
+  if (failing < 0) return [];
+  // The first row that stays: the `kept`-th step row before the failing one.
+  let cutoff = failing;
+  let steps = 0;
+  for (let i = failing - 1; i >= 0 && steps < kept; i--) {
+    if (rows[i]!.step) {
+      steps++;
+      cutoff = i;
+    }
+  }
+  if (steps < kept) return [];
+  const folded = new Set<number>();
+  for (let i = 0; i < cutoff; i++) {
+    const row = rows[i]!;
+    if (!row.keep && (row.step === null || row.step.passed)) folded.add(i);
+  }
+  // A step's own steps follow it, one level deeper or more, up to the next step at its level or above. A
+  // request or a console entry is no step's own: the table does not indent it.
+  for (let i = cutoff - 1; i >= 0; i--) {
+    const step = rows[i]!.step;
+    if (!step || !folded.has(i)) continue;
+    for (let j = i + 1; j < rows.length; j++) {
+      const inner = rows[j]!.step;
+      if (!inner) continue;
+      if (inner.level <= step.level) break;
+      if (!folded.has(j)) {
+        folded.delete(i);
+        break;
+      }
+    }
+  }
+  return folded.size >= 2 ? [...folded].sort((a, b) => a - b) : [];
+}
+
+/** One line naming what the Passed row folds, one count per type: `4 steps · 2 requests`. */
+export function passedFoldSummary(counts: ReadonlyArray<{ count: number; one: string; many: string }>): string {
+  return counts
+    .filter((c) => c.count > 0)
+    .map((c) => `${c.count} ${c.count === 1 ? c.one : c.many}`)
+    .join(' · ');
 }
 
 // ── Duration bars and the window's cut edges ─────────────────────────────────

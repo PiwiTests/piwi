@@ -156,7 +156,7 @@ const feedbackIcon = (f: string | null) =>
   <USlideover
     :open="open"
     title="Diagnosis history"
-    :ui="{ content: 'max-w-3xl' }"
+    :ui="{ content: 'sm:max-w-3xl' }"
     @update:open="emit('update:open', $event)"
   >
     <template #body>
