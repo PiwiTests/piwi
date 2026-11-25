@@ -23,17 +23,29 @@ export function childExitCode(code: number | null, signal: NodeJS.Signals | null
   return number === undefined ? COULD_NOT_START : 128 + number;
 }
 
-/** The Playwright CLI the project in `cwd` resolves, or null. */
+/**
+ * The Playwright CLI the project in `cwd` resolves, or null: `@playwright/test/cli`, else the `playwright` bin of the
+ * `playwright` package in a `node_modules` folder of `cwd` or above it (the package exports no CLI module of its own).
+ */
 export function resolvePlaywrightCli(cwd: string = process.cwd()): string | null {
-  const require = createRequire(path.join(cwd, 'noop.js'));
-  for (const id of ['playwright/cli', '@playwright/test/cli', 'playwright/lib/cli/cli']) {
-    try {
-      return require.resolve(id);
-    } catch {
-      // try the next candidate
-    }
+  try {
+    return createRequire(path.join(cwd, 'noop.js')).resolve('@playwright/test/cli');
+  } catch {
+    // a project with `playwright` alone
   }
-  return null;
+  for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+    const pkg = path.join(dir, 'node_modules', 'playwright');
+    try {
+      const manifest = JSON.parse(fs.readFileSync(path.join(pkg, 'package.json'), 'utf8')) as {
+        bin?: { playwright?: unknown };
+      };
+      const bin = manifest.bin?.playwright;
+      if (typeof bin === 'string') return path.join(pkg, bin);
+    } catch {
+      // none in this folder
+    }
+    if (path.dirname(dir) === dir) return null;
+  }
 }
 
 /**
