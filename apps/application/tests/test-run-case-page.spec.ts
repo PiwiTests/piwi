@@ -124,7 +124,7 @@ test.describe('Test-run-case page', () => {
     passedCaseId = run.testCases.find((c: { status: string }) => c.status === 'passed').executionId;
   });
 
-  test('failing execution leads with the situation block, the raw error one click away, then evidence and fix', async ({
+  test('failing execution leads with the situation block, the raw error one click away, then fix and evidence', async ({
     page,
   }) => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
@@ -618,6 +618,9 @@ test.describe('Situation block on seeded cases', () => {
     await expect(page.locator('[data-tour="fix-section-diagnosis"]')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('[data-tour="fix-section-reproduce"]')).toHaveAttribute('aria-expanded', 'false');
     await expect(page.locator('[data-shot="fix-diagnosis"]')).toHaveCount(0);
+    const fixBottom = (await page.locator('[data-shot="fix"]').boundingBox())!;
+    const evidenceTop = (await page.locator('[data-shot="evidence-card"]').boundingBox())!.y;
+    expect(fixBottom.y + fixBottom.height).toBeLessThanOrEqual(evidenceTop);
   });
 
   test('#37 shows the page at the failure as views on the Screen tab and picks from its DOM', async ({ page }) => {

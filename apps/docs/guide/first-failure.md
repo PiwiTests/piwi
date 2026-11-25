@@ -78,8 +78,8 @@ The error, trace, headline and clustering work with the reporter alone, and an u
 Right above the evidence, **[More ways to fix](/features/fix-plans#more-ways-to-fix)** is one line with a button for
 every *other* way to fix, verify or reproduce: a [replacement locator](/features/locator-healing), the
 [AI diagnosis](/features/ai-diagnosis) and its validated patch, verify, reproduce and bisect, fixed before, the tests it
-blocked. A button opens its section in a side panel beside the page, and the **Next** line's actions open the section
-they act on.
+blocked. A button opens its section in a side panel beside the page, and a **Next** action that works in a section,
+such as **Full patch**, opens it.
 
 ## You're not reading it alone
 

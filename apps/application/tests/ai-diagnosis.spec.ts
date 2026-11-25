@@ -423,7 +423,7 @@ test.describe.serial('AI diagnosis endpoints', () => {
     // A step from the diagnosis puts Diagnosis in its own card, always open.
     const panel = page.locator('[data-shot="fix-lead"] [data-shot="cluster-diagnosis"]');
     await expect(panel).toBeVisible();
-    await expect(page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"]')).toHaveCount(0);
+    await expect(page.locator('[data-shot="fix"] [data-tour="fix-section-diagnosis"]')).toHaveCount(0);
 
     // More actions › Show context opens the context modal.
     await page.getByRole('button', { name: 'More actions' }).click();

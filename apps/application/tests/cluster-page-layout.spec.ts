@@ -233,7 +233,7 @@ test.describe('Failure cluster page layout', () => {
     }
 
     const toolbox = page.locator('[data-shot="fix"]');
-    await expect(toolbox.locator(`[data-shot="fix-${key}"]`)).toHaveCount(0);
+    await expect(toolbox.locator(`[data-tour="fix-section-${key}"]`)).toHaveCount(0);
     const toggles = toolbox.locator('button[aria-expanded]');
     expect(await toggles.count()).toBeGreaterThan(0);
     for (const toggle of await toggles.all()) await expect(toggle).toHaveAttribute('aria-expanded', 'false');
@@ -825,7 +825,7 @@ test.describe('Cluster situation block on seeded clusters', () => {
     if (await tests.count()) expect(leadTop).toBeLessThan((await tests.boundingBox())!.y);
 
     const toolbox = page.locator('[data-shot="fix"]');
-    await expect(toolbox.locator('[data-shot="fix-diagnosis"]')).toHaveCount(0);
+    await expect(toolbox.locator('[data-tour="fix-section-diagnosis"]')).toHaveCount(0);
     const toggles = toolbox.locator('button[aria-expanded]');
     expect(await toggles.count()).toBeGreaterThan(0);
     for (const toggle of await toggles.all()) await expect(toggle).toHaveAttribute('aria-expanded', 'false');

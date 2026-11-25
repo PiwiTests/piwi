@@ -21,10 +21,11 @@
  * The table reads the steps as Playwright's tree: a `test.step`'s steps sit
  * indented under it, and the hooks and fixtures that ran before and after the
  * test body fold into a Setup and a Teardown section — open when the failure
- * happened there. The rows of the test body that passed before the failure fold
- * under one Passed row, but for the last steps before it, every problem and
- * what Most likely cites (`passedRowsToFold`); whether they fold is the
- * viewer's choice, kept per browser and folded by default. The step that failed is the innermost of the failing chain
+ * happened there. In an execution that failed, the rows of the test body that
+ * passed before the failure fold under one Passed row, but for the last steps
+ * before it, every problem, every duration that stands out and what Most likely
+ * cites (`passedRowsToFold`); whether they fold is the viewer's choice, kept
+ * per browser and folded by default. The step that failed is the innermost of the failing chain
  * that carries the execution's error; every step around it carries the failed
  * mark too. An error the test caught and went on from (a probe in a
  * `try`/`catch`, a retried `toPass` attempt) is shown muted, never as the
@@ -85,6 +86,7 @@ import { executionFailed } from '#shared/file-classify';
 import { resolveLocationRoot, stepLocations, stripLocationRoot } from '#shared/locator-chain';
 import { timelinePauseSpans, type TimelinePause } from '#shared/failure-timeline';
 import type { StepFailureRole, StepPhase } from '#shared/step-tree';
+import { durationStandout } from '#shared/duration-standout';
 import {
   barPlace,
   buildStepTreeView,
@@ -861,28 +863,62 @@ const passedFolded = useTimelinePassedFold();
 /** A section of the table: a phase of the test, or the rows that passed before the failure. */
 type TableSection = StepPhase | 'passed';
 
-/** The indexes of a block's rows that fold under the Passed row; none outside the block holding the failure. */
-function passedFoldIn(rows: MergedRow[]): number[] {
-  return passedRowsToFold(
-    rows.map((row) =>
-      row.kind === 'step'
-        ? {
-            step: { level: row.level, passed: row.role === null, failing: row.failing },
-            keep: isCited(row.item),
-          }
-        : { step: null, keep: timelineItemSeverity(row.item) !== null || isCited(row.item) },
-    ),
+/** Whether a row's duration stands out, by the rule its duration column reads (`durationStandout`). */
+function rowStandsOut(row: MergedRow): boolean {
+  if (row.kind === 'step') {
+    if (tree.value.groups.has(row.index)) return false;
+    const own = Math.max(0, (row.step.duration ?? 0) - stepPausedMs(row));
+    return durationStandout({ ms: own, testMs: props.durationMs, usualMs: row.item?.usual ?? null }) !== null;
+  }
+  const ms = row.item.duration;
+  return (
+    ms != null && durationStandout({ ms, testMs: requestTestMs(row.item), usualMs: row.item.usual ?? null }) !== null
   );
 }
 
-/** What the Passed row says it folds, one count per type, and how long its top-level steps took. */
+/**
+ * The rows of the test body that fold under the Passed row, for an execution
+ * that failed: never a row of the Setup or Teardown sections, a problem, a
+ * duration that stands out or what Most likely cites (`passedRowsToFold`).
+ */
+const passedRows = computed<Set<MergedRow>>(() => {
+  if (!props.hasError) return new Set();
+  const rows = mergedRows.value;
+  const body = new Set(rowBlocks.value.filter((block) => block.section === 'body').flatMap((block) => block.rows));
+  const folded = passedRowsToFold(
+    rows.map((row) => ({
+      step: row.kind === 'step' ? { level: row.level, passed: row.role === null, failing: row.failing } : null,
+      keep:
+        !body.has(row) ||
+        isCited(row.item) ||
+        rowStandsOut(row) ||
+        (row.kind === 'event' && timelineItemSeverity(row.item) !== null),
+    })),
+  );
+  return new Set(folded.map((i) => rows[i]!));
+});
+
+/** Where a row sits on the clock, in ms: on the axis's clock, else from the step's own start. */
+function rowSpan(row: MergedRow): [number, number] | null {
+  if (row.item) return [row.item.at, row.item.at + (row.item.duration ?? 0)];
+  if (row.kind !== 'step' || row.step.startTime == null) return null;
+  const start = new Date(row.step.startTime).getTime();
+  return Number.isFinite(start) ? [start, start + (row.step.duration ?? 0)] : null;
+}
+
+/** What the Passed row says it folds, one count per type, and how long from the first to the end of the last. */
 function passedFoldEntry(rows: MergedRow[], open: boolean, key: string): SectionEntry {
   const counts = new Map<string, number>();
-  let durationMs = 0;
+  let start = Infinity;
+  let end = -Infinity;
   for (const row of rows) {
     const lane = row.kind === 'step' ? 'steps' : row.item.lane;
     counts.set(lane, (counts.get(lane) ?? 0) + 1);
-    if (row.kind === 'step' && row.level === 0) durationMs += row.step.duration ?? 0;
+    const span = rowSpan(row);
+    if (span) {
+      start = Math.min(start, span[0]);
+      end = Math.max(end, span[1]);
+    }
   }
   const first = rows[0]!;
   return {
@@ -897,7 +933,7 @@ function passedFoldEntry(rows: MergedRow[], open: boolean, key: string): Section
         many: TIMELINE_TYPE_META[lane].many,
       })),
     ),
-    durationMs,
+    durationMs: end > start ? end - start : 0,
     failed: false,
     holdsFailure: false,
     open,
@@ -949,27 +985,23 @@ type SectionEntry = {
 };
 type RenderEntry = SectionEntry | (MergedRow & { key: string; nested: boolean });
 
-const renderList = computed<RenderEntry[]>(() => {
-  const blocks = groupRowsBySection(mergedRows.value, (row) =>
+/** The rows in consecutive sections: the setup and teardown hooks around the test body. */
+const rowBlocks = computed(() =>
+  groupRowsBySection(mergedRows.value, (row) =>
     row.kind === 'step' ? (tree.value.phases[row.index] ?? 'body') : null,
-  );
+  ),
+);
+
+const renderList = computed<RenderEntry[]>(() => {
   const out: RenderEntry[] = [];
-  blocks.forEach((block, b) => {
+  rowBlocks.value.forEach((block, b) => {
     const rowKey = (row: MergedRow) => (row.kind === 'step' ? `s-${row.index}` : row.item.id);
     if (block.section === 'body') {
-      const folds = new Set(passedFoldIn(block.rows));
-      block.rows.forEach((row, i) => {
-        if (folds.size > 0 && i === Math.min(...folds)) {
-          out.push(
-            passedFoldEntry(
-              block.rows.filter((_, j) => folds.has(j)),
-              !passedFolded.value,
-              `section-passed-${b}`,
-            ),
-          );
-        }
-        if (!folds.has(i) || !passedFolded.value) out.push({ ...row, key: rowKey(row), nested: false });
-      });
+      const folded = block.rows.filter((row) => passedRows.value.has(row));
+      for (const row of block.rows) {
+        if (row === folded[0]) out.push(passedFoldEntry(folded, !passedFolded.value, `section-passed-${b}`));
+        if (!passedRows.value.has(row) || !passedFolded.value) out.push({ ...row, key: rowKey(row), nested: false });
+      }
       return;
     }
     const summary = tree.value.sections[block.section];

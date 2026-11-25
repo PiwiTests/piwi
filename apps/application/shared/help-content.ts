@@ -885,7 +885,7 @@ export const HELP_TOPICS = {
   },
   'fix.toolbox': {
     title: 'More ways to fix',
-    text: 'Every other way to fix, verify or reproduce this failure, one button each, opening in a side panel beside the page: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). A button names its section’s summary on hover. The next step’s actions open its section; on a cluster, that section is a card of its own above this line.',
+    text: 'Every other way to fix, verify or reproduce this failure, one button each, opening in a side panel beside the page: the diagnosis, the locator fix, the verify command, the local reproduce-and-bisect recipe, the clusters fixed before, the tests this failure blocked, and the whole fix plan (as Markdown on the cluster page, a link to it on an execution: the same plan `get_fix_plan` returns to an AI agent via the MCP server). A button names its section’s summary on hover. A next-step action that works in a section (Full patch, Pick from snapshot) opens it; on a cluster, the section the next step points at is a card of its own above this line.',
     doc: 'features/fix-plans',
   },
   'case.test-source': {

@@ -408,6 +408,18 @@ describe('passedRowsToFold', () => {
     expect(passedRowsToFold(rows)).toEqual([0, 1]);
   });
 
+  test('folds the earlier steps inside the test.step that holds the failure', () => {
+    // The test.step around the failing click is part of the failure: it stays, its earlier steps fold.
+    const rows = [step(0, false), step(1), step(1), step(1), step(1), step(1), step(1), failing(1)];
+    expect(passedRowsToFold(rows)).toEqual([1, 2, 3]);
+  });
+
+  test('keeps a passed test.step whose own steps hold a row that stays', () => {
+    // A caught error inside a passed test.step keeps the step around it in view.
+    const rows = [step(), step(), step(0), step(1, false), step(1), step(), step(), step(), failing()];
+    expect(passedRowsToFold(rows)).toEqual([0, 1, 4]);
+  });
+
   test('takes how many steps it keeps', () => {
     const rows = [step(), step(), step(), step(), failing()];
     expect(passedRowsToFold(rows, 1)).toEqual([0, 1, 2]);

@@ -109,8 +109,8 @@ at 1280×800 (any other viewport reports without verdicts): at most 15 text styl
 page's block and 13 on the cluster page's, at most 27 controls in the navbar and the situation
 block on the execution page and 25 on the cluster page's, at most one solid primary button above the fold, and a Next step that copies a code change
 (`copy-git-apply`, `copy-locator`) shows that change in the block. The controls below the block
-that reach the fold (the evidence card's tabs, the affected tests, the history) are reported, not
-budgeted. The script finds the action by `data-next-action` and the content by `data-copies`, never
+that reach the fold (More ways to fix, the evidence card's tabs, the affected tests) are reported, not
+budgeted; the History line's strip and its last-pass link are in the block and count. The script finds the action by `data-next-action` and the content by `data-copies`, never
 by a label. The report ends with every breach; `--check` exits 1 when there is one, and a route that
 answers an error fails it too. CI runs `--build .output --check` on the shared build (`Failure page
 budgets`).
@@ -143,7 +143,7 @@ use the same ones and are the reference when in doubt.
 | A run with insights, failure clusters and a workers timeline | `/test-runs/2` |
 | A project with flaky tests, quarantine and performance tabs | `/projects/1` |
 | A test case's history across runs | `/test-cases/1` |
-| An execution's History line | `/test-run-cases/229` |
+| An execution's History line | `/test-run-cases/37` |
 | An execution that passed on retry | `/test-run-cases/768` |
 | A test that did not run (the run hit its max failures) | `/test-run-cases/748` |
 

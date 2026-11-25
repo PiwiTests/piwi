@@ -6723,8 +6723,8 @@ const SCENES = [
   {
     name: 'execution-history',
     description:
-      "Execution page: the History line of the situation block, this test's recent executions as one strip linking to the test",
-    route: '/test-run-cases/229',
+      "Execution page: the History line of the situation block, this test's recent executions as one strip linking to the test, its failing streak and last pass",
+    route: '/test-run-cases/37',
     viewport: { width: 1280, height: 1000 },
     of: '[data-shot="execution-history"]',
     pad: 12,

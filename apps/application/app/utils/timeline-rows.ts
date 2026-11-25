@@ -158,17 +158,21 @@ export interface FoldableRow {
     passed: boolean;
     failing: boolean;
   } | null;
-  /** The row shows a problem (an error, a warning, a failed request) or what Most likely cites: it never folds. */
+  /**
+   * The row says something the reader needs: a problem (an error, a warning, a failed request), a duration that
+   * stands out, or what Most likely cites. It never folds.
+   */
   keep: boolean;
 }
 
 /**
  * The rows of the test body that fold under one Passed row: before the failing
  * step, every row that only says something worked, except the last `kept` steps
- * before the failure and what happened among them. A step whose nested steps
- * stay in view stays too, so a kept step never loses the step around it.
- * Returns the indexes of the rows that fold, in order: none without a failing
- * row, and none when fewer than two rows would fold.
+ * before the failure and what happened among them. A step stays in view while
+ * one of its own steps does (a kept step, a caught error), so no step loses the
+ * step around it; the steps around the failing one are part of the
+ * failure and never fold. Returns the indexes of the rows that fold, in order:
+ * none without a failing row, and none when fewer than two rows would fold.
  */
 export function passedRowsToFold(rows: readonly FoldableRow[], kept = KEPT_STEPS_BEFORE_FAILURE): number[] {
   const failing = rows.findIndex((row) => row.step?.failing);
@@ -183,26 +187,27 @@ export function passedRowsToFold(rows: readonly FoldableRow[], kept = KEPT_STEPS
     }
   }
   if (steps < kept) return [];
-  // Up to the top-level step around it.
-  for (let level = rows[cutoff]!.step?.level ?? 0; level > 0;) {
-    let parent = -1;
-    for (let i = cutoff - 1; i >= 0; i--) {
-      const step = rows[i]!.step;
-      if (step && step.level < level) {
-        parent = i;
+  const folded = new Set<number>();
+  for (let i = 0; i < cutoff; i++) {
+    const row = rows[i]!;
+    if (!row.keep && (row.step === null || row.step.passed)) folded.add(i);
+  }
+  // A step's own steps follow it, one level deeper or more, up to the next step at its level or above. A
+  // request or a console entry is no step's own: the table does not indent it.
+  for (let i = cutoff - 1; i >= 0; i--) {
+    const step = rows[i]!.step;
+    if (!step || !folded.has(i)) continue;
+    for (let j = i + 1; j < rows.length; j++) {
+      const inner = rows[j]!.step;
+      if (!inner) continue;
+      if (inner.level <= step.level) break;
+      if (!folded.has(j)) {
+        folded.delete(i);
         break;
       }
     }
-    if (parent < 0) break;
-    cutoff = parent;
-    level = rows[parent]!.step!.level;
   }
-  const folded: number[] = [];
-  for (let i = 0; i < cutoff; i++) {
-    const row = rows[i]!;
-    if (!row.keep && (row.step === null || row.step.passed)) folded.push(i);
-  }
-  return folded.length >= 2 ? folded : [];
+  return folded.size >= 2 ? [...folded].sort((a, b) => a - b) : [];
 }
 
 /** One line naming what the Passed row folds, one count per type: `4 steps · 2 requests`. */
