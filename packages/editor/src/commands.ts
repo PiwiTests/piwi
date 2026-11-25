@@ -89,7 +89,10 @@ export function shellWord(arg: string): string | null {
   return arg && !SHELL_EXPANDED.test(arg) ? `"${arg}"` : null;
 }
 
-/** Whether `args` are test filters and the options of {@link PLAYWRIGHT_OPTIONS}, each followed by its value. */
+/**
+ * Whether `args` are test filters and the options of {@link PLAYWRIGHT_OPTIONS}, each followed by its value: after `=`
+ * for a long option alone, as Playwright reads a short one's `=` as the start of its value (`-G=x` is `=x`).
+ */
 export function validPlaywrightArgs(args: unknown[]): args is string[] {
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
@@ -97,7 +100,7 @@ export function validPlaywrightArgs(args: unknown[]): args is string[] {
     if (!arg.startsWith('-')) continue;
     const eq = arg.indexOf('=');
     const takesValue = PLAYWRIGHT_OPTIONS.get(eq < 0 ? arg : arg.slice(0, eq));
-    if (takesValue === undefined || (eq >= 0 && !takesValue)) return false;
+    if (takesValue === undefined || (eq >= 0 && (!takesValue || !arg.startsWith('--')))) return false;
     if (takesValue === true && eq < 0 && typeof args[++i] !== 'string') return false;
   }
   return true;

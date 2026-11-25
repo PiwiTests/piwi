@@ -140,7 +140,7 @@ describe('playwrightTestCommand', () => {
     expect(playwrightTestCommand(['a.spec.ts', '--shuffle'])).toBe('npx playwright test a.spec.ts --shuffle');
     expect(playwrightTestCommand(['--shuffle=1234', '--headed'])).toBe('npx playwright test --shuffle=1234 --headed');
     expect(playwrightArgsOf('npx playwright test --shuffle -G slow')).toEqual(['--shuffle', '-G', 'slow']);
-    for (const args of [['-G'], ['--shuffle=$(id)'], ['--shuffle', '-5'], ['-Gslow']]) {
+    for (const args of [['-G'], ['--shuffle=$(id)'], ['--shuffle', '-5'], ['-Gslow'], ['-G=slow'], ['-g=pays']]) {
       expect(playwrightTestCommand(args), JSON.stringify(args)).toBeNull();
     }
   });
