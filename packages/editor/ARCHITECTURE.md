@@ -1373,7 +1373,7 @@ would open on the machine the run runs on, not this one.").
   `src/` folders, following links, and reads them as a live trace, an unfinished call shown running. An
   `<attempt>.json` on disk is served in place of that listing.
   The viewer reads it once, as it stands when it loads: its service worker keeps a trace by its URL, so neither its
-  live poll nor a reload shows what came since (Playwright 1.59 to 1.64; a `.trace` file opened alone does not load,
+  live poll nor a reload shows what came since (Playwright 1.59 to 1.65; a `.trace` file opened alone does not load,
   being no archive). One viewer for each attempt at a time: a second ask while it is open says so, and to close it to
   see the trace as it stands then.
 - **The launcher** (`startTraceViewer`): the Playwright CLI of the run's folder (`resolvePlaywrightCli`) with the

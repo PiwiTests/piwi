@@ -56,7 +56,7 @@ The shallow clone `actions/checkout` makes is enough for the reporter: Piwi read
 
 ```yaml
 e2e:
-  image: mcr.microsoft.com/playwright:v1.64.1-noble   # the version of your @playwright/test
+  image: mcr.microsoft.com/playwright:v1.65.1-noble   # the version of your @playwright/test
   script:
     - npm ci
     - npx playwright test
