@@ -1,5 +1,11 @@
 import { describe, expect, test } from 'vitest';
-import { flattenSteps, hideStepParamSecrets, hideStepTextSecrets } from '../src/step-analysis';
+import {
+  flattenSteps,
+  hideStepParamSecrets,
+  hideStepTextSecrets,
+  hideStepTitleUrl,
+  hideTypedStepTitle,
+} from '../src/step-analysis';
 
 /** A value in a credential's shape, built from parts so no scanner reads it as a live key. */
 const KEY = ['sk_live_', 'a3Z9'.repeat(8)].join('');
@@ -28,6 +34,21 @@ describe('hideStepTextSecrets', () => {
   });
 });
 
+describe('hideStepTitleUrl', () => {
+  test('hides the credentials of the URL Playwright up to 1.62 quotes in a navigation’s or a request’s title', () => {
+    expect(hideStepTitleUrl('Navigate to "https://user:hunter2@shop.test/login?token=s3cret"', 'pw:api')).toBe(
+      'Navigate to "https://user:<hidden>@shop.test/login?token=<hidden>"',
+    );
+    expect(hideTypedStepTitle('GET "https://shop.test/api/me?access_token=s3cret"', 'pw:api')).toBe(
+      'GET "https://shop.test/api/me?access_token=<hidden>"',
+    );
+    expect(hideStepTitleUrl("Click getByRole('button')", 'pw:api')).toBe("Click getByRole('button')");
+    expect(hideStepTitleUrl('Navigate to "/login?token=s3cret"', 'test.step')).toBe(
+      'Navigate to "/login?token=s3cret"',
+    );
+  });
+});
+
 describe('hideStepParamSecrets', () => {
   test('hides the url param of any step, and every text param of a step of the test’s own', () => {
     expect(
@@ -39,9 +60,41 @@ describe('hideStepParamSecrets', () => {
       n: 2,
     });
   });
+
+  test('hides the whole value of a test.step param named like a credential', () => {
+    expect(hideStepParamSecrets({ password: 'hunter2', apiToken: 'abc', user: 'alice' }, 'test.step')).toEqual({
+      password: '<hidden>',
+      apiToken: '<hidden>',
+      user: 'alice',
+    });
+    const [step] = flattenSteps([
+      { title: 'Log in', category: 'test.step', params: { password: 'hunter2', user: 'alice' } },
+    ]);
+    expect(step!.params).toEqual({ password: '<hidden>', user: 'alice' });
+  });
+
+  test('hides the credentials of an object param as its JSON, and keeps a number', () => {
+    expect(
+      hideStepParamSecrets(
+        { creds: { password: 'hunter2' }, links: ['https://u:pw@x.test/?token=abc'], n: 1 },
+        'test.step',
+      ),
+    ).toEqual({
+      creds: '{"password":"<hidden>"}',
+      links: '["https://u:<hidden>@x.test/?token=<hidden>"]',
+      n: 1,
+    });
+  });
 });
 
 describe('flattenSteps', () => {
+  test('hides the credentials of a navigation’s title as Playwright up to 1.62 writes it', () => {
+    const [step] = flattenSteps([
+      { title: 'Navigate to "https://user:hunter2@shop.test/?token=s3cret"', category: 'pw:api', duration: 1 },
+    ]);
+    expect(step!.title).toBe('Navigate to "https://user:<hidden>@shop.test/?token=<hidden>"');
+  });
+
   test('hides the credentials of a navigation’s subtitle and url param', () => {
     const [step] = flattenSteps([
       {

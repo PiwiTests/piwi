@@ -244,14 +244,22 @@ describe('capSteps', () => {
           duration: 1,
         },
         { title: 'Log in', category: 'test.step', params: { link: '/magic?code=246810', user: 'alice' }, duration: 1 },
+        {
+          title: 'Navigate to "https://user:hunter2@shop.test/?token=s3cret"',
+          category: 'navigation',
+          duration: 1,
+        },
+        { title: 'Sign up', category: 'test.step', params: { creds: { password: 'hunter2' } }, duration: 1 },
       ],
       DEFAULT_INGEST_LIMITS,
-    ) as Array<{ subtitle?: string; params?: Record<string, unknown> }>;
+    ) as Array<{ title?: string; subtitle?: string; params?: Record<string, unknown> }>;
     expect(out[0]).toMatchObject({
       subtitle: 'https://user:<hidden>@shop.test/login?token=<hidden>',
       params: { url: 'https://user:<hidden>@shop.test/login?token=<hidden>' },
     });
     expect(out[1]!.params).toEqual({ link: '/magic?code=<hidden>', user: 'alice' });
+    expect(out[2]).toMatchObject({ title: 'Navigate to "https://user:<hidden>@shop.test/?token=<hidden>"' });
+    expect(out[3]!.params).toEqual({ creds: '{"password":"<hidden>"}' });
   });
 
   test('hides the text a fill typed into a secret field, from a reporter that predates hiding it', () => {

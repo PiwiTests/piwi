@@ -12,6 +12,7 @@ import {
   capStepValue,
   hideStepParamSecrets,
   hideStepTextSecrets,
+  hideStepTitleUrl,
   withoutTypedText,
 } from '@piwitests/core/step-analysis';
 import type { IngestLimits } from '#shared/ingest-limits';
@@ -433,6 +434,7 @@ function keepSteps(steps: unknown[], limit: number): unknown[] {
  * re-normalize each step's `subtitle` and `params` against the ingest limits,
  * masking token-shaped strings, with the credentials of its subtitle and of a
  * param that may carry one hidden (`hideStepTextSecrets`, `hideStepParamSecrets`),
+ * and of the URL a navigation's or a request's title quotes (`hideStepTitleUrl`),
  * the text a fill, a typing or an insert
  * typed into a field that may hold a secret hidden from its title and params
  * (`withoutTypedText`), and what may be a secret from its error (`hideSecretsInError`).
@@ -455,7 +457,7 @@ export function capSteps(value: unknown, limits: IngestLimits): unknown {
       typeof s.subtitle === 'string' ? s.subtitle : null,
       category,
     );
-    if (typeof s.title === 'string') out.title = typed.title;
+    if (typeof s.title === 'string') out.title = hideStepTitleUrl(typed.title, category);
     if (typed.params) {
       const params = capStepParams(typed.params, limits);
       if (params) out.params = params;

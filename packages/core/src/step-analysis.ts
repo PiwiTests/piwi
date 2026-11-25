@@ -14,6 +14,7 @@ import {
   hideSecretsInUrl,
   hideTypedText,
   isSecretLocator,
+  isSecretName,
   maskTokenLike,
 } from './mask';
 import { isCaptureStep, sameCodeLocation } from './step-tree';
@@ -236,7 +237,7 @@ function normalizeStepParams(
   let count = 0;
   const text = (key: string, value: string) =>
     capStepValue(
-      maskTokenLike(hidesStepParam(key, category) ? hideStepTextSecrets(value) : value),
+      maskTokenLike(hidesStepParam(key, category) ? hideStepParamText(key, value, category) : value),
       MAX_STEP_PARAM_VALUE_CHARS,
     );
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
@@ -363,18 +364,52 @@ export function hidesStepParam(key: string, category?: string | null): boolean {
   return key === 'url' || (!!category && OWN_CATEGORIES.has(category));
 }
 
-/** A step's params, each text that may carry a credential (`hidesStepParam`) with its credentials hidden. Pure. */
+/**
+ * The text of a param that may carry a credential (`hidesStepParam`) with its credentials hidden: the whole value of a
+ * param of the test's own named like a credential (`isSecretName`: `password`, `apiToken`), else what
+ * `hideStepTextSecrets` hides in it.
+ */
+function hideStepParamText(key: string, value: string, category?: string | null): string {
+  return category && OWN_CATEGORIES.has(category) && isSecretName(key) ? HIDDEN_VALUE : hideStepTextSecrets(value);
+}
+
+/**
+ * A step's params, each that may carry a credential (`hidesStepParam`) with its credentials hidden
+ * (`hideStepParamText`): a text as it is, any other value but `null` as its JSON. Pure.
+ */
 export function hideStepParamSecrets<P extends Record<string, unknown>>(params: P, category?: string | null): P {
   const out: Record<string, unknown> = { ...params };
   for (const [key, value] of Object.entries(out)) {
-    if (typeof value === 'string' && hidesStepParam(key, category)) out[key] = hideStepTextSecrets(value);
+    if (value == null || typeof value === 'number' || typeof value === 'boolean') continue;
+    if (!hidesStepParam(key, category)) continue;
+    try {
+      out[key] = hideStepParamText(key, typeof value === 'string' ? value : JSON.stringify(value), category);
+    } catch {
+      delete out[key];
+    }
   }
   return out as P;
 }
 
-/** A step's title with the text it types hidden (`hideTypedText`); a step of the test's own keeps its title. */
+/** How Playwright up to 1.62 titles a navigation (`Navigate to "…"`) and an API request (`GET "…"`): the URL quoted. */
+const URL_TITLE = /^(Navigate to|[A-Z]+) "([\s\S]*)"$/;
+
+/**
+ * A step's title with the credentials of the URL a navigation's or an API request's title quotes hidden
+ * (`hideStepTextSecrets`); a step of the test's own keeps its title. Pure.
+ */
+export function hideStepTitleUrl(title: string, category?: string | null): string {
+  if (category && OWN_CATEGORIES.has(category)) return title;
+  const match = URL_TITLE.exec(title);
+  return match ? `${match[1]} "${hideStepTextSecrets(match[2]!)}"` : title;
+}
+
+/**
+ * A step's title with the text it types (`hideTypedText`) and the credentials of the URL it quotes
+ * (`hideStepTitleUrl`) hidden; a step of the test's own keeps its title.
+ */
 export function hideTypedStepTitle(title: string, category?: string | null): string {
-  return category && OWN_CATEGORIES.has(category) ? title : hideTypedText(title);
+  return category && OWN_CATEGORIES.has(category) ? title : hideStepTitleUrl(hideTypedText(title), category);
 }
 
 /**
@@ -397,7 +432,7 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
       step.category,
     );
     const flat: FlatStep = {
-      title: typed.title,
+      title: hideStepTitleUrl(typed.title, step.category),
       duration: step.duration,
       category: categorizeStep(step.title, step.category, step.params),
       depth,

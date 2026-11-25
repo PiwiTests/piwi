@@ -478,8 +478,8 @@ is written `<hidden>`:
   `ghp_…` or `AKIA…`, a key or a token Piwi issues such as `pd_…`.
 
 Each step's error, and the error line of a hook or a fixture that failed, are hidden the same way. A step's subtitle
-and its `url` param, where Playwright writes the address of a navigation or an API request, and the params of a
-`test.step` have a credential in a URL, a cookie or a JSON field hidden too, and a credential's shape, on the live
+and its `url` param, where Playwright writes the address of a navigation or an API request (in its title up to
+Playwright 1.62), and the params of a `test.step` have a credential in a URL, a cookie or a JSON field hidden too, and a credential's shape, on the live
 timeline as in the stored steps. The dashboard hides them again as it stores a result, whatever sent it. An error that holds no secret is kept as it is, so it joins the
 [failure cluster](/features/failure-clusters) it did. An error stored before the dashboard hid a credential's shape
 has it hidden at the first start of the version that does, its failure cluster kept.
