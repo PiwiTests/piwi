@@ -1,6 +1,9 @@
 import type { TestCaseHistoryPoint } from '~~/types/api';
 import { isFailedStatus, testOutcomes } from '#shared/utils/test-counts';
 
+/** How many of a test's recent executions the history strip shows, newest first. */
+export const HISTORY_STRIP_LENGTH = 24;
+
 /** What the history strip says about the execution being viewed. */
 export interface HistoryStreak {
   /** Consecutive failed runs, from the viewed execution's run back. */

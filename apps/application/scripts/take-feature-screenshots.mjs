@@ -1506,13 +1506,21 @@ const COLORED_RUN_OUTPUT = [
 ];
 
 /**
+ * Opens a section of More ways to fix in its side panel by clicking its button,
+ * unless the section leads as a card of its own or is open already.
+ */
+async function openFixSection(page, key) {
+  const closed = page.locator(`[data-shot="fix"] [data-tour="fix-section-${key}"][aria-expanded="false"]`);
+  if (await closed.count()) await closed.first().click();
+}
+
+/**
  * Opens a cluster page's Diagnosis: it is the card under the situation block when
- * the next step comes from the diagnosis, and otherwise a folded section of More
- * ways to fix, which this unfolds.
+ * the next step comes from the diagnosis, and otherwise a section of More ways to
+ * fix, which this opens in the side panel.
  */
 async function openDiagnosisSection(page) {
-  const folded = page.locator('[data-shot="fix"] [data-shot="fix-diagnosis"] button[aria-expanded="false"]');
-  if (await folded.count()) await folded.first().click();
+  await openFixSection(page, 'diagnosis');
   await page.locator('[data-shot="cluster-diagnosis"]').waitFor({ timeout: 90000 });
 }
 
@@ -5748,16 +5756,22 @@ const SCENES = [
   },
   {
     name: 'locator-healing',
-    description: 'Locator fix: ranked replacements and a recommended fix in the toolbox',
+    description: 'Locator fix: ranked replacements and a recommended fix, in the side panel of More ways to fix',
     tags: ['docs'],
     out: 'docs',
     // Execution 533 is a strict-mode locator-resolution failure with pre-captured
-    // alternatives; its next step is "replace the locator", so the toolbox opens
-    // the Locator fix section with the panel in full.
+    // alternatives; its Locator fix section opens in the side panel with the
+    // healing panel in full.
     route: '/test-run-cases/533',
     viewport: { width: 1280, height: 1300 },
     of: '[data-shot="alternative-locators"]',
     pad: 12,
+    async run({ page, shoot, settle }) {
+      await openFixSection(page, 'locator-fix');
+      await page.locator('[data-shot="alternative-locators"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'next-step-change',
@@ -6136,7 +6150,7 @@ const SCENES = [
   {
     name: 'ai-diagnosis',
     description:
-      'Failure cluster page: the AI diagnosis, as the card under the situation block when the next step comes from it, else unfolded in More ways to fix (dark)',
+      'Failure cluster page: the AI diagnosis, as the card under the situation block when the next step comes from it, else in the side panel of More ways to fix (dark)',
     tags: ['docs'],
     out: 'docs',
     // Cluster 10 ships a stored, "diagnosis-verified" diagnosis in the demo seed.
@@ -6385,8 +6399,10 @@ const SCENES = [
     },
     {
       name: 'tour-locator-healing',
-      description: 'Broken locator: ranked replacements from the last passing run',
+      description:
+        'Broken locator: ranked replacements from the last passing run, in the side panel of More ways to fix',
       route: '/test-run-cases/533',
+      prepareShot: (page) => openFixSection(page, 'locator-fix'),
       scrollTo: '[data-shot="alternative-locators"]',
     },
     {
@@ -6706,8 +6722,9 @@ const SCENES = [
   },
   {
     name: 'execution-history',
-    description: "Execution page: the History block, this test's recent executions as a strip",
-    route: '/test-run-cases/229',
+    description:
+      "Execution page: the History line of the situation block, this test's recent executions as one strip linking to the test, its failing streak and last pass",
+    route: '/test-run-cases/37',
     viewport: { width: 1280, height: 1000 },
     of: '[data-shot="execution-history"]',
     pad: 12,
@@ -11419,6 +11436,12 @@ const SCENES = [
     inspection: { ...READY_INSPECTION, webServer: false },
     of: '[data-shot="fix-reproduce-body"]',
     pad: 12,
+    async run({ page, shoot, settle }) {
+      await openFixSection(page, 'reproduce');
+      await page.locator('[data-shot="fix-reproduce-body"]').waitFor({ timeout: 90000 });
+      await settle();
+      await shoot();
+    },
   },
   {
     name: 'desktop-rerun',
