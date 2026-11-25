@@ -115,7 +115,8 @@ shell and are feature-equivalent.
   `ALLOWED_FLAGS`); `piwi flake` refuses a protected one. `tests/unit/environments-shell.test.ts` holds it to core.
 - **The instance's key lives in the OS keychain and never reaches the window**: read only while `runTargetInstance` is
   set and handed to the server after each start (`hand_kept_key`), it is forgotten on `key-revoked` only when that
-  names the connected instance (`key_revoked`).
+  names the connected instance (`key_revoked`). The server also asks the team instance with it, for Compare with team
+  instance (`server/utils/desktop-team-comparison.ts`), and the window reads the answer, never the key.
 - **The discovery file is a cross-package contract.** The shell publishes `{ url, token, pid, projects }` to
   `~/.piwi/desktop.json` while it runs, rewrites it when a folder link changes (`projects` is `[{ id, path }]`, the
   linked folders), adds the bundled server as a hub (`runChannel`, `send`, `hub`, from `GET /api/desktop/run-channel`,

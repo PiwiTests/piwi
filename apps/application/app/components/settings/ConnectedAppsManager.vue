@@ -3,7 +3,8 @@ import type { ConnectedApp, ConnectedAppsResponse } from '~~/types/api';
 
 /**
  * The apps a user connected through the device flow (Piwi Picker, an editor, the desktop app), each with
- * when it last connected and, for an app that runs tests, whether it is online now; **Revoke** disconnects one. Keyed
+ * when it last connected and, for an app that runs tests, whether it is online now and whether it may compare a test
+ * with the team's CI; **Revoke** disconnects one. Keyed
  * by `userId`, as `ApiKeysManager` is, so it serves the Account page and the administrator's Users page alike.
  */
 const props = defineProps<{ userId: number }>();
@@ -84,6 +85,7 @@ async function revoke() {
               >Last used: <ClientDate :date="app.lastUsedAt" date-only
             /></span>
             <span v-if="app.target?.version">Version {{ app.target.version }}</span>
+            <span v-if="app.target?.compares">Compares with the team instance</span>
           </div>
         </div>
         <UButton

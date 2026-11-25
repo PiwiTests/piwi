@@ -173,14 +173,39 @@ describe('a target key', () => {
   test('an owner’s key, a key with other permissions, or no key is refused by the target routes', async () => {
     const owner = await key(userId, null);
     await expect(requireRunTarget(eventWithKey(owner.plaintext))).rejects.toMatchObject({ statusCode: 403 });
-    const wider = await target(userId, ['run:receive', 'project:read']);
+    const wider = await target(userId, ['run:receive', 'run:submit']);
     await expect(requireRunTarget(eventWithKey(wider.plaintext))).rejects.toMatchObject({ statusCode: 403 });
+    const empty = await target(userId, []);
+    await expect(requireRunTarget(eventWithKey(empty.plaintext))).rejects.toMatchObject({ statusCode: 403 });
     await expect(requireRunTarget(eventWithKey(null))).rejects.toMatchObject({ statusCode: 401 });
     await expect(requireRunTarget(eventWithKey('pd_unknown'))).rejects.toMatchObject({
       statusCode: 401,
       data: { errorCode: 'RUN_TARGET_KEY_REVOKED' },
     });
     await expect(requireRunTarget(eventWithKey(null))).rejects.toMatchObject({ data: { errorCode: 'UNAUTHORIZED' } });
+  });
+
+  test('serves each route only with the permission it names', async () => {
+    const both = await target(userId, ['run:receive', 'project:read']);
+    expect((await requireRunTarget(eventWithKey(both.plaintext))).target.id).toBe(both.targetId);
+    expect((await requireRunTarget(eventWithKey(both.plaintext), { permission: 'project:read' })).target.id).toBe(
+      both.targetId,
+    );
+    const receives = await target(userId, ['run:receive']);
+    await expect(
+      requireRunTarget(eventWithKey(receives.plaintext), { permission: 'project:read' }),
+    ).rejects.toMatchObject({ statusCode: 403, data: { errorCode: 'RUN_TARGET_KEY_CANNOT_COMPARE' } });
+    const compares = await target(userId, ['project:read']);
+    await expect(requireRunTarget(eventWithKey(compares.plaintext))).rejects.toMatchObject({ statusCode: 403 });
+    expect((await requireRunTarget(eventWithKey(compares.plaintext), { permission: 'project:read' })).target.id).toBe(
+      compares.targetId,
+    );
+  });
+
+  test('a key that may compare is still refused by every other route', async () => {
+    const t = await target(userId, ['run:receive', 'project:read']);
+    await expect(requireAuth(eventWithKey(t.plaintext), 'project:read')).rejects.toMatchObject({ statusCode: 403 });
+    expect(await getUserByApiKey(t.plaintext)).toBeNull();
   });
 
   test('an owner’s key still acts as its owner', async () => {

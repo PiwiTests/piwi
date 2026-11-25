@@ -40,6 +40,8 @@ import {
   mcpToolCalls,
   prFeedbackPosts,
   assistantMessages,
+  apiKeys,
+  runTargets,
 } from '../../server/database/schema';
 import { and, desc, eq, inArray, isNotNull, sql, type AnyColumn, type SQL, type Table } from 'drizzle-orm';
 import { notPrivateRun } from '../run-eligibility';
@@ -91,7 +93,8 @@ export type SetupCapabilityId =
   | 'resources'
   | 'agent-diagnoses'
   | 'agent-write-log'
-  | 'assistant';
+  | 'assistant'
+  | 'team-comparison';
 
 export interface SetupCapability {
   id: SetupCapabilityId;
@@ -473,6 +476,18 @@ function evidenceProbes(db: DrizzleDB, projectId?: number): Record<SetupCapabili
     'agent-write-log': () => exists(db, db.select({ id: mcpToolCalls.id }).from(mcpToolCalls).limit(1)),
     // The assistant: active once a question was stored. Conversations are private and span projects.
     assistant: () => exists(db, db.select({ id: assistantMessages.id }).from(assistantMessages).limit(1)),
+    // Compare with team instance: active once a connected desktop app holds a key that may compare. Keys span projects.
+    'team-comparison': async () => {
+      const keys = await db
+        .select({ permissions: apiKeys.permissions })
+        .from(runTargets)
+        .innerJoin(apiKeys, eq(runTargets.apiKeyId, apiKeys.id))
+        .where(eq(runTargets.kind, 'desktop'))
+        .limit(200);
+      return keys.some(
+        (key) => Array.isArray(key.permissions) && (key.permissions as unknown[]).includes('project:read'),
+      );
+    },
   };
 }
 
@@ -511,6 +526,7 @@ const SETUP_LADDER_ORDER: SetupCapabilityId[] = [
   'agent-diagnoses',
   'agent-write-log',
   'assistant',
+  'team-comparison',
 ];
 
 /**

@@ -1929,6 +1929,12 @@ holds no run of answers 404 (`tests/run-target-routes.test.ts`). The project nam
 requests and in its describe answer (`projects`) reach the window through `onProjectNames`; a request object never
 carries one, as the parser refuses fields it does not know.
 
+The target's key holds `run:receive`, and the desktop app's also `project:read`, which opens Compare with team instance:
+`compare` reads `GET /api/run-targets/projects/:id/test-comparison` for the project a linked folder belongs to
+(`compareWithTeam` in `src/run-target.ts`). A refusal there refuses that comparison alone, and its `data.errorCode`
+says why (`RUN_TARGET_KEY_CANNOT_COMPARE` for a key made before it, `TEAM_COMPARISON_OFF` for a decline). The describe
+answer's `compares` says whether the key may compare, and reaches the window as the connection's `compares`.
+
 The request host tells the shell to forget the key (`onKeyRevoked`) only on the stream's `revoked` event or the
 instance's 401 for a key it no longer holds (`data.errorCode` `RUN_TARGET_KEY_REVOKED`, or its message from an instance
 that sends no code). The instance's stream sends `revoked` as the key or its owner is deleted, and when its own check of

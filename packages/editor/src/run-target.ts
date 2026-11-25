@@ -10,6 +10,8 @@
  * in memory while they are asked about or run. The window never reads the key nor a request token.
  */
 import * as os from 'node:os';
+import { realpath } from 'node:fs/promises';
+import { resolve } from 'node:path';
 import type {
   RunRequest,
   RunRequestFolderHints,
@@ -87,6 +89,9 @@ interface DeviceFlow {
   expiresAt: number;
 }
 
+/** Counts the connections: each start of the host with a key, and each end, makes a new one. */
+let generation = 0;
+
 const state: {
   instance: string | null;
   key: string | null;
@@ -109,6 +114,8 @@ const state: {
   localRuns: string[];
   /** The names the instance gave for its projects, by id. */
   projectNames: Map<number, string>;
+  /** Whether the key may compare a test with the instance's CI, as the instance said; null until it says. */
+  compares: boolean | null;
 } = {
   instance: null,
   key: null,
@@ -126,6 +133,7 @@ const state: {
   adopted: new Set(),
   localRuns: [],
   projectNames: new Map(),
+  compares: null,
 };
 
 /** Why the last connect failed: its English sentence, and its code when the app worded it. */
@@ -175,6 +183,7 @@ export function runTargetConnection(): RunTargetConnectionView {
     keyToKeep: state.keyToKeep,
     linkedProjectIds: [...linksHere().keys()].sort((a, b) => a - b),
     projectNames: Object.fromEntries(state.projectNames),
+    compares: state.compares,
   };
 }
 
@@ -352,9 +361,11 @@ function expireLater(id: string, held: HeldRequest, afterMs: number): void {
 
 function startHost(instance: string, key: string): void {
   stopHost();
+  generation++;
   if (state.instance !== instance) state.projectNames.clear();
   state.instance = instance;
   state.key = key;
+  state.compares = null;
   state.error = null;
   state.status = 'connecting';
   const host = new RequestHost({
@@ -370,6 +381,11 @@ function startHost(instance: string, key: string): void {
       const changed = projects.some(({ id, name }) => state.projectNames.get(id) !== name);
       for (const { id, name } of projects) state.projectNames.set(id, name);
       if (changed) tellConnection();
+    },
+    onCompares: (compares) => {
+      if (state.host !== host || state.compares === compares) return;
+      state.compares = compares;
+      tellConnection();
     },
     onKeyRevoked: () => tellShell({ type: 'key-revoked', instance }),
     onStatus: (status, detail) => {
@@ -509,6 +525,92 @@ export function useLocalRuns(folders: readonly string[]): void {
   if (changed) void planWaiting();
 }
 
+/**
+ * The connection now, as a number that changes on each start with a key and each disconnect or revoke: what the
+ * host keeps of an answer of the instance serves that connection alone.
+ */
+export function runTargetGeneration(): number {
+  return generation;
+}
+
+/** Why the desktop app cannot compare a test with the team instance's CI now. */
+export type TeamComparisonProblem =
+  /** No team instance connected, or its key was revoked. */
+  | 'not-connected'
+  /** The folder is linked to no project of the connected instance. */
+  | 'no-team-project'
+  /** The key was made before it could compare: connect the app again. */
+  | 'reconnect'
+  /**
+   * The instance refuses the comparison: it or the project declines Compare with team instance, its owner cannot read
+   * the project, or it refuses the question.
+   */
+  | 'refused'
+  /** The instance predates the comparison. */
+  | 'not-supported'
+  /** The instance did not answer. */
+  | 'unreachable';
+
+/** What the team instance answered for a test of the folder, or why there is no answer. */
+export type TeamComparisonAnswer =
+  | { ok: true; instance: string; projectId: number; answer: unknown }
+  | { ok: false; problem: TeamComparisonProblem; message: string };
+
+async function realFolder(folder: string): Promise<string> {
+  return realpath(folder).catch(() => resolve(folder));
+}
+
+/**
+ * The project of the connected instance the shell links `folder` to, compared by real path; the lowest id when
+ * several are. Null without a connected instance or such a link.
+ */
+export async function teamProjectOfFolder(folder: string): Promise<number | null> {
+  if (state.instance === null) return null;
+  const own = await realFolder(folder);
+  const ids: number[] = [];
+  for (const [id, linked] of linksHere()) if ((await realFolder(linked)) === own) ids.push(id);
+  return ids.length ? Math.min(...ids) : null;
+}
+
+/**
+ * Ask the connected instance how a test of `folder` does in the CI of the project that folder is linked to
+ * (Compare with team instance), with the key the shell kept: `query` names the test and what to compare it with. The
+ * answer is the instance's, for the reader to check.
+ */
+export async function compareWithTeam(
+  folder: string,
+  query: Readonly<Record<string, string>>,
+): Promise<TeamComparisonAnswer> {
+  const host = state.host;
+  const instance = state.instance;
+  if (!host || instance === null || state.status === 'revoked') {
+    return { ok: false, problem: 'not-connected', message: 'The app is connected to no team instance.' };
+  }
+  const projectId = await teamProjectOfFolder(folder);
+  if (projectId === null) {
+    return {
+      ok: false,
+      problem: 'no-team-project',
+      message: 'This folder is linked to no project of the team instance.',
+    };
+  }
+  try {
+    return { ok: true, instance, projectId, answer: await host.compare(projectId, query) };
+  } catch (error) {
+    if (!(error instanceof RequestHostError)) {
+      return { ok: false, problem: 'unreachable', message: 'The team instance did not answer.' };
+    }
+    if (error.code === 'RUN_TARGET_KEY_CANNOT_COMPARE')
+      return { ok: false, problem: 'reconnect', message: error.message };
+    if (error.status === 401) return { ok: false, problem: 'not-connected', message: error.message };
+    if (error.status === 403 || error.status === 400) return { ok: false, problem: 'refused', message: error.message };
+    if (error.status === 404 || error.status === 405) {
+      return { ok: false, problem: 'not-supported', message: 'The team instance cannot compare yet: update it.' };
+    }
+    return { ok: false, problem: 'unreachable', message: error.message };
+  }
+}
+
 /** The folders the shell links now, each with the id of the instance's project it is linked to. */
 export function linkedFolders(): { id: number; path: string }[] {
   return [...state.links].map(([id, folder]) => ({ id, path: folder }));
@@ -549,6 +651,7 @@ export function keyToKeep(): { instance: string; key: string } | null {
 
 /** Ends the connection, or the sign-in on its way, and forgets its key and its instance. */
 function endConnection(): void {
+  generation++;
   if (state.flowTimer) clearTimeout(state.flowTimer);
   state.flowTimer = null;
   state.flow = null;
@@ -561,6 +664,7 @@ function endConnection(): void {
   state.keyToKeep = false;
   state.error = null;
   state.status = 'none';
+  state.compares = null;
 }
 
 /**

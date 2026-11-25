@@ -28,10 +28,19 @@ const EDITOR = {
   tick: 'Tick the box once your editor shows this same code',
   again: 'Start again from Piwi: Connect in your editor.',
 };
-/** A run target's key receives the run requests you make and reports their runs, and nothing else. */
-function targetWords(app: string) {
+const RECEIVES = 'sees the tests you ask to run on any of your projects and reports their results in your name';
+const COMPARES =
+  'reads a test’s results on this instance (its CI and your teammates’ runs, its failure clusters, the CI’s environment) to compare them with a run on your machine';
+
+/**
+ * What a run target's key does here, as the instance says for the signed-in person: it receives the run requests
+ * they make and reports their runs (`receives`), and the desktop app's compares a test with the CI (`compares`).
+ * Nothing else. With neither, the answer is refused, and the words say what the app is for.
+ */
+function targetWords(app: string, does: { receives: boolean; compares: boolean }) {
+  const parts = [does.receives || !does.compares ? RECEIVES : null, does.compares ? COMPARES : null].filter(Boolean);
   return {
-    grant: 'that sees the tests you ask to run on any of your projects, and reports their results in your name',
+    grant: `that ${parts.join(', and that ')}`,
     title: `Connect ${app}`,
     start: `clicked Connect in ${app}`,
     keyName: 'this computer',
@@ -41,12 +50,6 @@ function targetWords(app: string) {
     again: `Start again from ${app}.`,
   };
 }
-const WORDS = {
-  picker: PICKER,
-  editor: EDITOR,
-  desktop: targetWords('Piwi Desktop'),
-  runner: targetWords('Piwi Runner'),
-};
 
 const route = useRoute();
 const config = useRuntimeConfig();
@@ -69,7 +72,13 @@ const { request, loading, loadError, deciding, decideError, signedInAs, decide }
   answered: (current, reply) => ({ ...current, status: reply.status }),
 });
 
-const words = computed(() => WORDS[request.value?.clientKind ?? 'picker'] ?? PICKER);
+const words = computed(() => {
+  const kind = request.value?.clientKind ?? 'picker';
+  const does = { receives: request.value?.receives === true, compares: request.value?.compares === true };
+  if (kind === 'desktop') return targetWords('Piwi Desktop', does);
+  if (kind === 'runner') return targetWords('Piwi Runner', { ...does, compares: false });
+  return kind === 'editor' ? EDITOR : PICKER;
+});
 
 useHead({ title: () => words.value.title });
 </script>
@@ -97,7 +106,7 @@ useHead({ title: () => words.value.title });
           If you have not just {{ words.start }}, deny: someone may have sent you this link to get access in your name.
           <template v-if="config.public.authEnabled">
             Allowing creates an API key named after {{ words.keyName }}, {{ words.grant }}. You can revoke it in your
-            account’s API keys.
+            account’s Connected apps.
           </template>
           <template v-else>
             Authentication is off on this instance, so no key is needed: allowing only confirms the connection.

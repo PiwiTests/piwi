@@ -45,6 +45,8 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'POST /api/projects/:id/run-plans', // pass reuse — needs the diffs `piwi plan` computes from a local checkout
   'GET /api/projects/:id/run-plans/:planId', // pass reuse — reads a plan only `POST /api/projects/:id/run-plans` stores
   'GET /api/desktop/reporter-config', // desktop build only; returns null everywhere else, including the demo
+  'GET /api/desktop/team/executions/:id/comparison', // desktop build only; asks the team instance the app connected to, 404 everywhere else
+  'GET /api/desktop/team/test-cases/:id/comparison', // desktop build only; asks the team instance the app connected to, 404 everywhere else
   'POST /api/desktop/import-local', // desktop build only; reads local files, 404 everywhere else
   'POST /api/desktop/import-bug-report', // desktop build only; reads a local .piwibug, 404 everywhere else
   'GET /api/desktop/live-runs', // desktop build only; reports the shell's watched runs, empty everywhere else
@@ -141,6 +143,7 @@ const INTENTIONALLY_EXCLUDED = new Set([
   'GET /api/run-targets/requests/:id/folder-hints',
   'GET /api/run-targets/projects/:id/environments',
   'GET /api/run-targets/projects/:id/run-variables',
+  'GET /api/run-targets/projects/:id/test-comparison',
   'PUT /api/run-targets/self',
   // An MCP client's OAuth sign-in: the consent page answers a request the
   // authorize endpoint stored, and the client redeems a code for tokens. The

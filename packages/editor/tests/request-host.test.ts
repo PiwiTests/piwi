@@ -252,6 +252,47 @@ describe('the request host', () => {
       expect(instance.calls.some((c) => c.path.endsWith('/answer') || c.path.endsWith('/state'))).toBe(false);
   });
 
+  test('says whether the key compares, as the describe answer does', async () => {
+    for (const [answer, heard] of [
+      [{ compares: true }, true],
+      [{ compares: false }, false],
+      [{}, null],
+      [{ compares: 'yes' }, null],
+    ] as const) {
+      const instance = await fakeInstance({ self: () => answer });
+      cleanups.push(instance.close);
+      const said: (boolean | null)[] = [];
+      const { made } = host(instance.url, { onCompares: (compares) => said.push(compares) });
+      await made.describe();
+      expect(said).toEqual([heard]);
+    }
+  });
+
+  test('compares a test with a project’s CI, and a refusal refuses that comparison alone', async () => {
+    const instance = await fakeInstance({
+      status: (path) => (path.startsWith('/api/run-targets/projects/9/') ? 403 : null),
+      refusalJson: { message: 'This app’s key cannot compare', data: { errorCode: 'RUN_TARGET_KEY_CANNOT_COMPARE' } },
+    });
+    cleanups.push(instance.close);
+    const { made, statuses, keyGone } = host(instance.url);
+    made.start();
+    await until(() => statuses.includes('online'));
+
+    await made.compare(4, { filePath: 'tests/a b.spec.ts', title: 'pays & leaves' });
+    const asked = instance.calls.find((c) => c.path.startsWith('/api/run-targets/projects/4/test-comparison?'))!;
+    expect(asked.method).toBe('GET');
+    expect(asked.authorization).toBe(`Bearer ${KEY}`);
+    expect(new URL(asked.path, instance.url).searchParams.get('title')).toBe('pays & leaves');
+
+    await expect(made.compare(9, { filePath: 'a.spec.ts', title: 'a' })).rejects.toMatchObject({
+      status: 403,
+      code: 'RUN_TARGET_KEY_CANNOT_COMPARE',
+    });
+    expect(made.state).toBe('online');
+    expect(keyGone).toEqual([]);
+    await expect(made.compare(0, { filePath: 'a.spec.ts', title: 'a' })).rejects.toMatchObject({ status: 404 });
+  });
+
   test('passes on the project names of the describe answer, the snapshot, each request and the list', async () => {
     const instance = await fakeInstance({
       self: () => ({ projects: [{ id: 1, name: 'Checkout' }] }),

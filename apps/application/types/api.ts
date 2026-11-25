@@ -1532,6 +1532,8 @@ export interface ConnectedApp {
     projectIds: number[];
     lastSeenAt: Date | null;
     online: boolean;
+    /** Its key holds `project:read`: the desktop app may compare a test with the team's CI (Compare with team instance). */
+    compares: boolean;
   } | null;
 }
 

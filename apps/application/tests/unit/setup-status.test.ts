@@ -311,8 +311,9 @@ describe('first-run version and the New marker', () => {
     const newIds = new Set(capabilities.filter((c) => c.isNew).map((c) => c.id));
     // auto-heal (0.26), integrations (0.29), the Test Map (0.36), quality
     // reports (0.39), bug reports and flake suspects (0.41) and resources
-    // (0.45), the agent capabilities (0.46), coverage (0.54) and the assistant
-    // (0.59) landed after 0.20; pr-feedback (0.19) did not.
+    // (0.45), the agent capabilities (0.46), coverage (0.54), the assistant
+    // (0.59) and Compare with team instance (0.77) landed after 0.20;
+    // pr-feedback (0.19) did not.
     expect(newIds).toEqual(
       new Set([
         'auto-heal',
@@ -327,6 +328,7 @@ describe('first-run version and the New marker', () => {
         'agent-write-log',
         'coverage',
         'assistant',
+        'team-comparison',
       ]),
     );
   });

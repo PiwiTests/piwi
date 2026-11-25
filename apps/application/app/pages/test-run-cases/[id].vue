@@ -55,6 +55,13 @@ provideTestManagementKeys(() => testCase.value?.testRun?.project?.id);
 // Server-rendered fetches carry the viewer's session.
 const requestFetch = useRequestFetch();
 
+// Compare with team instance (desktop app): the team instance's CI for this test, once the page shows.
+const { comparison: teamComparison, shown: teamComparisonShown } = useTeamComparison('execution', () =>
+  String(testCaseId),
+);
+/** The execution failed or timed out: the Team CI line has a failure to explain. */
+const failedExecution = computed(() => testCase.value?.status === 'failed' || testCase.value?.status === 'timedOut');
+
 // The rows ride in the SSR payload, so the server and the client agree on the
 // History block's strip at hydration.
 const { data: historyData } = await useAsyncData(
@@ -1049,7 +1056,12 @@ const { handle: handleNextStepAction } = useNextStepActions({
             <ExecutionHistoryLine :history="historyData" :current-id="Number(testCaseId)" />
           </template>
 
-          <!-- Line 8: the facts line, one size smaller, with Details and Raw error -->
+          <!-- Line 8, in the desktop app, for a failure: how the test does in the team instance's CI, and the conclusion -->
+          <template v-if="teamComparisonShown && failedExecution" #teamCi>
+            <TeamComparisonLine :comparison="teamComparison!" with-conclusion />
+          </template>
+
+          <!-- Line 9: the facts line, one size smaller, with Details and Raw error -->
           <template #facts>
             <ExecutionFactsLine
               ref="factsLine"

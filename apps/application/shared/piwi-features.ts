@@ -1018,6 +1018,14 @@ export const PIWI_FEATURE_GROUPS: FeatureGroup[] = [
         doc: 'features/run-on-my-machine',
       },
       {
+        title: 'Compare with team instance',
+        summary:
+          'A test that fails in the desktop app shows how it does in your team instance’s CI: the same error seen there, the results of each environment, and what differs from the closest CI pass.',
+        needs: ['desktop'],
+        where: 'Desktop app → a failing execution → Team CI',
+        doc: 'features/compare-with-team',
+      },
+      {
         title: 'Piwi Runner',
         summary:
           'A small app that takes Run on my machine requests without the dashboard: it asks before every run, runs it in your folder and stays in the tray.',

@@ -16,6 +16,11 @@ Everything else — analytics, quality reports, notifications, the CI gate, PR f
 
 ## Recently shipped
 
+- **Compare with team instance**: a test that fails in the desktop app shows how it does in the team instance's CI:
+  the same error seen there, the results of each CI environment, and what differs from the closest CI pass, so a
+  failure of your own machine reads apart from one the team sees too.
+  [adr/compare-with-team.md](adr/compare-with-team.md); see
+  [Compare with team instance](https://piwitests.dev/features/compare-with-team).
 - **The running line of every lane**: the editor marks the line each running test of your own run is at, whether or
   not you watch its worker, the workers at one line named together, from a small `position` message each worker sends
   on the run channel; `piwi.runningLines` marks every lane, the watched one alone, or none.

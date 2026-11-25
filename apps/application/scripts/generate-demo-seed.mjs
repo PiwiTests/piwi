@@ -3978,7 +3978,8 @@ const GROUP_MEMBERS = DEMO_GROUPS.flatMap((g) =>
 );
 
 // The default demo identity connected the desktop app, which Connected apps lists as online: the demo's router
-// answers every target as online. The key's hash matches no key anyone holds.
+// answers every target as online. Its key may also compare with the team instance, as the device flow gives a desktop
+// app's key while the instance does not decline it. The key's hash matches no key anyone holds.
 const CONNECTED_APP_KEYS = [
   {
     id: 1,
@@ -3987,7 +3988,7 @@ const CONNECTED_APP_KEYS = [
     key_hash: 'demo-connected-app-'.padEnd(64, '0'),
     key_prefix: 'demo0000',
     client_kind: 'desktop',
-    permissions: ['run:receive'],
+    permissions: ['run:receive', 'project:read'],
     created_at: ts('2025-04-20T09:00:00'),
     last_used_at: ts('2025-04-25T08:00:00'),
   },
