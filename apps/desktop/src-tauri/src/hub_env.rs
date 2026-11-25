@@ -23,7 +23,7 @@ pub(crate) fn run_ref(id: u32, attended: bool) -> String {
 /// Whether a person attends a `playwright test` run with these arguments: not
 /// one in UI mode (`--ui`), which runs the tests from its own window, nor one
 /// that repeats each test (`--repeat-each` above 1), which is left to run,
-/// unless it ends at its first failure (`--max-failures=1`).
+/// unless it ends at its first failure (`--max-failures=1`, or `-x`).
 pub(crate) fn attended_args(args: &[String]) -> bool {
     let mut repeats = false;
     let mut stops_at_first_failure = false;
@@ -36,7 +36,7 @@ pub(crate) fn attended_args(args: &[String]) -> bool {
         {
             repeats = true;
         }
-        if option_value(args, index, "--max-failures") == Some("1") {
+        if arg == "-x" || option_value(args, index, "--max-failures") == Some("1") {
             stops_at_first_failure = true;
         }
     }
@@ -270,6 +270,7 @@ mod tests {
             args(&["--repeat-each", "1"]),
             args(&["--repeat-each=20", "--retries=0", "--max-failures=1"]),
             args(&["--max-failures", "1", "--repeat-each", "5"]),
+            args(&["--repeat-each=5", "-x"]),
         ] {
             assert!(attended_args(&attended), "{attended:?}");
         }

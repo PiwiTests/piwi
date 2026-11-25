@@ -200,6 +200,7 @@ describe('a worker of a desktop run', () => {
     expect(desktopArgsAttended(['tests/a.spec.ts:3', '--project=chromium', '--headed', '--trace=on'])).toBe(true);
     expect(desktopArgsAttended(['--repeat-each=1'])).toBe(true);
     expect(desktopArgsAttended(['--repeat-each', '1'])).toBe(true);
+    expect(desktopArgsAttended(['--repeat-each=5', '-x'])).toBe(true);
     for (const args of [
       ['--ui'],
       ['--ui=true'],
