@@ -12,13 +12,15 @@ from a project's settings (the capability ladder of Settings → Capabilities li
 register entry D70. PR 2a is built: the desktop app's server asks the team instance through the request host
 (`compare`), checks the answer, keeps it two minutes, and answers `GET /api/desktop/team/executions/:id/comparison` and
 `…/test-cases/:id/comparison` with the history in rows by environment, the conclusion and the environment diff against
-the closest CI pass; Settings → Desktop app says when a connection made before it must be made again. PR 2b (a
-connection for the comparison alone, where `machine-runs` is off) and PR 3 (the pages) remain. The maintainer settled on
-2026-11-25: one connection and one key, with a read permission beside `run:receive` (D1); a capability on by default,
-labeled **Compare with team instance** (D2); the CI as the only reference, the team's other shared runs shown apart,
-every environment of the team project listed (D3); sign-in required (D10); all four parts in the first version (D5 to
-D8); the comparison inside the history block of the execution page (D9); the instance's and the desktop server's work
-first, the page's after the execution page's new layout has merged (Delivery). The other decisions are recommendations.
+the closest CI pass; Settings → Desktop app says when a connection made before it must be made again. PR 2b is built:
+the device flow connects a desktop app whose owner reads a project where Compare with team instance is not declined,
+even with `machine-runs` off, and its verification page says what the app will do for that person there (`receives`,
+`compares`). PR 3 (the pages) remains. The three parts ship as one pull request. The maintainer settled on 2026-11-25:
+one connection and one key, with a read permission beside `run:receive` (D1); a capability on by default, labeled
+**Compare with team instance** (D2); the CI as the only reference, the team's other shared runs shown apart, every
+environment of the team project listed (D3); sign-in required (D10); all four parts in the first version (D5 to D8); the
+comparison inside the history block of the execution page (D9); the instance's and the desktop server's work first, the
+page's after the execution page's new layout has merged (Delivery). The other decisions are recommendations.
 
 ## Summary
 
@@ -291,8 +293,9 @@ panel). The first two pull requests touch no page and start now; the third waits
      CI pass, and **Reconnect to compare** on Settings → Desktop app. A unit test drives them against a fake team
      instance.
    - **2b, a connection for the comparison alone.** The gate accepting a desktop app whose owner may compare where
-     `machine-runs` is off, a key without `run:receive`, and the request host leaving such a key's run requests aside
-     (no stream, no list) while the comparison works.
+     `machine-runs` is off, and the verification page saying what the app will do for that person there. The key
+     keeps both permissions: with `machine-runs` off, the target routes offer no request, and the request host's
+     stream stays open with nothing on it.
 3. **The pages**, once the execution page's layout has merged. The history block's team rows, the situation line, the
    same error beside the occurrences, the side panel's section, the link, the test page's team history; the
    capability on the ladder of Settings → Capabilities (its detection: a desktop app's key that may compare); a

@@ -28,15 +28,19 @@ const EDITOR = {
   tick: 'Tick the box once your editor shows this same code',
   again: 'Start again from Piwi: Connect in your editor.',
 };
+const RECEIVES = 'sees the tests you ask to run on any of your projects and reports their results in your name';
+const COMPARES =
+  'reads a test’s results on this instance (its CI and your teammates’ runs, its failure clusters, the CI’s environment) to compare them with a run on your machine';
+
 /**
- * A run target's key receives the run requests you make and reports their runs; the desktop app's also reads how a
- * test does in your projects' CI to compare it with your machine (`compares`). Nothing else.
+ * What a run target's key does here, as the instance says for the signed-in person: it receives the run requests
+ * they make and reports their runs (`receives`), and the desktop app's compares a test with the CI (`compares`).
+ * Nothing else. With neither, the answer is refused, and the words say what the app is for.
  */
-function targetWords(app: string, compares: boolean) {
+function targetWords(app: string, does: { receives: boolean; compares: boolean }) {
+  const parts = [does.receives || !does.compares ? RECEIVES : null, does.compares ? COMPARES : null].filter(Boolean);
   return {
-    grant: compares
-      ? 'that sees the tests you ask to run on any of your projects and reports their results in your name, and that reads a test’s results on this instance (its CI and your teammates’ runs, its failure clusters, the CI’s environment) to compare them with a run on your machine'
-      : 'that sees the tests you ask to run on any of your projects, and reports their results in your name',
+    grant: `that ${parts.join(', and that ')}`,
     title: `Connect ${app}`,
     start: `clicked Connect in ${app}`,
     keyName: 'this computer',
@@ -70,8 +74,9 @@ const { request, loading, loadError, deciding, decideError, signedInAs, decide }
 
 const words = computed(() => {
   const kind = request.value?.clientKind ?? 'picker';
-  if (kind === 'desktop') return targetWords('Piwi Desktop', request.value?.compares === true);
-  if (kind === 'runner') return targetWords('Piwi Runner', false);
+  const does = { receives: request.value?.receives === true, compares: request.value?.compares === true };
+  if (kind === 'desktop') return targetWords('Piwi Desktop', does);
+  if (kind === 'runner') return targetWords('Piwi Runner', { ...does, compares: false });
   return kind === 'editor' ? EDITOR : PICKER;
 });
 

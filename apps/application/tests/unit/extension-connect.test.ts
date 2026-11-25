@@ -17,6 +17,7 @@ const {
   generateUserCode,
   connectClientKind,
   extensionClientName,
+  targetAbilitiesOf,
   DEVICE_CODE_TTL_MS,
   DEFAULT_POLL_INTERVAL_SECONDS,
   SLOW_DOWN_STEP_SECONDS,
@@ -123,7 +124,7 @@ describe('the flow', () => {
     expect(
       await decideDeviceConnect(
         anyDb(),
-        { userCode: start.userCode, userId, allow: true, mayConnectTarget: true },
+        { userCode: start.userCode, userId, allow: true, abilities: { receive: true, compare: true } },
         at(2),
       ),
     ).toBe('approved');
@@ -154,7 +155,7 @@ describe('the flow', () => {
       expect((await describeConnectRequest(anyDb(), start.userCode, at(1)))!.compares).toBe(target === 'desktop');
       await decideDeviceConnect(
         anyDb(),
-        { userCode: start.userCode, userId, allow: true, mayConnectTarget: true },
+        { userCode: start.userCode, userId, allow: true, abilities: { receive: true, compare: true } },
         at(2),
       );
       await pollDeviceConnect(anyDb(), start.deviceCode, at(6));
@@ -167,18 +168,55 @@ describe('the flow', () => {
     expect(await connect('desktop')).toEqual(['run:receive', 'project:read']);
   });
 
-  test('the verification page says a desktop app’s key compares, and no other client’s', async () => {
+  test('the verification page says what the app will do for the person here', async () => {
     const desktop = await startDeviceConnect(anyDb(), { target: 'desktop', device: 'LAPTOP-42' }, T0);
-    expect((await describeConnectRequest(anyDb(), desktop.userCode, at(1)))!.compares).toBe(true);
+    const runner = await startDeviceConnect(anyDb(), { target: 'runner', device: 'build-01' }, T0);
     const picker = await started();
-    expect((await describeConnectRequest(anyDb(), picker.userCode, at(1)))!.compares).toBe(false);
+    const compareOnly = { receive: false, compare: true };
+    expect(await describeConnectRequest(anyDb(), desktop.userCode, at(1), compareOnly)).toMatchObject({
+      receives: false,
+      compares: true,
+    });
+    expect(await describeConnectRequest(anyDb(), runner.userCode, at(1), compareOnly)).toMatchObject({
+      receives: false,
+      compares: false,
+    });
+    expect(await describeConnectRequest(anyDb(), picker.userCode, at(1))).toMatchObject({
+      receives: false,
+      compares: false,
+    });
+  });
+
+  test('the desktop app connects for the comparison alone, Piwi Runner only to take run requests', async () => {
+    const decide = async (target: 'desktop' | 'runner', abilities: { receive: boolean; compare: boolean }) => {
+      const start = await startDeviceConnect(anyDb(), { target, device: 'LAPTOP-42' }, T0);
+      return decideDeviceConnect(anyDb(), { userCode: start.userCode, userId, allow: true, abilities }, at(1));
+    };
+    expect(await decide('desktop', { receive: false, compare: true })).toBe('approved');
+    expect(await decide('runner', { receive: false, compare: true })).toBe('target-not-allowed');
+    expect(await decide('desktop', { receive: false, compare: false })).toBe('target-not-allowed');
+    expect(await decide('runner', { receive: true, compare: false })).toBe('approved');
+  });
+
+  test('what a person may do with an app: Run on my machine turned on, Compare with team instance not declined', async () => {
+    const { setInstanceDecisions } = await import('#shared/handlers/capabilities');
+    const { buildAccessSummary, InstanceRole, ProjectRole } = await import('#shared/permissions');
+    const viewer = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.VIEWER }]);
+    const contributor = buildAccessSummary(InstanceRole.MEMBER, [{ projectId: 1, role: ProjectRole.CONTRIBUTOR }]);
+    const nobody = buildAccessSummary(InstanceRole.MEMBER, []);
+    expect(await targetAbilitiesOf(anyDb(), viewer, true)).toEqual({ receive: false, compare: true });
+    expect(await targetAbilitiesOf(anyDb(), contributor, true)).toEqual({ receive: false, compare: true });
+    expect(await targetAbilitiesOf(anyDb(), nobody, true)).toEqual({ receive: false, compare: false });
+    expect(await targetAbilitiesOf(anyDb(), contributor, false)).toEqual({ receive: false, compare: false });
+    await setInstanceDecisions(anyDb(), { 'machine-runs': 'enabled', 'team-comparison': 'declined' });
+    expect(await targetAbilitiesOf(anyDb(), contributor, true)).toEqual({ receive: true, compare: false });
   });
 
   test('a run target is never connected with authentication off', async () => {
     const start = await startDeviceConnect(anyDb(), { target: 'runner', device: 'build-01', os: 'Linux' }, T0);
     await decideDeviceConnect(
       anyDb(),
-      { userCode: start.userCode, userId: null, allow: true, mayConnectTarget: true },
+      { userCode: start.userCode, userId: null, allow: true, abilities: { receive: true, compare: true } },
       at(1),
     );
     expect(await pollDeviceConnect(anyDb(), start.deviceCode, at(6))).not.toMatchObject({ status: 'approved' });

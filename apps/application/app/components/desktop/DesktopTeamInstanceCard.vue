@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * Settings → Desktop app: the connection to a team instance (Run on my machine), and a note when its key was made
- * before it could compare a test with the instance's CI (Compare with team instance): connecting again gives one that
- * can.
+ * Settings → Desktop app: the connection to a team instance (Run on my machine), which also compares a test that fails
+ * here with the instance's CI (Compare with team instance), and a note when its key was made before it could:
+ * connecting again gives one that can.
  */
 const { connection } = useDesktopTeamRequests();
 </script>
@@ -13,7 +13,14 @@ const { connection } = useDesktopTeamRequests();
     <div class="space-y-4">
       <DesktopTeamInstance app-name="Piwi Desktop" />
       <p
-        v-if="connection.compares === false && connection.state !== 'none'"
+        v-if="connection.compares === true && connection.state !== 'none'"
+        class="text-xs text-muted"
+        data-testid="team-instance-compares"
+      >
+        This connection also compares a test that fails here with the team instance's CI.
+      </p>
+      <p
+        v-else-if="connection.compares === false && connection.state !== 'none'"
         class="text-xs text-muted"
         data-testid="team-instance-reconnect-to-compare"
       >

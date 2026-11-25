@@ -5,6 +5,8 @@ import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
 import { hashToken } from './token-hash';
 import { cleanClientLabel } from './client-label';
+import { getInstanceDecisions } from '#shared/handlers/setup-status';
+import { holdsAnywhere, type AccessSummary } from '#shared/permissions';
 
 /**
  * Connecting the browser extension, the VS Code extension and JetBrains
@@ -89,6 +91,34 @@ export type RunTargetPermission = (typeof RUN_TARGET_PERMISSIONS)[number];
  */
 export function runTargetKeyPermissions(kind: ConnectClientKind): RunTargetPermission[] {
   return kind === 'desktop' ? ['run:receive', 'project:read'] : ['run:receive'];
+}
+
+/** What the signed-in person may do with a run target connected to this instance. */
+export interface TargetAbilities {
+  /** Take run requests: they hold `run:receive` on some project, and an administrator turned Run on my machine on. */
+  receive: boolean;
+  /** Compare a test with the CI: they read some project, and the instance does not decline Compare with team instance. */
+  compare: boolean;
+}
+
+/** What `access` may do with a run target here; nothing with sign-in off, where no account owns a key. */
+export async function targetAbilitiesOf(
+  db: DbClient,
+  access: AccessSummary,
+  authEnabled: boolean,
+): Promise<TargetAbilities> {
+  if (!authEnabled) return { receive: false, compare: false };
+  const decisions = await getInstanceDecisions(db);
+  return {
+    receive: holdsAnywhere(access, 'run:receive') && decisions['machine-runs'] === 'enabled',
+    compare: holdsAnywhere(access, 'project:read') && decisions['team-comparison'] !== 'declined',
+  };
+}
+
+/** Whether a client of `kind` may connect as a run target with `abilities`: Piwi Runner takes run requests alone. */
+export function mayConnectTarget(kind: ConnectClientKind, abilities: TargetAbilities): boolean {
+  if (kind === 'runner') return abilities.receive;
+  return kind === 'desktop' && (abilities.receive || abilities.compare);
 }
 
 export interface ConnectClient {
@@ -194,7 +224,9 @@ export interface ConnectRequestView {
   clientName: string;
   /** Who asked: Piwi Picker, the Piwi extension of an editor, or a run target. */
   clientKind: ConnectClientKind;
-  /** The key a run target gets also reads its owner's projects to compare a test with the team's CI. */
+  /** The run target will take its owner's run requests here: Run on my machine is on, and they may use it. */
+  receives: boolean;
+  /** The run target will compare a test with this instance's CI: the desktop app, where its owner may. */
   compares: boolean;
   createdAt: string;
   expiresAt: string;
@@ -202,23 +234,28 @@ export interface ConnectRequestView {
   status: DeviceCodeStatus | 'expired';
 }
 
-/** What the verification page shows for a user code; null when no request has it. */
+/**
+ * What the verification page shows for a user code, and what the run target it connects will do for the person with
+ * `abilities`; null when no request has it.
+ */
 export async function describeConnectRequest(
   db: DbClient,
   userCode: unknown,
   now = new Date(),
+  abilities: TargetAbilities = { receive: true, compare: true },
 ): Promise<ConnectRequestView | null> {
   const row = await findByUserCode(db, userCode);
   if (!row) return null;
   const status = row.status as DeviceCodeStatus;
   const expired = row.expiresAt.getTime() <= now.getTime() && status !== 'consumed' && status !== 'denied';
   const clientKind = storedClientKind(row);
-  const compares = RUN_TARGET_KINDS.has(clientKind) && runTargetKeyPermissions(clientKind).includes('project:read');
+  const target = RUN_TARGET_KINDS.has(clientKind);
   return {
     userCode: formatUserCode(normalizeUserCode(userCode)!),
     clientName: row.clientName,
     clientKind,
-    compares,
+    receives: target && abilities.receive,
+    compares: target && abilities.compare && runTargetKeyPermissions(clientKind).includes('project:read'),
     createdAt: row.createdAt.toISOString(),
     expiresAt: row.expiresAt.toISOString(),
     status: expired ? 'expired' : status,
@@ -236,20 +273,22 @@ export type ConnectDecisionResult =
 /**
  * Records the signed-in user's answer. `userId` is null when authentication is
  * off: the request is then allowed without an account, and the extension gets
- * an empty key. A run target is allowed only when `mayConnectTarget` (the user
- * holds `run:receive` and the instance turned run requests on), and never
- * without an account.
+ * an empty key. A run target is allowed only for what the user may do with it
+ * (`mayConnectTarget`: Piwi Runner takes run requests, the desktop app takes
+ * them or compares), and never without an account.
  */
 export async function decideDeviceConnect(
   db: DbClient,
-  opts: { userCode: unknown; userId: number | null; allow: boolean; mayConnectTarget?: boolean },
+  opts: { userCode: unknown; userId: number | null; allow: boolean; abilities?: TargetAbilities },
   now = new Date(),
 ): Promise<ConnectDecisionResult> {
   const row = await findByUserCode(db, opts.userCode);
   if (!row) return 'not-found';
   if (row.status !== 'pending') return 'already-decided';
   if (row.expiresAt.getTime() <= now.getTime()) return 'expired';
-  if (opts.allow && RUN_TARGET_KINDS.has(storedClientKind(row)) && (opts.userId == null || !opts.mayConnectTarget)) {
+  const kind = storedClientKind(row);
+  const abilities = opts.abilities ?? { receive: false, compare: false };
+  if (opts.allow && RUN_TARGET_KINDS.has(kind) && (opts.userId == null || !mayConnectTarget(kind, abilities))) {
     return 'target-not-allowed';
   }
   const status = opts.allow ? 'approved' : 'denied';
