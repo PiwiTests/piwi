@@ -3127,6 +3127,21 @@ function wrapFrameLocator(page: Page, frameLocator: FrameLocator): FrameLocator 
 const CANCELLED_REQUEST = /^net::ERR_ABORTED$|^NS_BINDING_ABORTED$|^NS_ERROR_ABORT$|cancell?ed/i;
 
 /**
+ * A console message's place as `url:line:column`, both 0-based: its `line` and
+ * `column` (Playwright 1.60 and later), else the `lineNumber` and
+ * `columnNumber` an older Playwright gives.
+ */
+function consoleLocation(location: {
+  url: string;
+  line?: number;
+  column?: number;
+  lineNumber?: number;
+  columnNumber?: number;
+}): string {
+  return `${location.url}:${location.line ?? location.lineNumber}:${location.column ?? location.columnNumber}`;
+}
+
+/**
  * Instrument a single page: wrap its locator-building methods for healing
  * capture and attach console/network listeners. Idempotent — safe to call on a
  * page already reached through another path (browser patch, `page` fixture).
@@ -3296,7 +3311,7 @@ function instrumentPage(page: Page): void {
         type,
         text: msg.text(),
         timestamp: Date.now(),
-        location: location ? `${location.url}:${location.lineNumber}:${location.columnNumber}` : null,
+        location: location ? consoleLocation(location) : null,
       });
     }
   });
@@ -3711,6 +3726,20 @@ function requestDuration(
 }
 
 /**
+ * The ARIA snapshot of the page's body Playwright took as the test's last
+ * failed `expect` found no element (`errorContext` of its error, Playwright 1.60
+ * and later), or null.
+ */
+function expectFailureAria(testInfo: Pick<TestInfo, 'errors'>): string | null {
+  const errors = testInfo.errors ?? [];
+  for (let i = errors.length - 1; i >= 0; i--) {
+    const aria = (errors[i] as { errorContext?: unknown }).errorContext;
+    if (typeof aria === 'string' && aria.trim()) return aria;
+  }
+  return null;
+}
+
+/**
  * Drain in-flight capture work and attach the collected `piwi-*` data to the
  * test, sourced from the sink so it works regardless of how the test's pages
  * were made.
@@ -3851,15 +3880,18 @@ async function flushSink(sink: CaptureSink, testInfo: TestInfo): Promise<void> {
     try {
       // Prefer a live read; fall back to the snapshot the close wrappers
       // stashed — the standard test page is already closed when this auto
-      // fixture tears down.
-      const snapshot = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
+      // fixture tears down — and, with neither, to the one Playwright took as
+      // a failed `expect` found nothing. The JSON tree goes only with a read
+      // of the fixtures' own.
+      const own = (live ? await readRootAria(page) : null) ?? sink.stashedAria;
+      const snapshot = own ?? expectFailureAria(testInfo);
       if (snapshot) {
         await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshot, {
           contentType: ARIA_SNAPSHOT_CONTENT_TYPE,
           body: snapshot,
         });
 
-        const snapshotJson = (live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson;
+        const snapshotJson = own ? ((live ? await readRootAriaJson(page) : null) ?? sink.stashedAriaJson) : null;
         if (snapshotJson) {
           await testInfo.attach(ATTACHMENT_NAMES.ariaSnapshotJson, {
             contentType: 'application/json',
