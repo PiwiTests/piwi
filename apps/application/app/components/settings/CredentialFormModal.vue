@@ -167,31 +167,14 @@ const NAME_PLACEHOLDERS: Record<CredentialService, string> = {
   'zephyr-scale': 'e.g. Zephyr Scale · acme',
   slack: 'e.g. Slack · piwi-bot',
 };
-const DESTINATION_HINTS: Partial<Record<CredentialService, { description: string; placeholder: string }>> = {
-  ai: {
-    description: 'The provider’s API (Anthropic’s, or an OpenAI-compatible base URL). A call elsewhere is refused.',
-    placeholder: 'https://api.anthropic.com/',
-  },
-  jira: {
-    description:
-      'The Jira site. Its Atlassian gateway, which a scoped token reaches, counts as the site. A request elsewhere is refused.',
-    placeholder: 'https://your-team.atlassian.net/',
-  },
-  'zephyr-scale': {
-    description: 'The API of the Zephyr Scale region. A request elsewhere is refused.',
-    placeholder: 'https://api.zephyrscale.smartbear.com/v2/',
-  },
-  slack: {
-    description: 'Slack’s Web API, which a channel posts its messages through. A request elsewhere is refused.',
-    placeholder: SLACK_API_ENDPOINT,
-  },
+const DESTINATION_PLACEHOLDERS: Partial<Record<CredentialService, string>> = {
+  ai: 'https://api.anthropic.com/',
+  jira: 'https://your-team.atlassian.net/',
+  'zephyr-scale': 'https://api.zephyrscale.smartbear.com/v2/',
+  slack: SLACK_API_ENDPOINT,
 };
-const destinationHint = computed(
-  () =>
-    DESTINATION_HINTS[form.value.service] ?? {
-      description: 'The base URL the secret may be sent under. A request elsewhere is refused.',
-      placeholder: 'https://jenkins.example.com/',
-    },
+const destinationPlaceholder = computed(
+  () => DESTINATION_PLACEHOLDERS[form.value.service] ?? 'https://jenkins.example.com/',
 );
 /** One click per repository host, for an SCM credential's destination. */
 const SCM_HOSTS = [
@@ -328,12 +311,7 @@ async function submit() {
   <UModal v-model:open="open" :title="editing ? 'Edit credential' : 'New credential'">
     <template #body>
       <form method="post" class="space-y-4" data-testid="credential-form" @submit.prevent="submit">
-        <UFormField
-          v-if="asksService"
-          label="Service"
-          name="credentialService"
-          description="What it is sent to: a CI server, a repository host's API, an AI provider, Jira, Zephyr Scale or Slack."
-        >
+        <SettingsField v-if="asksService" label="Service" name="credentialService" help="settings.credentials.service">
           <USelect
             v-model="form.service"
             :items="SERVICE_ITEMS"
@@ -341,16 +319,12 @@ async function submit() {
             class="w-full"
             data-testid="credential-service"
           />
-        </UFormField>
-        <UFormField
+        </SettingsField>
+        <SettingsField
           v-if="offersPerUser"
           label="Who it acts as"
           name="credentialIdentity"
-          :description="
-            isScm
-              ? 'A per-user credential runs each GitLab or Bitbucket CI action in the name of whoever starts it, with their rights. Each person authorizes your OAuth application once.'
-              : 'A per-user credential runs each action in the name of whoever starts it, on the CI server, with their rights. Each person gives their own API token, tested before it is saved.'
-          "
+          help="settings.credentials.identity"
         >
           <USelect
             v-model="form.perUser"
@@ -359,7 +333,7 @@ async function submit() {
             class="w-full"
             data-testid="credential-identity"
           />
-        </UFormField>
+        </SettingsField>
         <p v-else-if="editing && credential?.perUser" class="text-sm text-muted" data-testid="credential-per-user-note">
           <template v-if="credential.service === 'scm'">
             Per user: each person authorizes the OAuth application, and a CI action on it runs in their name. A new
@@ -379,12 +353,7 @@ async function submit() {
             class="w-full"
           />
         </UFormField>
-        <FormFieldGroup
-          v-if="isScm"
-          label="Destination"
-          required
-          :description="`The API the token is sent to. A path under its repositories narrows it: one owner on GitHub or Bitbucket (${SCM_API_DESTINATIONS.github}repos/acme/), one project on GitLab. A self-hosted GitLab must be in PIWI_SCM_GITLAB_HOSTS.`"
-        >
+        <FormFieldGroup v-if="isScm" label="Destination" required help="settings.credentials.destination">
           <div class="space-y-2">
             <div class="flex flex-wrap gap-2">
               <UButton
@@ -407,26 +376,26 @@ async function submit() {
             />
           </div>
         </FormFieldGroup>
-        <UFormField
+        <SettingsField
           v-else
           label="Destination"
           name="credentialDestination"
           required
-          :description="destinationHint.description"
+          help="settings.credentials.destination"
         >
           <UInput
             v-model="form.destination"
-            :placeholder="destinationHint.placeholder"
+            :placeholder="destinationPlaceholder"
             aria-label="Credential destination"
             class="w-full font-mono"
           />
-        </UFormField>
+        </SettingsField>
         <template v-if="perUserOauth">
-          <UFormField
+          <SettingsField
             label="OAuth client id"
             name="credentialOauthClientId"
             required
-            description="The application you registered on GitLab (scope api) or Bitbucket (an OAuth consumer with Account read, Repositories read and Pipelines write)."
+            help="settings.credentials.oauth-application"
           >
             <UInput
               v-model="form.oauthClientId"
@@ -435,19 +404,13 @@ async function submit() {
               class="w-full font-mono"
               data-testid="credential-oauth-client-id"
             />
-          </UFormField>
-          <UFormField
-            label="OAuth client secret"
-            name="credentialOauthClientSecret"
-            :required="!editing"
-            :description="
-              editing ? 'Leave empty to keep the stored one.' : 'Encrypted, and sent only to the host’s token endpoint.'
-            "
-          >
+          </SettingsField>
+          <UFormField label="OAuth client secret" name="credentialOauthClientSecret" :required="!editing">
             <UInput
               v-model="form.secret"
               type="password"
               autocomplete="new-password"
+              :placeholder="editing ? '•••••••• (unchanged)' : undefined"
               aria-label="OAuth client secret"
               class="w-full font-mono"
               data-testid="credential-oauth-client-secret"
@@ -457,11 +420,11 @@ async function submit() {
             Register this callback URL in the application: <code class="font-mono break-all">{{ callbackUrl }}</code>
           </p>
         </template>
-        <UFormField
+        <SettingsField
           v-if="perUser"
           label="Where a person creates their token"
           name="credentialTokenHelpUrl"
-          description="A link the token form shows, such as the API token page of the CI server. Optional."
+          help="settings.credentials.token-help-url"
         >
           <UInput
             v-model="form.tokenHelpUrl"
@@ -471,16 +434,13 @@ async function submit() {
             class="w-full font-mono"
             data-testid="credential-token-help-url"
           />
-        </UFormField>
+        </SettingsField>
         <div v-if="!perUser && !perUserOauth" class="grid gap-4 sm:grid-cols-2">
           <UFormField
             v-if="isCiServer || isJira"
             :label="isJira ? 'Account e-mail' : 'User'"
             name="credentialUser"
             :required="isJira"
-            :description="
-              isJira ? 'The Atlassian account the API token belongs to.' : 'For Basic auth, with the secret.'
-            "
           >
             <UInput
               v-model="form.user"
@@ -490,12 +450,7 @@ async function submit() {
               class="w-full font-mono"
             />
           </UFormField>
-          <UFormField
-            v-if="shareAll"
-            label="Secret source"
-            name="credentialSecretSource"
-            description="Saved here, or read on the server."
-          >
+          <UFormField v-if="shareAll" label="Secret source" name="credentialSecretSource">
             <USelect
               v-model="form.secretSource"
               :items="SOURCE_ITEMS"
@@ -505,12 +460,12 @@ async function submit() {
             />
           </UFormField>
         </div>
-        <UFormField
+        <SettingsField
           v-if="!perUser && !perUserOauth && readsEnv"
           label="Variable"
           name="credentialSecretEnv"
           required
-          :description="`Read on the server at each use. Only a variable named ${CREDENTIAL_SECRET_ENV_PREFIX}…, so no other variable of the server can be sent.`"
+          help="settings.credentials.secret"
         >
           <UInput
             v-model="form.secretEnv"
@@ -520,17 +475,13 @@ async function submit() {
             class="w-full font-mono"
             data-testid="credential-secret-env"
           />
-        </UFormField>
-        <UFormField
+        </SettingsField>
+        <SettingsField
           v-else-if="!perUser && !perUserOauth"
           label="Secret"
           name="credentialSecret"
           :required="!editing || destinationMoved || Boolean(credential?.secretEnv)"
-          :description="
-            editing && !credential?.secretEnv
-              ? 'Leave empty to keep the stored one.'
-              : 'Encrypted, and never shown again.'
-          "
+          help="settings.credentials.secret"
         >
           <UInput
             v-model="form.secret"
@@ -548,23 +499,8 @@ async function submit() {
             aria-label="Credential secret"
             class="w-full font-mono"
           />
-        </UFormField>
-        <FormFieldGroup
-          label="Projects"
-          :description="
-            perUserOauth
-              ? 'The projects whose GitLab or Bitbucket CI actions may name it.'
-              : isScm
-                ? 'The projects whose source control and CI actions may name it.'
-                : isAi
-                  ? 'An AI role serves every project: Settings → AI lists only a key shared with all of them.'
-                  : isConnection
-                    ? 'A connection serves every project bound to it: Settings → Integrations lists only a credential shared with all of them.'
-                    : isSlack
-                      ? 'A channel of the instance serves every project: Settings → Notifications lists only a credential shared with all of them.'
-                      : 'The projects whose CI actions may name it.'
-          "
-        >
+        </SettingsField>
+        <FormFieldGroup label="Projects" help="settings.credentials.projects">
           <div class="space-y-2">
             <USwitch v-if="shareAll" v-model="form.allProjects" label="All projects, present and future" />
             <USelectMenu
@@ -579,11 +515,7 @@ async function submit() {
             />
           </div>
         </FormFieldGroup>
-        <FormFieldGroup
-          v-if="isCiServer"
-          label="Inputs"
-          description="The CI action inputs a request carrying it may send, beside the arguments and the dispatch id."
-        >
+        <FormFieldGroup v-if="isCiServer" label="Inputs" help="settings.credentials.inputs">
           <div class="space-y-2">
             <USwitch v-model="form.everyInput" label="Every input" />
             <UInput
