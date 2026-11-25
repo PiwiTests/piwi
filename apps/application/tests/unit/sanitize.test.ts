@@ -233,6 +233,27 @@ describe('capSteps', () => {
     expect(out[2]).toMatchObject({ category: DROPPED_STEPS_CATEGORY, depth: 0 });
   });
 
+  test('hides the credentials of a subtitle’s URL, a url param and a test.step’s params, whatever reporter sent them', () => {
+    const out = capSteps(
+      [
+        {
+          title: 'Navigate',
+          category: 'navigation',
+          subtitle: 'https://user:hunter2@shop.test/login?token=s3cret',
+          params: { url: 'https://user:hunter2@shop.test/login?token=s3cret' },
+          duration: 1,
+        },
+        { title: 'Log in', category: 'test.step', params: { link: '/magic?code=246810', user: 'alice' }, duration: 1 },
+      ],
+      DEFAULT_INGEST_LIMITS,
+    ) as Array<{ subtitle?: string; params?: Record<string, unknown> }>;
+    expect(out[0]).toMatchObject({
+      subtitle: 'https://user:<hidden>@shop.test/login?token=<hidden>',
+      params: { url: 'https://user:<hidden>@shop.test/login?token=<hidden>' },
+    });
+    expect(out[1]!.params).toEqual({ link: '/magic?code=<hidden>', user: 'alice' });
+  });
+
   test('hides the text a fill typed into a secret field, from a reporter that predates hiding it', () => {
     const out = capSteps(
       [
@@ -282,14 +303,14 @@ describe('capSteps', () => {
     expect(out[0]!.subtitle).toBe("getByRole('form').g…");
   });
 
-  test('masks token-shaped param values and subtitles on ingest', () => {
+  test('masks token-shaped param values, and hides a subtitle’s, on ingest', () => {
     const jwt = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abcDEF123456';
     const out = capSteps(
       [{ title: 'Set token', duration: 1, subtitle: jwt, params: { token: jwt } }],
       DEFAULT_INGEST_LIMITS,
     ) as Array<{ subtitle: string; params: Record<string, string> }>;
     expect(out[0]!.params.token).toBe('[masked-token]');
-    expect(out[0]!.subtitle).toBe('[masked-token]');
+    expect(out[0]!.subtitle).toBe('<hidden>');
   });
 
   test('drops non-object params rather than trusting them through', () => {

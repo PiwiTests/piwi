@@ -125,6 +125,30 @@ describe('PiwiDashboardReporter live step streaming', () => {
     expect(steps.map((e) => e.shardIndex)).toEqual([shardIndex, shardIndex]);
   });
 
+  it('hides the credentials of the URL Playwright writes in a navigation’s or a request’s subtitle', async () => {
+    const { reporter, eventsBodies } = await startStreaming();
+    const suite = fakeSuite();
+    const test = fakeTestCase({ title: 'the test', parent: suite });
+    const result = fakeResult({ workerIndex: 0 });
+    reporter.onBegin(fakeConfig(), suite);
+
+    const navigate = { ...makeStep('pw:api', 'Navigate'), subtitle: 'https://user:hunter2@shop.test/login?token=s3cret' };
+    const request = { ...makeStep('pw:api', 'GET'), subtitle: '/api/reset?code=246810&page=2' };
+    for (const step of [navigate, request]) reporter.onStepBegin(test, result, step);
+    for (const step of [navigate, request]) reporter.onStepEnd(test, result, step);
+    await waitFor(() => streamed(eventsBodies).filter((e) => e.type === 'step-end').length >= 2);
+
+    const subtitles = streamed(eventsBodies)
+      .filter((e) => String(e.type).startsWith('step-'))
+      .map((e) => e.subtitle);
+    expect(subtitles).toEqual([
+      'https://user:<hidden>@shop.test/login?token=<hidden>',
+      '/api/reset?code=<hidden>&page=2',
+      'https://user:<hidden>@shop.test/login?token=<hidden>',
+      '/api/reset?code=<hidden>&page=2',
+    ]);
+  });
+
   it('streams an assertion step under the expect category Playwright reports', async () => {
     const { reporter, eventsBodies } = await startStreaming();
     const suite = fakeSuite();

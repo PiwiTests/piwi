@@ -45,6 +45,7 @@ import {
   collectStepMetrics,
   extractTestStepEvents,
   extractWaitEvents,
+  hideStepTextSecrets,
   hideTypedStepTitle,
 } from '@piwitests/core/step-analysis';
 import { isCaptureStep } from '@piwitests/core/step-tree';
@@ -979,7 +980,8 @@ export class PiwiDashboardReporter {
     const event: StreamEvent = {
       type: 'step-begin',
       title: hideTypedStepTitle(step.title, cat),
-      subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
+      subtitle:
+        typeof step.subtitle === 'string' && step.subtitle.length > 0 ? hideStepTextSecrets(step.subtitle) : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       stepCategory: cat,
       parentTitle: test?.title || null,
@@ -1004,7 +1006,8 @@ export class PiwiDashboardReporter {
     const event: StreamEvent = {
       type: 'step-end',
       title: hideTypedStepTitle(step.title, cat),
-      subtitle: typeof step.subtitle === 'string' && step.subtitle.length > 0 ? step.subtitle : null,
+      subtitle:
+        typeof step.subtitle === 'string' && step.subtitle.length > 0 ? hideStepTextSecrets(step.subtitle) : null,
       location: step.location ? `${step.location.file}:${step.location.line}:${step.location.column}` : 'unknown',
       status: step.error ? 'failed' : 'passed',
       duration: step.duration || 0,

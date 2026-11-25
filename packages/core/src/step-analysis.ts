@@ -7,7 +7,15 @@
  * from an imported blob report's step events.
  */
 import { stripAnsi } from './error-parse';
-import { HIDDEN_VALUE, hideSecretsInError, hideTypedText, isSecretLocator, maskTokenLike } from './mask';
+import {
+  HIDDEN_VALUE,
+  hideSecretsInError,
+  hideSecretsInText,
+  hideSecretsInUrl,
+  hideTypedText,
+  isSecretLocator,
+  maskTokenLike,
+} from './mask';
 import { isCaptureStep, sameCodeLocation } from './step-tree';
 import type { TestStepEvent, TestStepEventHook } from './wire';
 
@@ -215,24 +223,33 @@ export function orderedStepParams(
 
 /**
  * Normalize a step's raw `params`: keep primitives as they are, JSON-stringify
- * anything else, mask token-shaped strings, and cap both the key count and each
- * value's length. Returns undefined when nothing survives.
+ * anything else, hide the credentials of a param that may carry one
+ * (`hidesStepParam`), mask token-shaped strings, and cap both the key count and
+ * each value's length. Returns undefined when nothing survives.
  */
-function normalizeStepParams(raw: unknown): Record<string, string | number | boolean> | undefined {
+function normalizeStepParams(
+  raw: unknown,
+  category?: string | null,
+): Record<string, string | number | boolean> | undefined {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return undefined;
   const out: Record<string, string | number | boolean> = {};
   let count = 0;
+  const text = (key: string, value: string) =>
+    capStepValue(
+      maskTokenLike(hidesStepParam(key, category) ? hideStepTextSecrets(value) : value),
+      MAX_STEP_PARAM_VALUE_CHARS,
+    );
   for (const [key, value] of Object.entries(raw as Record<string, unknown>)) {
     if (count >= MAX_STEP_PARAM_KEYS) break;
     if (typeof value === 'number' || typeof value === 'boolean') {
       out[key] = value;
       count++;
     } else if (typeof value === 'string') {
-      out[key] = capStepValue(maskTokenLike(value), MAX_STEP_PARAM_VALUE_CHARS);
+      out[key] = text(key, value);
       count++;
     } else if (value != null) {
       try {
-        out[key] = capStepValue(maskTokenLike(JSON.stringify(value)), MAX_STEP_PARAM_VALUE_CHARS);
+        out[key] = text(key, JSON.stringify(value));
         count++;
       } catch {
         // Non-serializable (circular) values are dropped.
@@ -325,6 +342,36 @@ export function withoutTypedText<P extends Record<string, unknown>>(
   return { title: hidden, params: out as P };
 }
 
+/** A URL standing alone: absolute, protocol-relative or a path, with no space in it. */
+const LONE_URL = /^(?:[a-z][a-z0-9+.-]{0,31}:\/\/|\/)\S*$/i;
+
+/**
+ * A step's subtitle or the text of one of its params with each credential in it hidden: a URL standing alone (the one
+ * Playwright writes for a navigation or an API request) part by part (`hideSecretsInUrl`), then any text as
+ * `hideSecretsInText` reads it. Pure.
+ */
+export function hideStepTextSecrets(text: string): string {
+  return hideSecretsInText(LONE_URL.test(text) ? hideSecretsInUrl(text) : text);
+}
+
+/**
+ * Whether a step's param may carry a credential in its text: the `url` Playwright passes for a navigation, an API
+ * request or a script tag, and any param of a step of the test's own (`test.step`'s `params`, a hook, a fixture). The
+ * others, a locator and the text a call types among them, keep their text: `withoutTypedText` reads them.
+ */
+export function hidesStepParam(key: string, category?: string | null): boolean {
+  return key === 'url' || (!!category && OWN_CATEGORIES.has(category));
+}
+
+/** A step's params, each text that may carry a credential (`hidesStepParam`) with its credentials hidden. Pure. */
+export function hideStepParamSecrets<P extends Record<string, unknown>>(params: P, category?: string | null): P {
+  const out: Record<string, unknown> = { ...params };
+  for (const [key, value] of Object.entries(out)) {
+    if (typeof value === 'string' && hidesStepParam(key, category)) out[key] = hideStepTextSecrets(value);
+  }
+  return out as P;
+}
+
 /** A step's title with the text it types hidden (`hideTypedText`); a step of the test's own keeps its title. */
 export function hideTypedStepTitle(title: string, category?: string | null): string {
   return category && OWN_CATEGORIES.has(category) ? title : hideTypedText(title);
@@ -345,7 +392,7 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
     const named = [step.subtitle, step.params?.locator].filter((v) => typeof v === 'string' && v).join(' ');
     const typed = withoutTypedText(
       typeof step.title === 'string' ? step.title : '',
-      normalizeStepParams(step.params),
+      normalizeStepParams(step.params, step.category),
       named || null,
       step.category,
     );
@@ -355,7 +402,9 @@ export function flattenSteps(steps: any[], depth = 0): FlatStep[] {
       category: categorizeStep(step.title, step.category, step.params),
       depth,
     };
-    if (typeof step.subtitle === 'string' && step.subtitle.length > 0) flat.subtitle = maskTokenLike(step.subtitle);
+    if (typeof step.subtitle === 'string' && step.subtitle.length > 0) {
+      flat.subtitle = maskTokenLike(hideStepTextSecrets(step.subtitle));
+    }
     if (typed.params) flat.params = typed.params;
     if (step.error?.message) {
       flat.error = { message: hideSecretsInError(step.error.message) };

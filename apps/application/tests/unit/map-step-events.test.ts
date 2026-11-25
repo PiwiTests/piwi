@@ -45,6 +45,25 @@ const sequence = (batch: StreamEventPayload[]) =>
   mapStepEventsToRunEvents(batch).map((e) => `${e.type} ${e.data.title}`);
 
 describe('mapStepEventsToRunEvents', () => {
+  test('hides the credentials of a step’s subtitle, from a reporter that predates hiding them', () => {
+    const navigate: StreamEventPayload = {
+      type: 'step-begin',
+      title: 'Navigate',
+      subtitle: 'https://user:hunter2@shop.test/login?token=s3cret',
+      stepCategory: 'pw:api',
+      startedAt: 1700000000000,
+      ...onWorker,
+    };
+    const events = mapStepEventsToRunEvents([
+      navigate,
+      { ...navigate, type: 'step-end', status: 'passed', duration: 9 },
+    ]);
+    expect(events.map((e) => e.data.subtitle)).toEqual([
+      'https://user:<hidden>@shop.test/login?token=<hidden>',
+      'https://user:<hidden>@shop.test/login?token=<hidden>',
+    ]);
+  });
+
   test('keeps the batch order, so a step ends before the next one begins', () => {
     expect(sequence([waitBegin, waitEnd, expectBegin])).toEqual([
       'step-begin Wait for timeout',
