@@ -439,8 +439,9 @@ interface FailedIn {
 
 /**
  * The names of the Playwright projects a run's config lists
- * (`metadata.htmlReport.projects[].name`), including those a `--project`
- * filter left out; null when the run's metadata carries none.
+ * (`metadata.htmlReport.projects[].name`), including those the run left out
+ * (a `--project` filter, or `default: false`); null when the run's metadata
+ * carries none.
  */
 export function configuredProjectNames(meta: RunMetadata | null): Set<string> | null {
   const names = (meta?.htmlReport?.projects ?? [])
