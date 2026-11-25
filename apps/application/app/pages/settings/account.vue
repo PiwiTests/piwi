@@ -498,6 +498,10 @@ const authEnabled = computed(() => config.public.authEnabled);
 
       <RunRequestsCard />
 
+      <SectionCard icon="i-lucide-key-round" title="Credentials" data-shot="account-credentials">
+        <MyCredentialsManager />
+      </SectionCard>
+
       <!-- API keys section -->
       <SectionCard
         icon="i-lucide-key"

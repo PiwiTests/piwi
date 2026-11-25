@@ -1,8 +1,11 @@
 # Per-user credentials
 
-**Status.** Proposed on 2026-11-25, reviewed the same day (security, and correctness against the code), step 1 being
-built. It extends [credential-manager.md](../adr/credential-manager.md): the store, `withCredential`, the destination
-binding and the log stand as that record wrote them.
+**Status.** Proposed on 2026-11-25 and reviewed the same day (security, and correctness against the code). Step 1 is
+built: per-user CI server credentials (Jenkins), the token form and its test, Account → Credentials, the run dialog's
+authorization step, the credential's panel, the demo, the docs (`operate/per-user-credentials.md`) and entry D70 of the
+1.0 register. Step 2, OAuth for GitHub, GitLab and Bitbucket, remains, GitHub's part waiting on #1560. It extends
+[credential-manager.md](../adr/credential-manager.md): the store, `withCredential`, the destination binding and the log
+stand as that record wrote them.
 
 **Summary.** Every credential is a **shared credential** today: one secret, saved once, sent by every person who
 presses a button that names it. A run on CI started from Piwi therefore runs on the CI server in the name of the
@@ -149,8 +152,8 @@ with the person's user name, and a dispatch answers the refusal for a person wit
 
 1. **Per-user credentials for CI server actions.** The columns, the table and their migrations, `withCredential`,
    the routes, Account → Credentials, the run dialog's authorization step and target, Check and the job listing, the
-   repeat guard, the credential's panel, the demo, the docs (`operate/credentials.md`, `features/ci-rerun.md`,
-   `features/ci-actions.md`), the generated API reference, and entry D70 of the
+   repeat guard, the credential's panel, the demo, the docs (`operate/per-user-credentials.md`, linked from
+   `operate/credentials.md` and `features/ci-rerun.md`), the generated API reference, and entry D70 of the
    [1.0 register](1.0-stabilization.md).
 2. **OAuth for GitHub, GitLab and Bitbucket actions** (D20): the OAuth application fields, the popup and its callback,
    the refresh, the revocation, the setup of each host in the docs. GitHub uses the GitHub App of

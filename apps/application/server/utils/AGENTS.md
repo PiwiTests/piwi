@@ -299,9 +299,9 @@ runs (`@piwitests/editor/run-host`), plus these:
 
 ## Credentials
 
-- **A credential's secret is opened only by `withCredential`** (`credentials.ts`), which checks the credential's rules
-  (`credentialRefusal`), logs the use and masks the secret in what it keeps: never read `credentials.secret` or select a
-  whole credential row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
+- **A credential's secret, or a person's token, is opened only by `withCredential`** (`credentials.ts`), which checks
+  the credential's rules (`credentialRefusal`), logs the use and masks it in what it keeps: never read either column or
+  select a whole row elsewhere (`tests/unit/credential-secret-access.test.ts`). A new consumer plans its request
   without the secret and builds it again inside `withCredential`'s `send`, as `ci-server-dispatch.ts` does.
 - **An SCM provider gets a token only from `openScmProvider`** (`scm/index.ts`), which picks the credential
   (`scmCredentialFor`) and opens it through `withCredential` as one counted read. Every write of `ScmProvider` is a

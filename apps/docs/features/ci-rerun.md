@@ -52,6 +52,8 @@ Playwright takes.
   repository's; a Jenkins job with `{branch}` in its path, or a Custom request naming the branch, takes a typed name;
   any other CI server job runs its configured branch. A name git refuses is not sent.
 - Each choice input offers its options; the fixed ones are listed.
+- An action on a [per-user credential](/operate/per-user-credentials) says *in your name*, and asks for your own
+  token the first time.
 - The button's menu sends the page's first **What** in one click, to one action or app, on the branch the dialog
   would pick, with the default choices. In the desktop app, it is This computer's menu, with these runs on CI in it.
 

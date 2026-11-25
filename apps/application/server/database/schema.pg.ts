@@ -3272,6 +3272,8 @@ export const credentials = pgTable(
     customRequests: boolean('custom_requests').notNull().default(false), // whether a Custom CI server request may carry it
     disabled: boolean('disabled').notNull().default(false), // every use is refused
     managedBy: text('managed_by').notNull().default('db'), // 'db' | 'env'
+    perUser: boolean('per_user').notNull().default(false), // each person gives their own token (credential_user_tokens); no secret here
+    tokenHelpUrl: text('token_help_url'), // where a person creates their token, for a per-user credential
     createdBy: integer('created_by').references(() => users.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { mode: 'date' })
       .notNull()
@@ -3285,6 +3287,34 @@ export const credentials = pgTable(
     // Unique ignoring case, as the routes compare names.
     nameIdx: uniqueIndex('idx_credentials_name_lower').on(sql`lower(${t.name})`),
     createdByIdx: index('idx_credentials_created_by').on(t.createdBy),
+  }),
+);
+
+// A person's own token for a per-user credential, sealed with the credential, the person and the destination.
+export const credentialUserTokens = pgTable(
+  'credential_user_tokens',
+  {
+    id: serial('id').primaryKey(),
+    credentialId: integer('credential_id')
+      .notNull()
+      .references(() => credentials.id, { onDelete: 'cascade' }),
+    userId: integer('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    remoteUser: text('remote_user').notNull(), // the account the service named when the token was tested
+    secret: text('secret').notNull(), // AES-256-GCM JSON { credentialId, userId, destination, user, secret }
+    state: text('state').notNull().default('ready'), // 'ready' | 'invalid'
+    createdAt: timestamp('created_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    testedAt: timestamp('tested_at', { mode: 'date' })
+      .notNull()
+      .$defaultFn(() => new Date()),
+    lastUsedAt: timestamp('last_used_at', { mode: 'date' }),
+  },
+  (t) => ({
+    credentialUserIdx: uniqueIndex('idx_credential_user_tokens_credential_user').on(t.credentialId, t.userId),
+    userIdx: index('idx_credential_user_tokens_user').on(t.userId),
   }),
 );
 
@@ -3317,6 +3347,7 @@ export const credentialUses = pgTable(
     projectId: integer('project_id').references(() => projects.id, { onDelete: 'set null' }),
     userId: integer('user_id').references(() => users.id, { onDelete: 'set null' }),
     apiKeyId: integer('api_key_id').references(() => apiKeys.id, { onDelete: 'set null' }),
+    remoteUser: text('remote_user'), // the person's own account, for a use of a per-user credential
     subjectType: text('subject_type'), // 'ci-action'
     subjectId: text('subject_id'),
     destination: text('destination'), // the request's origin and path, never its query

@@ -9,9 +9,11 @@ import {
   credentialReferences,
   credentialScopeRefusal,
   credentialSummary,
+  deleteUserTokens,
   loadCredentialRecord,
   namedForEveryProject,
   updateCredential,
+  userTokenCounts,
 } from '#shared/handlers/credentials';
 import { credentialServiceProblem, parseCredentialInput } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm/gitlab-hosts';
@@ -23,7 +25,7 @@ defineRouteMeta({
     tags: ['Credentials'],
     summary: 'Update a credential',
     description:
-      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage and read no variable. Any other answers 404.',
+      'Changes the fields a body holds, as `POST /api/credentials` takes them; `service` cannot change. A `secret` replaces the stored one (a rotation) and moves `rotatedAt`, as does a `secretEnv`, which reads it from that `PIWI_CREDENTIAL_*` variable instead (`credentials:manage` only, 403); a new `destination` needs the secret or its variable in the same body, since either is sealed with the one destination it may be sent under (400 without it). `disabled: true` refuses every use until it is turned off. The rules of a create apply: 409 for a name another credential has or while `PIWI_SECRET_KEY` is unset with a secret, 403 for a scope the caller may not give. A credential the environment sets cannot change (409). A per-user credential (`perUser`) takes no `user`, `secret`, `secretEnv` or Custom request (400), and only its `tokenHelpUrl` is its own; a new destination needs no secret, and removes every person’s token, each sealed with the one it leaves. A change by someone who holds `credentials:manage` makes the credential theirs, so a Project admin who created it no longer changes it. Someone who holds `credentials:manage` changes any credential; a Project admin those they created that are shared only with projects they manage, read no variable and are not per-user. Any other answers 404.',
     parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'integer' } }],
     'x-required-permission': ['credentials:manage', 'project:manage'],
   },
@@ -53,6 +55,16 @@ export default eventHandler(async (event) => {
   if (service !== undefined && service !== record.service) {
     throw apiError({ statusCode: 400, message: 'A credential’s service cannot change: create another one.' });
   }
+  if (record.perUser && (patch.user || secret || patch.secretEnv || patch.customRequests)) {
+    throw apiError({
+      statusCode: 400,
+      message:
+        'A per-user credential holds no user and no secret, each person gives their own token, and never goes with a Custom request.',
+    });
+  }
+  if (!record.perUser && patch.tokenHelpUrl) {
+    throw apiError({ statusCode: 400, message: 'Only a per-user credential links to where a person creates a token.' });
+  }
   if (record.service !== 'ci-server') {
     const problem = credentialServiceProblem(
       record.service,
@@ -76,7 +88,8 @@ export default eventHandler(async (event) => {
         'Something that serves every project names this credential (the instance’s source control, an AI role, a connection or a Slack channel of the instance): name another one there first.',
     });
   }
-  if (patch.destination !== undefined && patch.destination !== record.destination && !secret && !patch.secretEnv) {
+  const moved = patch.destination !== undefined && patch.destination !== record.destination;
+  if (moved && !record.perUser && !secret && !patch.secretEnv) {
     throw apiError({
       statusCode: 400,
       message:
@@ -107,6 +120,8 @@ export default eventHandler(async (event) => {
   const owner = can(access, 'credentials:manage') && record.createdBy !== viewer.userId ? viewer.userId : undefined;
   try {
     await updateCredential(db, id, patch, sealed, owner);
+    // Each person's token was sealed with the destination it leaves: each gives theirs again.
+    if (moved && record.perUser) await deleteUserTokens(db, id, null);
   } catch (e) {
     // Two renames to one name at once: the database's unique index answers for the slower one.
     if (isUniqueViolation(e))
@@ -115,6 +130,13 @@ export default eventHandler(async (event) => {
   }
   const updated = (await loadCredentialRecord(db, id))!;
   return {
-    credential: withSecretEnvState(credentialSummary(updated, (await credentialReferences(db)).get(id) ?? [], viewer)),
+    credential: withSecretEnvState(
+      credentialSummary(
+        updated,
+        (await credentialReferences(db)).get(id) ?? [],
+        viewer,
+        (await userTokenCounts(db)).get(id) ?? 0,
+      ),
+    ),
   };
 });

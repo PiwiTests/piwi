@@ -10,6 +10,7 @@ import type { CiListingTargetOf, CiTargetOf, CiTargetType } from '#shared/ci-tar
 import type { CiDispatchPlace } from '#shared/handlers/ci-rerun-target';
 import type { CiServerUse } from '../ci-server-dispatch';
 import type { CredentialActor } from '../credentials';
+import type { UserTokenRefusalCode, UserTokenStatus } from '#shared/credentials';
 import type { DbClient } from '../../database';
 
 export type CiActionOf<K extends CiTargetType> = CiAction & { target: CiTargetOf<K> };
@@ -20,6 +21,10 @@ export interface CiReadiness {
   reason: string | null;
   /** Unavailable only because the action's credential refuses the request, which a dispatch then logs. */
   credentialRefused?: boolean;
+  /** Why a per-user credential refuses who asked, which a page answers by asking for their token. */
+  code?: UserTokenRefusalCode;
+  /** The per-user credential the action runs with, and the asker's token for it (null for an API key or no sign-in). */
+  perUser?: { credential: { id: number; name: string }; userToken: UserTokenStatus | null } | null;
 }
 
 /** What a provider's answer to a dispatch names: the page to watch, the branch it runs, the provider's id for it. */

@@ -4,7 +4,8 @@
  * kind of target's provider reads them (`./ci-providers/`): a repository
  * host's from its workflow or pipeline file at the commit the ref names now,
  * a CI server's from the CI server. An answer whose reads all succeeded is
- * kept five minutes, by project and target.
+ * kept five minutes, by project and target, and by person for a per-user
+ * credential, whose listing is what that person's own account sees.
  */
 import { TtlCache } from './ttl-cache';
 import { readProjectRepositoryUrl } from './scm/project-repository';
@@ -12,7 +13,7 @@ import { configuredGitlabHosts } from './scm/gitlab-hosts';
 import { ciProvider } from './ci-providers';
 import { ciTargetDefinition } from '#shared/ci-targets';
 import { isCiActionId, resolveCiListingTarget, type CiListingTarget } from '#shared/ci-actions';
-import { ciActionsCredentialProblem } from '#shared/handlers/credentials';
+import { ciActionsCredentialProblem, loadCredentialRecord } from '#shared/handlers/credentials';
 import { MAX_CI_JOB_FIELDS, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import type { CiServerUse } from './ci-server-dispatch';
 import type { DbClient } from '../database';
@@ -20,10 +21,20 @@ import type { DbClient } from '../database';
 const jobsCache = new TtlCache<CiJobListing>(5 * 60 * 1000);
 const fieldsCache = new TtlCache<CiJobFieldListing>(5 * 60 * 1000);
 
-const cacheKey = (projectId: number, target: CiListingTarget) => `${projectId}:${JSON.stringify(target)}`;
+/** Who a listing is kept for: everyone, or the person whose own token a per-user credential sends. */
+async function listingViewer(db: DbClient, target: CiListingTarget, use: CiServerUse): Promise<string> {
+  // Only a CI server credential is per user.
+  const credentialId = target.type === 'ci-server' ? target.credentialId : null;
+  if (credentialId == null) return '*';
+  const record = await loadCredentialRecord(db, credentialId);
+  return record?.perUser ? `user:${use.actor.userId ?? 'none'}` : '*';
+}
+
+const cacheKey = (viewer: string, projectId: number, target: CiListingTarget) =>
+  `${viewer}:${projectId}:${JSON.stringify(target)}`;
 /** What a job listing depends on: the target, whichever job is picked. */
-const jobsKey = (projectId: number, target: CiListingTarget) =>
-  `${projectId}:${JSON.stringify(ciTargetDefinition(target.type).withoutJob(target))}`;
+const jobsKey = (viewer: string, projectId: number, target: CiListingTarget) =>
+  `${viewer}:${projectId}:${JSON.stringify(ciTargetDefinition(target.type).withoutJob(target))}`;
 
 /**
  * The jobs a target lists, for the CI action editor: a repository's
@@ -38,7 +49,7 @@ export async function listCiJobs(
   use: CiServerUse,
   options: { refresh?: boolean } = {},
 ): Promise<CiJobListing> {
-  const key = jobsKey(projectId, target);
+  const key = jobsKey(await listingViewer(db, target, use), projectId, target);
   if (options.refresh) jobsCache.delete(key);
   const hit = jobsCache.get(key);
   if (hit) return hit;
@@ -62,7 +73,7 @@ export async function listCiJobFields(
   use: CiServerUse,
   options: { refresh?: boolean } = {},
 ): Promise<CiJobFieldListing> {
-  const key = cacheKey(projectId, target);
+  const key = cacheKey(await listingViewer(db, target, use), projectId, target);
   if (options.refresh) fieldsCache.delete(key);
   const hit = fieldsCache.get(key);
   if (hit) return hit;

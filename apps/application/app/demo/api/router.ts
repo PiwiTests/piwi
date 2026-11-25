@@ -547,6 +547,12 @@ import {
   demoDeleteCredential,
   demoGetCredential,
   demoListCredentials,
+  demoListUserTokens,
+  demoMyCredentials,
+  demoRemoveUserToken,
+  demoRemoveUserTokens,
+  demoSaveUserToken,
+  demoTestUserToken,
   demoUpdateCredential,
 } from './credentials';
 import { ciActionsCredentialProblem, projectScmCredentialProblem } from '#shared/handlers/credentials';
@@ -4063,6 +4069,44 @@ const routes: RouteEntry[] = [
     permission: ['credentials:manage', 'project:manage'],
     handler: async (_m, body, _q, ctx) =>
       demoCreateCredential(await getDemoDb(), demoViewer(ctx), body, ctx?.actingUserId ?? null),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/mine$/,
+    handler: async (_m, _b, _q, ctx) => demoMyCredentials(await getDemoDb(), demoViewer(ctx)),
+  },
+  {
+    method: 'PUT',
+    pattern: /^\/api\/credentials\/(\d+)\/token$/,
+    handler: async (m, body, _q, ctx) => demoSaveUserToken(await getDemoDb(), demoViewer(ctx), +m[1]!, body),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)\/token$/,
+    handler: async (m, _b, _q, ctx) => demoRemoveUserToken(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'POST',
+    pattern: /^\/api\/credentials\/(\d+)\/token\/test$/,
+    handler: async (m, _b, _q, ctx) => demoTestUserToken(await getDemoDb(), demoViewer(ctx), +m[1]!),
+  },
+  {
+    method: 'GET',
+    pattern: /^\/api\/credentials\/(\d+)\/tokens$/,
+    permission: 'credentials:manage',
+    handler: async (m) => demoListUserTokens(await getDemoDb(), +m[1]!),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)\/tokens$/,
+    permission: 'credentials:manage',
+    handler: async (m) => demoRemoveUserTokens(await getDemoDb(), +m[1]!, null),
+  },
+  {
+    method: 'DELETE',
+    pattern: /^\/api\/credentials\/(\d+)\/tokens\/(\d+)$/,
+    permission: 'credentials:manage',
+    handler: async (m) => demoRemoveUserTokens(await getDemoDb(), +m[1]!, +m[2]!),
   },
   {
     method: 'GET',

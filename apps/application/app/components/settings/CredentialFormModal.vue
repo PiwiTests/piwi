@@ -7,7 +7,9 @@
  * is a repository host's API, offered as one click per host. The secret is
  * write-only: left empty on a change, the stored one stays, and a new
  * destination asks for it again. An administrator may have it read from a
- * `PIWI_CREDENTIAL_*` variable of the server instead.
+ * `PIWI_CREDENTIAL_*` variable of the server instead, or, while sign-in is
+ * on, create a per-user CI server credential, which holds no user and no
+ * secret: each person gives their own token for it.
  */
 import { normalizeCiServerBaseUrl } from '#shared/ci-server';
 import {
@@ -16,6 +18,7 @@ import {
   isCredentialSecretEnv,
   MAX_CREDENTIAL_DESCRIPTION_LENGTH,
   MAX_CREDENTIAL_NAME_LENGTH,
+  MAX_TOKEN_HELP_URL_LENGTH,
   CREDENTIAL_SERVICE_LABELS,
   CREDENTIAL_SERVICES,
   SLACK_API_ENDPOINT,
@@ -43,6 +46,7 @@ const open = defineModel<boolean>('open', { default: false });
 const { can } = useAuth();
 const toast = useToast();
 const shareAll = computed(() => can('credentials:manage'));
+const authEnabled = Boolean(useRuntimeConfig().public.authEnabled);
 
 const { data: menu, execute: loadMenu } = useFetch('/api/projects/menu', {
   immediate: false,
@@ -71,6 +75,8 @@ const blank = () => ({
   everyInput: true,
   allowedInputs: '',
   customRequests: false,
+  perUser: false,
+  tokenHelpUrl: '',
 });
 const form = ref(blank());
 const saving = ref(false);
@@ -96,6 +102,8 @@ watch(open, (isOpen) => {
         everyInput: c.allowedInputs === null,
         allowedInputs: (c.allowedInputs ?? []).join(', '),
         customRequests: c.customRequests,
+        perUser: c.perUser,
+        tokenHelpUrl: c.tokenHelpUrl ?? '',
       }
     : {
         ...blank(),
@@ -113,6 +121,14 @@ const isScm = computed(() => form.value.service === 'scm');
 const isAi = computed(() => form.value.service === 'ai');
 /** A CI server credential's user, inputs and Custom request switch; the other services send the secret alone. */
 const isCiServer = computed(() => form.value.service === 'ci-server');
+/** Whether the form may create a per-user credential: a CI server's, by an administrator, while sign-in is on. */
+const offersPerUser = computed(() => !editing.value && isCiServer.value && shareAll.value && authEnabled);
+/** A per-user credential holds no user and no secret: each person gives their own token. */
+const perUser = computed(() => isCiServer.value && form.value.perUser);
+const IDENTITY_ITEMS = [
+  { label: 'Shared: one secret, sent for everyone', value: false },
+  { label: 'Per user: each person gives their own token', value: true },
+];
 /** A Jira credential's user is the account's e-mail, sent with the API token. */
 const isJira = computed(() => form.value.service === 'jira');
 /** A Jira or Zephyr Scale credential, which a connection of Settings → Integrations names. */
@@ -188,7 +204,10 @@ function problem(): string | null {
   const destination = credentialDestinationProblem(f.destination.trim());
   if (destination) return destination;
   if (isJira.value && !f.user.trim()) return 'Enter the e-mail of the account the token belongs to.';
-  if (readsEnv.value) {
+  if (perUser.value) {
+    const help = f.tokenHelpUrl.trim();
+    if (help && !/^https?:\/\//i.test(help)) return 'The token help link is an http(s) URL.';
+  } else if (readsEnv.value) {
     if (!isCredentialSecretEnv(f.secretEnv.trim())) {
       return `Name a variable of the server that starts with ${CREDENTIAL_SECRET_ENV_PREFIX}, in capitals.`;
     }
@@ -211,25 +230,38 @@ async function submit() {
     destination: f.destination.trim(),
     scope: f.allProjects ? { allProjects: true } : { allProjects: false, projectIds: f.projectIds },
     ...(isJira.value ? { user: f.user.trim() } : {}),
-    ...(!isCiServer.value
-      ? {}
-      : {
-          user: f.user.trim() || null,
+    ...(perUser.value
+      ? {
+          ...(editing.value ? {} : { perUser: true }),
+          tokenHelpUrl: f.tokenHelpUrl.trim() || null,
           allowedInputs: f.everyInput
             ? null
             : f.allowedInputs
                 .split(',')
                 .map((name) => name.trim())
                 .filter(Boolean),
-          customRequests: f.customRequests,
-        }),
-    ...(readsEnv.value
-      ? envChanged.value || destinationMoved.value || !editing.value
-        ? { secretEnv: f.secretEnv.trim() }
-        : {}
-      : f.secret.trim()
-        ? { secret: f.secret.trim() }
-        : {}),
+        }
+      : !isCiServer.value
+        ? {}
+        : {
+            user: f.user.trim() || null,
+            allowedInputs: f.everyInput
+              ? null
+              : f.allowedInputs
+                  .split(',')
+                  .map((name) => name.trim())
+                  .filter(Boolean),
+            customRequests: f.customRequests,
+          }),
+    ...(perUser.value
+      ? {}
+      : readsEnv.value
+        ? envChanged.value || destinationMoved.value || !editing.value
+          ? { secretEnv: f.secretEnv.trim() }
+          : {}
+        : f.secret.trim()
+          ? { secret: f.secret.trim() }
+          : {}),
   };
   saving.value = true;
   try {
@@ -271,6 +303,24 @@ async function submit() {
             data-testid="credential-service"
           />
         </UFormField>
+        <UFormField
+          v-if="offersPerUser"
+          label="Who it acts as"
+          name="credentialIdentity"
+          description="A per-user credential runs each action in the name of whoever starts it, on the CI server, with their rights. Each person gives their own API token, tested before it is saved."
+        >
+          <USelect
+            v-model="form.perUser"
+            :items="IDENTITY_ITEMS"
+            aria-label="Who the credential acts as"
+            class="w-full"
+            data-testid="credential-identity"
+          />
+        </UFormField>
+        <p v-else-if="editing && credential?.perUser" class="text-sm text-muted" data-testid="credential-per-user-note">
+          Per user: each person gives their own token, and an action on it runs in their name. A new destination removes
+          every token given for it.
+        </p>
         <UFormField label="Name" name="credentialName" required>
           <UInput
             v-model="form.name"
@@ -322,7 +372,22 @@ async function submit() {
             class="w-full font-mono"
           />
         </UFormField>
-        <div class="grid gap-4 sm:grid-cols-2">
+        <UFormField
+          v-if="perUser"
+          label="Where a person creates their token"
+          name="credentialTokenHelpUrl"
+          description="A link the token form shows, such as the API token page of the CI server. Optional."
+        >
+          <UInput
+            v-model="form.tokenHelpUrl"
+            :maxlength="MAX_TOKEN_HELP_URL_LENGTH"
+            placeholder="https://jenkins.example.com/me/security/"
+            aria-label="Where a person creates their token"
+            class="w-full font-mono"
+            data-testid="credential-token-help-url"
+          />
+        </UFormField>
+        <div v-if="!perUser" class="grid gap-4 sm:grid-cols-2">
           <UFormField
             v-if="isCiServer || isJira"
             :label="isJira ? 'Account e-mail' : 'User'"
@@ -356,7 +421,7 @@ async function submit() {
           </UFormField>
         </div>
         <UFormField
-          v-if="readsEnv"
+          v-if="!perUser && readsEnv"
           label="Variable"
           name="credentialSecretEnv"
           required
@@ -372,7 +437,7 @@ async function submit() {
           />
         </UFormField>
         <UFormField
-          v-else
+          v-else-if="!perUser"
           label="Secret"
           name="credentialSecret"
           :required="!editing || destinationMoved || Boolean(credential?.secretEnv)"
@@ -444,7 +509,7 @@ async function submit() {
           </div>
         </FormFieldGroup>
         <USwitch
-          v-if="isCiServer"
+          v-if="isCiServer && !perUser"
           v-model="form.customRequests"
           label="Custom requests may carry it"
           description="A Custom request reaches any path under the destination, a script console included."

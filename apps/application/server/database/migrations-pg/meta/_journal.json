@@ -1352,6 +1352,13 @@
       "when": 1795475572888,
       "tag": "0192_drop_ci_dispatches_provider_run_index",
       "breakpoints": true
+    },
+    {
+      "idx": 193,
+      "version": "7",
+      "when": 1795599903274,
+      "tag": "0193_per_user_credentials",
+      "breakpoints": true
     }
   ]
 }

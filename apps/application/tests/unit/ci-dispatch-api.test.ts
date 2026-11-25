@@ -518,6 +518,9 @@ describe('what a place is offered', () => {
       inputs: gh.inputs,
       available: true,
       reason: null,
+      credential: null,
+      userToken: null,
+      targetDigest: null,
     });
     expect(offered!.actions[2]!.environment).toBe('staging');
   });

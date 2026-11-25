@@ -323,6 +323,9 @@ describe('the inputs of a dispatch', () => {
       ],
       available: true,
       reason: null,
+      credential: null,
+      userToken: null,
+      targetDigest: null,
     });
   });
 

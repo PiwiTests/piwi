@@ -35,6 +35,8 @@ import type { CiDispatchView, FlakeLabKind } from '#shared/ci-dispatches';
 import { parseRouteId } from '#shared/route-id';
 import { parseCiTags, type CiTagMatch } from '#shared/ci-tags';
 import { foldText } from '#shared/utils/fold-text';
+import { Sha256 } from '#shared/utils/sha256';
+import type { UserTokenStatus } from '#shared/credentials';
 
 /** Where a dispatch's tests come from, as the server reads it. */
 export type CiDispatchSource =
@@ -301,9 +303,23 @@ export interface CiDispatchRequest {
   ref: string | null;
   /** The choices to set; null for their values from the source's run, else their defaults. */
   inputs: Record<string, string> | null;
+  /**
+   * The `targetDigest` of the action as the page showed it, which a dispatch
+   * through a per-user credential must send: a changed action is refused.
+   */
+  targetDigest?: string | null;
 }
 
-const BODY_KEYS = ['action', 'kind', 'source', 'ref', 'inputs'];
+const BODY_KEYS = ['action', 'kind', 'source', 'ref', 'inputs', 'targetDigest'];
+
+/**
+ * A digest of what an action sends: its target and its inputs. A dispatch in a
+ * person's name carries the digest of the action the page showed them, so an
+ * action changed since (another job, another fixed input) is refused.
+ */
+export function ciActionTargetDigest(action: Pick<CiAction, 'target' | 'inputs'>): string {
+  return new Sha256().update(new TextEncoder().encode(JSON.stringify([action.target, action.inputs]))).hex();
+}
 
 /**
  * A `POST /api/projects/:id/ci-dispatches` body: `{ source, action?, kind?,
@@ -322,6 +338,12 @@ export function parseCiDispatchRequest(raw: unknown): Parsed<CiDispatchRequest> 
   if (!source.ok) return source;
   const parsed = ciDispatchRequestOf(source.value, raw);
   if (!parsed.ok) return parsed;
+  if (raw.targetDigest != null) {
+    if (typeof raw.targetDigest !== 'string' || !/^[0-9a-f]{64}$/.test(raw.targetDigest)) {
+      return { ok: false, message: 'targetDigest is the digest the offered action gave.' };
+    }
+    parsed.value.targetDigest = raw.targetDigest;
+  }
   if (raw.kind != null) {
     if (!(CI_ACTION_KINDS as readonly unknown[]).includes(raw.kind)) {
       return { ok: false, message: `kind must be one of ${CI_ACTION_KINDS.join(', ')}.` };
@@ -400,6 +422,12 @@ export interface CiOfferedAction {
   available: boolean;
   /** Why it is not available. */
   reason: string | null;
+  /** The per-user credential it runs with, in the name of whoever starts it; null for a shared one. */
+  credential: { id: number; name: string } | null;
+  /** The viewer's token for that credential: `missing` when they gave none; null for a shared one. */
+  userToken: UserTokenStatus | null;
+  /** What a dispatch through a per-user credential sends back as `targetDigest`; null for a shared one. */
+  targetDigest: string | null;
 }
 
 /** What `GET /api/projects/:id/ci-actions/offered` answers. */
@@ -425,7 +453,11 @@ function offeredInputs(action: CiAction, started: CiDispatchStart | null): CiAct
 export function offeredCiAction(
   action: CiAction,
   place: { branch: string | null; started: CiDispatchStart | null },
-  ready: { available: boolean; reason: string | null },
+  ready: {
+    available: boolean;
+    reason: string | null;
+    perUser?: { credential: { id: number; name: string }; userToken: UserTokenStatus | null } | null;
+  },
 ): CiOfferedAction {
   const mode = ciBranchMode(action.target);
   return {
@@ -437,6 +469,9 @@ export function offeredCiAction(
     inputs: offeredInputs(action, place.started),
     available: ready.available,
     reason: ready.available ? null : ready.reason,
+    credential: ready.perUser?.credential ?? null,
+    userToken: ready.perUser?.userToken ?? null,
+    targetDigest: ready.perUser ? ciActionTargetDigest(action) : null,
   };
 }
 
