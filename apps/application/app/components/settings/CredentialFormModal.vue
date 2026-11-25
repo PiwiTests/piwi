@@ -426,7 +426,7 @@ async function submit() {
             label="OAuth client id"
             name="credentialOauthClientId"
             required
-            description="The application you registered on GitLab (scope api) or Bitbucket (an OAuth consumer that may read the account and write pipelines)."
+            description="The application you registered on GitLab (scope api) or Bitbucket (an OAuth consumer with Account read, Repositories read and Pipelines write)."
           >
             <UInput
               v-model="form.oauthClientId"
