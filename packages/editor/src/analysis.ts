@@ -217,10 +217,20 @@ export function stableReplacement(
   return recommendLocatorFix(method, stable)?.recommended ?? null;
 }
 
+/** A chain's trailing `.describe('…')` links, which name the locator in reports: a replacement keeps them after it. */
+const TRAILING_DESCRIBE = /(?:\s*\.\s*describe\s*\(\s*(['"`])(?:\\.|(?!\1)[^\\])*\1\s*\))+$/;
+
+/** Where the part of a chain scanned in `text` up to `end` that a replacement takes ends: before its descriptions. */
+function replacedEnd(text: string, end: number): number {
+  const descriptions = TRAILING_DESCRIBE.exec(text.slice(0, end));
+  return descriptions ? end - descriptions[0].length : end;
+}
+
 /**
  * The line with the locator replaced by `replacement`: the whole chain when
  * the line holds it (`page.locator('.row').nth(2).click()` keeps `page.` and
- * `.click()`), else its last locating call. Null when the line holds neither.
+ * `.click()`, and a trailing `.describe('…')` too), else its last locating
+ * call. Null when the line holds neither.
  */
 export function replaceLocatorOnLine(lineText: string, locator: string, replacement: string): string | null {
   const chain = tryParseLocatorChain(locator);
@@ -230,7 +240,8 @@ export function replaceLocatorOnLine(lineText: string, locator: string, replacem
     for (const m of lineText.matchAll(re)) {
       const scanned = scanLocatorChain(lineText.slice(m.index));
       if (scanned && renderLocatorChain(scanned.chain) === renderLocatorChain(chain)) {
-        const next = lineText.slice(0, m.index) + replacement + lineText.slice(m.index + scanned.end);
+        const end = m.index + replacedEnd(lineText.slice(m.index), scanned.end);
+        const next = lineText.slice(0, m.index) + replacement + lineText.slice(end);
         return next === lineText ? null : next;
       }
     }
@@ -245,8 +256,15 @@ const LOCATING_CALL = new RegExp(`(?<![\\w$])(?:${[...LOCATING_METHODS].join('|'
 /** The first locator chain a source line holds: its columns and its source; null when it holds none. */
 export function locatorChainOnLine(lineText: string): { start: number; end: number; locator: string } | null {
   for (const m of lineText.matchAll(LOCATING_CALL)) {
-    const scanned = scanLocatorChain(lineText.slice(m.index));
-    if (scanned) return { start: m.index, end: m.index + scanned.end, locator: renderLocatorChain(scanned.chain) };
+    const text = lineText.slice(m.index);
+    const scanned = scanLocatorChain(text);
+    if (scanned) {
+      return {
+        start: m.index,
+        end: m.index + replacedEnd(text, scanned.end),
+        locator: renderLocatorChain(scanned.chain),
+      };
+    }
   }
   return null;
 }
@@ -809,8 +827,65 @@ const TEST_CALL =
  * title: with its title alone (`test.skip('reason')`), it marks the test it is called in.
  */
 const MARK_CALL = /^test\.(?:skip|fixme|fail)\b/;
-/** A call's arguments from its `(`: a string literal, then another argument. */
-const TITLE_THEN_ARGUMENT = /^\(\s*(['"`])(?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*\1\s*,\s*[^\s)]/;
+
+/** The bracket that closes each opening one. */
+const CLOSING: Record<string, string> = { '(': ')', '[': ']', '{': '}' };
+
+/**
+ * The index of `text` after the comment, string, template literal or bracketed group that starts at `i`, else after
+ * its character. A string, a template literal or a group not closed in `text` runs to its end.
+ */
+function afterCode(text: string, i: number): number {
+  const c = text[i]!;
+  if (c === '/' && text[i + 1] === '/') {
+    const end = text.indexOf('\n', i);
+    return end < 0 ? text.length : end;
+  }
+  if (c === '/' && text[i + 1] === '*') {
+    const end = text.indexOf('*/', i + 2);
+    return end < 0 ? text.length : end + 2;
+  }
+  if (c === "'" || c === '"') {
+    let j = i + 1;
+    while (j < text.length && text[j] !== c && text[j] !== '\n') j += text[j] === '\\' ? 2 : 1;
+    return Math.min(j + 1, text.length);
+  }
+  if (c === '`') {
+    let j = i + 1;
+    while (j < text.length && text[j] !== '`') {
+      if (text[j] === '\\') j += 2;
+      else if (text[j] === '$' && text[j + 1] === '{') j = afterCode(text, j + 1);
+      else j++;
+    }
+    return Math.min(j + 1, text.length);
+  }
+  const close = CLOSING[c];
+  if (!close) return i + 1;
+  let j = i + 1;
+  while (j < text.length && text[j] !== close) j = afterCode(text, j);
+  return Math.min(j + 1, text.length);
+}
+
+/**
+ * How many arguments a call holds, `text` starting at its `(`: the commas at its own depth, outside strings, template
+ * literals and comments, a trailing comma left out. A call not closed in `text` counts what `text` holds.
+ */
+function callArgumentCount(text: string): number {
+  let count = 0;
+  let begun = false;
+  for (let i = 1; i < text.length && text[i] !== ')';) {
+    const c = text[i]!;
+    if (c === ',') {
+      if (begun) count++;
+      begun = false;
+      i++;
+      continue;
+    }
+    if (!/\s/.test(c) && !(c === '/' && (text[i + 1] === '/' || text[i + 1] === '*'))) begun = true;
+    i = afterCode(text, i);
+  }
+  return count + (begun ? 1 : 0);
+}
 /** A `test.describe(…)` call with a title (`test.describe.serial(…)` and the other modifiers too), its title in group 2. */
 const DESCRIBE_CALL =
   /(?<![\w$.])test\.describe(?:\.(?:only|skip|fixme|serial|parallel))*\s*\(\s*(['"`])((?:\\.|(?!\1)[^\\\n\r\u2028\u2029])*)\1/;
@@ -889,15 +964,22 @@ export function testCalls(lines: string[]): TestCall[] {
         blocks.push({ title: text.slice(from).split(',')[0]!.trim() || match[0], unread: true, endLine });
       }
     }
+    // After a mark, the code where a test call on the same line may start: none past a comment or a string.
+    let after = -1;
     for (const test of text.slice(from).matchAll(TEST_CALL)) {
+      const at = from + test.index;
       // A call in the line below, joined for its title, is read on its own line.
-      if (from + test.index >= code[i]!.length) return;
-      const open = text.indexOf('(', from + test.index);
+      if (at >= code[i]!.length) return;
+      if (after >= 0 && (at < after || /\/[/*]|['"`]/.test(text.slice(after, at)))) return;
+      const open = text.indexOf('(', at);
       const end = callEndLine(code, i, open);
       const endLine = end ?? i;
       // Its arguments up to its end, or the first lines of a call not closed yet.
       const args = [code[i]!.slice(open), ...code.slice(i + 1, (end ?? i + 3) + 1)].join('\n');
-      if (MARK_CALL.test(test[0]) && !TITLE_THEN_ARGUMENT.test(args)) continue;
+      if (MARK_CALL.test(test[0]) && callArgumentCount(args) < 2) {
+        after = afterCode(text, open);
+        continue;
+      }
       calls.push({
         line: i,
         endLine,
