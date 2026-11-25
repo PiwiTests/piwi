@@ -925,6 +925,56 @@ export const SETTINGS_ANCHORS = [
 /** @type {readonly import('./index.d.mts').GuideAnchorExemption[]} */
 export const SETTINGS_EXEMPTIONS = [
   {
+    rule: 'page',
+    key: '/authorized',
+    reason: 'The page a person lands on after authorizing a credential at its host, in a popup that closes itself.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.destination',
+    reason:
+      'The help of the Destination field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.identity',
+    reason:
+      'The help of the Who it acts as field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.inputs',
+    reason: 'The help of the Inputs field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.oauth-application',
+    reason:
+      'The help of the OAuth client id field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.projects',
+    reason: 'The help of the Projects field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.stored-secret',
+    reason:
+      'The help of the Secret and Variable field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.service',
+    reason: 'The help of the Service field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
+    rule: 'help',
+    key: 'settings.credentials.token-help-url',
+    reason:
+      'The help of the Where a person creates their token field of the credential form, a modal its New credential and Edit buttons open.',
+  },
+  {
     rule: 'field',
     key: 'account.connected-accounts',
     reason:

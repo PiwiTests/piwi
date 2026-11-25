@@ -169,6 +169,65 @@ export const SCM_API_DESTINATIONS: Record<ScmProviderName, string> = {
   bitbucket: `${SCM_API.bitbucket.origin}/`,
 };
 
+/** The OAuth endpoints of the repository host a per-user SCM credential is sent to, each fixed, never from input. */
+export interface OAuthEndpoints {
+  host: Exclude<ScmProviderName, 'github'>;
+  /** How a page names the host: `GitLab`, `Bitbucket`. */
+  label: string;
+  /** Where a person is sent to authorize the OAuth application. */
+  authorize: string;
+  /** Where a code and a refresh token are exchanged; the client secret is sealed with it. */
+  token: string;
+  /** Who the token belongs to: read once the authorization comes back, and by each test. */
+  user: string;
+  /** Where a token is revoked; null for a host that offers no revocation. */
+  revoke: string | null;
+  /** The scopes asked for; empty when the host takes them from the OAuth application. */
+  scopes: string;
+  /** Whether the host checks a PKCE challenge. */
+  pkce: boolean;
+}
+
+/**
+ * The OAuth endpoints of the host a per-user SCM credential's destination
+ * names, or null for one without them here: GitHub, which takes a GitHub App,
+ * or a destination that is no repository host's API. GitLab's are on the
+ * destination's host (gitlab.com, or a host of `PIWI_SCM_GITLAB_HOSTS`);
+ * Bitbucket's on its site and its API.
+ */
+export function oauthEndpoints(
+  destination: string,
+  gitlabHosts: ReadonlySet<string> = new Set(),
+): OAuthEndpoints | null {
+  const host = scmDestinationHost(destination, gitlabHosts);
+  if (host === 'gitlab') {
+    const origin = new URL(destination).origin;
+    return {
+      host,
+      label: SCM_PROVIDER_LABELS.gitlab,
+      authorize: `${origin}/oauth/authorize`,
+      token: `${origin}/oauth/token`,
+      user: `${origin}/api/v4/user`,
+      revoke: `${origin}/oauth/revoke`,
+      scopes: 'api',
+      pkce: true,
+    };
+  }
+  if (host === 'bitbucket') {
+    return {
+      host,
+      label: SCM_PROVIDER_LABELS.bitbucket,
+      authorize: 'https://bitbucket.org/site/oauth2/authorize',
+      token: 'https://bitbucket.org/site/oauth2/access_token',
+      user: `${SCM_API.bitbucket.origin}/2.0/user`,
+      revoke: null,
+      scopes: '',
+      pkce: false,
+    };
+  }
+  return null;
+}
+
 /**
  * The host an SCM credential's destination is for, or null when it is none
  * Piwi calls: the API of GitHub, Bitbucket, the GitLab cloud or a GitLab host

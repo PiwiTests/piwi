@@ -8,6 +8,7 @@ import {
   loadCredentialRecord,
 } from '#shared/handlers/credentials';
 import { can } from '#shared/permissions';
+import { revokeUserTokens } from '../../utils/credentials';
 import { credentialReferenceText } from '#shared/credentials';
 
 defineRouteMeta({
@@ -47,6 +48,8 @@ export default eventHandler(async (event) => {
       data: { usedBy },
     });
   }
+  // People's OAuth tokens are revoked at the host while the credential's application still opens.
+  if (record.perUser) await revokeUserTokens(db, record, null);
   await deleteCredential(db, id);
   return { ok: true };
 });

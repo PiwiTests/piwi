@@ -51,3 +51,11 @@ export function limitUserTokenTests(event: H3Event, userId: number, credentialId
     throw rateLimitedError(event, [key], 'Too many token tests: wait a few minutes before you test again.');
   }
 }
+
+/** Refuse an authorization started past the limit for this person and credential (429), as a test is. */
+export function limitUserAuthorizations(event: H3Event, userId: number, credentialId: number): void {
+  const key = `user-token-authorize:${userId}:${credentialId}`;
+  if (!checkRateLimit(key, USER_TOKEN_TEST_LIMIT, USER_TOKEN_TEST_WINDOW_MS)) {
+    throw rateLimitedError(event, [key], 'Too many authorizations started: wait a few minutes before you start again.');
+  }
+}
