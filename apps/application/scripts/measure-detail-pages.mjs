@@ -12,12 +12,14 @@
  * summed height, the word count, the active evidence tab, the grade of the Most
  * likely line, the Next step's action and how far below its button the content
  * it copies sits, and the text styles the situation block mixes. A control
- * counts when the reader can see it. It changes nothing on the page — it reads
+ * counts when the reader can see it and Tab reaches it: of a row of links with
+ * one keyboard stop (the History strip), the stop counts. It changes nothing on
+ * the page — it reads
  * the DOM after hydration and a bounded settle.
  *
  * The budgets (`scripts/lib/detail-page-budgets.mjs`) hold at 1280×800: at most
  * 15 text styles in the execution page's situation block and 13 in the cluster
- * page's, at most 27 controls in the navbar and the situation block on the
+ * page's, at most 28 controls in the navbar and the situation block on the
  * execution page and 25 on the cluster page's, at most
  * one solid primary button above the fold, and a Next step that copies a code
  * change shows that change in the block (distance 0). The script finds the Next
@@ -140,8 +142,11 @@ function measurePage({ viewportHeight, copyActions }) {
   // chooser beside an Open in IDE link) is not seen.
   const seen = (el) =>
     el.getBoundingClientRect().width > 0 && el.checkVisibility({ opacityProperty: true, visibilityProperty: true });
+  // A control Tab skips is one of a row with a single keyboard stop (the History
+  // strip's squares): the row counts once, by its stop.
+  const tabbable = (el) => el.getAttribute('tabindex') !== '-1';
   const controlSelector = 'button, a[href], [role="tab"], select, input, textarea, [role="button"], [role="combobox"]';
-  const controls = [...panel.querySelectorAll(controlSelector)].filter(seen);
+  const controls = [...panel.querySelectorAll(controlSelector)].filter((el) => seen(el) && tabbable(el));
   const inNavbar = (el) => !!body && !body.contains(el);
   // The controls the page opens on, wherever the fold falls: the navbar's and
   // the situation block's.

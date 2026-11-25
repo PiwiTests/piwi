@@ -463,11 +463,13 @@ test.describe('Test-run-case page', () => {
     await page.goto(`/test-run-cases/${failedCaseId}`);
     await waitForHydration(page);
 
-    // A line of the situation block: the strip is one link to the test's own page.
+    // A line of the situation block: each square opens its execution, this one's ringed; the test's own page
+    // opens from the navbar.
     const block = page.locator('[data-shot="situation-block"]');
     await expect(block.getByText('History', { exact: true })).toBeVisible();
-    const history = block.locator('[data-shot="execution-history"]');
-    await expect(history.getByRole('link', { name: /Open the test history/ })).toBeVisible();
+    const strip = block.locator('[data-shot="execution-history"]').getByRole('toolbar');
+    await expect(strip.locator('a[aria-current="true"]')).toHaveAttribute('href', `/test-run-cases/${failedCaseId}`);
+    await expect(page.getByRole('link', { name: 'Test history' })).toHaveAttribute('href', /\/test-cases\/\d+$/);
     expect(historyCalls).toEqual([]);
     expect(hydrationErrors).toEqual([]);
   });
@@ -646,6 +648,24 @@ test.describe('Situation block on seeded cases', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog.locator('iframe[title="DOM snapshot"]')).toBeVisible();
     await expect(dialog.getByText('No DOM snapshot or ARIA data available')).toHaveCount(0);
+  });
+
+  test('#37 History: each square opens its execution, the strip one keyboard stop', async ({ page }) => {
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+    const strip = page.locator('[data-shot="execution-history"]').getByRole('toolbar');
+    expect(await strip.getByRole('link').count()).toBeGreaterThan(2);
+    // Tab reaches this execution's square alone; the arrow keys move along the strip.
+    const stop = strip.locator('a[tabindex="0"]');
+    await expect(stop).toHaveCount(1);
+    await expect(stop).toHaveAttribute('aria-current', 'true');
+    await stop.focus();
+    await page.keyboard.press('ArrowLeft');
+    await expect(stop).toBeFocused();
+    await expect(stop).not.toHaveAttribute('aria-current', 'true');
+    const href = await stop.getAttribute('href');
+    await page.keyboard.press('Enter');
+    await expect(page).toHaveURL(new RegExp(`${href}$`));
   });
 
   test('#37 folds what passed before the failure under one Passed row, and remembers it open', async ({ page }) => {
