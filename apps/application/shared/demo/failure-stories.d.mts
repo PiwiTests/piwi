@@ -55,6 +55,7 @@ export interface PlacedStoryStep extends StoryStep {
 }
 
 export interface StoryConsoleEntry {
+  /** A console message's type, or `pageerror` for an exception the page threw and nothing caught. */
   type: string;
   text: string;
   location: string | null;
