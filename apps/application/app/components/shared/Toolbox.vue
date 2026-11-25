@@ -3,9 +3,12 @@
  * "More ways to fix": every other way to fix, verify or reproduce a failure, as
  * one line above the Evidence card. The line holds one button per section, its
  * one-line summary (which the page supplies) in the button's tooltip; a click
- * opens the section in a side panel, which closes on Escape or on a click
- * outside it, and does not hold the focus, so the evidence stays usable beside
- * it. Only the open section's body is rendered. The `FixSectionKey` union
+ * opens the section in a side panel beside the page, with no overlay. The panel
+ * stays open until its Close button or Escape, whatever is clicked or focused on
+ * the page, so the evidence stays usable beside it and what runs in it (a
+ * streaming diagnosis, a draft of context) goes on; the page closes it before it
+ * reveals evidence the panel would cover. Only the open section's body is
+ * rendered. The `FixSectionKey` union
  * (`app/utils/fix-sections.ts`) and the per-section slot contract are the same
  * the two pages fill; the line lists the sections it is given in one fixed order.
  *
@@ -56,15 +59,11 @@ const SECTION_ANCHORS: Record<FixSectionKey, Record<string, string>> = {
   'fix-plan': { 'data-tour': 'fix-section-fix-plan' },
 };
 
-const lineEl = ref<HTMLElement | null>(null);
 const leadEl = ref<HTMLElement | null>(null);
 const panelSectionEl = ref<HTMLElement | null>(null);
 
-function toggle(key: FixSectionKey) {
-  if (panelOpen.value && openKey.value === key) {
-    panelOpen.value = false;
-    return;
-  }
+/** Show a section in the side panel; a button never closes it, so a guide's opener can run twice. */
+function show(key: FixSectionKey) {
   openKey.value = key;
   panelOpen.value = true;
 }
@@ -74,12 +73,10 @@ function toggle(key: FixSectionKey) {
 // Important, to win over the theme's `inset-y-0`.
 const PANEL_CLASS = 'sm:max-w-3xl top-[var(--demo-banner-height,0px)]! bottom-[var(--desktop-runs-height,0px)]!';
 
-// A press on the line's buttons is theirs to answer: it switches or closes the
-// panel, so the panel's own outside-press closing does not run first.
+// A press or a focus outside the panel never closes it: focus going back to a
+// menu's trigger on the page, a click on the evidence beside it.
 function onInteractOutside(event: Event) {
-  const detail = (event as CustomEvent<{ originalEvent?: Event }>).detail;
-  const target = (detail?.originalEvent?.target ?? event.target) as Node | null;
-  if (target && lineEl.value?.contains(target)) event.preventDefault();
+  event.preventDefault();
 }
 
 /** Resolves once the side panel shows `key`'s section, or after a few frames without it. */
@@ -147,7 +144,7 @@ defineExpose({ openSection, scrollToSection, closePanel });
   <!-- Every other section, one button each, on one line -->
   <UCard v-if="active.length" :ui="{ header: 'p-2.5 sm:px-4 sm:py-3' }" data-shot="fix">
     <template #header>
-      <div ref="lineEl" class="flex flex-wrap items-center gap-x-3 gap-y-2" data-tour="more-ways-to-fix">
+      <div class="flex flex-wrap items-center gap-x-3 gap-y-2" data-tour="more-ways-to-fix">
         <div class="flex items-center gap-2 shrink-0">
           <UIcon name="i-lucide-wrench" class="size-5 shrink-0" :class="CARD_ICON_CLASS" data-card-icon />
           <h3 class="text-lg font-medium inline-flex items-center gap-1">
@@ -165,7 +162,7 @@ defineExpose({ openSection, scrollToSection, closePanel });
               :aria-expanded="panelOpen && openKey === s.key ? 'true' : 'false'"
               :class="panelOpen && openKey === s.key ? PRESSED_TOGGLE_CLASS : ''"
               v-bind="SECTION_ANCHORS[s.key]"
-              @click="toggle(s.key)"
+              @click="show(s.key)"
             />
             <template #content><slot :name="`${s.key}-summary`" /></template>
           </UTooltip>

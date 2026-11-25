@@ -8,6 +8,7 @@
  * history lives on the test page.
  */
 import type { TestCaseHistoryPoint } from '~~/types/api';
+import { HISTORY_STRIP_LENGTH } from '~/utils/history-streak';
 
 const props = withDefaults(
   defineProps<{
@@ -20,13 +21,15 @@ const props = withDefaults(
   { currentId: null, linked: true },
 );
 
-/** Oldest → newest, capped at 24, for the strip. */
-const strip = computed(() => props.history.slice(0, 24).slice().reverse());
+/** Oldest → newest, capped at `HISTORY_STRIP_LENGTH`, for the strip. */
+const strip = computed(() => props.history.slice(0, HISTORY_STRIP_LENGTH).slice().reverse());
 
 const SQUARE_CLASS = 'size-3.5 rounded-sm inline-block';
 
+/** A square's name: its run and outcome, and, linked, that it opens the execution. */
 function pointLabel(point: TestCaseHistoryPoint): string {
-  return `Execution in run #${point.runId}: ${formatExecutionStatus(point.status, point.passedAfterFailure)}`;
+  const outcome = formatExecutionStatus(point.status, point.passedAfterFailure);
+  return props.linked ? `Execution in run #${point.runId}: ${outcome}` : `Run #${point.runId}: ${outcome}`;
 }
 </script>
 

@@ -594,6 +594,7 @@ const clusterLocatorPanel = ref<{
 const toolbox = ref<{
   openSection: (k: FixSectionKey) => Promise<void>;
   scrollToSection: (k: FixSectionKey, anchor?: string) => Promise<void>;
+  closePanel: () => void;
 } | null>(null);
 
 // The Diagnosis section renders its panel only while open: open it (and scroll to
@@ -610,7 +611,9 @@ async function onDiagnosisPanel(act: (panel: DiagnosisPanelActions) => void, scr
     });
 }
 
+// A block of the page it scrolls to sits under More ways to fix's side panel: it closes first.
 function scrollToEl(el: HTMLElement | null) {
+  toolbox.value?.closePanel();
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 function openFixPlan() {
@@ -631,6 +634,7 @@ const pageSections: Record<string, () => void> = {
 provide(clusterSectionLocatorKey, {
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
   open: (id: string, index?: number) => {
+    toolbox.value?.closePanel();
     if (id in pageSections) pageSections[id]!();
     else evidenceTabs.value?.revealSection(id, index);
   },
@@ -651,7 +655,10 @@ const { handle: handleNextStepAction } = useNextStepActions({
   reproRecipe: () => fixPlan.value?.reproduce ?? null,
   diagnosisContextEndpoint: () => diagnosisContextEndpoint,
   scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
-  selectAttemptsTab: () => evidenceTabs.value?.selectTab('attempts'),
+  selectAttemptsTab: () => {
+    toolbox.value?.closePanel();
+    evidenceTabs.value?.selectTab('attempts');
+  },
   setClusterStatus,
   quarantine: async () => {
     if (selectedCase.value) {

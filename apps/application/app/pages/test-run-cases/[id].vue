@@ -801,7 +801,9 @@ function showPageDiff() {
   evidenceTabs.value?.revealSection('pageDiff');
 }
 
+// A block of the page it scrolls to sits under More ways to fix's side panel: it closes first.
 function scrollToEl(el: HTMLElement | null) {
+  toolbox.value?.closePanel();
   el?.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 // The raw error is a disclosure on the facts line; the locator fix lives in the
@@ -816,6 +818,7 @@ provide(clusterSectionLocatorKey, {
   // not only once the evidence card has mounted and registered its ref.
   canLocate: (id: string) => id in pageSections || id in EVIDENCE_SECTION_TAB,
   open: (id: string, index?: number) => {
+    toolbox.value?.closePanel();
     if (id in pageSections) pageSections[id]!();
     else evidenceTabs.value?.revealSection(id, index);
   },
@@ -836,6 +839,7 @@ const { handle: handleNextStepAction } = useNextStepActions({
   diagnosisContextEndpoint: () => `/api/test-run-cases/${testCaseId}/diagnosis-context`,
   scrollToSection: (k, anchor) => toolbox.value?.scrollToSection(k, anchor),
   selectAttemptsTab: () => {
+    toolbox.value?.closePanel();
     evidenceTabs.value?.selectTab('attempts');
     nextTick(() => scrollToEl(evidenceEl.value));
   },
@@ -1030,9 +1034,9 @@ const { handle: handleNextStepAction } = useNextStepActions({
           </template>
 
           <!-- Line 7: the test's recent executions, one link to its history, then its failing streak and last pass -->
-          <template v-if="historyData?.length && testCase?.testCaseId" #history>
+          <template v-if="testCase?.testCaseId" #history>
             <ExecutionHistoryLine
-              :history="historyData"
+              :history="historyData ?? []"
               :current-id="Number(testCaseId)"
               :test-case-id="testCase.testCaseId"
             />
