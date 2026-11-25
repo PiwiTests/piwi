@@ -325,6 +325,7 @@ describe('the inputs of a dispatch', () => {
       reason: null,
       credential: null,
       userToken: null,
+      code: null,
       targetDigest: null,
     });
   });

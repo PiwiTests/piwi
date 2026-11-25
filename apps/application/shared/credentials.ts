@@ -475,6 +475,13 @@ export type UserTokenStatus = UserTokenState | 'missing';
  */
 export type UserTokenRefusalCode = 'session-required' | 'sign-in-required' | 'user-token-required';
 
+/** A per-user credential as an offered CI action names it: with the viewer's own account on the service, once they gave a token. */
+export interface PerUserCredentialRef {
+  id: number;
+  name: string;
+  account: string | null;
+}
+
 /** A person's own token for a per-user credential, as its owner and the credential's managers see it. Never the secret. */
 export interface UserTokenView {
   userId: number;

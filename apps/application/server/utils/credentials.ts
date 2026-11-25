@@ -11,7 +11,7 @@
  * `tests/unit/credential-secret-access.test.ts` fails on any other code that
  * reads the secret column.
  */
-import { and, eq, gte, isNotNull, isNull, lt, sql } from 'drizzle-orm';
+import { and, eq, gte, isNotNull, isNull, lt, lte, sql } from 'drizzle-orm';
 import {
   appSettings,
   credentialProjects,
@@ -434,7 +434,7 @@ export async function withCredential<T>(
       : credentialRefusal(record, use);
   let code: UserTokenRefusalCode | null = null;
   let opened: OpenedCredential | null = null;
-  let userToken: { id: number; remoteUser: string } | null = null;
+  let userToken: { id: number; remoteUser: string; sealed: string } | null = null;
   if (!refusal && record && row) {
     if (record.perUser) {
       const actorRefusal = userTokenActorRefusal(name, use.actor);
@@ -442,7 +442,9 @@ export async function withCredential<T>(
         refusal = actorRefusal.message;
         code = actorRefusal.code;
       } else if (use.candidate) {
-        opened = use.candidate;
+        // A typed token is sent only to be tested, never with a request that acts.
+        if (testing) opened = use.candidate;
+        else refusal = `The credential "${name}" sends a typed token only to test it.`;
       } else {
         const [token] = await db
           .select({
@@ -466,8 +468,15 @@ export async function withCredential<T>(
             : null;
         if (unsealed && token) {
           opened = unsealed;
-          userToken = { id: token.id, remoteUser: token.remoteUser };
+          userToken = { id: token.id, remoteUser: token.remoteUser, sealed: token.secret };
         } else {
+          // A token that no longer opens (another secret key, another destination) is asked for again.
+          if (token && token.state === 'ready') {
+            await db
+              .update(credentialUserTokens)
+              .set({ state: 'invalid' })
+              .where(and(eq(credentialUserTokens.id, token.id), eq(credentialUserTokens.secret, token.secret)));
+          }
           refusal = userTokenMissingMessage(name, token ? 'invalid' : 'missing');
           code = 'user-token-required';
         }
@@ -550,9 +559,12 @@ export async function withCredential<T>(
   }
   const failed = failure?.(value) ?? null;
   await settle(failed ? 'failed' : 'ok', failed);
-  // A person's token the service refuses is not sent again until they give it anew.
+  // A person's token the service refuses is not sent again until they give it anew; one saved since stays as it is.
   if (userToken && options.unauthorized?.(value)) {
-    await db.update(credentialUserTokens).set({ state: 'invalid' }).where(eq(credentialUserTokens.id, userToken.id));
+    await db
+      .update(credentialUserTokens)
+      .set({ state: 'invalid' })
+      .where(and(eq(credentialUserTokens.id, userToken.id), eq(credentialUserTokens.secret, userToken.sealed)));
   }
   return value;
 }
@@ -569,17 +581,24 @@ export async function saveUserToken(
   token: { credentialId: number; userId: number; destination: string; remoteUser: string },
   opened: OpenedCredential,
 ): Promise<{ saved: true } | { saved: false; message: string }> {
+  const taken = {
+    saved: false as const,
+    message: `Another person already gave a token for the account "${token.remoteUser}": each person gives their own.`,
+  };
+  // The credential's destination changed while the token was tested: it was tested elsewhere, so it is not saved.
+  const [current] = await db
+    .select({ destination: credentials.destination, perUser: credentials.perUser })
+    .from(credentials)
+    .where(eq(credentials.id, token.credentialId));
+  if (!current?.perUser || current.destination !== token.destination) {
+    return { saved: false, message: 'The credential changed while your token was tested: give it again.' };
+  }
   const holders = await db
     .select({ userId: credentialUserTokens.userId, remoteUser: credentialUserTokens.remoteUser })
     .from(credentialUserTokens)
     .where(eq(credentialUserTokens.credentialId, token.credentialId));
   const account = token.remoteUser.toLowerCase();
-  if (holders.some((h) => h.userId !== token.userId && h.remoteUser.toLowerCase() === account)) {
-    return {
-      saved: false,
-      message: `Another person already gave a token for the account "${token.remoteUser}": each person gives their own.`,
-    };
-  }
+  if (holders.some((h) => h.userId !== token.userId && h.remoteUser.toLowerCase() === account)) return taken;
   const now = new Date();
   const fields = {
     remoteUser: token.remoteUser,
@@ -587,40 +606,53 @@ export async function saveUserToken(
     state: 'ready',
     testedAt: now,
   };
-  const update = () =>
-    db
-      .update(credentialUserTokens)
-      .set(fields)
-      .where(
-        and(eq(credentialUserTokens.credentialId, token.credentialId), eq(credentialUserTokens.userId, token.userId)),
-      );
-  if (holders.some((h) => h.userId === token.userId)) {
-    await update();
-    return { saved: true };
-  }
+  const own = and(
+    eq(credentialUserTokens.credentialId, token.credentialId),
+    eq(credentialUserTokens.userId, token.userId),
+  );
   try {
-    await db
-      .insert(credentialUserTokens)
-      .values({ ...fields, credentialId: token.credentialId, userId: token.userId, createdAt: now });
+    if (holders.some((h) => h.userId === token.userId)) {
+      await db.update(credentialUserTokens).set(fields).where(own);
+      return { saved: true };
+    }
+    try {
+      await db
+        .insert(credentialUserTokens)
+        .values({ ...fields, credentialId: token.credentialId, userId: token.userId, createdAt: now });
+    } catch (err) {
+      // Two saves of one person's token at once: the slower one replaces the row the other inserted.
+      if (!isUniqueViolation(err)) throw err;
+      await db.update(credentialUserTokens).set(fields).where(own);
+    }
   } catch (err) {
-    // Two saves of one person's token at once: the slower one replaces the row the other inserted.
-    if (!isUniqueViolation(err)) throw err;
-    await update();
+    // Another person saved the same account at the same moment: the account's unique index refuses the slower one.
+    if (isUniqueViolation(err)) return taken;
+    throw err;
   }
   return { saved: true };
 }
 
-/** Record a test of a person's saved token: when it ran and, when the service refused it, that it is `invalid`. */
+/**
+ * Record a test of a person's saved token: when it ran and, when the service
+ * refused it, that it is `invalid`. A token saved again since the test started
+ * (`startedAt`) is the person's new one, which the test did not send: it stays
+ * as it is.
+ */
 export async function recordUserTokenTest(
   db: DbClient,
   token: { credentialId: number; userId: number },
   state: 'ready' | 'invalid' | null,
+  startedAt: Date,
 ): Promise<void> {
   await db
     .update(credentialUserTokens)
     .set({ testedAt: new Date(), ...(state ? { state } : {}) })
     .where(
-      and(eq(credentialUserTokens.credentialId, token.credentialId), eq(credentialUserTokens.userId, token.userId)),
+      and(
+        eq(credentialUserTokens.credentialId, token.credentialId),
+        eq(credentialUserTokens.userId, token.userId),
+        lte(credentialUserTokens.testedAt, startedAt),
+      ),
     );
 }
 

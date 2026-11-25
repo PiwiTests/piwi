@@ -37,6 +37,7 @@ import {
   type CredentialUseEntry,
   type CredentialUseResult,
   type MyCredentialEntry,
+  type PerUserCredentialRef,
   type UserTokenRefusalCode,
   type UserTokenState,
   type UserTokenStatus,
@@ -522,6 +523,8 @@ export async function updateCredential(
 
 /** Delete a credential; its log rows stay, under the name they recorded. */
 export async function deleteCredential(db: DrizzleDB, id: number): Promise<void> {
+  // Deleted explicitly rather than through the foreign key's cascade, which the demo's database does not enforce.
+  await db.delete(credentialUserTokens).where(eq(credentialUserTokens.credentialId, id));
   await db.delete(credentials).where(eq(credentials.id, id));
 }
 
@@ -848,17 +851,17 @@ export async function userTokenCounts(db: DrizzleDB): Promise<Map<number, number
   return new Map(rows.map((row) => [row.credentialId, Number(row.count)]));
 }
 
-/** The state of one person's token for a credential, or null when they gave none. */
+/** The state of one person's token for a credential and the account it names, or null when they gave none. */
 export async function userTokenStateOf(
   db: DrizzleDB,
   credentialId: number,
   userId: number,
-): Promise<UserTokenState | null> {
+): Promise<{ state: UserTokenState; remoteUser: string } | null> {
   const [row] = await db
-    .select({ state: credentialUserTokens.state })
+    .select({ state: credentialUserTokens.state, remoteUser: credentialUserTokens.remoteUser })
     .from(credentialUserTokens)
     .where(and(eq(credentialUserTokens.credentialId, credentialId), eq(credentialUserTokens.userId, userId)));
-  return row ? userTokenState(row.state) : null;
+  return row ? { state: userTokenState(row.state), remoteUser: row.remoteUser } : null;
 }
 
 /**
@@ -989,17 +992,24 @@ export async function actionUserTokenReadiness(
   target: { credentialId?: number | null },
   actor: { userId: number | null; apiKeyId: number | null },
 ): Promise<{
-  perUser: { credential: { id: number; name: string }; userToken: UserTokenStatus | null };
+  perUser: { credential: PerUserCredentialRef; userToken: UserTokenStatus | null };
   code?: UserTokenRefusalCode;
   reason: string | null;
 } | null> {
   if (target.credentialId == null) return null;
   const record = await loadCredentialRecord(db, target.credentialId);
   if (!record?.perUser) return null;
-  const credential = { id: record.id, name: record.name };
   const refused = userTokenActorRefusal(record.name, actor);
-  if (refused) return { perUser: { credential, userToken: null }, code: refused.code, reason: refused.message };
-  const state = (await userTokenStateOf(db, record.id, actor.userId!)) ?? 'missing';
+  if (refused) {
+    return {
+      perUser: { credential: { id: record.id, name: record.name, account: null }, userToken: null },
+      code: refused.code,
+      reason: refused.message,
+    };
+  }
+  const token = await userTokenStateOf(db, record.id, actor.userId!);
+  const credential = { id: record.id, name: record.name, account: token?.remoteUser ?? null };
+  const state = token?.state ?? 'missing';
   if (state === 'ready') return { perUser: { credential, userToken: state }, reason: null };
   return {
     perUser: { credential, userToken: state },

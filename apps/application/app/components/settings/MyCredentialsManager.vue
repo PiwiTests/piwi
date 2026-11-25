@@ -13,7 +13,7 @@ type MineAnswer = ApiResponse<typeof import('~~/server/api/credentials/mine.get'
 type TestAnswer = ApiResponse<typeof import('~~/server/api/credentials/[id]/token/test.post').default>;
 
 const toast = useToast();
-const { data, refresh } = useFetch<MineAnswer>('/api/credentials/mine', { server: false });
+const { data, refresh, status } = useFetch<MineAnswer>('/api/credentials/mine', { server: false });
 const entries = computed(() => (data.value?.items ?? []) as MyCredentialEntry[]);
 /** The credential whose token form is open. */
 const giving = ref<number | null>(null);
@@ -66,7 +66,9 @@ async function remove(entry: MyCredentialEntry) {
       Credentials that run CI actions in your name, with your own token, so the CI server shows who started each build
       and applies your rights.
     </p>
-    <EmptyState v-if="entries.length === 0" icon="i-lucide-key-round" text="No credential asks for your token." />
+    <p v-if="status === 'error'" class="text-sm text-error">Your credentials could not be read: reload the page.</p>
+    <p v-else-if="status !== 'success'" class="text-sm text-muted">Reading your credentials…</p>
+    <EmptyState v-else-if="entries.length === 0" icon="i-lucide-key-round" text="No credential asks for your token." />
     <ul v-else class="divide-y divide-default rounded-md border border-default">
       <li
         v-for="entry in entries"
@@ -79,11 +81,12 @@ async function remove(entry: MyCredentialEntry) {
             <div class="flex items-center gap-2">
               <span class="truncate text-sm text-highlighted">{{ entry.name }}</span>
               <UBadge
-                :color="!entry.token ? 'neutral' : entry.token.state === 'ready' ? 'success' : 'error'"
+                v-if="entry.token?.state === 'invalid'"
+                color="error"
                 variant="soft"
                 size="xs"
                 class="shrink-0"
-                :label="!entry.token ? 'No token' : entry.token.state === 'ready' ? 'Ready' : 'Refused'"
+                label="Refused"
               />
             </div>
             <p class="truncate text-xs text-muted font-mono">{{ entry.destination }}</p>
@@ -107,7 +110,7 @@ async function remove(entry: MyCredentialEntry) {
           </div>
           <div class="flex shrink-0 items-center gap-1">
             <UButton
-              v-if="entry.usable"
+              v-if="entry.usable && !entry.disabled"
               size="xs"
               color="neutral"
               variant="outline"

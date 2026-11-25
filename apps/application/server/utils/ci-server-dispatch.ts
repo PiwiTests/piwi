@@ -47,7 +47,7 @@ import {
   type CiTemplateValues,
 } from '#shared/ci-server';
 import { loadCredentialRecord, type CredentialRecord } from '#shared/handlers/credentials';
-import { readWhoAmI, userTokenTestUrl, type UserTokenTestResult } from '#shared/credentials';
+import { jenkinsRoot, readWhoAmI, userTokenTestUrl, type UserTokenTestResult } from '#shared/credentials';
 import { MAX_CI_JOBS, withoutFreeText, type CiJobFieldListing, type CiJobListing } from '#shared/ci-job-fields';
 import type { DbClient } from '../database';
 
@@ -424,6 +424,9 @@ export async function testCiServerUserToken(
   candidate?: { user: string; secret: string },
 ): Promise<UserTokenTestResult> {
   const url = userTokenTestUrl(credential.destination);
+  // A token goes only where a dispatch would send it: over https, or to a place the operator listed.
+  const problem = ciServerBaseUrlProblem(jenkinsRoot(credential.destination));
+  if (problem) throw new CredentialRefusedError(problem);
   let answer: CiServerAnswer;
   try {
     answer = await withCredential(
@@ -451,7 +454,10 @@ export async function testCiServerUserToken(
           droppedInputs: [],
           maxAnswerBytes: MAX_ANSWER_BYTES,
         }),
-      (sent) => (sent.status >= 200 && sent.status < 300 ? null : `The CI server answered ${sent.status}`),
+      (sent) => {
+        if (sent.status < 200 || sent.status >= 300) return `The CI server answered ${sent.status}`;
+        return readWhoAmI(parseJson(sent.text)).ok ? null : 'The CI server named no signed-in user';
+      },
     );
   } catch (e) {
     if (e instanceof CredentialRefusedError) throw e;
@@ -459,13 +465,8 @@ export async function testCiServerUserToken(
   }
   if (answer.status === 401 || answer.status === 403) return { ok: false, reason: 'refused' };
   if (answer.status < 200 || answer.status >= 300) return { ok: false, reason: 'unreachable' };
-  let json: unknown = null;
-  try {
-    json = JSON.parse(answer.text);
-  } catch {
-    return { ok: false, reason: 'unreachable' };
-  }
-  return readWhoAmI(json);
+  const json = parseJson(answer.text);
+  return json === null ? { ok: false, reason: 'unreachable' } : readWhoAmI(json);
 }
 
 /**

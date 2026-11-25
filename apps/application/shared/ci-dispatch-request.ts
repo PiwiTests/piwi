@@ -36,7 +36,7 @@ import { parseRouteId } from '#shared/route-id';
 import { parseCiTags, type CiTagMatch } from '#shared/ci-tags';
 import { foldText } from '#shared/utils/fold-text';
 import { Sha256 } from '#shared/utils/sha256';
-import type { UserTokenStatus } from '#shared/credentials';
+import type { PerUserCredentialRef, UserTokenRefusalCode, UserTokenStatus } from '#shared/credentials';
 
 /** Where a dispatch's tests come from, as the server reads it. */
 export type CiDispatchSource =
@@ -422,10 +422,18 @@ export interface CiOfferedAction {
   available: boolean;
   /** Why it is not available. */
   reason: string | null;
-  /** The per-user credential it runs with, in the name of whoever starts it; null for a shared one. */
-  credential: { id: number; name: string } | null;
+  /**
+   * The per-user credential it runs with, in the name of whoever starts it, with the viewer's own account on the
+   * service once they gave a token; null for a shared one.
+   */
+  credential: PerUserCredentialRef | null;
   /** The viewer's token for that credential: `missing` when they gave none; null for a shared one. */
   userToken: UserTokenStatus | null;
+  /**
+   * Why the per-user credential refuses the viewer, when that alone keeps it from being sent: `user-token-required`
+   * (a page asks for their token), `session-required` (an API key) or `sign-in-required`; else null.
+   */
+  code: UserTokenRefusalCode | null;
   /** What a dispatch through a per-user credential sends back as `targetDigest`; null for a shared one. */
   targetDigest: string | null;
 }
@@ -456,7 +464,8 @@ export function offeredCiAction(
   ready: {
     available: boolean;
     reason: string | null;
-    perUser?: { credential: { id: number; name: string }; userToken: UserTokenStatus | null } | null;
+    perUser?: { credential: PerUserCredentialRef; userToken: UserTokenStatus | null } | null;
+    code?: UserTokenRefusalCode;
   },
 ): CiOfferedAction {
   const mode = ciBranchMode(action.target);
@@ -471,6 +480,7 @@ export function offeredCiAction(
     reason: ready.available ? null : ready.reason,
     credential: ready.perUser?.credential ?? null,
     userToken: ready.perUser?.userToken ?? null,
+    code: ready.code ?? null,
     targetDigest: ready.perUser ? ciActionTargetDigest(action) : null,
   };
 }

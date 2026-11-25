@@ -1345,6 +1345,13 @@
       "when": 1795599900585,
       "tag": "0191_per_user_credentials",
       "breakpoints": true
+    },
+    {
+      "idx": 192,
+      "version": "6",
+      "when": 1795602859433,
+      "tag": "0192_user_token_accounts",
+      "breakpoints": true
     }
   ]
 }

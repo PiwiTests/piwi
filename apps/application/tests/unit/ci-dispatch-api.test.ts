@@ -520,6 +520,7 @@ describe('what a place is offered', () => {
       reason: null,
       credential: null,
       userToken: null,
+      code: null,
       targetDigest: null,
     });
     expect(offered!.actions[2]!.environment).toBe('staging');
@@ -802,5 +803,102 @@ describe('the routes', () => {
       status: 404,
       body: { message: 'CI dispatch not found' },
     });
+  });
+});
+
+describe('an action on a per-user credential', () => {
+  const project = { id: '1' };
+  const query = {};
+  const body = (over: Record<string, unknown> = {}) => ({ source: {}, action: 'mine', ...over });
+
+  beforeEach(async () => {
+    process.env.PIWI_SECRET_KEY = '0123456789abcdef'.repeat(4);
+    const { insertCredential } = await import('#shared/handlers/credentials');
+    const credentialId = await insertCredential(
+      db as never,
+      {
+        name: 'Jenkins in your name',
+        description: null,
+        service: 'ci-server',
+        user: null,
+        destination: 'https://jenkins.example.com/',
+        scope: { allProjects: false, projectIds: [1] },
+        allowedInputs: null,
+        customRequests: false,
+        disabled: false,
+        perUser: true,
+        tokenHelpUrl: null,
+      },
+      null,
+      1,
+    );
+    const mine = {
+      id: 'mine',
+      name: 'Nightly in your name',
+      target: { type: 'ci-server', preset: 'jenkins', credentialId, fields: { job: 'nightly' } },
+      inputs: [],
+      accepts: ['suite'],
+    };
+    await db
+      .update(schema.projects)
+      .set({ ciRerun: { enabled: true, actions: [...actions, mine], defaults: { rerun: 'gh', suite: 'gh' } } })
+      .where(eq(schema.projects.id, 1));
+    return () => {
+      delete process.env.PIWI_SECRET_KEY;
+    };
+  });
+
+  const offeredMine = async (context: Record<string, unknown> = {}) => {
+    const answer = await call(offeredRoute, { context, params: project, query });
+    return (answer.body as { actions: Array<Record<string, unknown>> }).actions.find((a) => a.id === 'mine')!;
+  };
+  const dispatches = () => db.select().from(schema.ciDispatches);
+
+  test('asks a person without a token for it, and stores nothing when they send anyway', async () => {
+    expect(await offeredMine()).toMatchObject({
+      available: false,
+      code: 'user-token-required',
+      userToken: 'missing',
+      credential: { name: 'Jenkins in your name', account: null },
+    });
+    const sent = await call(postDispatch, { context: {}, params: project, body: body() });
+    expect(sent).toMatchObject({ status: 400, body: { data: { code: 'user-token-required' } } });
+    expect(await dispatches()).toEqual([]);
+  });
+
+  test('refuses an API key with its own code, and stores nothing', async () => {
+    state.caller = asRole(ProjectRole.MAINTAINER, true);
+    expect(await offeredMine({ apiKeyId: 5 })).toMatchObject({ available: false, code: 'session-required' });
+    const sent = await call(postDispatch, { context: { apiKeyId: 5 }, params: project, body: body() });
+    expect(sent).toMatchObject({ status: 400, body: { data: { code: 'session-required' } } });
+    expect(await dispatches()).toEqual([]);
+  });
+
+  test('goes only to the action the page showed: a changed or missing digest is refused, stored nowhere', async () => {
+    const { saveUserToken } = await import('../../server/utils/credentials');
+    const offered = await offeredMine();
+    await saveUserToken(
+      db as never,
+      {
+        credentialId: (offered.credential as { id: number }).id,
+        userId: 2,
+        destination: 'https://jenkins.example.com/',
+        remoteUser: 'sam.qa',
+      },
+      { user: 'sam.qa', secret: '11' + 'a'.repeat(32) },
+    );
+    const ready = await offeredMine();
+    expect(ready).toMatchObject({
+      available: true,
+      code: null,
+      userToken: 'ready',
+      credential: { account: 'sam.qa' },
+    });
+    expect(ready.targetDigest).toMatch(/^[0-9a-f]{64}$/);
+    for (const targetDigest of [undefined, 'f'.repeat(64)]) {
+      const sent = await call(postDispatch, { context: {}, params: project, body: body({ targetDigest }) });
+      expect(sent).toMatchObject({ status: 400, body: { data: { code: 'action-changed' } } });
+    }
+    expect(await dispatches()).toEqual([]);
   });
 });

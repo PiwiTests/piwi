@@ -19,6 +19,7 @@ export default eventHandler(async (event) => {
   const { db, viewer, record, entry } = await requireUserTokenRoute(event);
   if (!entry.token) throw apiError({ statusCode: 404, message: 'You gave no token for this credential.' });
   limitUserTokenTests(event, viewer.userId, record.id);
+  const startedAt = new Date();
   let result;
   try {
     result = await testCiServerUserToken(db, record, { userId: viewer.userId, apiKeyId: null });
@@ -28,7 +29,7 @@ export default eventHandler(async (event) => {
   }
   // A server that cannot be reached says nothing of the token.
   const state = result.ok ? 'ready' : result.reason === 'unreachable' ? null : 'invalid';
-  await recordUserTokenTest(db, { credentialId: record.id, userId: viewer.userId }, state);
+  await recordUserTokenTest(db, { credentialId: record.id, userId: viewer.userId }, state, startedAt);
   return {
     ok: result.ok,
     reason: result.ok ? null : result.reason,

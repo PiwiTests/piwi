@@ -23,8 +23,21 @@ const SECRET_READS: Array<{ what: string; pattern: RegExp }> = [
   { what: 'reads the secret column', pattern: /\bcredentials\s*\.\s*secret\b/ },
   { what: 'reads a person’s token', pattern: /\bcredentialUserTokens\s*\.\s*secret\b/ },
   {
+    what: 'reads a person’s token by its name',
+    pattern: /\bcredentialUserTokens\s*\[\s*['"`]secret['"`]\s*\]/,
+  },
+  {
     what: 'selects whole user token rows',
     pattern: /\.select\(\s*\)\s*\.from\(\s*(?:[\w$]+\.)?credentialUserTokens\s*\)/,
+  },
+  {
+    what: 'selects every column of the user tokens',
+    pattern: /getTableColumns\(\s*(?:[\w$]+\.)?credentialUserTokens\s*\)/,
+  },
+  { what: 'queries user token rows', pattern: /\.query\s*\.\s*credentialUserTokens\b/ },
+  {
+    what: 'reads user token rows in SQL',
+    pattern: /\bselect\s+(?:\*|[\w."`]+(?:\s*,\s*[\w."`]+)*)\s+from\s+["`]?credential_user_tokens["`]?(?!\w)/i,
   },
   { what: 'reads the secret column by its name', pattern: /\bcredentials\s*\[\s*['"`]secret['"`]\s*\]/ },
   {
@@ -93,6 +106,11 @@ describe('the credential secret', () => {
       'sql`select id, secret from credentials`',
       'db.select({ secret: credentialUserTokens.secret }).from(credentialUserTokens)',
       'await db.select().from(schema.credentialUserTokens)',
+      'row = credentialUserTokens["secret"]',
+      'db.select(getTableColumns(credentialUserTokens)).from(credentialUserTokens)',
+      'await db.query.credentialUserTokens.findFirst()',
+      'sql`select secret from credential_user_tokens`',
+      'sql`SELECT * FROM "credential_user_tokens"`',
     ];
     for (const text of reads) expect(secretReads(text), text).not.toEqual([]);
     const allowed = [
@@ -100,6 +118,7 @@ describe('the credential secret', () => {
       'db.select().from(credentialUses)',
       'db.select().from(credentialProjects)',
       'db.select({ state: credentialUserTokens.state }).from(credentialUserTokens)',
+      'select id, state from credential_user_tokens_backup',
       'await db.update(credentials).set({ secret: sealed })',
       'select id from credential_uses',
       'Only the credential manager reads a secret from credentials it stores.',

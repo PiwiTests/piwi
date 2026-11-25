@@ -257,9 +257,10 @@ const instanceAddress = computed(() => {
         <template v-else-if="place.ciPick">
           <div v-if="place.ciPick.credential" class="space-y-2" data-testid="run-dialog-in-your-name">
             <p class="text-sm text-highlighted">
-              {{ place.ciPick.target.label }} runs in your name, with your own token for “{{
-                place.ciPick.credential.name
-              }}”: the CI server shows you as who started it.
+              {{ place.ciPick.target.label }} runs in your name<template v-if="place.ciPick.credential.account"
+                >, as <span class="font-mono">{{ place.ciPick.credential.account }}</span></template
+              >, with your own token for “{{ place.ciPick.credential.name }}”: the CI server shows you as who started
+              it.
             </p>
             <template v-if="place.ciTokenAsked">
               <p class="text-sm text-muted">
@@ -269,7 +270,11 @@ const instanceAddress = computed(() => {
                     : 'Give your token first.'
                 }}
               </p>
-              <UserTokenForm :credential-id="place.ciTokenAsked.credential.id" @saved="place.refreshCiOffer()" />
+              <UserTokenForm
+                :key="place.ciTokenAsked.credential.id"
+                :credential-id="place.ciTokenAsked.credential.id"
+                @saved="place.refreshCiOffer()"
+              />
             </template>
           </div>
           <div class="space-y-1" data-testid="run-dialog-branch">

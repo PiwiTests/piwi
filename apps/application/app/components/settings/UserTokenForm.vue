@@ -23,15 +23,22 @@ const { authState } = useAuth();
 const loaded = ref<MyCredentialEntry | null>(null);
 const credential = computed(() => props.entry ?? loaded.value);
 
+const loadError = ref(false);
 watch(
   () => [props.credentialId, props.entry] as const,
   async () => {
+    // Another credential's destination is never shown while this one's is read.
+    loaded.value = null;
+    loadError.value = false;
     if (props.entry) return;
+    const id = props.credentialId;
     try {
       const mine = await $fetch<MineAnswer>('/api/credentials/mine');
-      loaded.value = mine.items.find((item) => item.id === props.credentialId) ?? null;
+      if (id !== props.credentialId) return;
+      loaded.value = mine.items.find((item) => item.id === id) ?? null;
+      loadError.value = loaded.value === null;
     } catch {
-      loaded.value = null;
+      if (id === props.credentialId) loadError.value = true;
     }
   },
   { immediate: true },
@@ -44,6 +51,8 @@ const error = ref<string | null>(null);
 
 async function save() {
   error.value = null;
+  // A token is given only once the form says where it goes.
+  if (!credential.value) return;
   if (!user.value.trim() || !secret.value.trim()) {
     error.value = 'Give your user name and an API token.';
     return;
@@ -65,13 +74,18 @@ async function save() {
 </script>
 
 <template>
-  <form class="space-y-3" data-testid="user-token-form" @submit.prevent="save">
-    <p v-if="credential" class="text-sm text-muted">
+  <form method="post" class="space-y-3" data-testid="user-token-form" @submit.prevent="save">
+    <p v-if="loadError" class="text-sm text-error">This credential could not be read: reload the page.</p>
+    <p v-else-if="credential" class="text-sm text-muted">
       Your token is sent only to <code class="font-mono break-all">{{ credential.destination }}</code
       ><template v-if="credential.createdByName">, set up by {{ credential.createdByName }}</template
       >. It is tested before it is saved, then encrypted and never shown again.
       <template v-if="credential.tokenHelpUrl">
-        <a :href="credential.tokenHelpUrl" target="_blank" rel="noopener" class="text-primary hover:underline"
+        <a
+          :href="credential.tokenHelpUrl"
+          target="_blank"
+          rel="noopener"
+          class="underline decoration-dotted underline-offset-2 hover:decoration-solid"
           >Create an API token</a
         >.
       </template>
@@ -105,6 +119,7 @@ async function save() {
       icon="i-lucide-plug-zap"
       label="Test and save"
       :loading="saving"
+      :disabled="!credential"
       data-testid="user-token-save"
     />
   </form>

@@ -3362,6 +3362,11 @@ export const credentialUserTokens = sqliteTable(
   (t) => ({
     credentialUserIdx: uniqueIndex('idx_credential_user_tokens_credential_user').on(t.credentialId, t.userId),
     userIdx: index('idx_credential_user_tokens_user').on(t.userId),
+    // One account on the service serves one person per credential, ignoring case.
+    remoteUserIdx: uniqueIndex('idx_credential_user_tokens_remote_user').on(
+      t.credentialId,
+      sql`lower(${t.remoteUser})`,
+    ),
   }),
 );
 

@@ -54,7 +54,12 @@ const credentialItems = computed(() => [
   ...credentials.value.map((c) => ({
     label: c.disabled ? `${c.name} (disabled)` : c.name,
     value: c.id,
-    description: c.user ? `${c.user} · ${c.destination}` : c.destination,
+    // A per-user credential runs the action in the name of whoever starts it, with their own token.
+    description: c.perUser
+      ? `In the name of whoever starts it · ${c.destination}`
+      : c.user
+        ? `${c.user} · ${c.destination}`
+        : c.destination,
   })),
 ]);
 const credentialValue = computed({

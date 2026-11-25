@@ -280,6 +280,7 @@ async function remove() {
 
           <CredentialUserTokens
             v-if="selected.perUser && selected.canManage"
+            :key="`${selected.id}-${selected.destination}-${selected.userTokens}`"
             :credential-id="selected.id"
             @changed="refresh"
           />

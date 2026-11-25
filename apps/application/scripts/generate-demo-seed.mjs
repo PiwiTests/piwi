@@ -4132,8 +4132,8 @@ const CREDENTIALS = [
 /** The people who gave their own Jenkins token for the per-user credential; the demo keeps no secret. */
 const CREDENTIAL_USER_TOKENS = [
   { userId: DEFAULT_DEMO_USER.id, remoteUser: DEFAULT_DEMO_USER.username, state: 'ready', at: '2025-04-22T09:05:00' },
-  { userId: 4, remoteUser: 'priya', state: 'ready', at: '2025-04-23T10:20:00', usedAt: '2025-04-24T18:10:00' },
-  { userId: 7, remoteUser: 'jordan', state: 'invalid', at: '2025-04-23T14:00:00' },
+  { userId: 6, remoteUser: 'quinn', state: 'ready', at: '2025-04-23T10:20:00', usedAt: '2025-04-24T18:10:00' },
+  { userId: 7, remoteUser: 'jordan', state: 'invalid', at: '2025-04-23T14:00:00', usedAt: '2025-04-24T18:30:00' },
 ].map((t, i) => ({
   id: i + 1,
   credential_id: PER_USER_CREDENTIAL_ID,
@@ -4288,12 +4288,12 @@ const CREDENTIAL_USES = [
     result: 'ok',
     reason: null,
   }),
-  // The per-user credential: Priya's own build, then Jordan's start refused until he gives his token again.
+  // The per-user credential: Quinn's own build, then Jordan's, which Jenkins refused (401): his token is marked refused.
   credentialUse(12, '2025-04-24T18:10:00', {
     credential_id: PER_USER_CREDENTIAL_ID,
     credential_name: 'Jenkins · in your name',
-    user_id: 4,
-    remote_user: 'priya',
+    user_id: 6,
+    remote_user: 'quinn',
     feature: 'ci-dispatch',
     subject_id: 'nightly-in-your-name',
     destination: 'https://jenkins.example.com/job/api/job/nightly/buildWithParameters',
@@ -4304,11 +4304,12 @@ const CREDENTIAL_USES = [
     credential_id: PER_USER_CREDENTIAL_ID,
     credential_name: 'Jenkins · in your name',
     user_id: 7,
+    remote_user: 'jordan',
     feature: 'ci-dispatch',
     subject_id: 'nightly-in-your-name',
     destination: 'https://jenkins.example.com/job/api/job/nightly/buildWithParameters',
-    result: 'refused',
-    reason: 'Your token for "Jenkins · in your name" was refused: give it again in your account\'s Credentials.',
+    result: 'failed',
+    reason: 'The CI server answered 401',
   }),
 ];
 const RUN_TARGETS = [

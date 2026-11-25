@@ -4125,7 +4125,7 @@ const SCENES = [
     viewport: { width: 1280, height: 900 },
     async run({ page, shoot, settle }) {
       await page.getByTestId('credential-row-7').click({ timeout: 90000 });
-      await page.getByTestId('credential-user-tokens').getByText('priya', { exact: true }).waitFor({ timeout: 30000 });
+      await page.getByTestId('credential-user-tokens').getByText('quinn', { exact: true }).waitFor({ timeout: 30000 });
       await page.getByTestId('credential-use').first().waitFor({ timeout: 30000 });
       await settle();
       await shoot();

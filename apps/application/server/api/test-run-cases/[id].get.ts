@@ -10,6 +10,7 @@ import {
 import { resolveWastedSettings } from '../../utils/wasted-settings';
 import { codeownersOwnerResolver } from '../../utils/scm/ownership';
 import { resolveAiConfig } from '../../utils/ai-provider';
+import { requestCredentialActor } from '../../utils/credentials';
 import { ciDispatchAvailability } from '../../utils/ci-rerun';
 
 defineRouteMeta({
@@ -40,6 +41,8 @@ export default eventHandler(async (event) => {
   // CI target are configured — signals only the server can resolve. A CI run is
   // offered only to a viewer who may start one.
   const mayDispatch = await holdsProjectPermission(event, projectId, ['run:control']);
+  // An API key never starts an action on a per-user credential: it is offered as unavailable to one.
+  const actor = requestCredentialActor(event, user);
   const [row] = await db
     .select({ testRunId: testRunsCases.testRunId, testCaseId: testRunsCases.testCaseId })
     .from(testRunsCases)
@@ -47,9 +50,13 @@ export default eventHandler(async (event) => {
   const [aiConfig, ciRerun, flakeLabCi] = await Promise.all([
     resolveAiConfig(db).catch(() => null),
     row && mayDispatch
-      ? ciDispatchAvailability(db, projectId, { from: 'execution', executionId: id, scope: 'test' }, user.id).catch(
-          () => null,
-        )
+      ? ciDispatchAvailability(
+          db,
+          projectId,
+          { from: 'execution', executionId: id, scope: 'test' },
+          user.id,
+          actor,
+        ).catch(() => null)
       : Promise.resolve(null),
     row?.testCaseId != null && mayDispatch
       ? ciDispatchAvailability(
@@ -57,6 +64,7 @@ export default eventHandler(async (event) => {
           projectId,
           { from: 'flake-lab', testCaseId: row.testCaseId, flakeLab: 'reproduce' },
           user.id,
+          actor,
         ).catch(() => null)
       : Promise.resolve(null),
   ]);

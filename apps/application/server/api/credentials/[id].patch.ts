@@ -3,6 +3,7 @@ import { getRequestAccess, requireAuth } from '../../utils/auth';
 import { requireRouteId } from '../../utils/project-access';
 import { sealCredentialEnv, sealCredentialSecret, withSecretEnvState } from '../../utils/credentials';
 import { isUniqueViolation } from '../../utils/db-errors';
+import { ciServerBaseUrlProblem } from '../../utils/ci-server-dispatch';
 import {
   canManageCredential,
   credentialNameTaken,
@@ -15,7 +16,7 @@ import {
   updateCredential,
   userTokenCounts,
 } from '#shared/handlers/credentials';
-import { credentialServiceProblem, parseCredentialInput } from '#shared/credentials';
+import { credentialServiceProblem, jenkinsRoot, parseCredentialInput } from '#shared/credentials';
 import { configuredGitlabHosts } from '../../utils/scm/gitlab-hosts';
 import { normalizeScmDestination } from '#shared/scm-urls';
 import { can } from '#shared/permissions';
@@ -89,6 +90,10 @@ export default eventHandler(async (event) => {
     });
   }
   const moved = patch.destination !== undefined && patch.destination !== record.destination;
+  if (moved && record.perUser) {
+    const unsafe = ciServerBaseUrlProblem(jenkinsRoot(patch.destination!));
+    if (unsafe) throw apiError({ statusCode: 400, message: unsafe });
+  }
   if (moved && !record.perUser && !secret && !patch.secretEnv) {
     throw apiError({
       statusCode: 400,

@@ -93,7 +93,7 @@ function providerOf(action: CiOfferedAction): string {
 }
 
 /** Whether an offered action waits only for the person's own token for its per-user credential. */
-const asksToken = (action: CiOfferedAction) => action.userToken === 'missing' || action.userToken === 'invalid';
+const asksToken = (action: CiOfferedAction) => action.code === 'user-token-required';
 
 /** What a sent run was, so **Run again** sends it the same way. */
 type SentRun =
@@ -239,12 +239,14 @@ export async function useRunPlace(options: RunPlaceOptions) {
     return Boolean(w.ci && offer?.enabled && offer.actions.some((a) => a.available || asksToken(a)));
   };
 
-  /** Read the picked What's offer again: once the person gave their token, its actions can be sent. */
+  /**
+   * Read every What's offer again: once the person gave their token, or after a dispatch a per-user credential refused
+   * (a token removed or refused since, an action changed since), its actions and their digests are what the server says.
+   */
   async function refreshCiOffer() {
-    const w = what.value;
-    if (!w) return;
-    delete offeredFor[w.key];
-    await readOffered([w]);
+    const list = [...new Map([...options.whats(), ...whats.value].map((w) => [w.key, w])).values()];
+    for (const w of list) delete offeredFor[w.key];
+    await readOffered(list);
   }
 
   // The first What says what the button shows; with CI actions on, the others are read when it cannot go to CI, else
@@ -607,7 +609,14 @@ export async function useRunPlace(options: RunPlaceOptions) {
         followUp.follow({ kind: 'dispatch', view: earlier });
         options.onDispatched?.(earlier);
         lastSent = sent;
-      } else sendError.value = errorMessage(error);
+      } else {
+        sendError.value = errorMessage(error);
+        // A per-user credential refused it: the offers say again what the person must do (give a token, look again).
+        if ((error as { data?: { data?: { code?: string } } } | null)?.data?.data?.code) {
+          followUp.reset();
+          await refreshCiOffer();
+        }
+      }
     } finally {
       sending.value = false;
     }

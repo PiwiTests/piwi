@@ -1,5 +1,6 @@
 import { CredentialRefusedError, saveUserToken } from '../../../../utils/credentials';
 import { testCiServerUserToken } from '../../../../utils/ci-server-dispatch';
+import { getEncryptionKey } from '../../../../utils/crypto';
 import { limitUserTokenTests, requireUserTokenRoute } from '../../../../utils/user-tokens';
 import { myCredential } from '#shared/handlers/credentials';
 import { USER_TOKEN_TEST_REASONS, userTokenInputProblem } from '#shared/credentials';
@@ -38,6 +39,8 @@ export default eventHandler(async (event) => {
   const secret = typeof body?.secret === 'string' ? body.secret.trim() : '';
   const problem = userTokenInputProblem(user, secret);
   if (problem) throw apiError({ statusCode: 400, message: problem });
+  // The token is saved encrypted: without the key, nothing is sent to the CI server.
+  getEncryptionKey();
   limitUserTokenTests(event, viewer.userId, record.id);
 
   let result;

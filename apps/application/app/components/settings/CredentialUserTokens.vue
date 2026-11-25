@@ -15,6 +15,8 @@ const emit = defineEmits<{ changed: [] }>();
 
 const toast = useToast();
 const tokens = ref<UserTokenView[]>([]);
+/** Whether **Remove all** waits for its confirmation. */
+const confirmingAll = ref(false);
 
 async function load() {
   try {
@@ -26,6 +28,7 @@ async function load() {
 watch(() => props.credentialId, load, { immediate: true });
 
 async function remove(userId: number | null) {
+  confirmingAll.value = false;
   try {
     await $fetch(`/api/credentials/${props.credentialId}/tokens${userId == null ? '' : `/${userId}`}`, {
       method: 'DELETE',
@@ -54,7 +57,7 @@ async function remove(userId: number | null) {
         variant="ghost"
         label="Remove all"
         data-testid="credential-user-tokens-remove-all"
-        @click="remove(null)"
+        @click="confirmingAll = true"
       />
     </div>
     <p v-if="tokens.length === 0" class="text-sm text-muted">
@@ -72,11 +75,12 @@ async function remove(userId: number | null) {
           <div class="flex items-center gap-2">
             <span class="truncate text-sm text-highlighted">{{ token.userName }}</span>
             <UBadge
-              :color="token.state === 'ready' ? 'success' : 'error'"
+              v-if="token.state === 'invalid'"
+              color="error"
               variant="soft"
               size="xs"
               class="shrink-0"
-              :label="token.state === 'ready' ? 'Ready' : 'Refused'"
+              label="Refused"
             />
           </div>
           <p class="truncate text-xs text-muted">
@@ -101,5 +105,17 @@ async function remove(userId: number | null) {
         </UTooltip>
       </li>
     </ul>
+    <UModal
+      v-model:open="confirmingAll"
+      title="Remove every token?"
+      :description="`The ${tokens.length} people who gave their token give it again before an action on this credential runs in their name. Their tokens stay valid on the CI server.`"
+    >
+      <template #footer>
+        <div class="flex w-full justify-end gap-2">
+          <UButton color="neutral" variant="outline" label="Cancel" @click="confirmingAll = false" />
+          <UButton color="error" label="Remove every token" icon="i-lucide-trash-2" @click="remove(null)" />
+        </div>
+      </template>
+    </UModal>
   </div>
 </template>

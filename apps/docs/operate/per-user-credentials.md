@@ -13,15 +13,16 @@ own Jenkins user name and API token for it, and a build started from Piwi shows 
 Alice's rights.
 
 <figure>
-  <img src="/screenshots/credentials-per-user.png" alt="A per-user Jenkins credential's panel: it acts as whoever starts an action, each person's own token, the three people who gave theirs with their Jenkins account and its state, one refused by Jenkins, and its log with Priya's dispatch and Jordan's refused one">
+  <img src="/screenshots/credentials-per-user.png" alt="A per-user Jenkins credential's panel: it acts as whoever starts an action, each person's own token, the three people who gave theirs with their Jenkins account and its state, one refused by Jenkins, and its log with Quinn's dispatch and Jordan's, which Jenkins refused">
   <figcaption>A per-user credential's panel: who gave their token, as which Jenkins account, and its log.</figcaption>
 </figure>
 
 ## Set one up
 
 In **Settings → Credentials**, **New credential**, service **CI server**, then **Who it acts as** → **Per user**. Only
-an administrator (the `credentials:manage` permission) creates or changes one, and only while sign-in is on: it
-collects other people's tokens, so its destination is one an administrator chose. Its fields are a shared credential's
+an administrator (the `credentials:manage` permission) creates or changes one, and creates it only while sign-in is
+on: it collects other people's tokens, so its destination is one an administrator chose. The destination is https, or
+a host `PIWI_CI_SERVER_HOSTS` lists, since a token is never sent in the clear. Its fields are a shared credential's
 without the user and the secret, plus an optional link to the page where a person creates their token (Jenkins: their
 user's **Security** page).
 
@@ -39,8 +40,8 @@ by reading Jenkins' `whoAmI` at the root of the destination, and keeps the accou
   also takes, is refused and never stored.
 - **One account per person**: a token for a Jenkins account another person already gave is refused, so a shared
   service account cannot be saved as someone's own.
-- **10 tests per person and credential in 10 minutes**, and a failed test says only refused or unreachable, never
-  Jenkins' own answer.
+- **10 tests per person and credential in 10 minutes**, and a failed test says only that Jenkins refused the token,
+  did not recognize it as a signed-in user, or could not be reached, never Jenkins' own answer.
 
 **Test** sends the saved token again; **Remove** takes it out of Piwi. A removed token stays valid on Jenkins: revoke
 it there too.
@@ -51,18 +52,19 @@ it there too.
   request is refused before anything is sent.
 - **Only your own token.** A person without one is asked for it before the dispatch is sent or stored; a token is
   never sent for anyone else.
-- **Only the action you saw.** The run dialog shows the job and the fixed inputs the action sends in your name, and a
-  dispatch refuses an action changed since the dialog showed it.
+- **Only the action you saw.** The run dialog shows the job, the fixed inputs and your Jenkins account, and a dispatch
+  refuses an action changed since the dialog showed it.
 - **A token Jenkins refuses** (401) is marked refused and no longer sent, until you give it again or a test passes.
 
-The action editor's **Check** and job listings read with the editor's own token.
+The action editor's credential picker says which credential runs in the starter's name; its **Check** and job
+listings read with the editor's own token.
 
 ## What an administrator sees
 
 The credential's panel lists who gave a token, with their Jenkins account, its state and its last use, never the
 token, and removes one or all. **Disable** stops every token at once. A new destination removes every token, each
-sealed with the one it leaves. The log names each use's person and their Jenkins account, and counts each person's
-reads in rows of their own.
+sealed with the one it leaves. The log names each use's person, and their Jenkins account for a use of their saved
+token, and counts each person's reads in rows of their own.
 
 ## Related
 

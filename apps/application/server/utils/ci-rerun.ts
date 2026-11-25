@@ -148,9 +148,12 @@ async function readiness(
   if (ready.available && place.kind === 'tests' && !place.args) return { available: false, reason: NO_RETRY_ARGS };
   const perUser = await actionUserTokenReadiness(db, action.target, actor);
   if (!perUser) return ready;
+  const refusal = { available: false, reason: perUser.reason, code: perUser.code, perUser: perUser.perUser };
+  // An API key, or an instance without sign-in, never starts it, whatever else the action needs.
+  if (perUser.code === 'session-required' || perUser.code === 'sign-in-required') return refusal;
   // A person without a token is asked for it before the dispatch is stored, never refused after.
   if (!ready.available || !perUser.code) return { ...ready, perUser: perUser.perUser };
-  return { available: false, reason: perUser.reason, code: perUser.code, perUser: perUser.perUser };
+  return refusal;
 }
 
 /** A second dispatch of the same action, arguments, branch and inputs within the guard: the earlier one. */

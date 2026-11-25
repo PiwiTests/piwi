@@ -47,7 +47,7 @@ import {
 } from '#shared/handlers/ci-rerun-target';
 import { claimCiDispatch, getCiDispatch, settleCiDispatch } from '#shared/handlers/ci-dispatches';
 import { actionUserTokenReadiness } from '#shared/handlers/credentials';
-import type { UserTokenRefusalCode, UserTokenStatus } from '#shared/credentials';
+import type { PerUserCredentialRef, UserTokenRefusalCode, UserTokenStatus } from '#shared/credentials';
 import {
   ciActionTargetDigest,
   ciBranchOptions,
@@ -148,7 +148,7 @@ async function readiness(
   available: boolean;
   reason: string | null;
   code?: UserTokenRefusalCode;
-  perUser?: { credential: { id: number; name: string }; userToken: UserTokenStatus | null } | null;
+  perUser?: { credential: PerUserCredentialRef; userToken: UserTokenStatus | null } | null;
 }> {
   if (!settings.enabled) return { available: false, reason: OFF_REASON };
   const action = pick.action;
@@ -177,8 +177,10 @@ async function readiness(
   // As the server: a person without a token is asked for it before the dispatch is recorded.
   const perUser = await actionUserTokenReadiness(db as never, target, { userId, apiKeyId: null });
   if (!perUser) return { available: !reason, reason };
+  const refusal = { available: false, reason: perUser.reason, code: perUser.code, perUser: perUser.perUser };
+  if (perUser.code === 'session-required' || perUser.code === 'sign-in-required') return refusal;
   if (reason || !perUser.code) return { available: !reason, reason, perUser: perUser.perUser };
-  return { available: false, reason: perUser.reason, code: perUser.code, perUser: perUser.perUser };
+  return refusal;
 }
 
 /** A place in the demo, or the error the server answers for its source. */

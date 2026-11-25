@@ -27,7 +27,7 @@ async function listingViewer(db: DbClient, target: CiListingTarget, use: CiServe
   const credentialId = target.type === 'ci-server' ? target.credentialId : null;
   if (credentialId == null) return '*';
   const record = await loadCredentialRecord(db, credentialId);
-  return record?.perUser ? `user:${use.actor.userId ?? 'none'}` : '*';
+  return record?.perUser ? `user:${use.actor.userId ?? 'none'}:${use.actor.apiKeyId ?? 'session'}` : '*';
 }
 
 const cacheKey = (viewer: string, projectId: number, target: CiListingTarget) =>
