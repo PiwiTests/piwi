@@ -11,6 +11,7 @@ import type { RunTargetMessage } from '@piwitests/editor/run-target-view';
 import { apiError } from '../../server/utils/api-error';
 import {
   answerRunRequest,
+  compareWithTeam,
   connectRunTarget,
   disconnectRunTarget,
   instanceUrlOf,
@@ -63,6 +64,8 @@ let verifyAt: string | null = null;
 let heldOnInstance: { id: string; state: string }[] = [];
 /** The project names the instance gives, in its snapshot and its describe answer. */
 let namesOnInstance: { id: number; name: string }[] = [{ id: 3, name: 'Checkout' }];
+/** Whether the describe answer says the key compares; left out when undefined. */
+let comparesOnInstance: boolean | undefined;
 
 function offer(): RunRequestOffer {
   return {
@@ -114,7 +117,9 @@ async function fakeInstance() {
       } else if (url === '/api/run-targets/requests') {
         res.end(JSON.stringify({ requests: [], stops: [], held: heldOnInstance }));
       } else if (url === '/api/run-targets/self') {
-        res.end(JSON.stringify({ projects: namesOnInstance }));
+        res.end(JSON.stringify({ projects: namesOnInstance, compares: comparesOnInstance }));
+      } else if (url.startsWith('/api/run-targets/projects/3/test-comparison?')) {
+        res.end(JSON.stringify({ testCase: { id: 12 } }));
       } else if (url.endsWith('/claim')) {
         const { expiresAt: _expiresAt, ...request } = offer();
         res.end(JSON.stringify(request));
@@ -165,6 +170,7 @@ afterEach(async () => {
   verifyAt = null;
   heldOnInstance = [];
   namesOnInstance = [{ id: 3, name: 'Checkout' }];
+  comparesOnInstance = undefined;
   resetDesktopRunTarget();
   await instance.close();
   fs.rmSync(folder, { recursive: true, force: true });
@@ -195,6 +201,31 @@ describe('the values the routes take', () => {
     expect(outcomeOf(null, false)).toBe('error');
     expect(outcomeOf(0, true)).toBe('stopped');
     expect(outcomeOf(null, true)).toBe('stopped');
+  });
+});
+
+describe('Compare with team instance', () => {
+  const query = { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card' };
+
+  test('asks about the project the folder is linked to, with the key, and says whether the key compares', async () => {
+    comparesOnInstance = true;
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => runTargetConnection().compares === true);
+
+    const answer = await compareWithTeam(path.join(folder, 'tests', '..'), query);
+    expect(answer).toEqual({ ok: true, instance: instance.url, projectId: 3, answer: { testCase: { id: 12 } } });
+    const asked = instance.calls.find((c) => c.path.startsWith('/api/run-targets/projects/3/test-comparison?'))!;
+    expect(new URL(asked.path, instance.url).searchParams.get('title')).toBe('pays with a saved card');
+
+    expect(await compareWithTeam(os.tmpdir(), query)).toMatchObject({ ok: false, problem: 'no-team-project' });
+  });
+
+  test('a key made before it could compare reads false; with no connection, nothing is asked', async () => {
+    expect(await compareWithTeam(folder, query)).toMatchObject({ ok: false, problem: 'not-connected' });
+    comparesOnInstance = false;
+    useKeptKey(instance.url, KEY, new Map([[3, folder]]));
+    await until(() => runTargetConnection().compares === false);
+    expect(instance.calls.some((c) => c.path.includes('/test-comparison'))).toBe(false);
   });
 });
 

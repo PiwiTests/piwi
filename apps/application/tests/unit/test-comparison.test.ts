@@ -33,6 +33,7 @@ vi.stubGlobal('apiError', apiError);
 vi.stubGlobal('getRouterParam', (event: FakeEvent, name: string) => event.params[name]);
 vi.stubGlobal('getQuery', (event: FakeEvent) => event.query);
 vi.stubGlobal('getRequestHeader', (event: FakeEvent, name: string) => event.node.req.headers[name]);
+vi.stubGlobal('readBody', async () => ({}));
 
 const { generateApiKey } = await import('../../server/utils/auth');
 const { compareTestWithTeam } = await import('../../server/utils/test-comparison');
@@ -42,6 +43,9 @@ const { setInstanceDecisions, setProjectDecisions } = await import('#shared/hand
 const route = (await import('../../server/api/run-targets/projects/[id]/test-comparison.get')).default as unknown as (
   event: FakeEvent,
 ) => Promise<unknown>;
+const self = (await import('../../server/api/run-targets/self.put')).default as unknown as (
+  event: FakeEvent,
+) => Promise<{ compares: boolean | null }>;
 
 const FINGERPRINT = 'a'.repeat(64);
 const ALIAS = 'b'.repeat(64);
@@ -120,6 +124,40 @@ describe('the test', () => {
     expect(elsewhere.history).toEqual([]);
   });
 
+  test('never matches by file and title a test case that holds another external ID', async () => {
+    expect((await compareTestWithTeam(db, shop, query({ externalId: 'SHOP-99' }))).testCase).toBeNull();
+  });
+
+  test('among test cases of the same file and title, takes the one holding an ID, then the newest', async () => {
+    const [older, newer] = await db
+      .insert(schema.testCases)
+      .values([
+        { projectId: shop, filePath: 'tests/twice.spec.ts', title: 'twice' },
+        { projectId: shop, filePath: 'tests/twice.spec.ts', title: 'twice' },
+      ])
+      .returning();
+    const twice = query({ filePath: 'tests/twice.spec.ts', title: 'twice' });
+    expect((await compareTestWithTeam(db, shop, twice)).testCase?.id).toBe(newer!.id);
+    await db.update(schema.testCases).set({ externalId: 'SHOP-7' }).where(eq(schema.testCases.id, older!.id));
+    expect((await compareTestWithTeam(db, shop, twice)).testCase?.id).toBe(older!.id);
+  });
+
+  test('takes a title as Playwright names it, empty or with spaces at its ends', async () => {
+    await db.insert(schema.testCases).values([
+      { projectId: shop, filePath: 'tests/edge.spec.ts', title: '' },
+      { projectId: shop, filePath: 'tests/edge.spec.ts', title: ' spaced ' },
+    ]);
+    expect(
+      (await compareTestWithTeam(db, shop, query({ filePath: 'tests/edge.spec.ts', title: '' }))).testCase,
+    ).not.toBeNull();
+    expect(
+      (await compareTestWithTeam(db, shop, query({ filePath: 'tests/edge.spec.ts', title: ' spaced ' }))).testCase,
+    ).not.toBeNull();
+    expect(
+      testComparisonQuerySchema.safeParse({ filePath: 'a.spec.ts', title: 'a', commit: 'a'.repeat(64) }).success,
+    ).toBe(true);
+  });
+
   test('says whether it is quarantined', async () => {
     await db.insert(schema.quarantinedTests).values({ projectId: shop, testCaseId: checkout });
     expect((await compareTestWithTeam(db, shop, query())).testCase?.quarantined).toBe(true);
@@ -164,6 +202,32 @@ describe('the history', () => {
     const webkit = await compareTestWithTeam(db, shop, query({ playwrightProject: 'webkit' }));
     expect(webkit.playwrightProjectMatched).toBe(false);
     expect(webkit.history).toHaveLength(2);
+  });
+
+  test('holds each CI environment’s latest results, however busy another one is', async () => {
+    const nightly = await run({ environment: 'integration', startTime: new Date(T0) });
+    await execution(nightly);
+    for (let i = 1; i <= 45; i++) {
+      await execution(await run({ environment: 'mco', startTime: new Date(T0 + i * 60_000) }));
+    }
+    const answer = await compareTestWithTeam(db, shop, query({ environment: 'integration' }));
+    expect(answer.history.filter((r) => r.environment === 'integration').map((r) => r.runId)).toEqual([nightly]);
+    expect(answer.closestPass?.runId).toBe(nightly);
+  });
+
+  test('marks a run of an environment incident', async () => {
+    await execution(
+      await run({
+        status: 'failed',
+        startTime: new Date(T0),
+        metadata: { incident: { reason: 'The staging database was down' } },
+      }),
+      {
+        status: 'failed',
+      },
+    );
+    const [result] = (await compareTestWithTeam(db, shop, query())).history;
+    expect(result?.incident).toBe(true);
   });
 
   test('holds the results on the local commit even when the latest are newer', async () => {
@@ -221,10 +285,51 @@ describe('the cluster', () => {
     const answer = await compareTestWithTeam(
       db,
       shop,
-      query({ filePath: 'tests/new.spec.ts', fingerprint: FINGERPRINT }),
+      query({ filePath: 'tests/new.spec.ts', fingerprint: FINGERPRINT, fingerprintVersion: FINGERPRINT_VERSION }),
     );
     expect(answer.testCase).toBeNull();
     expect(answer.cluster?.id).toBe(clusterId);
+  });
+
+  test('counts a CI failure a retry passed', async () => {
+    const flaky = await run({ startTime: new Date(T0 + 2 * DAY) });
+    await execution(flaky, { status: 'failed', retries: 0, finalAttempt: false, failureClusterId: clusterId });
+    await execution(flaky, { status: 'passed', retries: 1, passedAfterFailure: true });
+    const { cluster } = await compareTestWithTeam(
+      db,
+      shop,
+      query({ fingerprint: FINGERPRINT, fingerprintVersion: FINGERPRINT_VERSION }),
+    );
+    expect(cluster).toMatchObject({ ciOccurrences: 3, ciLastSeen: T0 + 2 * DAY });
+  });
+
+  test('follows the route a triager gave the test’s failures of that fingerprint', async () => {
+    const ci = await run({ status: 'failed', startTime: new Date(T0 + 2 * DAY) });
+    const [moved] = await db
+      .insert(schema.failureClusters)
+      .values({
+        projectId: shop,
+        fingerprint: 'd'.repeat(64),
+        signature: 'Moved',
+        firstSeenRunId: ci,
+        lastSeenRunId: ci,
+      })
+      .returning();
+    await db
+      .insert(schema.failureClusterTestRoutes)
+      .values({ projectId: shop, fingerprint: FINGERPRINT, testCaseId: checkout, clusterId: moved!.id });
+    const { cluster } = await compareTestWithTeam(
+      db,
+      shop,
+      query({ fingerprint: FINGERPRINT, fingerprintVersion: FINGERPRINT_VERSION }),
+    );
+    expect(cluster).toMatchObject({ id: moved!.id, title: 'Moved' });
+  });
+
+  test('a fingerprint sent without its version is not compared', async () => {
+    const answer = await compareTestWithTeam(db, shop, query({ fingerprint: FINGERPRINT }));
+    expect(answer.fingerprintComparable).toBe(false);
+    expect(answer.cluster).toBeNull();
   });
 
   test('is not matched across fingerprint versions', async () => {
@@ -258,15 +363,44 @@ describe('the closest CI pass', () => {
     await execution(newest);
     await execution(failed, { status: 'failed' });
 
-    const sameCommit = await compareTestWithTeam(db, shop, query({ commit: COMMIT, environment: 'integration' }));
+    const sameCommit = await compareTestWithTeam(db, shop, query({ commit: COMMIT }));
     expect(sameCommit.closestPass).toMatchObject({ runId: onCommit, sameCommit: true, environment: 'mco' });
     expect(sameCommit.closestPass?.snapshot.values.playwrightVersion).toBe('1.58.0');
 
-    const sameEnvironment = await compareTestWithTeam(db, shop, query({ environment: 'Integration' }));
+    // The local environment comes before the local commit: two deployed environments do not run the same app.
+    const sameEnvironment = await compareTestWithTeam(db, shop, query({ commit: COMMIT, environment: 'Integration' }));
     expect(sameEnvironment.closestPass).toMatchObject({ runId: inIntegration, sameCommit: false });
 
     const latest = await compareTestWithTeam(db, shop, query());
     expect(latest.closestPass?.runId).toBe(newest);
+  });
+
+  test('reads the environment a run’s label resolved to, whatever label it reported', async () => {
+    const mcoId = (await db.select().from(schema.environments).where(eq(schema.environments.key, 'mco')))[0]!.id;
+    const labelled = await run({ environment: 'MCO', environmentId: mcoId, startTime: new Date(T0) });
+    const integration = await run({ environment: 'integration', startTime: new Date(T0 + DAY) });
+    await execution(labelled);
+    await execution(integration);
+    const answer = await compareTestWithTeam(db, shop, query({ environment: 'mco' }));
+    expect(answer.closestPass).toMatchObject({ runId: labelled, environment: 'mco' });
+  });
+
+  test('on the local commit, in the local environment first', async () => {
+    const mco = await run({ commit: COMMIT, environment: 'mco', startTime: new Date(T0) });
+    const integration = await run({ commit: COMMIT, environment: 'integration', startTime: new Date(T0 + DAY) });
+    await execution(mco);
+    await execution(integration);
+    const answer = await compareTestWithTeam(db, shop, query({ commit: COMMIT, environment: 'mco' }));
+    expect(answer.closestPass).toMatchObject({ runId: mco, sameCommit: true });
+  });
+
+  test('a short commit stored by the CI matches the full local one', async () => {
+    const short = await run({ commit: COMMIT.slice(0, 7), startTime: new Date(T0) });
+    await execution(short);
+    await execution(await run({ startTime: new Date(T0 + DAY) }));
+    const answer = await compareTestWithTeam(db, shop, query({ commit: COMMIT }));
+    expect(answer.closestPass).toMatchObject({ runId: short, sameCommit: true });
+    expect(answer.history.map((r) => r.runId)).toContain(short);
   });
 
   test('is never a teammate’s run', async () => {
@@ -276,23 +410,30 @@ describe('the closest CI pass', () => {
 });
 
 describe('the route', () => {
-  async function key(permissions: string[]) {
+  async function key(permissions: string[], kind: 'desktop' | 'runner' = 'desktop') {
     const made = generateApiKey();
     const [row] = await db
       .insert(schema.apiKeys)
       .values({ userId, name: 'Piwi Desktop on LAPTOP-42', keyHash: made.hash, keyPrefix: made.prefix, permissions })
       .returning();
-    await db.insert(schema.runTargets).values({ userId, apiKeyId: row!.id, kind: 'desktop', deviceName: 'LAPTOP-42' });
+    await db.insert(schema.runTargets).values({ userId, apiKeyId: row!.id, kind, deviceName: 'LAPTOP-42' });
     return made.plaintext;
   }
 
+  const event = (plaintext: string, projectId: number, extra: Record<string, string> = {}): FakeEvent => ({
+    context: {},
+    params: { id: String(projectId) },
+    query: { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', ...extra },
+    node: { req: { headers: { authorization: `Bearer ${plaintext}` } }, res: {} },
+  });
   const call = (plaintext: string, projectId: number, extra: Record<string, string> = {}) =>
-    route({
-      context: {},
-      params: { id: String(projectId) },
-      query: { filePath: 'tests/checkout.spec.ts', title: 'pays with a saved card', ...extra },
-      node: { req: { headers: { authorization: `Bearer ${plaintext}` } }, res: {} },
-    });
+    route(event(plaintext, projectId, extra));
+
+  test('the describe answer says whether the key compares, false for a desktop app’s key made before it could', async () => {
+    expect((await self(event(await key(['run:receive', 'project:read']), shop))).compares).toBe(true);
+    expect((await self(event(await key(['run:receive']), shop))).compares).toBe(false);
+    expect((await self(event(await key(['run:receive'], 'runner'), shop))).compares).toBeNull();
+  });
 
   test('answers a key that may compare, on a project its owner reads', async () => {
     const answer = (await call(await key(['run:receive', 'project:read']), shop)) as { testCase: { id: number } };
@@ -312,11 +453,12 @@ describe('the route', () => {
 
   test('refuses a project that declines Compare with team instance, or an instance that does', async () => {
     const plaintext = await key(['run:receive', 'project:read']);
+    const off = { statusCode: 403, data: { errorCode: 'TEAM_COMPARISON_OFF' } };
     await setProjectDecisions(db as never, shop, { 'team-comparison': 'declined' });
-    await expect(call(plaintext, shop)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(call(plaintext, shop)).rejects.toMatchObject(off);
     await setProjectDecisions(db as never, shop, { 'team-comparison': null });
     await setInstanceDecisions(db as never, { 'team-comparison': 'declined' });
-    await expect(call(plaintext, shop)).rejects.toMatchObject({ statusCode: 403 });
+    await expect(call(plaintext, shop)).rejects.toMatchObject(off);
   });
 
   test('refuses a query that names no test', async () => {

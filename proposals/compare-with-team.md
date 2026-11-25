@@ -7,14 +7,18 @@ the team instance for this through the connection **Run on my machine** made, wh
 
 **Status.** Proposed 2026-11-25. PR 1 is built: the `team-comparison` capability, enforced on the route and declined
 from a project's settings (the capability ladder of Settings → Capabilities lists it with the pages, in PR 3);
-`project:read` on the key the device flow gives a desktop app while the instance does not decline it, said on the
-verification page and on Connected apps; `requireRunTarget` taking each route's own permission; and
-`GET /api/run-targets/projects/:id/test-comparison`, with register entry D70. The maintainer settled on 2026-11-25: one connection and one key,
-with a read permission beside `run:receive` (D1); a capability on by default, labeled **Compare with team instance**
-(D2); the CI as the only reference, the team's other shared runs shown apart, every environment of the team project
-listed (D3); sign-in required (D10); all four parts in the first version (D5 to D8); the comparison inside the history
-block of the execution page (D9); the instance's and the desktop server's work first, the page's after the execution
-page's new layout has merged (Delivery). The other decisions are recommendations.
+`project:read` on the key the device flow gives a desktop app, said on the verification page and on Connected apps;
+`requireRunTarget` taking each route's own permission; and `GET /api/run-targets/projects/:id/test-comparison`, with
+register entry D70. PR 2a is built: the desktop app's server asks the team instance through the request host
+(`compare`), checks the answer, keeps it two minutes, and answers `GET /api/desktop/team/executions/:id/comparison` and
+`…/test-cases/:id/comparison` with the history in rows by environment, the conclusion and the environment diff against
+the closest CI pass; Settings → Desktop app says when a connection made before it must be made again. PR 2b (a
+connection for the comparison alone, where `machine-runs` is off) and PR 3 (the pages) remain. The maintainer settled on
+2026-11-25: one connection and one key, with a read permission beside `run:receive` (D1); a capability on by default,
+labeled **Compare with team instance** (D2); the CI as the only reference, the team's other shared runs shown apart,
+every environment of the team project listed (D3); sign-in required (D10); all four parts in the first version (D5 to
+D8); the comparison inside the history block of the execution page (D9); the instance's and the desktop server's work
+first, the page's after the execution page's new layout has merged (Delivery). The other decisions are recommendations.
 
 ## Summary
 
@@ -41,7 +45,7 @@ page's new layout has merged (Delivery). The other decisions are recommendations
 | **target key** | The key the device flow gives a connected app (its name in the code). It holds only the permissions listed on it and is taken by the `/api/run-targets/*` routes alone. |
 | **team project** | The project of the team instance that a desktop project's folder is also linked to, the link Run on my machine uses. |
 | **reference runs** | The team project's runs a conclusion reads: the CI's (`ci`, `ci-rerun`). |
-| **closest CI pass** | The passing CI execution of the same test and Playwright project that the local one is compared with: on the same commit first, then chosen as the execution page's environment diff chooses its baseline (D8). |
+| **closest CI pass** | The passing CI execution of the same test and Playwright project that the local one is compared with: in the local run's environment on its commit, in its environment, on its commit, then any (D8). |
 | **comparison** | What the team instance answers for one test, and what the desktop app shows from it. |
 
 ## What exists
@@ -78,9 +82,10 @@ A test fails in the desktop app on a developer's laptop. The CI ran it overnight
 
 ### D1. One connection, one key, two permissions (settled)
 
-The device flow keeps making one key per connected app. The key holds `run:receive` when the instance has
-`machine-runs` on for its owner, and `project:read` when it has the comparison on (D2), as decided when the person
-confirms the connection. Piwi Runner's key never holds `project:read`: it has no page to show a comparison (D11).
+The device flow keeps making one key per connected app. The key holds `run:receive`, and a desktop app's also
+`project:read`, whatever the instance decides of the comparison: the route refuses each comparison an instance or a
+project declines (D2), so a decline holds over every key, made before it or after, and connecting again is never the
+way out of one. Piwi Runner's key never holds `project:read`: it has no page to show a comparison (D11).
 
 - `requireRunTarget` takes a key whose list holds only target permissions (`run:receive`, `project:read`), at least
   one, and each target route checks the one it needs, declared in its `x-required-permission`. A key with any other
@@ -89,8 +94,7 @@ confirms the connection. Piwi Runner's key never holds `project:read`: it has no
 - The confirmation page of the device flow says what the app will be able to do, one line per permission.
 - Connected apps (Settings → Account) shows what each key may do.
 - A key made before this plan holds `run:receive` alone. The comparison route answers 403 with its own error code, and
-  the desktop app's Settings → Desktop app says **Reconnect to compare**. The same applies when an administrator turns
-  a capability on after the connection.
+  the desktop app's Settings → Desktop app says **Reconnect to compare**.
 
 Why: one connection to make, to revoke and to explain. A second key would double the device flow, the keychain entry
 and the Connected apps rows for one app. Putting the comparison under `machine-runs` would tie two features an
@@ -138,7 +142,9 @@ the reference results on the local run's commit even when they are older. Each r
 status, flaky verdict, date, environment, branch, commit, Playwright project and a link. It also carries the test's
 quarantine state and flaky root cause, and the team project's default branch.
 
-The desktop app groups the results **by environment**: one row for each environment the CI ran the test against
+The answer also holds the latest results of each environment the CI ran the test in, so a busy one never hides the
+others, and marks the runs of an environment incident, which the conclusion leaves out. The desktop app groups the
+results **by environment**: one row for each environment the CI ran the test against
 (`mco`, `integration`), the local run's environment first when it has one, then the shared local runs. Each row has
 its pass rate and flaky rate (`passRate`, `flakyRate`) and shows each result's branch and commit, so a team whose
 long-lived branches stand for its environments reads them the same way. Two deployed environments do not run the same
@@ -159,10 +165,11 @@ reference occurrences (count, first and last seen) and how many tests it touches
 
 The environment differences reuse the execution page's environment diff, with no second registry of keys:
 
-- **The team instance picks the closest CI pass**: a passing reference execution of the same test and Playwright
-  project (`browserName`), on the
-  local commit when one exists, else ranked as `getEnvironmentDiff` ranks its baseline candidates (the same
-  environment, then the same branch, then the most recent).
+- **The team instance picks the closest CI pass**: a passing reference execution of the same test and Playwright project
+  (`browserName`), in this order: in the local run's environment on its commit, in its environment, on its commit, then
+  any, each on the local branch first, then the most recent. The environment comes before the commit: two deployed
+  environments do not run the same application. The local environment is resolved as a run's label is (its key or an
+  alias), and a CI run is read by the environment its label resolved to.
 - **It answers that execution's snapshot** (`buildEnvironmentSnapshot`: the registered keys only, with the inferred
   ones marked), its commit and its `scm.worktree`.
 - **The desktop app diffs it against its own execution's snapshot** with `computeEnvironmentDiff` and shows it with
@@ -224,13 +231,14 @@ follows `HTTPS_PROXY`, `HTTP_PROXY` and `NO_PROXY` as the device flow does.
 The team instance:
 
 - `GET /api/run-targets/projects/:id/test-comparison`, with the test's identity (`externalId`, `filePath`, `suitePath`,
-  `title`), `playwrightProject`, `environment`, `fingerprint`, `fingerprintVersion`, `commit` and `branch` in the query. Target
-  key only, `x-required-permission: project:read`, refused (403) when the key lacks `project:read`
-  (`RUN_TARGET_KEY_CANNOT_COMPARE`), the owner cannot read the project or the project declines `team-comparison`. It
-  answers `{ testCase, defaultBranch, history, cluster, fingerprintComparable, closestPass }`, each null when there is
-  none; `closestPass` holds the execution's snapshot values, inferred keys, commit and `worktree`. The answer names
-  pages by their path on the instance (`/test-cases/12`): the desktop app adds the address it connected to. The demo
-  has no connected app that calls it, so the route has no demo handler.
+  `title`), `playwrightProject`, `environment`, `fingerprint`, `fingerprintVersion`, `commit` and `branch` in the query.
+  Target key only, `x-required-permission: project:read`, refused (403) when the key lacks `project:read`
+  (`RUN_TARGET_KEY_CANNOT_COMPARE`), the owner cannot read the project, or the instance or the project declines
+  `team-comparison` (`TEAM_COMPARISON_OFF`). It answers `{ testCase, defaultBranch, history, cluster,
+  fingerprintComparable, closestPass }`, each null when there is none; `closestPass` holds the execution's snapshot
+  values, inferred keys, commit and `worktree`. The answer names pages by their path on the instance (`/test-cases/12`):
+  the desktop app adds the address it connected to. The demo has no connected app that calls it, so the route has no
+  demo handler.
 
 The desktop app's bundled server, behind the desktop guard:
 
@@ -271,16 +279,20 @@ The execution page is being reorganized on another branch (`claude/brave-carson-
 panel). The first two pull requests touch no page and start now; the third waits for that branch to merge.
 
 1. **The team instance.** The `team-comparison` capability; `project:read` on the keys the device flow
-   makes for a desktop app while the instance does not decline the capability; `requireRunTarget` taking a list of
+   makes for a desktop app; `requireRunTarget` taking a list of
    target permissions and each route checking its own; the confirmation page and Connected apps saying what a key may
    do; the comparison route; the register's D70; the demo's connected app; unit tests for the key rules, the route's
    refusals, the test match, the history, the fingerprint lookup and the closest CI pass. The device flow's gate keeps
    asking for `machine-runs`: a desktop app of this release reads a key without `run:receive` as broken.
-2. **The desktop app.** The gate accepting a key that may compare alone, and the desktop app's request host leaving
-   such a key's run requests aside; the two routes behind the desktop guard, the call to the team instance with the
-   key, the two-minute cache, the conclusion's rules and the environment differences in `shared/` (pure,
-   unit-tested), and **Reconnect to compare** on Settings → Desktop app. A unit test drives the routes against a fake
-   team instance.
+2. **The desktop app**, in two parts.
+   - **2a, the desktop app reads the comparison.** The request host's `compare` and `compares`; the two routes behind
+     the desktop guard, the call to the team instance with the key, the check of its answer, the two-minute cache, the
+     conclusion's rules and the history rows in `shared/` (pure, unit-tested), the environment diff against the closest
+     CI pass, and **Reconnect to compare** on Settings → Desktop app. A unit test drives them against a fake team
+     instance.
+   - **2b, a connection for the comparison alone.** The gate accepting a desktop app whose owner may compare where
+     `machine-runs` is off, a key without `run:receive`, and the request host leaving such a key's run requests aside
+     (no stream, no list) while the comparison works.
 3. **The pages**, once the execution page's layout has merged. The history block's team rows, the situation line, the
    same error beside the occurrences, the side panel's section, the link, the test page's team history; the
    capability on the ladder of Settings → Capabilities (its detection: a desktop app's key that may compare); a

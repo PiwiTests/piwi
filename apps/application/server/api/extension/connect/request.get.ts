@@ -8,7 +8,7 @@ defineRouteMeta({
     tags: ['Extension'],
     summary: 'Describe a browser-extension connect request',
     description:
-      'What the page at `/extension/connect` shows before the user allows or denies: the connecting client, the code, the expiry and the status (`pending`, `approved`, `denied`, `consumed` or `expired`). Query: `code`, the user code. Failed lookups are rate-limited.',
+      'What the page at `/extension/connect` shows before the user allows or denies: the connecting client, the code, the expiry, the status (`pending`, `approved`, `denied`, `consumed` or `expired`), and `compares`, whether the key it gets also compares a test with a project’s CI (the desktop app’s). Query: `code`, the user code. Failed lookups are rate-limited.',
     parameters: [{ name: 'code', in: 'query', required: true, schema: { type: 'string' } }],
     'x-required-permission': 'signed-in',
   },

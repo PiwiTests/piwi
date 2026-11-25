@@ -147,11 +147,11 @@ describe('the flow', () => {
     ]);
   });
 
-  test('Piwi Runner’s key, and a desktop app’s where the instance declines Compare with team instance, only take run requests', async () => {
+  test('Piwi Runner’s key only takes run requests; a desktop app’s compares even where the instance declines it', async () => {
     const { setInstanceDecisions } = await import('#shared/handlers/capabilities');
     const connect = async (target: 'desktop' | 'runner') => {
       const start = await startDeviceConnect(anyDb(), { target, device: 'LAPTOP-42', os: 'macOS' }, T0);
-      expect((await describeConnectRequest(anyDb(), start.userCode, at(1)))!.compares).toBe(false);
+      expect((await describeConnectRequest(anyDb(), start.userCode, at(1)))!.compares).toBe(target === 'desktop');
       await decideDeviceConnect(
         anyDb(),
         { userCode: start.userCode, userId, allow: true, mayConnectTarget: true },
@@ -162,8 +162,9 @@ describe('the flow', () => {
       return key!.permissions;
     };
     expect(await connect('runner')).toEqual(['run:receive']);
+    // The route refuses each comparison the instance declines, so the key does not depend on it.
     await setInstanceDecisions(anyDb(), { 'team-comparison': 'declined' });
-    expect(await connect('desktop')).toEqual(['run:receive']);
+    expect(await connect('desktop')).toEqual(['run:receive', 'project:read']);
   });
 
   test('the verification page says a desktop app’s key compares, and no other client’s', async () => {

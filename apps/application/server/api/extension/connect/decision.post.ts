@@ -11,7 +11,7 @@ defineRouteMeta({
     tags: ['Extension'],
     summary: 'Allow or deny a browser-extension connect request',
     description:
-      'Body: `{ userCode, allow }`. Allowing lets the extension that started the request receive an API key for the signed-in user, with their role and project access; the key is named after the browser and listed with their other keys. A run target (the desktop app, Piwi Runner) gets a key that holds `run:receive` alone, and is allowed only when the user holds `run:receive` on some project and an administrator turned **Run on my machine** on (403 otherwise). Answers the new `status`. 404 for an unknown code, 409 when the request was already decided, 410 when it expired. Takes a signed-in session: a request with an API key is refused (403).',
+      'Body: `{ userCode, allow }`. Allowing lets the extension that started the request receive an API key for the signed-in user, with their role and project access; the key is named after the browser and listed with their other keys. A run target (the desktop app, Piwi Runner) gets a key that holds `run:receive`, and the desktop app’s also `project:read` (Compare with team instance), and is allowed only when the user holds `run:receive` on some project and an administrator turned **Run on my machine** on (403 otherwise). Answers the new `status`. 404 for an unknown code, 409 when the request was already decided, 410 when it expired. Takes a signed-in session: a request with an API key is refused (403).',
     'x-required-permission': 'signed-in',
   },
 });

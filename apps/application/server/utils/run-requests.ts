@@ -82,7 +82,12 @@ export interface RunTargetCaller {
   db: DbClient;
   user: User;
   target: RunTarget;
-  /** The owner's access, loaded on every request: a target acts only on projects where they hold `run:receive`. */
+  /** The permissions the key holds: some of `RUN_TARGET_PERMISSIONS`. */
+  permissions: RunTargetPermission[];
+  /**
+   * The owner's access, loaded on every request: a target takes requests only on projects where they hold
+   * `run:receive`, and compares only on projects they read.
+   */
   access: AccessSummary;
 }
 
@@ -126,10 +131,11 @@ export async function requireRunTarget(
   event.context.apiKeyId = resolved.keyId;
   const access = await getUserAccessCached(db, resolved.user);
   event.context.access = access;
-  if (!seen) return { db, user: resolved.user, target, access };
+  const permissions = holds as RunTargetPermission[];
+  if (!seen) return { db, user: resolved.user, target, access, permissions };
   const now = new Date();
   await db.update(runTargets).set({ lastSeenAt: now }).where(eq(runTargets.id, target.id));
-  return { db, user: resolved.user, target: { ...target, lastSeenAt: now }, access };
+  return { db, user: resolved.user, target: { ...target, lastSeenAt: now }, access, permissions };
 }
 
 /** End a waiting request whose stored values no longer pass the parser, so its page says so rather than expired. */

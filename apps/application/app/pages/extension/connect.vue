@@ -35,7 +35,7 @@ const EDITOR = {
 function targetWords(app: string, compares: boolean) {
   return {
     grant: compares
-      ? 'that sees the tests you ask to run on any of your projects, reports their results in your name, and reads how a test does in your projects’ CI to compare it with a run on your machine'
+      ? 'that sees the tests you ask to run on any of your projects and reports their results in your name, and that reads a test’s results on this instance (its CI and your teammates’ runs, its failure clusters, the CI’s environment) to compare them with a run on your machine'
       : 'that sees the tests you ask to run on any of your projects, and reports their results in your name',
     title: `Connect ${app}`,
     start: `clicked Connect in ${app}`,
@@ -101,7 +101,7 @@ useHead({ title: () => words.value.title });
           If you have not just {{ words.start }}, deny: someone may have sent you this link to get access in your name.
           <template v-if="config.public.authEnabled">
             Allowing creates an API key named after {{ words.keyName }}, {{ words.grant }}. You can revoke it in your
-            account’s API keys.
+            account’s Connected apps.
           </template>
           <template v-else>
             Authentication is off on this instance, so no key is needed: allowing only confirms the connection.

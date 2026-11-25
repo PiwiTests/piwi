@@ -5,8 +5,6 @@ import type { DbClient } from '../database';
 import { generateApiKey } from './auth';
 import { hashToken } from './token-hash';
 import { cleanClientLabel } from './client-label';
-import { getInstanceDecisions } from '#shared/handlers/setup-status';
-import type { CapabilityId, InstanceDecision } from '#shared/capabilities';
 
 /**
  * Connecting the browser extension, the VS Code extension and JetBrains
@@ -85,16 +83,12 @@ export const RUN_TARGET_PERMISSIONS = ['run:receive', 'project:read'] as const;
 export type RunTargetPermission = (typeof RUN_TARGET_PERMISSIONS)[number];
 
 /**
- * The permissions the device flow gives a run target's key: `run:receive`, and `project:read` for the desktop app
- * while the instance does not decline Compare with team instance. Piwi Runner has no page to compare on.
+ * The permissions the device flow gives a run target's key: `run:receive`, and `project:read` for the desktop app,
+ * whose route refuses each comparison an instance or a project declines (Compare with team instance). Piwi Runner has
+ * no page to compare on.
  */
-export function runTargetKeyPermissions(
-  kind: ConnectClientKind,
-  decisions: Partial<Record<CapabilityId, InstanceDecision>>,
-): RunTargetPermission[] {
-  return kind === 'desktop' && decisions['team-comparison'] !== 'declined'
-    ? ['run:receive', 'project:read']
-    : ['run:receive'];
+export function runTargetKeyPermissions(kind: ConnectClientKind): RunTargetPermission[] {
+  return kind === 'desktop' ? ['run:receive', 'project:read'] : ['run:receive'];
 }
 
 export interface ConnectClient {
@@ -219,9 +213,7 @@ export async function describeConnectRequest(
   const status = row.status as DeviceCodeStatus;
   const expired = row.expiresAt.getTime() <= now.getTime() && status !== 'consumed' && status !== 'denied';
   const clientKind = storedClientKind(row);
-  const compares =
-    RUN_TARGET_KINDS.has(clientKind) &&
-    runTargetKeyPermissions(clientKind, await getInstanceDecisions(db)).includes('project:read');
+  const compares = RUN_TARGET_KINDS.has(clientKind) && runTargetKeyPermissions(clientKind).includes('project:read');
   return {
     userCode: formatUserCode(normalizeUserCode(userCode)!),
     clientName: row.clientName,
@@ -333,7 +325,7 @@ export async function pollDeviceConnect(
       keyHash: hash,
       keyPrefix: prefix,
       clientKind: kind,
-      permissions: target ? runTargetKeyPermissions(kind, await getInstanceDecisions(db)) : null,
+      permissions: target ? runTargetKeyPermissions(kind) : null,
       createdAt: now,
     })
     .returning({ id: apiKeys.id });

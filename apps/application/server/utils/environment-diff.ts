@@ -6,9 +6,14 @@
  * project, the servers under test). Used by the REST endpoint, the AI diagnosis section, and the
  * demo router (browser-safe: drizzle queries only).
  */
-import { and, eq, desc, like, type SQL } from 'drizzle-orm';
+import { and, eq, desc, isNull, or, sql, type SQL } from 'drizzle-orm';
 import { testRuns, testRunsCases } from '../database/schema';
-import { buildEnvironmentSnapshot, computeEnvironmentDiff, type EnvironmentDiffEntry } from '#shared/environment-diff';
+import {
+  buildEnvironmentSnapshot,
+  computeEnvironmentDiff,
+  type EnvironmentDiffEntry,
+  type EnvironmentSnapshot,
+} from '#shared/environment-diff';
 import { loadRunsSnapshots } from '#shared/handlers/environment-snapshots';
 import { CLOCK_OFFSET_WARN_MS, comparableSnapshots, runnerOfShard } from '#shared/environment-snapshots';
 import type { WireEnvironmentSnapshot, WireServerEnvironment } from '#shared/types';
@@ -18,6 +23,8 @@ import type { BrowserConfig } from '#shared/types';
 import type { DrizzleDB } from '#shared/handlers/db';
 import { CI_RUN_ORIGINS, eligibleRunSql, runOriginIn } from '#shared/run-eligibility';
 import type { TestComparisonClosestPass } from '#shared/test-comparison';
+import { sameCommit } from '#shared/test-comparison-conclusion';
+import { foldedEquals } from '#shared/utils/fold-text-sql';
 
 /** Passing executions inspected when choosing the baseline. */
 const BASELINE_CANDIDATES = 20;
@@ -182,24 +189,52 @@ export async function getEnvironmentDiff(db: DrizzleDB, testRunsCaseId: number):
   };
 }
 
-/** A run's commit matches `commit`: equal, or starting with it when it is short. */
+/** One execution's environment snapshot, as the environment diff reads it; null for an execution that does not exist. */
+export async function executionEnvironmentSnapshot(
+  db: DrizzleDB,
+  executionId: number,
+): Promise<EnvironmentSnapshot | null> {
+  const row = await loadExecutionEnvironment(db, and(eq(testRunsCases.id, executionId)));
+  if (!row) return null;
+  const snapshots = await loadRunsSnapshots(db, [row.runId]);
+  return toSnapshot(row, snapshots.get(row.runId) ?? []);
+}
+
+/**
+ * A run's commit matches `commit`, a short SHA and a full one either way round: the stored commit starts with
+ * `commit`, or `commit` starts with a stored commit of seven characters or more.
+ */
 export function commitMatches(commit: string): SQL {
-  return commit.length >= 40 ? eq(testRuns.commit, commit) : like(testRuns.commit, `${commit}%`);
+  return sql`(${testRuns.commit} LIKE ${`${commit}%`} OR (length(${testRuns.commit}) >= 7 AND ${commit} LIKE ${testRuns.commit} || '%'))`;
+}
+
+/** An environment as a run names it: the project's environment its label resolved to, and the label. */
+export interface RunEnvironmentRef {
+  id: number | null;
+  label: string | null;
+}
+
+/** The runs of environment `environment`: resolved to its id, or, for a run its label did not resolve, by that label. */
+export function runEnvironmentSql(environment: RunEnvironmentRef): SQL | null {
+  const byLabel = environment.label ? foldedEquals(testRuns.environment, environment.label) : null;
+  if (environment.id === null) return byLabel;
+  const byId = eq(testRuns.environmentId, environment.id);
+  return byLabel ? (or(byId, and(isNull(testRuns.environmentId), byLabel)) as SQL) : byId;
 }
 
 /**
  * The passing CI execution a test that ran elsewhere (a desktop app's run) is compared with: a final attempt of the
- * test in a CI run (`CI_RUN_ORIGINS`), in the same Playwright project when one is named, on `commit` when the CI ran
- * the test there, else ranked as the environment diff ranks its baseline (the same environment, then the same branch,
- * then the most recent). Answers its environment snapshot, which the other side diffs against its own; null when the
- * CI never passed the test.
+ * test in a CI run (`CI_RUN_ORIGINS`), in the same Playwright project when one is named, picked in this order: in the
+ * local run's environment on its commit, in its environment, on its commit, then any; within each, on the local
+ * branch first, then the most recent. Answers its environment snapshot, which the other side diffs against its own;
+ * null when the CI never passed the test.
  */
 export async function getClosestCiPass(
   db: DrizzleDB,
   opts: {
     testCaseId: number;
     playwrightProject: string | null;
-    environment: string | null;
+    environment: RunEnvironmentRef | null;
     branch: string | null;
     commit: string | null;
   },
@@ -210,23 +245,30 @@ export async function getClosestCiPass(
     })
   | null
 > {
-  const conds: SQL[] = [
+  const base: SQL[] = [
     eq(testRunsCases.testCaseId, opts.testCaseId),
     eq(testRunsCases.status, 'passed'),
     eq(testRunsCases.finalAttempt, true),
     runOriginIn(testRuns.origin, CI_RUN_ORIGINS),
     eligibleRunSql('baseline'),
   ];
-  if (opts.playwrightProject) conds.push(eq(testRunsCases.browserName, opts.playwrightProject));
-  const onCommit = opts.commit ? await loadExecutionEnvironment(db, and(...conds, commitMatches(opts.commit))) : null;
-  let chosen = onCommit;
-  if (!chosen) {
-    const candidates = await selectExecutionEnvironment(db, and(...conds)).limit(BASELINE_CANDIDATES);
+  if (opts.playwrightProject) base.push(eq(testRunsCases.browserName, opts.playwrightProject));
+  const inEnvironment = opts.environment ? runEnvironmentSql(opts.environment) : null;
+  const onCommit = opts.commit ? commitMatches(opts.commit) : null;
+  const tiers: SQL[][] = [];
+  if (inEnvironment && onCommit) tiers.push([inEnvironment, onCommit]);
+  if (inEnvironment) tiers.push([inEnvironment]);
+  if (onCommit) tiers.push([onCommit]);
+  tiers.push([]);
+  let chosen: ExecutionEnvironmentRow | null = null;
+  for (const extra of tiers) {
+    const candidates = await selectExecutionEnvironment(db, and(...base, ...extra)).limit(BASELINE_CANDIDATES);
     chosen =
       rankBaselineCandidates(
-        { environment: opts.environment, branch: opts.branch },
+        { environment: null, branch: opts.branch },
         candidates.map((row) => ({ ...scopeOf(row), row })),
       )[0]?.row ?? null;
+    if (chosen) break;
   }
   if (!chosen) return null;
   const snapshots = await loadRunsSnapshots(db, [chosen.runId]);
@@ -241,7 +283,7 @@ export async function getClosestCiPass(
     branch: scopeOf(chosen).branch ?? null,
     commit: chosen.runCommit ?? null,
     worktree: worktree === 'clean' || worktree === 'dirty' ? worktree : null,
-    sameCommit: onCommit !== null,
+    sameCommit: opts.commit !== null && sameCommit(chosen.runCommit ?? null, opts.commit),
     snapshot: { values: snapshot.values, inferred: [...snapshot.inferred] },
   };
 }

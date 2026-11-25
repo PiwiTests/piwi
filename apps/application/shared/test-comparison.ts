@@ -15,6 +15,10 @@ export const TEST_COMPARISON_LIMITS = {
   local: 20,
   /** The reference results on the local run's commit, even when older than the latest. */
   commit: 10,
+  /** The CI environments the test ran in that the answer gives their own latest results, the local one first. */
+  environments: 10,
+  /** How many latest results each of those environments has at least, when the CI ran the test there as often. */
+  perEnvironment: 10,
 } as const;
 
 const optionalText = (max: number) =>
@@ -28,10 +32,11 @@ const optionalText = (max: number) =>
 /** The query of the route. `filePath` and `title` name the test; everything else is optional. */
 export const testComparisonQuerySchema = z.object({
   externalId: optionalText(200),
-  filePath: z.string().trim().min(1).max(1000),
+  filePath: z.string().min(1).max(1000),
   /** The describe path, its titles joined by `\x1f`, as a test case stores it. */
   suitePath: z.string().max(4000).optional().default(''),
-  title: z.string().trim().min(1).max(2000),
+  /** As Playwright names it: it may be empty. */
+  title: z.string().max(2000),
   /** The Playwright project the local execution ran in (`browserName`). */
   playwrightProject: optionalText(200),
   /** The local run's environment label: a team environment's key when the run was started for one. */
@@ -39,7 +44,7 @@ export const testComparisonQuerySchema = z.object({
   branch: optionalText(250),
   commit: z
     .string()
-    .regex(/^[0-9a-f]{7,40}$/i)
+    .regex(/^[0-9a-f]{7,64}$/i)
     .transform((value) => value.toLowerCase())
     .optional()
     .transform((value) => value ?? null),
@@ -66,6 +71,8 @@ export interface TestComparisonResult {
   status: string;
   /** Passed after a failed attempt. */
   flaky: boolean;
+  /** Its run is marked as an environment incident: the conclusion leaves it out. */
+  incident: boolean;
   /** When its run started, epoch ms. */
   startTime: number | null;
   /** The team environment's key, else the run's label; null without one. */
@@ -82,9 +89,9 @@ export interface TestComparisonCluster {
   id: number;
   title: string | null;
   status: string;
-  /** Failed final attempts of the cluster in reference runs. */
+  /** The attempts that failed with it in reference runs, retried ones included. */
   ciOccurrences: number;
-  /** The first and last reference run that failed with it, epoch ms; null with no occurrence. */
+  /** The first and last reference run with an attempt that failed with it, epoch ms; null with no occurrence. */
   ciFirstSeen: number | null;
   ciLastSeen: number | null;
   /** The tests it failed in the reference runs. */
@@ -135,3 +142,80 @@ export interface TestComparison {
   cluster: TestComparisonCluster | null;
   closestPass: TestComparisonClosestPass | null;
 }
+
+const path = z.string().regex(/^\/[a-z-]+\/\d+$/);
+const epochOrNull = z.number().finite().nullable();
+const textOrNull = z.string().max(2000).nullable();
+
+const resultSchema = z.object({
+  executionId: z.number().int(),
+  runId: z.number().int(),
+  source: z.enum(['ci', 'local']),
+  status: z.string().max(40),
+  flaky: z.boolean(),
+  incident: z.boolean(),
+  startTime: epochOrNull,
+  environment: textOrNull,
+  branch: textOrNull,
+  commit: textOrNull,
+  playwrightProject: textOrNull,
+  path,
+});
+
+/**
+ * The answer of the route as the desktop app reads it from the team instance: anything else is refused, and the pages
+ * it names are paths of the instance (`/test-cases/12`), never another address.
+ */
+export const testComparisonSchema = z.object({
+  testCase: z
+    .object({
+      id: z.number().int(),
+      title: z.string().max(2000),
+      filePath: z.string().max(1000),
+      suitePath: z.string().max(4000),
+      quarantined: z.boolean(),
+      flakyRootCause: textOrNull,
+      path,
+    })
+    .nullable(),
+  defaultBranch: textOrNull,
+  playwrightProjectMatched: z.boolean(),
+  history: z
+    .array(resultSchema)
+    .max(
+      TEST_COMPARISON_LIMITS.ci +
+        TEST_COMPARISON_LIMITS.local +
+        TEST_COMPARISON_LIMITS.commit +
+        TEST_COMPARISON_LIMITS.environments * TEST_COMPARISON_LIMITS.perEnvironment,
+    ),
+  fingerprintComparable: z.boolean(),
+  cluster: z
+    .object({
+      id: z.number().int(),
+      title: textOrNull,
+      status: z.string().max(40),
+      ciOccurrences: z.number().int().nonnegative(),
+      ciFirstSeen: epochOrNull,
+      ciLastSeen: epochOrNull,
+      ciTests: z.number().int().nonnegative(),
+      path,
+    })
+    .nullable(),
+  closestPass: z
+    .object({
+      executionId: z.number().int(),
+      runId: z.number().int(),
+      startTime: epochOrNull,
+      environment: textOrNull,
+      branch: textOrNull,
+      commit: textOrNull,
+      worktree: z.enum(['clean', 'dirty']).nullable(),
+      sameCommit: z.boolean(),
+      snapshot: z.object({
+        values: z.record(z.string().max(200), z.string().max(2000).nullable()),
+        inferred: z.array(z.string().max(200)).max(200),
+      }),
+      path,
+    })
+    .nullable(),
+}) satisfies z.ZodType<TestComparison>;
