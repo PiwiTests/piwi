@@ -12,6 +12,9 @@ updates:
     commit-message:
       prefix: "chore(deps)"
     open-pull-requests-limit: 5
+    # A range that already admits the new version stays as written, and only the lockfile moves: the reporter's peer
+    # range on @playwright/test (">=x.y.z <2") is the oldest Playwright it supports, which moves by hand.
+    versioning-strategy: increase-if-necessary
     ignore:
       # TypeScript 7, the native compiler, has no compiler API: vue-tsc, tsup's declaration build and the tests that
       # parse source with `typescript` need one.
@@ -43,6 +46,14 @@ updates:
       opentelemetry:
         patterns:
           - "@opentelemetry/*"
+      # Each Playwright release lands in a pull request of its own, its three packages together, in every directory
+      # that installs it (the root workspaces and the desktop shell): a release can need fixes in the reporter, and
+      # they ship with it.
+      playwright:
+        patterns:
+          - "@playwright/test"
+          - "playwright"
+          - "playwright-core"
       minor-and-patch:
         update-types:
           - minor

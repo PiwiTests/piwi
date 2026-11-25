@@ -107,7 +107,10 @@ The release process, seen from a maintainer, is in [`CONTRIBUTING.md`](../CONTRI
 `dependabot.yml` checks every week for updates to:
 
 - the actions of the workflows and of `.github/actions/*`: the commit SHA and the version comment together;
-- the npm lockfiles: the root's (every workspace), `apps/desktop`'s and `apps/docs`'s;
+- the npm lockfiles: the root's (every workspace), `apps/desktop`'s and `apps/docs`'s. A range in a `package.json`
+  moves only when it no longer admits the new version (`increase-if-necessary`), so the reporter's peer range on
+  `@playwright/test` stays its floor. Playwright's packages arrive in a pull request of their own (the `playwright`
+  group), apart from the weekly minor and patch updates;
 - the desktop shell's crates and the JetBrains plugin's Gradle dependencies;
 - the .NET packages, within their major;
 - the `Dockerfile`'s base image, whose tag and digest move together. Its Node version is also the one the desktop app
