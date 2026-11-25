@@ -7,6 +7,8 @@ import {
   buildStepTreeView,
   citedItemIds,
   groupRowsBySection,
+  passedFoldSummary,
+  passedRowsToFold,
   sectionSummaryText,
   stepsTrack,
   testTrack,
@@ -375,5 +377,51 @@ describe('the rows the Most likely line cites', () => {
     expect(cited([{ section: 'networkRequests' }, { section: 'console' }])).toEqual([]);
     expect(cited([{ section: 'networkRequests', index: 7 }])).toEqual([]);
     expect(cited([])).toEqual([]);
+  });
+});
+
+describe('passedRowsToFold', () => {
+  const step = (level = 0, passed = true, failing = false) => ({ step: { level, passed, failing }, keep: false });
+  const event = (keep = false) => ({ step: null, keep });
+  const failing = (level = 0) => step(level, false, true);
+
+  test('folds what passed before the failure, keeping the last three steps and what happened among them', () => {
+    const rows = [event(), step(), event(), step(), step(), event(), step(), step(), failing(), event()];
+    expect(passedRowsToFold(rows)).toEqual([0, 1, 2, 3]);
+  });
+
+  test('never folds a problem, a row Most likely cites, a caught error or the failing chain', () => {
+    const rows = [step(), event(true), step(0, false), step(), step(), step(), step(), failing()];
+    expect(passedRowsToFold(rows)).toEqual([0, 3]);
+  });
+
+  test('folds nothing without a failing step, with three steps or fewer before it, or with one row to fold', () => {
+    expect(passedRowsToFold([step(), step(), step(), step()])).toEqual([]);
+    expect(passedRowsToFold([event(), step(), step(), step(), failing()])).toEqual([]);
+    expect(passedRowsToFold([step(), step(), step(), step(), failing()])).toEqual([]);
+    expect(passedRowsToFold([step(), step(), step(), step(), step(), failing()])).toEqual([0, 1]);
+  });
+
+  test('keeps the step around a kept nested step', () => {
+    // A test.step (1) holds the three steps kept before the failure.
+    const rows = [step(), event(), step(), step(1), step(1), step(1), failing()];
+    expect(passedRowsToFold(rows)).toEqual([0, 1]);
+  });
+
+  test('takes how many steps it keeps', () => {
+    const rows = [step(), step(), step(), step(), failing()];
+    expect(passedRowsToFold(rows, 1)).toEqual([0, 1, 2]);
+  });
+});
+
+describe('passedFoldSummary', () => {
+  test('counts each type it folds, in the order given, leaving out the empty ones', () => {
+    expect(
+      passedFoldSummary([
+        { count: 4, one: 'step', many: 'steps' },
+        { count: 0, one: 'console entry', many: 'console entries' },
+        { count: 1, one: 'request', many: 'requests' },
+      ]),
+    ).toBe('4 steps · 1 request');
   });
 });

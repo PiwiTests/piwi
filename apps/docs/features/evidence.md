@@ -34,7 +34,8 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   filter both. A trace adds a **Screen** lane per page: hover for the page then, click for its frames. **Show the
   page** puts it beside the steps for the hovered or picked row, in a card on hover, or as thumbnails; without a
   panel, a row's time opens it below. Hooks and fixtures fold into
-  **Setup** and **Teardown** rows, open when the failure is there; a `test.step` holds its steps; the failing step
+  **Setup** and **Teardown** rows, open when the failure is there; what passed before the failure, but for the last
+  three steps and any problem, folds into a **Passed** row; a `test.step` holds its steps; the failing step
   shows its error and its page's Screenshot, DOM and Accessibility tree; a caught error is greyed out; a
   [breakpoint](./editor-breakpoints)'s stop is a **Paused** band.
 - **Attempts**: shown when a test ran more than once, see [below](#attempts).
@@ -54,8 +55,7 @@ else on **Source**; a weak clue never picks it, and it never opens on **State**.
   performance hints and Web Vitals. **Output**: what the test wrote to stdout and stderr
   ([Test output](/reference/test-metadata#test-output)).
 
-Nothing follows the evidence card: the situation block's **History** line and
-[**More ways to fix**](./fix-plans#more-ways-to-fix) sit above it. A test that **passed on retry** leads with its failed attempt's error and keeps its
+A test that **passed on retry** leads with its failed attempt's error and keeps its
 next step; any other passing execution shows identity and facts. A test that **did not run** gives its reason as Most likely, with no evidence card. Network, console,
 Web Vitals, ARIA, focus and alternative-locator data come from the [capture fixtures](/guide/capture-fixtures).
 

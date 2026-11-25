@@ -645,6 +645,34 @@ test.describe('Situation block on seeded cases', () => {
     await expect(dialog.getByText('No DOM snapshot or ARIA data available')).toHaveCount(0);
   });
 
+  test('#37 folds what passed before the failure under one Passed row, and remembers it open', async ({ page }) => {
+    await page.goto('/test-run-cases/37');
+    await waitForHydration(page);
+    const timeline = page.locator('[data-tour="evidence-timeline"]').locator('table');
+    const passed = timeline.getByRole('button', { name: /^Passed/ });
+
+    // Folded by default: the rows that passed early, but not the last three steps before the failure.
+    await expect(passed).toHaveAttribute('aria-expanded', 'false');
+    await expect(passed).toContainText('2 steps · 2 requests');
+    const firstRequest = timeline.getByText('https://shop.example.com/api/cart');
+    await expect(firstRequest).toHaveCount(0);
+    for (const kept of ["getByLabel('Card number')", "getByLabel('Expiry date')", "getByLabel('CVV')"]) {
+      await expect(timeline.getByText(kept)).toBeVisible();
+    }
+    // A row Most likely cites never folds.
+    await expect(timeline.getByText('Cited by Most likely').first()).toBeVisible();
+
+    // Opened, the rows show in place, and stay open on the next visit.
+    await passed.click();
+    await expect(passed).toHaveAttribute('aria-expanded', 'true');
+    await expect(firstRequest).toBeVisible();
+    await page.reload();
+    await waitForHydration(page);
+    await expect(passed).toHaveAttribute('aria-expanded', 'true');
+    await passed.click();
+    await expect(passed).toHaveAttribute('aria-expanded', 'false');
+  });
+
   test('#533 proposes replacing the locator, its Locator fix section one click away', async ({ page }) => {
     test.skip(!(await (await page.request.get('/api/test-run-cases/533')).ok()), 'no #533');
     await page.goto('/test-run-cases/533');
@@ -733,8 +761,9 @@ test.describe('Situation block on seeded cases', () => {
       if (/\/locator-healing(\?|$)/.test(r.url())) healingFetches.push(r.url());
     });
     const section = page.locator('[data-tour="fix-section-locator-fix"]');
+    // The open side panel covers the line's buttons at this width: Escape closes it.
     const fold = async () => {
-      if ((await section.getAttribute('aria-expanded')) === 'true') await section.click();
+      if ((await section.getAttribute('aria-expanded')) === 'true') await page.keyboard.press('Escape');
       await expect(section).toHaveAttribute('aria-expanded', 'false');
     };
     const next = page.locator('[data-shot="next-step"]');
