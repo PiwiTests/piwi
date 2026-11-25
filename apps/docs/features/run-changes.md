@@ -40,7 +40,9 @@ project, and are never set on an earlier attempt of a retried test.
 
 The environment, visual and page diffs of one failing execution compare it with the same test's last passing
 execution on the same browser, in a shorter order: the same environment, then the same branch, then the most recent,
-with no base-branch rung. When no passing run from the same environment exists, the card says which environment the
+with no base-branch rung. The page diff also prefers, right after the environment, a run on the same Playwright
+version, since ARIA snapshots can change from one version to the next (Playwright 1.65 leaves out text the browser
+does not render). When no passing run from the same environment exists, the card says which environment the
 baseline came from (_"compared with a production run; no passing development run of this test exists"_) and leaves
 the environment label out of the diff.
 
