@@ -7,6 +7,7 @@ import {
   envFileProblem,
   requiredTagProblem,
   requiredTagsGrepInvert,
+  requiredTagsGrepInvertProblem,
 } from '@piwitests/core/environments';
 import { RUN_VARIABLE_LIMITS } from '@piwitests/core/run-variables';
 
@@ -98,17 +99,14 @@ describe('the shell applies an environment as core describes it', () => {
       const [own, source] = [kept[i]!, kept[i + 1]!];
       expect(requiredTagsGrepInvert(['@smoke'], own), own).toBe(`${ownStart}${source}${ownEnd}${required}`);
     }
-    // A pattern the shell refuses, core never keeps ignoring case.
+    // A pattern the shell refuses, core refuses too, saying why, and never writes a filter for.
     const refused = rustStrings(environments, 'for case_sensitive in [');
     expect(refused.length).toBeGreaterThan(0);
     for (const own of refused) {
-      let made: string | null;
-      try {
-        made = requiredTagsGrepInvert(['@smoke'], own);
-      } catch {
-        made = null;
-      }
-      expect(made, own).not.toBe(`${ownStart}${own.slice(1, own.lastIndexOf('/'))}${ownEnd}${required}`);
+      expect(requiredTagsGrepInvertProblem(own), own).toContain(own);
+      expect(() => requiredTagsGrepInvert(['@smoke'], own), own).toThrow(own);
     }
+    // A pattern the shell keeps, core keeps with no problem.
+    for (let i = 0; i < kept.length; i += 2) expect(requiredTagsGrepInvertProblem(kept[i]), kept[i]).toBeNull();
   });
 });

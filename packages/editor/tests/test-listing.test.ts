@@ -8,8 +8,8 @@ import { LIST_TESTS_ENV, type ListedTestLine } from '../src/recorder/use-reporte
 import {
   excludingFilter,
   listTests,
+  onlyNamedIds,
   parseErrorLines,
-  parseOnlyNamed,
   parseTestsLine,
   specFilter,
   TestListings,
@@ -69,29 +69,13 @@ const listed = (fields: Partial<ListedTestLine>): ListedTestLine => ({
   suites: [],
   project: '',
   tags: [],
+  onlyNamed: false,
   ...fields,
 });
 
 const testsLine = (tests: ListedTestLine[]) => `PIWI_TESTS ${JSON.stringify(tests)}\n`;
 
 describe('the reporter’s lines', () => {
-  test('name the projects that run only when --project names them, none a project run by default shares', () => {
-    const use = (projects: unknown[]) => `PIWI_USE ${JSON.stringify({ rootDir: '/w', projects })}\n`;
-    expect(
-      parseOnlyNamed(
-        use([
-          { name: 'chromium', default: true },
-          { name: 'slow', default: false },
-          { name: 'Shared', default: false },
-          { name: 'shared', default: true },
-          { name: 'old' },
-          { default: false },
-        ]),
-      ),
-    ).toEqual(['slow']);
-    expect(parseOnlyNamed('no line\n')).toBeNull();
-  });
-
   test('leaves out a test of a spec outside the config’s folder', () => {
     const outside = [listed({ file: '../tests/a.spec.ts' }), listed({ file: '/repo/tests/a.spec.ts' }), listed({})];
     expect(parseTestsLine(testsLine(outside))).toEqual([listed({})]);
@@ -170,7 +154,6 @@ describe('a listing', () => {
     expect(result).toEqual({
       tests: [listed({ file: 'tests/cart.spec.ts' })],
       broken: new Map([['tests/broken.spec.ts', 'SyntaxError: Unexpected token (line 3)']]),
-      onlyNamed: null,
     });
     // Every project's tests, those with `default: false` too.
     expect(asked).toEqual([['--project=*'], [excludingFilter('/work', ['tests/broken.spec.ts']), '--project=*']]);
@@ -245,45 +228,62 @@ describe('a listing', () => {
           : { stdout: `PIWI_USE {"rootDir":"/work","projects":[]}\n${testsLine([])}`, stderr: '' },
       );
     };
-    expect(await listTests(run, '/work/playwright.config.ts', null)).toEqual({
-      tests: [],
-      broken: new Map(),
-      onlyNamed: [],
-    });
+    expect(await listTests(run, '/work/playwright.config.ts', null)).toEqual({ tests: [], broken: new Map() });
     expect(asked).toEqual([['--project=*'], []]);
   });
 
-  test('lists the tests of a project with default: false, and names it, with its own Playwright', async () => {
+  test('lists the tests of a project with default: false, each saying whether a run must name it', async () => {
+    const test = (title: string) =>
+      `const { test } = require('@playwright/test');\ntest('${title}', async () => {});\n`;
     const config = project('named', {
       'playwright.config.js': [
         'module.exports = {',
         "  testDir: 'tests',",
         '  projects: [',
-        "    { name: 'chromium', testIgnore: /slow/ },",
+        "    { name: 'setup', testMatch: /\\.setup\\.js/, default: false, teardown: 'cleanup' },",
+        "    { name: 'cleanup', testMatch: /\\.teardown\\.js/, default: false },",
+        "    { name: 'chromium', testMatch: /cart/, dependencies: ['setup'] },",
         "    { name: 'slow', testMatch: /slow/, default: false },",
-        "    { name: 'nightly', default: false },",
+        '    { testMatch: /visual/, default: false },',
         '  ],',
         '};',
         '',
       ].join('\n'),
-      'tests/cart.spec.js': "const { test } = require('@playwright/test');\ntest('adds', async () => {});\n",
-      'tests/slow.spec.js': "const { test } = require('@playwright/test');\ntest('waits', async () => {});\n",
+      'tests/auth.setup.js': test('logs in'),
+      'tests/db.teardown.js': test('cleans'),
+      'tests/cart.spec.js': test('adds'),
+      'tests/slow.spec.js': test('waits'),
+      'tests/visual.spec.js': test('looks'),
     });
     const result = await listTests(playwright, config, null);
     if ('error' in result) throw new Error(result.error);
-    expect(result.tests.map((t) => `${t.project} ${t.file} ${t.title}`).sort()).toEqual([
-      'chromium tests/cart.spec.js adds',
-      'nightly tests/cart.spec.js adds',
-      'nightly tests/slow.spec.js waits',
-      'slow tests/slow.spec.js waits',
+    // A setup project and its teardown, which the default project runs, run without --project too.
+    expect(result.tests.map((t) => `${t.project}: ${t.title}${t.onlyNamed ? ' (only named)' : ''}`).sort()).toEqual([
+      ': looks (only named)',
+      'chromium: adds',
+      'cleanup: cleans',
+      'setup: logs in',
+      'slow: waits (only named)',
     ]);
-    expect(result.onlyNamed?.sort()).toEqual(['nightly', 'slow']);
+    // Two projects of one name, one run by default: the other's tests alone are named.
+    const shared = project('shared-name', {
+      'playwright.config.js':
+        "module.exports = { projects: [{ name: 'e2e', testDir: 'a' }, { name: 'e2e', testDir: 'b', default: false }] };\n",
+      'a/x.spec.js': test('x'),
+      'b/y.spec.js': test('y'),
+    });
+    const both = await listTests(playwright, shared, null);
+    if ('error' in both) throw new Error(both.error);
+    expect(both.tests.map((t) => `${t.project}: ${t.title}${t.onlyNamed ? ' (only named)' : ''}`).sort()).toEqual([
+      'e2e: x',
+      'e2e: y (only named)',
+    ]);
     // A config with no project lists nothing, and says nothing failed.
     const empty = project('no-projects', {
       'playwright.config.js': "module.exports = { testDir: 'tests', projects: [] };\n",
-      'tests/cart.spec.js': "const { test } = require('@playwright/test');\ntest('adds', async () => {});\n",
+      'tests/cart.spec.js': test('adds'),
     });
-    expect(await listTests(playwright, empty, null)).toEqual({ tests: [], broken: new Map(), onlyNamed: [] });
+    expect(await listTests(playwright, empty, null)).toEqual({ tests: [], broken: new Map() });
   }, 120_000);
 });
 
@@ -374,11 +374,10 @@ describe('each config’s listing', () => {
     expect(listing.listedAt.has('tests/b.spec.ts')).toBe(true);
   });
 
-  test('keeps the projects that run only when named, as the last listing read them', async () => {
-    let named = ['slow'];
+  test('names the tests whose project runs only when --project names it', async () => {
     const run: ListRunner = () =>
       Promise.resolve({
-        stdout: `PIWI_USE ${JSON.stringify({ rootDir: '/w', projects: named.map((name) => ({ name, default: false })) })}\n${testsLine([listed({})])}`,
+        stdout: testsLine([listed({ id: 'a' }), listed({ id: 'b', onlyNamed: true }), listed({ id: 'c', file: 'x' })]),
         stderr: '',
       });
     const listings = new TestListings(
@@ -388,11 +387,8 @@ describe('each config’s listing', () => {
     );
     listings.listAll('/w', '/w/playwright.config.ts');
     await settle();
-    expect([...listings.state('/w')!.listing!.onlyNamed]).toEqual(['slow']);
-    named = ['nightly'];
-    listings.listSpecs('/w', ['tests/a.spec.ts']);
-    await settle();
-    expect([...listings.state('/w')!.listing!.onlyNamed]).toEqual(['nightly']);
+    expect([...onlyNamedIds(listings.state('/w')!.listing)]).toEqual(['b']);
+    expect(onlyNamedIds(null).size).toBe(0);
   });
 
   test('lists a config whole again when a file it reads changed, and keeps the last listing past a failure', async () => {

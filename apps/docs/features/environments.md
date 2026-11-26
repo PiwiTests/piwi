@@ -63,7 +63,7 @@ environments**, like the [default branch](./branches#filtering-by-branch). A cop
 
 ## Choose the environment of a run
 
-Each place Piwi starts a run offers the project's environments that are not archived, and **None**. With **None**,
+Each place Piwi starts a run offers the project's unarchived environments, and **None**. With **None**,
 Piwi applies the project's run variables only and sets no label: the config decides, as in a terminal.
 
 A run Piwi starts for an environment gets:
@@ -82,10 +82,10 @@ Where you pick it:
 - **[Run on my machine](./run-on-my-machine)**: the request's window offers the same picker, and the app's
   confirmation names the environment and lists its variables.
 - **[The desktop app](./desktop)**: its runs offer the environments of the project the folder is linked to. A folder
-  also linked to a project of a team instance offers that project's environments too, read from the team instance at
-  each run and never kept on the machine.
+  also linked to a project of a team instance offers that project's environments too, read from that instance at
+  each run, never kept on the machine.
 - **[The editors](./editors)**: VS Code and JetBrains run with the environment picked for the workspace folder. The
-  **Allow** question the editors ask covers each new set of values, an environment's included.
+  editors' **Allow** question covers each new set of values, an environment's included.
 
 A command copied for Staging:
 
@@ -153,7 +153,7 @@ against it:
 
 - **runs only the tests carrying one of its required tags**, and the setup and teardown projects they depend on, which
   Playwright runs whole: Piwi adds a `--grep-invert` that leaves out every other test, and keeps the run's own filter
-  case-insensitive. The command shown carries it. On Windows, PowerShell may break its quoting when `npx` resolves to
+  case-insensitive: Piwi refuses `-G /…/` without `i`. The command shown carries it. On Windows, PowerShell may break its quoting when `npx` resolves to
   `npx.cmd`: start these runs from the desktop app or Run on my machine;
 - **is confirmed**, its name shown, in the desktop app, the app taking a Run on my machine request and the editors'
   question;

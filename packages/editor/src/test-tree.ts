@@ -14,7 +14,7 @@ import { CONFIG_NODE, type TestTreeNode, type TreeTest } from './protocol.js';
 export const NOT_IN_CHECKOUT = 'Not in this checkout';
 
 /** What a project's node says after its name when the project runs only when `--project` names it. */
-export const ONLY_NAMED = ' (only with --project)';
+export const ONLY_NAMED = '(only with --project)';
 
 /** The id of a folder's node: its config's folder and its path. */
 const folderId = (root: string, folder: string) => `folder\x1f${root}\x1f${folder}`;
@@ -53,7 +53,7 @@ function node(fields: Partial<TestTreeNode> & Pick<TestTreeNode, 'id' | 'label' 
 /**
  * The describe blocks and tests of one spec under `parent`, ids prefixed with `prefix`. Two tests of one title in the
  * same describe blocks are told apart by their order; a test that runs in several projects has a node per project, its
- * label saying so of a project `onlyNamed` holds.
+ * label saying so where `onlyNamed` holds Playwright's id of the test in that project.
  */
 function addTests(
   parent: TestTreeNode,
@@ -107,7 +107,7 @@ function addTests(
         node({
           // `\x1d`: no title holds it, so a project's node is never a test's.
           id: `${id}\x1d${p.project}`,
-          label: onlyNamed.has(p.project) ? `${p.project}${ONLY_NAMED}` : p.project,
+          label: onlyNamed.has(p.id) ? `${p.project} ${ONLY_NAMED}`.trim() : p.project,
           kind: 'project',
           uri,
           range,
@@ -123,7 +123,7 @@ function addTests(
 
 /**
  * The tree of one config: its folders and specs, then the Not in this checkout group when it holds a test. `onlyNamed`:
- * the projects that run only when `--project` names them (`default: false`).
+ * Playwright's ids of the tests whose project runs only when `--project` names it (`onlyNamedIds`).
  */
 export function configTree(
   root: string,
@@ -195,7 +195,7 @@ export interface NodeRun {
   locations: string[];
   /** Every test of the config, in place of `locations`. */
   all: boolean;
-  /** The projects it runs in alone; every project when empty. */
+  /** The projects it runs in alone, by name (empty for an unnamed one); those that run by default when empty. */
   projects: string[];
   grep: string | null;
   grepInvert: string | null;
@@ -267,11 +267,12 @@ interface Filter {
  * also runs by its spec's name, describe blocks and title (`--grep`), without the others of that line this matches
  * (`--grep-invert`), in a run of its own; when two tests of the line match each other, the whole line runs.
  *
- * A test runs only when `--project` names it when every project it runs in is one of the context's `onlyNamed`
- * (`default: false`); a test the listing gives no project runs in those of its spec's other tests. A node holding only
- * such tests runs with `--project` naming their projects. A node holding others too runs as Playwright runs it without
- * `--project` (a test of default and named projects in its default ones), and such tests under it run apart, in their
- * projects, each by the widest node holding none of the others: no picked test is left to a run that leaves it out.
+ * A test runs only when `--project` names it when the context's `onlyNamed` holds Playwright's id of it in every project
+ * it runs in (`default: false`, and no project a run without `--project` runs depends on that one); a test the listing
+ * gives no project goes by its spec's other tests. A node holding only such tests runs with `--project` naming their
+ * projects (`--project=` for an unnamed one). A node holding others too runs as Playwright runs it without `--project`
+ * (a test of both kinds of projects in the others), and such tests under it run apart, in their projects, each by the
+ * widest node holding none of the others: no picked test is left to a run that leaves it out.
  *
  * One run per config, set of projects and titles; a node that is not runnable runs nothing. A run is split where its
  * locations, as `locationArg` writes them from the context's `folder` (its root by default), would make too long a
@@ -350,30 +351,30 @@ export function nodeRuns(
     });
   };
 
-  /** The projects a test runs in: those the listing gives it, else those of its spec's other tests. */
-  const specProjects = new Map<string, string[]>();
-  const projectsOf = (test: TestTreeNode, spec: TestTreeNode | null): string[] => {
-    if (test.test!.playwright.length) return test.test!.playwright.map((p) => p.project);
+  /** The projects a test runs in, with its ids: those the listing gives it, else those of its spec's other tests. */
+  const specEntries = new Map<string, TreeTest['playwright']>();
+  const entriesOf = (test: TestTreeNode, spec: TestTreeNode | null): TreeTest['playwright'] => {
+    if (test.test!.playwright.length) return test.test!.playwright;
     if (!spec) return [];
-    let found = specProjects.get(spec.id);
+    let found = specEntries.get(spec.id);
     if (!found) {
-      const all = new Set<string>();
+      const all: TreeTest['playwright'] = [];
       const collect = (nodes: readonly TestTreeNode[]) => {
         for (const n of nodes) {
-          if (n.kind === 'test') for (const p of n.test?.playwright ?? []) all.add(p.project);
+          if (n.kind === 'test') all.push(...(n.test?.playwright ?? []));
           else collect(n.children);
         }
       };
       collect(spec.children);
-      found = [...all];
-      specProjects.set(spec.id, found);
+      found = all;
+      specEntries.set(spec.id, found);
     }
     return found;
   };
 
   /**
-   * What the tests under `nodes` need: the projects of those that run only when `--project` names them (every project
-   * they run in has `default: false`), and whether another runs without it.
+   * What the tests under `nodes` need: the projects of those that run only when `--project` names them, and whether
+   * another runs without it.
    */
   const reachOf = (nodes: readonly TestTreeNode[], root: string, spec: TestTreeNode | null) => {
     const named = new Set<string>();
@@ -385,9 +386,9 @@ export function nodeRuns(
         for (const c of n.children) visit(c, n.kind === 'spec' ? n : own);
         return;
       }
-      const projects = projectsOf(n, own);
-      if (onlyNamed && projects.length && projects.every((p) => onlyNamed.has(p))) {
-        for (const p of projects) named.add(p);
+      const entries = entriesOf(n, own);
+      if (onlyNamed && entries.length && entries.every((p) => onlyNamed.has(p.id))) {
+        for (const p of entries) named.add(p.project);
       } else byDefault = true;
     };
     for (const n of nodes) visit(n, spec);
@@ -473,7 +474,7 @@ export function nodeRuns(
   const runs = new Map<string, NodeRun>();
   for (const f of filters) {
     const projects = [...new Set(f.projects)].sort();
-    const key = [f.root, projects.join('\x1f'), f.grep ?? '', f.grepInvert ?? ''].join('\0');
+    const key = JSON.stringify([f.root, projects, f.grep, f.grepInvert]);
     let run = runs.get(key);
     if (!run) {
       run = { root: f.root, uri: f.uri, locations: [], all: false, projects, grep: f.grep, grepInvert: f.grepInvert };

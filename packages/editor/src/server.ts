@@ -199,7 +199,7 @@ import {
 } from './recorder/page-candidates.js';
 import { listWithReporter, readProjectOptions, type ProjectOptions } from './recorder/project-options.js';
 import { LIST_TESTS_ENV } from './recorder/use-reporter.js';
-import { TestListings, type ListedTest, type ListRunner } from './test-listing.js';
+import { onlyNamedIds, TestListings, type ListedTest, type ListRunner } from './test-listing.js';
 import { configTree, locationArg, nodeRuns, type MissingTest, type TreeSpec } from './test-tree.js';
 import { canonicalPath, resolvePlaywrightCli } from './recorder/playwright.js';
 import {
@@ -4307,7 +4307,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
           missing.push({ file: c.filePath, test: missingTest(context, c) });
         }
       }
-      const nodes = configTree(context.root, treeSpecs, missing, listing?.onlyNamed);
+      const nodes = configTree(context.root, treeSpecs, missing, onlyNamedIds(listing));
       if (!nodes.length && !state?.error) continue;
       result.contexts.push({
         root: context.root,
@@ -4360,7 +4360,7 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const contexts = tree.contexts.map((c) => ({
       ...c,
       folder: canonicalPath(c.root),
-      onlyNamed: testListings.state(c.root)?.listing?.onlyNamed,
+      onlyNamed: onlyNamedIds(testListings.state(c.root)?.listing ?? null),
     }));
     return nodeRuns(contexts, ids(params?.nodes), ids(params?.exclude)).map((run) => ({
       uri: run.uri ?? pathToFileURL(run.root).href,
@@ -4935,9 +4935,11 @@ export function startServer(connection: Connection, options: ServerOptions = {})
     const named = await testArgs(context, params);
     // The projects and the titles the tests run in and by, as Playwright's options.
     const option = (name: string, value: unknown) => (typeof value === 'string' && value ? [name, value] : []);
+    // An unnamed project is `--project=`, which Playwright reads as the projects with no name.
+    const project = (name: unknown) => (name === '' ? ['--project='] : option('--project', name));
     const tests = named && [
       ...named,
-      ...(Array.isArray(params.projects) ? params.projects.flatMap((p) => option('--project', p)) : []),
+      ...(Array.isArray(params.projects) ? params.projects.flatMap(project) : []),
       ...option('--grep', params.grep),
       ...option('--grep-invert', params.grepInvert),
     ];

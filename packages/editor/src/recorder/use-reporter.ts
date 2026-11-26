@@ -2,14 +2,13 @@
  * A Playwright reporter for the editor service, run as `playwright test --list`, so nothing runs. It always prints the
  * configuration Playwright resolved: one line, `PIWI_USE <json>`, with the config file, its root directory, Piwi's
  * section of the config (`'@piwi'`, which Playwright hands to reporters as written) and each project's name, test
- * directory, `use` options, without the functions and other values JSON cannot hold, and whether it runs when no
- * `--project` names it (`default`); the options read passes a filter no spec file matches, so no spec is loaded. With
- * `PIWI_LIST_TESTS=1`, it also prints the tests Playwright lists (`PIWI_TESTS <json>`) and each error Playwright
- * reports while it loads the specs (`PIWI_ERROR <json>`), for the test tree. Bundled on its own as
- * `dist/piwi-use-reporter.cjs`; it imports only Node's own modules at run time.
+ * directory and `use` options, without the functions and other values JSON cannot hold; the options read passes a
+ * filter no spec file matches, so no spec is loaded. With `PIWI_LIST_TESTS=1`, it also prints the tests Playwright
+ * lists (`PIWI_TESTS <json>`) and each error Playwright reports while it loads the specs (`PIWI_ERROR <json>`), for
+ * the test tree. Bundled on its own as `dist/piwi-use-reporter.cjs`; it imports only Node's own modules at run time.
  */
 import * as path from 'node:path';
-import type { FullConfig, Reporter, Suite, TestCase, TestError } from '@playwright/test/reporter';
+import type { FullConfig, FullProject, Reporter, Suite, TestCase, TestError } from '@playwright/test/reporter';
 import { PIWI_CONFIG_KEY } from '@piwitests/core/piwi-config';
 
 /** What the reporter's line starts with. */
@@ -37,6 +36,8 @@ export interface ListedTestLine {
   project: string;
   /** Its Playwright tags, as Playwright writes them (`@smoke`). */
   tags: string[];
+  /** Whether its project runs only when `--project` names it ({@link onlyNamedProjects}). */
+  onlyNamed: boolean;
 }
 
 /** An error Playwright reported while it loaded the specs: a spec that does not load, or the config itself. */
@@ -78,26 +79,35 @@ function plain(value: unknown, parents: unknown[] = []): unknown {
 const CONFIG_INTERNALS = 'configInternalSymbol';
 
 /**
- * The projects of `config.projects` that run only when `--project` names them (Playwright 1.64's `default: false`).
- * `FullProject` has no `default`: it is read from the config's internals, which hold each project reporters get
- * (`project`) beside its `default`, taken only where it is `false`. None when the internals cannot be read or hold no
- * `default` (a Playwright older than 1.64): every project then runs by default.
+ * The projects of `config.projects` that run only when `--project` names them: those with `default: false`
+ * (Playwright 1.64) that no project a run without `--project` runs depends on or has as its teardown, which Playwright
+ * runs with it. `FullProject` has no `default`: it is read from the config's internals,
+ * which hold each project reporters get (`project`) beside its `default`, taken only where it is `false`. None when
+ * the internals cannot be read or hold no `default` (a Playwright older than 1.64): every project then runs.
  */
-function namedOnlyProjects(config: FullConfig): Set<unknown> {
-  const named = new Set<unknown>();
+function onlyNamedProjects(config: FullConfig): Set<FullProject> {
+  const off = new Set<unknown>();
   try {
     const symbol = Object.getOwnPropertySymbols(config).find((s) => s.description === CONFIG_INTERNALS);
     const internals: unknown = symbol ? (config as unknown as Record<symbol, unknown>)[symbol] : undefined;
-    if (typeof internals !== 'object' || internals === null) return named;
-    const projects: unknown = (internals as Record<string, unknown>).projects;
+    const projects: unknown =
+      typeof internals === 'object' && internals !== null ? (internals as Record<string, unknown>).projects : null;
     for (const project of Array.isArray(projects) ? (projects as unknown[]) : []) {
       const fields = typeof project === 'object' && project !== null ? (project as Record<string, unknown>) : null;
-      if (fields?.default === false && fields.project) named.add(fields.project);
+      if (fields?.default === false && fields.project) off.add(fields.project);
     }
   } catch {
-    named.clear();
+    return new Set();
   }
-  return named;
+  const reached = new Set<FullProject>();
+  const reach = (project: FullProject) => {
+    if (reached.has(project)) return;
+    reached.add(project);
+    const next = [...(project.dependencies ?? []), ...(project.teardown ? [project.teardown] : [])];
+    for (const other of config.projects) if (next.includes(other.name)) reach(other);
+  };
+  for (const project of config.projects) if (!off.has(project)) reach(project);
+  return new Set(config.projects.filter((project) => !reached.has(project)));
 }
 
 /** A file relative to `folder` with forward slashes when it is inside it, else as given. */
@@ -108,9 +118,10 @@ function relativeFile(folder: string, file: string): string {
     : file;
 }
 
-/** A test as the reporter lists it. */
-export function listedTest(folder: string, test: TestCase): ListedTestLine {
+/** A test as the reporter lists it, `onlyNamed` the projects that run only when `--project` names them. */
+export function listedTest(folder: string, test: TestCase, onlyNamed: ReadonlySet<FullProject>): ListedTestLine {
   const suites: ListedTestLine['suites'] = [];
+  const project = test.parent.project();
   for (let suite: Suite | undefined = test.parent; suite && suite.type === 'describe'; suite = suite.parent) {
     if (suite.title) suites.unshift({ title: suite.title, line: suite.location?.line ?? test.location.line });
   }
@@ -121,8 +132,9 @@ export function listedTest(folder: string, test: TestCase): ListedTestLine {
     column: test.location.column,
     title: test.title,
     suites,
-    project: test.parent.project()?.name ?? '',
+    project: project?.name ?? '',
     tags: [...(test.tags ?? [])],
+    onlyNamed: !!project && onlyNamed.has(project),
   };
 }
 
@@ -134,7 +146,6 @@ export default class UseReporter implements Reporter {
 
   onBegin(config: FullConfig, suite: Suite): void {
     this.folder = config.configFile ? path.dirname(config.configFile) : config.rootDir;
-    const named = namedOnlyProjects(config);
     const resolved = {
       configFile: config.configFile ?? null,
       rootDir: config.rootDir,
@@ -143,12 +154,12 @@ export default class UseReporter implements Reporter {
         name: project.name,
         testDir: project.testDir,
         use: plain(project.use) ?? {},
-        default: !named.has(project),
       })),
     };
     process.stdout.write(`${USE_LINE}${JSON.stringify(resolved)}\n`);
     if (!this.lists) return;
-    const tests = suite.allTests().map((test) => listedTest(this.folder, test));
+    const onlyNamed = onlyNamedProjects(config);
+    const tests = suite.allTests().map((test) => listedTest(this.folder, test, onlyNamed));
     process.stdout.write(`${TESTS_LINE}${JSON.stringify(tests)}\n`);
   }
 

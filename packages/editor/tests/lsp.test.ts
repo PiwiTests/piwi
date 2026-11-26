@@ -2256,7 +2256,16 @@ describe('the test tree', () => {
       test({ id: 'm1' }),
       test({ id: 'm2', title: 'adds mug 2' }),
       test({ id: 'pc', line: 4, column: 3, title: 'pays', suites: [{ title: 'cart', line: 3 }], tags: ['@smoke'] }),
-      test({ id: 'pf', line: 4, column: 3, title: 'pays', suites: [{ title: 'cart', line: 3 }], project: 'firefox' }),
+      // Firefox runs only when `--project` names it.
+      test({
+        id: 'pf',
+        line: 4,
+        column: 3,
+        title: 'pays',
+        suites: [{ title: 'cart', line: 3 }],
+        project: 'firefox',
+        onlyNamed: true,
+      }),
       test({ id: 'cc', file: 'tests/checkout.spec.ts', line: 3, column: 1, title: 'pays' }),
       test({ id: 'cf', file: 'tests/checkout.spec.ts', line: 3, column: 1, title: 'pays', project: 'firefox' }),
     ];
@@ -2294,7 +2303,7 @@ describe('the test tree', () => {
       expect(cart.range).toEqual({ start: 2, end: 4 });
       expect(cart.children[0]!.children.map((p) => [p.kind, p.label, p.runnable])).toEqual([
         ['project', 'chromium', true],
-        ['project', 'firefox', true],
+        ['project', 'firefox (only with --project)', true],
       ]);
       // checkout.spec.ts, from the listing or, open with changes, from its text: each test with its projects' ids.
       expect(specs[0]!.tests.map((t) => [t.title, t.testCaseId, t.playwright.map((p) => p.id)])).toEqual([
@@ -2343,6 +2352,15 @@ describe('the test tree', () => {
       expect(await command([firefox.id])).toBe(
         `npx playwright test "^${dir}/tests/listed.spec.ts:4" --project firefox`,
       );
+      // An unnamed project is `--project=`, which Playwright reads as the projects with no name.
+      const unnamed = (await client.sendRequest('piwi/runArgs', {
+        uri: uri('tests/listed.spec.ts'),
+        root: dir,
+        testIds: [],
+        locations: ['tests/listed.spec.ts:4'],
+        projects: [''],
+      })) as RunCommand;
+      expect(unnamed.command).toBe(`npx playwright test "^${dir}/tests/listed.spec.ts:4" --project=`);
       // A folder, a spec and a test by their whole paths, anchored at their start.
       expect(await command([nodeOf(nodes, (n) => n.kind === 'folder')!.id])).toBe(
         `npx playwright test "^${dir}/tests/."`,
