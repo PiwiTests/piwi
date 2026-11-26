@@ -514,7 +514,7 @@ export const MCP_TOOL_DEFS = [
     module: 'core',
     description: md(
       'Get one execution in full: a one-line failure headline, the untruncated error, steps, console logs, web vitals, the ARIA snapshot and the test’s stdout and stderr.',
-      '`include` fetches only the heavy parts you need; the error, status and summary always come back. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
+      '`include` fetches only the heavy parts you need; the error, status and summary always come back. A console entry’s `location` is `url:line:column`, 1-based as an editor counts them. `stdout` and `stderr` (`include: output`) hold the first and last lines the test printed, at most 8,000 characters each, with a line naming what was cut between them. For a failure, `explain_failure` adds the locator fix, the diagnosis context and the situation, with a shorter error and ARIA snapshot.',
       EXECUTION_WORKER,
     ),
     inputSchema: {

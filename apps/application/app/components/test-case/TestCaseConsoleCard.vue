@@ -3,10 +3,11 @@
  * Browser console output captured while the test ran. With a `storageKey` the
  * card folds to its header with a one-line peek (entry count plus the first
  * entry, ANSI-stripped) and the fold state persists per user; without one it is
- * a plain always-open card.
+ * a plain always-open card. Each entry's place reads 1-based, as an editor
+ * counts lines and columns.
  */
 import { stripAnsi } from '@piwitests/run-ui/ansi';
-import { PAGE_ERROR_TYPE } from '#shared/console-entries';
+import { PAGE_ERROR_TYPE, shownConsoleLocation } from '#shared/console-entries';
 import SectionCard from '../shared/SectionCard.vue';
 import CollapsibleSectionCard from '../shared/CollapsibleSectionCard.vue';
 
@@ -121,7 +122,7 @@ function consoleTypeLabel(type: string): string {
             <span class="truncate">{{ entry.text }}</span>
           </div>
           <div v-if="entry.location" class="text-xs text-gray-400 mt-0.5 ml-0">
-            {{ entry.location }}
+            {{ shownConsoleLocation(entry.location) }}
           </div>
         </div>
       </div>
